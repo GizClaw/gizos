@@ -1,0 +1,69 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fm17660k",
+    srcs = [
+        "src/h2_fm17660k.c",
+        "src/h2_fm17660k_internal.h",
+        "src/h2_fm17660k_transport.c",
+    ],
+    hdrs = [
+        "include/h2_fm17660k.h",
+        "include/h2_fm17660k_transport.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/drivers/nfc/type2",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "fm17660k_test",
+    srcs = ["tests/src/test_fm17660k.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fm17660k",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = ["tests/src/test_h2_fm17660k_public_headers.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":fm17660k"],
+)
+
+cc_test(
+    name = "transport_public_header_test",
+    srcs = ["tests/src/test_h2_fm17660k_transport_public_header.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":fm17660k"],
+)

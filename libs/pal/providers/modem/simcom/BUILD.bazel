@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "simcom_modem",
+    srcs = [
+        "src/h2_simcom_at.c",
+        "src/h2_simcom_call.c",
+        "src/h2_simcom_gnss.c",
+        "src/h2_simcom_internal.h",
+        "src/h2_simcom_modem.c",
+        "src/h2_simcom_ppp.c",
+        "src/h2_simcom_status.c",
+        "src/h2_simcom_urc.c",
+    ],
+    hdrs = ["include/h2_simcom_modem.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)

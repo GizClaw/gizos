@@ -1,0 +1,63 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "bm8563",
+    srcs = ["src/h2_bm8563.c"],
+    hdrs = [
+        "include/h2_bm8563.h",
+        "include/h2_bm8563_transport.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "bm8563_test_support",
+    testonly = True,
+    srcs = ["tests/src/h2_bm8563_fake.c"],
+    hdrs = ["tests/include/h2_bm8563_fake.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/include"],
+    visibility = [
+        ":__pkg__",
+        "//native_component_src/bk3633/h2_pal_core:__pkg__",
+    ],
+    deps = [":bm8563"],
+)
+
+cc_test(
+    name = "test_h2_bm8563",
+    srcs = ["tests/src/test_h2_bm8563.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":bm8563",
+        ":bm8563_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_h2_bm8563_public_headers",
+    srcs = ["tests/src/test_h2_bm8563_public_headers.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":bm8563"],
+)

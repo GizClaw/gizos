@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "quectel_modem",
+    srcs = [
+        "src/h2_quectel_at.c",
+        "src/h2_quectel_call.c",
+        "src/h2_quectel_gnss.c",
+        "src/h2_quectel_internal.h",
+        "src/h2_quectel_modem.c",
+        "src/h2_quectel_ppp.c",
+        "src/h2_quectel_status.c",
+        "src/h2_quectel_urc.c",
+    ],
+    hdrs = ["include/h2_quectel_modem.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)
