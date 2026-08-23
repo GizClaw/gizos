@@ -7,3 +7,5 @@ volatile uint32_t h2_ac791n_reference_link_probe;
 void h2_ac791n_reference_probe(void) {
   h2_ac791n_reference_link_probe = h2_reference_smoke_value(UINT32_C(791));
 }
+
+void app_main(void) { h2_ac791n_reference_probe(); }

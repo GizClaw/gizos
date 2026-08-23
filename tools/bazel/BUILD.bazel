@@ -318,6 +318,9 @@ py_test(
     name = "jieli_runner_test",
     srcs = ["tests/test_jieli_runner.py"],
     data = [
+        "//boards/ac791n_chip/ac791n/layouts/compile_only:defs.bzl",
+        "//boards/ac791n_chip/ac791n/layouts/compile_only:project.mk",
+        "//boards/ac791n_chip/ac791n/layouts/compile_only:src/platform.c",
         "jieli/local_post_br23.sh",
         "jieli/local_post_wl82.sh",
         "jieli_runner.py",

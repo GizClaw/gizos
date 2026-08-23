@@ -1,5 +1,7 @@
-# Derived from the pinned JieLi SDK project configuration and modified so this
-# board layout owns the native project definition.
+# Repository-owned AC791N compile-only native project. The pinned SDK supplies
+# reusable CPU, common runtime, header, archive and linker inputs only.
+
+H2_JIELI_LAYOUT_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 # make 编译并下载
 # make VERBOSE=1 显示编译详细过程
@@ -163,7 +165,7 @@ INCLUDES := \
 	-Iinclude_lib/media \
 	-Iinclude_lib/media/cpu/wl82 \
 	-Iapps \
-	-Iapps/demo/demo_hello/include \
+	-I$(H2_JIELI_LAYOUT_ROOT)/include \
 	-Iinclude_lib/system/os \
 
 
@@ -180,8 +182,6 @@ c_SRC_FILES := \
 	apps/common/system/system_reset_reason.c \
 	apps/common/system/version.c \
 	apps/common/update/update.c \
-	apps/demo/demo_hello/app_main.c \
-	apps/demo/demo_hello/board/wl82/board.c \
 	cpu/wl82/debug.c \
 	cpu/wl82/iic.c \
 	cpu/wl82/key/adc_api.c \
