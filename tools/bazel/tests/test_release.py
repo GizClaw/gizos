@@ -215,6 +215,55 @@ class ReleaseTest(unittest.TestCase):
                 ["bk7258", "esp32p4", "esp32s3"],
             )
 
+    def test_s3_release_keeps_wifi_credentials_out_of_argv(self):
+        credentials = '{"ssid":"fixture","password":"fixture"}'
+        catalog = {
+            "board": "devkit",
+            "entry": "projects/example/s3",
+            "image": "example",
+            "label": "//projects/example/s3:package",
+            "platform": "esp",
+            "role": "app",
+            "target": "esp32s3",
+            "version": "1.2.3",
+        }
+        build = subprocess.CompletedProcess(
+            args=["bazel", "build"], returncode=0, stdout="", stderr=""
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog_path = root / "firmware-catalog.json"
+            catalog_path.write_text(json.dumps([catalog]), encoding="utf-8")
+            (root / "asset").write_text("firmware", encoding="utf-8")
+            query = subprocess.CompletedProcess(
+                args=["bazel", "cquery"],
+                returncode=0,
+                stdout=f"{root / 'asset'}\n",
+                stderr="",
+            )
+            output = root / "output"
+            output.mkdir()
+            with mock.patch.dict(
+                release.os.environ,
+                {"H2LOADER_WIFI_CREDENTIALS": credentials},
+                clear=True,
+            ), mock.patch.object(
+                release, "command", side_effect=[build, query]
+            ) as command:
+                release.build_firmware(
+                    root,
+                    "bazel",
+                    "esp32s3",
+                    "1.2.3",
+                    [catalog_path],
+                    output,
+                )
+            arguments = command.call_args_list[0].args[1]
+            self.assertNotIn(credentials, " ".join(arguments))
+            self.assertTrue(arguments[1].startswith("--bazelrc="), arguments)
+            self.assertEqual(arguments[2:4], ["build", "--noannounce_rc"])
+            self.assertFalse(Path(arguments[1].partition("=")[2]).exists())
+
     def test_final_bundle_replaces_partial_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

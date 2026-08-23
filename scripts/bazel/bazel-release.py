@@ -9,9 +9,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -243,18 +245,45 @@ def build_firmware(
     if not selected:
         raise ReleaseError(f"release catalog has no entries for {slice_name}")
     labels = sorted(item["label"] for item in selected)
-    command(
-        root,
-        [
-            bazel,
-            "build",
-            *cache_options(),
-            f"--config={target}",
-            f"--//tools/bazel:firmware_version={version}",
-            "--output_groups=release",
-            *labels,
-        ],
+    credentials_rc = None
+    credentials = os.environ.get("H2LOADER_WIFI_CREDENTIALS", "")
+    if target == "esp32s3" and credentials:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="h2-release-action-env-",
+            suffix=".bazelrc",
+            delete=False,
+        ) as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(
+                "build:esp --action_env=H2LOADER_WIFI_CREDENTIALS="
+                + shlex.quote(credentials)
+                + "\n"
+            )
+            credentials_rc = Path(stream.name)
+    startup_options = (
+        [f"--bazelrc={credentials_rc}"] if credentials_rc is not None else []
     )
+    build_options = ["--noannounce_rc"] if credentials_rc is not None else []
+    try:
+        command(
+            root,
+            [
+                bazel,
+                *startup_options,
+                "build",
+                *build_options,
+                *cache_options(),
+                f"--config={target}",
+                f"--//tools/bazel:firmware_version={version}",
+                "--output_groups=release",
+                *labels,
+            ],
+        )
+    finally:
+        if credentials_rc is not None:
+            credentials_rc.unlink(missing_ok=True)
     assets: list[Path] = []
     for label in labels:
         result = command(
