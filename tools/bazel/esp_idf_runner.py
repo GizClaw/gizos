@@ -31,6 +31,7 @@ H2LOADER_WIFI_CREDENTIALS = "H2LOADER_WIFI_CREDENTIALS"
 NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
 EXPECTED_IDF_VERSION = "6.0"
 TARGET_COMPILERS = {
+    "esp32c5": "riscv32-esp-elf-gcc",
     "esp32p4": "riscv32-esp-elf-gcc",
     "esp32s3": "xtensa-esp-elf-gcc",
 }

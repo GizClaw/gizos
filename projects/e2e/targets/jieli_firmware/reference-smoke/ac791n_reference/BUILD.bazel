@@ -24,13 +24,14 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         ":firmware_lib",
+        "//boards/ac791n_chip/ac791n",
         "//projects/e2e/libs/reference_smoke",
     ],
 )
 
 jieli_firmware(
     name = "firmware",
-    board = "ac791n_reference",
+    board = "ac791n_chip",
     graph = [":reference_launcher"],
     image = "reference-smoke",
     sdk_project = "apps/demo/demo_hello/board/wl82",

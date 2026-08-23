@@ -470,6 +470,9 @@ jobs:
           - name: ESP32-P4 / Build
             config: esp32p4
             runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+          - name: ESP32-C5 / Build
+            config: esp32c5
+            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -507,13 +510,13 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4
+          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
 
       - name: Install ESP-IDF tools
         shell: bash
         run: |
           export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
-          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4
+          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4,esp32c5
 
       - name: Install native compiler cache
         shell: bash
@@ -674,7 +677,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4
+          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
 
   bk7258-compatible-graph:
     if: >-

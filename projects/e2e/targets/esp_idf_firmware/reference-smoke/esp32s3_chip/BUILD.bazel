@@ -1,0 +1,41 @@
+load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = ["//projects/e2e/libs/reference_smoke"],
+)
+
+firmware_native_component(
+    name = "main",
+    srcs = ["main/main.c"],
+    component_directory = "projects/e2e/targets/esp_idf_firmware/reference-smoke/esp32s3_chip/main",
+    component_name = "main",
+    data = ["main/CMakeLists.txt"],
+    deps = [
+        ":firmware_lib",
+        "//boards/esp32s3_chip/esp32s3",
+        "//projects/e2e/libs/reference_smoke",
+    ],
+)
+
+esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/main.c",
+    ],
+    board = "esp32s3_chip",
+    graph = [
+        ":main",
+    ],
+    partition = "//boards/esp32s3_chip/esp32s3:partition.csv",
+    project = "CMakeLists.txt",
+    project_name = "h2_esp32s3_chip_reference_smoke",
+    project_support_files = ["//boards/esp32s3_chip/esp32s3:sdkconfig.defaults"],
+    target = "esp32s3",
+)

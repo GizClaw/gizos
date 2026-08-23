@@ -1,0 +1,59 @@
+load("//tools/bazel:bk7258.bzl", "bk7258_firmware")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = ["//projects/e2e/libs/reference_smoke"],
+)
+
+firmware_native_component(
+    name = "ap_main",
+    srcs = ["ap/main.c"],
+    component_directory = "projects/e2e/targets/bk7258_firmware/reference-smoke/bk7258_chip/ap",
+    component_name = "main",
+    data = ["ap/CMakeLists.txt"],
+    execution_unit = "ap",
+    deps = [
+        ":firmware_lib",
+        "//boards/bk7258_chip/ap",
+        "//projects/e2e/libs/reference_smoke",
+    ],
+)
+
+firmware_native_component(
+    name = "cp_main",
+    srcs = ["cp/main.c"],
+    component_directory = "projects/e2e/targets/bk7258_firmware/reference-smoke/bk7258_chip/cp",
+    component_name = "main",
+    data = ["cp/CMakeLists.txt"],
+    execution_unit = "cp",
+    deps = ["//boards/bk7258_chip/cp"],
+)
+
+bk7258_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "ap/CMakeLists.txt",
+        "ap/main.c",
+        "cp/CMakeLists.txt",
+        "cp/main.c",
+    ],
+    ap_config = ["//boards/bk7258_chip/ap:ap.defaults"],
+    ap_gpio = "//boards/bk7258_chip/ap:usr_gpio_cfg.h",
+    board = "bk7258_chip",
+    cp_config = ["//boards/bk7258_chip/cp:cp.defaults"],
+    cp_gpio = "//boards/bk7258_chip/cp:usr_gpio_cfg.h",
+    graph = [
+        ":ap_main",
+        ":cp_main",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2_bk7258_chip_reference_smoke",
+    project_support_files = ["//boards/bk7258_chip/layouts/reference:layout"],
+    ram_regions = "//boards/bk7258_chip:ram_regions.csv",
+    target = "bk7258",
+)

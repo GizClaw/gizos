@@ -13,20 +13,20 @@ firmware_native_component(
     name = "reference_launcher",
     srcs = ["src/reference_launcher.c"],
     component_name = "reference_launcher",
-    data = ["Makefile"],
     tags = ["manual"],
     deps = [
         ":firmware_lib",
+        "//boards/bk3633_chip/bk3633",
         "//projects/e2e/libs/reference_smoke",
     ],
 )
 
 bk3633_firmware(
     name = "firmware",
-    board = "bk3633_reference",
+    board = "bk3633_chip",
     graph = [":reference_launcher"],
     image = "reference-smoke",
-    native_merge = "bk3633_reference_merge_crc.bin",
-    native_target = "bk3633_reference",
-    project = "Makefile",
+    native_merge = "bk3633_chip_merge_crc.bin",
+    native_target = "bk3633_chip",
+    project = "//boards/bk3633_chip/bk3633:Makefile",
 )

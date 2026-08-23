@@ -85,6 +85,9 @@ build:esp32s3 --platforms=//tools/bazel/platforms:esp32s3
 build:esp32p4 --config=esp
 build:esp32p4 --define=h2_firmware_target=esp32p4
 build:esp32p4 --platforms=//tools/bazel/platforms:esp32p4
+build:esp32c5 --config=esp
+build:esp32c5 --define=h2_firmware_target=esp32c5
+build:esp32c5 --platforms=//tools/bazel/platforms:esp32c5
 build:bk7258 --define=h2_firmware_target=bk7258
 build:bk7258 --platforms=//tools/bazel/platforms:bk7258
 build:bk7258 --repo_env=BK7258_PATH

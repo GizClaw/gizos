@@ -1,0 +1,21 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "partition.csv",
+    "sdkconfig.defaults",
+])
+
+firmware_native_component(
+    name = "esp32c5",
+    srcs = ["src/h2_chip_board.c"],
+    hdrs = ["include/h2_chip_board.h"],
+    component_directory = "boards/esp32c5_chip/esp32c5",
+    component_name = "h2_chip_board",
+    data = [
+        "CMakeLists.txt",
+        "sdkconfig.defaults",
+    ],
+    tags = ["manual"],
+)

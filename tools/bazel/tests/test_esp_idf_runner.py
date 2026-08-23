@@ -274,6 +274,8 @@ class EspIdfRunnerTest(unittest.TestCase):
         tool_versions_file.write_text(
             tool_versions
             or (
+                "esp32c5=riscv32-esp-elf-gcc (crosstool-NG "
+                "esp-15.2.0_20251204) 15.2.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-15.2.0_20251204) 15.2.0\n"
                 "esp32s3=xtensa-esp-elf-gcc (crosstool-NG "
@@ -658,6 +660,8 @@ class EspIdfRunnerTest(unittest.TestCase):
     def test_compiler_version_mismatch_fails_closed(self):
         result, _ = self._run(
             tool_versions=(
+                "esp32c5=riscv32-esp-elf-gcc (crosstool-NG "
+                "esp-15.2.0_20251204) 15.2.0\n"
                 "esp32p4=riscv32-esp-elf-gcc (crosstool-NG "
                 "esp-15.2.0_20251204) 15.2.0\n"
                 "esp32s3=unexpected\n"
@@ -676,6 +680,7 @@ class EspIdfRunnerTest(unittest.TestCase):
     def test_ninja_missing_fails_closed(self):
         self.tool_bin.joinpath("ninja").unlink()
         result, _ = self._run(tool_versions=(
+            "esp32c5=riscv32-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0\n"
             "esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0\n"
             "esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0\n"
             "ninja=definitely-not-the-system-version\n"

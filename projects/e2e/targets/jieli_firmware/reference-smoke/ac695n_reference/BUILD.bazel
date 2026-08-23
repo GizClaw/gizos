@@ -24,13 +24,14 @@ firmware_native_component(
     target_compatible_with = AC695N_COMPATIBILITY,
     deps = [
         ":firmware_lib",
+        "//boards/ac695n_chip/ac695n",
         "//projects/e2e/libs/reference_smoke",
     ],
 )
 
 jieli_firmware(
     name = "firmware",
-    board = "ac695n_reference",
+    board = "ac695n_chip",
     graph = [":reference_launcher"],
     image = "reference-smoke",
     sdk_project = ".",

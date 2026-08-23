@@ -519,7 +519,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "ZmVIkSZHfpOk9PP4yT+nCTBc+EwBRZ6dmFjnyW3z044=",
+        "bzlTransitiveDigest": "S/X+e8Ngh/EnnKW/yX28ZIxJCjnqDugVkciDkqpqvhs=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -577,6 +577,34 @@
               "toolchain_identifier": "bk7258-local-arm-10.3.1",
               "version_key": "arm_gcc",
               "versions_file": "@@//tools/bazel:native_versions/bk_tool_versions.txt"
+            }
+          },
+          "gizos_esp32c5_cc_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
+            "attributes": {
+              "compile_flags": [
+                "-Os",
+                "-march=rv32imac_zicsr_zifencei",
+                "-mabi=ilp32",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-fno-common"
+              ],
+              "family": "riscv32-esp-elf",
+              "layout": "idf_tools",
+              "locator": "@@+esp_repositories+gizos_esp_idf_tools//:locator.json",
+              "locator_path": "tools_root",
+              "prefix": "riscv32-esp-elf-",
+              "target_constraints": [
+                "@gizos//tools/bazel/platforms:cpu_riscv32",
+                "@gizos//tools/bazel/platforms:target_esp32c5",
+                "@platforms//os:none"
+              ],
+              "target_cpu": "riscv32",
+              "target_system_name": "esp32c5-elf",
+              "toolchain_identifier": "esp32c5-local-esp-15.2.0",
+              "version_key": "esp32c5",
+              "versions_file": "@@//tools/bazel:native_versions/esp_idf_tool_versions.txt"
             }
           },
           "gizos_esp32p4_cc_toolchain": {

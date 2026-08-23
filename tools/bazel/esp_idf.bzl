@@ -28,6 +28,7 @@ def _native_firmware_resources(_os, _inputs_size):
     }
 
 _TARGET_CONFIGS = {
+    "esp32c5": "//tools/bazel/platforms:is_esp32c5",
     "esp32p4": "//tools/bazel/platforms:is_esp32p4",
     "esp32s3": "//tools/bazel/platforms:is_esp32s3",
 }
