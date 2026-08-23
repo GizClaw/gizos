@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "sqlite",
+    srcs = ["src/sqlite3.c"],
+    hdrs = [
+        "src/sqlite3.h",
+        "src/sqlite3ext.h",
+    ],
+    local_defines = ["SQLITE_OMIT_LOAD_EXTENSION"],
+    includes = ["src"],
+)

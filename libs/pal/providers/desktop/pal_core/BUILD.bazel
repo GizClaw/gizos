@@ -1,0 +1,119 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "core",
+    srcs = ["src/h2_desktop_platform_core.cpp"],
+    hdrs = ["include/h2_desktop_platform.h"],
+    copts = H2_WARNING_COPTS + [
+        "-Wno-thread-safety-analysis",
+    ],
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "simulators",
+    srcs = [
+        "src/h2_desktop_platform_ble.c",
+        "src/h2_desktop_platform_input.cpp",
+        "src/h2_desktop_platform_modem.c",
+    ],
+    hdrs = ["include/h2_desktop_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+        "-Wno-thread-safety-analysis",
+    ],
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":core",
+        "//libs/pal",
+    ],
+)
+
+# Minimal Desktop provider bundle used by backend-neutral WebRTC compatibility
+# executables. It intentionally excludes the production Desktop WebRTC adapter
+# so each test can link exactly one backend without duplicate protocol symbols.
+cc_library(
+    name = "webrtc_test_providers",
+    hdrs = ["include/h2_desktop_platform.h"],
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":core",
+    ],
+)
+
+cc_library(
+    name = "pal_core",
+    hdrs = ["include/h2_desktop_platform.h"],
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":core",
+        ":simulators",
+    ],
+)
+
+cc_test(
+    name = "ble_test",
+    srcs = [
+        "tests/h2_desktop_test_system_event.c",
+        "tests/h2_desktop_test_system_event.h",
+        "tests/test_desktop_ble.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal_core"],
+)
+
+cc_test(
+    name = "input_test",
+    srcs = [
+        "tests/h2_desktop_test_system_event.c",
+        "tests/h2_desktop_test_system_event.h",
+        "tests/test_desktop_input.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal_core"],
+)

@@ -64,6 +64,12 @@ vendor_repositories.repository(
     path = "third_party/sdl3",
 )
 vendor_repositories.repository(
+    name = "h2_vendor_sqlite",
+    build_file = "//third_party:sqlite.BUILD.bazel",
+    path = "third_party/sqlite",
+    source_is_gitlink = False,
+)
+vendor_repositories.repository(
     name = "h2_vendor_tinyh264",
     build_file = "//third_party:tinyh264.BUILD.bazel",
     patches = ["//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"],
@@ -82,6 +88,7 @@ use_repo(
     "h2_vendor_libco",
     "h2_vendor_libsrtp",
     "h2_vendor_sdl3",
+    "h2_vendor_sqlite",
     "h2_vendor_tinyh264",
     "h2_vendor_wolfssl",
     "h2_vendor_yyjson",

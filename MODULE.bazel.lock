@@ -235,7 +235,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "mx8oTTh/NII0YFU2I97ZxPAewF8GBVjttRRAw3Xr5iY=",
-        "usagesDigest": "dMDYnKN/VUBE5ZiWsfX+O0/nAMfpDw2zBO901x9f76A=",
+        "usagesDigest": "Y8cuUYJvoaYF5J4TGoxSYGavwRzMEnSYLNLL6MFYBcc=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_vendor_ikcp": {
@@ -317,6 +317,16 @@
               "path": "third_party/sdl3",
               "patches": [],
               "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_sqlite": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:sqlite.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/sqlite",
+              "patches": [],
+              "source_is_gitlink": false
             }
           },
           "h2_vendor_tinyh264": {
