@@ -1,0 +1,142 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "gizclaw_e2e",
+    srcs = [
+        "src/h2_gizclaw_e2e.c",
+        "src/h2_gizclaw_e2e_concurrency.c",
+        "src/h2_gizclaw_e2e_concurrency.h",
+        "src/h2_gizclaw_e2e_firmware.c",
+        "src/h2_gizclaw_e2e_firmware.h",
+        "src/h2_gizclaw_e2e_fixture.c",
+        "src/h2_gizclaw_e2e_internal.h",
+        "src/h2_gizclaw_e2e_report.c",
+        "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_rpc.c",
+        "src/h2_gizclaw_e2e_rpc.h",
+        "src/h2_gizclaw_e2e_service.c",
+        "src/h2_gizclaw_e2e_service.h",
+        "src/h2_gizclaw_e2e_voice.c",
+        "src/h2_gizclaw_e2e_voice.h",
+    ],
+    hdrs = ["include/h2_gizclaw_e2e.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    # The opus vendor build crashes the JieLi pi32v2 clang 4.0.1 backend.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/gizclaw",
+        "//libs/pal",
+        "//libs/runtime",
+    ] + select({
+        "//tools/bazel/platforms:is_bk3633": [
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//tools/bazel/platforms:is_bk7258": [
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//tools/bazel/platforms:is_esp32p4": [
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//tools/bazel/platforms:is_esp32s3": [
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
+        ],
+        "//conditions:default": [
+            "//tools/bazel:vendor_third_party_gizclaw",
+            "//tools/bazel:vendor_third_party_opus",
+        ],
+    }),
+)
+
+cc_test(
+    name = "gizclaw_e2e_test",
+    srcs = ["tests/test_h2_gizclaw_e2e.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":gizclaw_e2e"],
+)
+
+cc_test(
+    name = "gizclaw_e2e_fixture_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_fixture.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":gizclaw_e2e"],
+)
+
+cc_test(
+    name = "gizclaw_e2e_report_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_report.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":gizclaw_e2e"],
+)
+
+py_test(
+    name = "gizclaw_e2e_rpc_coverage_test",
+    srcs = ["tests/test_rpc_coverage.py"],
+    data = [
+        "src/h2_gizclaw_e2e_concurrency.c",
+        "src/h2_gizclaw_e2e_firmware.c",
+        "src/h2_gizclaw_e2e_fixture.c",
+        "src/h2_gizclaw_e2e_rpc.c",
+        "src/h2_gizclaw_e2e_voice.c",
+        "tests/check_rpc_coverage.sh",
+        "tests/rpc_coverage.tsv",
+        "tests/rpc_evidence_malformed.tsv",
+        "tests/rpc_evidence_valid.tsv",
+        "//libs/gizclaw:include/h2_gizclaw.h",
+        "//libs/gizclaw:include/h2_gizclaw_client.h",
+        "//libs/gizclaw:include/h2_gizclaw_config.h",
+        "//libs/gizclaw:include/h2_gizclaw_conversation.h",
+        "//libs/gizclaw:include/h2_gizclaw_pet.h",
+        "//libs/gizclaw:include/h2_gizclaw_points.h",
+        "//libs/gizclaw:include/h2_gizclaw_profile.h",
+        "//libs/gizclaw:include/h2_gizclaw_registration.h",
+        "//libs/gizclaw:include/h2_gizclaw_rpc.h",
+        "//libs/gizclaw:include/h2_gizclaw_social.h",
+        "//libs/gizclaw:include/h2_gizclaw_speech.h",
+        "//libs/gizclaw:include/h2_gizclaw_telemetry.h",
+        "//libs/gizclaw:include/h2_gizclaw_types.h",
+        "//libs/gizclaw:include/h2_gizclaw_workflow.h",
+        "//libs/gizclaw:include/h2_gizclaw_workspace.h",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_rpc_coverage.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

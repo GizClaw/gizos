@@ -1,0 +1,9 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "audio_system",
+    srcs = [
+        "data/audio/music_loop.ogg",
+        "//projects/example/apps/audio-system/app:audio_system",
+    ],
+)

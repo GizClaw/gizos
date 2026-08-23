@@ -1,0 +1,102 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "_wasm/index",
+    srcs = ["main.c"],
+    additional_linker_inputs = ["shell.html"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+        "-Wno-shorten-64-to-32",
+    ],
+    features = ["-output_format_js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "-sASYNCIFY_REMOVE=['lua*','yyjson*']",
+        "-sINITIAL_MEMORY=67108864",
+        "-sNO_EXIT_RUNTIME=1",
+        "--shell-file",
+        "$(location shell.html)",
+        "--oformat=html",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+        "//projects/example/apps/lua-flappybird/app:lua_flappybird",
+        "//projects/example/libs/host_runtime",
+    ],
+)
+
+wasm_cc_binary(
+    name = "lua_flappybird_wasm",
+    cc_target = ":_wasm/index",
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "lua_flappybird_wasm_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":lua_flappybird_wasm"],
+    entry_point = "index.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+pkg_tar(
+    name = "lua-flappybird",
+    srcs = [":lua_flappybird_wasm"],
+    out = "lua-flappybird.web.tar",
+    mode = "0644",
+    portable_mtime = True,
+    strip_prefix = ".",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "archive_test",
+    size = "small",
+    srcs = ["archive_test.py"],
+    args = ["$(location :lua-flappybird)"],
+    data = [":lua-flappybird"],
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

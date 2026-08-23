@@ -1,0 +1,11 @@
+{
+  "display": {
+    "title": "Libco Smoke",
+    "width": 480,
+    "height": 320
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": []
+}

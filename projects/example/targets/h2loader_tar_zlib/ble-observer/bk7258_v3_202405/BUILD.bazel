@@ -1,0 +1,108 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pixa",
+        "//libs/runtime",
+    ],
+)
+
+firmware_native_component(
+    name = "ap_launcher_component",
+    srcs = [
+        "ap/ap_main.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/example/targets/h2loader_tar_zlib/ble-observer/bk7258_v3_202405/ap",
+    component_name = "ap",
+    data = [
+        "ap/CMakeLists.txt",
+    ],
+    execution_unit = "ap",
+    native_srcs = [
+        "//projects/example/apps/ble-observer/app:src/app.c",
+    ],
+)
+
+firmware_native_component(
+    name = "cp_launcher_component",
+    srcs = [
+        "cp/cp_main.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/example/targets/h2loader_tar_zlib/ble-observer/bk7258_v3_202405/cp",
+    component_name = "cp",
+    data = [
+        "cp/CMakeLists.txt",
+    ],
+    execution_unit = "cp",
+)
+
+firmware_native_component(
+    name = "ble_observer_launcher",
+    srcs = [],
+    hdrs = [],
+    data = [
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":ap_launcher_component",
+        ":cp_launcher_component",
+        ":firmware_lib",
+        "//boards/bk7258_v3_202405/bk7258",
+        "//libs/pal",
+        "//libs/runtime",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+        "//native_component_src/bk7258/ap/zlib",
+        "//native_component_src/bk7258/cp/h2_cp_transport",
+        "//native_component_src/bk7258/cp/h2_pal_core",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+    ],
+)
+
+h2loader_bk7258_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "ap/CMakeLists.txt",
+        "ap/ap_main.c",
+        "cp/CMakeLists.txt",
+        "cp/cp_main.c",
+    ],
+    board = "bk7258_v3_202405",
+    graph = [
+        ":ble_observer_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2_bk_ble_observer",
+    target = "bk7258",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "bk7258_v3_202405",
+    firmware = ":firmware",
+    image = "ble-observer",
+    role = "app",
+    target = "bk7258",
+)

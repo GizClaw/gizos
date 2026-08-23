@@ -1,0 +1,131 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/desktop_layout:desktop_layout.bzl", "h2_desktop_layout_config")
+load(
+    "//tools/bazel/platforms:compatibility.bzl",
+    "DARWIN_HOST_TOOL_COMPATIBILITY",
+    "HOST_TOOL_COMPATIBILITY",
+    "LINUX_HOST_TOOL_COMPATIBILITY",
+    "WINDOWS_HOST_TOOL_COMPATIBILITY",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+h2_desktop_layout_config(
+    name = "layout_generated",
+    src = "layout.json",
+    app_name = "example/starboy",
+)
+
+cc_library(
+    name = "layout_config",
+    hdrs = [":layout_generated"],
+    strip_include_prefix = "layout_generated",
+    deps = [
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_library(
+    name = "global_mouse_source_sdl",
+    srcs = [
+        "global_mouse_source.h",
+        "global_mouse_source_sdl.cpp",
+    ],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = ["@h2_vendor_sdl3//:sdl3"],
+)
+
+cc_library(
+    name = "global_mouse_source_stub",
+    srcs = [
+        "global_mouse_source.h",
+        "global_mouse_source_stub.cpp",
+    ],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    target_compatible_with = WINDOWS_HOST_TOOL_COMPATIBILITY,
+)
+
+objc_library(
+    name = "global_mouse_source_macos",
+    srcs = [
+        "global_mouse_source.h",
+        "global_mouse_source_macos.mm",
+    ],
+    copts = H2_WARNING_COPTS + H2_CXX17_OPTS + ["-fobjc-arc"],
+    includes = ["."],
+    sdk_frameworks = [
+        "AppKit",
+        "Foundation",
+    ],
+    target_compatible_with = DARWIN_HOST_TOOL_COMPATIBILITY,
+    deps = ["@h2_vendor_sdl3//:sdl3"],
+)
+
+cc_library(
+    name = "global_mouse_source",
+    hdrs = ["global_mouse_source.h"],
+    includes = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = select({
+        "@platforms//os:linux": [":global_mouse_source_sdl"],
+        "@platforms//os:macos": [":global_mouse_source_macos"],
+        "@platforms//os:windows": [":global_mouse_source_stub"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "mouse_touch_adapter",
+    srcs = ["mouse_touch_adapter.cpp"],
+    hdrs = ["mouse_touch_adapter.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":global_mouse_source",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "mouse_touch_adapter_test",
+    srcs = ["tests/test_mouse_touch_adapter.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":mouse_touch_adapter"],
+)
+
+cc_binary(
+    name = "example-starboy",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["layout.json"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":layout_config",
+        ":mouse_touch_adapter",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/portaudio",
+        "//libs/runtime",
+        "//projects/example/apps/starboy/app:starboy",
+    ],
+)

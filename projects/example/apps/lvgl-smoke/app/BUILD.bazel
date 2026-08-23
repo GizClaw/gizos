@@ -1,0 +1,18 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "lvgl_smoke",
+    srcs = ["src/app.c"],
+    hdrs = ["include/h2_lvgl_smoke.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/lvgl",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)

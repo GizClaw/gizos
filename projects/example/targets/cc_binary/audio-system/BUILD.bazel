@@ -1,0 +1,45 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/desktop_layout:desktop_layout.bzl", "h2_desktop_layout_config")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_desktop_layout_config(
+    name = "layout_generated",
+    src = "layout.json",
+    app_name = "example/audio-system",
+    mount_inputs = [
+        "//projects/example/apps/audio-system:data/audio/music_loop.ogg",
+    ],
+)
+
+cc_library(
+    name = "layout_config",
+    hdrs = [":layout_generated"],
+    strip_include_prefix = "layout_generated",
+    deps = [
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_binary(
+    name = "example-audio-system",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = [
+        "layout.json",
+        "//projects/example/apps/audio-system:data/audio/music_loop.ogg",
+    ],
+    deps = [
+        ":layout_config",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/portaudio",
+        "//libs/runtime",
+        "//projects/example/apps/audio-system/app:audio_system",
+    ],
+)

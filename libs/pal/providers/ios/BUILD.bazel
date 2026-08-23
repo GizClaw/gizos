@@ -1,0 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "ios",
+    srcs = ["//libs/pal/providers/ios/pal_core"],
+    tags = ["manual"],
+)

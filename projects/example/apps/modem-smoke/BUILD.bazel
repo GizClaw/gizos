@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "modem_smoke",
+    srcs = [
+        "//projects/example/apps/modem-smoke/app:modem_smoke",
+    ],
+)

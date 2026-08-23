@@ -671,6 +671,7 @@ jobs:
             github.event.pull_request.head.repo.full_name == github.repository) &&
             vars.BAZEL_REMOTE_CACHE_URL || '' }}
         run: |
+          $outputRoot = Join-Path $env:SystemDrive 'b'
           $cacheArgs = @()
           if ($env:CACHE_URL) {
             if ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos/?$') {
@@ -685,9 +686,9 @@ jobs:
               '--disk_cache='
             )
           }
-          & $env:BAZEL_BIN build @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
+          & $env:BAZEL_BIN "--output_user_root=$outputRoot" build @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:BAZEL_BIN test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
+          & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Save Bazel repository cache

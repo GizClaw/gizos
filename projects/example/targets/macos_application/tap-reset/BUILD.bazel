@@ -1,0 +1,29 @@
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARM64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+objc_library(
+    name = "launcher",
+    srcs = ["main.m"],
+    copts = [
+        "-fobjc-arc",
+    ] + H2_WARNING_COPTS,
+    sdk_frameworks = [
+        "Foundation",
+    ],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = ["//projects/example/libs/desktop/tap-reset:app"],
+)
+
+macos_application(
+    name = "tap_reset_app",
+    bundle_id = "com.haivivi.firmwares.smokeapps.tapreset.macos",
+    bundle_name = "FirmwaresTapReset",
+    infoplists = ["Info.plist"],
+    minimum_os_version = "13.0",
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":launcher"],
+)

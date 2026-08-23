@@ -1,0 +1,98 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "_wasm/index",
+    srcs = ["main.c"],
+    additional_linker_inputs = ["shell.html"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    features = ["-output_format_js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "--shell-file",
+        "$(location shell.html)",
+        "--oformat=html",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+        "//projects/example/libs/host_runtime",
+    ],
+)
+
+wasm_cc_binary(
+    name = "pal_wasm",
+    cc_target = ":_wasm/index",
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "pal_wasm_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":pal_wasm"],
+    entry_point = "index.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+pkg_tar(
+    name = "pal",
+    srcs = [":pal_wasm"],
+    out = "pal.web.tar",
+    mode = "0644",
+    portable_mtime = True,
+    strip_prefix = ".",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "archive_test",
+    size = "small",
+    srcs = ["archive_test.py"],
+    args = ["$(location :pal)"],
+    data = [":pal"],
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

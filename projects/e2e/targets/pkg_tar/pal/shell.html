@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Firmwares PAL Browser E2E</title>
+  </head>
+  <body>
+    <main>
+      <h1>PAL Browser E2E</h1>
+      <canvas id="canvas" width="1" height="1"></canvas>
+      <pre id="result">RUNNING</pre>
+      <pre id="ledger"></pre>
+    </main>
+    <script>
+      const h2AppendLedger = text => {
+        document.getElementById('ledger').textContent += `${text}\n`;
+      };
+      var Module = {
+        canvas: document.getElementById('canvas'),
+        print: h2AppendLedger,
+        printErr: h2AppendLedger,
+      };
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

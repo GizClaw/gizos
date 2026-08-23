@@ -1,0 +1,80 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pal/providers/modem/simcom:simcom_modem",
+        "//libs/pixa",
+        "//libs/runtime",
+    ],
+)
+
+firmware_native_component(
+    name = "crash_before_confirm_launcher",
+    srcs = [
+        "main/main.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/example/targets/h2loader_tar_zlib/crash-before-confirm/waveshare_esp32s3_a7670e_4g/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
+    native_srcs = [
+        "//projects/example/apps/crash-before-confirm/app:app.c",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":firmware_lib",
+        "//boards/waveshare_esp32s3_a7670e_4g/esp32s3",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/h2_simcom_modem",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "waveshare_esp32s3_a7670e_4g",
+    graph = [
+        ":crash_before_confirm_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2_crash_before_confirm",
+    target = "esp32s3",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "waveshare_esp32s3_a7670e_4g",
+    firmware = ":firmware",
+    image = "crash-before-confirm",
+    role = "app",
+    target = "esp32s3",
+)

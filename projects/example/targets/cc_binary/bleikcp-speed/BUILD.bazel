@@ -1,0 +1,88 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/desktop_layout:desktop_layout.bzl", "h2_desktop_layout_config")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "bleikcp_speed_native",
+    srcs = ["bleikcp-speed-native.cpp"],
+    hdrs = ["bleikcp-speed-native.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/example/apps/bleikcp-speed/app:bleikcp_speed",
+    ],
+)
+
+h2_desktop_layout_config(
+    name = "client_layout_generated",
+    src = "client/layout.json",
+    app_name = "example/bleikcp-speed-client",
+)
+
+cc_library(
+    name = "client_layout_config",
+    hdrs = [":client_layout_generated"],
+    strip_include_prefix = "client_layout_generated",
+    deps = [
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_binary(
+    name = "example-bleikcp-speed-client",
+    srcs = ["client/main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["client/layout.json"],
+    deps = [
+        ":bleikcp_speed_native",
+        ":client_layout_config",
+        "//libs/pal/providers/desktop/app_support:bundle_rpath",
+    ],
+)
+
+h2_desktop_layout_config(
+    name = "server_layout_generated",
+    src = "server/layout.json",
+    app_name = "example/bleikcp-speed-server",
+)
+
+cc_library(
+    name = "server_layout_config",
+    hdrs = [":server_layout_generated"],
+    strip_include_prefix = "server_layout_generated",
+    deps = [
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_binary(
+    name = "example-bleikcp-speed-server",
+    srcs = ["server/main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["server/layout.json"],
+    deps = [
+        ":bleikcp_speed_native",
+        ":server_layout_config",
+        "//libs/pal/providers/desktop/app_support:bundle_rpath",
+    ],
+)
+
+filegroup(
+    name = "native_package",
+    srcs = [
+        ":example-bleikcp-speed-client",
+        ":example-bleikcp-speed-server",
+    ],
+)

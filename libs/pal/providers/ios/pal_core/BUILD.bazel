@@ -1,0 +1,110 @@
+load("@rules_apple//apple:ios.bzl", "ios_unit_test")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+objc_library(
+    name = "platform",
+    srcs = ["src/h2_ios_platform.m"],
+    hdrs = ["include/h2_ios_platform.h"],
+    copts = [
+        "-fobjc-arc",
+    ] + H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+        "-Wno-shorten-64-to-32",
+    ],
+    includes = ["include"],
+    sdk_frameworks = [
+        "CoreGraphics",
+        "Foundation",
+        "UIKit",
+    ],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "system_event",
+    srcs = ["src/h2_ios_system_event.c"],
+    hdrs = ["include/h2_ios_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "corebluetooth_uuid",
+    srcs = ["src/h2_ios_corebluetooth_uuid.c"],
+    hdrs = ["src/h2_ios_corebluetooth_internal.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+objc_library(
+    name = "corebluetooth",
+    srcs = ["src/h2_ios_corebluetooth.m"],
+    hdrs = ["include/h2_ios_platform.h"],
+    copts = [
+        "-fobjc-arc",
+    ] + H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+    ],
+    includes = ["include"],
+    sdk_frameworks = [
+        "CoreBluetooth",
+        "Foundation",
+    ],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":corebluetooth_uuid",
+        ":system_event",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "pal_core",
+    hdrs = ["include/h2_ios_platform.h"],
+    includes = ["include"],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":corebluetooth",
+        ":platform",
+        ":system_event",
+    ],
+)
+
+objc_library(
+    name = "pal_tests_lib",
+    testonly = True,
+    srcs = [
+        "tests/test_h2_ios_platform.m",
+        "tests/test_ios_corebluetooth.c",
+        "tests/test_ios_corebluetooth_uuid.c",
+        "tests/test_ios_system_event.c",
+    ],
+    copts = [
+        "-fobjc-arc",
+    ] + H2_WARNING_COPTS,
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":corebluetooth_uuid",
+        ":pal_core",
+    ],
+)
+
+ios_unit_test(
+    name = "pal_tests",
+    minimum_os_version = "16.0",
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_tests_lib"],
+)

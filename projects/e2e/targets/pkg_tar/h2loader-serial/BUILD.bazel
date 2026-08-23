@@ -1,0 +1,183 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "_wasm/index",
+    srcs = ["main.c"],
+    additional_linker_inputs = [
+        "run_poller.js",
+        "shell.html",
+        "shutdown.js",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_WEB_H2LOADER_INTERACTIVE=1"],
+    features = ["-output_format_js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "-sEXIT_RUNTIME=0",
+        "-sEXPORTED_RUNTIME_METHODS=['ccall']",
+        "--pre-js",
+        "$(location run_poller.js)",
+        "--pre-js",
+        "$(location shutdown.js)",
+        "--shell-file",
+        "$(location shell.html)",
+        "--oformat=html",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+        "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
+        "//projects/example/libs/host_runtime",
+    ],
+)
+
+wasm_cc_binary(
+    name = "h2loader_serial_wasm",
+    cc_target = ":_wasm/index",
+    outputs = [
+        "index.html",
+        "index.js",
+        "index.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_binary(
+    name = "_wasm/fake",
+    srcs = ["main.c"],
+    additional_linker_inputs = ["//libs/pal/providers/web/pal_core:tests/web_serial_fake.js"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_WEB_H2LOADER_FAKE_AUTO=1"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "--pre-js",
+        "$(location //libs/pal/providers/web/pal_core:tests/web_serial_fake.js)",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+        "//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e",
+        "//projects/example/libs/host_runtime",
+    ],
+)
+
+wasm_cc_binary(
+    name = "h2loader_serial_fake_wasm",
+    cc_target = ":_wasm/fake",
+    exit_runtime = True,
+    outputs = [
+        "fake.js",
+        "fake.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "run_poller_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = ["run_poller.js"],
+    entry_point = "run_poller_test.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "shutdown_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = ["shutdown.js"],
+    entry_point = "shutdown_test.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "h2loader_serial_wasm_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":h2loader_serial_fake_wasm"],
+    entry_point = "fake.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+pkg_tar(
+    name = "h2loader-serial",
+    srcs = [":h2loader_serial_wasm"],
+    out = "h2loader-serial.web.tar",
+    mode = "0644",
+    portable_mtime = True,
+    strip_prefix = ".",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "archive_test",
+    size = "small",
+    srcs = ["archive_test.py"],
+    args = ["$(location :h2loader-serial)"],
+    data = [":h2loader-serial"],
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

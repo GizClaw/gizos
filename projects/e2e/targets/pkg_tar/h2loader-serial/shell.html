@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>H2Loader Serial E2E</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: #f4f6f8;
+      color: #17202a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px 20px; }
+    main { width: min(960px, 100%); margin: 0 auto; }
+    h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; }
+    .subtitle { margin: 8px 0 28px; color: #667085; }
+    .panel {
+      margin-bottom: 18px;
+      padding: 22px;
+      border: 1px solid #d8dee7;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(25, 35, 50, 0.06);
+    }
+    .panel h2 { margin: 0 0 18px; font-size: 17px; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .field { display: grid; gap: 7px; min-width: 0; }
+    .field > span { color: #475467; font-size: 13px; font-weight: 650; }
+    .field-wide { grid-column: 1 / -1; }
+    .test-plan {
+      padding: 11px 13px;
+      border: 1px solid #c8d0dc;
+      border-radius: 8px;
+      background: #f8fafc;
+      font-weight: 650;
+    }
+    input, select, button {
+      min-height: 40px;
+      border: 1px solid #c8d0dc;
+      border-radius: 8px;
+      background: #fff;
+      color: inherit;
+      font: inherit;
+    }
+    input, select { width: 100%; padding: 8px 11px; }
+    input[type="file"] { padding: 6px 8px; }
+    button {
+      padding: 8px 16px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+    button:hover:not(:disabled) { border-color: #175cd3; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(21, 112, 239, 0.2);
+      border-color: #1570ef;
+    }
+    button:disabled { cursor: not-allowed; opacity: 0.5; }
+    #run { border-color: #175cd3; background: #175cd3; color: #fff; }
+    .connection, .actions, .run-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .connection-copy { color: #667085; font-size: 14px; }
+    .prerequisites { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .prerequisites li { display: flex; align-items: flex-start; gap: 10px; }
+    .check {
+      display: inline-grid;
+      flex: 0 0 22px;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border-radius: 50%;
+      background: #eaf2ff;
+      color: #175cd3;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .actions { margin-top: 18px; justify-content: flex-end; }
+    .run-status { justify-content: space-between; }
+    #progress { font-variant-numeric: tabular-nums; font-weight: 700; }
+    #result { margin: 0; font-weight: 700; }
+    #result[data-terminal="pass"] { color: #067647; }
+    #result[data-terminal="fail"] { color: #b42318; }
+    #ledger {
+      min-height: 120px;
+      max-height: 360px;
+      margin: 14px 0 0;
+      padding: 14px;
+      overflow: auto;
+      border-radius: 9px;
+      background: #101828;
+      color: #d0d5dd;
+      font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    #canvas { display: none; }
+    @media (max-width: 680px) {
+      body { padding: 20px 12px; }
+      .panel { padding: 16px; border-radius: 11px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field-wide { grid-column: auto; }
+      .actions { justify-content: stretch; }
+      .actions button { flex: 1; }
+      .run-status { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #0d1117; color: #e6edf3; }
+      .subtitle, .connection-copy, .field > span { color: #9da7b3; }
+      .panel { border-color: #30363d; background: #161b22; box-shadow: none; }
+      input, select, button { border-color: #3d4652; background: #0d1117; }
+      #ledger { background: #090c10; color: #c9d1d9; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>H2Loader Serial E2E</h1>
+    <p class="subtitle">Browser validation for H2Loader over Web Serial.</p>
+    <canvas id="canvas" width="1" height="1"></canvas>
+    <section class="panel" aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Prerequisites</h2>
+      <ul class="prerequisites">
+        <li><span class="check">1</span><span>Open this page in Google Chrome with Web Serial support.</span></li>
+        <li><span class="check">2</span><span>Connect one device running H2Loader over USB serial.</span></li>
+        <li><span class="check">3</span><span>Provide the reviewed install package identity and resources below.</span></li>
+        <li><span class="check">4</span><span>Click <strong>Run all tests</strong> once. Chrome asks for the serial device, then the complete test plan runs automatically.</span></li>
+      </ul>
+      <button id="authorize" type="button" hidden disabled>Authorize serial port</button>
+      <p id="connection-state" class="connection-copy">Serial authorization is requested only when the selected test needs it.</p>
+    </section>
+    <section class="panel" aria-labelledby="configuration-heading">
+      <h2 id="configuration-heading">Test configuration</h2>
+      <div class="form-grid">
+        <div class="field field-wide"><span>Test plan</span><div class="test-plan">Preflight → Status → Command → Install</div></div>
+        <label class="field field-wide"><span>Command used by the command test</span><select id="command"><option value="1">help</option><option value="2">status</option><option value="3">stats</option><option value="4">memory</option></select></label>
+        <label class="field"><span>Board</span><input id="board" placeholder="Expected board"></label>
+        <label class="field"><span>Target</span><input id="target" placeholder="Expected target"></label>
+        <label class="field field-wide"><span>Asset SHA-256</span><input id="sha256" size="64" maxlength="64" placeholder="Required for install"></label>
+        <label class="field"><span>Catalog/resource directory</span><input id="resource-directory" type="file" webkitdirectory multiple></label>
+        <label class="field"><span>Additional resource files</span><input id="resource-files" type="file" multiple></label>
+      </div>
+      <div class="actions">
+        <button id="cancel" type="button" disabled>Cancel</button>
+        <button id="run" type="button" disabled>Run all tests</button>
+      </div>
+    </section>
+    <section class="panel" aria-labelledby="result-heading">
+      <h2 id="result-heading">Run result</h2>
+      <div class="run-status">
+        <p id="result">Ready to run</p>
+        <span>Progress: <span id="progress">0/0</span></span>
+      </div>
+      <pre id="ledger"></pre>
+    </section>
+  </main>
+  <script>
+    const h2AppendLedger = text => {
+      document.getElementById('ledger').textContent += `${text}\n`;
+    };
+    var Module = {canvas: document.getElementById('canvas'),
+      print: h2AppendLedger, printErr: h2AppendLedger,
+      onRuntimeInitialized() {
+      const authorize = document.getElementById('authorize');
+      const run = document.getElementById('run');
+      const cancel = document.getElementById('cancel');
+      const result = document.getElementById('result');
+      const connectionState = document.getElementById('connection-state');
+      const fullSuite = 1 | 2 | 4 | 8;
+      let authorizationRequested = false;
+      let stopRunTimer = null;
+      let stopAuthorizationTimer = null;
+      const shutdownApp = h2CreatePageShutdown({
+        Module, authorize, run, cancel, result,
+        clearRunTimer() {
+          if (stopRunTimer !== null) {
+            stopRunTimer();
+            stopRunTimer = null;
+          }
+          if (stopAuthorizationTimer !== null) {
+            stopAuthorizationTimer();
+            stopAuthorizationTimer = null;
+          }
+        },
+      });
+      const loadFile = async (file, allocation, name) => {
+        if (!Number.isSafeInteger(file.size) || file.size <= 0 ||
+            file.size > 0xffffffff) {
+          throw new Error(`Unsupported file size for ${name || file.name}`);
+        }
+        const pointer = Module.ccall(allocation, 'number',
+          name === undefined ? ['number'] : ['string', 'number'],
+          name === undefined ? [file.size] : [name, file.size]);
+        if (!pointer) throw new Error(`Cannot allocate ${name || file.name}`);
+        const reader = file.stream().getReader();
+        let offset = 0;
+        for (;;) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          if (!value || value.byteLength === 0 ||
+              offset + value.byteLength > file.size) {
+            throw new Error(`Invalid file stream for ${name || file.name}`);
+          }
+          for (let chunkOffset = 0; chunkOffset < value.byteLength;
+               chunkOffset += 16384) {
+            const chunk = value.subarray(
+              chunkOffset, Math.min(chunkOffset + 16384, value.byteLength));
+            const rc = Module.ccall('h2_web_h2loader_write_allocation', 'number',
+              ['number', 'number', 'number', 'array', 'number'],
+              [pointer, file.size, offset, chunk, chunk.byteLength]);
+            if (rc !== 0) throw new Error(`Copy failed rc=${rc}`);
+            offset += chunk.byteLength;
+          }
+        }
+        if (offset !== file.size) throw new Error(`Short file ${name || file.name}`);
+      };
+      const readPlan = () => {
+        const board = document.getElementById('board').value.trim();
+        const target = document.getElementById('target').value.trim();
+        const sha256 = document.getElementById('sha256').value.trim();
+        const files = [
+          ...document.getElementById('resource-directory').files,
+          ...document.getElementById('resource-files').files,
+        ];
+        const catalogs = files.filter(file => file.name === 'firmware-index.json');
+        if (!board) throw new Error('Board is required');
+        if (!target) throw new Error('Target is required');
+        if (!/^[0-9a-f]{64}$/.test(sha256)) {
+          throw new Error('Asset SHA-256 must contain 64 lowercase hex characters');
+        }
+        if (catalogs.length !== 1) {
+          throw new Error('Exactly one firmware-index.json is required');
+        }
+        return {
+          board,
+          target,
+          sha256,
+          files,
+          catalog: catalogs[0],
+          command: Number(document.getElementById('command').value),
+        };
+      };
+      const executeRun = async plan => {
+        result.textContent = 'Loading reviewed test resources';
+        let rc = Module.ccall('h2_web_h2loader_configure', 'number',
+          ['number', 'number', 'string', 'string', 'string'],
+          [fullSuite, plan.command, plan.board, plan.target, plan.sha256]);
+        if (rc !== 0) throw new Error(`Config failed rc=${rc}`);
+        rc = Module.ccall('h2_web_h2loader_reset_resources', 'number', [], []);
+        if (rc !== 0) throw new Error(`Resource reset failed rc=${rc}`);
+        const catalogPath = plan.catalog.webkitRelativePath || plan.catalog.name;
+        const resourceRoot = catalogPath.slice(
+          0, catalogPath.length - plan.catalog.name.length);
+        await loadFile(plan.catalog, 'h2_web_h2loader_allocate_catalog');
+        for (const file of plan.files.filter(file => file !== plan.catalog)) {
+          const relativePath = file.webkitRelativePath || file.name;
+          const resourceName = relativePath.startsWith(resourceRoot)
+            ? relativePath.slice(resourceRoot.length) : relativePath;
+          await loadFile(file, 'h2_web_h2loader_allocate_resource', resourceName);
+        }
+        rc = Module.ccall('h2_web_h2loader_start', 'number', [], []);
+        if (rc !== 0) throw new Error(`Start failed rc=${rc}`);
+        result.textContent = 'Running complete H2Loader serial E2E plan';
+        cancel.disabled = false;
+        stopRunTimer = h2CreateRunPoller({
+          delayMs: 10,
+          wouldBlock: -9,
+          setTimer: (callback, delay) => setTimeout(callback, delay),
+          clearTimer: timer => clearTimeout(timer),
+          tick: () => Module.ccall('h2_web_h2loader_tick', 'number', [], []),
+          onTerminal: tick => {
+            stopRunTimer = null;
+            cancel.disabled = true;
+            if (result.dataset.terminal === undefined) {
+              result.textContent = tick === 0
+                ? 'Run finished without a terminal result'
+                : `Run failed rc=${tick}`;
+              result.dataset.terminal = 'fail';
+            }
+          },
+          onError: error => {
+            stopRunTimer = null;
+            cancel.disabled = true;
+            result.textContent = `Run failed: ${error.message}`;
+            result.dataset.terminal = 'fail';
+          },
+        });
+      };
+      const failBeforeStart = error => {
+        Module.ccall('h2_web_h2loader_reset_resources', 'number', [], []);
+        run.disabled = false;
+        cancel.disabled = true;
+        result.textContent = error.message;
+        result.dataset.terminal = 'fail';
+      };
+      const authorizeAndRun = plan => {
+        const rc = Module.ccall(
+          'h2_web_h2loader_request_port', 'number', [], []);
+        if (rc !== 0) {
+          failBeforeStart(new Error(`Authorization failed rc=${rc}`));
+          return;
+        }
+        result.textContent = 'Waiting for Chrome serial authorization';
+        connectionState.textContent = 'Select one H2Loader USB serial device in the Chrome dialog.';
+        stopAuthorizationTimer = h2CreateRunPoller({
+          delayMs: 50,
+          wouldBlock: -9,
+          setTimer: (callback, delay) => setTimeout(callback, delay),
+          clearTimer: timer => clearTimeout(timer),
+          tick: () => Module.ccall(
+            'h2_web_h2loader_authorization_status', 'number', [], []),
+          onTerminal: authorization => {
+            stopAuthorizationTimer = null;
+            if (authorization !== 0) {
+              failBeforeStart(
+                new Error(`Authorization failed rc=${authorization}`));
+              return;
+            }
+            authorizationRequested = true;
+            connectionState.textContent = 'Serial port authorized. The complete test plan is running.';
+            executeRun(plan).catch(failBeforeStart);
+          },
+          onError: failBeforeStart,
+        });
+      };
+      run.disabled = false;
+      run.addEventListener('click', () => {
+        delete result.dataset.terminal;
+        let plan;
+        try {
+          plan = readPlan();
+        } catch (error) {
+          failBeforeStart(error);
+          return;
+        }
+        run.disabled = true;
+        if (authorizationRequested) {
+          executeRun(plan).catch(failBeforeStart);
+        } else {
+          authorizeAndRun(plan);
+        }
+      });
+      cancel.addEventListener('click', () => Module.ccall('h2_web_h2loader_cancel', null, [], []));
+      addEventListener('pagehide', shutdownApp);
+      document.addEventListener('freeze', shutdownApp);
+    }};
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

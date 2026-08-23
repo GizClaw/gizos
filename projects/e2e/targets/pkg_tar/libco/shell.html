@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Firmwares libco Browser E2E</title>
+  </head>
+  <body>
+    <main>
+      <h1>libco Browser E2E</h1>
+      <pre id="result">RUNNING</pre>
+      <pre id="ledger"></pre>
+    </main>
+    <script>
+      const h2AppendLedger = text => {
+        document.getElementById('ledger').textContent += `${text}\n`;
+      };
+      for (const level of ['debug', 'info', 'warn', 'error']) {
+        const original = console[level].bind(console);
+        console[level] = (...values) => {
+          h2AppendLedger(values.join(' '));
+          original(...values);
+        };
+      }
+      var Module = {print: h2AppendLedger, printErr: h2AppendLedger};
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

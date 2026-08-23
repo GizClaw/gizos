@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lua Runtime E2E</title>
+  </head>
+  <body>
+    <main>
+      <h1>Lua Runtime E2E</h1>
+      <p id="result">Running…</p>
+      <canvas id="canvas" width="1" height="1" hidden></canvas>
+    </main>
+    <script>var Module = { canvas: document.getElementById("canvas") };</script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

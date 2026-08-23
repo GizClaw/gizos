@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Firmwares Web Smoke App: Tap Reset</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background: #050811;
+        color: #e2e8f0;
+      }
+
+      body {
+        box-sizing: border-box;
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        padding: 24px;
+        place-items: center;
+      }
+
+      main {
+        display: grid;
+        gap: 16px;
+        justify-items: center;
+      }
+
+      h1 {
+        margin: 0;
+        color: #7dd3fc;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      canvas {
+        width: min(360px, calc(100vw - 48px), 42.75vh);
+        height: auto;
+        border: 1px solid #334155;
+        border-radius: 28px;
+        box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+        image-rendering: pixelated;
+        touch-action: none;
+      }
+
+      #status {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Firmwares portable App</h1>
+      <canvas id="canvas" width="360" height="640"></canvas>
+      <p id="status">Loading WebAssembly…</p>
+    </main>
+    <script>
+      var Module = {
+        canvas: document.getElementById("canvas"),
+      };
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "lua-runtime",
+    srcs = ["//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e"],
+)

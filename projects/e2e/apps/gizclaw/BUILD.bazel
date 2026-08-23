@@ -1,0 +1,14 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "voice_prompt",
+    srcs = ["data/voice_prompt_l16_16khz_mono.pcm"],
+)
+
+filegroup(
+    name = "gizclaw_e2e",
+    srcs = [
+        ":voice_prompt",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
+    ],
+)

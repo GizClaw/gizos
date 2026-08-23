@@ -1,0 +1,11 @@
+{
+  "display": {
+    "title": "Firmwares Tap Reset",
+    "width": 360,
+    "height": 640
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": []
+}

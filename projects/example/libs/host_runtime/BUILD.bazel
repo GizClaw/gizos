@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "host_runtime",
+    hdrs = ["include/h2_smoke_host_runtime.h"],
+    includes = ["include"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "host_runtime_test",
+    srcs = ["tests/test_host_runtime.c"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":host_runtime",
+        "//libs/pal:unsupported",
+    ],
+)

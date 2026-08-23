@@ -1,0 +1,17 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "app",
+    srcs = ["src/h2_mobile_mp4_player.c"],
+    hdrs = ["include/h2_mobile_mp4_player.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/runtime",
+        "//projects/example/apps/mp4-player/app:mp4_player",
+    ],
+)

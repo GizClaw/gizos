@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "crash_before_confirm",
+    srcs = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = [
+            "BUILD.bazel",
+            "README.md",
+        ],
+    ) + [
+        "//projects/example/apps/crash-before-confirm/app:crash_before_confirm",
+    ],
+)

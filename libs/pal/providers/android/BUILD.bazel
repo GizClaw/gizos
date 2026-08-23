@@ -1,0 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "android",
+    srcs = ["//libs/pal/providers/android/pal_core"],
+    tags = ["manual"],
+)

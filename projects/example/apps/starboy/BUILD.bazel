@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "starboy",
+    srcs = ["//projects/example/apps/starboy/app:starboy"],
+)

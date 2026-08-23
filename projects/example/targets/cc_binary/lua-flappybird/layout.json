@@ -1,0 +1,20 @@
+{
+  "display": {
+    "title": "Lua Flappy Bird",
+    "width": 368,
+    "height": 448
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": [
+    {
+      "periph_id": 1,
+      "kind": {
+        "button": {
+          "key": "escape"
+        }
+      }
+    }
+  ]
+}

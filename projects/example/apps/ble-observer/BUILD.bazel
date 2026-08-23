@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "ble_observer",
+    srcs = [
+        "//projects/example/apps/ble-observer/app:ble_observer",
+    ],
+)

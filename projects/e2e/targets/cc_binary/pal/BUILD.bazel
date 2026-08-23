@@ -1,0 +1,117 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_test(
+    name = "pal_e2e_test",
+    srcs = [
+        "h2_pal_host_fixture.h",
+        "h2_pal_host_local_peers.h",
+        "test_h2_pal_host_e2e.c",
+    ] + select({
+        "@platforms//os:windows": [
+            "h2_pal_host_fixture_windows.c",
+            "h2_pal_host_local_peers_windows.c",
+        ],
+        "//conditions:default": [
+            "h2_pal_host_fixture_posix.c",
+            "h2_pal_host_local_peers_posix.c",
+        ],
+    }),
+    args = [
+        "$(location fixtures/localhost_ca.pem)",
+        "$(location fixtures/wrong_ca.pem)",
+        "$(location fixtures/localhost_cert.pem)",
+        "$(location fixtures/localhost_key.pem)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = glob(["fixtures/*.pem"]),
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-pthread"],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/wolfssl",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ] + select({
+        "@platforms//os:linux": [
+            "//libs/pal/providers/desktop/pal_core",
+            "//libs/pal/providers/linux/pal_core",
+        ],
+        "@platforms//os:macos": [
+            "//libs/pal/providers/darwin/pal_core",
+            "//libs/pal/providers/desktop/pal_core",
+        ],
+        "@platforms//os:windows": [
+            "//libs/pal/providers/windows/pal_core",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_test(
+    name = "pref_test",
+    srcs = ["test_h2_pal_pref_e2e_desktop.cpp"],
+    copts = H2_CXX17_OPTS + H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal/providers/sqlite",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ],
+)
+
+cc_test(
+    name = "mqtt_public_broker_smoke",
+    srcs = ["test_h2_pal_e2e_desktop.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ],
+)
+
+cc_test(
+    name = "mqtt_loopback_test",
+    srcs = ["test_h2_pal_e2e_desktop.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    local_defines = ["H2_MQTT_SMOKE_LOOPBACK=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ],
+)

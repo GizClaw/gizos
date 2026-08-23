@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lua Flappy Bird</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #07111f; color: #e2e8f0; }
+      body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
+      main { display: grid; gap: 12px; justify-items: center; }
+      canvas { width: min(368px, calc(100vw - 32px)); border: 1px solid #334155; border-radius: 20px; image-rendering: pixelated; touch-action: none; }
+      #status { margin: 0; color: #94a3b8; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="canvas" width="368" height="448"></canvas>
+      <p id="status">Loading WebAssembly…</p>
+    </main>
+    <script>
+      var Module = { canvas: document.getElementById("canvas") };
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && Module._h2_web_flappybird_back)
+          Module._h2_web_flappybird_back();
+      });
+    </script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

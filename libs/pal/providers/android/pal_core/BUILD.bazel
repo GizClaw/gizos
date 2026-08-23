@@ -1,0 +1,111 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "audio_contract",
+    srcs = ["src/h2_android_audio_contract.c"],
+    hdrs = ["src/h2_android_audio_internal.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_android_arm64": ["@platforms//os:android"],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "contracts",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_android_arm64": ["@platforms//os:android"],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        ":audio_contract",
+        ":video_contract",
+    ],
+)
+
+cc_library(
+    name = "pal_core",
+    srcs = [
+        "src/h2_android_audio_decoder.c",
+        "src/h2_android_platform.c",
+        "src/h2_android_video_decoder.c",
+    ],
+    hdrs = ["include/h2_android_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+        "-Wno-shorten-64-to-32",
+    ],
+    includes = ["include"],
+    linkopts = [
+        "-laaudio",
+        "-landroid",
+        "-ljnigraphics",
+        "-llog",
+        "-lm",
+        "-lmediandk",
+    ],
+    target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":contracts",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "video_contract",
+    srcs = ["src/h2_android_video_contract.c"],
+    hdrs = ["src/h2_android_video_internal.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_android_arm64": ["@platforms//os:android"],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "audio_contract_test",
+    srcs = ["tests/test_android_audio_contract.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":audio_contract"],
+)
+
+cc_test(
+    name = "video_contract_test",
+    srcs = ["tests/test_android_video_contract.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":video_contract"],
+)

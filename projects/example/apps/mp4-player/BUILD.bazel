@@ -1,0 +1,28 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "mp4_player",
+    srcs = [
+        "//projects/example/apps/mp4-player/app:mp4_player",
+    ],
+)
+
+filegroup(
+    name = "large_media",
+    srcs = ["data/media/test_1024x600_h264_aac.mp4"],
+)
+
+filegroup(
+    name = "large_media_checksum",
+    srcs = ["data/media/SHA256SUMS"],
+)
+
+filegroup(
+    name = "bk7258_showcase_media",
+    srcs = ["data/profiles/bk7258/media/showcase.mp4"],
+)
+
+filegroup(
+    name = "esp32p4_showcase_media",
+    srcs = ["data/profiles/esp32p4/media/showcase.mp4"],
+)

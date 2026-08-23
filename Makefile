@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help bazel-build bazel-test
+.PHONY: help bazel-build bazel-test bazel-test-mqtt_public_broker_smoke bazel-test-gizclaw_h2peer_live_test bazel-test-gizclaw_pion_live_test test-web
 
 BAZEL_BIN ?= bazel
 
@@ -16,3 +16,15 @@ bazel-build:
 
 bazel-test:
 	@scripts/bazel/bazel-test.py
+
+bazel-test-mqtt_public_broker_smoke:
+	@scripts/bazel/bazel-test-mqtt_public_broker_smoke.sh
+
+bazel-test-gizclaw_h2peer_live_test:
+	@scripts/bazel/bazel-test-gizclaw_h2peer_live_test.sh
+
+bazel-test-gizclaw_pion_live_test:
+	@scripts/bazel/bazel-test-gizclaw_pion_live_test.sh
+
+test-web:
+	@scripts/test/test-web.sh

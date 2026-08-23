@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+load("//tools/bazel/platforms:compatibility.bzl", "LINUX_ARMV7_GNUEABIHF_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "touch",
+    srcs = ["main/main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["package/touch.service"],
+    tags = ["manual"],
+    target_compatible_with = LINUX_ARMV7_GNUEABIHF_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//boards/kickpi_k4b/t113-s3:t113_s3",
+        "//libs/pal:unsupported",
+        "//projects/example/apps/touch/app:touch_smoke",
+    ],
+)

@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "lua-flappybird",
+    srcs = [
+        "data/skills/LICENSE",
+        "data/skills/SOURCE.md",
+        "data/skills/flappybird/SKILL.md",
+        "data/skills/flappybird/scripts/main.lua",
+        "//projects/example/apps/lua-flappybird/app:lua_flappybird",
+    ],
+)

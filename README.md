@@ -15,11 +15,12 @@ Each unchecked item represents exactly one future migration push. The item is ch
 - [x] Add BK7258 Bazel runners and shared AP/CP native components.
 - [x] Complete the existing public board targets and add AMOLED, DevKit, and SZP.
 - [x] Migrate the complete public H2Loader core, CLI, Loader, Web SDK, and package flow.
-- [ ] Migrate public Example and reusable E2E Apps with public launchers.
+- [x] Migrate public Example and reusable E2E Apps with public launchers.
+- [ ] Add public BK3633 and JieLi Bazel runners, PAL/native components, development boards, and generic build targets.
 - [ ] Migrate PIXA Games and Showcase with public Desktop artifacts.
 - [ ] Complete public tools, guides, release checks, and the final source-boundary audit.
 
-H106, H200/H200 V2, Tiga, Zero, TapDoki, Lucky Kitty, and every board, target, asset, test, guide, or release entry owned by those products remain private.
+H106, H200/H200 V2, Tiga, and Zero projects and their product-owned boards, targets, assets, tests, guides, and release entries remain private. TapDoki and Lucky Kitty product applications, configurations, assets, launchers, tests, guides, and release entries also remain private; reusable BK3633 and JieLi platform support, PAL/native components, SDK runners, development boards, and generic targets remain in the public migration scope.
 
 ## Repository layout
 

@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "generate_layout",
+    srcs = ["generate_layout.py"],
+    legacy_create_init = 0,
+    main = "generate_layout.py",
+    python_version = "PY3",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "generate_layout_test",
+    srcs = ["generate_layout_test.py"],
+    data = ["generate_layout.py"],
+    legacy_create_init = 0,
+    main = "generate_layout_test.py",
+    python_version = "PY3",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

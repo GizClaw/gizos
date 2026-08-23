@@ -1,0 +1,68 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "tap_reset_api",
+    hdrs = ["include/h2_tap_reset.h"],
+    includes = ["include"],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_library(
+    name = "tap_reset_mobile",
+    srcs = ["src/h2_tap_reset.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//tools/bazel/platforms:is_android_arm64": ["@platforms//os:android"],
+        "//tools/bazel/platforms:is_ios_sim_arm64": ["@platforms//os:ios"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tap_reset_api",
+        "//libs/lvgl:lvgl_mobile",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_library(
+    name = "tap_reset_web",
+    srcs = ["src/h2_tap_reset.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":tap_reset_api",
+        "//libs/lvgl:lvgl_web",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_library(
+    name = "tap_reset_desktop",
+    srcs = ["src/h2_tap_reset.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tap_reset_api",
+        "//libs/lvgl:display",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)

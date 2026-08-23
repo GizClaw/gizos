@@ -1,0 +1,16 @@
+[Unit]
+Description=H2 Display Smoke App
+After=local-fs.target dev-fb0.device
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/opt/h2/bin/display
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

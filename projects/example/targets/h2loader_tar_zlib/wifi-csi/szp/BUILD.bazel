@@ -1,0 +1,82 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/drivers/motion/qmi8658",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pixa",
+        "//libs/runtime",
+    ],
+)
+
+firmware_native_component(
+    name = "wifi_csi_launcher",
+    srcs = [
+        "main/main.c",
+    ],
+    hdrs = [],
+    component_directory = "projects/example/targets/h2loader_tar_zlib/wifi-csi/szp/main",
+    component_name = "main",
+    data = [
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+    ],
+    native_srcs = [
+        "//projects/example/apps/wifi-csi/app:src/app.c",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":firmware_lib",
+        "//boards/szp/esp32s3",
+        "//libs/bundle",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "szp",
+    graph = [
+        ":wifi_csi_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2_smoke_wifi_csi",
+    target = "esp32s3",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "szp",
+    firmware = ":firmware",
+    image = "wifi-csi",
+    role = "app",
+    target = "esp32s3",
+)

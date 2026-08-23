@@ -1,0 +1,17 @@
+[Unit]
+Description=H2 MP4 Player Smoke App
+After=local-fs.target dev-fb0.device
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Environment=LD_LIBRARY_PATH=/opt/h2/lib:/usr/lib
+ExecStart=/opt/h2/bin/mp4-player /opt/h2/share/mp4-player/test_1024x600_h264_aac.mp4
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
