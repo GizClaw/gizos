@@ -34,7 +34,10 @@ cc_library(
     srcs = ["tests/h2_posix_serial_host_test.c"],
     hdrs = ["tests/h2_posix_serial_host_test.h"],
     conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
     includes = ["tests"],
     linkopts = ["-lpthread"],
     target_compatible_with = select({
