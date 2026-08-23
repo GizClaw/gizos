@@ -2,30 +2,102 @@ name: CI
 
 on:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize]
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      checkout_sha:
+        description: Exact commit to build; defaults to the selected ref
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: read
-  id-token: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.checkout_sha || github.ref }}
   cancel-in-progress: true
 
 env:
   BAZEL_VERSION: "9.2.0"
   BAZEL_LINUX_X86_64_SHA256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+  BAZEL_MACOS_ARM64_SHA256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
+  BAZEL_WINDOWS_X86_64_SHA256: 5fc2f2805b8c697a54732558576938d06bab63aa0f9b6610cc01d2cae0388705
 
 jobs:
-  bazel:
-    name: Bazel public baseline
+  private-dependencies:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    name: Private dependency access
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Check out repository
+      - id: app-token
+        name: Create read-only h2vivi token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.H2VIVI_GITHUB_APP_ID }}
+          private-key: ${{ secrets.H2VIVI_GITHUB_APP_PRIVATE_KEY }}
+          owner: h2vivi
+
+      - name: Check out Firmwares devenv manifest
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: h2vivi/firmware-devenv
+          path: firmware-devenv
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Verify private SDK repository access
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          test -f firmware-devenv/export.sh
+          for repository in \
+            firmware-devenv \
+            bk-avdk-smp \
+            bk3633 \
+            AC695N_Soundbox_SDK \
+            fw-AC791N_SDK; do
+            test "$(gh api "repos/h2vivi/$repository" --jq .full_name)" = "h2vivi/$repository"
+          done
+
+  host:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 / Build + Test
+            runner: ubuntu-24.04
+            config: linux_x86_64
+            asset: linux-x86_64
+            sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+          - name: macOS arm64 / Build + Test
+            runner: macos-15
+            config: macos_arm64
+            asset: darwin-arm64
+            sha: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Validate Bazel remote cache variables
         env:
@@ -40,7 +112,7 @@ jobs:
             if [ -n "$value" ]; then configured=$((configured + 1)); fi
           done
           if [ "$configured" -eq 0 ]; then
-            echo 'Bazel remote cache is not provisioned; continuing without it.'
+            echo 'Bazel remote cache is not provisioned; using the job-local disk cache.'
           elif [ "$configured" -ne 4 ]; then
             echo 'Bazel remote cache repository variables are incomplete.' >&2
             exit 1
@@ -53,7 +125,7 @@ jobs:
         if: >-
           vars.BAZEL_REMOTE_CACHE_URL != '' &&
           (github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository)
+           github.event.pull_request.head.repo.full_name == github.repository)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
@@ -61,35 +133,195 @@ jobs:
           service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
+      - name: Restore Bazel repository cache
+        id: bazel-repository-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
       - name: Install and verify Bazel
         shell: bash
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
           curl --fail --location --silent --show-error \
-            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" \
+            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
             --output "$bazel_path"
-          test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
+          test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
-          printf 'BAZEL=%s\n' "$bazel_path" >> "$GITHUB_ENV"
+          {
+            printf 'BAZEL_BIN=%s\n' "$bazel_path"
+            printf 'BAZEL_CONFIG=%s\n' '${{ matrix.config }}'
+            printf 'BAZEL_BUILD_REMOTE_DOWNLOAD_OUTPUTS=minimal\n'
+          } >> "$GITHUB_ENV"
 
-      - name: Validate public graph
+      - name: Configure Bazel remote cache
+        if: >-
+          vars.BAZEL_REMOTE_CACHE_URL != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        shell: bash
+        run: |
+          {
+            printf 'BAZEL_REMOTE_CACHE_URL=%s\n' '${{ vars.BAZEL_REMOTE_CACHE_URL }}'
+            printf 'BAZEL_REMOTE_CACHE_MODE=write\n'
+            printf 'BAZEL_DISK_CACHE_MODE=off\n'
+          } >> "$GITHUB_ENV"
+
+      - name: Build compatible graph
+        run: make bazel-build
+
+      - name: Test compatible graph
+        run: make bazel-test
+
+      - name: Test repository policy scripts
+        if: matrix.config == 'linux_x86_64'
+        run: >-
+          node --test
+          .github/scripts/merge-eligibility-status/test.mjs
+          .github/scripts/ownership-approval/test.mjs
+
+      - name: Save Bazel repository cache
+        if: >-
+          always() && github.ref == 'refs/heads/main' &&
+          steps.bazel-repository-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
+  windows-compatible-graph:
+    name: Windows x86_64 / Build + Test
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+
+      - name: Validate Bazel remote cache variables
+        shell: pwsh
         env:
-          BAZEL_REMOTE_CACHE_URL: >-
+          CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
+          CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+        run: |
+          $configured = @(
+            $env:CACHE_PROJECT,
+            $env:CACHE_PROVIDER,
+            $env:CACHE_URL,
+            $env:CACHE_WRITER
+          ).Where({ $_ }).Count
+          if ($configured -eq 0) {
+            Write-Host 'Bazel remote cache is not provisioned; using the job-local disk cache.'
+          } elseif ($configured -ne 4) {
+            throw 'Bazel remote cache repository variables are incomplete.'
+          } elseif ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos/?$') {
+            throw 'BAZEL_REMOTE_CACHE_URL must use the /gizos prefix.'
+          }
+
+      - name: Authenticate Bazel remote cache
+        if: >-
+          vars.BAZEL_REMOTE_CACHE_URL != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Restore Bazel repository cache
+        id: bazel-repository-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
+      - name: Install and verify Bazel
+        shell: pwsh
+        run: |
+          $bazel = Join-Path $env:RUNNER_TEMP 'bazel.exe'
+          curl.exe --fail --location --silent --show-error `
+            "https://github.com/bazelbuild/bazel/releases/download/$env:BAZEL_VERSION/bazel-$env:BAZEL_VERSION-windows-x86_64.exe" `
+            --output $bazel
+          if ((Get-FileHash -Algorithm SHA256 $bazel).Hash.ToLowerInvariant() -ne $env:BAZEL_WINDOWS_X86_64_SHA256) {
+            throw 'Bazel SHA-256 mismatch'
+          }
+          "BAZEL_BIN=$bazel" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build and test compatible graph
+        shell: pwsh
+        env:
+          CACHE_URL: >-
             ${{ (github.event_name != 'pull_request' ||
             github.event.pull_request.head.repo.full_name == github.repository) &&
             vars.BAZEL_REMOTE_CACHE_URL || '' }}
+        run: |
+          $cacheArgs = @()
+          if ($env:CACHE_URL) {
+            if ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos/?$') {
+              throw 'BAZEL_REMOTE_CACHE_URL must use the /gizos prefix'
+            }
+            $cacheArgs = @(
+              "--remote_cache=$($env:CACHE_URL.TrimEnd('/'))",
+              '--google_default_credentials',
+              '--remote_timeout=60',
+              '--remote_retries=5',
+              '--remote_upload_local_results=true',
+              '--disk_cache='
+            )
+          }
+          & $env:BAZEL_BIN @cacheArgs build --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $env:BAZEL_BIN @cacheArgs test --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Save Bazel repository cache
+        if: >-
+          always() && github.ref == 'refs/heads/main' &&
+          steps.bazel-repository-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
+  ci-required:
+    if: always()
+    name: CI required
+    needs:
+      - private-dependencies
+      - host
+      - windows-compatible-graph
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable execution class
+        env:
+          HOST_RESULT: ${{ needs.host.result }}
+          PRIVATE_DEPENDENCIES_RESULT: ${{ needs.private-dependencies.result }}
+          PRIVATE_DEPENDENCIES_REQUIRED: >-
+            ${{ github.event_name != 'pull_request' ||
+            github.event.pull_request.head.repo.full_name == github.repository }}
+          WINDOWS_RESULT: ${{ needs.windows-compatible-graph.result }}
         shell: bash
         run: |
-          cache_args=()
-          if [ -n "$BAZEL_REMOTE_CACHE_URL" ]; then
-            cache_args=(
-              "--remote_cache=${BAZEL_REMOTE_CACHE_URL%/}"
-              --google_default_credentials
-              --remote_timeout=60
-              --remote_retries=5
-              --remote_upload_local_results=true
-            )
+          test "$HOST_RESULT" = success
+          test "$WINDOWS_RESULT" = success
+          if [ "$PRIVATE_DEPENDENCIES_REQUIRED" = true ]; then
+            test "$PRIVATE_DEPENDENCIES_RESULT" = success
+          else
+            test "$PRIVATE_DEPENDENCIES_RESULT" = skipped
           fi
-          "$BAZEL" "${cache_args[@]}" query //...
-          "$BAZEL" "${cache_args[@]}" build --remote_download_outputs=minimal //...
-          "$BAZEL" "${cache_args[@]}" test --remote_download_outputs=minimal //...

@@ -2,10 +2,33 @@ common --enable_bzlmod
 common --noenable_workspace
 common --enable_platform_specific_config
 common --announce_rc
+common --repository_cache=~/.cache/bazel/repository
 
 build:linux --define=h2_host_os=linux
+build:linux --dynamic_mode=off
 build:macos --define=h2_host_os=macos
 build:windows --define=h2_host_os=windows
 
+build --strip=never
+build --disk_cache=~/.cache/bazel/disk
+build --experimental_disk_cache_gc_max_age=14d
+build --experimental_disk_cache_gc_max_size=4G
+
+build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
+build:linux_x86_64 --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
+
+build:macos_arm64 --platforms=//tools/bazel/platforms:macos_arm64
+build:macos_arm64 --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain
+build:macos_arm64 --action_env=MACOSX_DEPLOYMENT_TARGET=13.0
+build:macos_arm64 --macos_minimum_os=13.0
+
+build:windows_x86_64 --platforms=//tools/bazel/platforms:windows_x86_64
+build:windows_x86_64 --extra_execution_platforms=//tools/bazel/platforms:windows_x86_64
+build:windows_x86_64 --extra_toolchains=@local_config_cc//:cc-toolchain-x64_windows
+build:windows_x86_64 --extra_toolchains=//tools/bazel/platforms:windows_x86_64_test_toolchain
+build:windows_x86_64 --features=compiler_param_file
+build:windows_x86_64 --enable_runfiles
+
 test --build_tests_only
 test --test_output=errors
+test --remote_download_outputs=minimal

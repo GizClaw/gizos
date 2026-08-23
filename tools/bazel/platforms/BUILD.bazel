@@ -1,4 +1,118 @@
+load(":test_toolchain.bzl", "empty_test_toolchain")
+
 package(default_visibility = ["//visibility:public"])
+
+constraint_setting(
+    name = "firmware_target",
+)
+
+constraint_setting(
+    name = "firmware_cpu",
+)
+
+constraint_value(
+    name = "cpu_xtensa",
+    constraint_setting = ":firmware_cpu",
+)
+
+constraint_value(
+    name = "cpu_riscv32",
+    constraint_setting = ":firmware_cpu",
+)
+
+constraint_value(
+    name = "cpu_arm_m",
+    constraint_setting = ":firmware_cpu",
+)
+
+constraint_value(
+    name = "cpu_armv5te",
+    constraint_setting = ":firmware_cpu",
+)
+
+constraint_value(
+    name = "target_esp32s3",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
+    name = "target_esp32p4",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
+    name = "target_bk7258",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
+    name = "target_bk3633",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
+    name = "cpu_pi32v2",
+    constraint_setting = ":firmware_cpu",
+)
+
+constraint_value(
+    name = "target_ac695n",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
+    name = "target_ac791n",
+    constraint_setting = ":firmware_target",
+)
+
+empty_test_toolchain(
+    name = "host_test_toolchain_info",
+)
+
+toolchain(
+    name = "linux_x86_64_test_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":host_test_toolchain_info",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
+)
+
+toolchain(
+    name = "linux_arm64_test_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":host_test_toolchain_info",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
+)
+
+toolchain(
+    name = "macos_arm64_test_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:macos",
+    ],
+    toolchain = ":host_test_toolchain_info",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
+)
+
+toolchain(
+    name = "windows_x86_64_test_toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:windows",
+    ],
+    toolchain = ":host_test_toolchain_info",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
+)
+
+config_setting(
+    name = "ci_graph",
+    define_values = {"h2_ci_graph": "true"},
+)
 
 config_setting(
     name = "is_bk7258",
@@ -11,11 +125,107 @@ config_setting(
 )
 
 config_setting(
+    name = "is_ac695n",
+    define_values = {"h2_firmware_target": "ac695n"},
+)
+
+config_setting(
+    name = "is_ac791n",
+    define_values = {"h2_firmware_target": "ac791n"},
+)
+
+# The JieLi toolchain only ships Linux x86_64 binaries, so native JieLi
+# firmware actions are compatible only when the Linux host runs them; other
+# hosts skip the targets instead of failing inside the action.
+config_setting(
+    name = "is_ac695n_linux_host",
+    define_values = {
+        "h2_firmware_target": "ac695n",
+        "h2_host_os": "linux",
+    },
+)
+
+config_setting(
+    name = "is_ac791n_linux_host",
+    define_values = {
+        "h2_firmware_target": "ac791n",
+        "h2_host_os": "linux",
+    },
+)
+
+config_setting(
+    name = "is_esp32s3",
+    define_values = {"h2_firmware_target": "esp32s3"},
+)
+
+config_setting(
+    name = "is_esp32p4",
+    define_values = {"h2_firmware_target": "esp32p4"},
+)
+
+config_setting(
+    name = "is_esp32s3_platform",
+    constraint_values = [":target_esp32s3"],
+)
+
+config_setting(
+    name = "is_pi32v2",
+    constraint_values = [":cpu_pi32v2"],
+)
+
+filegroup(
+    name = "kickpi_k4b_definition",
+    srcs = ["BUILD.bazel"],
+)
+
+config_setting(
+    name = "is_linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "is_linux_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "is_linux_armv7_gnueabihf",
+    constraint_values = [
+        "@platforms//cpu:armv7",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "is_macos_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:macos",
+    ],
+)
+
+config_setting(
     name = "is_windows_x86_64",
     constraint_values = [
         "@platforms//cpu:x86_64",
         "@platforms//os:windows",
     ],
+)
+
+config_setting(
+    name = "is_ios_sim_arm64",
+    define_values = {"h2_mobile_target": "ios_sim_arm64"},
+)
+
+config_setting(
+    name = "is_android_arm64",
+    define_values = {"h2_mobile_target": "android_arm64"},
 )
 
 config_setting(
@@ -43,4 +253,132 @@ config_setting(
         "@platforms//os:windows",
     ],
     define_values = {"h2_host_os": "windows"},
+)
+
+config_setting(
+    name = "host_macos_target_linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    define_values = {"h2_host_os": "macos"},
+)
+
+config_setting(
+    name = "host_macos_target_linux_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+    define_values = {"h2_host_os": "macos"},
+)
+
+platform(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "linux_armv7_gnueabihf",
+    constraint_values = [
+        "@platforms//cpu:armv7",
+        "@platforms//os:linux",
+    ],
+)
+
+platform(
+    name = "macos_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:macos",
+    ],
+)
+
+platform(
+    name = "windows_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:windows",
+    ],
+)
+
+platform(
+    name = "ios_sim_arm64",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:ios",
+    ],
+)
+
+platform(
+    name = "arm64-v8a",
+    constraint_values = [
+        "@platforms//cpu:arm64",
+        "@platforms//os:android",
+    ],
+)
+
+platform(
+    name = "esp32s3",
+    constraint_values = [
+        ":cpu_xtensa",
+        ":target_esp32s3",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "esp32p4",
+    constraint_values = [
+        ":cpu_riscv32",
+        ":target_esp32p4",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "bk7258",
+    constraint_values = [
+        ":cpu_arm_m",
+        ":target_bk7258",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "bk3633",
+    constraint_values = [
+        ":cpu_armv5te",
+        ":target_bk3633",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "ac695n",
+    constraint_values = [
+        ":cpu_pi32v2",
+        ":target_ac695n",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "ac791n",
+    constraint_values = [
+        ":cpu_pi32v2",
+        ":target_ac791n",
+        "@platforms//os:none",
+    ],
 )
