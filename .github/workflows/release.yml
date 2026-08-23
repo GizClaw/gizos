@@ -157,7 +157,7 @@ jobs:
   esp:
     name: Release ${{ matrix.slice }}
     needs: catalog
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     permissions:
       contents: read
@@ -165,7 +165,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        slice: [esp32s3, esp32p4]
+        include:
+          - slice: esp32s3
+            runner: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
+          - slice: esp32p4
+            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -275,9 +279,9 @@ jobs:
         env:
           WIFI_PASSWORD: ${{ secrets.H2LOADER_WIFI_PASSWORD }}
         run: |
+          . firmware-devenv/export.sh
           credentials="$(python3 -c 'import json, os; print(json.dumps({"ssid":"HAIVIVI-MFG","password":os.environ["WIFI_PASSWORD"]}, separators=(",", ":")))')"
           export H2LOADER_WIFI_CREDENTIALS="$credentials"
-          . firmware-devenv/export.sh
           make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE="${{ matrix.slice }}" RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR="build/release/${{ matrix.slice }}"
 
       - name: Show native compiler cache statistics

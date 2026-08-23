@@ -284,6 +284,13 @@ class PublicCommandSurfaceTest(unittest.TestCase):
         self.assertIn("actions/create-github-app-token@", workflow)
         self.assertNotIn("BK_SDK_DEPLOY_KEY", workflow)
         self.assertNotIn("ssh-key:", workflow)
+        firmware_build = workflow.split(
+            "- name: Build firmware slice", 1
+        )[1].split("- name: Show native compiler cache statistics", 1)[0]
+        self.assertLess(
+            firmware_build.index(". firmware-devenv/export.sh"),
+            firmware_build.index("export H2LOADER_WIFI_CREDENTIALS"),
+        )
         for private_product in (
             "projects/h106",
             "boards/h200",
