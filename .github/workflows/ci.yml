@@ -387,6 +387,24 @@ jobs:
           printf '%s' "$NATIVE_CCACHE_ACCESS_TOKEN" > "$token_file"
           printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache","remote_base_url":"%s","storage_helper":"bin/ccache-storage-https","token_file":"token"}\n' "$NATIVE_CCACHE_GCS_BASE_URL" > "$H2_NATIVE_CCACHE_RUNTIME_ROOT/runtime.json"
 
+      - name: Configure ESP Wi-Fi build credentials
+        env:
+          WIFI_PASSWORD: ${{ secrets.H2LOADER_WIFI_PASSWORD }}
+        shell: bash
+        run: |
+          credentials="$(
+            python3 - <<'PY'
+          import json
+          import os
+
+          print(json.dumps(
+              {"ssid": "HAIVIVI-MFG", "password": os.environ["WIFI_PASSWORD"]},
+              separators=(",", ":"),
+          ))
+          PY
+          )"
+          printf 'H2LOADER_WIFI_CREDENTIALS=%s\n' "$credentials" >> "$GITHUB_ENV"
+
       - name: Build ESP32-S3 compatible graph
         shell: bash
         run: |
