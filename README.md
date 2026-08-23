@@ -4,7 +4,7 @@ GizOS is a portable firmware and application platform for embedded devices, desk
 
 ## Status
 
-GizOS is being migrated into this repository in independently buildable waves. The current public baseline contains the Bazel workspace and the first target-independent utility library.
+GizOS is being migrated into this repository in independently buildable waves. The current public baseline contains the Bazel workspace, the platform abstraction contracts, and the first target-independent utility library.
 
 ## Repository layout
 
