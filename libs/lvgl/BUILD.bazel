@@ -1,0 +1,286 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "H2_WARNING_COPTS_NO_ERROR", "h2_gnu_only_copts")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+_LVGL_COPTS = H2_WARNING_COPTS_NO_ERROR + h2_gnu_only_copts([
+    "-Wno-unused-function",
+    "-Wno-unused-parameter",
+    "-Wno-unused-variable",
+])
+
+cc_library(
+    name = "config",
+    hdrs = [
+        "include/h2_lvgl_osal.h",
+        "include/lv_conf.h",
+    ],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = [
+        "include/h2_lvgl_button.h",
+        "include/h2_lvgl_display.h",
+        "include/h2_lvgl_fs.h",
+        "include/h2_lvgl_platform.h",
+        "include/h2_lvgl_touch.h",
+    ],
+    includes = ["include"],
+    deps = [
+        ":config",
+        "//libs/pal",
+        "//libs/runtime",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "display",
+    srcs = [
+        "src/h2_lvgl_display.c",
+        "src/h2_lvgl_display_internal.h",
+    ],
+    hdrs = ["include/h2_lvgl_display.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":config",
+        ":lvgl_desktop",
+        "//libs/pal",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "single_thread_config",
+    hdrs = ["config/single_thread/lv_conf.h"],
+    includes = ["config/single_thread"],
+)
+
+cc_library(
+    name = "web_config",
+    hdrs = ["config/web/lv_conf.h"],
+    includes = ["config/web"],
+)
+
+cc_library(
+    name = "upstream",
+    srcs = ["@h2_vendor_lvgl//:core_sources"],
+    conlyopts = H2_C11_OPTS,
+    copts = _LVGL_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":config",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "lvgl_mobile",
+    srcs = ["@h2_vendor_lvgl//:core_sources"],
+    conlyopts = H2_C11_OPTS,
+    copts = _LVGL_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//tools/bazel/platforms:is_android_arm64": ["@platforms//os:android"],
+        "//tools/bazel/platforms:is_ios_sim_arm64": ["@platforms//os:ios"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":single_thread_config",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "lvgl_web",
+    srcs = ["@h2_vendor_lvgl//:core_sources"],
+    conlyopts = H2_C11_OPTS,
+    copts = _LVGL_COPTS + ["-D_POSIX_C_SOURCE=200809L"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":web_config",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "lvgl_desktop",
+    srcs = ["@h2_vendor_lvgl//:core_sources"],
+    conlyopts = H2_C11_OPTS,
+    copts = _LVGL_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    defines = ["LV_USE_LODEPNG=1"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":config",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "platform",
+    srcs = [
+        "src/h2_lvgl_button.c",
+        "src/h2_lvgl_button_internal.h",
+        "src/h2_lvgl_fs.c",
+        "src/h2_lvgl_fs_internal.h",
+        "src/h2_lvgl_osal.c",
+        "src/h2_lvgl_touch.c",
+    ],
+    hdrs = [
+        "include/h2_lvgl_button.h",
+        "include/h2_lvgl_fs.h",
+        "include/h2_lvgl_osal.h",
+        "include/h2_lvgl_platform.h",
+        "include/h2_lvgl_touch.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":config",
+        "//libs/pal",
+        "//libs/runtime",
+        "@h2_vendor_lvgl//:header_group",
+    ],
+)
+
+cc_library(
+    name = "firmware",
+    srcs = [
+        "src/h2_lvgl_fs.c",
+        "src/h2_lvgl_fs_internal.h",
+        "src/h2_lvgl_osal.c",
+        "@h2_vendor_lvgl//:firmware_sources",
+    ],
+    hdrs = [
+        "include/h2_lvgl_fs.h",
+        "include/h2_lvgl_osal.h",
+        "include/h2_lvgl_platform.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = _LVGL_COPTS + ["-D_GNU_SOURCE"],
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_bk7258": [],
+        "//tools/bazel/platforms:is_esp32p4": [],
+        "//tools/bazel/platforms:is_esp32s3": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "@h2_vendor_lvgl//:header_group",
+    ] + select({
+        "//tools/bazel/platforms:is_bk7258": ["@h2_vendor_lvgl//:bk7258_config"],
+        "//tools/bazel/platforms:is_esp32p4": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
+        "//tools/bazel/platforms:is_esp32s3": ["@h2_vendor_lvgl//:esp_idf6_x_config"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "lvgl",
+    deps = select({
+        "//tools/bazel/platforms:is_bk7258": [":firmware"],
+        "//tools/bazel/platforms:is_esp32p4": [":firmware"],
+        "//tools/bazel/platforms:is_esp32s3": [":firmware"],
+        "//conditions:default": [
+            ":platform",
+            ":upstream",
+        ],
+    }),
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = [
+        "src/h2_lvgl_fs_internal.h",
+        "tests/test_public_headers.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":lvgl"],
+)
+
+cc_test(
+    name = "button_test",
+    srcs = [
+        "src/h2_lvgl_button_internal.h",
+        "tests/test_button.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":lvgl"],
+)
+
+cc_test(
+    name = "display_test",
+    srcs = ["tests/test_display.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":display",
+        ":platform",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)

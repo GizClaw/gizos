@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "package": "fixture",
+  "schema_digest": "60fae55e5b380e93db534e861ff8167e843b81aee516c16c52b8f65d62349234",
+  "files": [
+    "h2_fixture_api.c",
+    "h2_fixture_api.h"
+  ]
+}

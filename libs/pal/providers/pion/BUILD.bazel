@@ -1,0 +1,117 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "go.mod",
+    "go.sum",
+])
+
+filegroup(
+    name = "module_files",
+    srcs = [
+        "go.mod",
+        "go.sum",
+    ],
+)
+
+cc_library(
+    name = "bridge_headers",
+    hdrs = ["src/h2_pion_bridge.h"],
+    includes = ["src"],
+    visibility = ["//visibility:private"],
+)
+
+go_library(
+    name = "pion_backend",
+    srcs = ["backend.go"],
+    importpath = "h2vivi/firmwares/libs/pal/providers/pion",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_pion_webrtc_v4//:webrtc",
+        "@com_github_pion_webrtc_v4//pkg/media",
+    ],
+)
+
+go_binary(
+    name = "pion_archive",
+    srcs = [
+        "bridge/callback_stubs.c",
+        "bridge/main.go",
+    ],
+    cdeps = [":bridge_headers"],
+    cgo = True,
+    linkmode = "c-archive",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [":pion_backend"],
+)
+
+cc_library(
+    name = "pion",
+    srcs = ["src/h2_pion.c"],
+    hdrs = ["include/h2_pion.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = [
+        ":module_files",
+    ],
+    includes = ["include"],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-framework",
+            "Security",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":pion_archive",
+        "//libs/pal",
+    ],
+)
+
+go_test(
+    name = "pion_backend_test",
+    srcs = ["backend_test.go"],
+    embed = [":pion_backend"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "@com_github_pion_webrtc_v4//:webrtc",
+        "@com_github_pion_webrtc_v4//pkg/media",
+    ],
+)
+
+cc_test(
+    name = "pion_lifecycle_test",
+    srcs = ["tests/test_h2_pion.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pion"],
+)

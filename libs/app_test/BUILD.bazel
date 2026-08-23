@@ -1,0 +1,72 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "LINUX_X86_64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "app_test",
+    srcs = [
+        "src/core/h2_app_test.c",
+        "src/memory/h2_app_test_memory.c",
+    ],
+    hdrs = [
+        "include/h2_app_test.h",
+        "include/h2_app_test_case.h",
+        "include/h2_app_test_memory.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        "//libs/lvgl",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "app_test_test",
+    srcs = [
+        "tests/test_app_test.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_test",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_library(
+    name = "app_test_coverage_entry",
+    testonly = True,
+    srcs = ["tests/test_app_test.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = ["main=h2_coverage_app_test_test"],
+    target_compatible_with = LINUX_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":app_test",
+        "//libs/pal:unsupported",
+    ],
+)

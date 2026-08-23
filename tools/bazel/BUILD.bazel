@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,6 +23,72 @@ cc_library(
     name = "vendor_third_party_yyjson",
     tags = ["manual"],
     deps = ["@h2_vendor_yyjson//:yyjson"],
+)
+
+cc_library(
+    name = "vendor_third_party_lua",
+    tags = ["manual"],
+    deps = ["@h2_vendor_lua//:lua"],
+)
+
+cc_library(
+    name = "vendor_third_party_ffmpeg",
+    data = ["@h2_vendor_ffmpeg//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_gizclaw",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["@h2_vendor_gizclaw//:gizclaw"],
+)
+
+cc_library(
+    name = "vendor_third_party_gizclaw_firmware",
+    tags = ["manual"],
+    deps = ["@h2_vendor_gizclaw//:gizclaw_core"],
+)
+
+cc_library(
+    name = "vendor_third_party_lvgl",
+    data = ["@h2_vendor_lvgl//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_opus",
+    tags = ["manual"],
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = ["@h2_vendor_opus//:opus"],
+)
+
+cc_library(
+    name = "vendor_third_party_pixa",
+    tags = ["manual"],
+    deps = ["@h2_vendor_pixa//:pixa"],
+)
+
+cc_library(
+    name = "vendor_third_party_pixelroot32",
+    data = ["@h2_vendor_pixelroot32//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_portaudio",
+    data = ["@h2_vendor_portaudio//:all_sources"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "vendor_third_party_zlib",
+    tags = ["manual"],
+    deps = ["@h2_vendor_zlib//:zlib"],
 )
 
 cc_library(

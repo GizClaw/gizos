@@ -1,0 +1,78 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "bundle",
+    srcs = [
+        "src/h2_bundle_archive.c",
+        "src/h2_bundle_installer.c",
+        "src/h2_bundle_manifest.c",
+        "src/h2_bundle_path.c",
+        "src/h2_bundle_tar.c",
+        "src/h2_bundle_types.c",
+    ],
+    hdrs = [
+        "include/h2_bundle.h",
+        "include/h2_bundle_archive.h",
+        "include/h2_bundle_installer.h",
+        "include/h2_bundle_manifest.h",
+        "include/h2_bundle_path.h",
+        "include/h2_bundle_tar.h",
+        "include/h2_bundle_types.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/pixa",
+        "//tools/bazel:vendor_third_party_zlib",
+    ],
+)
+
+cc_test(
+    name = "bundle_install_test",
+    srcs = [
+        "tests/test_bundle_install.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":bundle"],
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = [
+        "tests/test_public_headers.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":bundle"],
+)

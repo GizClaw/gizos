@@ -1,0 +1,37 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/openapi_codegen:openapi_c_sdk.bzl", "openapi_c_sources")
+
+package(default_visibility = ["//visibility:public"])
+
+openapi_c_sources(
+    name = "generated",
+    package_name = "haivivi_next",
+    header = "h2_haivivi_next_api.h",
+    schema = "@haivivi_next_openapi//file",
+    source = "h2_haivivi_next_api.c",
+)
+
+cc_library(
+    name = "haivivi_next_api",
+    srcs = ["h2_haivivi_next_api.c"],
+    hdrs = ["h2_haivivi_next_api.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    strip_include_prefix = ".",
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "contract_test",
+    srcs = ["tests/test_contract.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":haivivi_next_api"],
+)

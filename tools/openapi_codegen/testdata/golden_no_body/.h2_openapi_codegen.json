@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "package": "status",
+  "schema_digest": "beb10e4add72a4d400a4205cda3e58592febb3a97733ced192b0a167bc994953",
+  "files": [
+    "h2_status_api.c",
+    "h2_status_api.h"
+  ]
+}

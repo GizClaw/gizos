@@ -1,0 +1,10 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "unsupported", "version": "1"},
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Remote": {"$ref": "https://example.com/schema.json#/Remote"}
+    }
+  }
+}

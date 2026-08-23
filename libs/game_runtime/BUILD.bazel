@@ -1,0 +1,299 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+_GAME_RUNTIME_DEFINES = [
+    "PIXELROOT32_ENABLE_4BPP_SPRITES=1",
+    "PIXELROOT32_ENABLE_AUDIO=0",
+    "PIXELROOT32_ENABLE_CAMERA_EFFECTS=0",
+    "PIXELROOT32_ENABLE_PARTICLES=0",
+    "PIXELROOT32_ENABLE_PHYSICS=1",
+    "PIXELROOT32_ENABLE_SCENE_TRANSITIONS=0",
+    "PIXELROOT32_ENABLE_STATIC_TILEMAP_FB_CACHE=0",
+    "PIXELROOT32_ENABLE_UI_SYSTEM=0",
+    "PIXELROOT32_NO_TFT_ESPI=1",
+]
+
+_GAME_AUDIO_DEFINES = [
+    "PIXELROOT32_ENABLE_AUDIO=1",
+    "PIXELROOT32_ENABLE_CAMERA_EFFECTS=0",
+    "PIXELROOT32_ENABLE_PARTICLES=0",
+    "PIXELROOT32_ENABLE_PHYSICS=0",
+    "PIXELROOT32_ENABLE_SCENE_TRANSITIONS=0",
+    "PIXELROOT32_ENABLE_STATIC_TILEMAP_FB_CACHE=0",
+    "PIXELROOT32_ENABLE_UI_SYSTEM=0",
+    "PIXELROOT32_NO_TFT_ESPI=1",
+]
+
+_GAME_PLATFORM_DEFINES = select({
+    "//tools/bazel/platforms:is_bk7258": ["BEKEN_PLATFORM=1"],
+    "//conditions:default": [],
+})
+
+_GAME_AUDIO_COPTS = H2_WARNING_COPTS + h2_gnu_only_copts([
+    "-Wno-error=unused-function",
+    "-Wno-error=unused-variable",
+]) + select({
+    ":linux_armv7": [],
+    "//tools/bazel/platforms:is_windows_x86_64": [],
+    "//conditions:default": ["-Wno-unused-private-field"],
+})
+
+_PIXELROOT32_COPTS = H2_WARNING_COPTS + select({
+    ":linux_armv7": ["-Wno-error=type-limits"],
+    "//tools/bazel/platforms:is_bk3633": ["-Wno-error=type-limits"],
+    "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
+    "//tools/bazel/platforms:is_esp32p4": ["-Wno-error=type-limits"],
+    "//tools/bazel/platforms:is_esp32s3": ["-Wno-error=type-limits"],
+    "//tools/bazel/platforms:is_windows_x86_64": [
+        "/wd4099",
+        "/wd4244",
+        "/wd4456",
+        "/wd4458",
+        "/wd4459",
+        "/wd4702",
+    ],
+    "//conditions:default": [
+        "-Wno-error=mismatched-tags",
+        "-Wno-error=tautological-constant-out-of-range-compare",
+    ],
+})
+
+config_setting(
+    name = "linux_armv7",
+    constraint_values = [
+        "@platforms//cpu:armv7",
+        "@platforms//os:linux",
+    ],
+)
+
+cc_library(
+    name = "pixelroot32_compat",
+    hdrs = [
+        "compat/Arduino.h",
+        "compat/SPI.h",
+        "compat/graphics/DisplayConfig.h",
+    ],
+    defines = _GAME_PLATFORM_DEFINES,
+    includes = ["compat"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = ["@h2_vendor_pixelroot32//:display_config_header"],
+)
+
+cc_library(
+    name = "pixelroot32",
+    srcs = ["@h2_vendor_pixelroot32//:core_sources"],
+    copts = _PIXELROOT32_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    local_defines = _GAME_RUNTIME_DEFINES,
+    # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":pixelroot32_compat",
+        "@h2_vendor_pixelroot32//:header_group",
+    ],
+)
+
+cc_library(
+    name = "pixelroot32_audio",
+    srcs = ["@h2_vendor_pixelroot32//:audio_sources"],
+    copts = _GAME_AUDIO_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    local_defines = _GAME_AUDIO_DEFINES,
+    # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":pixelroot32_compat",
+        "@h2_vendor_pixelroot32//:audio_header_group",
+    ],
+)
+
+cc_library(
+    name = "game_test_support",
+    hdrs = ["tests/h2_game_test_render.hpp"],
+    strip_include_prefix = "tests",
+)
+
+cc_library(
+    name = "game_audio",
+    srcs = ["src/h2_game_runtime_audio.cpp"],
+    hdrs = ["include/h2_game_audio.h"],
+    copts = _GAME_AUDIO_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = ["include"],
+    local_defines = _GAME_AUDIO_DEFINES,
+    # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":pixelroot32_audio",
+        ":pixelroot32_compat",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "game_runtime",
+    srcs = [
+        "src/h2_game_runtime.cpp",
+        "src/h2_game_runtime_display.cpp",
+        "src/h2_game_runtime_input.cpp",
+        "src/h2_game_runtime_internal.hpp",
+        "src/h2_game_runtime_time.cpp",
+        "src/h2_game_text.cpp",
+    ],
+    hdrs = [
+        "include/h2_game_audio.h",
+        "include/h2_game_runtime.h",
+        "include/h2_game_text.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "include",
+    ],
+    local_defines = _GAME_RUNTIME_DEFINES,
+    # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":game_audio",
+        ":pixelroot32",
+        ":pixelroot32_compat",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "audio_test",
+    srcs = [
+        "compat/Arduino.h",
+        "compat/SPI.h",
+        "compat/graphics/DisplayConfig.h",
+        "src/h2_game_runtime_internal.hpp",
+        "tests/test_audio.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _GAME_AUDIO_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":game_audio"],
+)
+
+cc_test(
+    name = "display_test",
+    srcs = [
+        "compat/Arduino.h",
+        "compat/SPI.h",
+        "compat/graphics/DisplayConfig.h",
+        "src/h2_game_runtime_internal.hpp",
+        "tests/test_display.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _GAME_RUNTIME_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":game_runtime"],
+)
+
+cc_test(
+    name = "input_test",
+    srcs = [
+        "compat/Arduino.h",
+        "compat/SPI.h",
+        "compat/graphics/DisplayConfig.h",
+        "src/h2_game_runtime_internal.hpp",
+        "tests/test_input.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _GAME_RUNTIME_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":game_runtime"],
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = [
+        "compat/Arduino.h",
+        "compat/SPI.h",
+        "compat/graphics/DisplayConfig.h",
+        "src/h2_game_runtime_internal.hpp",
+        "tests/test_public_headers.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _GAME_RUNTIME_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":game_runtime"],
+)
+
+cc_test(
+    name = "text_test",
+    srcs = [
+        "compat/Arduino.h",
+        "compat/SPI.h",
+        "compat/graphics/DisplayConfig.h",
+        "src/h2_game_runtime_internal.hpp",
+        "tests/test_text.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _GAME_RUNTIME_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":game_runtime"],
+)

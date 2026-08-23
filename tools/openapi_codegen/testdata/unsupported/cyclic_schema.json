@@ -1,0 +1,31 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "unsupported", "version": "1"},
+  "paths": {
+    "/node": {
+      "get": {
+        "operationId": "getNode",
+        "responses": {
+          "200": {
+            "description": "node",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Node"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Node": {
+        "type": "object",
+        "properties": {
+          "next": {"$ref": "#/components/schemas/Node"}
+        }
+      }
+    }
+  }
+}

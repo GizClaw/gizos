@@ -1,0 +1,119 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["lua_resource.bzl"])
+
+LUA_TARGET_COMPATIBILITY = select({
+    "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
+    "//tools/bazel/platforms:is_bk7258": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+py_binary(
+    name = "embed_resource",
+    srcs = ["embed_resource.py"],
+    legacy_create_init = 0,
+    main = "embed_resource.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_library(
+    name = "lua_core",
+    srcs = [
+        "src/core/h2_lua_internal.h",
+        "src/core/h2_lua_load.c",
+        "src/core/h2_lua_vm.c",
+    ],
+    hdrs = ["include/h2_lua_vm.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = LUA_TARGET_COMPATIBILITY,
+    deps = ["//tools/bazel:vendor_third_party_lua"],
+)
+
+cc_library(
+    name = "lua_runtime",
+    srcs = [
+        "src/core/h2_lua_internal.h",
+        "src/modules/h2_lua_esp_claw.c",
+        "src/modules/h2_lua_modules.c",
+        "src/runtime/h2_lua.c",
+        "src/runtime/h2_lua_event.c",
+        "src/runtime/h2_lua_internal.h",
+        "src/runtime/h2_lua_job.c",
+    ],
+    hdrs = [
+        "include/h2_lua.h",
+        "include/h2_lua_capability.h",
+        "include/h2_lua_esp_claw.h",
+        "include/h2_lua_event.h",
+        "include/h2_lua_job.h",
+        "include/h2_lua_module.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = LUA_TARGET_COMPATIBILITY,
+    deps = [
+        ":lua_core",
+        "//libs/runtime",
+        "//tools/bazel:vendor_third_party_lua",
+        "//tools/bazel:vendor_third_party_yyjson",
+    ] + select({
+        "//tools/bazel/platforms:is_esp32p4": ["//third_party/lua_patch"],
+        "//tools/bazel/platforms:is_esp32s3": ["//third_party/lua_patch"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "lua",
+    tags = ["h2-ci-native-package"],
+    target_compatible_with = LUA_TARGET_COMPATIBILITY,
+    deps = [":lua_runtime"],
+)
+
+cc_test(
+    name = "lua_core_test",
+    srcs = ["tests/test_h2_lua_vm.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":lua_core"],
+)
+
+cc_test(
+    name = "lua_test",
+    srcs = ["tests/test_h2_lua.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":lua_runtime",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)

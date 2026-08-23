@@ -1,0 +1,31 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "unsupported", "version": "1"},
+  "paths": {
+    "/value": {
+      "get": {
+        "operationId": "getValue",
+        "responses": {
+          "200": {
+            "description": "value",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Value"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Value": {
+        "oneOf": [
+          {"type": "object", "properties": {}},
+          {"type": "object", "properties": {}}
+        ]
+      }
+    }
+  }
+}

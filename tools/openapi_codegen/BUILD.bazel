@@ -1,0 +1,136 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "go.mod",
+    "go.sum",
+    "openapi_c_sdk.bzl",
+])
+
+filegroup(
+    name = "runtime_files",
+    srcs = [
+        "go.mod",
+        "go.sum",
+    ],
+)
+
+go_library(
+    name = "openapi_codegen_lib",
+    srcs = [
+        "emit.go",
+        "generator.go",
+        "main.go",
+        "naming.go",
+        "schema.go",
+    ],
+    importpath = "h2vivi/firmwares/tools/openapi_codegen",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["@com_github_getkin_kin_openapi//openapi3"],
+)
+
+go_binary(
+    name = "openapi_codegen",
+    data = [
+        ":runtime_files",
+    ],
+    embed = [":openapi_codegen_lib"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+go_test(
+    name = "openapi_codegen_test",
+    srcs = [
+        "generator_test.go",
+        "naming_test.go",
+        "schema_test.go",
+    ],
+    data = [
+        "testdata/embedded_subset.openapi.json",
+        "testdata/no_body.openapi.json",
+        "testdata/unsupported/additional_properties_false.json",
+        "testdata/unsupported/cyclic_schema.json",
+        "testdata/unsupported/openapi31.json",
+        "testdata/unsupported/remote_ref.json",
+        "testdata/unsupported/unbounded_string.json",
+        "testdata/unsupported/unsafe_integer.json",
+        "testdata/unsupported/unsupported_composition.json",
+    ],
+    embed = [":openapi_codegen_lib"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_library(
+    name = "golden_client",
+    srcs = ["testdata/golden/h2_fixture_api.c"],
+    hdrs = ["testdata/golden/h2_fixture_api.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    strip_include_prefix = "testdata/golden",
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "golden_no_body_client",
+    srcs = ["testdata/golden_no_body/h2_status_api.c"],
+    hdrs = ["testdata/golden_no_body/h2_status_api.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    strip_include_prefix = "testdata/golden_no_body",
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "golden_client_test",
+    srcs = ["testdata/test_h2_fixture_api.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":golden_client",
+        ":golden_no_body_client",
+        "//libs/pal/providers/yyjson",
+    ],
+)
+
+filegroup(
+    name = "golden_output",
+    srcs = [
+        "testdata/golden/.h2_openapi_codegen.json",
+        "testdata/golden/h2_fixture_api.c",
+        "testdata/golden/h2_fixture_api.h",
+    ],
+)
+
+filegroup(
+    name = "golden_no_body_output",
+    srcs = [
+        "testdata/golden_no_body/.h2_openapi_codegen.json",
+        "testdata/golden_no_body/h2_status_api.c",
+        "testdata/golden_no_body/h2_status_api.h",
+    ],
+)

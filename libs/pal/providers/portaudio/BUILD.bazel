@@ -1,0 +1,50 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "portaudio",
+    srcs = [
+        "src/h2_portaudio.cpp",
+        "src/h2_portaudio_internal.h",
+    ],
+    hdrs = ["include/h2_portaudio.h"],
+    copts = H2_WARNING_COPTS + [
+        "-Wno-thread-safety-analysis",
+    ],
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/pal",
+        "@h2_vendor_portaudio//:portaudio",
+        "@h2_vendor_speexdsp//:speexdsp",
+    ],
+)
+
+cc_test(
+    name = "portaudio_test",
+    srcs = ["tests/test_h2_portaudio.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":portaudio",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
