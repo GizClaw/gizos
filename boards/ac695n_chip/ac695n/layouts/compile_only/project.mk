@@ -91,6 +91,7 @@ INCLUDES := \
 	-Iinclude_lib/system/device \
 	-Iinclude_lib/system/fs \
 	-Iinclude_lib/update \
+	-Iinclude_lib/media/media_develop \
 	-Icpu/br23 \
 	-I$(SYS_INC_DIR) \
 
