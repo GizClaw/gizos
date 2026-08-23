@@ -82,9 +82,10 @@ def _jieli_firmware_impl(ctx):
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
         [
+            ctx.file.project_makefile,
             ctx.file.sdk_version,
             ctx.file.post_script,
-            ctx.file._sdk_wrapper,
+            ctx.file._project_rules,
             ctx.file._toolchain_archives,
             ctx.file.sdk_locator,
             ctx.file._toolchain_locator,
@@ -99,10 +100,8 @@ def _jieli_firmware_impl(ctx):
     args.add("--entry", ctx.label.package)
     args.add("--board", ctx.attr.board)
     args.add("--image", ctx.attr.image)
-    args.add("--sdk-project", ctx.attr.sdk_project)
-    if ctx.attr.sdk_entry_source:
-        args.add("--sdk-entry-source", ctx.attr.sdk_entry_source)
-    args.add("--sdk-wrapper", ctx.file._sdk_wrapper.path)
+    args.add("--project-makefile", ctx.file.project_makefile.path)
+    args.add("--project-rules", ctx.file._project_rules.path)
     args.add("--version", version)
     args.add("--sdk-version-file", ctx.file.sdk_version.path)
     args.add("--toolchain-archives-file", ctx.file._toolchain_archives.path)
@@ -186,9 +185,9 @@ _jieli_firmware = rule(
             allow_single_file = True,
             default = "@h2_jieli_postbuild//:locator.json",
         ),
-        "_sdk_wrapper": attr.label(
+        "_project_rules": attr.label(
             allow_single_file = [".mk"],
-            default = "//tools/bazel:jieli/h2_sdk_wrapper.mk",
+            default = "//tools/bazel:jieli/h2_project_rules.mk",
         ),
         "board": attr.string(mandatory = True),
         "graph": attr.label_list(
@@ -202,16 +201,14 @@ _jieli_firmware = rule(
             mandatory = True,
             doc = "Repository-owned local post-build script selected by the macro for the target.",
         ),
-        "sdk_entry_source": attr.string(
-            doc = "SDK-project-relative C file whose app_main symbol is renamed so the launcher component provides app_main.",
+        "project_makefile": attr.label(
+            allow_single_file = [".mk"],
+            mandatory = True,
+            doc = "Repository-owned native project selected by the board layout.",
         ),
         "sdk_locator": attr.label(
             allow_single_file = True,
             mandatory = True,
-        ),
-        "sdk_project": attr.string(
-            mandatory = True,
-            doc = "SDK-root-relative directory whose Makefile builds the selected launcher ('.' for the SDK root).",
         ),
         "sdk_version": attr.label(
             allow_single_file = True,

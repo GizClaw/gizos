@@ -3,10 +3,10 @@
 load("//tools/bazel:jieli.bzl", "jieli_firmware")
 
 def ac791n_compile_only_firmware(name, **kwargs):
-    """Declares firmware using the AC791N compile-only SDK layout."""
+    """Declares firmware using the repository-owned AC791N project."""
     jieli_firmware(
         name = name,
-        sdk_project = "apps/demo/demo_hello/board/wl82",
+        project_makefile = "//boards/ac791n_chip/ac791n/layouts/compile_only:project.mk",
         target = "wl82",
         **kwargs
     )

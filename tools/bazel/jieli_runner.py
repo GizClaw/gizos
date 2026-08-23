@@ -2,13 +2,12 @@
 """Run one JieLi SDK native build plus local post-build for a Bazel action.
 
 The SDK Makefiles write every intermediate (generated linker script, ELF,
-`download.sh`) into the SDK tree, and the upstream post-build step uploads the
-link result to JieLi's host-client cloud packager.  The runner therefore copies
-the pinned SDK checkout into an invocation-local tree, drives the SDK Makefile
-through the repository-owned wrapper (`tools/bazel/jieli/h2_sdk_wrapper.mk`)
-that adds the Bazel native sources and archives to the SDK link, and runs the
-repository-owned local post-build script that replaces the cloud packager with
-the Linux `isd_download`/`fw_add`/`ufw_maker` tools.
+`download.sh`) into the SDK tree. The runner therefore copies the pinned SDK
+checkout into an invocation-local tree, drives the repository-owned project
+selected by the board layout, and runs the repository-owned local post-build
+script that replaces the cloud packager with the Linux
+`isd_download`/`fw_add`/`ufw_maker` tools. The private SDK remains a source and
+library substrate; its application Makefiles are never selected or included.
 """
 
 from __future__ import annotations
@@ -68,9 +67,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--entry", required=True)
     parser.add_argument("--board", required=True)
     parser.add_argument("--image", required=True)
-    parser.add_argument("--sdk-project", required=True)
-    parser.add_argument("--sdk-entry-source", default="")
-    parser.add_argument("--sdk-wrapper", required=True)
+    parser.add_argument("--project-makefile", required=True)
+    parser.add_argument("--project-rules", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--sdk-version-file", required=True)
     parser.add_argument("--toolchain-archives-file", required=True)
@@ -89,13 +87,6 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--native-include-root", action="append", default=[])
     parser.add_argument("--prebuilt-component", action="append", default=[])
     return parser.parse_args(argv)
-
-
-def relative_sdk_path(value: str, label: str) -> Path:
-    path = Path(value)
-    if path.is_absolute() or ".." in path.parts:
-        raise RunnerError(f"{label} must stay inside the SDK: {value}")
-    return path
 
 
 def required_environment(arguments: argparse.Namespace) -> dict[str, str]:
@@ -329,7 +320,6 @@ def render_component_manifest(
     include_roots: list[Path],
     archives: dict[str, Path],
     defines: list[str],
-    entry_source: str,
 ) -> str:
     lines = [
         "# Generated from the Bazel native component graph.",
@@ -337,8 +327,6 @@ def render_component_manifest(
         "H2_BAZEL_NATIVE_INCLUDES := " + " ".join(f"-I{root}" for root in include_roots),
         "H2_BAZEL_ARCHIVES := " + " ".join(str(archives[name]) for name in sorted(archives)),
         "H2_BAZEL_DEFINES := " + " ".join(defines),
-        "H2_BAZEL_SDK_ENTRY_SOURCE := " + entry_source,
-        "H2_BAZEL_EXCLUDE_OBJS :=",
     ]
     lines.extend(f"H2_BAZEL_PREBUILT_{name.upper()} := {archives[name]}" for name in sorted(archives))
     return "\n".join(lines) + "\n"
@@ -364,11 +352,6 @@ def build(arguments: argparse.Namespace) -> None:
     ):
         if not SAFE_NAME.fullmatch(value):
             raise RunnerError(f"invalid JieLi {label}: {value}")
-    sdk_project = relative_sdk_path(arguments.sdk_project, "SDK project")
-    if arguments.sdk_entry_source:
-        relative_sdk_path(arguments.sdk_entry_source, "SDK entry source")
-        if not arguments.sdk_entry_source.endswith(".c"):
-            raise RunnerError(f"SDK entry source must be a C file: {arguments.sdk_entry_source}")
     source_root = Path(arguments.source_root).resolve()
     prebuilt_components = parse_prebuilt_components(arguments.prebuilt_component)
     archives = {
@@ -380,9 +363,16 @@ def build(arguments: argparse.Namespace) -> None:
             raise RunnerError(f"prebuilt component {name} archive is invalid: {archive}")
     native_sources = resolve_native_sources(source_root, arguments.native_component_source)
     include_roots = resolve_include_roots(source_root, arguments.native_include_root)
-    sdk_wrapper = resolve_under(source_root, arguments.sdk_wrapper, "SDK wrapper makefile")
-    if not sdk_wrapper.is_file():
-        raise RunnerError(f"SDK wrapper makefile is missing: {sdk_wrapper}")
+    project_makefile = resolve_under(
+        source_root, arguments.project_makefile, "JieLi project makefile"
+    )
+    if not project_makefile.is_file():
+        raise RunnerError(f"JieLi project makefile is missing: {project_makefile}")
+    project_rules = resolve_under(
+        source_root, arguments.project_rules, "JieLi project rules"
+    )
+    if not project_rules.is_file():
+        raise RunnerError(f"JieLi project rules are missing: {project_rules}")
     require_supported_host()
     try:
         environment = required_environment(arguments)
@@ -400,14 +390,6 @@ def build(arguments: argparse.Namespace) -> None:
     sdk_root = Path(environment["JIELI_SDK_ROOT"]).resolve()
     if sdk_root != sdk_checkout and sdk_checkout not in sdk_root.parents:
         raise RunnerError(f"SDK root escapes its Git checkout: {sdk_root}")
-    if not (sdk_root / sdk_project / "Makefile").is_file():
-        raise RunnerError(
-            f"JieLi SDK project has no Makefile: {sdk_root / sdk_project}"
-        )
-    if arguments.sdk_entry_source and not (sdk_root / sdk_project / arguments.sdk_entry_source).is_file():
-        raise RunnerError(
-            f"JieLi SDK entry source is missing: {sdk_root / sdk_project / arguments.sdk_entry_source}"
-        )
     git = command_path("git", environment)
     make = command_path("make", environment)
     bash = command_path("bash", environment)
@@ -442,7 +424,6 @@ def build(arguments: argparse.Namespace) -> None:
                     include_roots,
                     archives,
                     [shell_quote_define("H2_JIELI_FIRMWARE_VERSION", arguments.version)],
-                    arguments.sdk_entry_source,
                 ),
                 encoding="utf-8",
             )
@@ -450,20 +431,25 @@ def build(arguments: argparse.Namespace) -> None:
                 f"TOOL_DIR={toolchain_bin}",
                 "VERBOSE=0",
                 f"H2_BAZEL_COMPONENT_MANIFEST={manifest_file}",
+                f"H2_JIELI_PROJECT_RULES={project_rules}",
             ]
-            project = sdk_copy / sdk_project
             print(
                 "JieLi build starting: "
                 f"target={arguments.target} "
                 f"entry={arguments.entry} "
-                f"sdk_project={sdk_project.as_posix()} "
+                f"project={project_makefile.relative_to(source_root).as_posix()} "
                 f"sdk_commit={expected_commit} "
                 f"native_sources={len(native_sources)} "
                 f"archives={len(archives)} "
                 f"toolchain={toolchain_bin}"
             )
             run_native_make(
-                make, project, native_environment, ["-f", str(sdk_wrapper), *variables], ["h2_link"], "link"
+                make,
+                sdk_copy,
+                native_environment,
+                ["-f", str(project_makefile), *variables],
+                ["h2_link"],
+                "link",
             )
             result = subprocess.run(
                 [
@@ -505,8 +491,7 @@ def build(arguments: argparse.Namespace) -> None:
                 "postbuild": toolchain_identity(postbuild_locator),
                 "prebuilt_components": sorted(prebuilt_components),
                 "sdk_commit": expected_commit,
-                "sdk_entry_source": arguments.sdk_entry_source,
-                "sdk_project": sdk_project.as_posix(),
+                "project_makefile": project_makefile.relative_to(source_root).as_posix(),
                 "target": arguments.target,
                 "toolchain": toolchain_identity(toolchain_locator),
                 "version": arguments.version,

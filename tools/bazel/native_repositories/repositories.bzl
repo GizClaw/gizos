@@ -583,7 +583,7 @@ def _extension_impl(_module_ctx):
         environment_variable = "JIELI_AC695N_SDK_PATH",
         kind = "jieli-ac695n-sdk",
         required_files = [
-            "Makefile",
+            "cpu/br23/sdk_ld.c",
             "cpu/br23/tools/download.c",
             "cpu/br23/tools/download/standard/download.bat",
         ],
@@ -595,9 +595,9 @@ def _extension_impl(_module_ctx):
         environment_variable = "JIELI_AC791N_SDK_PATH",
         kind = "jieli-ac791n-sdk",
         required_files = [
-            "Makefile",
+            "cpu/wl82/sdk_ld.c",
             "cpu/wl82/tools/download.c",
-            "apps/demo/demo_hello/board/wl82/Makefile",
+            "cpu/wl82/tools/isd_config_rule.c",
         ],
     )
     _jieli_tools_repository(

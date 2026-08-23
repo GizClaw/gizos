@@ -376,7 +376,7 @@
     },
     "//tools/bazel/native_repositories:repositories.bzl%native_repositories": {
       "general": {
-        "bzlTransitiveDigest": "ozKfFIALDPRbmZSSCwJCDYGK+f/3B6CtpJ7LKqAirlU=",
+        "bzlTransitiveDigest": "wapA9ND7rCn1lTt/hMamsVPrpW5p/An/uq729y1SjQA=",
         "usagesDigest": "fCQHbHWyxHU4pBYo/A9GZrhbJ1InAj7MZI3GG5+X9Gs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -438,7 +438,7 @@
               "environment_variable": "JIELI_AC695N_SDK_PATH",
               "kind": "jieli-ac695n-sdk",
               "required_files": [
-                "Makefile",
+                "cpu/br23/sdk_ld.c",
                 "cpu/br23/tools/download.c",
                 "cpu/br23/tools/download/standard/download.bat"
               ]
@@ -452,9 +452,9 @@
               "environment_variable": "JIELI_AC791N_SDK_PATH",
               "kind": "jieli-ac791n-sdk",
               "required_files": [
-                "Makefile",
+                "cpu/wl82/sdk_ld.c",
                 "cpu/wl82/tools/download.c",
-                "apps/demo/demo_hello/board/wl82/Makefile"
+                "cpu/wl82/tools/isd_config_rule.c"
               ]
             }
           },

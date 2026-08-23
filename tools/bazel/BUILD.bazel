@@ -40,7 +40,7 @@ exports_files([
     "firmware.bzl",
     "firmware_components.bzl",
     "jieli.bzl",
-    "jieli/h2_sdk_wrapper.mk",
+    "jieli/h2_project_rules.mk",
     "jieli/local_post_br23.sh",
     "jieli/local_post_wl82.sh",
     "native_component.bzl",

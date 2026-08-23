@@ -3,10 +3,10 @@
 load("//tools/bazel:jieli.bzl", "jieli_firmware")
 
 def ac695n_compile_only_firmware(name, **kwargs):
-    """Declares firmware using the AC695N compile-only SDK layout."""
+    """Declares firmware using the repository-owned AC695N project."""
     jieli_firmware(
         name = name,
-        sdk_project = ".",
+        project_makefile = "//boards/ac695n_chip/ac695n/layouts/compile_only:project.mk",
         target = "br23",
         **kwargs
     )

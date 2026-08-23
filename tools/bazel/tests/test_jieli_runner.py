@@ -69,10 +69,7 @@ class JieliRunnerFixture:
         self.checkout = root / "sdk-checkout"
         sdk_root = self.checkout / self.subdirectory
         (sdk_root / "cpu" / target / "tools").mkdir(parents=True)
-        (sdk_root / "Makefile").write_text("all:\n", encoding="utf-8")
-        self.project = "." if target == "br23" else "apps/demo/board"
-        (sdk_root / self.project).mkdir(parents=True, exist_ok=True)
-        (sdk_root / self.project / "Makefile").write_text("all:\n", encoding="utf-8")
+        (sdk_root / "sdk-source.c").write_text("int sdk_source;\n", encoding="utf-8")
         git(self.checkout, "init", "-q")
         git(self.checkout, "add", "-A")
         git(self.checkout, "commit", "-q", "-m", "sdk")
@@ -107,8 +104,10 @@ class JieliRunnerFixture:
             '  printf "%s" "$name" > "$out/$name"\n'
             'done\n',
         )
-        self.sdk_wrapper = root / "h2_sdk_wrapper.mk"
-        self.sdk_wrapper.write_text("h2_link:\n", encoding="utf-8")
+        self.project_makefile = root / "project.mk"
+        self.project_makefile.write_text("h2_link:\n", encoding="utf-8")
+        self.project_rules = root / "h2_project_rules.mk"
+        self.project_rules.write_text("# fixture rules\n", encoding="utf-8")
         self.version_file = root / "sdk-commit.txt"
         self.version_file.write_text(self.commit + "\n", encoding="utf-8")
         self.archives_file = root / "archives.txt"
@@ -135,9 +134,8 @@ class JieliRunnerFixture:
             entry="projects/e2e/targets/jieli_firmware/pal/jieli_dev_board",
             board="fixture_board",
             image="demo",
-            sdk_project=self.project,
-            sdk_entry_source="",
-            sdk_wrapper=str(self.sdk_wrapper.relative_to(self.root)),
+            project_makefile=str(self.project_makefile.relative_to(self.root)),
+            project_rules=str(self.project_rules.relative_to(self.root)),
             version="test-version",
             sdk_version_file=str(self.version_file),
             toolchain_archives_file=str(self.archives_file),
@@ -222,13 +220,6 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertTrue((root / "copy/apps/demo/doc/readme.md").is_file())
             self.assertTrue((root / "copy/apps/demo/main.c").is_file())
 
-    def test_relative_sdk_paths_reject_escapes(self):
-        with self.assertRaisesRegex(runner.RunnerError, "stay inside"):
-            runner.relative_sdk_path("../outside", "SDK project")
-        with self.assertRaisesRegex(runner.RunnerError, "stay inside"):
-            runner.relative_sdk_path("/abs", "SDK project")
-        self.assertEqual(runner.relative_sdk_path("apps/demo", "x"), Path("apps/demo"))
-
     def test_prebuilt_components_reject_duplicates(self):
         self.assertEqual(
             runner.parse_prebuilt_components(["h2_firmware_lib=lib.a"]),
@@ -266,36 +257,39 @@ class JieliRunnerTest(unittest.TestCase):
             invocations = fixture.make_log.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(invocations), 1)
             self.assertIn("h2_link", invocations[0])
-            self.assertIn(f"-f {fixture.sdk_wrapper}", invocations[0])
+            self.assertIn(f"-f {fixture.project_makefile}", invocations[0])
             self.assertIn("H2_BAZEL_COMPONENT_MANIFEST=", invocations[0])
+            self.assertIn(f"H2_JIELI_PROJECT_RULES={fixture.project_rules}", invocations[0])
             self.assertIn(f"TOOL_DIR={fixture.toolchain_bin}", invocations[0])
             self.assertNotIn(str(fixture.checkout), invocations[0])
-            self.assertEqual(manifest["sdk_entry_source"], "")
+            self.assertEqual(manifest["project_makefile"], "project.mk")
             self.assertEqual(manifest["native_sources"], [])
             # The pinned checkout is never written to.
             self.assertEqual(git(fixture.checkout, "status", "--porcelain"), "")
 
-    def test_build_supports_nested_sdk_projects(self):
+    def test_build_does_not_select_an_sdk_application_project(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = JieliRunnerFixture(Path(temporary).resolve(), target="wl82")
+            sdk_application = fixture.checkout / "apps/demo/board"
+            sdk_application.mkdir(parents=True)
+            (sdk_application / "Makefile").write_text("$(error must not load)\n", encoding="utf-8")
+            git(fixture.checkout, "add", "-A")
+            git(fixture.checkout, "commit", "-q", "-m", "sdk application")
+            fixture.commit = git(fixture.checkout, "rev-parse", "HEAD")
+            fixture.version_file.write_text(fixture.commit + "\n", encoding="utf-8")
             runner.build(fixture.arguments())
             invocations = fixture.make_log.read_text(encoding="utf-8").splitlines()
-            self.assertIn("apps/demo/board", invocations[0])
+            self.assertNotIn("apps/demo/board", invocations[0])
+            self.assertIn(str(fixture.project_makefile), invocations[0])
             self.assertIn("h2_link", invocations[0])
 
-    def test_build_renders_component_manifest_with_sources_archives_and_entry(self):
+    def test_build_renders_component_manifest_with_sources_and_archives(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = JieliRunnerFixture(Path(temporary).resolve())
             (fixture.root / "launcher").mkdir()
             (fixture.root / "launcher/main.c").write_text("int x;\n", encoding="utf-8")
             (fixture.root / "launcher/include").mkdir()
             (fixture.root / "libh2_firmware_lib.a").write_bytes(b"!<arch>\n")
-            (fixture.checkout / "SDK/apps").mkdir()
-            (fixture.checkout / "SDK/apps/app_main.c").write_text("void app_main(void) {}\n", encoding="utf-8")
-            git(fixture.checkout, "add", "-A")
-            git(fixture.checkout, "commit", "-q", "-m", "entry")
-            fixture.commit = git(fixture.checkout, "rev-parse", "HEAD")
-            fixture.version_file.write_text(fixture.commit + "\n", encoding="utf-8")
             captured: dict[str, str] = {}
             original_make = runner.run_native_make
 
@@ -308,7 +302,6 @@ class JieliRunnerTest(unittest.TestCase):
             with mock.patch.object(runner, "run_native_make", capture):
                 runner.build(
                     fixture.arguments(
-                        sdk_entry_source="apps/app_main.c",
                         native_component_source=["launcher=launcher/main.c"],
                         native_include_root=["launcher/include"],
                         prebuilt_component=["h2_firmware_lib=libh2_firmware_lib.a"],
@@ -319,18 +312,16 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertIn(f"H2_BAZEL_NATIVE_INCLUDES := -I{fixture.root / 'launcher/include'}", manifest)
             self.assertIn(f"H2_BAZEL_ARCHIVES := {fixture.root / 'libh2_firmware_lib.a'}", manifest)
             self.assertIn('H2_BAZEL_DEFINES := -DH2_JIELI_FIRMWARE_VERSION=\\"test-version\\"', manifest)
-            self.assertIn("H2_BAZEL_SDK_ENTRY_SOURCE := apps/app_main.c", manifest)
             self.assertIn(f"H2_BAZEL_PREBUILT_H2_FIRMWARE_LIB := {fixture.root / 'libh2_firmware_lib.a'}", manifest)
             output = json.loads((fixture.outputs / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(output["native_sources"], ["launcher/main.c"])
             self.assertEqual(output["prebuilt_components"], ["h2_firmware_lib"])
-            self.assertEqual(output["sdk_entry_source"], "apps/app_main.c")
 
-    def test_build_rejects_missing_entry_source_and_escaping_inputs(self):
+    def test_build_rejects_missing_project_and_escaping_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = JieliRunnerFixture(Path(temporary).resolve())
-            with self.assertRaisesRegex(runner.RunnerError, "entry source is missing"):
-                runner.build(fixture.arguments(sdk_entry_source="apps/missing.c"))
+            with self.assertRaisesRegex(runner.RunnerError, "project makefile is missing"):
+                runner.build(fixture.arguments(project_makefile="missing.mk"))
             with self.assertRaisesRegex(runner.RunnerError, "escapes the source root"):
                 runner.build(fixture.arguments(native_include_root=["../outside"]))
             with self.assertRaisesRegex(runner.RunnerError, "source is missing"):
@@ -343,7 +334,9 @@ class JieliRunnerTest(unittest.TestCase):
             with self.assertRaisesRegex(runner.RunnerError, "commit mismatch"):
                 runner.build(fixture.arguments())
             fixture.version_file.write_text(fixture.commit + "\n", encoding="utf-8")
-            (fixture.checkout / "SDK" / "Makefile").write_text("all: dirty\n", encoding="utf-8")
+            (fixture.checkout / "SDK" / "sdk-source.c").write_text(
+                "int sdk_source = 1;\n", encoding="utf-8"
+            )
             with self.assertRaisesRegex(runner.RunnerError, "must be clean"):
                 runner.build(fixture.arguments())
 
@@ -359,8 +352,6 @@ class JieliRunnerTest(unittest.TestCase):
             fixture = JieliRunnerFixture(Path(temporary).resolve())
             with self.assertRaisesRegex(runner.RunnerError, "invalid JieLi board"):
                 runner.build(fixture.arguments(board="bad board"))
-            with self.assertRaisesRegex(runner.RunnerError, "must be a C file"):
-                runner.build(fixture.arguments(sdk_entry_source="apps/app_main.cpp"))
 
     def test_local_post_scripts_are_executable_and_headless(self):
         for name in ("local_post_br23.sh", "local_post_wl82.sh"):

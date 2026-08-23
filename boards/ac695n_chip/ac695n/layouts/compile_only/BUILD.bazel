@@ -1,1 +1,4 @@
-exports_files(["defs.bzl"])
+exports_files([
+    "defs.bzl",
+    "project.mk",
+])
