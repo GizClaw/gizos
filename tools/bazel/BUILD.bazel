@@ -321,6 +321,7 @@ py_test(
         "//boards/ac695n_chip/ac695n/layouts/compile_only:defs.bzl",
         "//boards/ac695n_chip/ac695n/layouts/compile_only:project.mk",
         "//boards/ac695n_chip/ac695n/layouts/compile_only:src/platform.c",
+        "//boards/ac695n_chip/ac695n/layouts/compile_only:src/sdk_config.c",
         "//boards/ac791n_chip/ac791n/layouts/compile_only:defs.bzl",
         "//boards/ac791n_chip/ac791n/layouts/compile_only:project.mk",
         "//boards/ac791n_chip/ac791n/layouts/compile_only:src/platform.c",

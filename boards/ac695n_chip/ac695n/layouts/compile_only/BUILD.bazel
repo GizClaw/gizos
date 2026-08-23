@@ -7,11 +7,15 @@ exports_files([
     "include/app_config.h",
     "project.mk",
     "src/platform.c",
+    "src/sdk_config.c",
 ])
 
 firmware_native_component(
     name = "layout",
-    srcs = ["src/platform.c"],
+    srcs = [
+        "src/platform.c",
+        "src/sdk_config.c",
+    ],
     hdrs = ["include/app_config.h"],
     component_name = "ac695n_compile_only_layout",
     tags = ["manual"],
