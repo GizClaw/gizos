@@ -1,0 +1,80 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "esp32s3",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    component_directory = "boards/waveshare_esp32s3_a7670e_4g/esp32s3",
+    component_name = "h2_esp_board",
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+        "sdkconfig.defaults",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "board_task_host_test",
+    srcs = [
+        "include/h2_esp_board.h",
+        "src/h2_esp_board_task.c",
+        "tests/h2_esp_board_task_test_sdk.h",
+        "tests/test_h2_esp_board_task.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests",
+    ],
+    local_defines = ["H2_ESP_BOARD_TASK_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)

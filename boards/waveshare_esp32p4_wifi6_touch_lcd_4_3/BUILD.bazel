@@ -1,0 +1,17 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "waveshare_esp32p4_wifi6_touch_lcd_4_3",
+    srcs = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = ["BUILD.bazel"],
+    ) + [
+        "//boards/waveshare_esp32p4_wifi6_touch_lcd_4_3/esp32p4",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_esp32p4": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

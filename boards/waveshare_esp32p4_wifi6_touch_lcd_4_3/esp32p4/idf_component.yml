@@ -1,0 +1,5 @@
+dependencies:
+  espressif/esp_hosted: "2.12.11"
+  espressif/esp_wifi_remote: "1.2.2"
+  espressif/esp_lcd_st7701: "2.0.2"
+  idf: "6.0.0"

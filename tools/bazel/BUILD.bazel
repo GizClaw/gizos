@@ -5,6 +5,9 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["cc_options.bzl"])
 
 exports_files([
+    "firmware_components.bzl",
+    "native_component.bzl",
+    "native_component.cmake",
     "native_versions/esp_idf_commit.txt",
     "native_versions/esp_idf_tool_versions.txt",
 ])

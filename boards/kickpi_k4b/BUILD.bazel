@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "kickpi_k4b",
+    srcs = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = ["BUILD.bazel"],
+    ) + [
+        "//boards/kickpi_k4b/t113-s3:t113_s3",
+    ],
+)

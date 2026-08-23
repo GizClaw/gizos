@@ -1,0 +1,30 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "cp.defaults",
+    "cp/usr_gpio_cfg.h",
+])
+
+firmware_native_component(
+    name = "bk7258",
+    hdrs = ["//boards/bk7258_v3_202405/bk7258/ap:native_headers"],
+    component_directory = "boards/bk7258_v3_202405/bk7258/ap",
+    component_name = "h2_bk7258_board",
+    # AP firmware files are dependency-graph inputs only. They must remain in
+    # data and must never be compiled by this native host cc_library.
+    data = [
+        "//boards/bk7258_v3_202405/bk7258/ap:firmware_sources",
+    ],
+    execution_unit = "ap",
+    native_srcs = ["//boards/bk7258_v3_202405/bk7258/ap:native_sources"],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
