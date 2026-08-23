@@ -109,6 +109,7 @@ class NativeCcacheTest(unittest.TestCase):
         for namespace, family in (
             ("esp32s3", "esp"),
             ("esp32p4", "esp"),
+            ("esp32c5", "esp"),
             ("bk7258", "bk"),
             ("bk3633", "bk"),
         ):
