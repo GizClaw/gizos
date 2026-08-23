@@ -1,4 +1,4 @@
-# BK7258 bare-chip canonical AP configuration.
+# BK7258 bare-chip compile-only AP configuration.
 CONFIG_SOC_BK7258=y
 # CONFIG_SOC_BK7258_AP is not set
 # CONFIG_SOC_BK7257 is not set

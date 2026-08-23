@@ -1,4 +1,4 @@
-# BK7258 bare-chip compile-validation memory profile.
+# BK7258 bare-chip compile-only memory profile.
 PSRAM_CAPCAITY_SIZE=8M
 #Name,                   Type,     Offset,     Size
 AP_SPINLOCK,             SRAM, 0x28000000, 0x010000

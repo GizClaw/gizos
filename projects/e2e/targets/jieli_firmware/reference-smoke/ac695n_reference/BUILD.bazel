@@ -1,5 +1,5 @@
+load("//boards/ac695n_chip/ac695n/layouts/compile_only:defs.bzl", "ac695n_compile_only_firmware")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
-load("//tools/bazel:jieli.bzl", "jieli_firmware")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -29,11 +29,9 @@ firmware_native_component(
     ],
 )
 
-jieli_firmware(
+ac695n_compile_only_firmware(
     name = "firmware",
     board = "ac695n_chip",
     graph = [":reference_launcher"],
     image = "reference-smoke",
-    sdk_project = ".",
-    target = "br23",
 )

@@ -28,5 +28,5 @@ bk3633_firmware(
     image = "reference-smoke",
     native_merge = "bk3633_chip_merge_crc.bin",
     native_target = "bk3633_chip",
-    project = "//boards/bk3633_chip/bk3633:Makefile",
+    project = "//boards/bk3633_chip/bk3633/layouts/compile_only:Makefile",
 )

@@ -1,4 +1,4 @@
-REPO_ROOT := $(abspath ../../..)
+REPO_ROOT := $(abspath ../../../../..)
 BK3633_SDK_ROOT := $(abspath $(BK3633_PATH)/SDK)
 SDK_PROJECT := $(BK3633_SDK_ROOT)/projects/app_gatt_all_roles
 SDK_BIM := $(SDK_PROJECT)/output/boot/BK3633_BIM_ALLROLES.bin

@@ -33,9 +33,9 @@ esp_idf_firmware(
     graph = [
         ":main",
     ],
-    partition = "//boards/esp32s3_chip/esp32s3:partition.csv",
+    partition = "//boards/esp32s3_chip/esp32s3/layouts/compile_only:partition.csv",
     project = "CMakeLists.txt",
     project_name = "h2_esp32s3_chip_reference_smoke",
-    project_support_files = ["//boards/esp32s3_chip/esp32s3:sdkconfig.defaults"],
+    project_support_files = ["//boards/esp32s3_chip/esp32s3/layouts/compile_only:sdkconfig"],
     target = "esp32s3",
 )

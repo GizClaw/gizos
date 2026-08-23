@@ -1,4 +1,4 @@
-# H2Loader-managed BK7258 boards use one full-size position-independent A/B layout.
+# Compile-only BK7258 validation uses one full-size position-independent A/B layout.
 # A / primary loader window = primary_cp_app + primary_ap_app
 # B / managed app window = s_app
 # size(s_app) must equal size(primary_cp_app) + size(primary_ap_app)

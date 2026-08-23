@@ -1,0 +1,48 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ap.defaults",
+    "ap/usr_gpio_cfg.h",
+    "cp.defaults",
+    "cp/usr_gpio_cfg.h",
+    "partitions/bk7258/ab_position_independent.csv",
+    "partitions/bk7258/auto_partitions.csv",
+    "partitions/bk7258/ota_rbl.config",
+    "pj_config.mk",
+    "ram_regions.csv",
+])
+
+filegroup(
+    name = "ap_config",
+    srcs = ["ap.defaults"],
+)
+
+filegroup(
+    name = "ap_gpio",
+    srcs = ["ap/usr_gpio_cfg.h"],
+)
+
+filegroup(
+    name = "cp_config",
+    srcs = ["cp.defaults"],
+)
+
+filegroup(
+    name = "cp_gpio",
+    srcs = ["cp/usr_gpio_cfg.h"],
+)
+
+filegroup(
+    name = "layout",
+    srcs = [
+        "partitions/bk7258/ab_position_independent.csv",
+        "partitions/bk7258/auto_partitions.csv",
+        "partitions/bk7258/ota_rbl.config",
+        "pj_config.mk",
+    ],
+)
+
+alias(
+    name = "ram_regions",
+    actual = "ram_regions.csv",
+)

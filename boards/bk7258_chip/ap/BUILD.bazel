@@ -2,11 +2,6 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "ap.defaults",
-    "usr_gpio_cfg.h",
-])
-
 firmware_native_component(
     name = "ap",
     srcs = ["src/h2_bk7258_chip_ap.c"],

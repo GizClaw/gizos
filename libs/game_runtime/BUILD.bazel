@@ -45,6 +45,7 @@ _PIXELROOT32_COPTS = H2_WARNING_COPTS + select({
     ":linux_armv7": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_bk3633": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
+    "//tools/bazel/platforms:is_esp32c5": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_esp32p4": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_esp32s3": ["-Wno-error=type-limits"],
     "//tools/bazel/platforms:is_windows_x86_64": [

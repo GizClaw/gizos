@@ -1,4 +1,4 @@
-# BK7258 bare-chip canonical CP configuration.
+# BK7258 bare-chip compile-only CP configuration.
 CONFIG_SOC_BK7258=y
 # CONFIG_SOC_BK7257 is not set
 CONFIG_CPU_CNT=3
