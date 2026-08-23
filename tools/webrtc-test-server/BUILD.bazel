@@ -1,0 +1,60 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "go.mod",
+    "go.sum",
+])
+
+filegroup(
+    name = "fixture_metadata",
+    srcs = [
+        "go.mod",
+        "go.sum",
+    ],
+)
+
+go_library(
+    name = "server_lib",
+    srcs = ["main.go"],
+    importpath = "h2vivi/firmwares/tools/webrtc-test-server",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_pion_datachannel//:datachannel",
+        "@com_github_pion_rtp//:rtp",
+        "@com_github_pion_stun_v3//:stun",
+        "@com_github_pion_turn_v4//:turn",
+        "@com_github_pion_webrtc_v4//:webrtc",
+    ],
+)
+
+go_binary(
+    name = "webrtc_test_server",
+    data = [":fixture_metadata"],
+    embed = [":server_lib"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+go_test(
+    name = "webrtc_test_server_test",
+    srcs = ["main_test.go"],
+    embed = [":server_lib"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

@@ -1,0 +1,75 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "desktop",
+    srcs = [
+        "//libs/lvgl:display",
+        "//libs/pal/providers/desktop/pal_core",
+        "//tools/bazel:vendor_third_party_opus",
+    ],
+)
+
+WEBRTC_COMPAT_SRCS = [
+    "tests/webrtc/h2_webrtc_compat_factory.h",
+    "tests/webrtc/h2_webrtc_compat_scenario.c",
+    "tests/webrtc/h2_webrtc_compat_scenario.h",
+    "tests/webrtc/h2_webrtc_pion_fixture.c",
+    "tests/webrtc/h2_webrtc_pion_fixture.h",
+    "tests/webrtc/test_h2_webrtc_compat.c",
+]
+
+cc_test(
+    name = "h2peer_pal_pion_test",
+    timeout = "moderate",
+    srcs = WEBRTC_COMPAT_SRCS + [
+        "tests/webrtc/h2_webrtc_h2peer_factory.c",
+    ],
+    args = [
+        "$(rootpath //tools/webrtc-test-server:webrtc_test_server)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["//tools/webrtc-test-server:webrtc_test_server"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core:webrtc_test_providers",
+    ],
+)
+
+cc_library(
+    name = "webrtc_h2peer_test_support",
+    srcs = [
+        "tests/webrtc/h2_webrtc_h2peer_factory.c",
+        "tests/webrtc/h2_webrtc_pion_fixture.c",
+    ],
+    hdrs = [
+        "tests/webrtc/h2_webrtc_compat_factory.h",
+        "tests/webrtc/h2_webrtc_pion_fixture.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/webrtc"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core:webrtc_test_providers",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+    ],
+)

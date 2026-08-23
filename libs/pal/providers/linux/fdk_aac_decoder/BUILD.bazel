@@ -1,0 +1,42 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "fdk_aac_decoder",
+    srcs = ["src/h2_linux_fdk_aac_decoder.c"],
+    hdrs = ["include/h2_linux_fdk_aac_decoder.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Wno-unused-function",
+    ],
+    strip_include_prefix = "include",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "@h2_fdk_aac//:fdk_aac",
+    ],
+)
+
+cc_test(
+    name = "fdk_aac_decoder_test",
+    srcs = [
+        "tests/h2_fdk_aac_test_fixture.h",
+        "tests/test_linux_fdk_aac_decoder.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":fdk_aac_decoder"],
+)

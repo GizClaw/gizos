@@ -295,6 +295,21 @@ int main(void) {
            memcmp(h2loader_encoded, beacon_encoded, h2loader_encoded_len) != 0);
     assert(memchr(h2loader_encoded, 0xff, h2loader_encoded_len) == NULL);
     assert(memchr(beacon_encoded, 0xff, beacon_encoded_len) == NULL);
+    h2_pal_ble_adv_data_t scan_response_data = {
+        .local_name = "scan-response",
+    };
+    assert(h2_pal_ble_adv_set_set_scan_response_data(
+               ble, h2loader_set, &scan_response_data) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    uint8_t unchanged_h2loader_encoded[64];
+    size_t unchanged_h2loader_encoded_len = 0u;
+    assert(h2_desktop_platform_copy_ble_adv_set_data(
+               h2loader_set, unchanged_h2loader_encoded,
+               sizeof(unchanged_h2loader_encoded),
+               &unchanged_h2loader_encoded_len) == H2_PAL_OK);
+    assert(unchanged_h2loader_encoded_len == h2loader_encoded_len);
+    assert(memcmp(unchanged_h2loader_encoded, h2loader_encoded,
+                  h2loader_encoded_len) == 0);
 
     assert(h2_pal_ble_adv_set_start(ble, h2loader_set) == H2_PAL_OK);
     assert(counts.last_started_set == h2loader_set);

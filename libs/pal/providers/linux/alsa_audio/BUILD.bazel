@@ -1,0 +1,54 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "LINUX_HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "alsa_audio",
+    srcs = [
+        "src/h2_linux_alsa_abi.h",
+        "src/h2_linux_alsa_audio.c",
+    ],
+    hdrs = ["include/h2_linux_alsa_audio.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = [
+        "-ldl",
+        "-pthread",
+    ],
+    strip_include_prefix = "include",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "alsa_audio_test_impl",
+    srcs = [
+        "src/h2_linux_alsa_abi.h",
+        "src/h2_linux_alsa_audio.c",
+    ],
+    hdrs = ["include/h2_linux_alsa_audio.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_LINUX_ALSA_TESTING"],
+    includes = ["src"],
+    strip_include_prefix = "include",
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "alsa_audio_test",
+    srcs = ["tests/test_linux_alsa_audio.c"],
+    conlyopts = H2_C11_OPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = [":alsa_audio_test_impl"],
+)

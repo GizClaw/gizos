@@ -1449,6 +1449,17 @@ static h2_pal_result_t h2_corebluetooth_adv_set_set_data(
     return [h2_corebluetooth_backend() setAdvertisingData:data];
 }
 
+static h2_pal_result_t
+h2_corebluetooth_adv_set_set_scan_response_data_unsupported(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const h2_pal_ble_adv_data_t *data) {
+    (void)user;
+    (void)set;
+    (void)data;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t h2_corebluetooth_adv_set_start(
     void *user,
     h2_pal_ble_adv_set_t *set) {
@@ -1656,6 +1667,8 @@ static const h2_pal_ble_vtable_t s_h2_corebluetooth_vtable = {
     .stop_advertising = h2_corebluetooth_stop_advertising,
     .adv_set_create = h2_corebluetooth_adv_set_create,
     .adv_set_set_data = h2_corebluetooth_adv_set_set_data,
+    .adv_set_set_scan_response_data =
+        h2_corebluetooth_adv_set_set_scan_response_data_unsupported,
     .adv_set_start = h2_corebluetooth_adv_set_start,
     .adv_set_stop = h2_corebluetooth_adv_set_stop,
     .adv_set_destroy = h2_corebluetooth_adv_set_destroy,

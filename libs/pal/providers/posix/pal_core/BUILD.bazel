@@ -115,10 +115,7 @@ cc_test(
     name = "net_test",
     srcs = ["tests/test_posix_net.c"],
     conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS + select({
-        "@platforms//os:linux": ["-D_POSIX_C_SOURCE=200809L"],
-        "//conditions:default": [],
-    }),
+    copts = H2_WARNING_COPTS,
     linkopts = ["-lpthread"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
@@ -141,10 +138,7 @@ cc_test(
         "$(location tests/fixtures/localhost_key.pem)",
     ],
     conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS + select({
-        "@platforms//os:linux": ["-D_POSIX_C_SOURCE=200809L"],
-        "//conditions:default": [],
-    }),
+    copts = H2_WARNING_COPTS,
     data = glob(["tests/fixtures/*.pem"]),
     linkopts = ["-lpthread"],
     target_compatible_with = select({

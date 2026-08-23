@@ -911,6 +911,17 @@ static h2_pal_result_t h2_desktop_ble_adv_set_set_data_adapter(
         H2_DESKTOP_BLE_API(user), set, data);
 }
 
+static h2_pal_result_t
+h2_desktop_ble_adv_set_set_scan_response_data_adapter(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const h2_pal_ble_adv_data_t *data) {
+    (void)user;
+    (void)set;
+    (void)data;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t h2_desktop_ble_adv_set_start_adapter(
     void *user,
     h2_pal_ble_adv_set_t *set) {
@@ -1072,6 +1083,8 @@ static const h2_pal_ble_vtable_t s_h2_desktop_ble_vtable = {
     .stop_advertising = h2_desktop_ble_stop_advertising_adapter,
     .adv_set_create = h2_desktop_ble_adv_set_create_adapter,
     .adv_set_set_data = h2_desktop_ble_adv_set_set_data_adapter,
+    .adv_set_set_scan_response_data =
+        h2_desktop_ble_adv_set_set_scan_response_data_adapter,
     .adv_set_start = h2_desktop_ble_adv_set_start_adapter,
     .adv_set_stop = h2_desktop_ble_adv_set_stop_adapter,
     .adv_set_destroy = h2_desktop_ble_adv_set_destroy_adapter,

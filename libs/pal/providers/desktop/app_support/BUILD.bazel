@@ -1,0 +1,152 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "bundle_rpath",
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-rpath,@loader_path/../../Frameworks"],
+        "//conditions:default": [],
+    }),
+)
+
+_TLS_FIXTURES = [
+    "//libs/pal/providers/posix/pal_core:tests/fixtures/localhost_ca.pem",
+    "//libs/pal/providers/posix/pal_core:tests/fixtures/wrong_ca.pem",
+    "//libs/pal/providers/posix/pal_core:tests/fixtures/localhost_cert.pem",
+    "//libs/pal/providers/posix/pal_core:tests/fixtures/localhost_key.pem",
+]
+
+cc_test(
+    name = "app_support_test",
+    srcs = ["tests/test_h2_desktop_app_support.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["tests/resource.txt"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":app_support"],
+)
+
+cc_test(
+    name = "network_services_test",
+    srcs = ["tests/test_h2_desktop_network_services.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "runtime_config_test",
+    srcs = ["tests/test_h2_desktop_runtime_config.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/pal/providers/ffmpeg",
+    ],
+)
+
+cc_test(
+    name = "corehttp_integration_test",
+    srcs = ["tests/test_h2_desktop_corehttp.c"],
+    args = ["$(location %s)" % fixture for fixture in _TLS_FIXTURES],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = _TLS_FIXTURES,
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/pal",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/wolfssl",
+    ],
+)
+
+cc_test(
+    name = "display_lvgl_integration_test",
+    srcs = ["tests/test_h2_desktop_display_lvgl.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    local_defines = ["SDL_DISABLE_OLD_NAMES"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":app_support",
+        "//libs/lvgl:platform",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/sdl3",
+        "@h2_vendor_sdl3//:sdl3",
+    ],
+)
+
+cc_library(
+    name = "app_support",
+    srcs = [
+        "h2_desktop_app_support.cpp",
+        "h2_desktop_app_support_c.cpp",
+        "h2_desktop_lvgl_input.cpp",
+        "h2_desktop_lvgl_input.h",
+        "h2_desktop_status_surface.cpp",
+    ],
+    hdrs = [
+        "h2_desktop_app_support.h",
+        "h2_desktop_app_support_c.h",
+    ],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/lvgl:display",
+        "//libs/lvgl:platform",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/ffmpeg",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/portaudio",
+        "//libs/pal/providers/sdl3",
+        "//libs/pal/providers/sqlite",
+        "//libs/pal/providers/wolfssl",
+        "//libs/runtime",
+    ] + select({
+        "@platforms//os:linux": [
+            "//libs/pal/providers/linux/pal_core",
+            "//libs/pal/providers/linux/serial_host",
+        ],
+        "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core"],
+        "//conditions:default": [],
+    }),
+)

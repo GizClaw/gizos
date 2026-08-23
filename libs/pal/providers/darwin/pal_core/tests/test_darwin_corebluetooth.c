@@ -49,5 +49,9 @@ int main(void) {
     assert(h2_darwin_corebluetooth_ble(&allocator) == ble);
     assert(h2_darwin_corebluetooth_ble(&other_allocator) == NULL);
     assert(ble->allocator == &allocator);
+    const h2_pal_ble_adv_data_t scan_response = {0};
+    assert(h2_pal_ble_adv_set_set_scan_response_data(
+               ble, (h2_pal_ble_adv_set_t *)ble, &scan_response) ==
+           H2_PAL_ERR_UNSUPPORTED);
     return 0;
 }
