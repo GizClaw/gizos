@@ -17,7 +17,7 @@ Each unchecked item represents exactly one future migration push. The item is ch
 - [x] Migrate the complete public H2Loader core, CLI, Loader, Web SDK, and package flow.
 - [x] Migrate public Example and reusable E2E Apps with public launchers.
 - [x] Add public BK3633 and JieLi Bazel runners, PAL/native components, and host validation.
-- [ ] Add generic BK3633, AC695N, and AC791N reference-board firmware targets for full compile coverage.
+- [x] Add generic BK3633, AC695N, and AC791N reference-board firmware targets for full compile coverage.
 - [x] Migrate PIXA Games and Showcase with public Desktop artifacts.
 - [x] Complete public tools, guides, release checks, and the final source-boundary audit.
 

@@ -1,0 +1,32 @@
+load("//tools/bazel:bk3633.bzl", "bk3633_firmware")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = ["//projects/e2e/libs/reference_smoke"],
+)
+
+firmware_native_component(
+    name = "reference_launcher",
+    srcs = ["src/reference_launcher.c"],
+    component_name = "reference_launcher",
+    data = ["Makefile"],
+    tags = ["manual"],
+    deps = [
+        ":firmware_lib",
+        "//projects/e2e/libs/reference_smoke",
+    ],
+)
+
+bk3633_firmware(
+    name = "firmware",
+    board = "bk3633_reference",
+    graph = [":reference_launcher"],
+    image = "reference-smoke",
+    native_merge = "bk3633_reference_merge_crc.bin",
+    native_target = "bk3633_reference",
+    project = "Makefile",
+)

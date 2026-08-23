@@ -1,0 +1,38 @@
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:jieli.bzl", "jieli_firmware")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "firmware_lib",
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//projects/e2e/libs/reference_smoke"],
+)
+
+firmware_native_component(
+    name = "reference_launcher",
+    srcs = ["src/reference_launcher.c"],
+    component_name = "reference_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":firmware_lib",
+        "//projects/e2e/libs/reference_smoke",
+    ],
+)
+
+jieli_firmware(
+    name = "firmware",
+    board = "ac791n_reference",
+    graph = [":reference_launcher"],
+    image = "reference-smoke",
+    sdk_project = "apps/demo/demo_hello/board/wl82",
+    target = "wl82",
+)
