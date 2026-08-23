@@ -6,6 +6,7 @@ exports_files([
     "ikcp.BUILD.bazel",
     "libco.BUILD.bazel",
     "libsrtp.BUILD.bazel",
+    "tinyh264.BUILD.bazel",
     "wolfssl.BUILD.bazel",
     "yyjson.BUILD.bazel",
 ])
@@ -18,6 +19,7 @@ filegroup(
         "ikcp.BUILD.bazel",
         "libco.BUILD.bazel",
         "libsrtp.BUILD.bazel",
+        "tinyh264.BUILD.bazel",
         "wolfssl.BUILD.bazel",
         "yyjson.BUILD.bazel",
     ],

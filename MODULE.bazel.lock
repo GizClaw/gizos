@@ -232,7 +232,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "mx8oTTh/NII0YFU2I97ZxPAewF8GBVjttRRAw3Xr5iY=",
-        "usagesDigest": "E8xbRt5TiDHDR8Wm64o8OAcgwn/YxnGtT3UxDzfrAdU=",
+        "usagesDigest": "rHiZLKwrXsekBgdCMjo5pQeulAxvzC1sHrUgh1tXzRw=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_vendor_ikcp": {
@@ -303,6 +303,18 @@
               },
               "path": "third_party/libco",
               "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_tinyh264": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:tinyh264.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/tinyh264",
+              "patches": [
+                "@@//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"
+              ],
               "source_is_gitlink": true
             }
           },

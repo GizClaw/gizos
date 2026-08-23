@@ -1,0 +1,77 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "tinyh264",
+    srcs = [
+        "src/h2_tinyh264.c",
+        "src/h2_tinyh264_allocator_bridge.c",
+    ],
+    hdrs = [
+        "include/h2_tinyh264.h",
+        "include/h2_tinyh264_allocator_bridge.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    # The vendor decoder includes <memory.h>, which the JieLi pi32v2 libc does not ship.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_tinyh264",
+    ],
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = [
+        "tests/test_public_headers.c",
+    ],
+    args = ["$(location tests/fixtures/baseline_annexb.h264)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = [
+        "tests/fixtures/README.md",
+        "tests/fixtures/SHA256SUMS",
+        "tests/fixtures/baseline_annexb.h264",
+    ],
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":tinyh264"],
+)
+
+cc_test(
+    name = "public_headers_cpp_test",
+    srcs = [
+        "tests/test_public_headers.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":tinyh264"],
+)

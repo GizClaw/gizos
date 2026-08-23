@@ -58,6 +58,12 @@ vendor_repositories.repository(
     path = "third_party/libco",
 )
 vendor_repositories.repository(
+    name = "h2_vendor_tinyh264",
+    build_file = "//third_party:tinyh264.BUILD.bazel",
+    patches = ["//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"],
+    path = "third_party/tinyh264",
+)
+vendor_repositories.repository(
     name = "h2_vendor_wolfssl",
     build_file = "//third_party:wolfssl.BUILD.bazel",
     path = "third_party/wolfssl",
@@ -69,6 +75,7 @@ use_repo(
     "h2_vendor_ikcp",
     "h2_vendor_libco",
     "h2_vendor_libsrtp",
+    "h2_vendor_tinyh264",
     "h2_vendor_wolfssl",
     "h2_vendor_yyjson",
 )

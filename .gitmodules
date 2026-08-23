@@ -26,3 +26,7 @@
 	path = third_party/yyjson
 	url = https://github.com/ibireme/yyjson.git
 	shallow = true
+[submodule "third_party/tinyh264"]
+	path = third_party/tinyh264
+	url = https://github.com/udevbe/tinyh264.git
+	shallow = true

@@ -4,3 +4,5 @@ filegroup(
     name = "repository_definitions",
     srcs = ["repositories.bzl"],
 )
+
+exports_files(glob(["patches/*.patch"]))

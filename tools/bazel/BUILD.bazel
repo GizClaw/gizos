@@ -36,3 +36,9 @@ cc_library(
     tags = ["manual"],
     deps = ["@h2_vendor_coremqtt//:coremqtt"],
 )
+
+cc_library(
+    name = "vendor_third_party_tinyh264",
+    tags = ["manual"],
+    deps = ["@h2_vendor_tinyh264//:tinyh264"],
+)
