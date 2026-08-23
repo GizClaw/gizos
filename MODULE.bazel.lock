@@ -223,7 +223,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "mx8oTTh/NII0YFU2I97ZxPAewF8GBVjttRRAw3Xr5iY=",
-        "usagesDigest": "UA3KqPcvvSXmRa1jkk8xtfqZi5oy6ReaY4AcQke+NGY=",
+        "usagesDigest": "E8xbRt5TiDHDR8Wm64o8OAcgwn/YxnGtT3UxDzfrAdU=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_vendor_ikcp": {
@@ -232,6 +232,77 @@
               "build_file": "@@//third_party:ikcp.BUILD.bazel",
               "overlay_files": {},
               "path": "third_party/ikcp",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_yyjson": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:yyjson.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/yyjson",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_corehttp": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:corehttp.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/corehttp",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_coremqtt": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:coremqtt.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/coremqtt",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_libsrtp": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:libsrtp.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/libsrtp",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_libco": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:libco.BUILD.bazel",
+              "overlay_files": {
+                "@@//third_party/libco_patch:libco.c": "src/libco.c",
+                "@@//third_party/libco_patch:backends/arm.c": "src/arm.c",
+                "@@//third_party/libco_patch:backends/cortex_m.c": "src/backends/cortex_m.c",
+                "@@//third_party/libco_patch:backends/emscripten/h2_libco_emscripten.c": "src/backends/emscripten/h2_libco_emscripten.c",
+                "@@//third_party/libco_patch:backends/esp32s3/h2_esp_libco_xtensa.S": "src/backends/esp32s3/h2_esp_libco_xtensa.S",
+                "@@//third_party/libco_patch:backends/esp32s3/h2_esp_libco_xtensa.c": "src/backends/esp32s3/h2_esp_libco_xtensa.c",
+                "@@//third_party/libco_patch:backends/esp32s3/h2_esp_libco_xtensa_internal.h": "src/backends/esp32s3/h2_esp_libco_xtensa_internal.h",
+                "@@//third_party/libco_patch:backends/riscv32/h2_libco_riscv32.S": "src/backends/riscv32/h2_libco_riscv32.S",
+                "@@//third_party/libco_patch:backends/riscv32/h2_libco_riscv32.c": "src/backends/riscv32/h2_libco_riscv32.c",
+                "@@//third_party/libco_patch:backends/riscv32/h2_libco_riscv32_internal.h": "src/backends/riscv32/h2_libco_riscv32_internal.h"
+              },
+              "path": "third_party/libco",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_wolfssl": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:wolfssl.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/wolfssl",
               "patches": [],
               "source_is_gitlink": true
             }

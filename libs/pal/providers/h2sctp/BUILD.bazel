@@ -1,0 +1,219 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "h2sctp",
+    srcs = [
+        "src/h2_sctp.c",
+        "src/h2_sctp_association.c",
+        "src/h2_sctp_association.h",
+        "src/h2_sctp_crc32c.c",
+        "src/h2_sctp_crc32c.h",
+        "src/h2_sctp_internal.h",
+        "src/h2_sctp_reliability.c",
+        "src/h2_sctp_reliability.h",
+        "src/h2_sctp_stream.c",
+        "src/h2_sctp_stream.h",
+        "src/h2_sctp_timer.c",
+        "src/h2_sctp_timer.h",
+        "src/h2_sctp_wire.c",
+        "src/h2_sctp_wire.h",
+    ],
+    hdrs = ["include/h2_sctp.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = [
+        "CMakeLists.txt",
+        "LICENSE.usrsctp",
+    ],
+    includes = [
+        "include",
+        "src",
+    ],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "association_test",
+    srcs = [
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_association.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "stream_test",
+    srcs = [
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_stream.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "lifecycle_test",
+    srcs = [
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "malformed_test",
+    srcs = [
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_malformed.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "reliability_test",
+    srcs = [
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_reliability.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "timer_test",
+    srcs = [
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_timer.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "wire_test",
+    srcs = [
+        "tests/h2_sctp_reference_vectors.c",
+        "tests/h2_sctp_reference_vectors.h",
+        "tests/test_wire.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "conformance_test",
+    srcs = [
+        "tests/h2_sctp_reference_vectors.c",
+        "tests/h2_sctp_reference_vectors.h",
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_conformance.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "public_header_c_test",
+    srcs = ["tests/test_public_header.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
+    name = "public_header_cxx_test",
+    srcs = ["tests/test_public_header.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)

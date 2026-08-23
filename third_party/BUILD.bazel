@@ -1,8 +1,24 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["ikcp.BUILD.bazel"])
+exports_files([
+    "corehttp.BUILD.bazel",
+    "coremqtt.BUILD.bazel",
+    "ikcp.BUILD.bazel",
+    "libco.BUILD.bazel",
+    "libsrtp.BUILD.bazel",
+    "wolfssl.BUILD.bazel",
+    "yyjson.BUILD.bazel",
+])
 
 filegroup(
     name = "repository_overlays",
-    srcs = ["ikcp.BUILD.bazel"],
+    srcs = [
+        "corehttp.BUILD.bazel",
+        "coremqtt.BUILD.bazel",
+        "ikcp.BUILD.bazel",
+        "libco.BUILD.bazel",
+        "libsrtp.BUILD.bazel",
+        "wolfssl.BUILD.bazel",
+        "yyjson.BUILD.bazel",
+    ],
 )

@@ -1,0 +1,59 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_H2_PROTOCOL_SOURCES = [
+    "src/crypto/cipher/cipher.c",
+    "src/crypto/cipher/cipher_test_cases.c",
+    "src/crypto/cipher/null_cipher.c",
+    "src/crypto/hash/auth.c",
+    "src/crypto/hash/auth_test_cases.c",
+    "src/crypto/hash/null_auth.c",
+    "src/crypto/kernel/crypto_kernel.c",
+    "src/crypto/kernel/err.c",
+    "src/crypto/kernel/key.c",
+    "src/crypto/math/datatypes.c",
+    "src/crypto/replay/rdb.c",
+    "src/crypto/replay/rdbx.c",
+    "src/srtp/srtp.c",
+]
+
+filegroup(
+    name = "h2_protocol_sources",
+    srcs = _H2_PROTOCOL_SOURCES,
+)
+
+cc_library(
+    name = "h2_private_headers",
+    hdrs = glob([
+        "src/crypto/include/*.h",
+        "src/crypto/cipher/*.h",
+        "src/crypto/hash/*.h",
+        "src/include/*.h",
+    ]),
+    includes = [
+        "src/crypto/cipher",
+        "src/crypto/hash",
+        "src/crypto/include",
+        "src/include",
+    ],
+)
+
+cc_library(
+    name = "srtp_headers",
+    hdrs = [
+        "src/include/srtp.h",
+        "src/include/srtp_priv.h",
+        "src/include/stream_list_priv.h",
+    ],
+    include_prefix = "srtp2",
+    strip_include_prefix = "src/include",
+)
+
+filegroup(
+    name = "all_sources",
+    srcs = _H2_PROTOCOL_SOURCES + [
+        ":h2_private_headers",
+        ":srtp_headers",
+    ],
+)

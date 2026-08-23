@@ -1,0 +1,126 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "libco",
+    srcs = [
+        "src/h2_libco.c",
+        "src/h2_libco_internal.h",
+        "src/h2_libco_pal_queue.c",
+        "src/h2_libco_pal_sync.c",
+        "src/h2_libco_pal_task.c",
+        "src/h2_libco_pal_time.c",
+        "@h2_vendor_libco//:implementation_sources",
+    ] + select({
+        "//tools/bazel/platforms:cpu_xtensa": ["@h2_vendor_libco//:esp32s3_assembly_sources"],
+        "//tools/bazel/platforms:cpu_riscv32": ["@h2_vendor_libco//:riscv32_assembly_sources"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["include/h2_libco.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    local_defines = select({
+        "@platforms//os:linux": ["thread_local=_Thread_local"],
+        "@platforms//os:macos": ["thread_local=_Thread_local"],
+        "//conditions:default": [],
+    }),
+    # No pi32v2 context-switch assembly and clang 4.0.1 rejects atomics on const _Atomic operands.
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal",
+        "@h2_vendor_libco//:headers",
+    ],
+)
+
+cc_test(
+    name = "test_h2_libco",
+    srcs = [
+        "src/h2_libco_internal.h",
+        "tests/test_h2_libco.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    linkopts = select({
+        "@platforms//os:linux": ["-pthread"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libco"],
+)
+
+cc_test(
+    name = "test_h2_libco_pal_task",
+    srcs = [
+        "tests/h2_libco_test_support.h",
+        "tests/test_h2_libco_pal_task.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libco"],
+)
+
+cc_test(
+    name = "test_h2_libco_pal_time",
+    srcs = [
+        "tests/h2_libco_test_support.h",
+        "tests/test_h2_libco_pal_time.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libco"],
+)
+
+cc_test(
+    name = "test_h2_libco_pal_sync",
+    srcs = [
+        "tests/h2_libco_test_support.h",
+        "tests/test_h2_libco_pal_sync.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libco"],
+)
+
+cc_test(
+    name = "test_h2_libco_pal_queue",
+    srcs = [
+        "tests/h2_libco_test_support.h",
+        "tests/test_h2_libco_pal_queue.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libco"],
+)

@@ -17,3 +17,22 @@ cc_library(
     tags = ["manual"],
     deps = ["@h2_vendor_ikcp//:ikcp"],
 )
+
+cc_library(
+    name = "vendor_third_party_yyjson",
+    tags = ["manual"],
+    deps = ["@h2_vendor_yyjson//:yyjson"],
+)
+
+cc_library(
+    name = "vendor_third_party_corehttp",
+    data = ["@h2_vendor_corehttp//:all_sources"],
+    tags = ["manual"],
+    deps = ["@h2_vendor_corehttp//:headers"],
+)
+
+cc_library(
+    name = "vendor_third_party_coremqtt",
+    tags = ["manual"],
+    deps = ["@h2_vendor_coremqtt//:coremqtt"],
+)

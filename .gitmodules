@@ -2,3 +2,27 @@
 	path = third_party/ikcp
 	url = https://github.com/skywind3000/kcp.git
 	shallow = true
+[submodule "third_party/corehttp"]
+	path = third_party/corehttp
+	url = https://github.com/FreeRTOS/coreHTTP.git
+	shallow = true
+[submodule "third_party/coremqtt"]
+	path = third_party/coremqtt
+	url = https://github.com/FreeRTOS/coreMQTT
+	shallow = true
+[submodule "third_party/libco"]
+	path = third_party/libco
+	url = https://github.com/higan-emu/libco.git
+	shallow = true
+[submodule "third_party/libsrtp"]
+	path = third_party/libsrtp
+	url = https://github.com/cisco/libsrtp.git
+	shallow = true
+[submodule "third_party/wolfssl"]
+	path = third_party/wolfssl
+	url = https://github.com/wolfSSL/wolfssl.git
+	shallow = true
+[submodule "third_party/yyjson"]
+	path = third_party/yyjson
+	url = https://github.com/ibireme/yyjson.git
+	shallow = true

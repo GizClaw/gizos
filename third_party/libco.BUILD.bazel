@@ -1,0 +1,50 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+cc_library(
+    name = "headers",
+    hdrs = ["src/libco.h"],
+    includes = ["src"],
+    textual_hdrs = [
+        "src/aarch64.c",
+        "src/amd64.c",
+        "src/arm.c",
+        "src/backends/cortex_m.c",
+        "src/backends/emscripten/h2_libco_emscripten.c",
+        "src/backends/esp32s3/h2_esp_libco_xtensa.c",
+        "src/backends/esp32s3/h2_esp_libco_xtensa_internal.h",
+        "src/backends/riscv32/h2_libco_riscv32.c",
+        "src/backends/riscv32/h2_libco_riscv32_internal.h",
+        "src/fiber.c",
+        "src/ppc.c",
+        "src/ppc64v2.c",
+        "src/settings.h",
+        "src/sjlj.c",
+        "src/ucontext.c",
+        "src/valgrind.h",
+        "src/x86.c",
+    ],
+)
+
+filegroup(
+    name = "implementation_sources",
+    srcs = ["src/libco.c"],
+)
+
+filegroup(
+    name = "esp32s3_assembly_sources",
+    srcs = ["src/backends/esp32s3/h2_esp_libco_xtensa.S"],
+)
+
+filegroup(
+    name = "riscv32_assembly_sources",
+    srcs = ["src/backends/riscv32/h2_libco_riscv32.S"],
+)
+
+exports_files([
+    "src/LICENSE",
+    "src/README.md",
+])

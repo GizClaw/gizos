@@ -1,0 +1,349 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_GNU_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "wolfcrypt_upstream",
+    srcs = [
+        "src/wolfcrypt/user_settings.h",
+        "@h2_vendor_wolfssl//:sources",
+    ],
+    conlyopts = H2_GNU_C11_OPTS,
+    copts = h2_gnu_only_copts([
+        "-Wno-sign-conversion",
+        "-Wno-unused-parameter",
+        "-fno-sanitize=undefined",
+    ]),
+    includes = ["src/wolfcrypt"],
+    local_defines = ["WOLFSSL_USER_SETTINGS"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
+)
+
+cc_library(
+    name = "wolfcrypt",
+    srcs = [
+        "src/h2_wolfcrypt_crypto.c",
+        "src/h2_wolfcrypt_crypto_internal.h",
+        "src/h2_wolfcrypt_rng_bridge.c",
+        "src/wolfcrypt/user_settings.h",
+    ],
+    hdrs = ["include/h2_wolfcrypt_crypto.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
+        "-Wno-error=cpp",
+    ]),
+    includes = [
+        "include",
+        "src/wolfcrypt",
+    ],
+    local_defines = ["WOLFSSL_USER_SETTINGS"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":wolfcrypt_upstream",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+    ],
+)
+
+_BK3633_WOLFCRYPT_COPTS = [
+    "-Wno-sign-conversion",
+    "-Wno-unused-parameter",
+    "-Wno-error=cpp",
+    "-fno-sanitize=undefined",
+    "-fstack-usage",
+    "-Werror",
+    "-iquote",
+    "libs/pal/providers/wolfssl/src/wolfcrypt",
+]
+
+_BK3633_WOLFCRYPT_DEFINES = [
+    "GCM_SMALL",
+    "WOLFSSL_AES_NO_UNROLL",
+    "WOLFSSL_AES_SMALL_TABLES",
+    "WOLFSSL_NO_MALLOC",
+    "WOLFSSL_USER_SETTINGS",
+]
+
+_BK3633_COMPATIBILITY = select({
+    "//tools/bazel/platforms:is_bk3633": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_library(
+    name = "wolfcrypt_bk3633_arm_lto",
+    srcs = [
+        "src/wolfcrypt/user_settings.h",
+        "@h2_vendor_wolfssl//:bk3633_arm_lto_sources",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = _BK3633_WOLFCRYPT_COPTS + [
+        "-marm",
+        "-flto",
+        "-ffat-lto-objects",
+    ],
+    local_defines = _BK3633_WOLFCRYPT_DEFINES,
+    target_compatible_with = _BK3633_COMPATIBILITY,
+    deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
+)
+
+cc_library(
+    name = "wolfcrypt_bk3633_thumb_lto",
+    srcs = [
+        "src/wolfcrypt/user_settings.h",
+        "@h2_vendor_wolfssl//:bk3633_thumb_lto_sources",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = _BK3633_WOLFCRYPT_COPTS + [
+        "-mthumb",
+        "-flto",
+        "-ffat-lto-objects",
+        "-fno-inline",
+    ],
+    local_defines = _BK3633_WOLFCRYPT_DEFINES,
+    target_compatible_with = _BK3633_COMPATIBILITY,
+    deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
+)
+
+cc_library(
+    name = "wolfcrypt_bk3633_thumb_non_lto",
+    srcs = [
+        "src/wolfcrypt/user_settings.h",
+        "@h2_vendor_wolfssl//:bk3633_thumb_non_lto_sources",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = _BK3633_WOLFCRYPT_COPTS + [
+        "-mthumb",
+        "-fno-inline",
+        "-Wstack-usage=1152",
+    ],
+    local_defines = _BK3633_WOLFCRYPT_DEFINES,
+    target_compatible_with = _BK3633_COMPATIBILITY,
+    deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
+)
+
+cc_library(
+    name = "wolfcrypt_bk3633_rng",
+    srcs = [
+        "src/h2_wolfcrypt_crypto_internal.h",
+        "src/h2_wolfcrypt_rng_bridge.c",
+        "src/wolfcrypt/user_settings.h",
+    ],
+    hdrs = ["include/h2_wolfcrypt_crypto.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = _BK3633_WOLFCRYPT_COPTS + [
+        "-mthumb",
+        "-flto",
+        "-ffat-lto-objects",
+    ],
+    includes = ["include"],
+    local_defines = _BK3633_WOLFCRYPT_DEFINES,
+    target_compatible_with = _BK3633_COMPATIBILITY,
+    deps = [
+        ":wolfcrypt_bk3633_arm_lto",
+        ":wolfcrypt_bk3633_thumb_lto",
+        ":wolfcrypt_bk3633_thumb_non_lto",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "wolfcrypt_bk3633",
+    srcs = [
+        "src/h2_wolfcrypt_crypto.c",
+        "src/h2_wolfcrypt_crypto_internal.h",
+        "src/wolfcrypt/user_settings.h",
+    ],
+    hdrs = ["include/h2_wolfcrypt_crypto.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = _BK3633_WOLFCRYPT_COPTS + [
+        "-mthumb",
+        "-fno-inline",
+        "-Wstack-usage=1152",
+    ],
+    includes = ["include"],
+    local_defines = _BK3633_WOLFCRYPT_DEFINES,
+    target_compatible_with = _BK3633_COMPATIBILITY,
+    deps = [
+        ":wolfcrypt_bk3633_rng",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_library(
+    name = "wolfssl_upstream",
+    srcs = [
+        "src/full/user_settings.h",
+        "@h2_vendor_wolfssl//:desktop_sources",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = h2_gnu_only_copts([
+        "-Wno-sign-conversion",
+        "-Wno-unused-parameter",
+        "-fno-sanitize=undefined",
+    ]),
+    defines = ["WOLFSSL_USER_SETTINGS"],
+    includes = ["src/full"],
+    local_defines = ["WOLFSSL_DTLS_MTU"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["@h2_vendor_wolfssl//:desktop_headers"],
+)
+
+cc_library(
+    name = "wolfssl",
+    srcs = [
+        "src/full/user_settings.h",
+        "src/h2_wolfcrypt_crypto.c",
+        "src/h2_wolfcrypt_crypto_internal.h",
+        "src/h2_wolfssl.c",
+        "src/h2_wolfssl_dtls.c",
+        "src/h2_wolfssl_dtls_identity.c",
+        "src/h2_wolfssl_dtls_io.c",
+        "src/h2_wolfssl_internal.h",
+        "src/h2_wolfssl_mem_bridge.c",
+        "src/h2_wolfssl_rng_bridge.c",
+    ],
+    hdrs = [
+        "include/h2_wolfcrypt_crypto.h",
+        "include/h2_wolfssl.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
+        "-fno-sanitize=undefined",
+    ]),
+    includes = [
+        "include",
+        "src/full",
+    ],
+    linkopts = select({
+        "@platforms//os:macos": ["-framework Security"],
+        "@platforms//os:windows": [
+            "-DEFAULTLIB:Crypt32.lib",
+            "-DEFAULTLIB:Ws2_32.lib",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "@platforms//os:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":wolfssl_upstream",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "crypto_test",
+    srcs = ["tests/test_wolfcrypt_crypto.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":wolfcrypt"],
+)
+
+cc_test(
+    name = "lifecycle_test",
+    srcs = ["tests/test_wolfcrypt_lifecycle.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":wolfcrypt",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = ["tests/test_wolfcrypt_public_headers.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":wolfssl"],
+)
+
+cc_test(
+    name = "public_headers_cpp_test",
+    srcs = ["tests/test_wolfcrypt_public_headers.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":wolfssl"],
+)
+
+cc_test(
+    name = "wolfssl_lifecycle_test",
+    srcs = ["tests/test_wolfssl_lifecycle.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":wolfssl",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "wolfssl_dtls_test",
+    srcs = ["tests/test_wolfssl_dtls.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":wolfssl"],
+)
+
+cc_test(
+    name = "wolfssl_dtls_failure_test",
+    srcs = ["tests/test_wolfssl_dtls_failure.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":wolfssl"],
+)

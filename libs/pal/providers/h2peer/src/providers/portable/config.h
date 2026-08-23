@@ -1,0 +1,46 @@
+#ifndef CONFIG_H_
+#define CONFIG_H_
+
+#define CONFIG_MTU (1300)
+
+#ifndef CONFIG_SDP_BUFFER_SIZE
+#define CONFIG_SDP_BUFFER_SIZE 12000
+#endif
+
+#ifndef CONFIG_MQTT_BUFFER_SIZE
+#define CONFIG_MQTT_BUFFER_SIZE 4096
+#endif
+
+#ifndef CONFIG_HTTP_BUFFER_SIZE
+#define CONFIG_HTTP_BUFFER_SIZE 4096
+#endif
+
+#ifndef CONFIG_TLS_READ_TIMEOUT
+#define CONFIG_TLS_READ_TIMEOUT 3000
+#endif
+
+#ifndef CONFIG_KEEPALIVE_TIMEOUT
+#define CONFIG_KEEPALIVE_TIMEOUT 10000
+#endif
+
+#ifndef CONFIG_KEEPALIVE_INTERVAL
+#define CONFIG_KEEPALIVE_INTERVAL 5000
+#endif
+
+#ifndef CONFIG_AUDIO_DURATION
+#define CONFIG_AUDIO_DURATION 20
+#endif
+
+#ifndef CONFIG_MAX_NALU_SIZE
+#define CONFIG_MAX_NALU_SIZE (10 * 1024)  // 10KB
+#endif
+
+#define CONFIG_IPV6 0
+// empty will use first active interface
+#define CONFIG_IFACE_PREFIX ""
+
+// #define LOG_LEVEL LEVEL_DEBUG
+// Disable MQTT and HTTP signaling
+// #define DISABLE_PEER_SIGNALING 1
+
+#endif  // CONFIG_H_

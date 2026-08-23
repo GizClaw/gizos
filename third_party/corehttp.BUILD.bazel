@@ -1,0 +1,41 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "corehttp_sources",
+    srcs = ["src/source/core_http_client.c"],
+)
+
+filegroup(
+    name = "llhttp_sources",
+    srcs = [
+        "src/source/dependency/3rdparty/llhttp/src/api.c",
+        "src/source/dependency/3rdparty/llhttp/src/http.c",
+        "src/source/dependency/3rdparty/llhttp/src/llhttp.c",
+    ],
+)
+
+cc_library(
+    name = "headers",
+    hdrs = [
+        "src/source/dependency/3rdparty/llhttp/include/llhttp.h",
+        "src/source/include/core_http_client.h",
+        "src/source/include/core_http_client_private.h",
+        "src/source/include/core_http_config_defaults.h",
+        "src/source/interface/transport_interface.h",
+    ],
+    includes = [
+        "src/source/dependency/3rdparty/llhttp/include",
+        "src/source/include",
+        "src/source/interface",
+    ],
+)
+
+filegroup(
+    name = "all_sources",
+    srcs = [
+        ":corehttp_sources",
+        ":llhttp_sources",
+    ],
+)

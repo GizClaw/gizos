@@ -1,0 +1,92 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+
+package(default_visibility = ["//libs/pal/providers/h2peer:__pkg__"])
+
+filegroup(
+    name = "build_metadata",
+    srcs = [
+        "CMakeLists.txt",
+        "sources.mk",
+    ],
+)
+
+cc_library(
+    name = "libsrtp",
+    srcs = [
+        "src/config.h",
+        "src/h2_libsrtp.c",
+        "src/h2_libsrtp_alloc.c",
+        "src/h2_libsrtp_crypto.c",
+        "src/h2_libsrtp_crypto_internal.h",
+        "src/h2_libsrtp_internal.h",
+        "src/netinet/in.h",
+        "@h2_vendor_libsrtp//:h2_protocol_sources",
+    ],
+    hdrs = ["include/h2_libsrtp.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "//tools/bazel/platforms:is_windows_x86_64": ["/Ilibs/pal/providers/h2peer/internal/libsrtp/src"],
+        "//conditions:default": ["-Ilibs/pal/providers/h2peer/internal/libsrtp/src"],
+    }) + h2_gnu_only_copts([
+        "-Wno-error=incompatible-pointer-types",
+        "-Wno-error=format",
+        "-fno-strict-aliasing",
+    ]),
+    data = [
+        ":build_metadata",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = ["HAVE_CONFIG_H"],
+    deps = [
+        "//libs/pal",
+        "@h2_vendor_libsrtp//:h2_private_headers",
+    ],
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = ["tests/test_public_headers.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libsrtp"],
+)
+
+cc_test(
+    name = "public_headers_cpp_test",
+    srcs = ["tests/test_public_headers.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":libsrtp"],
+)
+
+cc_test(
+    name = "rtp_rtcp_test",
+    srcs = ["tests/test_rtp_rtcp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":libsrtp",
+        "//libs/pal/providers/wolfssl:wolfcrypt",
+    ],
+)

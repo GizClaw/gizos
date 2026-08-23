@@ -1,0 +1,115 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "is_bk7258",
+    define_values = {"h2_firmware_target": "bk7258"},
+)
+
+config_setting(
+    name = "is_windows_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:windows",
+    ],
+)
+
+BK7258_COREMQTT_DEFINES = [
+    "%s=h2_bk_coremqtt_%s" % (symbol, symbol)
+    for symbol in [
+        "MQTT_Init",
+        "MQTT_InitStatefulQoS",
+        "MQTT_Connect",
+        "MQTT_Subscribe",
+        "MQTT_Publish",
+        "MQTT_CancelCallback",
+        "MQTT_Ping",
+        "MQTT_Unsubscribe",
+        "MQTT_Disconnect",
+        "MQTT_ProcessLoop",
+        "MQTT_ReceiveLoop",
+        "MQTT_GetPacketId",
+        "MQTT_MatchTopic",
+        "MQTT_GetSubAckStatusCodes",
+        "MQTT_Status_strerror",
+        "MQTT_SerializePublishHeaderWithoutTopic",
+        "MQTT_SerializeConnectFixedHeader",
+        "MQTT_GetConnectPacketSize",
+        "MQTT_SerializeConnect",
+        "MQTT_GetSubscribePacketSize",
+        "MQTT_SerializeSubscribeHeader",
+        "MQTT_SerializeUnsubscribeHeader",
+        "MQTT_SerializeSubscribe",
+        "MQTT_GetUnsubscribePacketSize",
+        "MQTT_SerializeUnsubscribe",
+        "MQTT_GetPublishPacketSize",
+        "MQTT_SerializePublish",
+        "MQTT_SerializePublishHeader",
+        "MQTT_SerializeAck",
+        "MQTT_GetDisconnectPacketSize",
+        "MQTT_SerializeDisconnect",
+        "MQTT_GetPingreqPacketSize",
+        "MQTT_SerializePingreq",
+        "MQTT_DeserializePublish",
+        "MQTT_DeserializeAck",
+        "MQTT_GetIncomingPacketTypeAndLength",
+        "MQTT_ProcessIncomingPacketTypeAndLength",
+        "MQTT_ReserveState",
+        "MQTT_CalculateStatePublish",
+        "MQTT_UpdateStatePublish",
+        "MQTT_RemoveStateRecord",
+        "MQTT_CalculateStateAck",
+        "MQTT_UpdateStateAck",
+        "MQTT_PubrelToResend",
+        "MQTT_PublishToResend",
+        "MQTT_State_strerror",
+    ]
+]
+
+cc_library(
+    name = "coremqtt",
+    srcs = [
+        "src/source/core_mqtt.c",
+        "src/source/core_mqtt_serializer.c",
+        "src/source/core_mqtt_state.c",
+    ],
+    hdrs = [
+        "src/source/include/core_mqtt.h",
+        "src/source/include/core_mqtt_config_defaults.h",
+        "src/source/include/core_mqtt_serializer.h",
+        "src/source/include/core_mqtt_state.h",
+        "src/source/interface/transport_interface.h",
+    ],
+    conlyopts = select({
+        ":is_windows_x86_64": [
+            "/experimental:c11atomics",
+            "/std:c11",
+        ],
+        "//conditions:default": ["-std=c11"],
+    }),
+    copts = select({
+        ":is_windows_x86_64": ["/W4"],
+        "//conditions:default": [
+            "-Wall",
+            "-Wextra",
+            "-Wno-sign-conversion",
+            "-Wno-unused-parameter",
+        ],
+    }),
+    defines = [
+        "MQTT_DO_NOT_USE_CUSTOM_CONFIG",
+        "MQTT_MAX_CONNACK_RECEIVE_RETRY_COUNT=10U",
+        "MQTT_PINGRESP_TIMEOUT_MS=1000U",
+        "MQTT_RECV_POLLING_TIMEOUT_MS=10U",
+        "MQTT_SEND_TIMEOUT_MS=10U",
+        "MQTT_SUB_UNSUB_MAX_VECTORS=8U",
+    ] + select({
+        ":is_bk7258": BK7258_COREMQTT_DEFINES,
+        "//conditions:default": [],
+    }),
+    includes = [
+        "src/source/include",
+        "src/source/interface",
+    ],
+)

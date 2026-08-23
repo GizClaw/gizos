@@ -1,0 +1,368 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "H2_WARNING_COPTS_NO_ERROR", "h2_gnu_only_copts")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "turn_refresh",
+    srcs = ["src/turn/h2_peer_turn.c"],
+    hdrs = ["src/turn/h2_peer_turn.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+)
+
+cc_library(
+    name = "portable_protocol_providers",
+    srcs = [
+        "src/providers/portable/address.c",
+        "src/providers/portable/agent.c",
+        "src/providers/portable/base64.c",
+        "src/providers/portable/dtls_srtp.c",
+        "src/providers/portable/ice.c",
+        "src/providers/portable/ice_transport.c",
+        "src/providers/portable/peer.c",
+        "src/providers/portable/peer_connection.c",
+        "src/providers/portable/ports.c",
+        "src/providers/portable/rtcp.c",
+        "src/providers/portable/rtp.c",
+        "src/providers/portable/sctp.c",
+        "src/providers/portable/sdp.c",
+        "src/providers/portable/socket.c",
+        "src/providers/portable/stun.c",
+        "src/providers/portable/utils.c",
+    ],
+    hdrs = glob(["src/providers/portable/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS_NO_ERROR + h2_gnu_only_copts([
+        "-Wno-ignored-qualifiers",
+        "-Wno-incompatible-pointer-types",
+        "-Wno-sign-compare",
+        "-Wno-unused-but-set-variable",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
+    ]),
+    defines = ["CONFIG_SDP_BUFFER_SIZE=12000"] + select({
+        "//tools/bazel/platforms:is_esp32p4": ["LOG_LEVEL=-1"],
+        "//tools/bazel/platforms:is_esp32s3": ["LOG_LEVEL=-1"],
+        "//conditions:default": [],
+    }),
+    includes = ["src/providers/portable"],
+    deps = [
+        ":turn_refresh",
+        "//libs/pal",
+        "//libs/pal/providers/h2peer/internal/libsrtp",
+    ],
+)
+
+cc_test(
+    name = "turn_refresh_test",
+    srcs = ["tests/test_turn.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":turn_refresh"],
+)
+
+cc_test(
+    name = "portable_stun_test",
+    srcs = ["tests/test_portable_stun.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_net_addr_test",
+    srcs = ["tests/test_portable_net_addr.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_log_test",
+    srcs = ["tests/test_portable_log.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_dtls_test",
+    srcs = ["tests/test_portable_dtls.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":portable_protocol_providers",
+        "//libs/pal/providers/wolfssl:wolfcrypt",
+    ],
+)
+
+cc_test(
+    name = "portable_crypto_test",
+    srcs = ["tests/test_portable_crypto.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_rtcp_test",
+    srcs = ["tests/test_portable_rtcp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_rtp_test",
+    srcs = ["tests/test_portable_rtp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_dcep_test",
+    srcs = ["tests/test_portable_dcep.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_sctp_test",
+    srcs = ["tests/test_portable_sctp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_ice_test",
+    srcs = ["tests/test_portable_ice.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_test(
+    name = "portable_ice_tcp_test",
+    srcs = ["tests/test_portable_ice_tcp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src/providers/portable"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":portable_protocol_providers"],
+)
+
+cc_library(
+    name = "h2peer",
+    srcs = [
+        "src/data_channel/h2_peer_dcep.c",
+        "src/data_channel/h2_peer_dcep.h",
+        "src/h2_peer_internal.h",
+        "src/h2_peer_webrtc.c",
+        "src/ice/h2_peer_ice.c",
+        "src/ice/h2_peer_ice.h",
+        "src/media/h2_peer_rtp.c",
+        "src/media/h2_peer_rtp.h",
+        "src/providers/h2_peer_portable_backend.c",
+        "src/providers/h2_peer_portable_backend.h",
+        "src/providers/h2_peer_providers.c",
+        "src/providers/h2_peer_providers.h",
+        "src/sdp/h2_peer_sdp.c",
+        "src/sdp/h2_peer_sdp.h",
+        "src/stun/h2_peer_stun.c",
+        "src/stun/h2_peer_stun.h",
+    ],
+    hdrs = ["include/h2_peer.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = [
+        "CMakeLists.txt",
+        "LICENSE.libpeer",
+    ],
+    includes = [
+        "include",
+        "src/providers/portable",
+    ],
+    deps = [
+        ":portable_protocol_providers",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "lifecycle_test",
+    srcs = [
+        "src/h2_peer_internal.h",
+        "src/providers/h2_peer_providers.h",
+        "tests/test_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2peer",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "malformed_corpus_test",
+    srcs = [
+        "src/data_channel/h2_peer_dcep.h",
+        "src/media/h2_peer_rtp.h",
+        "src/sdp/h2_peer_sdp.h",
+        "src/stun/h2_peer_stun.h",
+        "tests/test_malformed.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2peer"],
+)
+
+cc_test(
+    name = "public_header_c_test",
+    srcs = ["tests/test_public_header.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2peer"],
+)
+
+cc_test(
+    name = "public_header_cxx_test",
+    srcs = ["tests/test_public_header.cc"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2peer"],
+)
+
+cc_test(
+    name = "wire_test",
+    srcs = [
+        "src/data_channel/h2_peer_dcep.h",
+        "src/media/h2_peer_rtp.h",
+        "src/sdp/h2_peer_sdp.h",
+        "src/stun/h2_peer_stun.h",
+        "tests/test_wire.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2peer"],
+)

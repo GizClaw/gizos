@@ -1,0 +1,189 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+WOLFCRYPT_UPSTREAM_SOURCES = [
+    "wolfcrypt/src/aes.c",
+    "wolfcrypt/src/chacha.c",
+    "wolfcrypt/src/chacha20_poly1305.c",
+    "wolfcrypt/src/curve25519.c",
+    "wolfcrypt/src/ecc.c",
+    "wolfcrypt/src/fe_operations.c",
+    "wolfcrypt/src/hash.c",
+    "wolfcrypt/src/hmac.c",
+    "wolfcrypt/src/memory.c",
+    "wolfcrypt/src/md5.c",
+    "wolfcrypt/src/poly1305.c",
+    "wolfcrypt/src/random.c",
+    "wolfcrypt/src/sha256.c",
+    "wolfcrypt/src/sha.c",
+    "wolfcrypt/src/sp_c32.c",
+    "wolfcrypt/src/sp_int.c",
+    "wolfcrypt/src/wolfmath.c",
+]
+
+WOLFCRYPT_BK3633_THUMB_NON_LTO_SOURCES = [
+    "wolfcrypt/src/hmac.c",
+]
+
+WOLFCRYPT_BK3633_THUMB_LTO_SOURCES = [
+    "wolfcrypt/src/ecc.c",
+    "wolfcrypt/src/sp_int.c",
+]
+
+WOLFCRYPT_BK3633_ARM_LTO_SOURCES = [
+    source
+    for source in WOLFCRYPT_UPSTREAM_SOURCES
+    if source not in WOLFCRYPT_BK3633_THUMB_NON_LTO_SOURCES
+    if source not in WOLFCRYPT_BK3633_THUMB_LTO_SOURCES
+]
+
+WOLFCRYPT_UPSTREAM_HEADERS = [
+    "wolfssl/wolfcrypt/aes.h",
+    "wolfssl/wolfcrypt/asn.h",
+    "wolfssl/wolfcrypt/asn_public.h",
+    "wolfssl/wolfcrypt/chacha.h",
+    "wolfssl/wolfcrypt/chacha20_poly1305.h",
+    "wolfssl/wolfcrypt/cpuid.h",
+    "wolfssl/wolfcrypt/cryptocb.h",
+    "wolfssl/wolfcrypt/curve25519.h",
+    "wolfssl/wolfcrypt/ecc.h",
+    "wolfssl/wolfcrypt/error-crypt.h",
+    "wolfssl/wolfcrypt/fe_operations.h",
+    "wolfssl/wolfcrypt/ge_operations.h",
+    "wolfssl/wolfcrypt/hash.h",
+    "wolfssl/wolfcrypt/hmac.h",
+    "wolfssl/wolfcrypt/integer.h",
+    "wolfssl/wolfcrypt/libwolfssl_sources.h",
+    "wolfssl/wolfcrypt/logging.h",
+    "wolfssl/wolfcrypt/memory.h",
+    "wolfssl/wolfcrypt/md5.h",
+    "wolfssl/wolfcrypt/misc.h",
+    "wolfssl/wolfcrypt/oid_sum.h",
+    "wolfssl/wolfcrypt/poly1305.h",
+    "wolfssl/wolfcrypt/random.h",
+    "wolfssl/wolfcrypt/settings.h",
+    "wolfssl/wolfcrypt/sha256.h",
+    "wolfssl/wolfcrypt/sha.h",
+    "wolfssl/wolfcrypt/sp.h",
+    "wolfssl/wolfcrypt/sp_int.h",
+    "wolfssl/wolfcrypt/types.h",
+    "wolfssl/wolfcrypt/visibility.h",
+    "wolfssl/wolfcrypt/wc_port.h",
+    "wolfssl/wolfcrypt/wolfmath.h",
+]
+
+DESKTOP_WOLFSSL_UPSTREAM_SOURCES = [
+    "src/dtls.c",
+    "src/internal.c",
+    "src/keys.c",
+    "src/ocsp.c",
+    "src/ssl.c",
+    "src/tls.c",
+    "src/tls13.c",
+    "src/wolfio.c",
+    "wolfcrypt/src/aes.c",
+    "wolfcrypt/src/asn.c",
+    "wolfcrypt/src/chacha.c",
+    "wolfcrypt/src/chacha20_poly1305.c",
+    "wolfcrypt/src/coding.c",
+    "wolfcrypt/src/cpuid.c",
+    "wolfcrypt/src/curve25519.c",
+    "wolfcrypt/src/ecc.c",
+    "wolfcrypt/src/error.c",
+    "wolfcrypt/src/fe_low_mem.c",
+    "wolfcrypt/src/fe_operations.c",
+    "wolfcrypt/src/hash.c",
+    "wolfcrypt/src/hmac.c",
+    "wolfcrypt/src/kdf.c",
+    "wolfcrypt/src/logging.c",
+    "wolfcrypt/src/memory.c",
+    "wolfcrypt/src/md5.c",
+    "wolfcrypt/src/poly1305.c",
+    "wolfcrypt/src/random.c",
+    "wolfcrypt/src/rsa.c",
+    "wolfcrypt/src/sha.c",
+    "wolfcrypt/src/sha256.c",
+    "wolfcrypt/src/sha512.c",
+    "wolfcrypt/src/signature.c",
+    "wolfcrypt/src/sp_c32.c",
+    "wolfcrypt/src/sp_c64.c",
+    "wolfcrypt/src/sp_int.c",
+    "wolfcrypt/src/wc_encrypt.c",
+    "wolfcrypt/src/wc_port.c",
+    "wolfcrypt/src/wolfmath.c",
+]
+
+filegroup(
+    name = "sources",
+    srcs = ["src/" + path for path in WOLFCRYPT_UPSTREAM_SOURCES],
+)
+
+filegroup(
+    name = "bk3633_arm_lto_sources",
+    srcs = ["src/" + path for path in WOLFCRYPT_BK3633_ARM_LTO_SOURCES],
+)
+
+filegroup(
+    name = "bk3633_thumb_lto_sources",
+    srcs = ["src/" + path for path in WOLFCRYPT_BK3633_THUMB_LTO_SOURCES],
+)
+
+filegroup(
+    name = "bk3633_thumb_non_lto_sources",
+    srcs = ["src/" + path for path in WOLFCRYPT_BK3633_THUMB_NON_LTO_SOURCES],
+)
+
+filegroup(
+    name = "desktop_sources",
+    srcs = ["src/" + path for path in DESKTOP_WOLFSSL_UPSTREAM_SOURCES],
+)
+
+cc_library(
+    name = "wolfcrypt_header_group",
+    hdrs = ["src/" + path for path in WOLFCRYPT_UPSTREAM_HEADERS],
+    includes = ["src"],
+    textual_hdrs = ["src/wolfcrypt/src/misc.c"],
+)
+
+cc_library(
+    name = "desktop_headers",
+    hdrs = glob(["src/wolfssl/**/*.h"]),
+    includes = ["src"],
+    textual_hdrs = [
+        "src/src/bio.c",
+        "src/src/conf.c",
+        "src/src/pk.c",
+        "src/src/pk_ec.c",
+        "src/src/pk_rsa.c",
+        "src/src/ssl_api_cert.c",
+        "src/src/ssl_api_crl_ocsp.c",
+        "src/src/ssl_api_pk.c",
+        "src/src/ssl_asn1.c",
+        "src/src/ssl_bn.c",
+        "src/src/ssl_certman.c",
+        "src/src/ssl_crypto.c",
+        "src/src/ssl_ech.c",
+        "src/src/ssl_load.c",
+        "src/src/ssl_misc.c",
+        "src/src/ssl_p7p12.c",
+        "src/src/ssl_sess.c",
+        "src/src/ssl_sk.c",
+        "src/src/x509.c",
+        "src/src/x509_str.c",
+        "src/wolfcrypt/src/asn_orig.c",
+        "src/wolfcrypt/src/evp.c",
+        "src/wolfcrypt/src/evp_pk.c",
+        "src/wolfcrypt/src/misc.c",
+    ],
+)
+
+filegroup(
+    name = "all_sources",
+    srcs = [
+        ":desktop_headers",
+        ":desktop_sources",
+        ":sources",
+        ":wolfcrypt_header_group",
+    ],
+)

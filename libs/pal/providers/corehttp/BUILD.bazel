@@ -1,0 +1,91 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "llhttp",
+    srcs = [
+        "src/h2_corehttp_no_standard_stream.h",
+        "@h2_vendor_corehttp//:llhttp_sources",
+    ],
+    conlyopts = H2_C11_OPTS + select({
+        "//tools/bazel/platforms:is_windows_x86_64": [
+            "/FIlibs/pal/providers/corehttp/src/h2_corehttp_no_standard_stream.h",
+        ],
+        "//conditions:default": [
+            "-include",
+            "libs/pal/providers/corehttp/src/h2_corehttp_no_standard_stream.h",
+        ],
+    }),
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
+        "-Wno-sign-conversion",
+        "-Wno-unused-parameter",
+    ]) + select({
+        "//tools/bazel/platforms:is_bk3633": ["-Wno-type-limits"],
+        "//tools/bazel/platforms:is_bk7258": ["-Wno-type-limits"],
+        "//tools/bazel/platforms:is_windows_x86_64": [
+            "/wd4100",
+            "/wd4152",
+            "/wd4244",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["//tools/bazel:vendor_third_party_corehttp"],
+)
+
+cc_library(
+    name = "corehttp",
+    srcs = [
+        "src/h2_corehttp.c",
+        "src/h2_corehttp_internal.h",
+        "src/h2_corehttp_response.c",
+        "src/h2_corehttp_transport.c",
+        "src/h2_corehttp_url.c",
+        "@h2_vendor_corehttp//:corehttp_sources",
+    ],
+    hdrs = [
+        "include/core_http_config.h",
+        "include/h2_corehttp.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
+        "-Wno-sign-conversion",
+        "-Wno-unused-parameter",
+    ]) + select({
+        "//tools/bazel/platforms:is_bk3633": ["-Wno-type-limits"],
+        "//tools/bazel/platforms:is_bk7258": ["-Wno-type-limits"],
+        "//tools/bazel/platforms:is_windows_x86_64": [
+            "/wd4100",
+            "/wd4152",
+            "/wd4244",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    deps = [
+        ":llhttp",
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_corehttp",
+    ],
+)
+
+cc_test(
+    name = "corehttp_test",
+    srcs = [
+        "tests/fake_net.c",
+        "tests/fake_net.h",
+        "tests/test_corehttp.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":corehttp"],
+)

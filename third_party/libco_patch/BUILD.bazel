@@ -1,0 +1,14 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "libco.c",
+    "backends/arm.c",
+    "backends/cortex_m.c",
+    "backends/emscripten/h2_libco_emscripten.c",
+    "backends/esp32s3/h2_esp_libco_xtensa.S",
+    "backends/esp32s3/h2_esp_libco_xtensa.c",
+    "backends/esp32s3/h2_esp_libco_xtensa_internal.h",
+    "backends/riscv32/h2_libco_riscv32.S",
+    "backends/riscv32/h2_libco_riscv32.c",
+    "backends/riscv32/h2_libco_riscv32_internal.h",
+])
