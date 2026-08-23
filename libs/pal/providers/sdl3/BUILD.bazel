@@ -1,0 +1,49 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "sdl3",
+    srcs = [
+        "src/h2_sdl3_display.cpp",
+        "src/h2_sdl3_events.cpp",
+        "src/h2_sdl3_internal.h",
+    ],
+    hdrs = ["include/h2_sdl3.h"],
+    copts = H2_WARNING_COPTS + [
+        "-Wno-thread-safety-analysis",
+    ],
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    local_defines = ["SDL_DISABLE_OLD_NAMES"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "@h2_vendor_sdl3//:sdl3",
+    ],
+)
+
+cc_test(
+    name = "sdl3_test",
+    srcs = ["tests/test_h2_sdl3_display.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    local_defines = ["SDL_DISABLE_OLD_NAMES"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":sdl3",
+        "@h2_vendor_sdl3//:sdl3",
+    ],
+)

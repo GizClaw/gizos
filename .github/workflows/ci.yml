@@ -102,6 +102,29 @@ jobs:
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
 
+      - name: Install Linux SDL3 build dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          apt_network_options=(
+            -o Acquire::Retries=0
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          sudo apt-get "${apt_network_options[@]}" update
+          sudo apt-get "${apt_network_options[@]}" install --yes \
+            cmake libx11-dev libxext-dev libxi-dev libxrandr-dev \
+            ninja-build pkg-config
+
+      - name: Install macOS SDL3 build dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install cmake ninja pkg-config
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
+
       - name: Validate Bazel remote cache variables
         env:
           CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
