@@ -24,6 +24,7 @@ cc_library(
 
 cc_library(
     name = "wolfcrypt",
+    alwayslink = True,
     srcs = [
         "src/h2_wolfcrypt_crypto.c",
         "src/h2_wolfcrypt_crypto_internal.h",
@@ -199,6 +200,7 @@ cc_library(
 
 cc_library(
     name = "wolfssl",
+    alwayslink = True,
     srcs = [
         "src/full/user_settings.h",
         "src/h2_wolfcrypt_crypto.c",
