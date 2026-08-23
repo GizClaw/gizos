@@ -39,6 +39,42 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      - id: app-token
+        name: Create read-only h2vivi token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.H2VIVI_GITHUB_APP_ID }}
+          private-key: ${{ secrets.H2VIVI_GITHUB_APP_PRIVATE_KEY }}
+          owner: h2vivi
+
+      - name: Check out Firmwares devenv
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: h2vivi/firmware-devenv
+          path: firmware-devenv
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check out ESP-IDF from Firmwares devenv
+        shell: bash
+        run: git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+
+      - name: Restore ESP-IDF tool cache
+        id: esp-idf-cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: firmware-devenv/.tools/esp-idf
+          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
+
+      - name: Install ESP-IDF tools
+        shell: bash
+        run: |
+          export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
+          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4,esp32c5
+
       - name: Validate Bazel remote cache variables
         env:
           CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
@@ -99,7 +135,17 @@ jobs:
           chmod +x "$RUNNER_TEMP/bazel"
 
       - name: Build catalog slice
-        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_VERSION="${{ steps.version.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
+        run: |
+          . firmware-devenv/export.sh
+          make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_VERSION="${{ steps.version.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
+
+      - name: Save ESP-IDF tool cache seed
+        if: steps.esp-idf-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: firmware-devenv/.tools/esp-idf
+          key: ${{ steps.esp-idf-cache.outputs.cache-primary-key }}
 
       - name: Upload catalog slice
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
