@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BAZEL_VERSION: "9.2.0"
+  BAZEL_LINUX_X86_64_SHA256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+
+jobs:
+  bazel:
+    name: Bazel public baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install and verify Bazel
+        shell: bash
+        run: |
+          bazel_path="$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error \
+            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" \
+            --output "$bazel_path"
+          test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
+          chmod +x "$bazel_path"
+          printf 'BAZEL=%s\n' "$bazel_path" >> "$GITHUB_ENV"
+
+      - name: Query public graph
+        run: "$BAZEL query //..."
+
+      - name: Build public graph
+        run: "$BAZEL build //..."
+
+      - name: Test public graph
+        run: "$BAZEL test //..."

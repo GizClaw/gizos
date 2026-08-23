@@ -1,0 +1,11 @@
+common --enable_bzlmod
+common --noenable_workspace
+common --enable_platform_specific_config
+common --announce_rc
+
+build:linux --define=h2_host_os=linux
+build:macos --define=h2_host_os=macos
+build:windows --define=h2_host_os=windows
+
+test --build_tests_only
+test --test_output=errors

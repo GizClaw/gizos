@@ -4,7 +4,7 @@ GizOS is a portable firmware and application platform for embedded devices, desk
 
 ## Status
 
-This repository is being bootstrapped. The initial commit establishes the public ownership roots before source code is imported and validated. Build and contribution instructions will be added together with the first independently buildable source snapshot.
+GizOS is being migrated into this repository in independently buildable waves. The current public baseline contains the Bazel workspace and the first target-independent utility library.
 
 ## Repository layout
 
@@ -24,8 +24,16 @@ Public packages must build and test without access to private repositories, cred
 
 ## Build system
 
-GizOS uses Bazel as the source of truth for supported build graphs, tests, tools, and artifacts. The repository will not advertise build commands until the imported public graph passes from a clean clone without private dependencies.
+GizOS uses Bazel as the source of truth for supported build graphs, tests, tools, and artifacts. Bazel 9.2.0 is selected by `.bazelversion`.
+
+```sh
+bazel query //...
+bazel build //...
+bazel test //...
+```
+
+These commands must pass from a clean clone without private repositories, credentials, services, product assets, or board definitions.
 
 ## License
 
-The source license has not been selected yet. A license file will be added before the first source-code release. Until then, publication of this repository does not grant permission to use, modify, or redistribute future source imports.
+GizOS is licensed under the [Apache License 2.0](LICENSE).

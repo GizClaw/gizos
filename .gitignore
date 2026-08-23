@@ -1,0 +1,29 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+gha-creds-*.json
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+.cache/
+tmp/
+temp/
+
+# Bazel output and local state
+/bazel-*
+/.bazelrc.user
+
+# Build output
+build/
+build-*/
+compile_commands.json
