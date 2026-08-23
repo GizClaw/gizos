@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["ikcp.BUILD.bazel"])
+
+filegroup(
+    name = "repository_overlays",
+    srcs = ["ikcp.BUILD.bazel"],
+)

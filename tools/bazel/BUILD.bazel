@@ -1,3 +1,11 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["cc_options.bzl"])
+
+cc_library(
+    name = "vendor_third_party_ikcp",
+    tags = ["manual"],
+    deps = ["@h2_vendor_ikcp//:ikcp"],
+)

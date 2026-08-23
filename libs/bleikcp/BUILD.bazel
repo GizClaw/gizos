@@ -1,0 +1,51 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "bleikcp",
+    srcs = [
+        "src/h2_bleikcp.c",
+        "src/h2_bleikcp_client.c",
+        "src/h2_bleikcp_internal.h",
+        "src/h2_bleikcp_server.c",
+    ],
+    hdrs = [
+        "include/h2_bleikcp.h",
+        "include/h2_bleikcp_client.h",
+        "include/h2_bleikcp_server.h",
+        "include/h2_bleikcp_types.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_ikcp",
+    ],
+)
+
+cc_test(
+    name = "bleikcp_test",
+    srcs = [
+        "src/h2_bleikcp_internal.h",
+        "tests/test_bleikcp.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":bleikcp"],
+)

@@ -1,0 +1,4 @@
+[submodule "third_party/ikcp"]
+	path = third_party/ikcp
+	url = https://github.com/skywind3000/kcp.git
+	shallow = true

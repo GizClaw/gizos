@@ -188,6 +188,25 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
+      "general": {
+        "bzlTransitiveDigest": "mx8oTTh/NII0YFU2I97ZxPAewF8GBVjttRRAw3Xr5iY=",
+        "usagesDigest": "UA3KqPcvvSXmRa1jkk8xtfqZi5oy6ReaY4AcQke+NGY=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "h2_vendor_ikcp": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:ikcp.BUILD.bazel",
+              "overlay_files": {},
+              "path": "third_party/ikcp",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          }
+        }
+      }
+    },
     "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
       "general": {
         "bzlTransitiveDigest": "NRXra7941UfmNUyIxnLt82V5hULluVGL2nBsijTl4j4=",

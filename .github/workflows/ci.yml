@@ -98,6 +98,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
 
       - name: Validate Bazel remote cache variables
         env:
@@ -207,6 +208,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
 
       - name: Validate Bazel remote cache variables
         shell: pwsh

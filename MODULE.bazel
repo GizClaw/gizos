@@ -8,3 +8,14 @@ bazel_dep(name = "rules_cc", version = "0.2.17")
 
 cc_configure = use_extension("@rules_cc//cc:extensions.bzl", "cc_configure_extension")
 use_repo(cc_configure, "local_config_cc")
+
+vendor_repositories = use_extension(
+    "//tools/bazel/vendor:repositories.bzl",
+    "vendor_repositories",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_ikcp",
+    build_file = "//third_party:ikcp.BUILD.bazel",
+    path = "third_party/ikcp",
+)
+use_repo(vendor_repositories, "h2_vendor_ikcp")
