@@ -1,0 +1,85 @@
+load("@rules_cc//cc:defs.bzl", "cc_toolchain")
+load(":cc_toolchain_config.bzl", "esp32s3_cc_toolchain_config")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "selected_compiler_inputs",
+    srcs = glob(
+        ["inputs/compiler/**"],
+        allow_empty = True,
+    ),
+)
+
+filegroup(
+    name = "selected_archiver_inputs",
+    srcs = glob(
+        ["inputs/archiver/**"],
+        allow_empty = True,
+    ),
+)
+
+filegroup(
+    name = "selected_sdk_headers",
+    srcs = glob(
+        ["inputs/sdk/**"],
+        allow_empty = True,
+    ),
+)
+
+filegroup(
+    name = "compiler_inputs",
+    srcs = glob(["bin/*"]) + [
+        ":selected_compiler_inputs",
+        ":selected_sdk_headers",
+        "@gizos//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+    ],
+)
+
+filegroup(
+    name = "archiver_inputs",
+    srcs = glob(["bin/*"]) + [
+        ":selected_archiver_inputs",
+        ":selected_compiler_inputs",
+        "@gizos//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+    ],
+)
+
+filegroup(
+    name = "tools",
+    srcs = [
+        ":archiver_inputs",
+        ":compiler_inputs",
+    ],
+)
+
+esp32s3_cc_toolchain_config(
+    name = "config",
+    builtin_include_directories = {BUILTIN_INCLUDE_DIRECTORIES},
+    system_include_directories = {SYSTEM_INCLUDE_DIRECTORIES},
+)
+
+cc_toolchain(
+    name = "cc_toolchain",
+    all_files = ":tools",
+    ar_files = ":archiver_inputs",
+    compiler_files = ":compiler_inputs",
+    dwp_files = ":tools",
+    linker_files = ":tools",
+    objcopy_files = ":tools",
+    strip_files = ":tools",
+    toolchain_config = ":config",
+    toolchain_identifier = "esp32s3-local-esp-15.2.0",
+)
+
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = {EXEC_CONSTRAINTS},
+    target_compatible_with = [
+        "@gizos//tools/bazel/platforms:cpu_xtensa",
+        "@platforms//os:none",
+        "@gizos//tools/bazel/platforms:target_esp32s3",
+    ],
+    toolchain = ":cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)

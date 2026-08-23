@@ -1,0 +1,6 @@
+esp32p4=riscv32-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0
+esp32s3=xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0
+esp32s3_archive_compiler=xtensa-esp-elf-gcc
+esp32s3_dynconfig=xtensa_esp32s3.so
+ninja=1.13.2
+python=esp-idf-v6.0-constraints

@@ -19,3 +19,17 @@ vendor_repositories.repository(
     path = "third_party/ikcp",
 )
 use_repo(vendor_repositories, "h2_vendor_ikcp")
+
+esp_repositories = use_extension(
+    "//tools/bazel/native_repositories:esp_repositories.bzl",
+    "esp_repositories",
+)
+use_repo(esp_repositories, "gizos_esp_idf_sdk", "gizos_esp_idf_tools")
+
+esp32s3_cc = use_extension(
+    "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl",
+    "esp32s3_cc_toolchain",
+)
+use_repo(esp32s3_cc, "gizos_esp32s3_cc_toolchain")
+
+register_toolchains("@gizos_esp32s3_cc_toolchain//:toolchain")

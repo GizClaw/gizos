@@ -4,6 +4,11 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(["cc_options.bzl"])
 
+exports_files([
+    "native_versions/esp_idf_commit.txt",
+    "native_versions/esp_idf_tool_versions.txt",
+])
+
 cc_library(
     name = "vendor_third_party_ikcp",
     tags = ["manual"],

@@ -188,6 +188,38 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//tools/bazel/native_repositories:esp_repositories.bzl%esp_repositories": {
+      "general": {
+        "bzlTransitiveDigest": "xYrTNiEjDRt6HCGirFQ1ZB38rSe2Xqm/9+QxdigPV10=",
+        "usagesDigest": "27pbg8JY2J8pAD9Uy37l9nn74s2yPtaj1zQpp/ffdsI=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "gizos_esp_idf_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:esp_repositories.bzl%_esp_sdk_repository",
+            "attributes": {
+              "commit_file": "@@//tools/bazel:native_versions/esp_idf_commit.txt"
+            }
+          },
+          "gizos_esp_idf_tools": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:esp_repositories.bzl%_esp_tools_repository",
+            "attributes": {}
+          }
+        }
+      }
+    },
+    "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
+      "general": {
+        "bzlTransitiveDigest": "E7loyOdrQJUsbZ9R+M5+cQmFKUTp6/lViuIKoA25k68=",
+        "usagesDigest": "ThNWcQs68cS58YVY8fxEeAgWxkPnQNftCcSnKccvnDE=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "gizos_esp32s3_cc_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%_esp32s3_cc_repository",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "mx8oTTh/NII0YFU2I97ZxPAewF8GBVjttRRAw3Xr5iY=",

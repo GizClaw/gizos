@@ -32,3 +32,9 @@ build:windows_x86_64 --enable_runfiles
 test --build_tests_only
 test --test_output=errors
 test --remote_download_outputs=minimal
+
+build:esp --repo_env=IDF_PATH
+build:esp --repo_env=IDF_TOOLS_PATH
+build:esp32s3 --config=esp
+build:esp32s3 --define=h2_firmware_target=esp32s3
+build:esp32s3 --platforms=//tools/bazel/platforms:esp32s3
