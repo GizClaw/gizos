@@ -363,6 +363,7 @@ def build(arguments: argparse.Namespace) -> None:
             raise RunnerError(f"prebuilt component {name} archive is invalid: {archive}")
     native_sources = resolve_native_sources(source_root, arguments.native_component_source)
     include_roots = resolve_include_roots(source_root, arguments.native_include_root)
+    project_makefile_label = Path(arguments.project_makefile).as_posix()
     project_makefile = resolve_under(
         source_root, arguments.project_makefile, "JieLi project makefile"
     )
@@ -437,7 +438,7 @@ def build(arguments: argparse.Namespace) -> None:
                 "JieLi build starting: "
                 f"target={arguments.target} "
                 f"entry={arguments.entry} "
-                f"project={project_makefile.relative_to(source_root).as_posix()} "
+                f"project={project_makefile_label} "
                 f"sdk_commit={expected_commit} "
                 f"native_sources={len(native_sources)} "
                 f"archives={len(archives)} "
@@ -491,7 +492,7 @@ def build(arguments: argparse.Namespace) -> None:
                 "postbuild": toolchain_identity(postbuild_locator),
                 "prebuilt_components": sorted(prebuilt_components),
                 "sdk_commit": expected_commit,
-                "project_makefile": project_makefile.relative_to(source_root).as_posix(),
+                "project_makefile": project_makefile_label,
                 "target": arguments.target,
                 "toolchain": toolchain_identity(toolchain_locator),
                 "version": arguments.version,
