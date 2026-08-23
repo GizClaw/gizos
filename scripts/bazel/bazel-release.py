@@ -169,6 +169,23 @@ def copy_unique(files: list[Path], output: Path) -> None:
 
 
 def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
+    discovery = command(
+        root,
+        [
+            bazel,
+            "query",
+            'kind("h2loader_tar_zlib rule", //projects/...)',
+            "--output=label",
+        ],
+    )
+    labels = sorted(
+        line.strip()
+        for line in discovery.stdout.splitlines()
+        if line.strip()
+    )
+    if not labels:
+        raise ReleaseError("Bazel firmware package discovery returned no labels")
+    expression = "set(%s)" % " ".join(labels)
     catalog: list[dict[str, str]] = []
     for config in CATALOG_CONFIGS:
         result = command(
@@ -178,7 +195,7 @@ def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
                 "cquery",
                 f"--config={config}",
                 f"--//tools/bazel:firmware_version={version}",
-                'kind("h2loader_tar_zlib rule", //projects/...)',
+                expression,
                 "--output=starlark",
                 "--starlark:file=tools/bazel/firmware_catalog.cquery",
             ],

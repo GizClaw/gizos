@@ -126,7 +126,15 @@ class ReleaseTest(unittest.TestCase):
                 stdout="",
                 stderr="ERROR: Starlark evaluation error",
             )
-            with mock.patch.object(release, "command", return_value=result):
+            discovery = subprocess.CompletedProcess(
+                args=["bazel", "query"],
+                returncode=0,
+                stdout="//projects/example/s3:package\n",
+                stderr="",
+            )
+            with mock.patch.object(
+                release, "command", side_effect=[discovery, result]
+            ):
                 with self.assertRaisesRegex(release.ReleaseError, "reported an error"):
                     release.build_catalog(ROOT, "bazel", "1.2.3", output)
 
@@ -165,12 +173,22 @@ class ReleaseTest(unittest.TestCase):
         }
         results = [
             subprocess.CompletedProcess(
-                args=["bazel", "cquery"],
+                args=["bazel", "query"],
                 returncode=0,
-                stdout=json.dumps(entries[config]) + "\n",
+                stdout="\n".join(
+                    entry["label"] for entry in entries.values()
+                ) + "\n",
                 stderr="",
-            )
-            for config in release.CATALOG_CONFIGS
+            ),
+            *[
+                subprocess.CompletedProcess(
+                    args=["bazel", "cquery"],
+                    returncode=0,
+                    stdout=json.dumps(entries[config]) + "\n",
+                    stderr="",
+                )
+                for config in release.CATALOG_CONFIGS
+            ],
         ]
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -178,15 +196,17 @@ class ReleaseTest(unittest.TestCase):
                 release, "command", side_effect=results
             ) as command:
                 release.build_catalog(ROOT, "bazel", "1.2.3", output)
-            self.assertEqual(command.call_count, 3)
+            self.assertEqual(command.call_count, 4)
+            discovery = command.call_args_list[0]
+            self.assertEqual(discovery.args[1][1], "query")
             for config, invocation in zip(
-                release.CATALOG_CONFIGS, command.call_args_list
+                release.CATALOG_CONFIGS, command.call_args_list[1:]
             ):
                 self.assertIn(f"--config={config}", invocation.args[1])
-                self.assertIn(
-                    'kind("h2loader_tar_zlib rule", //projects/...)',
-                    invocation.args[1],
-                )
+                expression = invocation.args[1][4]
+                self.assertTrue(expression.startswith("set("), expression)
+                for entry in entries.values():
+                    self.assertIn(entry["label"], expression)
             catalog = json.loads(
                 (output / "firmware-catalog.json").read_text(encoding="utf-8")
             )
