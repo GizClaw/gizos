@@ -401,6 +401,10 @@ typedef struct h2_pal_ble_vtable {
         void *user,
         h2_pal_ble_adv_set_t *set,
         const h2_pal_ble_adv_data_t *data);
+    h2_pal_result_t (*adv_set_set_scan_response_data)(
+        void *user,
+        h2_pal_ble_adv_set_t *set,
+        const h2_pal_ble_adv_data_t *data);
     h2_pal_result_t (*adv_set_start)(void *user, h2_pal_ble_adv_set_t *set);
     h2_pal_result_t (*adv_set_stop)(void *user, h2_pal_ble_adv_set_t *set);
     h2_pal_result_t (*adv_set_destroy)(void *user, h2_pal_ble_adv_set_t *set);
@@ -601,6 +605,27 @@ static inline h2_pal_result_t h2_pal_ble_adv_set_set_data(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return ble->vtable->adv_set_set_data(ble->user, set, data);
+}
+
+/**
+ * Copy legacy scan-response data into one connectable advertising set.
+ *
+ * The backend copies @p data before returning. Providers that do not support
+ * independently configured scan-response data return H2_PAL_ERR_UNSUPPORTED.
+ */
+static inline h2_pal_result_t h2_pal_ble_adv_set_set_scan_response_data(
+    const h2_pal_ble_host_api_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const h2_pal_ble_adv_data_t *data) {
+    if (ble == NULL || set == NULL || data == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (ble->vtable == NULL ||
+        ble->vtable->adv_set_set_scan_response_data == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return ble->vtable->adv_set_set_scan_response_data(
+        ble->user, set, data);
 }
 
 /** Start one advertising set without changing any other set. */

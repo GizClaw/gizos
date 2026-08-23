@@ -1,4 +1,5 @@
 #include "h2/pal/hal/h2_pal_ble.h"
+#include "h2/pal/h2_pal_unsupported.h"
 
 #include <assert.h>
 #include <string.h>
@@ -7,6 +8,7 @@ typedef struct advertising_fake {
     unsigned calls;
     h2_pal_ble_adv_params_t params;
     unsigned set_data_calls;
+    unsigned set_scan_response_data_calls;
     unsigned set_start_calls;
     unsigned set_stop_calls;
     unsigned set_destroy_calls;
@@ -45,6 +47,17 @@ static h2_pal_result_t adv_set_set_data(
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t adv_set_set_scan_response_data(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const h2_pal_ble_adv_data_t *data) {
+    advertising_fake_t *fake = user;
+    assert(set == (h2_pal_ble_adv_set_t *)fake);
+    assert(data != NULL);
+    ++fake->set_scan_response_data_calls;
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t adv_set_start(void *user, h2_pal_ble_adv_set_t *set) {
     advertising_fake_t *fake = user;
     assert(set == (h2_pal_ble_adv_set_t *)fake);
@@ -73,6 +86,7 @@ int main(void) {
         .start_advertising = start_advertising,
         .adv_set_create = adv_set_create,
         .adv_set_set_data = adv_set_set_data,
+        .adv_set_set_scan_response_data = adv_set_set_scan_response_data,
         .adv_set_start = adv_set_start,
         .adv_set_stop = adv_set_stop,
         .adv_set_destroy = adv_set_destroy,
@@ -108,13 +122,35 @@ int main(void) {
     assert(set == (h2_pal_ble_adv_set_t *)&fake);
     h2_pal_ble_adv_data_t data = { .local_name = "multiple-set" };
     assert(h2_pal_ble_adv_set_set_data(&api, set, &data) == H2_PAL_OK);
+    assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, &data) ==
+           H2_PAL_OK);
     assert(h2_pal_ble_adv_set_start(&api, set) == H2_PAL_OK);
     assert(h2_pal_ble_adv_set_stop(&api, set) == H2_PAL_OK);
     assert(h2_pal_ble_adv_set_destroy(&api, set) == H2_PAL_OK);
     assert(fake.set_data_calls == 1u);
+    assert(fake.set_scan_response_data_calls == 1u);
     assert(fake.set_start_calls == 1u);
     assert(fake.set_stop_calls == 1u);
     assert(fake.set_destroy_calls == 1u);
+
+    assert(h2_pal_ble_adv_set_set_scan_response_data(NULL, set, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_ble_adv_set_set_scan_response_data(&api, NULL, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, NULL) ==
+           H2_PAL_ERR_INVALID_ARG);
+    h2_pal_ble_vtable_t missing_operation_vtable = vtable;
+    missing_operation_vtable.adv_set_set_scan_response_data = NULL;
+    const h2_pal_ble_host_api_t missing_operation_api = {
+        .user = &fake,
+        .vtable = &missing_operation_vtable,
+    };
+    assert(h2_pal_ble_adv_set_set_scan_response_data(
+               &missing_operation_api, set, &data) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_ble_adv_set_set_scan_response_data(
+               h2_pal_unsupported_ble_host_api(), set, &data) ==
+           H2_PAL_ERR_UNSUPPORTED);
 
     params.type = (h2_pal_ble_adv_type_t)9;
     assert(h2_pal_ble_start_advertising(&api, &params) == H2_PAL_ERR_INVALID_ARG);
