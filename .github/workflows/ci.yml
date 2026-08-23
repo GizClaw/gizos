@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,6 +27,37 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Validate Bazel remote cache variables
+        env:
+          CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
+          CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+        shell: bash
+        run: |
+          configured=0
+          for value in "$CACHE_PROJECT" "$CACHE_URL" "$CACHE_PROVIDER" "$CACHE_WRITER"; do
+            if [ -n "$value" ]; then configured=$((configured + 1)); fi
+          done
+          if [ "$configured" -eq 0 ]; then
+            echo 'Bazel remote cache is not provisioned; continuing without it.'
+          elif [ "$configured" -ne 4 ]; then
+            echo 'Bazel remote cache repository variables are incomplete.' >&2
+            exit 1
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+            echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
+            exit 1
+          fi
+
+      - name: Authenticate Bazel remote cache
+        if: vars.BAZEL_REMOTE_CACHE_URL != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
       - name: Install and verify Bazel
         shell: bash
         run: |
@@ -37,11 +69,21 @@ jobs:
           chmod +x "$bazel_path"
           printf 'BAZEL=%s\n' "$bazel_path" >> "$GITHUB_ENV"
 
-      - name: Query public graph
-        run: "$BAZEL query //..."
-
-      - name: Build public graph
-        run: "$BAZEL build //..."
-
-      - name: Test public graph
-        run: "$BAZEL test //..."
+      - name: Validate public graph
+        env:
+          BAZEL_REMOTE_CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
+        shell: bash
+        run: |
+          cache_args=()
+          if [ -n "$BAZEL_REMOTE_CACHE_URL" ]; then
+            cache_args=(
+              "--remote_cache=${BAZEL_REMOTE_CACHE_URL%/}"
+              --google_default_credentials
+              --remote_timeout=60
+              --remote_retries=5
+              --remote_upload_local_results=true
+            )
+          fi
+          "$BAZEL" "${cache_args[@]}" query //...
+          "$BAZEL" "${cache_args[@]}" build --remote_download_outputs=minimal //...
+          "$BAZEL" "${cache_args[@]}" test --remote_download_outputs=minimal //...
