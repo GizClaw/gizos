@@ -99,18 +99,15 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 
 Native firmware action 向 Bazel 声明每个 action 使用 4 CPU 和 4 GiB memory，并把底层 ESP-IDF/BK build 的并发限制为 4。Bazel 根据 runner 的可用资源自动决定同时运行多少个独立 firmware action；升级单台 runner 会自然提高 launcher 并行数，不需要为每个 launcher 创建 GitHub matrix job。
 
-CI 按 execution class 通过 repository variable 选择组织级 Larger Runner：
+CI 按 execution class 通过 repository variable 选择 runner。GizOS 保持与 Firmwares 相同的变量接口和 class assignment，但 runner label 必须属于 `GizClaw` 组织可用的 runner pool：
 
-- `FIRMWARE_LINUX_RUNNER` 使用 `firmwares-ubuntu-24.04-2core`，服务 ESP32-P4、BK3633 与 CI required aggregator；
-- `FIRMWARE_LINUX_4CORE_RUNNER` 使用 `firmwares-ubuntu-24.04-4core`，服务 Android Build/Test、Test coverage 与 K4B；
-- `FIRMWARE_LINUX_8CORE_RUNNER` 使用 `firmwares-ubuntu-24.04-8core`，服务 Linux Build/Test、ESP32-S3 与 BK7258；
-- `FIRMWARE_MACOS_RUNNER` 使用 `firmwares-macos-15-5core`，服务 macOS Build/Test；
-- `FIRMWARE_WINDOWS_RUNNER` 使用 `firmwares-windows-2025-8core`，服务 Windows Build/Test。
+- `FIRMWARE_LINUX_RUNNER` 服务 ESP32-P4、BK3633 与 CI required aggregator；
+- `FIRMWARE_LINUX_4CORE_RUNNER` 服务 Android Build/Test、Test coverage 与 K4B；
+- `FIRMWARE_LINUX_8CORE_RUNNER` 服务 Linux Build/Test、ESP32-S3 与 BK7258；
+- `FIRMWARE_MACOS_RUNNER` 服务 macOS Build/Test；
+- `FIRMWARE_WINDOWS_RUNNER` 服务 Windows Build/Test。
 
-4-core 与 8-core Linux runner group 各需要至少 3 个并发实例，Windows group
-需要 1 个，macOS group 需要 1 个。所有变量必须在 workflow push 前指向已经
-provision 为 Ready 的 organization runner，不提供标准 runner fallback。iOS
-Simulator 继续使用标准 `macos-15`。
+当前 `GizClaw` 组织不提供 Larger Runner，Linux variables 使用标准 `ubuntu-24.04`，macOS variable 使用标准 `macos-15`，Windows variable 使用标准 `windows-2025`。这些变量保留 execution class 的稳定接口；组织获得 Larger Runner 后可以只更新 variable value，不修改 workflow。iOS Simulator 继续使用标准 `macos-15`。
 
 Linux runner 的 system dependency 安装是后续 SDK、toolchain 与 Bazel cache 网络访问的 fail-fast health gate。APT 不在当前 runner 内重试，单次 HTTP/HTTPS 等待最多 30 秒，整个 step 最多 5 分钟；超时或下载失败直接使当前 job 失败，由新的 workflow run 使用干净 runner 重试。
 
@@ -131,7 +128,7 @@ Windows x86_64 已提供原生 Bazel Build/Test execution class。根 `MODULE.ba
 
 一方 C/C++ target 通过 `//tools/bazel:cc_options.bzl` 选择语言标准与 warning policy：GNU/Clang 使用 `-std`/`-W*`，MSVC 的 C11 target 使用 `/std:c11` 与 `/experimental:c11atomics`，C++ target 使用 `/std:*`，两者使用 `/W4`/`/WX`。BUILD target 不得直接写全局 `-Wall`/`-Wextra`/`-std=c11`/`-std=c++17`；只对 GNU/Clang 成立的 suppression 通过 `h2_gnu_only_copts` 隔离，避免 MSVC 把它们解析成无效 `/W*` 参数。
 
-Required CI 的 `windows-compatible-graph` job 通过 `FIRMWARE_WINDOWS_RUNNER` 使用 8-core Windows Server 2025 Larger Runner，在同一 Bazel server 与 output base 中依次请求 `bazel build --config=windows_x86_64 //...` 和带统一 test options 的 `bazel test --config=windows_x86_64 //...`。Build 使用 minimal remote output 下载，Test 复用 Build 已完成的 analysis 与 action state。Bazel 依据 `target_compatible_with` 跳过不属于 Windows 的 target；自动测试不声明 tag，只有需要外部环境的 opt-in 测试声明 `manual`。Apple/mobile rule 的 transition 在 compatibility 判定前就会请求平台 toolchain，因此 Windows config 只通过 `--deleted_packages` 排除这些已有独立平台 CI 的 artifact package；普通 target 仍必须用 compatibility contract，不维护 Windows target allowlist。
+Required CI 的 `windows-compatible-graph` job 通过 `FIRMWARE_WINDOWS_RUNNER` 选择 Windows Server 2025 runner，在同一 Bazel server 与 output base 中依次请求 `bazel build --config=windows_x86_64 //...` 和带统一 test options 的 `bazel test --config=windows_x86_64 //...`。Build 使用 minimal remote output 下载，Test 复用 Build 已完成的 analysis 与 action state。Bazel 依据 `target_compatible_with` 跳过不属于 Windows 的 target；自动测试不声明 tag，只有需要外部环境的 opt-in 测试声明 `manual`。Apple/mobile rule 的 transition 在 compatibility 判定前就会请求平台 toolchain，因此 Windows config 只通过 `--deleted_packages` 排除这些已有独立平台 CI 的 artifact package；普通 target 仍必须用 compatibility contract，不维护 Windows target allowlist。
 
 `//tools/bazel/tests/toolchain_smoke:windows_exe_smoke` 是标准 `cc_binary`，对应的 `windows_exe_smoke_test` 保证 Windows Test graph 至少执行一个真实 Win32 测试。它用 MSVC C++17 warning policy 编译 Win32 source，显式链接 `bcrypt.lib`，并调用 `BCryptGenRandom`。完整 Build/Test 后只对这个 focused target 使用 `--remote_download_outputs=toplevel`，再验证 declared `.exe` 的 PE signature、x86_64 COFF machine、PE32+ magic 和运行成功 marker，防止仅 analysis、cache metadata 或空 graph 绿灯。Windows CI 使用经 SHA-256 校验的 Bazel 9.2.0 Windows executable，并以 `--lockfile_mode=off` 规避 `emsdk` extension 在 Windows 与现有 macOS/Linux host 间的 transitive digest 差异；现有 host 仍以 `bazel mod deps --lockfile_mode=error` 验证 committed lockfile。`ci-required` 同时要求现有 matrix 和 Windows Build/Test 成功。
 

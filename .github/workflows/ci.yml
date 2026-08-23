@@ -33,7 +33,7 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
     name: Private dependency access
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 10
     steps:
       - id: app-token
@@ -72,7 +72,7 @@ jobs:
   host:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
       actions: read
       contents: read
@@ -82,17 +82,19 @@ jobs:
       matrix:
         include:
           - name: Linux x86_64 / Build + Test
-            runner: ubuntu-24.04
+            runner: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
             config: linux_x86_64
             task: build-test
             asset: linux-x86_64
             sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+            timeout: 120
           - name: macOS arm64 / Build + Test
-            runner: macos-15
+            runner: ${{ vars.FIRMWARE_MACOS_RUNNER }}
             config: macos_arm64
             task: build-test
             asset: darwin-arm64
             sha: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
+            timeout: 70
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -102,7 +104,7 @@ jobs:
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
 
-      - name: Install Linux SDL3 build dependencies
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         timeout-minutes: 5
         shell: bash
@@ -114,14 +116,15 @@ jobs:
           )
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake libx11-dev libxext-dev libxi-dev libxrandr-dev \
-            nasm ninja-build pkg-config
+            cmake doxygen lcov libasound2-dev libx11-dev libxext-dev \
+            libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
+            pkg-config ripgrep unzip
 
-      - name: Install macOS SDL3 build dependencies
+      - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install cmake ninja pkg-config
+          brew install cmake doxygen lcov ninja pkg-config ripgrep rsync
           sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
           test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
 
@@ -225,8 +228,8 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     name: ESP32-S3 / Build
     needs: private-dependencies
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    runs-on: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
+    timeout-minutes: 60
     permissions:
       actions: read
       contents: read
@@ -443,7 +446,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     name: BK7258 / Build
     needs: private-dependencies
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
     timeout-minutes: 60
     permissions:
       actions: read
@@ -612,8 +615,8 @@ jobs:
 
   windows-compatible-graph:
     name: Windows x86_64 / Build + Test
-    runs-on: windows-2025
-    timeout-minutes: 30
+    runs-on: ${{ vars.FIRMWARE_WINDOWS_RUNNER }}
+    timeout-minutes: 120
     permissions:
       actions: read
       contents: read
@@ -728,7 +731,7 @@ jobs:
       - host
       - esp32s3-compatible-graph
       - windows-compatible-graph
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     steps:
       - name: Require every applicable execution class
         env:

@@ -14,7 +14,7 @@ jobs:
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '@codex')
     name: Publish pending OpenAI eligibility
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -70,7 +70,7 @@ jobs:
     needs: [prepare, review]
     if: always() && needs.prepare.result == 'success'
     name: Publish final OpenAI eligibility
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 5
     permissions:
       contents: read

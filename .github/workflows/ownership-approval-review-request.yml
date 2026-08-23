@@ -11,7 +11,7 @@ jobs:
   request:
     if: github.event.pull_request.base.ref == 'main'
     name: Request ownership reevaluation
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 1
     steps:
       - name: Signal trusted evaluator

@@ -17,7 +17,7 @@ Platform 不拥有 wolfSSL 全局初始化。Composition 按 Windows Memory 与 
 
 ## 构建与验证
 
-`--config=windows_x86_64` 在原生 Windows x86_64 host 上通过 `rules_cc` 的 `local_config_cc` 选择 MSVC ABI toolchain。Required CI 的 Windows Build/Test job 通过 `FIRMWARE_WINDOWS_RUNNER` 使用 8-core Windows Server 2025 Larger Runner，顺序执行完整 compatible `//...` graph；Bazel 通过 `target_compatible_with` 选择目标，只有 opt-in 测试使用 `manual`。Graph Test 只从 Git inventory 读取一方 source，不能跟随 Windows workspace junction 进入 `bazel-*` output、external repository 或 cache tree。
+`--config=windows_x86_64` 在原生 Windows x86_64 host 上通过 `rules_cc` 的 `local_config_cc` 选择 MSVC ABI toolchain。Required CI 的 Windows Build/Test job 通过 `FIRMWARE_WINDOWS_RUNNER` 选择 Windows Server 2025 runner，顺序执行完整 compatible `//...` graph；Bazel 通过 `target_compatible_with` 选择目标，只有 opt-in 测试使用 `manual`。Graph Test 只从 Git inventory 读取一方 source，不能跟随 Windows workspace junction 进入 `bazel-*` output、external repository 或 cache tree。
 
 Windows provider 的普通单元测试覆盖 capability lifecycle、错误、timeout、token generation 和 callback drain；`windows_pal_compile_smoke` 引用全部 vtable operation，`corehttp_coremqtt_link_smoke` 强制形成 Windows PAL、完整 wolfSSL、CoreHTTP 和 CoreMQTT 的 PE link closure。未标记的 `//projects/e2e/targets/cc_binary/pal:pal_e2e_test` 在 Linux、macOS 和 Windows 运行相同 OS-neutral host case ledger，只使用 loopback、临时目录和仓库内测试证书。
 
