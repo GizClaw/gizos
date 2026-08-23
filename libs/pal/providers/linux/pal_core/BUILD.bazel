@@ -1,0 +1,143 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "LINUX_HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pal_core",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = [
+            "BUILD.bazel",
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    includes = ["include"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/posix/pal_core",
+    ],
+)
+
+cc_library(
+    name = "pal_core_test_impl",
+    srcs = [
+        "src/h2_linux_evdev_button.c",
+        "src/h2_linux_evdev_touch.c",
+        "src/h2_linux_gpio_button.c",
+        "src/h2_linux_platform.c",
+        "src/h2_linux_sync.c",
+    ],
+    hdrs = ["include/h2_linux_platform.h"],
+    defines = [
+        "H2_LINUX_TESTING",
+    ],
+    strip_include_prefix = "include",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "pal_core_test",
+    srcs = ["tests/test_linux_platform.c"],
+    linkopts = ["-pthread"],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":pal_core_test_impl",
+    ],
+)
+
+cc_test(
+    name = "evdev_button_test",
+    srcs = ["tests/test_linux_evdev_button.c"],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":pal_core_test_impl",
+    ],
+)
+
+cc_test(
+    name = "gpio_button_test",
+    srcs = ["tests/test_linux_gpio_button.c"],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":pal_core_test_impl",
+    ],
+)
+
+cc_test(
+    name = "evdev_touch_test",
+    srcs = ["tests/test_linux_evdev_touch.c"],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":pal_core_test_impl",
+    ],
+)
+
+cc_test(
+    name = "sync_test",
+    srcs = ["tests/test_linux_sync.c"],
+    linkopts = ["-pthread"],
+    target_compatible_with = LINUX_HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":pal_core_test_impl",
+    ],
+)

@@ -1,0 +1,57 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WINDOWS_X86_64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "serial_host",
+    srcs = ["src/h2_windows_serial_host.c"],
+    hdrs = ["include/h2_windows_serial_host.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    local_defines = [
+        "UNICODE",
+        "WINVER=0x0602",
+        "_WIN32_WINNT=0x0602",
+        "_UNICODE",
+    ],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "serial_host_test",
+    srcs = [
+        "include/h2_windows_serial_host.h",
+        "src/h2_windows_serial_host.c",
+        "tests/test_h2_windows_serial_host.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    local_defines = [
+        "H2_WINDOWS_CLEAR_COMM_ERROR=h2_test_ClearCommError",
+        "H2_WINDOWS_CLOSE_HANDLE=h2_test_CloseHandle",
+        "H2_WINDOWS_CREATE_FILE=h2_test_CreateFileW",
+        "H2_WINDOWS_ESCAPE_COMM_FUNCTION=h2_test_EscapeCommFunction",
+        "H2_WINDOWS_GET_COMM_STATE=h2_test_GetCommState",
+        "H2_WINDOWS_GET_COMM_TIMEOUTS=h2_test_GetCommTimeouts",
+        "H2_WINDOWS_GET_TICK_COUNT=h2_test_GetTickCount64",
+        "H2_WINDOWS_QUERY_DOS_DEVICE=h2_test_QueryDosDeviceW",
+        "H2_WINDOWS_READ_FILE=h2_test_ReadFile",
+        "H2_WINDOWS_SET_COMM_STATE=h2_test_SetCommState",
+        "H2_WINDOWS_SET_COMM_TIMEOUTS=h2_test_SetCommTimeouts",
+        "H2_WINDOWS_SETUP_COMM=h2_test_SetupComm",
+        "H2_WINDOWS_SLEEP=h2_test_Sleep",
+        "H2_WINDOWS_WRITE_FILE=h2_test_WriteFile",
+        "H2_WINDOWS_SERIAL_HOST_TESTING",
+        "UNICODE",
+        "WINVER=0x0602",
+        "_WIN32_WINNT=0x0602",
+        "_UNICODE",
+    ],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)

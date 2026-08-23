@@ -1,0 +1,149 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WINDOWS_X86_64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pal_core",
+    srcs = [
+        "src/h2_windows_entropy.c",
+        "src/h2_windows_fs.c",
+        "src/h2_windows_host_os.c",
+        "src/h2_windows_internal.h",
+        "src/h2_windows_log.c",
+        "src/h2_windows_mem.c",
+        "src/h2_windows_net.c",
+        "src/h2_windows_net_tls.c",
+        "src/h2_windows_netif.c",
+        "src/h2_windows_platform.c",
+        "src/h2_windows_queue.c",
+        "src/h2_windows_sync.c",
+        "src/h2_windows_system_event.c",
+        "src/h2_windows_task.c",
+        "src/h2_windows_time.c",
+        "src/h2_windows_timer.c",
+    ],
+    hdrs = [
+        "include/h2_windows_platform.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = [
+        "-DEFAULTLIB:Bcrypt.lib",
+        "-DEFAULTLIB:Iphlpapi.lib",
+        "-DEFAULTLIB:Synchronization.lib",
+        "-DEFAULTLIB:Ws2_32.lib",
+    ],
+    local_defines = [
+        "UNICODE",
+        "WINVER=0x0602",
+        "_WIN32_WINNT=0x0602",
+        "_UNICODE",
+    ],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/wolfssl",
+    ],
+)
+
+cc_test(
+    name = "platform_test",
+    srcs = ["tests/test_h2_windows_platform.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":pal_core",
+        "//libs/pal/providers/wolfssl",
+    ],
+)
+
+cc_test(
+    name = "host_os_test",
+    srcs = [
+        "include/h2_windows_platform.h",
+        "src/h2_windows_host_os.c",
+        "tests/test_h2_windows_host_os.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    local_defines = [
+        "H2_WINDOWS_GET_DRIVE_TYPE=h2_test_GetDriveTypeW",
+        "H2_WINDOWS_GET_FILE_ATTRIBUTES=h2_test_GetFileAttributesW",
+        "H2_WINDOWS_GET_LOGICAL_DRIVES=h2_test_GetLogicalDrives",
+        "H2_WINDOWS_HOST_OS_TESTING",
+        "H2_WINDOWS_PLATFORM_CREATE=h2_test_windows_platform_create",
+        "UNICODE",
+        "WINVER=0x0602",
+        "_WIN32_WINNT=0x0602",
+        "_UNICODE",
+    ],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "os_test",
+    srcs = ["tests/test_h2_windows_os.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+cc_test(
+    name = "fs_test",
+    srcs = ["tests/test_h2_windows_fs.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+cc_test(
+    name = "net_test",
+    srcs = ["tests/test_h2_windows_net.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+cc_test(
+    name = "netif_event_test",
+    srcs = [
+        "src/h2_windows_internal.h",
+        "tests/test_h2_windows_netif_event.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+cc_test(
+    name = "windows_pal_compile_smoke",
+    srcs = ["tests/windows_pal_compile_smoke.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+cc_binary(
+    name = "corehttp_coremqtt_link_smoke",
+    srcs = ["tests/corehttp_coremqtt_link_smoke.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":pal_core",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/wolfssl",
+    ],
+)

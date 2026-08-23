@@ -1,0 +1,171 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:private"])
+
+exports_files(
+    glob(["tests/fixtures/*.pem"]),
+    visibility = ["//libs/pal/providers/desktop/app_support:__pkg__"],
+)
+
+_POSIX_OWNERS = [
+    "//libs/pal/providers/darwin/pal_core:__pkg__",
+    "//libs/pal/providers/linux/pal_core:__pkg__",
+]
+
+cc_library(
+    name = "host_fs",
+    srcs = ["src/h2_posix_host_fs.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": [
+            "-D_DEFAULT_SOURCE",
+            "-D_XOPEN_SOURCE=700",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "net",
+    srcs = ["src/h2_posix_net.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS,
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/wolfssl",
+    ],
+)
+
+cc_library(
+    name = "entropy",
+    srcs = ["src/h2_posix_entropy.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "pal_core",
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _POSIX_OWNERS,
+    deps = [
+        ":entropy",
+        ":host_fs",
+        ":net",
+    ],
+)
+
+cc_test(
+    name = "host_fs_test",
+    srcs = ["tests/test_posix_host_fs.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": [
+            "-D_DEFAULT_SOURCE",
+            "-D_XOPEN_SOURCE=700",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":host_fs",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "net_test",
+    srcs = ["tests/test_posix_net.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":net",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "net_tls_test",
+    srcs = ["tests/test_posix_net_tls.c"],
+    args = [
+        "$(location tests/fixtures/localhost_ca.pem)",
+        "$(location tests/fixtures/wrong_ca.pem)",
+        "$(location tests/fixtures/localhost_cert.pem)",
+        "$(location tests/fixtures/localhost_key.pem)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = glob(["tests/fixtures/*.pem"]),
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        ":net",
+        "//libs/pal",
+        "//libs/pal/providers/wolfssl",
+    ],
+)
+
+cc_test(
+    name = "entropy_test",
+    srcs = ["tests/test_posix_entropy.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entropy",
+        "//libs/pal",
+    ],
+)

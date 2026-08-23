@@ -1,0 +1,47 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:private"])
+
+_OS_OWNERS = [
+    "//libs/pal/providers/darwin/pal_core:__pkg__",
+    "//libs/pal/providers/linux/serial_host:__pkg__",
+]
+
+cc_library(
+    name = "serial_host_internal",
+    srcs = ["src/h2_posix_serial_host.c"],
+    hdrs = ["src/h2_posix_serial_host_internal.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["src"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _OS_OWNERS,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "serial_host_test_support",
+    srcs = ["tests/h2_posix_serial_host_test.c"],
+    hdrs = ["tests/h2_posix_serial_host_test.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = _OS_OWNERS,
+    deps = ["//libs/pal"],
+)

@@ -1,0 +1,157 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARM64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "host_os",
+    srcs = ["src/h2_darwin_host_os.c"],
+    hdrs = ["include/h2_darwin_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/posix/pal_core",
+    ],
+)
+
+cc_library(
+    name = "netif_system_event",
+    srcs = [
+        "src/h2_darwin_netif.c",
+        "src/h2_darwin_netif_internal.h",
+        "src/h2_darwin_route.c",
+        "src/h2_darwin_system_event.c",
+    ],
+    hdrs = ["include/h2_darwin_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    linkopts = ["-lpthread"],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "serial_host",
+    srcs = ["src/h2_darwin_serial_host.c"],
+    hdrs = ["include/h2_darwin_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = [
+        "-framework CoreFoundation",
+        "-framework IOKit",
+    ],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/posix/serial_host:serial_host_internal",
+    ],
+)
+
+cc_library(
+    name = "corebluetooth_uuid",
+    srcs = ["src/h2_darwin_corebluetooth_uuid.c"],
+    hdrs = ["src/h2_darwin_corebluetooth_internal.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+objc_library(
+    name = "corebluetooth",
+    srcs = ["src/h2_darwin_corebluetooth.m"],
+    hdrs = ["include/h2_darwin_platform.h"],
+    copts = H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+    ],
+    includes = ["include"],
+    sdk_frameworks = [
+        "CoreBluetooth",
+        "Foundation",
+    ],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":corebluetooth_uuid",
+        ":netif_system_event",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "pal_core",
+    hdrs = ["include/h2_darwin_platform.h"],
+    includes = ["include"],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":corebluetooth",
+        ":host_os",
+        ":netif_system_event",
+        ":serial_host",
+    ],
+)
+
+cc_test(
+    name = "corebluetooth_test",
+    srcs = ["tests/test_darwin_corebluetooth.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":corebluetooth"],
+)
+
+cc_test(
+    name = "corebluetooth_uuid_test",
+    srcs = ["tests/test_darwin_corebluetooth_uuid.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":corebluetooth_uuid"],
+)
+
+cc_test(
+    name = "netif_test",
+    srcs = [
+        "include/h2_darwin_platform.h",
+        "src/h2_darwin_netif.c",
+        "src/h2_darwin_netif_internal.h",
+        "src/h2_darwin_route.c",
+        "src/h2_darwin_system_event.c",
+        "tests/test_darwin_netif.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = [
+        "-DH2_DARWIN_NETIF_TESTING",
+    ] + H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    linkopts = ["-lpthread"],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "serial_host_test",
+    srcs = ["tests/test_darwin_serial_host.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    env_inherit = ["H2_DESKTOP_SERIAL_PRINT"],
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":serial_host",
+        "//libs/pal/providers/posix/serial_host:serial_host_test_support",
+    ],
+)
