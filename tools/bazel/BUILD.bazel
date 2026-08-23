@@ -1,17 +1,109 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load(":firmware.bzl", "firmware_version")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["cc_options.bzl"])
 
 exports_files([
+    "esp_idf.bzl",
+    "firmware.bzl",
     "firmware_components.bzl",
     "native_component.bzl",
     "native_component.cmake",
     "native_versions/esp_idf_commit.txt",
     "native_versions/esp_idf_tool_versions.txt",
+    "native_versions/native_ccache_tools.txt",
 ])
+
+firmware_version(
+    name = "firmware_version",
+    build_setting_default = "bazel-native-artifacts",
+)
+
+py_library(
+    name = "native_runtime",
+    srcs = ["native_runtime.py"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_library(
+    name = "native_ccache",
+    srcs = ["native_ccache.py"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "native_runtime_test",
+    srcs = ["tests/test_native_runtime.py"],
+    legacy_create_init = 0,
+    main = "tests/test_native_runtime.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":native_runtime"],
+)
+
+py_test(
+    name = "native_ccache_test",
+    srcs = ["tests/test_native_ccache.py"],
+    legacy_create_init = 0,
+    main = "tests/test_native_ccache.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":native_ccache"],
+)
+
+py_binary(
+    name = "esp_idf_runner",
+    srcs = ["esp_idf_runner.py"],
+    legacy_create_init = 0,
+    main = "esp_idf_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":native_ccache",
+        ":native_runtime",
+    ],
+)
+
+py_test(
+    name = "esp_idf_runner_test",
+    srcs = ["tests/test_esp_idf_runner.py"],
+    data = ["esp_idf_runner.py"],
+    legacy_create_init = 0,
+    main = "tests/test_esp_idf_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":native_ccache",
+        ":native_runtime",
+    ],
+)
 
 cc_library(
     name = "vendor_third_party_ikcp",

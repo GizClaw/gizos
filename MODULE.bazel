@@ -249,7 +249,12 @@ esp_repositories = use_extension(
     "//tools/bazel/native_repositories:esp_repositories.bzl",
     "esp_repositories",
 )
-use_repo(esp_repositories, "gizos_esp_idf_sdk", "gizos_esp_idf_tools")
+use_repo(
+    esp_repositories,
+    "gizos_esp_idf_sdk",
+    "gizos_esp_idf_tools",
+    "gizos_native_ccache_runtime",
+)
 
 esp32s3_cc = use_extension(
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl",
@@ -258,3 +263,11 @@ esp32s3_cc = use_extension(
 use_repo(esp32s3_cc, "gizos_esp32s3_cc_toolchain")
 
 register_toolchains("@gizos_esp32s3_cc_toolchain//:toolchain")
+
+local_embedded_cc = use_extension(
+    "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl",
+    "local_embedded_cc_toolchains",
+)
+use_repo(local_embedded_cc, "gizos_esp32p4_cc_toolchain")
+
+register_toolchains("@gizos_esp32p4_cc_toolchain//:toolchain")

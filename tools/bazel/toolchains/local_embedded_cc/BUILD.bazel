@@ -1,0 +1,5 @@
+exports_files([
+    "cc_toolchain_config.bzl",
+    "repositories.bzl",
+    "toolchain.BUILD.bazel",
+])

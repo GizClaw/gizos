@@ -1,0 +1,49 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_simcom_modem",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/modem/simcom:simcom_modem",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
+)

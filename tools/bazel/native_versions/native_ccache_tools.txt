@@ -1,0 +1,3 @@
+# name version sha256 url
+ccache 4.13.6 508b2a1217dc6e04a23e967c7b95a0fb45d8a7e16fde9e180919698f2e2be060 https://github.com/ccache/ccache/releases/download/v4.13.6/ccache-4.13.6-linux-x86_64-glibc.tar.xz
+ccache-storage-http-go 0.8 2c2cfafa39f5a4628201ccc11c81829197519159aa128fe00ea251f1f4f2461c https://github.com/ccache/ccache-storage-http-go/releases/download/v0.8/ccache-storage-http-go-0.8-linux-amd64.tar.gz

@@ -1,0 +1,30 @@
+set(OPUS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/opus")
+
+include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+h2_bazel_native_component_sources(OPUS_SOURCES opus_port)
+
+idf_component_register(
+    SRCS ${OPUS_SOURCES}
+    INCLUDE_DIRS
+        "${OPUS_ROOT}/include"
+    PRIV_INCLUDE_DIRS
+        "${OPUS_ROOT}"
+        "${OPUS_ROOT}/celt"
+        "${OPUS_ROOT}/silk"
+        "${OPUS_ROOT}/silk/fixed"
+        "${OPUS_ROOT}/src")
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    OPUS_BUILD
+    FIXED_POINT
+    DISABLE_FLOAT_API
+    HAVE_LRINT
+    HAVE_LRINTF
+    HAVE_MEMORY_H
+    VAR_ARRAYS)
+
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    -O2
+    -Wno-maybe-uninitialized
+    -Wno-unused-function
+    -Wno-unused-variable)

@@ -1,0 +1,89 @@
+load("@rules_cc//cc:defs.bzl", "cc_toolchain")
+load(":cc_toolchain_config.bzl", "local_embedded_cc_toolchain_config")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "selected_compiler_inputs",
+    srcs = glob(["inputs/compiler/**"]),
+)
+
+filegroup(
+    name = "selected_archiver_inputs",
+    srcs = glob(["inputs/archiver/**"]),
+)
+
+filegroup(
+    name = "selected_toolchain_inputs",
+    srcs = glob(["inputs/toolchain/**"]),
+)
+
+filegroup(
+    name = "compiler_inputs",
+    srcs = [
+        "bin/gcc",
+        "{VERSION_LABEL}",
+        ":selected_compiler_inputs",
+        ":selected_toolchain_inputs",
+    ],
+)
+
+filegroup(
+    name = "archiver_inputs",
+    srcs = [
+        "bin/ar",
+        "{VERSION_LABEL}",
+        ":selected_archiver_inputs",
+        ":selected_toolchain_inputs",
+    ],
+)
+
+filegroup(
+    name = "nm_inputs",
+    srcs = [
+        "bin/nm",
+        "{VERSION_LABEL}",
+        ":selected_toolchain_inputs",
+    ],
+)
+
+filegroup(
+    name = "tools",
+    srcs = [
+        ":archiver_inputs",
+        ":compiler_inputs",
+        ":nm_inputs",
+    ],
+)
+
+local_embedded_cc_toolchain_config(
+    name = "config",
+    builtin_include_directories = {BUILTIN_INCLUDE_DIRECTORIES},
+    compile_flags = {COMPILE_FLAGS},
+    compiler = "{COMPILER}",
+    target_cpu = "{TARGET_CPU}",
+    target_system_name = "{TARGET_SYSTEM_NAME}",
+    toolchain_identifier = "{TOOLCHAIN_IDENTIFIER}",
+    unfiltered_compile_flags = {UNFILTERED_COMPILE_FLAGS},
+)
+
+cc_toolchain(
+    name = "cc_toolchain",
+    all_files = ":tools",
+    ar_files = ":archiver_inputs",
+    compiler_files = ":compiler_inputs",
+    dwp_files = ":tools",
+    linker_files = ":tools",
+    objcopy_files = ":tools",
+    strip_files = ":tools",
+    toolchain_config = ":config",
+    toolchain_identifier = "{TOOLCHAIN_IDENTIFIER}",
+)
+
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = {EXEC_CONSTRAINTS},
+    target_compatible_with = {TARGET_CONSTRAINTS},
+    toolchain = ":cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)

@@ -1,0 +1,47 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "lvgl_port",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = [
+        "CMakeLists.txt",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/lvgl:firmware",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
+)

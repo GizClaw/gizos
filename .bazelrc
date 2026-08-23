@@ -35,6 +35,11 @@ test --remote_download_outputs=minimal
 
 build:esp --repo_env=IDF_PATH
 build:esp --repo_env=IDF_TOOLS_PATH
+build:esp --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
+build:esp --action_env=H2LOADER_WIFI_CREDENTIALS
 build:esp32s3 --config=esp
 build:esp32s3 --define=h2_firmware_target=esp32s3
 build:esp32s3 --platforms=//tools/bazel/platforms:esp32s3
+build:esp32p4 --config=esp
+build:esp32p4 --define=h2_firmware_target=esp32p4
+build:esp32p4 --platforms=//tools/bazel/platforms:esp32p4

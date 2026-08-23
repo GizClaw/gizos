@@ -1,0 +1,128 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_pal_core",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = [
+        "CMakeLists.txt",
+        "idf_component.yml",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+cc_test(
+    name = "ble_indication_test",
+    srcs = [
+        "src/h2_esp_ble_indication_tracker.h",
+        "tests/test_h2_esp_ble_indication.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "dtls_state_test",
+    srcs = [
+        "src/h2_esp_platform_dtls_state.c",
+        "src/h2_esp_platform_dtls_state.h",
+        "tests/test_h2_esp_platform_dtls_state.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "pref_store_test",
+    srcs = [
+        "src/h2_esp_platform_pref_store.c",
+        "src/h2_esp_platform_pref_store.h",
+        "tests/test_h2_esp_platform_pref_store.c",
+    ],
+    conlyopts = H2_C11_OPTS + h2_gnu_only_copts([
+        "-D_POSIX_C_SOURCE=200809L",
+    ]),
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "net_socket_test",
+    srcs = [
+        "src/h2_esp_platform_net_socket.c",
+        "src/h2_esp_platform_net_socket.h",
+        "tests/test_h2_esp_platform_net_socket.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)

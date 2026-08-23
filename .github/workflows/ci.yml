@@ -276,6 +276,33 @@ jobs:
           export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
           firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3
 
+      - name: Install native compiler cache
+        shell: bash
+        run: |
+          manifest=tools/bazel/native_versions/native_ccache_tools.txt
+          read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
+          read -r _ helper_version helper_sha256 helper_url < <(awk '$1 == "ccache-storage-http-go" { print; exit }' "$manifest")
+          test "$ccache_version" = 4.13.6
+          test "$helper_version" = 0.8
+          runtime_root="$RUNNER_TEMP/native-ccache-runtime"
+          mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
+          curl --fail --location --silent --show-error "$ccache_url" --output "$runtime_root/ccache.tar.xz"
+          printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
+          tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
+          curl --fail --location --silent --show-error "$helper_url" --output "$runtime_root/helper.tar.gz"
+          printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
+          install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
+          install -m 0755 "$runtime_root/helper/ccache-storage-http" "$runtime_root/bin/ccache-storage-https"
+          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache"}\n' > "$runtime_root/runtime.json"
+          printf '%s\n' "$runtime_root/bin" >> "$GITHUB_PATH"
+          printf 'H2_NATIVE_CCACHE_RUNTIME_ROOT=%s\n' "$runtime_root" >> "$GITHUB_ENV"
+
+      - name: Configure native compiler cache
+        shell: bash
+        run: |
+          "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --version
+
       - name: Validate Bazel remote cache variables
         env:
           CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
@@ -336,11 +363,41 @@ jobs:
             printf 'BAZEL_DISK_CACHE_MODE=off\n'
           } >> "$GITHUB_ENV"
 
+      - name: Refresh native compiler cache token
+        id: native-ccache-auth
+        if: vars.NATIVE_CCACHE_GCS_BASE_URL != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          token_format: access_token
+          access_token_lifetime: 3600s
+
+      - name: Configure native compiler cache GCS access
+        if: vars.NATIVE_CCACHE_GCS_BASE_URL != ''
+        env:
+          NATIVE_CCACHE_ACCESS_TOKEN: ${{ steps.native-ccache-auth.outputs.access_token }}
+          NATIVE_CCACHE_GCS_BASE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
+        shell: bash
+        run: |
+          token_file="$H2_NATIVE_CCACHE_RUNTIME_ROOT/token"
+          install -m 0600 /dev/null "$token_file"
+          printf '%s' "$NATIVE_CCACHE_ACCESS_TOKEN" > "$token_file"
+          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache","remote_base_url":"%s","storage_helper":"bin/ccache-storage-https","token_file":"token"}\n' "$NATIVE_CCACHE_GCS_BASE_URL" > "$H2_NATIVE_CCACHE_RUNTIME_ROOT/runtime.json"
+
       - name: Build ESP32-S3 compatible graph
         shell: bash
         run: |
           . firmware-devenv/export.sh
           make bazel-build BAZEL_CONFIG=esp32s3
+
+      - name: Show native compiler cache statistics
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: CCACHE_DIR="$H2_NATIVE_CCACHE_RUNTIME_ROOT/cache/esp32s3" "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --show-stats
 
       - name: Save Bazel repository cache
         if: >-
