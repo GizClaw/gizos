@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">拍学机应用页</title>
+  <desc id="desc">全屏应用页使用三列网格排列十二个应用图标，包括打电话、我的角色、探索、音乐、魔拍、聊天、收藏、安全和设置，可以继续向下滚动。</desc>
+  <defs>
+    <linearGradient id="background" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#fff8ec"/>
+      <stop offset="0.52" stop-color="#f7ebff"/>
+      <stop offset="1" stop-color="#ded9ff"/>
+    </linearGradient>
+    <filter id="iconShadow" x="-35%" y="-35%" width="170%" height="190%">
+      <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#44377f" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="480" height="800" fill="url(#background)"/>
+  <circle cx="-6" cy="94" r="130" fill="#ffd6b8" opacity="0.22"/>
+  <circle cx="482" cy="337" r="150" fill="#c4b7ff" opacity="0.2"/>
+
+  <g transform="translate(24 28)">
+    <circle cx="25" cy="25" r="25" fill="#ffffff" opacity="0.7"/>
+    <path d="M29 16l-9 9 9 9" fill="none" stroke="#4b4261" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="240" y="64" text-anchor="middle" fill="#352d54" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="26" font-weight="700">应用</text>
+
+  <!-- Row 1 -->
+  <g transform="translate(50 105)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#7965e9"/>
+    <rect x="18" y="21" width="44" height="37" rx="7" fill="none" stroke="#fff" stroke-width="4"/>
+    <circle cx="48" cy="32" r="5" fill="#ffd66f"/>
+    <path d="M22 53l12-12 9 8 7-6 9 10" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="90" y="213" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">作品</text>
+
+  <g transform="translate(200 105)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#ae78df"/>
+    <path d="M50 18c-15 4-24 16-22 30 2 10 9 17 19 20-18 2-34-11-35-29-1-17 12-31 29-32 3 0 6 0 9 1z" fill="#fff"/>
+    <path d="M58 25l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#ffe587"/>
+  </g>
+  <text x="240" y="213" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">梦境</text>
+
+  <g transform="translate(350 105)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#f18468"/>
+    <path d="M24 18l11 15-7 8c6 11 13 18 24 24l8-7 15 11c-3 8-9 12-17 10-23-7-42-26-49-49-2-8 2-14 10-17z" transform="translate(-2 -4) scale(.9)" fill="#fff"/>
+  </g>
+  <text x="390" y="213" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">打电话</text>
+
+  <!-- Row 2 -->
+  <g transform="translate(50 263)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#5d78d8"/>
+    <circle cx="40" cy="35" r="17" fill="none" stroke="#fff" stroke-width="4"/>
+    <circle cx="34" cy="32" r="3" fill="#fff"/><circle cx="46" cy="32" r="3" fill="#fff"/>
+    <path d="M34 42c4 4 8 4 12 0M23 62c10-8 24-8 34 0" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="90" y="371" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="16" font-weight="600">我的角色</text>
+
+  <g transform="translate(200 263)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#4cafaa"/>
+    <circle cx="40" cy="40" r="23" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M48 25l-5 13-13 6 6-14z" fill="#fff"/>
+    <circle cx="40" cy="40" r="4" fill="#ffe587"/>
+  </g>
+  <text x="240" y="371" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">探索</text>
+
+  <g transform="translate(350 263)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#e878a5"/>
+    <path d="M35 19v37c0 7-6 12-13 10-6-2-8-9-4-14 4-5 11-5 17-2V28l28-6v29c0 7-6 12-13 10-6-2-8-9-4-14 4-5 11-5 17-2V16z" fill="#fff"/>
+  </g>
+  <text x="390" y="371" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">音乐</text>
+
+  <!-- Row 3 -->
+  <g transform="translate(50 421)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#ef8b5f"/>
+    <path d="M19 29h11l5-7h10l5 7h11c4 0 7 3 7 7v24c0 4-3 7-7 7H19c-4 0-7-3-7-7V36c0-4 3-7 7-7z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="40" cy="47" r="11" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M58 18l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#ffe587"/>
+  </g>
+  <text x="90" y="529" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">魔拍</text>
+
+  <g transform="translate(200 421)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#6976de"/>
+    <path d="M15 20h50v34H39L27 65V54H15z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="29" cy="37" r="3" fill="#fff"/><circle cx="40" cy="37" r="3" fill="#fff"/><circle cx="51" cy="37" r="3" fill="#fff"/>
+  </g>
+  <text x="240" y="529" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">聊天</text>
+
+  <g transform="translate(350 421)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#e56f87"/>
+    <path d="M40 63S16 49 16 31c0-12 15-17 24-6 9-11 24-6 24 6 0 18-24 32-24 32z" fill="#fff"/>
+  </g>
+  <text x="390" y="529" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">收藏</text>
+
+  <!-- Row 4 -->
+  <g transform="translate(50 579)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#52a99e"/>
+    <path d="M40 15l22 9v16c0 15-9 25-22 31-13-6-22-16-22-31V24z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+    <rect x="31" y="36" width="18" height="16" rx="4" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M35 36v-4c0-7 10-7 10 0v4" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="90" y="687" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">安全</text>
+
+  <g transform="translate(200 579)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#d89a4f"/>
+    <circle cx="40" cy="40" r="25" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M34 32c1-6 10-8 14-3 4 6-2 10-8 14v5M40 58h.1" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <text x="240" y="687" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">帮助</text>
+
+  <g transform="translate(350 579)" filter="url(#iconShadow)">
+    <rect width="80" height="80" rx="24" fill="#626075"/>
+    <path d="M40 16l6 7 9-1 3 9 8 5-4 9 2 9-9 4-6 8-9-4-9 4-6-8-9-4 2-9-4-9 8-5 3-9 9 1z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="40" cy="41" r="10" fill="none" stroke="#fff" stroke-width="4"/>
+  </g>
+  <text x="390" y="687" text-anchor="middle" fill="#403752" font-family="system-ui, 'PingFang SC', sans-serif" font-size="18" font-weight="600">设置</text>
+
+  <rect x="468" y="119" width="4" height="470" rx="2" fill="#7769a5" opacity="0.12"/>
+  <rect x="468" y="119" width="4" height="150" rx="2" fill="#7769a5" opacity="0.46"/>
+</svg>

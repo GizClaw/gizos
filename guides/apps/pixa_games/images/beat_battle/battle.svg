@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Beat Battle Battle</title>
+  <desc id="desc">Battle screen with enemy, health bars, rhythm lane, judgment ring, combo, and break meter.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#15102d"/><stop offset="1" stop-color="#080b18"/></linearGradient>
+  </defs>
+  <rect width="240" height="240" fill="url(#bg)"/>
+  <text x="9" y="13" fill="#cbd5e1" font-family="monospace" font-size="8">YOU</text>
+  <rect x="9" y="18" width="78" height="7" rx="3.5" fill="#283244"/><rect x="9" y="18" width="61" height="7" rx="3.5" fill="#43df87"/>
+  <text x="231" y="13" text-anchor="end" fill="#cbd5e1" font-family="monospace" font-size="8">ENEMY</text>
+  <rect x="153" y="18" width="78" height="7" rx="3.5" fill="#283244"/><rect x="170" y="18" width="61" height="7" rx="3.5" fill="#ff537c"/>
+  <text x="120" y="16" text-anchor="middle" fill="#f9c74f" font-family="monospace" font-size="8">PHASE 2</text>
+  <circle cx="120" cy="66" r="29" fill="#38205f" stroke="#bd83ff" stroke-width="3"/>
+  <path d="M98 55 L88 44 L102 47 M142 55 L152 44 L138 47" fill="#38205f" stroke="#bd83ff" stroke-width="3"/>
+  <circle cx="110" cy="64" r="3" fill="#ffffff"/><circle cx="130" cy="64" r="3" fill="#ffffff"/>
+  <path d="M106 78 Q120 68 134 78" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <rect x="8" y="106" width="224" height="54" rx="8" fill="#11182a" stroke="#334155" stroke-width="2"/>
+  <line x1="44" y1="109" x2="44" y2="157" stroke="#f9c74f" stroke-width="2"/>
+  <circle cx="44" cy="133" r="17" fill="none" stroke="#f9c74f" stroke-width="3"/>
+  <path d="M92 120 L75 133 L92 146 Z" fill="#4a9dff"/>
+  <circle cx="139" cy="133" r="14" fill="#ff537c" stroke="#ff9ab2" stroke-width="2"/>
+  <path d="M183 120 L200 133 L183 146 Z" fill="#52e0d1"/>
+  <text x="120" y="181" text-anchor="middle" fill="#6dffb0" font-family="monospace" font-size="14" font-weight="700">PERFECT</text>
+  <text x="18" y="198" fill="#ffffff" font-family="monospace" font-size="10">COMBO 12</text>
+  <text x="222" y="198" text-anchor="end" fill="#ffffff" font-family="monospace" font-size="10">SCORE 0240</text>
+  <text x="18" y="215" fill="#a7b0c0" font-family="monospace" font-size="8">BREAK</text>
+  <rect x="56" y="208" width="166" height="9" rx="4.5" fill="#283244"/>
+  <rect x="56" y="208" width="124" height="9" rx="4.5" fill="#f9c74f"/>
+  <text x="120" y="232" text-anchor="middle" fill="#64748b" font-family="monospace" font-size="7">LEFT       RIGHT       ACTION</text>
+</svg>

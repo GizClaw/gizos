@@ -4,6 +4,13 @@ common --enable_platform_specific_config
 common --announce_rc
 common --repository_cache=~/.cache/bazel/repository
 
+common:ci-graph --enable_bzlmod
+common:ci-graph --noenable_platform_specific_config
+common:ci-graph --define=h2_ci_graph=true
+common:ci-graph --define=h2_host_os=linux
+build:ci-graph --platforms=//tools/bazel/platforms:linux_x86_64
+build:ci-graph --extra_execution_platforms=//tools/bazel/platforms:linux_x86_64
+
 build:linux --define=h2_host_os=linux
 build:linux --dynamic_mode=off
 build:macos --define=h2_host_os=macos
@@ -17,6 +24,22 @@ build --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config
 
 build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
 build:linux_x86_64 --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
+
+build:test_coverage --platforms=//tools/bazel/platforms:linux_x86_64
+build:test_coverage --extra_toolchains=@gizos_coverage_llvm_toolchain//:cc-toolchain-x86_64-linux
+build:test_coverage --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
+build:test_coverage --copt=-D_GNU_SOURCE
+build:test_coverage --cxxopt=-Wno-error=unused-command-line-argument
+coverage:test_coverage --experimental_use_llvm_covmap
+coverage:test_coverage --experimental_generate_llvm_lcov
+coverage:test_coverage --instrumentation_filter=^//
+
+build:kickpi_k4b --platforms=//tools/bazel/platforms:linux_armv7_gnueabihf
+build:kickpi_k4b --extra_toolchains=@k4b_arm_gnu_toolchain//:toolchain
+build:kickpi_k4b --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
+build:kickpi_k4b -c opt
+build:kickpi_k4b --repo_env=K4B_CEDARX_INCLUDE_DIR
+build:kickpi_k4b --repo_env=K4B_CEDARX_LIB_DIR
 
 build:macos_arm64 --platforms=//tools/bazel/platforms:macos_arm64
 build:macos_arm64 --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain

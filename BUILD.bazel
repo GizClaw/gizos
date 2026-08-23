@@ -7,3 +7,28 @@ filegroup(
         "README.md",
     ],
 )
+
+filegroup(
+    name = "make_command_files",
+    srcs = glob([
+        "scripts/**/*.py",
+        "scripts/**/*.sh",
+    ]),
+)
+
+filegroup(
+    name = "public_command_surface_inputs",
+    srcs = glob(
+        [
+            "**/*.md",
+            ".github/workflows/*.yml",
+            "scripts/**/*.py",
+            "scripts/**/*.sh",
+        ],
+        exclude = [
+            "build/**",
+            "third_party/**",
+            "x/**",
+        ],
+    ) + ["Makefile"],
+)

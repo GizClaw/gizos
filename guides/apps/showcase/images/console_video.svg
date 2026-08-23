@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="600" viewBox="0 0 1024 600" role="img" aria-labelledby="title desc">
+  <title id="title">Showcase 选择视频控制台</title>
+  <desc id="desc">原生触屏控制台左侧显示 Tab 和当前值，右侧从名称列表选择背景 MP4。</desc>
+  <defs>
+    <linearGradient id="video" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d2142"/>
+      <stop offset="1" stop-color="#9c365f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="600" fill="url(#video)"/>
+  <rect width="1024" height="600" fill="#070a12" opacity="0.72"/>
+  <rect x="18" y="18" width="988" height="564" rx="22" fill="#101522" stroke="#52617d" stroke-width="2"/>
+  <rect x="18" y="18" width="222" height="564" rx="22" fill="#151c2d"/>
+  <text x="46" y="62" fill="#fff" font-family="sans-serif" font-size="25" font-weight="700">Showcase 控制台</text>
+  <rect x="34" y="92" width="190" height="62" rx="12" fill="#315efb"/>
+  <text x="58" y="131" fill="#fff" font-family="sans-serif" font-size="22" font-weight="700">视频</text>
+  <rect x="34" y="166" width="190" height="62" rx="12" fill="#202a40"/>
+  <text x="58" y="205" fill="#cbd5e1" font-family="sans-serif" font-size="22">选择对话角色</text>
+  <line x1="34" y1="430" x2="224" y2="430" stroke="#35415c"/>
+  <text x="42" y="462" fill="#8fa0bb" font-family="sans-serif" font-size="15">当前视频</text>
+  <text x="42" y="490" fill="#fff" font-family="sans-serif" font-size="17">Big Buck Bunny</text>
+  <text x="42" y="526" fill="#8fa0bb" font-family="sans-serif" font-size="15">当前角色</text>
+  <text x="42" y="554" fill="#fff" font-family="sans-serif" font-size="18">迪迦</text>
+  <text x="274" y="62" fill="#fff" font-family="sans-serif" font-size="28" font-weight="700">选择视频</text>
+  <rect x="274" y="84" width="700" height="70" rx="12" fill="#1d335c" stroke="#4f8cff" stroke-width="2"/>
+  <circle cx="308" cy="119" r="10" fill="#4f8cff"/>
+  <text x="336" y="114" fill="#fff" font-family="sans-serif" font-size="20">Big Buck Bunny</text>
+  <text x="336" y="138" fill="#9fb2cf" font-family="sans-serif" font-size="15">当前播放 · 视频和声音 · 循环</text>
+  <rect x="742" y="510" width="108" height="48" rx="12" fill="#29354b"/>
+  <text x="796" y="541" text-anchor="middle" fill="#fff" font-family="sans-serif" font-size="18">关闭</text>
+  <rect x="866" y="510" width="108" height="48" rx="12" fill="#315efb"/>
+  <text x="920" y="541" text-anchor="middle" fill="#fff" font-family="sans-serif" font-size="18" font-weight="700">确定</text>
+</svg>

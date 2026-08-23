@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240" role="img" aria-labelledby="title desc">
+  <title id="title">SZP Wi-Fi CSI Smoke dashboard</title>
+  <desc id="desc">Landscape CSI diagnostic dashboard with capture status, a curve and basic frame fields.</desc>
+  <rect width="320" height="240" fill="#10243d"/>
+  <rect width="320" height="34" fill="#001f5f"/>
+  <text x="18" y="23" fill="white" font-family="monospace" font-size="17" font-weight="bold">CSI SMOKE</text>
+  <text x="18" y="57" fill="#00e676" font-family="monospace" font-size="13" font-weight="bold">CAPTURING</text>
+  <rect x="18" y="79" width="284" height="81" rx="5" fill="#18e3" stroke="#2945"/>
+  <path d="M18 99H302M18 119H302M18 139H302M53 79V160M124 79V160M195 79V160M266 79V160" stroke="#2945"/>
+  <polyline points="18,140 31,132 44,144 57,117 70,129 83,105 96,119 109,92 122,109 135,96 148,82 161,107 174,95 187,119 200,104 213,132 226,113 239,140 252,124 265,148 278,131 291,142 302,136" fill="none" stroke="#00ffff" stroke-width="2"/>
+  <g fill="white" font-family="monospace" font-size="12" font-weight="bold">
+    <text x="18" y="184">CH-6</text><text x="18" y="211">RSSI--48</text>
+    <text x="164" y="184">FRAMES-128</text><text x="164" y="211">SAMPLES-96</text>
+  </g>
+</svg>

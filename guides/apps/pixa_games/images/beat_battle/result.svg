@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Beat Battle Result</title>
+  <desc id="desc">Victory result screen with score and judgment statistics.</desc>
+  <rect width="240" height="240" fill="#080b18"/>
+  <circle cx="120" cy="50" r="30" fill="#30215a" stroke="#f9c74f" stroke-width="3"/>
+  <path d="M100 45 L91 36 L103 38 M140 45 L149 36 L137 38" fill="#30215a" stroke="#f9c74f" stroke-width="3"/>
+  <path d="M104 54 Q120 68 136 54" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <text x="120" y="96" text-anchor="middle" fill="#f9c74f" font-family="monospace" font-size="21" font-weight="700">VICTORY</text>
+  <rect x="32" y="108" width="176" height="80" rx="9" fill="#11182a" stroke="#334155" stroke-width="2"/>
+  <text x="48" y="128" fill="#a7b0c0" font-family="monospace" font-size="9">SCORE</text><text x="192" y="128" text-anchor="end" fill="#ffffff" font-family="monospace" font-size="10">02480</text>
+  <text x="48" y="145" fill="#a7b0c0" font-family="monospace" font-size="9">MAX COMBO</text><text x="192" y="145" text-anchor="end" fill="#ffffff" font-family="monospace" font-size="10">32</text>
+  <text x="48" y="162" fill="#6dffb0" font-family="monospace" font-size="9">PERFECT 24</text><text x="192" y="162" text-anchor="end" fill="#70b7ff" font-family="monospace" font-size="9">GOOD 06</text>
+  <text x="48" y="179" fill="#ff7898" font-family="monospace" font-size="9">MISS 02</text><text x="192" y="179" text-anchor="end" fill="#cbd5e1" font-family="monospace" font-size="9">HP 3</text>
+  <rect x="34" y="204" width="172" height="24" rx="12" fill="#5b3fbd"/>
+  <text x="120" y="220" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="10" font-weight="700">ACTION: RETRY</text>
+</svg>

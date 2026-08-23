@@ -1,0 +1,29 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+# Publishes committed LVGL C descriptors from product-owned PNG sources.
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "conv_png_lib",
+    srcs = ["conv_png.py"],
+    imports = ["."],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_binary(
+    name = "conv_png",
+    srcs = ["conv_png.py"],
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":conv_png_lib"],
+)

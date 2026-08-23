@@ -1,0 +1,61 @@
+PROJECT_NAME           = "GizOS Public API"
+OUTPUT_DIRECTORY       = $(H2_GUIDES_GENERATED_ROOT)/doxygen
+
+INPUT                  = libs/app_test/include \
+                         libs/audio_mixer/include \
+                         libs/bleikcp/include \
+                         libs/bundle/include \
+                         libs/command/include \
+                         libs/pal/providers/corehttp/include \
+                         libs/pal/providers/coremqtt/include \
+                         libs/dns/include \
+                         libs/pal/providers/ffmpeg/include \
+                         libs/drivers \
+                         libs/game_runtime/include \
+                         libs/gizclaw/include \
+                         libs/pal/providers/h2peer/include \
+                         libs/pal/providers/h2sctp/include \
+                         projects/h2loader/libs/h2loader/include \
+                         libs/iostreamikcp/include \
+                         libs/lvgl/include \
+                         libs/mp4_decoder/include \
+                         libs/ntp/include \
+                         libs/pal/include \
+                         libs/pixa/include \
+                         libs/pal/providers/portaudio/include \
+                         libs/runtime/include \
+                         libs/pal/providers/sdl3/include \
+                         libs/pal/providers/sqlite/include \
+                         libs/pal/providers/tinyh264/include \
+                         libs/utils/include \
+                         libs/pal/providers/wolfssl/include
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */src/* */tests/* */test/*
+
+OPTIMIZE_OUTPUT_FOR_C  = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+SHOW_INCLUDE_FILES     = NO
+SORT_MEMBER_DOCS       = NO
+SORT_BRIEF_DOCS        = NO
+
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_LOGFILE           = $(H2_GUIDES_GENERATED_ROOT)/doxygen-warnings.log
+
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = NO
+
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+SKIP_FUNCTION_MACROS   = YES

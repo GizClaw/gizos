@@ -1,0 +1,13 @@
+def format(target):
+    target_providers = providers(target)
+    if "IncompatiblePlatformProvider" in target_providers:
+        return ""
+    matches = [
+        value
+        for key, value in target_providers.items()
+        if str(key).endswith("%FirmwareReleaseInfo")
+    ]
+    if len(matches) != 1:
+        fail("target must expose exactly one FirmwareReleaseInfo: " + str(target.label))
+    info = matches[0]
+    return "\n".join([file.path for file in info.release_files.to_list()])

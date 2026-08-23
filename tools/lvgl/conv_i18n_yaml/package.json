@@ -1,0 +1,14 @@
+{
+  "name": "@h2vivi/lvgl-conv-i18n-yaml",
+  "private": true,
+  "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "yaml": "2.9.0"
+  }
+}

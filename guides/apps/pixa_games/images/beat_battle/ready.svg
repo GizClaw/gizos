@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Beat Battle Ready</title>
+  <desc id="desc">Ready screen showing the enemy and three button cue mappings.</desc>
+  <rect width="240" height="240" fill="#080b18"/>
+  <circle cx="120" cy="69" r="35" fill="#38205f" stroke="#bd83ff" stroke-width="3"/>
+  <path d="M93 55 L81 42 L99 45 M147 55 L159 42 L141 45" fill="#38205f" stroke="#bd83ff" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="107" cy="66" r="4" fill="#ffffff"/><circle cx="133" cy="66" r="4" fill="#ffffff"/>
+  <path d="M105 82 Q120 92 135 82" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <text x="120" y="22" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="16" font-weight="700">BEAT BATTLE</text>
+  <text x="120" y="119" text-anchor="middle" fill="#a7b0c0" font-family="monospace" font-size="9">MATCH THE ATTACK</text>
+  <g transform="translate(25 132)">
+    <rect width="56" height="42" rx="7" fill="#102d55" stroke="#4a9dff" stroke-width="2"/>
+    <path d="M35 10 L19 21 L35 32 Z" fill="#4a9dff"/>
+    <text x="28" y="55" text-anchor="middle" fill="#d7e9ff" font-family="monospace" font-size="9">LEFT</text>
+  </g>
+  <g transform="translate(92 132)">
+    <rect width="56" height="42" rx="7" fill="#173e45" stroke="#52e0d1" stroke-width="2"/>
+    <path d="M21 10 L37 21 L21 32 Z" fill="#52e0d1"/>
+    <text x="28" y="55" text-anchor="middle" fill="#d8fffb" font-family="monospace" font-size="9">RIGHT</text>
+  </g>
+  <g transform="translate(159 132)">
+    <rect width="56" height="42" rx="7" fill="#55182b" stroke="#ff537c" stroke-width="2"/>
+    <circle cx="28" cy="21" r="12" fill="#ff537c"/>
+    <text x="28" y="55" text-anchor="middle" fill="#ffe0e8" font-family="monospace" font-size="9">ACTION</text>
+  </g>
+  <rect x="34" y="204" width="172" height="24" rx="12" fill="#5b3fbd"/>
+  <text x="120" y="220" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="10" font-weight="700">PRESS ANY KEY</text>
+</svg>

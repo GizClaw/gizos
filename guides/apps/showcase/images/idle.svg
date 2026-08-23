@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="600" viewBox="0 0 1024 600" role="img" aria-labelledby="title desc">
+  <title id="title">展架待机视频</title>
+  <desc id="desc">待机视频铺满整个显示区域，不叠加任何文字或操作提示。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171a35"/>
+      <stop offset="0.55" stop-color="#53428f"/>
+      <stop offset="1" stop-color="#d94772"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="600" fill="url(#bg)"/>
+  <circle cx="768" cy="183" r="152" fill="#fff" opacity="0.12"/>
+  <path d="M0 500 C208 417 344 542 560 450 S840 400 1024 492 V600 H0Z" fill="#090b1d" opacity="0.72"/>
+</svg>

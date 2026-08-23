@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480" role="img" aria-labelledby="title desc">
+  <title id="title">Wi-Fi CSI Smoke dashboard on BK7258</title>
+  <desc id="desc">An 800 by 480 landscape diagnostic dashboard showing the BK7258 provider in an SDK incompatible state, with no valid CSI data and a detailed error.</desc>
+  <rect width="800" height="480" fill="#07111f"/>
+  <rect width="800" height="64" fill="#10243d"/>
+  <path d="M25 40c8-10 20-10 28 0M32 47c5-5 13-5 18 0M41 53h0" fill="none" stroke="#67e8f9" stroke-width="4" stroke-linecap="round"/>
+  <text x="72" y="41" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="26" font-weight="700">WI-FI CSI</text>
+  <text x="392" y="41" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="17">BK7258</text>
+  <rect x="564" y="13" width="214" height="38" rx="19" fill="#401d24" stroke="#fb7185" stroke-width="2"/>
+  <text x="671" y="39" text-anchor="middle" fill="#fecdd3" font-family="ui-monospace, monospace" font-size="16" font-weight="700">SDK INCOMPATIBLE</text>
+
+  <rect x="22" y="84" width="756" height="82" rx="10" fill="#0f1d30" stroke="#263b55" stroke-width="2"/>
+  <text x="42" y="110" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="15">PROVIDER</text>
+  <text x="42" y="143" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="23" font-weight="700">bk7258</text>
+  <text x="352" y="110" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="15">SDK REVISION</text>
+  <text x="352" y="143" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="21" font-weight="700">recorded in evidence</text>
+  <text x="666" y="110" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="15">FRAMES/S</text>
+  <text x="666" y="143" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="23" font-weight="700">0</text>
+
+  <rect x="22" y="184" width="756" height="176" rx="12" fill="#0b1929" stroke="#1e3a53" stroke-width="2"/>
+  <text x="42" y="216" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="16">SUBCARRIER AMPLITUDE</text>
+  <line x1="46" y1="246" x2="754" y2="246" stroke="#173047" stroke-width="2"/>
+  <line x1="46" y1="290" x2="754" y2="290" stroke="#173047" stroke-width="2"/>
+  <line x1="46" y1="334" x2="754" y2="334" stroke="#173047" stroke-width="2"/>
+  <text x="400" y="296" text-anchor="middle" fill="#64748b" font-family="ui-monospace, monospace" font-size="25" font-weight="700">NO VALID CSI DATA</text>
+
+  <rect x="22" y="378" width="756" height="80" rx="10" fill="#401d24" stroke="#fb7185" stroke-width="2"/>
+  <text x="42" y="405" fill="#fda4af" font-family="ui-monospace, monospace" font-size="15">LAST ERROR · sdk_compat</text>
+  <text x="42" y="436" fill="#ffe4e6" font-family="ui-monospace, monospace" font-size="19" font-weight="700">BEACON EVENT FALL-THROUGH · CODE -1004</text>
+  <text x="758" y="405" text-anchor="end" fill="#fda4af" font-family="ui-monospace, monospace" font-size="15">INVALID 0 · DROP 0</text>
+  <text x="758" y="436" text-anchor="end" fill="#fda4af" font-family="ui-monospace, monospace" font-size="15">SESSION 1</text>
+</svg>

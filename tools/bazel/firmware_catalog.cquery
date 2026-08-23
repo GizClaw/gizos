@@ -1,0 +1,25 @@
+def format(target):
+    target_providers = providers(target)
+    if "IncompatiblePlatformProvider" in target_providers:
+        return ""
+    matches = [
+        value
+        for key, value in target_providers.items()
+        if str(key).endswith("%FirmwareReleaseInfo")
+    ]
+    if len(matches) != 1:
+        fail("target must expose exactly one FirmwareReleaseInfo: " + str(target.label))
+    info = matches[0]
+    label = str(target.label)
+    if label.startswith("@@"):
+        label = label[2:]
+    return json.encode({
+        "board": info.board,
+        "entry": info.entry,
+        "image": info.image,
+        "label": label,
+        "platform": info.platform,
+        "role": info.role,
+        "target": info.target,
+        "version": info.version,
+    })

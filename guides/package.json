@@ -1,0 +1,21 @@
+{
+  "name": "gizos-project-guide",
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
+  "scripts": {
+    "api": "node api/generate.mjs",
+    "dev": "npm run api && vitepress dev .",
+    "build": "npm run api && vitepress build .",
+    "preview": "vitepress preview ."
+  },
+  "devDependencies": {
+    "debug": "^4.4.3",
+    "fast-xml-parser": "^5.2.5",
+    "mermaid": "^11.16.0",
+    "vue": "3.5.39",
+    "vitepress": "2.0.0-alpha.18",
+    "vitepress-mermaid-plugin": "^3.0.0"
+  }
+}

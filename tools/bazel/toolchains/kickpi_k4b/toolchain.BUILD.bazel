@@ -1,0 +1,77 @@
+load("@rules_cc//cc:defs.bzl", "cc_toolchain")
+load(":cc_toolchain_config.bzl", "k4b_cc_toolchain_config")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "opt_mode",
+    values = {"compilation_mode": "opt"},
+)
+
+filegroup(
+    name = "all_files",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "BUILD.bazel",
+            "cc_toolchain_config.bzl",
+        ],
+    ),
+)
+
+k4b_cc_toolchain_config(
+    name = "config",
+    builtin_include_directories = [
+        "%package(//)%/lib/gcc/arm-linux-gnueabihf/8.2.1/include",
+        "%package(//)%/lib/gcc/arm-linux-gnueabihf/8.2.1/include-fixed",
+        "%package(//)%/arm-linux-gnueabihf/include/c++/8.2.1",
+        "%package(//)%/arm-linux-gnueabihf/include/c++/8.2.1/arm-linux-gnueabihf",
+        "%package(//)%/arm-linux-gnueabihf/include/c++/8.2.1/backward",
+        "%package(//)%/arm-linux-gnueabihf/include",
+        "%package(//)%/arm-linux-gnueabihf/libc/usr/include",
+    ],
+    compile_flags = select({
+        ":opt_mode": [
+            "-O2",
+            "-DNDEBUG",
+        ],
+        "//conditions:default": [],
+    }),
+    tool_paths = {
+        "ar": "bin/arm-linux-gnueabihf-ar",
+        "cpp": "bin/arm-linux-gnueabihf-cpp",
+        "gcc": "bin/arm-linux-gnueabihf-gcc",
+        "gcov": "bin/arm-linux-gnueabihf-gcov",
+        "ld": "bin/arm-linux-gnueabihf-ld",
+        "nm": "bin/arm-linux-gnueabihf-nm",
+        "objdump": "bin/arm-linux-gnueabihf-objdump",
+        "strip": "bin/arm-linux-gnueabihf-strip",
+    },
+)
+
+cc_toolchain(
+    name = "cc_toolchain",
+    all_files = ":all_files",
+    ar_files = ":all_files",
+    compiler_files = ":all_files",
+    dwp_files = ":all_files",
+    linker_files = ":all_files",
+    objcopy_files = ":all_files",
+    strip_files = ":all_files",
+    toolchain_config = ":config",
+    toolchain_identifier = "arm-gnu-8.2.1-arm-linux-gnueabihf",
+)
+
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:armv7",
+        "@platforms//os:linux",
+    ],
+    toolchain = ":cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)

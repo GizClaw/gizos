@@ -1,0 +1,68 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+load("//tools/bazel/platforms:compatibility.bzl", "WINDOWS_X86_64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "smoke_library",
+    srcs = ["smoke_library.c"],
+    hdrs = ["smoke_library.h"],
+    copts = H2_C11_OPTS + H2_WARNING_COPTS,
+)
+
+cc_test(
+    name = "toolchain_smoke_test",
+    srcs = ["toolchain_smoke_test.cpp"],
+    copts = H2_CXX17_OPTS + H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":smoke_library"],
+)
+
+cc_binary(
+    name = "cross_artifact",
+    srcs = ["cross_artifact.c"],
+    copts = h2_gnu_only_copts(["-g0"]) + H2_C11_OPTS + H2_WARNING_COPTS,
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-Wl,--build-id=none",
+            "-Wl,--export-dynamic",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_binary(
+    name = "windows_exe_smoke",
+    srcs = ["windows_exe_smoke.cc"],
+    copts = [
+        "/std:c++17",
+        "/W4",
+        "/WX",
+    ],
+    linkopts = ["-DEFAULTLIB:bcrypt.lib"],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+)
+
+cc_test(
+    name = "windows_exe_smoke_test",
+    srcs = ["windows_exe_smoke.cc"],
+    copts = [
+        "/std:c++17",
+        "/W4",
+        "/WX",
+    ],
+    linkopts = ["-DEFAULTLIB:bcrypt.lib"],
+    target_compatible_with = WINDOWS_X86_64_ARTIFACT_COMPATIBILITY,
+)

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240" role="img" aria-labelledby="title desc">
+  <title id="title">BLE iKCP Baseline Client landscape screen</title>
+  <desc id="desc">Client running screen with link parameters, five-second transmit and receive speeds, totals, reconnect counters, and preserved last connection error.</desc>
+  <rect width="320" height="240" fill="#08111f"/>
+  <rect x="0" y="0" width="320" height="38" fill="#10243d"/>
+  <circle cx="18" cy="19" r="6" fill="#60a5fa"/>
+  <text x="31" y="24" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="15" font-weight="700">BLE iKCP · CLIENT</text>
+  <rect x="244" y="9" width="64" height="21" rx="10.5" fill="#123b34" stroke="#2dd4bf"/>
+  <text x="276" y="24" text-anchor="middle" fill="#99f6e4" font-family="ui-monospace, monospace" font-size="11" font-weight="700">RUNNING</text>
+
+  <rect x="10" y="47" width="300" height="34" rx="7" fill="#0f1d30" stroke="#263b55"/>
+  <text x="20" y="61" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">PEER</text>
+  <text x="20" y="75" fill="#e2e8f0" font-family="ui-monospace, monospace" font-size="12" font-weight="700">C3:D4</text>
+  <text x="86" y="61" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">MTU</text>
+  <text x="86" y="75" fill="#e2e8f0" font-family="ui-monospace, monospace" font-size="12" font-weight="700">517</text>
+  <text x="139" y="61" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">PHY</text>
+  <text x="139" y="75" fill="#e2e8f0" font-family="ui-monospace, monospace" font-size="12" font-weight="700">2M</text>
+  <text x="192" y="61" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">INTERVAL</text>
+  <text x="192" y="75" fill="#e2e8f0" font-family="ui-monospace, monospace" font-size="12" font-weight="700">15 ms</text>
+
+  <rect x="10" y="90" width="145" height="58" rx="8" fill="#0d2830" stroke="#155e75"/>
+  <text x="20" y="108" fill="#67e8f9" font-family="ui-monospace, monospace" font-size="11" font-weight="700">TX · LAST 5S</text>
+  <text x="20" y="137" fill="#ecfeff" font-family="ui-monospace, monospace" font-size="23" font-weight="700">126.7</text>
+  <text x="105" y="137" fill="#a5f3fc" font-family="ui-monospace, monospace" font-size="10">KiB/s</text>
+  <rect x="165" y="90" width="145" height="58" rx="8" fill="#12243a" stroke="#3b82f6"/>
+  <text x="175" y="108" fill="#93c5fd" font-family="ui-monospace, monospace" font-size="11" font-weight="700">RX · LAST 5S</text>
+  <text x="175" y="137" fill="#eff6ff" font-family="ui-monospace, monospace" font-size="23" font-weight="700">128.1</text>
+  <text x="260" y="137" fill="#bfdbfe" font-family="ui-monospace, monospace" font-size="10">KiB/s</text>
+
+  <rect x="10" y="157" width="300" height="28" rx="6" fill="#0f1d30"/>
+  <text x="20" y="175" fill="#cbd5e1" font-family="ui-monospace, monospace" font-size="11">TOTAL</text>
+  <text x="69" y="175" fill="#67e8f9" font-family="ui-monospace, monospace" font-size="11">TX 1.18 GiB</text>
+  <text x="180" y="175" fill="#93c5fd" font-family="ui-monospace, monospace" font-size="11">RX 1.20 GiB</text>
+
+  <text x="12" y="204" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">CONN</text>
+  <text x="46" y="204" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="11" font-weight="700">4</text>
+  <text x="74" y="204" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">RECONN</text>
+  <text x="121" y="204" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="11" font-weight="700">3</text>
+  <text x="149" y="204" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">DISC</text>
+  <text x="181" y="204" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="11" font-weight="700">3</text>
+  <text x="210" y="204" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">RTX</text>
+  <text x="238" y="204" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="11" font-weight="700">0</text>
+  <text x="263" y="204" fill="#94a3b8" font-family="ui-monospace, monospace" font-size="10">WAIT</text>
+  <text x="296" y="204" fill="#f8fafc" font-family="ui-monospace, monospace" font-size="11" font-weight="700">0</text>
+
+  <rect x="10" y="213" width="300" height="19" rx="5" fill="#291b23" stroke="#7f1d1d"/>
+  <text x="18" y="226" fill="#fca5a5" font-family="ui-monospace, monospace" font-size="10">LAST ERROR</text>
+  <text x="88" y="226" fill="#fecaca" font-family="ui-monospace, monospace" font-size="10" font-weight="700">connect · -4</text>
+</svg>

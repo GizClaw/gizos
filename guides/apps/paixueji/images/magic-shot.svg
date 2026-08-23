@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">魔拍取景页</title><desc id="desc">拍摄真实场景后，把当前角色小拍自然生成到图片中。</desc>
+  <defs><linearGradient id="scene" x2="0" y2="1"><stop stop-color="#cde7ff"/><stop offset=".55" stop-color="#e9f2d8"/><stop offset="1" stop-color="#83b990"/></linearGradient></defs>
+  <rect width="480" height="800" fill="#171525"/>
+  <rect x="16" y="16" width="448" height="636" rx="36" fill="url(#scene)"/>
+  <circle cx="380" cy="112" r="48" fill="#fff4a3"/><path d="M16 480c72-67 126-73 197-13 74-91 155-105 251-7v192H16z" fill="#6aa174"/><path d="M16 550c95-58 179-31 250 28 57-42 122-51 198-19v93H16z" fill="#47785e"/>
+  <g opacity=".56" transform="translate(159 226)"><circle cx="81" cy="82" r="75" fill="#fff"/><rect x="20" y="43" width="122" height="139" rx="58" fill="#ded7ff"/><rect x="38" y="66" width="86" height="57" rx="28" fill="#392d72"/><circle cx="65" cy="94" r="7" fill="#fff"/><circle cx="98" cy="94" r="7" fill="#fff"/><path d="M67 109c10 9 20 9 29 0" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/></g>
+  <g font-family="system-ui,'PingFang SC',sans-serif">
+    <circle cx="48" cy="52" r="24" fill="#fff" opacity=".8"/><path d="M53 42l-10 10 10 10" fill="none" stroke="#3f3752" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="314" y="31" width="127" height="43" rx="21" fill="#fff" opacity=".86"/><circle cx="338" cy="52" r="14" fill="#7965e9"/><text x="361" y="58" fill="#3a324d" font-size="15" font-weight="650">小拍</text><path d="M419 48l5 5 5-5" fill="none" stroke="#625875" stroke-width="2"/>
+    <rect x="87" y="589" width="306" height="43" rx="21" fill="#211c38" opacity=".68"/><text x="240" y="616" text-anchor="middle" fill="#fff" font-size="15">小拍将自然出现在这张照片里</text>
+  </g>
+  <g transform="translate(0 652)"><rect width="480" height="148" fill="#171525"/><circle cx="240" cy="68" r="43" fill="none" stroke="#fff" stroke-width="5"/><circle cx="240" cy="68" r="33" fill="#fff"/><circle cx="84" cy="68" r="25" fill="#332d4c"/><path d="M74 68h20M84 58v20" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="396" cy="68" r="25" fill="#332d4c"/><path d="M386 64h20M390 72h12" stroke="#fff" stroke-width="3" stroke-linecap="round"/></g>
+</svg>

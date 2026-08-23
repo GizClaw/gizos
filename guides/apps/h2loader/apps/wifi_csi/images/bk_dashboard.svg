@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480" role="img" aria-labelledby="title desc">
+  <title id="title">BK Wi-Fi CSI Smoke dashboard</title>
+  <desc id="desc">Landscape BK CSI diagnostic dashboard retaining an SDK incompatible error for inspection.</desc>
+  <rect width="800" height="480" fill="#10243d"/>
+  <rect width="800" height="68" fill="#001f5f"/>
+  <text x="42" y="45" fill="white" font-family="monospace" font-size="34" font-weight="bold">CSI SMOKE</text>
+  <rect x="42" y="92" width="716" height="56" rx="8" fill="#7f0000"/>
+  <text x="66" y="129" fill="white" font-family="monospace" font-size="28" font-weight="bold">SDK INCOMPATIBLE</text>
+  <rect x="42" y="176" width="716" height="170" rx="8" fill="#18e3" stroke="#2945" stroke-width="2"/>
+  <path d="M42 219H758M42 262H758M42 305H758M131 176V346M310 176V346M489 176V346M668 176V346" stroke="#2945" stroke-width="2"/>
+  <text x="400" y="270" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="30" font-weight="bold">NO VALID CSI DATA</text>
+  <g fill="white" font-family="monospace" font-size="25" font-weight="bold">
+    <text x="42" y="396">CH-0</text><text x="42" y="445">RSSI-0</text>
+    <text x="405" y="396">FRAMES-0</text><text x="405" y="445">SAMPLES-0</text>
+  </g>
+</svg>

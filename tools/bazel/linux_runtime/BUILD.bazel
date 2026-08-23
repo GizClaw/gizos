@@ -1,0 +1,50 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "LINUX_X86_64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "ubuntu_24_04_x86_64_allowlist.json",
+    "validate.py",
+])
+
+cc_library(
+    name = "linux_runtime",
+    data = [
+        "ubuntu_24_04_x86_64_allowlist.json",
+        "validate.py",
+    ],
+)
+
+py_test(
+    name = "validate_test",
+    srcs = [
+        "test_validate.py",
+        "validate.py",
+    ],
+    data = ["ubuntu_24_04_x86_64_allowlist.json"],
+    legacy_create_init = 0,
+    main = "test_validate.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "validate_integration_test",
+    srcs = [
+        "test_validate_integration.py",
+        "validate.py",
+    ],
+    data = [
+        "ubuntu_24_04_x86_64_allowlist.json",
+        "//projects/showcase/targets/cc_binary/showcase",
+    ],
+    legacy_create_init = 0,
+    main = "test_validate_integration.py",
+    target_compatible_with = LINUX_X86_64_ARTIFACT_COMPATIBILITY,
+)

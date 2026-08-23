@@ -1,0 +1,61 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
+load("@lvgl_conv_i18n_yaml_npm//:defs.bzl", "npm_link_all_packages")
+
+package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
+
+filegroup(
+    name = "metadata",
+    srcs = [
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+    ],
+)
+
+filegroup(
+    name = "runtime",
+    srcs = ["src/conv_i18n_yaml.mjs"],
+)
+
+js_binary(
+    name = "conv_i18n_yaml",
+    chdir = "",
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [
+        ":node_modules",
+        ":runtime",
+    ],
+    entry_point = "src/conv_i18n_yaml.mjs",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "conv_i18n_yaml_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [
+        ":metadata",
+        ":node_modules",
+        ":runtime",
+    ],
+    entry_point = "tests/conv_i18n_yaml.test.mjs",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

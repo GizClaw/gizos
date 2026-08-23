@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">安全管理</title><desc id="desc">家长密码验证后的安全管理页面，包含通话联系人、时长、内容、权限、数据和授权规则。</desc>
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#f3fff9"/><stop offset="1" stop-color="#e2e0f6"/></linearGradient></defs><rect width="480" height="800" fill="url(#bg)"/>
+  <circle cx="42" cy="52" r="24" fill="#fff"/><path d="M47 42l-10 10 10 10" fill="none" stroke="#3e4a49" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="91" y="61" fill="#2f3e3c" font-family="system-ui,'PingFang SC',sans-serif" font-size="28" font-weight="750">安全</text><rect x="376" y="34" width="79" height="38" rx="19" fill="#ddf3ec"/><text x="415" y="59" text-anchor="middle" fill="#3d897b" font-family="system-ui,'PingFang SC',sans-serif" font-size="14" font-weight="650">已解锁</text>
+  <g font-family="system-ui,'PingFang SC',sans-serif"><rect x="25" y="99" width="430" height="113" rx="29" fill="#53aa9e"/><text x="51" y="137" fill="#dff7f2" font-size="14">今日使用</text><text x="51" y="181" fill="#fff" font-size="35" font-weight="750">42 分钟</text><rect x="286" y="131" width="133" height="45" rx="22" fill="#fff"/><text x="352" y="160" text-anchor="middle" fill="#428c81" font-size="15" font-weight="700">调整时间规则</text>
+    <text x="25" y="261" fill="#72807d" font-size="14" font-weight="650">家长策略</text><rect x="25" y="278" width="430" height="363" rx="29" fill="#fff"/>
+    <g fill="#42504d" font-size="16"><text x="82" y="318">通话联系人</text><text x="82" y="370">使用时长与休息</text><text x="82" y="422">内容安全等级</text><text x="82" y="474">摄像头与麦克风</text><text x="82" y="526">数据与备份</text><text x="82" y="578">第三方音乐授权</text><text x="82" y="630">积分与角色解锁</text></g>
+    <g fill="#7e8987" font-size="13" text-anchor="end"><text x="424" y="318">4 人 · 仅白名单  ›</text><text x="424" y="370">每日 90 分钟  ›</text><text x="424" y="422">儿童模式  ›</text><text x="424" y="474">允许  ›</text><text x="424" y="526">仅本机  ›</text><text x="424" y="578">未连接  ›</text><text x="424" y="630">需家长确认  ›</text></g>
+    <g fill="#56aa9e"><circle cx="54" cy="312" r="15"/><circle cx="54" cy="364" r="15"/><circle cx="54" cy="416" r="15"/><circle cx="54" cy="468" r="15"/><circle cx="54" cy="520" r="15"/><circle cx="54" cy="572" r="15"/><circle cx="54" cy="624" r="15"/></g>
+    <path d="M42 338h388M42 390h388M42 442h388M42 494h388M42 546h388M42 598h388" stroke="#e9efed"/>
+    <rect x="25" y="668" width="430" height="66" rx="25" fill="#fff"/><text x="54" y="709" fill="#d15d66" font-size="17" font-weight="650">数据导出、删除与恢复出厂设置</text><text x="423" y="709" text-anchor="end" fill="#a9959a" font-size="18">›</text>
+  </g>
+</svg>

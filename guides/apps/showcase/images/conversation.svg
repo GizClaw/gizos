@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="600" viewBox="0 0 1024 600" role="img" aria-labelledby="title desc">
+  <title id="title">Showcase 迪迦对话中效果</title>
+  <desc id="desc">背景 MP4 继续全屏循环，右上角通过角色呼吸光环和播放波形显示迪迦正在回复。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171a35"/>
+      <stop offset="0.55" stop-color="#53428f"/>
+      <stop offset="1" stop-color="#d94772"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="600" fill="url(#bg)"/>
+  <circle cx="768" cy="183" r="152" fill="#fff" opacity="0.12"/>
+  <path d="M0 500 C208 417 344 542 560 450 S840 400 1024 492 V600 H0Z" fill="#090b1d" opacity="0.72"/>
+  <g filter="url(#shadow)">
+    <rect x="650" y="34" width="340" height="292" rx="24" fill="#080b18" fill-opacity="0.94" stroke="#8ec5ff" stroke-width="2"/>
+    <circle cx="753" cy="139" r="92" fill="#69dfff" opacity="0.08"/>
+    <circle cx="753" cy="139" r="84" fill="none" stroke="#69dfff" stroke-width="3" opacity="0.55"/>
+    <circle cx="753" cy="139" r="77" fill="none" stroke="#b4ecff" stroke-width="2" opacity="0.8"/>
+    <image href="/showcase/tiga.png" x="668" y="54" width="170" height="170" preserveAspectRatio="xMidYMid meet"/>
+    <text x="850" y="92" fill="#fff" font-family="sans-serif" font-size="26" font-weight="700">迪迦</text>
+    <text x="850" y="128" fill="#9ddcff" font-family="sans-serif" font-size="18">角色回复中</text>
+    <rect x="674" y="230" width="292" height="66" rx="14" fill="#19223a"/>
+    <rect x="694" y="253" width="5" height="18" rx="2.5" fill="#69dfff"/>
+    <rect x="704" y="247" width="5" height="30" rx="2.5" fill="#69dfff"/>
+    <rect x="714" y="242" width="5" height="40" rx="2.5" fill="#b4ecff"/>
+    <rect x="724" y="249" width="5" height="26" rx="2.5" fill="#69dfff"/>
+    <rect x="734" y="255" width="5" height="14" rx="2.5" fill="#69dfff"/>
+    <text x="754" y="258" fill="#fff" font-family="sans-serif" font-size="18">你好！今天想聊些什么？</text>
+    <text x="754" y="282" fill="#aebbd3" font-family="sans-serif" font-size="15">正在播放角色回复</text>
+  </g>
+</svg>

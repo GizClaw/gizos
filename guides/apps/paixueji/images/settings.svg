@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">普通设置</title><desc id="desc">设置页不要求家长密码，只包含常用设备选项。</desc>
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#faf9ff"/><stop offset="1" stop-color="#e8e4f7"/></linearGradient></defs><rect width="480" height="800" fill="url(#bg)"/>
+  <circle cx="42" cy="52" r="24" fill="#fff"/><path d="M47 42l-10 10 10 10" fill="none" stroke="#474052" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><text x="91" y="61" fill="#332d3e" font-family="system-ui,'PingFang SC',sans-serif" font-size="28" font-weight="750">设置</text>
+  <g font-family="system-ui,'PingFang SC',sans-serif"><text x="25" y="113" fill="#81788a" font-size="14" font-weight="650">设备</text>
+    <rect x="25" y="130" width="430" height="250" rx="28" fill="#fff"/>
+    <g fill="#5b5364" font-size="18"><text x="82" y="177">音量</text><text x="82" y="237">屏幕亮度</text><text x="82" y="297">Wi-Fi</text><text x="82" y="357">熄屏时间</text></g>
+    <g fill="#857c8d" font-size="15" text-anchor="end"><text x="424" y="177">70%  ›</text><text x="424" y="237">自动  ›</text><text x="424" y="297">已连接  ›</text><text x="424" y="357">5 分钟  ›</text></g>
+    <g fill="#7462da"><circle cx="54" cy="171" r="16"/><circle cx="54" cy="231" r="16"/><circle cx="54" cy="291" r="16"/><circle cx="54" cy="351" r="16"/></g>
+    <path d="M43 171h7l8-7v14l-8-7M45 231h18M54 222v18M44 292c6-7 14-7 20 0M48 298c4-4 8-4 12 0M54 304h.1M54 341v10l7 5" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M42 190h388M42 250h388M42 310h388" stroke="#eeeaf2"/>
+    <text x="25" y="430" fill="#81788a" font-size="14" font-weight="650">系统</text>
+    <rect x="25" y="447" width="430" height="250" rx="28" fill="#fff"/>
+    <g fill="#5b5364" font-size="18"><text x="82" y="494">语言</text><text x="82" y="554">按键反馈</text><text x="82" y="614">设备信息</text><text x="82" y="674">系统更新</text></g>
+    <g fill="#857c8d" font-size="15" text-anchor="end"><text x="424" y="494">简体中文  ›</text><text x="424" y="554">声音与振动  ›</text><text x="424" y="614">›</text><text x="424" y="674">已是最新  ›</text></g>
+    <g fill="#696171"><circle cx="54" cy="488" r="16"/><circle cx="54" cy="548" r="16"/><circle cx="54" cy="608" r="16"/><circle cx="54" cy="668" r="16"/></g>
+    <text x="54" y="494" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">文</text><path d="M47 548h5l5-5v10l-5-5M61 544c4 3 4 7 0 10M54 599v18M48 603h12M46 668h16M54 660v16" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M42 507h388M42 567h388M42 627h388" stroke="#eeeaf2"/>
+  </g>
+</svg>

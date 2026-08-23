@@ -1,0 +1,25 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools/bazel:cc_options.bzl", "H2_CXX11_OPTS", "H2_WALL_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "mklittlefs",
+    srcs = ["@h2_vendor_mklittlefs//:src/main.cpp"],
+    copts = ["-Os"] + H2_WALL_COPTS,
+    cxxopts = H2_CXX11_OPTS,
+    local_defines = [
+        "BUILD_CONFIG=\\\"\\\"",
+        "BUILD_CONFIG_NAME=\\\"-generic\\\"",
+        "LFS_NAME_MAX=32",
+        "LITTLEFS_VERSION=\\\"v2.5.1\\\"",
+        "VERSION=\\\"3.1.0\\\"",
+        "__NO_INLINE__",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//tools/bazel:vendor_third_party_mklittlefs"],
+)

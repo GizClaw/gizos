@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Polygon Battle Result</title>
+  <desc id="desc">Game over result screen with score and gameplay statistics.</desc>
+  <rect width="240" height="240" fill="#050816"/>
+  <g fill="#ffffff" opacity=".5"><circle cx="21" cy="28" r="1"/><circle cx="52" cy="66" r="1.5"/><circle cx="184" cy="38" r="1"/><circle cx="218" cy="82" r="1.5"/><circle cx="144" cy="61" r="1"/></g>
+  <g transform="translate(120 48)">
+    <path d="M0 -20 L16 14 L6 10 L0 18 L-6 10 L-16 14 Z" fill="#42e8e0" stroke="#c8ffff" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M-6 15 L0 26 L6 15" fill="#f9c74f"/>
+  </g>
+  <text x="120" y="99" text-anchor="middle" fill="#ff4d6d" font-family="monospace" font-size="18" font-weight="700">GAME OVER</text>
+  <rect x="32" y="111" width="176" height="78" rx="9" fill="#11182a" stroke="#334155" stroke-width="2"/>
+  <text x="48" y="132" fill="#a7b0c0" font-family="monospace" font-size="9">SCORE</text><text x="192" y="132" text-anchor="end" fill="#ffffff" font-family="monospace" font-size="10">05280</text>
+  <text x="48" y="149" fill="#a7b0c0" font-family="monospace" font-size="9">DESTROYED</text><text x="192" y="149" text-anchor="end" fill="#ffffff" font-family="monospace" font-size="10">43</text>
+  <text x="48" y="166" fill="#a7b0c0" font-family="monospace" font-size="9">MAX COMBO</text><text x="192" y="166" text-anchor="end" fill="#ffffff" font-family="monospace" font-size="10">18</text>
+  <text x="48" y="183" fill="#a7b0c0" font-family="monospace" font-size="9">MODULES</text><text x="192" y="183" text-anchor="end" fill="#f9c74f" font-family="monospace" font-size="10">S3 P2 R2 D2</text>
+  <rect x="34" y="204" width="172" height="24" rx="12" fill="#5b3fbd"/>
+  <text x="120" y="220" text-anchor="middle" fill="#ffffff" font-family="monospace" font-size="10" font-weight="700">ACTION: RETRY</text>
+</svg>

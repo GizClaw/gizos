@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">探索与世界徽章</title><desc id="desc">探索页展示世界徽章收集进度和照片形成的 taxonomy 知识树。</desc>
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#f0fff7"/><stop offset="1" stop-color="#dcd8ff"/></linearGradient></defs>
+  <rect width="480" height="800" fill="url(#bg)"/>
+  <circle cx="42" cy="52" r="24" fill="#fff" opacity=".76"/><path d="M47 42l-10 10 10 10" fill="none" stroke="#3f4850" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="91" y="61" fill="#263d38" font-family="system-ui,'PingFang SC',sans-serif" font-size="28" font-weight="750">世界探索</text>
+  <rect x="25" y="91" width="430" height="137" rx="30" fill="#4eaaa0"/>
+  <text x="51" y="128" fill="#dffdf8" font-family="system-ui,'PingFang SC',sans-serif" font-size="15">我的世界徽章</text><text x="51" y="181" fill="#fff" font-family="system-ui,'PingFang SC',sans-serif" font-size="43" font-weight="750">18</text><text x="102" y="180" fill="#dffdf8" font-family="system-ui,'PingFang SC',sans-serif" font-size="16">/ 64</text>
+  <g transform="translate(275 111)"><circle cx="49" cy="49" r="43" fill="#fff" opacity=".2"/><circle cx="49" cy="49" r="32" fill="#ffe187"/><path d="M49 26l7 14 16 2-12 11 3 16-14-8-14 8 3-16-12-11 16-2z" fill="#fff"/></g>
+  <g font-family="system-ui,'PingFang SC',sans-serif">
+    <text x="25" y="276" fill="#2e3a39" font-size="22" font-weight="720">最近获得</text>
+    <g transform="translate(25 296)"><rect width="130" height="132" rx="26" fill="#fff" opacity=".78"/><circle cx="65" cy="51" r="35" fill="#e5b6dc"/><path d="M47 61c5-23 30-30 40-7-7 15-22 21-40 7z" fill="#fff"/><circle cx="77" cy="48" r="3" fill="#76506d"/><text x="65" y="110" text-anchor="middle" fill="#3e4850" font-size="15" font-weight="650">鸟类观察员</text></g>
+    <g transform="translate(175 296)"><rect width="130" height="132" rx="26" fill="#fff" opacity=".78"/><circle cx="65" cy="51" r="35" fill="#8bc9a3"/><path d="M66 70c-2-18 6-34 23-43-1 22-8 37-23 43zM63 69c-11-13-19-25-17-39 17 6 23 19 17 39z" fill="#fff"/><text x="65" y="110" text-anchor="middle" fill="#3e4850" font-size="15" font-weight="650">植物朋友</text></g>
+    <g transform="translate(325 296)"><rect width="130" height="132" rx="26" fill="#fff" opacity=".78"/><circle cx="65" cy="51" r="35" fill="#f0bc75"/><path d="M43 60h44l-7-23H50zM50 60v10M80 60v10" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><text x="65" y="110" text-anchor="middle" fill="#3e4850" font-size="15" font-weight="650">交通发现家</text></g>
+    <text x="25" y="477" fill="#2e3a39" font-size="22" font-weight="720">知识树</text>
+    <rect x="25" y="498" width="430" height="239" rx="30" fill="#fff" opacity=".78"/>
+    <circle cx="74" cy="551" r="25" fill="#55aa91"/><text x="74" y="558" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">世界</text>
+    <path d="M99 551h45M144 551v104M144 575h44M144 635h44" fill="none" stroke="#8ab8aa" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="214" cy="575" r="36" fill="#dff4e6"/><text x="214" y="581" text-anchor="middle" fill="#397764" font-size="16" font-weight="700">自然</text>
+    <circle cx="214" cy="655" r="36" fill="#efe9ff"/><text x="214" y="650" text-anchor="middle" fill="#6656a9" font-size="14" font-weight="700">人类</text><text x="214" y="668" text-anchor="middle" fill="#6656a9" font-size="14" font-weight="700">世界</text>
+    <path d="M250 575h44M250 655h44" stroke="#afa6cb" stroke-width="4" stroke-linecap="round"/>
+    <rect x="294" y="539" width="132" height="72" rx="20" fill="#eef9f1"/><text x="315" y="570" fill="#52655d" font-size="14">动物 · 8</text><text x="315" y="592" fill="#52655d" font-size="14">植物 · 5</text>
+    <rect x="294" y="619" width="132" height="72" rx="20" fill="#f3efff"/><text x="315" y="650" fill="#61577d" font-size="14">交通 · 3</text><text x="315" y="672" fill="#61577d" font-size="14">建筑 · 2</text>
+  </g>
+</svg>

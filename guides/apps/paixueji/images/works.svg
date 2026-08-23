@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">作品</title>
+  <desc id="desc">作品页按魔拍、梦境和音乐三个分类展示本机创作，以大幅作品瀑布流突出内容。</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#fff8ec"/><stop offset="1" stop-color="#e7e0ff"/></linearGradient>
+    <linearGradient id="dreamSky" x2="1" y2="1"><stop stop-color="#7a66dd"/><stop offset="1" stop-color="#b887dd"/></linearGradient>
+  </defs>
+  <rect width="480" height="800" fill="url(#bg)"/>
+  <circle cx="42" cy="52" r="24" fill="#fff" opacity=".76"/><path d="M47 42l-10 10 10 10" fill="none" stroke="#49405d" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="91" y="61" fill="#302947" font-family="system-ui,'PingFang SC',sans-serif" font-size="28" font-weight="750">作品</text>
+
+  <g font-family="system-ui,'PingFang SC',sans-serif">
+    <rect x="25" y="92" width="430" height="52" rx="26" fill="#fff" opacity=".76"/>
+    <rect x="29" y="96" width="139" height="44" rx="22" fill="#6f5be5"/>
+    <text x="99" y="125" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">魔拍</text>
+    <text x="240" y="125" text-anchor="middle" fill="#625875" font-size="16" font-weight="650">梦境</text>
+    <text x="381" y="125" text-anchor="middle" fill="#625875" font-size="16" font-weight="650">音乐</text>
+
+    <text x="25" y="189" fill="#51475e" font-size="18" font-weight="700">今天</text><text x="455" y="189" text-anchor="end" fill="#8a7e92" font-size="14">4 项</text>
+
+    <g transform="translate(25 209)">
+      <rect width="270" height="260" rx="30" fill="#b8d7c3"/>
+      <circle cx="215" cy="54" r="32" fill="#ffdf78"/>
+      <path d="M0 173l75-72 58 51 45-40 92 82v66H0z" fill="#619774"/>
+      <path d="M0 210l72-43 59 37 52-29 89 49v36H0z" fill="#47785d" opacity=".82"/>
+      <g transform="translate(110 87)"><circle cx="31" cy="31" r="31" fill="#f8f5ff"/><rect x="13" y="18" width="36" height="27" rx="13" fill="#3e3275"/><circle cx="25" cy="31" r="4" fill="#fff"/><circle cx="38" cy="31" r="4" fill="#fff"/></g>
+      <rect x="16" y="215" width="68" height="30" rx="15" fill="#fff" opacity=".9"/><text x="50" y="236" text-anchor="middle" fill="#544861" font-size="13" font-weight="700">魔拍</text>
+    </g>
+
+    <g transform="translate(312 209)">
+      <rect width="143" height="260" rx="30" fill="#f1ad95"/>
+      <circle cx="101" cy="48" r="25" fill="#ffdb71"/>
+      <path d="M0 170l44-50 34 32 28-26 37 38v96H0z" fill="#ba716e"/>
+      <path d="M0 205l42-28 39 25 31-19 31 23v54H0z" fill="#925861" opacity=".66"/>
+      <rect x="14" y="215" width="68" height="30" rx="15" fill="#fff" opacity=".9"/><text x="48" y="236" text-anchor="middle" fill="#544861" font-size="13" font-weight="700">魔拍</text>
+    </g>
+
+    <text x="25" y="519" fill="#51475e" font-size="18" font-weight="700">昨天</text><text x="455" y="519" text-anchor="end" fill="#8a7e92" font-size="14">8 项</text>
+
+    <g transform="translate(25 539)">
+      <rect width="205" height="221" rx="29" fill="#94c4d1"/>
+      <circle cx="57" cy="53" r="31" fill="#fff" opacity=".72"/><path d="M57 30l8 16 18 3-13 12 3 18-16-9-16 9 3-18-13-12 18-3z" fill="#79a7bb"/>
+      <path d="M0 157c53-42 114-39 205 22v42H0z" fill="#568e9e"/>
+      <g transform="translate(112 77)"><circle cx="26" cy="26" r="26" fill="#fff" opacity=".85"/><rect x="11" y="16" width="30" height="22" rx="11" fill="#3e3275"/><circle cx="21" cy="27" r="3" fill="#fff"/><circle cx="31" cy="27" r="3" fill="#fff"/></g>
+      <rect x="14" y="177" width="68" height="30" rx="15" fill="#fff" opacity=".9"/><text x="48" y="198" text-anchor="middle" fill="#544861" font-size="13" font-weight="700">魔拍</text>
+    </g>
+
+    <g transform="translate(250 539)">
+      <rect width="205" height="221" rx="29" fill="#d6b7df"/>
+      <circle cx="155" cy="52" r="34" fill="#fff" opacity=".65"/>
+      <path d="M0 152l67-62 49 47 38-36 51 50v70H0z" fill="#9b7cad"/>
+      <path d="M0 183l58-35 62 40 43-29 42 29v33H0z" fill="#755f91" opacity=".64"/>
+      <rect x="14" y="177" width="68" height="30" rx="15" fill="#fff" opacity=".9"/><text x="48" y="198" text-anchor="middle" fill="#544861" font-size="13" font-weight="700">魔拍</text>
+    </g>
+  </g>
+</svg>

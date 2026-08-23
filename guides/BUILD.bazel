@@ -1,0 +1,150 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@guides_npm//:defs.bzl", "npm_link_all_packages")
+load("@guides_npm//guides:vitepress/package_json.bzl", vitepress_bin = "bin")
+load("//tools/bazel/platforms:compatibility.bzl", "DARWIN_HOST_TOOL_COMPATIBILITY")
+load(":guides.bzl", "api_reference")
+
+package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
+
+js_binary(
+    name = "api_generator",
+    chdir = ".",
+    data = [
+        "api/sources.mjs",
+        ":node_modules/fast-xml-parser",
+    ],
+    entry_point = "api/generate.mjs",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+api_reference(
+    name = "api_reference",
+    doxyfile = "api/Doxyfile",
+    generator = ":api_generator",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/app_test",
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/dns",
+        "//libs/drivers/motion/qmi8658",
+        "//libs/drivers/nfc/fm175xx",
+        "//libs/drivers/nfc/type2",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/game_runtime",
+        "//libs/gizclaw",
+        "//libs/iostreamikcp",
+        "//libs/lvgl",
+        "//libs/mp4_decoder",
+        "//libs/ntp",
+        "//libs/pal",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/ffmpeg",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pal/providers/modem/quectel:quectel_modem",
+        "//libs/pal/providers/modem/simcom:simcom_modem",
+        "//libs/pal/providers/nfc/fm17660k",
+        "//libs/pal/providers/portaudio",
+        "//libs/pal/providers/sdl3",
+        "//libs/pal/providers/sqlite",
+        "//libs/pal/providers/tinyh264",
+        "//libs/pal/providers/wolfssl",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/utils",
+        "//projects/h2loader/libs/h2loader",
+    ],
+)
+
+GUIDE_SOURCES = glob(
+    [
+        "**",
+    ],
+    exclude = [
+        ".vitepress/cache/**",
+        ".vitepress/dist/**",
+        "BUILD.bazel",
+        "node_modules/**",
+    ],
+) + [
+    ":api_reference",
+]
+
+vitepress_bin.vitepress(
+    name = "build",
+    srcs = GUIDE_SOURCES,
+    chdir = package_name(),
+    data = [":node_modules"],
+    fixed_args = [
+        "build",
+        ".",
+        "--outDir",
+        ".vitepress/dist",
+    ],
+    out_dirs = [".vitepress/dist"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+build_test(
+    name = "guides_build_test",
+    target_compatible_with = DARWIN_HOST_TOOL_COMPATIBILITY,
+    targets = [":build"],
+)
+
+vitepress_bin.vitepress_binary(
+    name = "dev",
+    chdir = package_name(),
+    data = GUIDE_SOURCES + [":node_modules"],
+    fixed_args = [
+        "dev",
+        ".",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+vitepress_bin.vitepress_binary(
+    name = "preview",
+    chdir = package_name(),
+    data = GUIDE_SOURCES + [
+        ":build",
+        ":node_modules",
+    ],
+    fixed_args = [
+        "preview",
+        ".",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

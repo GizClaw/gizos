@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="800" viewBox="0 0 480 800" role="img" aria-labelledby="title desc">
+  <title id="title">拍学机最左侧引导页</title>
+  <desc id="desc">集中说明角色滑动、实体拍照键和实体对话键的引导页。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff8ee"/>
+      <stop offset="1" stop-color="#ebe4ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#4b3d7c" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="480" height="800" fill="url(#bg)"/>
+  <circle cx="30" cy="80" r="110" fill="#ffd8be" opacity="0.3"/>
+  <circle cx="460" cy="710" r="160" fill="#c7bcff" opacity="0.26"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans CJK SC', sans-serif">
+    <text x="40" y="87" fill="#2c2542" font-size="32" font-weight="750">认识你的新伙伴</text>
+    <text x="40" y="120" fill="#746d82" font-size="16">三件事，就可以一起出发</text>
+
+    <g filter="url(#shadow)" transform="translate(30 164)">
+      <rect width="420" height="150" rx="30" fill="#ffffff" opacity="0.84"/>
+      <g transform="translate(31 34)" fill="none" stroke="#725be9" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 41h76"/>
+        <path d="M22 27L8 41l14 14M72 27l14 14-14 14"/>
+      </g>
+      <text x="139" y="66" fill="#32294d" font-size="22" font-weight="700">左右滑动</text>
+      <text x="139" y="99" fill="#7b7488" font-size="15">切换不同角色和模式</text>
+    </g>
+
+    <g filter="url(#shadow)" transform="translate(30 334)">
+      <rect width="420" height="150" rx="30" fill="#ffffff" opacity="0.84"/>
+      <g transform="translate(37 45)" fill="none" stroke="#ef805c" stroke-width="5" stroke-linejoin="round">
+        <rect x="0" y="7" width="72" height="51" rx="13"/>
+        <path d="M17 7l8-11h23l8 11"/>
+        <circle cx="36" cy="33" r="13"/>
+      </g>
+      <text x="139" y="66" fill="#32294d" font-size="22" font-weight="700">按下拍照键</text>
+      <text x="139" y="99" fill="#7b7488" font-size="15">在拍照模式记录眼前画面</text>
+    </g>
+
+    <g filter="url(#shadow)" transform="translate(30 504)">
+      <rect width="420" height="150" rx="30" fill="#ffffff" opacity="0.84"/>
+      <g transform="translate(38 39)">
+        <rect x="10" y="0" width="48" height="75" rx="24" fill="none" stroke="#54ae9e" stroke-width="5"/>
+        <path d="M0 38c0 25 14 39 34 39s34-14 34-39M34 77v14M17 91h34" fill="none" stroke="#54ae9e" stroke-width="5" stroke-linecap="round"/>
+      </g>
+      <text x="139" y="66" fill="#32294d" font-size="22" font-weight="700">长按对话键</text>
+      <text x="139" y="99" fill="#7b7488" font-size="15">随时开始和伙伴说话</text>
+    </g>
+
+    <text x="240" y="731" text-anchor="middle" fill="#7567ce" font-size="16" font-weight="650">向左滑动，进入角色世界</text>
+    <path d="M208 755h64m-13-11 13 11-13 11" fill="none" stroke="#7567ce" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
