@@ -50,7 +50,10 @@ jobs:
           fi
 
       - name: Authenticate Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
+        if: >-
+          vars.BAZEL_REMOTE_CACHE_URL != '' &&
+          (github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
@@ -71,7 +74,10 @@ jobs:
 
       - name: Validate public graph
         env:
-          BAZEL_REMOTE_CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
+          BAZEL_REMOTE_CACHE_URL: >-
+            ${{ (github.event_name != 'pull_request' ||
+            github.event.pull_request.head.repo.full_name == github.repository) &&
+            vars.BAZEL_REMOTE_CACHE_URL || '' }}
         shell: bash
         run: |
           cache_args=()
