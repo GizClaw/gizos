@@ -234,14 +234,71 @@
     },
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
-        "bzlTransitiveDigest": "mx8oTTh/NII0YFU2I97ZxPAewF8GBVjttRRAw3Xr5iY=",
-        "usagesDigest": "Y8cuUYJvoaYF5J4TGoxSYGavwRzMEnSYLNLL6MFYBcc=",
+        "bzlTransitiveDigest": "RkblBfNt9eEUVDVwUVWCukPXZrqKuoVafrz3h095Rw0=",
+        "usagesDigest": "D/YNRtYlVbTnxgKFZ6jLTyLrjLbLQOIkLJEmGArMTOg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
+          "h2_fdk_aac": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_fdk_aac_repository",
+            "attributes": {
+              "build_file": "@@//tools/bazel/vendor:fdk_aac.BUILD.bazel",
+              "overlay_files": {
+                "@@//third_party/fdk_aac_patch:libFDK/include/common_fix.h": "libFDK/include/common_fix.h",
+                "@@//third_party/fdk_aac_patch:libFDK/include/fixmul.h": "libFDK/include/fixmul.h",
+                "@@//third_party/fdk_aac_patch:libFDK/include/fixpoint_math.h": "libFDK/include/fixpoint_math.h"
+              }
+            }
+          },
+          "h2_k4b_cedarx_sdk": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_k4b_cedarx_repository",
+            "attributes": {
+              "build_file": "@@//tools/bazel/vendor:kickpi_k4b_cedarx.BUILD.bazel"
+            }
+          },
+          "h2_vendor_esp_serial_flasher": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:esp_serial_flasher.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/esp-serial-flasher",
+              "patches": [
+                "@@//tools/bazel/vendor:patches/esp_serial_flasher_msvc_packing.patch",
+                "@@//tools/bazel/vendor:patches/esp_serial_flasher_msvc_weak.patch"
+              ],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_ffmpeg": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:ffmpeg.BUILD.bazel",
+              "ffmpeg_configure_adapter": true,
+              "overlay_files": {},
+              "path": "third_party/ffmpeg",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_gizclaw": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:gizclaw.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/gizclaw",
+              "patches": [
+                "@@//tools/bazel/vendor:patches/gizclaw_ascii_ctype.patch",
+                "@@//tools/bazel/vendor:patches/gizclaw_json_ascii_ctype.patch"
+              ],
+              "source_is_gitlink": true
+            }
+          },
           "h2_vendor_ikcp": {
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:ikcp.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/ikcp",
               "patches": [],
@@ -252,6 +309,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:yyjson.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/yyjson",
               "patches": [],
@@ -262,6 +320,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:corehttp.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/corehttp",
               "patches": [],
@@ -272,6 +331,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:coremqtt.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/coremqtt",
               "patches": [],
@@ -282,6 +342,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:libsrtp.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/libsrtp",
               "patches": [],
@@ -292,6 +353,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:libco.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {
                 "@@//third_party/libco_patch:libco.c": "src/libco.c",
                 "@@//third_party/libco_patch:backends/arm.c": "src/arm.c",
@@ -309,12 +371,110 @@
               "source_is_gitlink": true
             }
           },
+          "h2_vendor_lua": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:lua.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/lua",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_lvgl": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:lvgl.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {
+                "@@//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
+                "@@//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h"
+              },
+              "path": "third_party/lvgl",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_mklittlefs": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:mklittlefs.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/mklittlefs",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_opus": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:opus.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/opus",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_pixa": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:pixa.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/pixa",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_pixelroot32": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:pixelroot32.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/pixelroot32",
+              "patches": [
+                "@@//tools/bazel/vendor:patches/pixelroot32_msvc_display_guard.patch",
+                "@@//tools/bazel/vendor:patches/pixelroot32_msvc_shadow.patch",
+                "@@//tools/bazel/vendor:patches/pixelroot32_portable_popcount.patch"
+              ],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_portaudio": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:portaudio.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/portaudio",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
           "h2_vendor_sdl3": {
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:sdl3.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/sdl3",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_speexdsp": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:speexdsp.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {
+                "@@//third_party/speexdsp_patch:speexdsp_config_types.h": "src/include/speex/speexdsp_config_types.h"
+              },
+              "path": "third_party/speexdsp",
               "patches": [],
               "source_is_gitlink": true
             }
@@ -323,6 +483,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:sqlite.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/sqlite",
               "patches": [],
@@ -333,6 +494,7 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:tinyh264.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/tinyh264",
               "patches": [
@@ -345,10 +507,37 @@
             "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
             "attributes": {
               "build_file": "@@//third_party:wolfssl.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
               "overlay_files": {},
               "path": "third_party/wolfssl",
               "patches": [],
               "source_is_gitlink": true
+            }
+          },
+          "h2_vendor_zlib": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "attributes": {
+              "build_file": "@@//third_party:zlib.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "overlay_files": {},
+              "path": "third_party/zlib",
+              "patches": [],
+              "source_is_gitlink": true
+            }
+          }
+        }
+      }
+    },
+    "@@protobuf+//python/dist:system_python.bzl%system_python_extension": {
+      "general": {
+        "bzlTransitiveDigest": "pmsA+awieucfllLc2n7k8xEoPp0i5LF9Hw6mGX0cqSQ=",
+        "usagesDigest": "A+RWmbKdBBwZcBbNGNvfPbqG2vYZRjVrFp6x1iRUrAk=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "system_python": {
+            "repoRuleId": "@@protobuf+//python/dist:system_python.bzl%system_python",
+            "attributes": {
+              "minimum_python_version": "3.9"
             }
           }
         }

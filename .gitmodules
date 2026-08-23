@@ -34,3 +34,51 @@
 	path = third_party/sdl3
 	url = https://github.com/libsdl-org/SDL.git
 	shallow = true
+[submodule "third_party/esp-serial-flasher"]
+	path = third_party/esp-serial-flasher
+	url = https://github.com/espressif/esp-serial-flasher.git
+	shallow = true
+[submodule "third_party/ffmpeg"]
+	path = third_party/ffmpeg
+	url = https://github.com/FFmpeg/FFmpeg.git
+	shallow = true
+[submodule "third_party/gizclaw"]
+	path = third_party/gizclaw
+	url = https://github.com/GizClaw/gizclaw.git
+	shallow = true
+[submodule "third_party/lua"]
+	path = third_party/lua
+	url = https://github.com/lua/lua.git
+	shallow = true
+[submodule "third_party/lvgl"]
+	path = third_party/lvgl
+	url = https://github.com/lvgl/lvgl.git
+	shallow = true
+[submodule "third_party/mklittlefs"]
+	path = third_party/mklittlefs
+	url = https://github.com/earlephilhower/mklittlefs.git
+	shallow = true
+[submodule "third_party/opus"]
+	path = third_party/opus
+	url = https://github.com/xiph/opus.git
+	shallow = true
+[submodule "third_party/pixa"]
+	path = third_party/pixa
+	url = https://github.com/GizClaw/pixa.git
+	shallow = true
+[submodule "third_party/pixelroot32"]
+	path = third_party/pixelroot32
+	url = https://github.com/PixelRoot32-Game-Engine/PixelRoot32-Game-Engine.git
+	shallow = true
+[submodule "third_party/portaudio"]
+	path = third_party/portaudio
+	url = https://github.com/PortAudio/portaudio.git
+	shallow = true
+[submodule "third_party/speexdsp"]
+	path = third_party/speexdsp
+	url = https://github.com/xiph/speexdsp.git
+	shallow = true
+[submodule "third_party/zlib"]
+	path = third_party/zlib
+	url = https://github.com/madler/zlib.git
+	shallow = true

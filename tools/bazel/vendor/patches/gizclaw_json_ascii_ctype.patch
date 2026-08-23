@@ -1,0 +1,12 @@
+--- src/sdk/c/gizclaw/src/gzc_json.c
++++ src/sdk/c/gizclaw/src/gzc_json.c
+@@ -3,4 +3,9 @@
+ #include <ctype.h>
++#undef isdigit
++#undef isspace
++#define isdigit(value) ((value) >= '0' && (value) <= '9')
++#define isspace(value)                                                       \
++  ((value) == ' ' || ((value) >= '\t' && (value) <= '\r'))
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>

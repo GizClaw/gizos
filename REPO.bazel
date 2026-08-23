@@ -1,0 +1,31 @@
+# Keep the root CI graph independent from repositories embedded in submodules
+# and deprecated/experimental trees. The planner reads gitlinks directly from
+# the current Git index.
+ignore_directories([
+    "apploader/**",
+    "**/__pycache__/**",
+    "**/build/**",
+    "bazel-*/**",
+    "build/**",
+    "docs/**",
+    "h2loader/**",
+    "tests/**",
+    "third_party/corehttp/**",
+    "third_party/coremqtt/**",
+    "third_party/esp-serial-flasher/**",
+    "third_party/gizclaw/**",
+    "third_party/ikcp/**",
+    "third_party/libsrtp/**",
+    "third_party/lvgl/**",
+    "third_party/mklittlefs/**",
+    "third_party/opus/**",
+    "third_party/pixa/**",
+    "third_party/pixelroot32/**",
+    "third_party/portaudio/**",
+    "third_party/speexdsp/**",
+    "third_party/tinyh264/**",
+    "third_party/wolfssl/**",
+    "third_party/yyjson/**",
+    "third_party/zlib/**",
+    "x/**",
+])

@@ -1,0 +1,111 @@
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "all_sources",
+    srcs = glob(["src/**"]),
+)
+
+cmake(
+    name = "portaudio_foreign",
+    cache_entries = select({
+        "@platforms//os:linux": {
+            "AUDIOIO": "OFF",
+            "CMAKE_BUILD_TYPE": "Release",
+            "CMAKE_C_FLAGS": "-idirafter /usr/include",
+            "CMAKE_LIBRARY_PATH": "/usr/lib/x86_64-linux-gnu",
+            "PA_ALSA_DYNAMIC": "ON",
+            "PA_BUILD_EXAMPLES": "OFF",
+            "PA_BUILD_SHARED_LIBS": "ON",
+            "PA_BUILD_TESTS": "OFF",
+            "PA_USE_ALSA": "ON",
+            "PA_USE_JACK": "OFF",
+            "PA_USE_OSS": "OFF",
+            "PA_USE_PULSEAUDIO": "OFF",
+            "PA_USE_SNDIO": "OFF",
+        },
+        "@platforms//os:macos": {
+            "CMAKE_BUILD_TYPE": "Release",
+            "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -ffile-prefix-map=$$EXT_BUILD_ROOT=.",
+            "CMAKE_OSX_ARCHITECTURES": "arm64",
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+            "PA_BUILD_EXAMPLES": "OFF",
+            "PA_BUILD_SHARED_LIBS": "ON",
+            "PA_BUILD_TESTS": "OFF",
+        },
+        "//conditions:default": {},
+    }),
+    lib_source = ":all_sources",
+    out_bin_dir = "lib",
+    out_binaries = select({
+        "@platforms//os:linux": ["libportaudio.so.2"],
+        "//conditions:default": [],
+    }),
+    out_shared_libs = select({
+        "@platforms//os:linux": ["libportaudio.so"],
+        "@platforms//os:macos": ["libportaudio.2.dylib"],
+        "//conditions:default": [],
+    }),
+    postfix_script = select({
+        "@platforms//os:linux": (
+            "cp -L $$INSTALLDIR/lib/libportaudio.so.2 " +
+            "$$INSTALLDIR/lib/libportaudio.so.2.h2-real && " +
+            "mv -f $$INSTALLDIR/lib/libportaudio.so.2.h2-real " +
+            "$$INSTALLDIR/lib/libportaudio.so.2 && " +
+            "rm -f $$INSTALLDIR/lib/libportaudio.so && " +
+            "cp -p $$INSTALLDIR/lib/libportaudio.so.2 " +
+            "$$INSTALLDIR/lib/libportaudio.so"
+        ),
+        "//conditions:default": "",
+    }),
+    target_compatible_with = select({
+        "@platforms//os:linux": ["@platforms//cpu:x86_64"],
+        "@platforms//os:macos": ["@platforms//cpu:arm64"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+filegroup(
+    name = "shared_library",
+    srcs = [":portaudio_foreign"],
+    output_group = select({
+        "@platforms//os:linux": "libportaudio.so.2",
+        "@platforms//os:macos": "libportaudio.2.dylib",
+        "//conditions:default": "",
+    }),
+)
+
+filegroup(
+    name = "link_library",
+    srcs = [":portaudio_foreign"],
+    output_group = "libportaudio.so",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Pair the unversioned linker input with the versioned runtime object so Bazel
+# places the canonical SONAME in _solib and emits the matching runtime path.
+cc_import(
+    name = "runtime_import",
+    interface_library = ":link_library",
+    shared_library = ":shared_library",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+cc_library(
+    name = "portaudio",
+    deps = select({
+        "@platforms//os:linux": [
+            ":portaudio_foreign",
+            ":runtime_import",
+        ],
+        "@platforms//os:macos": [":portaudio_foreign"],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "runtime_files",
+    srcs = [":shared_library"],
+)

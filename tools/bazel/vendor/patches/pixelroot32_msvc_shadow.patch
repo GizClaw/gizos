@@ -1,0 +1,10 @@
+--- src/include/core/PhysicsActor.h
++++ src/include/core/PhysicsActor.h
+@@ -210,5 +210,5 @@
+     /**
+      * @brief Sets the simulation body type.
+-     * @param type The new PhysicsBodyType.
++     * @param bodyTypeValue The new PhysicsBodyType.
+      */
+-    void setBodyType(PhysicsBodyType type) { bodyType = type; }
++    void setBodyType(PhysicsBodyType bodyTypeValue) { bodyType = bodyTypeValue; }

@@ -17,6 +17,30 @@ vendor_repositories = use_extension(
     "vendor_repositories",
 )
 vendor_repositories.repository(
+    name = "h2_vendor_esp_serial_flasher",
+    build_file = "//third_party:esp_serial_flasher.BUILD.bazel",
+    patches = [
+        "//tools/bazel/vendor:patches/esp_serial_flasher_msvc_packing.patch",
+        "//tools/bazel/vendor:patches/esp_serial_flasher_msvc_weak.patch",
+    ],
+    path = "third_party/esp-serial-flasher",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_ffmpeg",
+    build_file = "//third_party:ffmpeg.BUILD.bazel",
+    ffmpeg_configure_adapter = True,
+    path = "third_party/ffmpeg",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_gizclaw",
+    build_file = "//third_party:gizclaw.BUILD.bazel",
+    patches = [
+        "//tools/bazel/vendor:patches/gizclaw_ascii_ctype.patch",
+        "//tools/bazel/vendor:patches/gizclaw_json_ascii_ctype.patch",
+    ],
+    path = "third_party/gizclaw",
+)
+vendor_repositories.repository(
     name = "h2_vendor_ikcp",
     build_file = "//third_party:ikcp.BUILD.bazel",
     path = "third_party/ikcp",
@@ -59,9 +83,61 @@ vendor_repositories.repository(
     path = "third_party/libco",
 )
 vendor_repositories.repository(
+    name = "h2_vendor_lua",
+    build_file = "//third_party:lua.BUILD.bazel",
+    path = "third_party/lua",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_lvgl",
+    build_file = "//third_party:lvgl.BUILD.bazel",
+    overlay_files = {
+        "//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
+        "//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h",
+    },
+    path = "third_party/lvgl",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_mklittlefs",
+    build_file = "//third_party:mklittlefs.BUILD.bazel",
+    path = "third_party/mklittlefs",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_opus",
+    build_file = "//third_party:opus.BUILD.bazel",
+    path = "third_party/opus",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_pixa",
+    build_file = "//third_party:pixa.BUILD.bazel",
+    path = "third_party/pixa",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_pixelroot32",
+    build_file = "//third_party:pixelroot32.BUILD.bazel",
+    patches = [
+        "//tools/bazel/vendor:patches/pixelroot32_msvc_display_guard.patch",
+        "//tools/bazel/vendor:patches/pixelroot32_msvc_shadow.patch",
+        "//tools/bazel/vendor:patches/pixelroot32_portable_popcount.patch",
+    ],
+    path = "third_party/pixelroot32",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_portaudio",
+    build_file = "//third_party:portaudio.BUILD.bazel",
+    path = "third_party/portaudio",
+)
+vendor_repositories.repository(
     name = "h2_vendor_sdl3",
     build_file = "//third_party:sdl3.BUILD.bazel",
     path = "third_party/sdl3",
+)
+vendor_repositories.repository(
+    name = "h2_vendor_speexdsp",
+    build_file = "//third_party:speexdsp.BUILD.bazel",
+    overlay_files = {
+        "//third_party/speexdsp_patch:speexdsp_config_types.h": "src/include/speex/speexdsp_config_types.h",
+    },
+    path = "third_party/speexdsp",
 )
 vendor_repositories.repository(
     name = "h2_vendor_sqlite",
@@ -80,18 +156,37 @@ vendor_repositories.repository(
     build_file = "//third_party:wolfssl.BUILD.bazel",
     path = "third_party/wolfssl",
 )
+vendor_repositories.repository(
+    name = "h2_vendor_zlib",
+    build_file = "//third_party:zlib.BUILD.bazel",
+    path = "third_party/zlib",
+)
 use_repo(
     vendor_repositories,
+    "h2_fdk_aac",
+    "h2_k4b_cedarx_sdk",
     "h2_vendor_corehttp",
     "h2_vendor_coremqtt",
+    "h2_vendor_esp_serial_flasher",
+    "h2_vendor_ffmpeg",
+    "h2_vendor_gizclaw",
     "h2_vendor_ikcp",
     "h2_vendor_libco",
     "h2_vendor_libsrtp",
+    "h2_vendor_lua",
+    "h2_vendor_lvgl",
+    "h2_vendor_mklittlefs",
+    "h2_vendor_opus",
+    "h2_vendor_pixa",
+    "h2_vendor_pixelroot32",
+    "h2_vendor_portaudio",
     "h2_vendor_sdl3",
+    "h2_vendor_speexdsp",
     "h2_vendor_sqlite",
     "h2_vendor_tinyh264",
     "h2_vendor_wolfssl",
     "h2_vendor_yyjson",
+    "h2_vendor_zlib",
 )
 
 esp_repositories = use_extension(

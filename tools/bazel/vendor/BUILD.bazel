@@ -2,7 +2,10 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "repository_definitions",
-    srcs = ["repositories.bzl"],
+    srcs = glob([
+        "*.BUILD.bazel",
+        "*.bzl",
+    ]),
 )
 
 exports_files(glob(["patches/*.patch"]))

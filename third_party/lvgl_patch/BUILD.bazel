@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "config/bk7258/lv_conf.h",
+    "config/esp_idf6_x/lv_conf.h",
+])

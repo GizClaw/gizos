@@ -8,7 +8,7 @@ Each unchecked item represents exactly one future migration push. The item is ch
 
 - [x] Create the Apache-2.0 repository, Bazel workspace, Make entry points, and CI framework.
 - [x] Migrate the PAL contracts, Runtime, foundational libraries, host providers, portable drivers, and current public board/target packages.
-- [ ] Add the remaining pinned third-party sources and Bazel overlays.
+- [x] Add the remaining pinned third-party sources and Bazel overlays.
 - [ ] Add the remaining portable libraries and non-composition PAL providers.
 - [ ] Complete Desktop PAL composition and host platform support.
 - [ ] Add ESP-IDF 6.x Bazel runners and shared native components.

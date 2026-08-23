@@ -1,0 +1,15 @@
+--- src/include/graphics/DisplayConfig.h
++++ src/include/graphics/DisplayConfig.h
+@@ -9,5 +9,8 @@
+  * This file remains licensed under the MIT License.
+  */
+ #pragma once
++#ifndef PIXELROOT32_GRAPHICS_DISPLAY_CONFIG_H
++#define PIXELROOT32_GRAPHICS_DISPLAY_CONFIG_H
+ 
+ #ifdef PLATFORM_NATIVE
+@@ -307,2 +310,4 @@
+ #define PIXELROOT32_CUSTOM_DISPLAY(surface_ptr, width, height) \
+     pixelroot32::graphics::DisplayConfig::createCustom(surface_ptr, width, height)
++
++#endif // PIXELROOT32_GRAPHICS_DISPLAY_CONFIG_H

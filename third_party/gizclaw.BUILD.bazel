@@ -1,0 +1,113 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "is_windows_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:windows",
+    ],
+)
+
+exports_files([
+    "src/sdk/c/gizclaw/src/gzc_client.c",
+    "src/sdk/c/gizclaw/tests/gzc_client_smoke_test.c",
+])
+
+cc_library(
+    name = "gizclaw_core",
+    srcs = [
+        "src/sdk/c/gizclaw/generated/events/peer_event.pb.c",
+        "src/sdk/c/gizclaw/generated/google/protobuf/struct.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/ai.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/edge.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/enums.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/firmware.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/gameplay.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/icon.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/social.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/system.pb.c",
+        "src/sdk/c/gizclaw/generated/payload/workspace.pb.c",
+        "src/sdk/c/gizclaw/generated/rpc.pb.c",
+        "src/sdk/c/gizclaw/src/gzc_buffer.c",
+        "src/sdk/c/gizclaw/src/gzc_client.c",
+        "src/sdk/c/gizclaw/src/gzc_common.c",
+        "src/sdk/c/gizclaw/src/gzc_event.c",
+        "src/sdk/c/gizclaw/src/gzc_json.c",
+        "src/sdk/c/gizclaw/src/gzc_keys.c",
+        "src/sdk/c/gizclaw/src/gzc_rpc.c",
+        "src/sdk/c/gizclaw/src/gzc_rpc_frame.c",
+        "src/sdk/c/gizclaw/src/gzc_signaling.c",
+        "src/sdk/c/gizclaw/src/gzc_telemetry.c",
+        "src/third_party/nanopb/upstream/pb_common.c",
+        "src/third_party/nanopb/upstream/pb_decode.c",
+        "src/third_party/nanopb/upstream/pb_encode.c",
+    ],
+    hdrs = [
+        "src/sdk/c/gizclaw/generated/events/peer_event.pb.h",
+        "src/sdk/c/gizclaw/generated/google/protobuf/struct.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/ai.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/edge.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/enums.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/firmware.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/gameplay.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/icon.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/social.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/system.pb.h",
+        "src/sdk/c/gizclaw/generated/payload/workspace.pb.h",
+        "src/sdk/c/gizclaw/generated/rpc.pb.h",
+        "src/sdk/c/gizclaw/include/gzc.h",
+        "src/sdk/c/gizclaw/include/gzc_buffer.h",
+        "src/sdk/c/gizclaw/include/gzc_client.h",
+        "src/sdk/c/gizclaw/include/gzc_common.h",
+        "src/sdk/c/gizclaw/include/gzc_event.h",
+        "src/sdk/c/gizclaw/include/gzc_http.h",
+        "src/sdk/c/gizclaw/include/gzc_json.h",
+        "src/sdk/c/gizclaw/include/gzc_keys.h",
+        "src/sdk/c/gizclaw/include/gzc_platform.h",
+        "src/sdk/c/gizclaw/include/gzc_rpc.h",
+        "src/sdk/c/gizclaw/include/gzc_rpc_frame.h",
+        "src/sdk/c/gizclaw/include/gzc_signaling.h",
+        "src/sdk/c/gizclaw/include/gzc_telemetry.h",
+        "src/sdk/c/gizclaw/include/gzc_webrtc.h",
+        "src/sdk/c/gizclaw/include/platform/gzc_platform.h",
+        "src/sdk/c/gizclaw/include/platform/gzc_platform_crypto.h",
+        "src/sdk/c/gizclaw/include/platform/gzc_platform_http.h",
+        "src/sdk/c/gizclaw/include/platform/gzc_platform_webrtc.h",
+        "src/sdk/c/gizclaw/src/gzc_client_internal.h",
+        "src/third_party/nanopb/upstream/pb.h",
+        "src/third_party/nanopb/upstream/pb_common.h",
+        "src/third_party/nanopb/upstream/pb_decode.h",
+        "src/third_party/nanopb/upstream/pb_encode.h",
+    ],
+    conlyopts = select({
+        ":is_windows_x86_64": [
+            "/experimental:c11atomics",
+            "/std:c11",
+        ],
+        "//conditions:default": ["-std=c11"],
+    }),
+    copts = select({
+        ":is_windows_x86_64": [
+            "/W4",
+            "/WX",
+        ],
+        "//conditions:default": [
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+        ],
+    }),
+    includes = [
+        "src/sdk/c/gizclaw/generated",
+        "src/sdk/c/gizclaw/include",
+        "src/third_party/nanopb/upstream",
+    ],
+)
+
+cc_library(
+    name = "gizclaw",
+    srcs = ["src/sdk/c/gizclaw/src/gzc_platform.c"],
+    deps = [":gizclaw_core"],
+)

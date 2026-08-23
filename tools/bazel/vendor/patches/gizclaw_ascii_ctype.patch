@@ -1,0 +1,10 @@
+--- src/sdk/c/gizclaw/src/gzc_event.c
++++ src/sdk/c/gizclaw/src/gzc_event.c
+@@ -3,4 +3,7 @@
+ #include <ctype.h>
++#undef isspace
++#define isspace(value)                                                       \
++  ((value) == ' ' || ((value) >= '\t' && (value) <= '\r'))
+ #include <pb_decode.h>
+ #include <pb_encode.h>
+ #include <string.h>

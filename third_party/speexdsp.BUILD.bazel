@@ -1,0 +1,61 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "speexdsp",
+    srcs = [
+        "src/libspeexdsp/buffer.c",
+        "src/libspeexdsp/fftwrap.c",
+        "src/libspeexdsp/filterbank.c",
+        "src/libspeexdsp/jitter.c",
+        "src/libspeexdsp/kiss_fft.c",
+        "src/libspeexdsp/kiss_fftr.c",
+        "src/libspeexdsp/mdf.c",
+        "src/libspeexdsp/preprocess.c",
+        "src/libspeexdsp/resample.c",
+        "src/libspeexdsp/scal.c",
+    ],
+    hdrs = [
+        "src/include/speex/speex_buffer.h",
+        "src/include/speex/speex_echo.h",
+        "src/include/speex/speex_jitter.h",
+        "src/include/speex/speex_preprocess.h",
+        "src/include/speex/speex_resampler.h",
+        "src/include/speex/speexdsp_config_types.h",
+        "src/include/speex/speexdsp_types.h",
+        "src/libspeexdsp/_kiss_fft_guts.h",
+        "src/libspeexdsp/arch.h",
+        "src/libspeexdsp/bfin.h",
+        "src/libspeexdsp/fftwrap.h",
+        "src/libspeexdsp/filterbank.h",
+        "src/libspeexdsp/fixed_arm4.h",
+        "src/libspeexdsp/fixed_arm5e.h",
+        "src/libspeexdsp/fixed_bfin.h",
+        "src/libspeexdsp/fixed_debug.h",
+        "src/libspeexdsp/fixed_generic.h",
+        "src/libspeexdsp/kiss_fft.h",
+        "src/libspeexdsp/kiss_fftr.h",
+        "src/libspeexdsp/math_approx.h",
+        "src/libspeexdsp/misc_bfin.h",
+        "src/libspeexdsp/os_support.h",
+        "src/libspeexdsp/pseudofloat.h",
+        "src/libspeexdsp/resample_neon.h",
+        "src/libspeexdsp/resample_sse.h",
+        "src/libspeexdsp/smallft.h",
+        "src/libspeexdsp/vorbis_psy.h",
+    ],
+    includes = [
+        "src/include",
+        "src/libspeexdsp",
+    ],
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-lm"],
+    }),
+    local_defines = [
+        "EXPORT=",
+        "FLOATING_POINT",
+        "USE_KISS_FFT",
+    ],
+)

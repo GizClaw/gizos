@@ -1,0 +1,105 @@
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+)
+
+cc_import(
+    name = "mem_adapter",
+    shared_library = "lib/libMemAdapter.so",
+)
+
+cc_import(
+    name = "ve",
+    shared_library = "lib/libVE.so",
+)
+
+cc_import(
+    name = "aftertreatment",
+    shared_library = "lib/libaftertreatment.so",
+)
+
+cc_import(
+    name = "awh264",
+    shared_library = "lib/libawh264.so",
+)
+
+cc_import(
+    name = "cdc_base",
+    shared_library = "lib/libcdc_base.so",
+)
+
+cc_import(
+    name = "cdx_ion",
+    shared_library = "lib/libcdx_ion.so",
+)
+
+cc_import(
+    name = "fbm",
+    shared_library = "lib/libfbm.so",
+)
+
+cc_import(
+    name = "sbm",
+    shared_library = "lib/libsbm.so",
+)
+
+cc_import(
+    name = "scaledown",
+    shared_library = "lib/libscaledown.so",
+)
+
+cc_import(
+    name = "vdecoder",
+    shared_library = "lib/libvdecoder.so",
+)
+
+cc_import(
+    name = "videoengine",
+    shared_library = "lib/libvideoengine.so",
+)
+
+cc_library(
+    name = "cedarx",
+    linkopts = [
+        "-ldl",
+        "-lm",
+        "-lpthread",
+        "-lrt",
+    ],
+    deps = [
+        ":aftertreatment",
+        ":awh264",
+        ":cdc_base",
+        ":cdx_ion",
+        ":fbm",
+        ":headers",
+        ":mem_adapter",
+        ":sbm",
+        ":scaledown",
+        ":vdecoder",
+        ":ve",
+        ":videoengine",
+    ],
+)
+
+filegroup(
+    name = "runtime_libraries",
+    srcs = [
+        "lib/libMemAdapter.so",
+        "lib/libVE.so",
+        "lib/libaftertreatment.so",
+        "lib/libawh264.so",
+        "lib/libcdc_base.so",
+        "lib/libcdx_ion.so",
+        "lib/libfbm.so",
+        "lib/libsbm.so",
+        "lib/libscaledown.so",
+        "lib/libvdecoder.so",
+        "lib/libvideoengine.so",
+    ],
+)

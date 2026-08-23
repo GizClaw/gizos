@@ -1,0 +1,73 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "is_windows_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:windows",
+    ],
+)
+
+filegroup(
+    name = "firmware_sources",
+    srcs = [
+        "src/adler32.c",
+        "src/crc32.c",
+        "src/inffast.c",
+        "src/inflate.c",
+        "src/inftrees.c",
+        "src/zutil.c",
+    ],
+)
+
+cc_library(
+    name = "zlib",
+    srcs = [
+        "src/adler32.c",
+        "src/compress.c",
+        "src/crc32.c",
+        "src/deflate.c",
+        "src/gzclose.c",
+        "src/gzlib.c",
+        "src/gzread.c",
+        "src/gzwrite.c",
+        "src/infback.c",
+        "src/inffast.c",
+        "src/inflate.c",
+        "src/inftrees.c",
+        "src/trees.c",
+        "src/uncompr.c",
+        "src/zutil.c",
+    ],
+    hdrs = [
+        "src/crc32.h",
+        "src/deflate.h",
+        "src/gzguts.h",
+        "src/inffast.h",
+        "src/inffixed.h",
+        "src/inflate.h",
+        "src/inftrees.h",
+        "src/trees.h",
+        "src/zconf.h",
+        "src/zlib.h",
+        "src/zutil.h",
+    ],
+    conlyopts = select({
+        ":is_windows_x86_64": [
+            "/experimental:c11atomics",
+            "/std:c11",
+        ],
+        "//conditions:default": ["-std=c11"],
+    }),
+    copts = select({
+        ":is_windows_x86_64": [],
+        "//conditions:default": [
+            "-Wno-deprecated-non-prototype",
+            "-Wno-implicit-function-declaration",
+            "-Wno-unused-variable",
+        ],
+    }),
+    includes = ["src"],
+)
