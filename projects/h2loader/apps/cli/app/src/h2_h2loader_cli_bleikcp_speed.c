@@ -453,7 +453,8 @@ static h2_pal_result_t write_json(
             (unsigned long long)results[run].transport.output_retries,
             (unsigned long long)results[run].transport.retransmits,
             (unsigned long long)results[run].transport.disconnects,
-            results[run].transport.waitsnd, results[run].reconnects);
+            (unsigned)results[run].transport.waitsnd,
+            results[run].reconnects);
         if (wrote < 0 || (size_t)wrote >= sizeof(json) - offset) {
             rc = H2_PAL_ERR_NO_SPACE;
         } else {

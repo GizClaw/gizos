@@ -2,6 +2,7 @@
 
 #include "h2_h2loader_host_internal.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -468,7 +469,7 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_json(
             numbers,
             sizeof(numbers),
             ",\"result\":%d,\"started_ms\":%llu,\"finished_ms\":%llu,"
-            "\"retry_count\":%u,\"usb_vid\":%u,\"usb_pid\":%u,"
+            "\"retry_count\":%" PRIu32 ",\"usb_vid\":%u,\"usb_pid\":%u,"
             "\"staged_valid\":%u}",
             (int)job->result,
             (unsigned long long)job->started_ms,
@@ -584,7 +585,7 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
         int count = snprintf(
             numbers,
             sizeof(numbers),
-            ",%d,%llu,%llu,%u,",
+            ",%d,%llu,%llu,%" PRIu32 ",",
             (int)job->result,
             (unsigned long long)job->started_ms,
             (unsigned long long)job->finished_ms,
