@@ -255,7 +255,8 @@ def build_firmware(
             suffix=".bazelrc",
             delete=False,
         ) as stream:
-            os.fchmod(stream.fileno(), 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(stream.fileno(), 0o600)
             stream.write(
                 "build:esp --action_env=H2LOADER_WIFI_CREDENTIALS="
                 + shlex.quote(credentials)
