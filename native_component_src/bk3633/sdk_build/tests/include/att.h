@@ -1,0 +1,19 @@
+#ifndef COMPONENTS_BK3633_SDK_BUILD_TESTS_INCLUDE_ATT_H_
+#define COMPONENTS_BK3633_SDK_BUILD_TESTS_INCLUDE_ATT_H_
+
+#define ATT_ERR_NO_ERROR 0u
+
+#define PERM_RIGHT_DISABLE 0u
+#define PERM_RIGHT_ENABLE 1u
+
+#define PERM_MASK_SVC_AUTH 0x0cu
+#define PERM_POS_SVC_AUTH 2u
+#define PERM_MASK_SVC_DIS 0x10u
+#define PERM_POS_SVC_DIS 4u
+#define PERM_MASK_SVC_SECONDARY 0x80u
+#define PERM_POS_SVC_SECONDARY 7u
+
+#define PERM(access, right) \
+    ((PERM_RIGHT_##right << PERM_POS_##access) & PERM_MASK_##access)
+
+#endif

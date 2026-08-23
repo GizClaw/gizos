@@ -372,6 +372,19 @@ use_repo(
     "gizos_bk_arm_toolchain",
 )
 
+native_repositories = use_extension(
+    "//tools/bazel/native_repositories:repositories.bzl",
+    "native_repositories",
+)
+use_repo(
+    native_repositories,
+    "h2_bk3633_sdk",
+    "h2_jieli_ac695n_sdk",
+    "h2_jieli_ac791n_sdk",
+    "h2_jieli_postbuild",
+    "h2_jieli_toolchain",
+)
+
 esp32s3_cc = use_extension(
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl",
     "esp32s3_cc_toolchain",
@@ -386,11 +399,15 @@ local_embedded_cc = use_extension(
 )
 use_repo(
     local_embedded_cc,
+    "gizos_bk3633_cc_toolchain",
     "gizos_bk7258_cc_toolchain",
     "gizos_esp32p4_cc_toolchain",
+    "gizos_jieli_pi32v2_cc_toolchain",
 )
 
 register_toolchains(
+    "@gizos_bk3633_cc_toolchain//:toolchain",
     "@gizos_bk7258_cc_toolchain//:toolchain",
     "@gizos_esp32p4_cc_toolchain//:toolchain",
+    "@gizos_jieli_pi32v2_cc_toolchain//:toolchain",
 )

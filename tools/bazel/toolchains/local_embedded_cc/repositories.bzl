@@ -220,6 +220,33 @@ local_embedded_cc_repository = repository_rule(
 
 def _extension_impl(_module_ctx):
     local_embedded_cc_repository(
+        name = "gizos_bk3633_cc_toolchain",
+        compile_flags = [
+            "-Os",
+            "-mcpu=arm968e-s",
+            "-march=armv5te",
+            "-mthumb",
+            "-mthumb-interwork",
+            "-ffunction-sections",
+            "-fdata-sections",
+        ],
+        layout = "bin_dir",
+        locator = "@gizos_bk_arm_toolchain//:locator.json",
+        locator_path = "bin",
+        prefix = "arm-none-eabi-",
+        target_constraints = [
+            "@gizos//tools/bazel/platforms:cpu_armv5te",
+            "@gizos//tools/bazel/platforms:target_bk3633",
+            "@platforms//os:none",
+        ],
+        target_cpu = "armv5te",
+        target_system_name = "bk3633-elf",
+        toolchain_identifier = "bk3633-local-arm-10.3.1",
+        version_key = "arm_gcc",
+        versions_file = "//tools/bazel:native_versions/bk_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
         name = "gizos_bk7258_cc_toolchain",
         compile_flags = [
             "-Os",
@@ -271,6 +298,49 @@ def _extension_impl(_module_ctx):
         toolchain_identifier = "esp32p4-local-esp-15.2.0",
         version_key = "esp32p4",
         versions_file = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
+        name = "gizos_jieli_pi32v2_cc_toolchain",
+        compile_flags = [
+            "-target",
+            "pi32v2",
+            "-mcpu=r3",
+            "-integrated-as",
+            "-Oz",
+            "-fno-common",
+            "-fallow-pointer-null",
+            "-fprefer-gnu-section",
+            "-fms-extensions",
+            "-Wno-shift-negative-value",
+        ],
+        compiler_kind = "clang",
+        exec_hosts = ["linux_x86_64"],
+        layout = "bin_dir",
+        locator = "@h2_jieli_toolchain//:locator.json",
+        locator_path = "pi32v2_bin",
+        prefix = "",
+        system_include_dirs = ["../include"],
+        target_constraints = [
+            "@gizos//tools/bazel/platforms:cpu_pi32v2",
+            "@platforms//os:none",
+        ],
+        target_cpu = "pi32v2",
+        target_system_name = "pi32v2-elf",
+        tool_overrides = {
+            "as": "clang",
+            "cpp": "clang",
+            "gcc": "clang",
+            "gcov": "clang",
+            "ld": "lto-wrapper",
+        },
+        toolchain_identifier = "jieli-local-clang-4.0.1",
+        unfiltered_compile_flags = [
+            "-Wno-missing-field-initializers",
+            "-Wno-missing-braces",
+        ],
+        version_key = "jieli_clang",
+        versions_file = "//tools/bazel:native_versions/jieli_tool_versions.txt",
     )
 
 local_embedded_cc_toolchains = module_extension(implementation = _extension_impl)

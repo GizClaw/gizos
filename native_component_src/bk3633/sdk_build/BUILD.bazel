@@ -1,0 +1,53 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "sdk_build",
+    srcs = ["src/h2_bk3633_attmdb_compat.c"],
+    component_name = "sdk_build",
+    data = ["bk3633_gcc_sources.mk"],
+    tags = [
+        "manual",
+    ],
+)
+
+cc_test(
+    name = "test_attmdb_compat",
+    srcs = [
+        "src/h2_bk3633_attmdb_compat.c",
+        "tests/include/att.h",
+        "tests/include/attm.h",
+        "tests/src/test_attmdb_compat.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "test_attmdb_compat_strong_override",
+    srcs = [
+        "src/h2_bk3633_attmdb_compat.c",
+        "tests/include/att.h",
+        "tests/include/attm.h",
+        "tests/src/test_attmdb_compat.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = [
+        "-DH2_TEST_STRONG_OVERRIDE",
+    ] + H2_WARNING_COPTS,
+    includes = ["tests/include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

@@ -66,3 +66,19 @@ build:bk7258 --define=h2_firmware_target=bk7258
 build:bk7258 --platforms=//tools/bazel/platforms:bk7258
 build:bk7258 --repo_env=BK7258_PATH
 build:bk7258 --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
+
+build:bk3633 --define=h2_firmware_target=bk3633
+build:bk3633 --platforms=//tools/bazel/platforms:bk3633
+build:bk3633 --repo_env=BK3633_PATH
+build:bk3633 --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT
+
+build:jieli --repo_env=JIELI_TOOLCHAIN_ROOT
+build:jieli --repo_env=JIELI_POSTBUILD_ROOT
+build:ac695n --config=jieli
+build:ac695n --define=h2_firmware_target=ac695n
+build:ac695n --platforms=//tools/bazel/platforms:ac695n
+build:ac695n --repo_env=JIELI_AC695N_SDK_PATH
+build:ac791n --config=jieli
+build:ac791n --define=h2_firmware_target=ac791n
+build:ac791n --platforms=//tools/bazel/platforms:ac791n
+build:ac791n --repo_env=JIELI_AC791N_SDK_PATH

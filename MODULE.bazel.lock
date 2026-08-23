@@ -349,6 +349,136 @@
         }
       }
     },
+    "//tools/bazel/native_repositories:repositories.bzl%native_repositories": {
+      "general": {
+        "bzlTransitiveDigest": "ozKfFIALDPRbmZSSCwJCDYGK+f/3B6CtpJ7LKqAirlU=",
+        "usagesDigest": "fCQHbHWyxHU4pBYo/A9GZrhbJ1InAj7MZI3GG5+X9Gs=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "h2_esp_idf_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_local_sdk_repository",
+            "attributes": {
+              "commit_file": "@@//tools/bazel:native_versions/esp_idf_commit.txt",
+              "environment_variable": "IDF_PATH",
+              "kind": "esp-idf-sdk",
+              "required_files": [
+                "tools/idf.py",
+                "tools/cmake/version.cmake"
+              ]
+            }
+          },
+          "h2_esp_idf_tools": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_esp_tools_repository",
+            "attributes": {
+              "sdk_locator": "@@+native_repositories+h2_esp_idf_sdk//:locator.json",
+              "tool_versions_file": "@@//tools/bazel:native_versions/esp_idf_tool_versions.txt"
+            }
+          },
+          "h2_bk7258_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_local_sdk_repository",
+            "attributes": {
+              "commit_file": "@@//tools/bazel:native_versions/bk7258_sdk_commit.txt",
+              "environment_variable": "BK7258_PATH",
+              "kind": "bk7258-sdk",
+              "required_files": [
+                "Makefile"
+              ]
+            }
+          },
+          "h2_bk3633_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_local_sdk_repository",
+            "attributes": {
+              "commit_file": "@@//tools/bazel:native_versions/bk3633_sdk_commit.txt",
+              "environment_variable": "BK3633_PATH",
+              "kind": "bk3633-sdk",
+              "required_files": [
+                "SDK/src/system/BK3633_STACK_ALLROLES.elf",
+                "SDK/projects/app_gatt_all_roles/output/stack/BK3633_STACK_ALLROLES.bin",
+                "SDK/projects/boot_for_all_roles/Makefile"
+              ]
+            }
+          },
+          "h2_bk_arm_toolchain": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_arm_toolchain_repository",
+            "attributes": {
+              "archives_file": "@@//tools/bazel:native_versions/bk_toolchain_archives.txt",
+              "identity_tool": "@@//tools/bazel:toolchain_identity.py"
+            }
+          },
+          "h2_jieli_ac695n_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_local_sdk_repository",
+            "attributes": {
+              "allow_subdirectory": true,
+              "commit_file": "@@//tools/bazel:native_versions/jieli_ac695n_sdk_commit.txt",
+              "environment_variable": "JIELI_AC695N_SDK_PATH",
+              "kind": "jieli-ac695n-sdk",
+              "required_files": [
+                "Makefile",
+                "cpu/br23/tools/download.c",
+                "cpu/br23/tools/download/standard/download.bat"
+              ]
+            }
+          },
+          "h2_jieli_ac791n_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_local_sdk_repository",
+            "attributes": {
+              "allow_subdirectory": true,
+              "commit_file": "@@//tools/bazel:native_versions/jieli_ac791n_sdk_commit.txt",
+              "environment_variable": "JIELI_AC791N_SDK_PATH",
+              "kind": "jieli-ac791n-sdk",
+              "required_files": [
+                "Makefile",
+                "cpu/wl82/tools/download.c",
+                "apps/demo/demo_hello/board/wl82/Makefile"
+              ]
+            }
+          },
+          "h2_jieli_toolchain": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_jieli_tools_repository",
+            "attributes": {
+              "archives_file": "@@//tools/bazel:native_versions/jieli_toolchain_archives.txt",
+              "contract_kind": "toolchain",
+              "environment_variable": "JIELI_TOOLCHAIN_ROOT",
+              "exported_paths": {
+                "pi32v2_bin": "pi32v2/bin",
+                "q32s_bin": "q32s/bin"
+              },
+              "identity_tool": "@@//tools/bazel:toolchain_identity.py",
+              "kind": "jieli-toolchain",
+              "required_files": [
+                "pi32v2/bin/clang",
+                "pi32v2/bin/lto-wrapper",
+                "pi32v2/bin/objcopy",
+                "pi32v2/bin/objdump",
+                "pi32v2/bin/objsizedump",
+                "q32s/bin/clang"
+              ]
+            }
+          },
+          "h2_jieli_postbuild": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_jieli_tools_repository",
+            "attributes": {
+              "archives_file": "@@//tools/bazel:native_versions/jieli_toolchain_archives.txt",
+              "contract_kind": "postbuild",
+              "environment_variable": "JIELI_POSTBUILD_ROOT",
+              "identity_tool": "@@//tools/bazel:toolchain_identity.py",
+              "kind": "jieli-postbuild",
+              "required_files": [
+                "fw_add",
+                "isd_download",
+                "pack_res",
+                "remove_tailing_zeros",
+                "ufw_maker"
+              ]
+            }
+          },
+          "h2_native_ccache_runtime": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_ccache_runtime_repository",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
       "general": {
         "bzlTransitiveDigest": "E7loyOdrQJUsbZ9R+M5+cQmFKUTp6/lViuIKoA25k68=",
@@ -364,10 +494,38 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "BHbu/hi3fkyEUn4V67Kb82fOmWeNC4XaJkEV67UAUes=",
+        "bzlTransitiveDigest": "ZmVIkSZHfpOk9PP4yT+nCTBc+EwBRZ6dmFjnyW3z044=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
+          "gizos_bk3633_cc_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
+            "attributes": {
+              "compile_flags": [
+                "-Os",
+                "-mcpu=arm968e-s",
+                "-march=armv5te",
+                "-mthumb",
+                "-mthumb-interwork",
+                "-ffunction-sections",
+                "-fdata-sections"
+              ],
+              "layout": "bin_dir",
+              "locator": "@@+bk_repositories+gizos_bk_arm_toolchain//:locator.json",
+              "locator_path": "bin",
+              "prefix": "arm-none-eabi-",
+              "target_constraints": [
+                "@gizos//tools/bazel/platforms:cpu_armv5te",
+                "@gizos//tools/bazel/platforms:target_bk3633",
+                "@platforms//os:none"
+              ],
+              "target_cpu": "armv5te",
+              "target_system_name": "bk3633-elf",
+              "toolchain_identifier": "bk3633-local-arm-10.3.1",
+              "version_key": "arm_gcc",
+              "versions_file": "@@//tools/bazel:native_versions/bk_tool_versions.txt"
+            }
+          },
           "gizos_bk7258_cc_toolchain": {
             "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
             "attributes": {
@@ -422,6 +580,54 @@
               "toolchain_identifier": "esp32p4-local-esp-15.2.0",
               "version_key": "esp32p4",
               "versions_file": "@@//tools/bazel:native_versions/esp_idf_tool_versions.txt"
+            }
+          },
+          "gizos_jieli_pi32v2_cc_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
+            "attributes": {
+              "compile_flags": [
+                "-target",
+                "pi32v2",
+                "-mcpu=r3",
+                "-integrated-as",
+                "-Oz",
+                "-fno-common",
+                "-fallow-pointer-null",
+                "-fprefer-gnu-section",
+                "-fms-extensions",
+                "-Wno-shift-negative-value"
+              ],
+              "compiler_kind": "clang",
+              "exec_hosts": [
+                "linux_x86_64"
+              ],
+              "layout": "bin_dir",
+              "locator": "@@+native_repositories+h2_jieli_toolchain//:locator.json",
+              "locator_path": "pi32v2_bin",
+              "prefix": "",
+              "system_include_dirs": [
+                "../include"
+              ],
+              "target_constraints": [
+                "@gizos//tools/bazel/platforms:cpu_pi32v2",
+                "@platforms//os:none"
+              ],
+              "target_cpu": "pi32v2",
+              "target_system_name": "pi32v2-elf",
+              "tool_overrides": {
+                "as": "clang",
+                "cpp": "clang",
+                "gcc": "clang",
+                "gcov": "clang",
+                "ld": "lto-wrapper"
+              },
+              "toolchain_identifier": "jieli-local-clang-4.0.1",
+              "unfiltered_compile_flags": [
+                "-Wno-missing-field-initializers",
+                "-Wno-missing-braces"
+              ],
+              "version_key": "jieli_clang",
+              "versions_file": "@@//tools/bazel:native_versions/jieli_tool_versions.txt"
             }
           }
         }

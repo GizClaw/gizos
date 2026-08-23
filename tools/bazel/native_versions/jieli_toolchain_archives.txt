@@ -1,0 +1,8 @@
+# kind archive archive_sha256 expanded_tree_sha256 expanded_directory
+# The upstream pkgman short links always redirect to the newest release, so
+# firmware-devenv mirrors the archives (tools/jieli_toolchain/archives) and
+# `make jieli-toolchain` unpacks them into .tools/<expanded_directory> with
+# --strip-components=1 and renames packres to pack_res; Bazel validates the
+# expanded tree that bootstrap produces.
+toolchain jieli-linux-toolchains-20250805.1.tar.xz f686586bcfb45e0f0bb27fd2b39c7a7f313cb4f0e88a66a14da621ffa8225958 f551f7c3126875025bc89786807d27458add752f13fcfa238126922b47aff4b9 jieli-linux-toolchains-20250805.1
+postbuild jieli-linux-post-build-tools-20260728.1.tar.xz f4a458738c5eec32e78377c76b346bcac1cd515b03eda2b7eb11ab183298a858 7ab34e957fcdb370eb976b0cbede44a92c33b0a6665978adc78b8fb66772630c jieli-linux-post-build-tools-20260728.1

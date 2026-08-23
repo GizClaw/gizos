@@ -1,0 +1,521 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "h2_platform_entropy",
+    srcs = ["src/h2_bk3633_platform_entropy.c"],
+    hdrs = ["include/h2_bk3633_platform_entropy.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_bk3633": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "h2_platform_mem",
+    srcs = ["src/h2_bk3633_platform_mem.c"],
+    hdrs = ["include/h2_bk3633_platform_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_bk3633": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_platform_entropy",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "mem_test_support",
+    testonly = True,
+    srcs = ["tests/src/h2_bk3633_mem_test_support.c"],
+    hdrs = ["tests/include/h2_bk3633_mem_test_support.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/include"],
+    visibility = ["//native_component_src/bk3633/h2_pal_core:__pkg__"],
+    deps = [
+        ":h2_platform_mem",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "h2_platform_libco",
+    srcs = ["src/h2_bk3633_platform_libco.c"],
+    hdrs = ["include/h2_bk3633_platform_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_bk3633": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_platform_entropy",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+firmware_native_component(
+    name = "h2_pal_core",
+    srcs = [
+        "src/h2_bk3633_flash_disk.c",
+        "src/h2_bk3633_nvds_pref.c",
+        "src/h2_bk3633_platform_battery.c",
+        "src/h2_bk3633_platform_ble.c",
+        "src/h2_bk3633_platform_button.c",
+        "src/h2_bk3633_platform_buzzer.c",
+        "src/h2_bk3633_platform_entropy.c",
+        "src/h2_bk3633_platform_firmware_info.c",
+        "src/h2_bk3633_platform_libco.c",
+        "src/h2_bk3633_platform_log.c",
+        "src/h2_bk3633_platform_mem.c",
+        "src/h2_bk3633_platform_power.c",
+        "src/h2_bk3633_platform_system_event.c",
+        "src/h2_bk3633_platform_time.c",
+    ],
+    hdrs = [
+        "include/h2_bk3633_platform_core.h",
+        "include/h2_bk3633_platform_entropy.h",
+    ],
+    component_name = "h2_pal_core",
+    data = [
+        "CMakeLists.txt",
+        "Makefile",
+        "src/h2_bk3633_pal_storage_internal.h",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+firmware_native_component(
+    name = "libco_smoke",
+    srcs = [
+        "src/h2_bk3633_platform_firmware_info.c",
+        "src/h2_bk3633_platform_libco.c",
+        "src/h2_bk3633_platform_log.c",
+        "src/h2_bk3633_platform_mem.c",
+        "src/h2_bk3633_platform_system_event.c",
+        "src/h2_bk3633_platform_time.c",
+    ],
+    hdrs = [
+        "include/h2_bk3633_platform_core.h",
+        "include/h2_bk3633_platform_entropy.h",
+    ],
+    component_name = "h2_pal_core_libco_smoke",
+    tags = ["manual"],
+    deps = [
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_libco",
+    srcs = ["tests/src/test_bk3633_platform_libco.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_platform_libco",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+filegroup(
+    name = "package_metadata",
+    srcs = ["BUILD.bazel"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "h2_pal_core_native",
+    testonly = True,
+    srcs = [
+        "src/h2_bk3633_platform_ble.c",
+        "src/h2_bk3633_platform_log.c",
+        "src/h2_bk3633_platform_system_event.c",
+        "tests/src/h2_bk3633_ble_sdk_fake.c",
+    ],
+    hdrs = [
+        "include/h2_bk3633_platform_core.h",
+        "tests/include/h2_bk3633_ble_sdk_fake.h",
+    ],
+    copts = [
+        "-DH2_BK3633_BLE_SDK_FAKE",
+    ] + H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/include",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":h2_platform_entropy",
+        ":h2_platform_libco",
+        ":h2_platform_mem",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "storage_native",
+    testonly = True,
+    srcs = [
+        "src/h2_bk3633_flash_disk.c",
+        "src/h2_bk3633_nvds_pref.c",
+        "src/h2_bk3633_pal_storage_internal.h",
+    ],
+    hdrs = ["include/h2_bk3633_platform_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":h2_platform_entropy",
+        ":h2_platform_libco",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_library(
+    name = "storage_test_support",
+    testonly = True,
+    srcs = [
+        "tests/src/fake_flash.c",
+        "tests/src/fake_nvds.c",
+    ],
+    hdrs = [
+        "src/h2_bk3633_pal_storage_internal.h",
+        "tests/include/fake_flash.h",
+        "tests/include/fake_nvds.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/include",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":storage_native",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "interaction_native",
+    testonly = True,
+    srcs = [
+        "src/h2_bk3633_platform_button.c",
+        "src/h2_bk3633_platform_buzzer.c",
+        "tests/src/h2_bk3633_interaction_sdk_fake.c",
+    ],
+    hdrs = [
+        "include/h2_bk3633_platform_core.h",
+        "tests/include/h2_bk3633_interaction_sdk_fake.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = [
+        "-DH2_BK3633_INTERACTION_SDK_FAKE",
+    ] + H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/include",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":h2_platform_entropy",
+        ":h2_platform_mem",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "power_lifecycle_native",
+    testonly = True,
+    srcs = [
+        "src/h2_bk3633_platform_battery.c",
+        "src/h2_bk3633_platform_power.c",
+        "src/h2_bk3633_platform_time.c",
+        "tests/src/h2_bk3633_power_sdk_fake.c",
+    ],
+    hdrs = [
+        "include/h2_bk3633_platform_core.h",
+        "tests/include/h2_bk3633_power_sdk_fake.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = [
+        "-DH2_BK3633_POWER_SDK_FAKE",
+    ] + H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/include",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":h2_platform_entropy",
+        ":h2_platform_libco",
+        ":h2_platform_mem",
+        "//libs/drivers/rtc/bm8563",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "fake_trng",
+    testonly = True,
+    srcs = ["tests/src/fake_trng.c"],
+    hdrs = ["tests/include/fake_trng.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/include"],
+    visibility = ["//native_component_src/bk3633/h2_pal_core:__pkg__"],
+    deps = [
+        ":h2_platform_entropy",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_entropy",
+    srcs = ["tests/src/test_bk3633_platform_entropy.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fake_trng",
+        ":h2_platform_entropy",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_mem",
+    srcs = ["tests/src/test_bk3633_platform_mem.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_platform_mem",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_button",
+    srcs = ["tests/src/test_bk3633_platform_button.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":interaction_native",
+        ":mem_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_buzzer",
+    srcs = ["tests/src/test_bk3633_platform_buzzer.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":interaction_native",
+        ":mem_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_battery",
+    srcs = ["tests/src/test_bk3633_platform_battery.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":mem_test_support",
+        ":power_lifecycle_native",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_power",
+    srcs = ["tests/src/test_bk3633_platform_power.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":mem_test_support",
+        ":power_lifecycle_native",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_time",
+    srcs = ["tests/src/test_bk3633_platform_time.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":power_lifecycle_native",
+        "//libs/drivers/rtc/bm8563:bm8563_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_ble_adv",
+    srcs = ["tests/src/test_bk3633_platform_ble_adv.c"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_pal_core_native",
+        ":mem_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_ble_dispatch",
+    srcs = ["tests/src/test_bk3633_platform_ble_dispatch.c"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_pal_core_native",
+        ":mem_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_ble_gatt",
+    srcs = ["tests/src/test_bk3633_platform_ble_gatt.c"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_pal_core_native",
+        ":mem_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_bk3633_platform_ble_scan",
+    srcs = ["tests/src/test_bk3633_platform_ble_scan.c"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_pal_core_native",
+        ":mem_test_support",
+    ],
+)
+
+cc_test(
+    name = "test_nvds_pref",
+    srcs = ["tests/src/test_nvds_pref.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":storage_native",
+        ":storage_test_support",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "test_flash_disk",
+    srcs = ["tests/src/test_flash_disk.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":storage_native",
+        ":storage_test_support",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+    ],
+)

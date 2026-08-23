@@ -10,17 +10,26 @@ exports_files(["cc_options.bzl"])
 
 exports_files([
     "bk7258.bzl",
+    "bk3633.bzl",
     "bk7258_requirements.txt",
     "esp_idf.bzl",
     "firmware.bzl",
     "firmware_components.bzl",
+    "jieli.bzl",
+    "jieli/local_post_br23.sh",
+    "jieli/local_post_wl82.sh",
     "native_component.bzl",
     "native_component.cmake",
+    "native_versions/bk3633_sdk_commit.txt",
     "native_versions/bk7258_sdk_commit.txt",
     "native_versions/bk_tool_versions.txt",
     "native_versions/bk_toolchain_archives.txt",
     "native_versions/esp_idf_commit.txt",
     "native_versions/esp_idf_tool_versions.txt",
+    "native_versions/jieli_ac695n_sdk_commit.txt",
+    "native_versions/jieli_ac791n_sdk_commit.txt",
+    "native_versions/jieli_tool_versions.txt",
+    "native_versions/jieli_toolchain_archives.txt",
     "native_versions/native_ccache_tools.txt",
     "remote_scrubbing_config.textproto",
     "web_archive.bzl",
@@ -208,6 +217,71 @@ py_test(
         requirement("pycparser"),
         requirement("pycryptodome"),
     ],
+)
+
+py_binary(
+    name = "bk3633_runner",
+    srcs = ["bk3633_runner.py"],
+    legacy_create_init = 0,
+    main = "bk3633_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":native_ccache",
+        ":native_runtime",
+    ],
+)
+
+py_test(
+    name = "bk3633_runner_test",
+    srcs = ["tests/test_bk3633_runner.py"],
+    data = ["bk3633_runner.py"],
+    legacy_create_init = 0,
+    main = "tests/test_bk3633_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":native_ccache",
+        ":native_runtime",
+    ],
+)
+
+py_binary(
+    name = "jieli_runner",
+    srcs = ["jieli_runner.py"],
+    legacy_create_init = 0,
+    main = "jieli_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":native_runtime"],
+)
+
+py_test(
+    name = "jieli_runner_test",
+    srcs = ["tests/test_jieli_runner.py"],
+    data = [
+        "jieli/local_post_br23.sh",
+        "jieli/local_post_wl82.sh",
+        "jieli_runner.py",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":native_runtime"],
 )
 
 cc_library(

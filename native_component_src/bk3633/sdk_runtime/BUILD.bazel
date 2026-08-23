@@ -1,0 +1,74 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "sdk_runtime",
+    srcs = [
+        "src/h2_bk3633_nvds_abi.c",
+        "src/h2_bk3633_rwip_environment.c",
+        "src/h2_bk3633_sdk_runtime.c",
+        "src/h2_bk3633_uart_printf_abi.c",
+    ],
+    hdrs = [
+        "include/h2_bk3633_sdk_runtime.h",
+    ],
+    component_name = "sdk_runtime",
+    data = [
+        "Makefile",
+        "src/h2_bk3633_sdk_runtime_internal.h",
+        "src/h2_bk3633_uart_printf_abi.h",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+cc_test(
+    name = "test_h2_bk3633_nvds_abi",
+    srcs = [
+        "include/h2_bk3633_sdk_runtime.h",
+        "src/h2_bk3633_nvds_abi.c",
+        "src/h2_bk3633_sdk_runtime_internal.h",
+        "tests/include/flash.h",
+        "tests/include/nvds.h",
+        "tests/src/test_h2_bk3633_nvds_abi.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/libco",
+    ],
+)
+
+firmware_native_component(
+    name = "rwip_abi",
+    srcs = ["src/h2_bk3633_uart_printf_abi.c"],
+    component_name = "sdk_runtime_rwip_abi",
+    data = ["src/h2_bk3633_uart_printf_abi.h"],
+    tags = ["manual"],
+)
+
+filegroup(
+    name = "package_metadata",
+    srcs = ["BUILD.bazel"],
+    tags = ["manual"],
+)
