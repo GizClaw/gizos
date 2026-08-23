@@ -1,0 +1,102 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "runtime",
+    srcs = [
+        "src/h2_runtime.c",
+        "src/h2_runtime_component_mapping.c",
+        "src/h2_runtime_event.c",
+        "src/h2_runtime_input.c",
+        "src/h2_runtime_internal.h",
+        "src/h2_runtime_state.c",
+        "src/h2_runtime_system_event.c",
+        "src/h2_runtime_system_state.c",
+        "src/h2_runtime_test.c",
+    ],
+    hdrs = [
+        "include/h2_runtime.h",
+        "include/h2_runtime_component.h",
+        "include/h2_runtime_event.h",
+        "include/h2_runtime_input.h",
+        "include/h2_runtime_input_button.h",
+        "include/h2_runtime_input_button_defs.h",
+        "include/h2_runtime_input_imu.h",
+        "include/h2_runtime_input_imu_defs.h",
+        "include/h2_runtime_input_nfc.h",
+        "include/h2_runtime_input_nfc_defs.h",
+        "include/h2_runtime_input_sensor.h",
+        "include/h2_runtime_input_sensor_defs.h",
+        "include/h2_runtime_state.h",
+        "include/h2_runtime_system_event.h",
+        "include/h2_runtime_system_state.h",
+        "include/h2_runtime_test.h",
+        "include/h2_runtime_types.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "//tools/bazel/platforms:is_bk3633": ["-Wno-error=type-limits"],
+        "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
+        "//conditions:default": [],
+    }),
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    deps = [
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "runtime_test",
+    srcs = [
+        "src/h2_runtime_internal.h",
+        "tests/src/test_runtime_buzzer.c",
+        "tests/src/test_runtime_nfc_card_emulation.c",
+        "tests/test_runtime.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":runtime",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "runtime_concurrency_test",
+    srcs = [
+        "src/h2_runtime_internal.h",
+        "tests/test_runtime_concurrency.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":runtime",
+        "//libs/pal:unsupported",
+    ],
+)

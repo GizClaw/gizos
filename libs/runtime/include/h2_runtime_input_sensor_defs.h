@@ -1,0 +1,14 @@
+#ifndef H2_RUNTIME_INPUT_SENSOR_DEFS_H
+#define H2_RUNTIME_INPUT_SENSOR_DEFS_H
+
+/* Scope: Passive sensor polling tunable macro defaults. */
+
+#ifndef H2_RUNTIME_BATTERY_POLL_INTERVAL_MS
+#define H2_RUNTIME_BATTERY_POLL_INTERVAL_MS 500u
+#endif
+
+#ifndef H2_RUNTIME_TEMPERATURE_POLL_INTERVAL_MS
+#define H2_RUNTIME_TEMPERATURE_POLL_INTERVAL_MS 1000u
+#endif
+
+#endif
