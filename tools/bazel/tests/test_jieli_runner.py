@@ -283,15 +283,21 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertIn(str(fixture.project_makefile), invocations[0])
             self.assertIn("h2_link", invocations[0])
 
-    def test_ac791n_layout_does_not_compile_the_sdk_demo_project(self):
+    def test_bare_chip_layouts_do_not_compile_sdk_application_projects(self):
         repository = MODULE_PATH.parents[2]
-        layout = repository / "boards/ac791n_chip/ac791n/layouts/compile_only"
-        project = (layout / "project.mk").read_text(encoding="utf-8")
-        definition = (layout / "defs.bzl").read_text(encoding="utf-8")
-        self.assertNotIn("apps/demo", project)
-        self.assertNotIn("apps/demo", definition)
-        self.assertNotIn("sdk_project", definition)
-        self.assertTrue((layout / "src/platform.c").is_file())
+        layouts = (
+            ("boards/ac695n_chip/ac695n/layouts/compile_only", "apps/soundbox"),
+            ("boards/ac791n_chip/ac791n/layouts/compile_only", "apps/demo"),
+        )
+        for relative, forbidden in layouts:
+            with self.subTest(layout=relative):
+                layout = repository / relative
+                project = (layout / "project.mk").read_text(encoding="utf-8")
+                definition = (layout / "defs.bzl").read_text(encoding="utf-8")
+                self.assertNotIn(forbidden, project)
+                self.assertNotIn(forbidden, definition)
+                self.assertNotIn("sdk_project", definition)
+                self.assertTrue((layout / "src/platform.c").is_file())
 
     def test_build_renders_component_manifest_with_sources_and_archives(self):
         with tempfile.TemporaryDirectory() as temporary:

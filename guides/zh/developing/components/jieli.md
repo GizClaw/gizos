@@ -44,7 +44,7 @@
 
 ## Repository-owned native project
 
-AC695N 与 AC791N 的 `compile_only/project.mk` 从当前 pinned SDK project 配置机械迁移，随后改为 repository ownership。Runner 在 invocation-local SDK 根执行 `make -f <layout>/project.mk h2_link`；`tools/bazel/jieli/h2_project_rules.mk` 只提供 Bazel native object/archive 的通用追加规则，不 include SDK Makefile。每个 `firmware_native_component` 源文件使用 layout project 的 flags 与 Bazel include roots编译到 `$(BUILD_DIR)/h2_bazel/`，`firmware_lib_component` archive 以 link group 进入同一条 `lto-wrapper` 链接。Bazel archive 是非 LTO ELF object，SDK source object 是 LTO bitcode。
+AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_config.h`、TASK policy、系列所需的 interrupt 配置与最小 board composition；具体 firmware launcher 自己提供 `app_main`。Runner 在 invocation-local SDK 根执行 `make -f <layout>/project.mk h2_link`，但 project 只选择 SDK 的 CPU/common substrate、headers、archives、linker inputs 与 post-build inputs，不编译 `apps/soundbox/**`、`apps/demo/**` 或其它 SDK application project。`tools/bazel/jieli/h2_project_rules.mk` 只提供 Bazel native object/archive 的通用追加规则，不 include SDK Makefile。每个 `firmware_native_component` 源文件使用 layout project 的 flags 与 Bazel include roots 编译到 `$(BUILD_DIR)/h2_bazel/`，`firmware_lib_component` archive 以 link group 进入同一条 `lto-wrapper` 链接。Bazel archive 是非 LTO ELF object，SDK source object 是 LTO bitcode。
 
 ## 板与 entry
 
