@@ -212,6 +212,58 @@ class PublicCommandSurfaceTest(unittest.TestCase):
                     )
         self.assertEqual(findings, [])
 
+    def test_ci_cache_contract_is_uniform(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        cache_action = (
+            "actions/cache/{kind}@"
+            "caa296126883cff596d87d8935842f9db880ef25 # v5.1.0"
+        )
+        self.assertNotIn(
+            "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
+            workflow,
+        )
+        self.assertNotIn(
+            "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830",
+            workflow,
+        )
+        self.assertEqual(workflow.count(cache_action.format(kind="restore")), 9)
+        self.assertEqual(workflow.count(cache_action.format(kind="save")), 9)
+        self.assertEqual(workflow.count("Save Bazel repository cache seed"), 6)
+        self.assertEqual(
+            workflow.count(
+                "key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}"
+            ),
+            6,
+        )
+        self.assertEqual(
+            workflow.count(
+                "Native ccache GCS requires the Bazel cache WIF variables."
+            ),
+            5,
+        )
+        self.assertEqual(
+            workflow.count(
+                "Native ccache and Bazel remote cache must use isolated prefixes "
+                "in the same bucket."
+            ),
+            5,
+        )
+        self.assertEqual(workflow.count("Refresh native compiler cache token"), 3)
+        self.assertEqual(
+            workflow.count("Configure native compiler cache GCS access"), 3
+        )
+        self.assertEqual(
+            workflow.count("Show native compiler cache statistics"), 3
+        )
+        for config in ("esp32s3", "esp32p4", "esp32c5", "bk7258", "bk3633"):
+            self.assertIn(config, workflow)
+        self.assertIn(
+            "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            workflow,
+        )
+
     def test_markdown_repository_commands_use_public_entry(self) -> None:
         findings = []
         for path in sorted(ROOT.rglob("*.md")):

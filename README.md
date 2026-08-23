@@ -30,7 +30,7 @@ Each unchecked item represents one future CI completion push. The item is checke
 - [x] Align host runner variables, platform dependencies, Guides tooling, and execution timeouts with the maintained Firmwares CI classes.
 - [x] Add required iOS Simulator, Android, test coverage, KickPi K4B, and ESP32-P4 execution classes.
 - [x] Add required BK3633, AC695N, and AC791N execution classes after their generic reference-board firmware targets exist.
-- [ ] Apply Bazel repository-cache and native ccache authentication, prefix validation, statistics, and seed handling consistently to every applicable execution class.
+- [x] Apply Bazel repository-cache and native ccache authentication, prefix validation, statistics, and seed handling consistently to every applicable execution class.
 - [ ] Add a public release workflow for catalog, firmware slices, bundles, GitHub Release publication, and release artifact verification.
 - [ ] Add public opt-in Live E2E jobs while excluding H106, H200/H200 V2, Tiga, Zero, TapDoki, Lucky Kitty, and other product-owned hardware flows.
 - [ ] Complete the required-check, fork-PR, cache, artifact, timeout, and public source-boundary audit against the maintained Firmwares workflows.

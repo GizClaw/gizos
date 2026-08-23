@@ -137,6 +137,7 @@ jobs:
           CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
           CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
         shell: bash
         run: |
           configured=0
@@ -148,9 +149,27 @@ jobs:
           elif [ "$configured" -ne 4 ]; then
             echo 'Bazel remote cache repository variables are incomplete.' >&2
             exit 1
-          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
             echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
             exit 1
+          fi
+          if [ -n "$NATIVE_CACHE_URL" ]; then
+            if [ "$configured" -ne 4 ]; then
+              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
+              exit 1
+            fi
+            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
+              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
+              exit 1
+            fi
+            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
+            native_bucket=${native_bucket%/ccache}
+            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
+            bazel_bucket=${bazel_bucket%/gizos}
+            if [ "$native_bucket" != "$bazel_bucket" ]; then
+              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
+              exit 1
+            fi
           fi
 
       - name: Authenticate Bazel remote cache
@@ -168,7 +187,7 @@ jobs:
       - name: Restore Bazel repository cache
         id: bazel-repository-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
@@ -215,15 +234,15 @@ jobs:
           .github/scripts/merge-eligibility-status/test.mjs
           .github/scripts/ownership-approval/test.mjs
 
-      - name: Save Bazel repository cache
+      - name: Save Bazel repository cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.bazel-repository-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   extended-platforms:
     name: ${{ matrix.name }}
@@ -335,6 +354,7 @@ jobs:
           CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
           CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
         shell: bash
         run: |
           configured=0
@@ -346,9 +366,27 @@ jobs:
           elif [ "$configured" -ne 4 ]; then
             echo 'Bazel remote cache repository variables are incomplete.' >&2
             exit 1
-          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
             echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
             exit 1
+          fi
+          if [ -n "$NATIVE_CACHE_URL" ]; then
+            if [ "$configured" -ne 4 ]; then
+              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
+              exit 1
+            fi
+            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
+              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
+              exit 1
+            fi
+            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
+            native_bucket=${native_bucket%/ccache}
+            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
+            bazel_bucket=${bazel_bucket%/gizos}
+            if [ "$native_bucket" != "$bazel_bucket" ]; then
+              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
+              exit 1
+            fi
           fi
 
       - name: Authenticate Bazel remote cache
@@ -366,7 +404,7 @@ jobs:
       - name: Restore Bazel repository cache
         id: bazel-repository-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
@@ -438,15 +476,15 @@ jobs:
           path: build/coverage/test/
           if-no-files-found: warn
 
-      - name: Save Bazel repository cache
+      - name: Save Bazel repository cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.bazel-repository-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   esp-compatible-graph:
     if: >-
@@ -507,7 +545,7 @@ jobs:
       - name: Restore ESP-IDF tool cache
         id: esp-idf-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf
           key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
@@ -551,6 +589,7 @@ jobs:
           CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
           CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
         shell: bash
         run: |
           configured=0
@@ -562,9 +601,27 @@ jobs:
           elif [ "$configured" -ne 4 ]; then
             echo 'Bazel remote cache repository variables are incomplete.' >&2
             exit 1
-          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
             echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
             exit 1
+          fi
+          if [ -n "$NATIVE_CACHE_URL" ]; then
+            if [ "$configured" -ne 4 ]; then
+              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
+              exit 1
+            fi
+            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
+              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
+              exit 1
+            fi
+            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
+            native_bucket=${native_bucket%/ccache}
+            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
+            bazel_bucket=${bazel_bucket%/gizos}
+            if [ "$native_bucket" != "$bazel_bucket" ]; then
+              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
+              exit 1
+            fi
           fi
 
       - name: Authenticate Bazel remote cache
@@ -579,7 +636,7 @@ jobs:
       - name: Restore Bazel repository cache
         id: bazel-repository-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
@@ -659,25 +716,25 @@ jobs:
         shell: bash
         run: CCACHE_DIR="$H2_NATIVE_CCACHE_RUNTIME_ROOT/cache/${{ matrix.config }}" "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --show-stats
 
-      - name: Save Bazel repository cache
+      - name: Save Bazel repository cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.bazel-repository-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
-      - name: Save ESP-IDF tool cache
+      - name: Save ESP-IDF tool cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.esp-idf-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4-esp32c5
+          key: ${{ steps.esp-idf-cache.outputs.cache-primary-key }}
 
   bk7258-compatible-graph:
     if: >-
@@ -752,6 +809,7 @@ jobs:
           CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
           CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
         shell: bash
         run: |
           configured=0
@@ -763,9 +821,27 @@ jobs:
           elif [ "$configured" -ne 4 ]; then
             echo 'Bazel remote cache repository variables are incomplete.' >&2
             exit 1
-          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
             echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
             exit 1
+          fi
+          if [ -n "$NATIVE_CACHE_URL" ]; then
+            if [ "$configured" -ne 4 ]; then
+              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
+              exit 1
+            fi
+            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
+              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
+              exit 1
+            fi
+            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
+            native_bucket=${native_bucket%/ccache}
+            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
+            bazel_bucket=${bazel_bucket%/gizos}
+            if [ "$native_bucket" != "$bazel_bucket" ]; then
+              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
+              exit 1
+            fi
           fi
 
       - name: Authenticate Bazel remote cache
@@ -780,7 +856,7 @@ jobs:
       - name: Restore Bazel repository cache
         id: bazel-repository-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
@@ -842,15 +918,15 @@ jobs:
         shell: bash
         run: CCACHE_DIR="$H2_NATIVE_CCACHE_RUNTIME_ROOT/cache/bk7258" "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --show-stats
 
-      - name: Save Bazel repository cache
+      - name: Save Bazel repository cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.bazel-repository-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   legacy-firmware:
     if: >-
@@ -912,7 +988,7 @@ jobs:
         id: ac791n-lfs-cache
         if: matrix.config == 'ac791n'
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .native-sdk/.git/lfs
           key: jieli-ac791n-sdk-lfs-${{ matrix.sdk_commit }}
@@ -956,7 +1032,7 @@ jobs:
         id: jieli-toolchain-lfs-cache
         if: matrix.config == 'ac695n' || matrix.config == 'ac791n'
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .firmware-devenv-jieli/.git/lfs
           key: jieli-toolchain-lfs-${{ hashFiles('tools/bazel/native_versions/jieli_toolchain_archives.txt') }}
@@ -1029,6 +1105,7 @@ jobs:
           CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
           CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
         shell: bash
         run: |
           configured=0
@@ -1040,9 +1117,27 @@ jobs:
           elif [ "$configured" -ne 4 ]; then
             echo 'Bazel remote cache repository variables are incomplete.' >&2
             exit 1
-          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
             echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
             exit 1
+          fi
+          if [ -n "$NATIVE_CACHE_URL" ]; then
+            if [ "$configured" -ne 4 ]; then
+              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
+              exit 1
+            fi
+            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
+              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
+              exit 1
+            fi
+            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
+            native_bucket=${native_bucket%/ccache}
+            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
+            bazel_bucket=${bazel_bucket%/gizos}
+            if [ "$native_bucket" != "$bazel_bucket" ]; then
+              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
+              exit 1
+            fi
           fi
 
       - name: Authenticate Bazel remote cache
@@ -1057,7 +1152,7 @@ jobs:
       - name: Restore Bazel repository cache
         id: bazel-repository-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
@@ -1083,6 +1178,30 @@ jobs:
             printf 'BAZEL_DISK_CACHE_MODE=off\n'
           } >> "$GITHUB_ENV"
 
+      - name: Refresh native compiler cache token
+        id: native-ccache-auth
+        if: vars.NATIVE_CCACHE_GCS_BASE_URL != '' && matrix.config == 'bk3633'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          token_format: access_token
+          access_token_lifetime: 3600s
+
+      - name: Configure native compiler cache GCS access
+        if: vars.NATIVE_CCACHE_GCS_BASE_URL != '' && matrix.config == 'bk3633'
+        env:
+          NATIVE_CCACHE_ACCESS_TOKEN: ${{ steps.native-ccache-auth.outputs.access_token }}
+          NATIVE_CCACHE_GCS_BASE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
+        shell: bash
+        run: |
+          token_file="$H2_NATIVE_CCACHE_RUNTIME_ROOT/token"
+          install -m 0600 /dev/null "$token_file"
+          printf '%s' "$NATIVE_CCACHE_ACCESS_TOKEN" > "$token_file"
+          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache","remote_base_url":"%s","storage_helper":"bin/ccache-storage-https","token_file":"token"}\n' "$NATIVE_CCACHE_GCS_BASE_URL" > "$H2_NATIVE_CCACHE_RUNTIME_ROOT/runtime.json"
+
       - name: Build legacy-chip compatible graph
         shell: bash
         run: make bazel-build BAZEL_CONFIG=${{ matrix.config }}
@@ -1095,10 +1214,10 @@ jobs:
 
       - name: Save AC791N SDK LFS cache seed
         if: >-
-          matrix.config == 'ac791n' && github.ref == 'refs/heads/main' &&
+          matrix.config == 'ac791n' && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.ac791n-lfs-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .native-sdk/.git/lfs
           key: ${{ steps.ac791n-lfs-cache.outputs.cache-primary-key }}
@@ -1106,20 +1225,20 @@ jobs:
       - name: Save JieLi toolchain archive LFS cache seed
         if: >-
           (matrix.config == 'ac695n' || matrix.config == 'ac791n') &&
-          github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.jieli-toolchain-lfs-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .firmware-devenv-jieli/.git/lfs
           key: ${{ steps.jieli-toolchain-lfs-cache.outputs.cache-primary-key }}
 
-      - name: Save Bazel repository cache
+      - name: Save Bazel repository cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.bazel-repository-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
@@ -1159,7 +1278,7 @@ jobs:
             Write-Host 'Bazel remote cache is not provisioned; using the job-local disk cache.'
           } elseif ($configured -ne 4) {
             throw 'Bazel remote cache repository variables are incomplete.'
-          } elseif ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos/?$') {
+          } elseif ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos$') {
             throw 'BAZEL_REMOTE_CACHE_URL must use the /gizos prefix.'
           }
 
@@ -1178,7 +1297,7 @@ jobs:
       - name: Restore Bazel repository cache
         id: bazel-repository-cache
         continue-on-error: true
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
@@ -1206,7 +1325,7 @@ jobs:
           $outputRoot = Join-Path $env:SystemDrive 'b'
           $cacheArgs = @()
           if ($env:CACHE_URL) {
-            if ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos/?$') {
+            if ($env:CACHE_URL -notmatch '^https://storage\.googleapis\.com/[^/]+/gizos$') {
               throw 'BAZEL_REMOTE_CACHE_URL must use the /gizos prefix'
             }
             $cacheArgs = @(
@@ -1223,15 +1342,15 @@ jobs:
           & $env:BAZEL_BIN "--output_user_root=$outputRoot" test @cacheArgs --config=windows_x86_64 --lockfile_mode=off --remote_download_outputs=minimal //...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Save Bazel repository cache
+      - name: Save Bazel repository cache seed
         if: >-
-          always() && github.ref == 'refs/heads/main' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.bazel-repository-cache.outputs.cache-hit != 'true'
         continue-on-error: true
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   ci-required:
     if: always()
