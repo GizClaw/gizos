@@ -28,7 +28,7 @@ H106, H200/H200 V2, Tiga, and Zero projects and their product-owned boards, targ
 Each unchecked item represents one future CI completion push. The item is checked in the same push that completes and validates the work.
 
 - [x] Align host runner variables, platform dependencies, Guides tooling, and execution timeouts with the maintained Firmwares CI classes.
-- [ ] Add required iOS Simulator, Android, test coverage, KickPi K4B, and ESP32-P4 execution classes.
+- [x] Add required iOS Simulator, Android, test coverage, KickPi K4B, and ESP32-P4 execution classes.
 - [ ] Add required BK3633, AC695N, and AC791N execution classes after their generic reference-board firmware targets exist.
 - [ ] Apply Bazel repository-cache and native ccache authentication, prefix validation, statistics, and seed handling consistently to every applicable execution class.
 - [ ] Add a public release workflow for catalog, firmware slices, bundles, GitHub Release publication, and release artifact verification.

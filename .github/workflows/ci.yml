@@ -22,6 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  ANDROID_API_LEVEL: "35"
+  ANDROID_BUILD_TOOLS_VERSION: "35.0.0"
+  ANDROID_NDK_VERSION: "28.2.13676358"
   BAZEL_VERSION: "9.2.0"
   BAZEL_LINUX_X86_64_SHA256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
   BAZEL_MACOS_ARM64_SHA256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
@@ -222,18 +225,251 @@ jobs:
           path: ~/.cache/bazel/repository
           key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
-  esp32s3-compatible-graph:
+  extended-platforms:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    continue-on-error: ${{ matrix.config == 'kickpi_k4b' }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS Simulator arm64 / Build
+            runner: macos-15
+            config: ios_sim_arm64
+            task: build
+            asset: darwin-arm64
+            sha: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
+            timeout: 45
+          - name: iOS Simulator arm64 / Test
+            runner: macos-15
+            config: ios_sim_arm64
+            task: test
+            asset: darwin-arm64
+            sha: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
+            timeout: 45
+          - name: Android arm64 / Build + Test
+            runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
+            config: android_arm64
+            task: build-test
+            asset: linux-x86_64
+            sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+            timeout: 70
+          - name: Test coverage
+            runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
+            config: test_coverage
+            task: coverage
+            asset: linux-x86_64
+            sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+            timeout: 60
+          - name: KickPi K4B / Build (non-blocking)
+            runner: ${{ vars.FIRMWARE_LINUX_4CORE_RUNNER }}
+            config: kickpi_k4b
+            task: build
+            asset: linux-x86_64
+            sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+            timeout: 60
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          apt_network_options=(
+            -o Acquire::Retries=0
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          sudo apt-get "${apt_network_options[@]}" update
+          sudo apt-get "${apt_network_options[@]}" install --yes \
+            cmake doxygen lcov libasound2-dev libx11-dev libxext-dev \
+            libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
+            pkg-config ripgrep unzip
+
+      - name: Install macOS dependencies and select Xcode
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install cmake doxygen lcov ninja pkg-config ripgrep rsync
+          sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+          test "$(xcodebuild -version | head -n 1)" = "Xcode 16.4"
+
+      - name: Install coverage toolchain compatibility dependency
+        if: matrix.config == 'test_coverage'
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.2_amd64.deb \
+            --output "$RUNNER_TEMP/libtinfo5.deb"
+          printf '%s  %s\n' \
+            b9bb64e716a7d9de05b1b33992763142ca81bcae3a7f8ce7e29fa3c6fd32f1e8 \
+            "$RUNNER_TEMP/libtinfo5.deb" | sha256sum --check --strict
+          sudo apt-get install --yes "$RUNNER_TEMP/libtinfo5.deb"
+
+      - name: Install Android SDK and NDK
+        if: matrix.config == 'android_arm64'
+        shell: bash
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "build-tools;$ANDROID_BUILD_TOOLS_VERSION" \
+            "ndk;$ANDROID_NDK_VERSION" \
+            "platforms;android-$ANDROID_API_LEVEL"
+          printf 'ANDROID_NDK_HOME=%s/ndk/%s\n' \
+            "$ANDROID_HOME" "$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Validate Bazel remote cache variables
+        env:
+          CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
+          CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+        shell: bash
+        run: |
+          configured=0
+          for value in "$CACHE_PROJECT" "$CACHE_URL" "$CACHE_PROVIDER" "$CACHE_WRITER"; do
+            if [ -n "$value" ]; then configured=$((configured + 1)); fi
+          done
+          if [ "$configured" -eq 0 ]; then
+            echo 'Bazel remote cache is not provisioned; using the job-local disk cache.'
+          elif [ "$configured" -ne 4 ]; then
+            echo 'Bazel remote cache repository variables are incomplete.' >&2
+            exit 1
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos/?$ ]]; then
+            echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
+            exit 1
+          fi
+
+      - name: Authenticate Bazel remote cache
+        if: >-
+          vars.BAZEL_REMOTE_CACHE_URL != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Restore Bazel repository cache
+        id: bazel-repository-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
+      - name: Install and verify Bazel
+        shell: bash
+        run: |
+          bazel_path="$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error \
+            "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
+            --output "$bazel_path"
+          test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
+          chmod +x "$bazel_path"
+          {
+            printf 'BAZEL_BIN=%s\n' "$bazel_path"
+            printf 'BAZEL_CONFIG=%s\n' '${{ matrix.config }}'
+            printf 'BAZEL_BUILD_REMOTE_DOWNLOAD_OUTPUTS=minimal\n'
+          } >> "$GITHUB_ENV"
+
+      - name: Configure Bazel remote cache
+        if: >-
+          vars.BAZEL_REMOTE_CACHE_URL != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        shell: bash
+        run: |
+          {
+            printf 'BAZEL_REMOTE_CACHE_URL=%s\n' '${{ vars.BAZEL_REMOTE_CACHE_URL }}'
+            printf 'BAZEL_REMOTE_CACHE_MODE=write\n'
+            printf 'BAZEL_DISK_CACHE_MODE=off\n'
+          } >> "$GITHUB_ENV"
+
+      - name: Execute platform task
+        shell: bash
+        run: |
+          case '${{ matrix.task }}' in
+            build)
+              make bazel-build
+              ;;
+            test)
+              make bazel-test
+              ;;
+            build-test)
+              make bazel-build
+              make bazel-test
+              ;;
+            coverage)
+              make bazel-coverage-report
+              ;;
+            *)
+              echo 'unknown execution task: ${{ matrix.task }}' >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Publish coverage summary
+        if: always() && matrix.config == 'test_coverage'
+        shell: bash
+        run: |
+          if [ -s build/coverage/test/summary.md ]; then
+            cat build/coverage/test/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage report
+        if: always() && matrix.config == 'test_coverage'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-coverage
+          path: build/coverage/test/
+          if-no-files-found: warn
+
+      - name: Save Bazel repository cache
+        if: >-
+          always() && github.ref == 'refs/heads/main' &&
+          steps.bazel-repository-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
+  esp-compatible-graph:
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    name: ESP32-S3 / Build
+    name: ${{ matrix.name }}
     needs: private-dependencies
-    runs-on: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
       actions: read
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ESP32-S3 / Build
+            config: esp32s3
+            runner: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
+          - name: ESP32-P4 / Build
+            config: esp32p4
+            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -271,13 +507,13 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3
+          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4
 
       - name: Install ESP-IDF tools
         shell: bash
         run: |
           export IDF_TOOLS_PATH="$GITHUB_WORKSPACE/firmware-devenv/.tools/esp-idf"
-          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3
+          firmware-devenv/third_party/esp_idf_6.0/install.sh esp32s3,esp32p4
 
       - name: Install native compiler cache
         shell: bash
@@ -408,17 +644,17 @@ jobs:
           )"
           printf 'H2LOADER_WIFI_CREDENTIALS=%s\n' "$credentials" >> "$GITHUB_ENV"
 
-      - name: Build ESP32-S3 compatible graph
+      - name: Build ${{ matrix.config }} compatible graph
         shell: bash
         run: |
           . firmware-devenv/export.sh
-          make bazel-build BAZEL_CONFIG=esp32s3
+          make bazel-build BAZEL_CONFIG=${{ matrix.config }}
 
       - name: Show native compiler cache statistics
         if: always()
         continue-on-error: true
         shell: bash
-        run: CCACHE_DIR="$H2_NATIVE_CCACHE_RUNTIME_ROOT/cache/esp32s3" "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --show-stats
+        run: CCACHE_DIR="$H2_NATIVE_CCACHE_RUNTIME_ROOT/cache/${{ matrix.config }}" "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --show-stats
 
       - name: Save Bazel repository cache
         if: >-
@@ -438,7 +674,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: firmware-devenv/.tools/esp-idf
-          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3
+          key: esp-idf-v2-${{ runner.os }}-${{ hashFiles('tools/bazel/native_versions/esp_idf_commit.txt') }}-esp32s3-esp32p4
 
   bk7258-compatible-graph:
     if: >-
@@ -727,9 +963,10 @@ jobs:
     name: CI required
     needs:
       - bk7258-compatible-graph
+      - extended-platforms
       - private-dependencies
       - host
-      - esp32s3-compatible-graph
+      - esp-compatible-graph
       - windows-compatible-graph
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     steps:
@@ -737,7 +974,8 @@ jobs:
         env:
           HOST_RESULT: ${{ needs.host.result }}
           BK7258_RESULT: ${{ needs.bk7258-compatible-graph.result }}
-          ESP32S3_RESULT: ${{ needs.esp32s3-compatible-graph.result }}
+          ESP_RESULT: ${{ needs.esp-compatible-graph.result }}
+          EXTENDED_RESULT: ${{ needs.extended-platforms.result }}
           PRIVATE_DEPENDENCIES_RESULT: ${{ needs.private-dependencies.result }}
           PRIVATE_DEPENDENCIES_REQUIRED: >-
             ${{ github.event_name != 'pull_request' ||
@@ -746,13 +984,14 @@ jobs:
         shell: bash
         run: |
           test "$HOST_RESULT" = success
+          test "$EXTENDED_RESULT" = success
           test "$WINDOWS_RESULT" = success
           if [ "$PRIVATE_DEPENDENCIES_REQUIRED" = true ]; then
             test "$PRIVATE_DEPENDENCIES_RESULT" = success
             test "$BK7258_RESULT" = success
-            test "$ESP32S3_RESULT" = success
+            test "$ESP_RESULT" = success
           else
             test "$PRIVATE_DEPENDENCIES_RESULT" = skipped
             test "$BK7258_RESULT" = skipped
-            test "$ESP32S3_RESULT" = skipped
+            test "$ESP_RESULT" = skipped
           fi
