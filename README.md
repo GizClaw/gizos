@@ -12,7 +12,7 @@ Each unchecked item represents exactly one future migration push. The item is ch
 - [x] Add the remaining portable libraries and non-composition PAL providers.
 - [x] Complete Desktop PAL composition and host platform support.
 - [x] Add ESP-IDF 6.x Bazel runners and shared native components.
-- [ ] Add BK7258 Bazel runners and shared AP/CP native components.
+- [x] Add BK7258 Bazel runners and shared AP/CP native components.
 - [ ] Complete the existing public board targets and add AMOLED, DevKit, and SZP.
 - [ ] Migrate the complete public H2Loader core, CLI, Loader, Web SDK, and package flow.
 - [ ] Migrate public Example and reusable E2E Apps with public launchers.

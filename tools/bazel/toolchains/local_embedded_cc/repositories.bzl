@@ -220,6 +220,33 @@ local_embedded_cc_repository = repository_rule(
 
 def _extension_impl(_module_ctx):
     local_embedded_cc_repository(
+        name = "gizos_bk7258_cc_toolchain",
+        compile_flags = [
+            "-Os",
+            "-mcpu=cortex-m33+nodsp",
+            "-mfpu=fpv5-sp-d16",
+            "-mfloat-abi=hard",
+            "-mcmse",
+            "-ffunction-sections",
+            "-fdata-sections",
+        ],
+        layout = "bin_dir",
+        locator = "@gizos_bk_arm_toolchain//:locator.json",
+        locator_path = "bin",
+        prefix = "arm-none-eabi-",
+        target_constraints = [
+            "@gizos//tools/bazel/platforms:cpu_arm_m",
+            "@gizos//tools/bazel/platforms:target_bk7258",
+            "@platforms//os:none",
+        ],
+        target_cpu = "armv8-m",
+        target_system_name = "bk7258-elf",
+        toolchain_identifier = "bk7258-local-arm-10.3.1",
+        version_key = "arm_gcc",
+        versions_file = "//tools/bazel:native_versions/bk_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
         name = "gizos_esp32p4_cc_toolchain",
         compile_flags = [
             "-Os",

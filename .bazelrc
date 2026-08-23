@@ -13,6 +13,7 @@ build --strip=never
 build --disk_cache=~/.cache/bazel/disk
 build --experimental_disk_cache_gc_max_age=14d
 build --experimental_disk_cache_gc_max_size=4G
+build --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config.textproto
 
 build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
 build:linux_x86_64 --extra_toolchains=//tools/bazel/platforms:linux_x86_64_test_toolchain
@@ -43,3 +44,7 @@ build:esp32s3 --platforms=//tools/bazel/platforms:esp32s3
 build:esp32p4 --config=esp
 build:esp32p4 --define=h2_firmware_target=esp32p4
 build:esp32p4 --platforms=//tools/bazel/platforms:esp32p4
+build:bk7258 --define=h2_firmware_target=bk7258
+build:bk7258 --platforms=//tools/bazel/platforms:bk7258
+build:bk7258 --repo_env=BK7258_PATH
+build:bk7258 --repo_env=H2_NATIVE_CCACHE_RUNTIME_ROOT

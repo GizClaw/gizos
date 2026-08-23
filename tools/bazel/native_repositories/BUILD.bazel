@@ -1,3 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["esp_repositories.bzl"])
+exports_files([
+    "bk_repositories.bzl",
+    "esp_repositories.bzl",
+])

@@ -1,0 +1,6 @@
+cffi==2.1.1
+click==8.4.2
+click-option-group==0.5.9
+cryptography==50.0.0
+pycparser==3.0
+pycryptodome==3.23.0

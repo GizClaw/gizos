@@ -1,0 +1,13 @@
+rules {
+  matcher {
+    mnemonic: "^(EspIdfFirmware|Bk7258Firmware)$"
+  }
+  transform {
+    omitted_inputs: "^external/\\+esp_repositories\\+gizos_esp_idf_sdk/locator\\.json$"
+    omitted_inputs: "^external/\\+esp_repositories\\+gizos_esp_idf_tools/locator\\.json$"
+    omitted_inputs: "^external/\\+bk_repositories\\+gizos_bk7258_sdk/locator\\.json$"
+    omitted_inputs: "^external/\\+bk_repositories\\+gizos_bk_arm_toolchain/locator\\.json$"
+    omitted_inputs: "^external/\\+esp_repositories\\+gizos_native_ccache_runtime/locator\\.json$"
+    salt: "h2-native-locator-v1"
+  }
+}

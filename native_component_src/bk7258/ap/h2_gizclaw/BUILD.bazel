@@ -1,0 +1,49 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_gizclaw",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = [
+        "CMakeLists.txt",
+    ],
+    execution_unit = "ap",
+    native_srcs = ["//libs/gizclaw:src/h2_gizclaw_conversation.c"],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/gizclaw",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+    ],
+)

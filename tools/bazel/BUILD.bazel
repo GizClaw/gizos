@@ -1,3 +1,4 @@
+load("@bk7258_pip//:requirements.bzl", "requirement")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
@@ -8,14 +9,20 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["cc_options.bzl"])
 
 exports_files([
+    "bk7258.bzl",
+    "bk7258_requirements.txt",
     "esp_idf.bzl",
     "firmware.bzl",
     "firmware_components.bzl",
     "native_component.bzl",
     "native_component.cmake",
+    "native_versions/bk7258_sdk_commit.txt",
+    "native_versions/bk_tool_versions.txt",
+    "native_versions/bk_toolchain_archives.txt",
     "native_versions/esp_idf_commit.txt",
     "native_versions/esp_idf_tool_versions.txt",
     "native_versions/native_ccache_tools.txt",
+    "remote_scrubbing_config.textproto",
 ])
 
 firmware_version(
@@ -43,6 +50,29 @@ py_library(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+py_library(
+    name = "toolchain_identity",
+    srcs = ["toolchain_identity.py"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "toolchain_identity_test",
+    srcs = ["tests/test_toolchain_identity.py"],
+    legacy_create_init = 0,
+    main = "tests/test_toolchain_identity.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":toolchain_identity"],
 )
 
 py_test(
@@ -102,6 +132,52 @@ py_test(
     deps = [
         ":native_ccache",
         ":native_runtime",
+    ],
+)
+
+py_binary(
+    name = "bk7258_runner",
+    srcs = ["bk7258_runner.py"],
+    legacy_create_init = 0,
+    main = "bk7258_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":native_ccache",
+        ":native_runtime",
+        requirement("cffi"),
+        requirement("click"),
+        requirement("click-option-group"),
+        requirement("cryptography"),
+        requirement("pycparser"),
+        requirement("pycryptodome"),
+    ],
+)
+
+py_test(
+    name = "bk7258_runner_test",
+    srcs = ["tests/test_bk7258_runner.py"],
+    data = ["bk7258_runner.py"],
+    legacy_create_init = 0,
+    main = "tests/test_bk7258_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":native_ccache",
+        ":native_runtime",
+        requirement("cffi"),
+        requirement("click"),
+        requirement("click-option-group"),
+        requirement("cryptography"),
+        requirement("pycparser"),
+        requirement("pycryptodome"),
     ],
 )
 
