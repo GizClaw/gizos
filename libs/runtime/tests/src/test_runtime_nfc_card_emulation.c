@@ -14,4 +14,5 @@ void h2_runtime_nfc_card_emulation_contract_compile_test(void) {
     h2_runtime_t runtime = {0};
     runtime.nfc_card_emulation = NULL;
     runtime.nfc = NULL;
+    (void)runtime;
 }
