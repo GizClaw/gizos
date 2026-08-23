@@ -1,0 +1,142 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "h2loader_host",
+    srcs = [
+        "src/h2_h2loader_host_ble.c",
+        "src/h2_h2loader_host_catalog.c",
+        "src/h2_h2loader_host_command.c",
+        "src/h2_h2loader_host_discovery.c",
+        "src/h2_h2loader_host_factory.c",
+        "src/h2_h2loader_host_flash.c",
+        "src/h2_h2loader_host_flash_bk7258.c",
+        "src/h2_h2loader_host_flash_esp.c",
+        "src/h2_h2loader_host_internal.h",
+        "src/h2_h2loader_host_operation.c",
+        "src/h2_h2loader_host_package.c",
+        "src/h2_h2loader_host_package_writer.c",
+        "src/h2_h2loader_host_scheduler.c",
+        "src/h2_h2loader_host_serial.c",
+        "src/h2_h2loader_host_sha256.c",
+        "src/h2_h2loader_host_status.c",
+    ],
+    hdrs = [
+        "include/h2_h2loader_host.h",
+        "include/h2_h2loader_host_catalog.h",
+        "include/h2_h2loader_host_factory.h",
+        "include/h2_h2loader_host_flash.h",
+        "include/h2_h2loader_host_package.h",
+        "include/h2_h2loader_host_scheduler.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:is_bk7258": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:is_esp32p4": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:is_esp32s3": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/iostreamikcp",
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_esp_serial_flasher",
+        "//tools/bazel:vendor_third_party_zlib",
+    ],
+)
+
+cc_test(
+    name = "h2loader_host_package_writer_test",
+    srcs = [
+        "src/h2_h2loader_host_internal.h",
+        "tests/test_h2loader_host_package_writer.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader_host"],
+)
+
+cc_test(
+    name = "h2loader_host_package_test",
+    srcs = [
+        "src/h2_h2loader_host_internal.h",
+        "tests/test_h2loader_host_package.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader_host",
+        "//tools/bazel:vendor_third_party_zlib",
+    ],
+)
+
+cc_test(
+    name = "bk7258_flash_test",
+    srcs = [
+        "src/h2_h2loader_host_internal.h",
+        "tests/test_bk7258_flash.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader_host"],
+)
+
+cc_test(
+    name = "h2loader_host_test",
+    srcs = [
+        "src/h2_h2loader_host_internal.h",
+        "tests/test_h2loader_host.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader_host"],
+)

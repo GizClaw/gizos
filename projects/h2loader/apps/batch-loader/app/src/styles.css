@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* Design tokens extracted from the approved Figma file
+   (H2Loader — Web Batch Loader, frames 12-331 and 19-685). */
+@theme {
+  --color-page: #060911;
+  --color-nav: #070a12;
+  --color-card: #0b0f18;
+  --color-card-raised: #0b1019;
+  --color-field: #0c111c;
+  --color-well: #090d14;
+  --color-well-2: #0e131d;
+  --color-kbd: #161d29;
+  --color-circle: #111925;
+  --color-line: #1f2734;
+  --color-line-strong: #293242;
+  --color-line-raised: #293443;
+  --color-line-modal: #334052;
+  --color-line-dashed: #27313f;
+  --color-line-dashed-2: #344052;
+  --color-row: #151b26;
+  --color-nav-line: #18202c;
+  --color-btn: #0f1420;
+  --color-btn-sm: #101722;
+  --color-close: #111722;
+  --color-check: #596274;
+  --color-radio-off: #657084;
+  --color-track: #202938;
+  --color-fg: #f4f4f5;
+  --color-fg-2: #8993a5;
+  --color-fg-3: #566174;
+  --color-accent: #a4ff72;
+  --color-accent-dot: #72f59a;
+  --color-on-accent: #071008;
+  --color-accent-bg: #102016;
+  --color-accent-bg-2: #142017;
+  --color-accent-bg-3: #0e1a16;
+  --color-accent-line: #274431;
+  --color-accent-line-2: #3d6749;
+  --color-accent-line-3: #2d4936;
+  --color-accent-well: #0e151b;
+  --color-info: #60d9ff;
+  --color-info-bg: #0d1b24;
+  --color-warn: #ffce67;
+  --color-warn-bg: #251f10;
+  --color-danger: #ff7b8a;
+  --color-danger-bg: #261216;
+  --color-neutral: #778194;
+  --color-neutral-bg: #171b24;
+  --color-overlay: #020409;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@layer base {
+  :root {
+    color: var(--color-fg);
+    background: var(--color-page);
+    font-synthesis: none;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    min-width: 1024px;
+    min-height: 100vh;
+    background: var(--color-page);
+  }
+}

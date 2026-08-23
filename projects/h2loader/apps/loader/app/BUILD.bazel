@@ -1,0 +1,76 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "loader",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = [
+            "BUILD.bazel",
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ) + glob(
+        [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+        allow_empty = True,
+    ) + [
+    ],
+    includes = ["include"],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/bleikcp",
+        "//libs/command",
+        "//libs/pal",
+        "//libs/runtime",
+        "//projects/h2loader/libs/h2loader",
+    ],
+)

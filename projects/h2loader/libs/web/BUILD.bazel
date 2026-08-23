@@ -1,0 +1,66 @@
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "h2loader_web_core",
+    srcs = ["src/h2_h2loader_web.c"],
+    hdrs = ["include/h2_h2loader_web.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    tags = ["h2-ci-native-package"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/h2loader_host",
+        "//libs/pal",
+        "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+cc_binary(
+    name = "_wasm/h2loader_runtime",
+    srcs = ["src/h2_h2loader_web_entry.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "-sENVIRONMENT=web",
+        "-sEXPORT_ES6=1",
+        "-sEXPORTED_FUNCTIONS=['_main','_h2_h2loader_web_create','_h2_h2loader_web_request_port','_h2_h2loader_web_authorization_result','_h2_h2loader_web_authorization_port','_h2_h2loader_web_forget_port','_h2_h2loader_web_forget_result','_h2_h2loader_web_list_ports','_h2_h2loader_web_inspect_package','_h2_h2loader_web_status','_h2_h2loader_web_install','_h2_h2loader_web_stage','_h2_h2loader_web_rollback','_h2_h2loader_web_restart','_h2_h2loader_web_reboot_loader','_h2_h2loader_web_reboot_app','_h2_h2loader_web_job_done','_h2_h2loader_web_job_result','_h2_h2loader_web_job_json','_h2_h2loader_web_job_progress_json','_h2_h2loader_web_job_cancel','_h2_h2loader_web_job_release','_h2_h2loader_web_close_begin','_h2_h2loader_web_close_step']",
+        "-sEXPORTED_RUNTIME_METHODS=['ccall']",
+        "-sEXPORT_NAME=createH2LoaderModule",
+        "-sMODULARIZE=1",
+        "-sNO_EXIT_RUNTIME=1",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":h2loader_web_core"],
+)
+
+wasm_cc_binary(
+    name = "h2loader_web_runtime",
+    cc_target = ":_wasm/h2loader_runtime",
+    outputs = [
+        "h2loader_runtime.js",
+        "h2loader.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+filegroup(
+    name = "h2loader_web",
+    srcs = [
+        ":h2loader_web_runtime",
+        "src/h2loader.js",
+    ],
+)

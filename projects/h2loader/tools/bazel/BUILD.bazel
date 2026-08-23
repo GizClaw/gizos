@@ -1,0 +1,75 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "h2loader_firmware.bzl",
+    "h2loader_tar_zlib.bzl",
+])
+
+py_library(
+    name = "firmware_artifacts",
+    srcs = ["firmware_artifacts.py"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "firmware_artifacts_test",
+    srcs = ["tests/test_firmware_artifacts.py"],
+    data = ["tests/fixtures/h2loader_format1.sha256"],
+    legacy_create_init = 0,
+    main = "tests/test_firmware_artifacts.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":firmware_artifacts"],
+)
+
+py_library(
+    name = "firmware_output",
+    srcs = ["firmware_output.py"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":firmware_artifacts"],
+)
+
+py_binary(
+    name = "h2loader_tar_zlib_runner",
+    srcs = ["h2loader_tar_zlib_runner.py"],
+    legacy_create_init = 0,
+    main = "h2loader_tar_zlib_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":firmware_output"],
+)
+
+py_test(
+    name = "h2loader_tar_zlib_runner_test",
+    srcs = ["tests/test_h2loader_tar_zlib_runner.py"],
+    data = ["h2loader_tar_zlib_runner.py"],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_tar_zlib_runner.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":firmware_output"],
+)

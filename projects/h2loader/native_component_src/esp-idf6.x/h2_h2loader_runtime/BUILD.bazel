@@ -1,0 +1,61 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "h2_h2loader_runtime",
+    srcs = glob(
+        [
+            "**/*.c",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.s",
+            "**/*.S",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ) + [
+        "//projects/h2loader/apps/loader/app:app.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_boot.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
+    ],
+    hdrs = glob(
+        [
+            "**/*.h",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "examples/**",
+            "test/**",
+            "tests/**",
+        ],
+    ),
+    data = [
+        "CMakeLists.txt",
+        "//projects/h2loader/apps/loader",
+    ],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//libs/bundle",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal",
+        "//libs/runtime",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//projects/h2loader/apps/loader/app:loader",
+        "//projects/h2loader/libs/h2loader",
+    ],
+)
