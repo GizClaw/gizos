@@ -264,6 +264,36 @@ class PublicCommandSurfaceTest(unittest.TestCase):
             workflow,
         )
 
+    def test_release_workflow_is_public_and_closed(self) -> None:
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        for job in (
+            "catalog:",
+            "esp:",
+            "bk7258:",
+            "firmware-bundle:",
+            "release-bundle:",
+        ):
+            self.assertIn(job, workflow)
+        self.assertIn("tags: [\"v*\"]", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("if: github.event_name == 'push'", workflow)
+        self.assertIn("--draft=false", workflow)
+        self.assertIn("gh release download", workflow)
+        self.assertIn("actions/create-github-app-token@", workflow)
+        self.assertNotIn("BK_SDK_DEPLOY_KEY", workflow)
+        self.assertNotIn("ssh-key:", workflow)
+        for private_product in (
+            "projects/h106",
+            "boards/h200",
+            "boards/tiga",
+            "boards/zero_",
+            "tapdoki",
+            "lucky_kitty",
+        ):
+            self.assertNotIn(private_product, workflow.lower())
+
     def test_markdown_repository_commands_use_public_entry(self) -> None:
         findings = []
         for path in sorted(ROOT.rglob("*.md")):

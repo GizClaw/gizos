@@ -28,6 +28,7 @@ SLICES = (
     "release-bundle",
 )
 PRODUCERS = frozenset({"catalog"})
+CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258")
 FIRMWARE_SLICES = {
     "esp32s3": ("esp", "esp32s3"),
     "esp32p4": ("esp", "esp32p4"),
@@ -168,28 +169,35 @@ def copy_unique(files: list[Path], output: Path) -> None:
 
 
 def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
-    result = command(
-        root,
-        [
-            bazel,
-            "cquery",
-            "--config=ci-graph",
-            f"--//tools/bazel:firmware_version={version}",
-            'kind("h2loader_tar_zlib rule", //projects/h2loader/...)',
-            "--output=starlark",
-            "--starlark:file=tools/bazel/firmware_catalog.cquery",
-        ],
-    )
-    if "ERROR:" in result.stderr:
-        raise ReleaseError(f"Bazel firmware catalog reported an error: {result.stderr.strip()}")
-    try:
-        catalog = [
-            json.loads(line)
-            for line in result.stdout.splitlines()
-            if line.strip()
-        ]
-    except json.JSONDecodeError as error:
-        raise ReleaseError(f"invalid Bazel firmware catalog: {error}") from error
+    catalog: list[dict[str, str]] = []
+    for config in CATALOG_CONFIGS:
+        result = command(
+            root,
+            [
+                bazel,
+                "cquery",
+                f"--config={config}",
+                f"--//tools/bazel:firmware_version={version}",
+                'kind("h2loader_tar_zlib rule", //projects/...)',
+                "--output=starlark",
+                "--starlark:file=tools/bazel/firmware_catalog.cquery",
+            ],
+        )
+        if "ERROR:" in result.stderr:
+            raise ReleaseError(
+                "Bazel firmware catalog reported an error for "
+                f"{config}: {result.stderr.strip()}"
+            )
+        try:
+            catalog.extend(
+                json.loads(line)
+                for line in result.stdout.splitlines()
+                if line.strip()
+            )
+        except json.JSONDecodeError as error:
+            raise ReleaseError(
+                f"invalid Bazel firmware catalog for {config}: {error}"
+            ) from error
     catalog.sort(key=lambda item: item.get("entry", ""))
     path = output / "firmware-catalog.json"
     path.write_text(

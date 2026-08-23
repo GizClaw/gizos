@@ -130,6 +130,71 @@ class ReleaseTest(unittest.TestCase):
                 with self.assertRaisesRegex(release.ReleaseError, "reported an error"):
                     release.build_catalog(ROOT, "bazel", "1.2.3", output)
 
+    def test_catalog_queries_each_releasable_firmware_configuration(self):
+        entries = {
+            "esp32s3": {
+                "board": "devkit",
+                "entry": "projects/example/s3",
+                "image": "example",
+                "label": "//projects/example/s3:package",
+                "platform": "esp",
+                "role": "app",
+                "target": "esp32s3",
+                "version": "1.2.3",
+            },
+            "esp32p4": {
+                "board": "p4",
+                "entry": "projects/example/p4",
+                "image": "example",
+                "label": "//projects/example/p4:package",
+                "platform": "esp",
+                "role": "app",
+                "target": "esp32p4",
+                "version": "1.2.3",
+            },
+            "bk7258": {
+                "board": "bk",
+                "entry": "projects/example/bk",
+                "image": "example",
+                "label": "//projects/example/bk:package",
+                "platform": "bk7258",
+                "role": "app",
+                "target": "bk7258",
+                "version": "1.2.3",
+            },
+        }
+        results = [
+            subprocess.CompletedProcess(
+                args=["bazel", "cquery"],
+                returncode=0,
+                stdout=json.dumps(entries[config]) + "\n",
+                stderr="",
+            )
+            for config in release.CATALOG_CONFIGS
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with mock.patch.object(
+                release, "command", side_effect=results
+            ) as command:
+                release.build_catalog(ROOT, "bazel", "1.2.3", output)
+            self.assertEqual(command.call_count, 3)
+            for config, invocation in zip(
+                release.CATALOG_CONFIGS, command.call_args_list
+            ):
+                self.assertIn(f"--config={config}", invocation.args[1])
+                self.assertIn(
+                    'kind("h2loader_tar_zlib rule", //projects/...)',
+                    invocation.args[1],
+                )
+            catalog = json.loads(
+                (output / "firmware-catalog.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                [item["target"] for item in catalog],
+                ["bk7258", "esp32p4", "esp32s3"],
+            )
+
     def test_final_bundle_replaces_partial_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
