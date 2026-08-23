@@ -1,0 +1,16 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "assets/fonts/NotoSansSC-Bold.ttf",
+    "assets/media/big_buck_bunny_showcase.mp4",
+    "assets/media/big_buck_bunny_showcase_s16le_16k_mono.pcm",
+])
+
+filegroup(
+    name = "showcase",
+    srcs = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = ["BUILD.bazel"],
+    ),
+)

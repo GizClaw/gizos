@@ -1,0 +1,69 @@
+{
+  "display": {
+    "title": "PIXA Games - DinoDive",
+    "width": 240,
+    "height": 240
+  },
+  "filesystem": {
+    "mounts": [
+      {
+        "source": "projects/pixa_games/libs/dinodive/tests/fixtures",
+        "target": "/pixa/player"
+      }
+    ]
+  },
+  "peripherals": [
+    {
+      "periph_id": 1,
+      "kind": {
+        "button": {
+          "key": "left"
+        }
+      }
+    },
+    {
+      "periph_id": 2,
+      "kind": {
+        "button": {
+          "key": "right"
+        }
+      }
+    },
+    {
+      "periph_id": 3,
+      "kind": {
+        "button": {
+          "key": "space"
+        }
+      }
+    },
+    {
+      "periph_id": 4,
+      "kind": {
+        "button": {
+          "key": "r"
+        }
+      }
+    }
+  ],
+  "simulation": {
+    "wifi_sta": {
+      "connected": false,
+      "saved": false,
+      "ssid": "",
+      "rssi_dbm": -42,
+      "channel": 1,
+      "scan_outcome": "success",
+      "scan_delay_ms": 0,
+      "scan_results": null
+    },
+    "modem": {
+      "available": false,
+      "mobile_data_enabled": false,
+      "operator_name": null,
+      "rssi_dbm": -85,
+      "rat": "unknown"
+    },
+    "telemetry": null
+  }
+}

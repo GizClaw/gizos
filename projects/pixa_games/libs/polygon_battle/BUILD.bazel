@@ -1,0 +1,66 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_PIXELROOT32_DEFINES = [
+    "PIXELROOT32_ENABLE_AUDIO=0",
+    "PIXELROOT32_ENABLE_CAMERA_EFFECTS=0",
+    "PIXELROOT32_ENABLE_PARTICLES=0",
+    "PIXELROOT32_ENABLE_PHYSICS=0",
+    "PIXELROOT32_ENABLE_SCENE_TRANSITIONS=0",
+    "PIXELROOT32_ENABLE_STATIC_TILEMAP_FB_CACHE=0",
+    "PIXELROOT32_ENABLE_UI_SYSTEM=0",
+    "PIXELROOT32_NO_TFT_ESPI=1",
+]
+
+cc_library(
+    name = "polygon_battle",
+    srcs = [
+        "src/polygon_battle.cpp",
+        "src/polygon_battle_audio.cpp",
+        "src/polygon_battle_internal.hpp",
+    ],
+    hdrs = [
+        "include/h2_polygon_battle.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "include",
+    ],
+    local_defines = _PIXELROOT32_DEFINES,
+    deps = [
+        "//libs/game_runtime",
+        "//libs/game_runtime:pixelroot32",
+        "//libs/pal",
+        "//libs/pixa",
+    ],
+)
+
+cc_test(
+    name = "polygon_battle_test",
+    srcs = [
+        "src/polygon_battle_internal.hpp",
+        "tests/test_polygon_battle.cpp",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _PIXELROOT32_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":polygon_battle",
+        "//libs/game_runtime:game_test_support",
+    ],
+)

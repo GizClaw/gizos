@@ -1,0 +1,69 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_PIXELROOT32_DEFINES = [
+    "PIXELROOT32_ENABLE_4BPP_SPRITES=1",
+    "PIXELROOT32_ENABLE_AUDIO=0",
+    "PIXELROOT32_ENABLE_CAMERA_EFFECTS=0",
+    "PIXELROOT32_ENABLE_PARTICLES=0",
+    "PIXELROOT32_ENABLE_PHYSICS=1",
+    "PIXELROOT32_ENABLE_SCENE_TRANSITIONS=0",
+    "PIXELROOT32_ENABLE_STATIC_TILEMAP_FB_CACHE=0",
+    "PIXELROOT32_ENABLE_UI_SYSTEM=0",
+    "PIXELROOT32_NO_TFT_ESPI=1",
+]
+
+cc_library(
+    name = "tuxemon",
+    srcs = [
+        "src/generated/tuxemon_assets.cpp",
+        "src/generated/tuxemon_assets.hpp",
+        "src/tuxemon.cpp",
+    ],
+    hdrs = [
+        "include/h2_tuxemon.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    includes = [
+        "include",
+    ],
+    local_defines = _PIXELROOT32_DEFINES,
+    deps = [
+        "//libs/game_runtime",
+        "//libs/game_runtime:pixelroot32",
+        "//libs/pal",
+        "//libs/pixa",
+    ],
+)
+
+cc_test(
+    name = "tuxemon_test",
+    srcs = [
+        "src/generated/tuxemon_assets.hpp",
+        "tests/test_tuxemon.cpp",
+    ],
+    args = ["$(location tests/fixtures/player.pixa)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
+    data = ["tests/fixtures/player.pixa"],
+    includes = [
+        "src",
+        "tests",
+    ],
+    local_defines = _PIXELROOT32_DEFINES,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":tuxemon",
+        "//libs/game_runtime:game_test_support",
+    ],
+)

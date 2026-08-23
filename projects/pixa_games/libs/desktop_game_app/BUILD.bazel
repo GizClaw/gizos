@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/pixa_games:__subpackages__"])
+
+cc_library(
+    name = "game_app",
+    srcs = ["game_app.cpp"],
+    hdrs = ["game_app.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    deps = [
+        "//libs/game_runtime",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/portaudio",
+        "//libs/pixa",
+        "//libs/runtime",
+    ],
+)

@@ -1,0 +1,56 @@
+{
+  "display": {
+    "title": "PIXA Games - DinoTetris",
+    "width": 240,
+    "height": 240
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": [
+    {
+      "periph_id": 1,
+      "kind": {
+        "button": {
+          "key": "left"
+        }
+      }
+    },
+    {
+      "periph_id": 2,
+      "kind": {
+        "button": {
+          "key": "right"
+        }
+      }
+    },
+    {
+      "periph_id": 3,
+      "kind": {
+        "button": {
+          "key": "space"
+        }
+      }
+    }
+  ],
+  "simulation": {
+    "wifi_sta": {
+      "connected": false,
+      "saved": false,
+      "ssid": "",
+      "rssi_dbm": -42,
+      "channel": 1,
+      "scan_outcome": "success",
+      "scan_delay_ms": 0,
+      "scan_results": null
+    },
+    "modem": {
+      "available": false,
+      "mobile_data_enabled": false,
+      "operator_name": null,
+      "rssi_dbm": -85,
+      "rat": "unknown"
+    },
+    "telemetry": null
+  }
+}

@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "dinorun",
+    srcs = glob(
+        ["**"],
+        allow_empty = True,
+        exclude = [
+            "BUILD.bazel",
+            "README.md",
+        ],
+    ) + [
+        "//projects/pixa_games/apps/dinorun/app:dinorun",
+    ],
+)
