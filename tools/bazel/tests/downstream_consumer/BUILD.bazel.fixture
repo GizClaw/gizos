@@ -11,7 +11,10 @@ alias(
 firmware_native_component(
     name = "native_component",
     srcs = ["consumer.c"],
-    deps = ["@gizos//libs/pal"],
+    deps = [
+        "@gizos//libs/pal",
+        "@gizos//tools/bazel:vendor_third_party_opus_headers",
+    ],
 )
 
 firmware_lib_component(

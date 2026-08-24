@@ -406,6 +406,12 @@ cc_library(
 )
 
 cc_library(
+    name = "vendor_third_party_opus_headers",
+    tags = ["manual"],
+    deps = ["@h2_vendor_opus//:headers"],
+)
+
+cc_library(
     name = "vendor_third_party_pixa",
     tags = ["manual"],
     deps = ["@h2_vendor_pixa//:pixa"],
