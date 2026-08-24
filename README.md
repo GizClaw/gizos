@@ -33,7 +33,7 @@ Each unchecked item represents one future CI completion push. The item is checke
 - [x] Apply Bazel repository-cache and native ccache authentication, prefix validation, statistics, and seed handling consistently to every applicable execution class.
 - [x] Add a public release workflow for catalog, firmware slices, bundles, GitHub Release publication, and release artifact verification.
 - [x] Add public opt-in Live E2E jobs while excluding H106, H200/H200 V2, Tiga, Zero, TapDoki, Lucky Kitty, and other product-owned hardware flows.
-- [ ] Complete the required-check, fork-PR, cache, artifact, timeout, and public source-boundary audit against the maintained Firmwares workflows.
+- [x] Complete the required-check, fork-PR, cache, artifact, timeout, and public source-boundary audit against the maintained Firmwares workflows.
 
 ## Repository layout
 

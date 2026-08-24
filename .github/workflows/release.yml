@@ -30,6 +30,7 @@ jobs:
   catalog:
     name: Release catalog
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
@@ -153,6 +154,7 @@ jobs:
           name: release-catalog
           path: build/release/catalog/
           if-no-files-found: error
+          retention-days: 14
 
   esp:
     name: Release ${{ matrix.slice }}
@@ -303,6 +305,7 @@ jobs:
           name: release-${{ matrix.slice }}
           path: build/release/${{ matrix.slice }}/
           if-no-files-found: error
+          retention-days: 14
 
   bk7258:
     name: Release BK7258
@@ -431,11 +434,13 @@ jobs:
           name: release-bk7258
           path: build/release/bk7258/
           if-no-files-found: error
+          retention-days: 14
 
   firmware-bundle:
     name: Release firmware bundle
     needs: [catalog, esp, bk7258]
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -477,11 +482,13 @@ jobs:
           name: release-firmware-bundle
           path: build/release/firmware-bundle/
           if-no-files-found: error
+          retention-days: 14
 
   release-bundle:
     name: Complete release bundle
     needs: [catalog, firmware-bundle]
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    timeout-minutes: 30
     permissions:
       contents: write
       id-token: write
@@ -522,6 +529,7 @@ jobs:
           name: release-bundle-${{ needs.catalog.outputs.version }}
           path: build/release/final/
           if-no-files-found: error
+          retention-days: 14
 
       - name: Publish GitHub Release
         if: github.event_name == 'push'

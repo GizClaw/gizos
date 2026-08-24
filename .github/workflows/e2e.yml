@@ -30,6 +30,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: live-e2e-${{ github.ref }}
@@ -53,7 +54,7 @@ jobs:
             bazel_asset: linux-x86_64
             bazel_sha256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
           - name: macOS arm64
-            runner: macos-15
+            runner: ${{ vars.FIRMWARE_MACOS_RUNNER }}
             bazel_config: macos_arm64
             bazel_asset: darwin-arm64
             bazel_sha256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
@@ -79,6 +80,63 @@ jobs:
         if: runner.os == 'macOS'
         run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
 
+      - name: Validate Bazel remote cache variables
+        env:
+          CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
+          CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
+        shell: bash
+        run: |
+          configured=0
+          for value in "$CACHE_PROJECT" "$CACHE_URL" "$CACHE_PROVIDER" "$CACHE_WRITER"; do
+            if [ -n "$value" ]; then configured=$((configured + 1)); fi
+          done
+          if [ "$configured" -eq 0 ]; then
+            echo 'Bazel remote cache is not provisioned; using the job-local disk cache.'
+          elif [ "$configured" -ne 4 ]; then
+            echo 'Bazel remote cache repository variables are incomplete.' >&2
+            exit 1
+          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
+            echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
+            exit 1
+          fi
+          if [ -n "$NATIVE_CACHE_URL" ]; then
+            if [ "$configured" -ne 4 ]; then
+              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
+              exit 1
+            fi
+            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
+              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
+              exit 1
+            fi
+            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
+            native_bucket=${native_bucket%/ccache}
+            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
+            bazel_bucket=${bazel_bucket%/gizos}
+            if [ "$native_bucket" != "$bazel_bucket" ]; then
+              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
+              exit 1
+            fi
+          fi
+
+      - name: Authenticate Bazel remote cache
+        if: vars.BAZEL_REMOTE_CACHE_URL != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Restore Bazel repository cache
+        continue-on-error: true
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/bazel/repository
+          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+
       - name: Install and verify Bazel
         shell: bash
         run: |
@@ -87,6 +145,16 @@ jobs:
           curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.bazel_sha256 }}"
           chmod +x "$bazel_path"
+
+      - name: Configure Bazel remote cache
+        if: vars.BAZEL_REMOTE_CACHE_URL != ''
+        shell: bash
+        run: |
+          {
+            printf 'BAZEL_REMOTE_CACHE_URL=%s\n' '${{ vars.BAZEL_REMOTE_CACHE_URL }}'
+            printf 'BAZEL_REMOTE_CACHE_MODE=write\n'
+            printf 'BAZEL_DISK_CACHE_MODE=off\n'
+          } >> "$GITHUB_ENV"
 
       - name: Run selected live E2E
         env:

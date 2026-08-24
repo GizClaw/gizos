@@ -317,6 +317,15 @@ class PublicCommandSurfaceTest(unittest.TestCase):
             "bazel-test-gizclaw_pion_live_test",
         ):
             self.assertIn(target, workflow)
+        self.assertIn("runner: ${{ vars.FIRMWARE_MACOS_RUNNER }}", workflow)
+        self.assertIn("timeout-minutes: 45", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("Validate Bazel remote cache variables", workflow)
+        self.assertIn("Authenticate Bazel remote cache", workflow)
+        self.assertIn("Restore Bazel repository cache", workflow)
+        self.assertIn("Configure Bazel remote cache", workflow)
+        self.assertIn("/gizos$", workflow)
+        self.assertIn("/ccache$", workflow)
         for private_product in (
             "projects/h106",
             "boards/h200",
@@ -326,6 +335,92 @@ class PublicCommandSurfaceTest(unittest.TestCase):
             "lucky_kitty",
         ):
             self.assertNotIn(private_product, workflow.lower())
+
+    def test_workflow_audit_closes_required_fork_artifact_and_timeout(self) -> None:
+        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        required = ci.split("  ci-required:", 1)[1]
+        self.assertIn("if: always()", required)
+        self.assertIn("timeout-minutes: 5", required)
+        for job in (
+            "host",
+            "extended-platforms",
+            "esp-compatible-graph",
+            "bk7258-compatible-graph",
+            "legacy-firmware",
+            "windows-compatible-graph",
+            "private-dependencies",
+        ):
+            self.assertIn(f"- {job}", required)
+        self.assertIn("PRIVATE_DEPENDENCIES_REQUIRED", required)
+        self.assertIn("PRIVATE_DEPENDENCIES_RESULT", required)
+        self.assertIn("test \"$PRIVATE_DEPENDENCIES_RESULT\" = skipped", required)
+        private_jobs = (
+            ("private-dependencies", "host"),
+            ("esp-compatible-graph", "bk7258-compatible-graph"),
+            ("bk7258-compatible-graph", "legacy-firmware"),
+            ("legacy-firmware", "windows-compatible-graph"),
+        )
+        for job, next_job in private_jobs:
+            block = ci.split(f"  {job}:", 1)[1].split(
+                f"  {next_job}:", 1
+            )[0]
+            self.assertIn(
+                "github.event.pull_request.head.repo.full_name == "
+                "github.repository",
+                block,
+            )
+        self.assertIn("if-no-files-found: error", ci)
+        self.assertIn("retention-days: 14", ci)
+
+        release = (ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(release.count("retention-days: 14"), 5)
+        for timeout in (
+            "timeout-minutes: 60",
+            "timeout-minutes: 180",
+            "timeout-minutes: 30",
+        ):
+            self.assertIn(timeout, release)
+
+    def test_public_source_boundary_has_no_product_owned_paths(self) -> None:
+        forbidden_product_prefixes = (
+            "h106",
+            "h200",
+            "tiga",
+            "zero",
+            "tapdoki",
+            "lucky_kitty",
+        )
+        findings = []
+        for path in ROOT.rglob("*"):
+            relative = path.relative_to(ROOT)
+            parts = tuple(part.lower() for part in relative.parts)
+            if (
+                len(parts) >= 2
+                and parts[0] in {"boards", "projects"}
+                and parts[1].replace("-", "_").startswith(
+                    forbidden_product_prefixes
+                )
+            ):
+                findings.append(relative.as_posix())
+            if (
+                len(parts) >= 3
+                and parts[:2] == ("guides", "apps")
+                and parts[2].replace("-", "_").startswith(
+                    forbidden_product_prefixes
+                )
+            ):
+                findings.append(relative.as_posix())
+        self.assertEqual(findings, [])
+
+        gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
+        self.assertNotIn("github.com/h2vivi/", gitmodules.lower())
+        urls = re.findall(r"(?m)^\s*url = (.+)$", gitmodules)
+        self.assertTrue(urls)
+        self.assertTrue(
+            all(url.startswith("https://github.com/") for url in urls), urls
+        )
 
     def test_markdown_repository_commands_use_public_entry(self) -> None:
         findings = []

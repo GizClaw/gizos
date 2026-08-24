@@ -474,7 +474,8 @@ jobs:
         with:
           name: test-coverage
           path: build/coverage/test/
-          if-no-files-found: warn
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Save Bazel repository cache seed
         if: >-
@@ -1355,6 +1356,7 @@ jobs:
   ci-required:
     if: always()
     name: CI required
+    timeout-minutes: 5
     needs:
       - bk7258-compatible-graph
       - extended-platforms
