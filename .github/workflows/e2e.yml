@@ -1,0 +1,128 @@
+name: Live E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Live E2E scope
+        required: true
+        default: all
+        type: choice
+        options: [all, pal, gizclaw]
+      entry:
+        description: GizClaw service entry
+        required: true
+        default: ap
+        type: choice
+        options: [ap, bj]
+      suite:
+        description: GizClaw suite
+        required: true
+        default: all
+        type: choice
+        options: [all, connectivity, rpc, firmware, voice, concurrency]
+      backend:
+        description: WebRTC PAL backend
+        required: true
+        default: h2peer
+        type: choice
+        options: [h2peer, pion, both]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BAZEL_VERSION: "9.2.0"
+
+jobs:
+  e2e:
+    name: ${{ matrix.name }} / ${{ inputs.scope }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+            bazel_config: linux_x86_64
+            bazel_asset: linux-x86_64
+            bazel_sha256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
+          - name: macOS arm64
+            runner: macos-15
+            bazel_config: macos_arm64
+            bazel_asset: darwin-arm64
+            bazel_sha256: dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          lfs: true
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake libasound2-dev libx11-dev libxext-dev libxi-dev libxrandr-dev libssl-dev nasm ninja-build pkg-config ripgrep
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja pkg-config ripgrep
+
+      - name: Select Xcode 16.4
+        if: runner.os == 'macOS'
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Install and verify Bazel
+        shell: bash
+        run: |
+          set -euo pipefail
+          bazel_path="$RUNNER_TEMP/bazel"
+          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
+          test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.bazel_sha256 }}"
+          chmod +x "$bazel_path"
+
+      - name: Run selected live E2E
+        env:
+          E2E_SCOPE: ${{ inputs.scope }}
+          H2_BAZEL_CONFIG: ${{ matrix.bazel_config }}
+          H2_GIZCLAW_E2E_ENTRY: ${{ inputs.entry }}
+          H2_GIZCLAW_E2E_REGISTRATION_TOKEN: ${{ secrets.H2_GIZCLAW_E2E_REGISTRATION_TOKEN }}
+          H2_GIZCLAW_E2E_SUITE: ${{ inputs.suite }}
+        run: |
+          run_gizclaw_target() {
+            make "$1" \
+              BAZEL_BIN="$RUNNER_TEMP/bazel" \
+              BAZEL_CONFIG="${{ matrix.bazel_config }}"
+          }
+          run_gizclaw() {
+            case "${{ inputs.backend }}" in
+              h2peer)
+                run_gizclaw_target bazel-test-gizclaw_h2peer_live_test
+                ;;
+              pion)
+                case "${{ inputs.suite }}" in rpc|firmware|voice) ;; *) return 2 ;; esac
+                run_gizclaw_target bazel-test-gizclaw_pion_live_test
+                ;;
+              both)
+                case "${{ inputs.suite }}" in firmware|voice) ;; *) return 2 ;; esac
+                final_rc=0
+                run_gizclaw_target bazel-test-gizclaw_h2peer_live_test || final_rc=$?
+                run_gizclaw_target bazel-test-gizclaw_pion_live_test || final_rc=$?
+                return "$final_rc"
+                ;;
+              *) return 2 ;;
+            esac
+          }
+          case "$E2E_SCOPE" in
+            all) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="${{ matrix.bazel_config }}"; run_gizclaw ;;
+            pal) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="${{ matrix.bazel_config }}" ;;
+            gizclaw) run_gizclaw ;;
+            *) printf 'unsupported live E2E scope: %s\n' "$E2E_SCOPE" >&2; exit 2 ;;
+          esac

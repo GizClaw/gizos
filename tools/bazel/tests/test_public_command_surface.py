@@ -301,6 +301,32 @@ class PublicCommandSurfaceTest(unittest.TestCase):
         ):
             self.assertNotIn(private_product, workflow.lower())
 
+    def test_live_e2e_workflow_is_public_and_opt_in(self) -> None:
+        workflow = (ROOT / ".github/workflows/e2e.yml").read_text(
+            encoding="utf-8"
+        )
+        trigger = workflow.split("permissions:", 1)[0]
+        self.assertIn("workflow_dispatch:", trigger)
+        self.assertNotIn("pull_request:", trigger)
+        self.assertNotIn("push:", trigger)
+        for scope in ("all", "pal", "gizclaw"):
+            self.assertIn(scope, trigger)
+        for target in (
+            "bazel-test-mqtt_public_broker_smoke",
+            "bazel-test-gizclaw_h2peer_live_test",
+            "bazel-test-gizclaw_pion_live_test",
+        ):
+            self.assertIn(target, workflow)
+        for private_product in (
+            "projects/h106",
+            "boards/h200",
+            "boards/tiga",
+            "boards/zero_",
+            "tapdoki",
+            "lucky_kitty",
+        ):
+            self.assertNotIn(private_product, workflow.lower())
+
     def test_markdown_repository_commands_use_public_entry(self) -> None:
         findings = []
         for path in sorted(ROOT.rglob("*.md")):
