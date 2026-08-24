@@ -1,0 +1,40 @@
+load("@gizos//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+
+def _fake_firmware_impl(ctx):
+    outputs = []
+    for name in [
+        "app.bin",
+        "bootloader.bin",
+        "combined_factory.bin",
+        "firmware.elf",
+        "firmware.map",
+        "partition-table.bin",
+        "flasher_args.json",
+    ]:
+        output = ctx.actions.declare_file(ctx.label.name + "/" + name)
+        ctx.actions.write(output, "{}" if name.endswith(".json") else "fixture")
+        outputs.append(output)
+    flash_files = ctx.actions.declare_directory(ctx.label.name + "/flash-files")
+    ctx.actions.run_shell(
+        command = "mkdir -p \"$1\"",
+        arguments = [flash_files.path],
+        outputs = [flash_files],
+    )
+    return [
+        DefaultInfo(files = depset(outputs + [flash_files])),
+        FirmwareInfo(
+            app_image = outputs[0],
+            bootloader_image = outputs[1],
+            combined_factory_image = outputs[2],
+            elf = outputs[3],
+            files = depset(outputs + [flash_files]),
+            flash_files = flash_files,
+            flash_metadata = outputs[6],
+            map = outputs[4],
+            partition_table_image = outputs[5],
+            target = "esp32s3",
+            version = "consumer-check",
+        ),
+    ]
+
+fake_firmware = rule(implementation = _fake_firmware_impl)

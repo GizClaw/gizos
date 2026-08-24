@@ -227,6 +227,10 @@ jobs:
         if: matrix.task == 'build-test'
         run: make bazel-test
 
+      - name: Test downstream Bzlmod consumer
+        if: matrix.config == 'macos_arm64'
+        run: make bazel-test-downstream-consumer
+
       - name: Test repository policy scripts
         if: matrix.config == 'linux_x86_64'
         run: >-

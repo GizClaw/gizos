@@ -221,6 +221,14 @@ Repository cache 或 remote action cache 的 miss、eviction 和生命周期删�
 
 Graph test 对目录、label、rule kind、artifact identity 和依赖边做校验，并拒绝 `test_suite`；它只扫描 Git 已跟踪或未跟踪但未忽略的一方 `BUILD.bazel`/`.bzl` 文件，不能递归进入 `bazel-*` convenience link、external repository 或 cache output。Build 命令直接请求完整 compatible graph，Release 从 artifact rule/provider 查询交付目标，不维护第二份聚合名单。普通 test target 不声明 tag；依赖外部服务、真实设备或人工环境准备的 E2E test 只声明 Bazel 特殊 tag `manual`，由 Bazel 的通配 target pattern 语义自动排除。专用 E2E 命令直接请求 exact label，不维护 tag filter。CI 的 `BAZEL_CONFIG` 决定唯一 execution class；Linux、macOS、Android 与 Windows 在一个 job 内依次请求 Build/Test，iOS 保留独立并行的 Build/Test task。
 
+## 下游 Bzlmod consumer
+
+产品仓库通过名为 `gizos` 的 Bzlmod module 消费公开 target，并统一使用 `@gizos//...` label。GizOS 自己作为 root 时使用的具名 Node、Go host toolchain extension 和 registration 标记为 `dev_dependency`；它们在 GizOS root build 中保持生效，在 GizOS 作为 dependency 时不替下游选择 root toolchain。Zig extension 只为实际 root module 生成 toolchain repository，因此使用 GizOS C/C++ graph 的下游 root 必须声明自己的同一 extension usage 和 registration。下游 root 同时负责 platform config、构建环境和最终产品 artifact，GizOS 仍拥有 public library、PAL provider、native component、firmware rule 和 H2Loader package rule。
+
+公开 `.bzl` 中指向 GizOS-owned tool、config setting 或默认输入的 label 必须稳定解析到 `@gizos//...`，不能用只在 root repository 成立的 `@//...`。Consumer-owned `srcs`、`data`、board、App 与 launcher 继续由调用方显式传入，GizOS rule 不能反向取得产品 ownership。
+
+`make bazel-test-downstream-consumer` 在临时 root module 中通过 `--override_module=gizos=<checkout>` 构建 Runtime、native component、firmware library composition 和 H2Loader package fixture。该验证不替代 GizOS 自身的完整 compatible graph，也不把本地 checkout override 当作发布 pin；正式 consumer 必须使用已发布版本或 immutable revision 与完整性校验。
+
 `NATIVE_TARGETS` 只接受 `//package:target` exact label，不提供 package path shorthand、recursive pattern 或兼容转换。CI 显式传入 `H2_BAZEL_CONFIG`；本地未传时，Make entry 按当前 macOS arm64、Linux x86_64 或 Linux arm64 host 选择已有 config。
 
 ## CI execution contract
