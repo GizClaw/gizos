@@ -32,8 +32,10 @@ def _native_firmware_resources(_os, _inputs_size):
     }
 
 _TARGET_CONFIGS = {
-    "bk7258": "//tools/bazel/platforms:is_bk7258",
+    "bk7258": Label("//tools/bazel/platforms:is_bk7258"),
 }
+
+_CI_GRAPH = Label("//tools/bazel/platforms:ci_graph")
 
 def _bk7258_firmware_impl(ctx):
     output_root = ctx.label.name
@@ -259,7 +261,7 @@ def bk7258_firmware(name, target, **kwargs):
     if "target_compatible_with" in kwargs:
         fail("bk7258_firmware owns target_compatible_with")
     compatibility = select({
-        "//tools/bazel/platforms:ci_graph": [],
+        _CI_GRAPH: [],
         _TARGET_CONFIGS[target]: [],
         "//conditions:default": ["@platforms//:incompatible"],
     })

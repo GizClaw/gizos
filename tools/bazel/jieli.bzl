@@ -33,19 +33,21 @@ JieliFirmwareInfo = provider(
 _TARGETS = {
     "br23": struct(
         family = "ac695n",
-        compatibility = "//tools/bazel/platforms:is_ac695n_linux_host",
-        sdk_locator = "@h2_jieli_ac695n_sdk//:locator.json",
-        sdk_version = "//tools/bazel:native_versions/jieli_ac695n_sdk_commit.txt",
-        post_script = "//tools/bazel:jieli/local_post_br23.sh",
+        compatibility = Label("//tools/bazel/platforms:is_ac695n_linux_host"),
+        sdk_locator = Label("@h2_jieli_ac695n_sdk//:locator.json"),
+        sdk_version = Label("//tools/bazel:native_versions/jieli_ac695n_sdk_commit.txt"),
+        post_script = Label("//tools/bazel:jieli/local_post_br23.sh"),
     ),
     "wl82": struct(
         family = "ac791n",
-        compatibility = "//tools/bazel/platforms:is_ac791n_linux_host",
-        sdk_locator = "@h2_jieli_ac791n_sdk//:locator.json",
-        sdk_version = "//tools/bazel:native_versions/jieli_ac791n_sdk_commit.txt",
-        post_script = "//tools/bazel:jieli/local_post_wl82.sh",
+        compatibility = Label("//tools/bazel/platforms:is_ac791n_linux_host"),
+        sdk_locator = Label("@h2_jieli_ac791n_sdk//:locator.json"),
+        sdk_version = Label("//tools/bazel:native_versions/jieli_ac791n_sdk_commit.txt"),
+        post_script = Label("//tools/bazel:jieli/local_post_wl82.sh"),
     ),
 }
+
+_CI_GRAPH = Label("//tools/bazel/platforms:ci_graph")
 
 def _native_firmware_resources(_os, _inputs_size):
     return {
@@ -242,7 +244,7 @@ def jieli_firmware(name, target, **kwargs):
             fail("jieli_firmware owns " + owned)
     selected = _TARGETS[target]
     compatibility = select({
-        "//tools/bazel/platforms:ci_graph": [],
+        _CI_GRAPH: [],
         selected.compatibility: [],
         "//conditions:default": ["@platforms//:incompatible"],
     })

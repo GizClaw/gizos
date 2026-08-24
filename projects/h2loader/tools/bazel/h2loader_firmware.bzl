@@ -31,24 +31,49 @@ def _support_files(kwargs, layout_files):
     support_files = kwargs.pop("support_files", [])
     return support_files + layout_files
 
-def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", **kwargs):
+def _require_layout_files(layout_files, required_fields, target, board):
+    missing = [field for field in required_fields if field not in layout_files]
+    if missing:
+        fail("incomplete H2Loader layout files for %s/%s: missing %s" % (
+            target,
+            board,
+            ", ".join(missing),
+        ))
+    return layout_files
+
+def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", layout_files = None, **kwargs):
     """Declares ESP-IDF firmware from one repository-owned board layout.
 
     Every board owns exactly one canonical sdkconfig.defaults; a layout only
     adds layout-owned settings such as the partition table, rollback, or a
     registered console/memory variant. There is no named config-profile
-    registry.
+    registry. A downstream repository with a private board passes layout_files
+    containing its exact partition and project-support labels; the private
+    board is not added to GizOS's built-in registry.
     """
-    entry = _require_layout(_ESP_LAYOUTS, target, board)
     for removed in ("config_profile", "config_profiles"):
         if removed in kwargs:
             fail("h2loader_esp_idf_firmware no longer accepts %s; declare a board layout" % removed)
-    if layout == "h2loader":
-        layout_root = entry.root
+    if layout_files == None:
+        entry = _require_layout(_ESP_LAYOUTS, target, board)
+        if layout == "h2loader":
+            layout_root = entry.root
+        else:
+            if layout not in getattr(entry, "variants", []):
+                fail("unsupported H2Loader ESP layout: %s/%s" % (board, layout))
+            layout_root = entry.root.rsplit("/", 1)[0] + "/" + layout
+        layout_files = {
+            "partition": entry.root + ":partition.csv",
+            "project_support_files": [layout_root + ":sdkconfig.h2loader.defaults"],
+            "support_files": getattr(entry, "support", []),
+        }
     else:
-        if layout not in getattr(entry, "variants", []):
-            fail("unsupported H2Loader ESP layout: %s/%s" % (board, layout))
-        layout_root = entry.root.rsplit("/", 1)[0] + "/" + layout
+        layout_files = _require_layout_files(
+            layout_files,
+            ["partition", "project_support_files"],
+            target,
+            board,
+        )
     if "partition" in kwargs:
         fail("h2loader_esp_idf_firmware owns partition")
     if "project_support_files" in kwargs:
@@ -56,45 +81,70 @@ def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", **kwargs
     esp_idf_firmware(
         name = name,
         board = board,
-        partition = entry.root + ":partition.csv",
-        project_support_files = [layout_root + ":sdkconfig.h2loader.defaults"],
-        support_files = _support_files(kwargs, getattr(entry, "support", [])),
+        partition = layout_files["partition"],
+        project_support_files = layout_files["project_support_files"],
+        support_files = _support_files(kwargs, layout_files.get("support_files", [])),
         target = target,
         **kwargs
     )
 
-def h2loader_bk7258_firmware(name, board, target, layout = "h2loader", **kwargs):
+def h2loader_bk7258_firmware(name, board, target, layout = "h2loader", layout_files = None, **kwargs):
     """Declares BK7258 firmware from one repository-owned board layout.
 
     Every layout under boards/<board>/bk7258/layouts/<layout>/ owns one
     complete AP configuration, CP configuration, GPIO selection, RAM-region
     plan, and partition metadata. There is no named config-profile registry.
+    A downstream repository with a private board passes layout_files containing
+    the exact AP/CP config, GPIO, RAM-region, and project-support labels.
     """
-    entry = _require_layout(_BK7258_BOARDS, target, board)
     for removed in ("config_profile", "config_profiles", "gpio_profile", "memory_profile"):
         if removed in kwargs:
             fail("h2loader_bk7258_firmware no longer accepts %s; declare a board layout" % removed)
-    if layout not in entry.layouts:
-        fail("unsupported H2Loader BK7258 layout: %s/%s" % (board, layout))
-    layout_root = entry.root + "/layouts/" + layout
+    if layout_files == None:
+        entry = _require_layout(_BK7258_BOARDS, target, board)
+        if layout not in entry.layouts:
+            fail("unsupported H2Loader BK7258 layout: %s/%s" % (board, layout))
+        layout_root = entry.root + "/layouts/" + layout
+        layout_files = {
+            "ap_config": [
+                entry.root + ":ap.defaults",
+                layout_root + ":ap.defaults",
+            ],
+            "ap_gpio": layout_root + ":ap_gpio",
+            "cp_config": [
+                entry.root + ":cp.defaults",
+                layout_root + ":cp.defaults",
+            ],
+            "cp_gpio": layout_root + ":cp_gpio",
+            "project_support_files": [layout_root + ":layout"],
+            "ram_regions": layout_root + ":ram_regions",
+        }
+    else:
+        layout_files = _require_layout_files(
+            layout_files,
+            [
+                "ap_config",
+                "ap_gpio",
+                "cp_config",
+                "cp_gpio",
+                "project_support_files",
+                "ram_regions",
+            ],
+            target,
+            board,
+        )
     if "project_support_files" in kwargs:
         fail("h2loader_bk7258_firmware owns project_support_files")
     bk7258_firmware(
         name = name,
         board = board,
-        ap_config = [
-            entry.root + ":ap.defaults",
-            layout_root + ":ap.defaults",
-        ],
-        cp_config = [
-            entry.root + ":cp.defaults",
-            layout_root + ":cp.defaults",
-        ],
-        ap_gpio = layout_root + ":ap_gpio",
-        cp_gpio = layout_root + ":cp_gpio",
-        project_support_files = [layout_root + ":layout"],
-        ram_regions = layout_root + ":ram_regions",
-        support_files = _support_files(kwargs, []),
+        ap_config = layout_files["ap_config"],
+        cp_config = layout_files["cp_config"],
+        ap_gpio = layout_files["ap_gpio"],
+        cp_gpio = layout_files["cp_gpio"],
+        project_support_files = layout_files["project_support_files"],
+        ram_regions = layout_files["ram_regions"],
+        support_files = _support_files(kwargs, layout_files.get("support_files", [])),
         target = target,
         **kwargs
     )

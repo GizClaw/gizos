@@ -99,15 +99,28 @@ package-local `firmware_native_component` launcher 依赖真实 App、Board、SD
 和 graph-reachable portable archive。Launcher 的 `srcs`、`hdrs`、`data` 和 firmware
 project 输入必须逐文件声明，不得使用 recursive glob，也不得把整个 Board、App 或
 Project root 当成 action input。CMake 文件仍作为原生 SDK 必需输入存在；entry 不保留
-image-local SDK config。H2Loader wrapper 根据 entry 声明的 `target` 与 `board` 从
-`boards/<board>/<target>/layouts/h2loader/` 注入 partition、layout defaults、recovery 和 variant 配置，entry 只选择 wrapper 公布的具名 config、GPIO 或 memory profiles，不写内部 layout label。最终 SDK 配置按 board defaults、layout defaults 和具名 profiles 的顺序合并。CMake 只消费 runner 生成的 component/source
+image-local SDK config。GizOS 仓库内的 H2Loader wrapper 根据 entry 声明的
+`target` 与 `board` 从 `boards/<board>/<target>/layouts/` 注入 partition、layout
+defaults 和 recovery 配置。通过 Bzlmod 消费 GizOS 的下游仓库可以保留自己的私有
+Board，并通过 `layout_files` 显式传入该仓库拥有的完整 layout labels；私有 Board
+不得加入 GizOS 的内建 Board registry，也不得复制 H2Loader wrapper。最终 SDK 配置
+按 board defaults 和 layout defaults 的顺序合并。CMake 只消费 runner 生成的 component/source
 manifest，不再维护第二份 first-party component path 或 source inventory。
 
 一个 portable App 只有一份实现；每个支持它的 board 仍需要单独 variant，因为 BSP、partition、component mapping 与 SDK build root 不同。
 
 ESP-IDF entry 的 CMake project 仍拥有 component discovery、Kconfig、linker、partition 和 bootloader 语义。内部 `:firmware` 使用 `h2loader_esp_idf_firmware` 按 `target` 与 `board` 选择 native layout，再委托通用 `esp_idf_firmware` 在 action-owned tree 内调用原生 `idf.py build`。它只暴露结构化 ELF、map、app、bootloader、partition table、由同一次构建的 flash arguments 生成并从 `0x0` 烧录的 `combined_factory.bin`、flash metadata 和完整 flash file set；Loader recovery 由外层 package rule 生成，并把 combined image 仅作为 native factory/recovery artifact 打包。公开交付从 `bazel build --config=<esp32s3|esp32p4> //projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>:package` 进入；`:package` 使用平台无关的 `h2loader_tar_zlib` 消费 `:firmware`，生成唯一 H2Loader package 和 release metadata。`combined_factory.bin` 不取得 managed package identity，也不参与 H2Loader runtime update。调用方不能把 action 内部的 native command 或临时 build tree 当成第二个公开入口。
 
-BK7258 entry 的 CMake project 继续拥有 AP/CP 与 linker 语义。每块 H2Loader-managed BK7258 Board 在自己的 `boards/<board>/bk7258/layouts/h2loader/` 中拥有 OTA flash geometry、SMP build config、recovery config 以及具名 GPIO、memory 和 AP/CP config profiles；同一 Board 的 Loader 与 App 都由 `h2loader_bk7258_firmware` 注入同一个 layout，target 目录不保留 SDK config。支持跨 Board OTA 兼容的 Board profile 必须保持相同 flash geometry，并由 graph test 比较其内容。`ram_regions.csv` 是 image linker RAM profile而不是 OTA partition layout，但仍由 Board layout 的具名 memory profile 拥有。通用 `bk7258_firmware` 只暴露标准 native outputs；Loader recovery bundle 由外层 package rule 生成。
+BK7258 entry 的 CMake project 继续拥有 AP/CP 与 linker 语义。每块
+H2Loader-managed BK7258 Board 在自己的 `boards/<board>/bk7258/` 中拥有 board
+defaults，并在 `layouts/<layout>/` 中拥有 OTA flash geometry、SMP build config、
+recovery config、GPIO、RAM region 和 AP/CP layout defaults；同一 Board 的 Loader 与
+App 都由 `h2loader_bk7258_firmware` 注入对应 layout，target 目录不保留 SDK config。
+通过 Bzlmod 使用私有 Board 时，consumer 必须在 `layout_files` 中显式提供 AP/CP
+config、GPIO、RAM region 和 project-support labels。支持跨 Board OTA 兼容的 Board
+必须保持相同 flash geometry，并由 graph test 比较其内容。`ram_regions.csv` 是 image
+linker RAM profile 而不是 OTA partition layout。通用 `bk7258_firmware` 只暴露标准
+native outputs；Loader recovery bundle 由外层 package rule 生成。
 
 ## 物理 Board 支持
 

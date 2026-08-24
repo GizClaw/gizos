@@ -28,10 +28,12 @@ def _native_firmware_resources(_os, _inputs_size):
     }
 
 _TARGET_CONFIGS = {
-    "esp32c5": "//tools/bazel/platforms:is_esp32c5",
-    "esp32p4": "//tools/bazel/platforms:is_esp32p4",
-    "esp32s3": "//tools/bazel/platforms:is_esp32s3",
+    "esp32c5": Label("//tools/bazel/platforms:is_esp32c5"),
+    "esp32p4": Label("//tools/bazel/platforms:is_esp32p4"),
+    "esp32s3": Label("//tools/bazel/platforms:is_esp32s3"),
 }
+
+_CI_GRAPH = Label("//tools/bazel/platforms:ci_graph")
 
 def _esp_idf_firmware_impl(ctx):
     output_root = ctx.label.name
@@ -251,7 +253,7 @@ def esp_idf_firmware(name, target, **kwargs):
     if "target_compatible_with" in kwargs:
         fail("esp_idf_firmware owns target_compatible_with")
     compatibility = select({
-        "//tools/bazel/platforms:ci_graph": [],
+        _CI_GRAPH: [],
         _TARGET_CONFIGS[target]: [],
         "//conditions:default": ["@platforms//:incompatible"],
     })

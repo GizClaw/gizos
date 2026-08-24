@@ -1,7 +1,8 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 load(":consumer.bzl", "fake_firmware")
 
 alias(
@@ -38,6 +39,58 @@ firmware_lib_component(
 )
 
 fake_firmware(name = "fake_firmware")
+
+exports_files([
+    "CMakeLists.txt",
+    "ap.defaults",
+    "cp.defaults",
+    "partition.csv",
+    "ram_regions.csv",
+    "sdkconfig.h2loader.defaults",
+])
+
+filegroup(
+    name = "ap_gpio",
+    srcs = ["ap_gpio.h"],
+)
+
+filegroup(
+    name = "cp_gpio",
+    srcs = ["cp_gpio.h"],
+)
+
+filegroup(
+    name = "layout",
+    srcs = ["layout.txt"],
+)
+
+h2loader_esp_idf_firmware(
+    name = "private_esp_firmware",
+    board = "private_esp_board",
+    layout_files = {
+        "partition": ":partition.csv",
+        "project_support_files": [":sdkconfig.h2loader.defaults"],
+    },
+    project = "CMakeLists.txt",
+    project_name = "private_esp_consumer",
+    target = "esp32s3",
+)
+
+h2loader_bk7258_firmware(
+    name = "private_bk_firmware",
+    board = "private_bk_board",
+    layout_files = {
+        "ap_config": [":ap.defaults"],
+        "ap_gpio": ":ap_gpio",
+        "cp_config": [":cp.defaults"],
+        "cp_gpio": ":cp_gpio",
+        "project_support_files": [":layout"],
+        "ram_regions": ":ram_regions.csv",
+    },
+    project = "CMakeLists.txt",
+    project_name = "private_bk_consumer",
+    target = "bk7258",
+)
 
 h2loader_tar_zlib(
     name = "package",

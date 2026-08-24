@@ -13,6 +13,15 @@ cp "$fixture_root/MODULE.bazel.fixture" "$consumer_root/MODULE.bazel"
 cp "$fixture_root/BUILD.bazel.fixture" "$consumer_root/BUILD.bazel"
 cp "$fixture_root/consumer.bzl.fixture" "$consumer_root/consumer.bzl"
 cp "$fixture_root/consumer.c" "$consumer_root/consumer.c"
+cp "$fixture_root/CMakeLists.txt.fixture" "$consumer_root/CMakeLists.txt"
+cp "$fixture_root/ap.defaults" "$consumer_root/ap.defaults"
+cp "$fixture_root/ap_gpio.h" "$consumer_root/ap_gpio.h"
+cp "$fixture_root/cp.defaults" "$consumer_root/cp.defaults"
+cp "$fixture_root/cp_gpio.h" "$consumer_root/cp_gpio.h"
+cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
+cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
+cp "$fixture_root/ram_regions.csv" "$consumer_root/ram_regions.csv"
+cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loader.defaults"
 
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)
@@ -34,6 +43,19 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 cd "$consumer_root"
+
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_ci_graph=true" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    'set(//:private_bk_firmware //:private_esp_firmware)'
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
