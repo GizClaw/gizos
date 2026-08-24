@@ -25,10 +25,7 @@ cc_library(
     ],
     hdrs = ["include/h2_libsrtp.h"],
     conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS + select({
-        "//tools/bazel/platforms:is_windows_x86_64": ["/Ilibs/pal/providers/h2peer/internal/libsrtp/src"],
-        "//conditions:default": ["-Ilibs/pal/providers/h2peer/internal/libsrtp/src"],
-    }) + h2_gnu_only_copts([
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
         "-Wno-error=incompatible-pointer-types",
         "-Wno-error=format",
         "-fno-strict-aliasing",
@@ -38,6 +35,7 @@ cc_library(
     ],
     includes = [
         "include",
+        "src",
     ],
     local_defines = ["HAVE_CONFIG_H"],
     deps = [

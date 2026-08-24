@@ -19,7 +19,10 @@ firmware_native_component(
 
 firmware_lib_component(
     name = "firmware_lib",
-    deps = ["@gizos//libs/runtime"],
+    deps = [
+        "@gizos//libs/pal/providers/h2peer:portable_protocol_providers",
+        "@gizos//libs/runtime",
+    ],
 )
 
 fake_firmware(name = "fake_firmware")
