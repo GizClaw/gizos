@@ -45,5 +45,6 @@ firmware_native_component(
     deps = [
         "//libs/gizclaw",
         "//native_component_src/bk7258/ap/h2_pal_core",
+        "//native_component_src/bk7258/ap/opus_port",
     ],
 )

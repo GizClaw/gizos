@@ -13,6 +13,7 @@ idf_component_register(
     esp_hw_support
     esp_timer
     h2_pal_core
+  PRIV_REQUIRES
     opus_port)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
