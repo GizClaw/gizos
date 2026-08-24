@@ -31,6 +31,12 @@ class ExternalNativeRootsTest(unittest.TestCase):
                 self.assertIn("repository_ctx.watch(candidate)", text)
                 self.assertNotIn("exclude =", text)
 
+    def test_esp_gizclaw_declares_its_opus_component_dependency(self) -> None:
+        path = ROOT / "native_component_src/esp-idf6.x/h2_gizclaw/CMakeLists.txt"
+        text = path.read_text(encoding="utf-8")
+        requires = text.partition("REQUIRES")[2].partition(")")[0].split()
+        self.assertIn("opus_port", requires)
+
 
 if __name__ == "__main__":
     unittest.main()

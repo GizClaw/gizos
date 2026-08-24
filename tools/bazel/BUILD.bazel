@@ -226,6 +226,7 @@ py_test(
     srcs = ["tests/test_external_native_roots.py"],
     data = [
         "//native_component_src/bk7258/ap/lvgl_port:CMakeLists.txt",
+        "//native_component_src/esp-idf6.x/h2_gizclaw:CMakeLists.txt",
         "//native_component_src/esp-idf6.x/lvgl_port:CMakeLists.txt",
         "//tools/bazel/native_repositories:bk_repositories.bzl",
         "//tools/bazel/native_repositories:esp_repositories.bzl",
