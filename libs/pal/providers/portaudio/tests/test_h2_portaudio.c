@@ -436,9 +436,15 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
 
   fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
-  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
   assert(h2_pal_audio_start_mic(audio) == H2_AUDIO_OK);
+
+  h2_audio_frame_t raw_capture = mic_frame(samples);
+  assert(h2_pal_audio_mic_read(audio, &raw_capture, 1000u) == H2_AUDIO_OK);
+  assert(atomic_load(&order.playback_count) == 0);
+  assert(atomic_load(&order.capture_count) == 0);
+
   assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
   wait_for_int_at_least(&order.capture_count, 1);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);

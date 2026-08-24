@@ -556,11 +556,7 @@ static h2_pal_result_t set_button_state_and_emit(
     runtime->private_state->input_source_count = prior_count;
     runtime->private_state->input_event_sequence_ceiling =
         prior_ceiling;
-    h2_pal_result_t rollback_rc =
-        h2_runtime_input_test_publish(runtime);
-    if (rollback_rc != H2_PAL_OK) {
-        rc = rollback_rc;
-    }
+    (void)h2_runtime_input_test_publish(runtime);
 done:
     return writer_unlock_result(runtime, rc);
 }
