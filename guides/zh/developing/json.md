@@ -10,7 +10,7 @@ include yyjson header，也不能根据 target macro 选择 backend。
 
 | Provider | 目录 | 上游 | 适用边界 |
 | --- | --- | --- | --- |
-| yyjson | `libs/pal/providers/yyjson` | `third_party/yyjson` 0.12.0 | 面向 firmware 的独立实例 provider；每个实例持有独立 allocator 和 lifecycle |
+| yyjson | `libs/pal/providers/yyjson` | `@h2_vendor_yyjson` 0.12.0 | 面向 firmware 的独立实例 provider；每个实例持有独立 allocator 和 lifecycle |
 
 Provider 创建时复制 `h2_pal_mem_api_t`，但不取得 Memory PAL backend 的 ownership。
 调用方必须先释放该 provider 创建的 serialized buffer 和 document，再销毁 provider；

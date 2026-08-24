@@ -1,6 +1,9 @@
-set(OPUS_ROOT "$ENV{H2_REPO_ROOT}/third_party/opus")
 include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES opus_port ap)
+h2_bazel_native_component_select_sources(OPUS_ROOT_MARKER opus_port ap src/opus.c)
+list(GET OPUS_ROOT_MARKER 0 OPUS_ROOT_MARKER)
+get_filename_component(OPUS_ROOT_SRC "${OPUS_ROOT_MARKER}" DIRECTORY)
+get_filename_component(OPUS_ROOT "${OPUS_ROOT_SRC}" DIRECTORY)
 
 armino_component_register(
     SRCS ${H2_COMPONENT_SOURCES}

@@ -6,10 +6,18 @@ get_filename_component(
   ABSOLUTE)
 
 function(h2_pixa_game_attach target game)
+  if(NOT DEFINED H2_PIXA_UPSTREAM_ROOT OR H2_PIXA_UPSTREAM_ROOT STREQUAL "")
+    message(FATAL_ERROR
+      "H2_PIXA_UPSTREAM_ROOT must point to the verified Bazel vendor archive")
+  endif()
+  if(NOT DEFINED H2_PIXELROOT32_UPSTREAM_ROOT OR
+     H2_PIXELROOT32_UPSTREAM_ROOT STREQUAL "")
+    message(FATAL_ERROR
+      "H2_PIXELROOT32_UPSTREAM_ROOT must point to the verified Bazel vendor archive")
+  endif()
   set(h2_pixa_game_root
       "${H2_PIXA_GAMES_REPO_ROOT}/projects/pixa_games/libs/${game}")
-  set(h2_pixelroot32_root
-      "${H2_PIXA_GAMES_REPO_ROOT}/third_party/pixelroot32")
+  set(h2_pixelroot32_root "${H2_PIXELROOT32_UPSTREAM_ROOT}")
 
   if(game STREQUAL "dinobounce")
     set(h2_pixa_game_sources
@@ -43,7 +51,7 @@ function(h2_pixa_game_attach target game)
     "${H2_PIXA_GAMES_REPO_ROOT}/libs/game_runtime/compat"
     "${H2_PIXA_GAMES_REPO_ROOT}/libs/pixa/include"
     "${H2_PIXA_GAMES_REPO_ROOT}/libs/pal/include"
-    "${H2_PIXA_GAMES_REPO_ROOT}/third_party/pixa/pkgs/c/include"
+    "${H2_PIXA_UPSTREAM_ROOT}/pkgs/c/include"
     "${h2_pixelroot32_root}/include")
   target_compile_options("${h2_pixa_game_target}" PRIVATE
     -std=c++17

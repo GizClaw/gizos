@@ -17,7 +17,10 @@ else()
     "${H2_LIBSRTP_ROOT}/../../../../../.."
     ABSOLUTE)
 endif()
-set(H2_LIBSRTP_UPSTREAM_ROOT "${H2_LIBSRTP_REPO_ROOT}/third_party/libsrtp")
+if(NOT DEFINED H2_LIBSRTP_UPSTREAM_ROOT OR H2_LIBSRTP_UPSTREAM_ROOT STREQUAL "")
+  message(FATAL_ERROR
+    "H2_LIBSRTP_UPSTREAM_ROOT must point to the verified Bazel vendor archive")
+endif()
 
 set(H2_LIBSRTP_UPSTREAM_SOURCES
   crypto/cipher/cipher.c

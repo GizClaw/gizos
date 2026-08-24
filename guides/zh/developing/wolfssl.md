@@ -1,6 +1,6 @@
 # WolfSSL
 
-`libs/pal/providers/wolfssl` 是 `third_party/wolfssl` 的唯一 stable integration root，并从
+`libs/pal/providers/wolfssl` 是 `@h2_vendor_wolfssl` 的唯一 stable integration root，并从
 同一份固定 upstream inventory 构建两个互斥 variant：
 
 `third_party/wolfssl.BUILD.bazel` 拥有固定 source/header groups；`libs/pal/providers/wolfssl` 选择 user settings、compile definitions 和最终 variant。Overlay 不从 first-party package 反向加载 source inventory。

@@ -125,7 +125,7 @@ AES-128-GCM、AES-256-GCM 和 ChaCha20-Poly1305，固定 12-byte nonce 与
 16-byte tag；plaintext 是 consumer policy，不是 Crypto PAL algorithm。MD5
 和 HMAC-SHA1 只用于 TURN/STUN/SRTP compatibility，不能用于新协议设计。
 
-`libs/pal/providers/wolfssl` 是 `third_party/wolfssl` 的唯一 stable-tree integration
+`libs/pal/providers/wolfssl` 是 `@h2_vendor_wolfssl` 的唯一 stable-tree integration
 boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 DTLS PAL，
 并统一管理 WolfSSL allocator、entropy、全局 init/deinit 和 live session。
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
@@ -172,7 +172,7 @@ h2/pal/application/h2_pal_webrtc.h
 
 Net 与 Application PAL 中既有平台 backend，也有 third-party 跨平台 backend。例如
 `libs/pal/providers/corehttp` 使用固定的 coreHTTP/llhttp 实现 `h2_pal_http.h`，并通过 Net PAL
-取得 DNS、TCP、TLS 与 close；`libs/pal/providers/coremqtt` 使用 `third_party/coremqtt` 实现
+取得 DNS、TCP、TLS 与 close；`libs/pal/providers/coremqtt` 使用 `@h2_vendor_coremqtt` 实现
 `h2_pal_mqtt.h`，`libs/pal/providers/h2peer` 通过注入 DTLS、SRTP、SCTP、Net、Crypto、Time 和
 Memory capability 实现 `h2_pal_webrtc.h`。HTTP provider 不直接依赖平台 TLS
 library，也不为 HTTP 新增平台专用 HTTP 方法。
@@ -450,9 +450,9 @@ boards/<board>/<chip-or-target>/             # 注入 target 能力并组装 pro
 
 例如：
 
-- `third_party/coremqtt` 提供上游 MQTT 实现，`libs/pal/providers/coremqtt` 实现 `h2_pal_mqtt_api_t`，`native_component_src/bk7258/ap/h2_coremqtt` 只负责把 Bazel archive 导入 Armino。
+- `@h2_vendor_coremqtt` 提供上游 MQTT 实现，`libs/pal/providers/coremqtt` 实现 `h2_pal_mqtt_api_t`，`native_component_src/bk7258/ap/h2_coremqtt` 只负责把 Bazel archive 导入 Armino。
 - `libs/pal/providers/h2peer` 提供 portable WebRTC 实现并消费注入的 PAL/provider capability；target composition owner 负责创建 capability、H2Peer owner 和最终 `h2_pal_webrtc_api_t` view。
-- `third_party/wolfssl` 提供上游密码实现，`libs/pal/providers/wolfssl` 已经拥有完整 Crypto PAL lifecycle 和 accessor；BK3633 component 只提供 hardware entropy callback，TapDoki BSP 直接注入并组装 provider，不增加 wolfCrypt forwarding component。
+- `@h2_vendor_wolfssl` 提供上游密码实现，`libs/pal/providers/wolfssl` 已经拥有完整 Crypto PAL lifecycle 和 accessor；BK3633 component 只提供 hardware entropy callback，TapDoki BSP 直接注入并组装 provider，不增加 wolfCrypt forwarding component。
 
 Third-party 跨平台集成不能直接依赖具体 board header 或芯片 SDK。需要平台能力时，通过已有 PAL contract、config 或 callback 显式注入。BSP 不直接包含 third-party source 或 private header，只消费 component 与 library 的 public capability 并提供 board-specific 配置。
 

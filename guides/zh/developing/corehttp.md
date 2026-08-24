@@ -49,7 +49,7 @@ Provider 不提供连接池、HTTP/2、proxy、cookie、压缩或平台 credenti
 固定 llhttp source 中未被 production parser 调用的 `llhttp__debug()` 由私有 llhttp
 Bazel target 的 forced-include config 保持为 no-op，不能向 `stderr` 输出，也不能
 把 newlib standard-stream reentrancy 符号带入 firmware archive。这个配置不修改
-vendor submodule 或增加 textual patch；CoreHTTP 自身需要诊断时只使用 caller 注入的
+verified vendor archive 或增加 textual patch；CoreHTTP 自身需要诊断时只使用 caller 注入的
 Log PAL。
 
 ## 构建与测试

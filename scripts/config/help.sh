@@ -8,7 +8,6 @@ printf '%s\n' \
   'Configuration:' \
   '  help                             show every public Make target' \
   '  cfg-doctor                       report the local build and H2Loader environment' \
-  '  cfg-submodules                   initialize repository submodules' \
   '' \
   'Bazel:' \
   '  bazel-build                      build every target compatible with the selected config' \

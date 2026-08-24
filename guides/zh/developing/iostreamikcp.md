@@ -6,7 +6,7 @@
 
 ## 依赖关系
 
-IO Stream iKCP 是跨平台 library。它依赖 PAL 提供内存与底层 byte I/O contract，并复用 `third_party/ikcp` 的协议实现，不直接依赖 board、target SDK 或操作系统 task。
+IO Stream iKCP 是跨平台 library。它依赖 PAL 提供内存与底层 byte I/O contract，并复用 `@h2_vendor_ikcp` 的协议实现，不直接依赖 board、target SDK 或操作系统 task。
 
 ```mermaid
 flowchart TD
@@ -15,7 +15,7 @@ flowchart TD
     IOStreamIKCP --> UART["PAL UART IO Stream"]
     IOStreamIKCP --> USBJTAG["PAL USB Serial-JTAG IO Stream"]
     IOStreamIKCP --> Time["调用方提供的 now_ms callback"]
-    IOStreamIKCP --> IKCP["third_party/ikcp"]
+    IOStreamIKCP --> IKCP["@h2_vendor_ikcp"]
     UART --> Backend["Target component backend"]
     USBJTAG --> Backend
 ```

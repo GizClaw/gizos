@@ -105,7 +105,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
-          submodules: recursive
+          submodules: false
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -299,7 +299,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
-          submodules: recursive
+          submodules: false
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -519,7 +519,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
-          submodules: recursive
+          submodules: false
 
       - id: app-token
         name: Create read-only h2vivi token
@@ -756,7 +756,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
-          submodules: recursive
+          submodules: false
 
       - id: app-token
         name: Create read-only h2vivi token
@@ -964,7 +964,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
-          submodules: recursive
+          submodules: false
 
       - id: app-token
         name: Create read-only h2vivi token
@@ -1259,7 +1259,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ inputs.checkout_sha || github.event.pull_request.head.sha || github.sha }}
-          submodules: recursive
+          submodules: false
 
       - name: Validate Bazel remote cache variables
         shell: pwsh

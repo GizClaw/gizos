@@ -1,4 +1,4 @@
-"""Bzlmod repositories for pinned gitlinks and Linux system libraries."""
+"""Bzlmod repositories for pinned upstream archives and host SDK inputs."""
 
 _FFMPEG_CONFIGURE_ADAPTER = """#!/bin/sh
 
@@ -99,81 +99,24 @@ def _source_files(source_root):
         fail("vendor source tree exceeds the supported 256-directory depth")
     return files
 
-def _validate_gitlink_revision(repository_ctx, workspace_root, source_root):
-    indexed = repository_ctx.execute(
-        [
-            "git",
-            "-C",
-            str(workspace_root),
-            "ls-files",
-            "--stage",
-            "--",
-            repository_ctx.attr.path,
-        ],
-        quiet = True,
-    )
-    if indexed.return_code != 0:
-        fail(
-            "failed to inspect gitlink %s: %s" %
-            (repository_ctx.attr.path, indexed.stderr),
-        )
-    entries = indexed.stdout.strip().splitlines()
-    if len(entries) != 1 or not entries[0].startswith("160000 "):
-        fail(
-            (
-                "%s is not exactly one Git index gitlink entry; restore the " +
-                "pinned submodule before building"
-            ) % repository_ctx.attr.path,
-        )
-    expected = entries[0].split(" ", 2)[1]
-    checked_out = repository_ctx.execute(
-        ["git", "-C", str(source_root), "rev-parse", "HEAD"],
-        quiet = True,
-    )
-    actual = checked_out.stdout.strip()
-    if checked_out.return_code != 0 or actual != expected:
-        fail(
-            (
-                "gitlink %s is at %s; expected %s; run git submodule update " +
-                "--init --recursive"
-            ) % (
-                repository_ctx.attr.path,
-                actual or "an unknown revision",
-                expected,
-            ),
-        )
+def _remove_upstream_repository_metadata(repository_ctx, source_root):
+    directories = [source_root]
+    for _depth in range(256):
+        if not directories:
+            break
+        next_directories = []
+        for current in directories:
+            for entry in current.readdir(watch = "no"):
+                if entry.basename in _VENDOR_METADATA_FILENAMES:
+                    if not repository_ctx.delete(entry):
+                        fail("failed to remove upstream repository metadata %s" % entry)
+                elif entry.is_dir:
+                    next_directories.append(entry)
+        directories = next_directories
+    if directories:
+        fail("vendor archive exceeds the supported 256-directory depth")
 
-def _gitlink_repository_impl(repository_ctx):
-    workspace_root = repository_ctx.path(repository_ctx.attr.workspace_file).dirname
-    source_root = workspace_root.get_child(repository_ctx.attr.path)
-    if not source_root.exists:
-        fail(
-            "gitlink %s is missing; run git submodule update --init --recursive" %
-            repository_ctx.attr.path,
-        )
-    repository_ctx.watch_tree(source_root)
-    if repository_ctx.attr.source_is_gitlink:
-        _validate_gitlink_revision(repository_ctx, workspace_root, source_root)
-    discovered = _source_files(source_root)
-    if not discovered:
-        fail(
-            "gitlink %s is empty; run git submodule update --init --recursive" %
-            repository_ctx.attr.path,
-        )
-    patched_paths = {}
-    for patch in repository_ctx.attr.patches:
-        for line in repository_ctx.read(patch).splitlines():
-            if line.startswith("+++ "):
-                path = line[4:].split("\t", 1)[0]
-                if path != "/dev/null":
-                    patched_paths[path] = True
-
-    for source in discovered:
-        destination = "src/" + source.relative
-        if destination in patched_paths:
-            repository_ctx.file(destination, repository_ctx.read(source.path))
-        else:
-            repository_ctx.symlink(source.path, destination)
+def _install_vendor_metadata(repository_ctx):
     for patch in repository_ctx.attr.patches:
         repository_ctx.patch(patch)
     for source, destination in repository_ctx.attr.overlay_files.items():
@@ -192,8 +135,80 @@ def _gitlink_repository_impl(repository_ctx):
             executable = True,
         )
 
-_gitlink_repository = repository_rule(
-    implementation = _gitlink_repository_impl,
+def _archive_repository_impl(repository_ctx):
+    if not repository_ctx.attr.urls:
+        fail("vendor archive requires at least one immutable URL")
+    if len(repository_ctx.attr.sha256) != 64:
+        fail("vendor archive requires a 64-character SHA-256 digest")
+    if not repository_ctx.attr.strip_prefix:
+        fail("vendor archive requires its extracted root as strip_prefix")
+    repository_ctx.download_and_extract(
+        url = repository_ctx.attr.urls,
+        output = "src",
+        sha256 = repository_ctx.attr.sha256,
+        stripPrefix = repository_ctx.attr.strip_prefix,
+        type = "tar.gz",
+    )
+    nested_paths = sorted(repository_ctx.attr.nested_archive_urls.keys())
+    if (nested_paths != sorted(repository_ctx.attr.nested_archive_sha256.keys()) or
+        nested_paths != sorted(repository_ctx.attr.nested_archive_strip_prefix.keys())):
+        fail("nested vendor archive URL, SHA-256, and strip-prefix paths must match")
+    for nested_path in nested_paths:
+        if (not nested_path or nested_path.startswith("/") or
+            ".." in nested_path.split("/")):
+            fail("invalid nested vendor archive destination: %s" % nested_path)
+        nested_sha256 = repository_ctx.attr.nested_archive_sha256[nested_path]
+        if len(nested_sha256) != 64:
+            fail("nested vendor archive %s requires a 64-character SHA-256 digest" % nested_path)
+        nested_strip_prefix = repository_ctx.attr.nested_archive_strip_prefix[nested_path]
+        if not nested_strip_prefix:
+            fail("nested vendor archive %s requires strip_prefix" % nested_path)
+        repository_ctx.download_and_extract(
+            url = repository_ctx.attr.nested_archive_urls[nested_path],
+            output = "src/" + nested_path,
+            sha256 = nested_sha256,
+            stripPrefix = nested_strip_prefix,
+            type = "tar.gz",
+        )
+    _remove_upstream_repository_metadata(repository_ctx, repository_ctx.path("src"))
+    _install_vendor_metadata(repository_ctx)
+
+_archive_repository = repository_rule(
+    implementation = _archive_repository_impl,
+    attrs = {
+        "build_file": attr.label(
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "ffmpeg_configure_adapter": attr.bool(default = False),
+        "nested_archive_sha256": attr.string_dict(),
+        "nested_archive_strip_prefix": attr.string_dict(),
+        "nested_archive_urls": attr.string_dict(),
+        "overlay_files": attr.label_keyed_string_dict(allow_files = True),
+        "patches": attr.label_list(allow_files = True),
+        "sha256": attr.string(mandatory = True),
+        "strip_prefix": attr.string(mandatory = True),
+        "urls": attr.string_list(mandatory = True),
+    },
+)
+
+def _local_vendor_repository_impl(repository_ctx):
+    workspace_root = repository_ctx.path(repository_ctx.attr.workspace_file).dirname
+    source_root = workspace_root.get_child(repository_ctx.attr.path)
+    if not source_root.exists:
+        fail("local vendor source %s is missing" % repository_ctx.attr.path)
+    repository_ctx.watch_tree(source_root)
+    discovered = _source_files(source_root)
+    if not discovered:
+        fail("local vendor source %s is empty" % repository_ctx.attr.path)
+
+    for source in discovered:
+        destination = "src/" + source.relative
+        repository_ctx.symlink(source.path, destination)
+    _install_vendor_metadata(repository_ctx)
+
+_local_vendor_repository = repository_rule(
+    implementation = _local_vendor_repository_impl,
     attrs = {
         "build_file": attr.label(
             allow_single_file = True,
@@ -203,7 +218,6 @@ _gitlink_repository = repository_rule(
         "overlay_files": attr.label_keyed_string_dict(allow_files = True),
         "path": attr.string(mandatory = True),
         "patches": attr.label_list(allow_files = True),
-        "source_is_gitlink": attr.bool(default = True),
         "workspace_file": attr.label(
             allow_single_file = True,
             default = Label("//:MODULE.bazel"),
@@ -342,10 +356,15 @@ _repository = tag_class(
         ),
         "name": attr.string(mandatory = True),
         "ffmpeg_configure_adapter": attr.bool(default = False),
+        "nested_archive_sha256": attr.string_dict(),
+        "nested_archive_strip_prefix": attr.string_dict(),
+        "nested_archive_urls": attr.string_dict(),
         "overlay_files": attr.label_keyed_string_dict(allow_files = True),
-        "path": attr.string(mandatory = True),
+        "path": attr.string(),
         "patches": attr.label_list(allow_files = True),
-        "source_is_gitlink": attr.bool(default = True),
+        "sha256": attr.string(),
+        "strip_prefix": attr.string(),
+        "urls": attr.string_list(),
     },
 )
 
@@ -365,15 +384,33 @@ def _vendor_repositories_impl(module_ctx):
     )
     for module in module_ctx.modules:
         for repository in module.tags.repository:
-            _gitlink_repository(
-                name = repository.name,
-                build_file = repository.build_file,
-                ffmpeg_configure_adapter = repository.ffmpeg_configure_adapter,
-                overlay_files = repository.overlay_files,
-                path = repository.path,
-                patches = repository.patches,
-                source_is_gitlink = repository.source_is_gitlink,
-            )
+            if repository.urls:
+                if repository.path:
+                    fail("vendor repository %s cannot set both urls and path" % repository.name)
+                _archive_repository(
+                    name = repository.name,
+                    build_file = repository.build_file,
+                    ffmpeg_configure_adapter = repository.ffmpeg_configure_adapter,
+                    nested_archive_sha256 = repository.nested_archive_sha256,
+                    nested_archive_strip_prefix = repository.nested_archive_strip_prefix,
+                    nested_archive_urls = repository.nested_archive_urls,
+                    overlay_files = repository.overlay_files,
+                    patches = repository.patches,
+                    sha256 = repository.sha256,
+                    strip_prefix = repository.strip_prefix,
+                    urls = repository.urls,
+                )
+            else:
+                if not repository.path:
+                    fail("vendor repository %s requires urls or path" % repository.name)
+                _local_vendor_repository(
+                    name = repository.name,
+                    build_file = repository.build_file,
+                    ffmpeg_configure_adapter = repository.ffmpeg_configure_adapter,
+                    overlay_files = repository.overlay_files,
+                    patches = repository.patches,
+                    path = repository.path,
+                )
 
 vendor_repositories = module_extension(
     implementation = _vendor_repositories_impl,

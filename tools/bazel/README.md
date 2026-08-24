@@ -84,8 +84,8 @@ application, or packaging. Issue #835 owns Windows PAL integration.
 
 ## ESP-IDF external builds
 
-Initialize the source submodules and source `.env/devenv` before requesting an
-ESP build. The sibling `firmware-devenv` provider exports `IDF_PATH` and
+Source `.env/devenv` before requesting an ESP build. The sibling
+`firmware-devenv` provider exports `IDF_PATH` and
 `IDF_TOOLS_PATH` for Bazel. The tools repository derives the unique
 `python_env/idf6.0_py*_env` installation from that tools root, validates it
 against the pinned ESP-IDF constraints, and materializes versioned SDK/tool
@@ -126,8 +126,8 @@ flash, erase, monitor, reset, serial, network, or installation operations.
 
 ## BK7258 external builds
 
-Initialize the source submodules and source `.env/devenv` before requesting a
-BK7258 build. The canonical provider exports only `BK7258_PATH`. A repository
+Source `.env/devenv` before requesting a BK7258 build. The canonical provider
+exports only `BK7258_PATH`. A repository
 rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
 clean tracked checkout. Another repository rule downloads Arm GNU
 10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values,

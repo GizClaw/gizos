@@ -49,7 +49,6 @@ REMOVED = (
 MAKE_TARGET_SCRIPTS = {
     "help": "config/help.sh",
     "cfg-doctor": "config/cfg-doctor.sh",
-    "cfg-submodules": "config/cfg-submodules.sh",
     "bazel-build": "bazel/bazel-build.py",
     "bazel-test": "bazel/bazel-test.py",
     "bazel-test-mqtt_public_broker_smoke": "bazel/bazel-test-mqtt_public_broker_smoke.sh",
@@ -414,12 +413,51 @@ class PublicCommandSurfaceTest(unittest.TestCase):
                 findings.append(relative.as_posix())
         self.assertEqual(findings, [])
 
-        gitmodules = (ROOT / ".gitmodules").read_text(encoding="utf-8")
-        self.assertNotIn("github.com/h2vivi/", gitmodules.lower())
-        urls = re.findall(r"(?m)^\s*url = (.+)$", gitmodules)
-        self.assertTrue(urls)
-        self.assertTrue(
-            all(url.startswith("https://github.com/") for url in urls), urls
+        self.assertFalse((ROOT / ".gitmodules").exists())
+        indexed = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "--stage", "third_party"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        gitlinks = [
+            line for line in indexed.stdout.splitlines() if line.startswith("160000 ")
+        ]
+        self.assertEqual(gitlinks, [])
+
+    def test_public_vendor_sources_use_integrity_pinned_archives(self) -> None:
+        module = (ROOT / "MODULE.bazel").read_text(encoding="utf-8")
+        declarations = module.split("vendor_repositories.repository(")[1:]
+        archive_names = []
+        local_names = []
+        for declaration in declarations:
+            name_match = re.search(r'\n\s+name = "([^"]+)"', declaration)
+            self.assertIsNotNone(name_match)
+            name = name_match.group(1)
+            if re.search(r'\n\s+path = "third_party/', declaration):
+                local_names.append(name)
+                continue
+            archive_names.append(name)
+            self.assertRegex(declaration, r'\n\s+sha256 = "[0-9a-f]{64}"')
+            self.assertRegex(declaration, r'\n\s+strip_prefix = "[^"]+"')
+            self.assertRegex(
+                declaration,
+                r'\n\s+urls = \["https://codeload\.github\.com/[^" ]+"\]',
+            )
+        self.assertEqual(local_names, ["h2_vendor_sqlite"])
+        self.assertEqual(len(archive_names), 21)
+        mklittlefs = next(
+            declaration
+            for declaration in declarations
+            if '\n    name = "h2_vendor_mklittlefs"' in declaration
+        )
+        self.assertRegex(
+            mklittlefs,
+            r'\n\s+nested_archive_sha256 = \{\n\s+"littlefs": "[0-9a-f]{64}",',
+        )
+        self.assertIn(
+            '"littlefs": "https://codeload.github.com/littlefs-project/littlefs/tar.gz/',
+            mklittlefs,
         )
 
     def test_markdown_repository_commands_use_public_entry(self) -> None:

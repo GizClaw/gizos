@@ -10,7 +10,7 @@
 
 ## 依赖和边界
 
-Bundle 使用 PAL filesystem 和 mem API，依赖 `libs/pixa` 以及 `third_party/zlib`。文件系统挂载、partition layout、boot policy 和 image 切换由 H2Loader、launcher 或 BSP 负责。
+Bundle 使用 PAL filesystem 和 mem API，依赖 `libs/pixa` 以及 `@h2_vendor_zlib`。文件系统挂载、partition layout、boot policy 和 image 切换由 H2Loader、launcher 或 BSP 负责。
 
 普通 `data/` entry 由 Bundle 原样安装。以 `.pixa` 结尾的 entry 是明确的安装期转换输入：Bundle 先校验 archive 中的源 entry，再通过 PAL-backed PIXA extractor 写入同路径加 `.d` suffix 的 directory。Extractor 删除旧 completion marker，写入 `clips/*.argb4444`，最后发布 `index.bin`；App 只消费完成的 `.pixa.d`。
 

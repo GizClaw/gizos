@@ -45,7 +45,7 @@ Each unchecked item represents one future CI completion push. The item is checke
 ├── native_component_src/   # Components compiled by native platform SDKs
 ├── projects/               # Portable applications and their public artifacts
 ├── scripts/                # Stable repository command implementations
-├── third_party/            # Pinned upstream sources and integration metadata
+├── third_party/            # Bazel overlays and repository-owned integration metadata
 └── tools/                  # Host-side build, packaging, and support tools
 ```
 
@@ -54,6 +54,8 @@ Public source packages must not depend on private product repositories, credenti
 ## Build system
 
 GizOS uses Bazel as the source of truth for supported build graphs, tests, tools, and artifacts. Bazel 9.2.0 is selected by `.bazelversion`; the top-level Make targets provide the stable repository command surface.
+
+Public upstream dependencies are fetched by Bazel from immutable commit archives declared in `MODULE.bazel`. Every archive has a checked SHA-256 digest and an explicit extracted root; required nested upstream sources are pinned the same way at their original submodule paths. A plain clone does not need Git submodule initialization. Repository-owned BUILD overlays, source overlays, and compatibility patches are applied only after archive verification.
 
 ```sh
 make help

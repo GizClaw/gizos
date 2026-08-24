@@ -1,6 +1,6 @@
 # LVGL
 
-`libs/lvgl` 集成 `third_party/lvgl`，并通过 GizOS PAL 提供 LVGL 所需的 OS abstraction。
+`libs/lvgl` 集成 `@h2_vendor_lvgl`，并通过 GizOS PAL 提供 LVGL 所需的 OS abstraction。
 
 ## API Reference
 
@@ -20,7 +20,7 @@
 
 `h2_lvgl_touch_create()` 把一个已校准到 display viewport 的 Touch PAL 注册成 LVGL pointer indev，不知道 evdev、GPIO、controller 或 board identity。`h2_lvgl_button_bind()` 解析 App Button component 到 mapped `PUSH_EDGE` periph，再把 widget 的 pressed/released edge 写入 Runtime；它不在 LVGL callback 中自行识别 click 或 long press。Adapter 对同一 Runtime/periph ID 强制唯一 live producer，重复 bind 返回 `H2_PAL_ERR_BUSY`；widget delete 释放 ownership 后才允许 rebind。
 
-ESP-IDF、BK7258 和 Desktop build adapter 都编译同一份 `h2_lvgl_osal.c` 与 `h2_lvgl_fs.c`。TinyTTF 是否启用、glyph cache 容量和 translation 等 feature 由各 target 的 `lv_conf.h` 决定；这些配置不能通过修改 `third_party/lvgl` 上游源码实现。
+ESP-IDF、BK7258 和 Desktop build adapter 都编译同一份 `h2_lvgl_osal.c` 与 `h2_lvgl_fs.c`。TinyTTF 是否启用、glyph cache 容量和 translation 等 feature 由各 target 的 `lv_conf.h` 决定；这些配置不能通过修改 verified upstream archive 实现。
 
 `third_party/lvgl.BUILD.bazel` 只把固定 upstream source set 暴露为 source filegroups；它不依赖任何 first-party target。GizOS-owned ESP-IDF/BK7258 `lv_conf.h` 完整文件位于 `third_party/lvgl_patch/config/`，由 vendor repository 通过 `overlay_files` 装配。`libs/lvgl/BUILD.bazel` 拥有可编译的 `lvgl`、`firmware`、`lvgl_mobile`、`lvgl_web` 与 `lvgl_desktop` variant，并分别选择 config 和其他平台 dependency。`firmware` 使用固定 source set，把 upstream、`h2_lvgl_osal.c` 和 `h2_lvgl_fs.c` 编译为一个 Bazel archive；ESP-IDF 与 BK7258 component 只注册 include/SDK dependency 并导入该 archive。Web variant 使用 single-thread config，并声明 Emscripten libc 提供 `strnlen` 所需的 POSIX feature level；Desktop variant 只选择 `core_sources`，不编译 LVGL upstream SDL2 driver。
 

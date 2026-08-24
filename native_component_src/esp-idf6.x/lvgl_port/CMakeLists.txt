@@ -1,5 +1,4 @@
 set(REPO_ROOT "${H2_REPO_ROOT}")
-set(LVGL_ROOT "${REPO_ROOT}/third_party/lvgl")
 set(H2_LVGL_ROOT "${REPO_ROOT}/libs/lvgl")
 set(H2_LVGL_CONFIG_ROOT "${REPO_ROOT}/third_party/lvgl_patch/config/esp_idf6_x")
 
@@ -7,8 +6,6 @@ idf_component_register(
     INCLUDE_DIRS
         "${H2_LVGL_CONFIG_ROOT}"
         "${H2_LVGL_ROOT}/include"
-        "${LVGL_ROOT}"
-        "${LVGL_ROOT}/src"
     REQUIRES
       h2_firmware_lib
         h2_pal_core

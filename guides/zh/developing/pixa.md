@@ -2,28 +2,27 @@
 
 PIXA 的格式、portable C runtime、通用工具和可分发动画资源由
 [`GizClaw/pixa`](https://github.com/GizClaw/pixa) 统一维护。GizOS 通过固定
-commit 的 `third_party/pixa` submodule 消费它，不再维护第二份格式实现或
+commit 和 SHA-256 的 `@h2_vendor_pixa` external repository 消费它，不再维护第二份格式实现或
 `h2_pixa_*` 格式 API。
 
-格式定义、兼容性和 C 平台接口以 submodule 中的文档为准：
+格式定义、兼容性和 C 平台接口以上游文档为准：
 
-- `third_party/pixa/docs/format.md`
-- `third_party/pixa/docs/compatibility.md`
-- `third_party/pixa/docs/c-osal.md`
+- [`docs/format.md`](https://github.com/GizClaw/pixa/blob/main/docs/format.md)
+- [`docs/compatibility.md`](https://github.com/GizClaw/pixa/blob/main/docs/compatibility.md)
+- [`docs/c-osal.md`](https://github.com/GizClaw/pixa/blob/main/docs/c-osal.md)
 
 ## API Reference
 
 [GizOS Bridge API Reference](/references/pixa)
 
 PIXA core 的 production public headers 位于
-`third_party/pixa/pkgs/c/include`。GizOS 自己的 public surface 只包含
+`@h2_vendor_pixa//src/pkgs/c/include`。GizOS 自己的 public surface 只包含
 `libs/pixa/include/h2_pixa_platform.h` 定义的 PAL bridge。
 
 ## Ownership
 
 ```text
-third_party/pixa/
-└── pkgs/c/                         # upstream format、reader、decode、blit、pack、extract
+@h2_vendor_pixa//src/pkgs/c/        # upstream format、reader、decode、blit、pack、extract
 libs/pixa/
 ├── include/h2_pixa_platform.h      # PAL-backed OSAL/allocator bridge
 └── src/h2_pixa_platform.c
@@ -33,7 +32,7 @@ libs/pal/providers/
 boards/**、<artifact-rule>/**       # mount、storage wiring 和 board policy
 ```
 
-- `third_party/pixa` 是 PIXA format/core/tools/assets 的唯一 source of truth。
+- `GizClaw/pixa` upstream 是 PIXA format/core/tools/assets 的唯一 source of truth；`MODULE.bazel` 只固定其 immutable archive。
 - `libs/pixa` 只把公开的 `h2_pal_fs_api_t` 和 `h2_pal_mem_api_t` 投影为
   upstream `pixa_osal_api_t` 和 `pixa_alloc_t`。
 - `libs/pal/providers` adapter 只导入 Bazel 已生成的 archive 并传播 public include，不重新
@@ -85,13 +84,10 @@ public wrapper 的 optional-sync 成功语义，其它缺失能力按 wrapper co
 
 ## 构建与测试
 
-验证 upstream core、bridge 和直接 consumer：
+验证 verified upstream archive、bridge 和直接 consumer：
 
 ```sh
-cd third_party/pixa
-make c-check
-
-cd ../..
+bazel build @h2_vendor_pixa//:pixa
 bazel test //libs/pixa:all
 bazel test //libs/bundle:all
 ```
@@ -99,25 +95,23 @@ bazel test //libs/bundle:all
 涉及 consumer 或 target wiring 的修改还必须按对应 Desktop、ESP-IDF 或 BK7258
 guide 构建至少一个实际入口。
 
-## 更新 submodule
+## 更新 upstream archive
 
-PIXA pointer 只能在审查 upstream 变更后推进。选择 release 或 immutable commit，
-不要在 GizOS 内 patch submodule：
+PIXA pin 只能在审查 upstream 变更后推进。选择 release 或 immutable commit，更新 `MODULE.bazel` 中 `h2_vendor_pixa` 的 archive URL、SHA-256 与 extracted root，不要在 GizOS 内 patch upstream source：
 
 ```sh
-git -C third_party/pixa fetch --tags
-git -C third_party/pixa checkout <selected-release-or-commit>
-git add third_party/pixa third_party/README.md
+curl -L https://codeload.github.com/GizClaw/pixa/tar.gz/<selected-commit> -o pixa.tar.gz
+shasum -a 256 pixa.tar.gz
 ```
 
-更新时同步记录 `third_party/README.md` 中的 version description 和完整 commit，
-然后至少运行：
+更新时在同一个 diff 中记录完整 commit、digest 与 extracted root，然后至少运行：
 
-1. `cd third_party/pixa && make c-check`
-2. `bazel test //libs/pixa:all`
-3. `bazel test //libs/bundle:all`
-4. 一个 Desktop PIXA consumer build
-5. 一个 ESP firmware PIXA consumer build
+1. 在 upstream checkout 对 selected commit 执行 `make c-check`
+2. `bazel build @h2_vendor_pixa//:pixa`
+3. `bazel test //libs/pixa:all`
+4. `bazel test //libs/bundle:all`
+5. 一个 Desktop PIXA consumer build
+6. 一个 ESP firmware PIXA consumer build
 6. 一个 BK7258 AP PIXA consumer build
 
 如果 upstream format 或 public C API 改变，还要检查所有 `pixa_*` consumer 和

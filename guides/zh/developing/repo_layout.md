@@ -9,14 +9,13 @@
 ├── AGENTS.md                              # Agent 工作入口和文档索引
 ├── .gitattributes                        # Git attributes
 ├── .gitignore                            # Git ignore 规则
-├── .gitmodules                           # Git submodule 定义
 ├── .bazelversion                         # CI graph 使用的 exact Bazel 版本
 ├── MODULE.bazel                          # Bzlmod 依赖
 ├── REPO.bazel                            # 根 query 排除的内嵌 repository
 ├── BUILD.bazel                           # 仓库级 logical CI graph 入口
 ├── Makefile                              # 公共 target、默认变量与命令调度
 ├── scripts/                            # 公共 Make target 的同名脚本入口
-│   ├── config/                           # 环境、submodule 与帮助命令
+│   ├── config/                           # 环境与帮助命令
 │   ├── build/                            # Bazel build、plan、CI 与 release 命令
 │   ├── test/                             # coverage 与 live E2E 命令
 │   ├── guides/                           # Guides build、dev 与 preview 命令
@@ -46,7 +45,7 @@
 │   │   └── BUILD.bazel                   # C/C++ build、test 和显式依赖
 │
 ├── third_party/
-│   ├── <dependency>/                     # 固定 upstream checkout
+│   ├── <dependency>/                     # 必须提交到仓库的少量 vendored source
 │   ├── <dependency>.BUILD.bazel          # Bazel vendor overlay
 │   └── <dependency>_patch/               # GizOS-owned upstream patch 与新增 source
 │
@@ -106,8 +105,8 @@
 │       ├── tests/                        # Tool tests，可选
 │       └── README.md                     # Tool usage，可选
 │
-├── third_party/                          # Upstream source 与依赖元数据
-│   ├── <upstream>/                         # Vendored source 或 submodule
+├── third_party/                          # Upstream integration metadata
+│   ├── <upstream>/                         # 必须提交到仓库的少量 vendored source
 │   └── <dependency>.BUILD.bazel            # GizOS-owned Bazel overlay
 │
 ├── guides/                               # GizOS 项目文档
@@ -131,7 +130,7 @@
 ## 根目录文件
 
 - `AGENTS.md` 是 Agent 使用的仓库入口，只保存索引、稳定根目录和必须遵守的工作规则。
-- `.gitattributes`、`.gitignore` 和 `.gitmodules` 保存 Git 行为与 submodule 配置。
+- `.gitattributes` 和 `.gitignore` 保存 Git 行为；公开 upstream archive 的 URL、commit、解压根和 SHA-256 pin 统一由 `MODULE.bazel` 保存。
 - `Makefile` 只定义公共 target、默认变量、export 和对 `scripts/` 同名脚本的调度。除 `common/` 外，每个 `scripts/<category>/<target>.py|sh` 必须只拥有对应的一个 target entry；两个以上 target 共用的 Make 实现只放在 `scripts/common/`。
 - `.bazelversion`、`MODULE.bazel`、`REPO.bazel` 和根 `BUILD.bazel` 定义
   [Bazel 构建与 CI 依赖图](/zh/developing/bazel)。Bazel 是 stable host
@@ -453,7 +452,7 @@ Host tool 可以发现、构建和运行 project artifact entry，但不能成�
 
 ## `third_party`
 
-`third_party/` 保存外部引入的 vendored source 或 submodule，并保持版本、来源和本地修改边界清楚。GizOS 为依赖维护的 Bazel overlay 使用 `third_party/<dependency>.BUILD.bazel`，与对应 upstream 目录同级；overlay 不能写入 submodule，也不能反向引用仓库内的 library、component、project、board 或 tool target。Overlay 默认只提供 source/header/file group；需要 PAL、GizOS API 或 platform dependency 的编译规则属于对应 `libs/` 或 component owner。仓库明确直接使用的纯 upstream contract 可以在 overlay 中直接编译；仅用于补齐 upstream portable build 的 config header 放在 `third_party/<dependency>_patch/`，并通过 repository rule 的 `overlay_files` 在 analysis 前 materialize 到 external repository。该 config 不能 include GizOS header、改变 public API 或取得 platform lifecycle ownership。CMake/configure upstream 可以使用 `rules_foreign_cc`，但 action input 必须只来自 gitlink、显式 overlay、Bazel toolchain和声明的 upstream dependency。此类 target 对 consumer 暴露不带 host 后缀的稳定 label，平台选择只存在于 overlay 内部；`libs` 和 `native_component_src` 可以直接依赖它，不能为了转发同一个 upstream target 再创建 `native_component_src/<platform>/pkgs` wrapper。通用 repository rule、必要的 upstream configure adapter 和 graph tool仍属于 `tools/bazel/`。
+`third_party/` 保存 GizOS-owned BUILD overlay、source overlay、兼容 patch，以及确实需要提交的少量 vendored source；公开 upstream source 不以 Git submodule 保存。每个公开 dependency 的 immutable commit archive URL、SHA-256 和 extracted root 由 `MODULE.bazel` 唯一固定，`tools/bazel/vendor/repositories.bzl` 在 external repository 中先下载并校验 archive，再装配 repository-owned metadata。Overlay 不能修改下载缓存，也不能反向引用仓库内的 library、component、project、board 或 tool target。Overlay 默认只提供 source/header/file group；需要 PAL、GizOS API 或 platform dependency 的编译规则属于对应 `libs/` 或 component owner。仓库明确直接使用的纯 upstream contract 可以在 overlay 中直接编译；仅用于补齐 upstream portable build 的 config header 放在 `third_party/<dependency>_patch/`，并通过 repository rule 的 `overlay_files` 在 analysis 前 materialize 到 external repository。该 config 不能 include GizOS header、改变 public API 或取得 platform lifecycle ownership。CMake/configure upstream 可以使用 `rules_foreign_cc`，但 action input 必须只来自已校验 archive、显式 overlay、Bazel toolchain 和声明的 upstream dependency。此类 target 对 consumer 暴露不带 host 后缀的稳定 label，平台选择只存在于 overlay 内部；`libs` 和 `native_component_src` 可以直接依赖它，不能为了转发同一个 upstream target 再创建 `native_component_src/<platform>/pkgs` wrapper。通用 repository rule、必要的 upstream configure adapter 和 graph tool 仍属于 `tools/bazel/`。
 
 GizOS 自己的跨平台 API 和 integration 应放在 `libs`，由原生 SDK 编译的 target adapter source 放在 `native_component_src`。App、BSP 和 launcher 不应直接把 third-party contract 当作 GizOS public API。
 

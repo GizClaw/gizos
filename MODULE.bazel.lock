@@ -315,6 +315,19 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//tools/bazel:release_inputs.bzl%release_inputs": {
+      "general": {
+        "bzlTransitiveDigest": "m11Se3m2zPsZf0fswmtL9YRcx0RlJefRFZCF6Qn4Ul4=",
+        "usagesDigest": "LIU8ZIfQBba0JNPFSj8BHKpvx7evMVMuDQWtrT5q+kY=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "h2_firmware_release_inputs": {
+            "repoRuleId": "@@//tools/bazel:release_inputs.bzl%_repository",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "//tools/bazel/native_repositories:bk_repositories.bzl%bk_repositories": {
       "general": {
         "bzlTransitiveDigest": "V9H8z4l68vtPorls4ip6FFM6oCoV6x/dAVRfIz3OoZE=",
@@ -517,6 +530,19 @@
         }
       }
     },
+    "//tools/bazel/toolchains/kickpi_k4b:repositories.bzl%kickpi_k4b_toolchain": {
+      "general": {
+        "bzlTransitiveDigest": "SRtv1DC8pthSko4tHMBc4QTrJhevWVrO2e10+GSgfK0=",
+        "usagesDigest": "ZVNN/uz/WNlBy5vTnZwUXlWs3S9skXRG4FBmhHGDwgM=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "k4b_arm_gnu_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/kickpi_k4b:repositories.bzl%_kickpi_k4b_toolchain_repository",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
         "bzlTransitiveDigest": "S/X+e8Ngh/EnnKW/yX28ZIxJCjnqDugVkciDkqpqvhs=",
@@ -688,8 +714,8 @@
     },
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
-        "bzlTransitiveDigest": "RkblBfNt9eEUVDVwUVWCukPXZrqKuoVafrz3h095Rw0=",
-        "usagesDigest": "D/YNRtYlVbTnxgKFZ6jLTyLrjLbLQOIkLJEmGArMTOg=",
+        "bzlTransitiveDigest": "CMDGYbE8LdlkxN5qej400MQLc4V0+UDGXL/CCEKf3kM=",
+        "usagesDigest": "VMM3MAsMp3QsLS3zvNz98wHVbWgrzFCJhqAPB339Rs4=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -710,104 +736,167 @@
             }
           },
           "h2_vendor_esp_serial_flasher": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:esp_serial_flasher.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/esp-serial-flasher",
               "patches": [
                 "@@//tools/bazel/vendor:patches/esp_serial_flasher_msvc_packing.patch",
                 "@@//tools/bazel/vendor:patches/esp_serial_flasher_msvc_weak.patch"
               ],
-              "source_is_gitlink": true
+              "sha256": "d3497d4f63b49f5cc5c6e87e81ad9a280d7fc9ac8fa37b7a5d9a722fbd40393c",
+              "strip_prefix": "esp-serial-flasher-71bac88f810728e178782c58aa73523356dfb48f",
+              "urls": [
+                "https://codeload.github.com/espressif/esp-serial-flasher/tar.gz/71bac88f810728e178782c58aa73523356dfb48f"
+              ]
             }
           },
           "h2_vendor_ffmpeg": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:ffmpeg.BUILD.bazel",
               "ffmpeg_configure_adapter": true,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/ffmpeg",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "2ae7e42343cfffb811d15cfe98b6d005f082595fcdf034d30a4ff90cfed9f9c6",
+              "strip_prefix": "FFmpeg-38b88335f99e76ed89ff3c93f877fdefce736c13",
+              "urls": [
+                "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/38b88335f99e76ed89ff3c93f877fdefce736c13"
+              ]
             }
           },
           "h2_vendor_gizclaw": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:gizclaw.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {
+                "third_party/nanopb/upstream": "10e5f014e91a540959cdb82ce486a25fb9a369cabefae128d9bda4ccb3598e30"
+              },
+              "nested_archive_strip_prefix": {
+                "third_party/nanopb/upstream": "nanopb-cad3c18ef15a663e30e3e43e3a752b66378adec1"
+              },
+              "nested_archive_urls": {
+                "third_party/nanopb/upstream": "https://codeload.github.com/GizClaw/nanopb/tar.gz/cad3c18ef15a663e30e3e43e3a752b66378adec1"
+              },
               "overlay_files": {},
-              "path": "third_party/gizclaw",
               "patches": [
                 "@@//tools/bazel/vendor:patches/gizclaw_ascii_ctype.patch",
                 "@@//tools/bazel/vendor:patches/gizclaw_json_ascii_ctype.patch"
               ],
-              "source_is_gitlink": true
+              "sha256": "d30c12a097a7fc59df4c5f761e9a66fc168613240d3b3696151e5fbdc3fff71d",
+              "strip_prefix": "gizclaw-763a46c41ebc99b6ba11e17ce875315dca4f2192",
+              "urls": [
+                "https://codeload.github.com/GizClaw/gizclaw/tar.gz/763a46c41ebc99b6ba11e17ce875315dca4f2192"
+              ]
             }
           },
           "h2_vendor_ikcp": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:ikcp.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/ikcp",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "291d08cd1fba918645a12078cbb6dfffa0825c57e33c0d0ec093604621bf3292",
+              "strip_prefix": "kcp-b1a7a2101dcbb96017681a500d6b82bbe5a88766",
+              "urls": [
+                "https://codeload.github.com/skywind3000/kcp/tar.gz/b1a7a2101dcbb96017681a500d6b82bbe5a88766"
+              ]
             }
           },
           "h2_vendor_yyjson": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:yyjson.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/yyjson",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "94e9c90f8f12d8329f2c0756782d21e5c278729023cd2c5fe47e323a35947ed6",
+              "strip_prefix": "yyjson-8b4a38dc994a110abaec8a400615567bd996105f",
+              "urls": [
+                "https://codeload.github.com/ibireme/yyjson/tar.gz/8b4a38dc994a110abaec8a400615567bd996105f"
+              ]
             }
           },
           "h2_vendor_corehttp": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:corehttp.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {
+                "source/dependency/3rdparty/llhttp": "ac1d762ad696e05cc6f8be52465632a2700af662b4682b2e6d13228d92fd5c09"
+              },
+              "nested_archive_strip_prefix": {
+                "source/dependency/3rdparty/llhttp": "llhttp-4fce8cac9433aa4728428bb3b26880d32ad05c88"
+              },
+              "nested_archive_urls": {
+                "source/dependency/3rdparty/llhttp": "https://codeload.github.com/nodejs/llhttp/tar.gz/4fce8cac9433aa4728428bb3b26880d32ad05c88"
+              },
               "overlay_files": {},
-              "path": "third_party/corehttp",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "b6e0e58f62a4fcc5de63adaa95a90975a1999a26d697edacf5bba7673369e4ad",
+              "strip_prefix": "coreHTTP-3c4a5838658cd6d0ff8fb7c3a14e30baafcbcd28",
+              "urls": [
+                "https://codeload.github.com/FreeRTOS/coreHTTP/tar.gz/3c4a5838658cd6d0ff8fb7c3a14e30baafcbcd28"
+              ]
             }
           },
           "h2_vendor_coremqtt": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:coremqtt.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/coremqtt",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "bb994633910488c899f99fff59cb3a798b73bf37e2bb6c8cd22935cca2b442d7",
+              "strip_prefix": "coreMQTT-2beef04725328923e05e576b884212d53ec97af7",
+              "urls": [
+                "https://codeload.github.com/FreeRTOS/coreMQTT/tar.gz/2beef04725328923e05e576b884212d53ec97af7"
+              ]
             }
           },
           "h2_vendor_libsrtp": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:libsrtp.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/libsrtp",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "063478e368d7cd13d04a908d152a46f90bfa728c4b324be6d413b0b92728207c",
+              "strip_prefix": "libsrtp-24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5",
+              "urls": [
+                "https://codeload.github.com/cisco/libsrtp/tar.gz/24b3bf8f19b6f5ab4cd2bcceb4f4064efca86fd5"
+              ]
             }
           },
           "h2_vendor_libco": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:libco.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {
                 "@@//third_party/libco_patch:libco.c": "src/libco.c",
                 "@@//third_party/libco_patch:backends/arm.c": "src/arm.c",
@@ -820,163 +909,243 @@
                 "@@//third_party/libco_patch:backends/riscv32/h2_libco_riscv32.c": "src/backends/riscv32/h2_libco_riscv32.c",
                 "@@//third_party/libco_patch:backends/riscv32/h2_libco_riscv32_internal.h": "src/backends/riscv32/h2_libco_riscv32_internal.h"
               },
-              "path": "third_party/libco",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "6e9f9a1e760e67c0708e5f4cbc3200f7783479e8d8d3ae0de64aac27b525f47c",
+              "strip_prefix": "libco-e18e09d634d612a01781168ad4d76be10a7e3bad",
+              "urls": [
+                "https://codeload.github.com/higan-emu/libco/tar.gz/e18e09d634d612a01781168ad4d76be10a7e3bad"
+              ]
             }
           },
           "h2_vendor_lua": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:lua.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/lua",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "b85ede9dbc4a4292addcfefebe15168acc7f1d42c674cc297d74f0e8ff2f2dd8",
+              "strip_prefix": "lua-a5522f06d2679b8f18534fd6a9968f7eb539dc31",
+              "urls": [
+                "https://codeload.github.com/lua/lua/tar.gz/a5522f06d2679b8f18534fd6a9968f7eb539dc31"
+              ]
             }
           },
           "h2_vendor_lvgl": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:lvgl.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {
                 "@@//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
                 "@@//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h"
               },
-              "path": "third_party/lvgl",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "68abe1316ce8f9a9ede55d89ad9788292753373ad4218480480ae81052fb005d",
+              "strip_prefix": "lvgl-237d06943a3f33d9f8e41597aadcc3a80cd461eb",
+              "urls": [
+                "https://codeload.github.com/lvgl/lvgl/tar.gz/237d06943a3f33d9f8e41597aadcc3a80cd461eb"
+              ]
             }
           },
           "h2_vendor_mklittlefs": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:mklittlefs.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {
+                "littlefs": "7b0c8daebbe7ca8bad1fc24b1f1d5b2c1be292f3781661c0f1f494dd5794f230"
+              },
+              "nested_archive_strip_prefix": {
+                "littlefs": "littlefs-6a53d76e90af33f0656333c1db09bd337fa75d23"
+              },
+              "nested_archive_urls": {
+                "littlefs": "https://codeload.github.com/littlefs-project/littlefs/tar.gz/6a53d76e90af33f0656333c1db09bd337fa75d23"
+              },
               "overlay_files": {},
-              "path": "third_party/mklittlefs",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "13c49072b88641c89b508d35862911ac56ecef723ce52b38ba0568dfeed7642d",
+              "strip_prefix": "mklittlefs-4aca4523e92398cdbdc08027f6dd2ba09ac700fe",
+              "urls": [
+                "https://codeload.github.com/earlephilhower/mklittlefs/tar.gz/4aca4523e92398cdbdc08027f6dd2ba09ac700fe"
+              ]
             }
           },
           "h2_vendor_opus": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:opus.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/opus",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "3267aa969b2b26542417f57819a5bc25d5079355300307dd2dddc7c704aed418",
+              "strip_prefix": "opus-22244de5a79bd1d6d623c32e72bf1954b56235be",
+              "urls": [
+                "https://codeload.github.com/xiph/opus/tar.gz/22244de5a79bd1d6d623c32e72bf1954b56235be"
+              ]
             }
           },
           "h2_vendor_pixa": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:pixa.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/pixa",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "2149259313211fa51d491a5be5af3dba616b4bb3e6f1f0647df4093b2f77053c",
+              "strip_prefix": "pixa-5bb311b60234e752f4e45e739c9c6719c2eec2af",
+              "urls": [
+                "https://codeload.github.com/GizClaw/pixa/tar.gz/5bb311b60234e752f4e45e739c9c6719c2eec2af"
+              ]
             }
           },
           "h2_vendor_pixelroot32": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:pixelroot32.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/pixelroot32",
               "patches": [
                 "@@//tools/bazel/vendor:patches/pixelroot32_msvc_display_guard.patch",
                 "@@//tools/bazel/vendor:patches/pixelroot32_msvc_shadow.patch",
                 "@@//tools/bazel/vendor:patches/pixelroot32_portable_popcount.patch"
               ],
-              "source_is_gitlink": true
+              "sha256": "22570ef5f5b640d00bc8dcf2c56ee6bc2884af035f08845562bbc832f1c1e3bf",
+              "strip_prefix": "PixelRoot32-Game-Engine-46ae7b4a4a904537ec22e8856c4e812a2f04cf95",
+              "urls": [
+                "https://codeload.github.com/PixelRoot32-Game-Engine/PixelRoot32-Game-Engine/tar.gz/46ae7b4a4a904537ec22e8856c4e812a2f04cf95"
+              ]
             }
           },
           "h2_vendor_portaudio": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:portaudio.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/portaudio",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "b397f7ffd82d8bc62d2ee6022f947d8446c8e90b451fb95b494093ef5c14e5dc",
+              "strip_prefix": "portaudio-f88b5841575b43bfa024a6861635b69d7eb98d6d",
+              "urls": [
+                "https://codeload.github.com/PortAudio/portaudio/tar.gz/f88b5841575b43bfa024a6861635b69d7eb98d6d"
+              ]
             }
           },
           "h2_vendor_sdl3": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:sdl3.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/sdl3",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "363ab3eb2225d700bf0b67bc16349f9949125c747ac50da3ba805c2d3a61b2a0",
+              "strip_prefix": "SDL-f87239e71e42da91ca317a12eefb82cfbf3393eb",
+              "urls": [
+                "https://codeload.github.com/libsdl-org/SDL/tar.gz/f87239e71e42da91ca317a12eefb82cfbf3393eb"
+              ]
             }
           },
           "h2_vendor_speexdsp": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:speexdsp.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {
                 "@@//third_party/speexdsp_patch:speexdsp_config_types.h": "src/include/speex/speexdsp_config_types.h"
               },
-              "path": "third_party/speexdsp",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "ca9c57302f86fb5cfe675745b1ec9f5843d8c339a250d8957100c3c106bdd194",
+              "strip_prefix": "speexdsp-7a158783df74efe7c2d1c6ee8363c1e695c71226",
+              "urls": [
+                "https://codeload.github.com/xiph/speexdsp/tar.gz/7a158783df74efe7c2d1c6ee8363c1e695c71226"
+              ]
             }
           },
           "h2_vendor_sqlite": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_local_vendor_repository",
             "attributes": {
               "build_file": "@@//third_party:sqlite.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
               "overlay_files": {},
-              "path": "third_party/sqlite",
               "patches": [],
-              "source_is_gitlink": false
+              "path": "third_party/sqlite"
             }
           },
           "h2_vendor_tinyh264": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:tinyh264.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/tinyh264",
               "patches": [
                 "@@//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"
               ],
-              "source_is_gitlink": true
+              "sha256": "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
+              "strip_prefix": "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",
+              "urls": [
+                "https://codeload.github.com/udevbe/tinyh264/tar.gz/524a702b6d98f8b9271238fdda9a064a1e6861e7"
+              ]
             }
           },
           "h2_vendor_wolfssl": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:wolfssl.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/wolfssl",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "94c2a0bd2cac88bf644482e1957c6c4141a606bc59a7e26c499bcf116040575a",
+              "strip_prefix": "wolfssl-6074a2dbe84db676a25bced7924f90ad5acdc63c",
+              "urls": [
+                "https://codeload.github.com/wolfSSL/wolfssl/tar.gz/6074a2dbe84db676a25bced7924f90ad5acdc63c"
+              ]
             }
           },
           "h2_vendor_zlib": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_gitlink_repository",
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
             "attributes": {
               "build_file": "@@//third_party:zlib.BUILD.bazel",
               "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
               "overlay_files": {},
-              "path": "third_party/zlib",
               "patches": [],
-              "source_is_gitlink": true
+              "sha256": "b9258cf6254e7f7c37f1cd61dba943a1c5ea3cff5718c789834dac359094f5f7",
+              "strip_prefix": "zlib-da607da739fa6047df13e66a2af6b8bec7c2a498",
+              "urls": [
+                "https://codeload.github.com/madler/zlib/tar.gz/da607da739fa6047df13e66a2af6b8bec7c2a498"
+              ]
             }
           }
         }
@@ -1540,6 +1709,26 @@
                 ]
               },
               "toolchain_target_settings": {}
+            }
+          }
+        }
+      }
+    },
+    "@@toolchains_llvm+//toolchain/extensions:distributions.bzl%llvm_distributions": {
+      "general": {
+        "bzlTransitiveDigest": "gCdXpBt3HBBc280OILOFheHmO7lXWXJYnPgYiTtyapI=",
+        "usagesDigest": "VyKGZSw79ryPJ9gt0sqBfIkA7qGOU6tnlDHd7awkb6Q=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "llvm_distributions_data": {
+            "repoRuleId": "@@toolchains_llvm+//toolchain/internal:distributions_repo.bzl%llvm_distributions_repo",
+            "attributes": {
+              "srcs": [
+                "@@toolchains_llvm+//toolchain/distributions:pre_github.jsonc",
+                "@@toolchains_llvm+//toolchain/distributions:github_legacy.jsonc",
+                "@@toolchains_llvm+//toolchain/distributions:github.jsonc",
+                "@@toolchains_llvm+//toolchain/distributions:extra.jsonc"
+              ]
             }
           }
         }

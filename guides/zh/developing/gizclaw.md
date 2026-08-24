@@ -42,10 +42,10 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 ## 上游 API 同步
 
-`third_party/gizclaw/sdk/c/gizclaw/generated` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。Pet、Points 或其它 RPC schema 更新时，先更新 `third_party/gizclaw` gitlink，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+`@h2_vendor_gizclaw//src/sdk/c/gizclaw/generated` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。Pet、Points 或其它 RPC schema 更新时，先更新 `MODULE.bazel` 中 `h2_vendor_gizclaw` 的 immutable archive pin、SHA-256 与 extracted root，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
-当前 gitlink 固定为 release tag `v0.3.1` 对应的
-`ddf02c1743eb3a12524523156b7f1fbf45132427`。Wire message 使用
+当前 archive 固定为 commit
+`763a46c41ebc99b6ba11e17ce875315dca4f2192`。Wire message 使用
 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；
 将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有
 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性
@@ -70,7 +70,7 @@ Firmware channel 是原子 breaking update，不保留旧 `firmware_name` alias 
 服务端版本；上述 record/relationship public ID 则是兼容 contract。method 64 不再是
 FriendGroup message send；该 RPC 和 wrapper 已删除，后续方法按生成 registry 重编号，
 FriendGroup message audio-get 固定为 method 95。生成的 protobuf/RPC 文件只能随
-submodule 更新，GizOS 不手工修改。
+upstream archive pin 更新，GizOS 不手工修改。
 
 API Reference 从 `libs/gizclaw/include` 的生产 Public Header 生成。完成上游同步和 adapter 修改后，在仓库根目录运行 `make guides-build`，使 `/references/gizclaw` 展示当前 wrapper 的 method、参数、ownership 和生命周期；不手工编辑 `.generated/api`。
 

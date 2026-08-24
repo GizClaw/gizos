@@ -29,7 +29,7 @@ make cfg-doctor
 
 颜色会根据 stdout 是否连接交互式终端、`CI` 和 `TERM=dumb` 自动关闭。`NO_COLOR=1` 可以显式关闭，`FORCE_COLOR=1` 可以在日志采集等非交互环境中强制开启。
 
-裸 `make` 只显示 help，不初始化 submodule、不加载 environment、不安装依赖，也不启动进程或 listener。`make cfg-submodules` 显式初始化仓库 `.gitmodules` 中的全部 root submodule，不递归拉取与本仓库构建无关的上游专用 submodule。
+裸 `make` 只显示 help，不解析 Bazel dependency、不加载 environment、不安装依赖，也不启动进程或 listener。GizOS 的公开 upstream source 由 Bazel 按 `MODULE.bazel` 中的 immutable archive pin 和 SHA-256 digest 下载并校验，不需要初始化仓库 submodule。
 
 根目录 `make cfg-doctor` 按以下顺序加载 shell environment；其他 Make target 不隐式加载：
 

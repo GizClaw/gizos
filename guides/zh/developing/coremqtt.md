@@ -1,6 +1,6 @@
 # CoreMQTT
 
-`libs/pal/providers/coremqtt` 将 `third_party/coremqtt` 集成为 GizOS 的 MQTT 实现，并向上提供 `h2_pal_mqtt_api_t`。
+`libs/pal/providers/coremqtt` 将 `@h2_vendor_coremqtt` 集成为 GizOS 的 MQTT 实现，并向上提供 `h2_pal_mqtt_api_t`。
 
 ## API Reference
 

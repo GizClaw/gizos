@@ -52,7 +52,7 @@ Desktop backend 使用的 host 能力包括：
 - pthread 提供线程和同步能力。
 - SDL3 提供 Desktop host 的 display、window 和 input integration；它不进入 T113 或其他嵌入式 target。
 - PortAudio 提供音频设备 integration。
-- 仓库 gitlink `third_party/wolfssl` 由 `libs/pal/providers/wolfssl` 集成为静态链接的完整 wolfSSL/DTLS 与裁剪 wolfCrypt variants；Desktop 使用 `//libs/pal/providers/wolfssl:wolfssl`，受限固件使用 `//libs/pal/providers/wolfssl:wolfcrypt`。
+- Verified external repository `@h2_vendor_wolfssl` 由 `libs/pal/providers/wolfssl` 集成为静态链接的完整 wolfSSL/DTLS 与裁剪 wolfCrypt variants；Desktop 使用 `//libs/pal/providers/wolfssl:wolfssl`，受限固件使用 `//libs/pal/providers/wolfssl:wolfcrypt`。
 - SQLite 提供 filesystem-backed preference storage。
 - `libs/audio_mixer`、`libs/pal/providers/h2peer` 和 `libs/pal/providers/coremqtt` 提供跨平台 integration。
 
@@ -180,7 +180,7 @@ bazel build --config=macos_arm64 //projects/example/targets/macos_application/ta
 
 H2Loader 的工厂 Batch Loader 是独立 Web 产品，不属于通用 Desktop component，也不由 macOS application bundle 发布。
 
-`macos_arm64` Bazel config 固定 macOS 13.0 minimum deployment target。SDL3、PortAudio、FFmpeg 和 wolfSSL 继续由固定 vendor gitlink 与 Bazel dependency graph 提供；Desktop target 不读取 Homebrew、`/usr/local` 或调用方提供的 dependency prefix。
+`macos_arm64` Bazel config 固定 macOS 13.0 minimum deployment target。SDL3、PortAudio、FFmpeg 和 wolfSSL 继续由固定 vendor archive 与 Bazel dependency graph 提供；Desktop target 不读取 Homebrew、`/usr/local` 或调用方提供的 dependency prefix。
 
 每个 Desktop package 的 `BUILD.bazel` 只声明自身 source、public header、runtime data 和 exact dependency。主要 ownership 是：
 
@@ -202,7 +202,7 @@ third_party/speexdsp_patch/BUILD.bazel
 
 Bazel 负责组合 C、C++、third-party library 和 host system library，但不能用来包装 ESP-IDF 或 Armino firmware build。
 
-Desktop PAL 直接依赖上述稳定 vendor label；`rules_apple` 从 Launcher 的 linking context 收集 macOS versioned dylib，不维护第二个 runtime filegroup。Linux foreign build 必须分别声明无 ABI 版本的 linker-name output 和带 ABI 版本的 SONAME runtime output：前者进入 C++ linking context，使 hermetic Zig linker 使用可移植的 `-lfoo`，后者作为独立 Bazel output 供 runfiles 使用。两者都必须在 foreign action 内解引用为普通文件；不能使用 Zig linker 不支持的 GNU `-l:libfoo.so.N`，也不能让声明产物继续指向未被 Bazel 收集的完整版本文件。macOS vendor target 仍把 versioned dylib 直接作为 linking output。Linux 只把 X11、ALSA 等 OS service development boundary 作为明确 host dependency，不能重新引入发行版 curl、SDL2、PortAudio 或 FFmpeg development package。HTTP 由 `libs/pal/providers/corehttp` 静态进入 consumer；Desktop Net PAL 的 TLS 实现由仓库 wolfSSL gitlink 静态进入 binary。Linux x86_64 foreign CMake target 显式使用发行版 dev package 的 `/usr/lib/x86_64-linux-gnu` 查找 X11、ALSA 等 OS service library，并用 `-idirafter /usr/include` 在 hermetic libc headers 之后补充这些 OS service headers；不能依赖 hermetic compiler 自动推断 host multiarch 路径，也不能让 host libc headers 覆盖 toolchain sysroot。两个平台都不能通过 build option、环境变量、Homebrew 或其他 mutable prefix 注入这些 upstream dependency。
+Desktop PAL 直接依赖上述稳定 vendor label；`rules_apple` 从 Launcher 的 linking context 收集 macOS versioned dylib，不维护第二个 runtime filegroup。Linux foreign build 必须分别声明无 ABI 版本的 linker-name output 和带 ABI 版本的 SONAME runtime output：前者进入 C++ linking context，使 hermetic Zig linker 使用可移植的 `-lfoo`，后者作为独立 Bazel output 供 runfiles 使用。两者都必须在 foreign action 内解引用为普通文件；不能使用 Zig linker 不支持的 GNU `-l:libfoo.so.N`，也不能让声明产物继续指向未被 Bazel 收集的完整版本文件。macOS vendor target 仍把 versioned dylib 直接作为 linking output。Linux 只把 X11、ALSA 等 OS service development boundary 作为明确 host dependency，不能重新引入发行版 curl、SDL2、PortAudio 或 FFmpeg development package。HTTP 由 `libs/pal/providers/corehttp` 静态进入 consumer；Desktop Net PAL 的 TLS 实现由 verified wolfSSL archive 静态进入 binary。Linux x86_64 foreign CMake target 显式使用发行版 dev package 的 `/usr/lib/x86_64-linux-gnu` 查找 X11、ALSA 等 OS service library，并用 `-idirafter /usr/include` 在 hermetic libc headers 之后补充这些 OS service headers；不能依赖 hermetic compiler 自动推断 host multiarch 路径，也不能让 host libc headers 覆盖 toolchain sysroot。两个平台都不能通过 build option、环境变量、Homebrew 或其他 mutable prefix 注入这些 upstream dependency。
 
 Desktop Net PAL 使用固定容量的 asynchronous resolver worker 实现 `resolve_start`/`resolve_poll`/`resolve_close`。portable consumer 的同一个总 deadline 必须覆盖 DNS、connect、TLS 和 HTTP I/O；capacity 用尽时返回 `H2_PAL_ERR_NO_SPACE`，close 不等待 worker，迟到结果由 backend 自行回收。该 worker 只提供 Net PAL contract，不能重新引入 Desktop HTTP backend。
 

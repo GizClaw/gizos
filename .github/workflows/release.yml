@@ -37,7 +37,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          submodules: recursive
+          submodules: false
           persist-credentials: false
 
       - id: app-token
@@ -177,7 +177,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
-          submodules: recursive
+          submodules: false
           persist-credentials: false
 
       - id: app-token
@@ -320,7 +320,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
-          submodules: recursive
+          submodules: false
           persist-credentials: false
 
       - id: app-token
@@ -448,7 +448,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          submodules: recursive
+          submodules: false
           persist-credentials: false
 
       - name: Authenticate read-write Bazel remote cache

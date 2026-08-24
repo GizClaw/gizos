@@ -1,7 +1,9 @@
-set(OPUS_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/opus")
-
 include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(OPUS_SOURCES opus_port)
+h2_bazel_native_component_select_sources(OPUS_ROOT_MARKER opus_port src/opus.c)
+list(GET OPUS_ROOT_MARKER 0 OPUS_ROOT_MARKER)
+get_filename_component(OPUS_ROOT_SRC "${OPUS_ROOT_MARKER}" DIRECTORY)
+get_filename_component(OPUS_ROOT "${OPUS_ROOT_SRC}" DIRECTORY)
 
 idf_component_register(
     SRCS ${OPUS_SOURCES}

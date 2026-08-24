@@ -2,12 +2,16 @@ REPO_ROOT := $(abspath ../../..)
 BUILD_DIR ?= build/probes
 HOST_CC ?= cc
 HOST_CFLAGS := -std=c11 -Wall -Wextra -Werror
+BAZEL ?= bazel
+BAZEL_EXECUTION_ROOT = $(shell cd $(REPO_ROOT) && $(BAZEL) info execution_root 2>/dev/null)
+LIBCO_SOURCE = $(firstword $(shell cd $(REPO_ROOT) && $(BAZEL) cquery --output=files @h2_vendor_libco//:implementation_sources 2>/dev/null))
+LIBCO_ROOT = $(abspath $(BAZEL_EXECUTION_ROOT)/$(dir $(LIBCO_SOURCE)))
 BK3633_PATH ?=
 BK3633_SDK_ROOT := $(if $(strip $(BK3633_PATH)),$(abspath $(BK3633_PATH)/SDK))
 INCLUDES := -Iinclude \
 	-I$(REPO_ROOT)/libs/drivers/rtc/bm8563/include \
 	-I$(REPO_ROOT)/libs/pal/providers/libco/include \
-	-I$(REPO_ROOT)/third_party/libco \
+	-I$(LIBCO_ROOT) \
 	-I$(REPO_ROOT)/libs/pal/include
 
 .PHONY: tests probes ble_sdk_probe button_sdk_probe buzzer_sdk_probe \
@@ -68,15 +72,15 @@ libco_arm_probe:
 		-std=c11 -Wall -Wextra -Werror -Wno-unused-value -ffreestanding \
 		-mcpu=arm968e-s -march=armv5te -marm -mthumb-interwork \
 		-I$(REPO_ROOT)/libs/pal/providers/libco/include \
-		-I$(REPO_ROOT)/third_party/libco \
+		-I$(LIBCO_ROOT) \
 		-c probes/src/libco_arm_probe.c \
 		-o $(BUILD_DIR)/libco-arm/probe.o
 	$(COMPILER_TOOLCHAIN_PATH)/arm-none-eabi-gcc \
 		-std=c11 -Wall -Wextra -Werror -Wno-unused-value -ffreestanding \
 		-ffunction-sections -fdata-sections \
 		-mcpu=arm968e-s -march=armv5te -marm -mthumb-interwork \
-		-I$(REPO_ROOT)/third_party/libco \
-		-c $(REPO_ROOT)/third_party/libco/libco.c \
+		-I$(LIBCO_ROOT) \
+		-c $(LIBCO_ROOT)/libco.c \
 		-o $(BUILD_DIR)/libco-arm/libco.o
 	$(COMPILER_TOOLCHAIN_PATH)/arm-none-eabi-nm \
 		$(BUILD_DIR)/libco-arm/libco.o | grep -q ' T co_derive$$'

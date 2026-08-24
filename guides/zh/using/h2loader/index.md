@@ -14,7 +14,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 完整命令见 [H2Loader CLI](./cli)。
 
-裸 `make` 只显示 target help，不初始化 submodule、不加载 environment、不安装依赖，也不启动进程或 listener：
+裸 `make` 只显示 target help，不解析 Bazel dependency、不加载 environment、不安装依赖，也不启动进程或 listener：
 
 ```sh
 make
@@ -48,12 +48,6 @@ make -C ../firmwares-devenv
 `.env/users/<os-user>.md` 是供用户和 Agent 阅读的本机 operator context，不是 shell env，`make` 不会 source 它。直接执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader --` 也不会主动加载 operation env，只使用当前进程已经继承的环境。
 
 ## Repository maintenance
-
-显式初始化仓库 submodule：
-
-```sh
-make cfg-submodules
-```
 
 启动 VitePress Documentation 开发服务器：
 
