@@ -46,6 +46,7 @@ cd "$consumer_root"
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    //:bk3633_test_support_consumer \
     //:firmware_lib \
     //:native_component \
     //:package \

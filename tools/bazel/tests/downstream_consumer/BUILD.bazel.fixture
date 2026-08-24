@@ -1,3 +1,4 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -6,6 +7,17 @@ load(":consumer.bzl", "fake_firmware")
 alias(
     name = "runtime",
     actual = "@gizos//libs/runtime",
+)
+
+cc_library(
+    name = "bk3633_test_support_consumer",
+    testonly = True,
+    srcs = ["consumer.c"],
+    deps = [
+        "@gizos//libs/runtime",
+        "@gizos//native_component_src/bk3633/h2_pal_core:fake_trng",
+        "@gizos//native_component_src/bk3633/h2_pal_core:mem_test_support",
+    ],
 )
 
 firmware_native_component(
