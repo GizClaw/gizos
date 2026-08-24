@@ -12,7 +12,9 @@ idf_component_register(
     esp_audio_codec
     esp_hw_support
     esp_timer
-    h2_pal_core)
+    h2_pal_core
+  PRIV_REQUIRES
+    opus_port)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra -Werror)
 target_link_options(${COMPONENT_LIB} INTERFACE

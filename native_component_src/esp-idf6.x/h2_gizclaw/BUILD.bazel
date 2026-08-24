@@ -45,5 +45,6 @@ firmware_native_component(
     deps = [
         "//libs/gizclaw",
         "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
     ],
 )
