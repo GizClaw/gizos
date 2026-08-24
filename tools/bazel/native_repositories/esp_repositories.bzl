@@ -100,7 +100,13 @@ def _system_executable(repository_ctx, name):
     return matches[0]
 
 def _watch_git_state(repository_ctx, root):
-    repository_ctx.watch_tree(root, exclude = [".git/**"])
+    for candidate in root.readdir():
+        if candidate.basename == ".git":
+            continue
+        if candidate.is_dir:
+            repository_ctx.watch_tree(candidate)
+        else:
+            repository_ctx.watch(candidate)
     dot_git = root.get_child(".git")
     if not dot_git.exists:
         return

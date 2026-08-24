@@ -23,10 +23,13 @@ class ExternalNativeRootsTest(unittest.TestCase):
             ROOT / "tools/bazel/native_repositories/bk_repositories.bzl",
             ROOT / "tools/bazel/native_repositories/repositories.bzl",
         )
-        expected = 'repository_ctx.watch_tree(root, exclude = [".git/**"])'
         for path in paths:
             with self.subTest(path=path.relative_to(ROOT)):
-                self.assertIn(expected, path.read_text(encoding="utf-8"))
+                text = path.read_text(encoding="utf-8")
+                self.assertIn('if candidate.basename == ".git":', text)
+                self.assertIn("repository_ctx.watch_tree(candidate)", text)
+                self.assertIn("repository_ctx.watch(candidate)", text)
+                self.assertNotIn("exclude =", text)
 
 
 if __name__ == "__main__":
