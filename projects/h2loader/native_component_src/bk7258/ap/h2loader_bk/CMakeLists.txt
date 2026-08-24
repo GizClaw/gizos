@@ -4,7 +4,6 @@ set(H2_BK_H2LOADER_SRCS
   "src/h2_bk_h2loader_app_control.c"
   "src/h2_bk_h2loader_app_bleikcp.c"
   "src/h2_bk_h2loader_iostreamikcp.c"
-  "src/h2_bk_h2loader_task_policy.c"
   "src/h2_bk_h2loader_ota_writer.c"
   "src/h2_bk_h2loader_power.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_app_client.c"

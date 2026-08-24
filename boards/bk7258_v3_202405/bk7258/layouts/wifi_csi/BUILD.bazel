@@ -1,4 +1,76 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
 package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "ap_task_policy",
+    srcs = ["task_policy/ap/src/h2_bk_layout_task_policy.c"],
+    hdrs = ["task_policy/ap/include/h2_bk_layout_task_policy.h"],
+    component_directory = "boards/bk7258_v3_202405/bk7258/layouts/wifi_csi/task_policy/ap",
+    component_name = "h2_bk_layout_task_policy",
+    data = ["task_policy/ap/CMakeLists.txt"],
+    execution_unit = "ap",
+    deps = ["//native_component_src/bk7258/ap/h2_pal_core"],
+)
+
+firmware_native_component(
+    name = "cp_task_policy",
+    srcs = ["task_policy/cp/src/h2_bk_layout_task_policy.c"],
+    hdrs = ["task_policy/cp/include/h2_bk_layout_task_policy.h"],
+    component_directory = "boards/bk7258_v3_202405/bk7258/layouts/wifi_csi/task_policy/cp",
+    component_name = "h2_bk_layout_task_policy",
+    data = ["task_policy/cp/CMakeLists.txt"],
+    execution_unit = "cp",
+    deps = ["//native_component_src/bk7258/cp/h2_pal_core"],
+)
+
+cc_test(
+    name = "ap_task_policy_test",
+    srcs = [
+        "task_policy/ap/include/h2_bk_layout_task_policy.h",
+        "task_policy/ap/src/h2_bk_layout_task_policy.c",
+        "task_policy/ap/tests/sdk/h2_bk_platform_core.h",
+        "task_policy/ap/tests/test_h2_bk_layout_task_policy.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "task_policy/ap/include",
+        "task_policy/ap/tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "cp_task_policy_test",
+    srcs = [
+        "task_policy/cp/include/h2_bk_layout_task_policy.h",
+        "task_policy/cp/src/h2_bk_layout_task_policy.c",
+        "task_policy/cp/tests/sdk/h2_bk_platform_core.h",
+        "task_policy/cp/tests/test_h2_bk_layout_task_policy.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "task_policy/cp/include",
+        "task_policy/cp/tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
 
 exports_files([
     "ap.defaults",

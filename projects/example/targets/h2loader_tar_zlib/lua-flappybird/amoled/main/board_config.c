@@ -1,9 +1,9 @@
 #include "board_config.h"
+#include "h2_esp_layout_task_policy.h"
 
 #include "h2_esp_board.h"
 #include "h2_esp_board_config.h"
-#include "h2_esp_platform_core.h"
-#include "h2_lua_flappybird.h"
+#include "h2_esp_platform_core.h"#include "h2_lua_flappybird.h"
 
 #include <stddef.h>
 
@@ -46,7 +46,10 @@ static const h2_runtime_component_mapper_t s_mapper = {
 
 h2_pal_result_t
 h2_lua_flappybird_amoled_runtime_config(h2_runtime_config_t *out_config) {
-  h2_pal_result_t result = h2_esp_board_runtime_config(out_config);
+  h2_pal_result_t result = h2_esp_layout_task_policy_install();
+  if (result != H2_PAL_OK)
+    return result;
+  result = h2_esp_board_runtime_config(out_config);
   if (result != H2_PAL_OK)
     return result;
   out_config->component_mapper = &s_mapper;

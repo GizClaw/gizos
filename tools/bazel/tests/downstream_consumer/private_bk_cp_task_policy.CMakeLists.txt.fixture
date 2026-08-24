@@ -1,0 +1,1 @@
+armino_component_register(SRCS "private_bk_cp_task_policy.c" INCLUDE_DIRS "." PRIV_REQUIRES h2_pal_core)

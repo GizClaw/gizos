@@ -40,6 +40,35 @@ firmware_native_component(
     ],
 )
 
+firmware_native_component(
+    name = "private_esp_task_policy",
+    component_directory = "private_esp_task_policy",
+    component_name = "h2_esp_layout_task_policy",
+    srcs = ["private_esp_task_policy/private_esp_task_policy.c"],
+    hdrs = ["private_esp_task_policy/private_esp_task_policy.h"],
+    data = ["private_esp_task_policy/CMakeLists.txt"],
+)
+
+firmware_native_component(
+    name = "private_bk_ap_task_policy",
+    component_directory = "private_bk_ap_task_policy",
+    component_name = "h2_bk_layout_task_policy",
+    execution_unit = "ap",
+    srcs = ["private_bk_ap_task_policy/private_bk_ap_task_policy.c"],
+    hdrs = ["private_bk_ap_task_policy/private_bk_ap_task_policy.h"],
+    data = ["private_bk_ap_task_policy/CMakeLists.txt"],
+)
+
+firmware_native_component(
+    name = "private_bk_cp_task_policy",
+    component_directory = "private_bk_cp_task_policy",
+    component_name = "h2_bk_layout_task_policy",
+    execution_unit = "cp",
+    srcs = ["private_bk_cp_task_policy/private_bk_cp_task_policy.c"],
+    hdrs = ["private_bk_cp_task_policy/private_bk_cp_task_policy.h"],
+    data = ["private_bk_cp_task_policy/CMakeLists.txt"],
+)
+
 firmware_lib_component(
     name = "firmware_lib",
     deps = [
@@ -81,6 +110,7 @@ h2loader_esp_idf_firmware(
     layout_files = {
         "partition": ":partition.csv",
         "project_support_files": [":sdkconfig.h2loader.defaults"],
+        "task_policy": ":private_esp_task_policy",
     },
     project = "CMakeLists.txt",
     project_name = "private_esp_consumer",
@@ -97,6 +127,8 @@ h2loader_bk7258_firmware(
         "cp_gpio": ":cp_gpio",
         "project_support_files": [":layout"],
         "ram_regions": ":ram_regions.csv",
+        "ap_task_policy": ":private_bk_ap_task_policy",
+        "cp_task_policy": ":private_bk_cp_task_policy",
     },
     project = "CMakeLists.txt",
     project_name = "private_bk_consumer",

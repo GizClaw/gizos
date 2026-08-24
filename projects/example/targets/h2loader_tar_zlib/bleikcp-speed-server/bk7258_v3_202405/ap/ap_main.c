@@ -1,6 +1,7 @@
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_bleikcp_speed.h"
+#include "h2_bk_layout_task_policy.h"
 
 #include "bk_private/bk_init.h"
 #include "os/os.h"
@@ -54,9 +55,6 @@ static void app_entry(void *user) {
         emit_marker("H2_BK_SPEED_STAGE stage=runtime_init rc=%d", rc);
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_bk_h2loader_configure_app_task_policy();
-    }
-    if (rc == H2_PAL_OK) {
         rc = h2_bk_h2loader_start_app_iostreamikcp(
             runtime, "bleikcp-speed-server");
         emit_marker("H2_BK_SPEED_STAGE stage=app_cli rc=%d", rc);
@@ -81,6 +79,9 @@ static void app_entry(void *user) {
 }
 
 int main(void) {
+    if (h2_bk_layout_task_policy_install() != H2_PAL_OK) {
+        return -1;
+    }
     emergency_uart_write_string(0, "H2_BK_AP_MAIN image=bleikcp-speed-server\r\n");
     bk_init();
     emergency_uart_write_string(0, "H2_BK_AP_MAIN image=bleikcp-speed-server stage=after_bk_init\r\n");
