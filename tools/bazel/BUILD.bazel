@@ -221,6 +221,22 @@ py_test(
     ],
 )
 
+py_test(
+    name = "external_native_roots_test",
+    srcs = ["tests/test_external_native_roots.py"],
+    data = [
+        "//native_component_src/bk7258/ap/lvgl_port:CMakeLists.txt",
+        "//native_component_src/esp-idf6.x/lvgl_port:CMakeLists.txt",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_external_native_roots.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 py_binary(
     name = "bk7258_runner",
     srcs = ["bk7258_runner.py"],
