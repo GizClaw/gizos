@@ -79,12 +79,15 @@ jobs:
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 
-      - name: Build package
+      - name: Build and validate package
         if: steps.package.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/bazel" build --config=linux_x86_64 "$PACKAGE_LABEL"
+          "$RUNNER_TEMP/bazel" run --config=linux_x86_64 "$PACKAGE_LABEL.publish" -- \
+            --dry-run \
+            --ignore-scripts
 
       - name: Publish package
         if: steps.package.outputs.publish == 'true'

@@ -223,6 +223,13 @@ jobs:
       - name: Build compatible graph
         run: make bazel-build
 
+      - name: Validate H2Loader npm package
+        if: matrix.config == 'linux_x86_64'
+        run: >-
+          "$BAZEL_BIN" run --config="$BAZEL_CONFIG"
+          //projects/h2loader/targets/npm_package/h2loader:h2loader.publish --
+          --dry-run --ignore-scripts
+
       - name: Test compatible graph
         if: matrix.task == 'build-test'
         run: make bazel-test
