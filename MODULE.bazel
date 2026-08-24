@@ -89,7 +89,11 @@ register_toolchains(
     "@emsdk//emscripten_toolchain:cc-toolchain-wasm-emscripten_win",
 )
 
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm = use_extension(
+    "@aspect_rules_js//npm:extensions.bzl",
+    "npm",
+    dev_dependency = True,
+)
 npm.npm_translate_lock(
     name = "guides_npm",
     pnpm_lock = "//guides:pnpm-lock.yaml",
