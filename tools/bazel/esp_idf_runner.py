@@ -21,6 +21,7 @@ from tools.bazel.native_ccache import (
 )
 from tools.bazel.native_runtime import (
     NativeRuntimeError,
+    find_external_repository_root,
     find_unique_executable,
     fixed_environment,
     locator_path,
@@ -724,6 +725,23 @@ def run(arguments: argparse.Namespace) -> None:
     subprocess_environment["H2_GIZOS_ROOT"] = str(GIZOS_ROOT)
     subprocess_environment["H2_FIRMWARE_VERSION"] = arguments.version
     subprocess_environment["H2_BAZEL_NATIVE_ARTIFACTS_ONLY"] = "1"
+    prebuilt_include_paths = [
+        path
+        for paths in prebuilt_component_includes.values()
+        for path in paths
+    ]
+    for variable, repository_name in (
+        ("H2_PIXA_UPSTREAM_ROOT", "h2_vendor_pixa"),
+        ("H2_PIXELROOT32_UPSTREAM_ROOT", "h2_vendor_pixelroot32"),
+    ):
+        try:
+            repository_root = find_external_repository_root(
+                prebuilt_include_paths, repository_name
+            )
+        except NativeRuntimeError as error:
+            raise RunnerError(str(error)) from error
+        if repository_root is not None:
+            subprocess_environment[variable] = str(repository_root)
     with tempfile.TemporaryDirectory(prefix=f"h2-esp-idf-{arguments.target}-") as temporary:
         temporary_root = Path(temporary)
         wrapper_directory = create_ninja_wrapper(

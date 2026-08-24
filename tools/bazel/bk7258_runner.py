@@ -21,6 +21,7 @@ from tools.bazel.native_ccache import (
 )
 from tools.bazel.native_runtime import (
     NativeRuntimeError,
+    find_external_repository_root,
     fixed_environment,
     locator_path,
     read_locator,
@@ -780,6 +781,23 @@ def run(arguments: argparse.Namespace) -> None:
                 "H2_REPO_ROOT": str(source_root),
             }
         )
+        prebuilt_include_paths = [
+            path
+            for paths in prebuilt_component_includes.values()
+            for path in paths
+        ]
+        for variable, repository_name in (
+            ("H2_PIXA_UPSTREAM_ROOT", "h2_vendor_pixa"),
+            ("H2_PIXELROOT32_UPSTREAM_ROOT", "h2_vendor_pixelroot32"),
+        ):
+            try:
+                repository_root = find_external_repository_root(
+                    prebuilt_include_paths, repository_name
+                )
+            except NativeRuntimeError as error:
+                raise RunnerError(str(error)) from error
+            if repository_root is not None:
+                subprocess_environment[variable] = str(repository_root)
         try:
             ccache = configure_ccache_environment(
                 subprocess_environment,
