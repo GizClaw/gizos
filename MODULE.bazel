@@ -208,6 +208,7 @@ register_toolchains(
 coverage_llvm = use_extension(
     "@toolchains_llvm//toolchain/extensions:llvm.bzl",
     "llvm",
+    dev_dependency = True,
 )
 coverage_llvm.toolchain(
     name = "gizos_coverage_llvm_toolchain",
