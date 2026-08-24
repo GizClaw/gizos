@@ -27,3 +27,17 @@ esp32s3_cc.locators(
 use_repo(esp32s3_cc, "gizos_esp32s3_cc_toolchain")
 
 register_toolchains("@gizos_esp32s3_cc_toolchain//:toolchain")
+
+bk_repositories = use_extension(
+    "@gizos//tools/bazel/native_repositories:bk_repositories.bzl",
+    "bk_repositories",
+)
+use_repo(bk_repositories, "gizos_bk_arm_toolchain")
+
+local_embedded_cc = use_extension(
+    "@gizos//tools/bazel/toolchains/local_embedded_cc:repositories.bzl",
+    "local_embedded_cc_toolchains",
+)
+use_repo(local_embedded_cc, "gizos_bk3633_cc_toolchain")
+
+register_toolchains("@gizos_bk3633_cc_toolchain//:toolchain")

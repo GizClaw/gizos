@@ -75,3 +75,16 @@ cd "$consumer_root"
     //:native_component \
     //:package \
     //:runtime
+
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    build \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_firmware_target=bk3633" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:bk3633" \
+    //:bk3633_wolfcrypt_consumer
