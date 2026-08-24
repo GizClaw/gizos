@@ -209,6 +209,34 @@ static h2_runtime_t *active_runtime(h2_runtime_test_control_t *control) {
     return control->runtime;
 }
 
+static h2_runtime_t *active_runtime_writer_lock(
+    h2_runtime_test_control_t *control,
+    h2_pal_result_t *out_rc) {
+    h2_runtime_t *runtime = active_runtime(control);
+    if (runtime == NULL) {
+        *out_rc = H2_PAL_ERR_INVALID_STATE;
+        return NULL;
+    }
+    *out_rc = h2_runtime_input_test_writer_lock(runtime);
+    if (*out_rc != H2_PAL_OK) {
+        return NULL;
+    }
+    if (active_runtime(control) != runtime) {
+        (void)h2_runtime_input_test_writer_unlock(runtime);
+        *out_rc = H2_PAL_ERR_INVALID_STATE;
+        return NULL;
+    }
+    return runtime;
+}
+
+static h2_pal_result_t writer_unlock_result(
+    h2_runtime_t *runtime,
+    h2_pal_result_t rc) {
+    const h2_pal_result_t unlock_rc =
+        h2_runtime_input_test_writer_unlock(runtime);
+    return rc != H2_PAL_OK ? rc : unlock_rc;
+}
+
 static h2_pal_result_t set_button_state_and_emit(
     h2_runtime_test_control_t *control,
     h2_runtime_component_id_t component_id,
@@ -394,19 +422,22 @@ h2_pal_result_t h2_runtime_test_set_component_state(
     h2_runtime_component_id_t component_id,
     const void *state,
     size_t state_size) {
-    h2_runtime_t *runtime = active_runtime(control);
+    h2_pal_result_t rc = H2_PAL_OK;
+    h2_runtime_t *runtime = active_runtime_writer_lock(control, &rc);
     if (runtime == NULL) {
-        return H2_PAL_ERR_INVALID_STATE;
+        return rc;
     }
     if (component_id == H2_RUNTIME_COMPONENT_ID_NONE || state == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
+        rc = H2_PAL_ERR_INVALID_ARG;
+        goto done;
     }
     const size_t prior_count =
         runtime->private_state->input_source_count;
     h2_runtime_input_source_t *source =
         find_or_create_input_source(runtime, component_id);
     if (source == NULL) {
-        return H2_PAL_ERR_NOT_FOUND;
+        rc = H2_PAL_ERR_NOT_FOUND;
+        goto done;
     }
     const h2_runtime_input_source_t prior_source = *source;
     if (source->component == H2_RUNTIME_COMPONENT_BUTTON &&
@@ -417,7 +448,8 @@ h2_pal_result_t h2_runtime_test_set_component_state(
              button_state->pressed_at_ms > button_state->updated_at_ms)) {
             *source = prior_source;
             runtime->private_state->input_source_count = prior_count;
-            return H2_PAL_ERR_FORMAT;
+            rc = H2_PAL_ERR_FORMAT;
+            goto done;
         }
         source->button_state = *button_state;
         source->timestamp_ms = button_state->updated_at_ms;
@@ -428,7 +460,8 @@ h2_pal_result_t h2_runtime_test_set_component_state(
             nfc_state->status > H2_RUNTIME_NFC_STATE_ERROR) {
             *source = prior_source;
             runtime->private_state->input_source_count = prior_count;
-            return H2_PAL_ERR_FORMAT;
+            rc = H2_PAL_ERR_FORMAT;
+            goto done;
         }
         source->nfc_state = *nfc_state;
         source->timestamp_ms = nfc_state->updated_at_ms;
@@ -440,14 +473,16 @@ h2_pal_result_t h2_runtime_test_set_component_state(
     } else {
         *source = prior_source;
         runtime->private_state->input_source_count = prior_count;
-        return H2_PAL_ERR_FORMAT;
+        rc = H2_PAL_ERR_FORMAT;
+        goto done;
     }
-    h2_pal_result_t rc = h2_runtime_input_test_publish(runtime);
+    rc = h2_runtime_input_test_publish(runtime);
     if (rc != H2_PAL_OK) {
         *source = prior_source;
         runtime->private_state->input_source_count = prior_count;
     }
-    return rc;
+done:
+    return writer_unlock_result(runtime, rc);
 }
 
 static h2_pal_result_t set_button_state_and_emit(
@@ -458,18 +493,19 @@ static h2_pal_result_t set_button_state_and_emit(
     h2_runtime_timestamp_ms_t timestamp_ms,
     const void *payload,
     size_t payload_size) {
-    h2_runtime_t *runtime = active_runtime(control);
+    h2_pal_result_t rc = H2_PAL_OK;
+    h2_runtime_t *runtime = active_runtime_writer_lock(control, &rc);
     if (runtime == NULL) {
-        return H2_PAL_ERR_INVALID_STATE;
+        return rc;
     }
-    h2_pal_result_t rc = validate_event(
+    rc = validate_event(
         kind,
         H2_RUNTIME_COMPONENT_BUTTON,
         component_id,
         payload,
         payload_size);
     if (rc != H2_PAL_OK) {
-        return rc;
+        goto done;
     }
     const size_t prior_count =
         runtime->private_state->input_source_count;
@@ -477,7 +513,8 @@ static h2_pal_result_t set_button_state_and_emit(
         find_or_create_input_source(runtime, component_id);
     if (source == NULL ||
         source->component != H2_RUNTIME_COMPONENT_BUTTON) {
-        return H2_PAL_ERR_NOT_FOUND;
+        rc = H2_PAL_ERR_NOT_FOUND;
+        goto done;
     }
     const h2_runtime_input_source_t prior_source = *source;
     const h2_runtime_sequence_t prior_ceiling =
@@ -486,7 +523,8 @@ static h2_pal_result_t set_button_state_and_emit(
     if (sequence == 0u) {
         *source = prior_source;
         runtime->private_state->input_source_count = prior_count;
-        return H2_PAL_ERR_INVALID_STATE;
+        rc = H2_PAL_ERR_INVALID_STATE;
+        goto done;
     }
     source->button_state = *state;
     source->sequence = sequence;
@@ -500,7 +538,7 @@ static h2_pal_result_t set_button_state_and_emit(
         runtime->private_state->input_source_count = prior_count;
         runtime->private_state->input_event_sequence_ceiling =
             prior_ceiling;
-        return rc;
+        goto done;
     }
     rc = h2_runtime_emit_event(
         runtime,
@@ -512,15 +550,15 @@ static h2_pal_result_t set_button_state_and_emit(
         payload,
         payload_size);
     if (rc == H2_PAL_OK) {
-        return H2_PAL_OK;
+        goto done;
     }
     *source = prior_source;
     runtime->private_state->input_source_count = prior_count;
     runtime->private_state->input_event_sequence_ceiling =
         prior_ceiling;
-    h2_pal_result_t rollback_rc =
-        h2_runtime_input_test_publish(runtime);
-    return rollback_rc == H2_PAL_OK ? rc : rollback_rc;
+    (void)h2_runtime_input_test_publish(runtime);
+done:
+    return writer_unlock_result(runtime, rc);
 }
 
 /* Current published click_count of a test-owned button (0 when unknown). */

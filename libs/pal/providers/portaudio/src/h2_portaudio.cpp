@@ -27,6 +27,7 @@ constexpr size_t kFrameValues = static_cast<size_t>(kFrameSamples) * kChannels;
 constexpr uint8_t kMaxTracks = 4u;
 constexpr uint8_t kTrackQueueFrames = 4u;
 constexpr uint8_t kMicQueueFrames = 4u;
+constexpr size_t kEchoReferenceFrames = 16u;
 constexpr auto kPlaybackPollInterval = std::chrono::milliseconds(1);
 
 int portaudio_output_open(void *, void **out_stream) {
@@ -51,6 +52,10 @@ int portaudio_output_write(void *, void *stream, const void *samples,
   return Pa_WriteStream(static_cast<PaStream *>(stream), samples, frames);
 }
 
+int portaudio_output_stop(void *, void *stream) {
+  return Pa_StopStream(static_cast<PaStream *>(stream));
+}
+
 int portaudio_output_abort(void *, void *stream) {
   return Pa_AbortStream(static_cast<PaStream *>(stream));
 }
@@ -69,6 +74,7 @@ const h2_portaudio_output_test_ops_t kPortAudioOutputOps = {
     portaudio_output_start,
     portaudio_output_write_available,
     portaudio_output_write,
+    portaudio_output_stop,
     portaudio_output_abort,
     portaudio_output_close,
     portaudio_output_error_text,
@@ -106,12 +112,18 @@ struct AudioState {
   PaStream *output_stream = nullptr;
   h2_portaudio_output_test_ops_t output_ops = kPortAudioOutputOps;
   bool output_ops_overridden = false;
+  h2_portaudio_echo_test_ops_t echo_test_ops = {};
+  bool echo_test_ops_overridden = false;
   h2_audio_mixer_t mixer = {};
   SpeexEchoState *echo_state = nullptr;
   h2_pal_audio_t audio = {};
   std::array<int16_t, kFrameValues> mic_scratch = {};
   std::array<int16_t, kFrameValues> playback_scratch = {};
   std::array<int16_t, kFrameValues> reference_scratch = {};
+  std::array<std::array<int16_t, kFrameValues>, kEchoReferenceFrames>
+      echo_reference_queue = {};
+  size_t echo_reference_head = 0u;
+  size_t echo_reference_count = 0u;
   std::array<int16_t, kFrameValues> cleaned_scratch = {};
 };
 
@@ -308,19 +320,21 @@ void abort_stream(PaStream *stream, const char *kind) {
   }
 }
 
-int close_output_stream(AudioState *state) {
+int close_output_stream(AudioState *state, bool abort) {
   std::lock_guard<std::mutex> lock(state->control_mutex);
   if (state->output_stream == nullptr) {
     return H2_AUDIO_OK;
   }
   void *stream = state->output_stream;
   int result = H2_AUDIO_OK;
-  const int abort_error =
-      state->output_ops.abort(state->output_ops.user, stream);
-  if (abort_error != paNoError && abort_error != paStreamIsStopped) {
+  const int stop_error =
+      abort ? state->output_ops.abort(state->output_ops.user, stream)
+            : state->output_ops.stop(state->output_ops.user, stream);
+  if (stop_error != paNoError && stop_error != paStreamIsStopped) {
     std::fprintf(
-        stderr, "desktop audio: output stream abort failed: %s\n",
-        state->output_ops.error_text(state->output_ops.user, abort_error));
+        stderr, "desktop audio: output stream %s failed: %s\n",
+        abort ? "abort" : "stop",
+        state->output_ops.error_text(state->output_ops.user, stop_error));
     result = H2_AUDIO_ERR_IO;
   }
   const int close_error =
@@ -335,9 +349,79 @@ int close_output_stream(AudioState *state) {
   return result;
 }
 
+void reset_echo_reference(AudioState *state) {
+  std::lock_guard<std::mutex> lock(state->echo_mutex);
+  state->echo_reference_head = 0u;
+  state->echo_reference_count = 0u;
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.reset(state->echo_test_ops.user);
+  }
+  if (state->echo_state != nullptr) {
+    speex_echo_state_reset(state->echo_state);
+  }
+}
+
+void queue_echo_reference(AudioState *state) {
+  if (state->echo_state == nullptr) {
+    return;
+  }
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.before_enqueue(state->echo_test_ops.user);
+  }
+  std::lock_guard<std::mutex> lock(state->echo_mutex);
+  if (!state->mic_running.load()) {
+    if (state->echo_test_ops_overridden) {
+      state->echo_test_ops.enqueue_result(state->echo_test_ops.user, 0);
+    }
+    return;
+  }
+  if (state->echo_reference_count == kEchoReferenceFrames) {
+    state->echo_reference_head =
+        (state->echo_reference_head + 1u) % kEchoReferenceFrames;
+    --state->echo_reference_count;
+  }
+  const size_t tail = (state->echo_reference_head +
+                       state->echo_reference_count) %
+                      kEchoReferenceFrames;
+  state->echo_reference_queue[tail] = state->reference_scratch;
+  ++state->echo_reference_count;
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.enqueue_result(state->echo_test_ops.user, 1);
+  }
+}
+
+bool clean_echo_capture(AudioState *state, MicQueueFrame *item) {
+  if (state->echo_state == nullptr || !state->playback_running.load() ||
+      item->bytes != sizeof(state->cleaned_scratch)) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(state->echo_mutex);
+  if (state->echo_reference_count == 0u) {
+    return false;
+  }
+  const std::array<int16_t, kFrameValues> &reference =
+      state->echo_reference_queue[state->echo_reference_head];
+  state->echo_reference_head =
+      (state->echo_reference_head + 1u) % kEchoReferenceFrames;
+  --state->echo_reference_count;
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.playback(state->echo_test_ops.user, reference.data());
+    state->echo_test_ops.capture(state->echo_test_ops.user,
+                                 item->samples.data(),
+                                 state->cleaned_scratch.data());
+  } else {
+    speex_echo_playback(state->echo_state, reference.data());
+    speex_echo_capture(state->echo_state, item->samples.data(),
+                       state->cleaned_scratch.data());
+  }
+  item->samples = state->cleaned_scratch;
+  return true;
+}
+
 void playback_main(AudioState *state) {
   size_t pending_frames = 0u;
   size_t pending_offset = 0u;
+  bool pending_echo_reference = false;
   while (state->playback_running.load()) {
     if (pending_frames == 0u) {
       h2_audio_frame_t frame = frame_for_buffer(
@@ -347,7 +431,7 @@ void playback_main(AudioState *state) {
       const int result =
           h2_audio_mixer_read_with_reference(&state->mixer, &frame, &reference);
       if (result != H2_AUDIO_OK || frame.bytes == 0u) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        std::this_thread::sleep_for(kPlaybackPollInterval);
         continue;
       }
       const size_t sample_count = frame.bytes / sizeof(int16_t);
@@ -358,14 +442,10 @@ void playback_main(AudioState *state) {
         state->reference_scratch[index] =
             apply_volume(state->reference_scratch[index], volume);
       }
-      if (state->echo_state != nullptr && state->mic_thread_started &&
-          reference.bytes == frame.bytes) {
-        std::lock_guard<std::mutex> lock(state->echo_mutex);
-        speex_echo_playback(state->echo_state, state->reference_scratch.data());
-      }
       pending_frames =
           frame.bytes / (sizeof(int16_t) * static_cast<size_t>(kChannels));
       pending_offset = 0u;
+      pending_echo_reference = reference.bytes == frame.bytes;
     }
 
     PaStream *stream = nullptr;
@@ -377,6 +457,7 @@ void playback_main(AudioState *state) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       pending_frames = 0u;
       pending_offset = 0u;
+      pending_echo_reference = false;
       continue;
     }
 
@@ -412,7 +493,12 @@ void playback_main(AudioState *state) {
     }
     pending_frames -= frames_to_write;
     pending_offset += frames_to_write;
+    if (pending_frames == 0u && pending_echo_reference) {
+      queue_echo_reference(state);
+      pending_echo_reference = false;
+    }
   }
+  reset_echo_reference(state);
   state->playback_running.store(false);
 }
 
@@ -422,7 +508,7 @@ int reap_stopped_playback_thread(AudioState *state) {
   }
   state->playback_thread.join();
   state->playback_thread_started = false;
-  return close_output_stream(state);
+  return close_output_stream(state, true);
 }
 
 int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
@@ -489,6 +575,7 @@ void mic_main(AudioState *state) {
     if (capture_result == 0) {
       continue;
     }
+    (void)clean_echo_capture(state, &item);
     (void)h2_pal_queue_send_latest(state->queue,
                                    state->mic_queue, &item);
   }
@@ -551,6 +638,7 @@ int audio_start_mic(void *user) {
     return result;
   }
   (void)h2_pal_queue_reset(state->queue, state->mic_queue);
+  reset_echo_reference(state);
   state->mic_running.store(true);
   if (!state->mic_thread_started) {
     try {
@@ -576,7 +664,7 @@ int audio_stop_mic(void *user) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   AudioState *state = static_cast<AudioState *>(user);
-  state->mic_running.store(false);
+  const bool was_running = state->mic_running.exchange(false);
   if (state->mic_queue != nullptr) {
     (void)h2_pal_queue_close(state->queue, state->mic_queue);
   }
@@ -596,6 +684,9 @@ int audio_stop_mic(void *user) {
       h2_pal_queue_destroy(state->queue, state->mic_queue);
       state->mic_queue = nullptr;
     }
+  }
+  if (was_running) {
+    reset_echo_reference(state);
   }
   std::lock_guard<std::mutex> lock(state->control_mutex);
   if (state->input_stream != nullptr) {
@@ -630,7 +721,7 @@ int audio_start_speaker(void *user) {
     state->playback_thread_started = true;
   } catch (...) {
     state->playback_running.store(false);
-    (void)close_output_stream(state);
+    (void)close_output_stream(state, true);
     return H2_AUDIO_ERR_IO;
   }
   return H2_AUDIO_OK;
@@ -647,7 +738,8 @@ int audio_stop_speaker(void *user) {
     state->playback_thread_started = false;
   }
   const int playback_result = state->playback_result.exchange(H2_AUDIO_OK);
-  const int cleanup_result = close_output_stream(state);
+  const int cleanup_result = close_output_stream(
+      state, playback_result != H2_AUDIO_OK);
   if (playback_result != H2_AUDIO_OK) {
     return playback_result;
   }
@@ -697,14 +789,6 @@ int audio_mic_read(void *user, h2_audio_frame_t *out_frame,
   std::memcpy(out_frame->data, item.samples.data(), item.bytes);
   out_frame->bytes = item.bytes;
   out_frame->samples_per_channel = item.samples_per_channel;
-  if (state->echo_state != nullptr &&
-      item.bytes == sizeof(state->cleaned_scratch)) {
-    std::lock_guard<std::mutex> lock(state->echo_mutex);
-    speex_echo_capture(state->echo_state,
-                       static_cast<const spx_int16_t *>(out_frame->data),
-                       state->cleaned_scratch.data());
-    std::memcpy(out_frame->data, state->cleaned_scratch.data(), item.bytes);
-  }
   return H2_AUDIO_OK;
 }
 
@@ -775,7 +859,7 @@ int h2_portaudio_set_output_test_ops(
   if (provider == nullptr || ops == nullptr || ops->open == nullptr ||
       ops->start == nullptr ||
       ops->write_available == nullptr || ops->write == nullptr ||
-      ops->abort == nullptr || ops->close == nullptr ||
+      ops->stop == nullptr || ops->abort == nullptr || ops->close == nullptr ||
       ops->error_text == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -785,6 +869,23 @@ int h2_portaudio_set_output_test_ops(
   }
   state->output_ops = *ops;
   state->output_ops_overridden = true;
+  return H2_AUDIO_OK;
+}
+
+int h2_portaudio_set_echo_test_ops(
+    h2_portaudio_t *provider, const h2_portaudio_echo_test_ops_t *ops) {
+  if (provider == nullptr || ops == nullptr || ops->reset == nullptr ||
+      ops->before_enqueue == nullptr || ops->enqueue_result == nullptr ||
+      ops->playback == nullptr || ops->capture == nullptr) {
+    return H2_AUDIO_ERR_INVALID_ARG;
+  }
+  AudioState *state = &provider->state;
+  std::lock_guard<std::mutex> lock(state->control_mutex);
+  if (state->mic_running.load() || state->playback_running.load()) {
+    return H2_AUDIO_ERR_INVALID_STATE;
+  }
+  state->echo_test_ops = *ops;
+  state->echo_test_ops_overridden = true;
   return H2_AUDIO_OK;
 }
 

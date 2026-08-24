@@ -3079,7 +3079,11 @@ static void test_control_button_down_tracks_click_sequence(void) {
     assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
 
     h2_runtime_button_state_t state;
+    const size_t button_locks_before = env.sync_state.locks;
+    const size_t button_unlocks_before = env.sync_state.unlocks;
     assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
+    assert(env.sync_state.locks == button_locks_before + 1u);
+    assert(env.sync_state.unlocks == button_unlocks_before + 1u);
     assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
            H2_PAL_OK);
     assert(state.pressed && state.click_count == 1u);
@@ -3256,8 +3260,12 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
     const h2_runtime_sequence_t next_sequence =
         runtime->private_state->next_sequence;
     state.updated_at_ms = 150u;
+    const size_t state_locks_before = env.sync_state.locks;
+    const size_t state_unlocks_before = env.sync_state.unlocks;
     assert(h2_runtime_test_set_component_state(
                control, 1u, &state, sizeof(state)) == H2_PAL_OK);
+    assert(env.sync_state.locks == state_locks_before + 1u);
+    assert(env.sync_state.unlocks == state_unlocks_before + 1u);
     assert(runtime->private_state->next_sequence == next_sequence);
     h2_runtime_button_state_t published_state;
     assert(h2_runtime_component_state_button(
