@@ -362,10 +362,19 @@ void reset_echo_reference(AudioState *state) {
 }
 
 void queue_echo_reference(AudioState *state) {
-  if (state->echo_state == nullptr || !state->mic_running.load()) {
+  if (state->echo_state == nullptr) {
     return;
   }
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.before_enqueue(state->echo_test_ops.user);
+  }
   std::lock_guard<std::mutex> lock(state->echo_mutex);
+  if (!state->mic_running.load()) {
+    if (state->echo_test_ops_overridden) {
+      state->echo_test_ops.enqueue_result(state->echo_test_ops.user, 0);
+    }
+    return;
+  }
   if (state->echo_reference_count == kEchoReferenceFrames) {
     state->echo_reference_head =
         (state->echo_reference_head + 1u) % kEchoReferenceFrames;
@@ -376,6 +385,9 @@ void queue_echo_reference(AudioState *state) {
                       kEchoReferenceFrames;
   state->echo_reference_queue[tail] = state->reference_scratch;
   ++state->echo_reference_count;
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.enqueue_result(state->echo_test_ops.user, 1);
+  }
 }
 
 bool clean_echo_capture(AudioState *state, MicQueueFrame *item) {
@@ -863,6 +875,7 @@ int h2_portaudio_set_output_test_ops(
 int h2_portaudio_set_echo_test_ops(
     h2_portaudio_t *provider, const h2_portaudio_echo_test_ops_t *ops) {
   if (provider == nullptr || ops == nullptr || ops->reset == nullptr ||
+      ops->before_enqueue == nullptr || ops->enqueue_result == nullptr ||
       ops->playback == nullptr || ops->capture == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }

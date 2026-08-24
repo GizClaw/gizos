@@ -56,9 +56,14 @@ typedef struct mic_reader {
 
 typedef struct echo_order {
   atomic_int reset_count;
+  atomic_int enqueue_count;
+  atomic_int rejected_enqueue_count;
   atomic_int playback_count;
   atomic_int capture_count;
   atomic_bool capture_before_playback;
+  atomic_bool block_enqueue;
+  atomic_bool enqueue_entered;
+  atomic_bool enqueue_release;
 } echo_order_t;
 
 static h2_audio_frame_t mic_frame(int16_t *samples) {
@@ -247,6 +252,25 @@ static void fake_echo_reset(void *user) {
   atomic_fetch_add_explicit(&order->reset_count, 1, memory_order_release);
 }
 
+static void fake_echo_before_enqueue(void *user) {
+  echo_order_t *order = user;
+  if (!atomic_load_explicit(&order->block_enqueue, memory_order_acquire))
+    return;
+  atomic_store_explicit(&order->enqueue_entered, true, memory_order_release);
+  while (!atomic_load_explicit(&order->enqueue_release, memory_order_acquire))
+    sleep_ms(1L);
+}
+
+static void fake_echo_enqueue_result(void *user, int queued) {
+  echo_order_t *order = user;
+  if (queued) {
+    atomic_fetch_add_explicit(&order->enqueue_count, 1, memory_order_release);
+  } else {
+    atomic_fetch_add_explicit(&order->rejected_enqueue_count, 1,
+                              memory_order_release);
+  }
+}
+
 static void fake_echo_capture(void *user, const int16_t *microphone,
                               int16_t *cleaned) {
   echo_order_t *order = user;
@@ -431,12 +455,19 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
                                                  fake_output_t *output) {
   echo_order_t order;
   atomic_init(&order.reset_count, 0);
+  atomic_init(&order.enqueue_count, 0);
+  atomic_init(&order.rejected_enqueue_count, 0);
   atomic_init(&order.playback_count, 0);
   atomic_init(&order.capture_count, 0);
   atomic_init(&order.capture_before_playback, false);
+  atomic_init(&order.block_enqueue, false);
+  atomic_init(&order.enqueue_entered, false);
+  atomic_init(&order.enqueue_release, false);
   const h2_portaudio_echo_test_ops_t echo_ops = {
       .user = &order,
       .reset = fake_echo_reset,
+      .before_enqueue = fake_echo_before_enqueue,
+      .enqueue_result = fake_echo_enqueue_result,
       .playback = fake_echo_playback,
       .capture = fake_echo_capture,
   };
@@ -467,8 +498,19 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
   assert(atomic_load(&order.reset_count) == 3);
+
+  fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
+  atomic_store(&order.block_enqueue, true);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  track = write_test_frame(audio, samples);
+  wait_for_bool(&order.enqueue_entered);
   assert(h2_pal_audio_stop_mic(audio) == H2_AUDIO_OK);
   assert(atomic_load(&order.reset_count) == 4);
+  atomic_store_explicit(&order.enqueue_release, true, memory_order_release);
+  wait_for_int_at_least(&order.rejected_enqueue_count, 1);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(atomic_load(&order.reset_count) == 5);
   assert(!atomic_load(&order.capture_before_playback));
   assert(atomic_load(&order.playback_count) >=
          atomic_load(&order.capture_count));
