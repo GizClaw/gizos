@@ -190,7 +190,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: bazel-repository-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
       - name: Install and verify Bazel
         shell: bash
@@ -222,6 +222,13 @@ jobs:
 
       - name: Build compatible graph
         run: make bazel-build
+
+      - name: Validate H2Loader npm package
+        if: matrix.config == 'linux_x86_64'
+        run: >-
+          "$BAZEL_BIN" run --config="$BAZEL_CONFIG"
+          //projects/h2loader/targets/npm_package/h2loader:h2loader.publish --
+          --dry-run --ignore-scripts
 
       - name: Test compatible graph
         if: matrix.task == 'build-test'
@@ -411,7 +418,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: bazel-repository-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
       - name: Install and verify Bazel
         shell: bash
@@ -644,7 +651,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: bazel-repository-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
       - name: Install and verify Bazel
         shell: bash
@@ -864,7 +871,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: bazel-repository-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
       - name: Install and verify Bazel
         shell: bash
@@ -1160,7 +1167,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: bazel-repository-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
       - name: Install and verify Bazel
         shell: bash
@@ -1305,7 +1312,7 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/bazel/repository
-          key: bazel-repository-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
+          key: bazel-repository-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BAZEL_VERSION }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}
 
       - name: Install and verify Bazel
         shell: pwsh

@@ -1,0 +1,29 @@
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+npm_package(
+    name = "h2loader",
+    srcs = [
+        "README.md",
+        "package.json",
+        "//:LICENSE",
+        "//projects/h2loader/libs/web:h2loader.wasm",
+        "//projects/h2loader/libs/web:h2loader_runtime.js",
+        "//projects/h2loader/libs/web:src/h2loader.js",
+    ],
+    include_runfiles = False,
+    include_sources = False,
+    include_srcs_packages = ["**"],
+    include_transitive_sources = False,
+    include_transitive_types = False,
+    include_types = False,
+    publishable = True,
+    root_paths = [
+        ".",
+        "projects/h2loader/libs/web",
+        "projects/h2loader/libs/web/src",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

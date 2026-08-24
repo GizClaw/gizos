@@ -13,11 +13,12 @@ H2Loader Batch Loader 是工厂使用的浏览器批量安装工具。产品 UI 
 projects/h2loader/apps/batch-loader/app/          # React/shadcn product UI and batch controller
 projects/h2loader/libs/web/                       # reusable internal JS/runtime/WASM SDK target
 projects/h2loader/targets/pkg_tar/batch-loader/   # the only deployable archive
+projects/h2loader/targets/npm_package/h2loader/   # reusable @gizclaw/h2loader Browser SDK package
 libs/h2loader_host/                               # protocol, package and lifecycle authority
 libs/pal/providers/web/pal_core/                   # Web Serial and browser scheduling
 ```
 
-依赖方向固定为 Web App → `//projects/h2loader/libs/web:h2loader_web` → Host Core/Web PAL。App 只调用 `createH2Loader()` 返回的 Promise API，不读取 Emscripten pointer、heap 或 `Module`。SDK 是 Bazel build target，不发布 npm package、独立 SDK archive 或 release asset。
+依赖方向固定为 Web App → `//projects/h2loader/libs/web:h2loader_web` → Host Core/Web PAL。App 只调用 `createH2Loader()` 返回的 Promise API，不读取 Emscripten pointer、heap 或 `Module`。同一 SDK target 由 `//projects/h2loader/targets/npm_package/h2loader:h2loader` 组装为 `@gizclaw/h2loader`，其提交的 `package.json` 独立管理 npm version；Batch Loader archive 不嵌套 npm package metadata。
 
 ## UI 与操作
 
@@ -50,6 +51,6 @@ bazel run //projects/h2loader/targets/pkg_tar/batch-loader:serve -- \
   --host 127.0.0.1 --port 8000
 ```
 
-唯一发布产物是 `batch-loader.web.tar`。archive 根目录包含 DOM frontend assets、`sdk/h2loader.js`、matching Emscripten runtime/WASM 和 `_headers`；不包含 Canvas shell、LVGL asset、`index.data`、nested SDK archive 或 package metadata。生产环境必须使用 HTTPS，并提供 `application/wasm`、`Permissions-Policy: serial=(self)` 及 archive 中等价的 CSP/security headers。
+Batch Loader 的唯一部署产物是 `batch-loader.web.tar`。archive 根目录包含 DOM frontend assets、`sdk/h2loader.js`、matching Emscripten runtime/WASM 和 `_headers`；不包含 Canvas shell、LVGL asset、`index.data`、nested SDK archive 或 package metadata。相同 SDK files 另以 `@gizclaw/h2loader` 发布到 GitHub Packages，仍要求 secure browser context 和 Web Serial，不是 Node.js serial-port runtime。生产环境必须使用 HTTPS，并提供 `application/wasm`、`Permissions-Policy: serial=(self)` 及 archive 中等价的 CSP/security headers。
 
 Bazel Playwright target 使用 hermetic Chromium 和 Bazel-managed static server。自动测试可以验证 DOM、调度、持久化和 real JS→WASM SDK loading；真实 USB、Windows driver、Chrome/Edge compatibility 和五台设备的四 active/一 queued 工厂验收仍需人工记录。

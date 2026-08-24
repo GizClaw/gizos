@@ -1,0 +1,26 @@
+{
+  "name": "@gizclaw/h2loader",
+  "version": "0.1.0",
+  "description": "Browser SDK for H2Loader package inspection and Web Serial device lifecycle operations",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GizClaw/gizos.git",
+    "directory": "projects/h2loader/targets/npm_package/h2loader"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./h2loader.js"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "h2loader.js",
+    "h2loader_runtime.js",
+    "h2loader.wasm"
+  ]
+}

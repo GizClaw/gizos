@@ -406,7 +406,7 @@ projects/h2loader/
 │   ├── h2loader/
 │   │   ├── include/                      # Shared H2Loader contract
 │   │   └── src/                          # Package、image、boot portable core
-│   ├── web/                              # Internal reusable H2Loader JS/runtime/WASM SDK
+│   ├── web/                              # Reusable H2Loader JS/runtime/WASM SDK
 │   └── cmake/                            # Shared H2Loader package helper
 ├── native_component_src/                 # H2Loader-only native SDK component source
 │   ├── esp-idf6.x/
@@ -426,11 +426,12 @@ projects/h2loader/
 │   └── bazel/                            # H2Loader package、recovery 与 artifact build helper
 └── targets/
     ├── cc_binary/cli/                    # Native CLI process 与 host PAL assembly
+    ├── npm_package/h2loader/             # @gizclaw/h2loader Browser SDK npm artifact
     ├── pkg_tar/batch-loader/              # Batch Loader HTML/JS/WASM Web archive
     └── h2loader_tar_zlib/loader/<board>/  # Loader package；内部选择 ESP-IDF 或 BK7258 firmware
 ```
 
-设备端 Loader App、共用 library、H2Loader 专用 target component、Loader image entry 和 H2Loader package tooling 归 `projects/h2loader/`。`projects/h2loader/tools/bazel/` 拥有 `h2loader_tar_zlib` artifact rule、按 `target`/`board` 选择 layout 的 firmware wrapper，以及共用 partition、recovery 和 variant build input；全仓通用 ESP-IDF、BK firmware rule 仍归顶层 `tools/bazel/`。可复用 Example 归 `projects/example/apps/`，跨目标测试 App 归 `projects/e2e/apps/`，PIXA game App 归 `projects/pixa_games/apps/`；它们的 H2Loader-managed package 同样位于各自 project 的 `targets/h2loader_tar_zlib/`。被 H2Loader 安装不会改变源码或 artifact ownership。Batch Loader React/shadcn UI 归 `projects/h2loader/apps/batch-loader/app/`，内部可复用 Web SDK 与唯一 archive 分别归 `libs/web/` 与 `targets/pkg_tar/batch-loader/`。Native CLI App 与 executable target 分别归 `projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`；portable Host Core 归 `libs/h2loader_host/`。具体职责见 [H2Loader 产品文档](/apps/h2loader/)。
+设备端 Loader App、共用 library、H2Loader 专用 target component、Loader image entry 和 H2Loader package tooling 归 `projects/h2loader/`。`projects/h2loader/tools/bazel/` 拥有 `h2loader_tar_zlib` artifact rule、按 `target`/`board` 选择 layout 的 firmware wrapper，以及共用 partition、recovery 和 variant build input；全仓通用 ESP-IDF、BK firmware rule 仍归顶层 `tools/bazel/`。可复用 Example 归 `projects/example/apps/`，跨目标测试 App 归 `projects/e2e/apps/`，PIXA game App 归 `projects/pixa_games/apps/`；它们的 H2Loader-managed package 同样位于各自 project 的 `targets/h2loader_tar_zlib/`。被 H2Loader 安装不会改变源码或 artifact ownership。Batch Loader React/shadcn UI 归 `projects/h2loader/apps/batch-loader/app/`，内部可复用 Web SDK、npm SDK artifact 与唯一 Batch Loader archive 分别归 `libs/web/`、`targets/npm_package/h2loader/` 与 `targets/pkg_tar/batch-loader/`。npm artifact 提交自己的 `package.json` 作为 package identity/version source of truth，并只组装 `libs/web` 的 matching JS/runtime/WASM outputs；它不取得 Browser lifecycle 或 Node.js runtime ownership。Native CLI App 与 executable target 分别归 `projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`；portable Host Core 归 `libs/h2loader_host/`。具体职责见 [H2Loader 产品文档](/apps/h2loader/)。
 
 ## `tools`
 

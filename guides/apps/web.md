@@ -15,6 +15,7 @@ projects/e2e/targets/pkg_tar/lua-runtime/ # Lua Runtime 九 case Browser archive
 projects/h2loader/
 ├── apps/batch-loader/app/         # React/shadcn Batch Loader DOM App
 ├── libs/web/                      # 可复用的 H2Loader JS/runtime/WASM build target
+├── targets/npm_package/h2loader/  # @gizclaw/h2loader Browser SDK npm package
 └── targets/pkg_tar/batch-loader/  # 唯一 serve-ready Web archive
 
 libs/pal/providers/web/pal_core/    # Canvas/Emscripten reusable PAL backend
@@ -45,7 +46,7 @@ Batch Loader 的发布 archive 是 `bazel-bin/projects/h2loader/targets/pkg_tar/
 
 Serve-ready archive 可以通过 `web_archive_serve` 声明本地运行入口。该 Bazel macro 只负责安全解包、静态 HTTP、`_headers` 和 MIME，不取得 App、HTML shell 或部署 ownership。Batch Loader 的入口是 `bazel run //projects/h2loader/targets/pkg_tar/batch-loader:serve -- --host 127.0.0.1 --port 8000`；localhost 仅用于开发检查。
 
-[H2Loader Batch Loader](./h2loader/apps/batch_loader/) 是 React JavaScript/JSX DOM App。`//projects/h2loader/libs/web:h2loader_web` 提供内部可复用的 public JS module、matching Emscripten runtime 和 WASM，并通过 Web PAL/Host Core 执行 Web Serial、package inspection 和 managed lifecycle；它不是 npm package 或独立发布物。`targets/pkg_tar/batch-loader/` 将 frontend 与 SDK outputs 组装成唯一 archive。浏览器保留 `SerialPort` 与 `File` 对象，C 只接收 runtime-scoped opaque handle 和 bounded slice。现有 H2Loader Serial Web E2E 继续验证底层协议与平台，不是产品 UI。
+[H2Loader Batch Loader](./h2loader/apps/batch_loader/) 是 React JavaScript/JSX DOM App。`//projects/h2loader/libs/web:h2loader_web` 提供可复用的 public JS module、matching Emscripten runtime 和 WASM，并通过 Web PAL/Host Core 执行 Web Serial、package inspection 和 managed lifecycle。`//projects/h2loader/targets/npm_package/h2loader:h2loader` 使用提交的 `package.json` 将完全相同的 SDK outputs 组装成 `@gizclaw/h2loader`；npm 是 Browser SDK 的分发格式，不提供 Node.js serial-port runtime。独立 workflow 在相关改动进入 `main` 后只发布 `package.json.version` 尚不存在的版本，不依赖 GizOS tag Release。`targets/pkg_tar/batch-loader/` 继续将 frontend 与同一 SDK outputs 组装成唯一 Batch Loader archive。浏览器保留 `SerialPort` 与 `File` 对象，C 只接收 runtime-scoped opaque handle 和 bounded slice。现有 H2Loader Serial Web E2E 继续验证底层协议与平台，不是产品 UI。
 
 浏览器不能从本地 `file:` URL 加载生成的 `.wasm`。
 
