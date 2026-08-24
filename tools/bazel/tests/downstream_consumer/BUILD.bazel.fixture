@@ -10,6 +10,11 @@ alias(
     actual = "@gizos//libs/runtime",
 )
 
+alias(
+    name = "i18n_runtime",
+    actual = "@gizos//tools/lvgl/conv_i18n_yaml:runtime",
+)
+
 cc_library(
     name = "bk3633_test_support_consumer",
     testonly = True,

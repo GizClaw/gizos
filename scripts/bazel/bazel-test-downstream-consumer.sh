@@ -70,6 +70,7 @@ cd "$consumer_root"
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
     //:bk3633_test_support_consumer \
     //:firmware_lib \
+    //:i18n_runtime \
     //:native_component \
     //:package \
     //:runtime

@@ -92,7 +92,6 @@ register_toolchains(
 npm = use_extension(
     "@aspect_rules_js//npm:extensions.bzl",
     "npm",
-    dev_dependency = True,
 )
 npm.npm_translate_lock(
     name = "guides_npm",
