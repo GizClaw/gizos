@@ -48,20 +48,20 @@ class NativeRuntimeTest(unittest.TestCase):
         self.assertNotIn("caller-only", environment["PATH"])
         self.assertEqual(environment["TZ"], "UTC")
 
-    def test_external_repository_root_uses_bazel_canonical_name(self):
+    def test_external_repository_source_root_uses_bazel_canonical_name(self):
         with tempfile.TemporaryDirectory() as temporary:
             external = Path(temporary) / "external"
             repository = external / "gizos++vendor_repositories+h2_vendor_pixa"
             include = repository / "src/pkgs/c/include"
             include.mkdir(parents=True)
             self.assertEqual(
-                native_runtime.find_external_repository_root(
+                native_runtime.find_external_repository_source_root(
                     [include], "h2_vendor_pixa"
                 ),
-                repository.resolve(),
+                repository.joinpath("src").resolve(),
             )
             self.assertIsNone(
-                native_runtime.find_external_repository_root(
+                native_runtime.find_external_repository_source_root(
                     [include], "h2_vendor_pixelroot32"
                 )
             )

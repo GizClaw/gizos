@@ -87,10 +87,10 @@ def find_unique_executable(root: Path, name: str, label: str) -> Path:
     return matches[0]
 
 
-def find_external_repository_root(
+def find_external_repository_source_root(
     paths: list[Path], repository_name: str
 ) -> Path | None:
-    """Find one Bazel external repository root containing declared inputs."""
+    """Find one extracted source root containing declared Bazel inputs."""
     suffix = "+" + repository_name
     matches: set[Path] = set()
     for path in paths:
@@ -103,7 +103,16 @@ def find_external_repository_root(
         raise NativeRuntimeError(
             f"multiple Bazel repositories matched {repository_name}: {rendered}"
         )
-    return next(iter(matches), None)
+    repository_root = next(iter(matches), None)
+    if repository_root is None:
+        return None
+    source_root = repository_root / "src"
+    if not source_root.is_dir():
+        raise NativeRuntimeError(
+            f"Bazel repository {repository_name} has no extracted source root: "
+            f"{source_root}"
+        )
+    return source_root
 
 
 def create_python_wrappers(directory: Path) -> Path:

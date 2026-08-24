@@ -21,7 +21,7 @@ from tools.bazel.native_ccache import (
 )
 from tools.bazel.native_runtime import (
     NativeRuntimeError,
-    find_external_repository_root,
+    find_external_repository_source_root,
     find_unique_executable,
     fixed_environment,
     locator_path,
@@ -735,7 +735,7 @@ def run(arguments: argparse.Namespace) -> None:
         ("H2_PIXELROOT32_UPSTREAM_ROOT", "h2_vendor_pixelroot32"),
     ):
         try:
-            repository_root = find_external_repository_root(
+            repository_root = find_external_repository_source_root(
                 prebuilt_include_paths, repository_name
             )
         except NativeRuntimeError as error:
