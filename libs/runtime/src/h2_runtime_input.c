@@ -1620,6 +1620,20 @@ h2_pal_result_t h2_runtime_input_test_publish(
     return publish_snapshot(runtime, 0);
 }
 
+h2_pal_result_t h2_runtime_input_test_writer_lock(h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    return input_writer_lock(runtime);
+}
+
+h2_pal_result_t h2_runtime_input_test_writer_unlock(h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    return input_writer_unlock(runtime);
+}
+
 h2_pal_result_t h2_runtime_input_test_session_close(
     h2_runtime_t *runtime) {
     if (!h2_runtime_ready(runtime) ||

@@ -419,6 +419,8 @@ h2_pal_result_t h2_runtime_input_poll_sensors_once(h2_runtime_t *runtime);
 h2_pal_result_t h2_runtime_input_test_session_open(
     h2_runtime_t *runtime,
     struct h2_runtime_test_control *control);
+h2_pal_result_t h2_runtime_input_test_writer_lock(h2_runtime_t *runtime);
+h2_pal_result_t h2_runtime_input_test_writer_unlock(h2_runtime_t *runtime);
 h2_pal_result_t h2_runtime_input_test_publish(
     h2_runtime_t *runtime);
 h2_pal_result_t h2_runtime_input_test_session_close(

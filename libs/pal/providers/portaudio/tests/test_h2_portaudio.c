@@ -35,6 +35,7 @@ typedef struct fake_output {
   atomic_int start_count;
   atomic_int availability_count;
   atomic_int write_count;
+  atomic_int stop_count;
   atomic_int abort_count;
   atomic_int close_count;
   atomic_bool failure_observed;
@@ -52,6 +53,12 @@ typedef struct mic_reader {
   atomic_bool done;
   int result;
 } mic_reader_t;
+
+typedef struct echo_order {
+  atomic_int playback_count;
+  atomic_int capture_count;
+  atomic_bool capture_before_playback;
+} echo_order_t;
 
 static h2_audio_frame_t mic_frame(int16_t *samples) {
   return (h2_audio_frame_t){
@@ -78,6 +85,7 @@ static void fake_output_init(fake_output_t *output) {
   atomic_init(&output->start_count, 0);
   atomic_init(&output->availability_count, 0);
   atomic_init(&output->write_count, 0);
+  atomic_init(&output->stop_count, 0);
   atomic_init(&output->abort_count, 0);
   atomic_init(&output->close_count, 0);
   atomic_init(&output->failure_observed, false);
@@ -94,6 +102,7 @@ static void fake_output_reset(fake_output_t *output,
   atomic_store(&output->start_count, 0);
   atomic_store(&output->availability_count, 0);
   atomic_store(&output->write_count, 0);
+  atomic_store(&output->stop_count, 0);
   atomic_store(&output->abort_count, 0);
   atomic_store(&output->close_count, 0);
   atomic_store(&output->failure_observed, false);
@@ -177,6 +186,14 @@ static int fake_output_abort(void *user, void *stream) {
   return 0;
 }
 
+static int fake_output_stop(void *user, void *stream) {
+  fake_output_t *output = user;
+  assert(stream == output);
+  fake_output_check_control(output);
+  atomic_fetch_add(&output->stop_count, 1);
+  return 0;
+}
+
 static int fake_output_close(void *user, void *stream) {
   fake_output_t *output = user;
   assert(stream == output);
@@ -216,6 +233,27 @@ static void wait_for_bool(atomic_bool *value) {
     sleep_ms(1L);
   }
   _Exit(EXIT_FAILURE);
+}
+
+static void fake_echo_playback(void *user, const int16_t *reference) {
+  echo_order_t *order = user;
+  assert(reference != NULL);
+  atomic_fetch_add_explicit(&order->playback_count, 1, memory_order_release);
+}
+
+static void fake_echo_capture(void *user, const int16_t *microphone,
+                              int16_t *cleaned) {
+  echo_order_t *order = user;
+  assert(microphone != NULL);
+  assert(cleaned != NULL);
+  const int capture_count =
+      atomic_load_explicit(&order->capture_count, memory_order_relaxed);
+  const int playback_count =
+      atomic_load_explicit(&order->playback_count, memory_order_acquire);
+  if (playback_count <= capture_count)
+    atomic_store(&order->capture_before_playback, true);
+  memcpy(cleaned, microphone, FAKE_OUTPUT_FRAME_SAMPLES * sizeof(*cleaned));
+  atomic_fetch_add_explicit(&order->capture_count, 1, memory_order_release);
 }
 
 static long elapsed_ms(const struct timespec *start,
@@ -310,11 +348,13 @@ static void test_zero_capacity_stop(h2_pal_audio_t *audio,
   assert(clock_gettime(CLOCK_MONOTONIC, &end) == 0);
   assert(elapsed_ms(&start, &end) < 1000L);
   assert(atomic_load(&output->write_count) == 0);
-  assert(atomic_load(&output->abort_count) == 1);
+  assert(atomic_load(&output->stop_count) == 1);
+  assert(atomic_load(&output->abort_count) == 0);
   assert(atomic_load(&output->close_count) == 1);
   assert(!atomic_load(&output->control_during_write));
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
-  assert(atomic_load(&output->abort_count) == 1);
+  assert(atomic_load(&output->stop_count) == 1);
+  assert(atomic_load(&output->abort_count) == 0);
   assert(atomic_load(&output->close_count) == 1);
 }
 
@@ -343,7 +383,8 @@ static void test_stop_waits_for_active_write(h2_pal_audio_t *audio,
   wait_for_bool(&output->write_active);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
-  assert(atomic_load(&output->abort_count) == 1);
+  assert(atomic_load(&output->stop_count) == 1);
+  assert(atomic_load(&output->abort_count) == 0);
   assert(atomic_load(&output->close_count) == 1);
   assert(!atomic_load(&output->control_during_write));
 }
@@ -373,9 +414,38 @@ static void test_worker_failure_restart(h2_pal_audio_t *audio,
   wait_for_int_at_least(&output->availability_count, 2);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
   assert(h2_pal_audio_track_close(restart_track) == H2_AUDIO_OK);
-  assert(atomic_load(&output->abort_count) == 2);
+  assert(atomic_load(&output->stop_count) == 1);
+  assert(atomic_load(&output->abort_count) == 1);
   assert(atomic_load(&output->close_count) == 2);
   assert(!atomic_load(&output->control_during_write));
+}
+
+static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
+                                                 h2_pal_audio_t *audio,
+                                                 fake_output_t *output) {
+  echo_order_t order;
+  atomic_init(&order.playback_count, 0);
+  atomic_init(&order.capture_count, 0);
+  atomic_init(&order.capture_before_playback, false);
+  const h2_portaudio_echo_test_ops_t echo_ops = {
+      .user = &order,
+      .playback = fake_echo_playback,
+      .capture = fake_echo_capture,
+  };
+  assert(h2_portaudio_set_echo_test_ops(provider, &echo_ops) == H2_AUDIO_OK);
+
+  fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
+  int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
+  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  assert(h2_pal_audio_start_mic(audio) == H2_AUDIO_OK);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  wait_for_int_at_least(&order.capture_count, 1);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_mic(audio) == H2_AUDIO_OK);
+  assert(!atomic_load(&order.capture_before_playback));
+  assert(atomic_load(&order.playback_count) >=
+         atomic_load(&order.capture_count));
 }
 
 int main(void) {
@@ -400,6 +470,7 @@ int main(void) {
       .start = fake_output_start,
       .write_available = fake_output_write_available,
       .write = fake_output_write,
+      .stop = fake_output_stop,
       .abort = fake_output_abort,
       .close = fake_output_close,
       .error_text = fake_output_error_text,
@@ -430,6 +501,7 @@ int main(void) {
   test_stop_waits_for_active_write(audio, &output);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_AVAILABILITY_ERROR);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_WRITE_ERROR);
+  test_echo_reference_precedes_capture(provider, audio, &output);
   h2_portaudio_destroy(provider);
   return 0;
 }
