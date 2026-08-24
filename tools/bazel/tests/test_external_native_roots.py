@@ -17,6 +17,17 @@ class ExternalNativeRootsTest(unittest.TestCase):
                 self.assertIn('set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")', text)
                 self.assertNotIn("H2_REPO_ROOT", text)
 
+    def test_native_sdk_watchers_exclude_git_internals(self) -> None:
+        paths = (
+            ROOT / "tools/bazel/native_repositories/esp_repositories.bzl",
+            ROOT / "tools/bazel/native_repositories/bk_repositories.bzl",
+            ROOT / "tools/bazel/native_repositories/repositories.bzl",
+        )
+        expected = 'repository_ctx.watch_tree(root, exclude = [".git/**"])'
+        for path in paths:
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertIn(expected, path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

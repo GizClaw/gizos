@@ -50,7 +50,7 @@ def _git_output(repository_ctx, git, root, arguments, description):
     return result.stdout.strip()
 
 def _watch_git_state(repository_ctx, root):
-    repository_ctx.watch_tree(root)
+    repository_ctx.watch_tree(root, exclude = [".git/**"])
     dot_git = root.get_child(".git")
     if not dot_git.exists:
         return

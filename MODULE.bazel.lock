@@ -330,7 +330,7 @@
     },
     "//tools/bazel/native_repositories:bk_repositories.bzl%bk_repositories": {
       "general": {
-        "bzlTransitiveDigest": "V9H8z4l68vtPorls4ip6FFM6oCoV6x/dAVRfIz3OoZE=",
+        "bzlTransitiveDigest": "MzczmZ31EWK5Uk4kPtTqVUZkNCLeYMHwiCU1JUrZpEc=",
         "usagesDigest": "0XBMgPy7bGQyP1RtWF/koXm6qgfD64JoC4DHG4TvNTg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -357,7 +357,7 @@
     },
     "//tools/bazel/native_repositories:esp_repositories.bzl%esp_repositories": {
       "general": {
-        "bzlTransitiveDigest": "SDRkmXIHQPuxosIqC4V8B2bRBpI+LmzA3IwfwknVxsY=",
+        "bzlTransitiveDigest": "XzUA7QwhKBK5yCDjkw8wkJRtOOTDrraYF/vtw1gsg0o=",
         "usagesDigest": "27pbg8JY2J8pAD9Uy37l9nn74s2yPtaj1zQpp/ffdsI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -389,7 +389,7 @@
     },
     "//tools/bazel/native_repositories:repositories.bzl%native_repositories": {
       "general": {
-        "bzlTransitiveDigest": "wapA9ND7rCn1lTt/hMamsVPrpW5p/An/uq729y1SjQA=",
+        "bzlTransitiveDigest": "yzIHEevb3UtCyDtk4+YlmegnvlTOez9jBq2bXWN4tS4=",
         "usagesDigest": "fCQHbHWyxHU4pBYo/A9GZrhbJ1InAj7MZI3GG5+X9Gs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
