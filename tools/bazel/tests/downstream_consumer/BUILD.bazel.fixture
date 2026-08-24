@@ -49,6 +49,7 @@ exports_files([
     "CMakeLists.txt",
     "ap.defaults",
     "cp.defaults",
+    "disabled_native_locator.json",
     "partition.csv",
     "ram_regions.csv",
     "sdkconfig.h2loader.defaults",

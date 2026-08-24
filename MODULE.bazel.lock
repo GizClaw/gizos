@@ -519,7 +519,7 @@
     },
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "E7loyOdrQJUsbZ9R+M5+cQmFKUTp6/lViuIKoA25k68=",
+        "bzlTransitiveDigest": "IL4PfzpXp+dGnFjjsGdXiNSJ0VMLlCFq8AUEmWKXAXM=",
         "usagesDigest": "ThNWcQs68cS58YVY8fxEeAgWxkPnQNftCcSnKccvnDE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

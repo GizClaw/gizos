@@ -15,3 +15,15 @@ register_toolchains(
     "@zig_sdk//toolchain:linux_amd64_gnu.2.28",
     "@zig_sdk//toolchain:linux_arm64_gnu.2.28",
 )
+
+esp32s3_cc = use_extension(
+    "@gizos//tools/bazel/toolchains/esp32s3_cc:repositories.bzl",
+    "esp32s3_cc_toolchain",
+)
+esp32s3_cc.locators(
+    sdk_locator = "//:disabled_native_locator.json",
+    tools_locator = "//:disabled_native_locator.json",
+)
+use_repo(esp32s3_cc, "gizos_esp32s3_cc_toolchain")
+
+register_toolchains("@gizos_esp32s3_cc_toolchain//:toolchain")
