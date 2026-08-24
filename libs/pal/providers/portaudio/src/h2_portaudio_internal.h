@@ -20,6 +20,7 @@ typedef struct h2_portaudio_output_test_ops {
 
 typedef struct h2_portaudio_echo_test_ops {
   void *user;
+  void (*reset)(void *user);
   void (*playback)(void *user, const int16_t *reference);
   void (*capture)(void *user, const int16_t *microphone, int16_t *cleaned);
 } h2_portaudio_echo_test_ops_t;

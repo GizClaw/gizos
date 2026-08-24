@@ -55,6 +55,7 @@ typedef struct mic_reader {
 } mic_reader_t;
 
 typedef struct echo_order {
+  atomic_int reset_count;
   atomic_int playback_count;
   atomic_int capture_count;
   atomic_bool capture_before_playback;
@@ -241,6 +242,11 @@ static void fake_echo_playback(void *user, const int16_t *reference) {
   atomic_fetch_add_explicit(&order->playback_count, 1, memory_order_release);
 }
 
+static void fake_echo_reset(void *user) {
+  echo_order_t *order = user;
+  atomic_fetch_add_explicit(&order->reset_count, 1, memory_order_release);
+}
+
 static void fake_echo_capture(void *user, const int16_t *microphone,
                               int16_t *cleaned) {
   echo_order_t *order = user;
@@ -424,11 +430,13 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
                                                  h2_pal_audio_t *audio,
                                                  fake_output_t *output) {
   echo_order_t order;
+  atomic_init(&order.reset_count, 0);
   atomic_init(&order.playback_count, 0);
   atomic_init(&order.capture_count, 0);
   atomic_init(&order.capture_before_playback, false);
   const h2_portaudio_echo_test_ops_t echo_ops = {
       .user = &order,
+      .reset = fake_echo_reset,
       .playback = fake_echo_playback,
       .capture = fake_echo_capture,
   };
@@ -437,6 +445,7 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
   fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
   assert(h2_pal_audio_start_mic(audio) == H2_AUDIO_OK);
+  assert(atomic_load(&order.reset_count) == 1);
 
   h2_audio_frame_t raw_capture = mic_frame(samples);
   assert(h2_pal_audio_mic_read(audio, &raw_capture, 1000u) == H2_AUDIO_OK);
@@ -448,7 +457,18 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
   wait_for_int_at_least(&order.capture_count, 1);
   assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
   assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(atomic_load(&order.reset_count) == 2);
+
+  const int captures_before_restart = atomic_load(&order.capture_count);
+  fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  track = write_test_frame(audio, samples);
+  wait_for_int_at_least(&order.capture_count, captures_before_restart + 1);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(atomic_load(&order.reset_count) == 3);
   assert(h2_pal_audio_stop_mic(audio) == H2_AUDIO_OK);
+  assert(atomic_load(&order.reset_count) == 4);
   assert(!atomic_load(&order.capture_before_playback));
   assert(atomic_load(&order.playback_count) >=
          atomic_load(&order.capture_count));

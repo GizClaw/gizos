@@ -8,7 +8,7 @@
 
 正常 speaker stop 必须先等待 playback worker 退出，再调用 PortAudio `stop` 排空设备已接收的尾帧后 close；worker 的 availability/write failure 使用 `abort`，保证失败清理有界且后续可以重新启动。设备一次只接受部分 frame 时，worker 保留未写部分并按原顺序继续，不能丢弃 frame 尾部。
 
-Desktop AEC 使用最多 16 帧的 playback-reference FIFO：只有完整写入 output stream 的 frame 才进入队列，队列满时丢弃最旧 reference；microphone worker 在处理 capture 前消费一个 reference，并按 `playback` 后 `capture` 的顺序调用 Speex。启动阶段、播放暂停或其他 reference queue 为空的时刻不阻塞 microphone、不合成静音 reference，该 capture 以未做 AEC 的原始 PCM 继续投递。停止 microphone 会清空 reference queue 并重置 Speex 状态。
+Desktop AEC 使用最多 16 帧的 playback-reference FIFO：只有完整写入 output stream 的 frame 才进入队列，队列满时丢弃最旧 reference；microphone worker 在处理 capture 前消费一个 reference，并按 `playback` 后 `capture` 的顺序调用 Speex。启动阶段、播放暂停或其他 reference queue 为空的时刻不阻塞 microphone、不合成静音 reference，该 capture 以未做 AEC 的原始 PCM 继续投递。playback worker 在正常 stop 或失败退出时、以及 microphone 停止时都会清空 reference queue 并重置 Speex 状态，speaker 重启不能消费停止前的旧 reference。
 
 `require_real_devices` 是 composition 注入的 policy。启用时，缺失默认输入/输出设备或 stream 初始化失败必须返回错误，不能静默切换到 synthetic microphone 或 sink。实时 callback 只进行 bounded queue/data transfer，不能分配、阻塞或调用 App code。
 

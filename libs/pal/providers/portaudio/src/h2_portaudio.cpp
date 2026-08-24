@@ -353,6 +353,9 @@ void reset_echo_reference(AudioState *state) {
   std::lock_guard<std::mutex> lock(state->echo_mutex);
   state->echo_reference_head = 0u;
   state->echo_reference_count = 0u;
+  if (state->echo_test_ops_overridden) {
+    state->echo_test_ops.reset(state->echo_test_ops.user);
+  }
   if (state->echo_state != nullptr) {
     speex_echo_state_reset(state->echo_state);
   }
@@ -483,6 +486,7 @@ void playback_main(AudioState *state) {
       pending_echo_reference = false;
     }
   }
+  reset_echo_reference(state);
   state->playback_running.store(false);
 }
 
@@ -648,7 +652,7 @@ int audio_stop_mic(void *user) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   AudioState *state = static_cast<AudioState *>(user);
-  state->mic_running.store(false);
+  const bool was_running = state->mic_running.exchange(false);
   if (state->mic_queue != nullptr) {
     (void)h2_pal_queue_close(state->queue, state->mic_queue);
   }
@@ -668,6 +672,9 @@ int audio_stop_mic(void *user) {
       h2_pal_queue_destroy(state->queue, state->mic_queue);
       state->mic_queue = nullptr;
     }
+  }
+  if (was_running) {
+    reset_echo_reference(state);
   }
   std::lock_guard<std::mutex> lock(state->control_mutex);
   if (state->input_stream != nullptr) {
@@ -855,8 +862,8 @@ int h2_portaudio_set_output_test_ops(
 
 int h2_portaudio_set_echo_test_ops(
     h2_portaudio_t *provider, const h2_portaudio_echo_test_ops_t *ops) {
-  if (provider == nullptr || ops == nullptr || ops->playback == nullptr ||
-      ops->capture == nullptr) {
+  if (provider == nullptr || ops == nullptr || ops->reset == nullptr ||
+      ops->playback == nullptr || ops->capture == nullptr) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   AudioState *state = &provider->state;
