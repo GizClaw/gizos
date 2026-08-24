@@ -8,7 +8,7 @@ set(H2_GIZCLAW_E2E_APP_DIR "${H2_REPO_ROOT}/projects/e2e/apps/gizclaw/app")
 set(H2_GIZCLAW_E2E_VOICE_PROMPT
   "${H2_REPO_ROOT}/projects/e2e/apps/gizclaw/data/voice_prompt_l16_16khz_mono.pcm")
 
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 
 idf_component_register(

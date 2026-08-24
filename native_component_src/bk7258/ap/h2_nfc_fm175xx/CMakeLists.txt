@@ -1,5 +1,5 @@
-set(REPO_ROOT "$ENV{H2_REPO_ROOT}")
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_nfc_fm175xx ap)
 
 armino_component_register(

@@ -80,7 +80,7 @@ else()
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_platform_webrtc_unsupported.c")
 endif()
 
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_select_sources(
   H2_COMPONENT_SOURCES
   h2_pal_core
