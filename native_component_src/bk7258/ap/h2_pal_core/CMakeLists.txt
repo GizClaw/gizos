@@ -1,4 +1,4 @@
-set(REPO_ROOT "$ENV{H2_REPO_ROOT}")
+set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 if(POLICY CMP0079)
   cmake_policy(SET CMP0079 NEW)
 endif()
@@ -111,7 +111,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_wifi_settings.c"
   "src/h2_bk_platform_ble.c"
   "src/h2_bk_platform_ble_heap.c")
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_select_sources(
   H2_COMPONENT_SOURCES
   h2_pal_core

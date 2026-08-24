@@ -75,7 +75,7 @@ def _validate_compiler_version(repository_ctx, compiler):
         ))
 
 def _toolchain_root(repository_ctx):
-    locator = json.decode(repository_ctx.read(repository_ctx.attr._tools_locator))
+    locator = json.decode(repository_ctx.read(repository_ctx.attr.tools_locator))
     if not locator.get("enabled", False):
         return None
     tools_path = locator.get("paths", {}).get("tools_root", "")
@@ -156,7 +156,7 @@ def _builtin_include_directories(repository_ctx, root, dynamic_config):
     return directories
 
 def _idf_builtin_include_directories(repository_ctx):
-    locator = json.decode(repository_ctx.read(repository_ctx.attr._sdk_locator))
+    locator = json.decode(repository_ctx.read(repository_ctx.attr.sdk_locator))
     if not locator.get("enabled", False):
         return []
     idf_path = locator.get("paths", {}).get("root", "")
@@ -315,20 +315,38 @@ _esp32s3_cc_repository = repository_rule(
             allow_single_file = True,
             default = "//tools/bazel:native_versions/esp_idf_tool_versions.txt",
         ),
-        "_sdk_locator": attr.label(
+        "sdk_locator": attr.label(
             allow_single_file = True,
             default = "@gizos_esp_idf_sdk//:locator.json",
         ),
-        "_tools_locator": attr.label(
+        "tools_locator": attr.label(
             allow_single_file = True,
             default = "@gizos_esp_idf_tools//:locator.json",
         ),
     },
 )
 
-def _esp32s3_cc_extension_impl(_module_ctx):
-    _esp32s3_cc_repository(name = "gizos_esp32s3_cc_toolchain")
+def _esp32s3_cc_extension_impl(module_ctx):
+    configurations = []
+    for module in module_ctx.modules:
+        configurations.extend(module.tags.locators)
+    if len(configurations) > 1:
+        fail("esp32s3_cc_toolchain accepts at most one locator configuration")
+    if configurations:
+        _esp32s3_cc_repository(
+            name = "gizos_esp32s3_cc_toolchain",
+            sdk_locator = configurations[0].sdk_locator,
+            tools_locator = configurations[0].tools_locator,
+        )
+    else:
+        _esp32s3_cc_repository(name = "gizos_esp32s3_cc_toolchain")
 
 esp32s3_cc_toolchain = module_extension(
     implementation = _esp32s3_cc_extension_impl,
+    tag_classes = {
+        "locators": tag_class(attrs = {
+            "sdk_locator": attr.label(allow_single_file = True, mandatory = True),
+            "tools_locator": attr.label(allow_single_file = True, mandatory = True),
+        }),
+    },
 )

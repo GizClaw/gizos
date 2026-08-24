@@ -1,4 +1,4 @@
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES opus_port ap)
 h2_bazel_native_component_select_sources(OPUS_ROOT_MARKER opus_port ap src/opus.c)
 list(GET OPUS_ROOT_MARKER 0 OPUS_ROOT_MARKER)

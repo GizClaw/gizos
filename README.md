@@ -67,6 +67,12 @@ The Linux, macOS, and Windows CI jobs analyze and build the complete compatible 
 
 The host-compatible public Bazel graph must pass from a clean clone without private source repositories, credentials, services, product assets, or private board definitions. Native firmware CI obtains SDK and toolchain inputs through the read-only development-environment integration.
 
+Product repositories consume GizOS as the `gizos` Bzlmod module and reference public targets through `@gizos//...`. The product root owns its selected platform config and root-only host toolchains; GizOS keeps its public library, native component, firmware composition, and H2Loader packaging labels valid when analyzed as an external repository. Repository CI verifies this boundary with:
+
+```sh
+make bazel-test-downstream-consumer
+```
+
 ## License
 
 GizOS is licensed under the [Apache License 2.0](LICENSE).

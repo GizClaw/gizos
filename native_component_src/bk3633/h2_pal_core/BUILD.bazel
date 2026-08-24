@@ -48,7 +48,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["tests/include"],
-    visibility = ["//native_component_src/bk3633/h2_pal_core:__pkg__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":h2_platform_mem",
         "//libs/pal",
@@ -309,7 +309,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["tests/include"],
-    visibility = ["//native_component_src/bk3633/h2_pal_core:__pkg__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":h2_platform_entropy",
         "//libs/pal",

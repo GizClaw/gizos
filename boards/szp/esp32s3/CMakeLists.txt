@@ -32,7 +32,7 @@ set(H2_ESP_BOARD_REQUIRES
   joltwallet__littlefs
   h2_firmware_lib)
 
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_BOARD_SOURCES h2_esp_board)
 
 idf_component_register(
