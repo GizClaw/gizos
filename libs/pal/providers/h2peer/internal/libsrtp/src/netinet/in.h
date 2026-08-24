@@ -1,7 +1,7 @@
 #ifndef H2_LIBSRTP_NETINET_IN_H
 #define H2_LIBSRTP_NETINET_IN_H
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(H2_LIBSRTP_NO_SYSTEM_NETINET)
 
 /* The private include root is propagated by Bazel, so do not shadow POSIX. */
 #include_next <netinet/in.h>
@@ -12,8 +12,8 @@
 
 /*
  * libSRTP uses netinet/in.h only for host/network byte-order conversion.
- * Keep that private upstream include portable without pulling a socket API
- * into the PAL-backed package.
+ * Keep that private upstream include portable on Windows and embedded targets
+ * without pulling a socket API into the PAL-backed package.
  */
 
 static inline uint16_t h2_libsrtp_network_u16(uint16_t value) {

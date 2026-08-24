@@ -37,7 +37,11 @@ cc_library(
         "include",
         "src",
     ],
-    local_defines = ["HAVE_CONFIG_H"],
+    local_defines = ["HAVE_CONFIG_H"] + select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["H2_LIBSRTP_NO_SYSTEM_NETINET"],
+    }),
     deps = [
         "//libs/pal",
         "@h2_vendor_libsrtp//:h2_private_headers",
