@@ -47,7 +47,7 @@ wasm_cc_binary(
     cc_target = ":_wasm/h2loader_runtime",
     outputs = [
         "h2loader_runtime.js",
-        "h2loader.wasm",
+        "h2loader_runtime.wasm",
     ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],

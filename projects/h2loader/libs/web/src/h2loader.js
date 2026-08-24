@@ -43,7 +43,7 @@ export async function createH2Loader(options = {}) {
   if (!Number.isInteger(pollIntervalMs) || pollIntervalMs < 1 || pollIntervalMs > 1000) {
     throw new H2LoaderError(-1, "create", "pollIntervalMs must be an integer from 1 to 1000");
   }
-  const wasmUrl = new URL("./h2loader.wasm", import.meta.url);
+  const wasmUrl = new URL("./h2loader_runtime.wasm", import.meta.url);
   const module = await createH2LoaderModule({
     locateFile(path) {
       return path.endsWith(".wasm") ? wasmUrl.href : path;

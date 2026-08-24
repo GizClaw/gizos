@@ -8,7 +8,6 @@
 projects/h2loader/
 ├── apps/
 │   ├── loader/app/                       # Portable Loader App
-│   ├── batch-loader/app/                  # H2Loader Batch Loader React/shadcn Web App
 │   └── cli/app/                           # Portable native CLI App
 ├── libs/
 │   ├── h2loader/                         # H2Loader 公共库
@@ -21,7 +20,7 @@ projects/h2loader/
 │   └── h2loader_tar_zlib.bzl             # H2Loader package artifact rule
 └── targets/
     ├── cc_binary/cli/                     # macOS/Linux/Windows native CLI process 与 PAL 组装
-    ├── pkg_tar/batch-loader/               # Batch Loader HTML/JS/WASM Web archive
+    ├── npm_package/h2loader/               # @gizclaw/h2loader Browser SDK
     └── h2loader_tar_zlib/loader/<board>/  # Loader package 与内部平台 firmware
 
 projects/example/apps/<app>/app/          # 共享 target-independent Example
@@ -32,7 +31,6 @@ projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/ # Owner 的 H2Loader
 boards/<board>/<target>/                   # 物理 board BSP、defaults 与 firmware layouts
 native_component_src/<target>/             # 跨产品原生 SDK component source
 libs/h2loader_host/                        # Portable Host Core
-projects/h2loader/apps/batch-loader/app/   # Batch Loader Host UI
 projects/h2loader/apps/cli/app/            # Portable CLI command 与 output policy
 projects/h2loader/targets/cc_binary/cli/   # Native CLI executable target
 ```
@@ -43,7 +41,7 @@ projects/h2loader/targets/cc_binary/cli/   # Native CLI executable target
 
 `apps/loader/app/` 保存 portable Loader App。它组织设备端 command、安装和启动流程，但不包含 board、partition label、SDK startup 或 Host UI。
 
-`apps/batch-loader/app/` 保存 React JavaScript/JSX DOM App、shadcn components、本地 package dialog、device table、localStorage metadata 和最多四路的 batch controller。内部 Web SDK 位于 `libs/web/`，通过 public Promise API 包装 Host Core 与 Web PAL；App 不使用 raw Emscripten ABI。最终 serve-ready archive 位于 `targets/pkg_tar/batch-loader/`。
+Batch Loader 产品 Web UI 已迁移到 `GizClaw/www`。本仓库的 `libs/web/` 通过 public Promise API 包装 Host Core 与 Web PAL，`targets/npm_package/h2loader/` 负责把 matching JS/runtime/WASM 发布为 `@gizclaw/h2loader`；消费方不使用 raw Emscripten ABI。
 
 `apps/cli/app/` 保存 portable C11 CLI App。它拥有参数校验、command dispatch、stable output 和 command-scoped policy，只消费 Runtime、现有 PAL contract、`libs/command/` 与 `libs/h2loader_host/`。`targets/cc_binary/cli/` 只拥有 argv/stdio、signal cancellation 和 macOS/Linux/Windows PAL provider 组装，不定义 project-private OS capability。
 
@@ -138,4 +136,4 @@ native outputs；Loader recovery bundle 由外层 package rule 生成。
 
 目录位置：`projects/h2loader/apps/cli/app/` 和 `projects/h2loader/targets/cc_binary/cli/`
 
-H2Loader Batch Loader Web App 位于 `apps/batch-loader/app/`，可复用 JS/runtime/WASM SDK 位于 `libs/web/`，唯一浏览器 archive 位于 `targets/pkg_tar/batch-loader/`。Batch Loader 与 native CLI 都通过 `libs/h2loader_host/` 取得 authoritative identity、typed command、package contract 与 lifecycle verification；两者不互相链接。CLI 的 App source、host target 和 tests 都由 `projects/h2loader/` 拥有，不在 `tools/` 维护第二套 protocol、package writer 或 Python runtime。Host 代码不属于 firmware，也不通过设备 Runtime 使用硬件能力。
+可复用 JS/runtime/WASM SDK 位于 `libs/web/`，公共 npm artifact 位于 `targets/npm_package/h2loader/`；产品 Batch Loader UI 位于 `GizClaw/www`。Web SDK 与 native CLI 都通过 `libs/h2loader_host/` 取得 authoritative identity、typed command、package contract 与 lifecycle verification。CLI 的 App source、host target 和 tests 都由 `projects/h2loader/` 拥有，不在 `tools/` 维护第二套 protocol、package writer 或 Python runtime。Host 代码不属于 firmware，也不通过设备 Runtime 使用硬件能力。

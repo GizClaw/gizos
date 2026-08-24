@@ -75,7 +75,7 @@ flowchart TD
 
 ### Host
 
-`projects/h2loader/apps/batch-loader/app/` 提供正式维护的 React/shadcn 工厂 Batch Loader，`projects/h2loader/libs/web/` 提供浏览器/Web Serial JS/runtime/WASM SDK source target，`projects/h2loader/targets/npm_package/h2loader/` 将同一组输出发布为公共 `@gizclaw/h2loader` npm package，`projects/h2loader/targets/pkg_tar/batch-loader/` 则组装 Batch Loader 浏览器应用。npm package 不提供 Node.js serial-port runtime。Native CLI 的 portable App 位于 `projects/h2loader/apps/cli/app/`，macOS/Linux/Windows process 与 PAL 组装位于 `projects/h2loader/targets/cc_binary/cli/`。Batch Loader 与 CLI 都通过 `libs/h2loader_host/` 执行 authoritative status、typed command、package 校验和 lifecycle verification，彼此不依赖 source。`projects/e2e/targets/pkg_tar/h2loader-serial/` 继续是非生产 Browser Host Serial 验证入口，不属于产品 UI 或发布物。Host 不属于设备固件，也不通过设备 Runtime 使用硬件能力。
+`projects/h2loader/libs/web/` 提供浏览器/Web Serial JS/runtime/WASM SDK source target，`projects/h2loader/targets/npm_package/h2loader/` 将同一组输出发布为公共 `@gizclaw/h2loader` npm package。产品 Batch Loader UI 由 `GizClaw/www` 消费该 package，GizOS 不再维护 React frontend 或 Batch Loader 静态 archive。npm package 不提供 Node.js serial-port runtime。Native CLI 的 portable App 位于 `projects/h2loader/apps/cli/app/`，macOS/Linux/Windows process 与 PAL 组装位于 `projects/h2loader/targets/cc_binary/cli/`。Web SDK 与 CLI 都通过 `libs/h2loader_host/` 执行 authoritative status、typed command、package 校验和 lifecycle verification，彼此不依赖 source。`projects/e2e/targets/pkg_tar/h2loader-serial/` 继续是非生产 Browser Host Serial 验证入口，不属于产品 UI 或发布物。Host 不属于设备固件，也不通过设备 Runtime 使用硬件能力。
 
 ### Loader image
 
@@ -102,10 +102,10 @@ BK3633 的 `:firmware` target 仍由 Bazel/CI 构建和验证，但没有 `Firmw
 
 ```mermaid
 flowchart TD
-    Batch["Batch Loader React/JS"] --> WebSDK["projects/h2loader/libs/web"]
-    WebSDK --> NpmSDK["@gizclaw/h2loader<br/>browser SDK package"]
+    Batch["GizClaw/www<br/>Batch Loader UI"] --> NpmSDK["@gizclaw/h2loader<br/>browser SDK package"]
+    NpmSDK --> WebSDK["projects/h2loader/libs/web"]
     WebSDK --> HostCore["libs/h2loader_host"]
-    Batch --> WebPAL["Web PAL / Web Serial"]
+    WebSDK --> WebPAL["Web PAL / Web Serial"]
     WebPAL --> Loader["H2Loader device"]
     HostCore --> WebPAL
     H2Main["h2loader_tar_zlib/loader/&lt;board&gt;"] --> LoaderApp["apps/loader"]
@@ -128,7 +128,7 @@ flowchart TD
 - `projects/h2loader/libs/h2loader/` 保存 package、image identity、确认、回退、return-to-loader 和调试协议。
 - `projects/h2loader/native_component_src/` 保存只服务 H2Loader 的 target glue；可跨产品复用的原生 SDK component source 必须提升到顶层 `native_component_src/`，Bazel 平台实现提升到 `libs/pal/providers/`。
 - `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/` 保存 owner 的薄 image 入口、build config、BSP 选择、Runtime 生命周期与最终 H2Loader package target；H2Loader project 自己只保留 Loader image entry 与共享 package support。
-- `projects/h2loader/apps/batch-loader/app/` 保存正式工厂 Batch Loader 的 React/shadcn DOM UI 与 batch controller；`projects/h2loader/libs/web/` 保存可复用的浏览器/Web Serial SDK source，`projects/h2loader/targets/npm_package/h2loader/` 保存公共 `@gizclaw/h2loader` manifest 与 Bazel 发布规则，`libs/h2loader_host/` 保存 portable device policy 与 managed lifecycle。
+- `projects/h2loader/libs/web/` 保存可复用的浏览器/Web Serial SDK source，`projects/h2loader/targets/npm_package/h2loader/` 保存公共 `@gizclaw/h2loader` manifest 与 Bazel 发布规则，`libs/h2loader_host/` 保存 portable device policy 与 managed lifecycle；产品 Web UI 归 `GizClaw/www`。
 - `projects/h2loader/apps/cli/app/` 保存 portable CLI command、参数和输出 policy，并且只消费 Runtime、PAL 与 repository library；`projects/h2loader/targets/cc_binary/cli/` 只保存 native process entry 和 macOS/Linux/Windows PAL provider 组装。
 - `projects/h2loader/tools/bazel/` 保存 H2Loader 专用 package、recovery、release metadata writer 和对应 artifact rule；顶层 `tools/bazel/` 只保存全仓通用 firmware rule 与 runner。
 
