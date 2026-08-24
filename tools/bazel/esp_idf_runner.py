@@ -21,6 +21,7 @@ from tools.bazel.native_ccache import (
 )
 from tools.bazel.native_runtime import (
     NativeRuntimeError,
+    find_external_repository_source_root,
     find_unique_executable,
     fixed_environment,
     locator_path,
@@ -29,6 +30,7 @@ from tools.bazel.native_runtime import (
 
 H2LOADER_WIFI_CREDENTIALS = "H2LOADER_WIFI_CREDENTIALS"
 NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
+GIZOS_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_IDF_VERSION = "6.0"
 TARGET_COMPILERS = {
     "esp32c5": "riscv32-esp-elf-gcc",
@@ -720,8 +722,26 @@ def run(arguments: argparse.Namespace) -> None:
     subprocess_environment = dict(environment)
     subprocess_environment["ESP_IDF_VERSION"] = EXPECTED_IDF_VERSION
     subprocess_environment["H2_REPO_ROOT"] = str(source_root)
+    subprocess_environment["H2_GIZOS_ROOT"] = str(GIZOS_ROOT)
     subprocess_environment["H2_FIRMWARE_VERSION"] = arguments.version
     subprocess_environment["H2_BAZEL_NATIVE_ARTIFACTS_ONLY"] = "1"
+    prebuilt_include_paths = [
+        path
+        for paths in prebuilt_component_includes.values()
+        for path in paths
+    ]
+    for variable, repository_name in (
+        ("H2_PIXA_UPSTREAM_ROOT", "h2_vendor_pixa"),
+        ("H2_PIXELROOT32_UPSTREAM_ROOT", "h2_vendor_pixelroot32"),
+    ):
+        try:
+            repository_root = find_external_repository_source_root(
+                prebuilt_include_paths, repository_name
+            )
+        except NativeRuntimeError as error:
+            raise RunnerError(str(error)) from error
+        if repository_root is not None:
+            subprocess_environment[variable] = str(repository_root)
     with tempfile.TemporaryDirectory(prefix=f"h2-esp-idf-{arguments.target}-") as temporary:
         temporary_root = Path(temporary)
         wrapper_directory = create_ninja_wrapper(
@@ -779,7 +799,10 @@ def run(arguments: argparse.Namespace) -> None:
         build_directory = temporary_root / "build"
         component_directories: dict[str, Path] = {}
         component_alias_root = temporary_root / "components"
-        archive_helper = source_root / "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
+        archive_helper = (
+            GIZOS_ROOT
+            / "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
+        )
         if arguments.generate_prebuilt_component:
             archive_helper = required_file(archive_helper, "ESP-IDF Bazel archive helper")
         for component_name in sorted(arguments.generate_prebuilt_component):

@@ -198,8 +198,8 @@ def bk3633_firmware(name, **kwargs):
     if "target_compatible_with" in kwargs:
         fail("bk3633_firmware owns target_compatible_with")
     compatibility = select({
-        "//tools/bazel/platforms:ci_graph": [],
-        "//tools/bazel/platforms:is_bk3633": [],
+        Label("//tools/bazel/platforms:ci_graph"): [],
+        Label("//tools/bazel/platforms:is_bk3633"): [],
         "//conditions:default": ["@platforms//:incompatible"],
     })
     _bk3633_firmware(

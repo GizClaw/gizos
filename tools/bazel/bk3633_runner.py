@@ -34,6 +34,7 @@ class RunnerError(RuntimeError):
 
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 COMPONENT_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+GIZOS_ROOT = Path(__file__).resolve().parents[2]
 
 
 def read_expected_commit(path: str, label: str) -> str:
@@ -143,6 +144,7 @@ def required_environment(arguments: argparse.Namespace) -> dict[str, str]:
     environment.update({
         "BK3633_PATH": str(sdk),
         "COMPILER_TOOLCHAIN_PATH": str(toolchain),
+        "H2_GIZOS_ROOT": str(GIZOS_ROOT),
         "H2_NATIVE_BUILD_JOBS": "4",
     })
     return environment

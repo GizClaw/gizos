@@ -32,10 +32,14 @@ def _native_firmware_resources(_os, _inputs_size):
     }
 
 _TARGET_CONFIGS = {
-    "bk7258": "//tools/bazel/platforms:is_bk7258",
+    "bk7258": Label("//tools/bazel/platforms:is_bk7258"),
 }
 
+_CI_GRAPH = Label("//tools/bazel/platforms:ci_graph")
+
 def _bk7258_firmware_impl(ctx):
+    if bool(ctx.file.memory_contract) != bool(ctx.executable.memory_checker):
+        fail("memory_contract and memory_checker must be declared together")
     output_root = ctx.label.name
     version = ctx.attr._firmware_version[FirmwareVersionInfo].value
     ap_elf = ctx.actions.declare_file(output_root + "/ap/firmware.elf")
@@ -70,7 +74,7 @@ def _bk7258_firmware_impl(ctx):
     prebuilt_files = [component.archive for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
-        [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files,
+        [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files + ([ctx.file.memory_contract] if ctx.file.memory_contract else []),
         transitive = graph_sources + prebuilt_headers,
     )
 
@@ -98,6 +102,9 @@ def _bk7258_firmware_impl(ctx):
     args.add("--recovery-output", recovery_image.path)
     args.add("--partition-metadata-output", partition_metadata.path)
     args.add("--ram-regions", ctx.file.ram_regions.path)
+    if ctx.file.memory_contract:
+        args.add("--memory-contract", ctx.file.memory_contract.path)
+        args.add("--memory-checker", ctx.executable.memory_checker.path)
     for support_file in ctx.files.support_files:
         args.add("--support-file", support_file.path)
     for support_file in ctx.files.project_support_files:
@@ -134,7 +141,7 @@ def _bk7258_firmware_impl(ctx):
         outputs = outputs,
         progress_message = "Building BK7258 firmware %{label}",
         resource_set = _native_firmware_resources,
-        tools = [ctx.executable._runner],
+        tools = [ctx.executable._runner] + ([ctx.executable.memory_checker] if ctx.executable.memory_checker else []),
         env = {"PATH": "/usr/bin:/bin"},
         use_default_shell_env = False,
     )
@@ -201,6 +208,15 @@ _bk7258_firmware = rule(
             doc = "Launcher source graph analyzed for the selected firmware platform.",
             providers = [H2NativeComponentInfo],
         ),
+        "memory_checker": attr.label(
+            cfg = "exec",
+            executable = True,
+            doc = "Optional product-owned executable paired with memory_contract.",
+        ),
+        "memory_contract": attr.label(
+            allow_single_file = [".json"],
+            doc = "Optional product-owned memory contract validated before and after linking.",
+        ),
         "project": attr.label(
             allow_single_file = ["CMakeLists.txt"],
             mandatory = True,
@@ -259,7 +275,7 @@ def bk7258_firmware(name, target, **kwargs):
     if "target_compatible_with" in kwargs:
         fail("bk7258_firmware owns target_compatible_with")
     compatibility = select({
-        "//tools/bazel/platforms:ci_graph": [],
+        _CI_GRAPH: [],
         _TARGET_CONFIGS[target]: [],
         "//conditions:default": ["@platforms//:incompatible"],
     })

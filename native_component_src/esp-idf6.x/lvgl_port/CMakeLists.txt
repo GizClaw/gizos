@@ -1,4 +1,4 @@
-set(REPO_ROOT "${H2_REPO_ROOT}")
+set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 set(H2_LVGL_ROOT "${REPO_ROOT}/libs/lvgl")
 set(H2_LVGL_CONFIG_ROOT "${REPO_ROOT}/third_party/lvgl_patch/config/esp_idf6_x")
 

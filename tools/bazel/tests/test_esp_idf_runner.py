@@ -36,6 +36,11 @@ if os.environ.get("H2_FIRMWARE_VERSION") != "test-version":
     raise SystemExit("runner did not provide the internal firmware version")
 if os.environ.get("H2_BAZEL_NATIVE_ARTIFACTS_ONLY") != "1":
     raise SystemExit("runner did not disable native package side effects")
+gizos_root = Path(os.environ["H2_GIZOS_ROOT"])
+if not gizos_root.joinpath(
+    "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
+).is_file():
+    raise SystemExit("runner did not provide the GizOS source root")
 args = sys.argv[1:]
 definitions = [args[index + 1] for index, value in enumerate(args[:-1]) if value == "-D"]
 if "PROJECT_VER=test-version" not in definitions:

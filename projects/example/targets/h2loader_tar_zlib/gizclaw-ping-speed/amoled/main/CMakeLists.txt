@@ -62,7 +62,7 @@ const char h2_smoke_wifi_ssid[] = \"${H2_SMOKE_WIFI_SSID_C}\";
 const char h2_smoke_wifi_password[] = \"${H2_SMOKE_WIFI_PASSWORD_C}\";
 ")
 
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
 list(APPEND H2_MAIN_SOURCES "${H2_SMOKE_GIZCLAW_GENERATED_C}")
 

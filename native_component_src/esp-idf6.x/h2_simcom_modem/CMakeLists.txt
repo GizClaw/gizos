@@ -1,6 +1,6 @@
 set(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_simcom_modem)
 
 idf_component_register(

@@ -330,7 +330,7 @@
     },
     "//tools/bazel/native_repositories:bk_repositories.bzl%bk_repositories": {
       "general": {
-        "bzlTransitiveDigest": "V9H8z4l68vtPorls4ip6FFM6oCoV6x/dAVRfIz3OoZE=",
+        "bzlTransitiveDigest": "lTqO10wvabKEowpNhT8dASg0VRbnCdV3BPolf9UREhY=",
         "usagesDigest": "0XBMgPy7bGQyP1RtWF/koXm6qgfD64JoC4DHG4TvNTg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -357,7 +357,7 @@
     },
     "//tools/bazel/native_repositories:esp_repositories.bzl%esp_repositories": {
       "general": {
-        "bzlTransitiveDigest": "SDRkmXIHQPuxosIqC4V8B2bRBpI+LmzA3IwfwknVxsY=",
+        "bzlTransitiveDigest": "f4IvQhHv80XY09UtHEHNp23faBkZ2x5syaX2C6/xf5k=",
         "usagesDigest": "27pbg8JY2J8pAD9Uy37l9nn74s2yPtaj1zQpp/ffdsI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -389,7 +389,7 @@
     },
     "//tools/bazel/native_repositories:repositories.bzl%native_repositories": {
       "general": {
-        "bzlTransitiveDigest": "wapA9ND7rCn1lTt/hMamsVPrpW5p/An/uq729y1SjQA=",
+        "bzlTransitiveDigest": "f0IR00E1HRZ7Vfgo35rYur/uVtPzwdlo5heuO8EkpxU=",
         "usagesDigest": "fCQHbHWyxHU4pBYo/A9GZrhbJ1InAj7MZI3GG5+X9Gs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -519,7 +519,7 @@
     },
     "//tools/bazel/toolchains/esp32s3_cc:repositories.bzl%esp32s3_cc_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "E7loyOdrQJUsbZ9R+M5+cQmFKUTp6/lViuIKoA25k68=",
+        "bzlTransitiveDigest": "IL4PfzpXp+dGnFjjsGdXiNSJ0VMLlCFq8AUEmWKXAXM=",
         "usagesDigest": "ThNWcQs68cS58YVY8fxEeAgWxkPnQNftCcSnKccvnDE=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1434,7 +1434,7 @@
     "@@rules_nodejs+//nodejs:extensions.bzl%node": {
       "general": {
         "bzlTransitiveDigest": "4pUxCNc22K4I+6+4Nxu52Hur12tFRfa1JMsN5mdDv60=",
-        "usagesDigest": "n1nQRhLaJgK9lzBmRYkA9Ops0tZQWx3DTOEbezyI8CA=",
+        "usagesDigest": "3LUOc9q34kypxPAcOkx30uVhJNgmk8yqOmrYpbn+Ib4=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_node_24_linux_amd64": {

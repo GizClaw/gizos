@@ -22,14 +22,21 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "2.2.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
-node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node = use_extension(
+    "@rules_nodejs//nodejs:extensions.bzl",
+    "node",
+    dev_dependency = True,
+)
 node.toolchain(
     name = "h2_node_24",
     node_version = "24.11.1",
 )
 use_repo(node, "h2_node_24_toolchains")
 
-register_toolchains("@h2_node_24_toolchains//:all")
+register_toolchains(
+    "@h2_node_24_toolchains//:all",
+    dev_dependency = True,
+)
 
 cc_configure = use_extension("@rules_cc//cc:extensions.bzl", "cc_configure_extension")
 use_repo(cc_configure, "local_config_cc")
@@ -82,7 +89,10 @@ register_toolchains(
     "@emsdk//emscripten_toolchain:cc-toolchain-wasm-emscripten_win",
 )
 
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm = use_extension(
+    "@aspect_rules_js//npm:extensions.bzl",
+    "npm",
+)
 npm.npm_translate_lock(
     name = "guides_npm",
     pnpm_lock = "//guides:pnpm-lock.yaml",
@@ -113,7 +123,11 @@ http_file(
     urls = ["https://api.haivivi.cn/openapi-json"],
 )
 
-go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk = use_extension(
+    "@rules_go//go:extensions.bzl",
+    "go_sdk",
+    dev_dependency = True,
+)
 go_sdk.download(
     name = "h2_go_sdk_1_24_12",
     version = "1.24.12",
@@ -124,7 +138,10 @@ use_repo(
     "h2_go_sdk_1_24_12",
 )
 
-register_toolchains("@go_toolchains//:all")
+register_toolchains(
+    "@go_toolchains//:all",
+    dev_dependency = True,
+)
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.11")
@@ -194,6 +211,7 @@ register_toolchains(
 coverage_llvm = use_extension(
     "@toolchains_llvm//toolchain/extensions:llvm.bzl",
     "llvm",
+    dev_dependency = True,
 )
 coverage_llvm.toolchain(
     name = "gizos_coverage_llvm_toolchain",

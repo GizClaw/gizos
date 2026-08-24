@@ -26,3 +26,13 @@ filegroup(
     name = "esp32p4_showcase_media",
     srcs = ["data/profiles/esp32p4/media/showcase.mp4"],
 )
+
+filegroup(
+    name = "small_media",
+    srcs = ["data/small/media/startup.mp4"],
+)
+
+filegroup(
+    name = "small_media_checksum",
+    srcs = ["data/small/media/SHA256SUMS"],
+)

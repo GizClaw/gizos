@@ -248,6 +248,7 @@ class Bk3633RunnerTest(unittest.TestCase):
                 environment["COMPILER_TOOLCHAIN_PATH"],
                 str(root / "toolchain"),
             )
+            self.assertEqual(environment["H2_GIZOS_ROOT"], str(runner.GIZOS_ROOT))
             self.assertEqual(environment["H2_NATIVE_BUILD_JOBS"], "4")
             self.assertNotIn("HTTP_PROXY", environment)
             self.assertNotIn("PYTHONPATH", environment)

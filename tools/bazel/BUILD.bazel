@@ -221,6 +221,26 @@ py_test(
     ],
 )
 
+py_test(
+    name = "external_native_roots_test",
+    srcs = ["tests/test_external_native_roots.py"],
+    data = [
+        "//native_component_src/bk7258/ap/lvgl_port:CMakeLists.txt",
+        "//native_component_src/esp-idf6.x/h2_gizclaw:CMakeLists.txt",
+        "//native_component_src/esp-idf6.x/lvgl_port:CMakeLists.txt",
+        "//tools/bazel/native_repositories:bk_repositories.bzl",
+        "//tools/bazel/native_repositories:esp_repositories.bzl",
+        "//tools/bazel/native_repositories:repositories.bzl",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_external_native_roots.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 py_binary(
     name = "bk7258_runner",
     srcs = ["bk7258_runner.py"],
@@ -403,6 +423,12 @@ cc_library(
     tags = ["manual"],
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = ["@h2_vendor_opus//:opus"],
+)
+
+cc_library(
+    name = "vendor_third_party_opus_headers",
+    tags = ["manual"],
+    deps = ["@h2_vendor_opus//:headers"],
 )
 
 cc_library(

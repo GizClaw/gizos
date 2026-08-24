@@ -1,5 +1,5 @@
 get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABSOLUTE)
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_H2LOADER_RUNTIME_SRCS h2_h2loader_runtime)
 
 idf_component_register(

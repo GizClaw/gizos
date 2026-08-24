@@ -56,8 +56,6 @@ _BK3633_WOLFCRYPT_COPTS = [
     "-fno-sanitize=undefined",
     "-fstack-usage",
     "-Werror",
-    "-iquote",
-    "libs/pal/providers/wolfssl/src/wolfcrypt",
 ]
 
 _BK3633_WOLFCRYPT_DEFINES = [
@@ -85,6 +83,7 @@ cc_library(
         "-flto",
         "-ffat-lto-objects",
     ],
+    includes = ["src/wolfcrypt"],
     local_defines = _BK3633_WOLFCRYPT_DEFINES,
     target_compatible_with = _BK3633_COMPATIBILITY,
     deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
@@ -103,6 +102,7 @@ cc_library(
         "-ffat-lto-objects",
         "-fno-inline",
     ],
+    includes = ["src/wolfcrypt"],
     local_defines = _BK3633_WOLFCRYPT_DEFINES,
     target_compatible_with = _BK3633_COMPATIBILITY,
     deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
@@ -120,6 +120,7 @@ cc_library(
         "-fno-inline",
         "-Wstack-usage=1152",
     ],
+    includes = ["src/wolfcrypt"],
     local_defines = _BK3633_WOLFCRYPT_DEFINES,
     target_compatible_with = _BK3633_COMPATIBILITY,
     deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],
@@ -139,7 +140,10 @@ cc_library(
         "-flto",
         "-ffat-lto-objects",
     ],
-    includes = ["include"],
+    includes = [
+        "include",
+        "src/wolfcrypt",
+    ],
     local_defines = _BK3633_WOLFCRYPT_DEFINES,
     target_compatible_with = _BK3633_COMPATIBILITY,
     deps = [
@@ -164,7 +168,10 @@ cc_library(
         "-fno-inline",
         "-Wstack-usage=1152",
     ],
-    includes = ["include"],
+    includes = [
+        "include",
+        "src/wolfcrypt",
+    ],
     local_defines = _BK3633_WOLFCRYPT_DEFINES,
     target_compatible_with = _BK3633_COMPATIBILITY,
     deps = [

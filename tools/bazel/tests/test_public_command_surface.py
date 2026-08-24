@@ -51,6 +51,7 @@ MAKE_TARGET_SCRIPTS = {
     "cfg-doctor": "config/cfg-doctor.sh",
     "bazel-build": "bazel/bazel-build.py",
     "bazel-test": "bazel/bazel-test.py",
+    "bazel-test-downstream-consumer": "bazel/bazel-test-downstream-consumer.sh",
     "bazel-test-mqtt_public_broker_smoke": "bazel/bazel-test-mqtt_public_broker_smoke.sh",
     "bazel-test-gizclaw_h2peer_live_test": "bazel/bazel-test-gizclaw_h2peer_live_test.sh",
     "bazel-test-gizclaw_pion_live_test": "bazel/bazel-test-gizclaw_pion_live_test.sh",

@@ -58,6 +58,9 @@ target_include_directories(h2libsrtp
     "${H2_LIBSRTP_UPSTREAM_ROOT}/include")
 target_compile_features(h2libsrtp PUBLIC c_std_11)
 target_compile_definitions(h2libsrtp PRIVATE HAVE_CONFIG_H)
+if(NOT UNIX AND NOT WIN32)
+  target_compile_definitions(h2libsrtp PRIVATE H2_LIBSRTP_NO_SYSTEM_NETINET)
+endif()
 target_compile_options(h2libsrtp PRIVATE
   -Wall
   -Wextra

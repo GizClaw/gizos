@@ -1,4 +1,4 @@
-set(REPO_ROOT "$ENV{H2_REPO_ROOT}")
+set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 
 set(H2_BK_H2LOADER_SRCS
   "src/h2_bk_h2loader_app_control.c"
@@ -30,7 +30,7 @@ if(H2_BK_H2LOADER_ENABLE_FATFS)
 else()
   list(APPEND H2_BK_H2LOADER_SRCS "src/h2_bk_h2loader_storage_none.c")
 endif()
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_select_sources(
   H2_COMPONENT_SOURCES
   h2loader_bk

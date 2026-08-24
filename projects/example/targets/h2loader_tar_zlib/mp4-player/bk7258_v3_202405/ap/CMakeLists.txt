@@ -1,7 +1,7 @@
-include("$ENV{H2_REPO_ROOT}/tools/bazel/native_component.cmake")
+include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES ap ap)
 
-set(REPO_ROOT "$ENV{H2_REPO_ROOT}")
+set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 if("${REPO_ROOT}" STREQUAL "")
   get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../../.." ABSOLUTE)
 endif()
