@@ -29,6 +29,7 @@ from tools.bazel.native_runtime import (
 
 H2LOADER_WIFI_CREDENTIALS = "H2LOADER_WIFI_CREDENTIALS"
 NATIVE_BUILD_JOBS = "H2_NATIVE_BUILD_JOBS"
+GIZOS_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_IDF_VERSION = "6.0"
 TARGET_COMPILERS = {
     "esp32c5": "riscv32-esp-elf-gcc",
@@ -720,6 +721,7 @@ def run(arguments: argparse.Namespace) -> None:
     subprocess_environment = dict(environment)
     subprocess_environment["ESP_IDF_VERSION"] = EXPECTED_IDF_VERSION
     subprocess_environment["H2_REPO_ROOT"] = str(source_root)
+    subprocess_environment["H2_GIZOS_ROOT"] = str(GIZOS_ROOT)
     subprocess_environment["H2_FIRMWARE_VERSION"] = arguments.version
     subprocess_environment["H2_BAZEL_NATIVE_ARTIFACTS_ONLY"] = "1"
     with tempfile.TemporaryDirectory(prefix=f"h2-esp-idf-{arguments.target}-") as temporary:
@@ -779,7 +781,10 @@ def run(arguments: argparse.Namespace) -> None:
         build_directory = temporary_root / "build"
         component_directories: dict[str, Path] = {}
         component_alias_root = temporary_root / "components"
-        archive_helper = source_root / "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
+        archive_helper = (
+            GIZOS_ROOT
+            / "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
+        )
         if arguments.generate_prebuilt_component:
             archive_helper = required_file(archive_helper, "ESP-IDF Bazel archive helper")
         for component_name in sorted(arguments.generate_prebuilt_component):

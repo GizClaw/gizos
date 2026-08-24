@@ -41,6 +41,7 @@ PARTITION_METADATA = (
     "bk_package.json",
     "configurationab.json",
 )
+GIZOS_ROOT = Path(__file__).resolve().parents[2]
 
 
 class RunnerError(RuntimeError):
@@ -775,6 +776,7 @@ def run(arguments: argparse.Namespace) -> None:
         subprocess_environment.update(
             {
                 "H2_FIRMWARE_VERSION_FILE": str(version_file),
+                "H2_GIZOS_ROOT": str(GIZOS_ROOT),
                 "H2_REPO_ROOT": str(source_root),
             }
         )
@@ -791,7 +793,10 @@ def run(arguments: argparse.Namespace) -> None:
         except NativeCcacheError as error:
             raise RunnerError(str(error)) from error
         staged_components: dict[tuple[str, str], Path] = {}
-        archive_helper = source_root / "native_component_src/bk7258/ap/cmake/h2_bazel_archive.cmake"
+        archive_helper = (
+            GIZOS_ROOT
+            / "native_component_src/bk7258/ap/cmake/h2_bazel_archive.cmake"
+        )
         if arguments.generate_prebuilt_component:
             archive_helper = required_file(archive_helper, "BK7258 Bazel archive helper")
         for component_name in sorted(arguments.generate_prebuilt_component):

@@ -30,6 +30,11 @@ if Path(os.environ["H2_FIRMWARE_VERSION_FILE"]).read_text() != "test-version":
 if "-j4" not in sys.argv:
     raise SystemExit("runner did not bound BK7258 build parallelism")
 source_root = Path(os.environ["H2_REPO_ROOT"])
+gizos_root = Path(os.environ["H2_GIZOS_ROOT"])
+if not gizos_root.joinpath(
+    "native_component_src/bk7258/ap/cmake/h2_bazel_archive.cmake"
+).is_file():
+    raise SystemExit("runner did not provide the GizOS source root")
 if Path(os.environ["H2_BAZEL_PREBUILT_H2_LIBCO"]).read_bytes() != b"libco":
     raise SystemExit("runner did not provide the Bazel-built libco archive")
 if not source_root.joinpath("partition.csv").is_file():
