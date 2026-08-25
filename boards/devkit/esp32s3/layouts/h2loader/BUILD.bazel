@@ -11,7 +11,6 @@ firmware_native_component(
     component_name = "h2_esp_layout_task_policy",
     data = ["CMakeLists.txt"],
     deps = [
-        "//libs/trie:esp_native_component",
         "//native_component_src/esp-idf6.x/h2_pal_core",
     ],
 )

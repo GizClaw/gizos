@@ -17,8 +17,6 @@ set(H2_BK_H2LOADER_PRIV_REQUIRES
   driver
   h2_firmware_lib
   h2_pal_core
-  h2_trie
-  h2_firmware_lib
   ota)
 
 if(NOT DEFINED H2_BK_H2LOADER_ENABLE_FATFS)

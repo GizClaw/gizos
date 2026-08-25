@@ -13,7 +13,6 @@ firmware_native_component(
     data = ["task_policy/ap/CMakeLists.txt"],
     execution_unit = "ap",
     deps = [
-        "//libs/trie:bk7258_ap_native_component",
         "//native_component_src/bk7258/ap/h2_pal_core",
     ],
 )

@@ -52,7 +52,6 @@ firmware_native_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/trie:bk7258_ap_native_component",
         "//projects/h2loader/libs/h2loader",
     ],
 )

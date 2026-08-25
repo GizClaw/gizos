@@ -39,7 +39,6 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
     ],
-    deps = ["//libs/trie:bk7258_ap_native_component"],
 )
 
 firmware_native_component(

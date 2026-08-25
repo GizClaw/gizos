@@ -19,8 +19,6 @@ idf_component_register(
     esp_rom
     h2_firmware_lib
     h2_pal_core
-    h2_trie
-    h2_firmware_lib
     mbedtls)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)

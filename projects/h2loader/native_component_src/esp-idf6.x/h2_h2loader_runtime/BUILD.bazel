@@ -54,7 +54,6 @@ firmware_native_component(
         "//libs/iostreamikcp",
         "//libs/pal",
         "//libs/runtime",
-        "//libs/trie:esp_native_component",
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//projects/h2loader/apps/loader/app:loader",
         "//projects/h2loader/libs/h2loader",
