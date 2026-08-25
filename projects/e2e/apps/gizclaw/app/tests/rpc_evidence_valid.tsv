@@ -1,3 +1,0 @@
-# kind	symbol	mode	stage	evidence
-method	H2_GIZCLAW_RPC_TEST_ONLY	live	unit	h2_gizclaw_client_ping
-wrapper	h2_gizclaw_client_ping	live	unit	h2_gizclaw_client_ping

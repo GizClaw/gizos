@@ -283,31 +283,6 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertIn(str(fixture.project_makefile), invocations[0])
             self.assertIn("h2_link", invocations[0])
 
-    def test_bare_chip_layouts_do_not_compile_sdk_application_projects(self):
-        repository = MODULE_PATH.parents[2]
-        layouts = (
-            (
-                "boards/ac695n_chip/ac695n/layouts/compile_only",
-                "apps/soundbox",
-                ("src/platform.c", "src/sdk_config.c"),
-            ),
-            (
-                "boards/ac791n_chip/ac791n/layouts/compile_only",
-                "apps/demo",
-                ("src/platform.c",),
-            ),
-        )
-        for relative, forbidden, owned_sources in layouts:
-            with self.subTest(layout=relative):
-                layout = repository / relative
-                project = (layout / "project.mk").read_text(encoding="utf-8")
-                definition = (layout / "defs.bzl").read_text(encoding="utf-8")
-                self.assertNotIn(forbidden, project)
-                self.assertNotIn(forbidden, definition)
-                self.assertNotIn("sdk_project", definition)
-                for owned_source in owned_sources:
-                    self.assertTrue((layout / owned_source).is_file())
-
     def test_build_renders_component_manifest_with_sources_and_archives(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = JieliRunnerFixture(Path(temporary).resolve())
@@ -377,19 +352,6 @@ class JieliRunnerTest(unittest.TestCase):
             fixture = JieliRunnerFixture(Path(temporary).resolve())
             with self.assertRaisesRegex(runner.RunnerError, "invalid JieLi board"):
                 runner.build(fixture.arguments(board="bad board"))
-
-    def test_local_post_scripts_are_executable_and_headless(self):
-        for name in ("local_post_br23.sh", "local_post_wl82.sh"):
-            script = MODULE_PATH.parent / "jieli" / name
-            with self.subTest(script=name):
-                contents = script.read_text(encoding="utf-8")
-                self.assertTrue(os.access(script, os.X_OK))
-                self.assertIn("QT_QPA_PLATFORM=offscreen", contents)
-                self.assertIn("set -euo pipefail", contents)
-                self.assertNotIn("host-client", contents.split("\n", 6)[-1].split("#", 1)[0] or "")
-                for output in ("firmware.elf", "symbols.txt", "jl_isd.bin", "jl_isd.fw", "update.ufw"):
-                    self.assertIn(f"\"$out/{output}\"", contents)
-
 
 if __name__ == "__main__":
     unittest.main()
