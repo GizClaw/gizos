@@ -12,7 +12,10 @@ firmware_native_component(
     component_name = "h2_bk_layout_task_policy",
     data = ["task_policy/ap/CMakeLists.txt"],
     execution_unit = "ap",
-    deps = ["//native_component_src/bk7258/ap/h2_pal_core"],
+    deps = [
+        "//libs/trie:bk7258_ap_native_component",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+    ],
 )
 
 firmware_native_component(
@@ -46,7 +49,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = [
+        "//libs/pal",
+        "//libs/trie",
+    ],
 )
 
 cc_test(

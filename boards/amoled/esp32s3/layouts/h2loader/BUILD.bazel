@@ -10,7 +10,10 @@ firmware_native_component(
     hdrs = ["include/h2_esp_layout_task_policy.h"],
     component_name = "h2_esp_layout_task_policy",
     data = ["CMakeLists.txt"],
-    deps = ["//native_component_src/esp-idf6.x/h2_pal_core"],
+    deps = [
+        "//libs/trie:esp_native_component",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+    ],
 )
 
 cc_test(
@@ -33,7 +36,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = [
+        "//libs/pal",
+        "//libs/trie",
+    ],
 )
 
 exports_files([

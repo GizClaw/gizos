@@ -71,23 +71,26 @@ static h2_pal_result_t h2_command_read_more(h2_command_t *command, uint32_t time
     return out_read == 0u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_command_route_marker(
+    const void *user,
+    const h2_trie_match_t *match,
+    void *response) {
+    (void)user;
+    (void)match;
+    (void)response;
+    return H2_PAL_ERR_INVALID_STATE;
+}
+
 static const h2_command_definition_t *h2_command_find_definition(
     const h2_command_t *command,
     size_t argc,
     const char *const *argv) {
-    const h2_command_definition_t *best = NULL;
-    size_t best_tokens = 0u;
-    size_t index;
+    const h2_trie_route_t *route = NULL;
 
-    for (index = 0u; index < command->definition_count; ++index) {
-        size_t tokens = 0u;
-        if (h2_command_path_matches(command->definitions[index].path, argc, argv, &tokens) &&
-            tokens > best_tokens) {
-            best = &command->definitions[index];
-            best_tokens = tokens;
-        }
+    if (h2_trie_find_tokens(&command->router, argc, argv, &route) != H2_PAL_OK) {
+        return NULL;
     }
-    return best;
+    return (const h2_command_definition_t *)route->user;
 }
 
 h2_pal_result_t h2_command_init(
@@ -95,6 +98,8 @@ h2_pal_result_t h2_command_init(
     const h2_command_config_t *config) {
     if (command == NULL || config == NULL || !h2_command_io_valid(&config->io) ||
         config->definitions == NULL || config->definition_capacity == 0u ||
+        config->routes == NULL || config->route_nodes == NULL ||
+        config->route_node_capacity == 0u ||
         config->input_buffer == NULL || config->input_buffer_size < 2u ||
         config->argv == NULL || config->argv_capacity == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -103,12 +108,23 @@ h2_pal_result_t h2_command_init(
     command->io = config->io;
     command->definitions = config->definitions;
     command->definition_capacity = config->definition_capacity;
+    command->routes = config->routes;
+    command->route_nodes = config->route_nodes;
+    command->route_node_capacity = config->route_node_capacity;
     command->input_buffer = config->input_buffer;
     command->input_buffer_size = config->input_buffer_size;
     command->argv = config->argv;
     command->argv_capacity = config->argv_capacity;
     command->write_timeout_ms = config->write_timeout_ms;
     command->input_buffer[0] = '\0';
+    if (h2_trie_build_tokens(
+            &command->router,
+            command->route_nodes,
+            command->route_node_capacity,
+            command->routes,
+            0u) != H2_PAL_OK) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     command->initialized = 1;
     return H2_PAL_OK;
 }
@@ -118,6 +134,7 @@ h2_pal_result_t h2_command_register(
     const h2_command_definition_t *definition) {
     size_t path_tokens;
     size_t index;
+    h2_pal_result_t result;
 
     if (command == NULL || definition == NULL || definition->path == NULL ||
         definition->handler == NULL || !command->initialized) {
@@ -138,7 +155,29 @@ h2_pal_result_t h2_command_register(
     if (command->definition_count == command->definition_capacity) {
         return H2_PAL_ERR_FULL;
     }
-    command->definitions[command->definition_count++] = *definition;
+    index = command->definition_count;
+    command->definitions[index] = *definition;
+    command->routes[index].path = definition->path;
+    command->routes[index].mode = H2_TRIE_ROUTE_EXACT_OR_PREFIX;
+    command->routes[index].handler = h2_command_route_marker;
+    command->routes[index].user = &command->definitions[index];
+    command->definition_count++;
+    result = h2_trie_build_tokens(
+        &command->router,
+        command->route_nodes,
+        command->route_node_capacity,
+        command->routes,
+        command->definition_count);
+    if (result != H2_PAL_OK) {
+        command->definition_count--;
+        (void)h2_trie_build_tokens(
+            &command->router,
+            command->route_nodes,
+            command->route_node_capacity,
+            command->routes,
+            command->definition_count);
+        return result;
+    }
     return H2_PAL_OK;
 }
 

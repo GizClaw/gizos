@@ -17,6 +17,7 @@ set(H2_BK_H2LOADER_PRIV_REQUIRES
   driver
   h2_firmware_lib
   h2_pal_core
+  h2_trie
   h2_firmware_lib
   ota)
 
@@ -43,6 +44,7 @@ armino_component_register(
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/libs/bundle/include"
     "${REPO_ROOT}/libs/command/include"
+    "${REPO_ROOT}/libs/trie/include"
     "${REPO_ROOT}/libs/iostreamikcp/include"
     "${REPO_ROOT}/libs/pal/include"
   PRIV_REQUIRES ${H2_BK_H2LOADER_PRIV_REQUIRES})

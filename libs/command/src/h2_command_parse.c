@@ -56,41 +56,6 @@ size_t h2_command_path_token_count(const char *path) {
     return count;
 }
 
-int h2_command_path_matches(
-    const char *path,
-    size_t argc,
-    const char *const *argv,
-    size_t *out_tokens) {
-    size_t token = 0u;
-    const char *cursor = path;
-
-    if (path == NULL || argv == NULL || out_tokens == NULL) {
-        return 0;
-    }
-    while (*cursor != '\0') {
-        const char *start;
-        size_t len;
-
-        while (h2_command_is_ascii_space(*cursor)) {
-            ++cursor;
-        }
-        if (*cursor == '\0') {
-            break;
-        }
-        start = cursor;
-        while (*cursor != '\0' && !h2_command_is_ascii_space(*cursor)) {
-            ++cursor;
-        }
-        len = (size_t)(cursor - start);
-        if (token >= argc || strlen(argv[token]) != len || memcmp(argv[token], start, len) != 0) {
-            return 0;
-        }
-        ++token;
-    }
-    *out_tokens = token;
-    return token > 0u;
-}
-
 int h2_command_paths_equal(const char *left, const char *right) {
     const char *left_cursor = left;
     const char *right_cursor = right;

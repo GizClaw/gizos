@@ -1208,6 +1208,9 @@ int h2_loader_command_init(
     command_config.io = config->io;
     command_config.definitions = self->definitions;
     command_config.definition_capacity = H2_LOADER_COMMAND_DEFINITION_CAPACITY;
+    command_config.routes = self->routes;
+    command_config.route_nodes = self->route_nodes;
+    command_config.route_node_capacity = H2_LOADER_COMMAND_ROUTE_NODE_CAPACITY;
     command_config.input_buffer = self->input_buffer;
     command_config.input_buffer_size = sizeof(self->input_buffer);
     command_config.argv = self->argv;
