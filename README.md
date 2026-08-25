@@ -1,78 +1,124 @@
+<div align="center">
+
 # GizOS
 
-GizOS is a portable firmware and application platform for embedded devices, desktop systems, mobile platforms, and WebAssembly. It provides reusable runtime, platform abstraction, application, board-support, build, packaging, and validation foundations without coupling the public platform to a specific commercial product.
+**A portable firmware and application platform for embedded devices, desktop, mobile, and WebAssembly.**
 
-## Migration checklist
+[![CI](https://github.com/GizClaw/gizos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/GizClaw/gizos/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/GizClaw/gizos)](LICENSE)
+[![Bazel](https://img.shields.io/badge/build-Bazel%209.2-43A047?logo=bazel&logoColor=white)](https://bazel.build/)
+[![C](https://img.shields.io/badge/core-C-00599C?logo=c&logoColor=white)](libs/)
 
-Each unchecked item represents exactly one future migration push. The item is checked in the same push that adds its code.
+![Embedded](https://img.shields.io/badge/target-Embedded-6A5ACD)
+![Desktop](https://img.shields.io/badge/target-Desktop-455A64)
+![Mobile](https://img.shields.io/badge/target-Mobile-00897B)
+![WebAssembly](https://img.shields.io/badge/target-WebAssembly-654FF0?logo=webassembly&logoColor=white)
 
-- [x] Create the Apache-2.0 repository, Bazel workspace, Make entry points, and CI framework.
-- [x] Migrate the PAL contracts, Runtime, foundational libraries, host providers, portable drivers, and current public board/target packages.
-- [x] Add the remaining pinned third-party sources and Bazel overlays.
-- [x] Add the remaining portable libraries and non-composition PAL providers.
-- [x] Complete Desktop PAL composition and host platform support.
-- [x] Add ESP-IDF 6.x Bazel runners and shared native components.
-- [x] Add BK7258 Bazel runners and shared AP/CP native components.
-- [x] Complete the existing public board targets and add AMOLED, DevKit, and SZP.
-- [x] Migrate the complete public H2Loader core, CLI, Loader, Web SDK, and package flow.
-- [x] Migrate public Example and reusable E2E Apps with public launchers.
-- [x] Add public BK3633 and JieLi Bazel runners, PAL/native components, and host validation.
-- [x] Add generic BK3633, AC695N, and AC791N reference-board firmware targets for full compile coverage.
-- [x] Migrate PIXA Games and Showcase with public Desktop artifacts.
-- [x] Complete public tools, guides, release checks, and the final source-boundary audit.
+</div>
 
-H106, H200/H200 V2, Tiga, and Zero projects and their product-owned boards, targets, assets, tests, guides, and release entries remain private. TapDoki and Lucky Kitty product applications, configurations, assets, boards, launchers, tests, guides, and release entries also remain private. Reusable BK3633 and JieLi platform support, PAL/native components, SDK runners, and future non-product development boards remain in the public migration scope.
+GizOS provides a shared foundation for building portable firmware and applications without tying reusable code to one board, operating system, or product. It combines platform abstractions, runtimes, libraries, board support, build rules, packaging, and validation in one Bazel workspace.
 
-## CI completion checklist
+## What GizOS provides
 
-Each unchecked item represents one future CI completion push. The item is checked in the same push that completes and validates the work.
+- **Portable application runtime** — compose applications from reusable libraries and platform-independent interfaces.
+- **Platform Abstraction Layer (PAL)** — consistent contracts for tasks, networking, storage, audio, display, input, and other system capabilities.
+- **Reusable libraries** — networking, media, protocols, UI, game runtime, command routing, serialization, security, and utilities.
+- **Board and SDK integration** — public board packages and native components for ESP, Beken, JieLi, and embedded Linux targets.
+- **Applications and tooling** — H2Loader, examples, E2E programs, PIXA games, showcases, packaging tools, and generated API documentation.
+- **Reproducible builds** — Bazel is the source of truth for dependency resolution, cross-platform builds, tests, artifacts, and releases.
 
-- [x] Align host runner variables, platform dependencies, Guides tooling, and execution timeouts with the maintained Firmwares CI classes.
-- [x] Add required iOS Simulator, Android, test coverage, KickPi K4B, and ESP32-P4 execution classes.
-- [x] Add required BK3633, AC695N, and AC791N execution classes after their generic reference-board firmware targets exist.
-- [x] Apply Bazel repository-cache and native ccache authentication, prefix validation, statistics, and seed handling consistently to every applicable execution class.
-- [x] Add a public release workflow for catalog, firmware slices, bundles, GitHub Release publication, and release artifact verification.
-- [x] Add public opt-in Live E2E jobs while excluding H106, H200/H200 V2, Tiga, Zero, TapDoki, Lucky Kitty, and other product-owned hardware flows.
-- [x] Complete the required-check, fork-PR, cache, artifact, timeout, and public source-boundary audit against the maintained Firmwares workflows.
+## Supported targets
 
-## Repository layout
+| Family | Targets |
+| --- | --- |
+| Embedded | ESP32-S3, ESP32-P4, ESP32-C5, BK7258 AP/CP, BK3633, AC695N, AC791N, T113-S3 |
+| Desktop | Linux x86_64, macOS arm64, Windows x86_64 |
+| Mobile | iOS Simulator arm64, Android arm64 |
+| Web | WebAssembly via Emscripten |
+
+Target compatibility is declared in the Bazel graph, so each configuration builds and tests only the packages supported by that platform.
+
+## Architecture
 
 ```text
-.
-├── boards/                 # Public physical-board support packages
-├── guides/                 # Architecture, development, usage, and review guides
-├── libs/                   # Target-independent reusable libraries and PAL providers
-├── native_component_src/   # Components compiled by native platform SDKs
-├── projects/               # Portable applications and their public artifacts
-├── scripts/                # Stable repository command implementations
-├── third_party/            # Bazel overlays and repository-owned integration metadata
-└── tools/                  # Host-side build, packaging, and support tools
+Applications
+    │
+Runtime and reusable libraries
+    │
+Platform Abstraction Layer
+    │
+Platform providers and native components
+    │
+Boards, operating systems, and SDKs
 ```
 
-Public source packages must not depend on private product repositories, credentials, services, assets, or board definitions. Product-specific applications and hardware integrations remain in their owning repositories and may depend on released GizOS interfaces; GizOS does not depend on them. Native SDK/toolchain access is a separate build-environment dependency and does not permit private product source to enter this repository.
+Product-specific code lives outside GizOS and consumes its public interfaces. This keeps the platform reusable while allowing each product repository to own its hardware composition, configuration, assets, and release policy.
 
-## Build system
+## Quick start
 
-GizOS uses Bazel as the source of truth for supported build graphs, tests, tools, and artifacts. Bazel 9.2.0 is selected by `.bazelversion`; the top-level Make targets provide the stable repository command surface.
-
-Public upstream dependencies are fetched by Bazel from immutable commit archives declared in `MODULE.bazel`. Every archive has a checked SHA-256 digest and an explicit extracted root; required nested upstream sources are pinned the same way at their original submodule paths. A plain clone does not need Git submodule initialization. Repository-owned BUILD overlays, source overlays, and compatibility patches are applied only after archive verification.
+Requirements vary by target. For a host build, install Bazel 9.2.0 or a compatible Bazel launcher, a C/C++ toolchain, and the platform dependencies required by the selected configuration.
 
 ```sh
+git clone https://github.com/GizClaw/gizos.git
+cd gizos
+
 make help
 make bazel-build BAZEL_CONFIG=linux_x86_64
 make bazel-test BAZEL_CONFIG=linux_x86_64
 ```
 
-The Linux, macOS, and Windows CI jobs analyze and build the complete compatible graph, and run every compatible automatic test. Fork pull requests run without private credentials. Same-repository CI additionally verifies read-only access to the private SDK development environment used by future firmware build classes.
+On Apple Silicon, use `BAZEL_CONFIG=macos_arm64`. Other supported configurations and native SDK setup are documented in the [Bazel guide](tools/bazel/README.md).
 
-The host-compatible public Bazel graph must pass from a clean clone without private source repositories, credentials, services, product assets, or private board definitions. Native firmware CI obtains SDK and toolchain inputs through the read-only development-environment integration.
-
-Product repositories consume GizOS as the `gizos` Bzlmod module and reference public targets through `@gizos//...`. The product root owns its selected platform config and root-only host toolchains; GizOS keeps its public library, native component, firmware composition, and H2Loader packaging labels valid when analyzed as an external repository. Repository CI verifies this boundary with:
+To verify that public targets also work when GizOS is consumed as a dependency:
 
 ```sh
 make bazel-test-downstream-consumer
 ```
 
+## Use GizOS from Bzlmod
+
+Add GizOS as a module override in the consuming repository and depend on public targets through `@gizos//...`:
+
+```starlark
+bazel_dep(name = "gizos", version = "0.0.0")
+
+git_override(
+    module_name = "gizos",
+    commit = "<gizos-commit>",
+    remote = "https://github.com/GizClaw/gizos.git",
+)
+```
+
+The consuming repository owns its root platform selection and product composition. GizOS owns portable libraries, PAL providers, native components, and public build interfaces.
+
+## Repository layout
+
+```text
+boards/                 Board definitions and target-specific composition
+guides/                 Architecture, development, usage, and API documentation
+libs/                   Portable libraries, runtimes, and PAL providers
+native_component_src/   Components compiled by native platform SDKs
+projects/               Applications, examples, games, and E2E programs
+scripts/                Stable repository command implementations
+third_party/            Bazel overlays, patches, and integration metadata
+tools/                  Build, packaging, code generation, and support tools
+```
+
+## Documentation
+
+- [Project documentation](guides/index.md)
+- [Development guide](guides/zh/guide.md)
+- [Bazel and platform builds](tools/bazel/README.md)
+- [API references](guides/references/index.md)
+- [Application documentation](guides/apps/index.md)
+
+Build the documentation locally with:
+
+```sh
+make guides-build
+make guides-preview
+```
+
 ## License
 
-GizOS is licensed under the [Apache License 2.0](LICENSE).
+GizOS is available under the [Apache License 2.0](LICENSE).
