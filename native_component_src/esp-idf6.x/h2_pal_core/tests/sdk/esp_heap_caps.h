@@ -1,0 +1,5 @@
+#ifndef TEST_ESP_HEAP_CAPS_H
+#define TEST_ESP_HEAP_CAPS_H
+#define MALLOC_CAP_SPIRAM 1u
+#define MALLOC_CAP_8BIT 2u
+#endif

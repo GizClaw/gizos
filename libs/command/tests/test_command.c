@@ -29,6 +29,8 @@ typedef struct fake_io {
 typedef struct command_fixture {
     h2_command_t command;
     h2_command_definition_t definitions[8];
+    h2_trie_route_t routes[8];
+    h2_trie_node_t route_nodes[96];
     char input_buffer[128];
     const char *argv[8];
 } command_fixture_t;
@@ -136,6 +138,9 @@ static void fixture_init(command_fixture_t *fixture, fake_io_t *io) {
     config.io.vtable = &fake_io_vtable;
     config.definitions = fixture->definitions;
     config.definition_capacity = sizeof(fixture->definitions) / sizeof(fixture->definitions[0]);
+    config.routes = fixture->routes;
+    config.route_nodes = fixture->route_nodes;
+    config.route_node_capacity = sizeof(fixture->route_nodes) / sizeof(fixture->route_nodes[0]);
     config.input_buffer = fixture->input_buffer;
     config.input_buffer_size = sizeof(fixture->input_buffer);
     config.argv = fixture->argv;
@@ -231,6 +236,24 @@ static void test_invalid_config_and_registration_capacity(void) {
     register_handler(&fixture, "eight", &capture);
     invalid.path = "nine";
     CHECK(h2_command_register(&fixture.command, &invalid) == H2_PAL_ERR_FULL);
+
+    memset(&fixture, 0, sizeof(fixture));
+    memset(&config, 0, sizeof(config));
+    config.io.user = &io;
+    config.io.vtable = &fake_io_vtable;
+    config.definitions = fixture.definitions;
+    config.definition_capacity = 1u;
+    config.routes = fixture.routes;
+    config.route_nodes = fixture.route_nodes;
+    config.route_node_capacity = 2u;
+    config.input_buffer = fixture.input_buffer;
+    config.input_buffer_size = sizeof(fixture.input_buffer);
+    config.argv = fixture.argv;
+    config.argv_capacity = 1u;
+    CHECK(h2_command_init(&fixture.command, &config) == H2_PAL_OK);
+    invalid.path = "long";
+    CHECK(h2_command_register(&fixture.command, &invalid) == H2_PAL_ERR_FULL);
+    CHECK(fixture.command.definition_count == 0u);
 }
 
 static void test_explicit_alias(void) {
@@ -259,7 +282,7 @@ static void test_fragmented_input_and_partial_write(void) {
     io.max_read = 2u;
     io.max_write = 3u;
     fixture_init(&fixture, &io);
-    register_handler(&fixture, "root child", &capture);
+    register_handler(&fixture, "  root\t child  ", &capture);
     CHECK(h2_command_poll(&fixture.command, 10u) == H2_PAL_OK);
     CHECK(capture.calls == 1u);
     CHECK(capture.argc == 3u);

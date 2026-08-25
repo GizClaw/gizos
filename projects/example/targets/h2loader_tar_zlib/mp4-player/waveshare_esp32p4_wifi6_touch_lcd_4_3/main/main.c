@@ -5,6 +5,7 @@
 #include "h2_loader_boot.h"
 #include "h2_smoke_mp4_player.h"
 #include "h2_tinyh264.h"
+#include "h2_esp_layout_task_policy.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -70,6 +71,9 @@ static void image_entry(void *user) {
 }
 
 void app_main(void) {
+    if (h2_esp_layout_task_policy_install() != H2_PAL_OK) {
+        return;
+    }
     const h2_pal_result_t result = h2_esp_board_start_entry_task(
         "waveshare_esp32p4_wifi6_touch_lcd_4_3/mp4-player",
         image_entry,

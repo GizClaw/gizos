@@ -2,6 +2,7 @@
 #define H2_COMMAND_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2_trie.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -61,6 +62,11 @@ typedef struct h2_command_config {
     h2_command_io_api_t io;
     h2_command_definition_t *definitions;
     size_t definition_capacity;
+    /** One route entry per definition, owned by the caller. */
+    h2_trie_route_t *routes;
+    /** Fixed trie storage, owned by the caller. */
+    h2_trie_node_t *route_nodes;
+    size_t route_node_capacity;
     char *input_buffer;
     size_t input_buffer_size;
     const char **argv;
@@ -79,6 +85,10 @@ struct h2_command {
     h2_command_definition_t *definitions;
     size_t definition_count;
     size_t definition_capacity;
+    h2_trie_t router;
+    h2_trie_route_t *routes;
+    h2_trie_node_t *route_nodes;
+    size_t route_node_capacity;
     char *input_buffer;
     size_t input_buffer_size;
     size_t input_len;

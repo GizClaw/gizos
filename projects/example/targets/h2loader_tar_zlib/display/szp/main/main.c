@@ -3,6 +3,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_loader_boot.h"
 #include "h2_smoke_display.h"
+#include "h2_esp_layout_task_policy.h"
 
 #include "esp_err.h"
 #include "esp_ota_ops.h"
@@ -69,6 +70,9 @@ static void image_entry(void *user) {
 }
 
 void app_main(void) {
+    if (h2_esp_layout_task_policy_install() != H2_PAL_OK) {
+        return;
+    }
     h2_pal_result_t rc = h2_esp_board_start_entry_task(
         "szp/display", image_entry, NULL);
     if (rc != H2_PAL_OK) {

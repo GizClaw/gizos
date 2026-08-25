@@ -5,6 +5,14 @@ bazel_dep(name = "hermetic_cc_toolchain", version = "4.2.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 
+go_host_toolchains = use_extension(
+    "@gizos//tools/bazel:go_host_toolchains.bzl",
+    "go_host_toolchains",
+)
+use_repo(go_host_toolchains, "gizos_go_toolchains")
+
+register_toolchains("@gizos_go_toolchains//:all")
+
 toolchains = use_extension(
     "@hermetic_cc_toolchain//toolchain:ext.bzl",
     "toolchains",

@@ -1,4 +1,5 @@
 #include "board_config.h"
+#include "h2_esp_layout_task_policy.h"
 
 #include "h2_esp_board.h"
 #include "h2_esp_board_config.h"
@@ -124,7 +125,11 @@ static const h2_runtime_component_mapper_t s_mapper = {
 
 h2_pal_result_t h2_starboy_amoled_runtime_config(
     h2_runtime_config_t *out_config) {
-    h2_pal_result_t rc = h2_esp_board_runtime_config(out_config);
+    h2_pal_result_t rc = h2_esp_layout_task_policy_install();
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = h2_esp_board_runtime_config(out_config);
     if (rc != H2_PAL_OK) {
         return rc;
     }

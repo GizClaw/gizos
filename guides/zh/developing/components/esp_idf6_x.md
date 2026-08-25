@@ -35,6 +35,14 @@ ESP chip 差异通过以下方式表达：
 
 ## PAL Backend
 
+### Task policy ownership
+
+`h2_pal_core` 只拥有一次性 policy 配置、policy 校验、FreeRTOS task 创建、诊断、join 和清理，不得比较具体 App、library、Loader、modem、board 或 product task name。最终 portable name 到 absolute priority、core affinity、minimum stack 和 Internal/PSRAM placement 的映射属于 selected firmware layout，并由 `boards/<board>/<esp-chip>/layouts/<layout>/h2_esp_layout_task_policy` component 提供。
+
+Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_init()` 或直接 PAL task creation 前调用 `h2_esp_layout_task_policy_install()`，安装失败必须停止 startup。配置只能成功一次；未配置启动、重复配置和任意 task start attempt 后配置都返回 `H2_PAL_ERR_INVALID_STATE`。Public H2Loader layouts 对 unknown name 使用 priority 4、no affinity、4096-byte minimum、PSRAM stack 的显式 fallback；private layout 可通过同一 contract 选择 fallback 或 reject，并通过 `layout_files.task_policy` 注入私有 component，不能把私有 task name 发布到 GizOS。
+
+Maintained Runtime scope 只有 ESP32-S3 与 ESP32-P4 的五个 public `h2loader` layouts。A7670E 是唯一包含 modem task policy 的 public layout；BLEIKCP-speed policy 只进入实际构建该 capability 的 layouts。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
+
 Netif provider 枚举现有 `esp_netif`，以 implementation index 优先、if-key 兜底
 建立稳定 identity，并映射 IPv4、MAC、DNS 与当前 default。没有 active netif
 时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。

@@ -2,6 +2,7 @@
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_pal_e2e.h"
+#include "h2_esp_layout_task_policy.h"
 
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -63,6 +64,9 @@ static void run_entry(void *user) {
 }
 
 void app_main(void) {
+    if (h2_esp_layout_task_policy_install() != H2_PAL_OK) {
+        return;
+    }
   int rc = h2_esp_board_start_entry_task("devkit/pal-pref", run_entry, NULL);
   if (rc != H2_PAL_OK) {
     printf("H2_PAL_PREF_E2E_FAIL stage=entry rc=%d\n", rc);

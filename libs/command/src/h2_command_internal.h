@@ -10,11 +10,6 @@ h2_pal_result_t h2_command_parse_line(
     size_t argv_capacity,
     size_t *out_argc);
 size_t h2_command_path_token_count(const char *path);
-int h2_command_path_matches(
-    const char *path,
-    size_t argc,
-    const char *const *argv,
-    size_t *out_tokens);
 int h2_command_paths_equal(const char *left, const char *right);
 
 #endif

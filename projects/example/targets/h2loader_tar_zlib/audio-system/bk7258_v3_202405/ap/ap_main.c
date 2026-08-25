@@ -1,6 +1,7 @@
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_smoke_audio_system.h"
+#include "h2_bk_layout_task_policy.h"
 
 #include "bk_private/bk_init.h"
 #include "os/os.h"
@@ -54,7 +55,6 @@ static void app_entry(void *user) {
             rtos_delay_milliseconds(1000);
         }
     }
-    rc = h2_bk_h2loader_configure_app_task_policy();
     if (rc == H2_PAL_OK) {
         rc = h2_bk_h2loader_start_app_iostreamikcp(
             runtime,
@@ -109,6 +109,9 @@ static void app_entry(void *user) {
 }
 
 int main(void) {
+    if (h2_bk_layout_task_policy_install() != H2_PAL_OK) {
+        return -1;
+    }
     emergency_uart_write_string(0, "H2_BK_AP_MAIN image=audio-system stage=before_bk_init\r\n");
     bk_init();
     emergency_uart_write_string(0, "H2_BK_AP_MAIN image=audio-system stage=after_bk_init\r\n");

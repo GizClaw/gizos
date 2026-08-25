@@ -9,6 +9,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/projects/h2loader/apps/loader/app/include"
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${H2_REPO_ROOT}/libs/command/include"
+    "${H2_REPO_ROOT}/libs/trie/include"
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
   REQUIRES
@@ -18,7 +19,6 @@ idf_component_register(
     esp_rom
     h2_firmware_lib
     h2_pal_core
-    h2_firmware_lib
     mbedtls)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)

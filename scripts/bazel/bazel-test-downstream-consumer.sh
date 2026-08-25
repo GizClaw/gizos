@@ -5,7 +5,13 @@ set -euo pipefail
 repository_root=$(git rev-parse --show-toplevel)
 fixture_root="$repository_root/tools/bazel/tests/downstream_consumer"
 consumer_root=$(mktemp -d "${TMPDIR:-/tmp}/gizos-downstream-consumer.XXXXXX")
-trap 'rm -rf "$consumer_root"' EXIT
+
+cleanup() {
+    "${BAZEL_BIN:-bazel}" --output_base="$consumer_root/output-base" shutdown >/dev/null 2>&1 || true
+    chmod -R u+w "$consumer_root" 2>/dev/null || true
+    rm -rf "$consumer_root"
+}
+trap cleanup EXIT
 repository_cache=${BAZEL_REPOSITORY_CACHE:-"$HOME/.cache/bazel/repository"}
 mkdir -p "$repository_cache"
 
@@ -23,6 +29,13 @@ cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
 cp "$fixture_root/ram_regions.csv" "$consumer_root/ram_regions.csv"
 cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loader.defaults"
+for policy in private_esp_task_policy private_bk_ap_task_policy private_bk_cp_task_policy; do
+    mkdir -p "$consumer_root/$policy"
+    cp "$fixture_root/$policy.c" "$consumer_root/$policy/$policy.c"
+    cp "$fixture_root/$policy.h" "$consumer_root/$policy/$policy.h"
+    cp "$fixture_root/$policy.CMakeLists.txt.fixture" \
+        "$consumer_root/$policy/CMakeLists.txt"
+done
 
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)
@@ -58,6 +71,36 @@ cd "$consumer_root"
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     'set(//:private_bk_firmware //:private_esp_firmware)'
 
+cp BUILD.bazel BUILD.bazel.complete
+expect_missing_policy_failure() {
+    local field=$1
+    local target=$2
+    cp BUILD.bazel.complete BUILD.bazel
+    sed -i.bak "/\"${field}\":/d" BUILD.bazel
+    if "${BAZEL_BIN:-bazel}" \
+        --ignore_all_rc_files \
+        --output_base="$consumer_root/output-base" \
+        cquery \
+        --enable_bzlmod \
+        --noenable_workspace \
+        --repository_cache="$repository_cache" \
+        --override_module="gizos=$repository_root" \
+        --define="h2_ci_graph=true" \
+        --define="h2_host_os=$host_os" \
+        --platforms="@gizos//tools/bazel/platforms:$platform" \
+        "$target" >"missing-${field}.log" 2>&1; then
+        printf 'expected missing %s to fail analysis\n' "$field" >&2
+        exit 1
+    fi
+    grep -F "missing ${field}" "missing-${field}.log" >/dev/null
+    grep -F "private_" "missing-${field}.log" >/dev/null
+}
+
+expect_missing_policy_failure task_policy //:private_esp_firmware
+expect_missing_policy_failure ap_task_policy //:private_bk_firmware
+expect_missing_policy_failure cp_task_policy //:private_bk_firmware
+cp BUILD.bazel.complete BUILD.bazel
+
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
     --output_base="$consumer_root/output-base" \
@@ -69,6 +112,7 @@ cd "$consumer_root"
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    @gizos//tools/openapi_codegen:openapi_codegen \
     //:bk3633_test_support_consumer \
     //:firmware_lib \
     //:i18n_runtime \

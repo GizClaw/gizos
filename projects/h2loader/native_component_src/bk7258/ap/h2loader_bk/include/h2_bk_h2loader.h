@@ -35,8 +35,6 @@ const h2_loader_image_reader_api_t *h2_bk_h2loader_image_reader(void);
 const h2_loader_image_writer_api_t *h2_bk_h2loader_image_writer(void);
 int h2_bk_h2loader_commit_staged_app_boot(void);
 const h2_pal_power_api_t *h2_bk_h2loader_power_api(void);
-int h2_bk_h2loader_configure_app_task_policy(void);
-int h2_bk_h2loader_configure_loader_task_policy(void);
 int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
                                           const char *active_name);
 int h2_bk_h2loader_stop_app_iostreamikcp(void);

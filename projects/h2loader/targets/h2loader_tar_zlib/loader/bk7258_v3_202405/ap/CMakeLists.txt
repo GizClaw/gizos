@@ -14,6 +14,7 @@ armino_component_register(
     "${REPO_ROOT}/projects/h2loader/apps/loader/app/include"
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/libs/command/include"
+    "${REPO_ROOT}/libs/trie/include"
     "${REPO_ROOT}/boards/bk7258_v3_202405/bk7258/ap/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
     "${REPO_ROOT}/projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/include"
@@ -21,6 +22,7 @@ armino_component_register(
     "${REPO_ROOT}/libs/pal/include"
     "${REPO_ROOT}/libs/runtime/include"
   REQUIRES
+    h2_bk_layout_task_policy
     h2_bk7258_board
     audio_play
     audio_record
@@ -32,7 +34,6 @@ armino_component_register(
     h2_firmware_lib
     h2loader_bk
     h2_pal_core
-    h2_firmware_lib
     media_service
     multimedia
     psa_mbedtls
