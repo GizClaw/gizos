@@ -985,7 +985,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "CMDGYbE8LdlkxN5qej400MQLc4V0+UDGXL/CCEKf3kM=",
-        "usagesDigest": "VMM3MAsMp3QsLS3zvNz98wHVbWgrzFCJhqAPB339Rs4=",
+        "usagesDigest": "RZEWwJgbhESKEueVmeRriwHCNHjT2AHOAC6VdNPVxHY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1039,32 +1039,6 @@
               "strip_prefix": "FFmpeg-38b88335f99e76ed89ff3c93f877fdefce736c13",
               "urls": [
                 "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/38b88335f99e76ed89ff3c93f877fdefce736c13"
-              ]
-            }
-          },
-          "h2_vendor_gizclaw": {
-            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
-            "attributes": {
-              "build_file": "@@//third_party:gizclaw.BUILD.bazel",
-              "ffmpeg_configure_adapter": false,
-              "nested_archive_sha256": {
-                "third_party/nanopb/upstream": "10e5f014e91a540959cdb82ce486a25fb9a369cabefae128d9bda4ccb3598e30"
-              },
-              "nested_archive_strip_prefix": {
-                "third_party/nanopb/upstream": "nanopb-cad3c18ef15a663e30e3e43e3a752b66378adec1"
-              },
-              "nested_archive_urls": {
-                "third_party/nanopb/upstream": "https://codeload.github.com/GizClaw/nanopb/tar.gz/cad3c18ef15a663e30e3e43e3a752b66378adec1"
-              },
-              "overlay_files": {},
-              "patches": [
-                "@@//tools/bazel/vendor:patches/gizclaw_ascii_ctype.patch",
-                "@@//tools/bazel/vendor:patches/gizclaw_json_ascii_ctype.patch"
-              ],
-              "sha256": "d30c12a097a7fc59df4c5f761e9a66fc168613240d3b3696151e5fbdc3fff71d",
-              "strip_prefix": "gizclaw-763a46c41ebc99b6ba11e17ce875315dca4f2192",
-              "urls": [
-                "https://codeload.github.com/GizClaw/gizclaw/tar.gz/763a46c41ebc99b6ba11e17ce875315dca4f2192"
               ]
             }
           },

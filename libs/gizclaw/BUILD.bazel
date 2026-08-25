@@ -1,7 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel/platforms:compatibility.bzl", "DARWIN_HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -179,10 +177,8 @@ cc_test(
 )
 
 cc_test(
-    name = "gzc_client_smoke_test",
-    srcs = [
-        "@h2_vendor_gizclaw//:src/sdk/c/gizclaw/tests/gzc_client_smoke_test.c",
-    ],
+    name = "gzc_firmware_platform_link_test",
+    srcs = ["tests/test_gzc_firmware_platform_link.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
@@ -190,21 +186,5 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["@h2_vendor_gizclaw//:gizclaw"],
-)
-
-py_test(
-    name = "gzc_terminal_alias_contract_test",
-    srcs = ["tests/test_gzc_terminal_alias_contract.py"],
-    args = [
-        "$(location @h2_vendor_gizclaw//:src/sdk/c/gizclaw/src/gzc_client.c)",
-        "$(location @h2_vendor_gizclaw//:src/sdk/c/gizclaw/tests/gzc_client_smoke_test.c)",
-    ],
-    data = [
-        "@h2_vendor_gizclaw//:src/sdk/c/gizclaw/src/gzc_client.c",
-        "@h2_vendor_gizclaw//:src/sdk/c/gizclaw/tests/gzc_client_smoke_test.c",
-    ],
-    legacy_create_init = 0,
-    main = "tests/test_gzc_terminal_alias_contract.py",
-    target_compatible_with = DARWIN_HOST_TOOL_COMPATIBILITY,
+    deps = ["@h2_gizclaw_c_sdk//:gizclaw_core"],
 )
