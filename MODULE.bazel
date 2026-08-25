@@ -129,6 +129,16 @@ use_repo(
 
 register_toolchains("@go_toolchains//:all")
 
+consumer_go_host_toolchains = use_extension(
+    "//tools/bazel:go_host_toolchains.bzl",
+    "go_host_toolchains",
+    dev_dependency = True,
+)
+use_repo(
+    consumer_go_host_toolchains,
+    "gizos_go_toolchains",
+)
+
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.11")
 python.toolchain(python_version = "3.11")

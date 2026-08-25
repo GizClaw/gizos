@@ -73,11 +73,6 @@ def _go_host_toolchains_impl(module_ctx):
         sdk_versions = [_GO_VERSION] * len(sdk_repos),
     )
 
-    return module_ctx.extension_metadata(
-        root_module_direct_deps = ["gizos_go_toolchains"],
-        root_module_direct_dev_deps = [],
-    )
-
 go_host_toolchains = module_extension(
     implementation = _go_host_toolchains_impl,
 )
