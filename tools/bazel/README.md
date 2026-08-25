@@ -255,16 +255,11 @@ claim macOS, Windows, firmware, device, network, audio, or rendered UI coverage.
 
 Web `pkg_tar` owners can expose a local preview target with
 `web_archive_serve(name = "serve", archive = ":<archive>")` from
-`//tools/bazel:web_archive.bzl`. Run that target with optional host and port
-arguments, for example:
-
-```sh
-bazel run //projects/h2loader/targets/pkg_tar/batch-loader:serve -- --host 127.0.0.1 --port 8000
-```
-
-The runner extracts the archive into a temporary directory, rejects unsafe tar
-members, applies the archive's `_headers` policy, serves WASM with
-`application/wasm`, and removes the temporary directory when it exits.
+`//tools/bazel:web_archive.bzl`. The runner extracts the archive into a temporary
+directory, rejects unsafe tar members, applies the archive's `_headers` policy,
+serves WASM with `application/wasm`, and removes the temporary directory when it
+exits. H2Loader is now distributed as `@gizclaw/h2loader`; its product frontend
+and local preview belong to `GizClaw/www`, not a GizOS `pkg_tar` target.
 
 CI targets use platform compatibility to expose the graph that belongs to the selected execution class. CI does not compute an affected target list. Each static platform job directly invokes:
 

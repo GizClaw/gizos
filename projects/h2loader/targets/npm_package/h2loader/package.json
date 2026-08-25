@@ -1,6 +1,6 @@
 {
   "name": "@gizclaw/h2loader",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser SDK for H2Loader package inspection and Web Serial device lifecycle operations",
   "license": "BSD-3-Clause",
   "repository": {
@@ -20,7 +20,8 @@
     "LICENSE",
     "README.md",
     "h2loader.js",
+    "h2loader_ports.js",
     "h2loader_runtime.js",
-    "h2loader.wasm"
+    "h2loader_runtime.wasm"
   ]
 }

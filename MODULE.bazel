@@ -106,12 +106,6 @@ npm.npm_translate_lock(
     run_lifecycle_hooks = False,
 )
 npm.npm_translate_lock(
-    name = "h2loader_batch_loader_npm",
-    data = ["//projects/h2loader/apps/batch-loader/app:pnpm-workspace.yaml"],
-    pnpm_lock = "//projects/h2loader/apps/batch-loader/app:pnpm-lock.yaml",
-    run_lifecycle_hooks = False,
-)
-npm.npm_translate_lock(
     name = "lvgl_conv_i18n_yaml_npm",
     pnpm_lock = "//tools/lvgl/conv_i18n_yaml:pnpm-lock.yaml",
     run_lifecycle_hooks = False,
@@ -119,7 +113,6 @@ npm.npm_translate_lock(
 use_repo(
     npm,
     "guides_npm",
-    "h2loader_batch_loader_npm",
     "lvgl_conv_i18n_yaml_npm",
 )
 

@@ -14,7 +14,7 @@ Product IA 优先在 Figma 中组织产品页面、关键状态和跨模块关�
 
 | Product App | Guide | IA |
 | --- | --- | --- |
-| H2Loader Batch Loader | [Batch Loader](/apps/h2loader/apps/batch_loader/) | [Figma](https://www.figma.com/design/cXBvKDzViDN8HJhKJq6IQn/H2Loader-%E2%80%94-Web-Batch-Loader?node-id=12-331) |
+| H2Loader Web SDK | [Web SDK](/apps/h2loader/apps/batch_loader/) | 产品 UI 位于 `GizClaw/www` |
 
 ## 文档边界
 
@@ -29,7 +29,7 @@ Product IA 优先在 Figma 中组织产品页面、关键状态和跨模块关�
 ## 产品
 
 - [H2Loader](/apps/h2loader/)：Host、Loader/App image、package 生命周期、board 支持矩阵与设备端诊断 App。
-    - [H2Loader Batch Loader](/apps/h2loader/apps/batch_loader/)：在桌面浏览器中运行的 React/shadcn 批量烧录 App，通过内部 WASM SDK、已授权 Web Serial、本地 package、并发 managed install 和最终验证工作。
+    - [H2Loader Web SDK](/apps/h2loader/apps/batch_loader/)：发布 `@gizclaw/h2loader`，通过 Web Serial、Host Core 与 Web PAL 提供 package inspection 和 managed lifecycle；产品 UI 位于 `GizClaw/www`。
     - [BLE iKCP Baseline](/apps/h2loader/apps/bleikcp_speed/)：设备对设备的 BLE iKCP 吞吐、断线恢复和屏幕诊断合同。
 - [GizClaw](/apps/gizclaw)：跨 App 的连接、请求状态、Audio System 和 OTA 集成合同。
 - [Mobile](/apps/mobile)：真实 portable App 到 mobile contract 的 adapter，以及彼此独立的 iOS、Android launcher。

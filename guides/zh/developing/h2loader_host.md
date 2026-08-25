@@ -75,7 +75,7 @@ JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。Format 2 记�
 
 `libs/h2loader_host` 的 serial、catalog、managed operation、ESP recovery 与 BK7258 recovery graph 可以编译为 wasm32，但 Browser 产品能力只由实际验证过的 Web Serial flow 决定。Web launcher 必须从直接用户手势调用 chooser，随后只向 Host Core 注入 opaque port ID；`scan()` 不请求权限。Browser 不伪造 OS path、USB serial、display name 或 board identity，权威 board/target 仍来自可靠连接后的 status。
 
-`projects/e2e/targets/pkg_tar/h2loader-serial/` 只验证 Browser Host Serial contract；它不是产品 UI。产品入口由 [H2Loader Batch Loader](/apps/h2loader/apps/batch_loader/) 定义：React/shadcn App 只消费 `//projects/h2loader/libs/web:h2loader_web` 的 public Promise API，SDK 通过本 Core 与 Web PAL 提供 authoritative status、managed operation、progress 与 final verification，但不暴露 destructive recovery。
+`projects/e2e/targets/pkg_tar/h2loader-serial/` 只验证 Browser Host Serial contract；它不是产品 UI。[H2Loader Web SDK](/apps/h2loader/apps/batch_loader/) 通过本 Core 与 Web PAL 提供 authoritative status、managed operation、progress 与 final verification，但不暴露 destructive recovery。产品 React UI 位于 `GizClaw/www`，只消费发布的 `@gizclaw/h2loader` Promise API。
 
 Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。DTR/RTS output 使用 `setSignals()`，控制线读取返回 canonical unsupported；normal managed install 不改变控制线。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
 
@@ -83,7 +83,8 @@ Web Serial Promise completion 只记录 generation-tagged result，等待任务�
 
 ```sh
 bazel test //libs/h2loader_host:all
-bazel test //projects/h2loader/apps/batch-loader/app:all //projects/h2loader/libs/web:all
+bazel test //projects/h2loader/libs/web:all
+bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
 
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 ESP 与 BK 的 live discovery、authoritative identity、安装或文档允许的 recovery、reboot，以及最终 role/state/checksum/staged state。
