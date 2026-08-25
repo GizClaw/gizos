@@ -5,7 +5,13 @@ set -euo pipefail
 repository_root=$(git rev-parse --show-toplevel)
 fixture_root="$repository_root/tools/bazel/tests/downstream_consumer"
 consumer_root=$(mktemp -d "${TMPDIR:-/tmp}/gizos-downstream-consumer.XXXXXX")
-trap 'rm -rf "$consumer_root"' EXIT
+
+cleanup() {
+    "${BAZEL_BIN:-bazel}" --output_base="$consumer_root/output-base" shutdown >/dev/null 2>&1 || true
+    chmod -R u+w "$consumer_root" 2>/dev/null || true
+    rm -rf "$consumer_root"
+}
+trap cleanup EXIT
 repository_cache=${BAZEL_REPOSITORY_CACHE:-"$HOME/.cache/bazel/repository"}
 mkdir -p "$repository_cache"
 
@@ -69,6 +75,7 @@ cd "$consumer_root"
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    @gizos//tools/openapi_codegen:openapi_codegen \
     //:bk3633_test_support_consumer \
     //:firmware_lib \
     //:i18n_runtime \

@@ -26,9 +26,6 @@ The Bazel action fetches only the digest-pinned JSON input, generates
 the consumer library. Firmware links the generated C and PAL only; it never
 links the Go tool.
 
-`//libs/haivivi_next_api:haivivi_next_api` is the production instance. Its
-source is `https://api.haivivi.cn/openapi-json`, pinned in `MODULE.bazel`.
-
 ## Direct usage
 
 ```sh
