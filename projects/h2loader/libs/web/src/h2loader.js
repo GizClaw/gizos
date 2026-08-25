@@ -1,4 +1,5 @@
 import createH2LoaderModule from "./h2loader_runtime.js";
+import { createH2LoaderPortRegistry } from "./h2loader_ports.js";
 
 const WOULD_BLOCK = -9;
 const ERROR_NAMES = new Map([
@@ -57,8 +58,7 @@ export async function createH2Loader(options = {}) {
   let nextBlobHandle = 1;
   let closed = false;
   let closePromise;
-  const portIds = new WeakMap();
-  const portObjects = new Map();
+  const portRegistry = createH2LoaderPortRegistry();
 
   const call = (name, returnType, argumentTypes, arguments_) =>
     module.ccall(name, returnType, argumentTypes, arguments_);
@@ -67,21 +67,8 @@ export async function createH2Loader(options = {}) {
     if (closed) throw new H2LoaderError(-10, "client");
   };
 
-  const wrapPort = (entry) => {
-    const existing = portObjects.get(entry.id);
-    if (existing) return existing;
-    const port = Object.freeze({
-      label: entry.label || "Authorized serial device",
-      usbVendorId: entry.usbVendorId || 0,
-      usbProductId: entry.usbProductId || 0,
-    });
-    portIds.set(port, entry.id);
-    portObjects.set(entry.id, port);
-    return port;
-  };
-
   const unwrapPort = (port, operation) => {
-    const id = portIds.get(port);
+    const id = portRegistry.id(port);
     if (!id) throw new H2LoaderError(-1, operation, "invalid port object");
     return id;
   };
@@ -215,8 +202,8 @@ export async function createH2Loader(options = {}) {
           [client],
         );
         const ports = await api.getAuthorizedPorts();
-        const selected = ports.find((port) => portIds.get(port) === id);
-        return selected ?? wrapPort({id});
+        const selected = ports.find((port) => port.id === id);
+        return selected ?? portRegistry.wrap({id});
       }
     },
 
@@ -243,8 +230,7 @@ export async function createH2Loader(options = {}) {
           continue;
         }
         if (result !== 0) throw new H2LoaderError(result, "forget-port");
-        portObjects.delete(id);
-        portIds.delete(port);
+        portRegistry.delete(port);
         return;
       }
     },
@@ -253,7 +239,7 @@ export async function createH2Loader(options = {}) {
       const result = await runJob("get-authorized-ports", () =>
         call("h2_h2loader_web_list_ports", "number", ["number"], [client]),
       );
-      return immutable(result.ports.map(wrapPort));
+      return immutable(result.ports.map(portRegistry.wrap));
     },
 
     async inspectPackage(blob, jobOptions = {}) {
@@ -407,7 +393,7 @@ export async function createH2Loader(options = {}) {
             continue;
           }
           module.h2LoaderWebBlobs.clear();
-          portObjects.clear();
+          portRegistry.clear();
           if (result !== 0 && result !== -3) {
             throw new H2LoaderError(result, "close");
           }

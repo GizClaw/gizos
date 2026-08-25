@@ -14,4 +14,5 @@ exec bazel test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:shutdown_test \
   //libs/h2loader_host:h2loader_host_package_test \
   //projects/h2loader/libs/web:h2loader_web \
+  //projects/h2loader/libs/web:h2loader_ports_test \
   //projects/h2loader/targets/npm_package/h2loader:wasm_url_test

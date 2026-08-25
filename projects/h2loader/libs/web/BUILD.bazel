@@ -1,3 +1,4 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
@@ -62,5 +63,23 @@ filegroup(
     srcs = [
         ":h2loader_web_runtime",
         "src/h2loader.js",
+        "src/h2loader_ports.js",
     ],
+)
+
+js_test(
+    name = "h2loader_ports_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = ["src/h2loader_ports.js"],
+    entry_point = "tests/h2loader_ports_test.mjs",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )

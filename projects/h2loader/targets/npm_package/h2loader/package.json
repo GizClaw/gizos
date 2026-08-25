@@ -20,6 +20,7 @@
     "LICENSE",
     "README.md",
     "h2loader.js",
+    "h2loader_ports.js",
     "h2loader_runtime.js",
     "h2loader_runtime.wasm"
   ]

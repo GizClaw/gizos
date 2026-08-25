@@ -13,6 +13,7 @@ npm_package(
         "//projects/h2loader/libs/web:h2loader_runtime.wasm",
         "//projects/h2loader/libs/web:h2loader_runtime.js",
         "//projects/h2loader/libs/web:src/h2loader.js",
+        "//projects/h2loader/libs/web:src/h2loader_ports.js",
     ],
     include_runfiles = False,
     include_sources = False,
