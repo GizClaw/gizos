@@ -40,6 +40,7 @@ typedef struct h2_loader_command_config {
 } h2_loader_command_config_t;
 
 #define H2_LOADER_COMMAND_DEFINITION_CAPACITY 11u
+#define H2_LOADER_COMMAND_ROUTE_NODE_CAPACITY 64u
 #define H2_LOADER_COMMAND_INPUT_BUFFER_SIZE 1024u
 #define H2_LOADER_COMMAND_ARGV_CAPACITY 8u
 
@@ -47,6 +48,8 @@ typedef struct h2_loader_command {
     h2_command_t command;
     h2_loader_command_config_t config;
     h2_command_definition_t definitions[H2_LOADER_COMMAND_DEFINITION_CAPACITY];
+    h2_trie_route_t routes[H2_LOADER_COMMAND_DEFINITION_CAPACITY];
+    h2_trie_node_t route_nodes[H2_LOADER_COMMAND_ROUTE_NODE_CAPACITY];
     char input_buffer[H2_LOADER_COMMAND_INPUT_BUFFER_SIZE];
     const char *argv[H2_LOADER_COMMAND_ARGV_CAPACITY];
 } h2_loader_command_t;

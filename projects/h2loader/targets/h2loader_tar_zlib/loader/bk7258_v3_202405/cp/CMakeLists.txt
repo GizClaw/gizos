@@ -6,6 +6,7 @@ armino_component_register(
   INCLUDE_DIRS
     "."
   PRIV_REQUIRES
+    h2_bk_layout_task_policy
     bk_cli
     bk_rtos
     h2_cp_transport

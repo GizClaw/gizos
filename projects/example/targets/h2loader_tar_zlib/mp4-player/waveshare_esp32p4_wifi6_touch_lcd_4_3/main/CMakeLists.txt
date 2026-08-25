@@ -16,6 +16,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/libs/pal/providers/tinyh264/include"
     "${H2_REPO_ROOT}/projects/example/apps/mp4-player/app/include"
   REQUIRES
+    h2_esp_layout_task_policy
     app_update
     espcoredump
     esp_driver_uart

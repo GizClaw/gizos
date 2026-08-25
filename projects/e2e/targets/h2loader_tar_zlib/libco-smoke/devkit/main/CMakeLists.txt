@@ -14,6 +14,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${H2_REPO_ROOT}/libs/pal/include"
   REQUIRES
+    h2_esp_layout_task_policy
     app_update
     espcoredump
     esp_driver_uart

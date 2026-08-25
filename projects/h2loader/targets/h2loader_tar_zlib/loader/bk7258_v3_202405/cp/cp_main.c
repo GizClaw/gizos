@@ -1,4 +1,5 @@
 #include "h2_bk_h2loader_cp_transport.h"
+#include "h2_bk_layout_task_policy.h"
 
 #include "bk_private/bk_init.h"
 
@@ -50,6 +51,9 @@ static void h2_bk_cp_start_task(void *arg) {
 }
 
 int main(void) {
+    if (h2_bk_layout_task_policy_install() != H2_PAL_OK) {
+        return -1;
+    }
     if (rtos_init_semaphore(&s_bk_init_done, 1) != kNoErr) {
         return -1;
     }

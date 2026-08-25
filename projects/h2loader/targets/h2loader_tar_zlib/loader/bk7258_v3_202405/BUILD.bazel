@@ -90,10 +90,10 @@ h2loader_bk7258_firmware(
         "cp/cp_main.c",
     ],
     board = "bk7258_v3_202405",
-    layout = "loader",
     graph = [
         ":h2loader_launcher",
     ],
+    layout = "loader",
     project = "CMakeLists.txt",
     project_name = "h2_bk_h2loader",
     target = "bk7258",

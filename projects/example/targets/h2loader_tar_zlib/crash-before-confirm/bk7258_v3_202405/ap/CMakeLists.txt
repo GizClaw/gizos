@@ -16,6 +16,7 @@ armino_component_register(
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
     "${REPO_ROOT}/libs/pal/include"
   REQUIRES
+    h2_bk_layout_task_policy
     h2_bk7258_board
     audio_play
     audio_record

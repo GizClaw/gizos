@@ -18,6 +18,7 @@ armino_component_register(
     "${REPO_ROOT}/libs/pal/include"
     "${REPO_ROOT}/libs/runtime/include"
   REQUIRES
+    h2_bk_layout_task_policy
     h2_bk7258_board
     bk_cli
     h2_firmware_lib
