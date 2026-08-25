@@ -15,20 +15,3 @@ filegroup(
         "scripts/**/*.sh",
     ]),
 )
-
-filegroup(
-    name = "public_command_surface_inputs",
-    srcs = glob(
-        [
-            "**/*.md",
-            ".github/workflows/*.yml",
-            "scripts/**/*.py",
-            "scripts/**/*.sh",
-        ],
-        exclude = [
-            "build/**",
-            "third_party/**",
-            "x/**",
-        ],
-    ) + ["Makefile"],
-)
