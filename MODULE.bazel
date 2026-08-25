@@ -48,6 +48,15 @@ http_archive = use_repo_rule(
     "http_archive",
 )
 
+http_archive(
+    name = "h2_gizclaw_c_sdk",
+    integrity = "sha256-ZwMPQka/Oyv3G+WxaAwHd13J/fNTyjNnKU3JKcHGs3k=",
+    strip_prefix = "gizclaw-c-sdk-0.7.8",
+    urls = [
+        "https://github.com/GizClaw/gizclaw/releases/download/v0.7.8/gizclaw-c-sdk-0.7.8.tar.gz",
+    ],
+)
+
 # Playwright 1.52.0 uses Chromium headless shell revision 1169. Keep the two
 # supported host archives as lazy repositories so module resolution remains
 # portable on Windows and cross-target CI workers.
@@ -255,26 +264,6 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/38b88335f99e76ed89ff3c93f877fdefce736c13"],
 )
 vendor_repositories.repository(
-    name = "h2_vendor_gizclaw",
-    build_file = "//third_party:gizclaw.BUILD.bazel",
-    nested_archive_sha256 = {
-        "third_party/nanopb/upstream": "10e5f014e91a540959cdb82ce486a25fb9a369cabefae128d9bda4ccb3598e30",
-    },
-    nested_archive_strip_prefix = {
-        "third_party/nanopb/upstream": "nanopb-cad3c18ef15a663e30e3e43e3a752b66378adec1",
-    },
-    nested_archive_urls = {
-        "third_party/nanopb/upstream": "https://codeload.github.com/GizClaw/nanopb/tar.gz/cad3c18ef15a663e30e3e43e3a752b66378adec1",
-    },
-    patches = [
-        "//tools/bazel/vendor:patches/gizclaw_ascii_ctype.patch",
-        "//tools/bazel/vendor:patches/gizclaw_json_ascii_ctype.patch",
-    ],
-    sha256 = "d30c12a097a7fc59df4c5f761e9a66fc168613240d3b3696151e5fbdc3fff71d",
-    strip_prefix = "gizclaw-763a46c41ebc99b6ba11e17ce875315dca4f2192",
-    urls = ["https://codeload.github.com/GizClaw/gizclaw/tar.gz/763a46c41ebc99b6ba11e17ce875315dca4f2192"],
-)
-vendor_repositories.repository(
     name = "h2_vendor_ikcp",
     build_file = "//third_party:ikcp.BUILD.bazel",
     sha256 = "291d08cd1fba918645a12078cbb6dfffa0825c57e33c0d0ec093604621bf3292",
@@ -456,7 +445,6 @@ use_repo(
     "h2_vendor_coremqtt",
     "h2_vendor_esp_serial_flasher",
     "h2_vendor_ffmpeg",
-    "h2_vendor_gizclaw",
     "h2_vendor_ikcp",
     "h2_vendor_libco",
     "h2_vendor_libsrtp",

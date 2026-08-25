@@ -397,13 +397,13 @@ cc_library(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["@h2_vendor_gizclaw//:gizclaw"],
+    deps = ["@h2_gizclaw_c_sdk//:gizclaw"],
 )
 
 cc_library(
     name = "vendor_third_party_gizclaw_firmware",
     tags = ["manual"],
-    deps = ["@h2_vendor_gizclaw//:gizclaw_core"],
+    deps = ["@h2_gizclaw_c_sdk//:gizclaw_core"],
 )
 
 cc_library(
