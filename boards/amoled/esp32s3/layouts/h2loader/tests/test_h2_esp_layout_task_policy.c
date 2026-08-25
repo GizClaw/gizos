@@ -1,6 +1,7 @@
 #include "h2_esp_layout_task_policy.h"
 #include "h2_esp_platform_core.h"
 #include <assert.h>
+#include <stddef.h>
 static h2_esp_task_policy_config_t captured;
 h2_pal_result_t
 h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
@@ -24,5 +25,7 @@ int main(void) {
   assert(get("bleikcp-speed/kcp", &p) == H2_PAL_OK);
   assert(get("net/modem_ppp_rx", &p) == H2_PAL_ERR_NOT_FOUND);
   assert(get("unknown", &p) == H2_PAL_ERR_NOT_FOUND);
+  assert(get("", &p) == H2_PAL_ERR_NOT_FOUND);
+  assert(get(NULL, &p) == H2_PAL_ERR_NOT_FOUND);
   return 0;
 }
