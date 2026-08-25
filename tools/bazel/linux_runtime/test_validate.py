@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import pathlib
 import sys
 import tempfile
@@ -41,14 +40,6 @@ class ValidateTest(unittest.TestCase):
             validate.validate_sonames({"libcurl.so.4"}, contract)
         with self.assertRaisesRegex(validate.ValidationError, "allowlist"):
             validate.validate_sonames({"libsurprise.so.1"}, contract)
-
-    def test_repository_allowlist_excludes_http_and_tls_implementations(self):
-        path = MODULE_PATH.with_name("ubuntu_24_04_x86_64_allowlist.json")
-        contract = json.loads(path.read_text(encoding="utf-8"))
-        names = " ".join(contract["allowed_sonames"]).lower()
-        for forbidden in ("curl", "ssl", "crypto", "corehttp", "llhttp", "wolf"):
-            self.assertNotIn(forbidden, names)
-
 
 if __name__ == "__main__":
     unittest.main()

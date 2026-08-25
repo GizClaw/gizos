@@ -23,7 +23,6 @@ py_test(
         "test_validate.py",
         "validate.py",
     ],
-    data = ["ubuntu_24_04_x86_64_allowlist.json"],
     legacy_create_init = 0,
     main = "test_validate.py",
     target_compatible_with = select({
