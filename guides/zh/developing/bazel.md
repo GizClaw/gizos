@@ -223,7 +223,7 @@ Graph test 对目录、label、rule kind、artifact identity 和依赖边做校�
 
 ## 下游 Bzlmod consumer
 
-产品仓库通过名为 `gizos` 的 Bzlmod module 消费公开 target，并统一使用 `@gizos//...` label。GizOS 自己作为 root 时使用的具名 Node、Go host toolchain extension 和 registration 标记为 `dev_dependency`；它们在 GizOS root build 中保持生效，在 GizOS 作为 dependency 时不替下游选择 root toolchain。Zig extension 只为实际 root module 生成 toolchain repository，因此使用 GizOS C/C++ graph 的下游 root 必须声明自己的同一 extension usage 和 registration。下游 root 同时负责 platform config、构建环境和最终产品 artifact，GizOS 仍拥有 public library、PAL provider、native component、firmware rule 和 H2Loader package rule。
+产品仓库通过名为 `gizos` 的 Bzlmod module 消费公开 target，并统一使用 `@gizos//...` label。GizOS 自己作为 root 时使用的具名 Node toolchain extension 和 registration 标记为 `dev_dependency`；它在 GizOS root build 中保持生效，在 GizOS 作为 dependency 时不替下游选择 root toolchain。GizOS 的 public module contract 通过 `rules_go` 官方 `@io_bazel_rules_go` identity 固定 Go 1.24.12 host SDK，并注册同一 extension 的 `@go_toolchains//:all`；这项非 dev usage 在 GizOS 作为 dependency 时继续进入 module graph，使公共 Go host tool 和 Gazelle repository tool 选择 GizOS 固定的兼容 SDK。consumer 不得直接声明 `rules_go`、下载 Go SDK 或注册 Go toolchain，只需固定包含该 contract 的 GizOS revision。Zig extension 只为实际 root module 生成 toolchain repository，因此使用 GizOS C/C++ graph 的下游 root 必须声明自己的同一 extension usage 和 registration。下游 root 同时负责 platform config、构建环境和最终产品 artifact，GizOS 仍拥有 public library、PAL provider、native component、firmware rule 和 H2Loader package rule。
 
 公开 `.bzl` 中指向 GizOS-owned tool、config setting 或默认输入的 label 必须稳定解析到 `@gizos//...`，不能用只在 root repository 成立的 `@//...`。Consumer-owned `srcs`、`data`、board、App 与 launcher 继续由调用方显式传入，GizOS rule 不能反向取得产品 ownership。
 
