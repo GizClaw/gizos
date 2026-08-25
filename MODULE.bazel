@@ -41,8 +41,6 @@ register_toolchains(
 cc_configure = use_extension("@rules_cc//cc:extensions.bzl", "cc_configure_extension")
 use_repo(cc_configure, "local_config_cc")
 
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",
@@ -114,13 +112,6 @@ use_repo(
     "guides_npm",
     "h2loader_batch_loader_npm",
     "lvgl_conv_i18n_yaml_npm",
-)
-
-http_file(
-    name = "haivivi_next_openapi",
-    downloaded_file_path = "openapi.json",
-    sha256 = "cd0dda64d35532233cc23f98a8242a746082f9cfbbee1aef7fb9fd5b601e3d53",
-    urls = ["https://api.haivivi.cn/openapi-json"],
 )
 
 go_sdk = use_extension(
