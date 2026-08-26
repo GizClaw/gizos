@@ -5,10 +5,10 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 _HOST_COMPATIBILITY = select({
-    "//tools/bazel/platforms:host_linux_target_linux": [],
-    "//tools/bazel/platforms:host_macos_target_macos": [],
-    "//tools/bazel/platforms:host_windows_target_windows": [],
-    "//conditions:default": ["@platforms//:incompatible"],
+    Label("//tools/bazel/platforms:host_linux_target_linux"): [],
+    Label("//tools/bazel/platforms:host_macos_target_macos"): [],
+    Label("//tools/bazel/platforms:host_windows_target_windows"): [],
+    Label("//conditions:default"): [Label("@platforms//:incompatible")],
 })
 
 def _target_directory(relative_directory):
@@ -27,7 +27,7 @@ def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
         component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
         data = [directory + "/CMakeLists.txt"],
-        deps = ["//native_component_src/esp-idf6.x/h2_pal_core"],
+        deps = [Label("//native_component_src/esp-idf6.x/h2_pal_core")],
     )
     cc_test(
         name = name + "_test",
@@ -41,9 +41,9 @@ def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
         includes = [directory],
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
-            "//libs/pal",
-            "//libs/trie",
-            "//native_component_src/esp-idf6.x/h2_target_task_policy:test_sdk",
+            Label("//libs/pal"),
+            Label("//libs/trie"),
+            Label("//native_component_src/esp-idf6.x/h2_target_task_policy:test_sdk"),
         ],
     )
 
@@ -68,7 +68,7 @@ def bk7258_target_task_policy(
         component_name = "h2_bk_target_task_policy",
         data = [ap_directory + "/CMakeLists.txt"],
         execution_unit = "ap",
-        deps = ["//native_component_src/bk7258/ap/h2_pal_core"],
+        deps = [Label("//native_component_src/bk7258/ap/h2_pal_core")],
     )
     firmware_native_component(
         name = cp_name,
@@ -78,7 +78,7 @@ def bk7258_target_task_policy(
         component_name = "h2_bk_target_task_policy",
         data = [cp_directory + "/CMakeLists.txt"],
         execution_unit = "cp",
-        deps = ["//native_component_src/bk7258/cp/h2_pal_core"],
+        deps = [Label("//native_component_src/bk7258/cp/h2_pal_core")],
     )
     cc_test(
         name = ap_name + "_test",
@@ -92,9 +92,9 @@ def bk7258_target_task_policy(
         includes = [ap_directory],
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
-            "//libs/pal",
-            "//libs/trie",
-            "//native_component_src/bk7258/ap/h2_target_task_policy:test_sdk",
+            Label("//libs/pal"),
+            Label("//libs/trie"),
+            Label("//native_component_src/bk7258/ap/h2_target_task_policy:test_sdk"),
         ],
     )
     cc_test(
@@ -109,7 +109,7 @@ def bk7258_target_task_policy(
         includes = [cp_directory],
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
-            "//libs/pal",
-            "//native_component_src/bk7258/cp/h2_target_task_policy:test_sdk",
+            Label("//libs/pal"),
+            Label("//native_component_src/bk7258/cp/h2_target_task_policy:test_sdk"),
         ],
     )
