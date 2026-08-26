@@ -4,4 +4,4 @@ h2_bazel_native_component_sources(H2_TARGET_TASK_POLICY_SOURCES h2_bk_target_tas
 armino_component_register(
     SRCS ${H2_TARGET_TASK_POLICY_SOURCES}
     INCLUDE_DIRS "."
-    REQUIRES h2_firmware_lib h2_pal_core bk_rtos)
+    REQUIRES h2_pal_core bk_rtos)
