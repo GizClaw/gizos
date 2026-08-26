@@ -72,7 +72,16 @@ def assemble(inputs: list[Path], output: Path, version: str) -> None:
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     if not isinstance(catalog, list) or not catalog:
         raise ValueError("firmware catalog must be a non-empty array")
-    required_identity = ("entry", "platform", "board", "image", "role", "target")
+    required_identity = (
+        "entry",
+        "platform",
+        "project",
+        "app",
+        "board",
+        "image",
+        "role",
+        "target",
+    )
     for item in catalog:
         if not isinstance(item, dict) or any(
             not isinstance(item.get(key), str) or not item[key]
@@ -95,7 +104,19 @@ def assemble(inputs: list[Path], output: Path, version: str) -> None:
             f"unexpected={sorted(actual - expected)}"
         )
     catalog_identity = {
-        item["entry"]: {key: item[key] for key in ("platform", "board", "image", "role", "target", "version")}
+        item["entry"]: {
+            key: item[key]
+            for key in (
+                "platform",
+                "project",
+                "app",
+                "board",
+                "image",
+                "role",
+                "target",
+                "version",
+            )
+        }
         for item in catalog
     }
     if output.exists():
@@ -106,7 +127,19 @@ def assemble(inputs: list[Path], output: Path, version: str) -> None:
     asset_names: set[str] = set()
     for item in firmware:
         validate_firmware_version(item.get("version"), item.get("entry"))
-        identity = {key: item.get(key) for key in ("platform", "board", "image", "role", "target", "version")}
+        identity = {
+            key: item.get(key)
+            for key in (
+                "platform",
+                "project",
+                "app",
+                "board",
+                "image",
+                "role",
+                "target",
+                "version",
+            )
+        }
         if identity != catalog_identity[item["entry"]]:
             raise ValueError(f"firmware identity mismatch: {item['entry']}")
         validate_package_manifest(item)

@@ -1,0 +1,10 @@
+load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "declared_board",
+    firmware = "//:fake_firmware",
+    image = "consumer_app",
+    role = "app",
+    target = "esp32s3",
+)

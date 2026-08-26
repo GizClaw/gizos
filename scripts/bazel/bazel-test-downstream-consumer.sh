@@ -23,6 +23,12 @@ cp "$fixture_root/package.BUILD.bazel.fixture" \
 mkdir -p "$consumer_root/projects/consumer/targets/bk3633_firmware/main/consumer_board"
 cp "$fixture_root/bk3633.BUILD.bazel.fixture" \
     "$consumer_root/projects/consumer/targets/bk3633_firmware/main/consumer_board/BUILD.bazel"
+mkdir -p "$consumer_root/noncanonical"
+cp "$fixture_root/noncanonical.BUILD.bazel.fixture" \
+    "$consumer_root/noncanonical/BUILD.bazel"
+mkdir -p "$consumer_root/projects/consumer/targets/h2loader_tar_zlib/main/path_board"
+cp "$fixture_root/board_mismatch.BUILD.bazel.fixture" \
+    "$consumer_root/projects/consumer/targets/h2loader_tar_zlib/main/path_board/BUILD.bazel"
 mkdir -p "$consumer_root/bk3633"
 cp "$fixture_root/bk3633.Makefile.fixture" "$consumer_root/bk3633/Makefile"
 cp "$fixture_root/release_identity.cquery.fixture" "$consumer_root/release_identity.cquery"
@@ -109,6 +115,37 @@ expect_missing_policy_failure task_policy //:private_esp_firmware
 expect_missing_policy_failure ap_task_policy //:private_bk_firmware
 expect_missing_policy_failure cp_task_policy //:private_bk_firmware
 cp BUILD.bazel.complete BUILD.bazel
+
+expect_release_identity_failure() {
+    local target=$1
+    local expected_message=$2
+    local log_name=$3
+    if "${BAZEL_BIN:-bazel}" \
+        --ignore_all_rc_files \
+        --output_base="$consumer_root/output-base" \
+        cquery \
+        --enable_bzlmod \
+        --noenable_workspace \
+        --repository_cache="$repository_cache" \
+        --override_module="gizos=$repository_root" \
+        --define="h2_host_os=$host_os" \
+        --platforms="@gizos//tools/bazel/platforms:$platform" \
+        --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+        "$target" >"$log_name" 2>&1; then
+        printf 'expected %s to fail release identity analysis\n' "$target" >&2
+        exit 1
+    fi
+    grep -F "$expected_message" "$log_name" >/dev/null
+}
+
+expect_release_identity_failure \
+    //noncanonical:package \
+    'firmware release target must use projects/<project>/targets/h2loader_tar_zlib/<app>/<board>' \
+    noncanonical-release-identity.log
+expect_release_identity_failure \
+    //projects/consumer/targets/h2loader_tar_zlib/main/path_board:package \
+    'does not match declared board declared_board' \
+    board-mismatch-release-identity.log
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \

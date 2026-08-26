@@ -18,6 +18,8 @@ class ReleaseBundleTest(unittest.TestCase):
             identity = {
                 "entry": "projects/example/targets/h2loader_tar_zlib/app/board",
                 "platform": "esp",
+                "project": "example",
+                "app": "app",
                 "board": "board",
                 "image": "app",
                 "role": "app",
@@ -72,6 +74,8 @@ class ReleaseBundleTest(unittest.TestCase):
                 identity = {
                     "entry": f"projects/example/{board}",
                     "platform": "esp",
+                    "project": "example",
+                    "app": "app",
                     "board": board,
                     "image": "app",
                     "role": "app",
@@ -125,6 +129,8 @@ class ReleaseBundleTest(unittest.TestCase):
             identity = {
                 "entry": "projects/example/targets/h2loader_tar_zlib/app/board",
                 "platform": "esp",
+                "project": "example",
+                "app": "app",
                 "board": "board",
                 "image": "app",
                 "role": "app",
@@ -175,6 +181,8 @@ class ReleaseBundleTest(unittest.TestCase):
             catalog.write_text(json.dumps([{
                 "entry": "entry",
                 "platform": "esp",
+                "project": "example",
+                "app": "app",
                 "board": "board",
                 "image": "app",
                 "role": "app",
@@ -192,6 +200,8 @@ class ReleaseBundleTest(unittest.TestCase):
             identity = {
                 "entry": "projects/example/targets/h2loader_tar_zlib/app/board",
                 "platform": "esp",
+                "project": "example",
+                "app": "app",
                 "board": "board",
                 "image": "app",
                 "role": "app",
@@ -228,6 +238,8 @@ class ReleaseBundleTest(unittest.TestCase):
             catalog.write_text(json.dumps([{
                 "entry": "missing",
                 "platform": "esp",
+                "project": "example",
+                "app": "app",
                 "board": "board",
                 "image": "app",
                 "role": "app",
@@ -236,6 +248,53 @@ class ReleaseBundleTest(unittest.TestCase):
             }]))
             with self.assertRaisesRegex(ValueError, "coverage mismatch"):
                 assemble([catalog], root / "output", "1.2.3")
+
+    def test_rejects_catalog_metadata_project_app_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / "example-app-board.update.tar.zlib"
+            asset.write_bytes(b"package")
+            identity = {
+                "entry": "projects/example/targets/h2loader_tar_zlib/app/board",
+                "platform": "esp",
+                "project": "example",
+                "app": "app",
+                "board": "board",
+                "image": "app",
+                "role": "app",
+                "target": "chip",
+            }
+            catalog = root / "firmware-catalog.json"
+            catalog.write_text(json.dumps([{**identity, "version": "1.2.3"}]))
+            metadata = root / "example-app-board.firmware.json"
+            for field in ("project", "app"):
+                with self.subTest(field=field):
+                    metadata.write_text(json.dumps({
+                        **identity,
+                        field: "other",
+                        "version": "1.2.3",
+                        "package_manifest": {
+                            "format": 1,
+                            "role": "app",
+                            "board": "board",
+                            "target": "chip",
+                            "version": "1.2.3",
+                            "image_size": 7,
+                            "image_sha256": "0" * 64,
+                        },
+                        "assets": [{
+                            "name": asset.name,
+                            "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(),
+                            "size": asset.stat().st_size,
+                        }],
+                    }))
+
+                    with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                        assemble(
+                            [catalog, metadata, asset],
+                            root / f"output-{field}",
+                            "release-1",
+                        )
 
 
 if __name__ == "__main__":
