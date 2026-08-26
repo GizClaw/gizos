@@ -18,12 +18,12 @@ def _target_directory(relative_directory):
 def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
     """Declares one ESP policy owned by the calling firmware target package."""
     header = directory + "/h2_esp_target_task_policy.h"
+    source = directory + "/h2_esp_target_task_policy.c"
+    test_source = directory + "/tests/test_h2_esp_target_task_policy.c"
     firmware_native_component(
         name = name,
         hdrs = [header],
-        native_srcs = [
-            "//native_component_src/esp-idf6.x/h2_target_task_policy:src/h2_esp_target_task_policy.c",
-        ],
+        srcs = [source],
         component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
         data = [directory + "/CMakeLists.txt"],
@@ -33,8 +33,8 @@ def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
         name = name + "_test",
         srcs = [
             header,
-            "//native_component_src/esp-idf6.x/h2_target_task_policy:src/h2_esp_target_task_policy.c",
-            "//native_component_src/esp-idf6.x/h2_target_task_policy:tests/test_h2_esp_target_task_policy.c",
+            source,
+            test_source,
         ],
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
@@ -42,6 +42,7 @@ def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
             "//libs/pal",
+            "//libs/trie",
             "//native_component_src/esp-idf6.x/h2_target_task_policy:test_sdk",
         ],
     )
@@ -55,12 +56,14 @@ def bk7258_target_task_policy(
     cp_directory = directory + "/cp"
     ap_header = ap_directory + "/h2_bk_target_task_policy.h"
     cp_header = cp_directory + "/h2_bk_target_task_policy.h"
+    ap_source = ap_directory + "/h2_bk_target_task_policy.c"
+    cp_source = cp_directory + "/h2_bk_target_task_policy.c"
+    ap_test_source = ap_directory + "/tests/test_h2_bk_target_task_policy.c"
+    cp_test_source = cp_directory + "/tests/test_h2_bk_target_task_policy.c"
     firmware_native_component(
         name = ap_name,
         hdrs = [ap_header],
-        native_srcs = [
-            "//native_component_src/bk7258/ap/h2_target_task_policy:src/h2_bk_target_task_policy.c",
-        ],
+        srcs = [ap_source],
         component_directory = _target_directory(ap_directory),
         component_name = "h2_bk_target_task_policy",
         data = [ap_directory + "/CMakeLists.txt"],
@@ -70,9 +73,7 @@ def bk7258_target_task_policy(
     firmware_native_component(
         name = cp_name,
         hdrs = [cp_header],
-        native_srcs = [
-            "//native_component_src/bk7258/cp/h2_target_task_policy:src/h2_bk_target_task_policy.c",
-        ],
+        srcs = [cp_source],
         component_directory = _target_directory(cp_directory),
         component_name = "h2_bk_target_task_policy",
         data = [cp_directory + "/CMakeLists.txt"],
@@ -83,8 +84,8 @@ def bk7258_target_task_policy(
         name = ap_name + "_test",
         srcs = [
             ap_header,
-            "//native_component_src/bk7258/ap/h2_target_task_policy:src/h2_bk_target_task_policy.c",
-            "//native_component_src/bk7258/ap/h2_target_task_policy:tests/test_h2_bk_target_task_policy.c",
+            ap_source,
+            ap_test_source,
         ],
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
@@ -92,6 +93,7 @@ def bk7258_target_task_policy(
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
             "//libs/pal",
+            "//libs/trie",
             "//native_component_src/bk7258/ap/h2_target_task_policy:test_sdk",
         ],
     )
@@ -99,8 +101,8 @@ def bk7258_target_task_policy(
         name = cp_name + "_test",
         srcs = [
             cp_header,
-            "//native_component_src/bk7258/cp/h2_target_task_policy:src/h2_bk_target_task_policy.c",
-            "//native_component_src/bk7258/cp/h2_target_task_policy:tests/test_h2_bk_target_task_policy.c",
+            cp_source,
+            cp_test_source,
         ],
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,

@@ -1,12 +1,16 @@
-#ifndef H2_BK_CP_TARGET_TASK_POLICY_H
-#define H2_BK_CP_TARGET_TASK_POLICY_H
+#ifndef H2_BK_TARGET_TASK_POLICY_H
+#define H2_BK_TARGET_TASK_POLICY_H
 
-#include "h2_bk_platform_core.h"
+#include "h2/pal/core/h2_pal_errors.h"
 
-#define H2_TARGET_TASK_POLICY_NAME                                             \
-  "projects/example/targets/h2loader_tar_zlib/bleikcp-speed-server/"           \
-  "bk7258_v3_202405"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 h2_pal_result_t h2_bk_target_task_policy_install(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -2,11 +2,6 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "src/h2_esp_target_task_policy.c",
-    "tests/test_h2_esp_target_task_policy.c",
-])
-
 cc_library(
     name = "test_sdk",
     hdrs = ["tests/sdk/h2_esp_platform_core.h"],
