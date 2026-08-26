@@ -138,8 +138,8 @@ native outputs；Loader recovery bundle 由外层 package rule 生成。
 
 可复用 JS/runtime/WASM SDK 位于 `libs/web/`，公共 npm artifact 位于 `targets/npm_package/h2loader/`；产品 Batch Loader UI 位于 `GizClaw/www`。Web SDK 与 native CLI 都通过 `libs/h2loader_host/` 取得 authoritative identity、typed command、package contract 与 lifecycle verification。CLI 的 App source、host target 和 tests 都由 `projects/h2loader/` 拥有，不在 `tools/` 维护第二套 protocol、package writer 或 Python runtime。Host 代码不属于 firmware，也不通过设备 Runtime 使用硬件能力。
 
-## Layout-owned task policy
+## Target-owned task policy
 
-H2Loader-managed embedded launcher 不拥有 task-name policy，也不依赖 shared provider 的隐式默认值。ESP launcher 在 `h2_esp_board_runtime_config()`、`h2_runtime_init()` 或直接 PAL task creation 前调用 selected `h2_esp_layout_task_policy_install()`；BK AP launcher 在 board Runtime configuration 前、BK CP launcher在 startup task creation 前调用 `h2_bk_layout_task_policy_install()`。安装失败必须停止 startup。
+每个 H2Loader-managed firmware target 拥有自己的 task-name policy，shared provider 不持有具体 task name。ESP launcher 在 `h2_esp_board_runtime_config()`、`h2_runtime_init()` 或直接 PAL task creation 前调用 `h2_esp_target_task_policy_install()`；BK AP launcher 在 board Runtime configuration 前、BK CP launcher 在 startup task creation 前调用 `h2_bk_target_task_policy_install()`。安装失败必须停止 startup。
 
-ESP selected component 位于 `boards/<board>/<target>/layouts/<layout>/`。BK selected AP/CP components 位于 `boards/<board>/bk7258/layouts/<layout>/task_policy/<ap|cp>/`。private board/layout 通过 `layout_files.task_policy` 或 `layout_files.ap_task_policy`/`cp_task_policy` 注入自己的 component，因此 private task name 不进入 GizOS public layout。
+ESP policy declaration 位于 concrete target package 的 `task_policy/`；BK AP/CP declarations 位于同一 target package 的 `task_policy/<ap|cp>/`。Firmware macro 分别通过 `task_policy` 或 `ap_task_policy`/`cp_task_policy` 显式接入 component。Board layout 只保留硬件、SDK、partition、GPIO 与 RAM-region 输入；private task name 因而不会进入 GizOS public board layout。

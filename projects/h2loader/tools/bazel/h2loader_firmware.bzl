@@ -41,15 +41,21 @@ def _require_layout_files(layout_files, required_fields, target, board):
         ))
     return layout_files
 
-def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", layout_files = None, **kwargs):
+def _require_target_policy(policy, field, target, board):
+    if policy == None:
+        fail("H2Loader firmware target %s/%s is missing %s" % (target, board, field))
+    return policy
+
+def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = "h2loader", layout_files = None, **kwargs):
     """Declares ESP-IDF firmware from one repository-owned board layout.
 
     Every board owns exactly one canonical sdkconfig.defaults; a layout only
-    adds layout-owned settings such as the partition table, rollback, or a
-    registered console/memory variant. There is no named config-profile
-    registry. A downstream repository with a private board passes layout_files
-    containing its exact partition and project-support labels; the private
-    board is not added to GizOS's built-in registry.
+    adds hardware/SDK settings such as the partition table, rollback, or a
+    registered console/memory variant. The concrete firmware target passes its
+    task policy explicitly. There is no named config-profile registry. A
+    downstream repository with a private board passes layout_files containing
+    its exact partition and project-support labels; the private board is not
+    added to GizOS's built-in registry.
     """
     for removed in ("config_profile", "config_profiles"):
         if removed in kwargs:
@@ -66,12 +72,11 @@ def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", layout_f
             "partition": entry.root + ":partition.csv",
             "project_support_files": [layout_root + ":sdkconfig.h2loader.defaults"],
             "support_files": getattr(entry, "support", []),
-            "task_policy": layout_root + ":task_policy",
         }
     else:
         layout_files = _require_layout_files(
             layout_files,
-            ["partition", "project_support_files", "task_policy"],
+            ["partition", "project_support_files"],
             target,
             board,
         )
@@ -79,7 +84,9 @@ def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", layout_f
         fail("h2loader_esp_idf_firmware owns partition")
     if "project_support_files" in kwargs:
         fail("h2loader_esp_idf_firmware owns project_support_files")
-    graph = kwargs.pop("graph", []) + [layout_files["task_policy"]]
+    graph = kwargs.pop("graph", []) + [
+        _require_target_policy(task_policy, "task_policy", target, board),
+    ]
     esp_idf_firmware(
         name = name,
         board = board,
@@ -91,12 +98,21 @@ def h2loader_esp_idf_firmware(name, board, target, layout = "h2loader", layout_f
         **kwargs
     )
 
-def h2loader_bk7258_firmware(name, board, target, layout = "h2loader", layout_files = None, **kwargs):
+def h2loader_bk7258_firmware(
+        name,
+        board,
+        target,
+        ap_task_policy = None,
+        cp_task_policy = None,
+        layout = "h2loader",
+        layout_files = None,
+        **kwargs):
     """Declares BK7258 firmware from one repository-owned board layout.
 
     Every layout under boards/<board>/bk7258/layouts/<layout>/ owns one
     complete AP configuration, CP configuration, GPIO selection, RAM-region
-    plan, and partition metadata. There is no named config-profile registry.
+    plan, and partition metadata. The concrete firmware target passes its AP
+    and CP task policies explicitly. There is no named config-profile registry.
     A downstream repository with a private board passes layout_files containing
     the exact AP/CP config, GPIO, RAM-region, and project-support labels.
     """
@@ -121,8 +137,6 @@ def h2loader_bk7258_firmware(name, board, target, layout = "h2loader", layout_fi
             "cp_gpio": layout_root + ":cp_gpio",
             "project_support_files": [layout_root + ":layout"],
             "ram_regions": layout_root + ":ram_regions",
-            "ap_task_policy": layout_root + ":ap_task_policy",
-            "cp_task_policy": layout_root + ":cp_task_policy",
         }
     else:
         layout_files = _require_layout_files(
@@ -134,8 +148,6 @@ def h2loader_bk7258_firmware(name, board, target, layout = "h2loader", layout_fi
                 "cp_gpio",
                 "project_support_files",
                 "ram_regions",
-                "ap_task_policy",
-                "cp_task_policy",
             ],
             target,
             board,
@@ -143,8 +155,8 @@ def h2loader_bk7258_firmware(name, board, target, layout = "h2loader", layout_fi
     if "project_support_files" in kwargs:
         fail("h2loader_bk7258_firmware owns project_support_files")
     graph = kwargs.pop("graph", []) + [
-        layout_files["ap_task_policy"],
-        layout_files["cp_task_policy"],
+        _require_target_policy(ap_task_policy, "ap_task_policy", target, board),
+        _require_target_policy(cp_task_policy, "cp_task_policy", target, board),
     ]
     bk7258_firmware(
         name = name,

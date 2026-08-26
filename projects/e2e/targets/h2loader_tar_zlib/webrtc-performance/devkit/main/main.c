@@ -4,7 +4,7 @@
 #include "h2_webrtc_performance.h"
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2_esp_layout_task_policy.h"
+#include "h2_esp_target_task_policy.h"
 
 #include "esp_heap_caps.h"
 #include "esp_system.h"
@@ -240,7 +240,7 @@ static void image_entry(void *user) {
 }
 
 void app_main(void) {
-    if (h2_esp_layout_task_policy_install() != H2_PAL_OK) {
+    if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
         return;
     }
   const h2_pal_result_t rc = h2_esp_board_start_entry_task(

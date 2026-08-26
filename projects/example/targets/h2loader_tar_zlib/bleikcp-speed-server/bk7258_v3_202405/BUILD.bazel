@@ -1,9 +1,12 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_task_policy.bzl", "h2loader_bk7258_target_task_policy")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
+
+h2loader_bk7258_target_task_policy()
 
 firmware_lib_component(
     name = "firmware_lib",
@@ -91,7 +94,9 @@ h2loader_bk7258_firmware(
         "cp/CMakeLists.txt",
         "cp/cp_main.c",
     ],
+    ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",
+    cp_task_policy = ":cp_task_policy",
     graph = [
         ":bleikcp_speed_server_launcher",
     ],
