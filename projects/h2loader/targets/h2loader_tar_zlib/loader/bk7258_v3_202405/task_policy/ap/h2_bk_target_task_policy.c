@@ -9,7 +9,7 @@ static const h2_bk_task_policy_t s_h2loader_policy = {
     .sdk_name = NULL,
     .core = 0u,
     .priority = 5u,
-    .min_stack_size = 8192u,
+    .min_stack_size = 49152u,
     .stack_region = H2_BK_TASK_STACK_PSRAM,
 };
 

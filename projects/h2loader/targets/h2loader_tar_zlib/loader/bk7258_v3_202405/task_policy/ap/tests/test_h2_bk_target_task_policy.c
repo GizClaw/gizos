@@ -34,10 +34,10 @@ int main(void) {
   assert(s_config.fallback.stack_region == H2_BK_TASK_STACK_DEFAULT);
   assert(get_policy("h2loader/appcmd", &policy) == H2_PAL_OK &&
          policy.core == 0u && policy.priority == 5u &&
-         policy.min_stack_size == 8192u);
+         policy.min_stack_size == 49152u);
   assert(get_policy("h2loader/uartcmd", &policy) == H2_PAL_OK &&
          policy.core == 0u && policy.priority == 5u &&
-         policy.min_stack_size == 8192u);
+         policy.min_stack_size == 49152u);
   assert(get_policy("audio-system-music", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy("bleikcp-speed/kcp", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy("unknown", &policy) == H2_PAL_ERR_NOT_FOUND);
