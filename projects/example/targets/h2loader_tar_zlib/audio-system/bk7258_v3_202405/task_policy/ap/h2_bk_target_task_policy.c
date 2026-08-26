@@ -51,6 +51,7 @@ static h2_trie_t s_router;
 static h2_pal_result_t resolve_policy(void *user, const char *name,
                                       h2_bk_task_policy_t *out_policy) {
   (void)user;
+  /* Reject invalid inputs before route or fallback dispatch. */
   if (name == NULL || name[0] == '\0' || out_policy == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
   }
