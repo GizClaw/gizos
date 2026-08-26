@@ -10,9 +10,9 @@
     H2_BK_TASK_STACK_PSRAM)                                                    \
   X("h2loader/uartcmd", H2_BK_TARGET_TASK_ROUTE_EXACT, NULL, 0u, 5u, 8192u,    \
     H2_BK_TASK_STACK_PSRAM)                                                    \
-  X("audio-system/music", H2_BK_TARGET_TASK_ROUTE_EXACT, NULL, 1u, 4u, 4096u,  \
+  X("audio-system-music", H2_BK_TARGET_TASK_ROUTE_EXACT, NULL, 1u, 4u, 4096u,  \
     H2_BK_TASK_STACK_PSRAM)                                                    \
-  X("audio-system/mic", H2_BK_TARGET_TASK_ROUTE_EXACT, NULL, 1u, 4u, 4096u,    \
+  X("audio-system-mic", H2_BK_TARGET_TASK_ROUTE_EXACT, NULL, 1u, 4u, 4096u,    \
     H2_BK_TASK_STACK_PSRAM)                                                    \
   X("bleikcp-speed/", H2_BK_TARGET_TASK_ROUTE_PREFIX, NULL, 0u, 6u, 4096u,     \
     H2_BK_TASK_STACK_PSRAM)

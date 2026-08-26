@@ -142,4 +142,4 @@ native outputs；Loader recovery bundle 由外层 package rule 生成。
 
 每个 H2Loader-managed firmware target 拥有自己的 task-name policy，shared provider 不持有具体 task name。ESP launcher 在 `h2_esp_board_runtime_config()`、`h2_runtime_init()` 或直接 PAL task creation 前调用 `h2_esp_target_task_policy_install()`；BK AP launcher 在 board Runtime configuration 前、BK CP launcher 在 startup task creation 前调用 `h2_bk_target_task_policy_install()`。安装失败必须停止 startup。
 
-ESP policy declaration 位于 concrete target package 的 `task_policy/`；BK AP/CP declarations 位于同一 target package 的 `task_policy/<ap|cp>/`。Firmware macro 分别通过 `task_policy` 或 `ap_task_policy`/`cp_task_policy` 显式接入 component。Board layout 只保留硬件、SDK、partition、GPIO 与 RAM-region 输入；private task name 因而不会进入 GizOS public board layout。
+ESP policy declaration 位于 concrete target package 的 `task_policy/`；BK AP/CP declarations 位于同一 target package 的 `task_policy/<ap|cp>/`。底层 native firmware rule 分别通过 `task_policy` 或 `ap_task_policy`/`cp_task_policy` 接入 component，H2Loader wrapper 负责要求这些参数。Board layout 只保留硬件、SDK、partition、GPIO 与 RAM-region 输入；private task name 因而不会进入 GizOS public board layout。

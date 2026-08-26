@@ -1,4 +1,4 @@
-"""Target-owned task-policy components for H2Loader-managed firmware."""
+"""Target-owned task-policy components for native firmware."""
 
 load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
@@ -15,14 +15,14 @@ def _target_directory(relative_directory):
     package = native.package_name()
     return package + "/" + relative_directory if package else relative_directory
 
-def h2loader_esp_target_task_policy(name = "task_policy", directory = "task_policy"):
+def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
     """Declares one ESP policy owned by the calling firmware target package."""
     header = directory + "/h2_esp_target_task_policy.h"
     firmware_native_component(
         name = name,
         hdrs = [header],
         native_srcs = [
-            "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_target_task_policy:src/h2_esp_target_task_policy.c",
+            "//native_component_src/esp-idf6.x/h2_target_task_policy:src/h2_esp_target_task_policy.c",
         ],
         component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
@@ -33,8 +33,8 @@ def h2loader_esp_target_task_policy(name = "task_policy", directory = "task_poli
         name = name + "_test",
         srcs = [
             header,
-            "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_target_task_policy:src/h2_esp_target_task_policy.c",
-            "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_target_task_policy:tests/test_h2_esp_target_task_policy.c",
+            "//native_component_src/esp-idf6.x/h2_target_task_policy:src/h2_esp_target_task_policy.c",
+            "//native_component_src/esp-idf6.x/h2_target_task_policy:tests/test_h2_esp_target_task_policy.c",
         ],
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
@@ -42,11 +42,11 @@ def h2loader_esp_target_task_policy(name = "task_policy", directory = "task_poli
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
             "//libs/pal",
-            "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_target_task_policy:test_sdk",
+            "//native_component_src/esp-idf6.x/h2_target_task_policy:test_sdk",
         ],
     )
 
-def h2loader_bk7258_target_task_policy(
+def bk7258_target_task_policy(
         ap_name = "ap_task_policy",
         cp_name = "cp_task_policy",
         directory = "task_policy"):
@@ -59,7 +59,7 @@ def h2loader_bk7258_target_task_policy(
         name = ap_name,
         hdrs = [ap_header],
         native_srcs = [
-            "//projects/h2loader/native_component_src/bk7258/ap/h2_h2loader_target_task_policy:src/h2_bk_target_task_policy.c",
+            "//native_component_src/bk7258/ap/h2_target_task_policy:src/h2_bk_target_task_policy.c",
         ],
         component_directory = _target_directory(ap_directory),
         component_name = "h2_bk_target_task_policy",
@@ -71,7 +71,7 @@ def h2loader_bk7258_target_task_policy(
         name = cp_name,
         hdrs = [cp_header],
         native_srcs = [
-            "//projects/h2loader/native_component_src/bk7258/cp/h2_h2loader_target_task_policy:src/h2_bk_target_task_policy.c",
+            "//native_component_src/bk7258/cp/h2_target_task_policy:src/h2_bk_target_task_policy.c",
         ],
         component_directory = _target_directory(cp_directory),
         component_name = "h2_bk_target_task_policy",
@@ -83,8 +83,8 @@ def h2loader_bk7258_target_task_policy(
         name = ap_name + "_test",
         srcs = [
             ap_header,
-            "//projects/h2loader/native_component_src/bk7258/ap/h2_h2loader_target_task_policy:src/h2_bk_target_task_policy.c",
-            "//projects/h2loader/native_component_src/bk7258/ap/h2_h2loader_target_task_policy:tests/test_h2_bk_target_task_policy.c",
+            "//native_component_src/bk7258/ap/h2_target_task_policy:src/h2_bk_target_task_policy.c",
+            "//native_component_src/bk7258/ap/h2_target_task_policy:tests/test_h2_bk_target_task_policy.c",
         ],
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
@@ -92,15 +92,15 @@ def h2loader_bk7258_target_task_policy(
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
             "//libs/pal",
-            "//projects/h2loader/native_component_src/bk7258/ap/h2_h2loader_target_task_policy:test_sdk",
+            "//native_component_src/bk7258/ap/h2_target_task_policy:test_sdk",
         ],
     )
     cc_test(
         name = cp_name + "_test",
         srcs = [
             cp_header,
-            "//projects/h2loader/native_component_src/bk7258/cp/h2_h2loader_target_task_policy:src/h2_bk_target_task_policy.c",
-            "//projects/h2loader/native_component_src/bk7258/cp/h2_h2loader_target_task_policy:tests/test_h2_bk_target_task_policy.c",
+            "//native_component_src/bk7258/cp/h2_target_task_policy:src/h2_bk_target_task_policy.c",
+            "//native_component_src/bk7258/cp/h2_target_task_policy:tests/test_h2_bk_target_task_policy.c",
         ],
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
@@ -108,6 +108,6 @@ def h2loader_bk7258_target_task_policy(
         target_compatible_with = _HOST_COMPATIBILITY,
         deps = [
             "//libs/pal",
-            "//projects/h2loader/native_component_src/bk7258/cp/h2_h2loader_target_task_policy:test_sdk",
+            "//native_component_src/bk7258/cp/h2_target_task_policy:test_sdk",
         ],
     )

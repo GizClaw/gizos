@@ -66,6 +66,7 @@ int main(void) {
 
 #undef H2_BK_ASSERT_TARGET_ROUTE
 
+  assert(get_policy("x", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy("unknown", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy("", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);

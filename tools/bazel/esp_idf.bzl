@@ -240,7 +240,7 @@ _esp_idf_firmware = rule(
     },
 )
 
-def esp_idf_firmware(name, target, **kwargs):
+def esp_idf_firmware(name, target, task_policy = None, **kwargs):
     """Declares one native ESP-IDF firmware target.
 
     The target remains visible to the repository-wide CI graph configuration,
@@ -249,6 +249,7 @@ def esp_idf_firmware(name, target, **kwargs):
     Args:
       name: Bazel target name.
       target: ESP-IDF chip target name.
+      task_policy: Optional target-owned task-policy component.
       **kwargs: Attributes forwarded to the private firmware rule.
     """
     if target not in _TARGET_CONFIGS:
@@ -260,7 +261,11 @@ def esp_idf_firmware(name, target, **kwargs):
         _TARGET_CONFIGS[target]: [],
         "//conditions:default": ["@platforms//:incompatible"],
     })
+    graph = kwargs.pop("graph", [])
+    if task_policy != None:
+        graph = graph + [task_policy]
     _esp_idf_firmware(
+        graph = graph,
         name = name,
         target = target,
         target_compatible_with = compatibility,

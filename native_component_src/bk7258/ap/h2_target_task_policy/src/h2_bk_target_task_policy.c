@@ -52,13 +52,14 @@ static h2_pal_result_t resolve_policy(void *user, const char *name,
     }
   }
   const h2_bk_target_task_route_t *best = NULL;
+  const size_t name_size = strlen(name);
   size_t best_size = 0u;
   for (size_t i = 0u; i < sizeof(s_routes) / sizeof(s_routes[0]); ++i) {
     if (s_routes[i].mode != H2_BK_TARGET_TASK_ROUTE_PREFIX) {
       continue;
     }
     const size_t size = strlen(s_routes[i].name);
-    if (size > best_size && name[size] != '\0' &&
+    if (size > best_size && name_size > size &&
         strncmp(s_routes[i].name, name, size) == 0) {
       best = &s_routes[i];
       best_size = size;

@@ -214,7 +214,7 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 - BSP public API 和 runtime config provider。
 - Board-specific SDK defaults 或 partition 输入。
 - Board firmware profile，放在 `layouts/<profile>/`，包含该启动与升级模型共用的 partition、layout-specific SDK defaults、link 和 recovery 输入。
-- Embedded task scheduling policy 属于具体 firmware target，而不是 board layout。每个 `projects/**/targets/**/<board>/` package 按 execution unit 声明 portable task name 到 priority、core affinity、minimum stack 和 stack-memory region 的最终映射；board layout 只提供硬件、SDK、partition、GPIO 与 RAM-region 输入。Shared PAL provider 只翻译已解析 policy 到 SDK task creation，App/library 只拥有稳定 portable name 与 requested minimum stack。Launcher 在 Runtime/PAL task access 前安装且只安装一个 target policy。
+- Embedded task scheduling policy 属于具体 firmware target，而不是 board layout 或某个上层 packaging workflow。任何使用 PAL task policy 的 `projects/**/targets/**/<board>/` package 都按 execution unit 声明 portable task name 到 priority、core affinity、minimum stack 和 stack-memory region 的最终映射；board layout 只提供硬件、SDK、partition、GPIO 与 RAM-region 输入。Shared PAL provider 只翻译已解析 policy 到 SDK task creation，App/library 只拥有稳定 portable name 与 requested minimum stack。Launcher 在 Runtime/PAL task access 前安装且只安装一个 target policy。
 
 同一个物理 board 包含多个 chip 或 core 时，它们仍放在同一个 `<board>` 根目录下，再按 `<chip-or-target>` 拆分。例如 BK7258 的 AP/CP 或同时包含 ESP32-P4、ESP32-C5 的开发板。
 

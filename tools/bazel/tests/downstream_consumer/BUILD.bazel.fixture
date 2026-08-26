@@ -1,5 +1,7 @@
 load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("@gizos//tools/bazel:bk7258.bzl", "bk7258_firmware")
+load("@gizos//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
 load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -118,7 +120,6 @@ filegroup(
 h2loader_esp_idf_firmware(
     name = "private_esp_firmware",
     board = "private_esp_board",
-    task_policy = ":private_esp_task_policy",
     layout_files = {
         "partition": ":partition.csv",
         "project_support_files": [":sdkconfig.h2loader.defaults"],
@@ -126,6 +127,7 @@ h2loader_esp_idf_firmware(
     project = "CMakeLists.txt",
     project_name = "private_esp_consumer",
     target = "esp32s3",
+    task_policy = ":private_esp_task_policy",
     version = ":private_esp_version",
 )
 
@@ -144,6 +146,35 @@ h2loader_bk7258_firmware(
     },
     project = "CMakeLists.txt",
     project_name = "private_bk_consumer",
+    target = "bk7258",
+    version = ":private_bk_version",
+)
+
+esp_idf_firmware(
+    name = "generic_private_esp_firmware",
+    board = "private_esp_board",
+    partition = ":partition.csv",
+    project = "CMakeLists.txt",
+    project_name = "private_esp_consumer",
+    project_support_files = [":sdkconfig.h2loader.defaults"],
+    target = "esp32s3",
+    task_policy = ":private_esp_task_policy",
+    version = ":private_esp_version",
+)
+
+bk7258_firmware(
+    name = "generic_private_bk_firmware",
+    ap_config = [":ap.defaults"],
+    ap_gpio = ":ap_gpio",
+    ap_task_policy = ":private_bk_ap_task_policy",
+    board = "private_bk_board",
+    cp_config = [":cp.defaults"],
+    cp_gpio = ":cp_gpio",
+    cp_task_policy = ":private_bk_cp_task_policy",
+    project = "CMakeLists.txt",
+    project_name = "private_bk_consumer",
+    project_support_files = [":layout"],
+    ram_regions = ":ram_regions.csv",
     target = "bk7258",
     version = ":private_bk_version",
 )

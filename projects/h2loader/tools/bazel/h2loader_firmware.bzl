@@ -84,16 +84,13 @@ def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = 
         fail("h2loader_esp_idf_firmware owns partition")
     if "project_support_files" in kwargs:
         fail("h2loader_esp_idf_firmware owns project_support_files")
-    graph = kwargs.pop("graph", []) + [
-        _require_target_policy(task_policy, "task_policy", target, board),
-    ]
     esp_idf_firmware(
         name = name,
         board = board,
+        task_policy = _require_target_policy(task_policy, "task_policy", target, board),
         partition = layout_files["partition"],
         project_support_files = layout_files["project_support_files"],
         support_files = _support_files(kwargs, layout_files.get("support_files", [])),
-        graph = graph,
         target = target,
         **kwargs
     )
@@ -154,13 +151,11 @@ def h2loader_bk7258_firmware(
         )
     if "project_support_files" in kwargs:
         fail("h2loader_bk7258_firmware owns project_support_files")
-    graph = kwargs.pop("graph", []) + [
-        _require_target_policy(ap_task_policy, "ap_task_policy", target, board),
-        _require_target_policy(cp_task_policy, "cp_task_policy", target, board),
-    ]
     bk7258_firmware(
         name = name,
+        ap_task_policy = _require_target_policy(ap_task_policy, "ap_task_policy", target, board),
         board = board,
+        cp_task_policy = _require_target_policy(cp_task_policy, "cp_task_policy", target, board),
         ap_config = layout_files["ap_config"],
         cp_config = layout_files["cp_config"],
         ap_gpio = layout_files["ap_gpio"],
@@ -168,7 +163,6 @@ def h2loader_bk7258_firmware(
         project_support_files = layout_files["project_support_files"],
         ram_regions = layout_files["ram_regions"],
         support_files = _support_files(kwargs, layout_files.get("support_files", [])),
-        graph = graph,
         target = target,
         **kwargs
     )

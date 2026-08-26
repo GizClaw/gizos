@@ -8,7 +8,8 @@
 #define H2_ESP_TARGET_TASK_POLICY_ROUTES(X)                                    \
   X("h2loader/appcmd", 8u, H2_ESP_TASK_CORE_0, 4096u, H2_ESP_TASK_STACK_PSRAM) \
   X("h2loader/return", 8u, H2_ESP_TASK_CORE_0, 4096u, H2_ESP_TASK_STACK_PSRAM) \
-  X("blelink", 6u, H2_ESP_TASK_CORE_0, 4096u, H2_ESP_TASK_STACK_PSRAM)         \
+  X("h2loader/blelink", 6u, H2_ESP_TASK_CORE_0, 4096u,                         \
+    H2_ESP_TASK_STACK_PSRAM)                                                   \
   X("bleikcp/kcp", 7u, H2_ESP_TASK_CORE_0, 4096u, H2_ESP_TASK_STACK_PSRAM)     \
   X("bleikcp/server", 5u, H2_ESP_TASK_CORE_0, 4096u, H2_ESP_TASK_STACK_PSRAM)  \
   X("h2peer/net", 7u, H2_ESP_TASK_CORE_0, 4096u, H2_ESP_TASK_STACK_PSRAM)      \

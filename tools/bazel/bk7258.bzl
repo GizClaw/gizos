@@ -265,12 +265,14 @@ _bk7258_firmware = rule(
     },
 )
 
-def bk7258_firmware(name, target, **kwargs):
+def bk7258_firmware(name, target, ap_task_policy = None, cp_task_policy = None, **kwargs):
     """Declares one native BK7258 AP/CP firmware target.
 
     Args:
       name: Bazel target name.
       target: BK7258 target configuration name.
+      ap_task_policy: Optional target-owned AP task-policy component.
+      cp_task_policy: Optional target-owned CP task-policy component.
       **kwargs: Attributes forwarded to the private firmware rule.
     """
     if target not in _TARGET_CONFIGS:
@@ -282,7 +284,13 @@ def bk7258_firmware(name, target, **kwargs):
         _TARGET_CONFIGS[target]: [],
         "//conditions:default": ["@platforms//:incompatible"],
     })
+    graph = kwargs.pop("graph", [])
+    if ap_task_policy != None:
+        graph = graph + [ap_task_policy]
+    if cp_task_policy != None:
+        graph = graph + [cp_task_policy]
     _bk7258_firmware(
+        graph = graph,
         name = name,
         target = target,
         target_compatible_with = compatibility,

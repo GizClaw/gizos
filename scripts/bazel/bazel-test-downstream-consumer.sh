@@ -69,7 +69,7 @@ cd "$consumer_root"
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
-    'set(//:private_bk_firmware //:private_esp_firmware)'
+    'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware)'
 
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
