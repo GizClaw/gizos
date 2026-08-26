@@ -67,7 +67,7 @@ def _is_native_source(path):
 
 def _jieli_firmware_impl(ctx):
     output_root = ctx.label.name
-    version = ctx.attr._firmware_version[FirmwareVersionInfo].value
+    version = ctx.attr.version[FirmwareVersionInfo].value
     elf = ctx.actions.declare_file(output_root + "/firmware.elf")
     symbols = ctx.actions.declare_file(output_root + "/symbols.txt")
     flash_image = ctx.actions.declare_file(output_root + "/jl_isd.bin")
@@ -169,7 +169,6 @@ def _jieli_firmware_impl(ctx):
 _jieli_firmware = rule(
     implementation = _jieli_firmware_impl,
     attrs = {
-        "_firmware_version": attr.label(default = "//tools/bazel:firmware_version"),
         "_runner": attr.label(
             default = "//tools/bazel:jieli_runner",
             cfg = "exec",
@@ -223,6 +222,10 @@ _jieli_firmware = rule(
         "target": attr.string(
             mandatory = True,
             values = sorted(_TARGETS),
+        ),
+        "version": attr.label(
+            default = "//tools/bazel:firmware_version",
+            providers = [FirmwareVersionInfo],
         ),
     },
 )

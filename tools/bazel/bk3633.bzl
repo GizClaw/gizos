@@ -42,7 +42,7 @@ def _is_native_source(path):
 
 def _bk3633_firmware_impl(ctx):
     output_root = ctx.label.name
-    version = ctx.attr._firmware_version[FirmwareVersionInfo].value
+    version = ctx.attr.version[FirmwareVersionInfo].value
     elf = ctx.actions.declare_file(output_root + "/firmware.elf")
     app_image = ctx.actions.declare_file(output_root + "/app.bin")
     map_file = ctx.actions.declare_file(output_root + "/firmware.map")
@@ -141,7 +141,6 @@ _bk3633_firmware = rule(
             cfg = "exec",
             executable = True,
         ),
-        "_firmware_version": attr.label(default = "//tools/bazel:firmware_version"),
         "_runner": attr.label(
             default = "//tools/bazel:bk3633_runner",
             cfg = "exec",
@@ -184,6 +183,10 @@ _bk3633_firmware = rule(
         "srcs": attr.label_list(
             allow_files = True,
             doc = "Project-local sources retained as explicit action inputs.",
+        ),
+        "version": attr.label(
+            default = "//tools/bazel:firmware_version",
+            providers = [FirmwareVersionInfo],
         ),
     },
 )

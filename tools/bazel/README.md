@@ -116,8 +116,12 @@ temporary tree, points it at the read-only repository source, and invokes the
 native `idf.py build` followed by `idf.py merge-bin`. It is explicitly
 unsandboxed and ineligible for remote execution, while its declared outputs may use the local disk cache or the
 authenticated remote cache. The runner constructs a fixed subprocess
-environment from the validated locators, pinned SDK version, and
-`//tools/bazel:firmware_version` value. A firmware target may explicitly opt in to the allowlisted
+environment from the validated locators, pinned SDK version, and the
+`FirmwareVersionInfo` selected by the firmware target. Product-owned final
+firmware should declare `firmware_version(name, value)` and pass its label with
+the public `version` attribute. Firmware declarations that omit `version`
+continue to use the `//tools/bazel:firmware_version` compatibility build
+setting. A firmware target may explicitly opt in to the allowlisted
 `H2LOADER_WIFI_CREDENTIALS` JSON object containing exact `ssid` and `password`
 fields; the runner validates it and exposes the two values only to that
 target's ESP-IDF subprocess. Unrelated ESP-IDF subprocesses never receive them. The

@@ -1,5 +1,6 @@
 load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
 load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
 load("@rules_cc//cc:defs.bzl", "cc_library")
@@ -8,6 +9,16 @@ load(":consumer.bzl", "fake_firmware")
 alias(
     name = "runtime",
     actual = "@gizos//libs/runtime",
+)
+
+firmware_version(
+    name = "private_esp_version",
+    value = "1.2.3",
+)
+
+firmware_version(
+    name = "private_bk_version",
+    value = "4.5.6-rc.1+consumer",
 )
 
 alias(
@@ -42,31 +53,31 @@ firmware_native_component(
 
 firmware_native_component(
     name = "private_esp_task_policy",
-    component_directory = "private_esp_task_policy",
-    component_name = "h2_esp_layout_task_policy",
     srcs = ["private_esp_task_policy/private_esp_task_policy.c"],
     hdrs = ["private_esp_task_policy/private_esp_task_policy.h"],
+    component_directory = "private_esp_task_policy",
+    component_name = "h2_esp_layout_task_policy",
     data = ["private_esp_task_policy/CMakeLists.txt"],
 )
 
 firmware_native_component(
     name = "private_bk_ap_task_policy",
-    component_directory = "private_bk_ap_task_policy",
-    component_name = "h2_bk_layout_task_policy",
-    execution_unit = "ap",
     srcs = ["private_bk_ap_task_policy/private_bk_ap_task_policy.c"],
     hdrs = ["private_bk_ap_task_policy/private_bk_ap_task_policy.h"],
+    component_directory = "private_bk_ap_task_policy",
+    component_name = "h2_bk_layout_task_policy",
     data = ["private_bk_ap_task_policy/CMakeLists.txt"],
+    execution_unit = "ap",
 )
 
 firmware_native_component(
     name = "private_bk_cp_task_policy",
-    component_directory = "private_bk_cp_task_policy",
-    component_name = "h2_bk_layout_task_policy",
-    execution_unit = "cp",
     srcs = ["private_bk_cp_task_policy/private_bk_cp_task_policy.c"],
     hdrs = ["private_bk_cp_task_policy/private_bk_cp_task_policy.h"],
+    component_directory = "private_bk_cp_task_policy",
+    component_name = "h2_bk_layout_task_policy",
     data = ["private_bk_cp_task_policy/CMakeLists.txt"],
+    execution_unit = "cp",
 )
 
 firmware_lib_component(
@@ -115,6 +126,7 @@ h2loader_esp_idf_firmware(
     project = "CMakeLists.txt",
     project_name = "private_esp_consumer",
     target = "esp32s3",
+    version = ":private_esp_version",
 )
 
 h2loader_bk7258_firmware(
@@ -133,6 +145,7 @@ h2loader_bk7258_firmware(
     project = "CMakeLists.txt",
     project_name = "private_bk_consumer",
     target = "bk7258",
+    version = ":private_bk_version",
 )
 
 h2loader_tar_zlib(
