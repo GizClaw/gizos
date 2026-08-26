@@ -52,12 +52,12 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 ## Audio 格式与背压
 
 - Audio format 和 provider frame size 由 Runtime Audio capability 决定，App 不能写死 board I2S 参数，也不能要求所有 board 按 20 ms 产出 PCM。
-- `libs/gizclaw` 复制并累计 provider 交付的完整 S16LE PCM frame，再按采样率切成 20 ms Opus frame 编码和发送。例如 16 kHz 下 Opus frame 是每声道 320 samples，Tiga provider 仍可保持每次 512 samples；切片边界由连续 PCM stream 决定。调用方通过 `h2_gizclaw_conversation_configure_pcm()` 传入 0 到 10 的 Opus complexity；H106 使用 0。
+- `libs/gizclaw` 复制并累计 provider 交付的完整 S16LE PCM frame，再按采样率切成 20 ms Opus frame 编码和发送。例如 16 kHz 下 Opus frame 是每声道 320 samples，Tiga provider 仍可保持每次 512 samples；切片边界由连续 PCM stream 决定。调用方通过 `h2_gizclaw_conversation_configure_pcm()` 传入 0 到 10 的 Opus complexity 和正数 Opus transmit ring 容量；H106 使用 complexity 0、容量 64。
 - `h2_gizclaw_conversation_write_opus()` 保留为已经持有 raw Opus packet 的低层入口；同一 conversation 不能混用 PCM 和 raw Opus 输入模式。
 - `GZC_PROTOCOL_OPUS_PACKET` 的 payload 是原始 Opus packet，不带 firmware-private timestamp header。C SDK 和 PAL provider 负责 media/RTP 映射；App 不调用底层 `peer_send_opus`，也不使用 DataChannel fallback。
 - 上行 input stream ID 与服务端产生的下行 response stream ID 不要求相同。`libs/gizclaw` 按 `transcript`、`assistant` label 分别绑定本轮第一个 response-local stream ID，并接受其 `:<suffix>` 子流；后续不匹配的 response ID 作为旧轮事件丢弃。RTP audio 仍由同一个 conversation generation 接收，不以 input stream ID 过滤。
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
-- Capture 和 playback 使用有界 buffer。PCM 在复制前返回 `WOULD_BLOCK` 时，调用方保留同一完整 provider frame 并重试；复制成功后的切片和有界 Opus transmit FIFO 由 `libs/gizclaw` 持有，调用方可以释放原始 PCM。每次编码后立即尝试按序排空 FIFO；FIFO 满时保留未编码 PCM 并继续向调用方传播背压。`commit` 只把最后一个非空残片补零编码一次，FIFO 全部发送后才提交 EOS，空输入不发送静音 packet。
+- Capture 和 playback 使用有界 buffer。复制成功后的切片和可配置有界 Opus transmit ring 由 `libs/gizclaw` 持有，调用方可以释放原始 PCM。每次编码后立即尝试按序排空 ring；transport 返回 `WOULD_BLOCK` 且 ring 已满时覆盖最旧 Opus packet，继续消费 PCM。`commit` 只把最后一个非空残片补零编码一次，ring 全部发送后才提交 EOS，排空期间仍可返回 `WOULD_BLOCK`，空输入不发送静音 packet。
 - Opus encode/decode、resample 或 channel conversion 属于 portable Audio/integration 层，不进入 board driver；当前 PCM uplink 只接受 libopus 原生支持的 sample rate、mono/stereo 和 S16LE，其他转换必须在调用入口前完成。
 - GizClaw service worker 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
