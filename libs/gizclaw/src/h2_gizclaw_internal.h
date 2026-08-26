@@ -140,6 +140,8 @@ void h2_gizclaw_test_set_client_poll(h2_gizclaw_test_client_poll_fn poll,
 void h2_gizclaw_test_set_conversation_ops(
     h2_gizclaw_test_conversation_packet_send_fn packet_send,
     h2_gizclaw_test_conversation_encode_fn encode, void *user);
+int h2_gizclaw_test_conversation_opus_complexity(
+    h2_gizclaw_conversation_t *conversation);
 
 gzc_event_stream_t *
 h2_gizclaw_test_replace_event_stream(h2_gizclaw_client_t *client,

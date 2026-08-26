@@ -74,22 +74,23 @@ bool h2_gizclaw_conversation_input_ready(
  * The format must describe S16LE mono or stereo PCM at an Opus-supported
  * sample rate. `frame_samples_per_channel` is the largest complete provider
  * chunk accepted by one `write_pcm` call; it is not an Opus frame duration.
- * Configure exactly once, before any raw Opus packet is written. The caller
- * retains ownership of `format`.
+ * `opus_complexity` must be in the libopus range 0 through 10. Configure
+ * exactly once, before any raw Opus packet is written. The caller retains
+ * ownership of `format`.
  */
 int h2_gizclaw_conversation_configure_pcm(
     h2_gizclaw_conversation_t *conversation,
-    const h2_audio_pcm_format_t *format);
+    const h2_audio_pcm_format_t *format, int opus_complexity);
 
 /**
  * Consumes one complete provider-sized PCM frame.
  *
  * The frame data is borrowed only for this call. Success means the complete
  * frame was copied into conversation-owned state, including when transport
- * backpressure leaves an encoded Opus packet pending internally. If pending
- * transport already blocks before the copy, `H2_PAL_ERR_WOULD_BLOCK` means the
- * frame was not consumed and the caller must retry the same frame. Other
- * errors are terminal for PCM input and the frame must not be retried.
+ * backpressure leaves encoded Opus packets in the bounded transmit ring. A
+ * full ring overwrites its oldest packet so transport backpressure does not
+ * block PCM consumption. Other errors are terminal for PCM input and the
+ * frame must not be retried.
  */
 int h2_gizclaw_conversation_write_pcm(h2_gizclaw_conversation_t *conversation,
                                       const h2_audio_frame_t *frame);
