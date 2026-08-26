@@ -269,7 +269,8 @@ esp_err_t h2_esp_adc_oneshot_stabilizer_init(
     h2_esp_adc_oneshot_t *service,
     adc_channel_t channel,
     const h2_esp_adc_value_stabilizer_config_t *config) {
-    if (service == NULL || config == NULL || config->jump_threshold < 0) {
+    if (service == NULL || config == NULL ||
+        config->jump_threshold_raw < 0) {
         return ESP_ERR_INVALID_ARG;
     }
     if (xSemaphoreTake(service->mutex, portMAX_DELAY) != pdTRUE) {
@@ -325,8 +326,8 @@ esp_err_t h2_esp_adc_oneshot_read_value(
         rc = adc_oneshot_read(service->unit, channel, &raw);
         if (rc == ESP_OK) {
             reading.reason = H2_ESP_ADC_VALUE_READ_DIRECT;
-            reading.stable_value = raw;
-            reading.immediate_value = raw;
+            reading.stable_raw = raw;
+            reading.immediate_raw = raw;
         }
     } else if (channel_state != NULL) {
         h2_esp_adc_value_read_context_t context = {

@@ -35,7 +35,7 @@ typedef void (*h2_esp_adc_value_wait_fn)(
 typedef struct h2_esp_adc_value_stabilizer {
     h2_esp_adc_value_stabilizer_config_t config;
     h2_esp_adc_numeric_stabilizer_t filter;
-    int32_t previous_value;
+    int32_t stable_raw;
     bool configured;
     bool initialized;
 } h2_esp_adc_value_stabilizer_t;
