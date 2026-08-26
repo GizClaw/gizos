@@ -21,6 +21,8 @@ typedef enum h2_gizclaw_conversation_input_mode {
   H2_GIZCLAW_CONVERSATION_INPUT_PCM,
 } h2_gizclaw_conversation_input_mode_t;
 
+#define H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY 4u
+
 typedef struct h2_gizclaw_conversation_opus_slot {
   uint8_t data[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
   size_t len;
@@ -54,8 +56,8 @@ struct h2_gizclaw_conversation {
   size_t pcm_sample_capacity;
   uint32_t pcm_opus_frame_samples;
   h2_audio_pcm_format_t pcm_format;
-  h2_gizclaw_conversation_opus_slot_t *pending_opus;
-  size_t pending_opus_capacity;
+  h2_gizclaw_conversation_opus_slot_t
+      pending_opus[H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY];
   size_t pending_opus_head;
   size_t pending_opus_count;
   uint8_t audio[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
@@ -160,14 +162,11 @@ static void release_pcm_input(h2_gizclaw_conversation_t *conversation) {
     return;
   h2_pal_mem_free(conversation->allocator, conversation->pcm_encoder);
   h2_pal_mem_free(conversation->allocator, conversation->pcm_samples);
-  h2_pal_mem_free(conversation->allocator, conversation->pending_opus);
   conversation->pcm_encoder = NULL;
   conversation->pcm_samples = NULL;
   conversation->pcm_sample_count = 0u;
   conversation->pcm_sample_capacity = 0u;
   conversation->pcm_opus_frame_samples = 0u;
-  conversation->pending_opus = NULL;
-  conversation->pending_opus_capacity = 0u;
   conversation->pending_opus_head = 0u;
   conversation->pending_opus_count = 0u;
   memset(&conversation->pcm_format, 0, sizeof(conversation->pcm_format));
@@ -412,8 +411,7 @@ bool h2_gizclaw_conversation_input_ready(
 
 int h2_gizclaw_conversation_configure_pcm(
     h2_gizclaw_conversation_t *conversation,
-    const h2_audio_pcm_format_t *format, int opus_complexity,
-    size_t opus_tx_capacity) {
+    const h2_audio_pcm_format_t *format, int opus_complexity) {
   if (conversation == NULL || format == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (!h2_gizclaw_conversation_input_ready(conversation) ||
@@ -426,9 +424,7 @@ int h2_gizclaw_conversation_configure_pcm(
       format->frame_samples_per_channel == 0u) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  if (opus_complexity < 0 || opus_complexity > 10 || opus_tx_capacity == 0u ||
-      size_multiply_overflows(opus_tx_capacity,
-                              sizeof(h2_gizclaw_conversation_opus_slot_t))) {
+  if (opus_complexity < 0 || opus_complexity > 10) {
     return H2_PAL_ERR_INVALID_ARG;
   }
 
@@ -453,12 +449,9 @@ int h2_gizclaw_conversation_configure_pcm(
       h2_pal_mem_alloc(conversation->allocator, (size_t)encoder_size);
   int16_t *samples = h2_pal_mem_alloc(conversation->allocator,
                                       capacity_values * sizeof(*samples));
-  h2_gizclaw_conversation_opus_slot_t *pending_opus = h2_pal_mem_alloc(
-      conversation->allocator, opus_tx_capacity * sizeof(*pending_opus));
-  if (encoder == NULL || samples == NULL || pending_opus == NULL) {
+  if (encoder == NULL || samples == NULL) {
     h2_pal_mem_free(conversation->allocator, encoder);
     h2_pal_mem_free(conversation->allocator, samples);
-    h2_pal_mem_free(conversation->allocator, pending_opus);
     return H2_PAL_ERR_NO_MEMORY;
   }
   const int opus_rc =
@@ -467,14 +460,12 @@ int h2_gizclaw_conversation_configure_pcm(
   if (opus_rc != OPUS_OK) {
     h2_pal_mem_free(conversation->allocator, encoder);
     h2_pal_mem_free(conversation->allocator, samples);
-    h2_pal_mem_free(conversation->allocator, pending_opus);
     return H2_PAL_ERR_UNSUPPORTED;
   }
   if (opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(opus_complexity)) !=
       OPUS_OK) {
     h2_pal_mem_free(conversation->allocator, encoder);
     h2_pal_mem_free(conversation->allocator, samples);
-    h2_pal_mem_free(conversation->allocator, pending_opus);
     return H2_PAL_ERR_UNSUPPORTED;
   }
 
@@ -483,8 +474,6 @@ int h2_gizclaw_conversation_configure_pcm(
   conversation->pcm_sample_capacity = capacity_values;
   conversation->pcm_opus_frame_samples = (uint32_t)opus_frame_samples;
   conversation->pcm_format = *format;
-  conversation->pending_opus = pending_opus;
-  conversation->pending_opus_capacity = opus_tx_capacity;
   conversation->input_mode = H2_GIZCLAW_CONVERSATION_INPUT_PCM;
   return H2_PAL_OK;
 }
@@ -501,7 +490,7 @@ static int send_pending_opus(h2_gizclaw_conversation_t *conversation) {
       return fail_pcm_input(conversation, rc);
     slot->len = 0u;
     conversation->pending_opus_head = (conversation->pending_opus_head + 1u) %
-                                      conversation->pending_opus_capacity;
+                                      H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY;
     --conversation->pending_opus_count;
   }
   return H2_PAL_OK;
@@ -520,14 +509,15 @@ static int drain_pcm_input(h2_gizclaw_conversation_t *conversation) {
     return send_rc;
   while (conversation->pcm_sample_count >= frame_values) {
     if (conversation->pending_opus_count ==
-        conversation->pending_opus_capacity) {
-      conversation->pending_opus_head = (conversation->pending_opus_head + 1u) %
-                                        conversation->pending_opus_capacity;
+        H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY) {
+      conversation->pending_opus_head =
+          (conversation->pending_opus_head + 1u) %
+          H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY;
       --conversation->pending_opus_count;
     }
     const size_t tail =
         (conversation->pending_opus_head + conversation->pending_opus_count) %
-        conversation->pending_opus_capacity;
+        H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY;
     h2_gizclaw_conversation_opus_slot_t *slot =
         &conversation->pending_opus[tail];
     const int encoded_len =

@@ -111,7 +111,7 @@ static int write_pcm(h2_gizclaw_e2e_fixture_t *fixture,
       .channels = 1u,
       .sample_format = H2_AUDIO_SAMPLE_S16LE,
   };
-  int rc = h2_gizclaw_conversation_configure_pcm(conversation, &format, 0, 64u);
+  int rc = h2_gizclaw_conversation_configure_pcm(conversation, &format, 0);
   h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_configure_pcm",
                           "voice-uplink", rc);
   if (rc != H2_PAL_OK)

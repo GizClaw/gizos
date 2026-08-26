@@ -74,15 +74,13 @@ bool h2_gizclaw_conversation_input_ready(
  * The format must describe S16LE mono or stereo PCM at an Opus-supported
  * sample rate. `frame_samples_per_channel` is the largest complete provider
  * chunk accepted by one `write_pcm` call; it is not an Opus frame duration.
- * `opus_complexity` must be in the libopus range 0 through 10.
- * `opus_tx_capacity` is the positive number of encoded packets retained while
- * transport is blocked. Configure exactly once, before any raw Opus packet is
- * written. The caller retains ownership of `format`.
+ * `opus_complexity` must be in the libopus range 0 through 10. Configure
+ * exactly once, before any raw Opus packet is written. The caller retains
+ * ownership of `format`.
  */
 int h2_gizclaw_conversation_configure_pcm(
     h2_gizclaw_conversation_t *conversation,
-    const h2_audio_pcm_format_t *format, int opus_complexity,
-    size_t opus_tx_capacity);
+    const h2_audio_pcm_format_t *format, int opus_complexity);
 
 /**
  * Consumes one complete provider-sized PCM frame.
