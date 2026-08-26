@@ -21,6 +21,13 @@ typedef enum h2_gizclaw_conversation_input_mode {
   H2_GIZCLAW_CONVERSATION_INPUT_PCM,
 } h2_gizclaw_conversation_input_mode_t;
 
+#define H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY 4u
+
+typedef struct h2_gizclaw_conversation_opus_slot {
+  uint8_t data[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
+  size_t len;
+} h2_gizclaw_conversation_opus_slot_t;
+
 struct h2_gizclaw_conversation {
   h2_gizclaw_client_t *client;
   const h2_pal_mem_api_t *allocator;
@@ -49,8 +56,10 @@ struct h2_gizclaw_conversation {
   size_t pcm_sample_capacity;
   uint32_t pcm_opus_frame_samples;
   h2_audio_pcm_format_t pcm_format;
-  uint8_t pending_opus[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
-  size_t pending_opus_len;
+  h2_gizclaw_conversation_opus_slot_t
+      pending_opus[H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY];
+  size_t pending_opus_head;
+  size_t pending_opus_count;
   uint8_t audio[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
   char text[H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u];
   char error_code[65];
@@ -67,6 +76,18 @@ void h2_gizclaw_test_set_conversation_ops(
   s_test_packet_send = packet_send;
   s_test_encode = encode;
   s_test_conversation_ops_user = user;
+}
+
+int h2_gizclaw_test_conversation_opus_complexity(
+    h2_gizclaw_conversation_t *conversation) {
+  if (conversation == NULL || conversation->pcm_encoder == NULL)
+    return -1;
+  opus_int32 complexity = -1;
+  if (opus_encoder_ctl(conversation->pcm_encoder,
+                       OPUS_GET_COMPLEXITY(&complexity)) != OPUS_OK) {
+    return -1;
+  }
+  return (int)complexity;
 }
 #endif
 
@@ -146,7 +167,8 @@ static void release_pcm_input(h2_gizclaw_conversation_t *conversation) {
   conversation->pcm_sample_count = 0u;
   conversation->pcm_sample_capacity = 0u;
   conversation->pcm_opus_frame_samples = 0u;
-  conversation->pending_opus_len = 0u;
+  conversation->pending_opus_head = 0u;
+  conversation->pending_opus_count = 0u;
   memset(&conversation->pcm_format, 0, sizeof(conversation->pcm_format));
 }
 
@@ -437,6 +459,11 @@ int h2_gizclaw_conversation_configure_pcm(
     h2_pal_mem_free(conversation->allocator, samples);
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  if (opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(0)) != OPUS_OK) {
+    h2_pal_mem_free(conversation->allocator, encoder);
+    h2_pal_mem_free(conversation->allocator, samples);
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
 
   conversation->pcm_encoder = encoder;
   conversation->pcm_samples = samples;
@@ -448,17 +475,21 @@ int h2_gizclaw_conversation_configure_pcm(
 }
 
 static int send_pending_opus(h2_gizclaw_conversation_t *conversation) {
-  if (conversation->pending_opus_len == 0u)
-    return H2_PAL_OK;
-  const int gzc_rc = conversation_send_packet(
-      conversation, GZC_PROTOCOL_OPUS_PACKET, conversation->pending_opus,
-      conversation->pending_opus_len);
-  const int rc = gzc_to_pal(gzc_rc);
-  if (rc == H2_PAL_OK)
-    conversation->pending_opus_len = 0u;
-  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
-    return fail_pcm_input(conversation, rc);
-  return rc;
+  while (conversation->pending_opus_count != 0u) {
+    h2_gizclaw_conversation_opus_slot_t *slot =
+        &conversation->pending_opus[conversation->pending_opus_head];
+    const int rc = gzc_to_pal(conversation_send_packet(
+        conversation, GZC_PROTOCOL_OPUS_PACKET, slot->data, slot->len));
+    if (rc == H2_PAL_ERR_WOULD_BLOCK)
+      return rc;
+    if (rc != H2_PAL_OK)
+      return fail_pcm_input(conversation, rc);
+    slot->len = 0u;
+    conversation->pending_opus_head = (conversation->pending_opus_head + 1u) %
+                                      H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY;
+    --conversation->pending_opus_count;
+  }
+  return H2_PAL_OK;
 }
 
 static int drain_pcm_input(h2_gizclaw_conversation_t *conversation) {
@@ -469,19 +500,24 @@ static int drain_pcm_input(h2_gizclaw_conversation_t *conversation) {
     return fail_pcm_input(conversation, H2_PAL_ERR_INVALID_STATE);
   }
 
-  while (true) {
-    int rc = send_pending_opus(conversation);
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (conversation->pcm_sample_count < frame_values)
-      return H2_PAL_OK;
-
-    const int encoded_len = conversation_encode(
-        conversation, conversation->pcm_samples,
-        (int)conversation->pcm_opus_frame_samples, conversation->pending_opus,
-        (int)sizeof(conversation->pending_opus));
-    if (encoded_len <= 0 ||
-        (size_t)encoded_len > sizeof(conversation->pending_opus)) {
+  int send_rc = send_pending_opus(conversation);
+  if (send_rc != H2_PAL_OK && send_rc != H2_PAL_ERR_WOULD_BLOCK)
+    return send_rc;
+  while (conversation->pcm_sample_count >= frame_values) {
+    if (conversation->pending_opus_count ==
+        H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY) {
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    const size_t tail =
+        (conversation->pending_opus_head + conversation->pending_opus_count) %
+        H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY;
+    h2_gizclaw_conversation_opus_slot_t *slot =
+        &conversation->pending_opus[tail];
+    const int encoded_len =
+        conversation_encode(conversation, conversation->pcm_samples,
+                            (int)conversation->pcm_opus_frame_samples,
+                            slot->data, (int)sizeof(slot->data));
+    if (encoded_len <= 0 || (size_t)encoded_len > sizeof(slot->data)) {
       return fail_pcm_input(conversation, H2_PAL_ERR_FORMAT);
     }
     conversation->pcm_sample_count -= frame_values;
@@ -490,8 +526,13 @@ static int drain_pcm_input(h2_gizclaw_conversation_t *conversation) {
               conversation->pcm_samples + frame_values,
               conversation->pcm_sample_count * sizeof(int16_t));
     }
-    conversation->pending_opus_len = (size_t)encoded_len;
+    slot->len = (size_t)encoded_len;
+    ++conversation->pending_opus_count;
+    send_rc = send_pending_opus(conversation);
+    if (send_rc != H2_PAL_OK && send_rc != H2_PAL_ERR_WOULD_BLOCK)
+      return send_rc;
   }
+  return send_rc;
 }
 
 int h2_gizclaw_conversation_write_pcm(h2_gizclaw_conversation_t *conversation,
@@ -522,12 +563,14 @@ int h2_gizclaw_conversation_write_pcm(h2_gizclaw_conversation_t *conversation,
   }
 
   int rc = drain_pcm_input(conversation);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
     return rc;
   const size_t sample_values =
       (size_t)frame->samples_per_channel * frame->channels;
   if (sample_values >
       conversation->pcm_sample_capacity - conversation->pcm_sample_count) {
+    if (rc == H2_PAL_ERR_WOULD_BLOCK)
+      return rc;
     return fail_pcm_input(conversation, H2_PAL_ERR_INVALID_STATE);
   }
   memcpy(conversation->pcm_samples + conversation->pcm_sample_count,

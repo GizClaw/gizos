@@ -68,9 +68,10 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定
   sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - Capture 和 playback 使用有界 buffer。PCM 在复制前返回 `WOULD_BLOCK` 时，调用方
-  保留同一完整 provider frame 并重试；复制成功后的切片和 pending Opus packet 由
-  `libs/gizclaw` 持有，调用方可以释放原始 PCM。`commit` 只把最后一个非空残片补零
-  编码一次，空输入不发送静音 packet。
+  保留同一完整 provider frame 并重试；复制成功后的切片和有界 Opus transmit FIFO
+  由 `libs/gizclaw` 持有，调用方可以释放原始 PCM。每次编码后立即尝试按序排空 FIFO；
+  FIFO 满时保留未编码 PCM 并继续向调用方传播背压。`commit` 只把最后一个非空残片
+  补零编码一次，FIFO 全部发送后才提交 EOS，空输入不发送静音 packet。
 - Opus encode/decode、resample 或 channel conversion 属于 portable Audio/integration
   层，不进入 board driver；当前 PCM uplink 只接受 libopus 原生支持的 sample rate、
   mono/stereo 和 S16LE，其他转换必须在调用入口前完成。

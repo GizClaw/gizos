@@ -26,6 +26,7 @@ typedef struct test_audio_state {
   int packet_results[TEST_MAX_PACKET_CALLS];
   size_t packet_result_count;
   size_t packet_lengths[TEST_MAX_PACKET_CALLS];
+  uint8_t packet_first_bytes[TEST_MAX_PACKET_CALLS];
 } test_audio_state_t;
 
 static int expect(int condition, const char *message) {
@@ -99,6 +100,7 @@ static int test_packet_send(void *user, gzc_client_t *client, uint8_t protocol,
   }
   const size_t call = test->packet_calls++;
   test->packet_lengths[call] = payload_len;
+  test->packet_first_bytes[call] = payload[0];
   return call < test->packet_result_count ? test->packet_results[call] : GZC_OK;
 }
 
@@ -130,6 +132,7 @@ static void reset_audio_calls(test_audio_state_t *test) {
   test->packet_result_count = 0u;
   memset(test->packet_results, 0, sizeof(test->packet_results));
   memset(test->packet_lengths, 0, sizeof(test->packet_lengths));
+  memset(test->packet_first_bytes, 0, sizeof(test->packet_first_bytes));
 }
 
 static h2_audio_frame_t mono_frame(int16_t *samples, uint16_t count,
@@ -309,42 +312,47 @@ static int test_backpressure(h2_gizclaw_client_t *client,
                              h2_audio_pcm_format_t format) {
   int fails = 0;
   reset_audio_calls(test);
-  test->packet_results[0] = GZC_ERR_WOULD_BLOCK;
-  test->packet_results[1] = GZC_ERR_WOULD_BLOCK;
-  test->packet_result_count = 2u;
+  test->packet_result_count = 11u;
+  for (size_t call = 0u; call < test->packet_result_count; ++call)
+    test->packet_results[call] = GZC_ERR_WOULD_BLOCK;
   h2_gizclaw_conversation_t *conversation =
       open_conversation(client, 6u, &fails);
   fails += expect(
       h2_gizclaw_conversation_configure_pcm(conversation, &format) == H2_PAL_OK,
       "backpressure conversation configures PCM");
-  int16_t input[1024];
-  for (size_t index = 0u; index < 1024u; ++index)
+  int16_t input[2560];
+  for (size_t index = 0u; index < 2560u; ++index)
     input[index] = (int16_t)index;
-  h2_audio_frame_t first = mono_frame(input, 512u, format);
-  h2_audio_frame_t second = mono_frame(input + 512u, 512u, format);
-  fails += expect(h2_gizclaw_conversation_write_pcm(conversation, &first) ==
-                          H2_PAL_OK &&
-                      test->encode_calls == 1u && test->packet_calls == 1u,
-                  "post-copy backpressure consumes the first provider frame");
-  fails += expect(h2_gizclaw_conversation_write_pcm(conversation, &second) ==
-                          H2_PAL_ERR_WOULD_BLOCK &&
-                      test->encode_calls == 1u && test->packet_calls == 2u,
-                  "pre-copy backpressure leaves the next frame unconsumed");
+  for (size_t chunk = 0u; chunk < 4u; ++chunk) {
+    h2_audio_frame_t frame = mono_frame(input + chunk * 512u, 512u, format);
+    fails += expect(h2_gizclaw_conversation_write_pcm(conversation, &frame) ==
+                        H2_PAL_OK,
+                    "bounded Opus backlog continues consuming provider PCM");
+  }
+  fails += expect(test->encode_calls == 4u,
+                  "bounded Opus backlog fills four packet slots");
+  h2_audio_frame_t fifth = mono_frame(input + 2048u, 512u, format);
+  fails +=
+      expect(h2_gizclaw_conversation_write_pcm(conversation, &fifth) ==
+                     H2_PAL_ERR_WOULD_BLOCK &&
+                 test->encode_calls == 4u,
+             "full Opus backlog leaves the next provider frame unconsumed");
   fails += expect(
-      h2_gizclaw_conversation_write_pcm(conversation, &second) == H2_PAL_OK &&
+      h2_gizclaw_conversation_write_pcm(conversation, &fifth) == H2_PAL_OK &&
           h2_gizclaw_conversation_commit(conversation, 0u) == H2_PAL_OK &&
-          test->encode_calls == 4u,
-      "retry resumes without duplicate encode and pads once");
-  int16_t encoded[1280];
-  for (size_t packet = 0u; packet < 4u; ++packet) {
+          test->encode_calls == 8u,
+      "transport recovery drains backlog and resumes PCM consumption");
+  int16_t encoded[2560];
+  for (size_t packet = 0u; packet < 8u; ++packet) {
     memcpy(encoded + packet * 320u, test->encoded_pcm[packet],
            320u * sizeof(int16_t));
   }
   fails += expect(memcmp(encoded, input, sizeof(input)) == 0,
                   "backpressure preserves all accepted PCM in order");
-  for (size_t index = 1024u; index < 1280u; ++index)
-    fails += expect(encoded[index] == 0,
-                    "backpressure commit pads only the final residual");
+  for (size_t packet = 0u; packet < 8u; ++packet) {
+    fails += expect(test->packet_first_bytes[11u + packet] == packet + 1u,
+                    "transport recovery sends queued Opus packets in order");
+  }
   h2_gizclaw_conversation_deinit(conversation);
   return fails;
 }
@@ -436,10 +444,12 @@ static int test_allocation_and_real_encoder(h2_gizclaw_client_t *client,
                       test->live_allocations == live_before_configure,
                   "partial PCM initialization releases successful allocations");
   test->fail_allocation_call = 0u;
-  fails += expect(h2_gizclaw_conversation_configure_pcm(conversation,
-                                                        &format) == H2_PAL_OK &&
-                      test->live_allocations == live_before_configure + 2u,
-                  "PCM state uses conversation PAL memory ownership");
+  fails += expect(
+      h2_gizclaw_conversation_configure_pcm(conversation, &format) ==
+              H2_PAL_OK &&
+          test->live_allocations == live_before_configure + 2u &&
+          h2_gizclaw_test_conversation_opus_complexity(conversation) == 0,
+      "PCM state uses PAL memory and minimum Opus complexity");
   h2_gizclaw_conversation_cancel(conversation);
   fails += expect(test->live_allocations == live_before_configure,
                   "cancel releases encoder and accumulator exactly once");
