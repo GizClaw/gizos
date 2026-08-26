@@ -54,16 +54,19 @@ static h2_pal_result_t bk_task_policy_resolve(const char *name,
   if (rc == H2_PAL_OK) {
     return H2_PAL_OK;
   }
+  if (rc == H2_PAL_ERR_NOT_FOUND && s_task_config.fallback_resolver != NULL) {
+    rc = s_task_config.fallback_resolver(s_task_config.resolver_user, name,
+                                         out_policy);
+    if (rc == H2_PAL_OK) {
+      return H2_PAL_OK;
+    }
+  }
   if (rc != H2_PAL_ERR_NOT_FOUND) {
     bk_task_fail(name, "resolve", "resolver-error");
     return H2_PAL_ERR_TASK;
   }
-  if (s_task_config.unknown_mode == H2_BK_TASK_UNKNOWN_REJECT) {
-    bk_task_fail(name, "resolve", "not-found");
-    return H2_PAL_ERR_NOT_FOUND;
-  }
-  *out_policy = s_task_config.fallback;
-  return H2_PAL_OK;
+  bk_task_fail(name, "resolve", "not-found");
+  return H2_PAL_ERR_NOT_FOUND;
 }
 
 static void bk_task_trampoline(void *raw) {
@@ -165,11 +168,7 @@ h2_bk_platform_task_configure(const h2_bk_task_policy_config_t *config) {
   if (s_task_configured || s_task_started) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  if (config == NULL || config->resolver == NULL ||
-      (config->unknown_mode != H2_BK_TASK_UNKNOWN_FALLBACK &&
-       config->unknown_mode != H2_BK_TASK_UNKNOWN_REJECT) ||
-      (config->unknown_mode == H2_BK_TASK_UNKNOWN_FALLBACK &&
-       !bk_task_policy_shape_valid(&config->fallback))) {
+  if (config == NULL || config->resolver == NULL) {
     bk_task_fail(NULL, "configure", "invalid-config");
     return H2_PAL_ERR_INVALID_ARG;
   }

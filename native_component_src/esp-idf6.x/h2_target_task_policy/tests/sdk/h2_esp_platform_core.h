@@ -16,11 +16,6 @@ typedef enum {
   H2_ESP_TASK_STACK_PSRAM = 1,
 } h2_esp_task_stack_region_t;
 
-typedef enum {
-  H2_ESP_TASK_UNKNOWN_FALLBACK = 0,
-  H2_ESP_TASK_UNKNOWN_REJECT = 1,
-} h2_esp_task_unknown_mode_t;
-
 typedef struct h2_esp_task_policy {
   uint32_t priority;
   h2_esp_task_core_t core;
@@ -33,9 +28,8 @@ typedef h2_pal_result_t (*h2_esp_task_policy_resolver_t)(
 
 typedef struct h2_esp_task_policy_config {
   h2_esp_task_policy_resolver_t resolver;
+  h2_esp_task_policy_resolver_t fallback_resolver;
   void *resolver_user;
-  h2_esp_task_unknown_mode_t unknown_mode;
-  h2_esp_task_policy_t fallback;
 } h2_esp_task_policy_config_t;
 
 h2_pal_result_t

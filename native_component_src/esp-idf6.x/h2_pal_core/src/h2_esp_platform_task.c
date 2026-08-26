@@ -58,15 +58,6 @@ static bool esp_policy_shape_valid(const h2_esp_task_policy_t *policy) {
           policy->stack_region == H2_ESP_TASK_STACK_PSRAM);
 }
 
-static bool esp_policy_supported(const h2_esp_task_policy_t *policy) {
-  return esp_policy_shape_valid(policy) &&
-         policy->priority < configMAX_PRIORITIES &&
-         (policy->core == H2_ESP_TASK_CORE_ANY ||
-          (uint32_t)policy->core < (uint32_t)CONFIG_FREERTOS_NUMBER_OF_CORES) &&
-         (policy->stack_region != H2_ESP_TASK_STACK_PSRAM ||
-          (H2_ESP_HAS_PSRAM && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM));
-}
-
 static BaseType_t esp_policy_core(const h2_esp_task_policy_t *policy) {
   return policy->core == H2_ESP_TASK_CORE_ANY ? tskNO_AFFINITY
                                               : (BaseType_t)policy->core;
@@ -79,16 +70,19 @@ static h2_pal_result_t esp_policy_resolve(const char *name,
   if (rc == H2_PAL_OK) {
     return H2_PAL_OK;
   }
+  if (rc == H2_PAL_ERR_NOT_FOUND && s_task_config.fallback_resolver != NULL) {
+    rc = s_task_config.fallback_resolver(s_task_config.resolver_user, name,
+                                         out_policy);
+    if (rc == H2_PAL_OK) {
+      return H2_PAL_OK;
+    }
+  }
   if (rc != H2_PAL_ERR_NOT_FOUND) {
     esp_task_fail(name, "resolve", "resolver-error");
     return H2_PAL_ERR_TASK;
   }
-  if (s_task_config.unknown_mode == H2_ESP_TASK_UNKNOWN_REJECT) {
-    esp_task_fail(name, "resolve", "not-found");
-    return H2_PAL_ERR_NOT_FOUND;
-  }
-  *out_policy = s_task_config.fallback;
-  return H2_PAL_OK;
+  esp_task_fail(name, "resolve", "not-found");
+  return H2_PAL_ERR_NOT_FOUND;
 }
 
 static h2_pal_result_t esp_policy_validate(const char *name,
@@ -221,11 +215,7 @@ h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
   if (s_task_configured || s_task_started) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  if (config == NULL || config->resolver == NULL ||
-      (config->unknown_mode != H2_ESP_TASK_UNKNOWN_FALLBACK &&
-       config->unknown_mode != H2_ESP_TASK_UNKNOWN_REJECT) ||
-      (config->unknown_mode == H2_ESP_TASK_UNKNOWN_FALLBACK &&
-       !esp_policy_supported(&config->fallback))) {
+  if (config == NULL || config->resolver == NULL) {
     esp_task_fail(NULL, "configure", "invalid-config");
     return H2_PAL_ERR_INVALID_ARG;
   }

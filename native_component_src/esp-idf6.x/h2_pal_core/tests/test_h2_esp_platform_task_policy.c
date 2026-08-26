@@ -21,6 +21,7 @@ typedef struct test_state {
   UBaseType_t priority;
   BaseType_t core;
   const char *name;
+  const char *fallback_name;
 } test_state_t;
 
 static test_state_t s;
@@ -96,17 +97,41 @@ static h2_pal_result_t resolve(void *user, const char *name,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-static h2_esp_task_policy_config_t config(h2_esp_task_unknown_mode_t mode) {
+static h2_pal_result_t resolve_fallback(void *user, const char *name,
+                                        h2_esp_task_policy_t *out) {
+  assert(user == &s);
+  s.fallback_name = name;
+  if (name != NULL && strcmp(name, "fallback-reject") == 0) {
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  if (name != NULL && strcmp(name, "fallback-error") == 0) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (name != NULL && strcmp(name, "fallback-invalid") == 0) {
+    *out = (h2_esp_task_policy_t){
+        .priority = configMAX_PRIORITIES,
+        .core = H2_ESP_TASK_CORE_0,
+        .min_stack_size = 4096u,
+        .stack_region = H2_ESP_TASK_STACK_INTERNAL,
+    };
+    return H2_PAL_OK;
+  }
+  *out = (h2_esp_task_policy_t){
+      .priority = name != NULL && strcmp(name, "dynamic-high") == 0 ? 6u : 3u,
+      .core = H2_ESP_TASK_CORE_ANY,
+      .min_stack_size =
+          name != NULL && strcmp(name, "dynamic-high") == 0 ? 12288u : 6144u,
+      .stack_region = H2_ESP_TASK_STACK_PSRAM,
+  };
+  return H2_PAL_OK;
+}
+
+static h2_esp_task_policy_config_t
+config(h2_esp_task_policy_resolver_t fallback_resolver) {
   return (h2_esp_task_policy_config_t){
       .resolver = resolve,
-      .unknown_mode = mode,
-      .fallback =
-          {
-              .priority = 4u,
-              .core = H2_ESP_TASK_CORE_ANY,
-              .min_stack_size = 4096u,
-              .stack_region = H2_ESP_TASK_STACK_PSRAM,
-          },
+      .fallback_resolver = fallback_resolver,
+      .resolver_user = &s,
   };
 }
 
@@ -125,18 +150,15 @@ int main(void) {
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==
          H2_PAL_ERR_INVALID_STATE);
   assert(task == NULL);
-  h2_esp_task_policy_config_t cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
+  h2_esp_task_policy_config_t cfg = config(resolve_fallback);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_STATE);
 
   reset();
   assert(h2_esp_platform_task_configure(NULL) == H2_PAL_ERR_INVALID_ARG);
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
-  cfg.fallback.priority = configMAX_PRIORITIES;
+  cfg = config(resolve_fallback);
+  cfg.resolver = NULL;
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
-  cfg.unknown_mode = (h2_esp_task_unknown_mode_t)99;
-  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
+  cfg = config(resolve_fallback);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_STATE);
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) == H2_PAL_OK);
@@ -148,7 +170,7 @@ int main(void) {
   assert(api->vtable->join(NULL, task) == H2_PAL_OK);
 
   reset();
-  cfg = config(H2_ESP_TASK_UNKNOWN_REJECT);
+  cfg = config(NULL);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
   options.name = "unknown";
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==
@@ -156,15 +178,25 @@ int main(void) {
   assert(s.creates == 0 && task == NULL);
 
   reset();
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
+  cfg = config(resolve_fallback);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+  options.name = "dynamic-high";
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) == H2_PAL_OK);
-  assert(s.core == tskNO_AFFINITY &&
+  assert(strcmp(s.fallback_name, "dynamic-high") == 0 && s.priority == 6u &&
+         s.stack_size == 12288u && s.core == tskNO_AFFINITY &&
          s.caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   assert(api->vtable->join(NULL, task) == H2_PAL_OK);
 
   reset();
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
+  cfg = config(resolve_fallback);
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+  options.name = "fallback-invalid";
+  assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==
+         H2_PAL_ERR_TASK);
+  assert(s.creates == 0);
+
+  reset();
+  cfg = config(resolve_fallback);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
   options.name = "invalid";
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==
@@ -172,7 +204,18 @@ int main(void) {
   assert(s.creates == 0);
 
   reset();
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
+  cfg = config(resolve_fallback);
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+  options.name = "fallback-reject";
+  assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==
+         H2_PAL_ERR_NOT_FOUND);
+  options.name = "fallback-error";
+  assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==
+         H2_PAL_ERR_TASK);
+  assert(s.creates == 0);
+
+  reset();
+  cfg = config(resolve_fallback);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
   s.fail_semaphore = 1;
   options.name = "known";
@@ -186,7 +229,7 @@ int main(void) {
 
 #if SIZE_MAX > UINT32_MAX
   reset();
-  cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
+  cfg = config(resolve_fallback);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
   options.min_stack_size = (size_t)UINT32_MAX + 1u;
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) ==

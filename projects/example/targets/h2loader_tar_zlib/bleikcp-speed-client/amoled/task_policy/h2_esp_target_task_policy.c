@@ -70,6 +70,23 @@ static h2_pal_result_t resolve_policy(void *user, const char *name,
   return h2_trie_handle(&s_router, name, out_policy);
 }
 
+static h2_pal_result_t
+resolve_fallback_policy(void *user, const char *name,
+                        h2_esp_task_policy_t *out_policy) {
+  (void)user;
+  (void)name;
+  if (out_policy == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_policy = (h2_esp_task_policy_t){
+      .priority = 4u,
+      .core = H2_ESP_TASK_CORE_ANY,
+      .min_stack_size = 4096u,
+      .stack_region = H2_ESP_TASK_STACK_PSRAM,
+  };
+  return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_esp_target_task_policy_install(void) {
   h2_pal_result_t rc =
       h2_trie_build(&s_router, s_route_nodes, ROUTE_NODE_CAPACITY, s_routes,
@@ -84,15 +101,8 @@ h2_pal_result_t h2_esp_target_task_policy_install(void) {
   }
   static const h2_esp_task_policy_config_t config = {
       .resolver = resolve_policy,
+      .fallback_resolver = resolve_fallback_policy,
       .resolver_user = NULL,
-      .unknown_mode = H2_ESP_TASK_UNKNOWN_FALLBACK,
-      .fallback =
-          {
-              .priority = 4u,
-              .core = H2_ESP_TASK_CORE_ANY,
-              .min_stack_size = 4096u,
-              .stack_region = H2_ESP_TASK_STACK_PSRAM,
-          },
   };
   rc = h2_esp_platform_task_configure(&config);
   if (rc == H2_PAL_OK) {

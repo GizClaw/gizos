@@ -31,11 +31,15 @@ static void assert_policy(const char *name, unsigned priority) {
 int main(void) {
   h2_esp_task_policy_t policy = {0};
   assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
-  assert(s_config.unknown_mode == H2_ESP_TASK_UNKNOWN_FALLBACK);
-  assert(s_config.fallback.priority == 4u);
-  assert(s_config.fallback.core == H2_ESP_TASK_CORE_ANY);
-  assert(s_config.fallback.min_stack_size == 4096u);
-  assert(s_config.fallback.stack_region == H2_ESP_TASK_STACK_PSRAM);
+  assert(s_config.fallback_resolver != NULL);
+  assert(s_config.fallback_resolver(s_config.resolver_user, "dynamic-default",
+                                    &policy) == H2_PAL_OK);
+  assert(policy.priority == 4u);
+  assert(policy.core == H2_ESP_TASK_CORE_ANY);
+  assert(policy.min_stack_size == 4096u);
+  assert(policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
+  assert(s_config.fallback_resolver(s_config.resolver_user, "dynamic-default",
+                                    NULL) == H2_PAL_ERR_INVALID_ARG);
   assert_policy("h2loader/appcmd", 8u);
   assert_policy("h2loader/return", 8u);
   assert_policy("h2loader/blelink", 6u);

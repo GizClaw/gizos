@@ -25,13 +25,17 @@ static h2_pal_result_t get_policy(const char *name,
 int main(void) {
   h2_bk_task_policy_t policy = {0};
   assert(h2_bk_target_task_policy_install() == H2_PAL_OK);
-  assert(s_config.unknown_mode == H2_BK_TASK_UNKNOWN_FALLBACK);
   assert(s_config.task_allocator == &s_allocator);
-  assert(s_config.fallback.sdk_name == NULL);
-  assert(s_config.fallback.core == 0u);
-  assert(s_config.fallback.priority == 7u);
-  assert(s_config.fallback.min_stack_size == 4096u);
-  assert(s_config.fallback.stack_region == H2_BK_TASK_STACK_DEFAULT);
+  assert(s_config.fallback_resolver != NULL);
+  assert(s_config.fallback_resolver(s_config.resolver_user, "dynamic-default",
+                                    &policy) == H2_PAL_OK);
+  assert(policy.sdk_name == NULL);
+  assert(policy.core == 0u);
+  assert(policy.priority == 7u);
+  assert(policy.min_stack_size == 4096u);
+  assert(policy.stack_region == H2_BK_TASK_STACK_DEFAULT);
+  assert(s_config.fallback_resolver(s_config.resolver_user, "dynamic-default",
+                                    NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(get_policy("h2loader/appcmd", &policy) == H2_PAL_OK &&
          policy.core == 0u && policy.priority == 5u &&
          policy.min_stack_size == 49152u);
