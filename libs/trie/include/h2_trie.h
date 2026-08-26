@@ -53,6 +53,8 @@ typedef struct h2_trie_node {
 struct h2_trie {
   h2_trie_node_t *nodes;
   const h2_trie_route_t *routes;
+  h2_trie_handler_fn fallback_handler;
+  const void *fallback_user;
   size_t node_count;
   size_t node_capacity;
   size_t route_count;
@@ -84,10 +86,22 @@ h2_pal_result_t h2_trie_build_tokens(h2_trie_t *trie, h2_trie_node_t *nodes,
                                      size_t route_count);
 
 /**
+ * @brief Register a synchronous handler for paths that match no route.
+ *
+ * The fallback uses the same handler contract as a route. Its match path is
+ * the complete input path and its remainder is also the complete input path.
+ * Exact and prefix routes always take precedence.
+ */
+h2_pal_result_t h2_trie_set_fallback(h2_trie_t *trie,
+                                     h2_trie_handler_fn handler,
+                                     const void *user);
+
+/**
  * @brief Dispatch a path to the best route.
  *
  * A complete exact route wins over prefix routes. Otherwise the deepest
- * matching prefix route is selected. The handler executes synchronously.
+ * matching prefix route is selected. If no route matches, the registered
+ * fallback handler is selected. The handler executes synchronously.
  */
 h2_pal_result_t h2_trie_handle(const h2_trie_t *trie, const char *path,
                                void *response);

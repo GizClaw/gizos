@@ -20,7 +20,7 @@ armino_component_register(
     "${REPO_ROOT}/libs/mp4_decoder/include"
     "${REPO_ROOT}/libs/pal/providers/tinyh264/include"
   REQUIRES
-    h2_bk_layout_task_policy
+    h2_bk_target_task_policy
     h2_bk7258_board
     bk_cli
     h2_firmware_lib

@@ -2,7 +2,7 @@
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_libco_smoke.h"
-#include "h2_esp_layout_task_policy.h"
+#include "h2_esp_target_task_policy.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -29,7 +29,7 @@ static void h2_libco_smoke_fail(const char *stage, int result,
 }
 
 void app_main(void) {
-    if (h2_esp_layout_task_policy_install() != H2_PAL_OK) {
+    if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
         return;
     }
   h2_runtime_config_t runtime_config = {0};

@@ -6,7 +6,7 @@
 #include "h2_loader_ble.h"
 #include "h2loader_bleikcp_internal.h"
 #include "h2/pal/core/h2_pal_errors.h"
-#include "h2_bk_layout_task_policy.h"
+#include "h2_bk_target_task_policy.h"
 
 #include "bk_private/bk_init.h"
 #include "driver/flash.h"
@@ -568,7 +568,7 @@ static void h2loader_ap_entry(void *user) {
 }
 
 int main(void) {
-    if (h2_bk_layout_task_policy_install() != H2_PAL_OK) {
+    if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
         return -1;
     }
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=before_bk_init\r\n");

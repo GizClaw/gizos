@@ -69,14 +69,14 @@ cd "$consumer_root"
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
-    'set(//:private_bk_firmware //:private_esp_firmware)'
+    'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware)'
 
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
     local field=$1
     local target=$2
     cp BUILD.bazel.complete BUILD.bazel
-    sed -i.bak "/\"${field}\":/d" BUILD.bazel
+    sed -i.bak "/^[[:space:]]*${field} =/d" BUILD.bazel
     if "${BAZEL_BIN:-bazel}" \
         --ignore_all_rc_files \
         --output_base="$consumer_root/output-base" \

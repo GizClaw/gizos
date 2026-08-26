@@ -2,8 +2,11 @@ load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
+
+esp_target_task_policy()
 
 firmware_lib_component(
     name = "firmware_lib",
@@ -69,6 +72,7 @@ h2loader_esp_idf_firmware(
     project = "CMakeLists.txt",
     project_name = "h2_crash_before_confirm",
     target = "esp32s3",
+    task_policy = ":task_policy",
 )
 
 h2loader_tar_zlib(

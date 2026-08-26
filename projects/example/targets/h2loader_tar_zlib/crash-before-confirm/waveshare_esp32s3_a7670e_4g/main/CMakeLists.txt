@@ -13,7 +13,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/projects/example/apps/crash-before-confirm/app/include"
   REQUIRES
-    h2_esp_layout_task_policy
+    h2_esp_target_task_policy
     espcoredump
     h2_esp_board
     h2_h2loader_ble

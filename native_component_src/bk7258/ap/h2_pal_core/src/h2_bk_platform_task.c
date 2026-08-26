@@ -63,12 +63,8 @@ static h2_pal_result_t bk_task_policy_resolve(const char *name,
     bk_task_fail(name, "resolve", "resolver-error");
     return H2_PAL_ERR_TASK;
   }
-  if (s_task_config.unknown_mode == H2_BK_TASK_UNKNOWN_REJECT) {
-    bk_task_fail(name, "resolve", "not-found");
-    return H2_PAL_ERR_NOT_FOUND;
-  }
-  *out_policy = s_task_config.fallback;
-  return H2_PAL_OK;
+  bk_task_fail(name, "resolve", "not-found");
+  return H2_PAL_ERR_NOT_FOUND;
 }
 
 static int bk_task_create(beken_thread_t *thread,
@@ -215,11 +211,7 @@ h2_bk_platform_task_configure(const h2_bk_task_policy_config_t *config) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (config == NULL || config->resolver == NULL ||
-      config->task_allocator == NULL ||
-      (config->unknown_mode != H2_BK_TASK_UNKNOWN_FALLBACK &&
-       config->unknown_mode != H2_BK_TASK_UNKNOWN_REJECT) ||
-      (config->unknown_mode == H2_BK_TASK_UNKNOWN_FALLBACK &&
-       !bk_task_policy_shape_valid(&config->fallback))) {
+      config->task_allocator == NULL) {
     bk_task_fail(NULL, "configure", "invalid-config");
     return H2_PAL_ERR_INVALID_ARG;
   }

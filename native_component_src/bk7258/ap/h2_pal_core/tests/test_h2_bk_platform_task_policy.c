@@ -12,6 +12,7 @@ static struct {
   uint8_t priority;
   uint32_t stack;
   const char *name;
+  const char *resolver_name;
 } s;
 static void *alloc(void *u, size_t n) {
   (void)u;
@@ -78,7 +79,8 @@ int rtos_core1_create_psram_thread(beken_thread_t *a, uint8_t b, const char *c,
 void rtos_delete_thread(beken_thread_t *x) { assert(x == NULL); }
 static h2_pal_result_t resolve(void *u, const char *n,
                                h2_bk_task_policy_t *out) {
-  (void)u;
+  assert(u == &s);
+  s.resolver_name = n;
   if (n && strcmp(n, "known") == 0) {
     *out = (h2_bk_task_policy_t){.sdk_name = "sdk",
                                  .core = 0,
@@ -94,17 +96,21 @@ static h2_pal_result_t resolve(void *u, const char *n,
                                  .stack_region = H2_BK_TASK_STACK_DEFAULT};
     return H2_PAL_OK;
   }
+  if (n && strcmp(n, "resolver-error") == 0)
+    return H2_PAL_ERR_INVALID_STATE;
+  if (n && strcmp(n, "dynamic-high") == 0) {
+    *out = (h2_bk_task_policy_t){.sdk_name = "dynamic-sdk",
+                                 .core = 0,
+                                 .priority = 8,
+                                 .min_stack_size = 12288,
+                                 .stack_region = H2_BK_TASK_STACK_DEFAULT};
+    return H2_PAL_OK;
+  }
   return H2_PAL_ERR_NOT_FOUND;
 }
-static h2_bk_task_policy_config_t cfg(h2_bk_task_unknown_mode_t mode) {
+static h2_bk_task_policy_config_t cfg(void) {
   return (h2_bk_task_policy_config_t){
-      .resolver = resolve,
-      .unknown_mode = mode,
-      .fallback = {.core = 0,
-                   .priority = 7,
-                   .min_stack_size = 4096,
-                   .stack_region = H2_BK_TASK_STACK_DEFAULT},
-      .task_allocator = &mem_api};
+      .resolver = resolve, .resolver_user = &s, .task_allocator = &mem_api};
 }
 static void entry(void *u) { (void)u; }
 static void reset(void) {
@@ -120,15 +126,13 @@ int main(void) {
              H2_PAL_ERR_INVALID_STATE &&
          t == NULL);
   reset();
-  h2_bk_task_policy_config_t c = cfg(H2_BK_TASK_UNKNOWN_FALLBACK);
+  h2_bk_task_policy_config_t c = cfg();
   c.task_allocator = NULL;
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_ERR_INVALID_ARG);
-  c = cfg(H2_BK_TASK_UNKNOWN_FALLBACK);
-  c.fallback.core = 2;
+  c = cfg();
+  c.resolver = NULL;
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_ERR_INVALID_ARG);
-  c = cfg((h2_bk_task_unknown_mode_t)99);
-  assert(h2_bk_platform_task_configure(&c) == H2_PAL_ERR_INVALID_ARG);
-  c = cfg(H2_BK_TASK_UNKNOWN_FALLBACK);
+  c = cfg();
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_ERR_INVALID_STATE);
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_OK);
@@ -139,19 +143,35 @@ int main(void) {
   s.fail_join = 0;
   assert(api->vtable->join(NULL, t) == H2_PAL_OK && s.frees == 1);
   reset();
-  c = cfg(H2_BK_TASK_UNKNOWN_REJECT);
+  c = cfg();
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
   o.name = "missing";
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) ==
              H2_PAL_ERR_NOT_FOUND &&
          s.creates == 0);
   reset();
-  c = cfg(H2_BK_TASK_UNKNOWN_FALLBACK);
+  c = cfg();
+  assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
+  o.name = "dynamic-high";
+  assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_OK);
+  assert(strcmp(s.resolver_name, "dynamic-high") == 0 && s.priority == 8 &&
+         s.stack == 12288 && strcmp(s.name, "dynamic-sdk") == 0);
+  assert(api->vtable->join(NULL, t) == H2_PAL_OK);
+  reset();
+  c = cfg();
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
   o.name = "invalid";
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_ERR_TASK);
   reset();
-  c = cfg(H2_BK_TASK_UNKNOWN_FALLBACK);
+  c = cfg();
+  assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
+  o.name = "missing";
+  assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_ERR_NOT_FOUND);
+  o.name = "resolver-error";
+  assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_ERR_TASK);
+  assert(s.creates == 0);
+  reset();
+  c = cfg();
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
   s.fail_alloc = 1;
   o.name = "known";
@@ -165,7 +185,7 @@ int main(void) {
 
 #if SIZE_MAX > UINT32_MAX
   reset();
-  c = cfg(H2_BK_TASK_UNKNOWN_FALLBACK);
+  c = cfg();
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
   o.min_stack_size = (size_t)UINT32_MAX + 1u;
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_ERR_TASK);

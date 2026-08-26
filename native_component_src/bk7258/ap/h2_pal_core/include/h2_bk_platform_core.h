@@ -35,11 +35,6 @@ typedef enum h2_bk_task_stack_region {
   H2_BK_TASK_STACK_PSRAM = 1,
 } h2_bk_task_stack_region_t;
 
-typedef enum h2_bk_task_unknown_mode {
-  H2_BK_TASK_UNKNOWN_FALLBACK = 0,
-  H2_BK_TASK_UNKNOWN_REJECT = 1,
-} h2_bk_task_unknown_mode_t;
-
 typedef struct h2_bk_task_policy {
   const char *sdk_name;
   uint32_t core;
@@ -54,8 +49,6 @@ typedef h2_pal_result_t (*h2_bk_task_policy_resolver_t)(
 typedef struct h2_bk_task_policy_config {
   h2_bk_task_policy_resolver_t resolver;
   void *resolver_user;
-  h2_bk_task_unknown_mode_t unknown_mode;
-  h2_bk_task_policy_t fallback;
   const h2_pal_mem_api_t *task_allocator;
 } h2_bk_task_policy_config_t;
 

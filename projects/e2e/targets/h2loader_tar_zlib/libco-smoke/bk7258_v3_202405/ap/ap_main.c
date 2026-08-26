@@ -1,7 +1,7 @@
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
 #include "h2_libco_smoke.h"
-#include "h2_bk_layout_task_policy.h"
+#include "h2_bk_target_task_policy.h"
 
 #include "bk_private/bk_init.h"
 #include "os/os.h"
@@ -107,7 +107,7 @@ static void h2_bk_libco_smoke_app_entry(void *user) {
 }
 
 int main(void) {
-    if (h2_bk_layout_task_policy_install() != H2_PAL_OK) {
+    if (h2_bk_target_task_policy_install() != H2_PAL_OK) {
         return -1;
     }
   emergency_uart_write_string(
