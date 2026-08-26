@@ -79,27 +79,6 @@ bool h2_esp_adc_radio_button_update(
     uint32_t button_id,
     uint32_t *out_button_id);
 
-/**
- * @brief Converts one raw ADC count into the stabilizer's value unit.
- *
- * The callback runs synchronously while the OneShot service mutex is held. It
- * must be deterministic, must not block, and must not call the same service.
- */
-typedef int32_t (*h2_esp_adc_value_transform_fn)(void *user, int raw);
-
-typedef struct h2_esp_adc_value_stabilizer_config {
-    /** Reseed delta in value units; zero selects one filtered sample per read. */
-    int32_t jump_threshold;
-    /** Leading reseed samples to discard; must be zero when threshold is zero. */
-    uint8_t discard_samples;
-    /** Reseed sample delay; must be zero when threshold is zero. */
-    uint32_t sample_interval_us;
-    /** Optional conversion applied to each raw sample; NULL is identity. */
-    h2_esp_adc_value_transform_fn transform;
-    /** Borrowed context passed to transform; ignored when transform is NULL. */
-    void *transform_user;
-} h2_esp_adc_value_stabilizer_config_t;
-
 typedef enum h2_esp_adc_value_read_reason {
     H2_ESP_ADC_VALUE_READ_DIRECT = 0,
     H2_ESP_ADC_VALUE_READ_STEADY,
@@ -108,9 +87,12 @@ typedef enum h2_esp_adc_value_read_reason {
 } h2_esp_adc_value_read_reason_t;
 
 typedef struct h2_esp_adc_value_reading {
+    /** Whether this read was direct, steady, startup, or a raw jump. */
     h2_esp_adc_value_read_reason_t reason;
-    int32_t stable_value;
-    int32_t immediate_value;
+    /** Median/EMA output in raw ADC counts. */
+    int32_t stable_raw;
+    /** Last hardware sample acquired by this transaction, in raw counts. */
+    int32_t immediate_raw;
 } h2_esp_adc_value_reading_t;
 
 typedef struct h2_esp_adc_percent_stabilizer {

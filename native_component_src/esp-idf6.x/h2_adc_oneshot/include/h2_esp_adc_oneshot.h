@@ -72,18 +72,14 @@ esp_err_t h2_esp_adc_oneshot_read_mv(
 /**
  * @brief Installs or resets a value stabilizer on one configured channel.
  *
- * The service copies @p config and owns the resulting state. The optional
- * transform_user remains borrowed and must stay valid until this stabilizer is
- * reinitialized/deinitialized or the service is deleted. Reinitializing a
- * channel discards its previous filter and jump baseline. This task-context
- * API is serialized with reads and must not run from an ISR. A zero jump
- * threshold selects one filtered sample per read and requires zero discard and
- * interval fields; a positive threshold enables startup/jump reseeding.
+ * The service owns the resulting state. Reinitializing a channel discards its
+ * previous raw filter and jump baseline. This task-context API is serialized
+ * with reads and must not run from an ISR. Raw deltas up to and including ten
+ * counts are smoothed; larger deltas use the component-owned reseed policy.
  */
 esp_err_t h2_esp_adc_oneshot_stabilizer_init(
     h2_esp_adc_oneshot_t *service,
-    adc_channel_t channel,
-    const h2_esp_adc_value_stabilizer_config_t *config);
+    adc_channel_t channel);
 
 /**
  * @brief Removes the optional value stabilizer from one configured channel.
@@ -100,10 +96,13 @@ esp_err_t h2_esp_adc_oneshot_stabilizer_deinit(
  * @brief Reads one channel using its optional service-owned stabilizer.
  *
  * A channel without an installed stabilizer performs one raw read and returns
- * DIRECT with equal stable and immediate values. An installed stabilizer runs
- * its complete transaction, including configured delays, while holding the
- * service mutex. On failure, channel state and @p out_reading remain unchanged.
- * This task-context API must not run from an ISR.
+ * DIRECT with equal stable and immediate raw values. An installed stabilizer
+ * runs its complete raw-count transaction, including component-owned delays,
+ * while holding the service mutex. The fixed ten-count smoothing boundary is
+ * measured from the last successfully published stable raw baseline. On
+ * failure, channel state and @p out_reading remain unchanged. This task-context
+ * API must not run from an ISR. Board-specific conversion into physical units
+ * occurs after this call.
  */
 esp_err_t h2_esp_adc_oneshot_read_value(
     h2_esp_adc_oneshot_t *service,

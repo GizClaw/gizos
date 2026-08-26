@@ -7,6 +7,9 @@
 
 #define H2_ESP_ADC_NUMERIC_MEDIAN_WINDOW 5u
 #define H2_ESP_ADC_NUMERIC_EMA_DIVISOR 60
+#define H2_ESP_ADC_VALUE_SMOOTH_DELTA_RAW 10
+#define H2_ESP_ADC_VALUE_RESEED_DISCARD_SAMPLES 5u
+#define H2_ESP_ADC_VALUE_RESEED_INTERVAL_US 5000u
 
 typedef struct h2_esp_adc_numeric_stabilizer {
     int32_t samples[H2_ESP_ADC_NUMERIC_MEDIAN_WINDOW];
@@ -33,16 +36,14 @@ typedef void (*h2_esp_adc_value_wait_fn)(
     uint32_t interval_us);
 
 typedef struct h2_esp_adc_value_stabilizer {
-    h2_esp_adc_value_stabilizer_config_t config;
     h2_esp_adc_numeric_stabilizer_t filter;
-    int32_t previous_value;
+    int32_t stable_raw;
     bool configured;
     bool initialized;
 } h2_esp_adc_value_stabilizer_t;
 
-bool h2_esp_adc_value_stabilizer_configure_internal(
-    h2_esp_adc_value_stabilizer_t *state,
-    const h2_esp_adc_value_stabilizer_config_t *config);
+bool h2_esp_adc_value_stabilizer_init_internal(
+    h2_esp_adc_value_stabilizer_t *state);
 
 void h2_esp_adc_value_stabilizer_reset_internal(
     h2_esp_adc_value_stabilizer_t *state);

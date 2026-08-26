@@ -34,19 +34,9 @@ static void wait_numeric_stream_sample(void *user, uint32_t interval_us) {
     fixture->last_interval_us = interval_us;
 }
 
-static h2_esp_adc_value_stabilizer_config_t value_stabilizer_config(void) {
-    return (h2_esp_adc_value_stabilizer_config_t){
-        .jump_threshold = 200,
-        .discard_samples = 5u,
-        .sample_interval_us = 5000u,
-    };
-}
-
 static void configure_value_stabilizer(
     h2_esp_adc_value_stabilizer_t *state) {
-    const h2_esp_adc_value_stabilizer_config_t config =
-        value_stabilizer_config();
-    assert(h2_esp_adc_value_stabilizer_configure_internal(state, &config));
+    assert(h2_esp_adc_value_stabilizer_init_internal(state));
 }
 
 static bool read_stabilized_value(
@@ -59,10 +49,6 @@ static bool read_stabilized_value(
         wait_numeric_stream_sample,
         fixture,
         out_reading);
-}
-
-static int32_t add_transform_offset(void *user, int raw) {
-    return raw + *(const int32_t *)user;
 }
 
 static uint32_t update_button(
@@ -228,14 +214,14 @@ static void test_numeric_stream_startup_steady_and_jump(void) {
     memset(&result, 0xa5, sizeof(result));
     assert(read_stabilized_value(&state, &fixture, &result));
     assert(result.reason == H2_ESP_ADC_VALUE_READ_STARTUP);
-    assert(result.immediate_value == 1080);
-    assert(result.stable_value == 1080);
+    assert(result.immediate_raw == 1080);
+    assert(result.stable_raw == 1080);
     assert(fixture.next_sample == 10u);
     assert(fixture.wait_count == 9u);
     assert(fixture.last_interval_us == 5000u);
-    assert(state.previous_value == 1080);
+    assert(state.stable_raw == 1080);
 
-    const int32_t steady_samples[] = {1279};
+    const int32_t steady_samples[] = {1090};
     fixture = (numeric_stream_fixture_t){
         .samples = steady_samples,
         .sample_count = 1u,
@@ -243,14 +229,15 @@ static void test_numeric_stream_startup_steady_and_jump(void) {
     };
     assert(read_stabilized_value(&state, &fixture, &result));
     assert(result.reason == H2_ESP_ADC_VALUE_READ_STEADY);
-    assert(result.immediate_value == 1279);
+    assert(result.immediate_raw == 1090);
+    assert(result.stable_raw == 1080);
     assert(fixture.next_sample == 1u);
     assert(fixture.wait_count == 0u);
-    assert(state.previous_value == 1279);
+    assert(state.stable_raw == 1080);
 
     const int32_t jump_samples[] = {
-        1479, 1480, 1481, 1482, 1483,
-        1500, 1490, 1510, 1480, 1520,
+        1091, 1092, 1093, 1094, 1095,
+        1100, 1090, 1110, 1080, 1120,
     };
     fixture = (numeric_stream_fixture_t){
         .samples = jump_samples,
@@ -259,13 +246,13 @@ static void test_numeric_stream_startup_steady_and_jump(void) {
     };
     assert(read_stabilized_value(&state, &fixture, &result));
     assert(result.reason == H2_ESP_ADC_VALUE_READ_JUMP);
-    assert(result.immediate_value == 1520);
-    assert(result.stable_value == 1500);
-    assert(state.previous_value == 1520);
+    assert(result.immediate_raw == 1120);
+    assert(result.stable_raw == 1100);
+    assert(state.stable_raw == 1100);
 
     const int32_t reverse_jump_samples[] = {
-        1200, 1201, 1202, 1203, 1204,
-        1190, 1210, 1180, 1220, 1200,
+        1089, 1088, 1087, 1086, 1085,
+        1080, 1090, 1070, 1100, 1080,
     };
     fixture = (numeric_stream_fixture_t){
         .samples = reverse_jump_samples,
@@ -275,8 +262,90 @@ static void test_numeric_stream_startup_steady_and_jump(void) {
     };
     assert(read_stabilized_value(&state, &fixture, &result));
     assert(result.reason == H2_ESP_ADC_VALUE_READ_JUMP);
-    assert(result.stable_value == 1200);
-    assert(state.previous_value == 1200);
+    assert(result.stable_raw == 1080);
+    assert(state.stable_raw == 1080);
+}
+
+static void test_numeric_stream_cumulative_raw_jump(void) {
+    h2_esp_adc_value_stabilizer_t state;
+    configure_value_stabilizer(&state);
+
+    const int32_t startup_samples[] = {
+        1000, 1001, 1002, 1003, 1004,
+        1005, 1006, 1007, 1008, 1009,
+    };
+    numeric_stream_fixture_t fixture = {
+        .samples = startup_samples,
+        .sample_count = sizeof(startup_samples) / sizeof(startup_samples[0]),
+        .fail_at = STREAM_NO_FAILURE,
+    };
+    h2_esp_adc_value_reading_t reading;
+    assert(read_stabilized_value(&state, &fixture, &reading));
+    assert(reading.reason == H2_ESP_ADC_VALUE_READ_STARTUP);
+    assert(reading.stable_raw == 1007);
+
+    const int32_t below_threshold_samples[] = {1012, 1017};
+    for (size_t i = 0u;
+         i < sizeof(below_threshold_samples) /
+                 sizeof(below_threshold_samples[0]);
+         ++i) {
+        fixture = (numeric_stream_fixture_t){
+            .samples = &below_threshold_samples[i],
+            .sample_count = 1u,
+            .fail_at = STREAM_NO_FAILURE,
+        };
+        assert(read_stabilized_value(&state, &fixture, &reading));
+        assert(reading.reason == H2_ESP_ADC_VALUE_READ_STEADY);
+        assert(reading.stable_raw == 1007);
+    }
+
+    const int32_t over_threshold_samples[] = {
+        1018, 1019, 1020, 1021, 1022,
+        1023, 1024, 1025, 1026, 1027,
+    };
+    fixture = (numeric_stream_fixture_t){
+        .samples = over_threshold_samples,
+        .sample_count =
+            sizeof(over_threshold_samples) /
+            sizeof(over_threshold_samples[0]),
+        .fail_at = STREAM_NO_FAILURE,
+    };
+    assert(read_stabilized_value(&state, &fixture, &reading));
+    assert(reading.reason == H2_ESP_ADC_VALUE_READ_JUMP);
+    assert(reading.immediate_raw == 1027);
+    assert(reading.stable_raw == 1025);
+    assert(state.stable_raw == 1025);
+}
+
+static void test_numeric_stream_widened_reverse_delta(void) {
+    h2_esp_adc_value_stabilizer_t state;
+    configure_value_stabilizer(&state);
+
+    const int32_t startup_samples[] = {
+        INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX,
+        INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX,
+    };
+    numeric_stream_fixture_t fixture = {
+        .samples = startup_samples,
+        .sample_count = sizeof(startup_samples) / sizeof(startup_samples[0]),
+        .fail_at = STREAM_NO_FAILURE,
+    };
+    h2_esp_adc_value_reading_t reading;
+    assert(read_stabilized_value(&state, &fixture, &reading));
+    assert(reading.stable_raw == INT32_MAX);
+
+    const int32_t jump_samples[] = {
+        INT32_MIN, INT32_MIN, INT32_MIN, INT32_MIN, INT32_MIN,
+        INT32_MIN, INT32_MIN, INT32_MIN, INT32_MIN, INT32_MIN,
+    };
+    fixture = (numeric_stream_fixture_t){
+        .samples = jump_samples,
+        .sample_count = sizeof(jump_samples) / sizeof(jump_samples[0]),
+        .fail_at = STREAM_NO_FAILURE,
+    };
+    assert(read_stabilized_value(&state, &fixture, &reading));
+    assert(reading.reason == H2_ESP_ADC_VALUE_READ_JUMP);
+    assert(reading.stable_raw == INT32_MIN);
 }
 
 static void test_numeric_stream_failure_is_atomic(void) {
@@ -315,7 +384,7 @@ static void test_numeric_stream_failure_is_atomic(void) {
     }
 }
 
-static void test_numeric_stream_invalid_config_is_atomic(void) {
+static void test_numeric_stream_invalid_calls_are_atomic(void) {
     h2_esp_adc_value_stabilizer_reset_internal(NULL);
     h2_esp_adc_value_stabilizer_t state = {0};
     const h2_esp_adc_value_stabilizer_t expected_state = state;
@@ -325,21 +394,21 @@ static void test_numeric_stream_invalid_config_is_atomic(void) {
         .sample_count = 1u,
         .fail_at = STREAM_NO_FAILURE,
     };
-    h2_esp_adc_value_stabilizer_config_t config =
-        value_stabilizer_config();
     h2_esp_adc_value_reading_t result;
     memset(&result, 0x5a, sizeof(result));
     const h2_esp_adc_value_reading_t expected_result = result;
 
-    config.jump_threshold = -1;
-    assert(!h2_esp_adc_value_stabilizer_configure_internal(&state, &config));
+    assert(!h2_esp_adc_value_stabilizer_init_internal(NULL));
+    assert(memcmp(&state, &expected_state, sizeof(state)) == 0);
+
+    assert(!h2_esp_adc_value_stabilizer_read_internal(
+        &state,
+        read_numeric_stream_sample,
+        wait_numeric_stream_sample,
+        &fixture,
+        &result));
     assert(memcmp(&state, &expected_state, sizeof(state)) == 0);
     assert(memcmp(&result, &expected_result, sizeof(result)) == 0);
-
-    config = value_stabilizer_config();
-    config.jump_threshold = 0;
-    assert(!h2_esp_adc_value_stabilizer_configure_internal(&state, &config));
-    assert(memcmp(&state, &expected_state, sizeof(state)) == 0);
 
     configure_value_stabilizer(&state);
     const h2_esp_adc_value_stabilizer_t configured_state = state;
@@ -354,46 +423,11 @@ static void test_numeric_stream_invalid_config_is_atomic(void) {
     assert(memcmp(&result, &expected_result, sizeof(result)) == 0);
 }
 
-static void test_value_stabilizer_zero_threshold_updates_automatically(void) {
-    const h2_esp_adc_value_stabilizer_config_t config = {
-        .jump_threshold = 0,
-    };
+static void test_value_stabilizer_init_and_reset(void) {
     h2_esp_adc_value_stabilizer_t state;
-    assert(h2_esp_adc_value_stabilizer_configure_internal(&state, &config));
+    configure_value_stabilizer(&state);
 
-    const int32_t samples[] = {100, 200, 300, 400, 500, 1000};
-    const int32_t expected[] = {100, 200, 200, 300, 300, 302};
-    for (size_t i = 0u; i < sizeof(samples) / sizeof(samples[0]); ++i) {
-        numeric_stream_fixture_t fixture = {
-            .samples = &samples[i],
-            .sample_count = 1u,
-            .fail_at = STREAM_NO_FAILURE,
-        };
-        h2_esp_adc_value_reading_t reading;
-        assert(read_stabilized_value(&state, &fixture, &reading));
-        assert(reading.reason == (i == 0u
-                                      ? H2_ESP_ADC_VALUE_READ_STARTUP
-                                      : H2_ESP_ADC_VALUE_READ_STEADY));
-        assert(reading.immediate_value == samples[i]);
-        assert(reading.stable_value == expected[i]);
-        assert(fixture.next_sample == 1u);
-        assert(fixture.wait_count == 0u);
-    }
-}
-
-static void test_value_stabilizer_config_transform_and_reset(void) {
-    const int32_t offset = 1000;
-    const h2_esp_adc_value_stabilizer_config_t config = {
-        .jump_threshold = 200,
-        .discard_samples = 0u,
-        .sample_interval_us = 0u,
-        .transform = add_transform_offset,
-        .transform_user = (void *)&offset,
-    };
-    h2_esp_adc_value_stabilizer_t state;
-    assert(h2_esp_adc_value_stabilizer_configure_internal(&state, &config));
-
-    const int32_t raw_samples[] = {1, 2, 3, 4, 5};
+    const int32_t raw_samples[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     numeric_stream_fixture_t fixture = {
         .samples = raw_samples,
         .sample_count = sizeof(raw_samples) / sizeof(raw_samples[0]),
@@ -403,14 +437,16 @@ static void test_value_stabilizer_config_transform_and_reset(void) {
     assert(h2_esp_adc_value_stabilizer_read_internal(
         &state,
         read_numeric_stream_sample,
-        NULL,
+        wait_numeric_stream_sample,
         &fixture,
         &reading));
     assert(reading.reason == H2_ESP_ADC_VALUE_READ_STARTUP);
-    assert(reading.stable_value == 1003);
-    assert(reading.immediate_value == 1005);
+    assert(reading.stable_raw == 8);
+    assert(reading.immediate_raw == 10);
+    assert(fixture.wait_count == 9u);
+    assert(fixture.last_interval_us == 5000u);
 
-    assert(h2_esp_adc_value_stabilizer_configure_internal(&state, &config));
+    configure_value_stabilizer(&state);
     assert(state.configured);
     assert(!state.initialized);
     h2_esp_adc_value_stabilizer_reset_internal(&state);
@@ -514,10 +550,11 @@ int main(void) {
     test_numeric_negative_startup_value();
     test_numeric_initial_window_precedes_ema();
     test_numeric_stream_startup_steady_and_jump();
+    test_numeric_stream_cumulative_raw_jump();
+    test_numeric_stream_widened_reverse_delta();
     test_numeric_stream_failure_is_atomic();
-    test_numeric_stream_invalid_config_is_atomic();
-    test_value_stabilizer_zero_threshold_updates_automatically();
-    test_value_stabilizer_config_transform_and_reset();
+    test_numeric_stream_invalid_calls_are_atomic();
+    test_value_stabilizer_init_and_reset();
     test_percent_hysteresis_and_direction();
     test_invalid_samples_do_not_change_state();
     puts("h2_esp_adc_stabilizer tests passed");
