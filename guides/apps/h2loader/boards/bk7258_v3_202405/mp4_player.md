@@ -13,7 +13,7 @@ bazel build --config=bk7258 \
   //projects/example/targets/h2loader_tar_zlib/mp4-player/bk7258_v3_202405:package
 ```
 
-构建生成 `bazel-bin/projects/example/targets/h2loader_tar_zlib/mp4-player/bk7258_v3_202405/package/bk7258_v3_202405-mp4-player-bk7258.update.tar.zlib`。安装与状态确认使用 [H2Loader CLI](/zh/using/h2loader/cli)，不得绕过仍可通信的 H2Loader 执行底层烧录。
+构建生成 `bazel-bin/projects/example/targets/h2loader_tar_zlib/mp4-player/bk7258_v3_202405/package/example-mp4-player-bk7258_v3_202405.update.tar.zlib`。安装与状态确认使用 [H2Loader CLI](/zh/using/h2loader/cli)，不得绕过仍可通信的 H2Loader 执行底层烧录。
 
 ## 验收
 

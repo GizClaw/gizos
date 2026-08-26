@@ -14,7 +14,7 @@ H2_PARTIAL_UPDATE_SMOKE result=PASS app=v2 data=v1
 bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/partial-update/szp:package
 ```
 
-该 target 使用固定的 App generation 与 data fixture，和其它 firmware entry 一样只生成一个标准 `<board>-<image>-<target>.update.tar.zlib`。包同时包含 App image 与显式 data snapshot，不生成 app-only、data-only、按 generation 命名的额外 package 或兼容入口。ELF、map、flash image 与 metadata 仍由同一 target 作为 native outputs 提供。
+该 target 使用固定的 App generation 与 data fixture，和其它 firmware entry 一样只生成一个标准 `<project>-<app>-<board>.update.tar.zlib`。包同时包含 App image 与显式 data snapshot，不生成 app-only、data-only、按 generation 命名的额外 package 或兼容入口。ELF、map、flash image 与 metadata 仍由同一 target 作为 native outputs 提供。
 
 ## 设备验收
 

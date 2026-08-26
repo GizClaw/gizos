@@ -51,6 +51,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "app/esp/app.bin",
                     "--entry",
                     "entry",
+                    "--project",
+                    "example",
+                    "--app",
+                    "loader",
                     "--platform",
                     "esp",
                     "--board",
@@ -106,6 +110,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "app/bk/app_ab_crc.rbl",
                     "--entry",
                     "entry",
+                    "--project",
+                    "example",
+                    "--app",
+                    "main",
                     "--platform",
                     "bk7258",
                     "--board",
@@ -162,6 +170,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "app/esp/app.bin",
                     "--entry",
                     "projects/example/targets/h2loader_tar_zlib/example/board",
+                    "--project",
+                    "example",
+                    "--app",
+                    "example",
                     "--platform",
                     "esp",
                     "--board",
@@ -196,6 +208,8 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                 )
             release = json.loads(metadata.read_text(encoding="utf-8"))
             self.assertEqual(release["entry"], "projects/example/targets/h2loader_tar_zlib/example/board")
+            self.assertEqual(release["project"], "example")
+            self.assertEqual(release["app"], "example")
             self.assertEqual(release["assets"][0]["operation"], "managed-install")
             self.assertEqual(release["native_artifacts"][0]["name"], "firmware.elf")
 
@@ -218,6 +232,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "app/bk/app_ab_crc.rbl",
                     "--entry",
                     "entry",
+                    "--project",
+                    "example",
+                    "--app",
+                    "main",
                     "--platform",
                     "bk7258",
                     "--board",
@@ -264,6 +282,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "app/bk/app_ab_crc.rbl",
                     "--entry",
                     "entry",
+                    "--project",
+                    "example",
+                    "--app",
+                    "main",
                     "--platform",
                     "bk7258",
                     "--board",
@@ -313,6 +335,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     "app/bk/app_ab_crc.rbl",
                     "--entry",
                     "projects/h2loader/targets/h2loader_tar_zlib/loader/board",
+                    "--project",
+                    "h2loader",
+                    "--app",
+                    "loader",
                     "--platform",
                     "bk7258",
                     "--board",

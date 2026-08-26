@@ -141,6 +141,8 @@ def publish_metadata(
     *,
     output: Path,
     entry: str,
+    project: str,
+    app: str,
     platform: str,
     board: str,
     image: str,
@@ -169,6 +171,8 @@ def publish_metadata(
         release_assets.append(asset(recovery, "recovery"))
     metadata = {
         "entry": entry,
+        "project": project,
+        "app": app,
         "platform": platform,
         "board": board,
         "image": image,

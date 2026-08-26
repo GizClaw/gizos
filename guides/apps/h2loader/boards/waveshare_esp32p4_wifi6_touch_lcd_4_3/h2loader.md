@@ -8,7 +8,7 @@ bazel build --config=esp32p4 \
   //projects/h2loader/targets/h2loader_tar_zlib/loader/waveshare_esp32p4_wifi6_touch_lcd_4_3:package
 ```
 
-首次恢复或已经确认 H2Loader 无法通信时，只能选择这个 target 生成的 `waveshare_esp32p4_wifi6_touch_lcd_4_3-h2loader-esp32p4.recovery.h2fb`，重新匹配实际 P4 port、确认 board/target identity、取得 destructive recovery 授权并执行恢复。
+首次恢复或已经确认 H2Loader 无法通信时，只能选择这个 target 生成的 `h2loader-loader-waveshare_esp32p4_wifi6_touch_lcd_4_3.recovery.h2fb`，重新匹配实际 P4 port、确认 board/target identity、取得 destructive recovery 授权并执行恢复。
 
 正常更新路径使用同 target 生成的 `update.tar.zlib`，不直接烧录。
 

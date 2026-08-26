@@ -56,7 +56,9 @@ Action 将选中的 launcher 复制到 invocation-local source tree，以只读 
 
 ## H2Loader package rule
 
-`h2loader_tar_zlib` 按类型消费标准 `FirmwareInfo` 或 `Bk7258FirmwareInfo`，因此 ESP 与 BK7258 使用同一个包装 rule。它把 provider 声明的 app image 写入 target-specific archive path，并把可选 `package_data` 相对 `package_data_root` 安装到 `data/`；package data 必须由真实 App owner 的具名 target 提供，不能放在 launcher 目录或进入 native firmware 的 `srcs`、`hdrs`、`data`，Loader role 不允许携带 package data。Rule 生成唯一的 `<board>-<image>-<target>.update.tar.zlib` 与 `.firmware.json`；Loader role 在这里从标准平台输出和 Board 的 H2Loader layout recovery config 生成 recovery bundle，并独占 `FirmwareReleaseInfo` 和 `release` output group。Release catalog、ESP/BK7258 CI tag 和公开交付都绑定 `:package`，不绑定内部 `:firmware`。
+`h2loader_tar_zlib` 按类型消费标准 `FirmwareInfo` 或 `Bk7258FirmwareInfo`，因此 ESP 与 BK7258 使用同一个包装 rule。它把 provider 声明的 app image 写入 target-specific archive path，并把可选 `package_data` 相对 `package_data_root` 安装到 `data/`；package data 必须由真实 App owner 的具名 target 提供，不能放在 launcher 目录或进入 native firmware 的 `srcs`、`hdrs`、`data`，Loader role 不允许携带 package data。最终 target 必须位于 `projects/<project>/targets/h2loader_tar_zlib/<app>/<board>`；rule 从这个路径推导 release identity，直接生成唯一的 `<project>-<app>-<board>.update.tar.zlib` 与 `.firmware.json`，芯片 target 只保留在 metadata。Loader role 在这里从标准平台输出和 Board 的 H2Loader layout recovery config 生成同 stem 的 recovery bundle，并独占 `FirmwareReleaseInfo` 和 `release` output group。Release catalog、ESP/BK7258 CI tag 和公开交付都绑定 `:package`，不绑定内部 `:firmware`，consumer 不得解析 label 或重命名发布文件。
+
+`bk3633_firmware` 同样要求 `projects/<project>/targets/bk3633_firmware/<app>/<board>` 路径。它保留 `app.bin`、ELF、map、merge image 等原生调试/恢复输出，同时额外直接声明 `<project>-<app>-<board>.bin` 作为发布 image；`Bk3633FirmwareInfo` 分别暴露 native `app_image` 与 canonical `release_image`。
 
 包装 action 只读取 provider 和 attrs 声明的文件，不访问 SDK、toolchain 或 invocation-local native build tree，因此保留 Bazel 默认 sandbox、remote execution 与 action cache 语义。它不重新解释平台固件格式，也不执行 install、flash、reset、serial、network 或设备操作。
 

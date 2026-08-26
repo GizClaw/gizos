@@ -28,7 +28,7 @@ Package 输出为：
 
 ```text
 bazel-bin/projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit/package/
-└── devkit-gizclaw-e2e-esp32s3.update.tar.zlib
+└── e2e-gizclaw-e2e-devkit.update.tar.zlib
 ```
 
 ## Managed Device Acceptance
@@ -39,7 +39,7 @@ bazel-bin/projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit/package/
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> send \
-  --file bazel-bin/projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit/package/devkit-gizclaw-e2e-esp32s3.update.tar.zlib
+  --file bazel-bin/projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit/package/e2e-gizclaw-e2e-devkit.update.tar.zlib
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> restart-monitor

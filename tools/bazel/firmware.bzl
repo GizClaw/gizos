@@ -6,6 +6,7 @@ FirmwareVersionInfo = provider(
 )
 
 _SAFE_CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._-+"
+_RELEASE_IDENTITY_CHARACTERS = "0123456789abcdefghijklmnopqrstuvwxyz._-"
 _SEMVER_IDENTIFIER_CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
 
 def _validate_safe(value):
@@ -55,6 +56,34 @@ def _validate_semver(value):
         fail("declared firmware version must use MAJOR.MINOR.PATCH SemVer")
     for field, identifier in zip(["major", "minor", "patch"], core_parts):
         _validate_numeric_identifier(identifier, field)
+
+def firmware_release_identity(package, artifact_rule, board):
+    """Derives the canonical release identity from a final firmware package.
+
+    Final firmware rules must live at
+    projects/<project>/targets/<artifact-rule>/<app>/<board>. The returned
+    identity is the sole source for published asset names.
+    """
+    parts = package.split("/")
+    if len(parts) != 6 or parts[0] != "projects" or parts[2] != "targets" or parts[3] != artifact_rule:
+        fail("firmware release target must use projects/<project>/targets/%s/<app>/<board>: %s" % (artifact_rule, package))
+    project = parts[1]
+    app = parts[4]
+    package_board = parts[5]
+    if package_board != board:
+        fail("firmware release target board %s does not match declared board %s" % (package_board, board))
+    for name, value in (("project", project), ("app", app), ("board", board)):
+        if not value or len(value) > 95:
+            fail("firmware release %s must contain 1..95 characters" % name)
+        for character in value.elems():
+            if character not in _RELEASE_IDENTITY_CHARACTERS:
+                fail("firmware release %s contains an unsafe character: %r" % (name, character))
+    return struct(
+        app = app,
+        board = board,
+        project = project,
+        stem = "%s-%s-%s" % (project, app, board),
+    )
 
 def _firmware_version_impl(ctx):
     value = ctx.attr.value

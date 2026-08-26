@@ -2,16 +2,19 @@
 
 load("//tools/bazel:bk7258.bzl", "Bk7258FirmwareInfo")
 load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+load("//tools/bazel:firmware.bzl", "firmware_release_identity")
 
 FirmwareReleaseInfo = provider(
     doc = "Canonical H2Loader release outputs for one firmware entry.",
     fields = {
+        "app": "Application identity derived from the final target path.",
         "board": "Physical board identity.",
         "entry": "Source-root-relative launcher entry.",
         "image": "Image identity.",
         "metadata": "Machine-readable metadata file.",
         "package": "The standard H2Loader package.",
         "platform": "Firmware platform family.",
+        "project": "Project identity derived from the final target path.",
         "recovery": "Loader recovery bundle or None.",
         "release_files": "Depset of release assets and metadata.",
         "role": "app or h2loader.",
@@ -90,18 +93,20 @@ def _h2loader_tar_zlib_impl(ctx):
     if ctx.attr.role == "h2loader" and ctx.files.package_data:
         fail("h2loader firmware cannot declare package_data")
 
-    stem = "%s-%s-%s" % (ctx.attr.board, ctx.attr.image, ctx.attr.target)
-    package = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".update.tar.zlib")
-    metadata = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".firmware.json")
+    identity = firmware_release_identity(ctx.label.package, "h2loader_tar_zlib", ctx.attr.board)
+    package = ctx.actions.declare_file(ctx.label.name + "/" + identity.stem + ".update.tar.zlib")
+    metadata = ctx.actions.declare_file(ctx.label.name + "/" + identity.stem + ".firmware.json")
     recovery = None
     if ctx.attr.role == "h2loader":
-        recovery = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".recovery.h2fb")
+        recovery = ctx.actions.declare_file(ctx.label.name + "/" + identity.stem + ".recovery.h2fb")
 
     args = ctx.actions.args()
     args.add("--source-root", ".")
     args.add("--app-image", firmware.app_image.path)
     args.add("--app-path", firmware.app_path)
     args.add("--entry", ctx.label.package)
+    args.add("--project", identity.project)
+    args.add("--app", identity.app)
     args.add("--platform", firmware.platform)
     args.add("--board", ctx.attr.board)
     args.add("--image", ctx.attr.image)
@@ -144,12 +149,14 @@ def _h2loader_tar_zlib_impl(ctx):
         DefaultInfo(files = release_files),
         OutputGroupInfo(release = release_files),
         FirmwareReleaseInfo(
+            app = identity.app,
             board = ctx.attr.board,
             entry = ctx.label.package,
             image = ctx.attr.image,
             metadata = metadata,
             package = package,
             platform = firmware.platform,
+            project = identity.project,
             recovery = recovery,
             release_files = release_files,
             role = ctx.attr.role,

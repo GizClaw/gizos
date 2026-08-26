@@ -17,6 +17,15 @@ mkdir -p "$repository_cache"
 
 cp "$fixture_root/MODULE.bazel.fixture" "$consumer_root/MODULE.bazel"
 cp "$fixture_root/BUILD.bazel.fixture" "$consumer_root/BUILD.bazel"
+mkdir -p "$consumer_root/projects/consumer/targets/h2loader_tar_zlib/main/consumer_board"
+cp "$fixture_root/package.BUILD.bazel.fixture" \
+    "$consumer_root/projects/consumer/targets/h2loader_tar_zlib/main/consumer_board/BUILD.bazel"
+mkdir -p "$consumer_root/projects/consumer/targets/bk3633_firmware/main/consumer_board"
+cp "$fixture_root/bk3633.BUILD.bazel.fixture" \
+    "$consumer_root/projects/consumer/targets/bk3633_firmware/main/consumer_board/BUILD.bazel"
+mkdir -p "$consumer_root/bk3633"
+cp "$fixture_root/bk3633.Makefile.fixture" "$consumer_root/bk3633/Makefile"
+cp "$fixture_root/release_identity.cquery.fixture" "$consumer_root/release_identity.cquery"
 cp "$fixture_root/consumer.bzl.fixture" "$consumer_root/consumer.bzl"
 cp "$fixture_root/consumer.c" "$consumer_root/consumer.c"
 cp "$fixture_root/CMakeLists.txt.fixture" "$consumer_root/CMakeLists.txt"
@@ -69,7 +78,7 @@ cd "$consumer_root"
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
-    'set(//:private_bk_firmware //:private_esp_firmware)'
+    'set(//:private_bk_firmware //:private_esp_firmware //projects/consumer/targets/bk3633_firmware/main/consumer_board:firmware)'
 
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
@@ -117,8 +126,70 @@ cp BUILD.bazel.complete BUILD.bazel
     //:firmware_lib \
     //:i18n_runtime \
     //:native_component \
-    //:package \
+    //projects/consumer/targets/h2loader_tar_zlib/main/consumer_board:package \
     //:runtime
+
+package_files=$("${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    --output=files \
+    //projects/consumer/targets/h2loader_tar_zlib/main/consumer_board:package)
+grep -F '/consumer-main-consumer_board.update.tar.zlib' <<<"$package_files" >/dev/null
+grep -F '/consumer-main-consumer_board.firmware.json' <<<"$package_files" >/dev/null
+package_identity=$("${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    --output=starlark \
+    --starlark:file="$consumer_root/release_identity.cquery" \
+    //projects/consumer/targets/h2loader_tar_zlib/main/consumer_board:package)
+test "$package_identity" = 'consumer|main|consumer_board|consumer-main-consumer_board.update.tar.zlib'
+
+bk3633_files=$("${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_ci_graph=true" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    --output=files \
+    //projects/consumer/targets/bk3633_firmware/main/consumer_board:firmware)
+grep -F '/consumer-main-consumer_board.bin' <<<"$bk3633_files" >/dev/null
+grep -F '/app.bin' <<<"$bk3633_files" >/dev/null
+bk3633_identity=$("${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_ci_graph=true" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    --output=starlark \
+    --starlark:file="$consumer_root/release_identity.cquery" \
+    //projects/consumer/targets/bk3633_firmware/main/consumer_board:firmware)
+test "$bk3633_identity" = 'consumer|main|consumer_board|consumer-main-consumer_board.bin'
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \

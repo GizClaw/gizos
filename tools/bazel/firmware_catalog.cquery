@@ -14,11 +14,13 @@ def format(target):
     if label.startswith("@@"):
         label = label[2:]
     return json.encode({
+        "app": info.app,
         "board": info.board,
         "entry": info.entry,
         "image": info.image,
         "label": label,
         "platform": info.platform,
+        "project": info.project,
         "role": info.role,
         "target": info.target,
         "version": info.version,

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -52,6 +53,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--entry", required=True)
+    parser.add_argument("--release-project", required=True)
+    parser.add_argument("--release-app", required=True)
     parser.add_argument("--board", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--native-target", required=True)
@@ -69,6 +72,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--map-output", required=True)
     parser.add_argument("--recovery-output", required=True)
     parser.add_argument("--manifest-output", required=True)
+    parser.add_argument("--release-output", required=True)
     parser.add_argument("--prebuilt-component", action="append", default=[])
     parser.add_argument("--native-component-source", action="append", default=[])
     parser.add_argument("--native-include-root", action="append", default=[])
@@ -337,6 +341,23 @@ def copy_output(source: Path, destination: Path) -> None:
     shutil.copyfile(source, destination)
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def publish_release_image(source: Path, destination: Path) -> None:
+    copy_output(source, destination)
+    if (
+        source.stat().st_size != destination.stat().st_size
+        or file_sha256(source) != file_sha256(destination)
+    ):
+        raise RunnerError("canonical release image does not match native app image")
+
+
 def run_native_make(
     make: Path,
     project: Path,
@@ -489,6 +510,8 @@ def build(arguments: argparse.Namespace) -> None:
             }
             canonical.update(
                 {
+                    "project": arguments.release_project,
+                    "app": arguments.release_app,
                     "entry": arguments.entry,
                     "version": arguments.version,
                     "elf": "firmware.elf",
@@ -505,6 +528,7 @@ def build(arguments: argparse.Namespace) -> None:
             }
             for key, source in files.items():
                 copy_output(source, destinations[key])
+            publish_release_image(files["bin"], Path(arguments.release_output))
             manifest_output = Path(arguments.manifest_output)
             manifest_output.parent.mkdir(parents=True, exist_ok=True)
             manifest_output.write_text(

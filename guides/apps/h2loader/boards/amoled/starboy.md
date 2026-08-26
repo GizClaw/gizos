@@ -11,7 +11,7 @@ bazel build \
   //projects/example/targets/h2loader_tar_zlib/starboy/amoled:package
 ```
 
-输出位于 `bazel-bin/projects/example/targets/h2loader_tar_zlib/starboy/amoled/package/amoled-starboy-esp32s3.update.tar.zlib`。安装、确认和恢复必须遵循 [H2Loader CLI 使用流程](/zh/using/h2loader/cli)。
+输出位于 `bazel-bin/projects/example/targets/h2loader_tar_zlib/starboy/amoled/package/example-starboy-amoled.update.tar.zlib`。安装、确认和恢复必须遵循 [H2Loader CLI 使用流程](/zh/using/h2loader/cli)。
 
 ## 控制与动效
 

@@ -11,7 +11,7 @@ bazel build --config=esp32s3 \
   //projects/example/targets/h2loader_tar_zlib/mp4-player-small/amoled:package
 ```
 
-构建生成 `bazel-bin/projects/example/targets/h2loader_tar_zlib/mp4-player-small/amoled/package/amoled-mp4-player-small-esp32s3.update.tar.zlib`。必须通过仍可通信的 H2Loader 安装，不得绕过 H2Loader 直接烧录。
+构建生成 `bazel-bin/projects/example/targets/h2loader_tar_zlib/mp4-player-small/amoled/package/example-mp4-player-small-amoled.update.tar.zlib`。必须通过仍可通信的 H2Loader 安装，不得绕过 H2Loader 直接烧录。
 
 ## 验收
 

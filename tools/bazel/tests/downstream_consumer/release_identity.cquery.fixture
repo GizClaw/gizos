@@ -1,0 +1,11 @@
+def format(target):
+    matches = [
+        value
+        for key, value in providers(target).items()
+        if str(key).endswith("%FirmwareReleaseInfo") or str(key).endswith("%Bk3633FirmwareInfo")
+    ]
+    if len(matches) != 1:
+        fail("target must expose exactly one firmware release provider: " + str(target.label))
+    info = matches[0]
+    asset = info.package if hasattr(info, "package") else info.release_image
+    return "|".join([info.project, info.app, info.board, asset.basename])

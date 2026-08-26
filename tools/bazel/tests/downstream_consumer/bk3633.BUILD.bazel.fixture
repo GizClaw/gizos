@@ -1,0 +1,11 @@
+load("@gizos//tools/bazel:bk3633.bzl", "bk3633_firmware")
+
+bk3633_firmware(
+    name = "firmware",
+    board = "consumer_board",
+    graph = ["//:native_component"],
+    image = "consumer_app",
+    native_merge = "consumer_merge_crc.bin",
+    native_target = "consumer_app",
+    project = "//:bk3633/Makefile",
+)

@@ -1,5 +1,4 @@
 load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware", "h2loader_esp_idf_firmware")
-load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -45,6 +44,7 @@ cc_library(
 firmware_native_component(
     name = "native_component",
     srcs = ["consumer.c"],
+    visibility = ["//visibility:public"],
     deps = [
         "@gizos//libs/pal",
         "@gizos//tools/bazel:vendor_third_party_opus_headers",
@@ -88,7 +88,10 @@ firmware_lib_component(
     ],
 )
 
-fake_firmware(name = "fake_firmware")
+fake_firmware(
+    name = "fake_firmware",
+    visibility = ["//visibility:public"],
+)
 
 exports_files([
     "CMakeLists.txt",
@@ -98,6 +101,7 @@ exports_files([
     "partition.csv",
     "ram_regions.csv",
     "sdkconfig.h2loader.defaults",
+    "bk3633/Makefile",
 ])
 
 filegroup(
@@ -146,13 +150,4 @@ h2loader_bk7258_firmware(
     project_name = "private_bk_consumer",
     target = "bk7258",
     version = ":private_bk_version",
-)
-
-h2loader_tar_zlib(
-    name = "package",
-    board = "consumer_board",
-    firmware = ":fake_firmware",
-    image = "consumer_app",
-    role = "app",
-    target = "esp32s3",
 )

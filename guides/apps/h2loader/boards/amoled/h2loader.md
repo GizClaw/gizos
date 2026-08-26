@@ -8,7 +8,7 @@ bazel build --config=esp32s3 \
   //projects/h2loader/targets/h2loader_tar_zlib/loader/amoled:package
 ```
 
-内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 `amoled-h2loader-esp32s3.update.tar.zlib` 和 release metadata；ESP-IDF app descriptor 和 package manifest 都使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
+内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 `h2loader-loader-amoled.update.tar.zlib` 和 release metadata；ESP-IDF app descriptor 和 package manifest 都使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
 
 ## Partition layout
 

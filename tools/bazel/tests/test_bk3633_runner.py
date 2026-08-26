@@ -56,6 +56,8 @@ class Bk3633RunnerTest(unittest.TestCase):
             source_root=str(root),
             project="launcher/Makefile",
             entry="launcher",
+            release_project="tapdoki",
+            release_app="tapdoki_app",
             board="bk3633_dev_board",
             image="example",
             native_target="app",
@@ -73,6 +75,7 @@ class Bk3633RunnerTest(unittest.TestCase):
             map_output=str(root / "outputs/firmware.map"),
             recovery_output=str(root / "outputs/merge-crc.bin"),
             manifest_output=str(root / "outputs/manifest.json"),
+            release_output=str(root / "outputs/tapdoki-tapdoki_app-bk3633_dev_board.bin"),
             prebuilt_component=[
                 "h2_firmware_lib=libh2_firmware_lib.a",
             ],
@@ -213,6 +216,22 @@ class Bk3633RunnerTest(unittest.TestCase):
             (root / "link.bin").symlink_to(target)
             with self.assertRaisesRegex(runner.RunnerError, "symlink"):
                 runner.release_file(root, "link.bin", "artifact")
+
+    def test_publish_release_image_is_byte_identical_and_fails_on_mismatch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "app.bin"
+            output = root / "tapdoki-tapdoki_app-tapdoki_v2_0.bin"
+            source.write_bytes(b"canonical application image")
+            runner.publish_release_image(source, output)
+            self.assertEqual(output.read_bytes(), source.read_bytes())
+
+            with (
+                mock.patch.object(runner, "copy_output"),
+                self.assertRaisesRegex(runner.RunnerError, "does not match"),
+            ):
+                output.write_bytes(b"different image")
+                runner.publish_release_image(source, output)
 
     def test_required_environment_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:

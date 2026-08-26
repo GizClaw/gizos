@@ -9,7 +9,7 @@ bazel build --config=esp32s3 \
   //projects/e2e/targets/h2loader_tar_zlib/pal-pref/devkit:package
 ```
 
-构建生成 `bazel-bin/projects/e2e/targets/h2loader_tar_zlib/pal-pref/devkit/package/devkit-pal-pref-esp32s3.update.tar.zlib`。
+构建生成 `bazel-bin/projects/e2e/targets/h2loader_tar_zlib/pal-pref/devkit/package/e2e-pal-pref-devkit.update.tar.zlib`。
 
 ## Layout cutover
 

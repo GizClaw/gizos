@@ -29,6 +29,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--app-image", required=True)
     parser.add_argument("--app-path", required=True)
     parser.add_argument("--entry", required=True)
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--app", required=True)
     parser.add_argument("--platform", required=True)
     parser.add_argument("--board", required=True)
     parser.add_argument("--image", required=True)
@@ -94,6 +96,8 @@ def run(arguments: argparse.Namespace) -> None:
     publish_metadata(
         output=Path(arguments.metadata_output),
         entry=arguments.entry,
+        project=arguments.project,
+        app=arguments.app,
         platform=arguments.platform,
         board=arguments.board,
         image=arguments.image,

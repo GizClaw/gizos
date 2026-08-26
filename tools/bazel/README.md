@@ -172,7 +172,7 @@ inputs bind the stable external execution environment into the action key.
 
 ## H2Loader package builds
 
-Every package below `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/`
+Every package below `projects/<project>/targets/h2loader_tar_zlib/<app>/<board>/`
 declares an internal `:firmware` target using `h2loader_esp_idf_firmware` or
 `h2loader_bk7258_firmware`, followed by the public `:package` target using
 `h2loader_tar_zlib`. The H2Loader wrappers select partition and recovery inputs
@@ -180,12 +180,20 @@ from the declared `target` and `board`, then delegate native compilation to the
 generic rules in this directory. The package rule consumes `FirmwareInfo` or `Bk7258FirmwareInfo`, writes
 the target-specific image path, installs optional `package_data` relative to
 `package_data_root`, and produces the single `.update.tar.zlib` plus
-`.firmware.json`. For Loader role it creates recovery from standard native outputs and owns
+`.firmware.json`, both named `<project>-<app>-<board>` directly by the rule. The
+chip target remains in metadata instead of being repeated in the filename. For
+Loader role it creates a same-stem recovery bundle from standard native outputs and owns
 `FirmwareReleaseInfo`, `DefaultInfo`, and the `release` output group for the
 deliverable. CI and release tags bind to `:package`, so release builds always
-traverse the native `:firmware` dependency before packaging.
+traverse the native `:firmware` dependency before packaging. Consumers copy
+these canonical outputs unchanged and do not parse labels or rename assets.
 
 ## BK3633 external builds
+
+Final BK3633 targets use
+`projects/<project>/targets/bk3633_firmware/<app>/<board>`. The rule keeps the
+native `app.bin`, ELF, map, merge image, and manifest, and additionally declares
+`<project>-<app>-<board>.bin` as the canonical release image.
 
 Source the sibling `firmwares-devenv/export.sh` before requesting a BK3633
 build. The provider exports only `BK3633_PATH`; Bazel validates it and supplies

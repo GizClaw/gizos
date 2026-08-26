@@ -1,12 +1,13 @@
 """Complete BK3633 firmware builds backed by canonical devenv."""
 
-load(":firmware.bzl", "FirmwareVersionInfo")
+load(":firmware.bzl", "FirmwareVersionInfo", "firmware_release_identity")
 load(":firmware_components.bzl", "collect_firmware_components", "firmware_components_aspect")
 load(":native_component.bzl", "H2NativeComponentInfo", "collect_native_components")
 
 Bk3633FirmwareInfo = provider(
     doc = "Structured native outputs from one BK3633 firmware build.",
     fields = {
+        "app": "Application identity derived from the final target path.",
         "app_image": "Application binary image.",
         "board": "Physical board identity.",
         "elf": "Application ELF.",
@@ -15,6 +16,8 @@ Bk3633FirmwareInfo = provider(
         "image": "Image identity.",
         "manifest": "Normalized native build manifest.",
         "map": "Application linker map.",
+        "project": "Project identity derived from the final target path.",
+        "release_image": "Canonical release binary named from project, app, and board.",
         "recovery_image": "Complete merge CRC image for direct flash recovery.",
         "stack": "BK3633 Stack flavor.",
         "target": "BK target name.",
@@ -42,13 +45,15 @@ def _is_native_source(path):
 
 def _bk3633_firmware_impl(ctx):
     output_root = ctx.label.name
+    identity = firmware_release_identity(ctx.label.package, "bk3633_firmware", ctx.attr.board)
     version = ctx.attr.version[FirmwareVersionInfo].value
     elf = ctx.actions.declare_file(output_root + "/firmware.elf")
     app_image = ctx.actions.declare_file(output_root + "/app.bin")
     map_file = ctx.actions.declare_file(output_root + "/firmware.map")
     recovery_image = ctx.actions.declare_file(output_root + "/merge-crc.bin")
     manifest = ctx.actions.declare_file(output_root + "/manifest.json")
-    outputs = [elf, app_image, map_file, recovery_image, manifest]
+    release_image = ctx.actions.declare_file(output_root + "/" + identity.stem + ".bin")
+    outputs = [elf, app_image, map_file, recovery_image, manifest, release_image]
     graph_sources = [
         dependency[H2NativeComponentInfo].files
         for dependency in ctx.attr.graph
@@ -66,6 +71,8 @@ def _bk3633_firmware_impl(ctx):
     args.add("--source-root", ".")
     args.add("--project", ctx.file.project.path)
     args.add("--entry", ctx.label.package)
+    args.add("--release-project", identity.project)
+    args.add("--release-app", identity.app)
     args.add("--board", ctx.attr.board)
     args.add("--image", ctx.attr.image)
     args.add("--native-target", ctx.attr.native_target)
@@ -83,6 +90,7 @@ def _bk3633_firmware_impl(ctx):
     args.add("--map-output", map_file.path)
     args.add("--recovery-output", recovery_image.path)
     args.add("--manifest-output", manifest.path)
+    args.add("--release-output", release_image.path)
     for component in prebuilt_components:
         args.add("--prebuilt-component", "%s=%s" % (component.component_name, component.archive.path))
         for include_root in component.include_roots:
@@ -118,6 +126,7 @@ def _bk3633_firmware_impl(ctx):
         DefaultInfo(files = files),
         OutputGroupInfo(release = files),
         Bk3633FirmwareInfo(
+            app = identity.app,
             app_image = app_image,
             board = ctx.attr.board,
             elf = elf,
@@ -126,7 +135,9 @@ def _bk3633_firmware_impl(ctx):
             image = ctx.attr.image,
             manifest = manifest,
             map = map_file,
+            project = identity.project,
             recovery_image = recovery_image,
+            release_image = release_image,
             stack = "allroles",
             target = "bk3633",
             version = version,
