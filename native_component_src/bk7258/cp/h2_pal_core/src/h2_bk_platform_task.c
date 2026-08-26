@@ -54,13 +54,6 @@ static h2_pal_result_t bk_task_policy_resolve(const char *name,
   if (rc == H2_PAL_OK) {
     return H2_PAL_OK;
   }
-  if (rc == H2_PAL_ERR_NOT_FOUND && s_task_config.fallback_resolver != NULL) {
-    rc = s_task_config.fallback_resolver(s_task_config.resolver_user, name,
-                                         out_policy);
-    if (rc == H2_PAL_OK) {
-      return H2_PAL_OK;
-    }
-  }
   if (rc != H2_PAL_ERR_NOT_FOUND) {
     bk_task_fail(name, "resolve", "resolver-error");
     return H2_PAL_ERR_TASK;

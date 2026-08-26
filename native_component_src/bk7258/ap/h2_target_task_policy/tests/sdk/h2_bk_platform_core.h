@@ -24,7 +24,6 @@ typedef h2_pal_result_t (*h2_bk_task_policy_resolver_t)(void *, const char *,
 
 typedef struct h2_bk_task_policy_config {
   h2_bk_task_policy_resolver_t resolver;
-  h2_bk_task_policy_resolver_t fallback_resolver;
   void *resolver_user;
   const h2_pal_mem_api_t *task_allocator;
 } h2_bk_task_policy_config_t;

@@ -28,18 +28,19 @@ static void assert_policy(const char *name, unsigned priority) {
   assert(policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
 }
 
-int main(void) {
+static void assert_default_policy(const char *name) {
   h2_esp_task_policy_t policy = {0};
-  assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
-  assert(s_config.fallback_resolver != NULL);
-  assert(s_config.fallback_resolver(s_config.resolver_user, "dynamic-default",
-                                    &policy) == H2_PAL_OK);
+  assert(get_policy(name, &policy) == H2_PAL_OK);
   assert(policy.priority == 4u);
   assert(policy.core == H2_ESP_TASK_CORE_ANY);
   assert(policy.min_stack_size == 4096u);
   assert(policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
-  assert(s_config.fallback_resolver(s_config.resolver_user, "dynamic-default",
-                                    NULL) == H2_PAL_ERR_INVALID_ARG);
+}
+
+int main(void) {
+  h2_esp_task_policy_t policy = {0};
+  assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
+  assert_default_policy("dynamic-default");
   assert_policy("h2loader/appcmd", 8u);
   assert_policy("h2loader/return", 8u);
   assert_policy("h2loader/blelink", 6u);
@@ -50,9 +51,9 @@ int main(void) {
   assert_policy("net/modem_ppp_rx", 7u);
   assert_policy("modem/call_in", 6u);
   assert_policy("modem/gnss_fix", 5u);
-  assert(get_policy("bleikcp-speed/kcp", &policy) == H2_PAL_ERR_NOT_FOUND);
-  assert(get_policy("bleikcp-speed/server", &policy) == H2_PAL_ERR_NOT_FOUND);
-  assert(get_policy("unknown", &policy) == H2_PAL_ERR_NOT_FOUND);
+  assert_default_policy("bleikcp-speed/kcp");
+  assert_default_policy("bleikcp-speed/server");
+  assert_default_policy("unknown");
   assert(get_policy("", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy("unknown", NULL) == H2_PAL_ERR_NOT_FOUND);

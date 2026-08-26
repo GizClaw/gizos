@@ -8,15 +8,6 @@ static h2_pal_result_t resolve_policy(void *user, const char *name,
                                       h2_bk_task_policy_t *out_policy) {
   (void)user;
   (void)name;
-  (void)out_policy;
-  return H2_PAL_ERR_NOT_FOUND;
-}
-
-static h2_pal_result_t
-resolve_fallback_policy(void *user, const char *name,
-                        h2_bk_task_policy_t *out_policy) {
-  (void)user;
-  (void)name;
   if (out_policy == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -32,7 +23,6 @@ resolve_fallback_policy(void *user, const char *name,
 h2_pal_result_t h2_bk_target_task_policy_install(void) {
   static const h2_bk_task_policy_config_t config = {
       .resolver = resolve_policy,
-      .fallback_resolver = resolve_fallback_policy,
       .resolver_user = NULL,
   };
   h2_pal_result_t rc = h2_bk_platform_task_configure(&config);

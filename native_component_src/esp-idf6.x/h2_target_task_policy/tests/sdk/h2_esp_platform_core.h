@@ -28,7 +28,6 @@ typedef h2_pal_result_t (*h2_esp_task_policy_resolver_t)(
 
 typedef struct h2_esp_task_policy_config {
   h2_esp_task_policy_resolver_t resolver;
-  h2_esp_task_policy_resolver_t fallback_resolver;
   void *resolver_user;
 } h2_esp_task_policy_config_t;
 

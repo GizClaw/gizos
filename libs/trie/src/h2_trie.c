@@ -169,6 +169,17 @@ h2_pal_result_t h2_trie_build_tokens(h2_trie_t *trie, h2_trie_node_t *nodes,
                                 1);
 }
 
+h2_pal_result_t h2_trie_set_fallback(h2_trie_t *trie,
+                                     h2_trie_handler_fn handler,
+                                     const void *user) {
+  if (trie == NULL || !trie->initialized || handler == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  trie->fallback_handler = handler;
+  trie->fallback_user = user;
+  return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_trie_handle(const h2_trie_t *trie, const char *path,
                                void *response) {
   const h2_trie_route_t *prefix_route = NULL;
@@ -207,6 +218,13 @@ h2_pal_result_t h2_trie_handle(const h2_trie_t *trie, const char *path,
         .remainder = prefix_remainder,
     };
     return prefix_route->handler(prefix_route->user, &match, response);
+  }
+  if (trie->fallback_handler != NULL) {
+    const h2_trie_match_t match = {
+        .path = path,
+        .remainder = path,
+    };
+    return trie->fallback_handler(trie->fallback_user, &match, response);
   }
   return H2_PAL_ERR_NOT_FOUND;
 }

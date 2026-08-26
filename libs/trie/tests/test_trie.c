@@ -64,6 +64,29 @@ static void test_prefix_requires_a_remainder(void) {
   assert(strcmp(state.remainder, "run") == 0);
 }
 
+static void test_fallback_dispatch(void) {
+  static const h2_trie_route_t route = {"known", H2_TRIE_ROUTE_EXACT,
+                                        record_handler, "known"};
+  h2_trie_node_t nodes[16];
+  h2_trie_t trie;
+  handler_state_t state = {0};
+
+  assert(h2_trie_build(&trie, nodes, 16u, &route, 1u) == H2_PAL_OK);
+  assert(h2_trie_handle(&trie, "dynamic", &state) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_trie_set_fallback(&trie, record_handler, "fallback") == H2_PAL_OK);
+  assert(h2_trie_handle(&trie, "dynamic", &state) == H2_PAL_OK);
+  assert(strcmp(state.name, "fallback") == 0);
+  assert(strcmp(state.path, "dynamic") == 0);
+  assert(strcmp(state.remainder, "dynamic") == 0);
+
+  memset(&state, 0, sizeof(state));
+  assert(h2_trie_handle(&trie, "known", &state) == H2_PAL_OK);
+  assert(strcmp(state.name, "known") == 0);
+  assert(h2_trie_set_fallback(NULL, record_handler, "fallback") ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_trie_set_fallback(&trie, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+}
+
 static void test_tokenized_lookup(void) {
   static const h2_trie_route_t routes[] = {
       {"  root  ", H2_TRIE_ROUTE_EXACT_OR_PREFIX, record_handler, "root"},
@@ -107,6 +130,7 @@ static void test_validation_and_capacity(void) {
 int main(void) {
   test_exact_and_longest_prefix_dispatch();
   test_prefix_requires_a_remainder();
+  test_fallback_dispatch();
   test_tokenized_lookup();
   test_validation_and_capacity();
   puts("h2_trie tests passed");
