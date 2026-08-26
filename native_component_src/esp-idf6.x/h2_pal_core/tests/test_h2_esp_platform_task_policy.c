@@ -159,7 +159,8 @@ int main(void) {
   cfg = config(H2_ESP_TASK_UNKNOWN_FALLBACK);
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
   assert(api->vtable->start(NULL, &options, entry, NULL, &task) == H2_PAL_OK);
-  assert(s.caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  assert(s.core == tskNO_AFFINITY &&
+         s.caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   assert(api->vtable->join(NULL, task) == H2_PAL_OK);
 
   reset();

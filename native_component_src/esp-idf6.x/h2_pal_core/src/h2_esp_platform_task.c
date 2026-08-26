@@ -67,6 +67,11 @@ static bool esp_policy_supported(const h2_esp_task_policy_t *policy) {
           (H2_ESP_HAS_PSRAM && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM));
 }
 
+static BaseType_t esp_policy_core(const h2_esp_task_policy_t *policy) {
+  return policy->core == H2_ESP_TASK_CORE_ANY ? tskNO_AFFINITY
+                                              : (BaseType_t)policy->core;
+}
+
 static h2_pal_result_t esp_policy_resolve(const char *name,
                                           h2_esp_task_policy_t *out_policy) {
   h2_pal_result_t rc =
@@ -169,16 +174,17 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
   task->entry = entry;
   task->ctx = ctx;
 
+  const BaseType_t core = esp_policy_core(&policy);
   BaseType_t ok;
   if (policy.stack_region == H2_ESP_TASK_STACK_INTERNAL) {
     ok = xTaskCreatePinnedToCore(
         esp_task_trampoline, esp_task_name(options->name), stack_size, task,
-        (UBaseType_t)policy.priority, &task->task, (BaseType_t)policy.core);
+        (UBaseType_t)policy.priority, &task->task, core);
   } else {
     task->stack_with_caps = 1;
     ok = xTaskCreatePinnedToCoreWithCaps(
         esp_task_trampoline, esp_task_name(options->name), stack_size, task,
-        (UBaseType_t)policy.priority, &task->task, (BaseType_t)policy.core,
+        (UBaseType_t)policy.priority, &task->task, core,
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   }
   if (ok != pdPASS) {
