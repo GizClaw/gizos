@@ -79,15 +79,6 @@ bool h2_esp_adc_radio_button_update(
     uint32_t button_id,
     uint32_t *out_button_id);
 
-typedef struct h2_esp_adc_value_stabilizer_config {
-    /** Reseed delta in raw counts; zero filters one raw sample per read. */
-    int32_t jump_threshold_raw;
-    /** Leading reseed samples to discard; must be zero when threshold is zero. */
-    uint8_t discard_samples;
-    /** Reseed sample delay; must be zero when threshold is zero. */
-    uint32_t sample_interval_us;
-} h2_esp_adc_value_stabilizer_config_t;
-
 typedef enum h2_esp_adc_value_read_reason {
     H2_ESP_ADC_VALUE_READ_DIRECT = 0,
     H2_ESP_ADC_VALUE_READ_STEADY,

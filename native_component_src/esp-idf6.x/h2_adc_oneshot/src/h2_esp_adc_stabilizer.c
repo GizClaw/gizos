@@ -99,19 +99,13 @@ bool h2_esp_adc_numeric_stabilizer_update_internal(
     return true;
 }
 
-bool h2_esp_adc_value_stabilizer_configure_internal(
-    h2_esp_adc_value_stabilizer_t *state,
-    const h2_esp_adc_value_stabilizer_config_t *config) {
-    if (state == NULL || config == NULL ||
-        config->jump_threshold_raw < 0 ||
-        (config->jump_threshold_raw == 0 &&
-         (config->discard_samples != 0u ||
-          config->sample_interval_us != 0u))) {
+bool h2_esp_adc_value_stabilizer_init_internal(
+    h2_esp_adc_value_stabilizer_t *state) {
+    if (state == NULL) {
         return false;
     }
 
     h2_esp_adc_value_stabilizer_t next_state = {0};
-    next_state.config = *config;
     next_state.configured = true;
     *state = next_state;
     return true;
@@ -138,8 +132,7 @@ bool h2_esp_adc_value_stabilizer_read_internal(
     void *user,
     h2_esp_adc_value_reading_t *out_reading) {
     if (state == NULL || !state->configured || sample == NULL ||
-        out_reading == NULL ||
-        (state->config.sample_interval_us != 0u && wait == NULL)) {
+        out_reading == NULL || wait == NULL) {
         return false;
     }
 
@@ -154,15 +147,14 @@ bool h2_esp_adc_value_stabilizer_read_internal(
     reading.reason = H2_ESP_ADC_VALUE_READ_STEADY;
     if (!next_state.initialized) {
         reading.reason = H2_ESP_ADC_VALUE_READ_STARTUP;
-        reseed = next_state.config.jump_threshold_raw > 0;
+        reseed = true;
     } else {
         int64_t delta = (int64_t)trigger_raw -
                         (int64_t)next_state.stable_raw;
         if (delta < 0) {
             delta = -delta;
         }
-        if (next_state.config.jump_threshold_raw > 0 &&
-            delta >= next_state.config.jump_threshold_raw) {
+        if (delta > H2_ESP_ADC_VALUE_SMOOTH_DELTA_RAW) {
             reading.reason = H2_ESP_ADC_VALUE_READ_JUMP;
             reseed = true;
         }
@@ -179,21 +171,17 @@ bool h2_esp_adc_value_stabilizer_read_internal(
     } else {
         int32_t seed_samples[H2_ESP_ADC_NUMERIC_MEDIAN_WINDOW] = {0};
         size_t seed_count = 0u;
-        if (next_state.config.discard_samples == 0u) {
-            seed_samples[seed_count++] = trigger_raw;
-        }
-        const size_t total_samples = next_state.config.discard_samples +
-                                     H2_ESP_ADC_NUMERIC_MEDIAN_WINDOW;
+        const size_t total_samples =
+            H2_ESP_ADC_VALUE_RESEED_DISCARD_SAMPLES +
+            H2_ESP_ADC_NUMERIC_MEDIAN_WINDOW;
         for (size_t i = 1u; i < total_samples; ++i) {
-            if (next_state.config.sample_interval_us != 0u) {
-                wait(user, next_state.config.sample_interval_us);
-            }
+            wait(user, H2_ESP_ADC_VALUE_RESEED_INTERVAL_US);
             int32_t raw = 0;
             if (!read_raw_sample(sample, user, &raw)) {
                 return false;
             }
             reading.immediate_raw = raw;
-            if (i >= next_state.config.discard_samples) {
+            if (i >= H2_ESP_ADC_VALUE_RESEED_DISCARD_SAMPLES) {
                 seed_samples[seed_count++] = raw;
             }
         }
