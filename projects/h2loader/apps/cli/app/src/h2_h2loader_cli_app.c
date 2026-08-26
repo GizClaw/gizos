@@ -124,7 +124,9 @@ static const char help_text[] =
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
     "          stage hold wifi reboot reboot-loader restart restart-monitor\n"
-    "          rollback upgrade coredump bleikcp-speed\n";
+    "          rollback upgrade coredump bleikcp-speed\n\n"
+    "wifi:     wifi connect <ssid> <password>\n"
+    "          wifi disconnect\n";
 
 static int parse_seconds(const char *value, uint32_t *out_ms) {
     char *end = NULL;

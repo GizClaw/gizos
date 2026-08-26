@@ -104,6 +104,10 @@ static void test_help_and_usage(void) {
 
     assert(run_cli(&output, 2, help) == H2_H2LOADER_CLI_EXIT_OK);
     assert(strstr(output.bytes, "commands: package golden check scan") != NULL);
+    assert(strstr(output.bytes,
+        "wifi:     wifi connect <ssid> <password>\n"
+        "          wifi disconnect\n") != NULL);
+    assert(strstr(output.bytes, "secret") == NULL);
 
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 4, raw) == H2_H2LOADER_CLI_EXIT_USAGE);

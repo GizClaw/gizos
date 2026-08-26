@@ -105,6 +105,28 @@ Loader 与 app image 都返回结构化 `H2_LOADER_STATUS`。状态包括 device
 
 `bleikcp-speed` 是独立的 native C baseline client，只访问 `FEE0/FEE1/FEE2` Baseline service；它不提供 H2Loader management BLE discovery、Firmware 或 Console。macOS 使用 Darwin CoreBluetooth PAL；Linux 在真实 BLE Host PAL 可用前明确返回 unsupported。
 
+## 连接 Wi-Fi
+
+设备运行 Loader image 时，可以通过 reliable command session 连接 Wi-Fi：
+
+```sh
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+  --port <serial-port> \
+  wifi connect <ssid> <password>
+```
+
+`ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以通过 Runtime `wifi_settings` 读取并重新连接。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
+
+该命令只允许用于 `status` 报告 `active_role=h2loader` 的设备。App image 上调用会被 Host Core 拒绝；CLI 不提供任意 raw command 旁路。主动断开当前连接：
+
+```sh
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
+  --port <serial-port> \
+  wifi disconnect
+```
+
+`wifi disconnect` 不删除已经保存的 STA 配置。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
+
 ## 构建 Package
 
 文件参数使用 PAL filesystem 的绝对路径。macOS 暴露 `/tmp` 与 `/Users`，Linux
