@@ -38,7 +38,7 @@ make cfg-doctor
 
 每个文件独立求值并报告 `[OK] env loaded`、`[WARNING] env missing` 或 `[ERROR] env invalid`，失败文件造成的 environment 变化会被丢弃。已提交的 `.env/devenv` 无效时 Make-owned command 立即失败，不能回退到 inherited SDK；复制出的测试仓库缺少 adapter 时仍只报告 warning。私有文件无效时丢弃其变化并继续使用共享环境。environment loader 不回显文件输出或变量值，随后执行的 Doctor 只报告上述非 secret 信息。Shell 文件已经触发的外部副作用无法回滚，不属于只读检查保证。`.env/devenv` 根据仓库根目录解析同级 `../firmwares-devenv/export.sh`，为所有开发者提供统一的 SDK 和 toolchain environment；它不依赖调用命令的当前目录，也不再加载 `.env/<os-user>`。`.env/users/<os-user>.md` 只供人和 Agent 阅读，永远不会 source。直接调用 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader --` 时只使用调用方继承的 environment。
 
-`make cfg-doctor` 没有收到显式 Wi-Fi 配置时默认使用仓库允许共享的 `HAIVIVI-MFG` manufacturing/test network。使用其他网络时，不要把 credential 写入仓库 env；只在本机创建 `~/.config/h2loader/env`：
+仓库不提供默认 Wi-Fi SSID 或 password。只有仍需要构建期 Wi-Fi 配置的 target 才从显式 environment 读取凭据；不要把 credential 写入仓库 env，只在本机创建 `~/.config/h2loader/env`：
 
 ```sh
 export H2LOADER_WIFI_SSID="private-network"
@@ -125,7 +125,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   wifi disconnect
 ```
 
-`wifi disconnect` 不删除已经保存的 STA 配置。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
+`wifi disconnect` 不删除已经保存的 STA 配置。仓库和 operation environment wrapper 都不补默认 SSID 或 password；依赖 Runtime `wifi_settings` 的 App 必须先在 Loader 中成功执行 `wifi connect`。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
 
 ## 构建 Package
 
@@ -230,7 +230,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 不支持 reliable command contract 的旧 BK7258 image 不能通过 legacy raw H2Loader command 迁移。只有默认 `scan`、`status`、`reboot-loader` 等 Loader recovery command 都无法通信，并且对应 board 文档明确进入 recovery 时，才允许使用独立的 BootROM recovery 流程。
 
-可共享的 Serial port、USB/BLE identity、板型映射，以及带日期的最后一次 Loader、App 或 MFG 验证基线可以记录在 `.env/users/<os-user>.md` 并提交到 Git；历史验证基线不代表设备当前实时状态。本地 package URL、个人或敏感 Wi-Fi credential、private endpoint 和其他 secret 不能写进仓库文档或提交到 Git。仓库只内置明确允许共享的 `HAIVIVI-MFG` manufacturing/test network；H2Loader 仍通过 environment 读取，不解析 Markdown operator context。
+可共享的 Serial port、USB/BLE identity、板型映射，以及带日期的最后一次 Loader、App 或 MFG 验证基线可以记录在 `.env/users/<os-user>.md` 并提交到 Git；历史验证基线不代表设备当前实时状态。本地 package URL、Wi-Fi credential、private endpoint 和其他 secret 不能写进仓库文档或提交到 Git。H2Loader 不从 Markdown operator context 或仓库默认值取得凭据。
 
 主动取消当前 staged candidate：
 

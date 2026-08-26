@@ -70,17 +70,11 @@ else
   h2_log WARNING 'env missing: ~/.config/h2loader/env'
 fi
 
-if [ -z "${H2LOADER_WIFI_SSID:-}" ]; then
-  H2LOADER_WIFI_SSID=HAIVIVI-MFG
-fi
-if [ "$H2LOADER_WIFI_SSID" = HAIVIVI-MFG ] && [ -z "${H2LOADER_WIFI_PASSWORD:-}" ]; then
-  H2LOADER_WIFI_PASSWORD='!haivivi'
-fi
 if h2_color_enabled; then
   H2LOADER_COLOR=always
 else
   H2LOADER_COLOR=never
 fi
-export H2LOADER_WIFI_SSID H2LOADER_WIFI_PASSWORD H2LOADER_COLOR
+export H2LOADER_COLOR
 
 exec "$@"
