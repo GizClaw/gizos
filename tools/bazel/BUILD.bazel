@@ -2,7 +2,7 @@ load("@bk7258_pip//:requirements.bzl", "requirement")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
-load(":firmware.bzl", "firmware_version")
+load(":firmware.bzl", "firmware_version_flag")
 load(":release_bundle.bzl", "firmware_release_bundle")
 
 package(default_visibility = ["//visibility:public"])
@@ -112,9 +112,14 @@ py_test(
     }),
 )
 
-firmware_version(
+firmware_version_flag(
     name = "firmware_version",
     build_setting_default = "bazel-native-artifacts",
+)
+
+firmware_version_flag(
+    name = "release_version",
+    build_setting_default = "bazel-release-batch",
 )
 
 py_library(

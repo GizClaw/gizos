@@ -41,7 +41,7 @@ def _bk7258_firmware_impl(ctx):
     if bool(ctx.file.memory_contract) != bool(ctx.executable.memory_checker):
         fail("memory_contract and memory_checker must be declared together")
     output_root = ctx.label.name
-    version = ctx.attr._firmware_version[FirmwareVersionInfo].value
+    version = ctx.attr.version[FirmwareVersionInfo].value
     ap_elf = ctx.actions.declare_file(output_root + "/ap/firmware.elf")
     ap_map = ctx.actions.declare_file(output_root + "/ap/firmware.map")
     ap_image = ctx.actions.declare_file(output_root + "/ap/app.bin")
@@ -177,7 +177,6 @@ _bk7258_firmware = rule(
             allow_single_file = True,
             default = "//native_component_src/bk7258/ap/cmake:h2_bazel_archive.cmake",
         ),
-        "_firmware_version": attr.label(default = "//tools/bazel:firmware_version"),
         "_sdk_version": attr.label(
             allow_single_file = True,
             default = "//tools/bazel:native_versions/bk7258_sdk_commit.txt",
@@ -258,6 +257,10 @@ _bk7258_firmware = rule(
         "target": attr.string(
             mandatory = True,
             values = sorted(_TARGET_CONFIGS),
+        ),
+        "version": attr.label(
+            default = "//tools/bazel:firmware_version",
+            providers = [FirmwareVersionInfo],
         ),
     },
 )

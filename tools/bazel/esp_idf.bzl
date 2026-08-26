@@ -37,7 +37,7 @@ _CI_GRAPH = Label("//tools/bazel/platforms:ci_graph")
 
 def _esp_idf_firmware_impl(ctx):
     output_root = ctx.label.name
-    version = ctx.attr._firmware_version[FirmwareVersionInfo].value
+    version = ctx.attr.version[FirmwareVersionInfo].value
     elf = ctx.actions.declare_file(output_root + "/firmware.elf")
     map_file = ctx.actions.declare_file(output_root + "/firmware.map")
     app_image = ctx.actions.declare_file(output_root + "/app.bin")
@@ -171,7 +171,6 @@ _esp_idf_firmware = rule(
             allow_single_file = True,
             default = "//native_component_src/esp-idf6.x/cmake:h2_bazel_archive.cmake",
         ),
-        "_firmware_version": attr.label(default = "//tools/bazel:firmware_version"),
         "_sdk_version": attr.label(
             allow_single_file = True,
             default = "//tools/bazel:native_versions/esp_idf_commit.txt",
@@ -233,6 +232,10 @@ _esp_idf_firmware = rule(
         "target": attr.string(
             mandatory = True,
             values = sorted(_TARGET_CONFIGS),
+        ),
+        "version": attr.label(
+            default = "//tools/bazel:firmware_version",
+            providers = [FirmwareVersionInfo],
         ),
     },
 )

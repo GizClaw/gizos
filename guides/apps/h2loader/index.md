@@ -87,14 +87,14 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 ## Firmware Release
 
-推送 `v<version>` tag 时，`.github/workflows/release.yml` 执行 closed DAG：`catalog → ESP32-S3/ESP32-P4 与 BK7258 slices → firmware-bundle → release-bundle → publish`。每一步只接收上一步声明并校验过的 artifact，最后一个 assembly job 验证完整 firmware index、版本、asset SHA-256 与无额外输入。通过 `workflow_dispatch` 手动运行时，调用方提供 `version` 并选择目标 branch；workflow 执行相同 DAG，但只上传完整 `release-bundle-<version>` Actions artifact，不创建 GitHub Release。新增、删除或移动 launcher 后，Bazel provider catalog、CI matrix 与 release coverage 同源，不能由脚本维护另一份 expected entry 列表。
+推送 `v<version>` tag 时，`.github/workflows/release.yml` 执行 closed DAG：`catalog → ESP32-S3/ESP32-P4 与 BK7258 slices → firmware-bundle → release-bundle → publish`。这里的 tag version 是 immutable release batch identity，不是每个 firmware 的产品版本。每一步只接收上一步声明并校验过的 artifact，最后一个 assembly job 验证完整 firmware index、逐项版本、asset SHA-256 与无额外输入。通过 `workflow_dispatch` 手动运行时，调用方提供 batch version 并选择目标 branch；workflow 执行相同 DAG，但只上传完整 `release-bundle-<version>` Actions artifact，不创建 GitHub Release。新增、删除或移动 launcher 后，Bazel provider catalog、CI matrix 与 release coverage 同源，不能由脚本维护另一份 expected entry 列表。
 
 每个 firmware 在同一个 GitHub Release 中提供：
 
 - `<board>-<image>-<target>.update.tar.zlib`：deploy 与 H2Loader stage 使用的正式安装包。
 - `<board>-h2loader-<target>.recovery.h2fb`：Loader entry 的确定性 factory bundle，含 board/target、driver、flash offset 和每个成员 SHA-256。
 
-每个 `:package` target 使用 `<board>-<image>-<target>.firmware.json` 传递 entry、role、board、target、version 与各 release asset SHA-256；`//tools/bazel:firmware_release_bundle` 校验完整 catalog 后聚合为 `firmware-index.json`，metadata 不再单独发布。`firmware-index.json` 必须完整覆盖全部维护中的 ESP/BK7258 entry；`SHA256SUMS` 覆盖索引和全部 firmware 发布文件。设备安装消费 `update.tar.zlib`，raw recovery 只消费匹配的 `.h2fb`。Release 不发布 ELF 或 diagnostic archive；内部 `:firmware` 的 `DefaultInfo` 仍包含 ELF、map 和直接烧录文件，供对应提交的本地调试、烧录与 coredump/backtrace 分析。任一 firmware、package 或 catalog build 失败时，publish job 不创建部分 Release。
+每个最终 firmware 可以通过 `firmware_version(name, value)` 声明自己或一个明确 lockstep 产品组的 SemVer，并把该 label 传给 ESP、BK7258、BK3633 或 JieLi firmware rule 的 `version`。没有显式声明的旧 target 继续使用 `//tools/bazel:firmware_version` compatibility flag。同一 release batch 可以包含多个 firmware version；每个 `:package` target 使用 `<board>-<image>-<target>.firmware.json` 传递 entry、role、board、target、version 与各 release asset SHA-256，package manifest 与 native firmware version 必须相同。`//tools/bazel:firmware_release_bundle` 校验完整 catalog 后聚合为 `firmware-index.json`，其顶层 `version` 是 batch identity，每个 firmware item 的 `version` 是该固件自己的版本；metadata 不再单独发布。`firmware-index.json` 必须完整覆盖全部维护中的 ESP/BK7258 entry；`SHA256SUMS` 覆盖索引和全部 firmware 发布文件。设备安装消费 `update.tar.zlib`，raw recovery 只消费匹配的 `.h2fb`。Release 不发布 ELF 或 diagnostic archive；内部 `:firmware` 的 `DefaultInfo` 仍包含 ELF、map 和直接烧录文件，供对应提交的本地调试、烧录与 coredump/backtrace 分析。任一 firmware、package、version 或 catalog validation 失败时，publish job 不创建部分 Release。
 
 BK3633 的 `:firmware` target 仍由 Bazel/CI 构建和验证，但没有 `FirmwareReleaseInfo`，因此不得出现在 catalog、任何 release slice、`firmware-index.json` 或 GitHub Release。这个 exclusion 由 catalog/release tests 和 final input allowlist 同时 fail closed；不能因为 BK3633 target 可以成功构建就把 graph success 当作可发布证据。
 

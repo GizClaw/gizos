@@ -36,6 +36,14 @@ FIRMWARE_SLICES = {
     "esp32p4": ("esp", "esp32p4"),
     "bk7258": ("bk7258", "bk7258"),
 }
+FIRMWARE_VERSION_PATTERN = re.compile(
+    r"^(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)"
+    r"(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 
 
 class ReleaseError(RuntimeError):
@@ -132,7 +140,16 @@ def input_files(path: Path | None) -> list[Path]:
     return files
 
 
-def load_catalog(files: list[Path], version: str) -> list[dict[str, str]]:
+def validate_firmware_version(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value.encode("ascii", errors="ignore")) == len(value)
+        and len(value) <= 31
+        and FIRMWARE_VERSION_PATTERN.fullmatch(value) is not None
+    )
+
+
+def load_catalog(files: list[Path]) -> list[dict[str, str]]:
     matches = [path for path in files if path.name == "firmware-catalog.json"]
     if len(matches) != 1:
         raise ReleaseError("release input must contain one firmware-catalog.json")
@@ -151,7 +168,7 @@ def load_catalog(files: list[Path], version: str) -> list[dict[str, str]]:
             or not isinstance(item.get("label"), str)
             or not item["label"].endswith(":package")
             or not isinstance(item.get("target"), str)
-            or item.get("version") != version
+            or not validate_firmware_version(item.get("version"))
         ):
             raise ReleaseError("firmware catalog contains an invalid entry")
         entry = item["entry"]
@@ -223,7 +240,7 @@ def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
         json.dumps(catalog, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    load_catalog([path], version)
+    load_catalog([path])
 
 
 def build_firmware(
@@ -234,7 +251,7 @@ def build_firmware(
     files: list[Path],
     output: Path,
 ) -> None:
-    catalog = load_catalog(files, version)
+    catalog = load_catalog(files)
     platform, target = FIRMWARE_SLICES[slice_name]
     selected = [
         item
@@ -314,12 +331,13 @@ def build_firmware_bundle(
     files: list[Path],
     output: Path,
 ) -> None:
-    load_catalog(files, version)
+    load_catalog(files)
     environment = dict(os.environ)
     environment["H2_FIRMWARE_RELEASE_INPUT_DIR"] = str(input_dir.resolve())
     options = [
         "--repo_env=H2_FIRMWARE_RELEASE_INPUT_DIR",
         f"--//tools/bazel:firmware_version={version}",
+        f"--//tools/bazel:release_version={version}",
     ]
     label = "//tools/bazel:firmware_release_bundle"
     command(
@@ -401,7 +419,7 @@ def assemble_final(
         if (
             not isinstance(item, dict)
             or item.get("platform") not in {"esp", "bk7258"}
-            or item.get("version") != version
+            or not validate_firmware_version(item.get("version"))
             or not isinstance(item.get("assets"), list)
         ):
             raise ReleaseError("firmware index contains an invalid entry")

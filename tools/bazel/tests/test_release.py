@@ -32,7 +32,7 @@ class ReleaseTest(unittest.TestCase):
                 "firmware_count": 1,
                 "firmware": [{
                     "platform": "esp",
-                    "version": "1.2.3",
+                    "version": "2.0.0",
                     "assets": [{"name": asset.name}],
                 }],
             }),
@@ -104,7 +104,7 @@ class ReleaseTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(release.ReleaseError, "invalid entry"):
-                release.load_catalog([path], "1.2.3")
+                release.load_catalog([path])
 
     def test_catalog_requires_final_package_target(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -115,7 +115,7 @@ class ReleaseTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(release.ReleaseError, "invalid entry"):
-                release.load_catalog([path], "1.2.3")
+                release.load_catalog([path])
 
     def test_catalog_rejects_starlark_errors_with_zero_exit(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -168,7 +168,7 @@ class ReleaseTest(unittest.TestCase):
                 "platform": "bk7258",
                 "role": "app",
                 "target": "bk7258",
-                "version": "1.2.3",
+                "version": "2.0.0",
             },
         }
         results = [

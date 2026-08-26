@@ -7,8 +7,30 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
+
+
+FIRMWARE_VERSION_PATTERN = re.compile(
+    r"^(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)"
+    r"(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+
+
+def validate_firmware_version(value: object, entry: object) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value.encode("ascii", errors="ignore")) != len(value)
+        or len(value) > 31
+        or not FIRMWARE_VERSION_PATTERN.fullmatch(value)
+    ):
+        raise ValueError(f"invalid firmware version: {entry}")
+    return value
 
 
 def validate_package_manifest(item: dict[str, object]) -> None:
@@ -57,8 +79,7 @@ def assemble(inputs: list[Path], output: Path, version: str) -> None:
             for key in required_identity
         ):
             raise ValueError("firmware catalog contains an invalid identity")
-        if item.get("version") != version:
-            raise ValueError(f"catalog version mismatch: {item['entry']}")
+        validate_firmware_version(item.get("version"), item["entry"])
     expected = {item["entry"] for item in catalog}
     if len(expected) != len(catalog):
         raise ValueError("firmware catalog contains duplicate entries")
@@ -74,7 +95,7 @@ def assemble(inputs: list[Path], output: Path, version: str) -> None:
             f"unexpected={sorted(actual - expected)}"
         )
     catalog_identity = {
-        item["entry"]: {key: item[key] for key in ("platform", "board", "image", "role", "target")}
+        item["entry"]: {key: item[key] for key in ("platform", "board", "image", "role", "target", "version")}
         for item in catalog
     }
     if output.exists():
@@ -84,9 +105,8 @@ def assemble(inputs: list[Path], output: Path, version: str) -> None:
         output.mkdir(parents=True)
     asset_names: set[str] = set()
     for item in firmware:
-        if item.get("version") != version:
-            raise ValueError(f"firmware version mismatch: {item.get('entry')}")
-        identity = {key: item.get(key) for key in ("platform", "board", "image", "role", "target")}
+        validate_firmware_version(item.get("version"), item.get("entry"))
+        identity = {key: item.get(key) for key in ("platform", "board", "image", "role", "target", "version")}
         if identity != catalog_identity[item["entry"]]:
             raise ValueError(f"firmware identity mismatch: {item['entry']}")
         validate_package_manifest(item)
