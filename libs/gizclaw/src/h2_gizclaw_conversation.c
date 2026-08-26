@@ -411,7 +411,7 @@ bool h2_gizclaw_conversation_input_ready(
 
 int h2_gizclaw_conversation_configure_pcm(
     h2_gizclaw_conversation_t *conversation,
-    const h2_audio_pcm_format_t *format) {
+    const h2_audio_pcm_format_t *format, int opus_complexity) {
   if (conversation == NULL || format == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (!h2_gizclaw_conversation_input_ready(conversation) ||
@@ -424,6 +424,8 @@ int h2_gizclaw_conversation_configure_pcm(
       format->frame_samples_per_channel == 0u) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  if (opus_complexity < 0 || opus_complexity > 10)
+    return H2_PAL_ERR_INVALID_ARG;
 
   const size_t opus_frame_samples = format->sample_rate_hz / 50u;
   const size_t maximum_provider_samples = format->frame_samples_per_channel;
@@ -459,7 +461,8 @@ int h2_gizclaw_conversation_configure_pcm(
     h2_pal_mem_free(conversation->allocator, samples);
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  if (opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(0)) != OPUS_OK) {
+  if (opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(opus_complexity)) !=
+      OPUS_OK) {
     h2_pal_mem_free(conversation->allocator, encoder);
     h2_pal_mem_free(conversation->allocator, samples);
     return H2_PAL_ERR_UNSUPPORTED;
