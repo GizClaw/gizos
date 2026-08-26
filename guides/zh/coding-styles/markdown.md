@@ -12,8 +12,10 @@
 
 ## 段落和换行
 
-- 普通段落不按 80 列硬换行，每个自然段保持连续。
-- 不因为修改相邻内容而重排无关段落。
+- 手写 Markdown 的普通 prose 段落不设置 80 列或其它固定源码列宽，每个自然段保持一条连续的物理源码行；editor、formatter、贡献者和 Agent 都不能按 print width 插入换行。
+- 只有 Markdown 结构或作者语义需要时才保留物理行边界，包括 heading、段落间空行、独立 list item、table row、fenced code 的 delimiter 和内容、blockquote 结构、generated 内容及显式 hard break。
+- List item 内的 prose continuation 不能仅因缩进或达到固定列宽而换行；移除换行不改变预期 Markdown 结构和渲染时，该换行不属于语义边界。
+- 新增或修改的普通 prose 段落必须使用连续源码行。改动触及已有固定列宽换行的段落时，可以整理完整的当前段落，但不能重排相邻未改段落、无关文件或范围外的已有违规内容。
 - Exact command、path、URL、symbol 和 protocol token 保持完整。
 - 一个段落只表达一个主题；内容过长时拆成小节或列表。
 

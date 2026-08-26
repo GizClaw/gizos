@@ -116,6 +116,12 @@
 - Mermaid、anchor、sidebar 和 internal link 在 VitePress 中正常渲染。
 - Build、test、flash 和使用命令可以复制执行，并在正确工作目录运行。
 
+## Markdown 源码
+
+- Issue 审查检查 issue specification，开发后自我审查检查 local diff 或 branch，PR Agent 审查检查最新 PR head；三类审查都对各自对象中的新增或修改手写 Markdown 应用同一源码换行规则。
+- 手写 Markdown 的新增或修改普通 prose 段落如果只因 80 列或其它固定 print width 插入物理换行，必须作为 documentation-format finding；reviewer 报告前必须确认该换行不是 Markdown 结构、显式 hard break 或 generated 内容的一部分。
+- 改动触及已有固定列宽换行的普通 prose 段落时，可以检查并整理完整的当前段落，但不能要求重排相邻未改段落、无关文件或范围外的已有违规内容。
+
 ## Git 内容
 
 - Diff 或计划改动只包含本任务相关内容。
