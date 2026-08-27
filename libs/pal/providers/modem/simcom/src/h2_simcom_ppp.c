@@ -93,7 +93,6 @@ h2_pal_result_t h2_simcom_modem_data_open(h2_pal_modem_t *platform, uint32_t tim
 }
 
 h2_pal_result_t h2_simcom_modem_data_close(h2_pal_modem_t *platform, uint32_t timeout_ms) {
-    (void)timeout_ms;
     h2_simcom_modem_t *modem = h2_simcom_from_platform(platform);
     if (modem == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -104,14 +103,19 @@ h2_pal_result_t h2_simcom_modem_data_close(h2_pal_modem_t *platform, uint32_t ti
     h2_pal_result_t result = modem->config.data_close != NULL
         ? modem->config.data_close(modem->config.transport_user, timeout_ms)
         : H2_PAL_ERR_UNSUPPORTED;
-    modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
-    modem->data_status.ip4_valid = 0u;
+    if (result == H2_PAL_OK) {
+        h2_simcom_modem_notify_data_closed(modem, H2_PAL_OK);
+        return H2_PAL_OK;
+    }
     modem->data_status.last_error = result;
+    const h2_pal_modem_event_t event = {
+        .result = result,
+    };
     h2_simcom_post_system_event(
         modem,
-        H2_PAL_SYSTEM_EVENT_TYPE_MODEM_DATA_CLOSED,
-        &modem->data_status,
-        sizeof(modem->data_status));
+        H2_PAL_SYSTEM_EVENT_TYPE_MODEM_ERROR,
+        &event,
+        sizeof(event));
     return result;
 }
 

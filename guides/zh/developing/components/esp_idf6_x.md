@@ -55,6 +55,8 @@ event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向�
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook
 补充 PPP 等不能仅凭 if-key 可靠判断的 kind。
 
+ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。注销 handler 必须发生在任何 callback state 释放之前，避免迟到的 LOST_IP/PPP phase event 访问已释放对象。`power_gpio < 0` 明确表示 BSP 没有可驱动的物理断电能力；此时 teardown 仍释放本机资源，但不能据此声称 modem 已物理断电。
+
 `h2_pal_core` 实现 ESP-IDF 6.x 的 PAL backend。它负责把 ESP event loop、
 FreeRTOS、ESP network、NVS、filesystem、Bluetooth、crypto 和 power API 转换为
 `libs/pal/include` 中定义的 contract。HTTP 由同一 component 编译 portable

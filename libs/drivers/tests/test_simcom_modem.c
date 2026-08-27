@@ -22,6 +22,9 @@ typedef struct command_state {
     int data_open_error;
     int data_open_calls;
     int data_close_calls;
+    int data_close_error;
+    int deinit_calls;
+    int deinit_error;
     char last_command[64];
     size_t command_calls;
 } command_state_t;
@@ -115,8 +118,15 @@ static h2_pal_result_t data_open(
 
 static h2_pal_result_t data_close(void *user, uint32_t timeout_ms) {
     assert(timeout_ms == 5678u || timeout_ms == 1000u);
-    ((command_state_t *)user)->data_close_calls++;
-    return H2_PAL_OK;
+    command_state_t *state = (command_state_t *)user;
+    state->data_close_calls++;
+    return state->data_close_error ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+}
+
+static h2_pal_result_t deinit_transport(void *user) {
+    command_state_t *state = (command_state_t *)user;
+    state->deinit_calls++;
+    return state->deinit_error ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
 static h2_pal_result_t wait_gnss_ready(void *user, uint32_t timeout_ms) {
@@ -131,12 +141,79 @@ static void init_command_modem(
     h2_simcom_modem_t *modem) {
     const h2_simcom_modem_config_t config = {
         .transport_user = state,
+        .deinit = deinit_transport,
         .command = command_response,
         .data_open = data_open,
         .data_close = data_close,
         .wait_gnss_ready = wait_gnss_ready,
     };
     assert(h2_simcom_modem_init(modem, &config) == H2_PAL_OK);
+}
+
+static void test_whole_modem_close_skips_graceful_data_close(void) {
+    command_state_t state = { 0 };
+    h2_simcom_modem_t modem;
+    init_command_modem(&state, &modem);
+    h2_pal_modem_t *api = h2_simcom_modem_platform(&modem);
+
+    assert(h2_pal_modem_open(api, 1000u) == H2_PAL_OK);
+    assert(h2_pal_modem_data_open(api, 1234u) == H2_PAL_OK);
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_OK);
+    assert(state.data_close_calls == 0);
+    assert(state.deinit_calls == 1);
+    assert(modem.opened == 0u);
+    assert(modem.prepared == 0u);
+    assert(modem.capabilities == 0u);
+    assert(modem.data_status.state == H2_PAL_MODEM_DATA_CLOSED);
+
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_OK);
+    assert(state.deinit_calls == 1);
+    h2_simcom_modem_deinit(&modem);
+}
+
+static void test_whole_modem_close_failure_is_retryable(void) {
+    command_state_t state = { .deinit_error = 1 };
+    h2_simcom_modem_t modem;
+    init_command_modem(&state, &modem);
+    h2_pal_modem_t *api = h2_simcom_modem_platform(&modem);
+
+    assert(h2_pal_modem_open(api, 1000u) == H2_PAL_OK);
+    assert(h2_pal_modem_data_open(api, 1234u) == H2_PAL_OK);
+    const uint32_t capabilities = modem.capabilities;
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_ERR_IO);
+    assert(state.data_close_calls == 0);
+    assert(state.deinit_calls == 1);
+    assert(modem.opened != 0u);
+    assert(modem.prepared != 0u);
+    assert(modem.capabilities == capabilities);
+    assert(modem.data_status.state == H2_PAL_MODEM_DATA_OPEN);
+
+    state.deinit_error = 0;
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_OK);
+    assert(state.deinit_calls == 2);
+    assert(modem.opened == 0u);
+    assert(modem.data_status.state == H2_PAL_MODEM_DATA_CLOSED);
+    h2_simcom_modem_deinit(&modem);
+}
+
+static void test_graceful_data_close_failure_keeps_open_state(void) {
+    command_state_t state = { .data_close_error = 1 };
+    h2_simcom_modem_t modem;
+    init_command_modem(&state, &modem);
+    h2_pal_modem_t *api = h2_simcom_modem_platform(&modem);
+
+    assert(h2_pal_modem_open(api, 1000u) == H2_PAL_OK);
+    assert(h2_pal_modem_data_open(api, 1234u) == H2_PAL_OK);
+    assert(h2_pal_modem_data_close(api, 5678u) == H2_PAL_ERR_TIMEOUT);
+    assert(state.data_close_calls == 1);
+    assert(modem.data_status.state == H2_PAL_MODEM_DATA_OPEN);
+    assert(modem.data_status.ip4_valid != 0u);
+    assert(modem.data_status.last_error == H2_PAL_ERR_TIMEOUT);
+
+    assert(h2_pal_modem_close(api, 1u) == H2_PAL_OK);
+    assert(state.data_close_calls == 1);
+    assert(state.deinit_calls == 1);
+    h2_simcom_modem_deinit(&modem);
 }
 
 static void test_identity_status_data_call_and_gnss(void) {
@@ -506,6 +583,9 @@ static void test_ppp_rejections_are_terminal(void) {
 }
 
 int main(void) {
+    test_whole_modem_close_skips_graceful_data_close();
+    test_whole_modem_close_failure_is_retryable();
+    test_graceful_data_close_failure_keeps_open_state();
     test_identity_status_data_call_and_gnss();
     test_absent_sim_and_bad_imei();
     test_capabilities_are_probed();

@@ -1,4 +1,5 @@
 #include "h2_esp_simcom_modem.h"
+#include "h2_esp_simcom_teardown.h"
 
 #include "h2_esp_platform_core.h"
 #include "h2_simcom_modem.h"
@@ -326,9 +327,51 @@ static h2_pal_result_t transport_init(void *user) {
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t transport_deinit(void *user) {
+static h2_pal_result_t teardown_power_off(void *user) {
+    h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
+    return set_power(modem, 0);
+}
+
+static h2_pal_result_t teardown_restore_default_netif(void *user) {
     h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
     restore_default_netif(modem);
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t teardown_unregister_event_handlers(void *user) {
+    h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
+    esp_err_t err;
+    /* Instance unregistration synchronizes on the ESP event-loop mutex. Once
+     * all three calls return, no active handler can still use modem->events. */
+    if (modem->ppp_status_instance != NULL) {
+        err = esp_event_handler_instance_unregister(
+            NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, modem->ppp_status_instance);
+        if (err != ESP_OK) {
+            return map_esp_error(err);
+        }
+        modem->ppp_status_instance = NULL;
+    }
+    if (modem->lost_ip_instance != NULL) {
+        err = esp_event_handler_instance_unregister(
+            IP_EVENT, IP_EVENT_PPP_LOST_IP, modem->lost_ip_instance);
+        if (err != ESP_OK) {
+            return map_esp_error(err);
+        }
+        modem->lost_ip_instance = NULL;
+    }
+    if (modem->got_ip_instance != NULL) {
+        err = esp_event_handler_instance_unregister(
+            IP_EVENT, IP_EVENT_PPP_GOT_IP, modem->got_ip_instance);
+        if (err != ESP_OK) {
+            return map_esp_error(err);
+        }
+        modem->got_ip_instance = NULL;
+    }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t teardown_destroy_dce(void *user) {
+    h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
 #ifdef CONFIG_ESP_MODEM_URC_HANDLER
     if (modem->dce != NULL) {
         (void)esp_modem_set_urc(modem->dce, NULL);
@@ -341,33 +384,46 @@ static h2_pal_result_t transport_deinit(void *user) {
         esp_modem_destroy(modem->dce);
         modem->dce = NULL;
     }
-    if (modem->ppp_status_instance != NULL) {
-        (void)esp_event_handler_instance_unregister(
-            NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, modem->ppp_status_instance);
-        modem->ppp_status_instance = NULL;
-    }
-    if (modem->lost_ip_instance != NULL) {
-        (void)esp_event_handler_instance_unregister(
-            IP_EVENT, IP_EVENT_PPP_LOST_IP, modem->lost_ip_instance);
-        modem->lost_ip_instance = NULL;
-    }
-    if (modem->got_ip_instance != NULL) {
-        (void)esp_event_handler_instance_unregister(
-            IP_EVENT, IP_EVENT_PPP_GOT_IP, modem->got_ip_instance);
-        modem->got_ip_instance = NULL;
-    }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t teardown_destroy_netif(void *user) {
+    h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
     if (modem->ppp_netif != NULL) {
         h2_esp_platform_netif_unregister(modem->ppp_netif);
         esp_netif_destroy(modem->ppp_netif);
         modem->ppp_netif = NULL;
     }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t teardown_destroy_event_group(void *user) {
+    h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
     if (modem->events != NULL) {
         vEventGroupDelete(modem->events);
         modem->events = NULL;
     }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t transport_deinit(void *user) {
+    h2_esp_simcom_modem_t *modem = (h2_esp_simcom_modem_t *)user;
+    modem->close_requested = true;
+    const h2_esp_simcom_teardown_config_t config = {
+        .user = modem,
+        .power_off = teardown_power_off,
+        .restore_default_netif = teardown_restore_default_netif,
+        .unregister_event_handlers = teardown_unregister_event_handlers,
+        .destroy_dce = teardown_destroy_dce,
+        .destroy_netif = teardown_destroy_netif,
+        .destroy_event_group = teardown_destroy_event_group,
+    };
+    const h2_pal_result_t rc = h2_esp_simcom_run_teardown(&config);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
     modem->transport_ready = false;
     modem->close_requested = false;
-    (void)set_power(modem, 0);
     return H2_PAL_OK;
 }
 
