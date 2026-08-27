@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef H2_PION_TESTING
+#define H2_PION_TESTING 0
+#endif
+
 struct h2_pal_webrtc_channel {
   struct h2_pal_webrtc_peer *peer;
   struct h2_pion *provider;
@@ -40,6 +44,13 @@ struct h2_pal_webrtc_peer {
   int offer_started;
   int closed;
   int close_pending;
+#if H2_PION_TESTING
+  size_t test_opus_send_attempts;
+  size_t test_first_opus_len;
+  uint64_t test_first_opus_hash;
+  int test_opus_payload_mismatch;
+  int test_block_next_opus_send;
+#endif
 };
 
 struct h2_pion {
@@ -53,6 +64,39 @@ struct h2_pion {
 
 static void h2_pion_peer_close_now(h2_pal_webrtc_peer_t *peer);
 static void h2_pion_finish_pending_destroy(h2_pion_t *provider);
+
+#if H2_PION_TESTING
+static uint64_t h2_pion_test_opus_hash(const uint8_t *data, size_t len) {
+  uint64_t hash = UINT64_C(1469598103934665603);
+  for (size_t i = 0u; i < len; ++i) {
+    hash ^= data[i];
+    hash *= UINT64_C(1099511628211);
+  }
+  return hash;
+}
+#endif
+
+static h2_pal_result_t h2_pion_submit_opus(h2_pal_webrtc_peer_t *peer,
+                                           const uint8_t *opus,
+                                           size_t opus_len) {
+#if H2_PION_TESTING
+  const uint64_t hash = h2_pion_test_opus_hash(opus, opus_len);
+  if (peer->test_opus_send_attempts == 0u) {
+    peer->test_first_opus_len = opus_len;
+    peer->test_first_opus_hash = hash;
+  } else if (peer->test_first_opus_len != opus_len ||
+             peer->test_first_opus_hash != hash) {
+    peer->test_opus_payload_mismatch = 1;
+  }
+  peer->test_opus_send_attempts++;
+  if (peer->test_block_next_opus_send) {
+    peer->test_block_next_opus_send = 0;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+#endif
+  return (h2_pal_result_t)h2PionGoPeerSendOpus(peer->go_handle,
+                                               (uint8_t *)opus, opus_len);
+}
 
 static void *h2_pion_alloc(h2_pion_t *provider, size_t size) {
   void *ptr = h2_pal_mem_alloc(&provider->mem, size);
@@ -301,8 +345,8 @@ static h2_pal_result_t h2_pion_peer_poll(h2_pal_webrtc_peer_t *peer,
       }
     }
     if (track->pending_opus_len != 0u) {
-      h2_pal_result_t send_result = (h2_pal_result_t)h2PionGoPeerSendOpus(
-          peer->go_handle, track->pending_opus, track->pending_opus_len);
+      h2_pal_result_t send_result = h2_pion_submit_opus(
+          peer, track->pending_opus, track->pending_opus_len);
       if (send_result == H2_PAL_OK)
         track->pending_opus_len = 0u;
       else if (send_result != H2_PAL_ERR_WOULD_BLOCK)
@@ -350,8 +394,7 @@ static h2_pal_result_t h2_pion_peer_send_opus(h2_pal_webrtc_peer_t *peer,
   if (peer == NULL || peer->closed) {
     return H2_PAL_ERR_CLOSED;
   }
-  return (h2_pal_result_t)h2PionGoPeerSendOpus(peer->go_handle, (uint8_t *)opus,
-                                               opus_len);
+  return h2_pion_submit_opus(peer, opus, opus_len);
 }
 
 static h2_pal_result_t h2_pion_channel_send(h2_pal_webrtc_channel_t *channel,
@@ -511,6 +554,27 @@ h2_pal_result_t h2_pion_media_track_destroy(h2_pal_webrtc_track_t **track_ptr) {
   h2_pal_mem_free(&provider->mem, track);
   return H2_PAL_OK;
 }
+
+#if H2_PION_TESTING
+void h2_pion_test_block_next_opus_send(h2_pal_webrtc_peer_t *peer) {
+  if (peer == NULL)
+    return;
+  peer->test_opus_send_attempts = 0u;
+  peer->test_first_opus_len = 0u;
+  peer->test_first_opus_hash = 0u;
+  peer->test_opus_payload_mismatch = 0;
+  peer->test_block_next_opus_send = 1;
+}
+
+size_t h2_pion_test_opus_send_attempts(h2_pal_webrtc_peer_t *peer) {
+  return peer == NULL ? 0u : peer->test_opus_send_attempts;
+}
+
+int h2_pion_test_opus_send_payloads_match(h2_pal_webrtc_peer_t *peer) {
+  return peer != NULL && peer->test_opus_send_attempts != 0u &&
+         !peer->test_opus_payload_mismatch;
+}
+#endif
 
 void h2_pion_destroy(h2_pion_t **provider_ptr) {
   if (provider_ptr == NULL || *provider_ptr == NULL) {

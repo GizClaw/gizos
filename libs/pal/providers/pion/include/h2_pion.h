@@ -48,6 +48,15 @@ h2_pion_media_track_create(h2_pion_t *provider,
                            h2_pal_webrtc_track_t **out_track);
 h2_pal_result_t h2_pion_media_track_destroy(h2_pal_webrtc_track_t **track);
 
+#if defined(H2_PION_TESTING) && H2_PION_TESTING
+/** Test-only: reject the next Track Opus submission with WOULD_BLOCK. */
+void h2_pion_test_block_next_opus_send(h2_pal_webrtc_peer_t *peer);
+/** Test-only: return Track Opus submissions observed after the block setup. */
+size_t h2_pion_test_opus_send_attempts(h2_pal_webrtc_peer_t *peer);
+/** Test-only: report whether all observed submissions matched the first. */
+int h2_pion_test_opus_send_payloads_match(h2_pal_webrtc_peer_t *peer);
+#endif
+
 /** Closes all peers and destroys the provider. NULL is accepted. */
 void h2_pion_destroy(h2_pion_t **provider);
 
