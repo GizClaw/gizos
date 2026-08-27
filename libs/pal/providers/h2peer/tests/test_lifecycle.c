@@ -1477,6 +1477,7 @@ static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
 
 typedef struct test_media_track_state {
     int read_ready;
+    size_t reads;
     size_t writes;
     uint8_t last_write[8];
     size_t last_write_len;
@@ -1493,6 +1494,7 @@ static h2_pal_result_t test_active_track_read(void *user, uint8_t *opus,
     opus[1] = 0x42u;
     *out_len = 2u;
     state->read_ready = 0;
+    state->reads++;
     return H2_PAL_OK;
 }
 
@@ -1506,7 +1508,7 @@ static h2_pal_result_t test_active_track_write(void *user, const uint8_t *opus,
     return H2_PAL_OK;
 }
 
-static void test_media_track_poll_owns_opus_progress(void) {
+static void test_media_track_poll_retains_opus_across_backpressure(void) {
     test_mem_t mem = {0};
     test_provider_t provider = {0};
     h2_peer_config_t config = test_config(&mem);
@@ -1536,8 +1538,14 @@ static void test_media_track_poll_owns_opus_progress(void) {
     assert(h2_pal_webrtc_peer_set_remote_sdp(
                api, peer, H2_PAL_WEBRTC_SDP_ANSWER, answer) == H2_PAL_OK);
     assert(h2_pal_webrtc_peer_poll(api, peer, 10) == H2_PAL_OK);
+    assert(track_state.reads == 0u);
+    provider.block_next_srtp_send = 1;
     assert(h2_pal_webrtc_peer_poll(api, peer, 10) == H2_PAL_OK);
-    assert(!track_state.read_ready && provider.last_rtp_len == 14u);
+    assert(!track_state.read_ready && track_state.reads == 1u);
+    assert(provider.srtp_send_calls == 1u && provider.last_rtp_len == 0u);
+    assert(h2_pal_webrtc_peer_poll(api, peer, 10) == H2_PAL_OK);
+    assert(track_state.reads == 1u);
+    assert(provider.srtp_send_calls == 2u && provider.last_rtp_len == 14u);
     assert(h2_peer_receive_rtp_for_test(peer, provider.last_rtp,
                                         provider.last_rtp_len) == H2_PAL_OK);
     assert(track_state.writes == 1u && track_state.last_write_len == 2u);
@@ -1599,6 +1607,6 @@ int main(void) {
     test_public_instance_requires_bounded_tcp_send();
     test_ice_server_transport_validation();
     test_media_track_lifecycle();
-    test_media_track_poll_owns_opus_progress();
+    test_media_track_poll_retains_opus_across_backpressure();
     return 0;
 }
