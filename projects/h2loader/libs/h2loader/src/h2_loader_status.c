@@ -153,6 +153,9 @@ int h2_loader_status_format(
     size_t out_len) {
     int len;
     uint64_t states;
+    const char *board;
+    const char *target;
+    const char *chip;
 
     if (status == NULL || out == NULL || out_len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -160,6 +163,9 @@ int h2_loader_status_format(
     if (h2_loader_states_pack(status, &states) != H2_PAL_OK) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    board = default_if_empty(status->board, "unknown");
+    target = default_if_empty(status->target, "unknown");
+    chip = default_if_empty(status->chip, target);
     len = snprintf(out,
         out_len,
         "H2_LOADER_STATUS board=%s target=%s chip=%s capabilities=0x%08lx command_availability=0x%08lx states=0x%016llx "
@@ -169,9 +175,9 @@ int h2_loader_status_format(
         "running_partition=%lu next_partition=%lu canonical_partition=%lu trial_partition=%lu "
         "upgrade_last=%ld upgrade_step=%s upgrade_package_sha256=%s candidate_board=%s candidate_target=%s "
         "candidate_version=%s candidate_bytes=%llu candidate_sha256=%s",
-        default_if_empty(status->board, "unknown"),
-        default_if_empty(status->target, "unknown"),
-        default_if_empty(status->chip, default_if_empty(status->target, "unknown")),
+        board,
+        target,
+        chip,
         (unsigned long)status->capabilities,
         (unsigned long)status->command_availability,
         (unsigned long long)states,

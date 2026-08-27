@@ -2472,6 +2472,11 @@ static void test_mfg_acceptance_revision_invalidates_obsolete_pass(void) {
 static void test_mfg_summary_validation_and_status_format(void) {
     h2_loader_status_t status = {0};
     char output[H2_LOADER_STATUS_LINE_MAX];
+    strcpy(status.board, "format-board");
+    strcpy(status.target, "format-target");
+    strcpy(status.chip, "format-chip");
+    status.capabilities = H2_LOADER_CAPABILITY_UART;
+    status.command_availability = H2_LOADER_COMMAND_AVAILABLE_STATUS;
     status.active_role = H2_LOADER_ACTIVE_ROLE_APP;
     status.app_confirmed = 1;
     status.mfg = mfg_summary_with_prefix(H2_LOADER_MFG_STEP_TOTAL);
@@ -2479,6 +2484,15 @@ static void test_mfg_summary_validation_and_status_format(void) {
         &status.mfg, H2_LOADER_MFG_STEP_TOTAL));
     assert(!h2_loader_mfg_summary_is_passed(&status.mfg, 10u));
     assert(h2_loader_status_format(&status, output, sizeof(output)) == H2_PAL_OK);
+    assert(strncmp(
+               output,
+               "H2_LOADER_STATUS board=format-board target=format-target "
+               "chip=format-chip capabilities=0x00000001 "
+               "command_availability=0x00000008 ",
+               strlen(
+                   "H2_LOADER_STATUS board=format-board target=format-target "
+                   "chip=format-chip capabilities=0x00000001 "
+                   "command_availability=0x00000008 ")) == 0);
     assert(strstr(output, "states=0x") != NULL);
     assert(h2_loader_states_pack(&status, &status.states) == H2_PAL_OK);
     assert(h2_loader_states_app_confirmed(status.states));
