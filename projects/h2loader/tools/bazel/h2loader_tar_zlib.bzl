@@ -173,17 +173,19 @@ _h2loader_tar_zlib = rule(
     },
 )
 
-def h2loader_tar_zlib(name, board, image, role, target, **kwargs):
+def h2loader_tar_zlib(name, board, image, role, target, recovery_config = None, **kwargs):
     """Packages one standard native firmware target for H2Loader installation."""
     _validate_identity(board, image, role, target)
     if bool(kwargs.get("package_data")) != bool(kwargs.get("package_data_root")):
         fail("package_data and package_data_root must be declared together")
-    recovery_config = None
+    if recovery_config != None and not (role == "h2loader" and target == "bk7258"):
+        fail("recovery_config is only valid for BK7258 H2Loader firmware")
     if role == "h2loader" and target == "bk7258":
-        key = (target, board)
-        if key not in _BK_RECOVERY_CONFIGS:
-            fail("unsupported H2Loader BK recovery layout: %s/%s" % key)
-        recovery_config = _BK_RECOVERY_CONFIGS[key]
+        if recovery_config == None:
+            key = (target, board)
+            if key not in _BK_RECOVERY_CONFIGS:
+                fail("unsupported H2Loader BK recovery layout: %s/%s" % key)
+            recovery_config = _BK_RECOVERY_CONFIGS[key]
     _h2loader_tar_zlib(
         name = name,
         board = board,
