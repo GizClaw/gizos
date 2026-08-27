@@ -369,10 +369,11 @@ h2_h2loader_host_command_terminal_t h2_h2loader_host_command_parse_terminal(
     return H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE;
 }
 
-h2_pal_result_t h2_h2loader_host_command_execute_transport(
+h2_pal_result_t h2_h2loader_host_command_execute_transport_with_finish(
     void *transport,
     h2_h2loader_host_command_write_fn write_command,
     h2_h2loader_host_command_read_fn read_response,
+    h2_h2loader_host_command_finish_fn finish_response,
     const h2_h2loader_host_command_request_t *request,
     h2_h2loader_host_command_result_t *out_result) {
     uint8_t response[8192u];
@@ -433,17 +434,42 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
                 response_len,
                 contract.accepted_disconnect_token)) {
             out_result->terminal = H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
-            return H2_PAL_OK;
+            if (finish_response == NULL) {
+                return H2_PAL_OK;
+            }
+            rc = finish_response(transport);
+            out_result->transport_result = rc;
+            return rc;
         }
         return rc;
     }
     out_result->terminal = h2_h2loader_host_command_parse_terminal(
         response, response_len, &contract);
     if (out_result->terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
-        return H2_PAL_OK;
+        if (contract.lifecycle_transition == 0u || finish_response == NULL) {
+            return H2_PAL_OK;
+        }
+        rc = finish_response(transport);
+        out_result->transport_result = rc;
+        return rc;
     }
     return out_result->terminal ==
             H2_H2LOADER_HOST_COMMAND_TERMINAL_UNSUPPORTED
         ? H2_PAL_ERR_UNSUPPORTED
         : H2_PAL_ERR_IO;
+}
+
+h2_pal_result_t h2_h2loader_host_command_execute_transport(
+    void *transport,
+    h2_h2loader_host_command_write_fn write_command,
+    h2_h2loader_host_command_read_fn read_response,
+    const h2_h2loader_host_command_request_t *request,
+    h2_h2loader_host_command_result_t *out_result) {
+    return h2_h2loader_host_command_execute_transport_with_finish(
+        transport,
+        write_command,
+        read_response,
+        NULL,
+        request,
+        out_result);
 }
