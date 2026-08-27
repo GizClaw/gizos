@@ -15,11 +15,20 @@ static const char *const fs_sources[] = {"/tmp", "/home"};
 static const char *const fs_targets[] = {"/tmp", "/home"};
 
 h2_pal_result_t h2_h2loader_cli_target_start(void) {
-    return (h2_pal_result_t)h2_linux_host_fs_create(
+    h2_pal_result_t result = (h2_pal_result_t)h2_linux_host_fs_create(
         fs_sources, fs_targets, 2u, &host_fs);
+    if (result != H2_PAL_OK) return result;
+    result = (h2_pal_result_t)h2_pal_system_event_init(
+        h2_linux_system_event_api());
+    if (result != H2_PAL_OK) {
+        h2_linux_host_fs_destroy(host_fs);
+        host_fs = NULL;
+    }
+    return result;
 }
 
 void h2_h2loader_cli_target_stop(void) {
+    h2_pal_system_event_deinit(h2_linux_system_event_api());
     h2_linux_host_fs_destroy(host_fs);
     host_fs = NULL;
 }

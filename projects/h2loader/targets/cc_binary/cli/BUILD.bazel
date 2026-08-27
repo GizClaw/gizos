@@ -34,6 +34,48 @@ cc_test(
     deps = [":host_path"],
 )
 
+cc_test(
+    name = "target_lifecycle_test",
+    srcs = [
+        "h2_h2loader_cli_target.h",
+        "h2_h2loader_cli_target_test.c",
+    ] + select({
+        "@platforms//os:macos": ["platform_darwin.c"],
+        "@platforms//os:linux": ["platform_linux.c"],
+        "@platforms//os:windows": ["platform_windows.c"],
+        "//conditions:default": [],
+    }),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":host_path",
+        "//libs/pal",
+        "//projects/h2loader/apps/cli/app:h2loader_cli_app",
+    ] + select({
+        "@platforms//os:macos": [
+            "//libs/pal/providers/darwin/pal_core",
+            "//libs/pal/providers/desktop/pal_core",
+        ],
+        "@platforms//os:linux": [
+            "//libs/pal/providers/desktop/pal_core",
+            "//libs/pal/providers/linux/pal_core",
+            "//libs/pal/providers/linux/serial_host",
+        ],
+        "@platforms//os:windows": [
+            "//libs/pal/providers/windows/pal_core",
+            "//libs/pal/providers/windows/serial_host",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
 cc_binary(
     name = "h2loader",
     srcs = [
