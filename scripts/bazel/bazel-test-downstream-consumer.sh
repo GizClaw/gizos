@@ -29,12 +29,34 @@ cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
 cp "$fixture_root/ram_regions.csv" "$consumer_root/ram_regions.csv"
 cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loader.defaults"
-for policy in private_esp_task_policy private_bk_ap_task_policy private_bk_cp_task_policy; do
-    mkdir -p "$consumer_root/$policy"
-    cp "$fixture_root/$policy.c" "$consumer_root/$policy/$policy.c"
-    cp "$fixture_root/$policy.h" "$consumer_root/$policy/$policy.h"
-    cp "$fixture_root/$policy.CMakeLists.txt.fixture" \
-        "$consumer_root/$policy/CMakeLists.txt"
+mkdir -p "$consumer_root/private_esp_task_policy/tests"
+sed 's/private_esp_task_policy/h2_esp_target_task_policy/g' \
+    "$fixture_root/private_esp_task_policy.c" > \
+    "$consumer_root/private_esp_task_policy/h2_esp_target_task_policy.c"
+sed 's/PRIVATE_ESP_TASK_POLICY/H2_ESP_TARGET_TASK_POLICY/g; s/private_esp_task_policy/h2_esp_target_task_policy/g' \
+    "$fixture_root/private_esp_task_policy.h" > \
+    "$consumer_root/private_esp_task_policy/h2_esp_target_task_policy.h"
+sed 's/private_esp_task_policy/h2_esp_target_task_policy/g' \
+    "$fixture_root/private_esp_task_policy.CMakeLists.txt.fixture" > \
+    "$consumer_root/private_esp_task_policy/CMakeLists.txt"
+cp "$fixture_root/task_policy_test.c" \
+    "$consumer_root/private_esp_task_policy/tests/test_h2_esp_target_task_policy.c"
+
+for unit in ap cp; do
+    source_policy="private_bk_${unit}_task_policy"
+    destination="$consumer_root/private_bk_task_policy/$unit"
+    mkdir -p "$destination/tests"
+    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
+        "$fixture_root/${source_policy}.c" > \
+        "$destination/h2_bk_target_task_policy.c"
+    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
+        "$fixture_root/${source_policy}.h" > \
+        "$destination/h2_bk_target_task_policy.h"
+    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
+        "$fixture_root/${source_policy}.CMakeLists.txt.fixture" > \
+        "$destination/CMakeLists.txt"
+    cp "$fixture_root/task_policy_test.c" \
+        "$destination/tests/test_h2_bk_target_task_policy.c"
 done
 
 case "$(uname -s)-$(uname -m)" in
@@ -69,7 +91,7 @@ cd "$consumer_root"
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
-    'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware)'
+    'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
 
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
@@ -118,6 +140,9 @@ cp BUILD.bazel.complete BUILD.bazel
     //:i18n_runtime \
     //:native_component \
     //:package \
+    //:private_bk_ap_task_policy_test \
+    //:private_bk_cp_task_policy_test \
+    //:private_esp_task_policy_test \
     //:runtime
 
 "${BAZEL_BIN:-bazel}" \
