@@ -157,17 +157,22 @@ static uint32_t effective_command_availability(
     const h2_loader_t *loader,
     const h2_loader_status_t *status) {
     uint32_t available;
+    uint32_t public_available =
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
 
     if (loader == NULL || status == NULL) {
         return 0u;
     }
+    if (status->installed.valid || status->staged.valid) {
+        public_available |= H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+    }
+    if (!mfg_gate_satisfied(loader, &status->mfg)) {
+        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+    }
     available = command_availability_load(
         &loader->command_availability) &
         H2_LOADER_COMMAND_AVAILABILITY_ALL;
-    if (!mfg_gate_satisfied(loader, &status->mfg)) {
-        available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
-    }
-    return available;
+    return available & public_available;
 }
 
 static int require_command_available(
