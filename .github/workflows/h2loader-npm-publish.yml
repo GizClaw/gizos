@@ -54,19 +54,21 @@ jobs:
           test "$package_name" = "$PACKAGE_NAME"
           node -e 'const version = require("./" + process.env.PACKAGE_JSON).version; if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$/.test(version)) process.exit(1)'
 
+          view_error=$(mktemp)
+          trap 'rm -f "$view_error"' EXIT
           set +e
-          view_output=$(npm view "$package_name@$package_version" version --json 2>&1)
+          view_output=$(npm view "$package_name@$package_version" version --json 2>"$view_error")
           view_status=$?
           set -e
           if [ "$view_status" -eq 0 ]; then
             test "$(printf '%s' "$view_output" | node -e 'let value=""; process.stdin.on("data", chunk => value += chunk).on("end", () => console.log(JSON.parse(value)))')" = "$package_version"
             printf 'publish=false\n' >> "$GITHUB_OUTPUT"
             printf 'Version %s is already published; nothing to do.\n' "$package_version"
-          elif printf '%s' "$view_output" | grep --quiet 'E404'; then
+          elif grep --quiet 'E404' "$view_error"; then
             printf 'publish=true\n' >> "$GITHUB_OUTPUT"
             printf 'Version %s is missing and will be published.\n' "$package_version"
           else
-            printf '%s\n' "$view_output" >&2
+            cat "$view_error" >&2
             exit "$view_status"
           fi
 
