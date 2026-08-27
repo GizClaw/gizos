@@ -187,7 +187,10 @@ int h2_bk_h2loader_init_app_client(
         .chip = runtime->chip,
         .active_name = active_name,
         .active_version = s_ble.active_version,
-        .capabilities = H2_LOADER_CAPABILITIES_APP,
+        .hardware_capabilities =
+            H2_LOADER_CAPABILITY_UART |
+            H2_LOADER_CAPABILITY_WIFI |
+            H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
         .coredump_partition_id = H2_BK_H2LOADER_COREDUMP_ADDR,
     };
@@ -249,8 +252,7 @@ static int h2_bk_h2loader_start_app_ble_with_mode(
             .allocator = runtime->mem,
         },
         .board = runtime->board,
-        .active_role = H2_LOADER_BLE_ROLE_APP,
-        .capabilities = H2_LOADER_CAPABILITIES_APP,
+        .capabilities = s_ble.client_config.hardware_capabilities,
         .advertising_mode = advertising_mode,
         .handler = handle_ble_session,
         .handler_user = &s_ble,

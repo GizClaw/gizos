@@ -725,7 +725,10 @@ void h2_esp_h2loader_run_with_command_service_config(
     config.loader.h2loader_partition_id = 1u;
     config.loader.app_partition_id = 2u;
     config.loader.mfg_required_total = runtime_loader_config->mfg_required_total;
-    config.loader.capabilities = H2_LOADER_CAPABILITIES_LOADER;
+    config.loader.hardware_capabilities =
+        H2_LOADER_CAPABILITY_UART |
+        H2_LOADER_CAPABILITY_WIFI |
+        H2_LOADER_CAPABILITY_BLE;
     config.loader.active_identity.format = 1u;
     config.loader.active_identity.role = H2_LOADER_IMAGE_ROLE_H2LOADER;
     (void)snprintf(

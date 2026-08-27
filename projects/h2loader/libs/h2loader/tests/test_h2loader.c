@@ -100,7 +100,7 @@ typedef struct command_test_io {
 
 typedef struct capability_lock_test_context {
     h2_loader_t *loader;
-    uint32_t capability;
+    uint32_t command;
     size_t lock_calls;
     size_t unlock_calls;
 } capability_lock_test_context_t;
@@ -112,8 +112,8 @@ static h2_pal_result_t capability_lock_test_lock(
 
     (void)mutex;
     context->lock_calls += 1u;
-    return (h2_pal_result_t)h2_loader_set_capability_availability(
-        context->loader, context->capability, false);
+    return (h2_pal_result_t)h2_loader_set_command_availability(
+        context->loader, context->command, false);
 }
 
 static h2_pal_result_t capability_lock_test_unlock(
@@ -408,7 +408,7 @@ static void test_wifi_connect_persists_confirmed_config(void) {
     assert(h2_loader_command_execute(
                &command, sizeof(argv) / sizeof(argv[0]), argv) == H2_PAL_OK);
     assert(context.connect_calls == 2);
-    assert(context.status_calls == 3);
+    assert(context.status_calls == 4);
     assert(context.save_calls == 1);
     assert(context.connected.ssid_len == strlen("test-network"));
     assert(context.saved.ssid_len == context.connected.ssid_len);
@@ -429,7 +429,7 @@ static void test_wifi_connect_persists_confirmed_config(void) {
                &command, sizeof(argv) / sizeof(argv[0]), argv) ==
            H2_PAL_ERR_IO);
     assert(context.connect_calls == 1);
-    assert(context.status_calls == 1);
+    assert(context.status_calls == 2);
     assert(context.save_calls == 1);
 }
 
@@ -561,10 +561,10 @@ static h2_pal_result_t command_test_init(
     static const h2_pal_http_vtable_t http_vtable = {0};
     static const h2_pal_wifi_sta_vtable_t wifi_vtable = {0};
     static const h2_pal_disk_vtable_t disk_vtable = {0};
-    h2_pal_fs_api_t fs = {.vtable = &fs_vtable};
-    h2_pal_http_api_t http = {.vtable = &http_vtable};
-    h2_pal_wifi_sta_api_t wifi = {.vtable = &wifi_vtable};
-    h2_pal_disk_api_t disk = {.vtable = &disk_vtable};
+    static const h2_pal_fs_api_t fs = {.vtable = &fs_vtable};
+    static const h2_pal_http_api_t http = {.vtable = &http_vtable};
+    static const h2_pal_wifi_sta_api_t wifi = {.vtable = &wifi_vtable};
+    static const h2_pal_disk_api_t disk = {.vtable = &disk_vtable};
     h2_loader_command_config_t config;
 
     memset(&config, 0, sizeof(config));
@@ -1426,7 +1426,7 @@ static void stage_test_fixture_init(stage_test_fixture_t *fixture) {
     fixture->loader.config.board = "test";
     fixture->loader.config.target = "host";
     fixture->loader.config.chip = "native";
-    fixture->loader.config.capabilities = H2_LOADER_CAPABILITIES_LOADER;
+    fixture->loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     fixture->loader.config.active_identity.role =
         H2_LOADER_IMAGE_ROLE_H2LOADER;
     strcpy(fixture->loader.config.active_identity.version, "test");
@@ -2472,18 +2472,20 @@ static void test_mfg_acceptance_revision_invalidates_obsolete_pass(void) {
 static void test_mfg_summary_validation_and_status_format(void) {
     h2_loader_status_t status = {0};
     char output[H2_LOADER_STATUS_LINE_MAX];
+    status.active_role = H2_LOADER_ACTIVE_ROLE_APP;
     status.app_confirmed = 1;
     status.mfg = mfg_summary_with_prefix(H2_LOADER_MFG_STEP_TOTAL);
     assert(h2_loader_mfg_summary_is_passed(
         &status.mfg, H2_LOADER_MFG_STEP_TOTAL));
     assert(!h2_loader_mfg_summary_is_passed(&status.mfg, 10u));
     assert(h2_loader_status_format(&status, output, sizeof(output)) == H2_PAL_OK);
-    assert(strstr(output, "state=idle app_confirmed=1") != NULL);
-    assert(strstr(output, "mfg=passed mfg_tests=22/22") != NULL);
-    assert(strstr(output, "mfg_steps=") != NULL);
+    assert(strstr(output, "states=0x") != NULL);
+    assert(h2_loader_states_pack(&status, &status.states) == H2_PAL_OK);
+    assert(h2_loader_states_app_confirmed(status.states));
+    assert(h2_loader_states_mfg_step(status.states, 0u) ==
+           H2_LOADER_MFG_STEP_PASSED);
     status.mfg.step_status[7] = H2_LOADER_MFG_STEP_SKIPPED;
     assert(h2_loader_status_format(&status, output, sizeof(output)) == H2_PAL_OK);
-    assert(strstr(output, "mfg=partial mfg_tests=21/22") != NULL);
     assert(!h2_loader_mfg_summary_is_passed(
         &status.mfg, H2_LOADER_MFG_STEP_TOTAL));
     status.mfg.step_status[7] = 4u;
@@ -2551,7 +2553,7 @@ static void test_status_format_fits_shared_line_capacity(void) {
     memset(status.board, 'b', sizeof(status.board) - 1u);
     memset(status.target, 't', sizeof(status.target) - 1u);
     memset(status.chip, 'c', sizeof(status.chip) - 1u);
-    memset(status.active_role, 'r', sizeof(status.active_role) - 1u);
+    status.active_role = H2_LOADER_ACTIVE_ROLE_H2LOADER;
     memset(status.active_name, 'n', sizeof(status.active_name) - 1u);
     memset(status.active_version, 'v', sizeof(status.active_version) - 1u);
     memset(status.active_checksum, 'a', sizeof(status.active_checksum) - 1u);
@@ -2581,7 +2583,7 @@ static void test_status_format_fits_shared_line_capacity(void) {
     assert(h2_loader_status_format(&status, output, sizeof(output)) == H2_PAL_OK);
     assert(strstr(
         output, "command_availability=0x00000003") != NULL);
-    assert(strstr(output, "mfg=partial mfg_tests=0/22") != NULL);
+    assert(strstr(output, "states=0x") != NULL);
 }
 
 static void test_command_availability_flags(void) {
@@ -2613,8 +2615,10 @@ static void test_command_availability_flags(void) {
     loader.config.pref = &pref;
     loader.config.package.allocator = &mem;
     loader.config.h2loader_partition_id = 1u;
-    loader.config.capabilities = H2_LOADER_CAP_REBOOT;
-    loader.status.capabilities = H2_LOADER_CAP_REBOOT;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
+    loader.status.capabilities = H2_LOADER_CAPABILITY_UART;
+    assert(h2_loader_set_implemented_commands(
+               &loader, H2_LOADER_COMMAND_AVAILABILITY_ALL) == H2_PAL_OK);
 
     assert(h2_loader_set_command_availability(
                NULL,
@@ -2623,7 +2627,7 @@ static void test_command_availability_flags(void) {
     assert(h2_loader_set_command_availability(
                &loader, 0u, false) == H2_PAL_ERR_INVALID_ARG);
     assert(h2_loader_set_command_availability(
-               &loader, UINT32_C(1) << 12, false) ==
+               &loader, UINT32_C(1) << 20, false) ==
            H2_PAL_ERR_INVALID_ARG);
     assert(h2_loader_set_command_availability(
                &loader,
@@ -2666,20 +2670,26 @@ static void test_command_availability_reflects_loader_state(void) {
     h2_loader_status_t status;
 
     stage_test_fixture_init(&fixture);
-    fixture.loader.config.capabilities = H2_LOADER_CAP_REBOOT;
+    fixture.loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
+    assert(h2_loader_set_implemented_commands(
+               &fixture.loader, H2_LOADER_COMMAND_AVAILABILITY_ALL) ==
+           H2_PAL_OK);
     fixture.context.installed_valid = 0;
 
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
-    assert(status.command_availability ==
-           H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER) != 0u);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT) == 0u);
     assert(h2_loader_request_install_staged(&fixture.loader) ==
            H2_PAL_ERR_INVALID_STATE);
 
     fixture.context.installed_valid = 1;
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
-    assert(status.command_availability ==
-           (H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |
-            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER));
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u);
 
     fixture.context.staged_valid = 1;
     strcpy(fixture.context.staged_version, "staged");
@@ -2688,16 +2698,20 @@ static void test_command_availability_reflects_loader_state(void) {
     fixture.context.package_exists = 1;
     fixture.context.package_size = 8u;
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
-    assert(status.command_availability ==
-           H2_LOADER_COMMAND_AVAILABILITY_ALL);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT) != 0u);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE) != 0u);
 
     assert(h2_loader_set_command_availability(
                &fixture.loader,
                H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
                false) == H2_PAL_OK);
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
-    assert(status.command_availability ==
-           H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER) != 0u);
     assert(h2_loader_set_command_availability(
                &fixture.loader,
                H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
@@ -2705,84 +2719,53 @@ static void test_command_availability_reflects_loader_state(void) {
 
     fixture.loader.config.mfg_required_total = 1u;
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
-    assert(status.command_availability ==
-           H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
-    assert(h2_loader_set_capability_availability(
-               &fixture.loader, H2_LOADER_CAP_REBOOT, false) == H2_PAL_OK);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER) != 0u);
+    assert(h2_loader_set_implemented_commands(&fixture.loader, 0u) == H2_PAL_OK);
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
     assert(status.command_availability == 0u);
 }
 
-static void test_capability_availability_flags(void) {
+static void test_hardware_capabilities_are_stable(void) {
     stage_test_fixture_t fixture;
     h2_loader_status_t status;
-    const uint32_t capabilities[] = {
-        H2_LOADER_CAP_STATUS,
-        H2_LOADER_CAP_STAGE,
-        H2_LOADER_CAP_UPGRADE,
-        H2_LOADER_CAP_REBOOT,
-        H2_LOADER_CAP_RESTART,
-        H2_LOADER_CAP_ROLLBACK,
-        H2_LOADER_CAP_HOLD,
-        H2_LOADER_CAP_COREDUMP,
-    };
 
     stage_test_fixture_init(&fixture);
-    fixture.loader.config.capabilities = H2_LOADER_CAPABILITIES_ALL;
-
-    assert(h2_loader_set_capability_availability(
-               NULL, H2_LOADER_CAP_STATUS, false) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_loader_set_capability_availability(
-               &fixture.loader, 0u, false) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_loader_set_capability_availability(
-               &fixture.loader, UINT32_C(1) << 12, false) ==
-           H2_PAL_ERR_INVALID_ARG);
-    assert(h2_loader_set_capability_availability(
-               &fixture.loader, H2_LOADER_CAPABILITIES_ALL, false) ==
+    fixture.loader.config.hardware_capabilities =
+        H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI;
+    assert(h2_loader_set_implemented_commands(
+               &fixture.loader, H2_LOADER_COMMAND_AVAILABILITY_ALL) ==
            H2_PAL_OK);
-    assert(h2_loader_get_available_capabilities(&fixture.loader) == 0u);
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
-    assert(status.capabilities == 0u);
-
-    for (size_t i = 0u; i < sizeof(capabilities) / sizeof(capabilities[0]);
-         ++i) {
-        assert(h2_loader_set_capability_availability(
-                   &fixture.loader, capabilities[i], true) == H2_PAL_OK);
-        assert((h2_loader_get_available_capabilities(&fixture.loader) &
-                capabilities[i]) != 0u);
-    }
-    assert(h2_loader_get_available_capabilities(&fixture.loader) ==
-           H2_LOADER_CAPABILITIES_ALL);
-
-    fixture.loader.config.capabilities = H2_LOADER_CAPABILITIES_LOADER;
-    assert(h2_loader_get_available_capabilities(&fixture.loader) ==
-           H2_LOADER_CAPABILITIES_LOADER);
-    fixture.loader.config.active_identity.role =
-        H2_LOADER_IMAGE_ROLE_H2LOADER;
-    fixture.loader.config.h2loader_partition_id = 1u;
-    fixture.loader.config.app_partition_id = 2u;
-    assert(h2_loader_set_capability_availability(
-               &fixture.loader, H2_LOADER_CAP_UPGRADE, false) == H2_PAL_OK);
-    assert(h2_loader_upgrade_start(&fixture.loader) ==
-           H2_PAL_ERR_INVALID_STATE);
+    assert(status.capabilities ==
+           (H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI));
+    assert(h2_loader_set_command_availability(
+               &fixture.loader,
+               H2_LOADER_COMMAND_AVAILABLE_STATUS,
+               false) == H2_PAL_OK);
+    assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
+    assert(status.capabilities ==
+           (H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI));
+    assert((status.command_availability &
+            H2_LOADER_COMMAND_AVAILABLE_STATUS) == 0u);
 }
 
-static void assert_command_capability_gate(
+static void assert_command_availability_gate(
     h2_loader_command_t *command,
     h2_loader_t *loader,
-    uint32_t capability,
+    uint32_t command_flag,
     size_t argc,
     const char *const *argv) {
-    assert(h2_loader_set_capability_availability(
-               loader, capability, false) == H2_PAL_OK);
-    assert(h2_loader_command_execute(command, argc, argv) ==
-           H2_PAL_ERR_INVALID_STATE);
-    assert(h2_loader_set_capability_availability(
-               loader, capability, true) == H2_PAL_OK);
+    assert(h2_loader_set_command_availability(
+               loader, command_flag, false) == H2_PAL_OK);
+    assert(h2_loader_command_execute(command, argc, argv) != H2_PAL_OK);
+    assert(h2_loader_set_command_availability(
+               loader, command_flag, true) == H2_PAL_OK);
 }
 
-static void test_loader_commands_follow_capability_availability(void) {
+static void test_loader_commands_follow_command_availability(void) {
     static const char *const status[] = {"h2loader", "status"};
     static const char *const stage[] = {"h2loader", "stage", "abort"};
     static const char *const upgrade[] = {"h2loader", "upgrade"};
@@ -2793,23 +2776,23 @@ static void test_loader_commands_follow_capability_availability(void) {
     h2_loader_command_t command;
     command_test_io_t io = {0};
 
-    loader.config.capabilities = H2_LOADER_CAPABILITIES_LOADER;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
-    assert_command_capability_gate(
-        &command, &loader, H2_LOADER_CAP_STATUS, 2u, status);
-    assert_command_capability_gate(
-        &command, &loader, H2_LOADER_CAP_STAGE, 3u, stage);
-    assert_command_capability_gate(
-        &command, &loader, H2_LOADER_CAP_UPGRADE, 2u, upgrade);
-    assert_command_capability_gate(
-        &command, &loader, H2_LOADER_CAP_REBOOT, 3u, reboot);
-    assert_command_capability_gate(
-        &command, &loader, H2_LOADER_CAP_HOLD, 3u, hold);
-    assert_command_capability_gate(
-        &command, &loader, H2_LOADER_CAP_COREDUMP, 3u, coredump);
+    assert_command_availability_gate(
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_STATUS, 2u, status);
+    assert_command_availability_gate(
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT, 3u, stage);
+    assert_command_availability_gate(
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE, 2u, upgrade);
+    assert_command_availability_gate(
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER, 3u, reboot);
+    assert_command_availability_gate(
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_HOLD_ON, 3u, hold);
+    assert_command_availability_gate(
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS, 3u, coredump);
 }
 
-static void test_loader_commands_recheck_capability_after_operation_lock(void) {
+static void test_loader_commands_recheck_availability_after_operation_lock(void) {
     static const char *const argv[] = {"h2loader", "hold", "on"};
     idle_trial_context_t idle_context = {0};
     h2_loader_t loader = {0};
@@ -2817,7 +2800,7 @@ static void test_loader_commands_recheck_capability_after_operation_lock(void) {
     command_test_io_t io = {0};
     capability_lock_test_context_t lock_context = {
         .loader = &loader,
-        .capability = H2_LOADER_CAP_HOLD,
+        .command = H2_LOADER_COMMAND_AVAILABLE_HOLD_ON,
     };
     const h2_pal_sync_vtable_t sync_vtable = {
         .lock_mutex = capability_lock_test_lock,
@@ -2842,7 +2825,7 @@ static void test_loader_commands_recheck_capability_after_operation_lock(void) {
 
     loader.config.pref = &pref;
     loader.config.power = &power;
-    loader.config.capabilities = H2_LOADER_CAP_HOLD;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
     command.config.operation_sync = &sync;
     command.config.operation_mutex = (h2_pal_mutex_t *)&lock_context;
@@ -2871,7 +2854,7 @@ static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) 
     loader.config.power = &power;
     loader.config.pref = &pref;
     loader.config.h2loader_partition_id = 1u;
-    loader.config.capabilities = H2_LOADER_CAP_REBOOT;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     loader.config.disruptive_user = &context;
     loader.config.before_disruptive = idle_before_disruptive;
 
@@ -2948,7 +2931,7 @@ static void test_loader_reboot_command_bypasses_incomplete_mfg_gate(void) {
     loader.config.pref = &pref;
     loader.config.power = &power;
     loader.config.h2loader_partition_id = 1u;
-    loader.config.capabilities = H2_LOADER_CAP_REBOOT;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     loader.config.mfg_required_total = 8u;
     loader.config.disruptive_user = &context;
     loader.config.before_disruptive = idle_before_disruptive;
@@ -2961,9 +2944,7 @@ static void test_loader_reboot_command_bypasses_incomplete_mfg_gate(void) {
     assert(h2_loader_command_execute(&command, 3u, argv) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(strstr(io.output, "result=accepted") == NULL);
-    assert(strstr(
-        io.output,
-        "H2_LOADER_REBOOT target=loader result=fail code=-7") != NULL);
+    assert(io.output_len == 0u);
     assert(context.disruptive_calls == 0);
     assert(context.reboots == 0);
     assert(h2_loader_set_command_availability(
@@ -3026,7 +3007,7 @@ static void test_app_request_commits_once_before_ack_and_teardown(void) {
     loader.config.pref = &pref;
     loader.config.package.allocator = &mem;
     loader.config.power = &power;
-    loader.config.capabilities = H2_LOADER_CAP_REBOOT;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     loader.config.disruptive_user = &context;
     loader.config.before_disruptive = idle_before_disruptive;
 
@@ -3106,7 +3087,7 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
 
     loader.config.pref = &pref;
     loader.config.package.allocator = &mem;
-    loader.config.capabilities = H2_LOADER_CAP_REBOOT;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     loader.config.disruptive_user = &context;
     loader.config.before_disruptive = idle_before_disruptive;
     assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
@@ -3475,8 +3456,8 @@ static void test_successful_upgrade_recovery_clears_staged_candidate(void) {
 static void test_command_registration_and_help(void) {
     static const char input[] = "h2loader help\nh2loader\n";
     static const char expected[] =
-        "h2loader <help|status|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n"
-        "usage: h2loader <help|status|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n";
+        "h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n"
+        "usage: h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n";
     command_test_io_t io;
     h2_loader_t loader;
     h2_loader_command_t command;
@@ -3772,7 +3753,7 @@ static void test_url_stage_discards_old_candidate_before_wifi(void) {
     assert(h2_loader_command_execute(
         &command, sizeof(argv) / sizeof(argv[0]), argv) ==
         H2_PAL_ERR_UNAVAILABLE);
-    assert(fixture.context.wifi_status_calls == 1u);
+    assert(fixture.context.wifi_status_calls == 2u);
     assert(fixture.context.package_present_when_wifi_checked == 0);
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.staged_valid == 0);
@@ -4159,7 +4140,7 @@ static int app_coredump_write(void *user, const char *data, size_t len) {
     return H2_PAL_OK;
 }
 
-static void test_app_client_derives_default_capabilities(void) {
+static void test_app_client_requires_stable_hardware_capabilities(void) {
     static const h2_pal_pref_vtable_t pref_vtable = {0};
     static const h2_pal_power_vtable_t power_vtable = {0};
     static const h2_pal_mem_vtable_t mem_vtable = {0};
@@ -4175,19 +4156,12 @@ static void test_app_client_derives_default_capabilities(void) {
     };
     h2_loader_app_client_t client;
 
-    assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
-    assert(client.config.capabilities ==
-        (H2_LOADER_CAP_STATUS |
-         H2_LOADER_CAP_RESTART |
-         H2_LOADER_CAP_ROLLBACK));
-
+    assert(h2_loader_app_client_init(&client, &config) ==
+           H2_PAL_ERR_INVALID_ARG);
+    config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     config.disk = &disk;
     assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
-    assert(client.config.capabilities == H2_LOADER_CAPABILITIES_APP);
-
-    config.capabilities = H2_LOADER_CAP_STATUS;
-    assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
-    assert(client.config.capabilities == H2_LOADER_CAP_STATUS);
+    assert(client.config.hardware_capabilities == H2_LOADER_CAPABILITY_UART);
 }
 
 static void test_app_client_coredump_uses_caller_output(void) {
@@ -4257,6 +4231,7 @@ static void test_app_return_console_prepares_before_success(void) {
         .pref = &pref,
         .power = &power,
         .allocator = &mem,
+        .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
         .h2loader_partition_id = 17u,
         .reboot_reason = 23u,
     };
@@ -4315,6 +4290,7 @@ static void test_app_return_console_reboots_when_reply_fails(void) {
         .pref = &pref,
         .power = &power,
         .allocator = &mem,
+        .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
         .h2loader_partition_id = 17u,
         .reboot_reason = 23u,
     };
@@ -4340,39 +4316,39 @@ static void test_ble_identity(void) {
     uint8_t payload[80];
     size_t payload_len = 0u;
     const uint8_t expected[] = {
-        'H', '2', 'L', 'D', 1u, 2u, 0xb1u, 0u, 0u, 0u, 6u,
+        'H', '2', 'L', 'D', 1u, 0u, 0x05u, 0u, 0u, 0u, 6u,
         'd', 'e', 'v', 'k', 'i', 't',
     };
 
     assert(h2_loader_ble_encode_identity(
-               H2_LOADER_BLE_ROLE_APP, 0xb1u, "devkit",
+               H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE, "devkit",
                payload, sizeof(payload), &payload_len) == H2_PAL_OK);
     assert(payload_len == sizeof(expected));
     assert(memcmp(payload, expected, sizeof(expected)) == 0);
     assert(h2_loader_ble_encode_identity(
-               H2_LOADER_BLE_ROLE_LOADER, 0xcfu,
+               H2_LOADER_CAPABILITIES_ALL,
                "waveshare_esp32p4_wifi6_touch_lcd_4_3",
                payload, sizeof(payload), &payload_len) == H2_PAL_OK);
     const uint8_t expected_compact[] = {
-        'H', '2', 'L', 'D', 2u, 1u, 0xcfu, 0u, 0u, 0u,
+        'H', '2', 'L', 'D', 2u, 0u, 0x07u, 0u, 0u, 0u,
         0x5eu, 0xe4u, 0x65u, 0xa0u, 0xc7u, 0xd3u, 0x26u, 0x2fu,
     };
     assert(payload_len == sizeof(expected_compact));
     assert(memcmp(payload, expected_compact, sizeof(expected_compact)) == 0);
     assert(h2_loader_ble_encode_identity(
-               H2_LOADER_BLE_ROLE_LOADER, 0x100u, "devkit",
+               UINT32_C(1) << 3, "devkit",
                payload, sizeof(payload), &payload_len) == H2_PAL_ERR_INVALID_ARG);
     memset(payload, 0xa5, sizeof(payload));
     payload_len = 42u;
     assert(h2_loader_ble_encode_identity(
-               H2_LOADER_BLE_ROLE_APP, 0xb1u, "devkit",
+               H2_LOADER_CAPABILITY_UART, "devkit",
                payload, sizeof(expected) - 1u, &payload_len) == H2_PAL_ERR_INVALID_ARG);
     for (size_t i = 0u; i < sizeof(payload); ++i) {
         assert(payload[i] == 0xa5u);
     }
     assert(payload_len == 42u);
     assert(h2_loader_ble_encode_identity(
-               H2_LOADER_BLE_ROLE_LOADER, 0xcfu,
+               H2_LOADER_CAPABILITIES_ALL,
                "waveshare_esp32p4_wifi6_touch_lcd_4_3",
                payload, sizeof(expected_compact) - 1u, &payload_len) == H2_PAL_ERR_INVALID_ARG);
     for (size_t i = 0u; i < sizeof(payload); ++i) {
@@ -4403,9 +4379,9 @@ int main(void) {
     test_status_format_fits_shared_line_capacity();
     test_command_availability_flags();
     test_command_availability_reflects_loader_state();
-    test_capability_availability_flags();
-    test_loader_commands_follow_capability_availability();
-    test_loader_commands_recheck_capability_after_operation_lock();
+    test_hardware_capabilities_are_stable();
+    test_loader_commands_follow_command_availability();
+    test_loader_commands_recheck_availability_after_operation_lock();
     test_idle_trial_never_reboots_itself();
     test_confirmed_state_without_installed_identity_stays_in_command_mode();
     test_failed_upgrade_does_not_block_app_startup();
@@ -4436,7 +4412,7 @@ int main(void) {
     test_app_client_coredump_uses_caller_output();
     test_app_return_console_prepares_before_success();
     test_app_return_console_reboots_when_reply_fails();
-    test_app_client_derives_default_capabilities();
+    test_app_client_requires_stable_hardware_capabilities();
     test_ble_identity();
     return 0;
 }

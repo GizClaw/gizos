@@ -232,8 +232,7 @@ h2_pal_result_t h2_h2loader_host_scheduler_complete(
              sizeof(final_status->active_name)) ||
          !terminated(
              final_status->active_version,
-             sizeof(final_status->active_version)) ||
-         !terminated(final_status->state, sizeof(final_status->state)))) {
+             sizeof(final_status->active_version)))) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_h2loader_host_job_result_t *job = &scheduler->jobs[index];
@@ -394,6 +393,15 @@ static const char *role_name(uint8_t role) {
     }
 }
 
+static const char *install_state_name(uint32_t state) {
+    static const char *const names[] = {
+        "unknown", "idle", "staged", "install_requested", "installing",
+        "installed_pending_confirm", "confirmed", "install_failed",
+        "return_requested", "main_failed",
+    };
+    return state < sizeof(names) / sizeof(names[0]) ? names[state] : "invalid";
+}
+
 h2_pal_result_t h2_h2loader_host_scheduler_export_json(
     const h2_h2loader_host_scheduler_t *scheduler,
     h2_h2loader_host_export_write_fn write,
@@ -453,13 +461,15 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_json(
         H2_JSON_FIELD("final_target", job->final_status.target)
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
         H2_JSON_FIELD(
-            "final_role", role_name(job->final_status.active_role))
+            "final_role", role_name((uint8_t)
+                h2_h2loader_host_status_active_role(&job->final_status)))
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
         H2_JSON_FIELD("final_name", job->final_status.active_name)
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
         H2_JSON_FIELD("final_version", job->final_status.active_version)
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
-        H2_JSON_FIELD("final_state", job->final_status.state)
+        H2_JSON_FIELD("final_state", install_state_name(
+            h2_h2loader_host_status_install_state(&job->final_status)))
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
         H2_JSON_FIELD("final_checksum", job->final_status.active_checksum)
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
@@ -477,7 +487,8 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_json(
             job->retry_count,
             (unsigned)job->input.candidate.usb_vid,
             (unsigned)job->input.candidate.usb_pid,
-            (unsigned)job->final_status.staged_valid);
+            (unsigned)h2_h2loader_host_status_staged_valid(
+                &job->final_status));
         if (count < 0 || (size_t)count >= sizeof(numbers)) {
             return H2_PAL_ERR_NO_SPACE;
         }
@@ -597,10 +608,12 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
         const char *final_fields[] = {
             job->final_status.board,
             job->final_status.target,
-            role_name(job->final_status.active_role),
+            role_name((uint8_t)h2_h2loader_host_status_active_role(
+                &job->final_status)),
             job->final_status.active_name,
             job->final_status.active_version,
-            job->final_status.state,
+            install_state_name(h2_h2loader_host_status_install_state(
+                &job->final_status)),
             job->final_status.active_checksum,
         };
         for (size_t field = 0u;
@@ -618,7 +631,8 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
             staged,
             sizeof(staged),
             ",%u,",
-            (unsigned)job->final_status.staged_valid);
+            (unsigned)h2_h2loader_host_status_staged_valid(
+                &job->final_status));
         if (staged_count < 0 || (size_t)staged_count >= sizeof(staged)) {
             return H2_PAL_ERR_NO_SPACE;
         }

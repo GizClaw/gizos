@@ -26,6 +26,7 @@ smoke_start_return_console(const h2_runtime_config_t *runtime_config) {
       .target = runtime_config->target,
       .chip = runtime_config->chip,
       .active_name = "smoke-wifi-csi",
+      .hardware_capabilities = H2_LOADER_CAPABILITIES_ALL,
       .h2loader_partition_id = 1u,
   };
   rc = h2_loader_app_client_init(&s_return_client, &return_config);

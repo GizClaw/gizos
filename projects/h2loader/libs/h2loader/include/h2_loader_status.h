@@ -13,7 +13,7 @@ extern "C" {
 
 int h2_loader_status_set_active(
     h2_loader_status_t *status,
-    const char *role,
+    h2_loader_active_role_t role,
     const char *name,
     const char *version,
     const char *checksum);

@@ -83,33 +83,52 @@ h2_pal_result_t h2_h2loader_web_status_json_write(
   append_json_string(&writer, status->target);
   append_text(&writer, ",\"chip\":");
   append_json_string(&writer, status->chip);
+  append_format(&writer,
+                ",\"capabilities\":%u,\"commandAvailability\":%u,"
+                "\"states\":\"0x%016llx\"",
+                (unsigned int)status->capabilities,
+                (unsigned int)status->command_availability,
+                (unsigned long long)status->states);
   append_text(&writer, ",\"activeName\":");
   append_json_string(&writer, status->active_name);
-  append_text(&writer, ",\"version\":");
+  append_text(&writer, ",\"activeVersion\":");
   append_json_string(&writer, status->active_version);
-  append_text(&writer, ",\"checksum\":");
+  append_text(&writer, ",\"activeChecksum\":");
   append_json_string(&writer, status->active_checksum);
+  append_format(&writer, ",\"last\":%d", (int)status->last);
+  append_text(&writer, ",\"installedVersion\":");
+  append_json_string(&writer, status->installed_version);
   append_text(&writer, ",\"installedChecksum\":");
   append_json_string(&writer, status->installed_checksum);
-  append_text(&writer, ",\"state\":");
-  append_json_string(&writer, status->state);
-  append_text(&writer, ",\"upgradePhase\":");
-  append_json_string(&writer, status->upgrade_phase);
-
-  append_format(&writer, ",\"role\":%u,\"capabilities\":%u",
-                (unsigned int)status->active_role,
-                (unsigned int)status->capabilities);
-  if (status->has_command_availability) {
-    append_format(&writer, ",\"commandAvailability\":%u",
-                  (unsigned int)status->command_availability);
-  }
+  append_text(&writer, ",\"stagedVersion\":");
+  append_json_string(&writer, status->staged_version);
+  append_text(&writer, ",\"stagedChecksum\":");
+  append_json_string(&writer, status->staged_checksum);
   append_format(&writer,
-                ",\"stagedBytes\":%llu,\"stagedValid\":%u,"
-                "\"installedValid\":%u,\"appConfirmed\":%u}",
+                ",\"stagedBytes\":\"%llu\",\"runningPartition\":%u,"
+                "\"nextPartition\":%u,\"canonicalPartition\":%u,"
+                "\"trialPartition\":%u,\"upgradeLast\":%d",
                 (unsigned long long)status->staged_bytes,
-                (unsigned int)status->staged_valid,
-                (unsigned int)status->installed_valid,
-                (unsigned int)status->app_confirmed);
+                (unsigned)status->running_partition,
+                (unsigned)status->next_partition,
+                (unsigned)status->canonical_partition,
+                (unsigned)status->trial_partition,
+                (int)status->upgrade_last);
+  append_text(&writer, ",\"upgradeStep\":");
+  append_json_string(&writer, status->upgrade_step);
+  append_text(&writer, ",\"upgradePackageSha256\":");
+  append_json_string(&writer, status->upgrade_package_sha256);
+  append_text(&writer, ",\"candidateBoard\":");
+  append_json_string(&writer, status->candidate_board);
+  append_text(&writer, ",\"candidateTarget\":");
+  append_json_string(&writer, status->candidate_target);
+  append_text(&writer, ",\"candidateVersion\":");
+  append_json_string(&writer, status->candidate_version);
+  append_format(&writer, ",\"candidateBytes\":\"%llu\",",
+                (unsigned long long)status->candidate_bytes);
+  append_text(&writer, "\"candidateSha256\":");
+  append_json_string(&writer, status->candidate_sha256);
+  append_text(&writer, "}");
 
   if (writer.failed) {
     out[0] = '\0';

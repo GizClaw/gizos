@@ -5,11 +5,6 @@
 #define H2_H2LOADER_HOST_DEFAULT_RECONNECT_DELAY_MS 1000u
 #define H2_H2LOADER_HOST_DEFAULT_RECONNECT_ATTEMPTS 30u
 
-static int bounded_nonempty_string(const char *value, size_t capacity) {
-    return value != NULL && value[0] != '\0' &&
-        memchr(value, '\0', capacity) != NULL;
-}
-
 static void emit_event(
     const h2_h2loader_host_managed_operation_config_t *config,
     h2_h2loader_host_operation_phase_t phase,
@@ -210,7 +205,8 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
     }
     if (strcmp(status.board, config->asset->board) != 0 ||
         strcmp(status.target, config->asset->target) != 0 ||
-        status.active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
+        h2_h2loader_host_status_active_role(&status) !=
+            H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
         return disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
     }
     rc = config->transport.vtable->stage(
@@ -230,8 +226,9 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
         if (rc == H2_PAL_OK &&
             (strcmp(status.board, config->asset->board) != 0 ||
              strcmp(status.target, config->asset->target) != 0 ||
-             status.active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-             status.staged_valid == 0u ||
+             h2_h2loader_host_status_active_role(&status) !=
+                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+             !h2_h2loader_host_status_staged_valid(&status) ||
              status.staged_bytes != config->asset->bytes ||
              strcmp(status.staged_checksum, config->asset->sha256) != 0)) {
             rc = H2_PAL_ERR_INVALID_STATE;
@@ -270,8 +267,9 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
         }
         if (strcmp(status.board, config->asset->board) == 0 &&
             strcmp(status.target, config->asset->target) == 0 &&
-            status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
-            status.staged_valid != 0u &&
+            h2_h2loader_host_status_active_role(&status) ==
+                H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+            h2_h2loader_host_status_staged_valid(&status) &&
             status.staged_bytes == config->asset->bytes &&
             strcmp(status.staged_checksum, config->asset->sha256) == 0) {
             *out_final_status = status;
@@ -289,8 +287,9 @@ h2_pal_result_t h2_h2loader_host_upgrade_tracker_init(
         memset(out_tracker, 0, sizeof(*out_tracker));
     }
     if (status == NULL || out_tracker == NULL ||
-        status->active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-        status->staged_valid == 0u ||
+        h2_h2loader_host_status_active_role(status) !=
+            H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+        !h2_h2loader_host_status_staged_valid(status) ||
         !h2_h2loader_host_is_safe_identity(status->board) ||
         !h2_h2loader_host_is_safe_identity(status->target) ||
         !h2_h2loader_host_is_sha256(status->staged_checksum)) {
@@ -313,31 +312,31 @@ h2_pal_result_t h2_h2loader_host_upgrade_tracker_observe(
     }
     if (!h2_h2loader_host_is_safe_identity(status->board) ||
         !h2_h2loader_host_is_safe_identity(status->target) ||
-        !bounded_nonempty_string(
-            status->upgrade_phase, sizeof(status->upgrade_phase)) ||
+        h2_h2loader_host_status_upgrade_phase(status) == 0u ||
         (status->upgrade_package_sha256[0] != '\0' &&
          !h2_h2loader_host_is_sha256(status->upgrade_package_sha256))) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (strcmp(status->board, tracker->board) != 0 ||
         strcmp(status->target, tracker->target) != 0 ||
-        status->active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
+        h2_h2loader_host_status_active_role(status) !=
+            H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if ((status->has_upgrade_last != 0u && status->upgrade_last != 0) ||
-        strcmp(status->upgrade_phase, "failed") == 0 ||
-        strcmp(status->upgrade_phase, "corrupt") == 0) {
+    if (status->upgrade_last != 0 ||
+        h2_h2loader_host_status_upgrade_phase(status) == 5u ||
+        h2_h2loader_host_status_upgrade_phase(status) == 6u) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if (strcmp(status->upgrade_phase, "trial_pending") == 0 ||
-        strcmp(status->upgrade_phase, "trial_running") == 0 ||
-        strcmp(status->upgrade_phase, "canonical_pending") == 0) {
+    if (h2_h2loader_host_status_upgrade_phase(status) == 2u ||
+        h2_h2loader_host_status_upgrade_phase(status) == 3u ||
+        h2_h2loader_host_status_upgrade_phase(status) == 4u) {
         tracker->observed_transition = 1u;
         return H2_PAL_ERR_WOULD_BLOCK;
     }
-    if (strcmp(status->upgrade_phase, "idle") == 0 &&
+    if (h2_h2loader_host_status_upgrade_phase(status) == 1u &&
         tracker->observed_transition != 0u &&
-        status->staged_valid == 0u &&
+        !h2_h2loader_host_status_staged_valid(status) &&
         strcmp(
             status->upgrade_package_sha256,
             tracker->package_sha256) == 0) {

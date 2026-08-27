@@ -24,6 +24,118 @@
 #define H2_LOADER_DOWNLOAD_REPORT_STEP 65536u
 #define H2_LOADER_COMMAND_PRINTF_BUFFER_SIZE 1024u
 #define H2_LOADER_COMMAND_STATUS_BUFFER_SIZE 2048u
+
+static int h2loader_get_coredump_partition(
+    h2_loader_command_t *self,
+    h2_pal_disk_partition_t *out_partition);
+static int h2loader_get_coredump_info(
+    h2_loader_command_t *self,
+    const h2_pal_disk_partition_t *partition,
+    uint64_t *out_stored_bytes,
+    int *out_blank);
+
+static uint32_t h2loader_effective_commands(
+    h2_loader_command_t *self,
+    const h2_loader_status_t *status) {
+    uint32_t available = h2_loader_get_command_availability(
+        self->config.loader, status);
+    h2_pal_wifi_sta_status_t wifi_status;
+    if (h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status) !=
+            H2_PAL_OK ||
+        (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&
+         wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTED &&
+         wifi_status.state != H2_PAL_WIFI_STA_STATE_GOT_IP)) {
+        available &= ~H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT;
+    }
+    h2_pal_disk_partition_t partition;
+    if (h2loader_get_coredump_partition(self, &partition) != H2_PAL_OK) {
+        available &= ~(H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
+            H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP |
+            H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE);
+    } else {
+        uint64_t stored_bytes = 0u;
+        int blank = 1;
+        if (h2loader_get_coredump_info(
+                self, &partition, &stored_bytes, &blank) != H2_PAL_OK) {
+            available &= ~(H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
+                H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP);
+        } else if (blank || stored_bytes == 0u) {
+            available &= ~H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP;
+        }
+    }
+    return available;
+}
+
+static uint32_t h2loader_command_bit(
+    size_t argc,
+    const char *const *argv) {
+    if (argc < 2u) return H2_LOADER_COMMAND_AVAILABLE_HELP;
+    if (strcmp(argv[1], "help") == 0) return H2_LOADER_COMMAND_AVAILABLE_HELP;
+    if (strcmp(argv[1], "status") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATUS;
+    if (strcmp(argv[1], "stats") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATS;
+    if (strcmp(argv[1], "memory") == 0) return H2_LOADER_COMMAND_AVAILABLE_MEMORY;
+    if (strcmp(argv[1], "upgrade") == 0) return H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE;
+    if (strcmp(argv[1], "reboot") == 0) {
+        return argc >= 3u && strcmp(argv[2], "loader") == 0
+            ? H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER
+            : H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+    }
+    if (strcmp(argv[1], "hold") == 0) {
+        return argc >= 3u && strcmp(argv[2], "off") == 0
+            ? H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF
+            : H2_LOADER_COMMAND_AVAILABLE_HOLD_ON;
+    }
+    if (strcmp(argv[1], "stage") == 0) {
+        if (argc >= 3u && strcmp(argv[2], "abort") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT;
+        if (argc >= 3u && strcmp(argv[2], "url") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_STAGE_URL;
+        return H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD;
+    }
+    if (strcmp(argv[1], "wifi") == 0) {
+        if (argc >= 3u && strcmp(argv[2], "scan") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN;
+        if (argc >= 3u && strcmp(argv[2], "disconnect") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT;
+        return H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT;
+    }
+    if (strcmp(argv[1], "coredump") == 0) {
+        if (argc >= 3u && strcmp(argv[2], "dump") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP;
+        if (argc >= 3u && strcmp(argv[2], "erase") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;
+        return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS;
+    }
+    return 0u;
+}
+
+static h2_pal_result_t h2loader_require_command(
+    h2_loader_command_t *self,
+    size_t argc,
+    const char *const *argv,
+    h2_loader_status_t *out_status) {
+    h2_loader_status_t status;
+    const uint32_t bit = h2loader_command_bit(argc, argv);
+    int rc;
+    if (bit == H2_LOADER_COMMAND_AVAILABLE_HELP ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_MEMORY ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP ||
+        bit == H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE) {
+        status = self->config.loader->status;
+        status.command_availability = h2loader_effective_commands(self, &status);
+    } else {
+        rc = h2_loader_read_status(self->config.loader, &status);
+        if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
+        status.command_availability = h2loader_effective_commands(self, &status);
+    }
+    if (out_status != NULL) *out_status = status;
+    return bit != 0u && (status.command_availability & bit) != 0u
+        ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+}
 static int h2loader_printf(h2_loader_command_t *self, const char *format, ...) {
     char line[H2_LOADER_COMMAND_PRINTF_BUFFER_SIZE];
     va_list args;
@@ -819,9 +931,11 @@ static h2_pal_result_t h2loader_root_handler(
     h2_loader_command_t *self = (h2_loader_command_t *)user;
 
     (void)command;
-    (void)argv;
+    h2_pal_result_t availability = h2loader_require_command(
+        self, argc, argv, NULL);
+    if (availability != H2_PAL_OK) return availability;
     if (argc < 2u) {
-        printf("usage: h2loader <help|status|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
+        printf("usage: h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
     } else {
         printf("usage: h2loader <help|status|memory|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
     }
@@ -836,9 +950,10 @@ static h2_pal_result_t h2loader_help_handler(
     h2_loader_command_t *self = (h2_loader_command_t *)user;
 
     (void)command;
-    (void)argc;
-    (void)argv;
-    printf("h2loader <help|status|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
+    h2_pal_result_t availability = h2loader_require_command(
+        self, argc, argv, NULL);
+    if (availability != H2_PAL_OK) return availability;
+    printf("h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
     return H2_PAL_OK;
 }
 
@@ -855,7 +970,7 @@ static h2_pal_result_t h2loader_status_handler_unlocked(
     (void)command;
     (void)argc;
     (void)argv;
-    rc = h2_loader_read_status(self->config.loader, &status);
+    rc = h2loader_require_command(self, argc, argv, &status);
     if (rc != H2_PAL_OK) {
         printf("H2_LOADER_STATUS_ERROR code=%d\n", rc);
         return (h2_pal_result_t)rc;
@@ -1164,7 +1279,6 @@ static h2_pal_result_t h2loader_invoke_locked(
     const char *const *argv,
     int lock_wifi,
     int lock_operation,
-    uint32_t required_capability,
     h2loader_handler_fn handler) {
     int wifi_locked = 0;
     int operation_locked = 0;
@@ -1196,11 +1310,8 @@ static h2_pal_result_t h2loader_invoke_locked(
         }
         operation_locked = 1;
     }
-    if (required_capability != 0u &&
-        (h2_loader_get_available_capabilities(self->config.loader) &
-            required_capability) == 0u) {
-        result = H2_PAL_ERR_INVALID_STATE;
-    } else {
+    result = h2loader_require_command(self, argc, argv, NULL);
+    if (result == H2_PAL_OK) {
         result = handler(self, command, argc, argv);
     }
     if (operation_locked) {
@@ -1229,7 +1340,6 @@ static h2_pal_result_t h2loader_status_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        H2_LOADER_CAP_STATUS,
         h2loader_status_handler_unlocked);
 }
 
@@ -1240,7 +1350,6 @@ static h2_pal_result_t h2loader_memory_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 0,
-        0u,
         h2loader_memory_handler_unlocked);
 }
 
@@ -1251,7 +1360,6 @@ static h2_pal_result_t h2loader_wifi_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 1, 0,
-        0u,
         h2loader_wifi_handler_unlocked);
 }
 
@@ -1263,7 +1371,6 @@ static h2_pal_result_t h2loader_stage_handler(
     int lock_wifi = argc >= 3u && strcmp(argv[2], "url") == 0;
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, lock_wifi, 1,
-        H2_LOADER_CAP_STAGE,
         h2loader_stage_handler_unlocked);
 }
 
@@ -1274,7 +1381,6 @@ static h2_pal_result_t h2loader_upgrade_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        H2_LOADER_CAP_UPGRADE,
         h2loader_upgrade_handler_unlocked);
 }
 
@@ -1285,7 +1391,6 @@ static h2_pal_result_t h2loader_reboot_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        H2_LOADER_CAP_REBOOT,
         h2loader_reboot_handler_unlocked);
 }
 
@@ -1296,7 +1401,6 @@ static h2_pal_result_t h2loader_hold_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        H2_LOADER_CAP_HOLD,
         h2loader_hold_handler_unlocked);
 }
 
@@ -1307,7 +1411,6 @@ static h2_pal_result_t h2loader_coredump_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        H2_LOADER_CAP_COREDUMP,
         h2loader_coredump_handler_unlocked);
 }
 
@@ -1370,6 +1473,29 @@ int h2_loader_command_init(
             .user = self,
         };
         rc = h2_command_register(&self->command, &definition);
+    }
+    if (rc == H2_PAL_OK) {
+        uint32_t implemented = H2_LOADER_COMMAND_AVAILABLE_HELP |
+            H2_LOADER_COMMAND_AVAILABLE_STATUS |
+            H2_LOADER_COMMAND_AVAILABLE_STATS |
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER |
+            H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD |
+            H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT |
+            H2_LOADER_COMMAND_AVAILABLE_STAGE_URL |
+            H2_LOADER_COMMAND_AVAILABLE_HOLD_ON |
+            H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF |
+            H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
+            H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
+            H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
+            H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE |
+            H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
+            H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP |
+            H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;
+        if (config->memory_stats.read != NULL) {
+            implemented |= H2_LOADER_COMMAND_AVAILABLE_MEMORY;
+        }
+        rc = h2_loader_set_implemented_commands(config->loader, implemented);
     }
     return rc;
 }

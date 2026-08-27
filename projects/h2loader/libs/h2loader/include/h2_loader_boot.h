@@ -14,37 +14,72 @@ extern "C" {
 #endif
 
 typedef enum h2_loader_capability {
-    H2_LOADER_CAP_STATUS = UINT32_C(1) << 0,
-    H2_LOADER_CAP_STAGE = UINT32_C(1) << 1,
-    H2_LOADER_CAP_UPGRADE = UINT32_C(1) << 2,
-    H2_LOADER_CAP_REBOOT = UINT32_C(1) << 3,
-    H2_LOADER_CAP_RESTART = UINT32_C(1) << 4,
-    H2_LOADER_CAP_ROLLBACK = UINT32_C(1) << 5,
-    H2_LOADER_CAP_HOLD = UINT32_C(1) << 6,
-    H2_LOADER_CAP_COREDUMP = UINT32_C(1) << 7,
+    H2_LOADER_CAPABILITY_UART = UINT32_C(1) << 0,
+    H2_LOADER_CAPABILITY_WIFI = UINT32_C(1) << 1,
+    H2_LOADER_CAPABILITY_BLE = UINT32_C(1) << 2,
 } h2_loader_capability_t;
+
+#define H2_LOADER_CAPABILITIES_ALL \
+    (H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI | \
+     H2_LOADER_CAPABILITY_BLE)
 
 typedef enum h2_loader_command_availability {
     H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP = UINT32_C(1) << 0,
     H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER = UINT32_C(1) << 1,
+    H2_LOADER_COMMAND_AVAILABLE_HELP = UINT32_C(1) << 2,
+    H2_LOADER_COMMAND_AVAILABLE_STATUS = UINT32_C(1) << 3,
+    H2_LOADER_COMMAND_AVAILABLE_STATS = UINT32_C(1) << 4,
+    H2_LOADER_COMMAND_AVAILABLE_MEMORY = UINT32_C(1) << 5,
+    H2_LOADER_COMMAND_AVAILABLE_APP_RESTART = UINT32_C(1) << 6,
+    H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK = UINT32_C(1) << 7,
+    H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS = UINT32_C(1) << 8,
+    H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP = UINT32_C(1) << 9,
+    H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE = UINT32_C(1) << 10,
+    H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD = UINT32_C(1) << 11,
+    H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT = UINT32_C(1) << 12,
+    H2_LOADER_COMMAND_AVAILABLE_STAGE_URL = UINT32_C(1) << 13,
+    H2_LOADER_COMMAND_AVAILABLE_HOLD_ON = UINT32_C(1) << 14,
+    H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF = UINT32_C(1) << 15,
+    H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN = UINT32_C(1) << 16,
+    H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT = UINT32_C(1) << 17,
+    H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT = UINT32_C(1) << 18,
+    H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE = UINT32_C(1) << 19,
 } h2_loader_command_availability_t;
 
-#define H2_LOADER_COMMAND_AVAILABILITY_ALL              \
-    (H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |           \
-     H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER)
+#define H2_LOADER_COMMAND_AVAILABILITY_ALL \
+    ((UINT32_C(1) << 20) - UINT32_C(1))
 
-#define H2_LOADER_CAPABILITIES_ALL                                        \
-    (H2_LOADER_CAP_STATUS | H2_LOADER_CAP_STAGE | H2_LOADER_CAP_UPGRADE | \
-     H2_LOADER_CAP_REBOOT | H2_LOADER_CAP_RESTART |                       \
-     H2_LOADER_CAP_ROLLBACK | H2_LOADER_CAP_HOLD |                        \
-     H2_LOADER_CAP_COREDUMP)
+typedef enum h2_loader_active_role {
+    H2_LOADER_ACTIVE_ROLE_UNKNOWN = 0,
+    H2_LOADER_ACTIVE_ROLE_H2LOADER = 1,
+    H2_LOADER_ACTIVE_ROLE_APP = 2,
+} h2_loader_active_role_t;
 
-#define H2_LOADER_CAPABILITIES_LOADER                                      \
-    (H2_LOADER_CAP_STATUS | H2_LOADER_CAP_STAGE | H2_LOADER_CAP_UPGRADE | \
-     H2_LOADER_CAP_REBOOT | H2_LOADER_CAP_HOLD | H2_LOADER_CAP_COREDUMP)
-#define H2_LOADER_CAPABILITIES_APP                                      \
-    (H2_LOADER_CAP_STATUS | H2_LOADER_CAP_RESTART |                    \
-     H2_LOADER_CAP_ROLLBACK | H2_LOADER_CAP_COREDUMP)
+typedef enum h2_loader_mfg_mode {
+    H2_LOADER_MFG_MODE_UNKNOWN = 0,
+    H2_LOADER_MFG_MODE_DISABLED = 1,
+    H2_LOADER_MFG_MODE_ENABLED = 2,
+} h2_loader_mfg_mode_t;
+
+#define H2_LOADER_STATES_ACTIVE_ROLE_SHIFT 0u
+#define H2_LOADER_STATES_ACTIVE_ROLE_MASK (UINT64_C(0x3) << 0u)
+#define H2_LOADER_STATES_BOOT_INTENT_SHIFT 2u
+#define H2_LOADER_STATES_BOOT_INTENT_MASK (UINT64_C(0x3) << 2u)
+#define H2_LOADER_STATES_INSTALL_STATE_SHIFT 4u
+#define H2_LOADER_STATES_INSTALL_STATE_MASK (UINT64_C(0xf) << 4u)
+#define H2_LOADER_STATES_UPGRADE_PHASE_SHIFT 8u
+#define H2_LOADER_STATES_UPGRADE_PHASE_MASK (UINT64_C(0x7) << 8u)
+#define H2_LOADER_STATES_FLAGS_KNOWN (UINT64_C(1) << 11u)
+#define H2_LOADER_STATES_APP_CONFIRMED (UINT64_C(1) << 12u)
+#define H2_LOADER_STATES_MANUAL_HOLD (UINT64_C(1) << 13u)
+#define H2_LOADER_STATES_INSTALLED_VALID (UINT64_C(1) << 14u)
+#define H2_LOADER_STATES_STAGED_VALID (UINT64_C(1) << 15u)
+#define H2_LOADER_STATES_MFG_MODE_SHIFT 16u
+#define H2_LOADER_STATES_MFG_MODE_MASK (UINT64_C(0x3) << 16u)
+#define H2_LOADER_STATES_MFG_STEP_SHIFT(index) (18u + ((uint32_t)(index) * 2u))
+#define H2_LOADER_STATES_MFG_STEP_MASK(index) \
+    (UINT64_C(0x3) << H2_LOADER_STATES_MFG_STEP_SHIFT(index))
+#define H2_LOADER_STATES_RESERVED_MASK (UINT64_C(0x3) << 62u)
 
 typedef enum h2_loader_boot_intent {
     H2_LOADER_BOOT_INTENT_UNKNOWN = 0,
@@ -147,17 +182,19 @@ typedef struct h2_loader_status {
     char board[H2_LOADER_IDENTITY_TEXT_MAX];
     char target[H2_LOADER_IDENTITY_TEXT_MAX];
     char chip[H2_LOADER_IDENTITY_TEXT_MAX];
-    char active_role[H2_LOADER_IDENTITY_TEXT_MAX];
+    h2_loader_active_role_t active_role;
     char active_name[H2_LOADER_IDENTITY_TEXT_MAX];
     char active_version[H2_LOADER_IDENTITY_TEXT_MAX];
     char active_checksum[H2_LOADER_IDENTITY_TEXT_MAX];
     uint32_t capabilities;
     uint32_t command_availability;
+    uint64_t states;
     h2_loader_identity_t installed;
     h2_loader_identity_t staged;
     uint32_t running_partition_id;
     uint32_t next_partition_id;
     h2_loader_upgrade_record_t loader_upgrade;
+    uint8_t upgrade_phase_known;
     char loader_upgrade_step[H2_LOADER_IDENTITY_TEXT_MAX];
     h2_loader_mfg_summary_t mfg;
 } h2_loader_status_t;
@@ -179,7 +216,7 @@ typedef struct h2_loader_config {
     uint32_t h2loader_partition_id;
     uint32_t app_partition_id;
     uint32_t mfg_required_total;
-    uint32_t capabilities;
+    uint32_t hardware_capabilities;
     h2_loader_image_identity_t active_identity;
     void *confirm_user;
     int (*confirm_active_image)(void *user);
@@ -198,8 +235,8 @@ typedef struct h2_loader {
     int force_command_mode;
     /** Volatile current-boot bypass; never serialized into MFG status. */
     h2_loader_atomic_flag_t mfg_gate_bypass;
-    /** Volatile product-owned capability gates; never persisted. */
-    h2_loader_atomic_flag_t capability_availability;
+    /** Commands backed by registered providers in this image. */
+    h2_loader_atomic_flag_t implemented_commands;
     /** Volatile product-owned command gates; never persisted. */
     h2_loader_atomic_flag_t command_availability;
 } h2_loader_t;
@@ -207,18 +244,11 @@ typedef struct h2_loader {
 /** Enables or revokes the volatile MFG App gate bypass for this boot. */
 int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled);
 /**
- * Atomically makes one or more implemented capabilities available or
- * unavailable for this boot.
- *
- * This mask can only restrict config.capabilities. All defined capabilities
- * start available for backward compatibility.
+ * Replaces the command bits backed by the currently registered providers.
  */
-int h2_loader_set_capability_availability(
+int h2_loader_set_implemented_commands(
     h2_loader_t *loader,
-    uint32_t capabilities,
-    bool available);
-/** Returns the currently available subset of config.capabilities. */
-uint32_t h2_loader_get_available_capabilities(const h2_loader_t *loader);
+    uint32_t commands);
 /**
  * Atomically sets or clears one or more product-owned command gates.
  *
@@ -229,6 +259,25 @@ int h2_loader_set_command_availability(
     h2_loader_t *loader,
     uint32_t flags,
     bool available);
+uint32_t h2_loader_get_command_availability(
+    const h2_loader_t *loader,
+    const h2_loader_status_t *status);
+
+int h2_loader_states_pack(
+    const h2_loader_status_t *status,
+    uint64_t *out_states);
+int h2_loader_states_validate(uint64_t states);
+uint32_t h2_loader_states_active_role(uint64_t states);
+uint32_t h2_loader_states_boot_intent(uint64_t states);
+uint32_t h2_loader_states_install_state(uint64_t states);
+uint32_t h2_loader_states_upgrade_phase(uint64_t states);
+int h2_loader_states_flags_known(uint64_t states);
+int h2_loader_states_app_confirmed(uint64_t states);
+int h2_loader_states_manual_hold(uint64_t states);
+int h2_loader_states_installed_valid(uint64_t states);
+int h2_loader_states_staged_valid(uint64_t states);
+uint32_t h2_loader_states_mfg_mode(uint64_t states);
+uint32_t h2_loader_states_mfg_step(uint64_t states, uint32_t index);
 
 const char *h2_loader_boot_intent_name(h2_loader_boot_intent_t intent);
 const char *h2_loader_install_state_name(h2_loader_install_state_t state);

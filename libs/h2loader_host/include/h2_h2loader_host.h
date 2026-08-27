@@ -26,16 +26,31 @@ extern "C" {
 #define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
 #define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 230400u
-#define H2_H2LOADER_HOST_CAP_STATUS (UINT32_C(1) << 0)
-#define H2_H2LOADER_HOST_CAP_STAGE (UINT32_C(1) << 1)
-#define H2_H2LOADER_HOST_CAP_UPGRADE (UINT32_C(1) << 2)
-#define H2_H2LOADER_HOST_CAP_REBOOT (UINT32_C(1) << 3)
-#define H2_H2LOADER_HOST_CAP_RESTART (UINT32_C(1) << 4)
-#define H2_H2LOADER_HOST_CAP_ROLLBACK (UINT32_C(1) << 5)
-#define H2_H2LOADER_HOST_CAP_HOLD (UINT32_C(1) << 6)
-#define H2_H2LOADER_HOST_CAP_COREDUMP (UINT32_C(1) << 7)
+#define H2_H2LOADER_HOST_CAPABILITY_UART (UINT32_C(1) << 0)
+#define H2_H2LOADER_HOST_CAPABILITY_WIFI (UINT32_C(1) << 1)
+#define H2_H2LOADER_HOST_CAPABILITY_BLE (UINT32_C(1) << 2)
+#define H2_H2LOADER_HOST_CAPABILITIES_ALL UINT32_C(0x00000007)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP (UINT32_C(1) << 0)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER (UINT32_C(1) << 1)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_HELP (UINT32_C(1) << 2)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS (UINT32_C(1) << 3)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS (UINT32_C(1) << 4)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY (UINT32_C(1) << 5)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_RESTART (UINT32_C(1) << 6)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_ROLLBACK (UINT32_C(1) << 7)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_STATUS (UINT32_C(1) << 8)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP (UINT32_C(1) << 9)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_ERASE (UINT32_C(1) << 10)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD (UINT32_C(1) << 11)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT (UINT32_C(1) << 12)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL (UINT32_C(1) << 13)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_HOLD_ON (UINT32_C(1) << 14)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_HOLD_OFF (UINT32_C(1) << 15)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN (UINT32_C(1) << 16)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT (UINT32_C(1) << 17)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE (UINT32_C(1) << 19)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL UINT32_C(0x000fffff)
 
 typedef enum h2_h2loader_host_transport {
     H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
@@ -55,25 +70,52 @@ typedef struct h2_h2loader_host_status {
     char active_name[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    char installed_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char installed_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    char staged_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char staged_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    char upgrade_step[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char upgrade_package_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char state[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char upgrade_phase[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    char candidate_board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    char candidate_target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    char candidate_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    char candidate_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     uint32_t capabilities;
     uint32_t command_availability;
+    uint64_t states;
     uint32_t running_partition;
+    uint32_t next_partition;
+    uint32_t canonical_partition;
+    uint32_t trial_partition;
     uint64_t staged_bytes;
+    uint64_t candidate_bytes;
+    int32_t last;
     int32_t upgrade_last;
-    uint8_t active_role;
-    uint8_t installed_valid;
-    uint8_t staged_valid;
-    uint8_t app_confirmed;
-    uint8_t has_capabilities;
-    uint8_t has_command_availability;
-    uint8_t has_running_partition;
-    uint8_t has_upgrade_last;
 } h2_h2loader_host_status_t;
+
+h2_h2loader_host_active_role_t h2_h2loader_host_status_active_role(
+    const h2_h2loader_host_status_t *status);
+uint32_t h2_h2loader_host_status_boot_intent(
+    const h2_h2loader_host_status_t *status);
+uint32_t h2_h2loader_host_status_install_state(
+    const h2_h2loader_host_status_t *status);
+uint32_t h2_h2loader_host_status_upgrade_phase(
+    const h2_h2loader_host_status_t *status);
+uint32_t h2_h2loader_host_status_mfg_mode(
+    const h2_h2loader_host_status_t *status);
+uint32_t h2_h2loader_host_status_mfg_step(
+    const h2_h2loader_host_status_t *status,
+    uint32_t index);
+int h2_h2loader_host_status_flags_known(
+    const h2_h2loader_host_status_t *status);
+int h2_h2loader_host_status_app_confirmed(
+    const h2_h2loader_host_status_t *status);
+int h2_h2loader_host_status_manual_hold(
+    const h2_h2loader_host_status_t *status);
+int h2_h2loader_host_status_installed_valid(
+    const h2_h2loader_host_status_t *status);
+int h2_h2loader_host_status_staged_valid(
+    const h2_h2loader_host_status_t *status);
 
 typedef struct h2_h2loader_host_candidate {
     h2_h2loader_host_transport_t transport;
@@ -90,7 +132,6 @@ typedef struct h2_h2loader_host_candidate {
     uint32_t serial_capabilities;
     uint16_t usb_vid;
     uint16_t usb_pid;
-    uint8_t advertised_role;
     uint8_t usb_identity_valid;
     char usb_serial[H2_PAL_SERIAL_HOST_USB_SERIAL_MAX_LEN];
 } h2_h2loader_host_candidate_t;
@@ -123,7 +164,7 @@ h2_pal_result_t h2_h2loader_host_scan(
     const h2_h2loader_host_scan_config_t *config,
     h2_h2loader_host_scan_result_t *out_result);
 
-/** Parse one complete H2_LOADER_STATUS or H2_APP_STATUS line. */
+/** Parse one complete, canonical H2_LOADER_STATUS line. */
 h2_pal_result_t h2_h2loader_host_status_parse(
     const char *line,
     h2_h2loader_host_status_t *out_status);
@@ -282,8 +323,10 @@ typedef struct h2_h2loader_host_command_result {
  *
  * The command set is intentionally closed. Arbitrary command strings are not
  * representable here; parameterized commands are validated before transport.
- * Capability, role, installed/staged state and an active managed operation all
- * participate in the decision.
+ * The authoritative per-command availability bit is the device-owned gate.
+ * Host-owned managed-operation serialization remains an additional gate for
+ * lifecycle commands; Host never reconstructs device availability from role,
+ * hardware capabilities, or packed state.
  */
 h2_pal_result_t h2_h2loader_host_command_validate(
     const h2_h2loader_host_status_t *status,

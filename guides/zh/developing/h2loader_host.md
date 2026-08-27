@@ -9,7 +9,7 @@ Host Core 拥有：
 - 串口与 BLE 候选的独立扫描结果；
 - reliable serial 与 BLE-iKCP H2Loader connection；
 - authoritative status 解析和 firmware compatibility；
-- transport-neutral typed command、capability/state gate、bounded output 与 terminal result；
+- transport-neutral typed command、authoritative per-command gate、bounded output 与 terminal result；
 - Release catalog、资源长度与 SHA-256 校验；
 - managed stage、activate、reconnect 与 final-state verification；
 - destructive recovery authorization、factory bundle parser 和 raw driver contract。
@@ -21,18 +21,18 @@ Linux Host Serial 归 `libs/pal/providers/linux/serial_host`，Darwin Host Seria
 
 一次 scan 同时启动 BLE 扫描并枚举串口。两个 provider 分别返回 result；一边 permission、timeout 或 unavailable 不会丢弃另一边的候选。不同 transport、相同名称或广播 board 不会自动合并。
 
-Candidate 的 endpoint、USB VID/PID/serial、display name 和 BLE advertisement 不是 authoritative identity。Connect 后必须通过现有 H2Loader command contract 读取 board、target、active role/name/version、checksum、state、capabilities 和 staged state。BLE 广播的明文 board 只做连接后交叉检查。
+Candidate 的 endpoint、USB VID/PID/serial、display name 和 BLE advertisement 不是 authoritative identity。Connect 后必须读取唯一的严格 `H2_LOADER_STATUS`：固定字段顺序与宽度，`capabilities` 只表示 UART/Wi-Fi/BLE 硬件，`command_availability` 表示逐命令 gate，`states` 是唯一的 lifecycle/MFG 状态来源。BLE 广播的明文 board 只做连接后交叉检查。
 
 Serial candidate 只尝试 reliable iostreamikcp command transport。Host Core scan 只返回 frozen discovery metadata；native CLI 在 scan snapshot 完成后按顺序使用 candidate 的 exact opaque `port_id` 执行一次 connect/status/disconnect，并把 live identity 或 exact per-candidate PAL failure 投影到 JSON。Timeout 不会触发 retry、legacy raw status probe、transport fallback 或 BLE/serial pairing，也不会产生第二种可管理设备协议；用户可见的在线设备、Firmware action 与 Console session 只来自 reliable serial 或 BLE-iKCP live status 成功。
 
 ## Typed command
 
 Console 和 Firmware 生命周期动作只能使用
-`h2_h2loader_host_command_t` 的闭集。Request 必须携带从同一 authoritative connection 获得的 live status 和当前 operation fence；Host Core 按 role、static `capabilities`、`installed_valid`、`staged_valid`、dynamic `command_availability` 与 active operation fail closed。Static capability 表示命令是否存在；dynamic availability 表示 `reboot app` 或 `reboot loader` 在 status snapshot 时是否允许。新 Host 在字段存在时检查对应 bit，字段缺失时保留旧 firmware 的既有 gate；未知 future bit 不会授权已知命令，也不会让 well-formed status 失效。Stage abort、hold、Wi-Fi、coredump erase、staged Loader upgrade 与 URL stage 都使用 closed typed request 和 bounded parameter field；任意文本 command 不属于这个 API。
+`h2_h2loader_host_command_t` 是闭集。Request 必须携带从同一 authoritative connection 获得的 live status 和当前 operation fence；Host Core 只检查该命令的 `command_availability` bit，再叠加 Host 自己的 managed-operation serialization。Host 不从 role、hardware capability 或 packed state 重建设备 availability。Stage abort、hold、Wi-Fi、coredump erase、staged Loader upgrade 与 URL stage 都使用 closed typed request 和 bounded parameter field；任意文本 command 不属于这个 API。
 
-Firmware 产品状态的 owner 通过 `h2_loader_set_command_availability(loader, flags, available)` 主动原子 set/clear 单个 bit 或多个 flags。所有已定义 product flags 默认 set；它们只能额外限制 Loader 自身校验，不能绕过 capability、MFG、artifact 或 lifecycle state。h2loader 不在 status 或 command path 反向调用产品 callback；connected status 发布 effective mask，执行路径在 durable accepted boundary 前重新读取最新 flags。Clear bit 的 reboot 返回并 flush `H2_LOADER_REBOOT target=<app|loader> result=fail code=<invalid-state>`，因此 Host 得到 terminal error 而不是等待 timeout。BLE advertisement 不携带该动态值，serial 与 BLE-iKCP 都以 connected status 为准。
+Firmware 先以 command registration 声明 implemented mask，再由产品 owner 通过 `h2_loader_set_command_availability(loader, flags, available)` 原子 set/clear 运行时 gate。它们只能额外限制 Loader 自身的 MFG、artifact 与 lifecycle 校验。connected status 发布 effective mask，执行路径在所需 operation lock 内重新计算；BLE advertisement 不携带该动态值，serial 与 BLE-iKCP 都以 connected status 为准。
 
-Browser SDK 把 Host status 中 present 的完整无符号 32-bit mask 投影为 camelCase `commandAvailability`，供 `status(port)`、`install(port, blob)` 和 `stage(port, blob)` 的 status object 使用。Present `0` 是权威值；未知高位会保留但不授权已知 command。旧 firmware 没有该 wire field 时 JavaScript property 必须 absent，Browser 或产品 UI 不能把缺失值合成为 `0`、全部可用或从 static `capabilities` 推导出的值。
+Browser SDK 始终投影固定的 `commandAvailability` number、`states` 十六进制 string，以及 `stagedBytes`/`candidateBytes` 十进制 string。`H2LoaderCapabilities`、`H2LoaderCommands`、`commandAvailable()` 与 `decodeH2LoaderStates()` 是唯一公共解码入口。Status object 不重复提供 role/state/validity scalar；旧字段缺失、`H2_APP_STATUS` 或字段乱序都直接 fail closed，不存在 fallback。
 
 Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。
 

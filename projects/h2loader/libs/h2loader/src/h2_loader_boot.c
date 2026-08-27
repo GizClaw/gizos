@@ -31,7 +31,6 @@ static int config_accepts_board(
 #define H2_LOADER_MFG_RECORD_V2_SIZE 24u
 #define H2_LOADER_MFG_RECORD_FORMAT 3u
 #define H2_LOADER_MFG_RECORD_SIZE (4u + H2_LOADER_MFG_STEP_TOTAL)
-#define H2_LOADER_CAPABILITY_AVAILABILITY_INITIALIZED (UINT32_C(1) << 30)
 #define H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED (UINT32_C(1) << 30)
 
 static int mfg_gate_bypass_load(const h2_loader_atomic_flag_t *value) {
@@ -143,20 +142,16 @@ int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
     return H2_PAL_OK;
 }
 
-int h2_loader_set_capability_availability(
+int h2_loader_set_implemented_commands(
     h2_loader_t *loader,
-    uint32_t capabilities,
-    bool available) {
-    if (loader == NULL || capabilities == 0u ||
-        (capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u) {
+    uint32_t commands) {
+    if (loader == NULL ||
+        (commands & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    atomic_availability_update(
-        &loader->capability_availability,
-        capabilities,
-        H2_LOADER_CAPABILITY_AVAILABILITY_INITIALIZED,
-        H2_LOADER_CAPABILITIES_ALL,
-        available);
+    atomic_availability_store(
+        &loader->implemented_commands,
+        H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands);
     return H2_PAL_OK;
 }
 
@@ -177,59 +172,162 @@ int h2_loader_set_command_availability(
     return H2_PAL_OK;
 }
 
-uint32_t h2_loader_get_available_capabilities(const h2_loader_t *loader) {
-    if (loader == NULL) {
-        return 0u;
-    }
-    return loader->config.capabilities & atomic_availability_load(
-        &loader->capability_availability,
-        H2_LOADER_CAPABILITY_AVAILABILITY_INITIALIZED,
-        H2_LOADER_CAPABILITIES_ALL);
-}
-
-static int require_capability(
-    const h2_loader_t *loader,
-    uint32_t capability) {
-    return (h2_loader_get_available_capabilities(loader) & capability) != 0u
-        ? H2_PAL_OK
-        : H2_PAL_ERR_INVALID_STATE;
-}
-
-static uint32_t effective_command_availability(
+uint32_t h2_loader_get_command_availability(
     const h2_loader_t *loader,
     const h2_loader_status_t *status) {
-    uint32_t available;
-    uint32_t public_available =
-        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
+    uint32_t public_available;
 
     if (loader == NULL || status == NULL) {
         return 0u;
     }
-    if ((h2_loader_get_available_capabilities(loader) &
-         H2_LOADER_CAP_REBOOT) == 0u) {
-        return 0u;
-    }
-    if (status->installed.valid || status->staged.valid) {
-        public_available |= H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+    public_available = atomic_availability_load(
+        &loader->implemented_commands,
+        H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED,
+        H2_LOADER_COMMAND_AVAILABILITY_ALL);
+    if (!status->installed.valid && !status->staged.valid) {
+        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
     if (!mfg_gate_satisfied(loader, &status->mfg)) {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
-    available = atomic_availability_load(
+    if (status->manual_hold) {
+        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_HOLD_ON;
+    } else {
+        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF;
+    }
+    if (!status->staged.valid) {
+        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT;
+        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE;
+    }
+    return public_available & atomic_availability_load(
         &loader->command_availability,
         H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED,
-        H2_LOADER_COMMAND_AVAILABILITY_ALL) &
-        H2_LOADER_COMMAND_AVAILABILITY_ALL;
-    return available & public_available;
+        H2_LOADER_COMMAND_AVAILABILITY_ALL);
 }
 
 static int require_command_available(
     const h2_loader_t *loader,
     const h2_loader_status_t *status,
     uint32_t flag) {
-    return (effective_command_availability(loader, status) & flag) != 0u
+    return (h2_loader_get_command_availability(loader, status) & flag) != 0u
         ? H2_PAL_OK
         : H2_PAL_ERR_INVALID_STATE;
+}
+
+static uint32_t states_field(uint64_t states, uint64_t mask, uint32_t shift) {
+    return (uint32_t)((states & mask) >> shift);
+}
+
+uint32_t h2_loader_states_active_role(uint64_t states) {
+    return states_field(states, H2_LOADER_STATES_ACTIVE_ROLE_MASK,
+                        H2_LOADER_STATES_ACTIVE_ROLE_SHIFT);
+}
+
+uint32_t h2_loader_states_boot_intent(uint64_t states) {
+    return states_field(states, H2_LOADER_STATES_BOOT_INTENT_MASK,
+                        H2_LOADER_STATES_BOOT_INTENT_SHIFT);
+}
+
+uint32_t h2_loader_states_install_state(uint64_t states) {
+    return states_field(states, H2_LOADER_STATES_INSTALL_STATE_MASK,
+                        H2_LOADER_STATES_INSTALL_STATE_SHIFT);
+}
+
+uint32_t h2_loader_states_upgrade_phase(uint64_t states) {
+    return states_field(states, H2_LOADER_STATES_UPGRADE_PHASE_MASK,
+                        H2_LOADER_STATES_UPGRADE_PHASE_SHIFT);
+}
+
+int h2_loader_states_flags_known(uint64_t states) {
+    return (states & H2_LOADER_STATES_FLAGS_KNOWN) != 0u;
+}
+
+int h2_loader_states_app_confirmed(uint64_t states) {
+    return (states & H2_LOADER_STATES_APP_CONFIRMED) != 0u;
+}
+
+int h2_loader_states_manual_hold(uint64_t states) {
+    return (states & H2_LOADER_STATES_MANUAL_HOLD) != 0u;
+}
+
+int h2_loader_states_installed_valid(uint64_t states) {
+    return (states & H2_LOADER_STATES_INSTALLED_VALID) != 0u;
+}
+
+int h2_loader_states_staged_valid(uint64_t states) {
+    return (states & H2_LOADER_STATES_STAGED_VALID) != 0u;
+}
+
+uint32_t h2_loader_states_mfg_mode(uint64_t states) {
+    return states_field(states, H2_LOADER_STATES_MFG_MODE_MASK,
+                        H2_LOADER_STATES_MFG_MODE_SHIFT);
+}
+
+uint32_t h2_loader_states_mfg_step(uint64_t states, uint32_t index) {
+    return index < H2_LOADER_MFG_STEP_TOTAL
+        ? states_field(states, H2_LOADER_STATES_MFG_STEP_MASK(index),
+                       H2_LOADER_STATES_MFG_STEP_SHIFT(index))
+        : UINT32_MAX;
+}
+
+int h2_loader_states_validate(uint64_t states) {
+    const uint32_t role = h2_loader_states_active_role(states);
+    const uint32_t intent = h2_loader_states_boot_intent(states);
+    const uint32_t install = h2_loader_states_install_state(states);
+    const uint32_t upgrade = h2_loader_states_upgrade_phase(states);
+    const uint32_t mfg_mode = h2_loader_states_mfg_mode(states);
+    const uint64_t lifecycle = H2_LOADER_STATES_APP_CONFIRMED |
+        H2_LOADER_STATES_MANUAL_HOLD | H2_LOADER_STATES_INSTALLED_VALID |
+        H2_LOADER_STATES_STAGED_VALID;
+    if ((states & H2_LOADER_STATES_RESERVED_MASK) != 0u ||
+        role == H2_LOADER_ACTIVE_ROLE_UNKNOWN || role == 3u ||
+        intent == 3u || install > 9u || upgrade > 6u ||
+        mfg_mode == H2_LOADER_MFG_MODE_UNKNOWN || mfg_mode == 3u ||
+        (!h2_loader_states_flags_known(states) && (states & lifecycle) != 0u)) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    if (mfg_mode != H2_LOADER_MFG_MODE_ENABLED) {
+        for (uint32_t i = 0u; i < H2_LOADER_MFG_STEP_TOTAL; ++i) {
+            if (h2_loader_states_mfg_step(states, i) != 0u) {
+                return H2_PAL_ERR_FORMAT;
+            }
+        }
+    }
+    return H2_PAL_OK;
+}
+
+int h2_loader_states_pack(
+    const h2_loader_status_t *status,
+    uint64_t *out_states) {
+    uint64_t states;
+    if (status == NULL || out_states == NULL ||
+        status->active_role > H2_LOADER_ACTIVE_ROLE_APP ||
+        status->boot_intent > H2_LOADER_BOOT_INTENT_APP ||
+        status->install_state > H2_LOADER_INSTALL_STATE_MAIN_FAILED ||
+        status->loader_upgrade.phase > H2_LOADER_UPGRADE_PHASE_CORRUPT ||
+        h2_loader_mfg_summary_validate(&status->mfg) != H2_PAL_OK) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    states = ((uint64_t)status->active_role << H2_LOADER_STATES_ACTIVE_ROLE_SHIFT) |
+        ((uint64_t)status->boot_intent << H2_LOADER_STATES_BOOT_INTENT_SHIFT) |
+        ((uint64_t)(status->install_state + 1u) << H2_LOADER_STATES_INSTALL_STATE_SHIFT) |
+        ((uint64_t)(status->upgrade_phase_known
+            ? status->loader_upgrade.phase + 1u : 0u)
+            << H2_LOADER_STATES_UPGRADE_PHASE_SHIFT) |
+        H2_LOADER_STATES_FLAGS_KNOWN;
+    if (status->app_confirmed) states |= H2_LOADER_STATES_APP_CONFIRMED;
+    if (status->manual_hold) states |= H2_LOADER_STATES_MANUAL_HOLD;
+    if (status->installed.valid) states |= H2_LOADER_STATES_INSTALLED_VALID;
+    if (status->staged.valid) states |= H2_LOADER_STATES_STAGED_VALID;
+    states |= (uint64_t)(status->mfg.total == 0u
+        ? H2_LOADER_MFG_MODE_DISABLED : H2_LOADER_MFG_MODE_ENABLED)
+        << H2_LOADER_STATES_MFG_MODE_SHIFT;
+    for (uint32_t i = 0u; i < H2_LOADER_MFG_STEP_TOTAL; ++i) {
+        states |= (uint64_t)status->mfg.step_status[i]
+            << H2_LOADER_STATES_MFG_STEP_SHIFT(i);
+    }
+    *out_states = states;
+    return h2_loader_states_validate(states);
 }
 
 typedef struct h2_loader_stage_pref_snapshot {
@@ -2016,15 +2114,16 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
     int rc;
 
     if (loader == NULL || config == NULL || config->package.fs == NULL ||
-        config->pref == NULL || config->power == NULL) {
+        config->pref == NULL || config->power == NULL ||
+        config->hardware_capabilities == 0u ||
+        (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(loader, 0, sizeof(*loader));
     mfg_gate_bypass_store(&loader->mfg_gate_bypass, 0);
     atomic_availability_store(
-        &loader->capability_availability,
-        H2_LOADER_CAPABILITY_AVAILABILITY_INITIALIZED |
-            H2_LOADER_CAPABILITIES_ALL);
+        &loader->implemented_commands,
+        H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
     atomic_availability_store(
         &loader->command_availability,
         H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
@@ -2371,10 +2470,12 @@ int h2_loader_upgrade_start_with_transition(
         loader->config.h2loader_partition_id == loader->config.app_partition_id) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    rc = require_capability(loader, H2_LOADER_CAP_UPGRADE);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
+    rc = h2_loader_read_status(loader, &loader->status);
+    if (rc != H2_PAL_OK) return rc;
+    rc = require_command_available(
+        loader, &loader->status,
+        H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE);
+    if (rc != H2_PAL_OK) return rc;
     rc = upgrade_record_read(
         loader->config.pref,
         loader->config.package.allocator,
@@ -2691,6 +2792,10 @@ int h2_loader_reboot_h2loader_with_transition(
     if (loader == NULL || loader->config.power == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    rc = h2_loader_read_status(loader, &loader->status);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
     rc = require_command_available(
         loader,
         &loader->status,
@@ -2762,14 +2867,14 @@ int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status) {
     }
     rc = h2_loader_status_set_active(
         &status,
-        "h2loader",
+        H2_LOADER_ACTIVE_ROLE_H2LOADER,
         "h2loader",
         loader->config.active_identity.version,
         loader->config.active_identity.image_sha256);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    status.capabilities = h2_loader_get_available_capabilities(loader);
+    status.capabilities = loader->config.hardware_capabilities;
     rc = h2_loader_package_read_staged_identity(&loader->package, loader->config.pref, &status.staged);
     if (rc != H2_PAL_OK) {
         status.staged.valid = 0;
@@ -2794,8 +2899,11 @@ int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status) {
         memset(&status.loader_upgrade, 0, sizeof(status.loader_upgrade));
         status.loader_upgrade.phase = H2_LOADER_UPGRADE_PHASE_IDLE;
     }
+    status.upgrade_phase_known = 1u;
     status.command_availability =
-        effective_command_availability(loader, &status);
+        h2_loader_get_command_availability(loader, &status);
+    rc = h2_loader_states_pack(&status, &status.states);
+    if (rc != H2_PAL_OK) return rc;
     loader->status = status;
     *out_status = status;
     return H2_PAL_OK;

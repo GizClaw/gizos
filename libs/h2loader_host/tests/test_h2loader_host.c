@@ -37,30 +37,29 @@ static const h2_pal_mem_api_t test_mem = {
 
 static h2_h2loader_host_status_t command_status(
     h2_h2loader_host_active_role_t role,
-    uint32_t capabilities) {
+    uint32_t command_availability) {
     h2_h2loader_host_status_t status = {0};
-    status.active_role = (uint8_t)role;
-    status.capabilities = capabilities;
-    status.has_capabilities = 1u;
+    status.states = (uint64_t)role | (UINT64_C(1) << 4u) |
+        (UINT64_C(1) << 11u) | (UINT64_C(1) << 16u);
+    status.command_availability = command_availability;
     return status;
 }
 
 static void test_typed_command_role_contract(void) {
     h2_h2loader_host_status_t app = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
-        H2_H2LOADER_HOST_CAP_STATUS |
-            H2_H2LOADER_HOST_CAP_RESTART |
-            H2_H2LOADER_HOST_CAP_ROLLBACK |
-            H2_H2LOADER_HOST_CAP_COREDUMP);
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_RESTART |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_ROLLBACK |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP);
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
-        H2_H2LOADER_HOST_CAP_STATUS |
-            H2_H2LOADER_HOST_CAP_STAGE |
-            H2_H2LOADER_HOST_CAP_UPGRADE |
-            H2_H2LOADER_HOST_CAP_REBOOT |
-            H2_H2LOADER_HOST_CAP_HOLD |
-            H2_H2LOADER_HOST_CAP_COREDUMP);
-    loader.installed_valid = 1u;
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE);
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
@@ -74,34 +73,15 @@ static void test_typed_command_role_contract(void) {
                0u,
                H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader,
-               0u,
-               H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) ==
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
                H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &app,
-               0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
            H2_PAL_ERR_INVALID_STATE);
-    loader.staged_valid = 1u;
-    assert(h2_h2loader_host_command_validate(
-               &loader,
-               0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
-    loader.installed_valid = 0u;
-    assert(h2_h2loader_host_command_validate(
-               &loader,
-               0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
-    assert(h2_h2loader_host_command_validate(
-               &loader,
-               0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) == H2_PAL_OK);
-    loader.has_command_availability = 1u;
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
     assert(h2_h2loader_host_command_validate(
@@ -124,24 +104,19 @@ static void test_typed_command_role_contract(void) {
                0u,
                H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) ==
            H2_PAL_ERR_INVALID_STATE);
-    loader.has_command_availability = 0u;
-    loader.staged_valid = 0u;
-    assert(h2_h2loader_host_command_validate(
-               &loader,
-               0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
-           H2_PAL_ERR_INVALID_STATE);
-    loader.installed_valid = 1u;
+    loader.command_availability =
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE |
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN;
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &app, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) == H2_PAL_ERR_INVALID_STATE);
-    loader.staged_valid = 1u;
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) ==
+           H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &loader, 1u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
-    loader.staged_valid = 0u;
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
@@ -152,12 +127,13 @@ static void test_typed_command_role_contract(void) {
                1u,
                H2_H2LOADER_HOST_COMMAND_APP_RESTART) ==
            H2_PAL_ERR_INVALID_STATE);
-    app.capabilities &= ~H2_H2LOADER_HOST_CAP_COREDUMP;
+    app.command_availability &=
+        ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP;
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
                H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP) ==
-           H2_PAL_ERR_UNSUPPORTED);
+           H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
@@ -167,9 +143,7 @@ static void test_typed_command_role_contract(void) {
 static void test_typed_command_wire_contract(void) {
     h2_h2loader_host_status_t app = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
-        H2_H2LOADER_HOST_CAP_STATUS |
-            H2_H2LOADER_HOST_CAP_RESTART |
-            H2_H2LOADER_HOST_CAP_ROLLBACK);
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
     h2_h2loader_host_command_request_t request = {
         .command = H2_H2LOADER_HOST_COMMAND_STATUS,
         .status = &app,
@@ -203,9 +177,7 @@ static void test_typed_command_wire_contract(void) {
 
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
-        H2_H2LOADER_HOST_CAP_STATUS | H2_H2LOADER_HOST_CAP_REBOOT |
-            H2_H2LOADER_HOST_CAP_STAGE | H2_H2LOADER_HOST_CAP_HOLD |
-            H2_H2LOADER_HOST_CAP_UPGRADE);
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
     request.command = H2_H2LOADER_HOST_COMMAND_STATUS;
     request.status = &loader;
     assert(h2_h2loader_host_command_contract(
@@ -459,7 +431,7 @@ static void test_typed_command_transport_execution(void) {
         "H2_LOADER_REBOOT target=loader result=accepted\n";
     h2_h2loader_host_status_t app = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
-        H2_H2LOADER_HOST_CAP_STATUS);
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
     command_transport_fixture_t fixture = {
         .response = ok,
         .response_len = sizeof(ok) - 1u,
@@ -553,7 +525,7 @@ static void test_typed_command_transport_execution(void) {
 
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
-        H2_H2LOADER_HOST_CAP_REBOOT);
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
     request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
     request.status = &loader;
     fixture.output_result = H2_PAL_OK;
@@ -622,7 +594,7 @@ static void test_typed_command_transport_execution(void) {
     static const uint8_t rollback_ok[] = "H2_LOADER_ROLLBACK result=OK\n";
     h2_h2loader_host_status_t app_lifecycle = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
-        H2_H2LOADER_HOST_CAP_RESTART | H2_H2LOADER_HOST_CAP_ROLLBACK);
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
     request.command = H2_H2LOADER_HOST_COMMAND_APP_RESTART;
     request.status = &app_lifecycle;
     fixture.response = restart_ok;
@@ -796,26 +768,38 @@ static void test_catalog(void) {
 static void test_status(void) {
     static const char checksum[] =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-    char line[1024];
+    char line[2048];
     int len = snprintf(
         line,
         sizeof(line),
-        "noise H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
-        "state=confirmed active_role=app active_name=display "
-        "active_version=v1 active_checksum=%s installed_valid=1 "
-        "installed_checksum=%s staged_valid=0 app_confirmed=1 "
-        "capabilities=0x3 command_availability=0x3 running_partition=1\n",
-        checksum,
-        checksum);
+        "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
+        "capabilities=0x00000005 command_availability=0x00000048 "
+        "states=0x000000000001586a active_name=display active_version=v1 "
+        "active_checksum=%s last=0 installed_version=v1 installed_checksum=%s "
+        "staged_version= staged_checksum= staged_bytes=0 running_partition=1 "
+        "next_partition=1 canonical_partition=0 trial_partition=0 "
+        "upgrade_last=0 upgrade_step= upgrade_package_sha256= candidate_board= "
+        "candidate_target= candidate_version= candidate_bytes=0 candidate_sha256=\n",
+        checksum, checksum);
     assert(len > 0 && (size_t)len < sizeof(line));
     h2_h2loader_host_status_t status;
     assert(h2_h2loader_host_status_parse(line, &status) == H2_PAL_OK);
     assert(strcmp(status.board, "devkit") == 0);
-    assert(status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
-    assert(status.capabilities == 3u);
-    assert(status.has_command_availability == 1u);
-    assert(status.command_availability == 3u);
-    assert(status.has_running_partition == 1u);
+    assert(h2_h2loader_host_status_active_role(&status) ==
+           H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    assert(status.capabilities == 5u);
+    assert(status.command_availability == UINT32_C(0x48));
+    assert(status.running_partition == 1u);
+    assert(h2_h2loader_host_status_app_confirmed(&status));
+
+    char noncanonical_hex[sizeof(line)];
+    strcpy(noncanonical_hex, line);
+    char *states_suffix = strstr(noncanonical_hex, "states=0x000000000001586a");
+    assert(states_suffix != NULL);
+    states_suffix[strlen("states=0x000000000001586")] = 'A';
+    assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
+           H2_PAL_ERR_FORMAT);
+    assert(h2_h2loader_host_status_parse(line, &status) == H2_PAL_OK);
 
     h2_h2loader_host_catalog_entry_t asset = { 0 };
     strcpy(asset.board, "devkit");
@@ -849,41 +833,39 @@ static void test_status(void) {
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_ERR_INVALID_STATE);
     strcpy(status.active_checksum, checksum);
-    status.staged_valid = 1u;
+    status.states |= UINT64_C(1) << 15u;
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_status_parse(
-               "H2_LOADER_STATUS board=../bad target=esp active_role=app\n",
+               "noise H2_LOADER_STATUS board=devkit\n",
                &status) == H2_PAL_ERR_FORMAT);
     assert(h2_h2loader_host_status_parse(
-               "H2_LOADER_STATUS board=devkit target=esp active_role=h2loader "
-               "command_availability=0x1 command_availability=0x2\n",
+               "H2_APP_STATUS board=devkit\n",
                &status) == H2_PAL_ERR_FORMAT);
-    assert(h2_h2loader_host_status_parse(
-               "H2_LOADER_STATUS board=devkit target=esp active_role=h2loader "
-               "command_availability=0x80000000\n",
-               &status) == H2_PAL_OK);
-    assert(status.command_availability == UINT32_C(0x80000000));
 
     static const char idle_loader[] =
-        "H2_LOADER_STATUS intent=h2loader "
         "board=waveshare_esp32s3_a7670e_4g target=esp32s3 chip=esp32s3 "
-        "state=idle app_confirmed=0 active_role=h2loader "
-        "capabilities=0x000000cf active_name=h2loader "
-        "active_version=pr388-f8aa6d36 active_checksum= "
-        "installed_valid=0 installed_version= installed_checksum= "
-        "staged_valid=0 staged_version= staged_checksum= staged_bytes=0 "
-        "running_partition=1 upgrade_phase=idle upgrade_last=0 "
+        "capabilities=0x00000007 command_availability=0x000fffff "
+        "states=0x0000000000010915 active_name=h2loader "
+        "active_version=pr388-f8aa6d36 active_checksum= last=0 "
+        "installed_version= installed_checksum= staged_version= staged_checksum= "
+        "staged_bytes=0 running_partition=1 next_partition=1 "
+        "canonical_partition=1 trial_partition=2 upgrade_last=0 upgrade_step= "
         "upgrade_package_sha256="
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\n";
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad "
+        "candidate_board= candidate_target= candidate_version= candidate_bytes=0 "
+        "candidate_sha256=\n";
+    char idle_line[2048];
+    (void)snprintf(idle_line, sizeof(idle_line), "H2_LOADER_STATUS %s", idle_loader);
     assert(h2_h2loader_host_status_parse(
-               idle_loader, &status) == H2_PAL_OK);
+               idle_line, &status) == H2_PAL_OK);
     assert(strcmp(status.board, "waveshare_esp32s3_a7670e_4g") == 0);
-    assert(status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+    assert(h2_h2loader_host_status_active_role(&status) ==
+           H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
     assert(status.active_checksum[0] == '\0');
     assert(status.installed_checksum[0] == '\0');
-    assert(status.staged_valid == 0u);
-    assert(status.has_upgrade_last == 1u && status.upgrade_last == 0);
+    assert(!h2_h2loader_host_status_staged_valid(&status));
+    assert(status.upgrade_last == 0);
     assert(strcmp(status.upgrade_package_sha256, checksum) == 0);
     memset(&asset, 0, sizeof(asset));
     strcpy(asset.board, "waveshare_esp32s3_a7670e_4g");
@@ -896,7 +878,7 @@ static void test_status(void) {
     strcpy(status.active_checksum, checksum);
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_OK);
-    status.staged_valid = 1u;
+    status.states |= UINT64_C(1) << 15u;
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_ERR_INVALID_STATE);
 }
@@ -1220,17 +1202,16 @@ static h2_pal_result_t operation_connect(
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->status_board);
     strcpy(out_status->target, fixture->asset.target);
-    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->states = UINT64_C(0x0000000000010915);
     if (fixture->connect_count > 1) {
         if (fixture->stage_only) {
-            out_status->staged_valid = 1u;
+            out_status->states |= UINT64_C(1) << 15u;
             out_status->staged_bytes = fixture->asset.bytes;
             strcpy(out_status->staged_checksum, fixture->asset.sha256);
             return H2_PAL_OK;
         }
-        out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+        out_status->states = UINT64_C(0x000000000001586a);
         strcpy(out_status->active_name, fixture->asset.image);
-        strcpy(out_status->state, "confirmed");
         strcpy(
             out_status->active_checksum,
             fixture->bad_final_checksum
@@ -1239,7 +1220,6 @@ static h2_pal_result_t operation_connect(
         strcpy(
             out_status->installed_checksum,
             fixture->asset.sha256);
-        out_status->installed_valid = 1u;
     }
     return H2_PAL_OK;
 }
@@ -1285,8 +1265,7 @@ static h2_pal_result_t operation_read_status(
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->asset.board);
     strcpy(out_status->target, fixture->asset.target);
-    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
-    out_status->staged_valid = 1u;
+    out_status->states = UINT64_C(0x0000000000018915);
     out_status->staged_bytes = fixture->asset.bytes;
     strcpy(out_status->staged_checksum, fixture->asset.sha256);
     return H2_PAL_OK;
@@ -1405,8 +1384,7 @@ static void test_managed_operation(void) {
     strcpy(upgrade_status.board, "devkit");
     strcpy(upgrade_status.target, "esp32s3");
     strcpy(upgrade_status.staged_checksum, package_sha);
-    upgrade_status.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
-    upgrade_status.staged_valid = 1u;
+    upgrade_status.states = UINT64_C(0x0000000000018911);
     assert(h2_h2loader_host_upgrade_tracker_init(
                &upgrade_status, &tracker) == H2_PAL_OK);
     upgrade_status.board[0] = '\0';
@@ -1414,16 +1392,16 @@ static void test_managed_operation(void) {
     assert(h2_h2loader_host_upgrade_tracker_init(
                &upgrade_status, &invalid_tracker) == H2_PAL_ERR_INVALID_ARG);
     strcpy(upgrade_status.board, "devkit");
-    strcpy(upgrade_status.upgrade_phase, "idle");
     strcpy(upgrade_status.upgrade_package_sha256, package_sha);
-    upgrade_status.staged_valid = 0u;
-    upgrade_status.has_upgrade_last = 1u;
+    upgrade_status.states &= ~(UINT64_C(1) << 15u);
     assert(h2_h2loader_host_upgrade_tracker_observe(
                &tracker, &upgrade_status) == H2_PAL_ERR_WOULD_BLOCK);
-    strcpy(upgrade_status.upgrade_phase, "trial_running");
+    upgrade_status.states = (upgrade_status.states &
+        ~(UINT64_C(0x7) << 8u)) | (UINT64_C(3) << 8u);
     assert(h2_h2loader_host_upgrade_tracker_observe(
                &tracker, &upgrade_status) == H2_PAL_ERR_WOULD_BLOCK);
-    strcpy(upgrade_status.upgrade_phase, "idle");
+    upgrade_status.states = (upgrade_status.states &
+        ~(UINT64_C(0x7) << 8u)) | (UINT64_C(1) << 8u);
     assert(h2_h2loader_host_upgrade_tracker_observe(
                &tracker, &upgrade_status) == H2_PAL_OK);
     upgrade_status.upgrade_last = -1;
@@ -1642,9 +1620,8 @@ static void test_scheduler(void) {
     strcpy(status.target, "esp32s3");
     strcpy(status.active_name, "display");
     strcpy(status.active_version, "v1");
-    strcpy(status.state, "confirmed");
     strcpy(status.active_checksum, sha);
-    status.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    status.states = UINT64_C(0x000000000001586a);
     memset(
         status.active_version,
         'x',

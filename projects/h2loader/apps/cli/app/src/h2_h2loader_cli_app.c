@@ -236,6 +236,15 @@ static const char *active_role_name(uint8_t role) {
     return "";
 }
 
+static const char *install_state_name(uint32_t state) {
+    static const char *const names[] = {
+        "", "idle", "staged", "install-requested", "installing",
+        "installed-pending-confirm", "confirmed", "install-failed",
+        "return-requested", "main-failed",
+    };
+    return state < sizeof(names) / sizeof(names[0]) ? names[state] : "";
+}
+
 static h2_pal_result_t scan_probe_serial(
     void *user,
     const h2_h2loader_host_candidate_t *candidate,
@@ -338,7 +347,10 @@ int h2_h2loader_cli_scan_candidates(
         }
         if (serial && rc == H2_PAL_OK) {
             rc = scan_output_field(
-                context, "active_role", active_role_name(status->active_role));
+                context,
+                "active_role",
+                active_role_name((uint8_t)
+                    h2_h2loader_host_status_active_role(status)));
         }
         if (serial && rc == H2_PAL_OK) {
             rc = scan_output_field(
@@ -349,7 +361,11 @@ int h2_h2loader_cli_scan_candidates(
                 context, "active_version", status->active_version);
         }
         if (serial && rc == H2_PAL_OK) {
-            rc = scan_output_field(context, "state", status->state);
+            rc = scan_output_field(
+                context,
+                "state",
+                install_state_name(
+                    h2_h2loader_host_status_install_state(status)));
         }
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_output(

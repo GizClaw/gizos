@@ -95,8 +95,7 @@ static h2_pal_result_t fake_scan_probe_candidate(
     strcpy(out_status->active_name, "h2loader");
     strcpy(out_status->active_version,
         strcmp(candidate->port_id, "port-a") == 0 ? "v1" : "v2");
-    strcpy(out_status->state, "idle");
-    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->states = UINT64_C(0x0000000000010915);
     return H2_PAL_OK;
 }
 

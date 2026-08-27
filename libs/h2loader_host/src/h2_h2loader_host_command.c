@@ -18,106 +18,78 @@ static int is_wire_field(const char *value) {
     return 1;
 }
 
-static int status_has_capability(
-    const h2_h2loader_host_status_t *status,
-    uint32_t capability) {
-    return status->has_capabilities != 0u &&
-        (status->capabilities & capability) == capability;
-}
-
 h2_pal_result_t h2_h2loader_host_command_validate(
     const h2_h2loader_host_status_t *status,
     uint8_t operation_active,
     h2_h2loader_host_command_t command) {
-    h2_h2loader_host_active_role_t role;
-    uint32_t capability = 0u;
     uint32_t availability = 0u;
     int lifecycle = 0;
 
     if (status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    role = (h2_h2loader_host_active_role_t)status->active_role;
-    if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
-        role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
     switch (command) {
         case H2_H2LOADER_HOST_COMMAND_HELP:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_HELP;
             break;
         case H2_H2LOADER_HOST_COMMAND_STATUS:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS;
+            break;
         case H2_H2LOADER_HOST_COMMAND_STATS:
-            capability = H2_H2LOADER_HOST_CAP_STATUS;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATS;
             break;
         case H2_H2LOADER_HOST_COMMAND_MEMORY:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY;
             break;
         case H2_H2LOADER_HOST_COMMAND_APP_RESTART:
-            capability = H2_H2LOADER_HOST_CAP_RESTART;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_RESTART;
             lifecycle = 1;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
             break;
         case H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK:
-            capability = H2_H2LOADER_HOST_CAP_ROLLBACK;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_ROLLBACK;
             lifecycle = 1;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
             break;
         case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP:
-            capability = H2_H2LOADER_HOST_CAP_REBOOT;
-            availability =
-                H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
             lifecycle = 1;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-                (status->installed_valid == 0u &&
-                 status->staged_valid == 0u)) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
             break;
         case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER:
-            capability = H2_H2LOADER_HOST_CAP_REBOOT;
-            availability =
-                H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
             lifecycle = 1;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
             break;
         case H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_STATUS;
+            break;
         case H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP;
+            break;
         case H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE:
-            capability = H2_H2LOADER_HOST_CAP_COREDUMP;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_ERASE;
             break;
         case H2_H2LOADER_HOST_COMMAND_STAGE_ABORT:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT;
+            break;
         case H2_H2LOADER_HOST_COMMAND_STAGE_URL:
-            capability = H2_H2LOADER_HOST_CAP_STAGE;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL;
             break;
         case H2_H2LOADER_HOST_COMMAND_HOLD_ON:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_HOLD_ON;
+            break;
         case H2_H2LOADER_HOST_COMMAND_HOLD_OFF:
-            capability = H2_H2LOADER_HOST_CAP_HOLD;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_HOLD_OFF;
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN;
+            break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT;
+            break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
             break;
         case H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE:
-            capability = H2_H2LOADER_HOST_CAP_UPGRADE;
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE;
             lifecycle = 1;
-            if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-                status->staged_valid == 0u) {
-                return H2_PAL_ERR_INVALID_STATE;
-            }
             break;
         default:
             return H2_PAL_ERR_INVALID_ARG;
@@ -125,12 +97,7 @@ h2_pal_result_t h2_h2loader_host_command_validate(
     if (lifecycle && operation_active != 0u) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if (capability != 0u && !status_has_capability(status, capability)) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    if (availability != 0u &&
-        status->has_command_availability != 0u &&
-        (status->command_availability & availability) == 0u) {
+    if ((status->command_availability & availability) == 0u) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     return H2_PAL_OK;

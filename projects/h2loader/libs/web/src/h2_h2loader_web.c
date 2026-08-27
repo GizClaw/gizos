@@ -335,10 +335,12 @@ static h2_pal_result_t restart_device(h2_web_job_t *job) {
   h2_pal_result_t result = job_connect(job, &initial);
   h2_h2loader_host_command_t command = H2_H2LOADER_HOST_COMMAND_HELP;
   if (result == H2_PAL_OK &&
-      initial.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP) {
+      h2_h2loader_host_status_active_role(&initial) ==
+          H2_H2LOADER_HOST_ACTIVE_ROLE_APP) {
     command = H2_H2LOADER_HOST_COMMAND_APP_RESTART;
   } else if (result == H2_PAL_OK &&
-             initial.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
+             h2_h2loader_host_status_active_role(&initial) ==
+                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
     command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
   } else if (result == H2_PAL_OK) {
     result = H2_PAL_ERR_INVALID_STATE;

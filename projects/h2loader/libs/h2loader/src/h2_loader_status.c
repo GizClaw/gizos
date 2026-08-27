@@ -7,24 +7,6 @@ static const char *default_if_empty(const char *value, const char *fallback) {
     return value != NULL && value[0] != '\0' ? value : fallback;
 }
 
-static const char *upgrade_phase_name(h2_loader_upgrade_phase_t phase) {
-    switch (phase) {
-    case H2_LOADER_UPGRADE_PHASE_IDLE:
-        return "idle";
-    case H2_LOADER_UPGRADE_PHASE_TRIAL_PENDING:
-        return "trial_pending";
-    case H2_LOADER_UPGRADE_PHASE_TRIAL_RUNNING:
-        return "trial_running";
-    case H2_LOADER_UPGRADE_PHASE_CANONICAL_PENDING:
-        return "canonical_pending";
-    case H2_LOADER_UPGRADE_PHASE_FAILED:
-        return "failed";
-    case H2_LOADER_UPGRADE_PHASE_CORRUPT:
-    default:
-        return "corrupt";
-    }
-}
-
 static void copy_text(char *dst, size_t dst_len, const char *src) {
     size_t len;
 
@@ -133,14 +115,18 @@ int h2_loader_status_set_mfg(
 
 int h2_loader_status_set_active(
     h2_loader_status_t *status,
-    const char *role,
+    h2_loader_active_role_t role,
     const char *name,
     const char *version,
     const char *checksum) {
     if (status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    copy_text(status->active_role, sizeof(status->active_role), role);
+    if (role != H2_LOADER_ACTIVE_ROLE_H2LOADER &&
+        role != H2_LOADER_ACTIVE_ROLE_APP) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    status->active_role = role;
     copy_text(status->active_name, sizeof(status->active_name), name);
     copy_text(status->active_version, sizeof(status->active_version), version);
     copy_text(status->active_checksum, sizeof(status->active_checksum), checksum);
@@ -166,46 +152,35 @@ int h2_loader_status_format(
     char *out,
     size_t out_len) {
     int len;
-    char mfg_steps[(H2_LOADER_MFG_STEP_TOTAL * 2u) + 1u];
+    uint64_t states;
 
     if (status == NULL || out == NULL || out_len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (h2_loader_mfg_summary_validate(&status->mfg) != H2_PAL_OK) {
+    if (h2_loader_states_pack(status, &states) != H2_PAL_OK) {
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    for (uint32_t i = 0u; i < H2_LOADER_MFG_STEP_TOTAL; ++i) {
-        (void)snprintf(&mfg_steps[i * 2u], 3u, "%02x",
-                       status->mfg.step_status[i]);
     }
     len = snprintf(out,
         out_len,
-        "H2_LOADER_STATUS intent=%s board=%s target=%s chip=%s state=%s app_confirmed=%d hold=%d last=%d "
-        "active_role=%s capabilities=0x%08lx command_availability=0x%08lx active_name=%s active_version=%s active_checksum=%s "
-        "installed_valid=%d installed_version=%s installed_checksum=%s "
-        "staged_valid=%d staged_version=%s staged_checksum=%s staged_bytes=%llu "
+        "H2_LOADER_STATUS board=%s target=%s chip=%s capabilities=0x%08lx command_availability=0x%08lx states=0x%016llx "
+        "active_name=%s active_version=%s active_checksum=%s last=%d "
+        "installed_version=%s installed_checksum=%s "
+        "staged_version=%s staged_checksum=%s staged_bytes=%llu "
         "running_partition=%lu next_partition=%lu canonical_partition=%lu trial_partition=%lu "
-        "upgrade_phase=%s upgrade_last=%ld upgrade_step=%s upgrade_package_sha256=%s candidate_board=%s candidate_target=%s "
-        "candidate_version=%s candidate_bytes=%llu candidate_sha256=%s "
-        "mfg=%s mfg_tests=%lu/%lu mfg_steps=%s",
-        h2_loader_boot_intent_name(status->boot_intent),
+        "upgrade_last=%ld upgrade_step=%s upgrade_package_sha256=%s candidate_board=%s candidate_target=%s "
+        "candidate_version=%s candidate_bytes=%llu candidate_sha256=%s",
         default_if_empty(status->board, "unknown"),
         default_if_empty(status->target, "unknown"),
         default_if_empty(status->chip, default_if_empty(status->target, "unknown")),
-        h2_loader_install_state_name(status->install_state),
-        status->app_confirmed,
-        status->manual_hold,
-        status->last_result,
-        default_if_empty(status->active_role, "unknown"),
         (unsigned long)status->capabilities,
         (unsigned long)status->command_availability,
+        (unsigned long long)states,
         default_if_empty(status->active_name, "unknown"),
         default_if_empty(status->active_version, ""),
         default_if_empty(status->active_checksum, ""),
-        status->installed.valid,
+        status->last_result,
         status->installed.version,
         status->installed.checksum,
-        status->staged.valid,
         status->staged.version,
         status->staged.checksum,
         (unsigned long long)status->staged.size,
@@ -213,7 +188,6 @@ int h2_loader_status_format(
         (unsigned long)status->next_partition_id,
         (unsigned long)status->loader_upgrade.canonical_partition,
         (unsigned long)status->loader_upgrade.trial_partition,
-        upgrade_phase_name(status->loader_upgrade.phase),
         (long)status->loader_upgrade.last_result,
         status->loader_upgrade_step,
         status->loader_upgrade.package_sha256,
@@ -221,11 +195,7 @@ int h2_loader_status_format(
         status->loader_upgrade.candidate.target,
         status->loader_upgrade.candidate.version,
         (unsigned long long)status->loader_upgrade.candidate.image_size,
-        status->loader_upgrade.candidate.image_sha256,
-        h2_loader_mfg_state_name(&status->mfg),
-        (unsigned long)mfg_passed_count(&status->mfg),
-        (unsigned long)status->mfg.total,
-        mfg_steps);
+        status->loader_upgrade.candidate.image_sha256);
     if (len < 0 || (size_t)len >= out_len) {
         return H2_PAL_ERR_NO_SPACE;
     }

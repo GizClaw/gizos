@@ -203,8 +203,9 @@ int h2_h2loader_cli_server_command_with_transport(
     if (rc == H2_PAL_OK &&
         (strcmp(status.board, initial_status.board) != 0 ||
          strcmp(status.target, initial_status.target) != 0 ||
-         status.active_role != initial_status.active_role ||
-         status.staged_valid == 0u ||
+         h2_h2loader_host_status_active_role(&status) !=
+             h2_h2loader_host_status_active_role(&initial_status) ||
+         !h2_h2loader_host_status_staged_valid(&status) ||
          status.staged_bytes != parsed.expected_bytes ||
          strcmp(status.staged_checksum, parsed.expected_sha256) != 0)) {
         rc = H2_PAL_ERR_INVALID_STATE;

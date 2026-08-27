@@ -85,7 +85,6 @@ static int open_command_service(
             .allocator = runtime->mem,
         },
         .board = board,
-        .active_role = H2_LOADER_BLE_ROLE_LOADER,
         .capabilities = capabilities,
         .handler = handle_session,
         .handler_user = &base,

@@ -115,7 +115,10 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         .chip = runtime_config->chip,
         .active_name = config->active_name,
         .active_version = config->active_version,
-        .capabilities = H2_LOADER_CAPABILITIES_APP,
+        .hardware_capabilities =
+            H2_LOADER_CAPABILITY_UART |
+            H2_LOADER_CAPABILITY_WIFI |
+            H2_LOADER_CAPABILITY_BLE,
         .memory_stats = {
             .read = h2_esp_h2loader_memory_stats_read,
         },
@@ -195,8 +198,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
             .allocator = runtime->mem,
         },
         .board = runtime->board,
-        .active_role = H2_LOADER_BLE_ROLE_APP,
-        .capabilities = H2_LOADER_CAPABILITIES_APP,
+        .capabilities = s_ble.client_config.hardware_capabilities,
         .handler = handle_ble_session,
         .handler_user = &s_ble,
     };
