@@ -94,6 +94,12 @@ typedef h2_pal_result_t (*h2_h2loader_cli_scan_probe_fn)(
     uint32_t timeout_ms,
     h2_h2loader_host_status_t *out_status);
 
+h2_pal_result_t h2_h2loader_cli_scan_probe_serial(
+    void *user,
+    const h2_h2loader_host_candidate_t *candidate,
+    uint32_t timeout_ms,
+    h2_h2loader_host_status_t *out_status);
+
 h2_pal_result_t h2_h2loader_cli_output(
     h2_h2loader_cli_context_t *context,
     h2_h2loader_cli_stream_t stream,

@@ -245,7 +245,7 @@ static const char *install_state_name(uint32_t state) {
     return state < sizeof(names) / sizeof(names[0]) ? names[state] : "";
 }
 
-static h2_pal_result_t scan_probe_serial(
+h2_pal_result_t h2_h2loader_cli_scan_probe_serial(
     void *user,
     const h2_h2loader_host_candidate_t *candidate,
     uint32_t timeout_ms,
@@ -407,7 +407,7 @@ static int scan_command(h2_h2loader_cli_context_t *context, int argc, const char
         candidates,
         result.count,
         timeout,
-        scan_probe_serial,
+        h2_h2loader_cli_scan_probe_serial,
         context);
 }
 

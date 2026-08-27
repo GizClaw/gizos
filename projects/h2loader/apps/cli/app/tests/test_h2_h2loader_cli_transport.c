@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct serial_policy_fixture {
@@ -15,7 +16,45 @@ typedef struct serial_policy_fixture {
     unsigned count_count;
     unsigned get_count;
     unsigned destroy_count;
+    unsigned sequence;
+    unsigned open_order;
+    unsigned set_order;
+    unsigned stream_order;
+    unsigned close_order;
+    unsigned open_count;
+    unsigned set_count;
+    unsigned stream_count;
+    unsigned close_count;
+    uint32_t line_mask;
+    uint32_t asserted_lines;
 } serial_policy_fixture_t;
+
+static void *test_alloc(void *user, size_t len) {
+    (void)user;
+    return malloc(len);
+}
+
+static void *test_realloc(void *user, void *ptr, size_t len) {
+    (void)user;
+    return realloc(ptr, len);
+}
+
+static void test_free(void *user, void *ptr) {
+    (void)user;
+    free(ptr);
+}
+
+static const h2_pal_mem_vtable_t test_mem_vtable = {
+    .alloc = test_alloc,
+    .realloc = test_realloc,
+    .free = test_free,
+};
+
+static const h2_pal_mem_api_t test_mem = {
+    .vtable = &test_mem_vtable,
+};
+
+static const h2_pal_time_api_t test_time = {0};
 
 static h2_pal_result_t policy_scan(
     void *user,
@@ -69,11 +108,66 @@ static h2_pal_result_t policy_snapshot_destroy(
     return fixture->destroy_result;
 }
 
+static h2_pal_result_t policy_open(
+    void *user,
+    const char *port_id,
+    const h2_pal_uart_io_stream_config_t *config,
+    h2_pal_serial_host_session_t **out_session) {
+    serial_policy_fixture_t *fixture = user;
+    assert(strcmp(port_id, "port-a") == 0);
+    assert(config->baud_rate == H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD);
+    fixture->open_order = ++fixture->sequence;
+    ++fixture->open_count;
+    *out_session = (h2_pal_serial_host_session_t *)fixture;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t policy_set_control_lines(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    uint32_t line_mask,
+    uint32_t asserted_lines) {
+    serial_policy_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->set_order = ++fixture->sequence;
+    ++fixture->set_count;
+    fixture->line_mask = line_mask;
+    fixture->asserted_lines = asserted_lines;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t policy_session_stream(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    const h2_pal_uart_io_stream_api_t **out_stream) {
+    serial_policy_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->stream_order = ++fixture->sequence;
+    ++fixture->stream_count;
+    *out_stream = NULL;
+    return H2_PAL_ERR_IO;
+}
+
+static h2_pal_result_t policy_close(
+    void *user,
+    h2_pal_serial_host_session_t **inout_session) {
+    serial_policy_fixture_t *fixture = user;
+    assert(*inout_session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->close_order = ++fixture->sequence;
+    ++fixture->close_count;
+    *inout_session = NULL;
+    return H2_PAL_OK;
+}
+
 static const h2_pal_serial_host_vtable_t policy_serial_vtable = {
     .scan = policy_scan,
     .snapshot_count = policy_snapshot_count,
     .snapshot_get = policy_snapshot_get,
     .snapshot_destroy = policy_snapshot_destroy,
+    .open = policy_open,
+    .session_stream = policy_session_stream,
+    .set_control_lines = policy_set_control_lines,
+    .close = policy_close,
 };
 
 static h2_h2loader_cli_transport_t make_transport(
@@ -94,6 +188,8 @@ static h2_h2loader_cli_transport_t make_transport(
         .runtime = runtime,
         .config = config,
     };
+    runtime->mem = &test_mem;
+    runtime->time = &test_time;
     *options = (h2_h2loader_cli_options_t){
         .port = "port-a",
         .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
@@ -118,7 +214,23 @@ static void set_port(
     port->usb_pid = usb_pid;
 }
 
-static void test_direct_policy_is_cached(void) {
+static void assert_deassert_connection_attempts(
+    const serial_policy_fixture_t *fixture,
+    unsigned attempts) {
+    assert(fixture->open_count == attempts);
+    assert(fixture->set_count == attempts);
+    assert(fixture->stream_count == attempts);
+    assert(fixture->close_count == attempts);
+    assert(fixture->open_order < fixture->set_order);
+    assert(fixture->set_order < fixture->stream_order);
+    assert(fixture->stream_order < fixture->close_order);
+    assert(fixture->line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture->asserted_lines == 0u);
+}
+
+static void test_direct_connect_and_reconnect_cache_policy(void) {
     serial_policy_fixture_t fixture = {
         .scan_result = H2_PAL_OK,
         .count_result = H2_PAL_OK,
@@ -131,6 +243,7 @@ static void test_direct_policy_is_cached(void) {
     h2_h2loader_cli_config_t config;
     h2_pal_serial_host_api_t serial;
     h2_h2loader_cli_options_t options;
+    h2_h2loader_host_status_t status;
     set_port(&fixture.ports[0], "port-a",
         H2_PAL_SERIAL_HOST_PORT_FIELD_USB_VID |
             H2_PAL_SERIAL_HOST_PORT_FIELD_USB_PID,
@@ -138,18 +251,48 @@ static void test_direct_policy_is_cached(void) {
     h2_h2loader_cli_transport_t transport = make_transport(
         &fixture, &context, &runtime, &config, &serial, &options);
 
-    assert(h2_h2loader_cli_transport_prepare_serial_policy(&transport) ==
-        H2_PAL_OK);
+    assert(h2_h2loader_cli_transport_connect(&transport, &status) ==
+        H2_PAL_ERR_IO);
     assert(transport.serial_control_line_mask ==
         (H2_PAL_SERIAL_HOST_CONTROL_DTR |
          H2_PAL_SERIAL_HOST_CONTROL_RTS));
     assert(transport.serial_asserted_control_lines == 0u);
     assert(fixture.scan_count == 1u);
     assert(fixture.destroy_count == 1u);
-    assert(h2_h2loader_cli_transport_prepare_serial_policy(&transport) ==
-        H2_PAL_OK);
+    assert_deassert_connection_attempts(&fixture, 1u);
+
+    assert(h2_h2loader_cli_transport_connect(&transport, &status) ==
+        H2_PAL_ERR_IO);
     assert(fixture.scan_count == 1u);
     assert(fixture.destroy_count == 1u);
+    assert_deassert_connection_attempts(&fixture, 2u);
+}
+
+static void test_scan_probe_uses_frozen_candidate(void) {
+    serial_policy_fixture_t fixture = {0};
+    h2_h2loader_cli_context_t context;
+    h2_runtime_t runtime = {0};
+    h2_h2loader_cli_config_t config;
+    h2_pal_serial_host_api_t serial;
+    h2_h2loader_cli_options_t options;
+    h2_h2loader_host_status_t status;
+    h2_h2loader_host_candidate_t candidate = {
+        .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
+        .serial_valid_fields =
+            H2_PAL_SERIAL_HOST_PORT_FIELD_USB_VID |
+            H2_PAL_SERIAL_HOST_PORT_FIELD_USB_PID,
+        .usb_vid = 0x1a86u,
+        .usb_pid = 0x7523u,
+    };
+    (void)make_transport(
+        &fixture, &context, &runtime, &config, &serial, &options);
+    strcpy(candidate.port_id, "port-a");
+
+    assert(h2_h2loader_cli_scan_probe_serial(
+               &context, &candidate, 1000u, &status) == H2_PAL_ERR_IO);
+    assert(fixture.scan_count == 0u);
+    assert(fixture.destroy_count == 0u);
+    assert_deassert_connection_attempts(&fixture, 1u);
 }
 
 static void test_frozen_candidate_policy(void) {
@@ -243,7 +386,8 @@ static void test_direct_metadata_fallback_and_cleanup(void) {
 }
 
 int main(void) {
-    test_direct_policy_is_cached();
+    test_direct_connect_and_reconnect_cache_policy();
+    test_scan_probe_uses_frozen_candidate();
     test_frozen_candidate_policy();
     test_direct_metadata_fallback_and_cleanup();
     puts("h2loader cli transport tests passed");
