@@ -71,7 +71,8 @@ static void app_entry(void *user) {
     }
   }
   if (rc == H2_PAL_OK) {
-    rc = h2_bk_h2loader_start_app_iostreamikcp(runtime, "wifi-csi");
+    rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+        runtime, "wifi-csi", H2_LOADER_CAPABILITY_UART);
   }
   if (rc != H2_PAL_OK) {
     emit_marker("H2_BK_SMOKE_WIFI_CSI_FAIL stage=app_cli rc=%d", rc);

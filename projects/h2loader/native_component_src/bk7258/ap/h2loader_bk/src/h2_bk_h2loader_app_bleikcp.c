@@ -155,9 +155,12 @@ static const h2_pal_disk_api_t s_coredump_disk = {
 int h2_bk_h2loader_init_app_client(
     h2_runtime_t *runtime,
     const char *active_name,
+    uint32_t hardware_capabilities,
     h2_loader_app_client_t *client) {
     if (runtime == NULL || active_name == NULL || active_name[0] == '\0' ||
-        client == NULL) {
+        client == NULL ||
+        (hardware_capabilities & H2_LOADER_CAPABILITY_UART) == 0u ||
+        (hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     int rc = h2_bk_h2loader_prepare_app_operation(runtime);
@@ -187,10 +190,7 @@ int h2_bk_h2loader_init_app_client(
         .chip = runtime->chip,
         .active_name = active_name,
         .active_version = s_ble.active_version,
-        .hardware_capabilities =
-            H2_LOADER_CAPABILITY_UART |
-            H2_LOADER_CAPABILITY_WIFI |
-            H2_LOADER_CAPABILITY_BLE,
+        .hardware_capabilities = hardware_capabilities,
         .h2loader_partition_id = H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
         .coredump_partition_id = H2_BK_H2LOADER_COREDUMP_ADDR,
     };
@@ -228,16 +228,19 @@ static int handle_ble_session(void *user, h2_bleikcp_t *stream, uint16_t conn_ha
 static int h2_bk_h2loader_start_app_ble_with_mode(
     h2_runtime_t *runtime,
     const char *active_name,
+    uint32_t hardware_capabilities,
     h2_loader_ble_advertising_mode_t advertising_mode) {
     h2_loader_app_client_t client;
 
-    if (runtime == NULL || active_name == NULL || active_name[0] == '\0') {
+    if (runtime == NULL || active_name == NULL || active_name[0] == '\0' ||
+        (hardware_capabilities & H2_LOADER_CAPABILITY_BLE) == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (s_started) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    int rc = h2_bk_h2loader_init_app_client(runtime, active_name, &client);
+    int rc = h2_bk_h2loader_init_app_client(
+        runtime, active_name, hardware_capabilities, &client);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -268,14 +271,38 @@ int h2_bk_h2loader_start_app_ble(
     h2_runtime_t *runtime,
     const char *active_name) {
     return h2_bk_h2loader_start_app_ble_with_mode(
-        runtime, active_name, H2_LOADER_BLE_ADVERTISING_LEGACY);
+        runtime,
+        active_name,
+        H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
+        H2_LOADER_BLE_ADVERTISING_LEGACY);
+}
+
+int h2_bk_h2loader_start_app_ble_with_capabilities(
+    h2_runtime_t *runtime,
+    const char *active_name,
+    uint32_t hardware_capabilities) {
+    return h2_bk_h2loader_start_app_ble_with_mode(
+        runtime, active_name, hardware_capabilities,
+        H2_LOADER_BLE_ADVERTISING_LEGACY);
 }
 
 int h2_bk_h2loader_start_app_ble_extended(
     h2_runtime_t *runtime,
     const char *active_name) {
     return h2_bk_h2loader_start_app_ble_with_mode(
-        runtime, active_name, H2_LOADER_BLE_ADVERTISING_EXTENDED);
+        runtime,
+        active_name,
+        H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
+        H2_LOADER_BLE_ADVERTISING_EXTENDED);
+}
+
+int h2_bk_h2loader_start_app_ble_extended_with_capabilities(
+    h2_runtime_t *runtime,
+    const char *active_name,
+    uint32_t hardware_capabilities) {
+    return h2_bk_h2loader_start_app_ble_with_mode(
+        runtime, active_name, hardware_capabilities,
+        H2_LOADER_BLE_ADVERTISING_EXTENDED);
 }
 
 int h2_bk_h2loader_pause_app_ble_advertising(void) {

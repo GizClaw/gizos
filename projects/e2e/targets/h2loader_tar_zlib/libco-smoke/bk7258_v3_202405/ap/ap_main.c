@@ -80,7 +80,8 @@ static void h2_bk_libco_smoke_app_entry(void *user) {
     h2_bk_libco_smoke_recover_before_command_transport("runtime_init", rc);
   }
   if (rc == H2_PAL_OK) {
-    rc = h2_bk_h2loader_start_app_iostreamikcp(runtime, "libco-smoke");
+    rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+        runtime, "libco-smoke", H2_LOADER_CAPABILITY_UART);
   }
   if (rc != H2_PAL_OK) {
     h2_bk_libco_smoke_recover_before_command_transport("app_cli", rc);

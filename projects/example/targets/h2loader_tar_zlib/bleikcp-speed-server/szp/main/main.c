@@ -28,6 +28,8 @@ static void image_entry(void *user) {
     h2_runtime_t *runtime = NULL;
     const h2_esp_h2loader_app_commands_config_t commands_config = {
         .active_name = "bleikcp-speed-server",
+        .hardware_capabilities =
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = 1u,
         .coredump_partition_id = 3u,
     };

@@ -85,7 +85,9 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         runtime_config->pref == NULL || runtime_config->power == NULL ||
         runtime_config->board == NULL || runtime_config->target == NULL ||
         runtime_config->chip == NULL || config == NULL ||
-        config->active_name == NULL || config->active_name[0] == '\0') {
+        config->active_name == NULL || config->active_name[0] == '\0' ||
+        (config->hardware_capabilities & H2_LOADER_CAPABILITY_UART) == 0u ||
+        (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (s_serial_started || s_ble.operation_mutex != NULL) {
@@ -115,10 +117,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         .chip = runtime_config->chip,
         .active_name = config->active_name,
         .active_version = config->active_version,
-        .hardware_capabilities =
-            H2_LOADER_CAPABILITY_UART |
-            H2_LOADER_CAPABILITY_WIFI |
-            H2_LOADER_CAPABILITY_BLE,
+        .hardware_capabilities = config->hardware_capabilities,
         .memory_stats = {
             .read = h2_esp_h2loader_memory_stats_read,
         },
@@ -158,6 +157,8 @@ int h2_esp_h2loader_app_commands_prepare_serial(
     uint32_t coredump_partition_id) {
     const h2_esp_h2loader_app_commands_config_t config = {
         .active_name = active_name,
+        .hardware_capabilities =
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
         .coredump_partition_id = coredump_partition_id,
     };
@@ -172,7 +173,9 @@ int h2_esp_h2loader_app_commands_start_with_config(
         runtime->time == NULL || runtime->sync == NULL ||
         runtime->system_event == NULL || runtime->mem == NULL ||
         config == NULL || config->active_name == NULL ||
-        config->active_name[0] == '\0') {
+        config->active_name[0] == '\0' ||
+        (config->hardware_capabilities & H2_LOADER_CAPABILITY_BLE) == 0u ||
+        (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (!s_serial_started || s_ble.service != NULL) {
@@ -181,6 +184,8 @@ int h2_esp_h2loader_app_commands_start_with_config(
     if (strcmp(s_ble.client_config.active_name, config->active_name) != 0 ||
         !h2_esp_optional_string_equal(
             s_ble.client_config.active_version, config->active_version) ||
+        s_ble.client_config.hardware_capabilities !=
+            config->hardware_capabilities ||
         s_ble.client_config.h2loader_partition_id !=
             config->h2loader_partition_id ||
         s_ble.client_config.coredump_partition_id !=
@@ -245,6 +250,8 @@ int h2_esp_h2loader_app_commands_start(
     uint32_t coredump_partition_id) {
     const h2_esp_h2loader_app_commands_config_t config = {
         .active_name = active_name,
+        .hardware_capabilities =
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
         .coredump_partition_id = coredump_partition_id,
     };

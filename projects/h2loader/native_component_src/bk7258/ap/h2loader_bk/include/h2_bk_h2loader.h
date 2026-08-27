@@ -37,6 +37,10 @@ int h2_bk_h2loader_commit_staged_app_boot(void);
 const h2_pal_power_api_t *h2_bk_h2loader_power_api(void);
 int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
                                           const char *active_name);
+int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+    h2_runtime_t *runtime,
+    const char *active_name,
+    uint32_t hardware_capabilities);
 int h2_bk_h2loader_stop_app_iostreamikcp(void);
 int h2_bk_h2loader_start_loader_iostreamikcp(
     h2_runtime_t *runtime, h2_loader_command_t *command,
@@ -44,8 +48,16 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
 int h2_bk_h2loader_stop_loader_iostreamikcp(void);
 int h2_bk_h2loader_start_app_ble(h2_runtime_t *runtime,
                                  const char *active_name);
+int h2_bk_h2loader_start_app_ble_with_capabilities(
+    h2_runtime_t *runtime,
+    const char *active_name,
+    uint32_t hardware_capabilities);
 int h2_bk_h2loader_start_app_ble_extended(h2_runtime_t *runtime,
                                           const char *active_name);
+int h2_bk_h2loader_start_app_ble_extended_with_capabilities(
+    h2_runtime_t *runtime,
+    const char *active_name,
+    uint32_t hardware_capabilities);
 int h2_bk_h2loader_pause_app_ble_advertising(void);
 int h2_bk_h2loader_resume_app_ble_advertising(void);
 int h2_bk_h2loader_advertise_app_ble_service(

@@ -799,6 +799,25 @@ static void test_status(void) {
     states_suffix[strlen("states=0x000000000001586")] = 'A';
     assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
            H2_PAL_ERR_FORMAT);
+    strcpy(noncanonical_hex, line);
+    char *unsafe_version = strstr(noncanonical_hex, "active_version=v1");
+    assert(unsafe_version != NULL);
+    unsafe_version[strlen("active_version=v")] = '\t';
+    assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
+           H2_PAL_ERR_FORMAT);
+    const char *staged_bytes = strstr(line, "staged_bytes=0");
+    assert(staged_bytes != NULL);
+    const size_t staged_value_offset =
+        (size_t)(staged_bytes - line) + strlen("staged_bytes=");
+    assert(snprintf(
+               noncanonical_hex,
+               sizeof(noncanonical_hex),
+               "%.*s0x0%s",
+               (int)staged_value_offset,
+               line,
+               staged_bytes + strlen("staged_bytes=0")) > 0);
+    assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
+           H2_PAL_ERR_FORMAT);
     assert(h2_h2loader_host_status_parse(line, &status) == H2_PAL_OK);
 
     h2_h2loader_host_catalog_entry_t asset = { 0 };

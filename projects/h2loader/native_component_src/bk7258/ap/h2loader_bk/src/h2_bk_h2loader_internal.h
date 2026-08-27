@@ -14,6 +14,7 @@ const h2_pal_power_api_t *h2_bk_h2loader_app_power_api(
 int h2_bk_h2loader_init_app_client(
     h2_runtime_t *runtime,
     const char *active_name,
+    uint32_t hardware_capabilities,
     h2_loader_app_client_t *client);
 
 #endif

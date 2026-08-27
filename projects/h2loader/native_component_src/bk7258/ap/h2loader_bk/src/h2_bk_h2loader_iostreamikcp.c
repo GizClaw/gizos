@@ -567,6 +567,15 @@ static int arm_pending_app_rollback(const h2_pal_pref_api_t *pref) {
 
 int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
                                           const char *active_name) {
+  return h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+      runtime, active_name,
+      H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE);
+}
+
+int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+    h2_runtime_t *runtime,
+    const char *active_name,
+    uint32_t hardware_capabilities) {
   if (runtime == NULL || runtime->task == NULL || runtime->mem == NULL ||
       runtime->pref == NULL || active_name == NULL || active_name[0] == '\0') {
     return H2_PAL_ERR_INVALID_ARG;
@@ -579,7 +588,8 @@ int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
   atomic_init(&state->stop_requested, false);
   int rc = arm_pending_app_rollback(runtime->pref);
   if (rc == H2_PAL_OK) {
-    rc = h2_bk_h2loader_init_app_client(runtime, active_name, &state->client);
+    rc = h2_bk_h2loader_init_app_client(
+        runtime, active_name, hardware_capabilities, &state->client);
   }
   if (rc == H2_PAL_OK) {
     rc =

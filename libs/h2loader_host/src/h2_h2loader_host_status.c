@@ -112,7 +112,7 @@ static int parse_u32(const char *value, size_t len, uint32_t *out_value) {
     return 1;
 }
 
-static int parse_u64(const char *value, size_t len, uint64_t *out_value) {
+static int parse_u64(const char *value, size_t len, int base, uint64_t *out_value) {
     char text[32];
     char *end = NULL;
     unsigned long long parsed;
@@ -123,12 +123,23 @@ static int parse_u64(const char *value, size_t len, uint64_t *out_value) {
     memcpy(text, value, len);
     text[len] = '\0';
     errno = 0;
-    parsed = strtoull(text, &end, 0);
+    parsed = strtoull(text, &end, base);
     if (errno != 0 || end == text || *end != '\0') {
         return 0;
     }
     *out_value = (uint64_t)parsed;
     return 1;
+}
+
+static int parse_decimal_u64(
+    const char *value,
+    size_t len,
+    uint64_t *out_value) {
+    if (value == NULL || len == 0u) return 0;
+    for (size_t i = 0u; i < len; ++i) {
+        if (value[i] < '0' || value[i] > '9') return 0;
+    }
+    return parse_u64(value, len, 10, out_value);
 }
 
 static int is_fixed_lower_hex(const char *value, size_t len) {
@@ -306,7 +317,7 @@ h2_pal_result_t h2_h2loader_host_status_parse(
 #define U32(name, member) \
     if (!take_field(&cursor, name, &value, &len) || !parse_u32(value, len, &out_status->member)) goto format_error
 #define U64(name, member) \
-    if (!take_field(&cursor, name, &value, &len) || !parse_u64(value, len, &out_status->member)) goto format_error
+    if (!take_field(&cursor, name, &value, &len) || !parse_decimal_u64(value, len, &out_status->member)) goto format_error
 #define I32(name, member) \
     if (!take_field(&cursor, name, &value, &len) || !parse_i32(value, len, &out_status->member)) goto format_error
     COPY("board", board); COPY("target", target); COPY("chip", chip);
@@ -315,7 +326,7 @@ h2_pal_result_t h2_h2loader_host_status_parse(
     if (!take_field(&cursor, "command_availability", &value, &len) || len != 10u ||
         !is_fixed_lower_hex(value, len) || !parse_u32(value, len, &out_status->command_availability)) goto format_error;
     if (!take_field(&cursor, "states", &value, &len) || len != 18u ||
-        !is_fixed_lower_hex(value, len) || !parse_u64(value, len, &out_status->states)) goto format_error;
+        !is_fixed_lower_hex(value, len) || !parse_u64(value, len, 0, &out_status->states)) goto format_error;
     COPY("active_name", active_name); COPY("active_version", active_version);
     COPY("active_checksum", active_checksum); I32("last", last);
     COPY("installed_version", installed_version); COPY("installed_checksum", installed_checksum);
@@ -338,6 +349,10 @@ h2_pal_result_t h2_h2loader_host_status_parse(
         !h2_h2loader_host_is_safe_identity(out_status->target) ||
         !h2_h2loader_host_is_safe_identity(out_status->chip) ||
         !h2_h2loader_host_is_safe_identity(out_status->active_name) ||
+        (out_status->active_version[0] != '\0' &&
+         !h2_h2loader_host_is_safe_identity(out_status->active_version)) ||
+        (out_status->upgrade_step[0] != '\0' &&
+         !h2_h2loader_host_is_safe_identity(out_status->upgrade_step)) ||
         (out_status->capabilities & ~H2_H2LOADER_HOST_CAPABILITIES_ALL) != 0u ||
         (out_status->command_availability & ~H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL) != 0u ||
         !states_valid(out_status->states)) goto format_error;
