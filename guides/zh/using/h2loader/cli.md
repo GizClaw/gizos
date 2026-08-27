@@ -78,7 +78,11 @@ ESP build 和 flash 需要 ESP-IDF 环境；BK 操作需要 BK SDK、toolchain �
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan
 ```
 
-扫描输出 JSON；serial candidate 的 transport 是 `iostreamikcp`，BLE candidate 是 `bleikcp`。BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。CLI 不以串口文件名、BLE display name 或广播 board 猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
+扫描输出 JSON；serial candidate 的 transport 是 `iostreamikcp`，BLE candidate 是 `bleikcp`。CLI 按枚举顺序对每个 serial candidate 恰好执行一次 reliable connect、live status 和 disconnect；成功 entry 的 `port` 是后续 `--port` 可原样复用的 opaque ID，并同时返回 authoritative `board`、`target`、`active_role`、`active_name`、`active_version`、`state`、`probe_result="ok"` 和 `probe_code=0`。失败 entry 仍保留 exact `port` 与 `endpoint`，使用 `probe_result="error"` 和 exact PAL `probe_code`，上述 identity field 为空；一个端口失败不隐藏其他 serial 或 BLE candidate。
+
+`--probe-timeout` 默认 10 秒，并分别作为每个串口的 handshake timeout 和 status command timeout，同时也是 BLE discovery allowance。N 个无响应串口的最坏耗时可达到 BLE allowance 加 `N × (handshake timeout + status timeout)` 与有界 open/close overhead。CLI 在 candidate 之间检查 cancellation，当前正在进行的 bounded connect 不变为异步取消；每个已打开 connection 都会在继续或返回前关闭。
+
+BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。BLE entry 的广播 board 仍只是 discovery evidence，不与 serial entry 配对，也不提升为 live identity。CLI 不以串口文件名、USB metadata、BLE display name、广播 board 或候选顺序猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status

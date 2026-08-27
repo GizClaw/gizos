@@ -225,6 +225,145 @@ static h2_pal_result_t file_read(
         : result;
 }
 
+typedef struct h2_h2loader_cli_scan_probe_result {
+    h2_h2loader_host_status_t status;
+    h2_pal_result_t result;
+} h2_h2loader_cli_scan_probe_result_t;
+
+static const char *active_role_name(uint8_t role) {
+    if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) return "h2loader";
+    if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP) return "app";
+    return "";
+}
+
+static h2_pal_result_t scan_probe_serial(
+    void *user,
+    const h2_h2loader_host_candidate_t *candidate,
+    uint32_t timeout_ms,
+    h2_h2loader_host_status_t *out_status) {
+    h2_h2loader_cli_context_t *context = user;
+    h2_h2loader_cli_options_t options = {
+        .port = candidate->port_id,
+        .wait_timeout_ms = timeout_ms,
+        .read_timeout_ms = timeout_ms,
+        .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
+    };
+    h2_h2loader_cli_transport_t transport;
+    h2_pal_result_t rc;
+    h2_pal_result_t disconnect_rc;
+
+    h2_h2loader_cli_transport_init(
+        &transport, context, &options, timeout_ms);
+    rc = h2_h2loader_cli_transport_connect(&transport, out_status);
+    disconnect_rc = h2_h2loader_cli_transport_disconnect(&transport);
+    return rc == H2_PAL_OK ? disconnect_rc : rc;
+}
+
+static h2_pal_result_t scan_output_field(
+    h2_h2loader_cli_context_t *context,
+    const char *name,
+    const char *value) {
+    h2_pal_result_t rc = h2_h2loader_cli_output(
+        context, H2_H2LOADER_CLI_STREAM_STDOUT, ", \"%s\": ", name);
+    return rc == H2_PAL_OK
+        ? h2_h2loader_cli_output_json_string(
+            context, H2_H2LOADER_CLI_STREAM_STDOUT, value)
+        : rc;
+}
+
+int h2_h2loader_cli_scan_candidates(
+    h2_h2loader_cli_context_t *context,
+    const h2_h2loader_host_candidate_t *candidates,
+    size_t count,
+    uint32_t timeout_ms,
+    h2_h2loader_cli_scan_probe_fn probe,
+    void *probe_user) {
+    h2_h2loader_cli_scan_probe_result_t probes[32];
+    h2_pal_result_t rc;
+
+    if (context == NULL || candidates == NULL || count > 32u ||
+        probe == NULL || timeout_ms == 0u) {
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
+    memset(probes, 0, sizeof(probes));
+    for (size_t i = 0u; i < count; ++i) {
+        if (candidates[i].transport != H2_H2LOADER_HOST_TRANSPORT_SERIAL) {
+            continue;
+        }
+        if (context->config->is_cancelled != NULL &&
+            context->config->is_cancelled(context->config->cancel_user)) {
+            return H2_H2LOADER_CLI_EXIT_RUNTIME;
+        }
+        probes[i].result = probe(
+            probe_user, &candidates[i], timeout_ms, &probes[i].status);
+        if (probes[i].result != H2_PAL_OK) {
+            memset(&probes[i].status, 0, sizeof(probes[i].status));
+        }
+    }
+    rc = h2_h2loader_cli_output(
+        context, H2_H2LOADER_CLI_STREAM_STDOUT, "{\n  \"devices\": [");
+    if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    for (size_t i = 0u; i < count; ++i) {
+        const h2_h2loader_host_candidate_t *candidate = &candidates[i];
+        const h2_h2loader_host_status_t *status = &probes[i].status;
+        int serial =
+            candidate->transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL;
+        rc = h2_h2loader_cli_output(
+            context, H2_H2LOADER_CLI_STREAM_STDOUT,
+            "%s\n    {\"transport\": \"%s\", \"port\": ",
+            i == 0u ? "" : ",",
+            serial ? "iostreamikcp" : "bleikcp");
+        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
+        rc = h2_h2loader_cli_output_json_string(
+            context, H2_H2LOADER_CLI_STREAM_STDOUT, candidate->port_id);
+        if (rc == H2_PAL_OK) {
+            rc = scan_output_field(
+                context, "endpoint", candidate->endpoint);
+        }
+        if (serial && rc == H2_PAL_OK) {
+            rc = h2_h2loader_cli_output(
+                context, H2_H2LOADER_CLI_STREAM_STDOUT,
+                ", \"probe_result\": \"%s\", \"probe_code\": %d",
+                probes[i].result == H2_PAL_OK ? "ok" : "error",
+                (int)probes[i].result);
+        }
+        if (rc == H2_PAL_OK) {
+            rc = scan_output_field(
+                context,
+                "board",
+                serial ? status->board : candidate->advertised_board);
+        }
+        if (serial && rc == H2_PAL_OK) {
+            rc = scan_output_field(context, "target", status->target);
+        }
+        if (serial && rc == H2_PAL_OK) {
+            rc = scan_output_field(
+                context, "active_role", active_role_name(status->active_role));
+        }
+        if (serial && rc == H2_PAL_OK) {
+            rc = scan_output_field(
+                context, "active_name", status->active_name);
+        }
+        if (serial && rc == H2_PAL_OK) {
+            rc = scan_output_field(
+                context, "active_version", status->active_version);
+        }
+        if (serial && rc == H2_PAL_OK) {
+            rc = scan_output_field(context, "state", status->state);
+        }
+        if (rc == H2_PAL_OK) {
+            rc = h2_h2loader_cli_output(
+                context, H2_H2LOADER_CLI_STREAM_STDOUT, "}");
+        }
+        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
+    rc = h2_h2loader_cli_output(
+        context, H2_H2LOADER_CLI_STREAM_STDOUT, "\n  ]\n}\n");
+    return rc == H2_PAL_OK
+        ? H2_H2LOADER_CLI_EXIT_OK
+        : H2_H2LOADER_CLI_EXIT_RUNTIME;
+}
+
 static int scan_command(h2_h2loader_cli_context_t *context, int argc, const char *const *argv) {
     h2_h2loader_host_candidate_t candidates[32];
     h2_h2loader_host_scan_result_t result;
@@ -244,43 +383,13 @@ static int scan_command(h2_h2loader_cli_context_t *context, int argc, const char
     };
     h2_pal_result_t rc = h2_h2loader_host_scan(&scan, &result);
     if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    rc = h2_h2loader_cli_output(
-        context, H2_H2LOADER_CLI_STREAM_STDOUT, "{\n  \"devices\": [");
-    if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    for (size_t i = 0u; i < result.count; ++i) {
-        rc = h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDOUT,
-            "%s\n    {\"transport\": \"%s\", \"port\": ",
-            i == 0u ? "" : ",",
-            candidates[i].transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL
-                ? "iostreamikcp"
-                : "bleikcp");
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-        rc = h2_h2loader_cli_output_json_string(
-            context, H2_H2LOADER_CLI_STREAM_STDOUT, candidates[i].port_id);
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-        rc = h2_h2loader_cli_output(
-            context, H2_H2LOADER_CLI_STREAM_STDOUT, ", \"endpoint\": ");
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-        rc = h2_h2loader_cli_output_json_string(
-            context, H2_H2LOADER_CLI_STREAM_STDOUT, candidates[i].endpoint);
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-        rc = h2_h2loader_cli_output(
-            context, H2_H2LOADER_CLI_STREAM_STDOUT, ", \"board\": ");
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-        rc = h2_h2loader_cli_output_json_string(
-            context,
-            H2_H2LOADER_CLI_STREAM_STDOUT,
-            candidates[i].advertised_board);
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-        rc = h2_h2loader_cli_output(
-            context, H2_H2LOADER_CLI_STREAM_STDOUT, "}");
-        if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    }
-    rc = h2_h2loader_cli_output(
-        context, H2_H2LOADER_CLI_STREAM_STDOUT, "\n  ]\n}\n");
-    return rc == H2_PAL_OK
-        ? H2_H2LOADER_CLI_EXIT_OK
-        : H2_H2LOADER_CLI_EXIT_RUNTIME;
+    return h2_h2loader_cli_scan_candidates(
+        context,
+        candidates,
+        result.count,
+        timeout,
+        scan_probe_serial,
+        context);
 }
 
 static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv) {

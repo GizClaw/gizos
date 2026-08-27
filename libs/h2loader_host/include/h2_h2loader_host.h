@@ -34,6 +34,8 @@ extern "C" {
 #define H2_H2LOADER_HOST_CAP_ROLLBACK (UINT32_C(1) << 5)
 #define H2_H2LOADER_HOST_CAP_HOLD (UINT32_C(1) << 6)
 #define H2_H2LOADER_HOST_CAP_COREDUMP (UINT32_C(1) << 7)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP (UINT32_C(1) << 0)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER (UINT32_C(1) << 1)
 
 typedef enum h2_h2loader_host_transport {
     H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
@@ -59,6 +61,7 @@ typedef struct h2_h2loader_host_status {
     char state[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char upgrade_phase[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     uint32_t capabilities;
+    uint32_t command_availability;
     uint32_t running_partition;
     uint64_t staged_bytes;
     int32_t upgrade_last;
@@ -67,6 +70,7 @@ typedef struct h2_h2loader_host_status {
     uint8_t staged_valid;
     uint8_t app_confirmed;
     uint8_t has_capabilities;
+    uint8_t has_command_availability;
     uint8_t has_running_partition;
     uint8_t has_upgrade_last;
 } h2_h2loader_host_status_t;
