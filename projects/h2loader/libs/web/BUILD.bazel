@@ -76,7 +76,10 @@ js_test(
         "//tools/bazel/platforms:is_windows_x86_64": True,
         "//conditions:default": False,
     }),
-    data = ["src/h2loader_protocol.js"],
+    data = [
+        "src/h2loader_protocol.js",
+        "tests/h2loader_protocol_test.mjs",
+    ],
     entry_point = "tests/h2loader_protocol_test.mjs",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
