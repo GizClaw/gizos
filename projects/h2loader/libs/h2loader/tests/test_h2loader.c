@@ -98,6 +98,34 @@ typedef struct command_test_io {
     h2_pal_result_t exhausted_result;
 } command_test_io_t;
 
+typedef struct capability_lock_test_context {
+    h2_loader_t *loader;
+    uint32_t capability;
+    size_t lock_calls;
+    size_t unlock_calls;
+} capability_lock_test_context_t;
+
+static h2_pal_result_t capability_lock_test_lock(
+    void *user,
+    h2_pal_mutex_t *mutex) {
+    capability_lock_test_context_t *context = user;
+
+    (void)mutex;
+    context->lock_calls += 1u;
+    return (h2_pal_result_t)h2_loader_set_capability_availability(
+        context->loader, context->capability, false);
+}
+
+static h2_pal_result_t capability_lock_test_unlock(
+    void *user,
+    h2_pal_mutex_t *mutex) {
+    capability_lock_test_context_t *context = user;
+
+    (void)mutex;
+    context->unlock_calls += 1u;
+    return H2_PAL_OK;
+}
+
 typedef struct wifi_command_test_context {
     h2_pal_wifi_sta_config_t connected;
     h2_pal_wifi_sta_config_t saved;
@@ -2679,6 +2707,10 @@ static void test_command_availability_reflects_loader_state(void) {
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
     assert(status.command_availability ==
            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+    assert(h2_loader_set_capability_availability(
+               &fixture.loader, H2_LOADER_CAP_REBOOT, false) == H2_PAL_OK);
+    assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
+    assert(status.command_availability == 0u);
 }
 
 static void test_capability_availability_flags(void) {
@@ -2775,6 +2807,51 @@ static void test_loader_commands_follow_capability_availability(void) {
         &command, &loader, H2_LOADER_CAP_HOLD, 3u, hold);
     assert_command_capability_gate(
         &command, &loader, H2_LOADER_CAP_COREDUMP, 3u, coredump);
+}
+
+static void test_loader_commands_recheck_capability_after_operation_lock(void) {
+    static const char *const argv[] = {"h2loader", "hold", "on"};
+    idle_trial_context_t idle_context = {0};
+    h2_loader_t loader = {0};
+    h2_loader_command_t command;
+    command_test_io_t io = {0};
+    capability_lock_test_context_t lock_context = {
+        .loader = &loader,
+        .capability = H2_LOADER_CAP_HOLD,
+    };
+    const h2_pal_sync_vtable_t sync_vtable = {
+        .lock_mutex = capability_lock_test_lock,
+        .unlock_mutex = capability_lock_test_unlock,
+    };
+    const h2_pal_sync_api_t sync = {
+        .user = &lock_context,
+        .vtable = &sync_vtable,
+    };
+    const h2_pal_pref_vtable_t pref_vtable = {.open = idle_pref_open};
+    const h2_pal_pref_api_t pref = {
+        .user = &idle_context,
+        .vtable = &pref_vtable,
+    };
+    const h2_pal_power_vtable_t power_vtable = {
+        .set_hold = idle_power_set_hold,
+    };
+    const h2_pal_power_api_t power = {
+        .user = &idle_context,
+        .vtable = &power_vtable,
+    };
+
+    loader.config.pref = &pref;
+    loader.config.power = &power;
+    loader.config.capabilities = H2_LOADER_CAP_HOLD;
+    assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
+    command.config.operation_sync = &sync;
+    command.config.operation_mutex = (h2_pal_mutex_t *)&lock_context;
+
+    assert(h2_loader_command_execute(&command, 3u, argv) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(lock_context.lock_calls == 1u);
+    assert(lock_context.unlock_calls == 1u);
+    assert(idle_context.hold_calls == 0);
 }
 
 static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) {
@@ -4328,6 +4405,7 @@ int main(void) {
     test_command_availability_reflects_loader_state();
     test_capability_availability_flags();
     test_loader_commands_follow_capability_availability();
+    test_loader_commands_recheck_capability_after_operation_lock();
     test_idle_trial_never_reboots_itself();
     test_confirmed_state_without_installed_identity_stays_in_command_mode();
     test_failed_upgrade_does_not_block_app_startup();
