@@ -1043,6 +1043,7 @@ static h2_pal_result_t h2loader_upgrade_handler_unlocked(
 typedef struct h2loader_reboot_transition_context {
     h2_loader_command_t *self;
     const char *target;
+    int emitted;
 } h2loader_reboot_transition_context_t;
 
 static int h2loader_reboot_transition(void *user) {
@@ -1053,7 +1054,23 @@ static int h2loader_reboot_transition(void *user) {
     printf(
         "H2_LOADER_REBOOT target=%s result=accepted\n",
         context->target);
+    context->emitted = 1;
     return (int)h2_command_flush(&context->self->command);
+}
+
+static void h2loader_reboot_failure(
+    h2loader_reboot_transition_context_t *transition,
+    int result) {
+    h2_loader_command_t *self = transition->self;
+
+    if (transition->emitted) {
+        return;
+    }
+    printf(
+        "H2_LOADER_REBOOT target=%s result=fail code=%d\n",
+        transition->target,
+        result);
+    (void)h2_command_flush(&transition->self->command);
 }
 
 static h2_pal_result_t h2loader_reboot_handler_unlocked(
@@ -1074,10 +1091,11 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
             self->config.loader,
             h2loader_reboot_transition,
             &transition);
+        h2loader_reboot_failure(&transition, rc);
         if (rc == H2_PAL_OK) {
             printf(
                 "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\n");
-        } else {
+        } else if (transition.emitted) {
             printf(
                 "H2_LOADER_REBOOT_FINAL target=loader result=fail code=%d\n",
                 rc);
@@ -1089,7 +1107,7 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
         return H2_PAL_ERR_INVALID_ARG;
     }
     transition.target = "app";
-    return (h2_pal_result_t)(self->config.defer_app_install ?
+    rc = self->config.defer_app_install ?
         h2_loader_request_install_staged_with_transition(
             self->config.loader,
             h2loader_reboot_transition,
@@ -1097,7 +1115,9 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
         h2_loader_install_staged_with_transition(
             self->config.loader,
             h2loader_reboot_transition,
-            &transition));
+            &transition);
+    h2loader_reboot_failure(&transition, rc);
+    return (h2_pal_result_t)rc;
 }
 
 static h2_pal_result_t h2loader_hold_handler_unlocked(

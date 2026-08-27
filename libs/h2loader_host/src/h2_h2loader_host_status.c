@@ -207,6 +207,15 @@ static h2_pal_result_t parse_field(
         return H2_PAL_OK;
     }
     if (field_matches(
+            field, field_len, "command_availability", &value, &value_len)) {
+        if (status->has_command_availability != 0u ||
+            !parse_u32(value, value_len, &status->command_availability)) {
+            return H2_PAL_ERR_FORMAT;
+        }
+        status->has_command_availability = 1u;
+        return H2_PAL_OK;
+    }
+    if (field_matches(
             field, field_len, "running_partition", &value, &value_len)) {
         if (!parse_u32(value, value_len, &status->running_partition)) {
             return H2_PAL_ERR_FORMAT;

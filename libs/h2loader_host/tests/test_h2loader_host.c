@@ -101,6 +101,30 @@ static void test_typed_command_role_contract(void) {
                &loader,
                0u,
                H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) == H2_PAL_OK);
+    loader.has_command_availability = 1u;
+    loader.command_availability =
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
+    assert(h2_h2loader_host_command_validate(
+               &loader,
+               0u,
+               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(h2_h2loader_host_command_validate(
+               &loader,
+               0u,
+               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) == H2_PAL_OK);
+    loader.command_availability =
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
+    assert(h2_h2loader_host_command_validate(
+               &loader,
+               0u,
+               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_validate(
+               &loader,
+               0u,
+               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) ==
+           H2_PAL_ERR_INVALID_STATE);
+    loader.has_command_availability = 0u;
     loader.staged_valid = 0u;
     assert(h2_h2loader_host_command_validate(
                &loader,
@@ -780,7 +804,7 @@ static void test_status(void) {
         "state=confirmed active_role=app active_name=display "
         "active_version=v1 active_checksum=%s installed_valid=1 "
         "installed_checksum=%s staged_valid=0 app_confirmed=1 "
-        "capabilities=0x3 running_partition=1\n",
+        "capabilities=0x3 command_availability=0x3 running_partition=1\n",
         checksum,
         checksum);
     assert(len > 0 && (size_t)len < sizeof(line));
@@ -789,6 +813,8 @@ static void test_status(void) {
     assert(strcmp(status.board, "devkit") == 0);
     assert(status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
     assert(status.capabilities == 3u);
+    assert(status.has_command_availability == 1u);
+    assert(status.command_availability == 3u);
     assert(status.has_running_partition == 1u);
 
     h2_h2loader_host_catalog_entry_t asset = { 0 };
@@ -829,6 +855,15 @@ static void test_status(void) {
     assert(h2_h2loader_host_status_parse(
                "H2_LOADER_STATUS board=../bad target=esp active_role=app\n",
                &status) == H2_PAL_ERR_FORMAT);
+    assert(h2_h2loader_host_status_parse(
+               "H2_LOADER_STATUS board=devkit target=esp active_role=h2loader "
+               "command_availability=0x1 command_availability=0x2\n",
+               &status) == H2_PAL_ERR_FORMAT);
+    assert(h2_h2loader_host_status_parse(
+               "H2_LOADER_STATUS board=devkit target=esp active_role=h2loader "
+               "command_availability=0x80000000\n",
+               &status) == H2_PAL_OK);
+    assert(status.command_availability == UINT32_C(0x80000000));
 
     static const char idle_loader[] =
         "H2_LOADER_STATUS intent=h2loader "

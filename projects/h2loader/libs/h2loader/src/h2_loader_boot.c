@@ -31,6 +31,7 @@ static int config_accepts_board(
 #define H2_LOADER_MFG_RECORD_V2_SIZE 24u
 #define H2_LOADER_MFG_RECORD_FORMAT 3u
 #define H2_LOADER_MFG_RECORD_SIZE (4u + H2_LOADER_MFG_STEP_TOTAL)
+#define H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED (UINT32_C(1) << 30)
 
 static int mfg_gate_bypass_load(const h2_loader_atomic_flag_t *value) {
 #if defined(_MSC_VER)
@@ -45,6 +46,79 @@ static void mfg_gate_bypass_store(h2_loader_atomic_flag_t *value, int enabled) {
     (void)_InterlockedExchange(value, (long)enabled);
 #else
     __atomic_store_n(value, enabled, __ATOMIC_RELEASE);
+#endif
+}
+
+static uint32_t command_availability_load(
+    const h2_loader_atomic_flag_t *value) {
+    uint32_t stored;
+#if defined(_MSC_VER)
+    stored = (uint32_t)_InterlockedCompareExchange(
+        (volatile long *)value, 0, 0);
+#else
+    stored = (uint32_t)__atomic_load_n(value, __ATOMIC_ACQUIRE);
+#endif
+    return (stored & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) != 0u
+        ? stored & H2_LOADER_COMMAND_AVAILABILITY_ALL
+        : H2_LOADER_COMMAND_AVAILABILITY_ALL;
+}
+
+static void command_availability_store(
+    h2_loader_atomic_flag_t *value,
+    uint32_t flags) {
+#if defined(_MSC_VER)
+    (void)_InterlockedExchange((volatile long *)value, (long)flags);
+#else
+    __atomic_store_n(value, (int)flags, __ATOMIC_RELEASE);
+#endif
+}
+
+static void command_availability_update(
+    h2_loader_atomic_flag_t *value,
+    uint32_t flags,
+    bool available) {
+    uint32_t next;
+
+#if defined(_MSC_VER)
+    uint32_t current;
+    current = (uint32_t)_InterlockedCompareExchange(
+        (volatile long *)value, 0, 0);
+    for (;;) {
+        uint32_t base = current;
+        uint32_t observed;
+        if ((base & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) == 0u) {
+            base = H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+                H2_LOADER_COMMAND_AVAILABILITY_ALL;
+        }
+        next = available ? base | flags : base & ~flags;
+        next |= H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED;
+        observed = (uint32_t)_InterlockedCompareExchange(
+            (volatile long *)value, (long)next, (long)current);
+        if (observed == current) {
+            break;
+        }
+        current = observed;
+    }
+#else
+    int expected = __atomic_load_n(value, __ATOMIC_ACQUIRE);
+    for (;;) {
+        uint32_t base = (uint32_t)expected;
+        if ((base & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) == 0u) {
+            base = H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+                H2_LOADER_COMMAND_AVAILABILITY_ALL;
+        }
+        next = available ? base | flags : base & ~flags;
+        next |= H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED;
+        if (__atomic_compare_exchange_n(
+                value,
+                &expected,
+                (int)next,
+                0,
+                __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) {
+            break;
+        }
+    }
 #endif
 }
 
@@ -64,6 +138,45 @@ int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
     }
     mfg_gate_bypass_store(&loader->mfg_gate_bypass, enabled);
     return H2_PAL_OK;
+}
+
+int h2_loader_set_command_availability(
+    h2_loader_t *loader,
+    uint32_t flags,
+    bool available) {
+    if (loader == NULL || flags == 0u ||
+        (flags & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    command_availability_update(
+        &loader->command_availability, flags, available);
+    return H2_PAL_OK;
+}
+
+static uint32_t effective_command_availability(
+    const h2_loader_t *loader,
+    const h2_loader_status_t *status) {
+    uint32_t available;
+
+    if (loader == NULL || status == NULL) {
+        return 0u;
+    }
+    available = command_availability_load(
+        &loader->command_availability) &
+        H2_LOADER_COMMAND_AVAILABILITY_ALL;
+    if (!mfg_gate_satisfied(loader, &status->mfg)) {
+        available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+    }
+    return available;
+}
+
+static int require_command_available(
+    const h2_loader_t *loader,
+    const h2_loader_status_t *status,
+    uint32_t flag) {
+    return (effective_command_availability(loader, status) & flag) != 0u
+        ? H2_PAL_OK
+        : H2_PAL_ERR_INVALID_STATE;
 }
 
 typedef struct h2_loader_stage_pref_snapshot {
@@ -1855,6 +1968,10 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
     }
     memset(loader, 0, sizeof(*loader));
     mfg_gate_bypass_store(&loader->mfg_gate_bypass, 0);
+    command_availability_store(
+        &loader->command_availability,
+        H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+            H2_LOADER_COMMAND_AVAILABILITY_ALL);
     loader->config = *config;
     loader->config.package.package_path =
         default_if_empty(config->package.package_path, H2_LOADER_DEFAULT_PACKAGE_PATH);
@@ -2513,6 +2630,13 @@ int h2_loader_reboot_h2loader_with_transition(
     if (loader == NULL || loader->config.power == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    rc = require_command_available(
+        loader,
+        &loader->status,
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
     rc = h2_pal_power_get_running_boot_partition(loader->config.power, &running);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -2609,6 +2733,8 @@ int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status) {
         memset(&status.loader_upgrade, 0, sizeof(status.loader_upgrade));
         status.loader_upgrade.phase = H2_LOADER_UPGRADE_PHASE_IDLE;
     }
+    status.command_availability =
+        effective_command_availability(loader, &status);
     loader->status = status;
     *out_status = status;
     return H2_PAL_OK;
@@ -2676,6 +2802,13 @@ static int request_install_staged(h2_loader_t *loader) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     rc = h2_loader_read_status(loader, &status);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = require_command_available(
+        loader,
+        &status,
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP);
     if (rc != H2_PAL_OK) {
         return rc;
     }

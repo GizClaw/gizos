@@ -31,6 +31,7 @@ h2_pal_result_t h2_h2loader_host_command_validate(
     h2_h2loader_host_command_t command) {
     h2_h2loader_host_active_role_t role;
     uint32_t capability = 0u;
+    uint32_t availability = 0u;
     int lifecycle = 0;
 
     if (status == NULL) {
@@ -66,6 +67,8 @@ h2_pal_result_t h2_h2loader_host_command_validate(
             break;
         case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP:
             capability = H2_H2LOADER_HOST_CAP_REBOOT;
+            availability =
+                H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
             lifecycle = 1;
             if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
                 (status->installed_valid == 0u &&
@@ -75,6 +78,8 @@ h2_pal_result_t h2_h2loader_host_command_validate(
             break;
         case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER:
             capability = H2_H2LOADER_HOST_CAP_REBOOT;
+            availability =
+                H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
             lifecycle = 1;
             if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
                 return H2_PAL_ERR_INVALID_STATE;
@@ -122,6 +127,11 @@ h2_pal_result_t h2_h2loader_host_command_validate(
     }
     if (capability != 0u && !status_has_capability(status, capability)) {
         return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (availability != 0u &&
+        status->has_command_availability != 0u &&
+        (status->command_availability & availability) == 0u) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
     return H2_PAL_OK;
 }

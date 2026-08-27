@@ -181,7 +181,7 @@ int h2_loader_status_format(
     len = snprintf(out,
         out_len,
         "H2_LOADER_STATUS intent=%s board=%s target=%s chip=%s state=%s app_confirmed=%d hold=%d last=%d "
-        "active_role=%s capabilities=0x%08lx active_name=%s active_version=%s active_checksum=%s "
+        "active_role=%s capabilities=0x%08lx command_availability=0x%08lx active_name=%s active_version=%s active_checksum=%s "
         "installed_valid=%d installed_version=%s installed_checksum=%s "
         "staged_valid=%d staged_version=%s staged_checksum=%s staged_bytes=%llu "
         "running_partition=%lu next_partition=%lu canonical_partition=%lu trial_partition=%lu "
@@ -198,6 +198,7 @@ int h2_loader_status_format(
         status->last_result,
         default_if_empty(status->active_role, "unknown"),
         (unsigned long)status->capabilities,
+        (unsigned long)status->command_availability,
         default_if_empty(status->active_name, "unknown"),
         default_if_empty(status->active_version, ""),
         default_if_empty(status->active_checksum, ""),

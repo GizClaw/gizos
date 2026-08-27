@@ -2509,9 +2509,76 @@ static void test_status_format_fits_shared_line_capacity(void) {
     status.mfg = (h2_loader_mfg_summary_t){
         .total = H2_LOADER_MFG_STEP_TOTAL,
     };
+    status.command_availability =
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
 
     assert(h2_loader_status_format(&status, output, sizeof(output)) == H2_PAL_OK);
+    assert(strstr(
+        output, "command_availability=0x00000003") != NULL);
     assert(strstr(output, "mfg=partial mfg_tests=0/22") != NULL);
+}
+
+static void test_command_availability_flags(void) {
+    idle_trial_context_t context = {
+        .running_partition = 2u,
+        .boot_intent = H2_LOADER_BOOT_INTENT_APP,
+        .commit_result = H2_PAL_ERR_WRITE,
+    };
+    h2_loader_t loader = {0};
+    const h2_pal_pref_vtable_t pref_vtable = {.open = idle_pref_open};
+    const h2_pal_pref_api_t pref = {.user = &context, .vtable = &pref_vtable};
+    const h2_pal_power_vtable_t power_vtable = {
+        .get_running_boot_partition = idle_power_running,
+        .set_next_boot_partition = idle_power_select,
+        .reboot = idle_power_reboot,
+    };
+    const h2_pal_power_api_t power = {.user = &context, .vtable = &power_vtable};
+
+    loader.config.power = &power;
+    loader.config.pref = &pref;
+    loader.config.h2loader_partition_id = 1u;
+
+    assert(h2_loader_set_command_availability(
+               NULL,
+               H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
+               false) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_loader_set_command_availability(
+               &loader, 0u, false) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_loader_set_command_availability(
+               &loader, UINT32_C(1) << 12, false) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_loader_set_command_availability(
+               &loader,
+               H2_LOADER_COMMAND_AVAILABILITY_ALL,
+               false) == H2_PAL_OK);
+    assert(h2_loader_reboot_h2loader_with_transition(
+               &loader, idle_reboot_transition, &context) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(h2_loader_request_install_staged(&loader) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(context.boot_selections == 0);
+    assert(context.commits == 0);
+
+    assert(h2_loader_set_command_availability(
+               &loader,
+               H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER,
+               true) == H2_PAL_OK);
+    assert(h2_loader_reboot_h2loader_with_transition(
+               &loader, idle_reboot_transition, &context) ==
+           H2_PAL_ERR_WRITE);
+    assert(context.boot_selections == 1);
+    assert(context.commits == 1);
+    assert(h2_loader_request_install_staged(&loader) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(context.commits == 1);
+
+    assert(h2_loader_set_command_availability(
+               &loader,
+               H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
+               true) == H2_PAL_OK);
+    assert(h2_loader_request_install_staged(&loader) == H2_PAL_ERR_WRITE);
+    assert(context.commits == 2);
 }
 
 static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) {
@@ -2612,6 +2679,24 @@ static void test_loader_reboot_command_bypasses_incomplete_mfg_gate(void) {
     loader.config.before_disruptive = idle_before_disruptive;
 
     assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
+    assert(h2_loader_set_command_availability(
+               &loader,
+               H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER,
+               false) == H2_PAL_OK);
+    assert(h2_loader_command_execute(&command, 3u, argv) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(strstr(io.output, "result=accepted") == NULL);
+    assert(strstr(
+        io.output,
+        "H2_LOADER_REBOOT target=loader result=fail code=-7") != NULL);
+    assert(context.disruptive_calls == 0);
+    assert(context.reboots == 0);
+    assert(h2_loader_set_command_availability(
+               &loader,
+               H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER,
+               true) == H2_PAL_OK);
+    memset(io.output, 0, sizeof(io.output));
+    io.output_len = 0u;
     assert(h2_loader_command_execute(&command, 3u, argv) == H2_PAL_OK);
     assert(context.disruptive_calls == 1);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_H2LOADER);
@@ -2732,7 +2817,10 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
     context.commit_result = H2_PAL_ERR_WRITE;
     assert(h2_loader_command_execute(&command, 3u, argv) == H2_PAL_ERR_WRITE);
     assert(strstr(io.output, "result=accepted") == NULL);
-    assert(io.flushes == 1u);
+    assert(strstr(
+        io.output,
+        "H2_LOADER_REBOOT target=app result=fail code=-14") != NULL);
+    assert(io.flushes == 2u);
     assert(context.disruptive_calls == 0);
 
     context.commit_result = H2_PAL_OK;
@@ -2742,7 +2830,7 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
     assert(h2_loader_command_execute(&command, 3u, argv) == H2_PAL_OK);
     assert(strstr(io.output,
                "H2_LOADER_REBOOT target=app result=accepted") != NULL);
-    assert(io.flushes == 3u);
+    assert(io.flushes == 4u);
     assert(context.disruptive_calls == 1);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_APP);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
@@ -4015,6 +4103,7 @@ int main(void) {
     test_mfg_summary_validation_and_status_format();
     test_mfg_handoff_pending_truth_table();
     test_status_format_fits_shared_line_capacity();
+    test_command_availability_flags();
     test_idle_trial_never_reboots_itself();
     test_confirmed_state_without_installed_identity_stays_in_command_mode();
     test_failed_upgrade_does_not_block_app_startup();

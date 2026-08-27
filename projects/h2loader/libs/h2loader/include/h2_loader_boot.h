@@ -6,6 +6,7 @@
 #include "h2/pal/os/h2_pal_pref.h"
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -22,6 +23,15 @@ typedef enum h2_loader_capability {
     H2_LOADER_CAP_HOLD = UINT32_C(1) << 6,
     H2_LOADER_CAP_COREDUMP = UINT32_C(1) << 7,
 } h2_loader_capability_t;
+
+typedef enum h2_loader_command_availability {
+    H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP = UINT32_C(1) << 0,
+    H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER = UINT32_C(1) << 1,
+} h2_loader_command_availability_t;
+
+#define H2_LOADER_COMMAND_AVAILABILITY_ALL              \
+    (H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |           \
+     H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER)
 
 #define H2_LOADER_CAPABILITIES_LOADER                                      \
     (H2_LOADER_CAP_STATUS | H2_LOADER_CAP_STAGE | H2_LOADER_CAP_UPGRADE | \
@@ -136,6 +146,7 @@ typedef struct h2_loader_status {
     char active_version[H2_LOADER_IDENTITY_TEXT_MAX];
     char active_checksum[H2_LOADER_IDENTITY_TEXT_MAX];
     uint32_t capabilities;
+    uint32_t command_availability;
     h2_loader_identity_t installed;
     h2_loader_identity_t staged;
     uint32_t running_partition_id;
@@ -181,10 +192,22 @@ typedef struct h2_loader {
     int force_command_mode;
     /** Volatile current-boot bypass; never serialized into MFG status. */
     h2_loader_atomic_flag_t mfg_gate_bypass;
+    /** Volatile product-owned command gates; never persisted. */
+    h2_loader_atomic_flag_t command_availability;
 } h2_loader_t;
 
 /** Enables or revokes the volatile MFG App gate bypass for this boot. */
 int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled);
+/**
+ * Atomically sets or clears one or more product-owned command gates.
+ *
+ * The flags are an additional restriction and never bypass Loader validation.
+ * All currently defined flags start set for backward compatibility.
+ */
+int h2_loader_set_command_availability(
+    h2_loader_t *loader,
+    uint32_t flags,
+    bool available);
 
 const char *h2_loader_boot_intent_name(h2_loader_boot_intent_t intent);
 const char *h2_loader_install_state_name(h2_loader_install_state_t state);
