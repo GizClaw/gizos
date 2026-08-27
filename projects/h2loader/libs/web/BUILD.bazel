@@ -63,9 +63,27 @@ filegroup(
     name = "h2loader_web",
     srcs = [
         "src/h2loader.js",
+        "src/h2loader_protocol.js",
         "src/h2loader_ports.js",
         ":h2loader_web_runtime",
     ],
+)
+
+js_test(
+    name = "h2loader_protocol_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = ["src/h2loader_protocol.js"],
+    entry_point = "tests/h2loader_protocol_test.mjs",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 js_test(

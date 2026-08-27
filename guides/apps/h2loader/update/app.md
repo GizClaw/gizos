@@ -40,7 +40,7 @@ hold（平台支持时），再在同一个 `h2loader` Preference transaction �
 `H2_LOADER_REBOOT target=app result=accepted`，随后才调用 MFG
 `before_disruptive` 停止和 join worker，再进入安装或启动流程。
 
-产品代码如果还有 cursor、Logic Off 或其他运行时 gate，必须在其状态转换路径调用 `h2_loader_set_command_availability(loader, flags, available)`，主动 set/clear `H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP`、`H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER` 或它们的组合。该 API 只原子更新 h2loader 内存状态，不持久化、不执行命令，也不调用 `before_disruptive`；所有 flags 默认 set，因此未接入的旧产品保持现有行为。Status 发布 public Loader checks 与 product flags 的交集，执行 reboot 时在 durable request commit 前再次读取最新 flag。产品不得把只读查询 callback 注入 status path。
+产品代码如果还有 cursor、Logic Off 或其他运行时 gate，必须在其状态转换路径调用 `h2_loader_set_command_availability(loader, flags, available)`，主动 set/clear 对应的逐命令 bit。该 API 只原子更新 h2loader 内存状态，不持久化、不执行命令，也不调用 `before_disruptive`。Status 发布 command registration、provider readiness、public lifecycle checks 与 product flags 的交集；执行路径在所需 lock 内、durable accepted boundary 前再次计算同一个 bit。产品不得把只读查询 callback 注入 status path。
 
 任一 setter 或 commit 失败时不输出 accepted，也不开始 MFG teardown，持久化状态仍是
 上一个完整 snapshot。accepted callback/flush 失败时已经提交的请求不回滚，但本次不开始

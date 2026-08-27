@@ -38,13 +38,11 @@ static const h2_pal_mem_api_t test_mem = {
 
 static h2_h2loader_host_status_t test_status(void) {
   h2_h2loader_host_status_t status = {
-      .active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
-      .capabilities = H2_H2LOADER_HOST_CAP_STATUS |
-                      H2_H2LOADER_HOST_CAP_REBOOT,
+      .states = UINT64_C(0x0000000000018911),
+      .capabilities = H2_H2LOADER_HOST_CAPABILITY_UART |
+                      H2_H2LOADER_HOST_CAPABILITY_BLE,
       .staged_bytes = 42u,
-      .staged_valid = 1u,
-      .installed_valid = 1u,
-      .app_confirmed = 0u,
+      .candidate_bytes = UINT64_MAX,
   };
   (void)snprintf(status.board, sizeof(status.board), "bo\"ard\\\n");
   (void)snprintf(status.target, sizeof(status.target), "target");
@@ -54,8 +52,8 @@ static h2_h2loader_host_status_t test_status(void) {
   (void)snprintf(status.active_checksum, sizeof(status.active_checksum), "aa");
   (void)snprintf(status.installed_checksum,
                  sizeof(status.installed_checksum), "bb");
-  (void)snprintf(status.state, sizeof(status.state), "confirmed");
-  (void)snprintf(status.upgrade_phase, sizeof(status.upgrade_phase), "idle");
+  (void)snprintf(status.staged_version, sizeof(status.staged_version), "v2");
+  (void)snprintf(status.staged_checksum, sizeof(status.staged_checksum), "cc");
   return status;
 }
 
@@ -91,17 +89,13 @@ static void assert_command_availability(
   const h2_pal_result_t result = h2_pal_json_object_get(
       h2_yyjson_json_api(provider), root, "commandAvailability",
       strlen("commandAvailability"), &availability);
-  if (expected_present) {
-    assert(result == H2_PAL_OK);
-    double value = 0.0;
-    assert(h2_pal_json_value_get_number(
-               h2_yyjson_json_api(provider), availability, &value) ==
-           H2_PAL_OK);
-    assert(value == (double)expected_value);
-  } else {
-    assert(result == H2_PAL_ERR_NOT_FOUND);
-    assert(availability == NULL);
-  }
+  (void)expected_present;
+  assert(result == H2_PAL_OK);
+  double value = 0.0;
+  assert(h2_pal_json_value_get_number(
+             h2_yyjson_json_api(provider), availability, &value) ==
+         H2_PAL_OK);
+  assert(value == (double)expected_value);
 
   h2_pal_json_value_t *board = NULL;
   assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "board",
@@ -131,11 +125,19 @@ static void test_maximum_projection_fits(h2_yyjson_json_t *provider) {
   fill_string(status.active_checksum, sizeof(status.active_checksum), 0x1f);
   fill_string(status.installed_checksum, sizeof(status.installed_checksum),
               0x1f);
-  fill_string(status.state, sizeof(status.state), 0x1f);
-  fill_string(status.upgrade_phase, sizeof(status.upgrade_phase), 0x1f);
-  status.has_command_availability = 1u;
-  status.command_availability = UINT32_MAX;
-  assert_command_availability(provider, &status, 1, UINT32_MAX);
+  fill_string(status.installed_version, sizeof(status.installed_version), 0x1f);
+  fill_string(status.staged_version, sizeof(status.staged_version), 0x1f);
+  fill_string(status.staged_checksum, sizeof(status.staged_checksum), 0x1f);
+  fill_string(status.upgrade_step, sizeof(status.upgrade_step), 0x1f);
+  fill_string(status.upgrade_package_sha256,
+              sizeof(status.upgrade_package_sha256), 0x1f);
+  fill_string(status.candidate_board, sizeof(status.candidate_board), 0x1f);
+  fill_string(status.candidate_target, sizeof(status.candidate_target), 0x1f);
+  fill_string(status.candidate_version, sizeof(status.candidate_version), 0x1f);
+  fill_string(status.candidate_sha256, sizeof(status.candidate_sha256), 0x1f);
+  status.command_availability = H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL;
+  assert_command_availability(provider, &status, 1,
+                              H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
 }
 
 static void test_truncation(void) {
@@ -154,8 +156,8 @@ int main(void) {
   assert(h2_yyjson_json_create(&test_mem, &provider) == H2_PAL_OK);
 
   h2_h2loader_host_status_t status = test_status();
-  status.command_availability = UINT32_MAX;
-  assert_command_availability(provider, &status, 0, 0u);
+  status.command_availability = 0u;
+  assert_command_availability(provider, &status, 1, 0u);
 
   static const uint32_t masks[] = {
       0u,
@@ -163,9 +165,8 @@ int main(void) {
       H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER,
       H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP |
           H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER,
-      UINT32_C(0x80000003),
+      H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL,
   };
-  status.has_command_availability = 1u;
   for (size_t index = 0u; index < sizeof(masks) / sizeof(masks[0]); ++index) {
     status.command_availability = masks[index];
     assert_command_availability(provider, &status, 1, masks[index]);

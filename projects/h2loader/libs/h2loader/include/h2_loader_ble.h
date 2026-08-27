@@ -3,6 +3,7 @@
 
 #include "h2_bleikcp.h"
 #include "h2_command.h"
+#include "h2_loader_boot.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,11 +13,6 @@ extern "C" {
 #define H2_LOADER_BLE_COMPACT_PROTOCOL_VERSION 2u
 #define H2_LOADER_BLE_BOARD_MAX 63u
 #define H2_LOADER_BLE_INLINE_BOARD_MAX 32u
-
-typedef enum h2_loader_ble_role {
-    H2_LOADER_BLE_ROLE_LOADER = 1,
-    H2_LOADER_BLE_ROLE_APP = 2,
-} h2_loader_ble_role_t;
 
 typedef enum h2_loader_ble_advertising_mode {
     H2_LOADER_BLE_ADVERTISING_EXTENDED = 0,
@@ -29,7 +25,6 @@ extern const uint8_t h2_loader_ble_rx_uuid_bytes[16];
 
 /** Encode the versioned Service Data payload, excluding its 128-bit UUID. */
 int h2_loader_ble_encode_identity(
-    h2_loader_ble_role_t active_role,
     uint32_t capabilities,
     const char *board,
     uint8_t *out,
@@ -41,7 +36,6 @@ typedef struct h2_loader_ble_service h2_loader_ble_service_t;
 typedef struct h2_loader_ble_service_config {
     h2_bleikcp_api_t api;
     const char *board;
-    h2_loader_ble_role_t active_role;
     uint32_t capabilities;
     h2_loader_ble_advertising_mode_t advertising_mode;
     h2_bleikcp_server_handler_fn handler;

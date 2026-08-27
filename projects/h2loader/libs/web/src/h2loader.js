@@ -1,5 +1,11 @@
 import createH2LoaderModule from "./h2loader_runtime.js";
 import { createH2LoaderPortRegistry } from "./h2loader_ports.js";
+export {
+  H2LoaderCapabilities,
+  H2LoaderCommands,
+  commandAvailable,
+  decodeH2LoaderStates,
+} from "./h2loader_protocol.js";
 
 const WOULD_BLOCK = -9;
 const ERROR_NAMES = new Map([
@@ -162,10 +168,7 @@ export async function createH2Loader(options = {}) {
     }
   };
 
-  const normalizeStatus = (status = {}) => ({
-    ...status,
-    role: status.role === 1 ? "h2loader" : status.role === 2 ? "app" : "unknown",
-  });
+  const normalizeStatus = (status = {}) => ({...status});
 
   const api = {
     supported() {

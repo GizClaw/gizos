@@ -61,8 +61,9 @@ static void app_entry(void *user) {
         return;
     }
     if (result == H2_PAL_OK) {
-        result = (h2_pal_result_t)h2_bk_h2loader_start_app_iostreamikcp(
-            runtime, "mp4-player");
+        result = (h2_pal_result_t)
+            h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+                runtime, "mp4-player", H2_LOADER_CAPABILITY_UART);
     }
     if (result != H2_PAL_OK) {
         emit_marker("H2_BK_MP4_PLAYER_FAIL stage=app_cli rc=%d", result);

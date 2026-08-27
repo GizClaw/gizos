@@ -197,7 +197,7 @@ int h2loader_app_run_with_command_service(
             command_service,
             &command,
             loader_config.board,
-            loader_config.capabilities,
+            loader_config.hardware_capabilities,
             &additional_command_service);
         serve_context = (h2loader_serve_context_t){
             .config = config,
@@ -276,7 +276,7 @@ int h2loader_app_run_with_command_service(
             command_service,
             &command,
             loader_config.board,
-            loader_config.capabilities,
+            loader_config.hardware_capabilities,
             &additional_command_service);
     }
     if (serve_handle == NULL) {

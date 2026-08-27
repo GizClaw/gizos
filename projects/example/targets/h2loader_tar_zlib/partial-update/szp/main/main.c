@@ -20,6 +20,8 @@ static void image_entry(void *user) {
     const h2_esp_h2loader_app_commands_config_t commands_config = {
         .active_name = "partial-update",
         .active_version = H2_PARTIAL_APP_GENERATION,
+        .hardware_capabilities =
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = 1u,
         .coredump_partition_id = 3u,
     };

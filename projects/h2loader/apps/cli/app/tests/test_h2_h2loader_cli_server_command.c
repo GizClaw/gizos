@@ -85,7 +85,7 @@ static h2_pal_result_t fake_transport_read_status(
         return H2_PAL_ERR_IO;
     }
     memset(out_status, 0, sizeof(*out_status));
-    out_status->staged_valid = 1u;
+    out_status->states = UINT64_C(1) << 15u;
     out_status->staged_bytes = transport->expected_bytes;
     strcpy(out_status->staged_checksum, transport->expected_sha256);
     return H2_PAL_OK;

@@ -23,6 +23,41 @@ typedef struct h2_loader_app_client_return_console {
     char status_line[H2_LOADER_STATUS_LINE_MAX];
 } h2_loader_app_client_return_console_t;
 
+static int coredump_info(
+    const h2_loader_app_client_t *client,
+    const h2_pal_disk_partition_t *partition,
+    uint64_t *out_stored_bytes,
+    int *out_blank);
+
+static uint32_t app_command_availability(
+    const h2_loader_app_client_t *client) {
+    uint32_t available = H2_LOADER_COMMAND_AVAILABLE_HELP |
+        H2_LOADER_COMMAND_AVAILABLE_STATUS |
+        H2_LOADER_COMMAND_AVAILABLE_STATS |
+        H2_LOADER_COMMAND_AVAILABLE_APP_RESTART;
+    if (client->config.memory_stats.read != NULL)
+        available |= H2_LOADER_COMMAND_AVAILABLE_MEMORY;
+    if (client->config.h2loader_partition_id != 0u)
+        available |= H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK;
+    h2_pal_disk_partition_t partition;
+    if (client->config.disk != NULL &&
+        h2_pal_disk_get_partition(
+            client->config.disk,
+            client->config.coredump_partition_id,
+            &partition) == H2_PAL_OK) {
+        available |= H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;
+        uint64_t stored_bytes = 0u;
+        int blank = 1;
+        if (coredump_info(
+                client, &partition, &stored_bytes, &blank) == H2_PAL_OK) {
+            available |= H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS;
+            if (!blank && stored_bytes != 0u)
+                available |= H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP;
+        }
+    }
+    return available;
+}
+
 static const char *default_if_empty(const char *value, const char *fallback) {
     return value != NULL && value[0] != '\0' ? value : fallback;
 }
@@ -80,6 +115,28 @@ static int is_coredump_command(int argc, const char *const *argv) {
     return argc >= 2 && argc <= 3 &&
         strcmp(argv[0], "h2loader") == 0 &&
         strcmp(argv[1], "coredump") == 0;
+}
+
+static uint32_t app_console_command_bit(
+    int argc,
+    const char *const *argv) {
+    if (is_help_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_HELP;
+    if (is_status_command(argc, argv)) {
+        return strcmp(argv[1], "stats") == 0
+            ? H2_LOADER_COMMAND_AVAILABLE_STATS
+            : H2_LOADER_COMMAND_AVAILABLE_STATUS;
+    }
+    if (is_memory_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_MEMORY;
+    if (is_restart_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_APP_RESTART;
+    if (is_return_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK;
+    if (is_coredump_command(argc, argv)) {
+        if (argc == 3 && strcmp(argv[2], "dump") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP;
+        if (argc == 3 && strcmp(argv[2], "erase") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;
+        return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS;
+    }
+    return 0u;
 }
 
 static int stdout_write(void *user, const char *data, size_t len) {
@@ -164,11 +221,13 @@ static int write_status(h2_loader_app_client_return_console_t *console) {
     }
     rc = h2_loader_status_set_active(
         &status,
-        "app",
+        H2_LOADER_ACTIVE_ROLE_APP,
         default_if_empty(console->client->config.active_name, "app"),
         console->client->config.active_version,
         console->client->config.active_checksum);
-    status.capabilities = console->client->config.capabilities;
+    status.capabilities = console->client->config.hardware_capabilities;
+    status.command_availability = app_command_availability(console->client);
+    status.upgrade_phase_known = 0u;
     if (rc == H2_PAL_OK) {
         rc = h2_loader_status_format(&status, line, H2_LOADER_STATUS_LINE_MAX);
     }
@@ -360,11 +419,29 @@ int h2_loader_app_client_coredump(
     if (client == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    return write_coredump(
+    uint32_t bit = H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS;
+    if (subcommand != NULL && strcmp(subcommand, "dump") == 0)
+        bit = H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP;
+    else if (subcommand != NULL && strcmp(subcommand, "erase") == 0)
+        bit = H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;
+    int rc = client->config.operation_mutex != NULL
+        ? h2_pal_mutex_lock(
+            client->config.operation_sync, client->config.operation_mutex)
+        : H2_PAL_OK;
+    if (rc != H2_PAL_OK) return rc;
+    rc = (app_command_availability(client) & bit) == 0u
+        ? H2_PAL_ERR_INVALID_STATE
+        : write_coredump(
         client,
         subcommand,
         write_user,
         write != NULL ? write : stdout_write);
+    if (client->config.operation_mutex != NULL) {
+        int unlock_rc = h2_pal_mutex_unlock(
+            client->config.operation_sync, client->config.operation_mutex);
+        if (rc == H2_PAL_OK) rc = unlock_rc;
+    }
+    return rc;
 }
 
 static void return_console_task(void *ctx) {
@@ -416,6 +493,18 @@ static void return_console_task(void *ctx) {
                 console, "H2_LOADER_ERROR reason=operation_lock_failed");
             continue;
         }
+        const uint32_t command_bit = app_console_command_bit(argc, argv);
+        if (command_bit == 0u ||
+            (app_command_availability(console->client) & command_bit) == 0u) {
+            (void)write_console_line(
+                console, "H2_LOADER_ERROR reason=command_unavailable");
+            if (recognized && console->client->config.operation_mutex != NULL) {
+                (void)h2_pal_mutex_unlock(
+                    console->client->config.operation_sync,
+                    console->client->config.operation_mutex);
+            }
+            continue;
+        }
         if (is_status_command(argc, argv)) {
             (void)write_status(console);
         } else if (is_memory_command(argc, argv)) {
@@ -424,7 +513,7 @@ static void return_console_task(void *ctx) {
             (void)write_console_line(console,
                 "h2loader <help|status|stats|memory|restart|rollback|coredump>");
         } else if (is_coredump_command(argc, argv)) {
-            (void)h2_loader_app_client_coredump(
+            (void)write_coredump(
                 console->client,
                 argc == 3 ? argv[2] : NULL,
                 console->write_user,
@@ -449,7 +538,9 @@ static void return_console_task(void *ctx) {
         } else if (is_restart_command(argc, argv)) {
             if (write_console_line(
                     console, "H2_LOADER_RESTART result=OK") == H2_PAL_OK) {
-                (void)h2_loader_app_client_restart(console->client);
+                (void)h2_pal_power_reboot(
+                    console->client->config.power,
+                    console->client->config.reboot_reason);
             }
         }
         if (recognized && console->client->config.operation_mutex != NULL) {
@@ -465,21 +556,14 @@ int h2_loader_app_client_init(
     const h2_loader_app_client_config_t *config) {
     if (client == NULL || config == NULL || config->pref == NULL ||
         config->power == NULL || config->allocator == NULL ||
+        config->hardware_capabilities == 0u ||
+        (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u ||
         ((config->operation_sync == NULL) !=
          (config->operation_mutex == NULL))) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(client, 0, sizeof(*client));
     client->config = *config;
-    if (client->config.capabilities == 0u) {
-        client->config.capabilities =
-            H2_LOADER_CAP_STATUS |
-            H2_LOADER_CAP_RESTART |
-            H2_LOADER_CAP_ROLLBACK;
-        if (client->config.disk != NULL) {
-            client->config.capabilities |= H2_LOADER_CAP_COREDUMP;
-        }
-    }
     return H2_PAL_OK;
 }
 
@@ -487,15 +571,49 @@ int h2_loader_app_client_restart(h2_loader_app_client_t *client) {
     if (client == NULL || client->config.power == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    return h2_pal_power_reboot(client->config.power, client->config.reboot_reason);
+    int rc = client->config.operation_mutex != NULL
+        ? h2_pal_mutex_lock(
+            client->config.operation_sync, client->config.operation_mutex)
+        : H2_PAL_OK;
+    if (rc != H2_PAL_OK) return rc;
+    if ((app_command_availability(client) &
+         H2_LOADER_COMMAND_AVAILABLE_APP_RESTART) == 0u) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+    } else {
+        rc = h2_pal_power_reboot(
+            client->config.power, client->config.reboot_reason);
+    }
+    if (client->config.operation_mutex != NULL) {
+        int unlock_rc = h2_pal_mutex_unlock(
+            client->config.operation_sync, client->config.operation_mutex);
+        if (rc == H2_PAL_OK) rc = unlock_rc;
+    }
+    return rc;
 }
 
 int h2_loader_app_client_return_to_loader(h2_loader_app_client_t *client) {
-    int rc = prepare_return_to_loader(client);
-    if (rc != H2_PAL_OK) {
-        return rc;
+    if (client == NULL) return H2_PAL_ERR_INVALID_ARG;
+    int rc = client->config.operation_mutex != NULL
+        ? h2_pal_mutex_lock(
+            client->config.operation_sync, client->config.operation_mutex)
+        : H2_PAL_OK;
+    if (rc != H2_PAL_OK) return rc;
+    if ((app_command_availability(client) &
+         H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK) == 0u) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+    } else {
+        rc = prepare_return_to_loader(client);
+        if (rc == H2_PAL_OK) {
+            rc = h2_pal_power_reboot(
+                client->config.power, client->config.reboot_reason);
+        }
     }
-    return h2_pal_power_reboot(client->config.power, client->config.reboot_reason);
+    if (client->config.operation_mutex != NULL) {
+        int unlock_rc = h2_pal_mutex_unlock(
+            client->config.operation_sync, client->config.operation_mutex);
+        if (rc == H2_PAL_OK) rc = unlock_rc;
+    }
+    return rc;
 }
 
 int h2_loader_app_client_start_return_console(

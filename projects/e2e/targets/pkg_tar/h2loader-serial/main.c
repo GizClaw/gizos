@@ -49,17 +49,23 @@ static void h2_web_h2loader_print_ledger(
            result->cases[index].case_id, result->cases[index].result);
   }
   printf("H2_WEB_H2LOADER_INITIAL board=%s target=%s role=%u "
-         "name=%s version=%s checksum=%s state=%s\n",
+         "name=%s version=%s checksum=%s states=0x%016llx\n",
          result->initial_status.board, result->initial_status.target,
-         result->initial_status.active_role, result->initial_status.active_name,
+         (unsigned int)h2_h2loader_host_status_active_role(
+             &result->initial_status),
+         result->initial_status.active_name,
          result->initial_status.active_version,
-         result->initial_status.active_checksum, result->initial_status.state);
+         result->initial_status.active_checksum,
+         (unsigned long long)result->initial_status.states);
   printf("H2_WEB_H2LOADER_FINAL board=%s target=%s role=%u "
-         "name=%s version=%s checksum=%s state=%s\n",
+         "name=%s version=%s checksum=%s states=0x%016llx\n",
          result->final_status.board, result->final_status.target,
-         result->final_status.active_role, result->final_status.active_name,
+         (unsigned int)h2_h2loader_host_status_active_role(
+             &result->final_status),
+         result->final_status.active_name,
          result->final_status.active_version,
-         result->final_status.active_checksum, result->final_status.state);
+         result->final_status.active_checksum,
+         (unsigned long long)result->final_status.states);
   printf("H2_WEB_H2LOADER_METRICS command_bytes=%zu command_transport=%d "
          "command_terminal=%d command_truncated=%u command_lifecycle=%u "
          "acknowledged=%llu "

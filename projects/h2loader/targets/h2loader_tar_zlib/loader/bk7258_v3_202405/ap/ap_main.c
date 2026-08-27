@@ -335,7 +335,7 @@ static void h2loader_startup_worker(void *user) {
         .confirm_active_image = h2_bk_h2loader_confirm_active_loader,
         .mount_file_point = h2_bk_h2loader_mount_file_point,
         .on_event = on_event,
-        .capabilities = H2_LOADER_CAPABILITIES_LOADER,
+        .hardware_capabilities = H2_LOADER_CAPABILITIES_ALL,
     };
     h2_loader_command_config_t command_config = {
         .loader = &s_h2loader,
@@ -511,7 +511,7 @@ static void h2loader_startup_worker(void *user) {
                         s_runtime,
                         &command_config,
                         "bk7258_v3_202405",
-                        H2_LOADER_CAPABILITIES_LOADER,
+                        H2_LOADER_CAPABILITIES_ALL,
                         &s_h2loader_ble_service);
                 }
                 if (rc != H2_PAL_OK) {

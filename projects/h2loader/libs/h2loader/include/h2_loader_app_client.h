@@ -38,8 +38,8 @@ typedef struct h2_loader_app_client_config {
     const char *active_name;
     const char *active_version;
     const char *active_checksum;
-    /** Zero derives the implemented App capabilities from optional APIs. */
-    uint32_t capabilities;
+    /** Stable hardware facilities wired by the complete running App image. */
+    uint32_t hardware_capabilities;
     uint32_t h2loader_partition_id;
     uint32_t coredump_partition_id;
     uint32_t reboot_reason;

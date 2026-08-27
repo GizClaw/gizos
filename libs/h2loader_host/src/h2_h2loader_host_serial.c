@@ -275,6 +275,17 @@ static int response_has_complete_marker(
     return 0;
 }
 
+static const char *find_line_marker(const char *response, const char *marker) {
+    const char *cursor = response;
+    while ((cursor = strstr(cursor, marker)) != NULL) {
+        if (cursor == response || cursor[-1] == '\n' || cursor[-1] == '\r') {
+            return cursor;
+        }
+        ++cursor;
+    }
+    return NULL;
+}
+
 static h2_pal_result_t serial_read_until(
     h2_h2loader_host_serial_connection_t *connection,
     const char *marker_a,
@@ -542,7 +553,6 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
     uint8_t response[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
     size_t response_len = 0u;
     static const char loader_marker[] = "H2_LOADER_STATUS ";
-    static const char app_marker[] = "H2_APP_STATUS ";
 
     if (out_status != NULL) {
         memset(out_status, 0, sizeof(*out_status));
@@ -565,18 +575,12 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
         connection->command_timeout_ms,
         NULL,
         NULL);
-    if (rc == H2_PAL_ERR_TIMEOUT &&
-        response_has_complete_marker(response, response_len, app_marker)) {
-        rc = H2_PAL_OK;
-    }
     if (rc != H2_PAL_OK) {
         return rc;
     }
     response[response_len] = '\0';
-    const char *marker = strstr((const char *)response, loader_marker);
-    if (marker == NULL) {
-        marker = strstr((const char *)response, app_marker);
-    }
+    const char *marker = find_line_marker(
+        (const char *)response, loader_marker);
     return marker == NULL
         ? H2_PAL_ERR_FORMAT
         : h2_h2loader_host_status_parse(marker, out_status);

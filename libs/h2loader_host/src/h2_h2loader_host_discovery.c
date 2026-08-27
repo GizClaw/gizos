@@ -89,7 +89,6 @@ static int parse_ble_identity(
     const uint8_t *payload = result->service_data.data;
     size_t payload_len = result->service_data.len;
     uint8_t version;
-    uint8_t role;
     uint32_t capabilities;
 
     if (!scan_result_has_service(result) ||
@@ -99,12 +98,10 @@ static int parse_ble_identity(
         return 0;
     }
     version = payload[4];
-    role = payload[5];
     capabilities = read_le32(&payload[6]);
     if ((version != 1u && version != 2u) ||
-        (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
-         role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP) ||
-        (capabilities & ~UINT32_C(0xff)) != 0u) {
+        payload[5] != 0u ||
+        (capabilities & ~H2_H2LOADER_HOST_CAPABILITIES_ALL) != 0u) {
         return 0;
     }
     if (version == 1u) {
@@ -139,7 +136,6 @@ static int parse_ble_identity(
             return 0;
         }
     }
-    out_candidate->advertised_role = role;
     out_candidate->advertised_capabilities = capabilities;
     return 1;
 }

@@ -487,16 +487,13 @@ static uint64_t h2_loader_ble_board_hash(const char *board) {
 }
 
 int h2_loader_ble_encode_identity(
-    h2_loader_ble_role_t active_role,
     uint32_t capabilities,
     const char *board,
     uint8_t *out,
     size_t out_capacity,
     size_t *out_len) {
     if (board == NULL || out == NULL || out_len == NULL ||
-        (active_role != H2_LOADER_BLE_ROLE_LOADER &&
-         active_role != H2_LOADER_BLE_ROLE_APP) ||
-        (capabilities & ~UINT32_C(0xff)) != 0u) {
+        (capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     size_t board_len = strlen(board);
@@ -510,7 +507,7 @@ int h2_loader_ble_encode_identity(
         return H2_PAL_ERR_INVALID_ARG;
     }
     memcpy(out, "H2LD", 4u);
-    out[5] = (uint8_t)active_role;
+    out[5] = 0u;
     write_le32(&out[6], capabilities);
     if (board_len > H2_LOADER_BLE_INLINE_BOARD_MAX) {
         out[4] = H2_LOADER_BLE_COMPACT_PROTOCOL_VERSION;
@@ -618,8 +615,6 @@ int h2_loader_ble_service_open(
         config->api.sync == NULL || config->api.system_event == NULL ||
         config->api.allocator == NULL || config->board == NULL ||
         config->handler == NULL ||
-        (config->active_role != H2_LOADER_BLE_ROLE_LOADER &&
-         config->active_role != H2_LOADER_BLE_ROLE_APP) ||
         (config->advertising_mode != H2_LOADER_BLE_ADVERTISING_LEGACY &&
          config->advertising_mode != H2_LOADER_BLE_ADVERTISING_EXTENDED)) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -634,7 +629,7 @@ int h2_loader_ble_service_open(
     service->active_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     service->pending_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     rc = h2_loader_ble_encode_identity(
-        config->active_role, config->capabilities, config->board,
+        config->capabilities, config->board,
         service->service_data, sizeof(service->service_data),
         &service->service_data_len);
     if (rc != H2_PAL_OK) {
