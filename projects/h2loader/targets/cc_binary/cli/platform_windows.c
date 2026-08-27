@@ -6,19 +6,10 @@
 static h2_windows_platform_t *platform;
 
 h2_pal_result_t h2_h2loader_cli_target_start(void) {
-    h2_pal_result_t result =
-        h2_windows_platform_create_with_logical_drives(&platform);
-    if (result != H2_PAL_OK) return result;
-    result = (h2_pal_result_t)h2_pal_system_event_init(
-        h2_windows_system_event_api(platform));
-    if (result != H2_PAL_OK) {
-        (void)h2_windows_platform_destroy(&platform);
-    }
-    return result;
+    return h2_windows_platform_create_with_logical_drives(&platform);
 }
 
 void h2_h2loader_cli_target_stop(void) {
-    h2_pal_system_event_deinit(h2_windows_system_event_api(platform));
     (void)h2_windows_platform_destroy(&platform);
 }
 
