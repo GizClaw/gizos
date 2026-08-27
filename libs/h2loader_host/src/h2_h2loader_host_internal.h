@@ -65,10 +65,14 @@ typedef h2_pal_result_t (*h2_h2loader_host_command_read_fn)(
     h2_h2loader_host_command_output_fn on_output,
     void *output_user);
 
+typedef h2_pal_result_t (*h2_h2loader_host_command_finish_fn)(
+    void *transport);
+
 h2_pal_result_t h2_h2loader_host_command_execute_transport(
     void *transport,
     h2_h2loader_host_command_write_fn write_command,
     h2_h2loader_host_command_read_fn read_response,
+    h2_h2loader_host_command_finish_fn finish_response,
     const h2_h2loader_host_command_request_t *request,
     h2_h2loader_host_command_result_t *out_result);
 

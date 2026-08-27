@@ -8,6 +8,7 @@
 
 #define H2_H2LOADER_HOST_SERIAL_POLL_MS 10u
 #define H2_H2LOADER_HOST_SERIAL_SESSION_RETRY_MS 200u
+#define H2_H2LOADER_HOST_SERIAL_RESPONSE_ACK_GRACE_MS 100u
 #define H2_H2LOADER_HOST_SERIAL_RECEIVE_WINDOW 64u
 #define H2_H2LOADER_HOST_SERIAL_RX_SIZE (64u * 1024u)
 #define H2_H2LOADER_HOST_SERIAL_WRITE_BATCH (64u * 1024u)
@@ -613,6 +614,48 @@ static h2_pal_result_t serial_command_read(
         output_user);
 }
 
+static h2_pal_result_t serial_finish_command_response(void *transport) {
+    h2_h2loader_host_serial_connection_t *connection = transport;
+    uint64_t start = 0u;
+    uint64_t now = 0u;
+    h2_pal_result_t rc;
+
+    if (connection == NULL || connection->stream == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    /* serial_read_until() already flushed the KCP ACK after the complete
+     * terminal line. Keep pumping for a bounded grace period so the peer can
+     * consume that ACK before this side closes the physical session. */
+    rc = h2_iostreamikcp_flush(connection->stream);
+    if (rc != H2_PAL_OK) {
+        return rc == H2_PAL_ERR_CLOSED ? H2_PAL_OK : rc;
+    }
+    rc = serial_now(connection->time, &start);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    now = start;
+    while (now - start < H2_H2LOADER_HOST_SERIAL_RESPONSE_ACK_GRACE_MS) {
+        uint32_t remaining = H2_H2LOADER_HOST_SERIAL_RESPONSE_ACK_GRACE_MS -
+            (uint32_t)(now - start);
+        uint32_t poll_ms = remaining < H2_H2LOADER_HOST_SERIAL_POLL_MS
+            ? remaining
+            : H2_H2LOADER_HOST_SERIAL_POLL_MS;
+        rc = serial_pump(connection, poll_ms);
+        if (rc == H2_PAL_ERR_CLOSED) {
+            return H2_PAL_OK;
+        }
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+        rc = serial_now(connection->time, &now);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+    }
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_h2loader_host_serial_execute_command(
     h2_h2loader_host_serial_connection_t *connection,
     const h2_h2loader_host_command_request_t *request,
@@ -621,6 +664,7 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
         connection,
         serial_command_write,
         serial_command_read,
+        serial_finish_command_response,
         request,
         out_result);
 }

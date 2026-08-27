@@ -430,6 +430,7 @@ h2_pal_result_t h2_h2loader_host_ble_execute_command(
         connection,
         ble_command_write,
         ble_command_read,
+        NULL,
         request,
         out_result);
 }
