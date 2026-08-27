@@ -40,7 +40,8 @@ if(IDF_TARGET STREQUAL "esp32p4" AND NOT CONFIG_ESP_WIFI_REMOTE_ENABLED)
 else()
   list(APPEND H2_ESP_PLATFORM_CORE_SRCS
     "src/h2_esp_platform_wifi.c"
-    "src/h2_esp_platform_wifi_settings.c")
+    "src/h2_esp_platform_wifi_settings.c"
+    "src/h2_esp_wifi_teardown.c")
   if(CONFIG_ESP_WIFI_CSI_ENABLED)
     list(APPEND H2_ESP_PLATFORM_CORE_SRCS "src/h2_esp_platform_wifi_csi.c")
   else()

@@ -1,6 +1,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_platform_wifi_internal.h"
+#include "h2_esp_wifi_teardown.h"
 
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -201,6 +202,46 @@ static h2_pal_wifi_ap_client_t h2_esp_wifi_remove_ap_client(const uint8_t mac[6]
 }
 #endif
 
+static int h2_esp_wifi_teardown_dhcp_stop(void *user) {
+    (void)user;
+    if (s_h2_esp_wifi_sta_netif == NULL) {
+        return ESP_OK;
+    }
+
+    /* DHCP stop may transmit RELEASE from the TCP/IP task. Complete it while
+     * the Wi-Fi driver still owns a valid transmit callback. */
+    return esp_netif_dhcpc_stop(s_h2_esp_wifi_sta_netif);
+}
+
+static int h2_esp_wifi_teardown_stop(void *user) {
+    (void)user;
+    return esp_wifi_stop();
+}
+
+static int h2_esp_wifi_teardown_deinit(void *user) {
+    (void)user;
+    return esp_wifi_deinit();
+}
+
+static int h2_esp_wifi_teardown_map_error(void *user, int error) {
+    (void)user;
+    return h2_esp_wifi_map_error((esp_err_t)error);
+}
+
+static int h2_esp_wifi_teardown_driver(void) {
+    const h2_esp_wifi_teardown_config_t config = {
+        .dhcp_stop = h2_esp_wifi_teardown_dhcp_stop,
+        .wifi_stop = h2_esp_wifi_teardown_stop,
+        .wifi_deinit = h2_esp_wifi_teardown_deinit,
+        .map_error = h2_esp_wifi_teardown_map_error,
+        .success = ESP_OK,
+        .dhcp_already_stopped = ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED,
+        .wifi_not_initialized = ESP_ERR_WIFI_NOT_INIT,
+        .wifi_not_started = ESP_ERR_WIFI_NOT_STARTED,
+    };
+    return h2_esp_wifi_run_driver_teardown(&config);
+}
+
 static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
     if (s_h2_esp_wifi_events != NULL) {
         EventBits_t bits = xEventGroupGetBits(s_h2_esp_wifi_events);
@@ -215,14 +256,9 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
         return H2_PAL_OK;
     }
 
-    esp_err_t err = esp_wifi_stop();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
-        return h2_esp_wifi_map_error(err);
-    }
-
-    err = esp_wifi_deinit();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
-        return h2_esp_wifi_map_error(err);
+    int rc = h2_esp_wifi_teardown_driver();
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
 
     if (s_h2_esp_wifi_sta_netif != NULL) {
@@ -855,14 +891,9 @@ static int h2_esp_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     }
 #endif
 
-    err = esp_wifi_stop();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
-        return h2_esp_wifi_map_error(err);
-    }
-
-    err = esp_wifi_deinit();
-    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
-        return h2_esp_wifi_map_error(err);
+    rc = h2_esp_wifi_teardown_driver();
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
 
     if (s_h2_esp_wifi_sta_netif != NULL) {
