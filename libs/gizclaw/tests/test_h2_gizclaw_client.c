@@ -695,8 +695,9 @@ typedef struct test_workspace_history_notification {
   size_t calls;
 } test_workspace_history_notification_t;
 
-static void test_workspace_history_notification(
-    void *user, const h2_gizclaw_client_event_t *event) {
+static void
+test_workspace_history_notification(void *user,
+                                    const h2_gizclaw_client_event_t *event) {
   test_workspace_history_notification_t *notification = user;
   assert(notification != NULL && event != NULL);
   assert(event->kind == H2_GIZCLAW_CLIENT_EVENT_WORKSPACE_HISTORY_UPDATED);
@@ -822,9 +823,9 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_WORKSPACE_HISTORY_UPDATED;
   test.read_event.which_payload =
       gizclaw_events_v1_PeerEvent_workspace_history_updated_tag;
-  (void)snprintf(test.read_event.payload.workspace_history_updated.workspace_name,
-                 sizeof(test.read_event.payload.workspace_history_updated
-                            .workspace_name),
+  (void)snprintf(
+      test.read_event.payload.workspace_history_updated.workspace_name,
+      sizeof(test.read_event.payload.workspace_history_updated.workspace_name),
                  "%s", "social-group-1");
   test.read_event.payload.workspace_history_updated.last_updated_at_unix_ms =
       1234;
@@ -845,7 +846,8 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
                       conversation != NULL && test.send_count == 1u,
                   "closed-poll test opens an active logical conversation");
   test_workspace_history_notification_t notification = {0};
-  fails += expect(h2_gizclaw_client_dispatch_event(
+  fails +=
+      expect(h2_gizclaw_client_dispatch_event(
                       client, 0, test_workspace_history_notification,
                       &notification) == H2_PAL_OK &&
                       notification.calls == 1u &&
@@ -862,7 +864,8 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
                   "would-block client Event dispatch preserves the active "
                   "conversation");
   test.read_result = GZC_ERR_RPC;
-  fails += expect(h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL) ==
+  fails +=
+      expect(h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL) ==
                           H2_PAL_ERR_IO &&
                       test.read_count == 3u && test.close_count == 1u &&
                       !h2_gizclaw_conversation_input_ready(conversation) &&
@@ -1590,8 +1593,8 @@ static int test_telemetry_send_call(void *user,
       frame->observations[3].kind == GZC_TELEMETRY_OBSERVATION_SYSTEM &&
       frame->observations[3].system.has_hardware_version &&
       frame->observations[3].system.hardware_version.len == 13u &&
-      memcmp(frame->observations[3].system.hardware_version.data, "esp32s3_dev_1",
-             13u) == 0;
+      memcmp(frame->observations[3].system.hardware_version.data,
+             "esp32s3_dev_1", 13u) == 0;
   return mock->result;
 }
 
@@ -1718,6 +1721,26 @@ static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t *peer,
   return test_opus_send_result;
 }
 
+static size_t test_media_track_bind_calls;
+
+static h2_pal_result_t
+test_webrtc_peer_create(void *user, const h2_pal_webrtc_callbacks_t *callbacks,
+                        h2_pal_webrtc_peer_t **out_peer) {
+  (void)user;
+  assert(callbacks != NULL);
+  assert(callbacks->on_opus_frame == NULL);
+  *out_peer = (h2_pal_webrtc_peer_t *)0x2;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_peer_set_media_track(h2_pal_webrtc_peer_t *peer,
+                                                 h2_pal_webrtc_track_t *track) {
+  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+  assert(track == (h2_pal_webrtc_track_t *)0x4);
+  ++test_media_track_bind_calls;
+  return H2_PAL_OK;
+}
+
 static void test_peer_close(h2_pal_webrtc_peer_t *peer) {
   assert(peer == (h2_pal_webrtc_peer_t *)0x2);
   ++test_peer_close_calls;
@@ -1795,7 +1818,9 @@ int main(void) {
   };
   const h2_pal_http_api_t http = {0};
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
+      .peer_create = test_webrtc_peer_create,
       .peer_poll = test_peer_poll,
+      .peer_set_media_track = test_peer_set_media_track,
       .channel_send = test_channel_send,
       .peer_send_opus = test_peer_send_opus,
       .peer_close = test_peer_close,
@@ -1860,6 +1885,19 @@ int main(void) {
   fails += expect(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK,
                   "init accepts the current SDK platform contract");
   fails += expect(client != NULL, "successful init returns a client");
+  config.webrtc_media_track = (h2_pal_webrtc_track_t *)0x4;
+  h2_gizclaw_client_t *track_client = NULL;
+  fails += expect(h2_gizclaw_client_init(&config, &track_client) == H2_PAL_OK,
+                  "track-mode init accepts an opaque provider track");
+  h2_pal_webrtc_peer_t *track_peer = NULL;
+  fails +=
+      expect(h2_gizclaw_test_peer_create(track_client, &track_peer) == GZC_OK &&
+                 track_peer == (h2_pal_webrtc_peer_t *)0x2 &&
+                 test_media_track_bind_calls == 1u,
+             "GizClaw binds the opaque track before offer setup");
+  h2_gizclaw_client_deinit(track_client);
+  test_peer_close_calls = 0u;
+  config.webrtc_media_track = NULL;
   fails += expect(h2_gizclaw_test_media_registered(client),
                   "init pins the C SDK Opus media adapter");
   const uint8_t opus_payload[] = {0xf8u, 0xffu, 0xfeu};

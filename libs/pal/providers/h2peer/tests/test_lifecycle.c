@@ -1466,6 +1466,117 @@ static void test_ice_server_transport_validation(void) {
     assert(mem.allocations == mem.frees);
 }
 
+static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
+                                       size_t capacity, size_t *out_len) {
+    (void)user;
+    (void)opus;
+    (void)capacity;
+    *out_len = 0u;
+    return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+typedef struct test_media_track_state {
+    int read_ready;
+    size_t writes;
+    uint8_t last_write[8];
+    size_t last_write_len;
+} test_media_track_state_t;
+
+static h2_pal_result_t test_active_track_read(void *user, uint8_t *opus,
+                                              size_t capacity,
+                                              size_t *out_len) {
+    test_media_track_state_t *state = user;
+    if (!state->read_ready)
+        return H2_PAL_ERR_WOULD_BLOCK;
+    assert(capacity >= 2u);
+    opus[0] = 0xf8u;
+    opus[1] = 0x42u;
+    *out_len = 2u;
+    state->read_ready = 0;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_active_track_write(void *user, const uint8_t *opus,
+                                               size_t len) {
+    test_media_track_state_t *state = user;
+    assert(len <= sizeof(state->last_write));
+    memcpy(state->last_write, opus, len);
+    state->last_write_len = len;
+    state->writes++;
+    return H2_PAL_OK;
+}
+
+static void test_media_track_poll_owns_opus_progress(void) {
+    test_mem_t mem = {0};
+    test_provider_t provider = {0};
+    h2_peer_config_t config = test_config(&mem);
+    h2_peer_provider_bundle_t providers = test_providers(&provider, &mem);
+    h2_peer_t *owner = NULL;
+    assert(h2_peer_create_with_providers(&config, &providers, &owner) ==
+           H2_PAL_OK);
+    test_media_track_state_t track_state = {.read_ready = 1};
+    const h2_peer_media_track_config_t track_config = {
+        .user = &track_state,
+        .read = test_active_track_read,
+        .write = test_active_track_write,
+    };
+    h2_pal_webrtc_track_t *track = NULL;
+    assert(h2_peer_media_track_create(owner, &track_config, &track) ==
+           H2_PAL_OK);
+    const h2_pal_webrtc_api_t *api = h2_peer_webrtc_api(owner);
+    const h2_pal_webrtc_callbacks_t callbacks = {0};
+    h2_pal_webrtc_peer_t *peer = NULL;
+    assert(h2_pal_webrtc_peer_create(api, &callbacks, &peer) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_set_media_track(api, peer, track) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_start_offer(api, peer) == H2_PAL_OK);
+    const h2_pal_webrtc_str_t answer = {
+        .data = answer_sdp,
+        .len = sizeof(answer_sdp) - 1u,
+    };
+    assert(h2_pal_webrtc_peer_set_remote_sdp(
+               api, peer, H2_PAL_WEBRTC_SDP_ANSWER, answer) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_poll(api, peer, 10) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_poll(api, peer, 10) == H2_PAL_OK);
+    assert(!track_state.read_ready && provider.last_rtp_len == 14u);
+    assert(h2_peer_receive_rtp_for_test(peer, provider.last_rtp,
+                                        provider.last_rtp_len) == H2_PAL_OK);
+    assert(track_state.writes == 1u && track_state.last_write_len == 2u);
+    h2_pal_webrtc_peer_close(api, peer);
+    assert(h2_peer_media_track_destroy(&track) == H2_PAL_OK);
+    h2_peer_destroy(&owner);
+    assert(mem.allocations == mem.frees);
+}
+
+static void test_media_track_lifecycle(void) {
+    test_mem_t mem = {0};
+    test_provider_t provider = {0};
+    h2_peer_config_t config = test_config(&mem);
+    h2_peer_provider_bundle_t providers = test_providers(&provider, &mem);
+    h2_peer_t *owner = NULL;
+    assert(h2_peer_create_with_providers(&config, &providers, &owner) ==
+           H2_PAL_OK);
+    const h2_peer_media_track_config_t track_config = {
+        .read = test_track_read,
+    };
+    h2_pal_webrtc_track_t *track = NULL;
+    assert(h2_peer_media_track_create(owner, &track_config, &track) ==
+           H2_PAL_OK);
+    assert(track != NULL);
+    const h2_pal_webrtc_api_t *api = h2_peer_webrtc_api(owner);
+    const h2_pal_webrtc_callbacks_t callbacks = {0};
+    h2_pal_webrtc_peer_t *peer = NULL;
+    assert(h2_pal_webrtc_peer_create(api, &callbacks, &peer) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_set_media_track(api, peer, track) == H2_PAL_OK);
+    assert(h2_peer_media_track_destroy(&track) == H2_PAL_ERR_INVALID_STATE);
+    assert(track != NULL);
+    assert(h2_pal_webrtc_peer_set_media_track(api, peer, NULL) == H2_PAL_OK);
+    assert(h2_peer_media_track_destroy(&track) == H2_PAL_OK);
+    assert(track == NULL);
+    h2_pal_webrtc_peer_close(api, peer);
+    h2_peer_destroy(&owner);
+    assert(mem.allocations == mem.frees);
+}
+
 int main(void) {
     test_stream_pool_is_bounded_and_recycles_unopened_sid();
     test_reentrant_terminal_during_channel_open_preserves_result();
@@ -1487,5 +1598,7 @@ int main(void) {
     test_public_instance_rejects_missing_pal_operations();
     test_public_instance_requires_bounded_tcp_send();
     test_ice_server_transport_validation();
+    test_media_track_lifecycle();
+    test_media_track_poll_owns_opus_progress();
     return 0;
 }

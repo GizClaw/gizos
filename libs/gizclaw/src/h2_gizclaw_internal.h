@@ -160,6 +160,8 @@ void h2_gizclaw_test_set_telemetry_send(h2_gizclaw_test_telemetry_send_fn send,
                                         void *user);
 
 bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client);
+int h2_gizclaw_test_peer_create(h2_gizclaw_client_t *client,
+                                h2_pal_webrtc_peer_t **out_peer);
 int h2_gizclaw_test_media_send_opus(h2_gizclaw_client_t *client,
                                     gzc_rtc_peer_t *peer, const uint8_t *opus,
                                     size_t opus_len);

@@ -122,6 +122,21 @@ globalThis.h2FakeSerialPort = h2FakePort;
 Object.defineProperty(globalThis, "navigator", {
   configurable: true,
   value: {
+    mediaDevices: {
+      getUserMedia() {
+        globalThis.h2FakeGetUserMediaCount =
+            (globalThis.h2FakeGetUserMediaCount || 0) + 1;
+        const track = {
+          kind: 'audio',
+          stopped: false,
+          stop() { this.stopped = true; },
+        };
+        return Promise.resolve({
+          getTracks() { return [track]; },
+          getAudioTracks() { return [track]; },
+        });
+      },
+    },
     serial: {
       getPorts() { return Promise.resolve([h2FakePort]); },
       requestPort() {
@@ -136,3 +151,92 @@ Object.defineProperty(globalThis, "navigator", {
     },
   },
 });
+
+class H2FakeRTCDataChannel {
+  constructor(label, options, id) {
+    this.label = label;
+    this.id = options.id === undefined ? id : options.id;
+    this.ordered = options.ordered !== false;
+    this.maxRetransmits = options.maxRetransmits ?? null;
+    this.maxPacketLifeTime = null;
+    this.readyState = 'connecting';
+    this.bufferedAmount = 0;
+  }
+  open() {
+    this.readyState = 'open';
+    if (this.onopen) this.onopen();
+  }
+  send(data) {
+    if (this.readyState !== 'open') throw new Error('closed');
+    const copied = typeof data === 'string' ? data : data.slice().buffer;
+    Promise.resolve().then(() => {
+      if (this.readyState === 'open' && this.onmessage) {
+        this.onmessage({data: copied});
+      }
+    });
+  }
+  close() {
+    if (this.readyState === 'closed') return;
+    this.readyState = 'closed';
+    if (this.onclose) this.onclose();
+  }
+}
+
+class H2FakeRTCPeerConnection {
+  constructor() {
+    this.connectionState = 'new';
+    this.signalingState = 'stable';
+    this.iceGatheringState = 'complete';
+    this.configuration = {iceServers: []};
+    this.channels = [];
+    this.nextChannelId = 0;
+  }
+  addTrack(track, stream) { this.audioSender = {track, stream}; }
+  getConfiguration() { return this.configuration; }
+  setConfiguration(configuration) { this.configuration = configuration; }
+  createDataChannel(label, options = {}) {
+    const channel = new H2FakeRTCDataChannel(
+        label, options, this.nextChannelId++);
+    this.channels.push(channel);
+    return channel;
+  }
+  createOffer() { return Promise.resolve({type: 'offer', sdp: 'fake-offer'}); }
+  setLocalDescription(description) {
+    this.localDescription = description;
+    return Promise.resolve();
+  }
+  setRemoteDescription(description) {
+    this.remoteDescription = description;
+    this.connectionState = 'connected';
+    if (this.onconnectionstatechange) this.onconnectionstatechange();
+    for (const channel of this.channels) channel.open();
+    if (this.ontrack && this.audioSender) {
+      this.ontrack({
+        track: {kind: 'audio'},
+        streams: [{getTracks() { return []; }}],
+      });
+    }
+    return Promise.resolve();
+  }
+  addEventListener() {}
+  removeEventListener() {}
+  close() {
+    for (const channel of this.channels) channel.close();
+    this.connectionState = 'closed';
+    if (this.onconnectionstatechange) this.onconnectionstatechange();
+  }
+}
+
+globalThis.RTCPeerConnection = H2FakeRTCPeerConnection;
+globalThis.MediaStream = class {
+  constructor(tracks) { this.tracks = tracks; }
+  getTracks() { return this.tracks; }
+};
+globalThis.Audio = class {
+  play() {
+    globalThis.h2FakeAudioPlayCount =
+        (globalThis.h2FakeAudioPlayCount || 0) + 1;
+    return Promise.resolve();
+  }
+  pause() {}
+};

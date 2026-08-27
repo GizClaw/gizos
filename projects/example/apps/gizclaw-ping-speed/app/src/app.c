@@ -310,6 +310,7 @@ h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
         .allocator = runtime->mem,
         .http = runtime->http,
         .webrtc = runtime->webrtc,
+        .webrtc_media_track = runtime->webrtc_media_track,
         .crypto = runtime->crypto,
         .time = runtime->time,
         .log = runtime->log,

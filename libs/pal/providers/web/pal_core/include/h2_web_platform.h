@@ -80,6 +80,12 @@ const h2_pal_touch_api_t *
 h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *
 h2_web_platform_serial_host_api(h2_web_platform_t *platform);
+/** Browser RTCPeerConnection/DataChannel provider. */
+const h2_pal_webrtc_api_t *
+h2_web_platform_webrtc_api(h2_web_platform_t *platform);
+/** Browser-managed microphone and remote playback track. */
+h2_pal_webrtc_track_t *
+h2_web_platform_webrtc_audio_track(h2_web_platform_t *platform);
 
 /**
  * Start the Web Serial chooser; call only from a direct user gesture.

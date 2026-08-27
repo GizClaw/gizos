@@ -42,6 +42,13 @@ static h2_pal_result_t unsupported_webrtc_peer_poll(h2_pal_webrtc_peer_t *p0, in
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_webrtc_peer_set_media_track(
+    h2_pal_webrtc_peer_t *p0, h2_pal_webrtc_track_t *p1) {
+    (void)p0;
+    (void)p1;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t unsupported_webrtc_peer_send_opus(
     h2_pal_webrtc_peer_t *p0,
     const uint8_t *p1,
@@ -74,6 +81,7 @@ static const h2_pal_webrtc_vtable_t unsupported_webrtc_vtable = {
     .peer_start_offer = unsupported_webrtc_peer_start_offer,
     .peer_set_remote_sdp = unsupported_webrtc_peer_set_remote_sdp,
     .peer_create_data_channel = unsupported_webrtc_peer_create_data_channel,
+    .peer_set_media_track = unsupported_webrtc_peer_set_media_track,
     .peer_poll = unsupported_webrtc_peer_poll,
     .peer_send_opus = unsupported_webrtc_peer_send_opus,
     .channel_send = unsupported_webrtc_channel_send,

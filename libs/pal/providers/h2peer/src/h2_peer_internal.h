@@ -49,6 +49,15 @@ typedef struct h2_peer_round_stats {
     uint64_t max_us;
 } h2_peer_round_stats_t;
 
+struct h2_pal_webrtc_track {
+    h2_peer_t *owner;
+    struct h2_pal_webrtc_track *next;
+    h2_pal_webrtc_peer_t *bound_peer;
+    h2_peer_media_track_config_t config;
+    uint8_t pending_opus[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
+    size_t pending_opus_len;
+};
+
 struct h2_pal_webrtc_channel {
     struct h2_pal_webrtc_peer *owner;
     struct h2_pal_webrtc_channel *next;
@@ -75,6 +84,7 @@ struct h2_pal_webrtc_peer {
     h2_peer_t *owner;
     struct h2_pal_webrtc_peer *next;
     h2_pal_webrtc_callbacks_t callbacks;
+    h2_pal_webrtc_track_t *media_track;
     uint32_t receive_flags;
     h2_pal_webrtc_channel_t *channels;
     h2_peer_ice_server_t ice_servers[H2_PEER_ICE_SERVER_MAX];
@@ -140,6 +150,7 @@ struct h2_peer {
     h2_peer_provider_bundle_t providers;
     h2_pal_webrtc_api_t webrtc_api;
     h2_pal_webrtc_peer_t *peers;
+    h2_pal_webrtc_track_t *tracks;
     atomic_uint operation_depth;
     int destroying;
     int production_backend;

@@ -7,6 +7,11 @@
 
 #define H2_WEB_TOUCH_EVENT_CAPACITY 32u
 
+struct h2_pal_webrtc_track {
+  h2_web_platform_t *owner;
+  h2_pal_webrtc_peer_t *bound_peer;
+};
+
 struct h2_web_platform {
   int32_t width;
   int32_t height;
@@ -24,7 +29,10 @@ struct h2_web_platform {
   h2_pal_display_api_t display_api;
   h2_pal_touch_api_t touch_api;
   h2_pal_serial_host_api_t serial_api;
+  h2_pal_webrtc_api_t webrtc_api;
+  h2_pal_webrtc_track_t webrtc_audio_track;
   void *serial_state;
+  h2_pal_webrtc_peer_t *webrtc_peers;
   bool pointer_installed;
   bool touch_opened;
   bool pumping;
@@ -45,5 +53,7 @@ h2_libco_result_t h2_web_platform_serial_poll(h2_web_platform_t *platform,
                                                h2_libco_t *executor);
 void h2_web_platform_request_pump(h2_web_platform_t *platform,
                                   uint64_t deadline_ms);
+void h2_web_platform_webrtc_init(h2_web_platform_t *platform);
+void h2_web_platform_webrtc_deinit(h2_web_platform_t *platform);
 
 #endif

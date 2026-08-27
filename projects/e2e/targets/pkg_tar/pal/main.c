@@ -48,6 +48,8 @@ int main(void) {
   config.task = h2_web_platform_task_api(platform);
   config.sync = h2_web_platform_sync_api(platform);
   config.touch = h2_web_platform_touch_api(platform);
+  config.webrtc = h2_web_platform_webrtc_api(platform);
+  config.webrtc_media_track = h2_web_platform_webrtc_audio_track(platform);
   h2_runtime_t *runtime = NULL;
   h2_pal_result_t result = h2_runtime_init(&config, &runtime);
   h2_web_pal_app_t app = {

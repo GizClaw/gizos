@@ -60,6 +60,7 @@ typedef struct h2_runtime_config {
     const h2_pal_netif_api_t *netif;
     const h2_pal_mqtt_api_t *mqtt;
     const h2_pal_webrtc_api_t *webrtc;
+    h2_pal_webrtc_track_t *webrtc_media_track;
     const h2_pal_wifi_sta_api_t *wifi_sta;
     const h2_pal_wifi_ap_api_t *wifi_ap;
     const h2_pal_wifi_csi_api_t *wifi_csi;
@@ -134,6 +135,7 @@ struct h2_runtime {
     const h2_pal_netif_api_t *netif;
     const h2_pal_mqtt_api_t *mqtt;
     const h2_pal_webrtc_api_t *webrtc;
+    h2_pal_webrtc_track_t *webrtc_media_track;
     const h2_pal_wifi_sta_api_t *wifi_sta;
     const h2_pal_wifi_ap_api_t *wifi_ap;
     const h2_pal_wifi_csi_api_t *wifi_csi;

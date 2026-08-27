@@ -13,6 +13,7 @@ extern "C" {
 
 typedef struct h2_pal_webrtc_peer h2_pal_webrtc_peer_t;
 typedef struct h2_pal_webrtc_channel h2_pal_webrtc_channel_t;
+typedef struct h2_pal_webrtc_track h2_pal_webrtc_track_t;
 
 #define H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE 1275u
 
@@ -120,6 +121,8 @@ typedef struct h2_pal_webrtc_vtable {
         h2_pal_webrtc_peer_t *peer,
         const h2_pal_webrtc_channel_config_t *config,
         h2_pal_webrtc_channel_t **out_channel);
+    h2_pal_result_t (*peer_set_media_track)(h2_pal_webrtc_peer_t *peer,
+                                            h2_pal_webrtc_track_t *track);
     h2_pal_result_t (*peer_poll)(h2_pal_webrtc_peer_t *peer, int timeout_ms);
     h2_pal_result_t (*peer_send_opus)(h2_pal_webrtc_peer_t *peer,
                                       const uint8_t *opus, size_t opus_len);
@@ -159,9 +162,8 @@ h2_pal_webrtc_peer_create(const h2_pal_webrtc_api_t *api,
 }
 
 static inline h2_pal_result_t h2_pal_webrtc_peer_create_pull(
-    const h2_pal_webrtc_api_t *api,
-    const h2_pal_webrtc_callbacks_t *callbacks, uint32_t receive_flags,
-    h2_pal_webrtc_peer_t **out_peer) {
+    const h2_pal_webrtc_api_t *api, const h2_pal_webrtc_callbacks_t *callbacks,
+    uint32_t receive_flags, h2_pal_webrtc_peer_t **out_peer) {
     if (api == NULL || api->vtable == NULL || callbacks == NULL ||
         out_peer == NULL || receive_flags == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -229,6 +231,31 @@ static inline h2_pal_result_t h2_pal_webrtc_peer_create_data_channel(
         return H2_PAL_ERR_INVALID_ARG;
     }
     return api->vtable->peer_create_data_channel(peer, config, out_channel);
+}
+
+/*
+ * Binds one provider-owned bidirectional media track before start_offer().
+ * The track layout is private to the provider that created it; passing a
+ * track to a different provider returns H2_PAL_ERR_INVALID_ARG. The caller
+ * retains the handle, but it must outlive the peer and cannot be bound to two
+ * live peers. A NULL track explicitly selects a data-only peer.
+ *
+ * Media capture, playback, codec work, RTP progression, and media-event
+ * dispatch are provider responsibilities driven by peer_poll() or by the
+ * provider's native event loop. Portable callers never read or write codec
+ * packets through this handle.
+ */
+static inline h2_pal_result_t
+h2_pal_webrtc_peer_set_media_track(const h2_pal_webrtc_api_t *api,
+                                   h2_pal_webrtc_peer_t *peer,
+                                   h2_pal_webrtc_track_t *track) {
+    if (api == NULL || api->vtable == NULL || peer == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (api->vtable->peer_set_media_track == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return api->vtable->peer_set_media_track(peer, track);
 }
 
 static inline h2_pal_result_t

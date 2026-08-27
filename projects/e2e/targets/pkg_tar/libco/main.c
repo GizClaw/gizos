@@ -70,6 +70,8 @@ int main(void) {
       h2_web_root_time_api(), h2_web_platform_queue_api(platform),
       h2_pal_unsupported_display_api());
   config.log = h2_web_platform_log_api();
+  config.webrtc = h2_web_platform_webrtc_api(platform);
+  config.webrtc_media_track = h2_web_platform_webrtc_audio_track(platform);
   h2_runtime_t *runtime = NULL;
   h2_pal_result_t result = h2_runtime_init(&config, &runtime);
   const uint64_t started_ms = (uint64_t)emscripten_get_now();

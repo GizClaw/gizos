@@ -36,6 +36,8 @@ int main(void) {
   runtime_config.task = h2_web_platform_task_api(host);
   runtime_config.sync = h2_web_platform_sync_api(host);
   runtime_config.touch = h2_web_platform_touch_api(host);
+  runtime_config.webrtc = h2_web_platform_webrtc_api(host);
+  runtime_config.webrtc_media_track = h2_web_platform_webrtc_audio_track(host);
   if (h2_runtime_init(&runtime_config, &runtime) != H2_PAL_OK) {
     web_set_status("Runtime initialization failed");
     h2_web_platform_destroy(host);

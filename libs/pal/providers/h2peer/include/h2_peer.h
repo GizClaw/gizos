@@ -21,6 +21,34 @@ extern "C" {
 typedef struct h2_peer h2_peer_t;
 
 /**
+ * Provider-integration source for one complete Opus packet.
+ *
+ * H2Peer calls this only from h2_pal_webrtc_peer_poll(). WOULD_BLOCK means no
+ * packet is currently ready. A successful read consumes the packet.
+ */
+typedef h2_pal_result_t (*h2_peer_media_track_read_fn)(void *user,
+                                                       uint8_t *opus,
+                                                       size_t capacity,
+                                                       size_t *out_len);
+
+/**
+ * Provider-integration sink for one received Opus packet.
+ *
+ * Success consumes the complete packet. Any error is terminal for the media
+ * track; sinks must provide their own bounded buffering and must not return
+ * WOULD_BLOCK after partially consuming a packet.
+ */
+typedef h2_pal_result_t (*h2_peer_media_track_write_fn)(void *user,
+                                                        const uint8_t *opus,
+                                                        size_t len);
+
+typedef struct h2_peer_media_track_config {
+    void *user;
+    h2_peer_media_track_read_fn read;
+    h2_peer_media_track_write_fn write;
+} h2_peer_media_track_config_t;
+
+/**
  * Platform capabilities borrowed by one H2Peer instance.
  *
  * Every API object and its backend state must remain valid until
@@ -104,6 +132,21 @@ h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
  * @return Borrowed WebRTC API view, or NULL for an invalid instance.
  */
 const h2_pal_webrtc_api_t *h2_peer_webrtc_api(h2_peer_t *peer);
+
+/**
+ * Creates an H2Peer-owned media adapter with provider-private layout.
+ *
+ * The callbacks adapt a board/audio integration into H2Peer; portable App and
+ * GizClaw code pass only the resulting opaque PAL track. H2Peer owns RTP and
+ * polling. The borrowed callback user state must outlive the track.
+ */
+h2_pal_result_t
+h2_peer_media_track_create(h2_peer_t *peer,
+                           const h2_peer_media_track_config_t *config,
+                           h2_pal_webrtc_track_t **out_track);
+
+/** Destroys an unbound H2Peer media track and clears the caller handle. */
+h2_pal_result_t h2_peer_media_track_destroy(h2_pal_webrtc_track_t **track);
 
 /**
  * Closes all live peers and channels and destroys an H2Peer instance.
