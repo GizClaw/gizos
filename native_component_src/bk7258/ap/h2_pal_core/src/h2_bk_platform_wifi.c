@@ -538,7 +538,7 @@ static int h2_bk_wifi_sta_scan(
                 for (size_t i = 0u; i < copy_count; ++i) {
                     h2_pal_wifi_scan_entry_t entry;
                     h2_bk_wifi_copy_scan_entry(&entry, &scan_result.aps[i]);
-                    if (on_result(user, &entry)) {
+                    if (!on_result(user, &entry)) {
                         break;
                     }
                 }

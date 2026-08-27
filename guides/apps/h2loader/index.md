@@ -142,7 +142,7 @@ Loader 与支持管理命令的 App image 复用同一 command registry。ESP32-
 
 当前 v1/v2 identity 不能稳定区分多台同型号设备。后续 Service Data v3 将增加 64-bit `device_uid`；在此之前，CoreBluetooth/Bleak `backend_id` 只用于当前 Host/backend 生命周期，不能作为跨扫描或跨进程的设备身份。
 
-BLE connection 加载 package 时，Host 必须在当前 GATT/KCP session 中发送 `stage` command 和 package bytes，不依赖设备 Wi-Fi 或 HTTP URL。当前 repository CLI 不提供 H2Loader management BLE provider；其 `bleikcp-speed` 只访问独立 Baseline service。
+Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同一 typed command contract 和设备 command registry；`bleikcp-speed` 仍只访问独立 Baseline service。BLE payload `send` 必须在当前 GATT/KCP session 中发送 `stage` command 和 package bytes，并在断开前从同一 connection 验证 staged identity。BLE `send-url` 的 Wi-Fi/STAGE_URL control command、下载 terminal 和 staged status 验证也必须留在同一 connection；设备 payload 仍经 Wi-Fi/HTTP 下载。需要断线后重新识别物理设备的 Loader upgrade 在 v1/v2 上必须发送前 fail closed，不能把 backend ID、address、display name 或 board 当成 `device_uid`。
 
 串口和 BLE 可以同时等待输入，但共享 operation mutex 串行执行命令。Command line、stage bytes 和 response 始终绑定发起它的 transport；断开的 operation 失败，不转移到另一 transport，也不自动 replay。
 

@@ -9,7 +9,7 @@ typedef enum transport_scenario {
     TRANSPORT_SUCCESS = 0,
     TRANSPORT_TIMEOUT,
     TRANSPORT_REJECTED,
-    TRANSPORT_RECONNECT_STATUS_FAILURE,
+    TRANSPORT_READ_STATUS_FAILURE,
 } transport_scenario_t;
 
 typedef struct fake_transport {
@@ -44,28 +44,13 @@ static const h2_command_io_vtable_t discard_vtable = {
 
 static h2_pal_result_t fake_transport_connect(
     void *user,
-    const h2_h2loader_host_serial_connection_config_t *config) {
-    fake_transport_t *transport = user;
-    assert(config->command_timeout_ms == 660000u);
-    ++transport->connect_count;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t fake_transport_read_status(
-    void *user,
+    uint32_t command_timeout_ms,
     h2_h2loader_host_status_t *out_status) {
     fake_transport_t *transport = user;
+    assert(command_timeout_ms == 660000u);
+    ++transport->connect_count;
     ++transport->status_count;
     memset(out_status, 0, sizeof(*out_status));
-    if (transport->status_count == 2u &&
-        transport->scenario == TRANSPORT_RECONNECT_STATUS_FAILURE) {
-        return H2_PAL_ERR_IO;
-    }
-    if (transport->status_count == 2u) {
-        out_status->staged_valid = 1u;
-        out_status->staged_bytes = transport->expected_bytes;
-        strcpy(out_status->staged_checksum, transport->expected_sha256);
-    }
     return H2_PAL_OK;
 }
 
@@ -91,10 +76,25 @@ static h2_pal_result_t fake_transport_disconnect(void *user) {
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t fake_transport_read_status(
+    void *user,
+    h2_h2loader_host_status_t *out_status) {
+    fake_transport_t *transport = user;
+    ++transport->status_count;
+    if (transport->scenario == TRANSPORT_READ_STATUS_FAILURE) {
+        return H2_PAL_ERR_IO;
+    }
+    memset(out_status, 0, sizeof(*out_status));
+    out_status->staged_valid = 1u;
+    out_status->staged_bytes = transport->expected_bytes;
+    strcpy(out_status->staged_checksum, transport->expected_sha256);
+    return H2_PAL_OK;
+}
+
 static const h2_h2loader_cli_server_transport_vtable_t fake_transport_vtable = {
     .connect = fake_transport_connect,
-    .read_status = fake_transport_read_status,
     .execute = fake_transport_execute,
+    .read_status = fake_transport_read_status,
     .disconnect = fake_transport_disconnect,
 };
 
@@ -164,7 +164,7 @@ static void run_terminal_scenario(
     assert(transport_state.connect_count == expected_connects);
     assert(transport_state.status_count == expected_statuses);
     assert(transport_state.execute_count == 1u);
-    assert(transport_state.disconnect_count == 2u);
+    assert(transport_state.disconnect_count == 1u);
 }
 
 static void test_url_terminal_paths(void) {
@@ -173,10 +173,10 @@ static void test_url_terminal_paths(void) {
     run_terminal_scenario(
         TRANSPORT_REJECTED, H2_H2LOADER_CLI_EXIT_RUNTIME, 1u, 1u);
     run_terminal_scenario(
-        TRANSPORT_RECONNECT_STATUS_FAILURE,
-        H2_H2LOADER_CLI_EXIT_RUNTIME, 2u, 2u);
+        TRANSPORT_READ_STATUS_FAILURE,
+        H2_H2LOADER_CLI_EXIT_RUNTIME, 1u, 2u);
     run_terminal_scenario(
-        TRANSPORT_SUCCESS, H2_H2LOADER_CLI_EXIT_OK, 2u, 2u);
+        TRANSPORT_SUCCESS, H2_H2LOADER_CLI_EXIT_OK, 1u, 2u);
 }
 
 int main(void) {

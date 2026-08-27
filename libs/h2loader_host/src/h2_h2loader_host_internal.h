@@ -61,7 +61,9 @@ typedef h2_pal_result_t (*h2_h2loader_host_command_read_fn)(
     const char *marker,
     uint8_t *response,
     size_t response_size,
-    size_t *out_response_len);
+    size_t *out_response_len,
+    h2_h2loader_host_command_output_fn on_output,
+    void *output_user);
 
 h2_pal_result_t h2_h2loader_host_command_execute_transport(
     void *transport,

@@ -99,6 +99,7 @@ h2_pal_result_t h2_h2loader_host_command_validate(
                 return H2_PAL_ERR_INVALID_STATE;
             }
             break;
+        case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN:
         case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT:
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
             if (role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
@@ -223,6 +224,27 @@ h2_pal_result_t h2_h2loader_host_command_contract(
             out_contract->marker = "H2_LOADER_HOLD ";
             out_contract->success_token = "result=OK";
             break;
+        case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN: {
+            uint32_t limit = request->wifi_scan_limit == 0u
+                ? H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_LIMIT
+                : request->wifi_scan_limit;
+            uint32_t timeout_ms = request->wifi_scan_timeout_ms == 0u
+                ? H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS
+                : request->wifi_scan_timeout_ms;
+            if (limit > H2_H2LOADER_HOST_WIFI_SCAN_MAX_LIMIT ||
+                timeout_ms > H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS) {
+                return H2_PAL_ERR_INVALID_ARG;
+            }
+            if (snprintf(out_contract->line, sizeof(out_contract->line),
+                    "h2loader wifi scan --limit %u --timeout-ms %u\n",
+                    (unsigned)limit,
+                    (unsigned)timeout_ms) >= (int)sizeof(out_contract->line)) {
+                return H2_PAL_ERR_INVALID_ARG;
+            }
+            out_contract->marker = "H2_LOADER_WIFI_SCAN_DONE ";
+            out_contract->success_token = "result=OK";
+            break;
+        }
         case H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT:
             if (!is_wire_field(request->ssid) || !is_wire_field(request->password)) {
                 return H2_PAL_ERR_INVALID_ARG;
@@ -409,17 +431,11 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
         contract.marker,
         response,
         sizeof(response),
-        &response_len);
+        &response_len,
+        request->on_output,
+        request->output_user);
     out_result->output_bytes = response_len;
     out_result->output_truncated = rc == H2_PAL_ERR_NO_SPACE ? 1u : 0u;
-    if (response_len > 0u && request->on_output != NULL) {
-        h2_pal_result_t output_rc = request->on_output(
-            request->output_user, response, response_len);
-        if (output_rc != H2_PAL_OK) {
-            out_result->transport_result = output_rc;
-            return output_rc;
-        }
-    }
     if (request->is_cancelled != NULL &&
         request->is_cancelled(request->cancel_user)) {
         out_result->transport_result = H2_PAL_EXIT;

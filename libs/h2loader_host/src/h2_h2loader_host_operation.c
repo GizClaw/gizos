@@ -222,6 +222,23 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
         config->cancel_user,
         config->on_progress,
         config->progress_user);
+    if (rc == H2_PAL_OK &&
+        config->transport.vtable->read_status != NULL) {
+        memset(&status, 0, sizeof(status));
+        rc = config->transport.vtable->read_status(
+            config->transport.user, &status);
+        if (rc == H2_PAL_OK &&
+            (strcmp(status.board, config->asset->board) != 0 ||
+             strcmp(status.target, config->asset->target) != 0 ||
+             status.active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+             status.staged_valid == 0u ||
+             status.staged_bytes != config->asset->bytes ||
+             strcmp(status.staged_checksum, config->asset->sha256) != 0)) {
+            rc = H2_PAL_ERR_INVALID_STATE;
+        }
+        if (rc == H2_PAL_OK) *out_final_status = status;
+        return disconnect_after(config, rc);
+    }
     rc = disconnect_after(config, rc);
     if (rc != H2_PAL_OK) {
         return rc;

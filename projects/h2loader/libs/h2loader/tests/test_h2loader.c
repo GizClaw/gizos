@@ -98,10 +98,13 @@ typedef struct wifi_command_test_context {
     h2_pal_wifi_sta_config_t connected;
     h2_pal_wifi_sta_config_t saved;
     h2_pal_result_t save_result;
+    h2_pal_result_t scan_result;
+    uint32_t scan_timeout_ms;
     int disconnect_after_save;
     int connect_calls;
     int status_calls;
     int save_calls;
+    int scan_calls;
 } wifi_command_test_context_t;
 
 typedef struct stage_test_context {
@@ -243,6 +246,48 @@ static int wifi_command_test_connect(
     return H2_PAL_OK;
 }
 
+static int wifi_command_test_scan(
+    void *user,
+    const h2_pal_wifi_scan_request_t *request,
+    h2_pal_wifi_scan_result_fn on_result,
+    void *callback_user,
+    uint32_t timeout_ms) {
+    static const h2_pal_wifi_scan_entry_t entries[] = {
+        {
+            .ssid = "Cafe WiFi",
+            .ssid_len = 9u,
+            .bssid = {0x00u, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u},
+            .channel = 6u,
+            .rssi = -42,
+            .security = H2_PAL_WIFI_SECURITY_WPA2,
+        },
+        {
+            .ssid = "Lab",
+            .ssid_len = 3u,
+            .bssid = {0xaau, 0xbbu, 0xccu, 0xddu, 0xeeu, 0xffu},
+            .channel = 11u,
+            .rssi = -55,
+            .security = H2_PAL_WIFI_SECURITY_OPEN,
+        },
+        {
+            .ssid_len = 0u,
+            .channel = 1u,
+            .rssi = -70,
+            .security = H2_PAL_WIFI_SECURITY_UNKNOWN,
+        },
+    };
+    wifi_command_test_context_t *context = user;
+
+    assert(request == NULL);
+    assert(on_result != NULL);
+    context->scan_calls++;
+    context->scan_timeout_ms = timeout_ms;
+    for (size_t i = 0u; i < sizeof(entries) / sizeof(entries[0]); ++i) {
+        if (!on_result(callback_user, &entries[i])) break;
+    }
+    return context->scan_result;
+}
+
 static int wifi_command_test_get_status(
     void *user,
     h2_pal_wifi_sta_status_t *out_status) {
@@ -354,6 +399,101 @@ static void test_wifi_connect_persists_confirmed_config(void) {
     assert(context.connect_calls == 1);
     assert(context.status_calls == 1);
     assert(context.save_calls == 1);
+}
+
+static void test_wifi_scan_is_bounded_and_structured(void) {
+    static const char *const defaults[] = {
+        "h2loader", "wifi", "scan"};
+    static const char *const argv[] = {
+        "h2loader", "wifi", "scan", "--timeout-ms", "2500",
+        "--limit", "2"};
+    static const char *const invalid[] = {
+        "h2loader", "wifi", "scan", "--limit", "0"};
+    static const h2_command_io_vtable_t io_vtable = {
+        .read = command_test_read,
+        .write = command_test_write,
+        .flush = command_test_flush,
+    };
+    static const h2_pal_fs_vtable_t fs_vtable = {0};
+    static const h2_pal_http_vtable_t http_vtable = {0};
+    static const h2_pal_wifi_sta_vtable_t wifi_vtable = {
+        .scan = wifi_command_test_scan,
+    };
+    static const h2_pal_disk_vtable_t disk_vtable = {0};
+    command_test_io_t io = {0};
+    wifi_command_test_context_t context = {0};
+    h2_loader_t loader = {0};
+    h2_loader_command_t command;
+    h2_pal_fs_api_t fs = {.vtable = &fs_vtable};
+    h2_pal_http_api_t http = {.vtable = &http_vtable};
+    h2_pal_wifi_sta_api_t wifi = {
+        .user = &context,
+        .vtable = &wifi_vtable,
+    };
+    h2_pal_disk_api_t disk = {.vtable = &disk_vtable};
+    h2_loader_command_config_t config = {
+        .loader = &loader,
+        .fs = &fs,
+        .http = &http,
+        .wifi = &wifi,
+        .disk = &disk,
+        .digest = {
+            .start = command_test_digest_start,
+            .update = command_test_digest_update,
+            .finish = command_test_digest_finish,
+        },
+        .now_ms = command_test_now_ms,
+        .sleep_ms = command_test_sleep_ms,
+        .io = {
+            .user = &io,
+            .vtable = &io_vtable,
+        },
+    };
+
+    assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+    assert(h2_loader_command_execute(
+               &command, sizeof(argv) / sizeof(argv[0]), argv) == H2_PAL_OK);
+    assert(context.scan_calls == 1);
+    assert(context.scan_timeout_ms == 2500u);
+    assert(strstr(io.output,
+        "H2_LOADER_WIFI_SCAN_RESULT index=1 ssid_hex=436166652057694669 ") != NULL);
+    assert(strstr(io.output,
+        "bssid=001122334455 channel=6 rssi=-42 security=4\n") != NULL);
+    assert(strstr(io.output,
+        "H2_LOADER_WIFI_SCAN_RESULT index=2 ssid_hex=4c6162 ") != NULL);
+    assert(strstr(io.output,
+        "H2_LOADER_WIFI_SCAN_DONE result=OK code=0 count=2\n") != NULL);
+    assert(strstr(io.output, "index=3") == NULL);
+
+    memset(&io, 0, sizeof(io));
+    assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+    assert(h2_loader_command_execute(
+               &command, sizeof(defaults) / sizeof(defaults[0]), defaults) ==
+           H2_PAL_OK);
+    assert(context.scan_calls == 2);
+    assert(context.scan_timeout_ms == 10000u);
+    assert(strstr(io.output,
+        "H2_LOADER_WIFI_SCAN_RESULT index=3 ssid_hex= ") != NULL);
+    assert(strstr(io.output,
+        "H2_LOADER_WIFI_SCAN_DONE result=OK code=0 count=3\n") != NULL);
+
+    memset(&io, 0, sizeof(io));
+    context.scan_result = H2_PAL_ERR_TIMEOUT;
+    assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+    assert(h2_loader_command_execute(
+               &command, sizeof(argv) / sizeof(argv[0]), argv) ==
+           H2_PAL_ERR_TIMEOUT);
+    assert(context.scan_calls == 3);
+    assert(strstr(io.output,
+        "H2_LOADER_WIFI_SCAN_DONE result=error code=") != NULL);
+    context.scan_result = H2_PAL_OK;
+
+    memset(&io, 0, sizeof(io));
+    assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+    assert(h2_loader_command_execute(
+               &command, sizeof(invalid) / sizeof(invalid[0]), invalid) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(context.scan_calls == 3);
 }
 
 static h2_pal_result_t command_test_memory_read(
@@ -3893,6 +4033,7 @@ int main(void) {
     test_upgrade_does_not_cancel_mfg_before_validation();
     test_last_result_is_persisted();
     test_wifi_connect_persists_confirmed_config();
+    test_wifi_scan_is_bounded_and_structured();
     test_command_reinit_discards_partial_old_session_input();
     test_stage_close_removes_only_incomplete_tmp();
     test_url_stage_discards_old_candidate_before_wifi();

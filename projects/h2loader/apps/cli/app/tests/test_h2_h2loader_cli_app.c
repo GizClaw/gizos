@@ -100,10 +100,39 @@ static void test_help_and_usage(void) {
     const char *missing_port[] = {
         "h2loader", "wifi", "connect", "ssid", "secret",
     };
+    const char *invalid_scan_limit[] = {
+        "h2loader", "wifi", "scan", "--limit", "0",
+    };
+    const char *duplicate_scan_timeout[] = {
+        "h2loader", "wifi", "scan", "--timeout-ms", "10",
+        "--timeout-ms", "20",
+    };
+    const char *disabled_ble[] = {
+        "h2loader", "--no-ble", "--transport", "bleikcp",
+        "--port", "1:001122334455", "status",
+    };
+    const char *serial_only_ble_option[] = {
+        "h2loader", "--transport", "bleikcp", "--ready", "READY",
+        "--port", "1:001122334455", "status",
+    };
     fake_output_t output = {0};
 
     assert(run_cli(&output, 2, help) == H2_H2LOADER_CLI_EXIT_OK);
     assert(strstr(output.bytes, "commands: package golden check scan") != NULL);
+    assert(strstr(output.bytes, "--transport iostreamikcp|bleikcp") != NULL);
+    assert(strstr(output.bytes,
+        "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
+        "          wifi connect <ssid> <password>\n"
+        "          wifi disconnect\n") != NULL);
+    assert(strstr(output.bytes, "secret") == NULL);
+
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 7, disabled_ble) == H2_H2LOADER_CLI_EXIT_USAGE);
+    assert(strstr(output.bytes, "usage: h2loader") != NULL);
+
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 8, serial_only_ble_option) ==
+        H2_H2LOADER_CLI_EXIT_USAGE);
 
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 4, raw) == H2_H2LOADER_CLI_EXIT_USAGE);
@@ -112,6 +141,47 @@ static void test_help_and_usage(void) {
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 5, missing_port) == H2_H2LOADER_CLI_EXIT_USAGE);
     assert(strstr(output.bytes, "secret") == NULL);
+
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 5, invalid_scan_limit) ==
+        H2_H2LOADER_CLI_EXIT_USAGE);
+
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 7, duplicate_scan_timeout) ==
+        H2_H2LOADER_CLI_EXIT_USAGE);
+}
+
+static void test_ble_transport_routes_the_shared_device_command(void) {
+    const char *argv[] = {
+        "h2loader", "--transport", "bleikcp", "--port",
+        "1:001122334455", "status",
+    };
+    fake_output_t output = {0};
+    fake_ble_source_t source = {
+        .api = h2_pal_unsupported_ble_host_api(),
+    };
+
+    assert(run_cli_with_ble(&output, 6, argv, &source) ==
+        H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(source.calls == 1u);
+    assert(strstr(output.bytes, "usage: h2loader") == NULL);
+    assert(strstr(output.bytes, "command failed") != NULL);
+}
+
+static void test_ble_upgrade_fails_before_identity_unsafe_reconnect(void) {
+    const char *argv[] = {
+        "h2loader", "--transport", "bleikcp", "--port",
+        "1:001122334455", "upgrade",
+    };
+    fake_output_t output = {0};
+    fake_ble_source_t source = {
+        .api = h2_pal_unsupported_ble_host_api(),
+    };
+
+    assert(run_cli_with_ble(&output, 6, argv, &source) ==
+        H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(source.calls == 0u);
+    assert(strstr(output.bytes, "BLE v1/v2 has no device_uid") != NULL);
 }
 
 static void test_check_reports_runtime_capabilities(void) {
@@ -289,6 +359,8 @@ static void test_send_reports_unreadable_file(void) {
 
 int main(void) {
     test_help_and_usage();
+    test_ble_transport_routes_the_shared_device_command();
+    test_ble_upgrade_fails_before_identity_unsafe_reconnect();
     test_check_reports_runtime_capabilities();
     test_ble_acquired_only_when_requested();
     test_bleikcp_speed_ble_lifecycle_boundaries();

@@ -119,6 +119,11 @@ static void test_typed_command_role_contract(void) {
                &loader, 1u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
     loader.staged_valid = 0u;
     assert(h2_h2loader_host_command_validate(
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_validate(
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(h2_h2loader_host_command_validate(
                &app,
                1u,
                H2_H2LOADER_HOST_COMMAND_APP_RESTART) ==
@@ -194,6 +199,28 @@ static void test_typed_command_wire_contract(void) {
                contract.accepted_disconnect_token,
                "H2_LOADER_REBOOT target=loader result=accepted") == 0);
     assert(contract.lifecycle_transition == 1u);
+
+    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
+    request.wifi_scan_limit = 0u;
+    request.wifi_scan_timeout_ms = 0u;
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.line,
+        "h2loader wifi scan --limit 16 --timeout-ms 10000\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_WIFI_SCAN_DONE ") == 0);
+    assert(strcmp(contract.success_token, "result=OK") == 0);
+    request.wifi_scan_limit = 3u;
+    request.wifi_scan_timeout_ms = 2500u;
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.line,
+        "h2loader wifi scan --limit 3 --timeout-ms 2500\n") == 0);
+    request.wifi_scan_limit = H2_H2LOADER_HOST_WIFI_SCAN_MAX_LIMIT + 1u;
+    assert(h2_h2loader_host_command_contract(&request, &contract) ==
+        H2_PAL_ERR_INVALID_ARG);
+    request.wifi_scan_limit = 1u;
+    request.wifi_scan_timeout_ms =
+        H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS + 1u;
+    assert(h2_h2loader_host_command_contract(&request, &contract) ==
+        H2_PAL_ERR_INVALID_ARG);
 
     request.command = H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT;
     request.ssid = "factory";
@@ -323,6 +350,7 @@ typedef struct command_transport_fixture {
     size_t write_count;
     size_t read_count;
     size_t output_count;
+    size_t output_chunk_size;
     int cancelled;
     int cancel_after_output;
     char line[64];
@@ -345,7 +373,9 @@ static h2_pal_result_t command_transport_read(
     const char *marker,
     uint8_t *response,
     size_t response_size,
-    size_t *out_response_len) {
+    size_t *out_response_len,
+    h2_h2loader_host_command_output_fn on_output,
+    void *output_user) {
     command_transport_fixture_t *fixture = user;
     ++fixture->read_count;
     snprintf(fixture->marker, sizeof(fixture->marker), "%s", marker);
@@ -355,6 +385,19 @@ static h2_pal_result_t command_transport_read(
     }
     memcpy(response, fixture->response, copied);
     *out_response_len = copied;
+    if (copied > 0u && on_output != NULL) {
+        size_t delivered = 0u;
+        size_t chunk_size = fixture->output_chunk_size == 0u
+            ? copied : fixture->output_chunk_size;
+        while (delivered < copied) {
+            size_t chunk = copied - delivered;
+            if (chunk > chunk_size) chunk = chunk_size;
+            h2_pal_result_t output_rc = on_output(
+                output_user, &response[delivered], chunk);
+            if (output_rc != H2_PAL_OK) return output_rc;
+            delivered += chunk;
+        }
+    }
     return fixture->read_result;
 }
 
@@ -590,6 +633,30 @@ static void test_typed_command_transport_execution(void) {
                command_transport_read,
                &request,
                &result) == H2_PAL_OK);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+
+    static const uint8_t wifi_scan[] =
+        "H2_LOADER_WIFI_SCAN_RESULT index=1 ssid_hex=666f6f\n"
+        "H2_LOADER_WIFI_SCAN_DONE result=OK code=0 count=1\n";
+    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
+    request.status = &loader;
+    request.wifi_scan_limit = 1u;
+    request.wifi_scan_timeout_ms = 2500u;
+    fixture.response = wifi_scan;
+    fixture.response_len = sizeof(wifi_scan) - 1u;
+    fixture.read_result = H2_PAL_OK;
+    fixture.output_count = 0u;
+    fixture.output_chunk_size = 17u;
+    assert(h2_h2loader_host_command_execute_transport(
+               &fixture,
+               command_transport_write,
+               command_transport_read,
+               &request,
+               &result) == H2_PAL_OK);
+    assert(fixture.output_count > 1u);
+    assert(strcmp(fixture.line,
+        "h2loader wifi scan --limit 1 --timeout-ms 2500\n") == 0);
+    assert(strcmp(fixture.marker, "H2_LOADER_WIFI_SCAN_DONE ") == 0);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 }
 
@@ -1095,6 +1162,7 @@ typedef struct operation_fixture {
     int activate_count;
     int disconnect_count;
     int rediscover_count;
+    int read_status_count;
     int sleep_count;
     int cancelled;
     int bad_final_checksum;
@@ -1174,6 +1242,21 @@ static h2_pal_result_t operation_disconnect(void *user) {
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t operation_read_status(
+    void *user,
+    h2_h2loader_host_status_t *out_status) {
+    operation_fixture_t *fixture = user;
+    ++fixture->read_status_count;
+    memset(out_status, 0, sizeof(*out_status));
+    strcpy(out_status->board, fixture->asset.board);
+    strcpy(out_status->target, fixture->asset.target);
+    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->staged_valid = 1u;
+    out_status->staged_bytes = fixture->asset.bytes;
+    strcpy(out_status->staged_checksum, fixture->asset.sha256);
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t operation_rediscover(void *user) {
     ++((operation_fixture_t *)user)->rediscover_count;
     return ((operation_fixture_t *)user)->rediscover_result;
@@ -1210,6 +1293,7 @@ static void test_managed_operation(void) {
         .connect = operation_connect,
         .stage = operation_stage,
         .activate = operation_activate,
+        .read_status = operation_read_status,
         .disconnect = operation_disconnect,
         .rediscover = operation_rediscover,
     };
@@ -1268,14 +1352,16 @@ static void test_managed_operation(void) {
     fixture.activate_count = 0;
     fixture.disconnect_count = 0;
     fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
     fixture.sleep_count = 0;
     assert(h2_h2loader_host_stage_operation_run(
                &config, &final_status) == H2_PAL_OK);
-    assert(fixture.connect_count == 2);
+    assert(fixture.connect_count == 1);
     assert(fixture.stage_count == 1);
     assert(fixture.activate_count == 0);
-    assert(fixture.disconnect_count == 2);
-    assert(fixture.rediscover_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.rediscover_count == 0);
+    assert(fixture.read_status_count == 1);
     assert(strcmp(final_status.staged_checksum, package_sha) == 0);
     fixture.stage_only = 0;
 

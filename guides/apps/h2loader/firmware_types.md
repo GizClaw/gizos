@@ -58,6 +58,7 @@ Loader 固件报告 `active_role=loader`。支持 BLE 的 Board 通过固定 Ser
 | `h2loader status` | 输出设备、Board、Target、版本、运行固件、安装、确认和更新状态。 |
 | `h2loader stats` | `status` 的别名，输出相同的结构化状态。 |
 | `h2loader memory` | 输出 internal RAM、IRAM 和 PSRAM 的容量、空闲量与最小空闲量；没有 memory stats provider 时返回 unsupported。 |
+| `h2loader wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]` | 有界扫描 Wi-Fi AP；每个 callback 立即输出一条安全编码的结果，最后输出独立 terminal summary。serial IO Stream iKCP 与 BLE-iKCP 使用同一 typed command。 |
 | `h2loader wifi connect <ssid> <password>` | 连接 Wi-Fi，等待取得 IP，并在连接成功后保存同一份 STA 配置供 App 重启后使用。 |
 | `h2loader wifi disconnect` | 断开当前 Wi-Fi。 |
 | `h2loader stage <bytes> <sha256>` | 替换已有 staged candidate，再从当前 command transport 接收指定长度的更新包；完整校验 archive SHA-256 后才发布到 `/dl`。 |

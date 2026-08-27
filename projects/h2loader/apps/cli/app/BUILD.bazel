@@ -12,6 +12,7 @@ cc_library(
         "src/h2_h2loader_cli_output.c",
         "src/h2_h2loader_cli_package_command.c",
         "src/h2_h2loader_cli_server_command.c",
+        "src/h2_h2loader_cli_transport.c",
     ],
     hdrs = ["include/h2_h2loader_cli_app.h"],
     conlyopts = H2_C11_OPTS,

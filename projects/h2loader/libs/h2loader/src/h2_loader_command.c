@@ -15,6 +15,10 @@
 #define H2_LOADER_WIFI_IP_TIMEOUT_MS 15000u
 #define H2_LOADER_WIFI_IP_POLL_MS 100u
 #define H2_LOADER_WIFI_SETTINGS_SETTLE_MS 250u
+#define H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT 16u
+#define H2_LOADER_WIFI_SCAN_MAX_LIMIT 16u
+#define H2_LOADER_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
+#define H2_LOADER_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
 #define H2_LOADER_HTTP_TIMEOUT_MS 600000
 #define H2_LOADER_DOWNLOAD_CHUNK 4096u
 #define H2_LOADER_DOWNLOAD_REPORT_STEP 65536u
@@ -437,6 +441,107 @@ static int h2loader_copy_wifi_text(char *dst, size_t dst_cap, size_t *out_len, c
     return H2_PAL_OK;
 }
 
+typedef struct h2loader_wifi_scan_context {
+    h2_loader_command_t *command;
+    size_t limit;
+    size_t count;
+    int output_result;
+} h2loader_wifi_scan_context_t;
+
+static bool h2loader_wifi_scan_result(
+    void *user,
+    const h2_pal_wifi_scan_entry_t *entry) {
+    static const char hex[] = "0123456789abcdef";
+    h2loader_wifi_scan_context_t *context = user;
+    h2_loader_command_t *self;
+    char ssid_hex[(H2_PAL_WIFI_SSID_MAX * 2u) + 1u];
+
+    if (context == NULL) {
+        return false;
+    }
+    if (entry == NULL || entry->ssid_len > H2_PAL_WIFI_SSID_MAX) {
+        context->output_result = H2_PAL_ERR_FORMAT;
+        return false;
+    }
+    if (context->count >= context->limit ||
+        context->output_result != H2_PAL_OK) {
+        return false;
+    }
+    self = context->command;
+    for (size_t i = 0u; i < entry->ssid_len; ++i) {
+        uint8_t byte = (uint8_t)entry->ssid[i];
+        ssid_hex[i * 2u] = hex[(byte >> 4u) & 0x0fu];
+        ssid_hex[(i * 2u) + 1u] = hex[byte & 0x0fu];
+    }
+    ssid_hex[entry->ssid_len * 2u] = '\0';
+    context->count++;
+    if (printf(
+            "H2_LOADER_WIFI_SCAN_RESULT index=%u ssid_hex=%s "
+            "bssid=%02x%02x%02x%02x%02x%02x channel=%u rssi=%d security=%d\n",
+            (unsigned)context->count,
+            ssid_hex,
+            entry->bssid[0], entry->bssid[1], entry->bssid[2],
+            entry->bssid[3], entry->bssid[4], entry->bssid[5],
+            (unsigned)entry->channel,
+            entry->rssi,
+            (int)entry->security) < 0) {
+        context->output_result = H2_PAL_ERR_IO;
+        return false;
+    }
+    fflush(stdout);
+    return context->count < context->limit;
+}
+
+static int h2loader_wifi_scan_command(
+    h2_loader_command_t *self,
+    size_t argc,
+    const char *const *argv) {
+    h2loader_wifi_scan_context_t context = {
+        .command = self,
+        .limit = H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT,
+        .output_result = H2_PAL_OK,
+    };
+    size_t timeout_ms = H2_LOADER_WIFI_SCAN_DEFAULT_TIMEOUT_MS;
+    int saw_limit = 0;
+    int saw_timeout = 0;
+
+    for (size_t i = 3u; i < argc; i += 2u) {
+        size_t value = 0u;
+        if (i + 1u >= argc ||
+            h2loader_parse_size_arg(argv[i + 1u], &value) != H2_PAL_OK) {
+            printf("usage: h2loader wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n");
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        if (strcmp(argv[i], "--limit") == 0 && !saw_limit &&
+            value > 0u && value <= H2_LOADER_WIFI_SCAN_MAX_LIMIT) {
+            context.limit = value;
+            saw_limit = 1;
+        } else if (strcmp(argv[i], "--timeout-ms") == 0 && !saw_timeout &&
+            value > 0u && value <= H2_LOADER_WIFI_SCAN_MAX_TIMEOUT_MS) {
+            timeout_ms = value;
+            saw_timeout = 1;
+        } else {
+            printf("usage: h2loader wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n");
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+    }
+    int rc = h2_pal_wifi_sta_scan(
+        self->config.wifi,
+        NULL,
+        h2loader_wifi_scan_result,
+        &context,
+        (uint32_t)timeout_ms);
+    if (context.output_result != H2_PAL_OK) {
+        rc = context.output_result;
+    }
+    printf("H2_LOADER_WIFI_SCAN_DONE result=%s code=%d count=%u\n",
+        rc == H2_PAL_OK ? "OK" : "error",
+        rc,
+        (unsigned)context.count);
+    fflush(stdout);
+    return rc;
+}
+
 static void h2loader_print_ip4(h2_loader_command_t *self, uint32_t ip4) {
     uint8_t bytes[4];
     h2_pal_wifi_ip4_to_bytes(ip4, bytes);
@@ -473,6 +578,9 @@ static int h2loader_wifi_command(
     const char *const *argv) {
     const h2_pal_wifi_sta_api_t *sta = self->config.wifi;
     int rc;
+    if (argc >= 3 && strcmp(argv[2], "scan") == 0) {
+        return h2loader_wifi_scan_command(self, argc, argv);
+    }
     if (argc >= 3 && strcmp(argv[2], "connect") == 0) {
         h2_pal_wifi_sta_config_t config;
         h2_pal_wifi_sta_status_t status;
@@ -568,7 +676,7 @@ static int h2loader_wifi_command(
         printf("H2_LOADER_WIFI result=%s code=%d\n", rc == H2_PAL_OK ? "disconnected" : "error", rc);
         return rc;
     }
-    printf("usage: h2loader wifi <connect|disconnect>\n");
+    printf("usage: h2loader wifi <scan|connect|disconnect>\n");
     return H2_PAL_ERR_INVALID_ARG;
 }
 
