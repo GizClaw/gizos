@@ -2600,6 +2600,10 @@ static void test_command_availability_flags(void) {
                &loader,
                H2_LOADER_COMMAND_AVAILABILITY_ALL,
                false) == H2_PAL_OK);
+    loader.config.active_identity.role = H2_LOADER_IMAGE_ROLE_H2LOADER;
+    loader.config.app_partition_id = 2u;
+    loader.status.staged.valid = 1;
+    assert(h2_loader_upgrade_start(&loader) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_loader_reboot_h2loader_with_transition(
                &loader, idle_reboot_transition, &context) ==
            H2_PAL_ERR_INVALID_STATE);
@@ -2646,7 +2650,31 @@ static void test_command_availability_reflects_loader_state(void) {
     fixture.context.installed_valid = 1;
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
     assert(status.command_availability ==
+           (H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER));
+
+    fixture.context.staged_valid = 1;
+    strcpy(fixture.context.staged_version, "staged");
+    strcpy(fixture.context.staged_checksum, TEST_AB_SHA256);
+    fixture.context.staged_size = 8u;
+    fixture.context.package_exists = 1;
+    fixture.context.package_size = 8u;
+    assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
+    assert(status.command_availability ==
            H2_LOADER_COMMAND_AVAILABILITY_ALL);
+
+    assert(h2_loader_set_command_availability(
+               &fixture.loader,
+               H2_LOADER_COMMAND_AVAILABLE_UPGRADE,
+               false) == H2_PAL_OK);
+    assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
+    assert(status.command_availability ==
+           (H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER));
+    assert(h2_loader_set_command_availability(
+               &fixture.loader,
+               H2_LOADER_COMMAND_AVAILABLE_UPGRADE,
+               true) == H2_PAL_OK);
 
     assert(h2_loader_set_command_availability(
                &fixture.loader,
@@ -2654,7 +2682,8 @@ static void test_command_availability_reflects_loader_state(void) {
                false) == H2_PAL_OK);
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
     assert(status.command_availability ==
-           H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+           (H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER |
+            H2_LOADER_COMMAND_AVAILABLE_UPGRADE));
     assert(h2_loader_set_command_availability(
                &fixture.loader,
                H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
@@ -2663,7 +2692,8 @@ static void test_command_availability_reflects_loader_state(void) {
     fixture.loader.config.mfg_required_total = 1u;
     assert(h2_loader_read_status(&fixture.loader, &status) == H2_PAL_OK);
     assert(status.command_availability ==
-           H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+           (H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER |
+            H2_LOADER_COMMAND_AVAILABLE_UPGRADE));
 }
 
 static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) {

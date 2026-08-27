@@ -166,6 +166,9 @@ static uint32_t effective_command_availability(
     if (status->installed.valid || status->staged.valid) {
         public_available |= H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
+    if (status->staged.valid) {
+        public_available |= H2_LOADER_COMMAND_AVAILABLE_UPGRADE;
+    }
     if (!mfg_gate_satisfied(loader, &status->mfg)) {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
@@ -2318,6 +2321,13 @@ int h2_loader_upgrade_start_with_transition(
         loader->config.h2loader_partition_id == 0u || loader->config.app_partition_id == 0u ||
         loader->config.h2loader_partition_id == loader->config.app_partition_id) {
         return H2_PAL_ERR_UNSUPPORTED;
+    }
+    rc = require_command_available(
+        loader,
+        &loader->status,
+        H2_LOADER_COMMAND_AVAILABLE_UPGRADE);
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
     rc = upgrade_record_read(
         loader->config.pref,
