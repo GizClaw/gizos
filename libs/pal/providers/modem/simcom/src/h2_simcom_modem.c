@@ -232,6 +232,7 @@ h2_pal_result_t h2_simcom_modem_open(h2_pal_modem_t *platform, uint32_t timeout_
 }
 
 h2_pal_result_t h2_simcom_modem_close(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    (void)timeout_ms;
     h2_simcom_modem_t *modem = h2_simcom_from_platform(platform);
     if (modem == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -239,20 +240,17 @@ h2_pal_result_t h2_simcom_modem_close(h2_pal_modem_t *platform, uint32_t timeout
     if (modem->opened == 0u) {
         return H2_PAL_OK;
     }
-    h2_pal_result_t result = H2_PAL_OK;
-    if (modem->data_status.state != H2_PAL_MODEM_DATA_CLOSED) {
-        result = h2_simcom_modem_data_close(platform, timeout_ms);
+    if (modem->config.deinit != NULL) {
+        const h2_pal_result_t rc = modem->config.deinit(modem->config.transport_user);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
     }
     modem->opened = 0u;
     modem->prepared = 0u;
     modem->capabilities = 0u;
-    if (modem->config.deinit != NULL) {
-        h2_pal_result_t deinit_rc = modem->config.deinit(modem->config.transport_user);
-        if (result == H2_PAL_OK) {
-            result = deinit_rc;
-        }
-    }
-    return result;
+    h2_simcom_modem_notify_data_closed(modem, H2_PAL_OK);
+    return H2_PAL_OK;
 }
 
 h2_simcom_modem_t *h2_simcom_from_platform(h2_pal_modem_t *platform) {

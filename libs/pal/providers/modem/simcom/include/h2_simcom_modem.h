@@ -18,6 +18,12 @@ extern "C" {
 typedef struct h2_simcom_modem h2_simcom_modem_t;
 
 typedef h2_pal_result_t (*h2_simcom_modem_init_fn)(void *user);
+/**
+ * @brief Power off the whole modem and release its transport resources.
+ *
+ * This callback must not depend on a graceful data-session close. On failure,
+ * it must leave the transport safe to retry.
+ */
 typedef h2_pal_result_t (*h2_simcom_modem_deinit_fn)(void *user);
 typedef h2_pal_result_t (*h2_simcom_modem_flush_fn)(void *user);
 typedef h2_pal_result_t (*h2_simcom_modem_read_fn)(

@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -46,4 +48,23 @@ firmware_native_component(
         "//libs/pal/providers/modem/simcom:simcom_modem",
         "//native_component_src/esp-idf6.x/h2_pal_core",
     ],
+)
+
+cc_test(
+    name = "simcom_teardown_test",
+    srcs = [
+        "src/h2_esp_simcom_teardown.c",
+        "src/h2_esp_simcom_teardown.h",
+        "tests/test_h2_esp_simcom_teardown.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
 )
