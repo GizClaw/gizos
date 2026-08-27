@@ -138,7 +138,7 @@ Runtime 不是 Common 的直接依赖：portable App 消费 Runtime；H2Loader a
 
 Loader 与支持管理命令的 App image 复用同一 command registry。ESP32-S3 与 BK7258 的 managed UART transport 固定为 `230400` baud，并通过 IO Stream iKCP 承载完整 command 与 response；Loader 还在同一 session 接收 stage bytes，App 不注册 stage。Host 不提供 legacy raw H2Loader command transport，可靠握手失败不得自动 fallback。独立的 BootROM recovery driver 不属于 command transport。
 
-支持 BLE 的 board 由具体 launcher 显式注册 H2Loader GATT service，不使用全局 build option。H2Loader 使用 connectable Extended Advertising，不携带 local name；固定 Service UUID 和 Service Data 是唯一的发现与连接 identity。Service Data 提供 protocol version、active role 和 capabilities；v1 在 board 名不超过 32 bytes 时内联 UTF-8 board，较长名称使用 v2 FNV-1a 64-bit board fingerprint，Host 必须从本地 board registry 唯一解析，hash 缺失或碰撞时不得连接。Host 根据解析出的 board 合成 `h2l.<board>` 显示名。广播 identity 只用于发现和初筛，连接后的 `stats` 必须交叉校验完整 board、role 和 capabilities，才是 authoritative identity。Loader 与 App 的 BLE task stack 必须分配在 PSRAM，不能静默退回 internal RAM。
+支持 BLE 的 board 由具体 launcher 显式注册 H2Loader GATT service，不使用全局 build option。H2Loader 使用 connectable Extended Advertising，不携带 local name；固定 Service UUID 和 Service Data 是唯一的发现与连接 identity。Service Data 提供 protocol version、active role 和静态实现 capabilities；v1 在 board 名不超过 32 bytes 时内联 UTF-8 board，较长名称使用 v2 FNV-1a 64-bit board fingerprint，Host 必须从本地 board registry 唯一解析，hash 缺失或碰撞时不得连接。Host 根据解析出的 board 合成 `h2l.<board>` 显示名。广播 identity 只用于发现和初筛，连接后的 `stats` 必须交叉校验完整 board、role 和当前动态 capabilities，才是 authoritative identity。Loader 与 App 的 BLE task stack 必须分配在 PSRAM，不能静默退回 internal RAM。
 
 当前 v1/v2 identity 不能稳定区分多台同型号设备。后续 Service Data v3 将增加 64-bit `device_uid`；在此之前，CoreBluetooth/Bleak `backend_id` 只用于当前 Host/backend 生命周期，不能作为跨扫描或跨进程的设备身份。
 

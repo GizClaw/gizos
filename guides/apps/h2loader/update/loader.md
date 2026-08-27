@@ -8,7 +8,9 @@ H2Loader 没有第三个 Loader 分区。设备使用 [固件结构分区与类�
 
 Trial Loader 不是第三类固件。它是新 Loader firmware 在更新期间临时运行于 B 分区的状态。更新完成后，B 中的 Loader 不会被识别为 App；下一次 App 安装会覆盖它。
 
-带 MFG Main Task 的 Loader 在完整校验 staged Loader package 后，循环把任意非 `-2` cursor 原子改为 `-1`。`run_mfg()` 完成真实 MFG Main Task handle 的 `join` 后，才通过 completion semaphore 放行 Loader command task 并进入下面的 trial/canonical lifecycle；该 join 已包含 Main Task 对全部后台 task 的 join。`cursor=-2` 代表真正关机，self-upgrade 和 `reboot loader` 都不得覆盖它；校验失败则直接返回且不修改 MFG cursor。Loader 更新不要求 22 项 MFG 全部通过。
+产品可以通过 `h2_loader_set_capability_availability()` 动态关闭任意 Loader capability。`config.capabilities` 仍声明 image 实现的静态上限；`status.capabilities` 发布静态上限与当前 availability 的交集。关闭 `H2_LOADER_CAP_UPGRADE` 后，upgrade command 在读取 upgrade record、检查 package、调用 disruptive teardown、写分区或修改持久状态前返回 `H2_PAL_ERR_INVALID_STATE`。
+
+动态 capability gate 只增加限制，不绕过 staged package、role、board、target、checksum、partition 或 phase 校验；全部 capability 默认 available，因此没有配置 gate 的产品保持原有行为。`command_availability` 继续只表达同一个 `H2_LOADER_CAP_REBOOT` 下 App 与 Loader 两个 reboot 子命令的差异，不能用于定义新的 capability gate。
 
 ## 更新流程
 
