@@ -27,13 +27,17 @@ typedef enum h2_loader_capability {
 typedef enum h2_loader_command_availability {
     H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP = UINT32_C(1) << 0,
     H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER = UINT32_C(1) << 1,
-    H2_LOADER_COMMAND_AVAILABLE_UPGRADE = UINT32_C(1) << 2,
 } h2_loader_command_availability_t;
 
 #define H2_LOADER_COMMAND_AVAILABILITY_ALL              \
     (H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |           \
-     H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER |        \
-     H2_LOADER_COMMAND_AVAILABLE_UPGRADE)
+     H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER)
+
+#define H2_LOADER_CAPABILITIES_ALL                                        \
+    (H2_LOADER_CAP_STATUS | H2_LOADER_CAP_STAGE | H2_LOADER_CAP_UPGRADE | \
+     H2_LOADER_CAP_REBOOT | H2_LOADER_CAP_RESTART |                       \
+     H2_LOADER_CAP_ROLLBACK | H2_LOADER_CAP_HOLD |                        \
+     H2_LOADER_CAP_COREDUMP)
 
 #define H2_LOADER_CAPABILITIES_LOADER                                      \
     (H2_LOADER_CAP_STATUS | H2_LOADER_CAP_STAGE | H2_LOADER_CAP_UPGRADE | \
@@ -194,12 +198,27 @@ typedef struct h2_loader {
     int force_command_mode;
     /** Volatile current-boot bypass; never serialized into MFG status. */
     h2_loader_atomic_flag_t mfg_gate_bypass;
+    /** Volatile product-owned capability gates; never persisted. */
+    h2_loader_atomic_flag_t capability_availability;
     /** Volatile product-owned command gates; never persisted. */
     h2_loader_atomic_flag_t command_availability;
 } h2_loader_t;
 
 /** Enables or revokes the volatile MFG App gate bypass for this boot. */
 int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled);
+/**
+ * Atomically makes one or more implemented capabilities available or
+ * unavailable for this boot.
+ *
+ * This mask can only restrict config.capabilities. All defined capabilities
+ * start available for backward compatibility.
+ */
+int h2_loader_set_capability_availability(
+    h2_loader_t *loader,
+    uint32_t capabilities,
+    bool available);
+/** Returns the currently available subset of config.capabilities. */
+uint32_t h2_loader_get_available_capabilities(const h2_loader_t *loader);
 /**
  * Atomically sets or clears one or more product-owned command gates.
  *

@@ -1164,6 +1164,7 @@ static h2_pal_result_t h2loader_invoke_locked(
     const char *const *argv,
     int lock_wifi,
     int lock_operation,
+    uint32_t required_capability,
     h2loader_handler_fn handler) {
     int wifi_locked = 0;
     int operation_locked = 0;
@@ -1195,7 +1196,13 @@ static h2_pal_result_t h2loader_invoke_locked(
         }
         operation_locked = 1;
     }
-    result = handler(self, command, argc, argv);
+    if (required_capability != 0u &&
+        (h2_loader_get_available_capabilities(self->config.loader) &
+            required_capability) == 0u) {
+        result = H2_PAL_ERR_INVALID_STATE;
+    } else {
+        result = handler(self, command, argc, argv);
+    }
     if (operation_locked) {
         int unlock_rc = h2_pal_mutex_unlock(
             self->config.operation_sync,
@@ -1222,6 +1229,7 @@ static h2_pal_result_t h2loader_status_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
+        H2_LOADER_CAP_STATUS,
         h2loader_status_handler_unlocked);
 }
 
@@ -1232,6 +1240,7 @@ static h2_pal_result_t h2loader_memory_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 0,
+        0u,
         h2loader_memory_handler_unlocked);
 }
 
@@ -1242,6 +1251,7 @@ static h2_pal_result_t h2loader_wifi_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 1, 0,
+        0u,
         h2loader_wifi_handler_unlocked);
 }
 
@@ -1253,6 +1263,7 @@ static h2_pal_result_t h2loader_stage_handler(
     int lock_wifi = argc >= 3u && strcmp(argv[2], "url") == 0;
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, lock_wifi, 1,
+        H2_LOADER_CAP_STAGE,
         h2loader_stage_handler_unlocked);
 }
 
@@ -1263,6 +1274,7 @@ static h2_pal_result_t h2loader_upgrade_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
+        H2_LOADER_CAP_UPGRADE,
         h2loader_upgrade_handler_unlocked);
 }
 
@@ -1273,6 +1285,7 @@ static h2_pal_result_t h2loader_reboot_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
+        H2_LOADER_CAP_REBOOT,
         h2loader_reboot_handler_unlocked);
 }
 
@@ -1283,6 +1296,7 @@ static h2_pal_result_t h2loader_hold_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
+        H2_LOADER_CAP_HOLD,
         h2loader_hold_handler_unlocked);
 }
 
@@ -1293,6 +1307,7 @@ static h2_pal_result_t h2loader_coredump_handler(
     const char *const *argv) {
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
+        H2_LOADER_CAP_COREDUMP,
         h2loader_coredump_handler_unlocked);
 }
 
