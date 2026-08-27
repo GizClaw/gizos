@@ -14,6 +14,7 @@ typedef struct test_state {
   int close_on_local_sdp;
   int destroy_on_local_sdp;
   int destroy_on_peer_closed;
+  size_t track_reads;
 } test_state_t;
 
 static int s_fail_next_alloc;
@@ -94,6 +95,19 @@ static void on_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
   }
 }
 
+static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
+                                       size_t capacity, size_t *out_len) {
+  test_state_t *test = user;
+  if (test->track_reads != 0u)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  assert(capacity >= 2u);
+  opus[0] = 0xf8u;
+  opus[1] = 0x42u;
+  *out_len = 2u;
+  test->track_reads++;
+  return H2_PAL_OK;
+}
+
 int main(void) {
   static const h2_pal_mem_vtable_t mem_vtable = {
       .alloc = test_alloc,
@@ -118,11 +132,32 @@ int main(void) {
   };
   h2_pal_webrtc_peer_t *peer = NULL;
   assert(h2_pal_webrtc_peer_create(api, &callbacks, &peer) == H2_PAL_OK);
+  const h2_pion_media_track_config_t track_config = {
+      .user = &test,
+      .read = test_track_read,
+  };
+  h2_pal_webrtc_track_t *track = NULL;
+  assert(h2_pion_media_track_create(provider, &track_config, &track) ==
+         H2_PAL_OK);
+  assert(h2_pal_webrtc_peer_set_media_track(api, peer, track) == H2_PAL_OK);
+  h2_pion_bridge_emit_peer_state((uintptr_t)peer,
+                                 H2_PAL_WEBRTC_PEER_CONNECTED);
+  h2_pion_test_block_next_opus_send(peer);
+  assert(h2_pal_webrtc_peer_poll(api, peer, 0) == H2_PAL_OK);
+  assert(test.track_reads == 1u);
+  assert(h2_pion_test_opus_send_attempts(peer) == 1u);
+  assert(h2_pion_test_opus_send_payloads_match(peer));
+  assert(h2_pal_webrtc_peer_poll(api, peer, 0) == H2_PAL_OK);
+  assert(test.track_reads == 1u);
+  assert(h2_pion_test_opus_send_attempts(peer) == 2u);
+  assert(h2_pion_test_opus_send_payloads_match(peer));
+  assert(h2_pion_media_track_destroy(&track) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_pal_webrtc_peer_set_media_track(api, peer, NULL) == H2_PAL_OK);
+  assert(h2_pion_media_track_destroy(&track) == H2_PAL_OK);
 
   s_fail_next_alloc = 1;
-  assert(h2_pion_bridge_emit_channel_open(
-             (uintptr_t)peer, 99u, "remote", 6u, 1, 2u, 1, 1, 1) ==
-         H2_PAL_ERR_NO_MEMORY);
+  assert(h2_pion_bridge_emit_channel_open((uintptr_t)peer, 99u, "remote", 6u, 1,
+                                          2u, 1, 1, 1) == H2_PAL_ERR_NO_MEMORY);
 
   h2_pal_webrtc_channel_config_t channel_config = {
       .label = {.data = "rpc", .len = 3u},

@@ -5,6 +5,7 @@
 
 #include <signal.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -52,7 +53,8 @@ typedef struct h2_webrtc_compat_state {
         *reverse_channels[H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT];
     const h2_pal_webrtc_api_t *api;
     int callback_error;
-    int opus_echoed;
+    atomic_int opus_echoed;
+    atomic_int track_read_ready;
     size_t recycle_opened;
     size_t recycle_closed;
     size_t recycle_wait_opened;
@@ -312,18 +314,33 @@ static void h2_webrtc_compat_on_channel_message(
     state->callback_error = 1;
 }
 
-static void h2_webrtc_compat_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
-                                     const uint8_t *opus, size_t opus_len) {
-    (void)peer;
-    h2_webrtc_compat_state_t *state = (h2_webrtc_compat_state_t *)user;
-    static const uint8_t expected[] = {0xf8u, 0x55u};
-    h2_webrtc_compat_record(state, "opus len=%zu", opus_len);
-    if (opus_len == sizeof(expected) && opus != NULL &&
-        memcmp(opus, expected, sizeof(expected)) == 0) {
-        state->opus_echoed = 1;
-    } else {
-        state->callback_error = 1;
+static h2_pal_result_t h2_webrtc_compat_track_read(void *user, uint8_t *opus,
+                                                   size_t capacity,
+                                                   size_t *out_len) {
+    h2_webrtc_compat_state_t *state = user;
+    if (!atomic_exchange_explicit(&state->track_read_ready, 0,
+                                  memory_order_acq_rel)) {
+        return H2_PAL_ERR_WOULD_BLOCK;
     }
+    static const uint8_t packet[] = {0xf8u, 0x55u};
+    if (capacity < sizeof(packet))
+        return H2_PAL_ERR_NO_SPACE;
+    memcpy(opus, packet, sizeof(packet));
+    *out_len = sizeof(packet);
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_webrtc_compat_track_write(void *user,
+                                                    const uint8_t *opus,
+                                                    size_t opus_len) {
+    h2_webrtc_compat_state_t *state = user;
+    static const uint8_t expected[] = {0xf8u, 0x55u};
+    if (opus_len != sizeof(expected) || opus == NULL ||
+        memcmp(opus, expected, sizeof(expected)) != 0) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    atomic_store_explicit(&state->opus_echoed, 1, memory_order_release);
+    return H2_PAL_OK;
 }
 
 static int h2_webrtc_compat_wait(const h2_pal_webrtc_api_t *api,
@@ -362,7 +379,7 @@ static int h2_webrtc_compat_echoed(const h2_webrtc_compat_state_t *state) {
 }
 
 static int h2_webrtc_compat_opus_echoed(const h2_webrtc_compat_state_t *state) {
-    return state->opus_echoed;
+    return atomic_load_explicit(&state->opus_echoed, memory_order_acquire);
 }
 
 static int
@@ -577,7 +594,7 @@ static int h2_webrtc_compat_run_reuse_cycles(
                               h2_webrtc_compat_echoed, 10000u) != 0) {
         return -1;
     }
-    state->opus_echoed = 0;
+    atomic_store_explicit(&state->opus_echoed, 0, memory_order_release);
     static const uint8_t opus[] = {0xf8u, 0x55u};
     if (h2_pal_webrtc_peer_send_opus(backend->api, peer, opus, sizeof(opus)) !=
             H2_PAL_OK ||
@@ -598,6 +615,7 @@ static int h2_webrtc_compat_run_session(
     int run_reuse, const char *expected_protocol, int require_udp_drop) {
     int failed = 1;
     h2_pal_webrtc_peer_t *peer = NULL;
+    h2_pal_webrtc_track_t *track = NULL;
     h2_webrtc_compat_state_t state = {
         .backend_name = backend->name,
         .mode = relay_only ? "turn-relay-only" : fixture->mode,
@@ -611,7 +629,7 @@ static int h2_webrtc_compat_run_session(
         .on_local_sdp = h2_webrtc_compat_on_local_sdp,
         .on_channel_state = h2_webrtc_compat_on_channel_state,
         .on_channel_message = h2_webrtc_compat_on_channel_message,
-        .on_opus_frame = h2_webrtc_compat_on_opus,
+        .on_opus_frame = NULL,
     };
     h2_pal_result_t result =
         h2_pal_webrtc_peer_create(backend->api, &callbacks, &peer);
@@ -620,6 +638,16 @@ static int h2_webrtc_compat_run_session(
         h2_webrtc_compat_record(&state, "peer_create result=%d", result);
         h2_webrtc_compat_dump_failure(&state);
         return 1;
+    }
+    if (backend->track_create == NULL || backend->track_destroy == NULL ||
+        backend->track_create(backend->api, &state,
+                              h2_webrtc_compat_track_read,
+                              h2_webrtc_compat_track_write,
+                              &track) != H2_PAL_OK ||
+        h2_pal_webrtc_peer_set_media_track(backend->api, peer, track) !=
+            H2_PAL_OK) {
+        fprintf(stderr, "%s: media Track setup failed\n", backend->name);
+        goto cleanup;
     }
     h2_webrtc_compat_set_phase(&state, "channel-create");
     h2_pal_webrtc_channel_t *channels[H2_WEBRTC_COMPAT_CHANNEL_COUNT] = {0};
@@ -805,14 +833,17 @@ static int h2_webrtc_compat_run_session(
         goto cleanup;
     }
     h2_webrtc_compat_set_phase(&state, "opus");
-    static const uint8_t opus[] = {0xf8u, 0x55u};
-    result =
-        h2_pal_webrtc_peer_send_opus(backend->api, peer, opus, sizeof(opus));
-    if (result != H2_PAL_OK ||
-        h2_webrtc_compat_wait(backend->api, peer, &state,
-                              h2_webrtc_compat_opus_echoed, 10000u) != 0) {
-        fprintf(stderr, "%s: Opus echo failed result=%d\n", backend->name,
-                result);
+    atomic_store_explicit(&state.opus_echoed, 0, memory_order_release);
+    atomic_store_explicit(&state.track_read_ready, 1, memory_order_release);
+    const uint64_t opus_deadline = h2_webrtc_compat_now_ms() + 10000u;
+    while (!h2_webrtc_compat_opus_echoed(&state) &&
+           h2_webrtc_compat_now_ms() < opus_deadline) {
+        const struct timespec delay = {.tv_nsec = 1000000L};
+        (void)nanosleep(&delay, NULL);
+    }
+    if (!h2_webrtc_compat_opus_echoed(&state)) {
+        fprintf(stderr, "%s: protocol task did not service media Track\n",
+                backend->name);
         goto cleanup;
     }
     if (run_reuse) {
@@ -845,6 +876,10 @@ cleanup:
     }
     if (peer != NULL) {
         h2_pal_webrtc_peer_close(backend->api, peer);
+    }
+    if (track != NULL && backend->track_destroy != NULL &&
+        backend->track_destroy(&track) != H2_PAL_OK) {
+        failed = 1;
     }
     return failed;
 }

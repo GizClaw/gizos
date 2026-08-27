@@ -129,6 +129,7 @@ static void gizclaw_task_entry(void *context) {
       .allocator = app->runtime->mem,
       .http = app->runtime->http,
       .webrtc = app->runtime->webrtc,
+      .webrtc_media_track = app->runtime->webrtc_media_track,
       .crypto = app->runtime->crypto,
       .time = app->runtime->time,
       .log = app->runtime->log,

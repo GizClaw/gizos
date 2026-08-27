@@ -324,7 +324,8 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
           .workspace_name = {.data = workspace_name,
                              .len = strlen(workspace_name)},
           .last_updated_at_unix_ms =
-              peer_event.payload.workspace_history_updated.last_updated_at_unix_ms,
+                      peer_event.payload.workspace_history_updated
+                          .last_updated_at_unix_ms,
       });
     }
     return H2_PAL_OK;
@@ -338,8 +339,8 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_client_set_event_handler(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_event_fn on_event,
+int h2_gizclaw_client_set_event_handler(h2_gizclaw_client_t *client,
+                                        h2_gizclaw_client_event_fn on_event,
     void *event_user) {
   if (client == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -724,9 +725,11 @@ static void h2_gizclaw_log_rpc_error(h2_gizclaw_client_t *client,
                          message);
 }
 
-void h2_gizclaw_client_log_rpc_error_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
-    int error_code, const char *error_message, size_t error_message_len) {
+void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
+                                              h2_gizclaw_rpc_method_t method,
+                                              int error_code,
+                                              const char *error_message,
+                                              size_t error_message_len) {
   h2_gizclaw_log_rpc_error(client, method, error_code, error_message,
                            error_message_len);
 }
@@ -1184,7 +1187,8 @@ static int h2_gzc_peer_create(void *user,
       .on_local_sdp = h2_gzc_local_sdp,
       .on_channel_state = h2_gzc_channel_state,
       .on_channel_message = h2_gzc_channel_message,
-      .on_opus_frame = h2_gzc_opus_frame,
+      .on_opus_frame =
+          client->config.webrtc_media_track == NULL ? h2_gzc_opus_frame : NULL,
   };
   h2_pal_webrtc_peer_t *peer = NULL;
   int rc =
@@ -1192,6 +1196,15 @@ static int h2_gzc_peer_create(void *user,
   h2_gizclaw_log_webrtc_rc(client, "peer_create", rc);
   if (rc != H2_PAL_OK) {
     return GZC_ERR_WEBRTC;
+  }
+  if (client->config.webrtc_media_track != NULL) {
+    rc = h2_pal_webrtc_peer_set_media_track(client->config.webrtc, peer,
+                                            client->config.webrtc_media_track);
+    h2_gizclaw_log_webrtc_rc(client, "peer_set_media_track", rc);
+    if (rc != H2_PAL_OK) {
+      h2_pal_webrtc_peer_close(client->config.webrtc, peer);
+      return GZC_ERR_WEBRTC;
+    }
   }
   client->webrtc_peer = peer;
   *out_peer = (gzc_rtc_peer_t *)peer;
@@ -1318,6 +1331,8 @@ static int h2_gzc_peer_send_opus(gzc_rtc_peer_t *peer, const uint8_t *opus,
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
+  if (client->config.webrtc_media_track != NULL)
+    return GZC_ERR_UNSUPPORTED;
   const int rc = h2_pal_webrtc_peer_send_opus(
       client->config.webrtc, (h2_pal_webrtc_peer_t *)peer, opus, opus_len);
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) {
@@ -1466,8 +1481,7 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
     if (client->webrtc_peer == NULL) {
       return GZC_ERR_WEBRTC;
     }
-    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer,
-                                 0);
+    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer, 0);
     if (rc != H2_PAL_OK) {
       return h2_gzc_media_result(rc);
     }
@@ -2122,6 +2136,14 @@ bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client) {
   return client != NULL && client->media.struct_size == sizeof(client->media) &&
          client->media.peer_set_opus_frame_callback != NULL &&
          client->media.peer_send_opus != NULL;
+}
+
+int h2_gizclaw_test_peer_create(h2_gizclaw_client_t *client,
+                                h2_pal_webrtc_peer_t **out_peer) {
+  if (client == NULL || out_peer == NULL)
+    return GZC_ERR_INVALID_ARGUMENT;
+  const gzc_webrtc_callbacks_t callbacks = {0};
+  return h2_gzc_peer_create(client, &callbacks, (gzc_rtc_peer_t **)out_peer);
 }
 
 int h2_gizclaw_test_media_send_opus(h2_gizclaw_client_t *client,

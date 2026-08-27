@@ -14,6 +14,7 @@ cc_library(
         "src/h2_web_platform_pref.c",
         "src/h2_web_platform_serial.c",
         "src/h2_web_platform_timer.c",
+        "src/h2_web_platform_webrtc.c",
     ],
     hdrs = ["include/h2_web_platform.h"],
     includes = ["include"],

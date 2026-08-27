@@ -226,13 +226,21 @@ WebRTC signaling 可以在创建 peer 后、开始 offer 前通过 `h2_pal_webrt
 
 WebRTC DataChannel handle 由 backend 拥有。`h2_pal_webrtc_channel_close()` 消费 handle，调用返回后 caller 不能再访问；`CLOSED` 和 `ERROR` callback 中的 channel/info 只在同步 callback 期间提供终态 borrowed view。Backend 必须在 terminal callback 返回后释放 handle、label 和其他 channel-owned storage。自动 stream ID 分配必须有界；暂时没有可复用 entry 时返回 `H2_PAL_ERR_NO_SPACE`，不能让固定宽度计数器 wrap 后碰撞 live channel。已经提交到 wire 的 stream ID 只有在底层协议确认本地和 peer 两个方向都 reset 后才能重新分配。
 
-WebRTC media 使用 connection-scoped raw Opus contract。Backend 在
+WebRTC media 的默认边界是 provider-owned opaque track。调用方在 offer 前通过
+`h2_pal_webrtc_peer_set_media_track()` 绑定由同一个 provider 创建的
+`h2_pal_webrtc_track_t`；公共 header 只前置声明该类型，各平台在自己的实现中定义
+布局、来源和生命周期。Track 不能跨 provider 使用，也不能同时绑定到两个 live peer。
+采集、播放、codec、RTP progression 和 media event dispatch 都在 provider 的
+`peer_poll()` 或 native event loop 内完成，portable App 和 GizClaw 不读写 codec packet。
+
+既有 WebRTC media raw Opus contract 暂时作为固件迁移兼容面保留。Backend 在
 `on_opus_frame` 中交付一个完整、无私有前缀的 Opus packet；payload 只在同步 callback
 期间借用。`h2_pal_webrtc_peer_send_opus()` 接收相同格式并负责交给底层 audio RTP
 track，调用方不组装 RTP，也不能退回 DataChannel。成功返回表示 backend 已同步消费
 输入；`H2_PAL_ERR_WOULD_BLOCK` 表示整帧未消费，调用方必须保留同一帧重试。单包长度
 必须在 `1..H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE` 内。Unsupported backend 仍提供显式
-`H2_PAL_ERR_UNSUPPORTED` 实现，不能静默丢帧。
+`H2_PAL_ERR_UNSUPPORTED` 实现，不能静默丢帧。新 consumer 不得用这条兼容面绕过
+opaque track。
 
 WebRTC receive 同时提供 callback compatibility 和显式 pull mode。既有 `h2_pal_webrtc_peer_create()` 保持 callback 语义不变；需要拉取接收时必须调用 `h2_pal_webrtc_peer_create_pull()` 并选择 DataChannel、Opus 或两者。DataChannel pull 调用方按 channel handle 使用 `h2_pal_webrtc_channel_receive()`，每个 channel 由一个 caller task 独占 receive；Opus pull 使用 `h2_pal_webrtc_peer_receive_opus()`。同一种 payload 不能同时由 callback 和 pull API 竞争消费，所选 pull 类型对应的 callback 必须为 NULL。Pull receive 成功时返回一个完整 message 或 packet；timeout 不消费，buffer 太小时返回 `H2_PAL_ERR_NO_SPACE`、通过 `out_len` 报告所需长度并保留同一项供重试。Caller 不能并发 receive/close 同一 handle。不实现新增入口的旧 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。
 

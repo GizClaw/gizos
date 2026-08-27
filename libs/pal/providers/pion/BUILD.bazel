@@ -87,6 +87,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "pion_testable",
+    srcs = ["src/h2_pion.c"],
+    hdrs = ["include/h2_pion.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    defines = ["H2_PION_TESTING=1"],
+    includes = ["include"],
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-framework",
+            "Security",
+        ],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        ":pion_archive",
+        "//libs/pal",
+    ],
+)
+
 go_test(
     name = "pion_backend_test",
     srcs = ["backend_test.go"],
@@ -113,5 +140,5 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":pion"],
+    deps = [":pion_testable"],
 )

@@ -170,6 +170,9 @@ static void run_app(void *user) {
   config.task = h2_web_platform_task_api(context->platform);
   config.sync = h2_web_platform_sync_api(context->platform);
   config.touch = h2_web_platform_touch_api(context->platform);
+  config.webrtc = h2_web_platform_webrtc_api(context->platform);
+  config.webrtc_media_track =
+      h2_web_platform_webrtc_audio_track(context->platform);
   config.periph = &s_periph;
   config.component_mapper = &s_mapper;
   context->result = h2_runtime_init(&config, &runtime);

@@ -178,7 +178,9 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   h2_web_platform_timer_init(platform);
   h2_web_platform_pref_init(platform);
   h2_web_platform_display_init(platform);
+  h2_web_platform_webrtc_init(platform);
   if (h2_web_platform_serial_init(platform) != H2_PAL_OK) {
+    h2_web_platform_webrtc_deinit(platform);
     h2_web_platform_display_deinit(platform);
     h2_web_platform_timer_deinit(platform);
     (void)h2_libco_destroy(&platform->executor);
@@ -204,6 +206,7 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
     return;
   }
   h2_web_platform_serial_deinit(platform);
+  h2_web_platform_webrtc_deinit(platform);
   h2_web_platform_display_deinit(platform);
   h2_web_platform_timer_deinit(platform);
   free(platform);
@@ -296,4 +299,14 @@ h2_web_platform_touch_api(h2_web_platform_t *platform) {
 const h2_pal_serial_host_api_t *
 h2_web_platform_serial_host_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->serial_api;
+}
+
+const h2_pal_webrtc_api_t *
+h2_web_platform_webrtc_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->webrtc_api;
+}
+
+h2_pal_webrtc_track_t *
+h2_web_platform_webrtc_audio_track(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->webrtc_audio_track;
 }

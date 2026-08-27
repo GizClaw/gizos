@@ -50,6 +50,14 @@ typedef struct h2_gizclaw_config {
     const h2_pal_mem_api_t *allocator;
     const h2_pal_http_api_t *http;
     const h2_pal_webrtc_api_t *webrtc;
+    /**
+     * Optional provider-owned bidirectional media track.
+     *
+     * When set, GizClaw binds it before starting the offer and never accesses
+     * codec packets through the PAL. Capture, playback, codec, and RTP
+     * progression belong to the WebRTC provider.
+     */
+    h2_pal_webrtc_track_t *webrtc_media_track;
     const h2_pal_crypto_api_t *crypto;
     const h2_pal_time_api_t *time;
     const h2_pal_log_api_t *log;

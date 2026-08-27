@@ -43,6 +43,7 @@ cc_test(
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
         "//libs/pal/providers/desktop/pal_core:webrtc_test_providers",
+        "//libs/pal/providers/h2peer",
     ],
 )
 

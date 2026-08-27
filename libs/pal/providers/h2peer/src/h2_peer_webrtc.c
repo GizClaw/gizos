@@ -6,8 +6,8 @@
 #include "sdp/h2_peer_sdp.h"
 
 #include <inttypes.h>
-#include <stdio.h>
 #include <stdatomic.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifndef H2_PEER_PRODUCTION_ONLY
@@ -67,10 +67,9 @@ static void h2_peer_network_record_round(h2_pal_webrtc_peer_t *peer,
         char message[H2_PAL_LOG_MESSAGE_MAX];
         (void)snprintf(
             message, sizeof(message),
-            "round_us command=%" PRIu64 "/%" PRIu64 "/%" PRIu64
-            " send=%" PRIu64 "/%" PRIu64 "/%" PRIu64
-            " transport=%" PRIu64 "/%" PRIu64 "/%" PRIu64
-            " idle=%" PRIu64 "/%" PRIu64 "/%" PRIu64,
+            "round_us command=%" PRIu64 "/%" PRIu64 "/%" PRIu64 " send=%" PRIu64
+            "/%" PRIu64 "/%" PRIu64 " transport=%" PRIu64 "/%" PRIu64
+            "/%" PRIu64 " idle=%" PRIu64 "/%" PRIu64 "/%" PRIu64,
             peer->perf_command.count,
             h2_peer_round_average_us(&peer->perf_command),
             peer->perf_command.max_us, peer->perf_send.count,
@@ -94,6 +93,7 @@ typedef enum h2_peer_network_command_type {
     H2_PEER_NETWORK_START_OFFER,
     H2_PEER_NETWORK_SET_REMOTE_SDP,
     H2_PEER_NETWORK_CREATE_DATA_CHANNEL,
+    H2_PEER_NETWORK_SET_MEDIA_TRACK,
     H2_PEER_NETWORK_CHANNEL_CLOSE,
     H2_PEER_NETWORK_PEER_CLOSE,
 } h2_peer_network_command_type_t;
@@ -107,6 +107,7 @@ typedef struct h2_peer_network_command {
             h2_pal_webrtc_str_t sdp;
         } remote_sdp;
         const h2_pal_webrtc_channel_config_t *channel_config;
+        h2_pal_webrtc_track_t *media_track;
         h2_pal_webrtc_channel_t *channel;
     } value;
 } h2_peer_network_command_t;
@@ -381,9 +382,9 @@ static void h2_peer_channel_ready_set(h2_pal_webrtc_channel_t *channel) {
     if (channel->ready_slot >= H2_PEER_READY_CHANNEL_COUNT) {
         return;
     }
-    atomic_fetch_or_explicit(
-        &channel->owner->channel_ready,
-        UINT32_C(1) << channel->ready_slot, memory_order_release);
+    atomic_fetch_or_explicit(&channel->owner->channel_ready,
+                             UINT32_C(1) << channel->ready_slot,
+                             memory_order_release);
 }
 
 static void h2_peer_channel_ready_clear(h2_pal_webrtc_channel_t *channel) {
@@ -518,8 +519,7 @@ static int h2_peer_network_enabled(const h2_pal_webrtc_peer_t *peer) {
            peer->network_events != NULL;
 }
 
-static int h2_peer_channel_pull_enabled(
-    const h2_pal_webrtc_peer_t *peer) {
+static int h2_peer_channel_pull_enabled(const h2_pal_webrtc_peer_t *peer) {
     return (peer->receive_flags & H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL) != 0u;
 }
 
@@ -648,10 +648,9 @@ h2_pal_result_t h2_peer_webrtc_emit_channel_message(
         if (h2_peer_channel_pull_enabled(peer)) {
             h2_pal_result_t result = h2_peer_receive_submit(
                 peer, channel->rx_storage, channel->rx_state,
-                &channel->rx_count, &channel->rx_write_cursor,
-                channel->rx_gate, data, len, is_text);
-            return result == H2_PAL_ERR_FULL ? H2_PAL_ERR_WOULD_BLOCK
-                                             : result;
+                &channel->rx_count, &channel->rx_write_cursor, channel->rx_gate,
+                data, len, is_text);
+            return result == H2_PAL_ERR_FULL ? H2_PAL_ERR_WOULD_BLOCK : result;
         }
         if (peer->callbacks.on_channel_message == NULL) {
             return H2_PAL_OK;
@@ -676,6 +675,13 @@ h2_pal_result_t h2_peer_webrtc_emit_channel_message(
 void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
                                     const uint8_t *opus, size_t opus_len) {
     if (h2_peer_network_enabled(peer)) {
+        if (peer->media_track != NULL &&
+            peer->media_track->config.write != NULL) {
+            h2_peer_record_network_event_error(
+                peer, peer->media_track->config.write(
+                          peer->media_track->config.user, opus, opus_len));
+            return;
+        }
         if (h2_peer_opus_pull_enabled(peer)) {
             h2_peer_record_network_event_error(
                 peer, h2_peer_receive_submit(
@@ -694,7 +700,12 @@ void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
             peer, h2_peer_queue_network_event(peer, &event, opus, opus_len));
         return;
     }
-    if (peer->callbacks.on_opus_frame != NULL) {
+    if (peer->media_track != NULL && peer->media_track->config.write != NULL) {
+        const h2_pal_result_t write_result = peer->media_track->config.write(
+            peer->media_track->config.user, opus, opus_len);
+        if (write_result != H2_PAL_OK)
+            h2_peer_webrtc_emit_peer_state(peer, H2_PAL_WEBRTC_PEER_FAILED);
+    } else if (peer->callbacks.on_opus_frame != NULL) {
         peer->callbacks.on_opus_frame(peer->callbacks.user, peer, opus,
                                       opus_len);
     }
@@ -1052,6 +1063,11 @@ static void h2_peer_finish_destroy(h2_peer_t *owner) {
     while (owner->peers != NULL) {
         h2_peer_close_now(owner->peers);
     }
+    while (owner->tracks != NULL) {
+        h2_pal_webrtc_track_t *track = owner->tracks;
+        owner->tracks = track->next;
+        h2_peer_free(owner, track);
+    }
     owner->operation_depth--;
     h2_peer_control_free(owner, owner);
 }
@@ -1107,8 +1123,7 @@ static h2_pal_result_t
 h2_peer_webrtc_peer_create(void *user,
                            const h2_pal_webrtc_callbacks_t *callbacks,
                            h2_pal_webrtc_peer_t **out_peer) {
-    return h2_peer_webrtc_peer_create_with_flags(user, callbacks, 0u,
-                                                 out_peer);
+    return h2_peer_webrtc_peer_create_with_flags(user, callbacks, 0u, out_peer);
 }
 
 static h2_pal_result_t
@@ -1489,6 +1504,32 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
     return result;
 }
 
+static h2_pal_result_t
+h2_peer_webrtc_set_media_track(h2_pal_webrtc_peer_t *peer,
+                               h2_pal_webrtc_track_t *track) {
+    if (peer == NULL || peer->closed) {
+        return H2_PAL_ERR_CLOSED;
+    }
+    if (peer->offer_started) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (track != NULL &&
+        (track->owner != peer->owner ||
+         (track->bound_peer != NULL && track->bound_peer != peer))) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (track != NULL && (h2_peer_opus_pull_enabled(peer) ||
+                          peer->callbacks.on_opus_frame != NULL)) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (peer->media_track != NULL)
+        peer->media_track->bound_peer = NULL;
+    peer->media_track = track;
+    if (track != NULL)
+        track->bound_peer = peer;
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t h2_peer_remaining_timeout(h2_pal_webrtc_peer_t *peer,
                                                  uint64_t start_ms,
                                                  int timeout_ms,
@@ -1726,6 +1767,10 @@ static void h2_peer_close_now(h2_pal_webrtc_peer_t *peer) {
     } else {
         h2_peer_close_providers(peer);
     }
+    if (peer->media_track != NULL) {
+        peer->media_track->bound_peer = NULL;
+        peer->media_track = NULL;
+    }
     h2_peer_mark_channels_closed(peer);
     while (peer->channels != NULL) {
         h2_pal_webrtc_channel_t *channel = peer->channels;
@@ -1853,6 +1898,10 @@ h2_peer_network_dispatch_available(h2_pal_webrtc_peer_t *peer,
 
 static void h2_peer_network_destroy_resources(h2_pal_webrtc_peer_t *peer) {
     h2_peer_t *owner = peer->owner;
+    if (peer->media_track != NULL) {
+        peer->media_track->bound_peer = NULL;
+        peer->media_track = NULL;
+    }
     (void)atomic_exchange_explicit(&peer->rtp_pending, NULL,
                                    memory_order_acq_rel);
     h2_peer_free_tx_item(owner, peer->rtp_storage);
@@ -1897,6 +1946,10 @@ h2_peer_network_process_command(h2_pal_webrtc_peer_t *peer,
     case H2_PEER_NETWORK_CREATE_DATA_CHANNEL:
         response->result = h2_peer_webrtc_create_data_channel(
             peer, command->value.channel_config, &response->channel);
+        break;
+    case H2_PEER_NETWORK_SET_MEDIA_TRACK:
+        response->result = h2_peer_webrtc_set_media_track(
+            peer, command->value.media_track);
         break;
     case H2_PEER_NETWORK_CHANNEL_CLOSE:
         h2_peer_webrtc_channel_close(command->value.channel);
@@ -1960,8 +2013,8 @@ static int h2_peer_network_pump_transport(h2_pal_webrtc_peer_t *peer,
         if (received > 0) {
             result = h2_peer_service_stream_resets(peer);
             if (result == H2_PAL_OK) {
-                result = h2_peer_portable_service_datagram(
-                    peer, &addr, packet, (size_t)received);
+                result = h2_peer_portable_service_datagram(peer, &addr, packet,
+                                                           (size_t)received);
             }
             h2_pal_result_t reset_result = h2_peer_service_stream_resets(peer);
             if (reset_result != H2_PAL_OK) {
@@ -1972,8 +2025,8 @@ static int h2_peer_network_pump_transport(h2_pal_webrtc_peer_t *peer,
                    received == H2_PAL_ERR_WOULD_BLOCK) {
             result = h2_peer_service_stream_resets(peer);
             if (result == H2_PAL_OK) {
-                result = h2_peer_portable_service_datagram(
-                    peer, NULL, NULL, 0u);
+                result =
+                    h2_peer_portable_service_datagram(peer, NULL, NULL, 0u);
             }
         } else {
             result = H2_PAL_ERR_IO;
@@ -2034,8 +2087,8 @@ static int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
     int made_progress = 0;
     const uint8_t start_slot = peer->channel_round_robin;
     for (size_t offset = 0u; offset < H2_PEER_READY_CHANNEL_COUNT; ++offset) {
-        const uint8_t ready_slot = (uint8_t)(
-            (start_slot + offset) % H2_PEER_READY_CHANNEL_COUNT);
+        const uint8_t ready_slot =
+            (uint8_t)((start_slot + offset) % H2_PEER_READY_CHANNEL_COUNT);
         const uint32_t bit = UINT32_C(1) << ready_slot;
         if ((*snapshot & bit) == 0u) {
             continue;
@@ -2063,8 +2116,8 @@ static int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
         atomic_store_explicit(&channel->tx_state[slot], 0u,
                               memory_order_release);
         h2_peer_network_notify_send_ready(peer);
-        peer->channel_round_robin = (uint8_t)(
-            (ready_slot + 1u) % H2_PEER_READY_CHANNEL_COUNT);
+        peer->channel_round_robin =
+            (uint8_t)((ready_slot + 1u) % H2_PEER_READY_CHANNEL_COUNT);
         if (result != H2_PAL_OK && result != H2_PAL_ERR_CLOSED &&
             result != H2_PAL_ERR_INVALID_STATE) {
             h2_peer_record_network_event_error(peer, result);
@@ -2073,6 +2126,8 @@ static int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
     }
     return made_progress;
 }
+
+static h2_pal_result_t h2_peer_media_track_service(h2_pal_webrtc_peer_t *peer);
 
 static void h2_peer_network_task(void *context) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)context;
@@ -2093,6 +2148,15 @@ static void h2_peer_network_task(void *context) {
             h2_peer_network_record_round(peer, &peer->perf_command,
                                          round_started_us);
             continue;
+        }
+
+        if (!transport_terminal) {
+            const h2_pal_result_t media_result =
+                h2_peer_media_track_service(peer);
+            if (media_result != H2_PAL_OK) {
+                h2_peer_record_network_event_error(peer, media_result);
+                transport_terminal = 1;
+            }
         }
 
         int transport_progress = 0;
@@ -2132,13 +2196,12 @@ static void h2_peer_network_task(void *context) {
             rtp_pending != NULL && rtp_pending != H2_PEER_TX_RESERVED
                 ? h2_peer_network_service_rtp(peer)
                 : 0;
-        const int channel_progress = writable
-                                         ? h2_peer_network_service_channel(
-                                               peer, &channel_snapshot)
+        const int channel_progress =
+            writable ? h2_peer_network_service_channel(peer, &channel_snapshot)
                                          : 0;
         int receive_waited = 0;
-        if (h2_peer_network_pump_transport(
-                peer, H2_PEER_NETWORK_IDLE_WAIT_MS, &transport_terminal,
+        if (h2_peer_network_pump_transport(peer, H2_PEER_NETWORK_IDLE_WAIT_MS,
+                                           &transport_terminal,
                 &receive_waited)) {
             transport_progress = 1;
         }
@@ -2160,8 +2223,7 @@ static void h2_peer_network_task(void *context) {
             (void)h2_pal_time_sleep_ms(peer->owner->config.time,
                                        H2_PEER_NETWORK_IDLE_WAIT_MS);
         }
-        h2_peer_network_record_round(peer, &peer->perf_idle,
-                                     round_started_us);
+        h2_peer_network_record_round(peer, &peer->perf_idle, round_started_us);
     }
     atomic_store_explicit(&peer->network_stopped, 1, memory_order_release);
 }
@@ -2339,8 +2401,8 @@ static h2_pal_result_t h2_peer_network_peer_create_pull(
         *out_peer = NULL;
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    const uint32_t valid_flags = H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL |
-                                 H2_PAL_WEBRTC_RECEIVE_OPUS_PULL;
+    const uint32_t valid_flags =
+        H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL | H2_PAL_WEBRTC_RECEIVE_OPUS_PULL;
     if ((receive_flags & ~valid_flags) != 0u ||
         ((receive_flags & H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL) != 0u &&
          callbacks->on_channel_message != NULL) ||
@@ -2439,9 +2501,25 @@ static h2_pal_result_t h2_peer_network_create_data_channel(
     return result;
 }
 
+static h2_pal_result_t
+h2_peer_network_set_media_track(h2_pal_webrtc_peer_t *peer,
+                                h2_pal_webrtc_track_t *track) {
+    if (!h2_peer_network_enabled(peer)) {
+        return h2_peer_webrtc_set_media_track(peer, track);
+    }
+    const h2_peer_network_command_t command = {
+        .type = H2_PEER_NETWORK_SET_MEDIA_TRACK,
+        .value.media_track = track,
+    };
+    return h2_peer_network_call(peer, &command, NULL);
+}
+
 static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
                                             int timeout_ms) {
     if (!h2_peer_network_enabled(peer)) {
+        h2_pal_result_t media_result = h2_peer_media_track_service(peer);
+        if (media_result != H2_PAL_OK)
+            return media_result;
         return h2_peer_webrtc_poll(peer, timeout_ms);
     }
     if (timeout_ms < 0) {
@@ -2475,15 +2553,8 @@ static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
     return result;
 }
 
-static h2_pal_result_t h2_peer_network_send_opus(h2_pal_webrtc_peer_t *peer,
-                                                 const uint8_t *opus,
-                                                 size_t opus_len) {
-    if (!h2_peer_network_enabled(peer)) {
-        return h2_peer_webrtc_send_opus(peer, opus, opus_len);
-    }
-    if (peer->closed || peer->state != H2_PAL_WEBRTC_PEER_CONNECTED) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
+static h2_pal_result_t h2_peer_network_enqueue_opus(
+    h2_pal_webrtc_peer_t *peer, const uint8_t *opus, size_t opus_len) {
     h2_peer_tx_item_t *expected = NULL;
     if (!atomic_compare_exchange_strong_explicit(
             &peer->rtp_pending, &expected, H2_PEER_TX_RESERVED,
@@ -2498,6 +2569,48 @@ static h2_pal_result_t h2_peer_network_send_opus(h2_pal_webrtc_peer_t *peer,
     }
     atomic_store_explicit(&peer->rtp_pending, item, memory_order_release);
     return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_peer_network_send_opus(h2_pal_webrtc_peer_t *peer,
+                                                 const uint8_t *opus,
+                                                 size_t opus_len) {
+    if (!h2_peer_network_enabled(peer)) {
+        return h2_peer_webrtc_send_opus(peer, opus, opus_len);
+    }
+    if (peer->closed || peer->state != H2_PAL_WEBRTC_PEER_CONNECTED) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    return h2_peer_network_enqueue_opus(peer, opus, opus_len);
+}
+
+static h2_pal_result_t h2_peer_media_track_service(h2_pal_webrtc_peer_t *peer) {
+    h2_pal_webrtc_track_t *track = peer->media_track;
+    if (track == NULL || track->config.read == NULL ||
+        peer->state != H2_PAL_WEBRTC_PEER_CONNECTED || peer->closed) {
+        return H2_PAL_OK;
+    }
+    if (track->pending_opus_len == 0u) {
+        size_t opus_len = 0u;
+        h2_pal_result_t result =
+            track->config.read(track->config.user, track->pending_opus,
+                               sizeof(track->pending_opus), &opus_len);
+        if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT)
+            return H2_PAL_OK;
+        if (result != H2_PAL_OK)
+            return result;
+        if (opus_len == 0u || opus_len > sizeof(track->pending_opus))
+            return H2_PAL_ERR_FORMAT;
+        track->pending_opus_len = opus_len;
+    }
+    h2_pal_result_t result =
+        h2_peer_network_enabled(peer)
+            ? h2_peer_network_enqueue_opus(peer, track->pending_opus,
+                                           track->pending_opus_len)
+            : h2_peer_webrtc_send_opus(peer, track->pending_opus,
+                                       track->pending_opus_len);
+    if (result == H2_PAL_OK)
+        track->pending_opus_len = 0u;
+    return result == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_OK : result;
 }
 
 static h2_pal_result_t h2_peer_network_receive_opus(h2_pal_webrtc_peer_t *peer,
@@ -2644,6 +2757,7 @@ static const h2_pal_webrtc_vtable_t h2_peer_webrtc_vtable = {
     .peer_start_offer = h2_peer_network_start_offer,
     .peer_set_remote_sdp = h2_peer_network_set_remote_sdp,
     .peer_create_data_channel = h2_peer_network_create_data_channel,
+    .peer_set_media_track = h2_peer_network_set_media_track,
     .peer_poll = h2_peer_network_poll,
     .peer_send_opus = h2_peer_network_send_opus,
     .peer_receive_opus = h2_peer_network_receive_opus,
@@ -2718,6 +2832,47 @@ h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
 
 const h2_pal_webrtc_api_t *h2_peer_webrtc_api(h2_peer_t *peer) {
     return peer == NULL || peer->destroying ? NULL : &peer->webrtc_api;
+}
+
+h2_pal_result_t
+h2_peer_media_track_create(h2_peer_t *peer,
+                           const h2_peer_media_track_config_t *config,
+                           h2_pal_webrtc_track_t **out_track) {
+    if (peer == NULL || peer->destroying || config == NULL ||
+        (config->read == NULL && config->write == NULL) || out_track == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_track = NULL;
+    h2_pal_webrtc_track_t *track =
+        (h2_pal_webrtc_track_t *)h2_peer_alloc(peer, sizeof(*track));
+    if (track == NULL)
+        return H2_PAL_ERR_NO_MEMORY;
+    track->owner = peer;
+    track->config = *config;
+    track->next = peer->tracks;
+    peer->tracks = track;
+    *out_track = track;
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_peer_media_track_destroy(h2_pal_webrtc_track_t **track_ptr) {
+    if (track_ptr == NULL || *track_ptr == NULL)
+        return H2_PAL_OK;
+    h2_pal_webrtc_track_t *track = *track_ptr;
+    if (track->owner == NULL || track->owner->destroying)
+        return H2_PAL_ERR_CLOSED;
+    if (track->bound_peer != NULL)
+        return H2_PAL_ERR_INVALID_STATE;
+    h2_peer_t *owner = track->owner;
+    h2_pal_webrtc_track_t **cursor = &owner->tracks;
+    while (*cursor != NULL && *cursor != track)
+        cursor = &(*cursor)->next;
+    if (*cursor != track)
+        return H2_PAL_ERR_INVALID_ARG;
+    *cursor = track->next;
+    *track_ptr = NULL;
+    h2_peer_free(owner, track);
+    return H2_PAL_OK;
 }
 
 void h2_peer_destroy(h2_peer_t **peer) {

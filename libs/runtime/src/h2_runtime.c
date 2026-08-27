@@ -311,6 +311,7 @@ h2_pal_result_t h2_runtime_init(
     H2_RUNTIME_BIND_PROXY(netif);
     H2_RUNTIME_BIND_PROXY(mqtt);
     H2_RUNTIME_BIND_PROXY(webrtc);
+    runtime->webrtc_media_track = config->webrtc_media_track;
     H2_RUNTIME_BIND_PROXY(wifi_sta);
     H2_RUNTIME_BIND_PROXY(wifi_ap);
     H2_RUNTIME_BIND_PROXY(wifi_csi);

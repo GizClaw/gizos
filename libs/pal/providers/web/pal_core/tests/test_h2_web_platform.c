@@ -7,10 +7,11 @@
 #include <string.h>
 
 EM_JS(void, h2_web_test_set_serial_mode, (int mode), {
-  const modes = ['normal', 'denied', 'normal', 'delayed', 'timeout-read',
-                 'unplug-read', 'grow-read', 'timeout-write', 'partial-read',
-                 'unplug-write', 'revoked-open', 'busy-open',
-                 'close-needs-cancel-turn', 'delayed-read'];
+  const modes = [
+    'normal', 'denied', 'normal', 'delayed', 'timeout-read', 'unplug-read',
+    'grow-read', 'timeout-write', 'partial-read', 'unplug-write',
+    'revoked-open', 'busy-open', 'close-needs-cancel-turn', 'delayed-read'
+  ];
   globalThis.h2FakeSerialMode = modes[mode] || 'normal';
   globalThis.isSecureContext = mode !== 2;
   if (mode === 0 && globalThis.h2FakeSerialPort) {
@@ -18,13 +19,11 @@ EM_JS(void, h2_web_test_set_serial_mode, (int mode), {
   }
 });
 
-EM_JS(int, h2_web_test_forget_count, (), {
-  return globalThis.h2FakeForgetCount || 0;
-});
+EM_JS(int, h2_web_test_forget_count, (),
+      { return globalThis.h2FakeForgetCount || 0; });
 
-EM_JS(int, h2_web_test_close_rejected_before_cancel_settled, (), {
-  return globalThis.h2FakeCloseRejectedBeforeCancelSettled ? 1 : 0;
-});
+EM_JS(int, h2_web_test_close_rejected_before_cancel_settled, (),
+      { return globalThis.h2FakeCloseRejectedBeforeCancelSettled ? 1 : 0; });
 
 static void h2_web_test_task(void *user) {
   int *ran = user;
@@ -43,8 +42,8 @@ typedef struct h2_web_task_cancel_test {
 
 static void h2_web_test_task_cancel(void *user) {
   h2_web_task_cancel_test_t *test = user;
-  test->result = h2_pal_time_sleep_ms(
-      h2_web_platform_time_api(test->platform), 10000u);
+  test->result =
+      h2_pal_time_sleep_ms(h2_web_platform_time_api(test->platform), 10000u);
 }
 
 static void h2_web_test_auto_pump(void *user) {
@@ -60,10 +59,66 @@ static h2_pal_task_t *h2_web_auto_pump_task;
 
 static void h2_web_test_main_loop(void) {}
 
+typedef struct h2_web_webrtc_test {
+  const h2_pal_webrtc_api_t *api;
+  int local_sdp;
+  int connected;
+  int channel_open;
+  int message;
+} h2_web_webrtc_test_t;
+
+static void h2_web_test_webrtc_peer_state(void *user,
+                                          h2_pal_webrtc_peer_t *peer,
+                                          h2_pal_webrtc_peer_state_t state) {
+  (void)peer;
+  h2_web_webrtc_test_t *test = user;
+  if (state == H2_PAL_WEBRTC_PEER_CONNECTED)
+    test->connected++;
+}
+
+static void h2_web_test_webrtc_local_sdp(void *user, h2_pal_webrtc_peer_t *peer,
+                                         h2_pal_webrtc_sdp_type_t type,
+                                         h2_pal_webrtc_str_t sdp) {
+  (void)peer;
+  h2_web_webrtc_test_t *test = user;
+  if (type == H2_PAL_WEBRTC_SDP_OFFER && sdp.len == 10u &&
+      memcmp(sdp.data, "fake-offer", 10u) == 0) {
+    test->local_sdp++;
+  }
+}
+
+static void
+h2_web_test_webrtc_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
+                                 h2_pal_webrtc_channel_t *channel,
+                                 const h2_pal_webrtc_channel_info_t *info,
+                                 h2_pal_webrtc_channel_state_t state) {
+  (void)peer;
+  (void)channel;
+  h2_web_webrtc_test_t *test = user;
+  if (state == H2_PAL_WEBRTC_CHANNEL_OPEN && info->has_stream_id &&
+      info->stream_id == 0u && info->ordered && info->reliable) {
+    test->channel_open++;
+  }
+}
+
+static void h2_web_test_webrtc_message(void *user, h2_pal_webrtc_peer_t *peer,
+                                       h2_pal_webrtc_channel_t *channel,
+                                       const h2_pal_webrtc_channel_info_t *info,
+                                       const uint8_t *data, size_t len,
+                                       int is_text) {
+  (void)peer;
+  (void)info;
+  h2_web_webrtc_test_t *test = user;
+  if (is_text && len == 4u && memcmp(data, "ping", 4u) == 0) {
+    test->message++;
+    h2_pal_webrtc_channel_close(test->api, channel);
+  }
+}
+
 static void h2_web_test_auto_pump_verify(void *user) {
   (void)user;
-  const h2_pal_result_t join_result = h2_pal_task_join(
-      h2_web_platform_task_api(h2_web_auto_pump.platform),
+  const h2_pal_result_t join_result =
+      h2_pal_task_join(h2_web_platform_task_api(h2_web_auto_pump.platform),
       h2_web_auto_pump_task);
   const int success =
       h2_web_auto_pump.complete == 1 && join_result == H2_PAL_OK;
@@ -122,7 +177,8 @@ static void h2_web_test_serial(void *user) {
   }
   if (h2_pal_serial_host_scan(serial, &snapshot) != H2_PAL_OK ||
       h2_pal_serial_host_snapshot_count(serial, snapshot, &count) !=
-          H2_PAL_OK || count != 1u ||
+          H2_PAL_OK ||
+      count != 1u ||
       h2_pal_serial_host_snapshot_get(serial, snapshot, 0u, &info) !=
           H2_PAL_OK ||
       strcmp(info.port_id, "web-serial-1") != 0 ||
@@ -204,13 +260,14 @@ static void h2_web_test_serial_read_edge(void *user) {
   h2_web_test_set_serial_mode(0);
   const h2_pal_result_t close_result =
       h2_pal_serial_host_close(serial, &session);
-  if (result != test->expected || close_result != H2_PAL_OK) return;
-  if (result == H2_PAL_OK &&
-      (transferred != sizeof(bytes) || bytes[0] != 0x48u ||
-       bytes[1] != 0x32u)) {
+  if (result != test->expected || close_result != H2_PAL_OK)
+    return;
+  if (result == H2_PAL_OK && (transferred != sizeof(bytes) ||
+                              bytes[0] != 0x48u || bytes[1] != 0x32u)) {
     return;
   }
-  if (result != H2_PAL_OK && transferred != 0u) return;
+  if (result != H2_PAL_OK && transferred != 0u)
+    return;
   test->result = 0;
 }
 
@@ -287,9 +344,8 @@ static void h2_web_test_serial_read_timeout_recovery(void *user) {
   h2_web_test_set_serial_mode(0);
   const h2_pal_result_t close_result =
       h2_pal_serial_host_close(serial, &session);
-  if (timeout_result != H2_PAL_ERR_TIMEOUT ||
-      recovery_result != H2_PAL_OK || transferred != sizeof(bytes) ||
-      bytes[0] != 0x48u || bytes[1] != 0x32u ||
+  if (timeout_result != H2_PAL_ERR_TIMEOUT || recovery_result != H2_PAL_OK ||
+      transferred != sizeof(bytes) || bytes[0] != 0x48u || bytes[1] != 0x32u ||
       close_result != H2_PAL_OK) {
     return;
   }
@@ -332,8 +388,7 @@ static void h2_web_test_serial_partial_read(void *user) {
       h2_pal_serial_host_close(serial, &session);
   if (first_result != H2_PAL_OK || second_result != H2_PAL_OK ||
       transferred != 2u || first[0] != 0x48u || first[1] != 0x32u ||
-      second[0] != 0x21u || second[1] != 0x22u ||
-      close_result != H2_PAL_OK) {
+      second[0] != 0x21u || second[1] != 0x22u || close_result != H2_PAL_OK) {
     return;
   }
   test->result = 0;
@@ -392,8 +447,8 @@ static void h2_web_test_serial_open_failure(void *user) {
   };
   h2_pal_serial_host_session_t *session = NULL;
   h2_web_test_set_serial_mode(test->mode);
-  const h2_pal_result_t result = h2_pal_serial_host_open(
-      serial, "web-serial-1", &config, &session);
+  const h2_pal_result_t result =
+      h2_pal_serial_host_open(serial, "web-serial-1", &config, &session);
   h2_web_test_set_serial_mode(0);
   test->result = result == test->expected && session == NULL ? 0 : 1;
 }
@@ -479,8 +534,8 @@ static void h2_web_test_serial_close_wait(void *user) {
   state.stream = stream;
   h2_web_test_set_serial_mode(4);
   if (h2_pal_task_start(h2_web_platform_task_api(test->platform), NULL,
-                        h2_web_test_serial_blocked_read, &state, &reader) !=
-          H2_PAL_OK ||
+                        h2_web_test_serial_blocked_read, &state,
+                        &reader) != H2_PAL_OK ||
       h2_pal_time_sleep_ms(h2_web_platform_time_api(test->platform), 1u) !=
           H2_PAL_OK) {
     return;
@@ -488,8 +543,8 @@ static void h2_web_test_serial_close_wait(void *user) {
   const h2_pal_result_t close_result =
       h2_pal_serial_host_close(serial, &session);
   h2_web_test_set_serial_mode(0);
-  const h2_pal_result_t join_result = h2_pal_task_join(
-      h2_web_platform_task_api(test->platform), reader);
+  const h2_pal_result_t join_result =
+      h2_pal_task_join(h2_web_platform_task_api(test->platform), reader);
   if (close_result != H2_PAL_OK || join_result != H2_PAL_OK ||
       state.read_result != H2_PAL_ERR_TIMEOUT || session != NULL) {
     return;
@@ -536,7 +591,8 @@ static int h2_web_test_run_task(h2_web_platform_t *platform,
     return 0;
   }
   for (int iteration = 0; iteration < 64; ++iteration) {
-    if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK) return 0;
+    if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
+      return 0;
     if (h2_pal_task_join(h2_web_platform_task_api(platform), task) ==
         H2_PAL_OK) {
       return 1;
@@ -580,9 +636,63 @@ int main(void) {
       h2_web_platform_display_api(platform) == NULL ||
       h2_web_platform_touch_api(platform) == NULL ||
       h2_web_platform_pref_api(platform) == NULL ||
-      h2_web_platform_serial_host_api(platform) == NULL) {
+      h2_web_platform_serial_host_api(platform) == NULL ||
+      h2_web_platform_webrtc_api(platform) == NULL) {
     return 4;
   }
+  h2_web_webrtc_test_t webrtc_test = {0};
+  const h2_pal_webrtc_callbacks_t webrtc_callbacks = {
+      .user = &webrtc_test,
+      .on_peer_state = h2_web_test_webrtc_peer_state,
+      .on_local_sdp = h2_web_test_webrtc_local_sdp,
+      .on_channel_state = h2_web_test_webrtc_channel_state,
+      .on_channel_message = h2_web_test_webrtc_message,
+  };
+  const h2_pal_webrtc_api_t *webrtc = h2_web_platform_webrtc_api(platform);
+  h2_pal_webrtc_track_t *webrtc_track =
+      h2_web_platform_webrtc_audio_track(platform);
+  webrtc_test.api = webrtc;
+  h2_pal_webrtc_peer_t *webrtc_peer = NULL;
+  h2_pal_webrtc_channel_t *webrtc_channel = NULL;
+  const h2_pal_webrtc_ice_server_t ice_server = {
+      .url = {.data = "stun:example.test", .len = 17u},
+  };
+  const h2_pal_webrtc_channel_config_t channel_config = {
+      .label = {.data = "rpc", .len = 3u},
+      .ordered = 1,
+      .reliable = 1,
+  };
+  const h2_pal_webrtc_str_t answer = {
+      .data = "fake-answer",
+      .len = 11u,
+  };
+  const uint8_t opus[] = {0xf8u, 0xffu, 0xfeu};
+  if (h2_pal_webrtc_peer_create(webrtc, &webrtc_callbacks, &webrtc_peer) !=
+          H2_PAL_OK ||
+      webrtc_track == NULL ||
+      h2_pal_webrtc_peer_set_media_track(webrtc, webrtc_peer, webrtc_track) !=
+          H2_PAL_OK ||
+      h2_pal_webrtc_peer_add_ice_server(webrtc, webrtc_peer, &ice_server) !=
+          H2_PAL_OK ||
+      h2_pal_webrtc_peer_create_data_channel(
+          webrtc, webrtc_peer, &channel_config, &webrtc_channel) != H2_PAL_OK ||
+      h2_pal_webrtc_peer_start_offer(webrtc, webrtc_peer) != H2_PAL_OK ||
+      webrtc_test.local_sdp != 1 ||
+      h2_pal_webrtc_peer_set_remote_sdp(
+          webrtc, webrtc_peer, H2_PAL_WEBRTC_SDP_ANSWER, answer) != H2_PAL_OK ||
+      webrtc_test.connected != 1 || webrtc_test.channel_open != 1 ||
+      EM_ASM_INT({ return globalThis.h2FakeGetUserMediaCount || 0; }) != 1 ||
+      EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount || 0; }) != 1 ||
+      h2_pal_webrtc_channel_send(webrtc, webrtc_channel,
+                                 (const uint8_t *)"ping", 4u, 1) != H2_PAL_OK ||
+      h2_pal_webrtc_peer_send_opus(webrtc, webrtc_peer, opus, sizeof(opus)) !=
+          H2_PAL_ERR_UNSUPPORTED) {
+    return 101;
+  }
+  emscripten_sleep(0u);
+  if (webrtc_test.message != 1)
+    return 102;
+  h2_pal_webrtc_peer_close(webrtc, webrtc_peer);
   h2_pal_pref_namespace_t *prefs = NULL;
   char *stored_port = NULL;
   const uint8_t status_bytes[] = {1u, 2u, 3u, 4u};
@@ -624,8 +734,7 @@ int main(void) {
       resumed != 1u || ran != 1) {
     return 6;
   }
-  if (h2_pal_task_join(h2_web_platform_task_api(platform), task) !=
-      H2_PAL_OK) {
+  if (h2_pal_task_join(h2_web_platform_task_api(platform), task) != H2_PAL_OK) {
     return 7;
   }
   if (h2_pal_touch_open(h2_web_platform_touch_api(platform)) != H2_PAL_OK ||
@@ -663,7 +772,8 @@ int main(void) {
       h2_web_test_forget_count() != 1) {
     return 42;
   }
-  if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) return 43;
+  if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK)
+    return 43;
   emscripten_sleep(0u);
   if (h2_web_platform_serial_authorization(platform, port_id,
                                             sizeof(port_id)) != H2_PAL_OK ||
@@ -700,8 +810,8 @@ int main(void) {
       {platform, 5, H2_PAL_ERR_CLOSED, -1},
       {platform, 6, H2_PAL_OK, -1},
   };
-  for (size_t index = 0u;
-       index < sizeof(read_edges) / sizeof(read_edges[0]); ++index) {
+  for (size_t index = 0u; index < sizeof(read_edges) / sizeof(read_edges[0]);
+       ++index) {
     if (!h2_web_test_run_task(platform, h2_web_test_serial_read_edge,
                               &read_edges[index]) ||
         read_edges[index].result != 0) {
@@ -723,8 +833,7 @@ int main(void) {
       .platform = platform,
       .result = -1,
   };
-  if (!h2_web_test_run_task(platform,
-                            h2_web_test_serial_read_timeout_recovery,
+  if (!h2_web_test_run_task(platform, h2_web_test_serial_read_timeout_recovery,
                             &read_timeout_recovery) ||
       read_timeout_recovery.result != 0) {
     return 100;
@@ -835,30 +944,30 @@ int main(void) {
   }
 
   h2_web_test_set_serial_mode(1);
-  if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) return 32;
+  if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK)
+    return 32;
   emscripten_sleep(0u);
-  if (h2_web_platform_serial_authorization(platform, port_id,
-                                            sizeof(port_id)) !=
-      H2_PAL_ERR_NOT_FOUND) {
+  if (h2_web_platform_serial_authorization(
+          platform, port_id, sizeof(port_id)) != H2_PAL_ERR_NOT_FOUND) {
     return 33;
   }
   h2_web_test_set_serial_mode(2);
   if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK ||
-      h2_web_platform_serial_authorization(platform, port_id,
-                                            sizeof(port_id)) !=
-          H2_PAL_ERR_UNSUPPORTED) {
+      h2_web_platform_serial_authorization(
+          platform, port_id, sizeof(port_id)) != H2_PAL_ERR_UNSUPPORTED) {
     return 34;
   }
   h2_web_test_set_serial_mode(3);
-  if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) return 35;
+  if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK)
+    return 35;
   h2_web_platform_destroy(platform);
   h2_web_test_set_serial_mode(0);
   platform = h2_web_platform_create(&valid);
-  if (platform == NULL) return 36;
+  if (platform == NULL)
+    return 36;
   emscripten_sleep(2u);
-  if (h2_web_platform_serial_authorization(platform, port_id,
-                                            sizeof(port_id)) !=
-      H2_PAL_ERR_WOULD_BLOCK) {
+  if (h2_web_platform_serial_authorization(
+          platform, port_id, sizeof(port_id)) != H2_PAL_ERR_WOULD_BLOCK) {
     return 37;
   }
   h2_web_platform_destroy(platform);
@@ -884,9 +993,10 @@ int main(void) {
   }
   joined = 0;
   for (int iteration = 0; iteration < 8 && !joined; ++iteration) {
-    if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK) return 38;
-    joined = h2_pal_task_join(h2_web_platform_task_api(platform), task) ==
-        H2_PAL_OK;
+    if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
+      return 38;
+    joined =
+        h2_pal_task_join(h2_web_platform_task_api(platform), task) == H2_PAL_OK;
   }
   if (!joined || shutdown_test.result != 0 ||
       h2_web_platform_serial_request_port(platform) !=
@@ -904,17 +1014,15 @@ int main(void) {
       h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK ||
       h2_web_platform_task_cancel(platform, task) != H2_PAL_OK ||
       h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK ||
-      h2_pal_task_join(h2_web_platform_task_api(platform), task) !=
-          H2_PAL_OK ||
+      h2_pal_task_join(h2_web_platform_task_api(platform), task) != H2_PAL_OK ||
       task_cancel_test.result != H2_PAL_EXIT) {
     return 38;
   }
   h2_web_platform_destroy(platform);
   h2_web_auto_pump.platform = h2_web_platform_create(&valid);
   if (h2_web_auto_pump.platform == NULL ||
-      h2_pal_task_start(
-          h2_web_platform_task_api(h2_web_auto_pump.platform), NULL,
-          h2_web_test_auto_pump, &h2_web_auto_pump,
+      h2_pal_task_start(h2_web_platform_task_api(h2_web_auto_pump.platform),
+                        NULL, h2_web_test_auto_pump, &h2_web_auto_pump,
           &h2_web_auto_pump_task) != H2_PAL_OK ||
       h2_web_platform_pump(h2_web_auto_pump.platform, 1u, NULL) != H2_PAL_OK) {
     return 38;
