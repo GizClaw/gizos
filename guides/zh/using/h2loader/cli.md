@@ -95,7 +95,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `check` 报告 BLE capability 时只检查平台是否提供 BLE Host，不启动它；`--no-ble` 下 BLE capability 报告为不可用。
 
-串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；BLE 每次连接执行 scan、精确匹配原 endpoint，并在 lifecycle transition 后拒绝切换到另一 address。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
+串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；BLE endpoint 只用于当前 Host/backend 生命周期内选择初始 candidate，连接后的 status 才提供 authoritative board/role/capability。v1/v2 尚无 `device_uid`，因此 CLI 不把 backend address 当成断线后可重新识别物理设备的 identity。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
 
 `--ready` 和非零 `--post-delay` 是 serial boot-marker 调试参数，不能与 `--transport bleikcp` 组合；CLI 会在连接前拒绝，而不是悄悄忽略 transport-specific 参数。
 
@@ -197,7 +197,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --file /tmp/update.tar.zlib
 ```
 
-同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage，不会改写命令或另建 BLE 指令表：
+同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage，并在断开前通过同一 connection 读取 status、核对 exact staged bytes/SHA-256，不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
@@ -236,7 +236,9 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --sha256 <package-sha256>
 ```
 
-串口和 BLE 共用 Wi-Fi setup、typed `STAGE_URL`、断开、重新发现以及 exact staged bytes/SHA-256 验证。BLE 重连只接受原 endpoint 对应的 address，不按 display name 或 board 名称替换设备，也不会重放已经接受的 URL command。
+串口和 BLE 共用 Wi-Fi setup、typed `STAGE_URL` 以及 exact staged bytes/SHA-256 验证。BLE 在同一 connection 内完成 URL 下载 terminal 和 staged status 验证，随后才断开；不按 display name、board 或 backend address 跨扫描替换设备，也不会重放已经接受的 URL command。
+
+需要重启并重新识别物理设备的 Loader `upgrade` 在 serial 上继续使用 stable USB identity。BLE v1/v2 没有 `device_uid`，CLI 会在连接和发送 upgrade 前明确拒绝 `--transport bleikcp`；协议提供 authoritative UID 后才能开放 BLE upgrade lifecycle verification。普通 `status`、Wi-Fi、stage、hold、restart、rollback、reboot、coredump、`send` 和 `send-url` 仍使用同一命令解析和 typed request，其中 lifecycle command 的成功只表示当前 connection 上的 accepted terminal，不伪造重连验收。
 
 当前 PAL Net contract 没有 TCP listener/accept，因此 native CLI 暂不支持
 `send-url --file`，也不会在 target 中维护 POSIX 或 Win32 listener。

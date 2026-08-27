@@ -32,9 +32,9 @@ Console 和 Firmware 生命周期动作只能使用
 
 Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。
 
-Native CLI 在 command parser 之后只创建一个 transport-neutral session。`iostreamikcp` 与 `bleikcp` adapter 分别拥有连接资源，但 `status`、typed command、payload stage、disconnect 和 rediscover 调用点相同；`send`、`send-url`、Wi-Fi 与 lifecycle command 不注册 transport-specific handler。BLE endpoint 必须来自 management scan 的 exact address identity，重连时重新扫描同一 endpoint；缺失、重复或 identity 改变都 fail closed，不能按 display name 选择替代设备。
+Native CLI 在 command parser 之后只创建一个 transport-neutral session。`iostreamikcp` 与 `bleikcp` adapter 分别拥有连接资源，但 `status`、typed command、payload stage 和 disconnect 调用点相同；`send`、`send-url`、Wi-Fi 与 lifecycle command 不注册 transport-specific handler。BLE endpoint 只在当前 Host/backend 生命周期内选择初始 candidate，不能提升为跨扫描物理 identity。`send` 和 `send-url` 必须在同一 BLE connection 内完成 stage terminal 与 exact staged bytes/SHA-256 status 验证，再断开。需要断线后重新识别设备的 Loader upgrade 在 BLE v1/v2 上发送前 fail closed，直到 Service Data 提供 authoritative `device_uid`；不能按 display name、board 或 backend address选择替代设备。
 
-App restart/rollback 的 `result=OK` 与 Loader reboot 的 `result=accepted` 只表示设备端接受请求。Loader-to-Loader reboot 继续等待 `H2_LOADER_REBOOT_FINAL`：同步返回时必须得到 `result=OK`，同步失败必须得到 `result=fail`；真正执行重启而不返回时，只有已收到 `accepted` 后 transport 明确关闭才算 transition accepted，timeout 仍是失败。Caller 随后关闭旧 connection、按 stable USB identity/BLE address 重新发现同一物理设备、重连并读取 live status；只有 board/target 与预期 role 匹配，App restart 还匹配原 App name/version，才能投影 success。
+App restart/rollback 的 `result=OK` 与 Loader reboot 的 `result=accepted` 只表示设备端接受请求。Loader-to-Loader reboot 继续等待 `H2_LOADER_REBOOT_FINAL`：同步返回时必须得到 `result=OK`，同步失败必须得到 `result=fail`；真正执行重启而不返回时，只有已收到 `accepted` 后 transport 明确关闭才算 transition accepted，timeout 仍是失败。Caller 只有持有 stable USB identity 或未来 BLE `device_uid` 时才能重新发现同一物理设备、重连并读取 live status；只有 board/target 与预期 role 匹配，App restart 还匹配原 App name/version，才能投影 lifecycle success。BLE v1/v2 只返回 accepted terminal，不把 backend address 伪装成重连验收。
 
 ## Catalog 与 operation
 

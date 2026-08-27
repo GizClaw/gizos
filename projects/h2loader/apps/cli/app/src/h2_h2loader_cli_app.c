@@ -35,6 +35,12 @@ static h2_pal_result_t cli_managed_disconnect(void *user) {
     return h2_h2loader_cli_transport_disconnect(user);
 }
 
+static h2_pal_result_t cli_managed_read_status(
+    void *user,
+    h2_h2loader_host_status_t *out_status) {
+    return h2_h2loader_cli_transport_read_status(user, out_status);
+}
+
 static h2_pal_result_t cli_managed_rediscover(void *user) {
     return h2_h2loader_cli_transport_rediscover(user);
 }
@@ -43,6 +49,7 @@ static const h2_h2loader_host_managed_transport_vtable_t
     cli_stage_transport_vtable = {
         .connect = cli_managed_connect,
         .stage = cli_managed_stage,
+        .read_status = cli_managed_read_status,
         .disconnect = cli_managed_disconnect,
         .rediscover = cli_managed_rediscover,
     };
@@ -390,6 +397,13 @@ static int upgrade_command(
     h2_pal_result_t rc;
     if (argc != 0 || options->port == NULL) {
         return H2_H2LOADER_CLI_EXIT_USAGE;
+    }
+    if (options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
+        h2_h2loader_cli_output(
+            context, H2_H2LOADER_CLI_STREAM_STDERR,
+            "h2loader: upgrade requires authoritative reconnect identity; "
+            "BLE v1/v2 has no device_uid\n");
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
     h2_h2loader_cli_transport_init(
         &transport, context, options, options->read_timeout_ms);

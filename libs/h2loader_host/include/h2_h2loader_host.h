@@ -436,12 +436,18 @@ typedef struct h2_h2loader_host_managed_transport_vtable {
     h2_pal_result_t (*activate)(
         void *user,
         const h2_h2loader_host_catalog_entry_t *asset);
+    /** Read authoritative status without leaving the current connection. */
+    h2_pal_result_t (*read_status)(
+        void *user,
+        h2_h2loader_host_status_t *out_status);
     h2_pal_result_t (*disconnect)(void *user);
     /**
      * Re-enumerate the original physical candidate.
      *
-     * Implementations must use stable USB identity or BLE address when
-     * available and must never switch to a name-matched candidate.
+     * Implementations must use authoritative physical identity and must
+     * never switch to a name-matched candidate. BLE v1/v2 backend IDs and
+     * addresses are not authoritative across scans; callers must instead
+     * remain in one connection or fail until a device UID is available.
      */
     h2_pal_result_t (*rediscover)(void *user);
 } h2_h2loader_host_managed_transport_vtable_t;

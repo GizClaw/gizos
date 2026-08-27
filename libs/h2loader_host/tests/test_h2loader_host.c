@@ -1162,6 +1162,7 @@ typedef struct operation_fixture {
     int activate_count;
     int disconnect_count;
     int rediscover_count;
+    int read_status_count;
     int sleep_count;
     int cancelled;
     int bad_final_checksum;
@@ -1241,6 +1242,21 @@ static h2_pal_result_t operation_disconnect(void *user) {
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t operation_read_status(
+    void *user,
+    h2_h2loader_host_status_t *out_status) {
+    operation_fixture_t *fixture = user;
+    ++fixture->read_status_count;
+    memset(out_status, 0, sizeof(*out_status));
+    strcpy(out_status->board, fixture->asset.board);
+    strcpy(out_status->target, fixture->asset.target);
+    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->staged_valid = 1u;
+    out_status->staged_bytes = fixture->asset.bytes;
+    strcpy(out_status->staged_checksum, fixture->asset.sha256);
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t operation_rediscover(void *user) {
     ++((operation_fixture_t *)user)->rediscover_count;
     return ((operation_fixture_t *)user)->rediscover_result;
@@ -1277,6 +1293,7 @@ static void test_managed_operation(void) {
         .connect = operation_connect,
         .stage = operation_stage,
         .activate = operation_activate,
+        .read_status = operation_read_status,
         .disconnect = operation_disconnect,
         .rediscover = operation_rediscover,
     };
@@ -1335,14 +1352,16 @@ static void test_managed_operation(void) {
     fixture.activate_count = 0;
     fixture.disconnect_count = 0;
     fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
     fixture.sleep_count = 0;
     assert(h2_h2loader_host_stage_operation_run(
                &config, &final_status) == H2_PAL_OK);
-    assert(fixture.connect_count == 2);
+    assert(fixture.connect_count == 1);
     assert(fixture.stage_count == 1);
     assert(fixture.activate_count == 0);
-    assert(fixture.disconnect_count == 2);
-    assert(fixture.rediscover_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.rediscover_count == 0);
+    assert(fixture.read_status_count == 1);
     assert(strcmp(final_status.staged_checksum, package_sha) == 0);
     fixture.stage_only = 0;
 

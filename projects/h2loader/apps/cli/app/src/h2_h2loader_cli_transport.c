@@ -151,6 +151,21 @@ h2_pal_result_t h2_h2loader_cli_transport_stage(
         is_cancelled, cancel_user, on_progress, progress_user);
 }
 
+h2_pal_result_t h2_h2loader_cli_transport_read_status(
+    h2_h2loader_cli_transport_t *transport,
+    h2_h2loader_host_status_t *out_status) {
+    if (transport == NULL || transport->options == NULL ||
+        out_status == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
+        return h2_h2loader_host_ble_read_status(
+            transport->ble_connection, out_status);
+    }
+    return h2_h2loader_host_serial_read_status(
+        transport->serial_connection, out_status);
+}
+
 h2_pal_result_t h2_h2loader_cli_transport_disconnect(
     h2_h2loader_cli_transport_t *transport) {
     h2_pal_result_t serial_rc = h2_h2loader_host_serial_disconnect(
@@ -165,7 +180,10 @@ h2_pal_result_t h2_h2loader_cli_transport_rediscover(
     if (transport->options->transport != H2_H2LOADER_HOST_TRANSPORT_BLE) {
         return H2_PAL_OK;
     }
-    return resolve_ble_candidate(transport);
+    /* BLE v1/v2 has no authoritative physical device UID. A backend address
+     * may select the initial candidate within this Host lifetime, but must not
+     * be promoted into identity across a new scan or disconnected session. */
+    return H2_PAL_ERR_UNSUPPORTED;
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(

@@ -136,41 +136,30 @@ static void run_e2e(void *raw) {
 static void supervise_wifi(void *raw) {
   h2_gizclaw_e2e_devkit_wifi_supervisor_t *supervisor = raw;
   for (;;) {
-    h2_pal_wifi_sta_config_t saved = {0};
-    h2_pal_wifi_sta_status_t status = {0};
-    int rc = h2_pal_wifi_sta_get_status(supervisor->runtime->wifi_sta, &status);
-    if (rc == H2_PAL_OK && status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-        status.ip_valid != 0u) {
-      (void)h2_pal_time_sleep_ms(supervisor->runtime->time, 1000u);
-      continue;
-    }
-    if (rc == H2_PAL_OK &&
-        (status.state == H2_PAL_WIFI_STA_STATE_CONNECTING ||
-         status.state == H2_PAL_WIFI_STA_STATE_CONNECTED)) {
-      (void)h2_pal_time_sleep_ms(supervisor->runtime->time, 1000u);
-      continue;
-    }
-    rc = h2_pal_wifi_settings_get_saved_sta_config(
-        supervisor->runtime->wifi_settings, &saved);
-    if (rc != H2_PAL_OK) {
-      printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=NO_SAVED_WIFI rc=%d "
-             "retry_ms=%u\n",
-             rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
-      fflush(stdout);
-      (void)h2_pal_time_sleep_ms(
-          supervisor->runtime->time,
-          supervisor->config->wifi_retry_interval_ms);
-      continue;
-    }
-    printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=CONNECTING\n");
-    fflush(stdout);
-    rc = h2_pal_wifi_sta_connect(
-        supervisor->runtime->wifi_sta, &saved,
-        supervisor->config->wifi_connect_timeout_ms);
+    h2_gizclaw_e2e_devkit_wifi_result_t result;
+    int rc = h2_gizclaw_e2e_devkit_wifi_step(
+        supervisor->runtime->wifi_sta, supervisor->runtime->wifi_settings,
+        supervisor->config->wifi_connect_timeout_ms, &result);
     if (rc != H2_PAL_OK) {
       printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=RETRY rc=%d "
              "retry_ms=%u\n",
              rc, (unsigned)supervisor->config->wifi_retry_interval_ms);
+      fflush(stdout);
+    } else if (result.outcome ==
+               H2_GIZCLAW_E2E_DEVKIT_WIFI_NO_SAVED_CONFIG) {
+      printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=NO_SAVED_WIFI rc=%d "
+             "retry_ms=%u\n",
+             result.rc,
+             (unsigned)supervisor->config->wifi_retry_interval_ms);
+      fflush(stdout);
+    } else if (result.outcome == H2_GIZCLAW_E2E_DEVKIT_WIFI_CONNECTED) {
+      printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=CONNECTING\n");
+      fflush(stdout);
+    } else if (result.outcome == H2_GIZCLAW_E2E_DEVKIT_WIFI_RETRY) {
+      printf("H2_GIZCLAW_E2E_DEVKIT stage=wifi status=RETRY rc=%d "
+             "retry_ms=%u\n",
+             result.rc,
+             (unsigned)supervisor->config->wifi_retry_interval_ms);
       fflush(stdout);
     }
     (void)h2_pal_time_sleep_ms(

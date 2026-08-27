@@ -55,8 +55,10 @@ typedef struct h2_h2loader_cli_server_transport_vtable {
         void *user,
         const h2_h2loader_host_command_request_t *request,
         h2_h2loader_host_command_result_t *out_result);
+    h2_pal_result_t (*read_status)(
+        void *user,
+        h2_h2loader_host_status_t *out_status);
     h2_pal_result_t (*disconnect)(void *user);
-    h2_pal_result_t (*rediscover)(void *user);
 } h2_h2loader_cli_server_transport_vtable_t;
 
 typedef struct h2_h2loader_cli_server_transport_api {
@@ -157,6 +159,10 @@ h2_pal_result_t h2_h2loader_cli_transport_stage(
     void *cancel_user,
     h2_h2loader_host_progress_fn on_progress,
     void *progress_user);
+
+h2_pal_result_t h2_h2loader_cli_transport_read_status(
+    h2_h2loader_cli_transport_t *transport,
+    h2_h2loader_host_status_t *out_status);
 
 h2_pal_result_t h2_h2loader_cli_transport_disconnect(
     h2_h2loader_cli_transport_t *transport);
