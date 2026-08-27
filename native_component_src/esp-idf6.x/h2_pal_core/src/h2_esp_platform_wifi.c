@@ -201,6 +201,20 @@ static h2_pal_wifi_ap_client_t h2_esp_wifi_remove_ap_client(const uint8_t mac[6]
 }
 #endif
 
+static int h2_esp_wifi_stop_sta_dhcp(void) {
+    if (s_h2_esp_wifi_sta_netif == NULL) {
+        return H2_PAL_OK;
+    }
+
+    /* DHCP stop may transmit RELEASE from the TCP/IP task. Complete it while
+     * the Wi-Fi driver still owns a valid transmit callback. */
+    esp_err_t err = esp_netif_dhcpc_stop(s_h2_esp_wifi_sta_netif);
+    if (err == ESP_OK || err == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+        return H2_PAL_OK;
+    }
+    return h2_esp_wifi_map_error(err);
+}
+
 static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
     if (s_h2_esp_wifi_events != NULL) {
         EventBits_t bits = xEventGroupGetBits(s_h2_esp_wifi_events);
@@ -213,6 +227,11 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
     memset(&ap_info, 0, sizeof(ap_info));
     if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
         return H2_PAL_OK;
+    }
+
+    int rc = h2_esp_wifi_stop_sta_dhcp();
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
 
     esp_err_t err = esp_wifi_stop();
@@ -854,6 +873,11 @@ static int h2_esp_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
         return h2_esp_wifi_map_error(esp_wifi_set_mode(WIFI_MODE_AP));
     }
 #endif
+
+    rc = h2_esp_wifi_stop_sta_dhcp();
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
 
     err = esp_wifi_stop();
     if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
