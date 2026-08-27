@@ -23,8 +23,10 @@ typedef struct h2_peer h2_peer_t;
 /**
  * Provider-integration source for one complete Opus packet.
  *
- * H2Peer calls this only from h2_pal_webrtc_peer_poll(). WOULD_BLOCK means no
- * packet is currently ready. A successful read consumes the packet.
+ * Production H2Peer calls this from its h2peer/net protocol task. Direct test
+ * backends call it from h2_pal_webrtc_peer_poll(). WOULD_BLOCK means no packet
+ * is currently ready. A successful read consumes the packet. The source must
+ * therefore support concurrent access from its producer and the protocol task.
  */
 typedef h2_pal_result_t (*h2_peer_media_track_read_fn)(void *user,
                                                        uint8_t *opus,
@@ -34,8 +36,9 @@ typedef h2_pal_result_t (*h2_peer_media_track_read_fn)(void *user,
 /**
  * Provider-integration sink for one received Opus packet.
  *
- * Success consumes the complete packet. Any error is terminal for the media
- * track; sinks must provide their own bounded buffering and must not return
+ * Production H2Peer calls this from its h2peer/net protocol task. Success
+ * consumes the complete packet. Any error is terminal for the media track;
+ * sinks must provide their own bounded buffering and must not return
  * WOULD_BLOCK after partially consuming a packet.
  */
 typedef h2_pal_result_t (*h2_peer_media_track_write_fn)(void *user,
