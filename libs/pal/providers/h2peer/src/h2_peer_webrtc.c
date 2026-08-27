@@ -2553,15 +2553,8 @@ static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
     return result;
 }
 
-static h2_pal_result_t h2_peer_network_send_opus(h2_pal_webrtc_peer_t *peer,
-                                                 const uint8_t *opus,
-                                                 size_t opus_len) {
-    if (!h2_peer_network_enabled(peer)) {
-        return h2_peer_webrtc_send_opus(peer, opus, opus_len);
-    }
-    if (peer->closed || peer->state != H2_PAL_WEBRTC_PEER_CONNECTED) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
+static h2_pal_result_t h2_peer_network_enqueue_opus(
+    h2_pal_webrtc_peer_t *peer, const uint8_t *opus, size_t opus_len) {
     h2_peer_tx_item_t *expected = NULL;
     if (!atomic_compare_exchange_strong_explicit(
             &peer->rtp_pending, &expected, H2_PEER_TX_RESERVED,
@@ -2576,6 +2569,18 @@ static h2_pal_result_t h2_peer_network_send_opus(h2_pal_webrtc_peer_t *peer,
     }
     atomic_store_explicit(&peer->rtp_pending, item, memory_order_release);
     return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_peer_network_send_opus(h2_pal_webrtc_peer_t *peer,
+                                                 const uint8_t *opus,
+                                                 size_t opus_len) {
+    if (!h2_peer_network_enabled(peer)) {
+        return h2_peer_webrtc_send_opus(peer, opus, opus_len);
+    }
+    if (peer->closed || peer->state != H2_PAL_WEBRTC_PEER_CONNECTED) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    return h2_peer_network_enqueue_opus(peer, opus, opus_len);
 }
 
 static h2_pal_result_t h2_peer_media_track_service(h2_pal_webrtc_peer_t *peer) {
@@ -2597,8 +2602,12 @@ static h2_pal_result_t h2_peer_media_track_service(h2_pal_webrtc_peer_t *peer) {
             return H2_PAL_ERR_FORMAT;
         track->pending_opus_len = opus_len;
     }
-    h2_pal_result_t result = h2_peer_network_send_opus(
-        peer, track->pending_opus, track->pending_opus_len);
+    h2_pal_result_t result =
+        h2_peer_network_enabled(peer)
+            ? h2_peer_network_enqueue_opus(peer, track->pending_opus,
+                                           track->pending_opus_len)
+            : h2_peer_webrtc_send_opus(peer, track->pending_opus,
+                                       track->pending_opus_len);
     if (result == H2_PAL_OK)
         track->pending_opus_len = 0u;
     return result == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_OK : result;
