@@ -6,6 +6,7 @@
 
 typedef struct wifi_fixture {
   int settings_rc;
+  int connect_rc;
   h2_pal_wifi_sta_config_t saved;
   unsigned connect_count;
   h2_pal_wifi_sta_config_t connected;
@@ -26,7 +27,7 @@ static int wifi_connect(void *user, const h2_pal_wifi_sta_config_t *config,
   ++fixture->connect_count;
   fixture->connected = *config;
   fixture->connect_timeout_ms = timeout_ms;
-  return H2_PAL_OK;
+  return fixture->connect_rc;
 }
 
 static int settings_get(void *user, h2_pal_wifi_sta_config_t *out_config) {
@@ -74,6 +75,16 @@ static void test_wifi_step_uses_only_valid_saved_configuration(void) {
   assert(fixture.connected.password_len == fixture.saved.password_len);
   assert(memcmp(fixture.connected.password, fixture.saved.password,
                 fixture.saved.password_len) == 0);
+
+  fixture.connect_rc = H2_PAL_ERR_TIMEOUT;
+  fixture.connect_count = 0u;
+  assert(h2_gizclaw_e2e_devkit_wifi_step(
+             &wifi, &settings, 4321u, &result) == H2_PAL_OK);
+  assert(result.outcome == H2_GIZCLAW_E2E_DEVKIT_WIFI_RETRY);
+  assert(result.rc == H2_PAL_ERR_TIMEOUT);
+  assert(fixture.connect_count == 1u);
+  assert(fixture.connect_timeout_ms == 4321u);
+  fixture.connect_rc = H2_PAL_OK;
 
   const int unavailable[] = {
       H2_PAL_ERR_NOT_FOUND,
