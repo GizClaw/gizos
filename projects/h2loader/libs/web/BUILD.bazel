@@ -19,6 +19,7 @@ cc_library(
         "//libs/h2loader_host",
         "//libs/pal",
         "//libs/pal/providers/web/pal_core",
+        "//projects/h2loader/libs/web/status_json:h2loader_web_status_json",
     ],
 )
 
@@ -61,9 +62,9 @@ wasm_cc_binary(
 filegroup(
     name = "h2loader_web",
     srcs = [
-        ":h2loader_web_runtime",
         "src/h2loader.js",
         "src/h2loader_ports.js",
+        ":h2loader_web_runtime",
     ],
 )
 

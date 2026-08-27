@@ -1,6 +1,6 @@
 {
   "name": "@gizclaw/h2loader",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Browser SDK for H2Loader package inspection and Web Serial device lifecycle operations",
   "license": "BSD-3-Clause",
   "repository": {
