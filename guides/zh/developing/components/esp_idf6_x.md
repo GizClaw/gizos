@@ -55,7 +55,9 @@ event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向�
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook
 补充 PPP 等不能仅凭 if-key 可靠判断的 kind。
 
-ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。注销 handler 必须发生在任何 callback state 释放之前，避免迟到的 LOST_IP/PPP phase event 访问已释放对象。`power_gpio < 0` 明确表示 BSP 没有可驱动的物理断电能力；此时 teardown 仍释放本机资源，但不能据此声称 modem 已物理断电。
+ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。default netif 恢复失败会在销毁 PPP netif 前返回并保留 route ownership state，供下一次 close 重试。
+
+PPP/IP handler 注销利用 ESP-IDF default event loop 的 mutex 作为 quiescence barrier：从普通 task 调用 close 时，注销要么在 event loop 空闲时直接移除 handler，要么等待正在执行的 callback 释放 loop mutex；返回成功后，已排队 event 也不会再调用被注销的实例。因此只有全部 handler 注销成功后，teardown 才能释放 DCE、PPP netif 和 event group；任一次注销失败均立即返回并保留尚未销毁的本机资源供重试。SIMCOM 的私有 PPP/IP callback 不调用 close；从 ESP default event-loop callback 内重入整机 close 不受支持，调用方必须把 close handoff 到普通 task。`power_gpio < 0` 明确表示 BSP 没有可驱动的物理断电能力；此时 teardown 仍释放本机资源，但不能据此声称 modem 已物理断电。
 
 `h2_pal_core` 实现 ESP-IDF 6.x 的 PAL backend。它负责把 ESP event loop、
 FreeRTOS、ESP network、NVS、filesystem、Bluetooth、crypto 和 power API 转换为
