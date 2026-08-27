@@ -282,11 +282,11 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
     result = H2_PAL_ERR_INVALID_STATE;
   }
   static const h2_h2loader_host_managed_transport_vtable_t vtable = {
-      h2_h2loader_serial_e2e_managed_connect,
-      h2_h2loader_serial_e2e_managed_stage,
-      h2_h2loader_serial_e2e_managed_activate,
-      h2_h2loader_serial_e2e_managed_disconnect,
-      h2_h2loader_serial_e2e_managed_rediscover,
+      .connect = h2_h2loader_serial_e2e_managed_connect,
+      .stage = h2_h2loader_serial_e2e_managed_stage,
+      .activate = h2_h2loader_serial_e2e_managed_activate,
+      .disconnect = h2_h2loader_serial_e2e_managed_disconnect,
+      .rediscover = h2_h2loader_serial_e2e_managed_rediscover,
   };
   if (result == H2_PAL_OK) {
     context->payload_resource_name = asset.resource_name;
