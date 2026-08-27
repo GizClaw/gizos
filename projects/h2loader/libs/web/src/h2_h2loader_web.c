@@ -1,4 +1,5 @@
 #include "h2_h2loader_web.h"
+#include "h2_h2loader_web_status_json.h"
 
 #include "h2_h2loader_host.h"
 #include "h2_h2loader_host_package.h"
@@ -678,43 +679,6 @@ static size_t append_json_string(char *out, size_t capacity, size_t offset,
   return append_text(out, capacity, offset, "\"");
 }
 
-static size_t append_status_json(char *out, size_t capacity, size_t offset,
-                                 const h2_h2loader_host_status_t *status) {
-  offset = append_text(out, capacity, offset, "{\"board\":");
-  offset = append_json_string(out, capacity, offset, status->board);
-  offset = append_text(out, capacity, offset, ",\"target\":");
-  offset = append_json_string(out, capacity, offset, status->target);
-  offset = append_text(out, capacity, offset, ",\"chip\":");
-  offset = append_json_string(out, capacity, offset, status->chip);
-  offset = append_text(out, capacity, offset, ",\"activeName\":");
-  offset = append_json_string(out, capacity, offset, status->active_name);
-  offset = append_text(out, capacity, offset, ",\"version\":");
-  offset = append_json_string(out, capacity, offset, status->active_version);
-  offset = append_text(out, capacity, offset, ",\"checksum\":");
-  offset = append_json_string(out, capacity, offset,
-                              status->active_checksum);
-  offset = append_text(out, capacity, offset, ",\"installedChecksum\":");
-  offset = append_json_string(out, capacity, offset,
-                              status->installed_checksum);
-  offset = append_text(out, capacity, offset, ",\"state\":");
-  offset = append_json_string(out, capacity, offset, status->state);
-  offset = append_text(out, capacity, offset, ",\"upgradePhase\":");
-  offset = append_json_string(out, capacity, offset, status->upgrade_phase);
-  char numbers[384];
-  (void)snprintf(
-      numbers, sizeof(numbers),
-      ",\"role\":%u,\"capabilities\":%u,"
-      "\"stagedBytes\":%llu,\"stagedValid\":%u,"
-      "\"installedValid\":%u,\"appConfirmed\":%u}",
-      (unsigned int)status->active_role,
-      (unsigned int)status->capabilities,
-      (unsigned long long)status->staged_bytes,
-      (unsigned int)status->staged_valid,
-      (unsigned int)status->installed_valid,
-      (unsigned int)status->app_confirmed);
-  return append_text(out, capacity, offset, numbers);
-}
-
 static h2_pal_result_t ensure_json_capacity(h2_h2loader_web_client_t *client,
                                             size_t capacity) {
   if (client == NULL || capacity == 0u) return H2_PAL_ERR_INVALID_ARG;
@@ -805,10 +769,19 @@ const char *h2_h2loader_web_job_json(h2_h2loader_web_client_t *client,
       job->kind == H2_WEB_JOB_STAGE) {
     offset = append_text(client->json, client->json_capacity, offset,
                          ",\"status\":");
-    offset = append_status_json(client->json, client->json_capacity, offset,
-                                &job->status);
+    size_t status_size = 0u;
+    if (offset >= client->json_capacity ||
+        h2_h2loader_web_status_json_write(
+            &job->status, client->json + offset,
+            client->json_capacity - offset, &status_size) != H2_PAL_OK) {
+      return NULL;
+    }
+    offset += status_size;
   }
-  (void)append_text(client->json, client->json_capacity, offset, "}");
+  if (append_text(client->json, client->json_capacity, offset, "}") >=
+      client->json_capacity) {
+    return NULL;
+  }
   return client->json;
 }
 

@@ -18,6 +18,8 @@ GizClaw/www                                       # GizOS 网站、Batch Loader 
 
 SDK 支持恢复已授权端口、请求或撤销 Web Serial 授权、校验 format-1 package、读取 authoritative status，并执行 `stage`、`install`、`rollback`、`restart` 与 `rebootApp`。`SerialPort`、File 和 firmware bytes 只在浏览器 session 内存中存活；持久化产品 metadata、并发调度和页面展示由消费方拥有。
 
+`status(port)`、`install(port, blob)` 与 `stage(port, blob)` 返回的 status object 会在 connected firmware 提供动态命令状态时包含无符号 32-bit `commandAvailability`。`1 << 0` 表示 Loader reboot-to-App 当前可用，`1 << 1` 表示 Loader reboot-to-Loader 当前可用；present `0` 表示两者当前都不可用。未知高位原样保留，但不授权任何已知命令。旧 firmware 未提供 `command_availability` 时，该 JavaScript property 保持 absent，消费方只能在 absent 时使用 legacy fallback，不能从 static `capabilities` 或其他 status 字段合成动态值。该值只是 connected status snapshot，Host Core 与设备执行路径仍会 fail closed。
+
 SDK 要求 secure browser context 和 Web Serial。确定性释放必须在 event loop 仍可推进时 `await loader.close()`；`pagehide` 只适合阻止新工作并发起 best-effort cleanup。
 
 ## Build and publish

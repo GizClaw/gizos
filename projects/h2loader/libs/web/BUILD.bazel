@@ -1,10 +1,24 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "h2loader_web_status_json",
+    srcs = ["src/h2_h2loader_web_status_json.c"],
+    hdrs = ["src/h2_h2loader_web_status_json.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/h2loader_host",
+        "//libs/pal",
+    ],
+)
 
 cc_library(
     name = "h2loader_web_core",
@@ -16,9 +30,27 @@ cc_library(
     tags = ["h2-ci-native-package"],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
+        ":h2loader_web_status_json",
         "//libs/h2loader_host",
         "//libs/pal",
         "//libs/pal/providers/web/pal_core",
+    ],
+)
+
+cc_test(
+    name = "h2loader_web_status_json_test",
+    srcs = ["tests/test_h2_h2loader_web_status_json.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2loader_web_status_json",
+        "//libs/pal/providers/yyjson",
     ],
 )
 
@@ -61,9 +93,9 @@ wasm_cc_binary(
 filegroup(
     name = "h2loader_web",
     srcs = [
-        ":h2loader_web_runtime",
         "src/h2loader.js",
         "src/h2loader_ports.js",
+        ":h2loader_web_runtime",
     ],
 )
 

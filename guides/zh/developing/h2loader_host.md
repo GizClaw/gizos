@@ -32,6 +32,8 @@ Console 和 Firmware 生命周期动作只能使用
 
 Firmware 产品状态的 owner 通过 `h2_loader_set_command_availability(loader, flags, available)` 主动原子 set/clear 单个 bit 或多个 flags。所有已定义 product flags 默认 set；它们只能额外限制 Loader 自身校验，不能绕过 capability、MFG、artifact 或 lifecycle state。h2loader 不在 status 或 command path 反向调用产品 callback；connected status 发布 effective mask，执行路径在 durable accepted boundary 前重新读取最新 flags。Clear bit 的 reboot 返回并 flush `H2_LOADER_REBOOT target=<app|loader> result=fail code=<invalid-state>`，因此 Host 得到 terminal error 而不是等待 timeout。BLE advertisement 不携带该动态值，serial 与 BLE-iKCP 都以 connected status 为准。
 
+Browser SDK 把 Host status 中 present 的完整无符号 32-bit mask 投影为 camelCase `commandAvailability`，供 `status(port)`、`install(port, blob)` 和 `stage(port, blob)` 的 status object 使用。Present `0` 是权威值；未知高位会保留但不授权已知 command。旧 firmware 没有该 wire field 时 JavaScript property 必须 absent，Browser 或产品 UI 不能把缺失值合成为 `0`、全部可用或从 static `capabilities` 推导出的值。
+
 Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。
 
 Native CLI 在 command parser 之后只创建一个 transport-neutral session。`iostreamikcp` 与 `bleikcp` adapter 分别拥有连接资源，但 `status`、typed command、payload stage 和 disconnect 调用点相同；`send`、`send-url`、Wi-Fi 与 lifecycle command 不注册 transport-specific handler。BLE endpoint 只在当前 Host/backend 生命周期内选择初始 candidate，不能提升为跨扫描物理 identity。`send` 和 `send-url` 必须在同一 BLE connection 内完成 stage terminal 与 exact staged bytes/SHA-256 status 验证，再断开。需要断线后重新识别设备的 Loader upgrade 在 BLE v1/v2 上发送前 fail closed，直到 Service Data 提供 authoritative `device_uid`；不能按 display name、board 或 backend address选择替代设备。
