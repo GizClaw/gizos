@@ -5,6 +5,7 @@ load("@gizos//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
 load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
+load("@gizos//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy", "esp_target_task_policy")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load(":consumer.bzl", "fake_firmware")
 
@@ -53,33 +54,15 @@ firmware_native_component(
     ],
 )
 
-firmware_native_component(
+esp_target_task_policy(
     name = "private_esp_task_policy",
-    srcs = ["private_esp_task_policy/private_esp_task_policy.c"],
-    hdrs = ["private_esp_task_policy/private_esp_task_policy.h"],
-    component_directory = "private_esp_task_policy",
-    component_name = "h2_esp_target_task_policy",
-    data = ["private_esp_task_policy/CMakeLists.txt"],
+    directory = "private_esp_task_policy",
 )
 
-firmware_native_component(
-    name = "private_bk_ap_task_policy",
-    srcs = ["private_bk_ap_task_policy/private_bk_ap_task_policy.c"],
-    hdrs = ["private_bk_ap_task_policy/private_bk_ap_task_policy.h"],
-    component_directory = "private_bk_ap_task_policy",
-    component_name = "h2_bk_target_task_policy",
-    data = ["private_bk_ap_task_policy/CMakeLists.txt"],
-    execution_unit = "ap",
-)
-
-firmware_native_component(
-    name = "private_bk_cp_task_policy",
-    srcs = ["private_bk_cp_task_policy/private_bk_cp_task_policy.c"],
-    hdrs = ["private_bk_cp_task_policy/private_bk_cp_task_policy.h"],
-    component_directory = "private_bk_cp_task_policy",
-    component_name = "h2_bk_target_task_policy",
-    data = ["private_bk_cp_task_policy/CMakeLists.txt"],
-    execution_unit = "cp",
+bk7258_target_task_policy(
+    ap_name = "private_bk_ap_task_policy",
+    cp_name = "private_bk_cp_task_policy",
+    directory = "private_bk_task_policy",
 )
 
 firmware_lib_component(
