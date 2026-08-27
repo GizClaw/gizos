@@ -1855,6 +1855,162 @@ static void test_scheduler(void) {
     assert(h2_h2loader_host_scheduler_close(&scheduler) == H2_PAL_OK);
 }
 
+typedef struct serial_control_fixture {
+    h2_pal_result_t set_result;
+    h2_pal_result_t stream_result;
+    unsigned sequence;
+    unsigned open_order;
+    unsigned set_order;
+    unsigned stream_order;
+    unsigned close_order;
+    unsigned open_count;
+    unsigned set_count;
+    unsigned stream_count;
+    unsigned close_count;
+    uint32_t line_mask;
+    uint32_t asserted_lines;
+} serial_control_fixture_t;
+
+static h2_pal_result_t serial_control_open(
+    void *user,
+    const char *port_id,
+    const h2_pal_uart_io_stream_config_t *config,
+    h2_pal_serial_host_session_t **out_session) {
+    serial_control_fixture_t *fixture = user;
+    assert(strcmp(port_id, "control-port") == 0);
+    assert(config->baud_rate == H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD);
+    fixture->open_order = ++fixture->sequence;
+    ++fixture->open_count;
+    *out_session = (h2_pal_serial_host_session_t *)fixture;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t serial_control_set(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    uint32_t line_mask,
+    uint32_t asserted_lines) {
+    serial_control_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->set_order = ++fixture->sequence;
+    ++fixture->set_count;
+    fixture->line_mask = line_mask;
+    fixture->asserted_lines = asserted_lines;
+    return fixture->set_result;
+}
+
+static h2_pal_result_t serial_control_stream(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    const h2_pal_uart_io_stream_api_t **out_stream) {
+    serial_control_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->stream_order = ++fixture->sequence;
+    ++fixture->stream_count;
+    *out_stream = NULL;
+    return fixture->stream_result;
+}
+
+static h2_pal_result_t serial_control_close(
+    void *user,
+    h2_pal_serial_host_session_t **inout_session) {
+    serial_control_fixture_t *fixture = user;
+    assert(*inout_session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->close_order = ++fixture->sequence;
+    ++fixture->close_count;
+    *inout_session = NULL;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_serial_host_vtable_t serial_control_vtable = {
+    .open = serial_control_open,
+    .session_stream = serial_control_stream,
+    .set_control_lines = serial_control_set,
+    .close = serial_control_close,
+};
+
+static void test_serial_initial_control_policy(void) {
+    h2_pal_time_api_t time = {0};
+    serial_control_fixture_t fixture = {
+        .set_result = H2_PAL_OK,
+        .stream_result = H2_PAL_ERR_IO,
+    };
+    h2_pal_serial_host_api_t serial = {
+        .user = &fixture,
+        .vtable = &serial_control_vtable,
+    };
+    h2_h2loader_host_serial_connection_config_t config = {
+        .serial = &serial,
+        .time = &time,
+        .allocator = &test_mem,
+        .port_id = "control-port",
+        .initial_control_line_mask =
+            H2_PAL_SERIAL_HOST_CONTROL_DTR |
+            H2_PAL_SERIAL_HOST_CONTROL_RTS,
+        .initial_asserted_control_lines = 0u,
+    };
+    h2_h2loader_host_serial_connection_t *connection = NULL;
+
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(connection == NULL);
+    assert(fixture.open_count == 1u);
+    assert(fixture.set_count == 1u);
+    assert(fixture.stream_count == 1u);
+    assert(fixture.close_count == 1u);
+    assert(fixture.open_order < fixture.set_order);
+    assert(fixture.set_order < fixture.stream_order);
+    assert(fixture.stream_order < fixture.close_order);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_OK;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    config.initial_control_line_mask = 0u;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(fixture.set_count == 0u);
+    assert(fixture.stream_count == 1u);
+    assert(fixture.close_count == 1u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_UNSUPPORTED;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    config.initial_control_line_mask =
+        H2_PAL_SERIAL_HOST_CONTROL_DTR |
+        H2_PAL_SERIAL_HOST_CONTROL_RTS;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(fixture.set_count == 1u);
+    assert(fixture.stream_count == 1u);
+    assert(fixture.close_count == 1u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_TIMEOUT;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_TIMEOUT);
+    assert(fixture.set_count == 1u);
+    assert(fixture.stream_count == 0u);
+    assert(fixture.close_count == 1u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    config.initial_control_line_mask = UINT32_C(4);
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_INVALID_ARG);
+    assert(fixture.open_count == 0u);
+
+    config.initial_control_line_mask = H2_PAL_SERIAL_HOST_CONTROL_RTS;
+    config.initial_asserted_control_lines =
+        H2_PAL_SERIAL_HOST_CONTROL_DTR;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_INVALID_ARG);
+    assert(fixture.open_count == 0u);
+}
+
 int main(void) {
     test_typed_command_role_contract();
     test_typed_command_wire_contract();
@@ -1866,5 +2022,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
+    test_serial_initial_control_policy();
     return 0;
 }

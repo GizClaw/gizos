@@ -263,6 +263,9 @@ static h2_pal_result_t scan_probe_serial(
 
     h2_h2loader_cli_transport_init(
         &transport, context, &options, timeout_ms);
+    rc = h2_h2loader_cli_transport_set_serial_candidate(
+        &transport, candidate);
+    if (rc != H2_PAL_OK) return rc;
     rc = h2_h2loader_cli_transport_connect(&transport, out_status);
     disconnect_rc = h2_h2loader_cli_transport_disconnect(&transport);
     return rc == H2_PAL_OK ? disconnect_rc : rc;
