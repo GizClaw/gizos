@@ -18,6 +18,7 @@ typedef struct fake_transport {
     unsigned status_count;
     unsigned execute_count;
     unsigned disconnect_count;
+    unsigned rediscover_count;
     uint64_t expected_bytes;
     char expected_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
 } fake_transport_t;
@@ -44,17 +45,11 @@ static const h2_command_io_vtable_t discard_vtable = {
 
 static h2_pal_result_t fake_transport_connect(
     void *user,
-    const h2_h2loader_host_serial_connection_config_t *config) {
-    fake_transport_t *transport = user;
-    assert(config->command_timeout_ms == 660000u);
-    ++transport->connect_count;
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t fake_transport_read_status(
-    void *user,
+    uint32_t command_timeout_ms,
     h2_h2loader_host_status_t *out_status) {
     fake_transport_t *transport = user;
+    assert(command_timeout_ms == 660000u);
+    ++transport->connect_count;
     ++transport->status_count;
     memset(out_status, 0, sizeof(*out_status));
     if (transport->status_count == 2u &&
@@ -91,11 +86,17 @@ static h2_pal_result_t fake_transport_disconnect(void *user) {
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t fake_transport_rediscover(void *user) {
+    fake_transport_t *transport = user;
+    ++transport->rediscover_count;
+    return H2_PAL_OK;
+}
+
 static const h2_h2loader_cli_server_transport_vtable_t fake_transport_vtable = {
     .connect = fake_transport_connect,
-    .read_status = fake_transport_read_status,
     .execute = fake_transport_execute,
     .disconnect = fake_transport_disconnect,
+    .rediscover = fake_transport_rediscover,
 };
 
 static void test_parse_route_and_timeout(void) {
@@ -165,6 +166,10 @@ static void run_terminal_scenario(
     assert(transport_state.status_count == expected_statuses);
     assert(transport_state.execute_count == 1u);
     assert(transport_state.disconnect_count == 2u);
+    assert(transport_state.rediscover_count ==
+        (scenario == TRANSPORT_TIMEOUT || scenario == TRANSPORT_REJECTED
+            ? 0u
+            : 1u));
 }
 
 static void test_url_terminal_paths(void) {

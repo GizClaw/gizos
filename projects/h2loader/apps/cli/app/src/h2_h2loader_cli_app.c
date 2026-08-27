@@ -4,37 +4,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY 8u
+
 typedef struct open_source {
     const h2_pal_fs_api_t *fs;
     h2_pal_fs_file_t *file;
 } open_source_t;
 
-typedef struct serial_managed_adapter {
-    h2_h2loader_host_serial_connection_config_t connect;
-    h2_h2loader_host_serial_connection_t *connection;
-} serial_managed_adapter_t;
-
-static h2_pal_result_t serial_managed_connect(
+static h2_pal_result_t cli_managed_connect(
     void *user,
     h2_h2loader_host_status_t *out_status) {
-    serial_managed_adapter_t *adapter = user;
-    h2_pal_result_t rc;
-    h2_h2loader_host_serial_connection_config_t connect = adapter->connect;
-    (void)h2_h2loader_host_serial_disconnect(&adapter->connection);
-    rc = h2_h2loader_host_serial_connect(
-        &connect, &adapter->connection);
-    if (rc == H2_PAL_OK) adapter->connect.ready_marker = NULL;
-    if (rc == H2_PAL_OK) {
-        rc = h2_h2loader_host_serial_read_status(
-            adapter->connection, out_status);
-    }
-    if (rc != H2_PAL_OK) {
-        (void)h2_h2loader_host_serial_disconnect(&adapter->connection);
-    }
-    return rc;
+    return h2_h2loader_cli_transport_connect(user, out_status);
 }
 
-static h2_pal_result_t serial_managed_stage(
+static h2_pal_result_t cli_managed_stage(
     void *user,
     const h2_h2loader_host_catalog_entry_t *asset,
     h2_h2loader_host_payload_read_fn read_payload,
@@ -43,34 +26,25 @@ static h2_pal_result_t serial_managed_stage(
     void *cancel_user,
     h2_h2loader_host_progress_fn on_progress,
     void *progress_user) {
-    serial_managed_adapter_t *adapter = user;
-    return h2_h2loader_host_serial_stage(
-        adapter->connection,
-        asset,
-        read_payload,
-        payload_user,
-        is_cancelled,
-        cancel_user,
-        on_progress,
-        progress_user);
+    return h2_h2loader_cli_transport_stage(
+        user, asset, read_payload, payload_user, is_cancelled, cancel_user,
+        on_progress, progress_user);
 }
 
-static h2_pal_result_t serial_managed_disconnect(void *user) {
-    serial_managed_adapter_t *adapter = user;
-    return h2_h2loader_host_serial_disconnect(&adapter->connection);
+static h2_pal_result_t cli_managed_disconnect(void *user) {
+    return h2_h2loader_cli_transport_disconnect(user);
 }
 
-static h2_pal_result_t serial_managed_rediscover(void *user) {
-    (void)user;
-    return H2_PAL_OK;
+static h2_pal_result_t cli_managed_rediscover(void *user) {
+    return h2_h2loader_cli_transport_rediscover(user);
 }
 
 static const h2_h2loader_host_managed_transport_vtable_t
-    serial_stage_transport_vtable = {
-        .connect = serial_managed_connect,
-        .stage = serial_managed_stage,
-        .disconnect = serial_managed_disconnect,
-        .rediscover = serial_managed_rediscover,
+    cli_stage_transport_vtable = {
+        .connect = cli_managed_connect,
+        .stage = cli_managed_stage,
+        .disconnect = cli_managed_disconnect,
+        .rediscover = cli_managed_rediscover,
     };
 
 void h2_h2loader_cli_send_progress(
@@ -119,13 +93,15 @@ void h2_h2loader_cli_send_progress(
 }
 
 static const char help_text[] =
-    "usage: h2loader [--port PORT] [--transport iostreamikcp] [--ready MARKER]\n"
+    "usage: h2loader [--port ENDPOINT] [--transport iostreamikcp|bleikcp]\n"
+    "                [--ready MARKER]\n"
     "                [--wait-timeout SECONDS] [--read-timeout SECONDS]\n"
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
     "          stage hold wifi reboot reboot-loader restart restart-monitor\n"
     "          rollback upgrade coredump bleikcp-speed\n\n"
-    "wifi:     wifi connect <ssid> <password>\n"
+    "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
+    "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n";
 
 static int parse_seconds(const char *value, uint32_t *out_ms) {
@@ -160,10 +136,19 @@ static int parse_global(
     const char *const *argv,
     h2_h2loader_cli_options_t *out) {
     memset(out, 0, sizeof(*out));
+    out->transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;
     out->wait_timeout_ms = 10000u;
     out->read_timeout_ms = 2000u;
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] != '-') {
+            if (out->no_ble &&
+                out->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
+                return 0;
+            }
+            if (out->transport == H2_H2LOADER_HOST_TRANSPORT_BLE &&
+                (out->ready_marker != NULL || out->post_delay_ms != 0u)) {
+                return 0;
+            }
             out->command_index = i;
             return 1;
         }
@@ -178,7 +163,12 @@ static int parse_global(
         if (i + 1 >= argc) return 0;
         if (strcmp(argv[i], "--port") == 0) out->port = argv[++i];
         else if (strcmp(argv[i], "--transport") == 0) {
-            if (strcmp(argv[++i], "iostreamikcp") != 0) return 0;
+            const char *transport = argv[++i];
+            if (strcmp(transport, "iostreamikcp") == 0) {
+                out->transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;
+            } else if (strcmp(transport, "bleikcp") == 0) {
+                out->transport = H2_H2LOADER_HOST_TRANSPORT_BLE;
+            } else return 0;
         } else if (strcmp(argv[i], "--ready") == 0) {
             out->ready_marker = argv[++i];
         } else if (strcmp(argv[i], "--wait-timeout") == 0) {
@@ -254,7 +244,9 @@ static int scan_command(h2_h2loader_cli_context_t *context, int argc, const char
         rc = h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDOUT,
             "%s\n    {\"transport\": \"%s\", \"port\": ",
             i == 0u ? "" : ",",
-            candidates[i].transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL ? "serial" : "ble");
+            candidates[i].transport == H2_H2LOADER_HOST_TRANSPORT_SERIAL
+                ? "iostreamikcp"
+                : "bleikcp");
         if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
         rc = h2_h2loader_cli_output_json_string(
             context, H2_H2LOADER_CLI_STREAM_STDOUT, candidates[i].port_id);
@@ -297,6 +289,7 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 2 && strcmp(argv[0], "hold") == 0 && strcmp(argv[1], "on") == 0) return H2_H2LOADER_HOST_COMMAND_HOLD_ON;
     if (argc == 2 && strcmp(argv[0], "hold") == 0 && strcmp(argv[1], "off") == 0) return H2_H2LOADER_HOST_COMMAND_HOLD_OFF;
     if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "disconnect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
+    if (argc >= 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "scan") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "dump") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "erase") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE;
@@ -304,30 +297,62 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     return 0;
 }
 
+static int parse_wifi_scan_options(
+    int argc,
+    const char *const *argv,
+    uint32_t *out_limit,
+    uint32_t *out_timeout_ms) {
+    int saw_limit = 0;
+    int saw_timeout = 0;
+
+    *out_limit = H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_LIMIT;
+    *out_timeout_ms = H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS;
+    for (int i = 2; i < argc; i += 2) {
+        char *end = NULL;
+        unsigned long value;
+        if (i + 1 >= argc || argv[i + 1][0] == '\0') return 0;
+        errno = 0;
+        value = strtoul(argv[i + 1], &end, 10);
+        if (errno != 0 || end == argv[i + 1] || *end != '\0' || value == 0u) {
+            return 0;
+        }
+        if (strcmp(argv[i], "--limit") == 0 && !saw_limit &&
+            value <= H2_H2LOADER_HOST_WIFI_SCAN_MAX_LIMIT) {
+            *out_limit = (uint32_t)value;
+            saw_limit = 1;
+        } else if (strcmp(argv[i], "--timeout-ms") == 0 && !saw_timeout &&
+            value <= H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS) {
+            *out_timeout_ms = (uint32_t)value;
+            saw_timeout = 1;
+        } else {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int device_command(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
     int argc,
     const char *const *argv) {
-    h2_h2loader_host_serial_connection_t *connection = NULL;
+    h2_h2loader_cli_transport_t transport;
     h2_h2loader_host_status_t status = {0};
     h2_h2loader_host_command_request_t request;
     h2_h2loader_host_command_result_t result = {0};
     h2_h2loader_host_command_t kind = command_kind(argc, argv);
+    uint32_t wifi_scan_limit = 0u;
+    uint32_t wifi_scan_timeout_ms = 0u;
     h2_pal_result_t rc;
+    if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_SCAN &&
+        !parse_wifi_scan_options(
+            argc, argv, &wifi_scan_limit, &wifi_scan_timeout_ms)) {
+        return H2_H2LOADER_CLI_EXIT_USAGE;
+    }
     if (kind == 0 || options->port == NULL) return H2_H2LOADER_CLI_EXIT_USAGE;
-    h2_h2loader_host_serial_connection_config_t connect = {
-        .serial = context->config->serial,
-        .time = context->runtime->time,
-        .allocator = context->runtime->mem,
-        .port_id = options->port,
-        .handshake_timeout_ms = options->wait_timeout_ms,
-        .command_timeout_ms = options->read_timeout_ms,
-        .ready_marker = options->ready_marker,
-        .post_command_delay_ms = options->post_delay_ms,
-    };
-    rc = h2_h2loader_host_serial_connect(&connect, &connection);
-    if (rc == H2_PAL_OK) rc = h2_h2loader_host_serial_read_status(connection, &status);
+    h2_h2loader_cli_transport_init(
+        &transport, context, options, options->read_timeout_ms);
+    rc = h2_h2loader_cli_transport_connect(&transport, &status);
     request = (h2_h2loader_host_command_request_t){
         .command = kind,
         .status = &status,
@@ -339,9 +364,13 @@ static int device_command(
     if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT) {
         request.ssid = argv[2];
         request.password = argv[3];
+    } else if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) {
+        request.wifi_scan_limit = wifi_scan_limit;
+        request.wifi_scan_timeout_ms = wifi_scan_timeout_ms;
     }
-    if (rc == H2_PAL_OK) rc = h2_h2loader_host_serial_execute_command(connection, &request, &result);
-    (void)h2_h2loader_host_serial_disconnect(&connection);
+    if (rc == H2_PAL_OK) rc = h2_h2loader_cli_transport_execute(
+        &transport, &request, &result);
+    (void)h2_h2loader_cli_transport_disconnect(&transport);
     if (rc != H2_PAL_OK || result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
         h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDERR,
             "h2loader: command failed code=%d terminal=%d\n", rc, result.terminal);
@@ -354,7 +383,7 @@ static int upgrade_command(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
     int argc) {
-    h2_h2loader_host_serial_connection_t *connection = NULL;
+    h2_h2loader_cli_transport_t transport;
     h2_h2loader_host_status_t status = {0};
     h2_h2loader_host_upgrade_tracker_t tracker;
     h2_h2loader_host_command_result_t result = {0};
@@ -362,24 +391,12 @@ static int upgrade_command(
     if (argc != 0 || options->port == NULL) {
         return H2_H2LOADER_CLI_EXIT_USAGE;
     }
-    h2_h2loader_host_serial_connection_config_t connect = {
-        .serial = context->config->serial,
-        .time = context->runtime->time,
-        .allocator = context->runtime->mem,
-        .port_id = options->port,
-        .handshake_timeout_ms = options->wait_timeout_ms,
-        .command_timeout_ms = options->read_timeout_ms,
-        .ready_marker = options->ready_marker,
-        .post_command_delay_ms = options->post_delay_ms,
-    };
-    rc = h2_h2loader_host_serial_connect(&connect, &connection);
-    if (rc == H2_PAL_OK) {
-        rc = h2_h2loader_host_serial_read_status(connection, &status);
-    }
+    h2_h2loader_cli_transport_init(
+        &transport, context, options, options->read_timeout_ms);
+    rc = h2_h2loader_cli_transport_connect(&transport, &status);
     if (rc == H2_PAL_OK) {
         rc = h2_h2loader_host_upgrade_tracker_init(&status, &tracker);
     }
-    connect.ready_marker = NULL;
     if (rc == H2_PAL_OK) {
         h2_h2loader_host_command_request_t request = {
             .command = H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE,
@@ -389,14 +406,14 @@ static int upgrade_command(
             .on_output = command_output,
             .output_user = context,
         };
-        rc = h2_h2loader_host_serial_execute_command(
-            connection, &request, &result);
+        rc = h2_h2loader_cli_transport_execute(
+            &transport, &request, &result);
         if (rc == H2_PAL_OK &&
             result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
             rc = H2_PAL_ERR_IO;
         }
     }
-    (void)h2_h2loader_host_serial_disconnect(&connection);
+    (void)h2_h2loader_cli_transport_disconnect(&transport);
     if (rc != H2_PAL_OK) {
         return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
@@ -411,14 +428,14 @@ static int upgrade_command(
         if (rc != H2_PAL_OK) {
             break;
         }
-        rc = h2_h2loader_host_serial_connect(&connect, &connection);
+        rc = h2_h2loader_cli_transport_rediscover(&transport);
         if (rc == H2_PAL_OK) {
-            rc = h2_h2loader_host_serial_read_status(connection, &status);
+            rc = h2_h2loader_cli_transport_connect(&transport, &status);
         }
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_host_upgrade_tracker_observe(&tracker, &status);
         }
-        (void)h2_h2loader_host_serial_disconnect(&connection);
+        (void)h2_h2loader_cli_transport_disconnect(&transport);
         if (rc == H2_PAL_OK) {
             h2_h2loader_cli_output(
                 context,
@@ -440,25 +457,22 @@ static int restart_monitor_command(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
     int argc) {
-    h2_h2loader_host_serial_connection_t *connection = NULL;
+    h2_h2loader_cli_transport_t transport;
     h2_h2loader_host_status_t status = {0};
     h2_h2loader_host_command_result_t result = {0};
     h2_pal_result_t rc;
     if (argc != 0 || options->port == NULL) return H2_H2LOADER_CLI_EXIT_USAGE;
-    h2_h2loader_host_serial_connection_config_t connect = {
-        .serial = context->config->serial,
-        .time = context->runtime->time,
-        .allocator = context->runtime->mem,
-        .port_id = options->port,
-        .handshake_timeout_ms = options->wait_timeout_ms,
-        .command_timeout_ms = options->read_timeout_ms,
-        .ready_marker = options->ready_marker,
-        .post_command_delay_ms = options->post_delay_ms,
-        .on_log = transport_log,
-        .log_user = context,
-    };
-    rc = h2_h2loader_host_serial_connect(&connect, &connection);
-    if (rc == H2_PAL_OK) rc = h2_h2loader_host_serial_read_status(connection, &status);
+    if (options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
+        h2_h2loader_cli_output(
+            context, H2_H2LOADER_CLI_STREAM_STDERR,
+            "h2loader: restart-monitor requires iostreamikcp log transport\n");
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
+    h2_h2loader_cli_transport_init(
+        &transport, context, options, options->read_timeout_ms);
+    transport.on_log = transport_log;
+    transport.log_user = context;
+    rc = h2_h2loader_cli_transport_connect(&transport, &status);
     h2_h2loader_host_command_request_t request = {
         .command = H2_H2LOADER_HOST_COMMAND_APP_RESTART,
         .status = &status,
@@ -467,12 +481,14 @@ static int restart_monitor_command(
         .on_output = command_output,
         .output_user = context,
     };
-    if (rc == H2_PAL_OK) rc = h2_h2loader_host_serial_execute_command(connection, &request, &result);
+    if (rc == H2_PAL_OK) rc = h2_h2loader_cli_transport_execute(
+        &transport, &request, &result);
     if (rc == H2_PAL_OK && result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
-        rc = h2_h2loader_host_serial_monitor_logs(
-            connection, context->config->is_cancelled, context->config->cancel_user);
+        rc = h2_h2loader_cli_transport_monitor_logs(
+            &transport, context->config->is_cancelled,
+            context->config->cancel_user);
     }
-    (void)h2_h2loader_host_serial_disconnect(&connection);
+    (void)h2_h2loader_cli_transport_disconnect(&transport);
     return rc == H2_PAL_EXIT ? H2_H2LOADER_CLI_EXIT_OK :
         (rc == H2_PAL_OK ? H2_H2LOADER_CLI_EXIT_OK : H2_H2LOADER_CLI_EXIT_RUNTIME);
 }
@@ -500,7 +516,7 @@ static int send_command(
     open_source_t source = {.fs = context->runtime->fs};
     h2_h2loader_host_catalog_entry_t asset = {0};
     h2_h2loader_host_status_t final_status = {0};
-    serial_managed_adapter_t adapter = {0};
+    h2_h2loader_cli_transport_t transport;
     h2_h2loader_cli_send_progress_t progress = {
         .context = context,
     };
@@ -540,23 +556,13 @@ static int send_command(
         (void)h2_pal_fs_close(context->runtime->fs, source.file);
         return send_source_failure(context, "inspect", argv[1], rc);
     }
-    adapter = (serial_managed_adapter_t){
-        .connect = {
-        .serial = context->config->serial,
-        .time = context->runtime->time,
-        .allocator = context->runtime->mem,
-        .port_id = options->port,
-        .handshake_timeout_ms = options->wait_timeout_ms,
-        .command_timeout_ms = options->read_timeout_ms,
-        .ready_marker = options->ready_marker,
-        .post_command_delay_ms = options->post_delay_ms,
-        },
-    };
+    h2_h2loader_cli_transport_init(
+        &transport, context, options, options->read_timeout_ms);
     h2_h2loader_host_managed_operation_config_t operation = {
         .time = context->runtime->time,
         .transport = {
-            .user = &adapter,
-            .vtable = &serial_stage_transport_vtable,
+            .user = &transport,
+            .vtable = &cli_stage_transport_vtable,
         },
         .asset = &asset,
         .read_payload = file_read,
@@ -574,7 +580,7 @@ static int send_command(
     if (rc == H2_PAL_OK) {
         rc = h2_h2loader_host_stage_operation_run(&operation, &final_status);
     }
-    (void)h2_h2loader_host_serial_disconnect(&adapter.connection);
+    (void)h2_h2loader_cli_transport_disconnect(&transport);
     if (source.file != NULL) {
         (void)h2_pal_fs_close(context->runtime->fs, source.file);
         source.file = NULL;
@@ -653,9 +659,9 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
     if (strcmp(command, "bleikcp-speed") == 0)
         return h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
     {
-        const char *parts[4] = {command, NULL, NULL, NULL};
+        const char *parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
         int count = 1;
-        while (count < 4 && count - 1 < argc) {
+        while (count < (int)H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY && count - 1 < argc) {
             parts[count] = argv[count - 1];
             ++count;
         }

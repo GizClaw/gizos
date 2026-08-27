@@ -4,44 +4,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct serial_server_transport {
-    h2_h2loader_host_serial_connection_t *connection;
-} serial_server_transport_t;
-
-static h2_pal_result_t serial_server_connect(
+static h2_pal_result_t cli_server_connect(
     void *user,
-    const h2_h2loader_host_serial_connection_config_t *config) {
-    serial_server_transport_t *transport = user;
-    return h2_h2loader_host_serial_connect(config, &transport->connection);
-}
-
-static h2_pal_result_t serial_server_read_status(
-    void *user,
+    uint32_t command_timeout_ms,
     h2_h2loader_host_status_t *out_status) {
-    serial_server_transport_t *transport = user;
-    return h2_h2loader_host_serial_read_status(transport->connection, out_status);
+    h2_h2loader_cli_transport_t *transport = user;
+    transport->command_timeout_ms = command_timeout_ms;
+    return h2_h2loader_cli_transport_connect(transport, out_status);
 }
 
-static h2_pal_result_t serial_server_execute(
+static h2_pal_result_t cli_server_execute(
     void *user,
     const h2_h2loader_host_command_request_t *request,
     h2_h2loader_host_command_result_t *out_result) {
-    serial_server_transport_t *transport = user;
-    return h2_h2loader_host_serial_execute_command(
-        transport->connection, request, out_result);
+    return h2_h2loader_cli_transport_execute(user, request, out_result);
 }
 
-static h2_pal_result_t serial_server_disconnect(void *user) {
-    serial_server_transport_t *transport = user;
-    return h2_h2loader_host_serial_disconnect(&transport->connection);
+static h2_pal_result_t cli_server_disconnect(void *user) {
+    return h2_h2loader_cli_transport_disconnect(user);
+}
+
+static h2_pal_result_t cli_server_rediscover(void *user) {
+    return h2_h2loader_cli_transport_rediscover(user);
 }
 
 static const h2_h2loader_cli_server_transport_vtable_t
-    serial_server_transport_vtable = {
-        .connect = serial_server_connect,
-        .read_status = serial_server_read_status,
-        .execute = serial_server_execute,
-        .disconnect = serial_server_disconnect,
+    cli_server_transport_vtable = {
+        .connect = cli_server_connect,
+        .execute = cli_server_execute,
+        .disconnect = cli_server_disconnect,
+        .rediscover = cli_server_rediscover,
     };
 
 static int parse_u64(const char *value, uint64_t *out) {
@@ -144,9 +136,9 @@ int h2_h2loader_cli_server_command_with_transport(
         context->runtime == NULL || options == NULL ||
         (argc != 0 && argv == NULL) || transport == NULL ||
         transport->vtable == NULL || transport->vtable->connect == NULL ||
-        transport->vtable->read_status == NULL ||
         transport->vtable->execute == NULL ||
-        transport->vtable->disconnect == NULL) {
+        transport->vtable->disconnect == NULL ||
+        transport->vtable->rediscover == NULL) {
         return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
     if (options->port == NULL ||
@@ -163,20 +155,8 @@ int h2_h2loader_cli_server_command_with_transport(
         rc = H2_PAL_EXIT;
         goto cleanup;
     }
-    h2_h2loader_host_serial_connection_config_t connect = {
-        .serial = context->config->serial,
-        .time = context->runtime->time,
-        .allocator = context->runtime->mem,
-        .port_id = options->port,
-        .handshake_timeout_ms = options->wait_timeout_ms,
-        .command_timeout_ms = parsed.download_timeout_ms,
-        .ready_marker = options->ready_marker,
-        .post_command_delay_ms = options->post_delay_ms,
-    };
-    rc = transport->vtable->connect(transport->user, &connect);
-    if (rc == H2_PAL_OK) rc = transport->vtable->read_status(
-        transport->user, &status);
-    connect.ready_marker = NULL;
+    rc = transport->vtable->connect(
+        transport->user, parsed.download_timeout_ms, &status);
     if (rc == H2_PAL_OK && parsed.ssid != NULL) {
         h2_h2loader_host_command_request_t wifi = {
             .command = H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT,
@@ -213,9 +193,9 @@ int h2_h2loader_cli_server_command_with_transport(
         }
     }
     (void)transport->vtable->disconnect(transport->user);
-    if (rc == H2_PAL_OK) rc = transport->vtable->connect(transport->user, &connect);
-    if (rc == H2_PAL_OK) rc = transport->vtable->read_status(
-        transport->user, &status);
+    if (rc == H2_PAL_OK) rc = transport->vtable->rediscover(transport->user);
+    if (rc == H2_PAL_OK) rc = transport->vtable->connect(
+        transport->user, parsed.download_timeout_ms, &status);
     if (rc == H2_PAL_OK &&
         (status.staged_valid == 0u ||
          status.staged_bytes != parsed.expected_bytes ||
@@ -237,10 +217,12 @@ int h2_h2loader_cli_server_command(
     const h2_h2loader_cli_options_t *options,
     int argc,
     const char *const *argv) {
-    serial_server_transport_t serial = {0};
+    h2_h2loader_cli_transport_t session;
+    h2_h2loader_cli_transport_init(
+        &session, context, options, options->read_timeout_ms);
     h2_h2loader_cli_server_transport_api_t transport = {
-        .user = &serial,
-        .vtable = &serial_server_transport_vtable,
+        .user = &session,
+        .vtable = &cli_server_transport_vtable,
     };
     return h2_h2loader_cli_server_command_with_transport(
         context, options, argc, argv, &transport);

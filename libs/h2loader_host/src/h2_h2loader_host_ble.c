@@ -148,7 +148,9 @@ static h2_pal_result_t ble_read_until(
     uint8_t *response,
     size_t response_size,
     size_t *out_len,
-    uint32_t timeout_ms) {
+    uint32_t timeout_ms,
+    h2_h2loader_host_command_output_fn on_output,
+    void *output_user) {
     size_t length = 0u;
     uint64_t deadline_ms = 0u;
     *out_len = 0u;
@@ -179,6 +181,14 @@ static h2_pal_result_t ble_read_until(
         if (read == 0u) {
             *out_len = length;
             return H2_PAL_ERR_TIMEOUT;
+        }
+        if (on_output != NULL) {
+            rc = on_output(output_user, &response[length], read);
+            if (rc != H2_PAL_OK) {
+                length += read;
+                *out_len = length;
+                return rc;
+            }
         }
         length += read;
         if (response_has_complete_marker(response, length, marker_a) &&
@@ -361,7 +371,9 @@ h2_pal_result_t h2_h2loader_host_ble_read_status(
         response,
         sizeof(response) - 1u,
         &response_len,
-        connection->command_timeout_ms);
+        connection->command_timeout_ms,
+        NULL,
+        NULL);
     if (rc == H2_PAL_ERR_TIMEOUT &&
         response_has_complete_marker(response, response_len, app_marker)) {
         rc = H2_PAL_OK;
@@ -390,7 +402,9 @@ static h2_pal_result_t ble_command_read(
     const char *marker,
     uint8_t *response,
     size_t response_size,
-    size_t *out_response_len) {
+    size_t *out_response_len,
+    h2_h2loader_host_command_output_fn on_output,
+    void *output_user) {
     h2_h2loader_host_ble_connection_t *connection = transport;
     return ble_read_until(
         connection,
@@ -399,7 +413,9 @@ static h2_pal_result_t ble_command_read(
         response,
         response_size,
         out_response_len,
-        connection->command_timeout_ms + 30000u);
+        connection->command_timeout_ms + 30000u,
+        on_output,
+        output_user);
 }
 
 h2_pal_result_t h2_h2loader_host_ble_execute_command(
@@ -491,7 +507,9 @@ h2_pal_result_t h2_h2loader_host_ble_stage(
         response,
         sizeof(response),
         &response_len,
-        connection->command_timeout_ms + 30000u);
+        connection->command_timeout_ms + 30000u,
+        NULL,
+        NULL);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -535,7 +553,9 @@ h2_pal_result_t h2_h2loader_host_ble_activate(
         response,
         sizeof(response),
         &response_len,
-        connection->command_timeout_ms + 30000u);
+        connection->command_timeout_ms + 30000u,
+        NULL,
+        NULL);
     if (rc != H2_PAL_OK) {
         return rc;
     }

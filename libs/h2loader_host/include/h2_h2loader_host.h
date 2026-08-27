@@ -21,6 +21,10 @@ extern "C" {
 #define H2_H2LOADER_HOST_DISPLAY_NAME_MAX_LEN 256u
 #define H2_H2LOADER_HOST_CANDIDATE_ID_MAX_LEN 512u
 #define H2_H2LOADER_HOST_DEFAULT_COMMAND_TIMEOUT_MS 5000u
+#define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_LIMIT 16u
+#define H2_H2LOADER_HOST_WIFI_SCAN_MAX_LIMIT 16u
+#define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
+#define H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
 #define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 230400u
 #define H2_H2LOADER_HOST_CAP_STATUS (UINT32_C(1) << 0)
 #define H2_H2LOADER_HOST_CAP_STAGE (UINT32_C(1) << 1)
@@ -208,13 +212,16 @@ typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE = 16,
     H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE = 17,
     H2_H2LOADER_HOST_COMMAND_STAGE_URL = 18,
+    H2_H2LOADER_HOST_COMMAND_WIFI_SCAN = 19,
 } h2_h2loader_host_command_t;
 
 /**
  * @brief Consume one borrowed command-output slice synchronously.
  *
  * data is valid only for the callback duration and must be copied before the
- * callback returns. Returning a non-OK result aborts delivery and becomes the
+ * callback returns. Transport readers deliver newly received chunks while the
+ * command is still running; one chunk may contain a partial line or several
+ * complete lines. Returning a non-OK result aborts delivery and becomes the
  * execute call's result. The callback runs on the caller's worker thread.
  */
 typedef h2_pal_result_t (*h2_h2loader_host_command_output_fn)(
@@ -240,6 +247,8 @@ typedef struct h2_h2loader_host_command_request {
     /** Borrowed bounded parameters used only by the matching typed command. */
     const char *ssid;
     const char *password;
+    uint32_t wifi_scan_limit;
+    uint32_t wifi_scan_timeout_ms;
     const char *url;
     uint64_t expected_bytes;
     const char *expected_sha256;
