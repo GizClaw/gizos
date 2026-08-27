@@ -1,3 +1,5 @@
+startup --windows_enable_symlinks
+
 common --enable_bzlmod
 common --noenable_workspace
 common --enable_platform_specific_config
