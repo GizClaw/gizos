@@ -429,6 +429,8 @@ static void test_typed_command_transport_execution(void) {
         "diagnostic\nH2_LOADER_STATUS board=amoled active_role=app\n";
     static const uint8_t unsupported[] =
         "H2_LOADER_STATUS result=unsupported\n";
+    static const uint8_t error[] =
+        "H2_LOADER_STATUS result=fail\n";
     static const uint8_t reboot_ok[] =
         "H2_LOADER_REBOOT target=loader result=accepted\n"
         "H2_LOADER_REBOOT_FINAL target=loader result=OK code=0\n";
@@ -462,6 +464,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(fixture.write_count == 1u);
@@ -475,14 +478,14 @@ static void test_typed_command_transport_execution(void) {
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
     fixture.finish_count = 0u;
-    assert(h2_h2loader_host_command_execute_transport_with_finish(
+    assert(h2_h2loader_host_command_execute_transport(
                &fixture,
                command_transport_write,
                command_transport_read,
                command_transport_finish,
                &request,
                &result) == H2_PAL_OK);
-    assert(fixture.finish_count == 0u);
+    assert(fixture.finish_count == 1u);
     assert(result.transport_result == H2_PAL_OK);
     assert(result.output_bytes == sizeof(ok) - 1u);
     assert(result.output_truncated == 0u);
@@ -494,10 +497,24 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               command_transport_finish,
                &request,
                &result) == H2_PAL_ERR_UNSUPPORTED);
+    assert(fixture.finish_count == 2u);
     assert(result.terminal ==
            H2_H2LOADER_HOST_COMMAND_TERMINAL_UNSUPPORTED);
+
+    fixture.response = error;
+    fixture.response_len = sizeof(error) - 1u;
+    assert(h2_h2loader_host_command_execute_transport(
+               &fixture,
+               command_transport_write,
+               command_transport_read,
+               command_transport_finish,
+               &request,
+               &result) == H2_PAL_ERR_IO);
+    assert(fixture.finish_count == 3u);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_ERROR);
 
     fixture.response = ok;
     fixture.response_len = sizeof(ok) - 1u;
@@ -506,6 +523,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_ERR_NO_SPACE);
     assert(result.output_truncated == 1u);
@@ -518,6 +536,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_EXIT);
     assert(fixture.write_count == prior_writes);
@@ -528,6 +547,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_EXIT);
     assert(result.transport_result == H2_PAL_EXIT);
@@ -539,6 +559,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_ERR_IO);
     assert(result.transport_result == H2_PAL_ERR_IO);
@@ -552,16 +573,18 @@ static void test_typed_command_transport_execution(void) {
     fixture.response = reboot_ok;
     fixture.response_len = sizeof(reboot_ok) - 1u;
     fixture.read_result = H2_PAL_OK;
+    fixture.finish_count = 0u;
     assert(h2_h2loader_host_command_execute_transport(
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(strcmp(fixture.marker, "H2_LOADER_REBOOT ") == 0);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
-    assert(h2_h2loader_host_command_execute_transport_with_finish(
+    assert(h2_h2loader_host_command_execute_transport(
                &fixture,
                command_transport_write,
                command_transport_read,
@@ -572,7 +595,7 @@ static void test_typed_command_transport_execution(void) {
     assert(result.transport_result == H2_PAL_OK);
 
     fixture.finish_result = H2_PAL_ERR_TIMEOUT;
-    assert(h2_h2loader_host_command_execute_transport_with_finish(
+    assert(h2_h2loader_host_command_execute_transport(
                &fixture,
                command_transport_write,
                command_transport_read,
@@ -590,6 +613,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
@@ -601,6 +625,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(result.transport_result == H2_PAL_ERR_CLOSED);
@@ -613,6 +638,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(result.transport_result == H2_PAL_ERR_TIMEOUT);
@@ -627,6 +653,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_ERR_TIMEOUT);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
@@ -647,6 +674,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(result.transport_result == H2_PAL_ERR_CLOSED);
@@ -658,6 +686,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
@@ -670,6 +699,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
@@ -690,6 +720,7 @@ static void test_typed_command_transport_execution(void) {
                &fixture,
                command_transport_write,
                command_transport_read,
+               NULL,
                &request,
                &result) == H2_PAL_OK);
     assert(fixture.output_count > 1u);
@@ -699,14 +730,14 @@ static void test_typed_command_transport_execution(void) {
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
     fixture.finish_count = 0u;
-    assert(h2_h2loader_host_command_execute_transport_with_finish(
+    assert(h2_h2loader_host_command_execute_transport(
                &fixture,
                command_transport_write,
                command_transport_read,
                command_transport_finish,
                &request,
                &result) == H2_PAL_OK);
-    assert(fixture.finish_count == 0u);
+    assert(fixture.finish_count == 1u);
 }
 
 typedef struct resource_fixture {
