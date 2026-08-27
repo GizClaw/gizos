@@ -298,11 +298,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             data = root / "data/images.pixa"
             data.parent.mkdir(parents=True)
             app.write_bytes(b"application")
-            data.write_text(
-                "version https://git-lfs.github.com/spec/v1\n"
-                "oid sha256:a12b33d85e0d6a25a2458352d4328c5826cde92a5818c9899c0454fd58d8baf0\n"
-                "size 28588\n",
-                encoding="utf-8",
+            data.write_bytes(
+                b"version https://git-lfs.github.com/spec/v1\r\n"
+                b"oid sha256:a12b33d85e0d6a25a2458352d4328c5826cde92a5818c9899c0454fd58d8baf0\r\n"
+                b"size 28588\r\n"
             )
             package = root / "out.update.tar.zlib"
             result = subprocess.run(

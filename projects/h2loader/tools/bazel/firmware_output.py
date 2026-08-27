@@ -15,7 +15,7 @@ from projects.h2loader.tools.bazel.firmware_artifacts import (
 )
 
 
-GIT_LFS_POINTER_HEADER = b"version https://git-lfs.github.com/spec/v1\n"
+GIT_LFS_POINTER_HEADER = b"version https://git-lfs.github.com/spec/v1"
 
 
 def sha256(path: Path) -> str:
@@ -48,7 +48,7 @@ def package_entries(source_root: Path, data_root: str, files: list[str]) -> list
         if not source.is_file():
             raise ValueError(f"package data file is missing: {value}")
         data = source.read_bytes()
-        if data.startswith(GIT_LFS_POINTER_HEADER):
+        if data.splitlines()[:1] == [GIT_LFS_POINTER_HEADER]:
             raise ValueError(
                 f"package data is an unresolved Git LFS pointer: {value}; "
                 "materialize Git LFS objects before packaging"
