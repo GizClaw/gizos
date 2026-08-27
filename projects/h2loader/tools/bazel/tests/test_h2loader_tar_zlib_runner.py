@@ -291,6 +291,60 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("escapes declared root", result.stderr)
 
+    def test_rejects_unresolved_git_lfs_package_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "app.bin"
+            data = root / "data/images.pixa"
+            data.parent.mkdir(parents=True)
+            app.write_bytes(b"application")
+            data.write_text(
+                "version https://git-lfs.github.com/spec/v1\n"
+                "oid sha256:a12b33d85e0d6a25a2458352d4328c5826cde92a5818c9899c0454fd58d8baf0\n"
+                "size 28588\n",
+                encoding="utf-8",
+            )
+            package = root / "out.update.tar.zlib"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--source-root",
+                    str(root),
+                    "--app-image",
+                    str(app),
+                    "--app-path",
+                    "app/esp/app.bin",
+                    "--entry",
+                    "entry",
+                    "--platform",
+                    "esp",
+                    "--board",
+                    "board",
+                    "--image",
+                    "example",
+                    "--role",
+                    "app",
+                    "--target",
+                    "esp32s3",
+                    "--version",
+                    "1.2.3",
+                    "--package-output",
+                    str(package),
+                    "--metadata-output",
+                    str(root / "out.firmware.json"),
+                    "--package-data-root",
+                    "data",
+                    "--package-data-file",
+                    "data/images.pixa",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unresolved Git LFS pointer", result.stderr)
+            self.assertFalse(package.exists())
+
     def test_packages_bk_image_and_records_loader_recovery(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
