@@ -439,6 +439,9 @@ static void test_typed_command_transport_execution(void) {
         "H2_LOADER_REBOOT_FINAL target=loader result=fail code=-4\n";
     static const uint8_t reboot_disconnected[] =
         "H2_LOADER_REBOOT target=loader result=accepted\n";
+    static const uint8_t reboot_app_ok[] =
+        "H2_LOADER_REBOOT target=app result=accepted\n"
+        "H2_LOADER_REBOOT_FINAL target=app result=OK code=0\n";
     h2_h2loader_host_status_t app = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
         H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
@@ -606,6 +609,23 @@ static void test_typed_command_transport_execution(void) {
     assert(result.transport_result == H2_PAL_ERR_TIMEOUT);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
     fixture.finish_result = H2_PAL_OK;
+
+    request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP;
+    fixture.response = reboot_app_ok;
+    fixture.response_len = sizeof(reboot_app_ok) - 1u;
+    fixture.read_result = H2_PAL_OK;
+    assert(h2_h2loader_host_command_execute_transport(
+               &fixture,
+               command_transport_write,
+               command_transport_read,
+               command_transport_finish,
+               &request,
+               &result) == H2_PAL_OK);
+    assert(strcmp(fixture.marker,
+                  "H2_LOADER_REBOOT_FINAL target=app ") == 0);
+    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+
+    request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
 
     fixture.response = reboot_failed;
     fixture.response_len = sizeof(reboot_failed) - 1u;

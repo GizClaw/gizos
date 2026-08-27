@@ -164,8 +164,9 @@ h2_pal_result_t h2_h2loader_host_command_contract(
             break;
         case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP:
             SET_LINE("h2loader reboot app\n");
-            out_contract->marker = "H2_LOADER_REBOOT ";
-            out_contract->success_token = "result=accepted";
+            out_contract->marker =
+                "H2_LOADER_REBOOT_FINAL target=app ";
+            out_contract->success_token = "result=OK";
             out_contract->accepted_disconnect_token =
                 "H2_LOADER_REBOOT target=app result=accepted";
             out_contract->lifecycle_transition = 1u;

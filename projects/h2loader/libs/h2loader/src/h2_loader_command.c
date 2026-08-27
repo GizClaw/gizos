@@ -1232,6 +1232,12 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
             h2loader_reboot_transition,
             &transition);
     h2loader_reboot_failure(&transition, rc);
+    if (transition.emitted) {
+        printf(
+            "H2_LOADER_REBOOT_FINAL target=app result=%s code=%d\n",
+            rc == H2_PAL_OK ? "OK" : "fail",
+            rc);
+    }
     return (h2_pal_result_t)rc;
 }
 
