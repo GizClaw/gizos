@@ -24,16 +24,11 @@ typedef struct h2_h2loader_cli_transport {
     const h2_h2loader_cli_options_t *options;
     h2_h2loader_host_serial_connection_t *serial_connection;
     h2_h2loader_host_ble_connection_t *ble_connection;
-    h2_h2loader_host_candidate_t serial_candidate;
     h2_h2loader_host_candidate_t ble_candidate;
     const char *ready_marker;
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
     uint32_t command_timeout_ms;
-    uint32_t serial_control_line_mask;
-    uint32_t serial_asserted_control_lines;
-    uint8_t serial_candidate_valid;
-    uint8_t serial_policy_valid;
     uint8_t ble_candidate_valid;
 } h2_h2loader_cli_transport_t;
 
@@ -89,12 +84,6 @@ typedef struct h2_h2loader_cli_send_progress {
 } h2_h2loader_cli_send_progress_t;
 
 typedef h2_pal_result_t (*h2_h2loader_cli_scan_probe_fn)(
-    void *user,
-    const h2_h2loader_host_candidate_t *candidate,
-    uint32_t timeout_ms,
-    h2_h2loader_host_status_t *out_status);
-
-h2_pal_result_t h2_h2loader_cli_scan_probe_serial(
     void *user,
     const h2_h2loader_host_candidate_t *candidate,
     uint32_t timeout_ms,
@@ -165,13 +154,6 @@ void h2_h2loader_cli_transport_init(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
     uint32_t command_timeout_ms);
-
-h2_pal_result_t h2_h2loader_cli_transport_set_serial_candidate(
-    h2_h2loader_cli_transport_t *transport,
-    const h2_h2loader_host_candidate_t *candidate);
-
-h2_pal_result_t h2_h2loader_cli_transport_prepare_serial_policy(
-    h2_h2loader_cli_transport_t *transport);
 
 h2_pal_result_t h2_h2loader_cli_transport_connect(
     h2_h2loader_cli_transport_t *transport,

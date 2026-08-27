@@ -103,7 +103,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `--ready` 和非零 `--post-delay` 是 serial boot-marker 调试参数，不能与 `--transport bleikcp` 组合；CLI 会在连接前拒绝，而不是悄悄忽略 transport-specific 参数。
 
-Reliable UART transport 固定使用 `230400` baud，Loader 与 app image 使用相同 contract，CLI 不提供 baud 参数。Darwin 上只有 discovery metadata 同时包含有效 VID/PID 且值为 `303a:1001` 的 ESP 原生 USB Serial/JTAG endpoint 才保持零 control-line mask，避免只读命令更新 DTR/RTS 并重启 target；metadata 缺失、scan 失败或其它 native endpoint 都按外置 USB-UART 处理。外置 USB-UART 在 PAL `open()` 成功后、读取 ready marker 或发送 reliable session traffic 前明确 deassert DTR 与 RTS，CH340 连接的 BK target 依赖该状态释放 `CEN` 并确认 reliable session。一次 CLI transport lifecycle 只选择并缓存一次 policy，scan probe 使用 frozen candidate，direct `--port` 通过 exact opaque `port_id` snapshot match 取得 metadata，reconnect 不重新解释 identity 或改变 policy。Host、ESP UART backend 和 BK AP/CP tunnel 都保留一次 encoded frame 的写边界，不增加固定 write gap；设备 console 与 protocol frame 通过 target TX serializer 串行化。进度与最终成功仍以 peer ACK 和 package checksum 为准。
+Reliable UART transport 固定使用 `230400` baud，Loader 与 app image 使用相同 contract，CLI 不提供 baud 参数。所有 reliable serial endpoint 都在 PAL `open()` 成功后、读取 ready marker 或发送 reliable session traffic 前统一 deassert DTR 与 RTS；这只让两条 modem-control line 保持非激活，不执行 reset/download pulse，也不按 VID/PID、board 或操作系统选择策略。Host、ESP UART backend 和 BK AP/CP tunnel 都保留一次 encoded frame 的写边界，不增加固定 write gap；设备 console 与 protocol frame 通过 target TX serializer 串行化。进度与最终成功仍以 peer ACK 和 package checksum 为准。
 
 IO Stream iKCP 的 `send` 由 receiver window、CWND、ACK 和重传提供 backpressure，不使用固定 256-byte/10 ms 发送节流。Host 按 KCP MSS 组织 single-segment message，并以不超过 6 KiB（BK 20-segment receive window 内）的 delivery batch 输出 `acked bytes / total / percent / rate` 进度；进度表示 peer 已确认的数据，不是仅写入本机串口 buffer。
 

@@ -203,10 +203,6 @@ typedef struct h2_h2loader_host_serial_connection_config {
     uint32_t handshake_timeout_ms;
     uint32_t command_timeout_ms;
     uint32_t conversation_id;
-    /** Optional line mask applied after open and before any stream traffic. */
-    uint32_t initial_control_line_mask;
-    /** Asserted lines within initial_control_line_mask; zero deasserts them. */
-    uint32_t initial_asserted_control_lines;
     /** Optional raw boot marker consumed before opening the reliable session. */
     const char *ready_marker;
     /** Optional bounded delay after command delivery and before response read. */
@@ -219,13 +215,13 @@ typedef struct h2_h2loader_host_serial_connection_config {
 /**
  * @brief Open a reliable serial H2Loader session and complete SESSION_ACK.
  *
- * A nonzero initial_control_line_mask is applied immediately after Host Serial
- * open and before borrowing its stream, consuming ready_marker, or sending
- * SESSION_OPEN. Unsupported control lines do not prevent the handshake; other
- * control-line failures close the partial session and return unchanged. A zero
- * mask preserves the endpoint state. conversation_id must be nonzero or a
- * nonzero value is derived from the monotonic clock. The connection borrows
- * all injected PAL APIs and never falls back to raw transport.
+ * The call deasserts DTR and RTS immediately after Host Serial open and before
+ * borrowing its stream, consuming ready_marker, or sending SESSION_OPEN.
+ * Unsupported control lines do not prevent the handshake; other control-line
+ * failures close the partial session and return unchanged. conversation_id
+ * must be nonzero or a nonzero value is derived from the monotonic clock. The
+ * connection borrows all injected PAL APIs and never falls back to raw
+ * transport.
  */
 h2_pal_result_t h2_h2loader_host_serial_connect(
     const h2_h2loader_host_serial_connection_config_t *config,

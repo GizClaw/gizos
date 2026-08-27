@@ -4,75 +4,6 @@
 
 #define H2_H2LOADER_CLI_BLE_CANDIDATE_CAPACITY 32u
 
-static int serial_candidate_is_darwin_esp_usb_jtag(
-    const h2_h2loader_host_candidate_t *candidate) {
-#if defined(__APPLE__) && defined(__MACH__)
-    const uint32_t usb_fields =
-        H2_PAL_SERIAL_HOST_PORT_FIELD_USB_VID |
-        H2_PAL_SERIAL_HOST_PORT_FIELD_USB_PID;
-    return candidate != NULL &&
-        (candidate->serial_valid_fields & usb_fields) == usb_fields &&
-        candidate->usb_vid == 0x303au && candidate->usb_pid == 0x1001u;
-#else
-    (void)candidate;
-    return 0;
-#endif
-}
-
-static void select_serial_policy(h2_h2loader_cli_transport_t *transport) {
-    transport->serial_control_line_mask =
-        H2_PAL_SERIAL_HOST_CONTROL_DTR |
-        H2_PAL_SERIAL_HOST_CONTROL_RTS;
-    transport->serial_asserted_control_lines = 0u;
-    if (transport->serial_candidate_valid &&
-        serial_candidate_is_darwin_esp_usb_jtag(
-            &transport->serial_candidate)) {
-        transport->serial_control_line_mask = 0u;
-    }
-    transport->serial_policy_valid = 1u;
-}
-
-static h2_pal_result_t resolve_serial_candidate(
-    h2_h2loader_cli_transport_t *transport) {
-    const h2_pal_serial_host_api_t *serial = transport->context->config->serial;
-    h2_pal_serial_host_snapshot_t *snapshot = NULL;
-    h2_pal_result_t rc = h2_pal_serial_host_scan(serial, &snapshot);
-    size_t count = 0u;
-
-    if (rc == H2_PAL_OK) {
-        rc = h2_pal_serial_host_snapshot_count(serial, snapshot, &count);
-    }
-    for (size_t index = 0u; rc == H2_PAL_OK && index < count; ++index) {
-        h2_pal_serial_host_port_info_t info;
-        rc = h2_pal_serial_host_snapshot_get(
-            serial, snapshot, index, &info);
-        if (rc != H2_PAL_OK ||
-            strcmp(info.port_id, transport->options->port) != 0) {
-            continue;
-        }
-        memset(&transport->serial_candidate, 0,
-            sizeof(transport->serial_candidate));
-        transport->serial_candidate.transport =
-            H2_H2LOADER_HOST_TRANSPORT_SERIAL;
-        memcpy(
-            transport->serial_candidate.port_id,
-            info.port_id,
-            strlen(info.port_id) + 1u);
-        transport->serial_candidate.serial_valid_fields = info.valid_fields;
-        transport->serial_candidate.serial_capabilities = info.capabilities;
-        transport->serial_candidate.usb_vid = info.usb_vid;
-        transport->serial_candidate.usb_pid = info.usb_pid;
-        transport->serial_candidate_valid = 1u;
-        break;
-    }
-    h2_pal_result_t destroy_rc = h2_pal_serial_host_snapshot_destroy(
-        serial, &snapshot);
-    if (destroy_rc != H2_PAL_OK) {
-        return destroy_rc;
-    }
-    return H2_PAL_OK;
-}
-
 static h2_pal_result_t resolve_ble_candidate(
     h2_h2loader_cli_transport_t *transport) {
     h2_h2loader_host_candidate_t candidates[
@@ -128,42 +59,6 @@ void h2_h2loader_cli_transport_init(
     transport->command_timeout_ms = command_timeout_ms;
 }
 
-h2_pal_result_t h2_h2loader_cli_transport_set_serial_candidate(
-    h2_h2loader_cli_transport_t *transport,
-    const h2_h2loader_host_candidate_t *candidate) {
-    if (transport == NULL || transport->options == NULL ||
-        transport->options->port == NULL || candidate == NULL ||
-        candidate->transport != H2_H2LOADER_HOST_TRANSPORT_SERIAL ||
-        strcmp(candidate->port_id, transport->options->port) != 0) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    transport->serial_candidate = *candidate;
-    transport->serial_candidate_valid = 1u;
-    transport->serial_policy_valid = 0u;
-    return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_h2loader_cli_transport_prepare_serial_policy(
-    h2_h2loader_cli_transport_t *transport) {
-    if (transport == NULL || transport->context == NULL ||
-        transport->context->config == NULL || transport->options == NULL ||
-        transport->options->port == NULL ||
-        transport->options->transport != H2_H2LOADER_HOST_TRANSPORT_SERIAL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (transport->serial_policy_valid) {
-        return H2_PAL_OK;
-    }
-    if (!transport->serial_candidate_valid) {
-        h2_pal_result_t rc = resolve_serial_candidate(transport);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-    }
-    select_serial_policy(transport);
-    return H2_PAL_OK;
-}
-
 h2_pal_result_t h2_h2loader_cli_transport_connect(
     h2_h2loader_cli_transport_t *transport,
     h2_h2loader_host_status_t *out_status) {
@@ -200,8 +95,6 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
         return h2_h2loader_host_ble_connect(
             &connect, &transport->ble_connection, out_status);
     }
-    rc = h2_h2loader_cli_transport_prepare_serial_policy(transport);
-    if (rc != H2_PAL_OK) return rc;
     h2_h2loader_host_serial_connection_config_t connect = {
         .serial = transport->context->config->serial,
         .time = transport->context->runtime->time,
@@ -209,9 +102,6 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
         .port_id = transport->options->port,
         .handshake_timeout_ms = transport->options->wait_timeout_ms,
         .command_timeout_ms = transport->command_timeout_ms,
-        .initial_control_line_mask = transport->serial_control_line_mask,
-        .initial_asserted_control_lines =
-            transport->serial_asserted_control_lines,
         .ready_marker = transport->ready_marker,
         .post_command_delay_ms = transport->options->post_delay_ms,
         .on_log = transport->on_log,

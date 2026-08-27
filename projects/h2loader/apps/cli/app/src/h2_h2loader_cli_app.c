@@ -245,7 +245,7 @@ static const char *install_state_name(uint32_t state) {
     return state < sizeof(names) / sizeof(names[0]) ? names[state] : "";
 }
 
-h2_pal_result_t h2_h2loader_cli_scan_probe_serial(
+static h2_pal_result_t scan_probe_serial(
     void *user,
     const h2_h2loader_host_candidate_t *candidate,
     uint32_t timeout_ms,
@@ -263,9 +263,6 @@ h2_pal_result_t h2_h2loader_cli_scan_probe_serial(
 
     h2_h2loader_cli_transport_init(
         &transport, context, &options, timeout_ms);
-    rc = h2_h2loader_cli_transport_set_serial_candidate(
-        &transport, candidate);
-    if (rc != H2_PAL_OK) return rc;
     rc = h2_h2loader_cli_transport_connect(&transport, out_status);
     disconnect_rc = h2_h2loader_cli_transport_disconnect(&transport);
     return rc == H2_PAL_OK ? disconnect_rc : rc;
@@ -407,7 +404,7 @@ static int scan_command(h2_h2loader_cli_context_t *context, int argc, const char
         candidates,
         result.count,
         timeout,
-        h2_h2loader_cli_scan_probe_serial,
+        scan_probe_serial,
         context);
 }
 

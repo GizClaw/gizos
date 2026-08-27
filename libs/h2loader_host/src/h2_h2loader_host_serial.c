@@ -401,9 +401,6 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     h2_h2loader_host_serial_connection_t *connection = NULL;
     uint32_t conversation_id;
     uint64_t now = 0u;
-    const uint32_t valid_control_lines =
-        H2_PAL_SERIAL_HOST_CONTROL_DTR |
-        H2_PAL_SERIAL_HOST_CONTROL_RTS;
 
     if (out_connection != NULL) {
         *out_connection = NULL;
@@ -411,10 +408,7 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     if (config == NULL || out_connection == NULL ||
         config->serial == NULL || config->time == NULL ||
         config->allocator == NULL || config->port_id == NULL ||
-        config->port_id[0] == '\0' ||
-        (config->initial_control_line_mask & ~valid_control_lines) != 0u ||
-        (config->initial_asserted_control_lines &
-         ~config->initial_control_line_mask) != 0u) {
+        config->port_id[0] == '\0') {
         return H2_PAL_ERR_INVALID_ARG;
     }
     connection = h2_pal_mem_alloc(
@@ -447,17 +441,16 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     if (rc != H2_PAL_OK) {
         goto fail;
     }
-    if (config->initial_control_line_mask != 0u) {
-        rc = h2_pal_serial_host_set_control_lines(
-            config->serial,
-            connection->session,
-            config->initial_control_line_mask,
-            config->initial_asserted_control_lines);
-        if (rc == H2_PAL_ERR_UNSUPPORTED) {
-            rc = H2_PAL_OK;
-        } else if (rc != H2_PAL_OK) {
-            goto fail;
-        }
+    rc = h2_pal_serial_host_set_control_lines(
+        config->serial,
+        connection->session,
+        H2_PAL_SERIAL_HOST_CONTROL_DTR |
+            H2_PAL_SERIAL_HOST_CONTROL_RTS,
+        0u);
+    if (rc == H2_PAL_ERR_UNSUPPORTED) {
+        rc = H2_PAL_OK;
+    } else if (rc != H2_PAL_OK) {
+        goto fail;
     }
     rc = h2_pal_serial_host_session_stream(
         config->serial, connection->session, &connection->uart);
