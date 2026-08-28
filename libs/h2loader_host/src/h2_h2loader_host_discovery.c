@@ -17,7 +17,10 @@ typedef struct h2_h2loader_host_scan_context {
     size_t required_capacity;
     h2_pal_ble_addr_t ble_seen[128];
     size_t ble_seen_count;
+    int ble_endpoint_found;
 } h2_h2loader_host_scan_context_t;
+
+#define H2_H2LOADER_HOST_BLE_SCAN_POLL_MS 250u
 
 static uint32_t read_le32(const uint8_t *data) {
     return (uint32_t)data[0] | ((uint32_t)data[1] << 8u) |
@@ -212,7 +215,43 @@ static bool scan_ble_callback(
         return false;
     }
     scan_add_candidate(context, &candidate);
+    if (context->config->ble_endpoint != NULL &&
+        strcmp(candidate.endpoint, context->config->ble_endpoint) == 0) {
+        (void)h2_pal_mutex_lock(context->config->sync, context->mutex);
+        context->ble_endpoint_found = 1;
+        (void)h2_pal_mutex_unlock(context->config->sync, context->mutex);
+        return true;
+    }
     return false;
+}
+
+static int scan_ble_endpoint_found(
+    h2_h2loader_host_scan_context_t *context) {
+    int found;
+    (void)h2_pal_mutex_lock(context->config->sync, context->mutex);
+    found = context->ble_endpoint_found;
+    (void)h2_pal_mutex_unlock(context->config->sync, context->mutex);
+    return found;
+}
+
+static h2_pal_result_t wait_for_ble_scan(
+    h2_h2loader_host_scan_context_t *context) {
+    uint32_t remaining_ms = context->config->ble_timeout_ms;
+    if (context->config->ble_endpoint == NULL) {
+        return h2_pal_time_sleep_ms(context->config->time, remaining_ms);
+    }
+    while (remaining_ms > 0u && !scan_ble_endpoint_found(context)) {
+        uint32_t sleep_ms = remaining_ms < H2_H2LOADER_HOST_BLE_SCAN_POLL_MS
+            ? remaining_ms
+            : H2_H2LOADER_HOST_BLE_SCAN_POLL_MS;
+        h2_pal_result_t rc = h2_pal_time_sleep_ms(
+            context->config->time, sleep_ms);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+        remaining_ms -= sleep_ms;
+    }
+    return H2_PAL_OK;
 }
 
 static h2_pal_result_t scan_serial(
@@ -350,8 +389,7 @@ h2_pal_result_t h2_h2loader_host_scan(
         out_result->serial_result = scan_serial(&context);
     }
     if (ble_started) {
-        h2_pal_result_t sleep_rc = h2_pal_time_sleep_ms(
-            config->time, config->ble_timeout_ms);
+        h2_pal_result_t sleep_rc = wait_for_ble_scan(&context);
         h2_pal_result_t stop_rc = h2_pal_ble_stop_scan(config->ble);
         out_result->ble_result =
             sleep_rc == H2_PAL_OK ? stop_rc : sleep_rc;

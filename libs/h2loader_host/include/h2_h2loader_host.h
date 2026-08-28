@@ -149,6 +149,8 @@ typedef struct h2_h2loader_host_scan_config {
     const h2_pal_sync_api_t *sync;
     const h2_pal_time_api_t *time;
     uint32_t ble_timeout_ms;
+    /** Optional exact BLE endpoint that ends scanning as soon as it is seen. */
+    const char *ble_endpoint;
     h2_h2loader_host_candidate_t *candidates;
     size_t candidate_capacity;
 } h2_h2loader_host_scan_config_t;

@@ -286,6 +286,20 @@ static void h2_bk_ble_post_adv_set(
     h2_bk_ble_post(type, &payload, sizeof(payload));
 }
 
+static void h2_bk_ble_mark_connectable_advertising_stopped(void) {
+    for (size_t i = 0u; i < H2_BK_BLE_ADV_SET_COUNT; ++i) {
+        h2_pal_ble_adv_set_t *set = &s_h2_bk_ble_adv_sets[i];
+        if (set->allocated && set->active &&
+            set->params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE) {
+            set->active = 0;
+            h2_bk_ble_post_adv_set(
+                H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+                set,
+                H2_PAL_OK);
+        }
+    }
+}
+
 static int h2_bk_ble_adv_set_valid(const h2_pal_ble_adv_set_t *set) {
     uintptr_t address = (uintptr_t)set;
     return address >= (uintptr_t)&s_h2_bk_ble_adv_sets[0] &&
@@ -1765,17 +1779,7 @@ static void h2_bk_ble_notice_cb_unlocked(ble_notice_t notice, void *param) {
     } else if (notice == BLE_5_CONNECT_EVENT) {
         const ble_conn_ind_t *conn = (const ble_conn_ind_t *)param;
         if (conn != NULL) {
-            for (size_t i = 0u; i < H2_BK_BLE_ADV_SET_COUNT; ++i) {
-                h2_pal_ble_adv_set_t *set = &s_h2_bk_ble_adv_sets[i];
-                if (set->allocated && set->active &&
-                    set->params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE) {
-                    set->active = 0;
-                    h2_bk_ble_post_adv_set(
-                        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
-                        set,
-                        H2_PAL_OK);
-                }
-            }
+            h2_bk_ble_mark_connectable_advertising_stopped();
             s_h2_bk_ble_peripheral_conn_handle = conn->conn_idx;
             memcpy(
                 s_h2_bk_ble_peripheral_peer_addr,
@@ -2255,6 +2259,11 @@ static int32_t h2_bk_ble_gatts_cb_unlocked(
         break;
     case BK_GATTS_CONNECT_EVT:
         if (param != NULL) {
+            /* A successful peripheral connection terminates connectable
+             * advertising in the controller. EtherMind does not reliably
+             * emit the GAP advertising-terminated callback, so mirror that
+             * physical transition before the disconnect path restarts it. */
+            h2_bk_ble_mark_connectable_advertising_stopped();
             s_h2_bk_ble_peripheral_conn_handle = param->connect.conn_id;
             memcpy(
                 s_h2_bk_ble_peripheral_peer_addr,

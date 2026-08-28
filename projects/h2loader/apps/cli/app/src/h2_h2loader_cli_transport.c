@@ -20,6 +20,7 @@ static h2_pal_result_t resolve_ble_candidate(
         .sync = transport->context->runtime->sync,
         .time = transport->context->runtime->time,
         .ble_timeout_ms = transport->options->wait_timeout_ms,
+        .ble_endpoint = transport->options->port,
         .candidates = candidates,
         .candidate_capacity = H2_H2LOADER_CLI_BLE_CANDIDATE_CAPACITY,
     };

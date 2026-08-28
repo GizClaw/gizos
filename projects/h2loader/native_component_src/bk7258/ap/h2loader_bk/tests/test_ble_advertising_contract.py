@@ -78,6 +78,22 @@ class BleAdvertisingContractTest(unittest.TestCase):
             "connection.mtu = H2_BK_BLE_LOCAL_MAX_MTU",
             gatts_connect_body,
         )
+        self.assertIn(
+            "h2_bk_ble_mark_connectable_advertising_stopped()",
+            gatts_connect_body,
+        )
+        helper = source.index(
+            "static void h2_bk_ble_mark_connectable_advertising_stopped("
+        )
+        helper_end = source.index(
+            "static int h2_bk_ble_adv_set_valid(", helper
+        )
+        helper_body = source[helper:helper_end]
+        self.assertIn("set->active = 0", helper_body)
+        self.assertIn(
+            "H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED",
+            helper_body,
+        )
         set_phy = source.index("static h2_pal_result_t h2_bk_ble_set_preferred_phy(")
         read_phy = source.index("static h2_pal_result_t h2_bk_ble_read_phy(")
         self.assertIn(
