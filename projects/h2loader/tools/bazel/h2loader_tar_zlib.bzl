@@ -8,6 +8,7 @@ FirmwareReleaseInfo = provider(
     fields = {
         "board": "Physical board identity.",
         "entry": "Source-root-relative launcher entry.",
+        "factory": "ESP Loader combined factory image or None.",
         "image": "Image identity.",
         "metadata": "Machine-readable metadata file.",
         "package": "The standard H2Loader package.",
@@ -43,6 +44,7 @@ def _native_firmware(ctx):
         return struct(
             app_image = firmware.app_image,
             app_path = "app/esp/app.bin",
+            factory_image = firmware.combined_factory_image,
             inputs = [firmware.app_image, firmware.elf, firmware.map, firmware.bootloader_image, firmware.combined_factory_image, firmware.partition_table_image, firmware.flash_files, firmware.flash_metadata],
             native_artifacts = [
                 struct(name = "firmware.elf", file = firmware.elf),
@@ -64,6 +66,7 @@ def _native_firmware(ctx):
         return struct(
             app_image = firmware.managed_app_image,
             app_path = "app/bk/app_ab_crc.rbl",
+            factory_image = None,
             inputs = [firmware.ap_elf, firmware.ap_map, firmware.ap_image, firmware.cp_elf, firmware.cp_map, firmware.cp_image, firmware.managed_app_image, firmware.recovery_image, firmware.partition_metadata],
             native_artifacts = [
                 struct(name = "ap/firmware.elf", file = firmware.ap_elf),
@@ -93,9 +96,12 @@ def _h2loader_tar_zlib_impl(ctx):
     stem = "%s-%s-%s" % (ctx.attr.board, ctx.attr.image, ctx.attr.target)
     package = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".update.tar.zlib")
     metadata = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".firmware.json")
+    factory = None
     recovery = None
     if ctx.attr.role == "h2loader":
         recovery = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".recovery.h2fb")
+        if firmware.factory_image:
+            factory = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".combined_factory.bin")
 
     args = ctx.actions.args()
     args.add("--source-root", ".")
@@ -110,6 +116,9 @@ def _h2loader_tar_zlib_impl(ctx):
     args.add("--version", firmware.version)
     args.add("--package-output", package.path)
     args.add("--metadata-output", metadata.path)
+    if factory:
+        args.add("--factory-image", firmware.factory_image.path)
+        args.add("--factory-output", factory.path)
     if recovery:
         args.add("--recovery", recovery.path)
         if firmware.platform == "esp":
@@ -134,18 +143,19 @@ def _h2loader_tar_zlib_impl(ctx):
         executable = ctx.executable._runner,
         inputs = depset(action_inputs),
         mnemonic = "H2LoaderTarZlib",
-        outputs = [package, metadata] + ([recovery] if recovery else []),
+        outputs = [package, metadata] + ([factory] if factory else []) + ([recovery] if recovery else []),
         progress_message = "Packaging H2Loader archive %{label}",
         tools = [ctx.executable._runner],
     )
 
-    release_files = depset([package, metadata] + ([recovery] if recovery else []))
+    release_files = depset([package, metadata] + ([factory] if factory else []) + ([recovery] if recovery else []))
     return [
         DefaultInfo(files = release_files),
         OutputGroupInfo(release = release_files),
         FirmwareReleaseInfo(
             board = ctx.attr.board,
             entry = ctx.label.package,
+            factory = factory,
             image = ctx.attr.image,
             metadata = metadata,
             package = package,

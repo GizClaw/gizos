@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import shutil
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
@@ -37,6 +38,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--package-output", required=True)
     parser.add_argument("--metadata-output", required=True)
+    parser.add_argument("--factory-image")
+    parser.add_argument("--factory-output")
     parser.add_argument("--recovery")
     parser.add_argument("--esp-flash-root")
     parser.add_argument("--esp-flash-metadata")
@@ -57,7 +60,16 @@ def run(arguments: argparse.Namespace) -> None:
     source_root = Path(arguments.source_root).resolve()
     app_image = Path(arguments.app_image)
     package = Path(arguments.package_output)
+    if bool(arguments.factory_image) != bool(arguments.factory_output):
+        raise ValueError("factory image and output must be declared together")
+    factory = Path(arguments.factory_output) if arguments.factory_output else None
+    factory_required = arguments.platform == "esp" and arguments.role == "h2loader"
+    if (factory is not None) != factory_required:
+        raise ValueError("ESP H2Loader firmware must declare one factory image")
     recovery = Path(arguments.recovery) if arguments.recovery else None
+    if factory is not None:
+        factory.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(Path(arguments.factory_image), factory)
     if recovery and (arguments.esp_flash_root or arguments.bk_recovery_image):
         if arguments.platform == "esp":
             if not arguments.esp_flash_root or not arguments.esp_flash_metadata:
@@ -102,6 +114,7 @@ def run(arguments: argparse.Namespace) -> None:
         version=arguments.version,
         app_image=app_image,
         package=package,
+        factory=factory,
         recovery=recovery,
         native=arguments.native_artifact,
     )
