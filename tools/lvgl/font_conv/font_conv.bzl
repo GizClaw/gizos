@@ -6,6 +6,24 @@ _C_IDENTIFIER_FIRST = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _C_IDENTIFIER_REST = _C_IDENTIFIER_FIRST + "0123456789"
 _SUPPORTED_BPP = [1, 2, 3, 4, 8]
 
+def _node_runtime_tool_impl(ctx):
+    node = ctx.toolchains["@rules_nodejs//nodejs:runtime_toolchain_type"].nodeinfo.node
+    if not node:
+        fail("the LVGL font converter requires a hermetic Node executable")
+    launcher = ctx.actions.declare_file(ctx.label.name + ".exe")
+    ctx.actions.symlink(
+        output = launcher,
+        target_file = node,
+        is_executable = True,
+    )
+    return [DefaultInfo(executable = launcher, files = depset([launcher]))]
+
+node_runtime_tool = rule(
+    implementation = _node_runtime_tool_impl,
+    executable = True,
+    toolchains = ["@rules_nodejs//nodejs:runtime_toolchain_type"],
+)
+
 def _valid_identifier(value):
     if not value or value[0] not in _C_IDENTIFIER_FIRST:
         return False
@@ -29,16 +47,13 @@ def _lvgl_font_impl(ctx):
     if not ctx.outputs.out.basename.endswith(".c"):
         fail("out must name a C source")
 
-    nodeinfo = ctx.toolchains["@rules_nodejs//nodejs:runtime_toolchain_type"].nodeinfo
-    node = nodeinfo.node
-    node_path = node.path if node else nodeinfo.node_path
     package_stores = ctx.attr._converter_package[JsInfo].npm_package_store_infos.to_list()
     if len(package_stores) != 1:
         fail("lv_font_conv package must provide exactly one npm package store")
     converter_package = package_stores[0].package_store_directory
 
     arguments = ctx.actions.args()
-    arguments.add("--node", node_path)
+    arguments.add("--node", ctx.executable._node.path)
     arguments.add("--converter-entry", ctx.file._converter_entry.path)
     arguments.add("--converter-package", converter_package.path)
     arguments.add("--font", ctx.file.font.path)
@@ -52,9 +67,7 @@ def _lvgl_font_impl(ctx):
     arguments.add("--lv-include", ctx.attr.lv_include)
     arguments.add("--output", ctx.outputs.out.path)
 
-    tool_files = [ctx.file._converter_entry]
-    if node:
-        tool_files.append(node)
+    tool_files = [ctx.file._converter_entry, ctx.executable._node]
     converter_tools = depset(
         direct = tool_files,
         transitive = [ctx.attr._converter_package[DefaultInfo].files],
@@ -117,6 +130,11 @@ lvgl_font = rule(
             default = Label("@gizos//tools/lvgl/font_conv:node_modules/lv_font_conv"),
             providers = [JsInfo],
         ),
+        "_node": attr.label(
+            cfg = "exec",
+            default = Label("@gizos//tools/lvgl/font_conv:node_runtime"),
+            executable = True,
+        ),
         "_runner": attr.label(
             cfg = "exec",
             default = Label("@gizos//tools/lvgl/font_conv:font_conv_runner"),
@@ -124,5 +142,4 @@ lvgl_font = rule(
         ),
     },
     doc = "Generates one static LVGL C font with the pinned official converter.",
-    toolchains = ["@rules_nodejs//nodejs:runtime_toolchain_type"],
 )
