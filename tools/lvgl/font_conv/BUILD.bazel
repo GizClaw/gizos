@@ -1,6 +1,7 @@
 load("@lvgl_font_conv_npm//:defs.bzl", "npm_link_all_packages")
 load("@lvgl_font_conv_npm//tools/lvgl/font_conv:lv_font_conv/package_json.bzl", lv_font_conv_bin = "bin")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,12 +18,7 @@ filegroup(
 
 lv_font_conv_bin.lv_font_conv_binary(
     name = "lv_font_conv",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_binary(
@@ -30,6 +26,7 @@ py_binary(
     srcs = ["font_conv_runner.py"],
     legacy_create_init = 0,
     python_version = "PY3",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_binary(
@@ -37,6 +34,7 @@ py_binary(
     srcs = ["tests/fake_font_conv.py"],
     legacy_create_init = 0,
     python_version = "PY3",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_test(
@@ -50,6 +48,7 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_font_conv_runner.py",
     python_version = "PY3",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = ["@rules_python//python/runfiles"],
 )
 

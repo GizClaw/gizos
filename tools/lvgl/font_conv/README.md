@@ -23,4 +23,5 @@ The generated target is a normal C source and can be listed in `cc_library.srcs`
 ```sh
 bazel test //tools/lvgl/font_conv:all
 bazel run //tools/lvgl/font_conv:lv_font_conv -- --version
+make bazel-test-downstream-consumer
 ```
