@@ -109,6 +109,7 @@ h2loader_tar_zlib(
     board = "bk7258_v3_202405",
     firmware = ":firmware",
     image = "loader",
+    recovery_config = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:bk_loader.json",
     role = "h2loader",
     target = "bk7258",
 )
