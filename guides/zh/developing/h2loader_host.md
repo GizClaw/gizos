@@ -21,7 +21,7 @@ Linux Host Serial 归 `libs/pal/providers/linux/serial_host`，Darwin Host Seria
 
 一次 scan 同时启动 BLE 扫描并枚举串口。两个 provider 分别返回 result；一边 permission、timeout 或 unavailable 不会丢弃另一边的候选。不同 transport、相同名称或广播 board 不会自动合并。
 
-Candidate 的 endpoint、USB VID/PID/serial、display name 和 BLE advertisement 不是 authoritative identity。Connect 后必须读取唯一的严格 `H2_LOADER_STATUS`：固定字段顺序与宽度，`capabilities` 只表示 UART/Wi-Fi/BLE 硬件，`command_availability` 表示逐命令 gate，`states` 是唯一的 lifecycle/MFG 状态来源。BLE 广播的明文 board 只做连接后交叉检查。
+Candidate 的 endpoint、USB VID/PID/serial、display name 和 BLE advertisement 不是 authoritative identity。Legacy BLE advertisement 保留 H2Loader service UUID，并把 compact Loader identity 放在 manufacturer data；payload 可以位于 primary advertisement 或独立 scan response。Host 为兼容既有固件也接受相同格式的 Service Data，但 connect 后仍必须读取唯一的严格 `H2_LOADER_STATUS`：固定字段顺序与宽度，`capabilities` 只表示 UART/Wi-Fi/BLE 硬件，`command_availability` 表示逐命令 gate，`states` 是唯一的 lifecycle/MFG 状态来源。BLE 广播的明文 board 只做连接后交叉检查。
 
 Serial candidate 只尝试 reliable iostreamikcp command transport。Host Core scan 只返回 frozen discovery metadata；native CLI 在 scan snapshot 完成后按顺序使用 candidate 的 exact opaque `port_id` 执行一次 connect/status/disconnect，并把 live identity 或 exact per-candidate PAL failure 投影到 JSON。Timeout 不会触发 retry、legacy raw status probe、transport fallback 或 BLE/serial pairing，也不会产生第二种可管理设备协议；用户可见的在线设备、Firmware action 与 Console session 只来自 reliable serial 或 BLE-iKCP live status 成功。
 
