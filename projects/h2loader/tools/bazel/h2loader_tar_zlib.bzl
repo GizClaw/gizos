@@ -87,6 +87,8 @@ def _native_firmware(ctx):
     fail("firmware must provide FirmwareInfo or Bk7258FirmwareInfo")
 
 def _h2loader_tar_zlib_impl(ctx):
+    if ctx.file.recovery_config and not (ctx.attr.role == "h2loader" and ctx.attr.target == "bk7258"):
+        fail("recovery_config is only valid for BK7258 H2Loader firmware")
     firmware = _native_firmware(ctx)
     if firmware.target != ctx.attr.target:
         fail("package target %s does not match firmware target %s" % (ctx.attr.target, firmware.target))
@@ -188,8 +190,6 @@ def h2loader_tar_zlib(name, board, image, role, target, recovery_config = None, 
     _validate_identity(board, image, role, target)
     if bool(kwargs.get("package_data")) != bool(kwargs.get("package_data_root")):
         fail("package_data and package_data_root must be declared together")
-    if recovery_config != None and not (role == "h2loader" and target == "bk7258"):
-        fail("recovery_config is only valid for BK7258 H2Loader firmware")
     if role == "h2loader" and target == "bk7258":
         if recovery_config == None:
             key = (target, board)

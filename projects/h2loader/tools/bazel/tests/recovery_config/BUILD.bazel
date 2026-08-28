@@ -1,0 +1,67 @@
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load(":recovery_config_test.bzl", "explicit_recovery_config_test", "fake_bk7258_firmware", "fallback_recovery_config_test", "invalid_role_recovery_config_test", "invalid_target_recovery_config_test")
+
+package(default_visibility = ["//visibility:private"])
+
+fake_bk7258_firmware(
+    name = "firmware",
+)
+
+h2loader_tar_zlib(
+    name = "explicit_package",
+    board = "private_board",
+    firmware = ":firmware",
+    image = "loader",
+    recovery_config = "private_recovery.json",
+    role = "h2loader",
+    target = "bk7258",
+)
+
+h2loader_tar_zlib(
+    name = "fallback_package",
+    board = "bk7258_v3_202405",
+    firmware = ":firmware",
+    image = "loader",
+    role = "h2loader",
+    target = "bk7258",
+)
+
+h2loader_tar_zlib(
+    name = "invalid_role_package",
+    board = "private_board",
+    firmware = ":firmware",
+    image = "main",
+    recovery_config = "private_recovery.json",
+    role = "app",
+    target = "bk7258",
+)
+
+h2loader_tar_zlib(
+    name = "invalid_target_package",
+    board = "private_board",
+    firmware = ":firmware",
+    image = "loader",
+    recovery_config = "private_recovery.json",
+    role = "h2loader",
+    target = "esp32s3",
+)
+
+explicit_recovery_config_test(
+    name = "explicit_recovery_config_test",
+    target_under_test = ":explicit_package",
+)
+
+fallback_recovery_config_test(
+    name = "fallback_recovery_config_test",
+    target_under_test = ":fallback_package",
+)
+
+invalid_role_recovery_config_test(
+    name = "invalid_role_recovery_config_test",
+    target_under_test = ":invalid_role_package",
+)
+
+invalid_target_recovery_config_test(
+    name = "invalid_target_recovery_config_test",
+    target_under_test = ":invalid_target_package",
+)
