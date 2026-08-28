@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import unicodedata
@@ -24,48 +23,38 @@ def collect_symbols(paths: list[Path]) -> str:
     return "".join(sorted(symbols, key=ord))
 
 
-def exclude_symbols_covered_by_ranges(symbols: str, ranges: list[str]) -> str:
-    """Remove symbols already selected by non-remapped converter ranges."""
-    covered: list[tuple[int, int]] = []
-    for value in ranges:
-        for item in value.split(","):
-            match = re.fullmatch(
-                r"\s*(0[xX][0-9a-fA-F]+|[0-9]+)"
-                r"(?:\s*-\s*(0[xX][0-9a-fA-F]+|[0-9]+))?"
-                r"(?:\s*=>\s*(0[xX][0-9a-fA-F]+|[0-9]+))?\s*",
-                item,
-            )
-            if match is None:
-                continue
-            start = int(match.group(1), 0)
-            end = int(match.group(2), 0) if match.group(2) else start
-            mapped_start = int(match.group(3), 0) if match.group(3) else start
-            if start <= end and mapped_start == start:
-                covered.append((start, end))
-    return "".join(
-        character
-        for character in symbols
-        if not any(start <= ord(character) <= end for start, end in covered)
-    )
-
-
 def convert(args: argparse.Namespace) -> None:
     """Invoke lv_font_conv and publish only a complete non-empty C source."""
     output = Path(args.output).resolve()
-    symbols = exclude_symbols_covered_by_ranges(
-        collect_symbols([Path(path) for path in args.symbol_source]), args.ranges
-    )
+    symbols = collect_symbols([Path(path) for path in args.symbol_source])
     if not symbols and not args.ranges:
         raise ValueError("font conversion requires symbols or ranges")
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="lvgl-font-", dir=output.parent) as directory:
         temporary_output = Path(directory) / output.name
-        command = [
-            str(Path(args.converter).resolve()),
+        if args.converter:
+            command = [str(Path(args.converter).resolve())]
+        elif args.node and args.converter_entry:
+            if not args.converter_package:
+                raise ValueError("direct Node conversion requires --converter-package")
+            command = [
+                str(Path(args.node).resolve()),
+                "--preserve-symlinks-main",
+                str(Path(args.converter_entry)),
+                str(Path(args.converter_package)),
+            ]
+        else:
+            raise ValueError(
+                "font conversion requires --converter or both --node and "
+                "--converter-entry"
+            )
+        command.extend(
+            [
             "--font",
             str(Path(args.font).resolve()),
-        ]
+            ]
+        )
         if symbols:
             command.extend(["--symbols", symbols])
         for value in args.ranges:
@@ -96,7 +85,10 @@ def convert(args: argparse.Namespace) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--converter", required=True)
+    parser.add_argument("--converter")
+    parser.add_argument("--node")
+    parser.add_argument("--converter-entry")
+    parser.add_argument("--converter-package")
     parser.add_argument("--font", required=True)
     parser.add_argument("--symbol-source", action="append", default=[])
     parser.add_argument("--range", dest="ranges", action="append", default=[])

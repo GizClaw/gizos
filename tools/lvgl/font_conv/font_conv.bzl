@@ -1,5 +1,7 @@
 """Public rule for generating a fixed-size LVGL C font."""
 
+load("@aspect_rules_js//js:providers.bzl", "JsInfo")
+
 _C_IDENTIFIER_FIRST = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _C_IDENTIFIER_REST = _C_IDENTIFIER_FIRST + "0123456789"
 _SUPPORTED_BPP = [1, 2, 3, 4, 8]
@@ -27,8 +29,18 @@ def _lvgl_font_impl(ctx):
     if not ctx.outputs.out.basename.endswith(".c"):
         fail("out must name a C source")
 
+    nodeinfo = ctx.toolchains["@rules_nodejs//nodejs:runtime_toolchain_type"].nodeinfo
+    node = nodeinfo.node
+    node_path = node.path if node else nodeinfo.node_path
+    package_stores = ctx.attr._converter_package[JsInfo].npm_package_store_infos.to_list()
+    if len(package_stores) != 1:
+        fail("lv_font_conv package must provide exactly one npm package store")
+    converter_package = package_stores[0].package_store_directory
+
     arguments = ctx.actions.args()
-    arguments.add("--converter", ctx.executable._converter.path)
+    arguments.add("--node", node_path)
+    arguments.add("--converter-entry", ctx.file._converter_entry.path)
+    arguments.add("--converter-package", converter_package.path)
     arguments.add("--font", ctx.file.font.path)
     for source in ctx.files.symbol_sources:
         arguments.add("--symbol-source", source.path)
@@ -40,6 +52,14 @@ def _lvgl_font_impl(ctx):
     arguments.add("--lv-include", ctx.attr.lv_include)
     arguments.add("--output", ctx.outputs.out.path)
 
+    tool_files = [ctx.file._converter_entry]
+    if node:
+        tool_files.append(node)
+    converter_tools = depset(
+        direct = tool_files,
+        transitive = [ctx.attr._converter_package[DefaultInfo].files],
+    )
+
     ctx.actions.run(
         arguments = [arguments],
         executable = ctx.executable._runner,
@@ -48,7 +68,7 @@ def _lvgl_font_impl(ctx):
         outputs = [ctx.outputs.out],
         progress_message = "Generating LVGL font %{label}",
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
-        tools = [ctx.attr._converter[DefaultInfo].files_to_run],
+        tools = converter_tools,
     )
     return [DefaultInfo(files = depset([ctx.outputs.out]))]
 
@@ -87,10 +107,15 @@ lvgl_font = rule(
             allow_files = True,
             doc = "UTF-8 files whose unique non-control characters form the symbol set.",
         ),
-        "_converter": attr.label(
+        "_converter_entry": attr.label(
             cfg = "exec",
-            default = Label("@gizos//tools/lvgl/font_conv:lv_font_conv"),
-            executable = True,
+            allow_single_file = [".cjs"],
+            default = Label("@gizos//tools/lvgl/font_conv:font_conv_entry.cjs"),
+        ),
+        "_converter_package": attr.label(
+            cfg = "exec",
+            default = Label("@gizos//tools/lvgl/font_conv:node_modules/lv_font_conv"),
+            providers = [JsInfo],
         ),
         "_runner": attr.label(
             cfg = "exec",
@@ -99,4 +124,5 @@ lvgl_font = rule(
         ),
     },
     doc = "Generates one static LVGL C font with the pinned official converter.",
+    toolchains = ["@rules_nodejs//nodejs:runtime_toolchain_type"],
 )

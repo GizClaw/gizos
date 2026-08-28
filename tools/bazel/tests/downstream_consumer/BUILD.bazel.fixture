@@ -21,7 +21,7 @@ lvgl_font(
     out = "downstream_font_16.c",
     font = "font.ttf",
     font_name = "downstream_font_16",
-    ranges = ["0x20-0x7E"],
+    ranges = ["0x42=>0xF002"],
     symbol_sources = ["font_symbols.txt"],
 )
 

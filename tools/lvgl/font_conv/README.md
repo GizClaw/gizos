@@ -2,7 +2,7 @@
 
 `lvgl_font` wraps the pinned official `lv_font_conv` package as a public Bazel rule. Consumers own the source font, UTF-8 symbol sources, fixed pixel size, output symbol, and generated target wiring; GizOS owns the converter version, Node dependency graph, hermetic execution, validation, and failure behavior.
 
-The rule reads declared symbol sources as strict UTF-8 and includes every unique non-control character. `ranges` can add stable sets such as printable ASCII; characters already covered by an equivalent non-remapped range are omitted from `--symbols` to avoid duplicate converter inputs. The official converter rasterizes one requested size and emits an uncompressed LVGL C font, so the generated source does not require TinyTTF or `LV_USE_FONT_COMPRESSED` at runtime.
+The rule reads declared symbol sources as strict UTF-8 and includes every unique non-control character. `ranges` can add stable sets such as printable ASCII. The action invokes the hermetic Node executable and official package entry module directly, so arbitrary Unicode, CMD metacharacters, and remapped range syntax never cross an npm batch launcher on Windows. The official converter rasterizes one requested size and emits an uncompressed LVGL C font, so the generated source does not require TinyTTF or `LV_USE_FONT_COMPRESSED` at runtime.
 
 ```starlark
 load("@gizos//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")

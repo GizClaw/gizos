@@ -52,4 +52,7 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
-exports_files(["font_conv.bzl"])
+exports_files([
+    "font_conv.bzl",
+    "font_conv_entry.cjs",
+])
