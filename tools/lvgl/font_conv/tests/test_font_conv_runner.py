@@ -55,9 +55,27 @@ class FontConvRunnerTest(unittest.TestCase):
         args, output = self._args()
         font_conv_runner.convert(args)
         generated = output.read_text(encoding="utf-8")
-        self.assertIn("symbols=U+0041,U+4E2D,U+6587", generated)
+        self.assertIn("symbols=U+4E2D,U+6587", generated)
         self.assertIn("ranges=0x20-0x7E size=16 bpp=4", generated)
         self.assertIn("const lv_font_t fixture_font_16", generated)
+
+    def test_excludes_symbols_covered_by_decimal_and_hex_ranges(self) -> None:
+        symbols = " !AZ中"
+        self.assertEqual(
+            "中",
+            font_conv_runner.exclude_symbols_covered_by_ranges(
+                symbols, ["0x20-0x40,65-90"]
+            ),
+        )
+
+    def test_preserves_symbols_from_remapped_or_unknown_ranges(self) -> None:
+        symbols = "A中"
+        self.assertEqual(
+            symbols,
+            font_conv_runner.exclude_symbols_covered_by_ranges(
+                symbols, ["0x41=>0xF001", "named-range"]
+            ),
+        )
 
     def test_rejects_invalid_utf8(self) -> None:
         args, _ = self._args()
