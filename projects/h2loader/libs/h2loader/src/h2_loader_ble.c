@@ -11,8 +11,8 @@
 #define H2_LOADER_BLE_ADV_SID 0u
 #define H2_LOADER_BLE_IO_TIMEOUT_MS 5000u
 #define H2_LOADER_BLE_WINDOW 32u
-#define H2_LOADER_BLE_INPUT_FRAME_CAPACITY 64u
-#define H2_LOADER_BLE_BUFFER_SIZE (32u * 1024u)
+#define H2_LOADER_BLE_INPUT_FRAME_CAPACITY 16u
+#define H2_LOADER_BLE_BUFFER_SIZE (8u * 1024u)
 #define H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN 11u
 #define H2_LOADER_BLE_COMPACT_SERVICE_DATA_LEN 18u
 #define H2_LOADER_BLE_LINK_INTERVAL_MS 15u
@@ -156,12 +156,12 @@ static int h2_loader_ble_service_update_advertising(
         .local_name = NULL,
         .service_uuids = services,
         .service_uuid_count = additional_service_count + 1u,
-        .manufacturer_data = { 0 },
-        .service_data_uuid = services[0],
-        .service_data = {
+        .manufacturer_data = {
             .data = service->service_data,
             .len = service->service_data_len,
         },
+        .service_data_uuid = { 0 },
+        .service_data = { 0 },
     };
     int rc = stop_first
         ? h2_pal_ble_adv_set_stop(service->config.api.ble, service->adv_set)

@@ -86,8 +86,12 @@ static int scan_result_has_service(
 static int parse_ble_identity(
     const h2_pal_ble_scan_result_t *result,
     h2_h2loader_host_candidate_t *out_candidate) {
-    const uint8_t *payload = result->service_data.data;
-    size_t payload_len = result->service_data.len;
+    const uint8_t *payload = result->service_data.len > 0u
+        ? result->service_data.data
+        : result->manufacturer_data.data;
+    size_t payload_len = result->service_data.len > 0u
+        ? result->service_data.len
+        : result->manufacturer_data.len;
     uint8_t version;
     uint32_t capabilities;
 
