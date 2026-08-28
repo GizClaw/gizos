@@ -1,9 +1,11 @@
 """Tests for the official LVGL font converter adapter."""
 
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from python.runfiles import runfiles
 
@@ -14,8 +16,9 @@ class FontConvRunnerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
+        executable_suffix = ".exe" if os.name == "nt" else ""
         self.converter = runfiles.Create().Rlocation(
-            "gizos/tools/lvgl/font_conv/fake_font_conv"
+            "gizos/tools/lvgl/font_conv/fake_font_conv" + executable_suffix
         )
         self.assertIsNotNone(self.converter)
 
@@ -88,9 +91,20 @@ class FontConvRunnerTest(unittest.TestCase):
         args.node = "node.exe"
         args.converter_entry = "font_conv_entry.cjs"
         args.converter_package = "node_modules/lv_font_conv"
-        with self.assertRaises(FileNotFoundError) as context:
+        def write_output(command, *, check):
+            del check
+            Path(command[command.index("--output") + 1]).write_text(
+                "const lv_font_t fixture_font_16 = {0};\n",
+                encoding="utf-8",
+            )
+
+        with mock.patch(
+            "font_conv_runner.subprocess.run", side_effect=write_output
+        ) as run:
             font_conv_runner.convert(args)
-        self.assertEqual("node.exe", Path(context.exception.filename).name)
+        command = run.call_args.args[0]
+        self.assertEqual("node.exe", Path(command[0]).name)
+        self.assertEqual("--preserve-symlinks-main", command[1])
 
     def test_rejects_invalid_utf8(self) -> None:
         args, _ = self._args()
