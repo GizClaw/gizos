@@ -147,8 +147,6 @@ def h2loader_bk7258_firmware(
             "project_support_files",
             "ram_regions",
         ]
-        if layout in ("h2loader", "loader"):
-            required_layout_files.append("recovery_config")
         layout_files = _require_layout_files(
             layout_files,
             required_layout_files,
