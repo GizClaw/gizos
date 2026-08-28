@@ -174,6 +174,19 @@ cp BUILD.bazel.complete BUILD.bazel
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
     --output_base="$consumer_root/output-base" \
+    test \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    //:font_consumer_test
+
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
     build \
     --enable_bzlmod \
     --noenable_workspace \
