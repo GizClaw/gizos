@@ -154,7 +154,7 @@ bool h2_esp_adc_value_stabilizer_read_internal(
         if (delta < 0) {
             delta = -delta;
         }
-        if (delta > H2_ESP_ADC_VALUE_SMOOTH_DELTA_RAW) {
+        if (delta >= H2_ESP_ADC_VALUE_SMOOTH_DELTA_RAW) {
             reading.reason = H2_ESP_ADC_VALUE_READ_JUMP;
             reseed = true;
         }

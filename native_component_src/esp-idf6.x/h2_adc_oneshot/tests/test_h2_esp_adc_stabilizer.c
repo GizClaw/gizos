@@ -236,7 +236,7 @@ static void test_numeric_stream_startup_steady_and_jump(void) {
     assert(state.stable_raw == 1080);
 
     const int32_t jump_samples[] = {
-        1091, 1092, 1093, 1094, 1095,
+        1100, 1092, 1093, 1094, 1095,
         1100, 1090, 1110, 1080, 1120,
     };
     fixture = (numeric_stream_fixture_t){
@@ -251,7 +251,7 @@ static void test_numeric_stream_startup_steady_and_jump(void) {
     assert(state.stable_raw == 1100);
 
     const int32_t reverse_jump_samples[] = {
-        1089, 1088, 1087, 1086, 1085,
+        1080, 1088, 1087, 1086, 1085,
         1080, 1090, 1070, 1100, 1080,
     };
     fixture = (numeric_stream_fixture_t){
@@ -284,7 +284,7 @@ static void test_numeric_stream_cumulative_raw_jump(void) {
     assert(reading.reason == H2_ESP_ADC_VALUE_READ_STARTUP);
     assert(reading.stable_raw == 1007);
 
-    const int32_t below_threshold_samples[] = {1012, 1017};
+    const int32_t below_threshold_samples[] = {1017, 1026};
     for (size_t i = 0u;
          i < sizeof(below_threshold_samples) /
                  sizeof(below_threshold_samples[0]);
@@ -300,8 +300,8 @@ static void test_numeric_stream_cumulative_raw_jump(void) {
     }
 
     const int32_t over_threshold_samples[] = {
-        1018, 1019, 1020, 1021, 1022,
-        1023, 1024, 1025, 1026, 1027,
+        1027, 1028, 1029, 1030, 1031,
+        1032, 1033, 1034, 1035, 1036,
     };
     fixture = (numeric_stream_fixture_t){
         .samples = over_threshold_samples,
@@ -312,9 +312,9 @@ static void test_numeric_stream_cumulative_raw_jump(void) {
     };
     assert(read_stabilized_value(&state, &fixture, &reading));
     assert(reading.reason == H2_ESP_ADC_VALUE_READ_JUMP);
-    assert(reading.immediate_raw == 1027);
-    assert(reading.stable_raw == 1025);
-    assert(state.stable_raw == 1025);
+    assert(reading.immediate_raw == 1036);
+    assert(reading.stable_raw == 1034);
+    assert(state.stable_raw == 1034);
 }
 
 static void test_numeric_stream_widened_reverse_delta(void) {
