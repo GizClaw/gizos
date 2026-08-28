@@ -12,17 +12,8 @@ py_test(
     name = "cp_startup_contract_test",
     srcs = ["tests/test_cp_startup_contract.py"],
     data = [
-        "//projects/e2e/targets/h2loader_tar_zlib/libco-smoke/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/audio-system/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/ble-broadcaster/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/ble-observer/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-client/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-server/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/crash-before-confirm/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/mp4-player/bk7258_v3_202405:cp/cp_main.c",
-        "//projects/example/targets/h2loader_tar_zlib/wifi-csi/bk7258_v3_202405:cp/cp_main.c",
-        "cp/cp_main.c",
+        "//native_component_src/bk7258/cp/h2_cp_transport:src/h2_bk_h2loader_cp_transport.c",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher:src/cp_main.c",
     ],
     legacy_create_init = 0,
     main = "tests/test_cp_startup_contract.py",
@@ -73,18 +64,6 @@ firmware_native_component(
 )
 
 firmware_native_component(
-    name = "cp_launcher_component",
-    srcs = [
-        "cp/cp_main.c",
-    ],
-    hdrs = [],
-    component_directory = "projects/h2loader/targets/h2loader_tar_zlib/loader/bk7258_v3_202405/cp",
-    component_name = "cp",
-    data = ["cp/CMakeLists.txt"],
-    execution_unit = "cp",
-)
-
-firmware_native_component(
     name = "h2loader_launcher",
     srcs = [],
     hdrs = [],
@@ -95,7 +74,6 @@ firmware_native_component(
     ],
     deps = [
         ":ap_launcher_component",
-        ":cp_launcher_component",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
         "//libs/bundle",
@@ -108,6 +86,7 @@ firmware_native_component(
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
     ],
 )
 
@@ -117,8 +96,6 @@ h2loader_bk7258_firmware(
         "CMakeLists.txt",
         "ap/CMakeLists.txt",
         "ap/ap_main.c",
-        "cp/CMakeLists.txt",
-        "cp/cp_main.c",
     ],
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",

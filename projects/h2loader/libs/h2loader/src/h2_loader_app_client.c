@@ -168,12 +168,23 @@ static int write_output_line(
 }
 
 static int write_console_line(
-    const h2_loader_app_client_return_console_t *console,
+    h2_loader_app_client_return_console_t *console,
     const char *line) {
+    size_t len;
+
     if (console == NULL || line == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    return write_output_line(console->write_user, console->write, line);
+    len = strlen(line);
+    if (len + 1u >= sizeof(console->status_line)) {
+        return H2_PAL_ERR_NO_SPACE;
+    }
+    if (line != console->status_line) {
+        memmove(console->status_line, line, len);
+    }
+    console->status_line[len++] = '\n';
+    console->status_line[len] = '\0';
+    return console->write(console->write_user, console->status_line, len);
 }
 
 static int prepare_return_to_loader(h2_loader_app_client_t *client) {

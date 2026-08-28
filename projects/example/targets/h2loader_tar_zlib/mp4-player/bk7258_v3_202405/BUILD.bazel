@@ -53,20 +53,6 @@ firmware_native_component(
 )
 
 firmware_native_component(
-    name = "cp_launcher_component",
-    srcs = [
-        "cp/cp_main.c",
-    ],
-    hdrs = [],
-    component_directory = "projects/example/targets/h2loader_tar_zlib/mp4-player/bk7258_v3_202405/cp",
-    component_name = "cp",
-    data = [
-        "cp/CMakeLists.txt",
-    ],
-    execution_unit = "cp",
-)
-
-firmware_native_component(
     name = "mp4_player_launcher",
     srcs = [],
     hdrs = [],
@@ -77,7 +63,6 @@ firmware_native_component(
     ],
     deps = [
         ":ap_launcher_component",
-        ":cp_launcher_component",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
         "//libs/mp4_decoder",
@@ -92,6 +77,7 @@ firmware_native_component(
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
     ],
 )
 
@@ -101,8 +87,6 @@ h2loader_bk7258_firmware(
         "CMakeLists.txt",
         "ap/CMakeLists.txt",
         "ap/ap_main.c",
-        "cp/CMakeLists.txt",
-        "cp/cp_main.c",
     ],
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",

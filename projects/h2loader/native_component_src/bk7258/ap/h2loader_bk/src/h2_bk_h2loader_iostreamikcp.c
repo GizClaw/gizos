@@ -553,7 +553,13 @@ static int app_write(void *user, const char *data, size_t len) {
     }
     offset += written;
   }
-  return state->io.vtable->flush(state->io.user);
+  /* The app console emits each logical line as body + "\n". Flushing the
+   * body first waits for its KCP ACK while the Host deliberately waits for
+   * the line terminator before its terminal flush, so both peers can wait
+   * forever. Queue both writes and flush only at the line boundary. */
+  return len != 0u && (data[len - 1u] == '\n' || data[len - 1u] == '\r')
+      ? state->io.vtable->flush(state->io.user)
+      : H2_PAL_OK;
 }
 
 static int arm_pending_app_rollback(const h2_pal_pref_api_t *pref) {

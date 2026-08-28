@@ -52,7 +52,6 @@ firmware_native_component(
 firmware_native_component(
     name = "cp_launcher_component",
     srcs = [
-        "cp/cp_main.c",
         "cp/wifi_scan_country_code_compat.c",
     ],
     hdrs = [],
@@ -60,6 +59,9 @@ firmware_native_component(
     component_name = "cp",
     data = ["cp/CMakeLists.txt"],
     execution_unit = "cp",
+    native_srcs = [
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher:src/cp_main.c",
+    ],
 )
 
 firmware_native_component(
@@ -94,7 +96,6 @@ h2loader_bk7258_firmware(
         "ap/CMakeLists.txt",
         "ap/ap_main.c",
         "cp/CMakeLists.txt",
-        "cp/cp_main.c",
         "cp/wifi_scan_country_code_compat.c",
     ],
     ap_task_policy = ":ap_task_policy",

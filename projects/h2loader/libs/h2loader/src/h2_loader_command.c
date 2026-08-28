@@ -1171,7 +1171,10 @@ static int h2loader_reboot_transition(void *user) {
         "H2_LOADER_REBOOT target=%s result=accepted\n",
         context->target);
     context->emitted = 1;
-    return (int)h2_command_flush(&context->self->command);
+    /* The lifecycle request is durable before this callback runs. Do not wait
+       for a peer ACK here: installation and the whole-device reset must start
+       even if the Host closes or the terminal response is lost. */
+    return H2_PAL_OK;
 }
 
 static void h2loader_reboot_failure(

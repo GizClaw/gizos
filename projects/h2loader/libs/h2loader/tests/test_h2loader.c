@@ -96,6 +96,7 @@ typedef struct command_test_io {
     size_t output_len;
     size_t writes;
     size_t flushes;
+    h2_pal_result_t flush_result;
     h2_pal_result_t exhausted_result;
 } command_test_io_t;
 
@@ -237,7 +238,7 @@ static h2_pal_result_t command_test_write(
 static h2_pal_result_t command_test_flush(void *user) {
     command_test_io_t *io = (command_test_io_t *)user;
     io->flushes += 1u;
-    return H2_PAL_OK;
+    return io->flush_result;
 }
 
 static int command_test_digest_start(void *user) {
@@ -3125,9 +3126,21 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
     assert(h2_loader_command_execute(&command, 3u, argv) == H2_PAL_OK);
     assert(strstr(io.output,
                "H2_LOADER_REBOOT target=app result=accepted") != NULL);
-    assert(io.flushes == 4u);
+    assert(io.flushes == 3u);
     assert(context.disruptive_calls == 1);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_APP);
+    assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
+
+    context.install_state = H2_LOADER_INSTALL_STATE_IDLE;
+    context.disruptive_calls = 0;
+    io.flush_result = H2_PAL_ERR_TIMEOUT;
+    memset(io.output, 0, sizeof(io.output));
+    io.output_len = 0u;
+    assert(h2_loader_command_execute(&command, 3u, argv) ==
+           H2_PAL_ERR_TIMEOUT);
+    assert(strstr(io.output,
+               "H2_LOADER_REBOOT target=app result=accepted") != NULL);
+    assert(context.disruptive_calls == 1);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
 }
 
@@ -4079,6 +4092,7 @@ typedef struct app_return_test_context {
     size_t input_offset;
     char output[256];
     size_t output_len;
+    size_t successful_writes;
     int write_result;
 } app_return_test_context_t;
 
@@ -4096,6 +4110,8 @@ static int app_return_write(void *user, const char *data, size_t len) {
     if (context->write_result != H2_PAL_OK) {
         return context->write_result;
     }
+    assert(len != 0u && data[len - 1u] == '\n');
+    context->successful_writes += 1u;
     assert(context->output_len + len < sizeof(context->output));
     if (len >= strlen("H2_LOADER_ROLLBACK") &&
         memcmp(data, "H2_LOADER_ROLLBACK", strlen("H2_LOADER_ROLLBACK")) == 0) {
@@ -4300,6 +4316,7 @@ static void test_app_return_console_prepares_before_success(void) {
     assert(context.lifecycle.selected_partition == 17u);
     assert(context.lifecycle.reboots == 1);
     assert(strstr(context.output, "H2_LOADER_ROLLBACK result=OK\n") != NULL);
+    assert(context.successful_writes == 2u);
     assert(h2_loader_app_client_join_return_console(&client) == H2_PAL_OK);
 }
 

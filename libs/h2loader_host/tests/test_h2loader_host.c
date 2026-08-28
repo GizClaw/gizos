@@ -1918,7 +1918,7 @@ static const h2_pal_serial_host_vtable_t serial_control_vtable = {
     .close = serial_control_close,
 };
 
-static void test_serial_deasserts_control_lines(void) {
+static void test_serial_deasserts_rts(void) {
     h2_pal_time_api_t time = {0};
     serial_control_fixture_t fixture = {
         .set_result = H2_PAL_OK,
@@ -1941,9 +1941,7 @@ static void test_serial_deasserts_control_lines(void) {
     assert(connection == NULL);
     assert(fixture.event_count == 4u);
     assert(memcmp(fixture.events, "ostc", 4u) == 0);
-    assert(fixture.line_mask ==
-        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
-         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.line_mask == H2_PAL_SERIAL_HOST_CONTROL_RTS);
     assert(fixture.asserted_lines == 0u);
 
     memset(&fixture, 0, sizeof(fixture));
@@ -1974,6 +1972,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
-    test_serial_deasserts_control_lines();
+    test_serial_deasserts_rts();
     return 0;
 }

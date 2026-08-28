@@ -215,8 +215,8 @@ typedef struct h2_h2loader_host_serial_connection_config {
 /**
  * @brief Open a reliable serial H2Loader session and complete SESSION_ACK.
  *
- * The call deasserts DTR and RTS immediately after Host Serial open to
- * neutralize operating-system defaults; it does not pulse either line.
+ * The call deasserts RTS immediately after Host Serial open to neutralize
+ * operating-system defaults; it leaves DTR untouched and does not pulse RTS.
  * Unsupported control lines do not prevent the handshake. conversation_id
  * must be nonzero or a nonzero value is derived from the monotonic clock.
  * The connection borrows all injected PAL APIs and never falls back to raw

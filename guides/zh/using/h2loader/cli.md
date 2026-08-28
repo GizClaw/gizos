@@ -103,7 +103,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `--ready` 和非零 `--post-delay` 是 serial boot-marker 调试参数，不能与 `--transport bleikcp` 组合；CLI 会在连接前拒绝，而不是悄悄忽略 transport-specific 参数。
 
-Reliable UART transport 固定使用 `230400` baud，Loader 与 app image 使用相同 contract，CLI 不提供 baud 参数。Host Serial 打开任意 endpoint 后、借出 byte stream 和开始握手前，立即把 DTR 与 RTS 都设为 inactive；它不 assert、不 pulse，也不按 ESP/BK、VID/PID、操作系统或 endpoint 类型设置例外。不支持 control line 的 provider 返回 canonical unsupported，Host 仍继续握手；其它 control-line 错误会关闭 session 并返回。macOS/CH340 在 `open()` 到明确 deassert 之间仍可能让 BK target 短暂 reset，握手重试必须等待设备重新启动，而不能把这段窗口解释为 layout 或 UART 故障。Host、ESP UART backend 和 BK AP/CP tunnel 都保留一次 encoded frame 的写边界，不增加固定 write gap；设备 console 与 protocol frame 通过 target TX serializer 串行化。进度与最终成功仍以 peer ACK 和 package checksum 为准。
+Reliable UART transport 固定使用 `230400` baud，Loader 与 app image 使用相同 contract，CLI 不提供 baud 参数。Host Serial 打开任意 endpoint 后、借出 byte stream 和开始握手前，立即把 RTS 设为 inactive，DTR 保持 provider 打开后的原状态；它不 assert、不 pulse，也不按 ESP/BK、VID/PID、操作系统或 endpoint 类型设置例外。不支持 control line 的 provider 返回 canonical unsupported，Host 仍继续握手；其它 control-line 错误会关闭 session 并返回。macOS/CH340 在 `open()` 到明确 deassert RTS 之间仍可能让 BK target 短暂 reset，握手重试必须等待设备重新启动，而不能把这段窗口解释为 layout 或 UART 故障。Host、ESP UART backend 和 BK AP/CP tunnel 都保留一次 encoded frame 的写边界，不增加固定 write gap；设备 console 与 protocol frame 通过 target TX serializer 串行化。进度与最终成功仍以 peer ACK 和 package checksum 为准。
 
 IO Stream iKCP 的 `send` 由 receiver window、CWND、ACK 和重传提供 backpressure，不使用固定 256-byte/10 ms 发送节流。Host 按 KCP MSS 组织 single-segment message，并以不超过 6 KiB（BK 20-segment receive window 内）的 delivery batch 输出 `acked bytes / total / percent / rate` 进度；进度表示 peer 已确认的数据，不是仅写入本机串口 buffer。
 

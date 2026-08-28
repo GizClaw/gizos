@@ -5,8 +5,10 @@
 #include <stdbool.h>
 
 #include "common/bk_include.h"
+#include "components/shell_task.h"
 #include "driver/mb_uart_driver.h"
 #include "driver/uart.h"
+#include "os/mem.h"
 #include "os/os.h"
 #include "shell_drv.h"
 
@@ -35,7 +37,7 @@ static beken_semaphore_t s_transport_done;
 static h2_bk_uart_tunnel_decoder_t s_decoder;
 static int s_started;
 static volatile int s_running;
-static uint8_t s_uart_rx_storage[H2_BK_CP_UART_RX_QUEUE_SIZE];
+static uint8_t *s_uart_rx_storage;
 static h2_bk_cp_byte_ring_t s_uart_rx_ring;
 
 static void uart_rx_indicate(void) {
@@ -96,26 +98,34 @@ static int mailbox_write_all(uint8_t mailbox_id, const uint8_t *data,
 
 static int suspend_logs(void *user) {
   (void)user;
-  return shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_SUSPEND,
-                                     NULL)
-             ? 0
-             : -1;
+  shell_log_flush();
+  return 0;
 }
 
 static int write_uart_frame(void *user, const uint8_t *data, size_t len) {
   (void)user;
-  int rc = bk_uart_set_enable_tx(UART_ID_0, true);
-  return rc == 0 ? bk_uart_write_bytes(UART_ID_0, data, (uint32_t)len) : rc;
+  if (len > UINT16_MAX) {
+    return -1;
+  }
+  /* The SDK copies raw data into an owned log packet and serializes complete
+   * packets in its UART ISR. Other logs can precede or follow this binary
+   * frame, but cannot be inserted into it. */
+  return shell_log_raw_data(data, (uint16_t)len) ? 0 : -1;
 }
 
 static void wait_uart_frame(void *user) {
   (void)user;
-  bk_uart_wait_tx_over(UART_ID_0);
+  shell_log_flush();
+  uint8_t uart_id = 0u;
+  if (shell_uart.dev_drv != NULL && shell_uart.dev_drv->io_ctrl != NULL &&
+      shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_GET_UART_PORT,
+                                  &uart_id)) {
+    bk_uart_wait_tx_over((uart_id_t)uart_id);
+  }
 }
 
 static void resume_logs(void *user) {
   (void)user;
-  (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_RESUME, NULL);
 }
 
 static int acknowledge_frame(void *user, uint16_t sequence) {
@@ -190,8 +200,14 @@ int h2_bk_h2loader_cp_transport_start(void) {
     (void)bk_mb_uart_dev_deinit(MB_UART0);
     return -1;
   }
+  s_uart_rx_storage = psram_malloc(H2_BK_CP_UART_RX_QUEUE_SIZE);
+  if (s_uart_rx_storage == NULL) {
+    (void)bk_mb_uart_dev_deinit(MB_UART1);
+    (void)bk_mb_uart_dev_deinit(MB_UART0);
+    return -1;
+  }
   h2_bk_cp_byte_ring_init(&s_uart_rx_ring, s_uart_rx_storage,
-                          sizeof(s_uart_rx_storage));
+                          H2_BK_CP_UART_RX_QUEUE_SIZE);
   if (bk_uart_set_baud_rate(UART_ID_0, H2_BK_CP_UART_BAUD_RATE) != 0 ||
       shell_uart.dev_drv == NULL || shell_uart.dev_drv->read == NULL ||
       shell_uart.dev_drv->io_ctrl == NULL ||
@@ -201,6 +217,8 @@ int h2_bk_h2loader_cp_transport_start(void) {
       (void)shell_uart.dev_drv->io_ctrl(
           &shell_uart, SHELL_IO_CTRL_SET_RX_ISR, NULL);
     }
+    psram_free(s_uart_rx_storage);
+    s_uart_rx_storage = NULL;
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
     return -1;
@@ -209,20 +227,24 @@ int h2_bk_h2loader_cp_transport_start(void) {
   s_running = 1;
   if (rtos_init_semaphore(&s_transport_done, 1) != kNoErr) {
     s_running = 0;
+    psram_free(s_uart_rx_storage);
+    s_uart_rx_storage = NULL;
     (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_SET_RX_ISR,
                                       NULL);
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
     return -1;
   }
-  int rc = rtos_create_thread(&s_transport_thread, BEKEN_APPLICATION_PRIORITY,
-                              "h2-uart-tunnel", transport_task,
-                              H2_BK_CP_TASK_STACK_SIZE, NULL);
+  int rc = rtos_create_psram_thread(
+      &s_transport_thread, BEKEN_APPLICATION_PRIORITY, "h2-uart-tunnel",
+      transport_task, H2_BK_CP_TASK_STACK_SIZE, NULL);
   if (rc == 0) {
     s_started = 1;
   } else {
     s_running = 0;
     (void)rtos_deinit_semaphore(&s_transport_done);
+    psram_free(s_uart_rx_storage);
+    s_uart_rx_storage = NULL;
     (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_SET_RX_ISR,
                                       NULL);
     (void)bk_mb_uart_dev_deinit(MB_UART1);
@@ -246,6 +268,8 @@ int h2_bk_h2loader_cp_transport_stop(void) {
                                     NULL);
   (void)bk_mb_uart_dev_deinit(MB_UART1);
   (void)bk_mb_uart_dev_deinit(MB_UART0);
+  psram_free(s_uart_rx_storage);
+  s_uart_rx_storage = NULL;
   s_started = 0;
   return 0;
 }
