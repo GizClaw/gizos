@@ -1,1 +1,6 @@
-{}
+{
+  "baud": 500000,
+  "reset_type": 0,
+  "link_type": 0,
+  "offset": "0x0"
+}

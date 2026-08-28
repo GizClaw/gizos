@@ -1,7 +1,49 @@
 """Analysis tests for the public H2Loader recovery-config contract."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "FirmwareReleaseInfo")
 load("//tools/bazel:bk7258.bzl", "Bk7258FirmwareInfo")
+load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+
+def _fake_esp_firmware_impl(ctx):
+    app_image = ctx.actions.declare_file(ctx.label.name + "/app.bin")
+    bootloader_image = ctx.actions.declare_file(ctx.label.name + "/bootloader.bin")
+    combined_factory_image = ctx.actions.declare_file(ctx.label.name + "/combined_factory.bin")
+    elf = ctx.actions.declare_file(ctx.label.name + "/firmware.elf")
+    flash_files = ctx.actions.declare_file(ctx.label.name + "/flash-files.fixture")
+    flash_metadata = ctx.actions.declare_file(ctx.label.name + "/flasher_args.json")
+    map_file = ctx.actions.declare_file(ctx.label.name + "/firmware.map")
+    partition_table_image = ctx.actions.declare_file(ctx.label.name + "/partition-table.bin")
+    outputs = [
+        app_image,
+        bootloader_image,
+        combined_factory_image,
+        elf,
+        flash_files,
+        flash_metadata,
+        map_file,
+        partition_table_image,
+    ]
+    for output in outputs:
+        ctx.actions.write(output, "fixture")
+    return [
+        DefaultInfo(files = depset(outputs)),
+        FirmwareInfo(
+            app_image = app_image,
+            bootloader_image = bootloader_image,
+            combined_factory_image = combined_factory_image,
+            elf = elf,
+            files = depset(outputs),
+            flash_files = flash_files,
+            flash_metadata = flash_metadata,
+            map = map_file,
+            partition_table_image = partition_table_image,
+            target = "esp32s3",
+            version = "1.2.3",
+        ),
+    ]
+
+fake_esp_firmware = rule(implementation = _fake_esp_firmware_impl)
 
 def _fake_bk7258_firmware_impl(ctx):
     ap_elf = ctx.actions.declare_file(ctx.label.name + "/ap.elf")
@@ -45,6 +87,26 @@ def _fake_bk7258_firmware_impl(ctx):
     ]
 
 fake_bk7258_firmware = rule(implementation = _fake_bk7258_firmware_impl)
+
+def _factory_exclusion_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    release = target[FirmwareReleaseInfo]
+    release_files = target[OutputGroupInfo].release.to_list()
+    asserts.equals(env, None, release.factory)
+    asserts.true(env, any([file.basename.endswith(".firmware.json") for file in release_files]), "release output group must retain metadata")
+    asserts.false(env, any([file.basename.endswith(".combined_factory.bin") for file in release_files]), "release output group must omit combined factory images")
+    actions = [
+        action
+        for action in analysistest.target_actions(env)
+        if action.mnemonic == "H2LoaderTarZlib"
+    ]
+    asserts.equals(env, 1, len(actions))
+    if actions:
+        asserts.false(env, "--factory-output" in actions[0].argv, "package action must omit factory output wiring")
+    return analysistest.end(env)
+
+factory_exclusion_test = analysistest.make(_factory_exclusion_test_impl)
 
 def _assert_recovery_config(env, suffix, message):
     actions = [
