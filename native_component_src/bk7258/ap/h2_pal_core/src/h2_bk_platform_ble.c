@@ -1795,6 +1795,11 @@ static void h2_bk_ble_notice_cb_unlocked(ble_notice_t notice, void *param) {
         }
     } else if (notice == BLE_5_DISCONNECT_EVENT) {
         const ble_discon_ind_t *disconn = (const ble_discon_ind_t *)param;
+        /* A disconnect can still arrive when the stack omitted or delayed the
+         * matching peripheral-connect notice.  Normalize the controller's
+         * stopped connectable advertisement here as well so the upper layer
+         * can always restart it after the session. */
+        h2_bk_ble_mark_connectable_advertising_stopped();
         h2_pal_ble_disconnected_info_t event;
         memset(&event, 0, sizeof(event));
         event.conn_handle = disconn != NULL
@@ -2291,6 +2296,10 @@ static int32_t h2_bk_ble_gatts_cb_unlocked(
         break;
     case BK_GATTS_DISCONNECT_EVT:
         if (param != NULL) {
+            /* EtherMind may report a failed/short-lived session only through
+             * GATTS_DISCONNECT.  Clear the stale advertising state before the
+             * upper-layer disconnect handler schedules a restart. */
+            h2_bk_ble_mark_connectable_advertising_stopped();
             os_printf(
                 "H2_BK_BLE_GATTS_DISCONNECTED conn=%u reason=%u\n",
                 (unsigned)param->disconnect.conn_id,

@@ -23,9 +23,13 @@
 #define H2_BK_UART_BAUD_RATE 230400u
 #define H2_BK_UART_TX_ACK_MAGIC 0xa5u
 #define H2_BK_UART_TX_ACK_VERSION 1u
+#define H2_BK_UART_CP_READY_REQUEST 0x5au
+#define H2_BK_UART_CP_READY_ACK 0x5bu
 
 static volatile int s_initialized;
 static uint16_t s_sequence;
+static int s_cp_ready;
+static uint32_t s_ready_requested_at;
 
 static uint32_t elapsed_ms(uint32_t started) {
   return (uint32_t)rtos_get_time() - started;
@@ -49,6 +53,8 @@ static h2_pal_result_t configure(void *user,
       return H2_PAL_ERR_IO;
     }
     s_sequence = 0u;
+    s_cp_ready = 0;
+    s_ready_requested_at = 0u;
     s_initialized = 1;
   }
   return H2_PAL_OK;
@@ -66,6 +72,23 @@ static h2_pal_result_t read_stream(void *user, void *buffer, size_t len,
   do {
     if (!s_initialized) {
       return H2_PAL_ERR_CLOSED;
+    }
+    if (!s_cp_ready) {
+      uint32_t now = (uint32_t)rtos_get_time();
+      if (s_ready_requested_at == 0u ||
+          elapsed_ms(s_ready_requested_at) >= 50u) {
+        uint8_t request = H2_BK_UART_CP_READY_REQUEST;
+        if (bk_mb_uart_write(MB_UART1, &request, sizeof(request)) != 0u) {
+          s_ready_requested_at = now;
+        }
+      }
+      uint8_t response = 0u;
+      while (bk_mb_uart_read(MB_UART1, &response, sizeof(response)) != 0u) {
+        if (response == H2_BK_UART_CP_READY_ACK) {
+          s_cp_ready = 1;
+          break;
+        }
+      }
     }
     uint16_t count = bk_mb_uart_read(MB_UART0, buffer, (uint16_t)len);
     if (count != 0u) {

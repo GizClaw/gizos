@@ -68,7 +68,9 @@ class BleAdvertisingContractTest(unittest.TestCase):
         source = sources[0].read_text(encoding="utf-8")
         gatts_connect = source.index("case BK_GATTS_CONNECT_EVT:")
         gatts_disconnect = source.index("case BK_GATTS_DISCONNECT_EVT:")
+        gatts_default = source.index("    default:", gatts_disconnect)
         gatts_connect_body = source[gatts_connect:gatts_disconnect]
+        gatts_disconnect_body = source[gatts_disconnect:gatts_default]
         self.assertNotIn("link_role", gatts_connect_body)
         self.assertIn(
             "connection.conn_handle = param->connect.conn_id",
@@ -81,6 +83,10 @@ class BleAdvertisingContractTest(unittest.TestCase):
         self.assertIn(
             "h2_bk_ble_mark_connectable_advertising_stopped()",
             gatts_connect_body,
+        )
+        self.assertIn(
+            "h2_bk_ble_mark_connectable_advertising_stopped()",
+            gatts_disconnect_body,
         )
         helper = source.index(
             "static void h2_bk_ble_mark_connectable_advertising_stopped("
@@ -111,6 +117,22 @@ class BleAdvertisingContractTest(unittest.TestCase):
         self.assertIn(
             "conn_handle == s_h2_bk_ble_peripheral_conn_handle",
             source[update_connection:exchange_mtu],
+        )
+
+        legacy_connect = source.index("} else if (notice == BLE_5_CONNECT_EVENT)")
+        legacy_disconnect = source.index(
+            "} else if (notice == BLE_5_DISCONNECT_EVENT)"
+        )
+        legacy_init_connect = source.index(
+            "} else if (notice == BLE_5_INIT_CONNECT_EVENT)"
+        )
+        self.assertIn(
+            "h2_bk_ble_mark_connectable_advertising_stopped()",
+            source[legacy_connect:legacy_disconnect],
+        )
+        self.assertIn(
+            "h2_bk_ble_mark_connectable_advertising_stopped()",
+            source[legacy_disconnect:legacy_init_connect],
         )
 
     def test_ethermind_rx_does_not_reenter_attribute_access(self):

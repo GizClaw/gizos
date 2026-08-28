@@ -534,7 +534,8 @@ static h2_pal_result_t serial_set_control_lines(
     h2_pal_serial_host_session_t *session,
     uint32_t line_mask,
     uint32_t asserted_lines) {
-    int bits;
+    int set_bits = 0;
+    int clear_bits = 0;
     h2_pal_result_t result = H2_PAL_OK;
     (void)user;
     if (session == NULL) {
@@ -543,24 +544,31 @@ static h2_pal_result_t serial_set_control_lines(
     pthread_mutex_lock(&session->mutex);
     if (session->closed) {
         result = H2_PAL_ERR_CLOSED;
-    } else if (ioctl(session->fd, TIOCMGET, &bits) != 0) {
-        result = errno == ENOTTY ? H2_PAL_ERR_UNSUPPORTED : map_io_error(errno);
     } else {
         if ((line_mask & H2_PAL_SERIAL_HOST_CONTROL_DTR) != 0u) {
             if ((asserted_lines & H2_PAL_SERIAL_HOST_CONTROL_DTR) != 0u) {
-                bits |= TIOCM_DTR;
+                set_bits |= TIOCM_DTR;
             } else {
-                bits &= ~TIOCM_DTR;
+                clear_bits |= TIOCM_DTR;
             }
         }
         if ((line_mask & H2_PAL_SERIAL_HOST_CONTROL_RTS) != 0u) {
             if ((asserted_lines & H2_PAL_SERIAL_HOST_CONTROL_RTS) != 0u) {
-                bits |= TIOCM_RTS;
+                set_bits |= TIOCM_RTS;
             } else {
-                bits &= ~TIOCM_RTS;
+                clear_bits |= TIOCM_RTS;
             }
         }
-        if (ioctl(session->fd, TIOCMSET, &bits) != 0) {
+        /* Use the atomic bit operations used by established serial clients.
+         * Some USB-UART drivers accept TIOCMGET/TIOCMSET without applying the
+         * requested output transition, while TIOCMBIS/TIOCMBIC correctly
+         * update the physical DTR/RTS lines. */
+        if (clear_bits != 0 &&
+            ioctl(session->fd, TIOCMBIC, &clear_bits) != 0) {
+            result =
+                errno == ENOTTY ? H2_PAL_ERR_UNSUPPORTED : map_io_error(errno);
+        } else if (set_bits != 0 &&
+                   ioctl(session->fd, TIOCMBIS, &set_bits) != 0) {
             result =
                 errno == ENOTTY ? H2_PAL_ERR_UNSUPPORTED : map_io_error(errno);
         }

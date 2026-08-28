@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 #include "common/bk_include.h"
+#include "bk_private/bk_uart.h"
 #include "components/shell_task.h"
 #include "driver/mb_uart_driver.h"
 #include "driver/uart.h"
@@ -31,6 +32,8 @@
 #define H2_BK_CP_STOP_TIMEOUT_MS 1000u
 #define H2_BK_CP_TX_ACK_MAGIC 0xa5u
 #define H2_BK_CP_TX_ACK_VERSION 1u
+#define H2_BK_CP_READY_REQUEST 0x5au
+#define H2_BK_CP_READY_ACK 0x5bu
 
 static beken_thread_t s_transport_thread;
 static beken_semaphore_t s_transport_done;
@@ -39,16 +42,29 @@ static int s_started;
 static volatile int s_running;
 static uint8_t *s_uart_rx_storage;
 static h2_bk_cp_byte_ring_t s_uart_rx_ring;
+static uart_id_t s_uart_id = UART_ID_MAX;
+static int s_uart_rx_taken;
+static int s_ap_ready;
 
-static void uart_rx_indicate(void) {
+static void uart_rx_isr(uart_id_t uart_id, void *param) {
   uint8_t buffer[H2_BK_CP_UART_CHUNK_SIZE];
-  uint16_t count;
+  size_t count = 0u;
+  uint8_t byte;
+  (void)param;
 
-  /* Drain the SDK's 200-byte shell ring from the UART ISR into a queue sized
-   * beyond the complete KCP receive window. The transport task may block on
-   * AP mailbox backpressure without silently losing the next UART burst. */
-  while ((count = shell_uart.dev_drv->read(&shell_uart, buffer,
-                                           sizeof(buffer))) != 0u) {
+  /* Own the physical RX ISR while the CP transport is active. Merely setting
+   * the shell RX indication callback is insufficient when CONFIG_CLI is off:
+   * the callback depends on the shell's private ISR and 200-byte ring having
+   * already been installed. Drain the UART FIFO directly into the transport
+   * ring so loader input does not depend on the CLI lifecycle. */
+  while (uart_read_byte_ex(uart_id, &byte) != -1) {
+    buffer[count++] = byte;
+    if (count == sizeof(buffer)) {
+      (void)h2_bk_cp_byte_ring_push(&s_uart_rx_ring, buffer, count);
+      count = 0u;
+    }
+  }
+  if (count != 0u) {
     (void)h2_bk_cp_byte_ring_push(&s_uart_rx_ring, buffer, count);
   }
 }
@@ -61,17 +77,20 @@ static uint16_t uart_rx_read(uint8_t *buffer, uint16_t capacity) {
 }
 
 static int uart_rx_take_overflow(void) {
-  uint16_t shell_overflow = 0u;
-  (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_GET_RX_STATUS,
-                                    &shell_overflow);
   uint32_t interrupt_level = rtos_enter_critical();
   int overflow = h2_bk_cp_byte_ring_take_overflow(&s_uart_rx_ring);
-  if (shell_overflow != 0u) {
-    s_uart_rx_ring.read_offset = s_uart_rx_ring.write_offset;
-    overflow = 1;
-  }
   rtos_exit_critical(interrupt_level);
   return overflow;
+}
+
+static void uart_rx_release(void) {
+  if (!s_uart_rx_taken) {
+    return;
+  }
+  (void)bk_uart_disable_rx_interrupt(s_uart_id);
+  (void)bk_uart_recover_rx_isr(s_uart_id);
+  s_uart_rx_taken = 0;
+  s_uart_id = UART_ID_MAX;
 }
 
 typedef struct mailbox_writer_context {
@@ -98,8 +117,14 @@ static int mailbox_write_all(uint8_t mailbox_id, const uint8_t *data,
 
 static int suspend_logs(void *user) {
   (void)user;
+  if (shell_uart.dev_drv == NULL || shell_uart.dev_drv->io_ctrl == NULL) {
+    return -1;
+  }
   shell_log_flush();
-  return 0;
+  return shell_uart.dev_drv->io_ctrl(
+             &shell_uart, SHELL_IO_CTRL_TX_SUSPEND, NULL)
+             ? 0
+             : -1;
 }
 
 static int write_uart_frame(void *user, const uint8_t *data, size_t len) {
@@ -107,10 +132,11 @@ static int write_uart_frame(void *user, const uint8_t *data, size_t len) {
   if (len > UINT16_MAX) {
     return -1;
   }
-  /* The SDK copies raw data into an owned log packet and serializes complete
-   * packets in its UART ISR. Other logs can precede or follow this binary
-   * frame, but cannot be inserted into it. */
-  return shell_log_raw_data(data, (uint16_t)len) ? 0 : -1;
+  if (bk_uart_set_enable_tx(s_uart_id, true) != BK_OK) {
+    return -1;
+  }
+  return bk_uart_write_bytes(s_uart_id, data, (uint32_t)len) == BK_OK ? 0
+                                                                     : -1;
 }
 
 static void wait_uart_frame(void *user) {
@@ -126,6 +152,8 @@ static void wait_uart_frame(void *user) {
 
 static void resume_logs(void *user) {
   (void)user;
+  (void)shell_uart.dev_drv->io_ctrl(
+      &shell_uart, SHELL_IO_CTRL_TX_RESUME, NULL);
 }
 
 static int acknowledge_frame(void *user, uint16_t sequence) {
@@ -146,9 +174,8 @@ static int write_physical_frame(void *user, uint16_t sequence,
       shell_uart.dev_drv == NULL || shell_uart.dev_drv->io_ctrl == NULL) {
     return -1;
   }
-  /* Pause the shell serializer after its current FIFO contents drain. Any
-   * remaining or newly queued log bytes stay pending until resume, so this
-   * complete protocol frame cannot be interleaved with console output. */
+  /* Pause the shell serializer after its current FIFO contents drain, write
+   * the protocol frame directly, then resume queued logs. */
   const h2_bk_cp_frame_writer_t writer = {
       .suspend_logs = suspend_logs,
       .write_frame = write_uart_frame,
@@ -165,10 +192,30 @@ static void transport_task(void *arg) {
   (void)arg;
 
   while (s_running) {
+    /* RX-finish is not raised reliably for short frames on BK7258. Poll the
+     * hardware FIFO so the 22-byte session-open frame cannot remain below the
+     * interrupt threshold indefinitely. */
+    uart_rx_isr(s_uart_id, NULL);
+    uint8_t ready_request = 0u;
+    while (bk_mb_uart_read(MB_UART1, &ready_request,
+                           sizeof(ready_request)) != 0u) {
+      if (ready_request == H2_BK_CP_READY_REQUEST) {
+        uint8_t ready_ack = H2_BK_CP_READY_ACK;
+        if (!s_ap_ready) {
+          /* AP startup can reconfigure shared UART state after CP startup.
+           * Restore the CP-owned receiver only when the AP endpoint is ready. */
+          (void)bk_uart_set_enable_rx(s_uart_id, true);
+          s_ap_ready = 1;
+        }
+        (void)mailbox_write_all(MB_UART1, &ready_ack, sizeof(ready_ack));
+      }
+    }
     if (uart_rx_take_overflow()) {
       os_printf("H2_BK_CP_TRANSPORT_ERROR reason=rx_overflow\r\n");
     }
-    uint16_t uart_count = uart_rx_read(buffer, H2_BK_CP_UART_CHUNK_SIZE);
+    uint16_t uart_count = s_ap_ready
+                              ? uart_rx_read(buffer, H2_BK_CP_UART_CHUNK_SIZE)
+                              : 0u;
     if (uart_count != 0u) {
       if (mailbox_write_all(MB_UART0, buffer, uart_count) != 0) {
         break;
@@ -208,29 +255,37 @@ int h2_bk_h2loader_cp_transport_start(void) {
   }
   h2_bk_cp_byte_ring_init(&s_uart_rx_ring, s_uart_rx_storage,
                           H2_BK_CP_UART_RX_QUEUE_SIZE);
-  if (bk_uart_set_baud_rate(UART_ID_0, H2_BK_CP_UART_BAUD_RATE) != 0 ||
-      shell_uart.dev_drv == NULL || shell_uart.dev_drv->read == NULL ||
-      shell_uart.dev_drv->io_ctrl == NULL ||
-      !shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_SET_RX_ISR,
-                                   (void *)uart_rx_indicate)) {
-    if (shell_uart.dev_drv != NULL && shell_uart.dev_drv->io_ctrl != NULL) {
-      (void)shell_uart.dev_drv->io_ctrl(
-          &shell_uart, SHELL_IO_CTRL_SET_RX_ISR, NULL);
-    }
+  s_ap_ready = 0;
+  uint8_t uart_port = UART_ID_MAX;
+  if (shell_uart.dev_drv == NULL || shell_uart.dev_drv->io_ctrl == NULL ||
+      !shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_GET_UART_PORT,
+                                   &uart_port) ||
+      uart_port >= UART_ID_MAX) {
     psram_free(s_uart_rx_storage);
     s_uart_rx_storage = NULL;
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
     return -1;
   }
+  s_uart_id = (uart_id_t)uart_port;
+  if (bk_uart_set_baud_rate(s_uart_id, H2_BK_CP_UART_BAUD_RATE) != BK_OK ||
+      bk_uart_take_rx_isr(s_uart_id, uart_rx_isr, NULL) != BK_OK) {
+    s_uart_id = UART_ID_MAX;
+    psram_free(s_uart_rx_storage);
+    s_uart_rx_storage = NULL;
+    (void)bk_mb_uart_dev_deinit(MB_UART1);
+    (void)bk_mb_uart_dev_deinit(MB_UART0);
+    return -1;
+  }
+  s_uart_rx_taken = 1;
+  (void)bk_uart_disable_rx_interrupt(s_uart_id);
   h2_bk_uart_tunnel_decoder_init(&s_decoder);
   s_running = 1;
   if (rtos_init_semaphore(&s_transport_done, 1) != kNoErr) {
     s_running = 0;
     psram_free(s_uart_rx_storage);
     s_uart_rx_storage = NULL;
-    (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_SET_RX_ISR,
-                                      NULL);
+    uart_rx_release();
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
     return -1;
@@ -245,8 +300,7 @@ int h2_bk_h2loader_cp_transport_start(void) {
     (void)rtos_deinit_semaphore(&s_transport_done);
     psram_free(s_uart_rx_storage);
     s_uart_rx_storage = NULL;
-    (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_SET_RX_ISR,
-                                      NULL);
+    uart_rx_release();
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
   }
@@ -264,8 +318,7 @@ int h2_bk_h2loader_cp_transport_stop(void) {
   }
   s_transport_thread = NULL;
   (void)rtos_deinit_semaphore(&s_transport_done);
-  (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_SET_RX_ISR,
-                                    NULL);
+  uart_rx_release();
   (void)bk_mb_uart_dev_deinit(MB_UART1);
   (void)bk_mb_uart_dev_deinit(MB_UART0);
   psram_free(s_uart_rx_storage);
