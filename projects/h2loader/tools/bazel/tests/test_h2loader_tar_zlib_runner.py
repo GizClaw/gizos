@@ -39,6 +39,9 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             package = root / "out/loader.update.tar.zlib"
             metadata = root / "out/loader.firmware.json"
             recovery = root / "out/loader.recovery.h2fb"
+            factory_input = root / "firmware/combined_factory.bin"
+            factory_output = root / "out/loader.combined_factory.bin"
+            factory_input.write_bytes(b"combined factory")
             result = subprocess.run(
                 [
                     sys.executable,
@@ -67,6 +70,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     str(package),
                     "--metadata-output",
                     str(metadata),
+                    "--factory-image",
+                    str(factory_input),
+                    "--factory-output",
+                    str(factory_output),
                     "--recovery",
                     str(recovery),
                     "--esp-flash-root",
@@ -79,6 +86,16 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(recovery.is_file())
+            self.assertEqual(factory_output.read_bytes(), b"combined factory")
+            release = json.loads(metadata.read_text(encoding="utf-8"))
+            factory_asset = next(
+                asset
+                for asset in release["assets"]
+                if asset["operation"] == "factory-flash"
+            )
+            self.assertEqual(factory_asset["name"], "loader.combined_factory.bin")
+            self.assertEqual(factory_asset["release_suffix"], ".combined_factory.bin")
+            self.assertEqual(factory_asset["flash_offset"], 0)
 
     def test_packages_symlinked_bazel_data_input(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -197,6 +214,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             release = json.loads(metadata.read_text(encoding="utf-8"))
             self.assertEqual(release["entry"], "projects/example/targets/h2loader_tar_zlib/example/board")
             self.assertEqual(release["assets"][0]["operation"], "managed-install")
+            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar.zlib")
             self.assertEqual(release["native_artifacts"][0]["name"], "firmware.elf")
 
     def test_rejects_data_outside_declared_root(self):
@@ -398,6 +416,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             self.assertEqual(
                 [asset["operation"] for asset in release["assets"]],
                 ["managed-install", "recovery"],
+            )
+            self.assertEqual(
+                [asset["release_suffix"] for asset in release["assets"]],
+                [".update.tar.zlib", ".recovery.h2fb"],
             )
 
 
