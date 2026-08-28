@@ -82,7 +82,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `--probe-timeout` 默认 10 秒，并分别作为每个串口的 handshake timeout 和 status command timeout，同时也是 BLE discovery allowance。N 个无响应串口的最坏耗时可达到 BLE allowance 加 `N × (handshake timeout + status timeout)` 与有界 open/close overhead。CLI 在 candidate 之间检查 cancellation，当前正在进行的 bounded connect 不变为异步取消；每个已打开 connection 都会在继续或返回前关闭。
 
-BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。BLE entry 的广播 board 仍只是 discovery evidence，不与 serial entry 配对，也不提升为 live identity。CLI 不以串口文件名、USB metadata、BLE display name、广播 board 或候选顺序猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
+BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。Legacy H2Loader advertisement 保留 management service UUID；compact identity 可以来自新固件的 manufacturer data，也兼容旧固件的 Service Data，并可由 scan response 补全。BLE entry 的广播 board 仍只是 discovery evidence，不与 serial entry 配对，也不提升为 live identity。CLI 不以串口文件名、USB metadata、BLE display name、广播 board 或候选顺序猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
