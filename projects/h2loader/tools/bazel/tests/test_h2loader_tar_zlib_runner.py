@@ -39,6 +39,9 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             package = root / "out/loader.update.tar.zlib"
             metadata = root / "out/loader.firmware.json"
             recovery = root / "out/loader.recovery.h2fb"
+            factory_input = root / "firmware/combined_factory.bin"
+            factory_output = root / "out/loader.combined_factory.bin"
+            factory_input.write_bytes(b"combined factory")
             result = subprocess.run(
                 [
                     sys.executable,
@@ -67,6 +70,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     str(package),
                     "--metadata-output",
                     str(metadata),
+                    "--factory-image",
+                    str(factory_input),
+                    "--factory-output",
+                    str(factory_output),
                     "--recovery",
                     str(recovery),
                     "--esp-flash-root",
@@ -79,6 +86,16 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(recovery.is_file())
+            self.assertEqual(factory_output.read_bytes(), b"combined factory")
+            release = json.loads(metadata.read_text(encoding="utf-8"))
+            factory_asset = next(
+                asset
+                for asset in release["assets"]
+                if asset["operation"] == "factory-flash"
+            )
+            self.assertEqual(factory_asset["name"], "loader.combined_factory.bin")
+            self.assertEqual(factory_asset["release_suffix"], ".combined_factory.bin")
+            self.assertEqual(factory_asset["flash_offset"], 0)
 
     def test_packages_symlinked_bazel_data_input(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -197,6 +214,7 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             release = json.loads(metadata.read_text(encoding="utf-8"))
             self.assertEqual(release["entry"], "projects/example/targets/h2loader_tar_zlib/example/board")
             self.assertEqual(release["assets"][0]["operation"], "managed-install")
+            self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar.zlib")
             self.assertEqual(release["native_artifacts"][0]["name"], "firmware.elf")
 
     def test_rejects_data_outside_declared_root(self):
@@ -291,6 +309,59 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("escapes declared root", result.stderr)
 
+    def test_rejects_unresolved_git_lfs_package_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "app.bin"
+            data = root / "data/images.pixa"
+            data.parent.mkdir(parents=True)
+            app.write_bytes(b"application")
+            data.write_bytes(
+                b"version https://git-lfs.github.com/spec/v1\r\n"
+                b"oid sha256:a12b33d85e0d6a25a2458352d4328c5826cde92a5818c9899c0454fd58d8baf0\r\n"
+                b"size 28588\r\n"
+            )
+            package = root / "out.update.tar.zlib"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--source-root",
+                    str(root),
+                    "--app-image",
+                    str(app),
+                    "--app-path",
+                    "app/esp/app.bin",
+                    "--entry",
+                    "entry",
+                    "--platform",
+                    "esp",
+                    "--board",
+                    "board",
+                    "--image",
+                    "example",
+                    "--role",
+                    "app",
+                    "--target",
+                    "esp32s3",
+                    "--version",
+                    "1.2.3",
+                    "--package-output",
+                    str(package),
+                    "--metadata-output",
+                    str(root / "out.firmware.json"),
+                    "--package-data-root",
+                    "data",
+                    "--package-data-file",
+                    "data/images.pixa",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unresolved Git LFS pointer", result.stderr)
+            self.assertFalse(package.exists())
+
     def test_packages_bk_image_and_records_loader_recovery(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -345,6 +416,10 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             self.assertEqual(
                 [asset["operation"] for asset in release["assets"]],
                 ["managed-install", "recovery"],
+            )
+            self.assertEqual(
+                [asset["release_suffix"] for asset in release["assets"]],
+                [".update.tar.zlib", ".recovery.h2fb"],
             )
 
 

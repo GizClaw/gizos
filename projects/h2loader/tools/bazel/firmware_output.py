@@ -15,6 +15,9 @@ from projects.h2loader.tools.bazel.firmware_artifacts import (
 )
 
 
+GIT_LFS_POINTER_HEADER = b"version https://git-lfs.github.com/spec/v1"
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -44,11 +47,17 @@ def package_entries(source_root: Path, data_root: str, files: list[str]) -> list
         source = source_root / logical_source
         if not source.is_file():
             raise ValueError(f"package data file is missing: {value}")
+        data = source.read_bytes()
+        if data.splitlines()[:1] == [GIT_LFS_POINTER_HEADER]:
+            raise ValueError(
+                f"package data is an unresolved Git LFS pointer: {value}; "
+                "materialize Git LFS objects before packaging"
+            )
         name = data_entry_name(relative_path.as_posix())
         if name in names:
             raise ValueError(f"duplicate package data path: {name}")
         names.add(name)
-        entries.append(BundleEntry(name=name, data=source.read_bytes()))
+        entries.append(BundleEntry(name=name, data=data))
     return entries
 
 
@@ -149,24 +158,45 @@ def publish_metadata(
     version: str,
     app_image: Path,
     package: Path,
+    factory: Path | None,
     recovery: Path | None,
     native: list[tuple[str, Path]],
 ) -> None:
-    def asset(path: Path, operation: str, name: str | None = None) -> dict[str, str | int]:
+    def asset(
+        path: Path,
+        operation: str,
+        release_suffix: str | None,
+        name: str | None = None,
+        flash_offset: int | None = None,
+    ) -> dict[str, str | int]:
         asset_name = name or path.name
         normalized = Path(asset_name)
         if normalized.is_absolute() or ".." in normalized.parts:
             raise ValueError(f"invalid artifact name: {asset_name}")
-        return {
+        result: dict[str, str | int] = {
             "name": normalized.as_posix(),
             "operation": operation,
             "sha256": sha256(path),
             "size": path.stat().st_size,
         }
+        if release_suffix is not None:
+            result["release_suffix"] = release_suffix
+        if flash_offset is not None:
+            result["flash_offset"] = flash_offset
+        return result
 
-    release_assets = [asset(package, "managed-install")]
+    release_assets = [asset(package, "managed-install", ".update.tar.zlib")]
     if recovery is not None:
-        release_assets.append(asset(recovery, "recovery"))
+        release_assets.append(asset(recovery, "recovery", ".recovery.h2fb"))
+    if factory is not None:
+        release_assets.append(
+            asset(
+                factory,
+                "factory-flash",
+                ".combined_factory.bin",
+                flash_offset=0,
+            )
+        )
     metadata = {
         "entry": entry,
         "platform": platform,
@@ -184,7 +214,7 @@ def publish_metadata(
         ),
         "assets": release_assets,
         "native_artifacts": [
-            asset(path, "native-debug-or-flash", name)
+            asset(path, "native-debug-or-flash", None, name)
             for name, path in native
         ],
     }

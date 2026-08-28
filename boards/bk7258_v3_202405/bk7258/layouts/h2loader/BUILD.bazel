@@ -37,6 +37,11 @@ filegroup(
     ],
 )
 
+alias(
+    name = "recovery_config",
+    actual = "bk_loader.json",
+)
+
 filegroup(
     name = "ap_gpio_diagnostic",
     srcs = ["ap/diagnostic/usr_gpio_cfg.h"],

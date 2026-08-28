@@ -16,6 +16,7 @@ Bk7258FirmwareInfo = provider(
         "files": "Stable depset containing every public output.",
         "managed_app_image": "Managed app_ab_crc.rbl update image.",
         "partition_metadata": "Directory containing validated package metadata.",
+        "recovery_config": "Board-layout recovery flashing config or None.",
         "recovery_image": "Combined all-app.bin recovery image.",
         "target": "BK target name.",
         "version": "Firmware version selected by the Bazel build setting.",
@@ -159,6 +160,7 @@ def _bk7258_firmware_impl(ctx):
             files = files,
             managed_app_image = managed_app_image,
             partition_metadata = partition_metadata,
+            recovery_config = ctx.file.recovery_config,
             recovery_image = recovery_image,
             target = ctx.attr.target,
             version = version,
@@ -222,6 +224,10 @@ _bk7258_firmware = rule(
         ),
         "project_name": attr.string(mandatory = True),
         "project_support_files": attr.label_list(allow_files = True),
+        "recovery_config": attr.label(
+            allow_single_file = [".json"],
+            doc = "Optional recovery flashing config owned by the selected board layout.",
+        ),
         "ram_regions": attr.label(
             allow_single_file = [".csv"],
             mandatory = True,
