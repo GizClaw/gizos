@@ -108,10 +108,11 @@ def h2loader_bk7258_firmware(
 
     Every layout under boards/<board>/bk7258/layouts/<layout>/ owns one
     complete AP configuration, CP configuration, GPIO selection, RAM-region
-    plan, and partition metadata. The concrete firmware target passes its AP
-    and CP task policies explicitly. There is no named config-profile registry.
-    A downstream repository with a private board passes layout_files containing
-    the exact AP/CP config, GPIO, RAM-region, and project-support labels.
+    plan, partition metadata, and optional recovery flashing config. The
+    concrete firmware target passes its AP and CP task policies explicitly.
+    There is no named config-profile registry. A downstream repository with a
+    private board passes layout_files containing the exact labels owned by that
+    layout.
     """
     for removed in ("config_profile", "config_profiles", "gpio_profile", "memory_profile"):
         if removed in kwargs:
@@ -135,17 +136,22 @@ def h2loader_bk7258_firmware(
             "project_support_files": [layout_root + ":layout"],
             "ram_regions": layout_root + ":ram_regions",
         }
+        if layout in ("h2loader", "loader"):
+            layout_files["recovery_config"] = layout_root + ":recovery_config"
     else:
+        required_layout_files = [
+            "ap_config",
+            "ap_gpio",
+            "cp_config",
+            "cp_gpio",
+            "project_support_files",
+            "ram_regions",
+        ]
+        if layout in ("h2loader", "loader"):
+            required_layout_files.append("recovery_config")
         layout_files = _require_layout_files(
             layout_files,
-            [
-                "ap_config",
-                "ap_gpio",
-                "cp_config",
-                "cp_gpio",
-                "project_support_files",
-                "ram_regions",
-            ],
+            required_layout_files,
             target,
             board,
         )
@@ -161,6 +167,7 @@ def h2loader_bk7258_firmware(
         ap_gpio = layout_files["ap_gpio"],
         cp_gpio = layout_files["cp_gpio"],
         project_support_files = layout_files["project_support_files"],
+        recovery_config = layout_files.get("recovery_config"),
         ram_regions = layout_files["ram_regions"],
         support_files = _support_files(kwargs, layout_files.get("support_files", [])),
         target = target,

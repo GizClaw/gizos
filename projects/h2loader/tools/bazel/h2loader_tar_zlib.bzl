@@ -63,7 +63,7 @@ def _native_firmware(ctx):
             app_image = firmware.managed_app_image,
             app_path = "app/bk/app_ab_crc.rbl",
             factory_image = None,
-            inputs = [firmware.ap_elf, firmware.ap_map, firmware.ap_image, firmware.cp_elf, firmware.cp_map, firmware.cp_image, firmware.managed_app_image, firmware.recovery_image, firmware.partition_metadata],
+            inputs = [firmware.ap_elf, firmware.ap_map, firmware.ap_image, firmware.cp_elf, firmware.cp_map, firmware.cp_image, firmware.managed_app_image, firmware.recovery_image, firmware.partition_metadata] + ([firmware.recovery_config] if firmware.recovery_config else []),
             native_artifacts = [
                 struct(name = "ap/firmware.elf", file = firmware.ap_elf),
                 struct(name = "ap/firmware.map", file = firmware.ap_map),
@@ -75,8 +75,9 @@ def _native_firmware(ctx):
                 struct(name = "all-app.bin", file = firmware.recovery_image),
             ],
             platform = "bk7258",
+            recovery_config = firmware.recovery_config,
             recovery_image = firmware.recovery_image,
-            recovery_inputs = [firmware.recovery_image],
+            recovery_inputs = [firmware.recovery_image] + ([firmware.recovery_config] if firmware.recovery_config else []),
             target = firmware.target,
             version = firmware.version,
         )
@@ -122,8 +123,10 @@ def _h2loader_tar_zlib_impl(ctx):
             args.add("--esp-flash-root", native.flash_files.path)
             args.add("--esp-flash-metadata", native.flash_metadata.path)
         else:
+            if not firmware.recovery_config:
+                fail("BK7258 H2Loader firmware must provide its layout recovery config")
             args.add("--bk-recovery-image", firmware.recovery_image.path)
-            args.add("--bk-recovery-config", ctx.file.recovery_config.path)
+            args.add("--bk-recovery-config", firmware.recovery_config.path)
     if ctx.attr.package_data_root:
         args.add("--package-data-root", ctx.attr.package_data_root)
     for data_file in ctx.files.package_data:
@@ -132,8 +135,6 @@ def _h2loader_tar_zlib_impl(ctx):
         args.add("--native-artifact", "%s=%s" % (native.name, native.file.path))
 
     action_inputs = firmware.inputs + ctx.files.package_data
-    if recovery and ctx.file.recovery_config:
-        action_inputs.append(ctx.file.recovery_config)
     ctx.actions.run(
         arguments = [args],
         executable = ctx.executable._runner,
@@ -174,26 +175,20 @@ _h2loader_tar_zlib = rule(
         "package_data": attr.label_list(allow_files = True),
         "package_data_root": attr.string(),
         "role": attr.string(mandatory = True, values = ["app", "h2loader"]),
-        "recovery_config": attr.label(allow_single_file = [".json"]),
         "target": attr.string(mandatory = True),
     },
 )
 
-def h2loader_tar_zlib(name, board, image, role, target, recovery_config = None, **kwargs):
+def h2loader_tar_zlib(name, board, image, role, target, **kwargs):
     """Packages one standard native firmware target for H2Loader installation."""
     _validate_identity(board, image, role, target)
     if bool(kwargs.get("package_data")) != bool(kwargs.get("package_data_root")):
         fail("package_data and package_data_root must be declared together")
-    if recovery_config != None and not (role == "h2loader" and target == "bk7258"):
-        fail("recovery_config is only valid for BK7258 H2Loader firmware")
-    if role == "h2loader" and target == "bk7258" and recovery_config == None:
-        fail("BK7258 H2Loader firmware requires recovery_config")
     _h2loader_tar_zlib(
         name = name,
         board = board,
         image = image,
         role = role,
         target = target,
-        recovery_config = recovery_config,
         **kwargs
     )

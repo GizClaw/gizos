@@ -25,3 +25,8 @@ filegroup(
     name = "layout",
     srcs = ["//boards/bk7258_v3_202405/bk7258/layouts/h2loader:layout"],
 )
+
+alias(
+    name = "recovery_config",
+    actual = "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:recovery_config",
+)
