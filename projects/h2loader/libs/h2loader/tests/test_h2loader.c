@@ -94,6 +94,7 @@ typedef struct command_test_io {
     size_t input_offset;
     char output[512];
     size_t output_len;
+    size_t writes;
     size_t flushes;
     h2_pal_result_t exhausted_result;
 } command_test_io_t;
@@ -228,6 +229,7 @@ static h2_pal_result_t command_test_write(
     assert(io->output_len + len <= sizeof(io->output));
     memcpy(io->output + io->output_len, buffer, len);
     io->output_len += len;
+    io->writes += 1u;
     *out_written = len;
     return H2_PAL_OK;
 }
@@ -3489,6 +3491,40 @@ static void test_command_registration_and_help(void) {
     assert(memcmp(io.output, expected, sizeof(expected) - 1u) == 0);
 }
 
+static void test_status_command_writes_complete_line_atomically(void) {
+    static const char input[] = "h2loader status\n";
+    idle_trial_context_t context = {.running_partition = 1u};
+    command_test_io_t io = {
+        .input = input,
+        .input_len = sizeof(input) - 1u,
+    };
+    h2_loader_t loader = {0};
+    h2_loader_command_t command;
+    const h2_pal_pref_vtable_t pref_vtable = {.open = idle_pref_open};
+    const h2_pal_pref_api_t pref = {.user = &context, .vtable = &pref_vtable};
+    const h2_pal_power_vtable_t power_vtable = {
+        .get_running_boot_partition = idle_power_running,
+    };
+    const h2_pal_power_api_t power = {.user = &context, .vtable = &power_vtable};
+    const h2_pal_mem_vtable_t mem_vtable = {
+        .alloc = idle_mem_alloc,
+        .free = idle_mem_free,
+    };
+    const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
+
+    loader.config.pref = &pref;
+    loader.config.power = &power;
+    loader.config.package.allocator = &mem;
+    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
+    assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
+    assert(h2_loader_command_poll(&command, 10u) == H2_PAL_OK);
+    assert(io.writes == 1u);
+    assert(io.output_len > 0u);
+    assert(io.output[io.output_len - 1u] == '\n');
+    assert(memcmp(io.output, "H2_LOADER_STATUS ",
+                  strlen("H2_LOADER_STATUS ")) == 0);
+}
+
 static void test_memory_command_preserves_stats_identity_alias(void) {
     static const char input[] = "h2loader memory\n";
     static const char expected[] =
@@ -4402,6 +4438,7 @@ int main(void) {
     test_successful_upgrade_recovery_clears_failure_step();
     test_successful_upgrade_recovery_clears_staged_candidate();
     test_command_registration_and_help();
+    test_status_command_writes_complete_line_atomically();
     test_memory_command_preserves_stats_identity_alias();
     test_mfg_gate_keeps_canonical_loader_in_command_mode();
     test_durable_install_request_precedes_fresh_mfg_gate();

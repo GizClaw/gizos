@@ -441,6 +441,17 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     if (rc != H2_PAL_OK) {
         goto fail;
     }
+    rc = h2_pal_serial_host_set_control_lines(
+        config->serial,
+        connection->session,
+        H2_PAL_SERIAL_HOST_CONTROL_DTR |
+            H2_PAL_SERIAL_HOST_CONTROL_RTS,
+        0u);
+    if (rc == H2_PAL_ERR_UNSUPPORTED) {
+        rc = H2_PAL_OK;
+    } else if (rc != H2_PAL_OK) {
+        goto fail;
+    }
     rc = h2_pal_serial_host_session_stream(
         config->serial, connection->session, &connection->uart);
     if (rc != H2_PAL_OK) {

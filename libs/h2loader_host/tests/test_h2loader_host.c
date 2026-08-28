@@ -1855,6 +1855,114 @@ static void test_scheduler(void) {
     assert(h2_h2loader_host_scheduler_close(&scheduler) == H2_PAL_OK);
 }
 
+typedef struct serial_control_fixture {
+    h2_pal_result_t set_result;
+    h2_pal_result_t stream_result;
+    char events[4];
+    size_t event_count;
+    uint32_t line_mask;
+    uint32_t asserted_lines;
+} serial_control_fixture_t;
+
+static h2_pal_result_t serial_control_open(
+    void *user,
+    const char *port_id,
+    const h2_pal_uart_io_stream_config_t *config,
+    h2_pal_serial_host_session_t **out_session) {
+    serial_control_fixture_t *fixture = user;
+    assert(strcmp(port_id, "control-port") == 0);
+    assert(config->baud_rate == H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD);
+    fixture->events[fixture->event_count++] = 'o';
+    *out_session = (h2_pal_serial_host_session_t *)fixture;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t serial_control_set(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    uint32_t line_mask,
+    uint32_t asserted_lines) {
+    serial_control_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->events[fixture->event_count++] = 's';
+    fixture->line_mask = line_mask;
+    fixture->asserted_lines = asserted_lines;
+    return fixture->set_result;
+}
+
+static h2_pal_result_t serial_control_stream(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    const h2_pal_uart_io_stream_api_t **out_stream) {
+    serial_control_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->events[fixture->event_count++] = 't';
+    *out_stream = NULL;
+    return fixture->stream_result;
+}
+
+static h2_pal_result_t serial_control_close(
+    void *user,
+    h2_pal_serial_host_session_t **inout_session) {
+    serial_control_fixture_t *fixture = user;
+    assert(*inout_session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->events[fixture->event_count++] = 'c';
+    *inout_session = NULL;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_serial_host_vtable_t serial_control_vtable = {
+    .open = serial_control_open,
+    .session_stream = serial_control_stream,
+    .set_control_lines = serial_control_set,
+    .close = serial_control_close,
+};
+
+static void test_serial_deasserts_control_lines(void) {
+    h2_pal_time_api_t time = {0};
+    serial_control_fixture_t fixture = {
+        .set_result = H2_PAL_OK,
+        .stream_result = H2_PAL_ERR_IO,
+    };
+    h2_pal_serial_host_api_t serial = {
+        .user = &fixture,
+        .vtable = &serial_control_vtable,
+    };
+    h2_h2loader_host_serial_connection_config_t config = {
+        .serial = &serial,
+        .time = &time,
+        .allocator = &test_mem,
+        .port_id = "control-port",
+    };
+    h2_h2loader_host_serial_connection_t *connection = NULL;
+
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(connection == NULL);
+    assert(fixture.event_count == 4u);
+    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_UNSUPPORTED;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(fixture.event_count == 4u);
+    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_TIMEOUT;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_TIMEOUT);
+    assert(fixture.event_count == 3u);
+    assert(memcmp(fixture.events, "osc", 3u) == 0);
+}
+
 int main(void) {
     test_typed_command_role_contract();
     test_typed_command_wire_contract();
@@ -1866,5 +1974,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
+    test_serial_deasserts_control_lines();
     return 0;
 }

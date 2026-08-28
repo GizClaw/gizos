@@ -153,13 +153,14 @@ static int h2loader_printf(h2_loader_command_t *self, const char *format, ...) {
 static h2_pal_result_t h2loader_write_line(
     h2_loader_command_t *self,
     const char *line) {
-    h2_pal_result_t result;
-
-    result = h2_command_write(&self->command, line, strlen(line));
-    if (result != H2_PAL_OK) {
-        return result;
+    char output[H2_LOADER_COMMAND_STATUS_BUFFER_SIZE + 1u];
+    size_t len = strlen(line);
+    if (len >= H2_LOADER_COMMAND_STATUS_BUFFER_SIZE) {
+        return H2_PAL_ERR_NO_SPACE;
     }
-    return h2_command_write(&self->command, "\n", 1u);
+    memcpy(output, line, len);
+    output[len++] = '\n';
+    return h2_command_write(&self->command, output, len);
 }
 
 static void h2loader_flush(FILE *stream) {
