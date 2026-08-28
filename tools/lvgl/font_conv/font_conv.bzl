@@ -16,7 +16,11 @@ def _node_runtime_tool_impl(ctx):
         target_file = node,
         is_executable = True,
     )
-    return [DefaultInfo(executable = launcher, files = depset([launcher]))]
+    return [DefaultInfo(
+        executable = launcher,
+        files = depset([launcher]),
+        runfiles = ctx.runfiles(files = [node]),
+    )]
 
 node_runtime_tool = rule(
     implementation = _node_runtime_tool_impl,
@@ -67,7 +71,7 @@ def _lvgl_font_impl(ctx):
     arguments.add("--lv-include", ctx.attr.lv_include)
     arguments.add("--output", ctx.outputs.out.path)
 
-    tool_files = [ctx.file._converter_entry, ctx.executable._node]
+    tool_files = [ctx.file._converter_entry]
     converter_tools = depset(
         direct = tool_files,
         transitive = [ctx.attr._converter_package[DefaultInfo].files],
@@ -81,7 +85,10 @@ def _lvgl_font_impl(ctx):
         outputs = [ctx.outputs.out],
         progress_message = "Generating LVGL font %{label}",
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
-        tools = converter_tools,
+        tools = [
+            ctx.attr._node[DefaultInfo].files_to_run,
+            converter_tools,
+        ],
     )
     return [DefaultInfo(files = depset([ctx.outputs.out]))]
 
