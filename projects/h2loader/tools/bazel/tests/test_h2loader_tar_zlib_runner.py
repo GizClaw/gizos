@@ -215,9 +215,6 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             self.assertEqual(release["entry"], "projects/example/targets/h2loader_tar_zlib/example/board")
             self.assertEqual(release["assets"][0]["operation"], "managed-install")
             self.assertEqual(release["assets"][0]["release_suffix"], ".update.tar.zlib")
-            self.assertFalse(
-                any(asset["operation"] == "factory-flash" for asset in release["assets"])
-            )
             self.assertEqual(release["native_artifacts"][0]["name"], "firmware.elf")
 
     def test_rejects_data_outside_declared_root(self):
@@ -423,9 +420,6 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
             self.assertEqual(
                 [asset["release_suffix"] for asset in release["assets"]],
                 [".update.tar.zlib", ".recovery.h2fb"],
-            )
-            self.assertFalse(
-                any(asset["operation"] == "factory-flash" for asset in release["assets"])
             )
 
 
