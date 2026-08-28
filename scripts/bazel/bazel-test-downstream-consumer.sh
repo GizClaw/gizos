@@ -25,6 +25,11 @@ cp "$fixture_root/ap_gpio.h" "$consumer_root/ap_gpio.h"
 cp "$fixture_root/cp.defaults" "$consumer_root/cp.defaults"
 cp "$fixture_root/cp_gpio.h" "$consumer_root/cp_gpio.h"
 cp "$fixture_root/disabled_native_locator.json" "$consumer_root/disabled_native_locator.json"
+cp "$fixture_root/font_consumer.c" "$consumer_root/font_consumer.c"
+cp "$fixture_root/font_consumer_test.c" "$consumer_root/font_consumer_test.c"
+cp "$fixture_root/font_symbols.txt" "$consumer_root/font_symbols.txt"
+cp "$repository_root/projects/showcase/assets/fonts/NotoSansSC-Bold.ttf" \
+    "$consumer_root/font.ttf"
 cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
 cp "$fixture_root/ram_regions.csv" "$consumer_root/ram_regions.csv"
@@ -123,6 +128,24 @@ expect_missing_policy_failure ap_task_policy //:private_bk_firmware
 expect_missing_policy_failure cp_task_policy //:private_bk_firmware
 cp BUILD.bazel.complete BUILD.bazel
 
+sed -i.bak 's/font_name = "downstream_font_16"/font_name = "9invalid"/' BUILD.bazel
+if "${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    //:downstream_font_16 >invalid-font-name.log 2>&1; then
+    printf 'expected invalid LVGL font symbol name to fail analysis\n' >&2
+    exit 1
+fi
+grep -F "font_name must be a valid C identifier" invalid-font-name.log >/dev/null
+cp BUILD.bazel.complete BUILD.bazel
+
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
     --output_base="$consumer_root/output-base" \
@@ -137,6 +160,9 @@ cp BUILD.bazel.complete BUILD.bazel
     @gizos//tools/openapi_codegen:openapi_codegen \
     //:bk3633_test_support_consumer \
     //:firmware_lib \
+    //:font_consumer \
+    //:font_consumer_test \
+    //:font_native_component \
     //:i18n_runtime \
     //:native_component \
     //:package \
@@ -144,6 +170,19 @@ cp BUILD.bazel.complete BUILD.bazel
     //:private_bk_cp_task_policy_test \
     //:private_esp_task_policy_test \
     //:runtime
+
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    test \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    //:font_consumer_test
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \

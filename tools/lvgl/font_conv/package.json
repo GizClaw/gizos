@@ -1,0 +1,10 @@
+{
+  "name": "@gizos/lvgl-font-conv",
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
+  "dependencies": {
+    "lv_font_conv": "1.5.3"
+  }
+}
