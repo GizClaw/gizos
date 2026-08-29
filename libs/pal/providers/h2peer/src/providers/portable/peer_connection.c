@@ -45,6 +45,7 @@ struct PeerConnection {
   RtpEncoder vrtp_encoder;
   RtpDecoder vrtp_decoder;
   RtpDecoder artp_decoder;
+  RtpReorderBuffer artp_reorder;
   uint8_t pending_rtp[CONFIG_MTU + 128];
   size_t pending_rtp_len;
 
@@ -200,8 +201,8 @@ static int peer_connection_process_completed_packet(
     } else if (pc->artp_decoder.last_event ==
                RTP_DECODE_EVENT_REORDER_WAIT) {
       H2_PEER_LOGD(pc->config.log,
-                   "Opus RTP reorder wait sequence=%u next_sequence=%u ssrc=%u",
-                   (unsigned int)pc->artp_decoder.reorder_sequence,
+                   "Opus RTP reorder wait buffered=%u next_sequence=%u ssrc=%u",
+                   (unsigned int)pc->artp_reorder.count,
                    (unsigned int)pc->artp_decoder.next_sequence,
                    (unsigned int)pc->artp_decoder.ssrc);
     } else if (pc->artp_decoder.last_event ==
@@ -332,7 +333,8 @@ PeerConnection* peer_connection_create(
                      peer_connection_outgoing_rtp_packet, (void*)pc);
 
     rtp_decoder_init(&pc->artp_decoder, pc->config.audio_codec,
-                     pc->config.onaudiotrack, pc->config.user_data);
+                     pc->config.onaudiotrack, pc->config.user_data,
+                     &pc->artp_reorder);
   }
 
   if (pc->config.video_codec) {
@@ -340,7 +342,7 @@ PeerConnection* peer_connection_create(
                      peer_connection_outgoing_rtp_packet, (void*)pc);
 
     rtp_decoder_init(&pc->vrtp_decoder, pc->config.video_codec,
-                     pc->config.onvideotrack, pc->config.user_data);
+                     pc->config.onvideotrack, pc->config.user_data, NULL);
   }
 
   return pc;

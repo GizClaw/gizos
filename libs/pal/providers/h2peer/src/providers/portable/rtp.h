@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #define H2_PEER_PORTABLE_RTP_HEADER_SIZE 12u
+#define H2_PEER_PORTABLE_RTP_REORDER_CAPACITY 8u
 
 typedef enum RtpPayloadType {
   PT_PCMU = 0,
@@ -47,6 +48,19 @@ typedef enum RtpDecodeEvent {
   RTP_DECODE_EVENT_RESET
 } RtpDecodeEvent;
 
+typedef struct RtpReorderPacket {
+  uint32_t timestamp;
+  uint16_t sequence;
+  size_t payload_size;
+  uint8_t payload[CONFIG_MTU];
+  uint8_t valid;
+} RtpReorderPacket;
+
+typedef struct RtpReorderBuffer {
+  RtpReorderPacket packets[H2_PEER_PORTABLE_RTP_REORDER_CAPACITY];
+  uint8_t count;
+} RtpReorderBuffer;
+
 struct RtpDecoder {
   RtpPayloadType type;
   RtpOnDecodedPacket on_packet;
@@ -55,13 +69,9 @@ struct RtpDecoder {
   uint32_t last_timestamp;
   uint16_t next_sequence;
   uint16_t last_loss_count;
-  uint16_t reorder_sequence;
-  uint32_t reorder_timestamp;
-  size_t reorder_payload_size;
+  RtpReorderBuffer *reorder;
   RtpDecodeEvent last_event;
   uint8_t sequence_initialized;
-  uint8_t reorder_pending;
-  uint8_t reorder_payload[CONFIG_MTU];
 };
 
 struct RtpEncoder {
@@ -78,7 +88,9 @@ struct RtpEncoder {
 int rtp_packet_validate(uint8_t *packet, size_t size);
 void rtp_encoder_init(RtpEncoder *encoder, MediaCodec codec, RtpOnEncodedPacket on_packet, void *user_data);
 int rtp_encoder_encode(RtpEncoder *encoder, const uint8_t *data, size_t size);
-void rtp_decoder_init(RtpDecoder *decoder, MediaCodec codec, RtpOnDecodedPacket on_packet, void *user_data);
+void rtp_decoder_init(RtpDecoder *decoder, MediaCodec codec,
+                      RtpOnDecodedPacket on_packet, void *user_data,
+                      RtpReorderBuffer *reorder);
 int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size);
 int rtp_decoders_decode(RtpDecoder *audio_decoder,
                         RtpDecoder *video_decoder,
