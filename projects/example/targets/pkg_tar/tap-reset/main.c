@@ -1,3 +1,4 @@
+#include "h2_lvgl_platform.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 #include "h2_web_tap_reset_app.h"
@@ -26,6 +27,18 @@ int main(void) {
     web_set_status("Host allocation failed");
     return 1;
   }
+  const h2_lvgl_platform_config_t lvgl_platform_config = {
+      .allocator = h2_web_platform_mem_api(),
+      .task_api = h2_web_platform_task_api(host),
+      .sync_api = h2_web_platform_sync_api(host),
+      .queue_api = h2_web_platform_queue_api(host),
+      .time_api = h2_web_platform_time_api(host),
+  };
+  if (h2_lvgl_platform_init(&lvgl_platform_config) != 0) {
+    web_set_status("LVGL platform initialization failed");
+    h2_web_platform_destroy(host);
+    return 1;
+  }
   h2_runtime_t *runtime = NULL;
   h2_runtime_config_t runtime_config = h2_smoke_host_runtime_config(
       "browser", "webassembly", "wasm32", h2_web_platform_mem_api(),
@@ -40,6 +53,7 @@ int main(void) {
   runtime_config.webrtc_media_track = h2_web_platform_webrtc_audio_track(host);
   if (h2_runtime_init(&runtime_config, &runtime) != H2_PAL_OK) {
     web_set_status("Runtime initialization failed");
+    h2_lvgl_platform_deinit();
     h2_web_platform_destroy(host);
     return 1;
   }
@@ -53,6 +67,7 @@ int main(void) {
   };
   const h2_pal_result_t result = h2_web_tap_reset_app_run(runtime, &config);
   h2_runtime_deinit(runtime);
+  h2_lvgl_platform_deinit();
   h2_web_platform_destroy(host);
   web_set_status(result == H2_PAL_OK ? "Stopped" : "Portable App failed");
   return result == H2_PAL_OK ? 0 : 1;
