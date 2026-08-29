@@ -25,6 +25,9 @@ EM_JS(int, h2_web_test_forget_count, (),
 EM_JS(int, h2_web_test_close_rejected_before_cancel_settled, (),
       { return globalThis.h2FakeCloseRejectedBeforeCancelSettled ? 1 : 0; });
 
+EM_JS(int, h2_web_test_audio_stopped_sources, (),
+      { return globalThis.h2FakeAudioStoppedSources || 0; });
+
 static void h2_web_test_task(void *user) {
   int *ran = user;
   *ran = 1;
@@ -699,6 +702,36 @@ int main(void) {
   }
   h2_pal_http_response_free(h2_web_platform_http_api(platform),
                             &http_response);
+  const h2_pal_audio_api_t *audio = h2_web_platform_audio_api(platform);
+  const h2_audio_pcm_format_t audio_format = {
+      .sample_rate_hz = 48000u,
+      .frame_samples_per_channel = 4u,
+      .channels = 1u,
+      .sample_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  const h2_audio_track_config_t audio_track_config = {
+      .name = "web-test",
+      .format = audio_format,
+      .volume_factor_milli = 1000u,
+      .buffer_frames = 1u,
+  };
+  int16_t audio_samples[4] = {0, 100, -100, 0};
+  h2_audio_frame_t audio_frame = h2_audio_frame_for_buffer(
+      audio_samples, sizeof(audio_samples), audio_format);
+  audio_frame.bytes = sizeof(audio_samples);
+  h2_pal_audio_track_t *audio_track = NULL;
+  if (h2_pal_audio_start_speaker(audio) != H2_AUDIO_OK ||
+      h2_pal_audio_create_track(audio, &audio_track_config, &audio_track) !=
+          H2_AUDIO_OK ||
+      h2_pal_audio_track_write(audio_track, &audio_frame, 1000u) !=
+          H2_AUDIO_OK ||
+      h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
+      h2_web_test_audio_stopped_sources() != 1 ||
+      h2_pal_audio_track_write(audio_track, &audio_frame, 1000u) !=
+          H2_AUDIO_ERR_INVALID_STATE ||
+      h2_pal_audio_track_close(audio_track) != H2_AUDIO_OK) {
+    return 105;
+  }
   h2_web_webrtc_test_t webrtc_test = {0};
   const h2_pal_webrtc_callbacks_t webrtc_callbacks = {
       .user = &webrtc_test,
@@ -752,6 +785,24 @@ int main(void) {
   if (webrtc_test.message != 1)
     return 102;
   h2_pal_webrtc_peer_close(webrtc, webrtc_peer);
+  EM_ASM({ globalThis.h2FakeRejectGetUserMedia = true; });
+  h2_web_webrtc_test_t denied_webrtc_test = {.api = webrtc};
+  const h2_pal_webrtc_callbacks_t denied_webrtc_callbacks = {
+      .user = &denied_webrtc_test,
+      .on_local_sdp = h2_web_test_webrtc_local_sdp,
+  };
+  h2_pal_webrtc_peer_t *denied_webrtc_peer = NULL;
+  if (h2_pal_webrtc_peer_create(webrtc, &denied_webrtc_callbacks,
+                                &denied_webrtc_peer) != H2_PAL_OK ||
+      h2_pal_webrtc_peer_set_media_track(webrtc, denied_webrtc_peer,
+                                         webrtc_track) != H2_PAL_OK ||
+      h2_pal_webrtc_peer_start_offer(webrtc, denied_webrtc_peer) != H2_PAL_OK ||
+      denied_webrtc_test.local_sdp != 1 ||
+      EM_ASM_INT({ return globalThis.h2FakeAudioTransceiverCount || 0; }) != 1) {
+    return 106;
+  }
+  h2_pal_webrtc_peer_close(webrtc, denied_webrtc_peer);
+  EM_ASM({ globalThis.h2FakeRejectGetUserMedia = false; });
   h2_pal_pref_namespace_t *prefs = NULL;
   char *stored_port = NULL;
   const uint8_t status_bytes[] = {1u, 2u, 3u, 4u};

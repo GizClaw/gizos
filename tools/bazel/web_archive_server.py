@@ -13,12 +13,21 @@ import tempfile
 from typing import BinaryIO
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 
 MAX_ARCHIVE_MEMBERS = 4096
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 MAX_PROXY_BODY_BYTES = 64 * 1024 * 1024
+
+
+class _NoProxyRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+_PROXY_OPENER = build_opener(_NoProxyRedirect)
 
 
 def _safe_parts(name: str) -> tuple[str, ...]:
@@ -190,7 +199,7 @@ def make_handler(
                 method=self.command,
             )
             try:
-                response = urlopen(request, timeout=60)
+                response = _PROXY_OPENER.open(request, timeout=60)
             except HTTPError as error:
                 response = error
             except URLError as error:

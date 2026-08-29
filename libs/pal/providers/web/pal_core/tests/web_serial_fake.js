@@ -119,6 +119,46 @@ const h2FakePort = {
 };
 globalThis.h2FakeSerialPort = h2FakePort;
 
+class H2FakeAudioSource {
+  connect(node) { return node; }
+  start() {
+    this.started = true;
+    globalThis.h2FakeAudioActiveSources =
+        (globalThis.h2FakeAudioActiveSources || 0) + 1;
+  }
+  stop() {
+    if (!this.started || this.stopped) return;
+    this.stopped = true;
+    globalThis.h2FakeAudioActiveSources -= 1;
+    globalThis.h2FakeAudioStoppedSources =
+        (globalThis.h2FakeAudioStoppedSources || 0) + 1;
+    if (this.onended) this.onended();
+  }
+}
+
+class H2FakeAudioContext {
+  constructor() {
+    this.currentTime = 0;
+    this.destination = {};
+    this.state = 'running';
+  }
+  createBuffer(channels, samples, sampleRate) {
+    const outputs = Array.from(
+        {length: channels}, () => new Float32Array(samples));
+    return {
+      duration: samples / sampleRate,
+      getChannelData(channel) { return outputs[channel]; },
+    };
+  }
+  createBufferSource() { return new H2FakeAudioSource(); }
+  createGain() {
+    return {gain: {value: 1}, connect(node) { return node; }};
+  }
+  close() { return Promise.resolve(); }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+}
+globalThis.AudioContext = H2FakeAudioContext;
+
 Object.defineProperty(globalThis, "navigator", {
   configurable: true,
   value: {
@@ -126,6 +166,9 @@ Object.defineProperty(globalThis, "navigator", {
       getUserMedia() {
         globalThis.h2FakeGetUserMediaCount =
             (globalThis.h2FakeGetUserMediaCount || 0) + 1;
+        if (globalThis.h2FakeRejectGetUserMedia) {
+          return Promise.reject({name: 'NotAllowedError'});
+        }
         const track = {
           kind: 'audio',
           stopped: false,
@@ -192,6 +235,12 @@ class H2FakeRTCPeerConnection {
     this.nextChannelId = 0;
   }
   addTrack(track, stream) { this.audioSender = {track, stream}; }
+  addTransceiver(kind, options) {
+    this.audioTransceiver = {kind, direction: options.direction};
+    globalThis.h2FakeAudioTransceiverCount =
+        (globalThis.h2FakeAudioTransceiverCount || 0) + 1;
+    return this.audioTransceiver;
+  }
   getConfiguration() { return this.configuration; }
   setConfiguration(configuration) { this.configuration = configuration; }
   createDataChannel(label, options = {}) {

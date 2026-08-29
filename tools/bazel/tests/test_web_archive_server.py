@@ -8,7 +8,8 @@ import threading
 import unittest
 from unittest.mock import patch
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from tools.bazel.web_archive_server import (
     extract_web_archive,
@@ -183,6 +184,84 @@ class WebArchiveServerTest(unittest.TestCase):
                 upstream.shutdown()
                 upstream.server_close()
                 upstream_thread.join()
+
+    def test_opt_in_proxy_does_not_follow_redirects(self) -> None:
+        from http.server import BaseHTTPRequestHandler
+
+        redirected_requests = 0
+
+        class DestinationHandler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                nonlocal redirected_requests
+                redirected_requests += 1
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, _format, *_args) -> None:
+                pass
+
+        class RedirectHandler(BaseHTTPRequestHandler):
+            destination = ""
+
+            def do_GET(self) -> None:
+                self.send_response(302)
+                self.send_header("Location", self.destination)
+                self.end_headers()
+
+            def log_message(self, _format, *_args) -> None:
+                pass
+
+        class NoRedirect(HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                del req, fp, code, msg, headers, newurl
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_text("ok", encoding="utf-8")
+            destination = ThreadingHTTPServer(
+                ("127.0.0.1", 0), DestinationHandler
+            )
+            destination.daemon_threads = True
+            destination_thread = threading.Thread(
+                target=destination.serve_forever
+            )
+            destination_thread.start()
+            RedirectHandler.destination = (
+                f"http://127.0.0.1:{destination.server_address[1]}/escaped"
+            )
+            upstream = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+            upstream.daemon_threads = True
+            upstream_thread = threading.Thread(target=upstream.serve_forever)
+            upstream_thread.start()
+            upstream_origin = f"http://127.0.0.1:{upstream.server_address[1]}"
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                make_handler(root, [], frozenset({upstream_origin})),
+            )
+            server.daemon_threads = True
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                target = quote(f"{upstream_origin}/redirect", safe="")
+                opener = build_opener(NoRedirect)
+                with self.assertRaises(HTTPError) as raised:
+                    opener.open(
+                        f"http://127.0.0.1:{server.server_address[1]}"
+                        f"/_h2/http-proxy?url={target}"
+                    )
+                self.assertEqual(raised.exception.code, 302)
+                self.assertEqual(redirected_requests, 0)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+                upstream.shutdown()
+                upstream.server_close()
+                upstream_thread.join()
+                destination.shutdown()
+                destination.server_close()
+                destination_thread.join()
 
 
 if __name__ == "__main__":

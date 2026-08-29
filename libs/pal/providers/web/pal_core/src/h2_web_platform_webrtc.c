@@ -216,25 +216,33 @@ EM_ASYNC_JS(int, h2_web_webrtc_start_offer_js, (uintptr_t peer_address), {
   try {
     const pc = entry.pc;
     if (entry.mediaEnabled && !entry.localStream) {
+      const addReceiveAudio = (reason) => {
+        pc.addTransceiver('audio', {direction : 'recvonly'});
+        console.warn(`H2 WebRTC: ${reason}; using receive-only audio`);
+      };
       if (globalThis.navigator?.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({audio : true});
-        if (Module['h2WebRtcPeers']?.get(peer_address) !== entry) {
-          for (const track of stream.getTracks()) track.stop();
-          return -10;
-        }
-        entry.localStream = stream;
-        const audioTracks = stream.getAudioTracks();
-        if (!audioTracks.length) {
-          for (const track of stream.getTracks()) track.stop();
-          entry.localStream = null;
-          pc.addTransceiver('audio', {direction : 'sendrecv'});
-          console.warn('H2 WebRTC: microphone unavailable; using a silent audio sender');
-        } else {
-          for (const track of audioTracks) pc.addTrack(track, stream);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({audio : true});
+          if (Module['h2WebRtcPeers']?.get(peer_address) !== entry) {
+            for (const track of stream.getTracks()) track.stop();
+            return -10;
+          }
+          entry.localStream = stream;
+          const audioTracks = stream.getAudioTracks();
+          if (!audioTracks.length) {
+            for (const track of stream.getTracks()) track.stop();
+            entry.localStream = null;
+            addReceiveAudio('microphone returned no audio track');
+          } else {
+            for (const track of audioTracks) pc.addTrack(track, stream);
+          }
+        } catch(error) {
+          if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
+            return -10;
+          addReceiveAudio(`microphone unavailable (${error?.name || 'error'})`);
         }
       } else {
-        pc.addTransceiver('audio', {direction : 'sendrecv'});
-        console.warn('H2 WebRTC: getUserMedia unavailable; using a silent audio sender');
+        addReceiveAudio('getUserMedia unavailable');
       }
     }
     const offer = await pc.createOffer();
