@@ -232,6 +232,13 @@ static void test_typed_command_wire_contract(void) {
     assert(strcmp(contract.success_token, "result=connecting") == 0);
     request.password = "bad password";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
+
+    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
+    request.ssid = NULL;
+    request.password = NULL;
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.marker, "H2_LOADER_WIFI ") == 0);
+    assert(strcmp(contract.success_token, "result=disconnected") == 0);
     request.command = H2_H2LOADER_HOST_COMMAND_STAGE_URL;
     request.url = "https://example.test/update.tar.zlib";
     request.expected_bytes = 42u;

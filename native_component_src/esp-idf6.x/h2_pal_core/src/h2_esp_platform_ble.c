@@ -124,6 +124,13 @@ static size_t s_h2_esp_ble_read_out_size;
 static size_t s_h2_esp_ble_read_out_len;
 static uint8_t s_h2_esp_ble_adv_data[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
 static size_t s_h2_esp_ble_adv_data_len;
+static uint8_t s_h2_esp_ble_legacy_adv_data[
+    H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
+static size_t s_h2_esp_ble_legacy_adv_data_len;
+static uint8_t s_h2_esp_ble_legacy_scan_response[
+    H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
+static size_t s_h2_esp_ble_legacy_scan_response_len;
+static bool s_h2_esp_ble_legacy_adv_data_valid;
 static bool s_h2_esp_ble_adv_data_staged;
 static bool s_h2_esp_ble_adv_active;
 static bool s_h2_esp_ble_ext_adv_configured;
@@ -1526,6 +1533,9 @@ static h2_pal_result_t h2_esp_ble_stop(h2_pal_ble_t *ble) {
     s_h2_esp_ble_connect_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     s_h2_esp_ble_last_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     s_h2_esp_ble_adv_data_len = 0u;
+    s_h2_esp_ble_legacy_adv_data_len = 0u;
+    s_h2_esp_ble_legacy_scan_response_len = 0u;
+    s_h2_esp_ble_legacy_adv_data_valid = false;
     s_h2_esp_ble_adv_data_staged = false;
     s_h2_esp_ble_adv_active = false;
     s_h2_esp_ble_ext_adv_configured = false;
@@ -1554,6 +1564,36 @@ static h2_pal_result_t h2_esp_ble_set_adv_data(
     }
     memcpy(s_h2_esp_ble_adv_data, encoded, encoded_len);
     s_h2_esp_ble_adv_data_len = encoded_len;
+    h2_pal_ble_adv_data_t legacy_primary = *data;
+    legacy_primary.local_name = NULL;
+    legacy_primary.manufacturer_data = (h2_pal_ble_bytes_t){ 0 };
+    size_t legacy_primary_len = 0u;
+    rc = h2_esp_ble_encode_adv_data(
+        &legacy_primary,
+        s_h2_esp_ble_legacy_adv_data,
+        &legacy_primary_len);
+    size_t legacy_scan_response_len = 0u;
+    bool legacy_valid = rc == H2_PAL_OK &&
+        legacy_primary_len <= H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN;
+    if (legacy_valid && data->manufacturer_data.len > 0u) {
+        legacy_valid = h2_esp_ble_adv_put(
+            s_h2_esp_ble_legacy_scan_response,
+            &legacy_scan_response_len,
+            H2_ESP_BLE_AD_TYPE_MANUFACTURER,
+            data->manufacturer_data.data,
+            data->manufacturer_data.len);
+    }
+    if (legacy_valid && data->local_name != NULL) {
+        legacy_valid = h2_esp_ble_adv_put(
+            s_h2_esp_ble_legacy_scan_response,
+            &legacy_scan_response_len,
+            H2_ESP_BLE_AD_TYPE_NAME_COMPLETE,
+            (const uint8_t *)data->local_name,
+            strlen(data->local_name));
+    }
+    s_h2_esp_ble_legacy_adv_data_len = legacy_primary_len;
+    s_h2_esp_ble_legacy_scan_response_len = legacy_scan_response_len;
+    s_h2_esp_ble_legacy_adv_data_valid = legacy_valid;
     s_h2_esp_ble_adv_data_staged = true;
     return H2_PAL_OK;
 }
@@ -1566,7 +1606,7 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (params->type == H2_PAL_BLE_ADV_TYPE_LEGACY &&
-        s_h2_esp_ble_adv_data_len > H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN) {
+        !s_h2_esp_ble_legacy_adv_data_valid) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (s_h2_esp_ble_events != NULL) {
@@ -1603,7 +1643,13 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
     if (mbuf == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
-    ext_rc = os_mbuf_append(mbuf, s_h2_esp_ble_adv_data, s_h2_esp_ble_adv_data_len);
+    const uint8_t *advertising_data = legacy
+        ? s_h2_esp_ble_legacy_adv_data
+        : s_h2_esp_ble_adv_data;
+    size_t advertising_data_len = legacy
+        ? s_h2_esp_ble_legacy_adv_data_len
+        : s_h2_esp_ble_adv_data_len;
+    ext_rc = os_mbuf_append(mbuf, advertising_data, advertising_data_len);
     if (ext_rc != 0) {
         os_mbuf_free_chain(mbuf);
         return h2_esp_ble_map_rc(ext_rc);
@@ -1611,6 +1657,25 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
     ext_rc = ble_gap_ext_adv_set_data(H2_ESP_BLE_EXT_ADV_INSTANCE, mbuf);
     if (ext_rc != 0) {
         return h2_esp_ble_map_rc(ext_rc);
+    }
+    if (legacy && s_h2_esp_ble_legacy_scan_response_len > 0u) {
+        mbuf = os_msys_get_pkthdr(0u, 0u);
+        if (mbuf == NULL) {
+            return H2_PAL_ERR_NO_MEMORY;
+        }
+        ext_rc = os_mbuf_append(
+            mbuf,
+            s_h2_esp_ble_legacy_scan_response,
+            s_h2_esp_ble_legacy_scan_response_len);
+        if (ext_rc != 0) {
+            os_mbuf_free_chain(mbuf);
+            return h2_esp_ble_map_rc(ext_rc);
+        }
+        ext_rc = ble_gap_ext_adv_rsp_set_data(
+            H2_ESP_BLE_EXT_ADV_INSTANCE, mbuf);
+        if (ext_rc != 0) {
+            return h2_esp_ble_map_rc(ext_rc);
+        }
     }
     uint32_t duration_units = legacy ? 0u : (params->duration_ms + 9u) / 10u;
     uint8_t max_adv_events = legacy ? 0u : params->max_adv_events;
@@ -1621,9 +1686,19 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     {
-        int data_rc = ble_gap_adv_set_data(s_h2_esp_ble_adv_data, s_h2_esp_ble_adv_data_len);
+        int data_rc = ble_gap_adv_set_data(
+            s_h2_esp_ble_legacy_adv_data,
+            s_h2_esp_ble_legacy_adv_data_len);
         if (data_rc != 0) {
             return h2_esp_ble_map_rc(data_rc);
+        }
+        if (s_h2_esp_ble_legacy_scan_response_len > 0u) {
+            data_rc = ble_gap_adv_rsp_set_data(
+                s_h2_esp_ble_legacy_scan_response,
+                s_h2_esp_ble_legacy_scan_response_len);
+            if (data_rc != 0) {
+                return h2_esp_ble_map_rc(data_rc);
+            }
         }
         struct ble_gap_adv_params adv_params;
         memset(&adv_params, 0, sizeof(adv_params));
@@ -1780,6 +1855,7 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
     h2_pal_ble_adv_data_t primary_data = *data;
     if (legacy) {
         primary_data.local_name = NULL;
+        primary_data.manufacturer_data = (h2_pal_ble_bytes_t){ 0 };
     }
     uint8_t encoded[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
     size_t encoded_len = 0u;
@@ -1796,6 +1872,16 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
     }
     uint8_t scan_response[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
     size_t scan_response_len = 0u;
+    if (legacy && data->manufacturer_data.len > 0u &&
+        !h2_esp_ble_adv_put(
+            scan_response,
+            &scan_response_len,
+            H2_ESP_BLE_AD_TYPE_MANUFACTURER,
+            data->manufacturer_data.data,
+            data->manufacturer_data.len)) {
+        h2_esp_ble_unlock_adv();
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     if (legacy && data->local_name != NULL) {
         size_t name_len = strlen(data->local_name);
         if (name_len + 2u > sizeof(scan_response) ||

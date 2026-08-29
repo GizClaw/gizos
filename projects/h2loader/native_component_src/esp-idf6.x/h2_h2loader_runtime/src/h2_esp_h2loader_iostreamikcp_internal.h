@@ -15,6 +15,7 @@ typedef struct h2_esp_h2loader_command_transport {
     uint32_t write_timeout_ms;
     uint32_t receive_window;
     int replacement_pending;
+    int close_pending;
 } h2_esp_h2loader_command_transport_t;
 
 h2_pal_result_t h2_esp_h2loader_console_init(void);
@@ -34,5 +35,9 @@ int h2_esp_h2loader_command_transport_has_session(
     const h2_esp_h2loader_command_transport_t *transport);
 int h2_esp_h2loader_command_transport_replacement_pending(
     const h2_esp_h2loader_command_transport_t *transport);
+int h2_esp_h2loader_command_transport_close_pending(
+    const h2_esp_h2loader_command_transport_t *transport);
+void h2_esp_h2loader_command_transport_deactivate(
+    h2_esp_h2loader_command_transport_t *transport);
 
 #endif

@@ -411,7 +411,7 @@ static void test_wifi_connect_persists_config_before_start(void) {
     assert(h2_loader_command_execute(
                &command, sizeof(argv) / sizeof(argv[0]), argv) == H2_PAL_OK);
     assert(context.connect_calls == 1);
-    assert(context.status_calls == 1);
+    assert(context.status_calls == 0);
     assert(context.save_calls == 1);
     assert(context.connected.ssid_len == strlen("test-network"));
     assert(context.saved.ssid_len == context.connected.ssid_len);
@@ -432,7 +432,7 @@ static void test_wifi_connect_persists_config_before_start(void) {
                &command, sizeof(argv) / sizeof(argv[0]), argv) ==
            H2_PAL_ERR_IO);
     assert(context.connect_calls == 0);
-    assert(context.status_calls == 1);
+    assert(context.status_calls == 0);
     assert(context.save_calls == 1);
 }
 
@@ -3817,7 +3817,7 @@ static void test_url_stage_discards_old_candidate_before_wifi(void) {
     assert(h2_loader_command_execute(
         &command, sizeof(argv) / sizeof(argv[0]), argv) ==
         H2_PAL_ERR_UNAVAILABLE);
-    assert(fixture.context.wifi_status_calls == 2u);
+    assert(fixture.context.wifi_status_calls == 1u);
     assert(fixture.context.package_present_when_wifi_checked == 0);
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.staged_valid == 0);

@@ -12,6 +12,8 @@
 #define H2_LOADER_STAGE_PATH "/dl/update.tar.zlib"
 #define H2_LOADER_STAGE_PREV_PATH "/dl/update.tar.zlib.prev"
 #define H2_LOADER_WIFI_SETTINGS_SETTLE_MS 250u
+#define H2_LOADER_WIFI_READY_POLL_MS 250u
+#define H2_LOADER_WIFI_READY_TIMEOUT_MS 30000u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT 16u
 #define H2_LOADER_WIFI_SCAN_MAX_LIMIT 16u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
@@ -36,14 +38,6 @@ static uint32_t h2loader_effective_commands(
     const h2_loader_status_t *status) {
     uint32_t available = h2_loader_get_command_availability(
         self->config.loader, status);
-    h2_pal_wifi_sta_status_t wifi_status;
-    if (h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status) !=
-            H2_PAL_OK ||
-        (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&
-         wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTED &&
-         wifi_status.state != H2_PAL_WIFI_STA_STATE_GOT_IP)) {
-        available &= ~H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT;
-    }
     h2_pal_disk_partition_t partition;
     if (h2loader_get_coredump_partition(self, &partition) != H2_PAL_OK) {
         available &= ~(H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
@@ -401,19 +395,31 @@ static int h2loader_stage_url(
     }
     printf("H2_LOADER_DOWNLOAD state=prepare step=wifi\n");
     fflush(stdout);
-    rc = h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status);
-    if (rc != H2_PAL_OK) {
-        printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi\n", rc);
-        fflush(stdout);
-        return rc;
-    }
-    if (wifi_status.state != H2_PAL_WIFI_STA_STATE_GOT_IP || wifi_status.ip_valid == 0u) {
-        printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi state=%d ip_valid=%u\n",
-            H2_PAL_ERR_UNAVAILABLE,
-            (int)wifi_status.state,
-            (unsigned)wifi_status.ip_valid);
-        fflush(stdout);
-        return H2_PAL_ERR_UNAVAILABLE;
+    for (uint32_t waited_ms = 0u;; waited_ms += H2_LOADER_WIFI_READY_POLL_MS) {
+        rc = h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status);
+        if (rc != H2_PAL_OK) {
+            printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi\n", rc);
+            fflush(stdout);
+            return rc;
+        }
+        if (wifi_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
+            wifi_status.ip_valid != 0u) {
+            break;
+        }
+        if (waited_ms >= H2_LOADER_WIFI_READY_TIMEOUT_MS ||
+            (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&
+             wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTED &&
+             wifi_status.state != H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
+            printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi state=%d disconnect_reason=%d ip_valid=%u\n",
+                H2_PAL_ERR_UNAVAILABLE,
+                (int)wifi_status.state,
+                wifi_status.disconnect_reason,
+                (unsigned)wifi_status.ip_valid);
+            fflush(stdout);
+            return H2_PAL_ERR_UNAVAILABLE;
+        }
+        self->config.sleep_ms(
+            self->config.clock_user, H2_LOADER_WIFI_READY_POLL_MS);
     }
     printf("H2_LOADER_DOWNLOAD state=prepare step=open path=%s\n", H2_LOADER_STAGE_TMP_PATH);
     fflush(stdout);
@@ -711,7 +717,9 @@ static int h2loader_wifi_command(
     }
     if (argc >= 3 && strcmp(argv[2], "disconnect") == 0) {
         rc = h2_pal_wifi_sta_disconnect(sta);
-        printf("H2_LOADER_WIFI result=%s code=%d\n", rc == H2_PAL_OK ? "disconnected" : "error", rc);
+        printf("H2_LOADER_WIFI result=%s code=%d\n",
+            rc == H2_PAL_OK ? "disconnected" : "error", rc);
+        fflush(stdout);
         return rc;
     }
     printf("usage: h2loader wifi <scan|connect|disconnect>\n");

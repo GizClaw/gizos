@@ -652,6 +652,10 @@ static int serve_loader(
         }
         if (rc == H2_PAL_ERR_CLOSED &&
             h2_esp_h2loader_command_transport_replacement_pending(&s_command_transport)) {
+            if (h2_esp_h2loader_command_transport_close_pending(&s_command_transport) &&
+                s_command_transport.pending_conv == 0u) {
+                h2_esp_h2loader_command_transport_deactivate(&s_command_transport);
+            }
             continue;
         }
         if (rc != H2_PAL_OK) {

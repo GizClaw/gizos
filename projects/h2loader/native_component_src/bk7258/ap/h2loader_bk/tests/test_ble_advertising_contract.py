@@ -56,14 +56,12 @@ class BleAdvertisingContractTest(unittest.TestCase):
 
         self.assertEqual(1, len(sources), [str(path) for path in sources])
         source = sources[0].read_text(encoding="utf-8")
-        advertising = source.index(
-            "const h2_pal_ble_adv_data_t adv_data = {"
-        )
+        advertising = source.index("h2_pal_ble_adv_data_t adv_data = {")
         update = source.index("int rc = stop_first", advertising)
         advertising_block = source[advertising:update]
 
-        self.assertIn(".manufacturer_data = {", advertising_block)
-        self.assertIn(".service_data = { 0 }", advertising_block)
+        self.assertIn("adv_data.manufacturer_data", advertising_block)
+        self.assertIn("adv_data.service_data_uuid", advertising_block)
         self.assertIn(
             ".service_uuid_count = additional_service_count + 1u",
             advertising_block,
