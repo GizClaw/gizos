@@ -60,7 +60,27 @@ class FontConvRunnerTest(unittest.TestCase):
         generated = output.read_text(encoding="utf-8")
         self.assertIn("symbols=U+0041,U+4E2D,U+6587", generated)
         self.assertIn("ranges=0x20-0x7E size=16 bpp=4", generated)
+        self.assertIn("compressed=False", generated)
         self.assertIn("const lv_font_t fixture_font_16", generated)
+
+    def test_enables_compression_without_disable_flags(self) -> None:
+        args, _ = self._args()
+        args.compressed = True
+
+        def write_output(command, *, check):
+            del check
+            Path(command[command.index("--output") + 1]).write_text(
+                "const lv_font_t fixture_font_16 = {0};\n",
+                encoding="utf-8",
+            )
+
+        with mock.patch(
+            "font_conv_runner.subprocess.run", side_effect=write_output
+        ) as run:
+            font_conv_runner.convert(args)
+        command = run.call_args.args[0]
+        self.assertNotIn("--no-compress", command)
+        self.assertNotIn("--no-prefilter", command)
 
     def test_preserves_shell_metacharacters_without_ranges(self) -> None:
         args, output = self._args()
@@ -105,6 +125,8 @@ class FontConvRunnerTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual("node.exe", Path(command[0]).name)
         self.assertEqual("--preserve-symlinks-main", command[1])
+        self.assertIn("--no-compress", command)
+        self.assertIn("--no-prefilter", command)
 
     def test_rejects_invalid_utf8(self) -> None:
         args, _ = self._args()

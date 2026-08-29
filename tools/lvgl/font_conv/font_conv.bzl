@@ -67,6 +67,8 @@ def _lvgl_font_impl(ctx):
         arguments.add("--range", value)
     arguments.add("--size", ctx.attr.size)
     arguments.add("--bpp", ctx.attr.bpp)
+    if ctx.attr.compressed:
+        arguments.add("--compressed")
     arguments.add("--font-name", ctx.attr.font_name)
     arguments.add("--lv-include", ctx.attr.lv_include)
     arguments.add("--output", ctx.outputs.out.path)
@@ -98,6 +100,10 @@ lvgl_font = rule(
         "bpp": attr.int(
             default = 4,
             doc = "Bits per pixel used for glyph anti-aliasing.",
+        ),
+        "compressed": attr.bool(
+            default = False,
+            doc = "Use LVGL's compressed bitmap format; the runtime must enable LV_USE_FONT_COMPRESSED.",
         ),
         "font": attr.label(
             allow_single_file = [".otf", ".ttf", ".woff", ".woff2"],

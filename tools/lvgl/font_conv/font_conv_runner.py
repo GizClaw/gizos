@@ -71,12 +71,11 @@ def convert(args: argparse.Namespace) -> None:
                 args.font_name,
                 "--lv-include",
                 args.lv_include,
-                "--no-compress",
-                "--no-prefilter",
-                "--output",
-                str(temporary_output),
             ]
         )
+        if not args.compressed:
+            command.extend(["--no-compress", "--no-prefilter"])
+        command.extend(["--output", str(temporary_output)])
         subprocess.run(command, check=True)
         if not temporary_output.is_file() or temporary_output.stat().st_size == 0:
             raise RuntimeError("lv_font_conv did not produce a non-empty C source")
@@ -94,6 +93,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--range", dest="ranges", action="append", default=[])
     parser.add_argument("--size", required=True, type=int)
     parser.add_argument("--bpp", required=True, type=int)
+    parser.add_argument("--compressed", action="store_true")
     parser.add_argument("--font-name", required=True)
     parser.add_argument("--lv-include", required=True)
     parser.add_argument("--output", required=True)

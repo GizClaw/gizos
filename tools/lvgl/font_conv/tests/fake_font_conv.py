@@ -24,7 +24,7 @@ def main() -> None:
     if Path(args.font).name == "empty.ttf":
         return
     Path(args.output).write_text(
-        "/* symbols=%s ranges=%s size=%s bpp=%s include=%s */\n"
+        "/* symbols=%s ranges=%s size=%s bpp=%s include=%s compressed=%s */\n"
         "const lv_font_t %s = {0};\n"
         % (
             ",".join("U+%04X" % ord(character) for character in args.symbols),
@@ -32,6 +32,7 @@ def main() -> None:
             args.size,
             args.bpp,
             args.lv_include,
+            not args.no_compress,
             args.lv_font_name,
         ),
         encoding="utf-8",
