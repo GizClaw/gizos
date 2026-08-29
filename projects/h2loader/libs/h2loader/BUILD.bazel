@@ -17,6 +17,7 @@ cc_library(
         "src/h2_loader_ble.c",
         "src/h2_loader_boot.c",
         "src/h2_loader_command.c",
+        "src/h2_loader_metadata.c",
         "src/h2_loader_package.c",
         "src/h2_loader_status.c",
     ],
@@ -26,6 +27,7 @@ cc_library(
         "include/h2_loader_boot.h",
         "include/h2_loader_command.h",
         "include/h2_loader_memory.h",
+        "include/h2_loader_metadata.h",
         "include/h2_loader_package.h",
         "include/h2_loader_status.h",
     ],
@@ -45,6 +47,20 @@ cc_library(
 cc_test(
     name = "h2loader_test",
     srcs = ["tests/test_h2loader.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader"],
+)
+
+cc_test(
+    name = "h2loader_metadata_test",
+    srcs = ["tests/test_h2loader_metadata.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({

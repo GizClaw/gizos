@@ -2,6 +2,7 @@
 #define H2_LOADER_BOOT_H
 
 #include "h2_loader_package.h"
+#include "h2_loader_metadata.h"
 #include "h2/pal/hal/h2_pal_power.h"
 #include "h2/pal/os/h2_pal_pref.h"
 
@@ -82,9 +83,8 @@ typedef enum h2_loader_mfg_mode {
 #define H2_LOADER_STATES_RESERVED_MASK (UINT64_C(0x3) << 62u)
 
 typedef enum h2_loader_boot_intent {
-    H2_LOADER_BOOT_INTENT_UNKNOWN = 0,
-    H2_LOADER_BOOT_INTENT_H2LOADER = 1,
-    H2_LOADER_BOOT_INTENT_APP = 2,
+    H2_LOADER_BOOT_INTENT_LOADER = 1,
+    H2_LOADER_BOOT_INTENT_AUTO = 2,
 } h2_loader_boot_intent_t;
 
 typedef enum h2_loader_install_state {
@@ -174,6 +174,9 @@ typedef int (*h2_loader_install_transition_fn)(void *user);
 
 typedef struct h2_loader_status {
     h2_loader_boot_intent_t boot_intent;
+    h2_loader_metadata_t stage;
+    h2_loader_metadata_t partition_1;
+    h2_loader_metadata_t partition_2;
     h2_loader_install_state_t install_state;
     /** Persistent safety gate set only after the running App confirms. */
     int app_confirmed;

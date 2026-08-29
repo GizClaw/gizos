@@ -153,10 +153,20 @@ static void test_help_and_usage(void) {
         "h2loader", "--transport", "bleikcp", "--ready", "READY",
         "--port", "1:001122334455", "status",
     };
+    const char *ble_monitor[] = {
+        "h2loader", "--transport", "bleikcp", "--port",
+        "1:001122334455", "monitor",
+    };
+    const char *ble_reboot_monitor[] = {
+        "h2loader", "--transport", "bleikcp", "--port",
+        "1:001122334455", "reboot", "app", "--monitor",
+    };
     fake_output_t output = {0};
 
     assert(run_cli(&output, 2, help) == H2_H2LOADER_CLI_EXIT_OK);
     assert(strstr(output.bytes, "commands: package golden check scan") != NULL);
+    assert(strstr(output.bytes, "restart-monitor") == NULL);
+    assert(strstr(output.bytes, "monitor") != NULL);
     assert(strstr(output.bytes, "--transport iostreamikcp|bleikcp") != NULL);
     assert(strstr(output.bytes,
         "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
@@ -171,6 +181,17 @@ static void test_help_and_usage(void) {
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 8, serial_only_ble_option) ==
         H2_H2LOADER_CLI_EXIT_USAGE);
+
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 6, ble_monitor) == H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(strstr(output.bytes,
+        "monitor requires iostreamikcp log transport") != NULL);
+
+    memset(&output, 0, sizeof(output));
+    assert(run_cli(&output, 8, ble_reboot_monitor) ==
+        H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(strstr(output.bytes,
+        "--monitor requires iostreamikcp log transport") != NULL);
 
     memset(&output, 0, sizeof(output));
     assert(run_cli(&output, 4, raw) == H2_H2LOADER_CLI_EXIT_USAGE);

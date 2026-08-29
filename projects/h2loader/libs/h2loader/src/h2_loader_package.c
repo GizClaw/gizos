@@ -1471,7 +1471,7 @@ static void layout_validator_abort(h2_loader_layout_validator_t *validator) {
     }
 }
 
-static int h2_loader_package_inspect_path(
+int h2_loader_package_inspect_path(
     h2_loader_package_t *package,
     const char *archive_path,
     h2_loader_package_inspection_t *out_inspection) {

@@ -302,7 +302,7 @@ int h2_loader_states_pack(
     uint64_t states;
     if (status == NULL || out_states == NULL ||
         status->active_role > H2_LOADER_ACTIVE_ROLE_APP ||
-        status->boot_intent > H2_LOADER_BOOT_INTENT_APP ||
+        status->boot_intent > H2_LOADER_BOOT_INTENT_AUTO ||
         status->install_state > H2_LOADER_INSTALL_STATE_MAIN_FAILED ||
         status->loader_upgrade.phase > H2_LOADER_UPGRADE_PHASE_CORRUPT ||
         h2_loader_mfg_summary_validate(&status->mfg) != H2_PAL_OK) {
@@ -378,11 +378,10 @@ static int is_sha256_hex(const char *text) {
 
 const char *h2_loader_boot_intent_name(h2_loader_boot_intent_t intent) {
     switch (intent) {
-    case H2_LOADER_BOOT_INTENT_H2LOADER:
-        return "h2loader";
-    case H2_LOADER_BOOT_INTENT_APP:
-        return "app";
-    case H2_LOADER_BOOT_INTENT_UNKNOWN:
+    case H2_LOADER_BOOT_INTENT_LOADER:
+        return "loader";
+    case H2_LOADER_BOOT_INTENT_AUTO:
+        return "auto";
     default:
         return "unknown";
     }
@@ -1172,7 +1171,7 @@ int h2_loader_read_pref_status(
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(out_status, 0, sizeof(*out_status));
-    out_status->boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    out_status->boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     out_status->install_state = H2_LOADER_INSTALL_STATE_IDLE;
 
     rc = pref_open(pref, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
@@ -1227,6 +1226,33 @@ int h2_loader_read_pref_status(
     }
     if (ns->close != NULL) {
         (void)ns->close(ns);
+    }
+    if (allocator != NULL) {
+        h2_loader_metadata_t *records[] = {
+            &out_status->stage,
+            &out_status->partition_1,
+            &out_status->partition_2,
+        };
+        const h2_loader_metadata_slot_t slots[] = {
+            H2_LOADER_METADATA_SLOT_STAGE,
+            H2_LOADER_METADATA_SLOT_PARTITION_1,
+            H2_LOADER_METADATA_SLOT_PARTITION_2,
+        };
+        size_t i;
+        for (i = 0u; i < sizeof(slots) / sizeof(slots[0]); ++i) {
+            int present = 0;
+            rc = h2_loader_metadata_read(
+                pref, allocator, slots[i], records[i], &present);
+            if (rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_UNSUPPORTED) {
+                rc = H2_PAL_OK;
+            }
+            if (rc != H2_PAL_OK) {
+                memset(records[i], 0, sizeof(*records[i]));
+                if (out_status->last_result == H2_PAL_OK) {
+                    out_status->last_result = rc;
+                }
+            }
+        }
     }
     return H2_PAL_OK;
 }
@@ -1400,13 +1426,13 @@ static int normalize_legacy_staged_lifecycle(
     }
     if (!status->installed.valid) {
         state = H2_LOADER_INSTALL_STATE_IDLE;
-        intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+        intent = H2_LOADER_BOOT_INTENT_LOADER;
     } else if (status->app_confirmed) {
         state = H2_LOADER_INSTALL_STATE_CONFIRMED;
-        intent = H2_LOADER_BOOT_INTENT_APP;
+        intent = H2_LOADER_BOOT_INTENT_AUTO;
     } else {
         state = H2_LOADER_INSTALL_STATE_MAIN_FAILED;
-        intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+        intent = H2_LOADER_BOOT_INTENT_LOADER;
     }
     return pref_set_state(loader->config.pref, state, intent);
 }
@@ -1475,13 +1501,13 @@ out:
             status.install_state == H2_LOADER_INSTALL_STATE_STAGED) {
             if (!status.installed.valid) {
                 loader->status.install_state = H2_LOADER_INSTALL_STATE_IDLE;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
             } else if (status.app_confirmed) {
                 loader->status.install_state = H2_LOADER_INSTALL_STATE_CONFIRMED;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_APP;
+                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
             } else {
                 loader->status.install_state = H2_LOADER_INSTALL_STATE_MAIN_FAILED;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
             }
         }
     }
@@ -1578,7 +1604,7 @@ static int clear_failed_app_to_loader(h2_loader_t *loader) {
     }
     return pref_set_state(loader->config.pref,
         H2_LOADER_INSTALL_STATE_IDLE,
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
 }
 
 static int mark_main_failed(h2_loader_t *loader, int result) {
@@ -1590,7 +1616,7 @@ static int mark_main_failed(h2_loader_t *loader, int result) {
     (void)pref_set_i32(loader->config.pref, "last_result", result);
     rc = pref_set_state(loader->config.pref,
         H2_LOADER_INSTALL_STATE_MAIN_FAILED,
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
     emit_event(loader, H2_LOADER_STARTUP_EVENT_MAIN_FAILED, result);
     return rc == H2_PAL_OK ? result : rc;
 }
@@ -1602,7 +1628,7 @@ static int mark_install_failed(h2_loader_t *loader, int result) {
     (void)pref_set_i32(loader->config.pref, "last_result", result);
     (void)pref_set_state(loader->config.pref,
         H2_LOADER_INSTALL_STATE_INSTALL_FAILED,
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
     emit_event(loader, H2_LOADER_STARTUP_EVENT_INSTALL_FAILED, result);
     return result;
 }
@@ -1637,7 +1663,7 @@ static int recover_unconfirmed_app_to_loader(h2_loader_t *loader, int result) {
     if (rc != H2_PAL_OK) {
         (void)pref_set_state(loader->config.pref,
             H2_LOADER_INSTALL_STATE_MAIN_FAILED,
-            H2_LOADER_BOOT_INTENT_H2LOADER);
+            H2_LOADER_BOOT_INTENT_LOADER);
     }
     emit_event(loader, H2_LOADER_STARTUP_EVENT_MAIN_FAILED, result);
     return rc == H2_PAL_OK ? result : rc;
@@ -2062,7 +2088,7 @@ static int h2_loader_upgrade_recover(
         rc = pref_set_state(
             loader->config.pref,
             H2_LOADER_INSTALL_STATE_IDLE,
-            H2_LOADER_BOOT_INTENT_H2LOADER);
+            H2_LOADER_BOOT_INTENT_LOADER);
         if (rc != H2_PAL_OK) {
             return upgrade_mark_recovery_failed(
                 loader,
@@ -2094,7 +2120,7 @@ static int select_app_and_reboot_pending_confirm(h2_loader_t *loader) {
     }
     rc = pref_set_state(loader->config.pref,
         H2_LOADER_INSTALL_STATE_INSTALLED_PENDING_CONFIRM,
-        H2_LOADER_BOOT_INTENT_APP);
+        H2_LOADER_BOOT_INTENT_AUTO);
     if (rc != H2_PAL_OK) {
         if (loader->config.h2loader_partition_id != 0u) {
             int rollback_rc = h2_pal_power_set_next_boot_partition(
@@ -2309,11 +2335,11 @@ int h2_loader_startup(h2_loader_t *loader, h2_loader_startup_action_t *out_actio
         if (rc == H2_PAL_OK && !inspection.legacy &&
             inspection.manifest.role == H2_LOADER_IMAGE_ROLE_H2LOADER) {
             if (loader->status.install_state != H2_LOADER_INSTALL_STATE_STAGED ||
-                loader->status.boot_intent != H2_LOADER_BOOT_INTENT_H2LOADER) {
+                loader->status.boot_intent != H2_LOADER_BOOT_INTENT_LOADER) {
                 rc = pref_set_state(
                     loader->config.pref,
                     H2_LOADER_INSTALL_STATE_STAGED,
-                    H2_LOADER_BOOT_INTENT_H2LOADER);
+                    H2_LOADER_BOOT_INTENT_LOADER);
                 if (rc != H2_PAL_OK) {
                     return rc;
                 }
@@ -2345,7 +2371,7 @@ int h2_loader_startup(h2_loader_t *loader, h2_loader_startup_action_t *out_actio
             emit_event(loader, H2_LOADER_STARTUP_EVENT_INSTALL_BEGIN, H2_PAL_OK);
             rc = pref_set_state(loader->config.pref,
                 H2_LOADER_INSTALL_STATE_INSTALLING,
-                H2_LOADER_BOOT_INTENT_H2LOADER);
+                H2_LOADER_BOOT_INTENT_LOADER);
             if (rc != H2_PAL_OK) {
                 return mark_install_failed(loader, rc);
             }
@@ -2407,7 +2433,7 @@ int h2_loader_startup(h2_loader_t *loader, h2_loader_startup_action_t *out_actio
                 rc = pref_set_state(
                     loader->config.pref,
                     H2_LOADER_INSTALL_STATE_CONFIRMED,
-                    H2_LOADER_BOOT_INTENT_APP);
+                    H2_LOADER_BOOT_INTENT_AUTO);
                 if (rc != H2_PAL_OK) {
                     return mark_install_failed(loader, rc);
                 }
@@ -2533,7 +2559,7 @@ int h2_loader_upgrade_start_with_transition(
             rc = pref_set_state(
                 loader->config.pref,
                 H2_LOADER_INSTALL_STATE_IDLE,
-                H2_LOADER_BOOT_INTENT_H2LOADER);
+                H2_LOADER_BOOT_INTENT_LOADER);
         }
         if (rc == H2_PAL_OK) {
             loader->status.loader_upgrade = record;
@@ -2570,7 +2596,7 @@ int h2_loader_upgrade_start_with_transition(
         rc = pref_set_state(
             loader->config.pref,
             H2_LOADER_INSTALL_STATE_IDLE,
-            H2_LOADER_BOOT_INTENT_H2LOADER);
+            H2_LOADER_BOOT_INTENT_LOADER);
     }
     if (rc == H2_PAL_OK) {
         rc = h2_loader_package_install_to(
@@ -2612,7 +2638,7 @@ int h2_loader_upgrade_start(h2_loader_t *loader) {
 int h2_loader_mark_return_requested(const h2_pal_pref_api_t *pref) {
     int rc = pref_set_state(pref,
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED,
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -2626,7 +2652,7 @@ int h2_loader_mark_app_confirmed(const h2_pal_pref_api_t *pref) {
     }
     return pref_set_state(pref,
         H2_LOADER_INSTALL_STATE_CONFIRMED,
-        H2_LOADER_BOOT_INTENT_APP);
+        H2_LOADER_BOOT_INTENT_AUTO);
 }
 
 static int remove_optional_file(
@@ -2751,7 +2777,7 @@ static int boot_app_no_hook(h2_loader_t *loader) {
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    return select_and_reboot(loader, loader->config.app_partition_id, H2_LOADER_BOOT_INTENT_APP);
+    return select_and_reboot(loader, loader->config.app_partition_id, H2_LOADER_BOOT_INTENT_AUTO);
 }
 
 int h2_loader_boot_app(h2_loader_t *loader) {
@@ -2762,7 +2788,7 @@ int h2_loader_boot_app(h2_loader_t *loader) {
     rc = prepare_app_transition(loader);
     return rc == H2_PAL_OK ?
         select_and_reboot(loader, loader->config.app_partition_id,
-                          H2_LOADER_BOOT_INTENT_APP) :
+                          H2_LOADER_BOOT_INTENT_AUTO) :
         rc;
 }
 
@@ -2779,7 +2805,7 @@ int h2_loader_boot_h2loader(h2_loader_t *loader) {
             return rc;
         }
     }
-    return select_and_reboot(loader, loader->config.h2loader_partition_id, H2_LOADER_BOOT_INTENT_H2LOADER);
+    return select_and_reboot(loader, loader->config.h2loader_partition_id, H2_LOADER_BOOT_INTENT_LOADER);
 }
 
 int h2_loader_reboot_h2loader_with_transition(
@@ -2821,11 +2847,11 @@ int h2_loader_reboot_h2loader_with_transition(
     rc = pref_set_u32(
         loader->config.pref,
         "boot_intent",
-        (uint32_t)H2_LOADER_BOOT_INTENT_H2LOADER);
+        (uint32_t)H2_LOADER_BOOT_INTENT_LOADER);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    loader->status.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     if (transition != NULL) {
         rc = transition(transition_user);
         if (rc != H2_PAL_OK) {
@@ -2954,7 +2980,7 @@ int h2_loader_abort_stage(h2_loader_t *loader) {
     if (rc == H2_PAL_OK) {
         rc = pref_set_state(loader->config.pref,
             H2_LOADER_INSTALL_STATE_IDLE,
-            H2_LOADER_BOOT_INTENT_H2LOADER);
+            H2_LOADER_BOOT_INTENT_LOADER);
     }
     return rc;
 }
@@ -3010,14 +3036,14 @@ static int request_install_staged(h2_loader_t *loader) {
         }
         if (rc == H2_PAL_OK) {
             rc = ns->set_u32(
-                ns, "boot_intent", (uint32_t)H2_LOADER_BOOT_INTENT_APP);
+                ns, "boot_intent", (uint32_t)H2_LOADER_BOOT_INTENT_AUTO);
         }
         if (rc == H2_PAL_OK) {
             rc = ns->commit(ns);
             if (rc == H2_PAL_OK) {
                 loader->status.manual_hold = 0;
                 loader->status.install_state = next_state;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_APP;
+                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
             }
         }
     }

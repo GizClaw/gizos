@@ -83,7 +83,7 @@ int h2_loader_status_mfg_handoff_pending(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (!staged_loader &&
-        status->boot_intent == H2_LOADER_BOOT_INTENT_APP) {
+        status->boot_intent == H2_LOADER_BOOT_INTENT_AUTO) {
         if (status->install_state ==
                 H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED ||
             status->install_state == H2_LOADER_INSTALL_STATE_INSTALLING) {

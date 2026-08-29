@@ -105,7 +105,7 @@ static const char help_text[] =
     "                [--wait-timeout SECONDS] [--read-timeout SECONDS]\n"
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
-    "          stage hold wifi reboot reboot-loader restart restart-monitor\n"
+    "          stage hold wifi reboot reboot-loader restart monitor\n"
     "          rollback upgrade coredump bleikcp-speed\n\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
@@ -434,6 +434,12 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 1 && strcmp(argv[0], "reboot") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP;
     if (argc == 1 && strcmp(argv[0], "reboot-loader") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
     if (argc == 1 && strcmp(argv[0], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE;
+    if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
+        strcmp(argv[1], "app") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP;
+    if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
+        strcmp(argv[1], "loader") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
+    if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
+        strcmp(argv[1], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE;
     if (argc == 2 && strcmp(argv[0], "stage") == 0 && strcmp(argv[1], "abort") == 0) return H2_H2LOADER_HOST_COMMAND_STAGE_ABORT;
     if (argc == 2 && strcmp(argv[0], "hold") == 0 && strcmp(argv[1], "on") == 0) return H2_H2LOADER_HOST_COMMAND_HOLD_ON;
     if (argc == 2 && strcmp(argv[0], "hold") == 0 && strcmp(argv[1], "off") == 0) return H2_H2LOADER_HOST_COMMAND_HOLD_OFF;
@@ -484,7 +490,8 @@ static int device_command(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
     int argc,
-    const char *const *argv) {
+    const char *const *argv,
+    int monitor_after) {
     h2_h2loader_cli_transport_t transport;
     h2_h2loader_host_status_t status = {0};
     h2_h2loader_host_command_request_t request;
@@ -499,8 +506,18 @@ static int device_command(
         return H2_H2LOADER_CLI_EXIT_USAGE;
     }
     if (kind == 0 || options->port == NULL) return H2_H2LOADER_CLI_EXIT_USAGE;
+    if (monitor_after && options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
+        h2_h2loader_cli_output(
+            context, H2_H2LOADER_CLI_STREAM_STDERR,
+            "h2loader: --monitor requires iostreamikcp log transport\n");
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
     h2_h2loader_cli_transport_init(
         &transport, context, options, options->read_timeout_ms);
+    if (monitor_after) {
+        transport.on_log = transport_log;
+        transport.log_user = context;
+    }
     rc = h2_h2loader_cli_transport_connect(&transport, &status);
     request = (h2_h2loader_host_command_request_t){
         .command = kind,
@@ -519,6 +536,15 @@ static int device_command(
     }
     if (rc == H2_PAL_OK) rc = h2_h2loader_cli_transport_execute(
         &transport, &request, &result);
+    if (rc == H2_PAL_OK &&
+        result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
+        monitor_after) {
+        rc = h2_h2loader_cli_transport_monitor_logs(
+            &transport,
+            context->config->is_cancelled,
+            context->config->cancel_user);
+        if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
+    }
     (void)h2_h2loader_cli_transport_disconnect(&transport);
     if (rc != H2_PAL_OK || result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
         h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDERR,
@@ -609,19 +635,18 @@ static int upgrade_command(
     return H2_H2LOADER_CLI_EXIT_RUNTIME;
 }
 
-static int restart_monitor_command(
+static int monitor_command(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
     int argc) {
     h2_h2loader_cli_transport_t transport;
     h2_h2loader_host_status_t status = {0};
-    h2_h2loader_host_command_result_t result = {0};
     h2_pal_result_t rc;
     if (argc != 0 || options->port == NULL) return H2_H2LOADER_CLI_EXIT_USAGE;
     if (options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
         h2_h2loader_cli_output(
             context, H2_H2LOADER_CLI_STREAM_STDERR,
-            "h2loader: restart-monitor requires iostreamikcp log transport\n");
+            "h2loader: monitor requires iostreamikcp log transport\n");
         return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
     h2_h2loader_cli_transport_init(
@@ -629,17 +654,7 @@ static int restart_monitor_command(
     transport.on_log = transport_log;
     transport.log_user = context;
     rc = h2_h2loader_cli_transport_connect(&transport, &status);
-    h2_h2loader_host_command_request_t request = {
-        .command = H2_H2LOADER_HOST_COMMAND_APP_RESTART,
-        .status = &status,
-        .is_cancelled = context->config->is_cancelled,
-        .cancel_user = context->config->cancel_user,
-        .on_output = command_output,
-        .output_user = context,
-    };
-    if (rc == H2_PAL_OK) rc = h2_h2loader_cli_transport_execute(
-        &transport, &request, &result);
-    if (rc == H2_PAL_OK && result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
+    if (rc == H2_PAL_OK) {
         rc = h2_h2loader_cli_transport_monitor_logs(
             &transport, context->config->is_cancelled,
             context->config->cancel_user);
@@ -824,17 +839,24 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
     if (strcmp(command, "send-url") == 0) {
         return h2_h2loader_cli_server_command(&context, &options, argc, argv);
     }
-    if (strcmp(command, "restart-monitor") == 0) return restart_monitor_command(&context, &options, argc);
+    if (strcmp(command, "monitor") == 0) return monitor_command(&context, &options, argc);
     if (strcmp(command, "upgrade") == 0) return upgrade_command(&context, &options, argc);
     if (strcmp(command, "bleikcp-speed") == 0)
         return h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
     {
         const char *parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
         int count = 1;
+        int monitor_after = 0;
+        if (strcmp(command, "reboot") == 0 && argc > 0 &&
+            strcmp(argv[argc - 1], "--monitor") == 0) {
+            monitor_after = 1;
+            --argc;
+            if (argc != 1) return H2_H2LOADER_CLI_EXIT_USAGE;
+        }
         while (count < (int)H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY && count - 1 < argc) {
             parts[count] = argv[count - 1];
             ++count;
         }
-        return device_command(&context, &options, count, parts);
+        return device_command(&context, &options, count, parts, monitor_after);
     }
 }

@@ -1044,7 +1044,7 @@ static int stage_test_pref_get_u32(
     stage_test_context_t *context = ns->user;
 
     if (strcmp(key, "boot_intent") == 0) {
-        if (context->boot_intent == H2_LOADER_BOOT_INTENT_UNKNOWN) {
+        if ((uint32_t)context->boot_intent == 0u) {
             return H2_PAL_ERR_NOT_FOUND;
         }
         *out_value = (uint32_t)context->boot_intent;
@@ -1386,7 +1386,7 @@ static void stage_test_fixture_init(stage_test_fixture_t *fixture) {
 
     memset(fixture, 0, sizeof(*fixture));
     fixture->context.capacity = 16u;
-    fixture->context.boot_intent = H2_LOADER_BOOT_INTENT_APP;
+    fixture->context.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
     fixture->context.install_state = H2_LOADER_INSTALL_STATE_CONFIRMED;
     fixture->context.app_confirmed = 1;
     fixture->context.installed_valid = 1;
@@ -2523,18 +2523,18 @@ static void test_mfg_handoff_pending_truth_table(void) {
     assert(h2_loader_status_mfg_handoff_pending(&status, 2, &pending) ==
            H2_PAL_ERR_INVALID_ARG);
 
-    status.boot_intent = H2_LOADER_BOOT_INTENT_APP;
+    status.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
     status.install_state = H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED;
     assert(h2_loader_status_mfg_handoff_pending(&status, 1, &pending) ==
            H2_PAL_OK);
     assert(pending == 0);
 
-    status.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     assert(h2_loader_status_mfg_handoff_pending(&status, 0, &pending) ==
            H2_PAL_OK);
     assert(pending == 0);
 
-    status.boot_intent = H2_LOADER_BOOT_INTENT_APP;
+    status.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
     for (int state = H2_LOADER_INSTALL_STATE_IDLE;
          state <= H2_LOADER_INSTALL_STATE_MAIN_FAILED;
          ++state) {
@@ -2606,7 +2606,7 @@ static void test_status_format_fits_shared_line_capacity(void) {
 static void test_command_availability_flags(void) {
     idle_trial_context_t context = {
         .running_partition = 2u,
-        .boot_intent = H2_LOADER_BOOT_INTENT_APP,
+        .boot_intent = H2_LOADER_BOOT_INTENT_AUTO,
         .commit_result = H2_PAL_ERR_WRITE,
         .installed_valid = 1,
         .installed_version = "installed",
@@ -2857,7 +2857,7 @@ static void test_loader_commands_recheck_availability_after_operation_lock(void)
 static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) {
     idle_trial_context_t context = {
         .running_partition = 2u,
-        .boot_intent = H2_LOADER_BOOT_INTENT_APP,
+        .boot_intent = H2_LOADER_BOOT_INTENT_AUTO,
     };
     h2_loader_t loader = {0};
     const h2_pal_pref_vtable_t pref_vtable = {.open = idle_pref_open};
@@ -2885,7 +2885,7 @@ static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) 
     assert(h2_loader_reboot_h2loader_with_transition(
         &loader, idle_reboot_transition, &context) == H2_PAL_ERR_WRITE);
     assert(context.boot_selections == 1);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_APP);
+    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
     assert(context.reboot_transitions == 0);
     assert(context.disruptive_calls == 1);
     assert(context.reboots == 0);
@@ -2896,7 +2896,7 @@ static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) 
     assert(h2_loader_reboot_h2loader_with_transition(
         &loader, idle_reboot_transition, &context) == H2_PAL_ERR_TIMEOUT);
     assert(context.boot_selections == 2);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_H2LOADER);
+    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
     assert(context.reboot_transitions == 1);
     assert(context.selection_sequence < context.commit_sequence);
     assert(context.commit_sequence < context.transition_sequence);
@@ -2999,7 +2999,7 @@ static void test_loader_reboot_command_bypasses_incomplete_mfg_gate(void) {
 static void test_app_request_commits_once_before_ack_and_teardown(void) {
     idle_trial_context_t context = {
         .running_partition = 1u,
-        .boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER,
+        .boot_intent = H2_LOADER_BOOT_INTENT_LOADER,
         .install_state = H2_LOADER_INSTALL_STATE_IDLE,
         .manual_hold = 1,
         .installed_valid = 1,
@@ -3037,7 +3037,7 @@ static void test_app_request_commits_once_before_ack_and_teardown(void) {
     assert(context.commits == 0);
     assert(context.manual_hold == 1);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_H2LOADER);
+    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
     assert(context.reboot_transitions == 0);
     assert(context.disruptive_calls == 0);
 
@@ -3049,7 +3049,7 @@ static void test_app_request_commits_once_before_ack_and_teardown(void) {
     assert(context.commits == 1);
     assert(context.manual_hold == 1);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_H2LOADER);
+    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
     assert(context.reboot_transitions == 0);
     assert(context.disruptive_calls == 0);
 
@@ -3061,7 +3061,7 @@ static void test_app_request_commits_once_before_ack_and_teardown(void) {
     assert(context.commits == 2);
     assert(context.manual_hold == 0);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_APP);
+    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
     assert(context.reboot_transitions == 1);
     assert(context.commit_sequence < context.transition_sequence);
     assert(context.disruptive_calls == 0);
@@ -3473,7 +3473,7 @@ static void test_successful_upgrade_recovery_clears_staged_candidate(void) {
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.staged_valid == 0);
     assert(fixture.context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
-    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_H2LOADER);
+    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
     assert(h2_loader_upgrade_record_decode(
                fixture.context.upgrade_record,
                fixture.context.upgrade_record_len,
@@ -3764,7 +3764,7 @@ static void test_stage_close_removes_only_incomplete_tmp(void) {
     assert(fixture.context.temporary_exists == 0);
     assert(fixture.context.staged_valid == 0);
     assert(fixture.context.install_state == H2_LOADER_INSTALL_STATE_CONFIRMED);
-    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_APP);
+    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
 }
 
 static void test_url_stage_discards_old_candidate_before_wifi(void) {
@@ -3795,7 +3795,7 @@ static void test_url_stage_discards_old_candidate_before_wifi(void) {
     fixture.context.staged_size = 8u;
     fixture.context.install_state =
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     fixture.context.manual_hold = 1;
     fixture.context.last_result = H2_PAL_ERR_TIMEOUT;
 
@@ -3824,7 +3824,7 @@ static void test_url_stage_discards_old_candidate_before_wifi(void) {
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED);
     assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
     assert(fixture.context.manual_hold == 1);
     assert(fixture.context.last_result == H2_PAL_ERR_TIMEOUT);
 }
@@ -3835,7 +3835,7 @@ static void test_stage_publication_preserves_app_lifecycle(void) {
     stage_test_fixture_init(&fixture);
     fixture.context.install_state =
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     fixture.context.manual_hold = 1;
     fixture.context.last_result = H2_PAL_ERR_WRITE;
     fixture.context.package_exists = 1;
@@ -3851,7 +3851,7 @@ static void test_stage_publication_preserves_app_lifecycle(void) {
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED);
     assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
     assert(fixture.context.app_confirmed == 1);
     assert(fixture.context.manual_hold == 1);
     assert(fixture.context.last_result == H2_PAL_ERR_WRITE);
@@ -3872,7 +3872,7 @@ static void test_stage_publication_preserves_app_lifecycle(void) {
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED);
     assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
 }
 
 static void test_stage_replacement_normalizes_only_legacy_staged_state(void) {
@@ -3880,7 +3880,7 @@ static void test_stage_replacement_normalizes_only_legacy_staged_state(void) {
 
     stage_test_fixture_init(&fixture);
     fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     fixture.context.package_exists = 1;
     fixture.context.package_size = 8u;
     fixture.context.staged_valid = 1;
@@ -3893,12 +3893,12 @@ static void test_stage_replacement_normalizes_only_legacy_staged_state(void) {
         "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_CONFIRMED);
-    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_APP);
+    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
     assert(fixture.context.staged_valid == 0);
 
     stage_test_fixture_init(&fixture);
     fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     fixture.context.installed_valid = 0;
     fixture.context.app_confirmed = 0;
     assert(h2_loader_begin_stage_replacement(
@@ -3907,11 +3907,11 @@ static void test_stage_replacement_normalizes_only_legacy_staged_state(void) {
         "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
     assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
 
     stage_test_fixture_init(&fixture);
     fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     fixture.context.app_confirmed = 0;
     assert(h2_loader_begin_stage_replacement(
         &fixture.loader,
@@ -3920,7 +3920,7 @@ static void test_stage_replacement_normalizes_only_legacy_staged_state(void) {
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_MAIN_FAILED);
     assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_H2LOADER);
+        H2_LOADER_BOOT_INTENT_LOADER);
     assert(h2_loader_begin_stage_replacement(
         &fixture.loader,
         "/dl/update.tar.zlib.tmp",
@@ -3963,7 +3963,7 @@ static void test_startup_normalizes_legacy_staged_without_installing(void) {
 
     stage_test_fixture_init(&fixture);
     fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_H2LOADER;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
     fixture.context.manual_hold = 1;
     fixture.context.package_exists = 1;
     fixture.context.package_size = 8u;
@@ -3978,7 +3978,7 @@ static void test_startup_normalizes_legacy_staged_without_installing(void) {
     assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_CONFIRMED);
-    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_APP);
+    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
     assert(fixture.context.package_exists == 1);
     assert(fixture.context.staged_valid == 1);
     assert(fixture.context.removes == 0u);
