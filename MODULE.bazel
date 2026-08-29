@@ -164,7 +164,16 @@ pip.parse(
         "linux_x86_64",
     ],
 )
-use_repo(pip, "bk7258_pip")
+pip.parse(
+    hub_name = "lvgl_ttf_subset_pip",
+    python_version = "3.11",
+    requirements_lock = "//tools/lvgl/ttf_subset:requirements.txt",
+)
+use_repo(
+    pip,
+    "bk7258_pip",
+    "lvgl_ttf_subset_pip",
+)
 
 remote_android_tools = use_extension(
     "@rules_android//bzlmod_extensions:android_extensions.bzl",

@@ -25,6 +25,7 @@ cp "$fixture_root/ap_gpio.h" "$consumer_root/ap_gpio.h"
 cp "$fixture_root/cp.defaults" "$consumer_root/cp.defaults"
 cp "$fixture_root/cp_gpio.h" "$consumer_root/cp_gpio.h"
 cp "$fixture_root/disabled_native_locator.json" "$consumer_root/disabled_native_locator.json"
+cp "$fixture_root/embedded_ttf_consumer.cc" "$consumer_root/embedded_ttf_consumer.cc"
 cp "$fixture_root/font_consumer.c" "$consumer_root/font_consumer.c"
 cp "$fixture_root/font_consumer_test.c" "$consumer_root/font_consumer_test.c"
 cp "$fixture_root/font_symbols.txt" "$consumer_root/font_symbols.txt"
@@ -98,6 +99,25 @@ cd "$consumer_root"
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
 
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    aquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_ci_graph=true" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    'mnemonic(EspIdfFirmware, //:generic_private_esp_firmware)' \
+    >font-native-staging.log
+grep -F -- '--native-component' font-native-staging.log >/dev/null
+grep -F 'embedded_menu_font=.' font-native-staging.log >/dev/null
+grep -F -- '--native-component-source' font-native-staging.log >/dev/null
+grep -F 'embedded_menu_font.c' font-native-staging.log >/dev/null
+grep -F 'embedded_menu_font.h' font-native-staging.log >/dev/null
+
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
     local field=$1
@@ -146,6 +166,24 @@ fi
 grep -F "font_name must be a valid C identifier" invalid-font-name.log >/dev/null
 cp BUILD.bazel.complete BUILD.bazel
 
+sed -i.bak 's/symbol = "embedded_menu_font"/symbol = "9invalid"/' BUILD.bazel
+if "${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    cquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    //:embedded_menu_font >invalid-ttf-symbol.log 2>&1; then
+    printf 'expected invalid embedded TTF symbol name to fail analysis\n' >&2
+    exit 1
+fi
+grep -F "symbol must be a valid C identifier" invalid-ttf-symbol.log >/dev/null
+cp BUILD.bazel.complete BUILD.bazel
+
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
     --output_base="$consumer_root/output-base" \
@@ -160,6 +198,7 @@ cp BUILD.bazel.complete BUILD.bazel
     @gizos//tools/openapi_codegen:openapi_codegen \
     //:bk3633_test_support_consumer \
     //:firmware_lib \
+    //:embedded_menu_font_test \
     //:font_consumer \
     //:font_consumer_test \
     //:font_native_component \
@@ -182,6 +221,7 @@ cp BUILD.bazel.complete BUILD.bazel
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
+    //:embedded_menu_font_test \
     //:font_consumer_test
 
 "${BAZEL_BIN:-bazel}" \
