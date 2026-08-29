@@ -178,6 +178,11 @@ int h2_loader_package_read_staged_identity(
     const h2_pal_pref_api_t *pref,
     h2_loader_identity_t *out_identity);
 int h2_loader_package_validate_path(h2_loader_package_t *package, const char *archive_path);
+int h2_loader_package_verify_path(
+    h2_loader_package_t *package,
+    const char *archive_path,
+    uint64_t expected_size,
+    const char *expected_sha256);
 int h2_loader_package_inspect_path(
     h2_loader_package_t *package,
     const char *archive_path,

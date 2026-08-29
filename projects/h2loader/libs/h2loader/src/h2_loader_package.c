@@ -353,23 +353,33 @@ static void digest_to_hex(
     out_hex[H2_LOADER_SHA256_SIZE * 2u] = '\0';
 }
 
-static int verify_archive_checksum(
+int h2_loader_package_verify_path(
     h2_loader_package_t *package,
-    const h2_loader_identity_t *identity) {
+    const char *archive_path,
+    uint64_t expected_size,
+    const char *expected_sha256) {
     uint8_t buffer[H2_LOADER_VALIDATE_IO_BUF_SIZE];
     uint8_t digest[H2_LOADER_SHA256_SIZE];
     char actual_checksum[H2_LOADER_SHA256_SIZE * 2u + 1u];
     h2_pal_fs_file_t *archive = NULL;
+    h2_pal_fs_stat_t stat;
     int rc;
 
-    if (package == NULL || identity == NULL || !is_sha256_hex(identity->checksum) ||
+    if (package == NULL || archive_path == NULL || expected_size == 0u ||
+        !is_sha256_hex(expected_sha256) ||
         package->config.digest.start == NULL || package->config.digest.update == NULL ||
         package->config.digest.finish == NULL || package->config.digest.abort == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (package->config.fs != NULL && package->config.fs->vtable != NULL &&
+        package->config.fs->vtable->stat != NULL) {
+        rc = h2_pal_fs_stat(package->config.fs, archive_path, &stat);
+        if (rc != H2_PAL_FS_OK) return rc;
+        if (stat.is_dir || stat.size != expected_size) return H2_PAL_ERR_FORMAT;
+    }
     rc = h2_pal_fs_open(
         package->config.fs,
-        package->config.package_path,
+        archive_path,
         H2_PAL_FS_OPEN_READ,
         &archive);
     if (rc != H2_PAL_FS_OK) {
@@ -414,8 +424,19 @@ static int verify_archive_checksum(
         return rc;
     }
     digest_to_hex(digest, actual_checksum);
-    return strcmp(actual_checksum, identity->checksum) == 0 ?
+    return strcmp(actual_checksum, expected_sha256) == 0 ?
         H2_PAL_OK : H2_PAL_ERR_FORMAT;
+}
+
+static int verify_archive_checksum(
+    h2_loader_package_t *package,
+    const h2_loader_identity_t *identity) {
+    if (identity == NULL) return H2_PAL_ERR_INVALID_ARG;
+    return h2_loader_package_verify_path(
+        package,
+        package != NULL ? package->config.package_path : NULL,
+        identity->size,
+        identity->checksum);
 }
 
 static void copy_text(char *dst, size_t dst_len, const char *src) {
