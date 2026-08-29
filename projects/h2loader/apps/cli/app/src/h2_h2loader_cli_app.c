@@ -486,6 +486,52 @@ static int parse_wifi_scan_options(
     return 1;
 }
 
+static h2_pal_result_t monitor_transport(
+    h2_h2loader_cli_context_t *context,
+    h2_h2loader_cli_transport_t *transport,
+    int connected) {
+    h2_h2loader_host_status_t status = {0};
+    h2_pal_result_t rc = H2_PAL_OK;
+    int reported_reconnect = 0;
+    if (context == NULL || transport == NULL ||
+        context->config->is_cancelled == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    for (;;) {
+        if (context->config->is_cancelled(context->config->cancel_user)) {
+            return H2_PAL_EXIT;
+        }
+        if (!connected) {
+            rc = h2_h2loader_cli_transport_rediscover(transport);
+            if (rc == H2_PAL_OK) {
+                rc = h2_h2loader_cli_transport_connect(transport, &status);
+            }
+            if (rc != H2_PAL_OK) {
+                if (!reported_reconnect) {
+                    (void)h2_h2loader_cli_output(
+                        context,
+                        H2_H2LOADER_CLI_STREAM_STDERR,
+                        "h2loader: monitor waiting for serial reconnect code=%d\n",
+                        rc);
+                    reported_reconnect = 1;
+                }
+                rc = h2_pal_time_sleep_ms(context->runtime->time, 250u);
+                if (rc != H2_PAL_OK) return rc;
+                continue;
+            }
+            connected = 1;
+            reported_reconnect = 0;
+        }
+        rc = h2_h2loader_cli_transport_monitor_logs(
+            transport,
+            context->config->is_cancelled,
+            context->config->cancel_user);
+        (void)h2_h2loader_cli_transport_disconnect(transport);
+        connected = 0;
+        if (rc == H2_PAL_EXIT) return rc;
+    }
+}
+
 static int device_command(
     h2_h2loader_cli_context_t *context,
     const h2_h2loader_cli_options_t *options,
@@ -539,10 +585,7 @@ static int device_command(
     if (rc == H2_PAL_OK &&
         result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
         monitor_after) {
-        rc = h2_h2loader_cli_transport_monitor_logs(
-            &transport,
-            context->config->is_cancelled,
-            context->config->cancel_user);
+        rc = monitor_transport(context, &transport, 1);
         if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
     }
     (void)h2_h2loader_cli_transport_disconnect(&transport);
@@ -654,11 +697,7 @@ static int monitor_command(
     transport.on_log = transport_log;
     transport.log_user = context;
     rc = h2_h2loader_cli_transport_connect(&transport, &status);
-    if (rc == H2_PAL_OK) {
-        rc = h2_h2loader_cli_transport_monitor_logs(
-            &transport, context->config->is_cancelled,
-            context->config->cancel_user);
-    }
+    if (rc == H2_PAL_OK) rc = monitor_transport(context, &transport, 1);
     (void)h2_h2loader_cli_transport_disconnect(&transport);
     return rc == H2_PAL_EXIT ? H2_H2LOADER_CLI_EXIT_OK :
         (rc == H2_PAL_OK ? H2_H2LOADER_CLI_EXIT_OK : H2_H2LOADER_CLI_EXIT_RUNTIME);
