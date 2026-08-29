@@ -119,6 +119,12 @@ static void test_typed_command_role_contract(void) {
                &loader, 1u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
+    loader.command_availability &=
+        ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
+    loader.capabilities |= H2_H2LOADER_HOST_CAPABILITY_WIFI;
+    assert(h2_h2loader_host_command_validate(
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT) ==
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) ==
            H2_PAL_ERR_INVALID_STATE);
@@ -223,6 +229,7 @@ static void test_typed_command_wire_contract(void) {
     request.password = "secret";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
     assert(strcmp(contract.line, "h2loader wifi connect factory secret\n") == 0);
+    assert(strcmp(contract.success_token, "result=connecting") == 0);
     request.password = "bad password";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
     request.command = H2_H2LOADER_HOST_COMMAND_STAGE_URL;

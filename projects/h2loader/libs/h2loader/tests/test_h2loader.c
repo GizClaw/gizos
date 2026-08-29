@@ -275,7 +275,7 @@ static int wifi_command_test_connect(
     uint32_t timeout_ms) {
     wifi_command_test_context_t *context = user;
 
-    assert(timeout_ms != 0u);
+    assert(timeout_ms == 0u);
     context->connected = *config;
     context->connect_calls++;
     return H2_PAL_OK;
@@ -346,13 +346,13 @@ static int wifi_command_test_save(
     const h2_pal_wifi_sta_config_t *config) {
     wifi_command_test_context_t *context = user;
 
-    assert(context->connect_calls == 1);
+    assert(context->connect_calls == 0);
     context->saved = *config;
     context->save_calls++;
     return context->save_result;
 }
 
-static void test_wifi_connect_persists_confirmed_config(void) {
+static void test_wifi_connect_persists_config_before_start(void) {
     static const char *const argv[] = {
         "h2loader", "wifi", "connect", "test-network", "test-password"};
     static const h2_command_io_vtable_t io_vtable = {
@@ -410,8 +410,8 @@ static void test_wifi_connect_persists_confirmed_config(void) {
     assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
     assert(h2_loader_command_execute(
                &command, sizeof(argv) / sizeof(argv[0]), argv) == H2_PAL_OK);
-    assert(context.connect_calls == 2);
-    assert(context.status_calls == 4);
+    assert(context.connect_calls == 1);
+    assert(context.status_calls == 1);
     assert(context.save_calls == 1);
     assert(context.connected.ssid_len == strlen("test-network"));
     assert(context.saved.ssid_len == context.connected.ssid_len);
@@ -431,8 +431,8 @@ static void test_wifi_connect_persists_confirmed_config(void) {
     assert(h2_loader_command_execute(
                &command, sizeof(argv) / sizeof(argv[0]), argv) ==
            H2_PAL_ERR_IO);
-    assert(context.connect_calls == 1);
-    assert(context.status_calls == 2);
+    assert(context.connect_calls == 0);
+    assert(context.status_calls == 1);
     assert(context.save_calls == 1);
 }
 
@@ -4468,7 +4468,7 @@ int main(void) {
     test_boot_app_runs_disruptive_hook_before_reboot();
     test_upgrade_does_not_cancel_mfg_before_validation();
     test_last_result_is_persisted();
-    test_wifi_connect_persists_confirmed_config();
+    test_wifi_connect_persists_config_before_start();
     test_wifi_scan_is_bounded_and_structured();
     test_command_reinit_discards_partial_old_session_input();
     test_stage_close_removes_only_incomplete_tmp();

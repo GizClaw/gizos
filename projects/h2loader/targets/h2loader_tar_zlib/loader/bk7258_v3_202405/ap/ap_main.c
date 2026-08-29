@@ -208,6 +208,35 @@ static void command_sleep_ms(void *user, uint32_t delay_ms) {
     rtos_delay_milliseconds(delay_ms);
 }
 
+static void restore_saved_wifi(void) {
+    h2_pal_wifi_sta_config_t config;
+    int rc;
+
+    if (s_runtime->wifi_settings == NULL || s_runtime->wifi_sta == NULL) {
+        return;
+    }
+    memset(&config, 0, sizeof(config));
+    rc = h2_pal_wifi_settings_get_saved_sta_config(
+        s_runtime->wifi_settings,
+        &config);
+    if (rc == H2_PAL_OK) {
+        rc = h2_pal_wifi_sta_connect(s_runtime->wifi_sta, &config, 0u);
+    }
+    if (rc == H2_PAL_OK) {
+        emergency_uart_write_string(
+            0,
+            "H2_BK_H2LOADER_STEP stage=wifi_restore rc=0\r\n");
+    } else if (rc != H2_PAL_ERR_NOT_FOUND) {
+        char line[80];
+        (void)snprintf(
+            line,
+            sizeof(line),
+            "H2_BK_H2LOADER_STEP stage=wifi_restore rc=%d\r\n",
+            rc);
+        emergency_uart_write_string(0, line);
+    }
+}
+
 static h2_pal_result_t coredump_disk_get_partition(
     void *user,
     uint32_t partition_id,
@@ -428,6 +457,7 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("initialization_unlock", rc);
         wait_forever();
     }
+    restore_saved_wifi();
 
     for (;;) {
         h2_loader_startup_action_t action = H2_LOADER_STARTUP_ACTION_COMMAND_MODE;

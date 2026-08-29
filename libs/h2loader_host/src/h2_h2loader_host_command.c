@@ -97,7 +97,9 @@ h2_pal_result_t h2_h2loader_host_command_validate(
     if (lifecycle && operation_active != 0u) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if ((status->command_availability & availability) == 0u) {
+    if ((status->command_availability & availability) == 0u &&
+        !(command == H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT &&
+          (status->capabilities & H2_H2LOADER_HOST_CAPABILITY_WIFI) != 0u)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     return H2_PAL_OK;
@@ -232,7 +234,7 @@ h2_pal_result_t h2_h2loader_host_command_contract(
                 return H2_PAL_ERR_INVALID_ARG;
             }
             out_contract->marker = "H2_LOADER_WIFI ";
-            out_contract->success_token = "result=connected";
+            out_contract->success_token = "result=connecting";
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
             SET_LINE("h2loader wifi disconnect\n");

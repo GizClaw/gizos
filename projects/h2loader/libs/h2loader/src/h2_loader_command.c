@@ -11,9 +11,6 @@
 #define H2_LOADER_STAGE_TMP_PATH "/dl/update.tar.zlib.tmp"
 #define H2_LOADER_STAGE_PATH "/dl/update.tar.zlib"
 #define H2_LOADER_STAGE_PREV_PATH "/dl/update.tar.zlib.prev"
-#define H2_LOADER_WIFI_CONNECT_TIMEOUT_MS 30000u
-#define H2_LOADER_WIFI_IP_TIMEOUT_MS 15000u
-#define H2_LOADER_WIFI_IP_POLL_MS 100u
 #define H2_LOADER_WIFI_SETTINGS_SETTLE_MS 250u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT 16u
 #define H2_LOADER_WIFI_SCAN_MAX_LIMIT 16u
@@ -655,36 +652,6 @@ static int h2loader_wifi_scan_command(
     return rc;
 }
 
-static void h2loader_print_ip4(h2_loader_command_t *self, uint32_t ip4) {
-    uint8_t bytes[4];
-    h2_pal_wifi_ip4_to_bytes(ip4, bytes);
-    printf("%u.%u.%u.%u", (unsigned)bytes[0], (unsigned)bytes[1], (unsigned)bytes[2], (unsigned)bytes[3]);
-}
-
-static int h2loader_wait_wifi_ip(
-    h2_loader_command_t *self,
-    const h2_pal_wifi_sta_api_t *sta,
-    h2_pal_wifi_sta_status_t *out_status,
-    uint32_t timeout_ms) {
-    uint64_t started_at = self->config.now_ms(self->config.clock_user);
-    int rc = H2_PAL_OK;
-
-    if (sta == NULL || out_status == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-
-    do {
-        memset(out_status, 0, sizeof(*out_status));
-        rc = h2_pal_wifi_sta_get_status(sta, out_status);
-        if (rc == H2_PAL_OK && out_status->ip_valid != 0u) {
-            return H2_PAL_OK;
-        }
-        self->config.sleep_ms(self->config.clock_user, H2_LOADER_WIFI_IP_POLL_MS);
-    } while ((self->config.now_ms(self->config.clock_user) - started_at) < timeout_ms);
-
-    return rc == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : rc;
-}
-
 static int h2loader_wifi_command(
     h2_loader_command_t *self,
     size_t argc,
@@ -710,31 +677,6 @@ static int h2loader_wifi_command(
             printf("H2_LOADER_WIFI result=invalid_config code=%d\n", rc);
             return rc;
         }
-        printf("H2_LOADER_WIFI result=connecting ssid=%s\n", config.ssid);
-        fflush(stdout);
-        rc = h2_pal_wifi_sta_connect(sta, &config, H2_LOADER_WIFI_CONNECT_TIMEOUT_MS);
-        if (rc != H2_PAL_OK) {
-            memset(&status, 0, sizeof(status));
-            if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
-                printf("H2_LOADER_WIFI result=error code=%d state=%d disconnect_reason=%d ip_valid=%u\n",
-                    rc,
-                    (int)status.state,
-                    status.disconnect_reason,
-                    (unsigned)status.ip_valid);
-            } else {
-                printf("H2_LOADER_WIFI result=error code=%d\n", rc);
-            }
-            return rc;
-        }
-        rc = h2loader_wait_wifi_ip(self, sta, &status, H2_LOADER_WIFI_IP_TIMEOUT_MS);
-        if (rc != H2_PAL_OK) {
-            printf("H2_LOADER_WIFI result=error code=%d step=ip state=%d disconnect_reason=%d ip_valid=%u\n",
-                rc,
-                (int)status.state,
-                status.disconnect_reason,
-                (unsigned)status.ip_valid);
-            return rc;
-        }
         if (self->config.wifi_settings != NULL) {
             rc = h2_pal_wifi_settings_set_saved_sta_config(
                 self->config.wifi_settings,
@@ -748,40 +690,23 @@ static int h2loader_wifi_command(
             self->config.sleep_ms(
                 self->config.clock_user,
                 H2_LOADER_WIFI_SETTINGS_SETTLE_MS);
-            memset(&status, 0, sizeof(status));
-            rc = h2_pal_wifi_sta_get_status(sta, &status);
-            if (rc != H2_PAL_OK ||
-                status.state != H2_PAL_WIFI_STA_STATE_GOT_IP ||
-                status.ip_valid == 0u) {
-                rc = h2_pal_wifi_sta_connect(
-                    sta,
-                    &config,
-                    H2_LOADER_WIFI_CONNECT_TIMEOUT_MS);
-                if (rc != H2_PAL_OK) {
-                    printf(
-                        "H2_LOADER_WIFI result=error code=%d step=settings_reconnect\n",
-                        rc);
-                    return rc;
-                }
-                rc = h2loader_wait_wifi_ip(
-                    self,
-                    sta,
-                    &status,
-                    H2_LOADER_WIFI_IP_TIMEOUT_MS);
-                if (rc != H2_PAL_OK) {
-                    printf(
-                        "H2_LOADER_WIFI result=error code=%d step=settings_ip state=%d disconnect_reason=%d ip_valid=%u\n",
-                        rc,
-                        (int)status.state,
-                        status.disconnect_reason,
-                        (unsigned)status.ip_valid);
-                    return rc;
-                }
-            }
         }
-        printf("H2_LOADER_WIFI result=connected ip=");
-        h2loader_print_ip4(self, status.ip.ip4);
-        printf("\n");
+        rc = h2_pal_wifi_sta_connect(sta, &config, 0u);
+        if (rc != H2_PAL_OK) {
+            memset(&status, 0, sizeof(status));
+            if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
+                printf("H2_LOADER_WIFI result=error code=%d state=%d disconnect_reason=%d ip_valid=%u\n",
+                    rc,
+                    (int)status.state,
+                    status.disconnect_reason,
+                    (unsigned)status.ip_valid);
+            } else {
+                printf("H2_LOADER_WIFI result=error code=%d\n", rc);
+            }
+            return rc;
+        }
+        printf("H2_LOADER_WIFI result=connecting ssid=%s\n", config.ssid);
+        fflush(stdout);
         return H2_PAL_OK;
     }
     if (argc >= 3 && strcmp(argv[2], "disconnect") == 0) {
