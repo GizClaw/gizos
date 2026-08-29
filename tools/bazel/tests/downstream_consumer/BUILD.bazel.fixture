@@ -61,6 +61,8 @@ cc_test(
 
 firmware_native_component(
     name = "font_native_component",
+    component_directory = ".",
+    component_name = "embedded_menu_font",
     srcs = ["font_consumer.c"],
     native_srcs = [
         ":downstream_font_16",
@@ -158,6 +160,7 @@ filegroup(
 h2loader_esp_idf_firmware(
     name = "private_esp_firmware",
     board = "private_esp_board",
+    graph = [":font_native_component"],
     layout_files = {
         "partition": ":partition.csv",
         "project_support_files": [":sdkconfig.h2loader.defaults"],
@@ -191,6 +194,7 @@ h2loader_bk7258_firmware(
 esp_idf_firmware(
     name = "generic_private_esp_firmware",
     board = "private_esp_board",
+    graph = [":font_native_component"],
     partition = ":partition.csv",
     project = "CMakeLists.txt",
     project_name = "private_esp_consumer",

@@ -99,6 +99,25 @@ cd "$consumer_root"
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
 
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    aquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_ci_graph=true" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    'mnemonic(EspIdfFirmware, //:generic_private_esp_firmware)' \
+    >font-native-staging.log
+grep -F -- '--native-component' font-native-staging.log >/dev/null
+grep -F 'embedded_menu_font=.' font-native-staging.log >/dev/null
+grep -F -- '--native-component-source' font-native-staging.log >/dev/null
+grep -F 'embedded_menu_font.c' font-native-staging.log >/dev/null
+grep -F 'embedded_menu_font.h' font-native-staging.log >/dev/null
+
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
     local field=$1

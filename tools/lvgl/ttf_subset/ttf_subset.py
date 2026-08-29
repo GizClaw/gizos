@@ -1,6 +1,7 @@
 """Create a deterministic TTF subset and emit it as C data."""
 
 import argparse
+import hashlib
 import io
 import re
 import unicodedata
@@ -59,8 +60,18 @@ def font_codepoints(data: bytes) -> frozenset[int]:
         font.close()
 
 
+def validate_codepoints(
+    required: frozenset[int], actual: frozenset[int]
+) -> None:
+    missing = required - actual
+    if missing:
+        values = ", ".join(f"U+{value:04X}" for value in sorted(missing))
+        raise RuntimeError(f"generated font misses required codepoints: {values}")
+
+
 def render_header(symbol: str) -> str:
-    guard = f"{symbol.upper()}_H"
+    digest = hashlib.sha256(symbol.encode("utf-8")).hexdigest().upper()
+    guard = f"H2_TTF_SUBSET_{digest}_H"
     return (
         f"#ifndef {guard}\n#define {guard}\n\n"
         "#include <stddef.h>\n#include <stdint.h>\n\n"
@@ -93,10 +104,7 @@ def main() -> None:
         raise ValueError("symbol must be a valid C identifier")
     required = collect_codepoints(args.symbol_source, args.range)
     data = subset_font(args.font.read_bytes(), required)
-    missing = required - font_codepoints(data)
-    if missing:
-        values = ", ".join(f"U+{value:04X}" for value in sorted(missing))
-        raise RuntimeError(f"generated font misses required codepoints: {values}")
+    validate_codepoints(required, font_codepoints(data))
     args.out_h.write_text(render_header(args.symbol), encoding="utf-8")
     args.out_c.write_text(
         render_source(args.symbol, args.out_h.name, data), encoding="utf-8"

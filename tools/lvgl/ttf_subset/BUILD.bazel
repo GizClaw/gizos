@@ -46,6 +46,7 @@ cc_test(
         ":fixture_font",
         "tests/consumer.c",
     ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 exports_files(["ttf_subset.bzl"])
