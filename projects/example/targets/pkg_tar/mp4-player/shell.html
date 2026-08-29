@@ -20,10 +20,33 @@
     <main>
       <h1>GizOS MP4 Player</h1>
       <canvas id="canvas" width="240" height="240"></canvas>
-      <button id="start" type="button">Play</button>
-      <p id="status">Loading WebAssembly…</p>
+      <button id="start" type="button">Start</button>
+      <p id="status">Ready</p>
     </main>
-    <script>var Module = {canvas: document.getElementById('canvas')};</script>
-    {{{ SCRIPT }}}
+    <template id="program">{{{ SCRIPT }}}</template>
+    <script>
+      var Module = {canvas: document.getElementById('canvas')};
+      const start = document.getElementById('start');
+      start.addEventListener('click', () => {
+        start.disabled = true;
+        start.textContent = 'Starting';
+        document.getElementById('status').textContent = 'Loading WebAssembly…';
+
+        const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
+        if (AudioContext) {
+          Module.h2WebAudioContext = new AudioContext();
+          Module.h2WebAudioContext.resume().catch(() => {});
+        }
+
+        const source = document.querySelector('#program').content.querySelector('script');
+        const loader = document.createElement('script');
+        for (const attribute of source.attributes)
+          loader.setAttribute(attribute.name, attribute.value);
+        loader.addEventListener('error', () => {
+          document.getElementById('status').textContent = 'WebAssembly load failed';
+        });
+        document.body.appendChild(loader);
+      }, {once: true});
+    </script>
   </body>
 </html>

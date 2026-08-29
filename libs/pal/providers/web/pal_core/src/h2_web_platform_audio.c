@@ -15,7 +15,7 @@ EM_JS(void, h2_web_audio_init_js, (uintptr_t platform_address), {
   const platforms = Module['h2WebAudioPlatforms'] ||= new Map();
   if (platforms.has(platform_address)) return;
   const state = {
-    context: null,
+    context: Module['h2WebAudioContext'] || null,
     tracks: new Map(),
     activate: null,
     speakerStarted: false,
@@ -24,6 +24,7 @@ EM_JS(void, h2_web_audio_init_js, (uintptr_t platform_address), {
     const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AudioContext) return null;
     state.context ||= new AudioContext();
+    Module['h2WebAudioContext'] ||= state.context;
     if (state.context.state === 'suspended') {
       state.context.resume().catch(() => {});
     }
@@ -50,7 +51,11 @@ EM_JS(void, h2_web_audio_deinit_js, (uintptr_t platform_address), {
       try { source.stop(); } catch (_) {}
     }
   }
-  if (state.context) state.context.close().catch(() => {});
+  if (state.context) {
+    if (Module['h2WebAudioContext'] === state.context)
+      Module['h2WebAudioContext'] = null;
+    state.context.close().catch(() => {});
+  }
   platforms.delete(platform_address);
 });
 

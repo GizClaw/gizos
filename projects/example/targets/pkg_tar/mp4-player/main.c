@@ -25,16 +25,6 @@ EM_JS(void, web_set_status, (const char *status), {
     element.textContent = UTF8ToString(status);
 });
 
-EM_ASYNC_JS(void, web_wait_for_start, (), {
-  const button = document.getElementById('start');
-  if (!button)
-    return;
-  await new Promise(
-      resolve => button.addEventListener('click', resolve, {once : true}));
-  button.disabled = true;
-  button.textContent = 'Playing';
-});
-
 static h2_pal_result_t web_media_read_at(void *user, uint64_t offset,
                                          void *buffer, size_t capacity,
                                          size_t *out_read) {
@@ -90,8 +80,7 @@ int main(void) {
     web_set_status("Web PAL initialization failed");
     return 1;
   }
-  web_set_status("Ready — press Play to enable audio");
-  web_wait_for_start();
+  web_set_status("Loading embedded MP4");
 
   web_media_t media = {0};
   if (!web_load_media("/media/startup.mp4", &media)) {
@@ -122,7 +111,7 @@ int main(void) {
                            .read_at = web_media_read_at},
                 .acquire_timeout_ms = 1000u,
                 .display_mode = H2_SMOKE_MP4_PLAYER_DISPLAY_EXACT,
-        .require_audio = 1,
+                .require_audio = 1,
             },
         .result = H2_PAL_ERR_TASK,
     };
