@@ -253,6 +253,8 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
     return NULL;
   }
   h2_web_platform_audio_init(platform);
+  h2_web_platform_audio_decoder_init(platform);
+  h2_web_platform_video_decoder_init(platform);
   h2_web_platform_display_init(platform);
   h2_web_platform_webrtc_init(platform);
   if (h2_web_platform_serial_init(platform) != H2_PAL_OK) {
@@ -374,6 +376,16 @@ h2_web_platform_display_api(h2_web_platform_t *platform) {
 const h2_pal_audio_api_t *
 h2_web_platform_audio_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->audio_api;
+}
+
+const h2_pal_video_decoder_api_t *
+h2_web_platform_video_decoder_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->video_decoder_api;
+}
+
+const h2_pal_audio_decoder_api_t *
+h2_web_platform_audio_decoder_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->audio_decoder_api;
 }
 
 const h2_pal_touch_api_t *

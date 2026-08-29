@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GizOS Web MP4 Player</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #080b12; color: #e5e7eb; }
+      body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
+      main { display: grid; gap: 16px; justify-items: center; }
+      h1 { margin: 0; font-size: 18px; }
+      canvas { width: min(480px, calc(100vw - 32px)); height: auto; background: #000; image-rendering: pixelated; }
+      button { padding: 10px 24px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font: inherit; font-weight: 700; cursor: pointer; }
+      button:active { transform: translateY(1px); background: #7dd3fc; }
+      button:disabled { cursor: default; opacity: 0.65; }
+      #status { margin: 0; color: #94a3b8; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>GizOS MP4 Player</h1>
+      <canvas id="canvas" width="240" height="240"></canvas>
+      <button id="start" type="button">Play</button>
+      <p id="status">Loading WebAssembly…</p>
+    </main>
+    <script>var Module = {canvas: document.getElementById('canvas')};</script>
+    {{{ SCRIPT }}}
+  </body>
+</html>

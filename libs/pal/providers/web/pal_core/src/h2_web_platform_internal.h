@@ -29,6 +29,8 @@ struct h2_web_platform {
   h2_pal_pref_api_t pref_api;
   h2_pal_http_api_t http_api;
   h2_pal_audio_api_t audio_api;
+  h2_pal_audio_decoder_api_t audio_decoder_api;
+  h2_pal_video_decoder_api_t video_decoder_api;
   h2_pal_display_api_t display_api;
   h2_pal_touch_api_t touch_api;
   h2_pal_serial_host_api_t serial_api;
@@ -41,6 +43,7 @@ struct h2_web_platform {
   h2_pal_time_wall_source_t wall_time_source;
   bool touch_opened;
   bool speaker_started;
+  bool speaker_stopped;
   uint32_t speaker_volume_percent;
   bool pumping;
   bool shutting_down;
@@ -53,6 +56,8 @@ void h2_web_platform_display_init(h2_web_platform_t *platform);
 void h2_web_platform_display_deinit(h2_web_platform_t *platform);
 void h2_web_platform_audio_init(h2_web_platform_t *platform);
 void h2_web_platform_audio_deinit(h2_web_platform_t *platform);
+void h2_web_platform_audio_decoder_init(h2_web_platform_t *platform);
+void h2_web_platform_video_decoder_init(h2_web_platform_t *platform);
 int h2_web_platform_crypto_init(h2_web_platform_t *platform);
 void h2_web_platform_crypto_deinit(h2_web_platform_t *platform);
 void h2_web_platform_http_init(h2_web_platform_t *platform);

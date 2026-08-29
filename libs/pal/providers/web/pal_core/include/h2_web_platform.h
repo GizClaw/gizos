@@ -85,6 +85,12 @@ h2_web_platform_display_api(h2_web_platform_t *platform);
 /** Browser Web Audio playback provider. Microphone capture is unsupported. */
 const h2_pal_audio_api_t *
 h2_web_platform_audio_api(h2_web_platform_t *platform);
+/** Browser WebCodecs H.264 Annex-B decoder with allocator-backed RGB565 output. */
+const h2_pal_video_decoder_api_t *
+h2_web_platform_video_decoder_api(h2_web_platform_t *platform);
+/** Browser WebCodecs AAC-LC decoder with allocator-backed S16LE output. */
+const h2_pal_audio_decoder_api_t *
+h2_web_platform_audio_decoder_api(h2_web_platform_t *platform);
 const h2_pal_touch_api_t *
 h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *

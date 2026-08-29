@@ -10,6 +10,7 @@ cc_library(
     srcs = [
         "src/h2_web_platform.c",
         "src/h2_web_platform_audio.c",
+        "src/h2_web_platform_audio_decoder.c",
         "src/h2_web_platform_crypto.c",
         "src/h2_web_platform_display.c",
         "src/h2_web_platform_http.c",
@@ -17,6 +18,7 @@ cc_library(
         "src/h2_web_platform_pref.c",
         "src/h2_web_platform_serial.c",
         "src/h2_web_platform_timer.c",
+        "src/h2_web_platform_video_decoder.c",
         "src/h2_web_platform_webrtc.c",
     ],
     hdrs = ["include/h2_web_platform.h"],

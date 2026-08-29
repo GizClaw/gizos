@@ -89,7 +89,7 @@ EM_JS(int, h2_web_audio_track_write_js,
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         const track = state?.tracks.get(track_address);
         const context = state?.activate();
-        if (!track || !context || !state.speakerStarted) return -7;
+        if (!track || !context) return -7;
         try {
           const buffer = context.createBuffer(channels, samples_per_channel,
                                               sample_rate_hz);
@@ -139,7 +139,7 @@ static int h2_web_audio_get_info(void *user, h2_audio_info_t *out_info) {
       .playback_supported = 1,
       .playback_format =
           {
-              .sample_rate_hz = 48000u,
+              .sample_rate_hz = 16000u,
               .frame_samples_per_channel = 960u,
               .channels = 1u,
               .sample_format = H2_AUDIO_SAMPLE_S16LE,
@@ -169,6 +169,7 @@ static int h2_web_audio_start_speaker(void *user) {
   const int result = h2_web_audio_start_js((uintptr_t)platform);
   if (result == H2_AUDIO_OK) {
     platform->speaker_started = true;
+    platform->speaker_stopped = false;
   }
   return result;
 }
@@ -179,6 +180,7 @@ static int h2_web_audio_stop_speaker(void *user) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   platform->speaker_started = false;
+  platform->speaker_stopped = true;
   h2_web_audio_stop_js((uintptr_t)platform);
   return H2_AUDIO_OK;
 }
@@ -189,7 +191,7 @@ static int h2_web_audio_track_write(h2_pal_audio_track_t *base,
   (void)timeout_ms;
   h2_web_audio_track_t *track = (h2_web_audio_track_t *)base;
   if (track == NULL || frame == NULL || frame->data == NULL ||
-      !track->platform->speaker_started ||
+      track->platform->speaker_stopped ||
       frame->sample_rate_hz != track->format.sample_rate_hz ||
       frame->channels != track->format.channels ||
       frame->sample_format != track->format.sample_format ||
@@ -253,9 +255,6 @@ static int h2_web_audio_create_track(void *user,
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE ||
       config->volume_factor_milli > 1000u) {
     return H2_AUDIO_ERR_INVALID_ARG;
-  }
-  if (!platform->speaker_started) {
-    return H2_AUDIO_ERR_INVALID_STATE;
   }
   h2_web_audio_track_t *track = calloc(1u, sizeof(*track));
   if (track == NULL) {
