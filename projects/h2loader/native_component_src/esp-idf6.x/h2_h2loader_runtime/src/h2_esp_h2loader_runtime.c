@@ -609,6 +609,7 @@ static int prepare_loader(void *user, h2_loader_t *loader) {
     return h2_loader_package_recover_publish(
         runtime->fs,
         runtime->pref,
+        runtime->mem,
         H2_LOADER_STAGE_PATH,
         H2_LOADER_STAGE_PREV_PATH);
 }

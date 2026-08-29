@@ -183,6 +183,8 @@ typedef struct stage_test_context {
     size_t wifi_status_calls;
     uint8_t upgrade_record[384];
     size_t upgrade_record_len;
+    uint8_t stage_record[512];
+    size_t stage_record_len;
 } stage_test_context_t;
 
 typedef struct stage_test_fixture {
@@ -1215,6 +1217,13 @@ static int stage_test_pref_get_blob(
 
     *out_data = NULL;
     *out_len = 0u;
+    if (strcmp(key, "stage") == 0 && context->stage_record_len != 0u) {
+        *out_data = h2_pal_mem_alloc(allocator, context->stage_record_len);
+        if (*out_data == NULL) return H2_PAL_ERR_NO_MEMORY;
+        memcpy(*out_data, context->stage_record, context->stage_record_len);
+        *out_len = context->stage_record_len;
+        return H2_PAL_OK;
+    }
     if (strcmp(key, "loader_upgrade") == 0 &&
         context->upgrade_record_len != 0u) {
         *out_data = h2_pal_mem_alloc(allocator, context->upgrade_record_len);
@@ -1236,6 +1245,24 @@ static int stage_test_pref_set_blob(
     size_t len) {
     stage_test_context_t *context = ns->user;
 
+    if (strcmp(key, "stage") == 0 && data != NULL &&
+        len <= sizeof(context->stage_record)) {
+        h2_loader_metadata_t stage = {0};
+        memcpy(context->stage_record, data, len);
+        context->stage_record_len = len;
+        assert(h2_loader_metadata_decode(
+                   H2_LOADER_METADATA_SLOT_STAGE,
+                   data,
+                   len,
+                   &stage) == H2_PAL_OK);
+        context->staged_valid = stage.valid;
+        context->staged_size = (uint32_t)stage.package_size;
+        strcpy(context->staged_checksum, stage.package_checksum);
+        strcpy(context->staged_version, stage.version);
+        context->publish_marker_present = 1;
+        context->publish_committed = stage.valid;
+        return H2_PAL_OK;
+    }
     if (strcmp(key, "loader_upgrade") != 0 || data == NULL ||
         len > sizeof(context->upgrade_record)) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -1249,6 +1276,18 @@ static int stage_test_pref_remove(
     h2_pal_pref_namespace_t *ns,
     const char *key) {
     stage_test_context_t *context = ns->user;
+
+    if (strcmp(key, "stage") == 0) {
+        if (context->stage_record_len == 0u) return H2_PAL_ERR_NOT_FOUND;
+        context->stage_record_len = 0u;
+        context->staged_valid = 0;
+        context->staged_size = 0u;
+        context->staged_checksum[0] = '\0';
+        context->staged_version[0] = '\0';
+        context->publish_marker_present = 0;
+        context->publish_committed = 0;
+        return H2_PAL_OK;
+    }
 
     if (strcmp(key, "staged_version") == 0 ||
         strcmp(key, "staged_checksum") == 0 ||
@@ -1437,6 +1476,30 @@ static void stage_test_fixture_init(stage_test_fixture_t *fixture) {
         TEST_AB_SHA256);
     fixture->loader.package.config =
         fixture->loader.config.package;
+}
+
+static void stage_test_seed_stage(
+    stage_test_fixture_t *fixture,
+    int valid,
+    uint64_t package_size,
+    const char *package_checksum) {
+    h2_loader_metadata_t stage = {0};
+
+    stage.valid = valid;
+    if (valid) {
+        stage.package_size = package_size;
+        stage.image_size = 32u;
+        stage.role = H2_LOADER_IMAGE_ROLE_APP;
+        strcpy(stage.package_checksum, package_checksum);
+        strcpy(stage.image_checksum, TEST_CD_SHA256);
+        strcpy(stage.version, "candidate");
+        strcpy(stage.board, "test");
+        strcpy(stage.target, "host");
+    }
+    assert(h2_loader_metadata_write(
+               &fixture->pref,
+               H2_LOADER_METADATA_SLOT_STAGE,
+               &stage) == H2_PAL_OK);
 }
 
 static int idle_pref_close(h2_pal_pref_namespace_t *ns) {
@@ -3725,6 +3788,7 @@ static void test_stage_close_removes_only_incomplete_tmp(void) {
     stage_test_fixture_t fixture;
     h2_loader_command_t command;
     h2_loader_command_config_t config;
+    h2_loader_metadata_t stage = {0};
 
     assert(strlen(sha256) == 64u);
     int input_len = snprintf(input, sizeof(input), "h2loader stage 8 %s\nabcd", sha256);
@@ -3762,7 +3826,12 @@ static void test_stage_close_removes_only_incomplete_tmp(void) {
     assert(fixture.context.package_present_when_opened == 0);
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.temporary_exists == 0);
-    assert(fixture.context.staged_valid == 0);
+    assert(h2_loader_metadata_decode(
+               H2_LOADER_METADATA_SLOT_STAGE,
+               fixture.context.stage_record,
+               fixture.context.stage_record_len,
+               &stage) == H2_PAL_OK);
+    assert(stage.valid == 0);
     assert(fixture.context.install_state == H2_LOADER_INSTALL_STATE_CONFIRMED);
     assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
 }
@@ -3829,7 +3898,7 @@ static void test_url_stage_discards_old_candidate_before_wifi(void) {
     assert(fixture.context.last_result == H2_PAL_ERR_TIMEOUT);
 }
 
-static void test_stage_publication_preserves_app_lifecycle(void) {
+static void test_stage_publication_rejects_unverified_candidate(void) {
     stage_test_fixture_t fixture;
 
     stage_test_fixture_init(&fixture);
@@ -3842,12 +3911,9 @@ static void test_stage_publication_preserves_app_lifecycle(void) {
     fixture.context.package_size = 7u;
 
     assert(h2_loader_publish_stage(
-        &fixture.loader, 7u, TEST_AB_SHA256) == H2_PAL_OK);
-    assert(fixture.context.staged_valid == 1);
-    assert(strcmp(fixture.context.staged_checksum, TEST_AB_SHA256) == 0);
-    assert(fixture.context.staged_size == 7u);
-    assert(fixture.context.publish_marker_present == 1);
-    assert(fixture.context.publish_committed == 1);
+        &fixture.loader, 7u, TEST_AB_SHA256) != H2_PAL_OK);
+    assert(fixture.context.package_exists == 0);
+    assert(fixture.context.stage_record_len == 0u);
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED);
     assert(fixture.context.boot_intent ==
@@ -3856,77 +3922,35 @@ static void test_stage_publication_preserves_app_lifecycle(void) {
     assert(fixture.context.manual_hold == 1);
     assert(fixture.context.last_result == H2_PAL_ERR_WRITE);
 
+}
+
+static void test_stage_replacement_invalidates_only_stage_metadata(void) {
+    stage_test_fixture_t fixture;
+    h2_loader_metadata_t stage = {0};
+
+    stage_test_fixture_init(&fixture);
+    fixture.context.install_state = H2_LOADER_INSTALL_STATE_RETURN_REQUESTED;
+    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
+    fixture.context.manual_hold = 1;
     fixture.context.package_exists = 1;
-    fixture.context.package_size = 9u;
-    fixture.context.staged_valid = 0;
-    fixture.context.staged_version[0] = '\0';
-    fixture.context.staged_checksum[0] = '\0';
-    fixture.context.staged_size = 0u;
-    fixture.context.publish_marker_present = 1;
-    fixture.context.publish_committed = 0;
-    fixture.context.pref_set_error = H2_PAL_ERR_WRITE;
-    assert(h2_loader_publish_stage(
-        &fixture.loader, 9u, TEST_CD_SHA256) == H2_PAL_ERR_WRITE);
-    assert(fixture.context.package_exists == 0);
-    assert(fixture.context.staged_valid == 0);
+    fixture.context.package_size = 8u;
+    stage_test_seed_stage(&fixture, 1, 8u, TEST_AB_SHA256);
+    assert(h2_loader_begin_stage_replacement(
+        &fixture.loader,
+        "/dl/update.tar.zlib.tmp",
+        "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.install_state ==
         H2_LOADER_INSTALL_STATE_RETURN_REQUESTED);
     assert(fixture.context.boot_intent ==
         H2_LOADER_BOOT_INTENT_LOADER);
-}
-
-static void test_stage_replacement_normalizes_only_legacy_staged_state(void) {
-    stage_test_fixture_t fixture;
-
-    stage_test_fixture_init(&fixture);
-    fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-    fixture.context.package_exists = 1;
-    fixture.context.package_size = 8u;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "old");
-    strcpy(fixture.context.staged_checksum, TEST_AB_SHA256);
-    fixture.context.staged_size = 8u;
-    assert(h2_loader_begin_stage_replacement(
-        &fixture.loader,
-        "/dl/update.tar.zlib.tmp",
-        "/dl/update.tar.zlib.prev") == H2_PAL_OK);
-    assert(fixture.context.install_state ==
-        H2_LOADER_INSTALL_STATE_CONFIRMED);
-    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
-    assert(fixture.context.staged_valid == 0);
-
-    stage_test_fixture_init(&fixture);
-    fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-    fixture.context.installed_valid = 0;
-    fixture.context.app_confirmed = 0;
-    assert(h2_loader_begin_stage_replacement(
-        &fixture.loader,
-        "/dl/update.tar.zlib.tmp",
-        "/dl/update.tar.zlib.prev") == H2_PAL_OK);
-    assert(fixture.context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
-    assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_LOADER);
-
-    stage_test_fixture_init(&fixture);
-    fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-    fixture.context.app_confirmed = 0;
-    assert(h2_loader_begin_stage_replacement(
-        &fixture.loader,
-        "/dl/update.tar.zlib.tmp",
-        "/dl/update.tar.zlib.prev") == H2_PAL_OK);
-    assert(fixture.context.install_state ==
-        H2_LOADER_INSTALL_STATE_MAIN_FAILED);
-    assert(fixture.context.boot_intent ==
-        H2_LOADER_BOOT_INTENT_LOADER);
-    assert(h2_loader_begin_stage_replacement(
-        &fixture.loader,
-        "/dl/update.tar.zlib.tmp",
-        "/dl/update.tar.zlib.prev") == H2_PAL_OK);
-    assert(fixture.context.install_state ==
-        H2_LOADER_INSTALL_STATE_MAIN_FAILED);
+    assert(fixture.context.manual_hold == 1);
+    assert(fixture.context.package_exists == 0);
+    assert(h2_loader_metadata_decode(
+               H2_LOADER_METADATA_SLOT_STAGE,
+               fixture.context.stage_record,
+               fixture.context.stage_record_len,
+               &stage) == H2_PAL_OK);
+    assert(stage.valid == 0);
 }
 
 static void test_stage_replacement_cleans_files_after_preference_failure(void) {
@@ -3939,11 +3963,8 @@ static void test_stage_replacement_cleans_files_after_preference_failure(void) {
     fixture.context.temporary_size = 4u;
     fixture.context.previous_exists = 1;
     fixture.context.previous_size = 8u;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "old");
-    strcpy(fixture.context.staged_checksum, TEST_AB_SHA256);
-    fixture.context.staged_size = 8u;
-    fixture.context.pref_set_error = H2_PAL_ERR_WRITE;
+    stage_test_seed_stage(&fixture, 1, 8u, TEST_AB_SHA256);
+    fixture.context.pref_commit_error = H2_PAL_ERR_WRITE;
 
     assert(h2_loader_begin_stage_replacement(
         &fixture.loader,
@@ -3952,36 +3973,7 @@ static void test_stage_replacement_cleans_files_after_preference_failure(void) {
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.temporary_exists == 0);
     assert(fixture.context.previous_exists == 0);
-    assert(fixture.context.staged_valid == 0);
     assert(fixture.context.opens == 0u);
-}
-
-static void test_startup_normalizes_legacy_staged_without_installing(void) {
-    stage_test_fixture_t fixture;
-    h2_loader_startup_action_t action =
-        H2_LOADER_STARTUP_ACTION_REBOOTING_APP;
-
-    stage_test_fixture_init(&fixture);
-    fixture.context.install_state = H2_LOADER_INSTALL_STATE_STAGED;
-    fixture.context.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-    fixture.context.manual_hold = 1;
-    fixture.context.package_exists = 1;
-    fixture.context.package_size = 8u;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "candidate");
-    strcpy(fixture.context.staged_checksum, TEST_AB_SHA256);
-    fixture.context.staged_size = 8u;
-    fixture.context.publish_marker_present = 1;
-    fixture.context.publish_committed = 1;
-
-    assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
-    assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
-    assert(fixture.context.install_state ==
-        H2_LOADER_INSTALL_STATE_CONFIRMED);
-    assert(fixture.context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
-    assert(fixture.context.package_exists == 1);
-    assert(fixture.context.staged_valid == 1);
-    assert(fixture.context.removes == 0u);
 }
 
 static void test_stage_recovery_never_restores_discarded_candidate(void) {
@@ -3994,55 +3986,42 @@ static void test_stage_recovery_never_restores_discarded_candidate(void) {
     fixture.context.temporary_size = 5u;
     fixture.context.previous_exists = 1;
     fixture.context.previous_size = 8u;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "old");
-    strcpy(fixture.context.staged_checksum, TEST_AB_SHA256);
-    fixture.context.staged_size = 8u;
-    fixture.context.publish_marker_present = 1;
-    fixture.context.publish_committed = 0;
+    stage_test_seed_stage(&fixture, 0, 0u, "");
     assert(h2_loader_package_recover_publish(
         &fixture.fs,
         &fixture.pref,
+        &fixture.mem,
         "/dl/update.tar.zlib",
         "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.temporary_exists == 0);
     assert(fixture.context.previous_exists == 0);
-    assert(fixture.context.staged_valid == 0);
-    assert(fixture.context.publish_marker_present == 0);
+    assert(fixture.context.stage_record_len == 0u);
 
     stage_test_fixture_init(&fixture);
     fixture.context.package_exists = 1;
     fixture.context.package_size = 8u;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "current");
-    strcpy(fixture.context.staged_checksum, TEST_CD_SHA256);
-    fixture.context.staged_size = 8u;
-    fixture.context.publish_marker_present = 1;
-    fixture.context.publish_committed = 1;
+    stage_test_seed_stage(&fixture, 1, 8u, TEST_CD_SHA256);
     assert(h2_loader_package_recover_publish(
         &fixture.fs,
         &fixture.pref,
+        &fixture.mem,
         "/dl/update.tar.zlib",
         "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.package_exists == 1);
     assert(fixture.context.staged_valid == 1);
-    assert(fixture.context.publish_committed == 1);
+    assert(fixture.context.stage_record_len != 0u);
 
     stage_test_fixture_init(&fixture);
     fixture.context.package_exists = 1;
     fixture.context.package_size = 7u;
     fixture.context.previous_exists = 1;
     fixture.context.previous_size = 8u;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "current");
-    strcpy(fixture.context.staged_checksum, TEST_CD_SHA256);
-    fixture.context.staged_size = 7u;
-    fixture.context.publish_marker_present = 1;
-    fixture.context.publish_committed = 1;
+    stage_test_seed_stage(&fixture, 1, 7u, TEST_CD_SHA256);
     assert(h2_loader_package_recover_publish(
         &fixture.fs,
         &fixture.pref,
+        &fixture.mem,
         "/dl/update.tar.zlib",
         "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.package_exists == 1);
@@ -4051,8 +4030,7 @@ static void test_stage_recovery_never_restores_discarded_candidate(void) {
     assert(fixture.context.staged_valid == 1);
     assert(strcmp(fixture.context.staged_checksum, TEST_CD_SHA256) == 0);
     assert(fixture.context.staged_size == 7u);
-    assert(fixture.context.publish_marker_present == 1);
-    assert(fixture.context.publish_committed == 1);
+    assert(fixture.context.stage_record_len != 0u);
 
     stage_test_fixture_init(&fixture);
     fixture.context.package_exists = 1;
@@ -4061,22 +4039,17 @@ static void test_stage_recovery_never_restores_discarded_candidate(void) {
     fixture.context.temporary_is_dir = 1;
     fixture.context.previous_exists = 1;
     fixture.context.previous_is_dir = 1;
-    fixture.context.staged_valid = 1;
-    strcpy(fixture.context.staged_version, "invalid-directory");
-    strcpy(fixture.context.staged_checksum, TEST_AB_SHA256);
-    fixture.context.staged_size = 8u;
-    fixture.context.publish_marker_present = 1;
-    fixture.context.publish_committed = 1;
+    stage_test_seed_stage(&fixture, 1, 8u, TEST_AB_SHA256);
     assert(h2_loader_package_recover_publish(
         &fixture.fs,
         &fixture.pref,
+        &fixture.mem,
         "/dl/update.tar.zlib",
         "/dl/update.tar.zlib.prev") == H2_PAL_OK);
     assert(fixture.context.package_exists == 0);
     assert(fixture.context.temporary_exists == 0);
     assert(fixture.context.previous_exists == 0);
-    assert(fixture.context.staged_valid == 0);
-    assert(fixture.context.publish_marker_present == 0);
+    assert(fixture.context.stage_record_len == 0u);
 }
 
 typedef struct app_coredump_test_context {
@@ -4473,10 +4446,9 @@ int main(void) {
     test_command_reinit_discards_partial_old_session_input();
     test_stage_close_removes_only_incomplete_tmp();
     test_url_stage_discards_old_candidate_before_wifi();
-    test_stage_publication_preserves_app_lifecycle();
-    test_stage_replacement_normalizes_only_legacy_staged_state();
+    test_stage_publication_rejects_unverified_candidate();
+    test_stage_replacement_invalidates_only_stage_metadata();
     test_stage_replacement_cleans_files_after_preference_failure();
-    test_startup_normalizes_legacy_staged_without_installing();
     test_stage_recovery_never_restores_discarded_candidate();
     test_app_client_coredump_uses_caller_output();
     test_app_return_console_prepares_before_success();

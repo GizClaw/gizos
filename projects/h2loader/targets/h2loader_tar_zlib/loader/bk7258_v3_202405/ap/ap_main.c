@@ -477,6 +477,7 @@ static void h2loader_startup_worker(void *user) {
             rc = h2_loader_package_recover_publish(
                 &s_h2loader_fs,
                 s_runtime->pref,
+                s_runtime->mem,
                 H2_BK_STAGE_PATH,
                 H2_BK_STAGE_PREV_PATH);
             if (rc != H2_PAL_OK) {

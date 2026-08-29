@@ -171,6 +171,7 @@ int h2_loader_package_init(h2_loader_package_t *package, const h2_loader_package
 int h2_loader_package_recover_publish(
     const h2_pal_fs_api_t *fs,
     const h2_pal_pref_api_t *pref,
+    const h2_pal_mem_api_t *allocator,
     const char *package_path,
     const char *previous_path);
 int h2_loader_package_read_staged_identity(

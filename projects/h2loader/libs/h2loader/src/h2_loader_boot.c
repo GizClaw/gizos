@@ -1,4 +1,5 @@
 #include "h2_loader_boot.h"
+#include "h2_loader_stage.h"
 
 #include "h2_loader_status.h"
 
@@ -184,7 +185,8 @@ uint32_t h2_loader_get_command_availability(
         &loader->implemented_commands,
         H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED,
         H2_LOADER_COMMAND_AVAILABILITY_ALL);
-    if (!status->installed.valid && !status->staged.valid) {
+    if (!status->partition_2.valid && !status->installed.valid &&
+        !status->stage.valid && !status->staged.valid) {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
     if (!mfg_gate_satisfied(loader, &status->mfg)) {
@@ -195,7 +197,7 @@ uint32_t h2_loader_get_command_availability(
     } else {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF;
     }
-    if (!status->staged.valid) {
+    if (!status->stage.valid && !status->staged.valid) {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT;
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE;
     }
@@ -1437,83 +1439,6 @@ static int normalize_legacy_staged_lifecycle(
     return pref_set_state(loader->config.pref, state, intent);
 }
 
-static int invalidate_staged_metadata(
-    h2_loader_t *loader,
-    int normalize_legacy_lifecycle) {
-    h2_loader_status_t status;
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    if (loader == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(&status, 0, sizeof(status));
-    if (normalize_legacy_lifecycle) {
-        rc = h2_loader_read_status(loader, &status);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        rc = normalize_legacy_staged_lifecycle(loader, &status);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-    }
-    rc = pref_open(loader->config.pref, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->remove == NULL || ns->set_bool == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-        goto out;
-    }
-    rc = ns->remove(ns, "staged_version");
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        rc = H2_PAL_OK;
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "staged_checksum");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "staged_size");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->set_bool(ns, "publish_committed", 0);
-    }
-    if (rc == H2_PAL_OK && ns->commit != NULL) {
-        rc = ns->commit(ns);
-    }
-
-out:
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    if (rc == H2_PAL_OK) {
-        rc = close_rc;
-    }
-    if (rc == H2_PAL_OK) {
-        memset(&loader->status.staged, 0, sizeof(loader->status.staged));
-        if (normalize_legacy_lifecycle &&
-            status.install_state == H2_LOADER_INSTALL_STATE_STAGED) {
-            if (!status.installed.valid) {
-                loader->status.install_state = H2_LOADER_INSTALL_STATE_IDLE;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-            } else if (status.app_confirmed) {
-                loader->status.install_state = H2_LOADER_INSTALL_STATE_CONFIRMED;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
-            } else {
-                loader->status.install_state = H2_LOADER_INSTALL_STATE_MAIN_FAILED;
-                loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-            }
-        }
-    }
-    return rc;
-}
-
 static int clear_installed_state(h2_loader_t *loader) {
     int rc;
 
@@ -1535,50 +1460,14 @@ static int clear_installed_state(h2_loader_t *loader) {
     return pref_set_bool(loader->config.pref, "app_confirmed", 0);
 }
 
-static int publish_staged_state(
-    h2_loader_t *loader,
-    const char *checksum,
-    uint32_t size) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    if (loader == NULL || checksum == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    rc = pref_open(loader->config.pref, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->set_string == NULL || ns->set_u32 == NULL || ns->set_bool == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-        goto out;
-    }
-    rc = ns->set_string(ns, "staged_checksum", checksum);
-    if (rc == H2_PAL_OK) {
-        rc = ns->set_string(ns, "staged_version", checksum);
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->set_u32(ns, "staged_size", size);
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->set_bool(ns, "publish_committed", 1);
-    }
-    if (rc == H2_PAL_OK && ns->commit != NULL) {
-        rc = ns->commit(ns);
-    }
-
-out:
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
-}
-
 static void cleanup_failed_stage_publish(h2_loader_t *loader) {
     if (loader == NULL) {
         return;
     }
-    (void)remove_staged_package(loader);
-    (void)invalidate_staged_metadata(loader, 0);
+    (void)h2_loader_stage_abort(
+        loader->config.package.fs,
+        loader->config.pref,
+        loader->config.package.package_path);
 }
 
 static void emit_event(h2_loader_t *loader, h2_loader_startup_event_t event, int code) {
@@ -2680,7 +2569,7 @@ int h2_loader_begin_stage_replacement(
         loader->config.package.package_path == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = invalidate_staged_metadata(loader, 1);
+    rc = h2_loader_stage_begin(loader->config.pref);
     if (rc != H2_PAL_OK) {
         first_error = rc;
     }
@@ -2704,7 +2593,7 @@ int h2_loader_prepare_stage_publish(h2_loader_t *loader) {
     if (loader == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    return pref_set_bool(loader->config.pref, "publish_committed", 0);
+    return h2_loader_stage_begin(loader->config.pref);
 }
 
 int h2_loader_set_last_result(h2_loader_t *loader, int result) {
@@ -2901,9 +2790,17 @@ int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status) {
         return rc;
     }
     status.capabilities = loader->config.hardware_capabilities;
-    rc = h2_loader_package_read_staged_identity(&loader->package, loader->config.pref, &status.staged);
-    if (rc != H2_PAL_OK) {
-        status.staged.valid = 0;
+    if (status.stage.valid) {
+        status.staged.valid = 1;
+        status.staged.size = status.stage.package_size;
+        copy_text(status.staged.checksum, sizeof(status.staged.checksum),
+            status.stage.package_checksum);
+        copy_text(status.staged.version, sizeof(status.staged.version),
+            status.stage.version);
+    } else {
+        rc = h2_loader_package_read_staged_identity(
+            &loader->package, loader->config.pref, &status.staged);
+        if (rc != H2_PAL_OK) status.staged.valid = 0;
     }
     rc = h2_pal_power_get_running_boot_partition(loader->config.power, &partition);
     if (rc == H2_PAL_OK) {
@@ -2941,47 +2838,29 @@ int h2_loader_publish_stage(h2_loader_t *loader, uint32_t bytes, const char *sha
     if (loader == NULL || sha256 == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = publish_staged_state(loader, sha256, bytes);
+    rc = h2_loader_stage_publish(
+        &loader->package,
+        loader->config.pref,
+        bytes,
+        sha256,
+        &loader->status.stage);
     if (rc != H2_PAL_OK) {
         cleanup_failed_stage_publish(loader);
-    } else {
-        memset(&loader->status.staged, 0, sizeof(loader->status.staged));
-        loader->status.staged.valid = 1;
-        copy_text(loader->status.staged.version,
-            sizeof(loader->status.staged.version), sha256);
-        copy_text(loader->status.staged.checksum,
-            sizeof(loader->status.staged.checksum), sha256);
-        loader->status.staged.size = bytes;
     }
     return rc;
 }
 
 int h2_loader_abort_stage(h2_loader_t *loader) {
-    h2_loader_status_t previous_status;
-    int clear_failed_installed;
     int rc;
 
     if (loader == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = h2_loader_read_status(loader, &previous_status);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    clear_failed_installed =
-        previous_status.install_state == H2_LOADER_INSTALL_STATE_MAIN_FAILED ||
-        previous_status.install_state == H2_LOADER_INSTALL_STATE_INSTALL_FAILED ||
-        previous_status.install_state == H2_LOADER_INSTALL_STATE_INSTALLED_PENDING_CONFIRM;
-    (void)remove_staged_package(loader);
-    rc = clear_staged_state(loader);
-    if (rc == H2_PAL_OK && clear_failed_installed) {
-        rc = clear_installed_state(loader);
-    }
-    if (rc == H2_PAL_OK) {
-        rc = pref_set_state(loader->config.pref,
-            H2_LOADER_INSTALL_STATE_IDLE,
-            H2_LOADER_BOOT_INTENT_LOADER);
-    }
+    rc = h2_loader_stage_abort(
+        loader->config.package.fs,
+        loader->config.pref,
+        loader->config.package.package_path);
+    if (rc == H2_PAL_OK) memset(&loader->status.stage, 0, sizeof(loader->status.stage));
     return rc;
 }
 

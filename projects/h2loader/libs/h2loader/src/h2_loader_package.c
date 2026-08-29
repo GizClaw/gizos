@@ -2,6 +2,7 @@
 
 #include "h2_bundle_tar.h"
 #include "h2_bundle_types.h"
+#include "h2_loader_metadata.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -826,76 +827,6 @@ static int read_pref_u32(
     return rc == H2_PAL_OK ? close_rc : rc;
 }
 
-static int read_pref_bool(
-    const h2_pal_pref_api_t *pref,
-    const char *key,
-    int *out_value) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    if (pref == NULL || key == NULL || out_value == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_value = 0;
-    rc = h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->get_bool == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-    } else {
-        rc = ns->get_bool(ns, key, out_value);
-    }
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
-}
-
-static int clear_staged_publish_metadata(const h2_pal_pref_api_t *pref) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    rc = h2_pal_pref_open(
-        pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->remove == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-        goto out;
-    }
-    rc = ns->remove(ns, "staged_version");
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        rc = H2_PAL_OK;
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "staged_checksum");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "staged_size");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "publish_committed");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK && ns->commit != NULL) {
-        rc = ns->commit(ns);
-    }
-
-out:
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
-}
-
 static int layout_validator_start_entry(
     h2_loader_layout_validator_t *validator,
     const h2_bundle_entry_t *entry) {
@@ -1337,8 +1268,10 @@ int h2_loader_package_init(h2_loader_package_t *package, const h2_loader_package
 int h2_loader_package_recover_publish(
     const h2_pal_fs_api_t *fs,
     const h2_pal_pref_api_t *pref,
+    const h2_pal_mem_api_t *allocator,
     const char *package_path,
     const char *previous_path) {
+    h2_loader_metadata_t stage = {0};
     h2_pal_fs_stat_t package_stat;
     h2_pal_fs_stat_t previous_stat;
     h2_pal_fs_stat_t temporary_stat;
@@ -1346,13 +1279,13 @@ int h2_loader_package_recover_publish(
     int package_exists = 0;
     int previous_exists = 0;
     int temporary_exists = 0;
-    int publish_committed = 0;
-    int publish_marker_present = 0;
+    int stage_present = 0;
     int malformed_candidate = 0;
     int discard_candidate;
     int rc;
 
-    if (fs == NULL || pref == NULL || package_path == NULL || previous_path == NULL) {
+    if (fs == NULL || pref == NULL || allocator == NULL ||
+        package_path == NULL || previous_path == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     rc = snprintf(
@@ -1387,21 +1320,20 @@ int h2_loader_package_recover_publish(
     } else if (rc != H2_PAL_FS_ERR_NOT_FOUND) {
         return rc;
     }
-    rc = read_pref_bool(pref, "publish_committed", &publish_committed);
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        publish_marker_present = 0;
-    } else if (rc != H2_PAL_OK) {
-        return rc;
-    } else {
-        publish_marker_present = 1;
-    }
+    rc = h2_loader_metadata_read(
+        pref,
+        allocator,
+        H2_LOADER_METADATA_SLOT_STAGE,
+        &stage,
+        &stage_present);
+    if (rc != H2_PAL_OK) return rc;
     discard_candidate =
         malformed_candidate ||
-        (previous_exists &&
-            (!publish_marker_present || !publish_committed)) ||
         temporary_exists ||
-        (package_exists && publish_marker_present && !publish_committed) ||
-        !package_exists;
+        !package_exists ||
+        !stage_present ||
+        !stage.valid ||
+        (package_exists && package_stat.size != stage.package_size);
     if (temporary_exists) {
         rc = h2_pal_fs_remove(fs, temporary_path);
         if (rc != H2_PAL_FS_OK && rc != H2_PAL_FS_ERR_NOT_FOUND) {
@@ -1421,7 +1353,7 @@ int h2_loader_package_recover_publish(
         }
     }
     return discard_candidate ?
-        clear_staged_publish_metadata(pref) :
+        h2_loader_metadata_clear(pref, H2_LOADER_METADATA_SLOT_STAGE) :
         H2_PAL_OK;
 }
 
