@@ -202,7 +202,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
-    includes = ["include"],
+    strip_include_prefix = "include",
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
         ":lvgl_web",
