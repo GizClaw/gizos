@@ -36,10 +36,12 @@ typedef h2_pal_result_t (*h2_peer_media_track_read_fn)(void *user,
 /**
  * Provider-integration sink for one received Opus packet.
  *
- * Production H2Peer calls this from its h2peer/net protocol task. Success
- * consumes the complete packet. Any error is terminal for the media track;
- * sinks must provide their own bounded buffering and must not return
- * WOULD_BLOCK after partially consuming a packet.
+ * Production H2Peer calls this from its h2peer/net protocol task. One detected
+ * missing RTP packet is reported as opus == NULL and len == 0 so the codec
+ * owner can run packet-loss concealment. Success consumes the complete packet
+ * or loss marker. Any error is terminal for the media track; sinks must provide
+ * their own bounded buffering and must not return WOULD_BLOCK after partially
+ * consuming a packet.
  */
 typedef h2_pal_result_t (*h2_peer_media_track_write_fn)(void *user,
                                                         const uint8_t *opus,

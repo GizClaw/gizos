@@ -191,6 +191,36 @@ static int peer_connection_process_completed_packet(
     dtls_srtp_decrypt_rtp_packet(&pc->dtls_srtp, packet, &packet_len);
     (void)rtp_decoders_decode(
         &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len);
+    if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LOSS) {
+      H2_PEER_LOGW(pc->config.log,
+                   "Opus RTP loss missing=%u next_sequence=%u ssrc=%u",
+                   (unsigned int)pc->artp_decoder.last_loss_count,
+                   (unsigned int)pc->artp_decoder.next_sequence,
+                   (unsigned int)pc->artp_decoder.ssrc);
+    } else if (pc->artp_decoder.last_event ==
+               RTP_DECODE_EVENT_REORDER_WAIT) {
+      H2_PEER_LOGD(pc->config.log,
+                   "Opus RTP reorder wait sequence=%u next_sequence=%u ssrc=%u",
+                   (unsigned int)pc->artp_decoder.reorder_sequence,
+                   (unsigned int)pc->artp_decoder.next_sequence,
+                   (unsigned int)pc->artp_decoder.ssrc);
+    } else if (pc->artp_decoder.last_event ==
+               RTP_DECODE_EVENT_REORDER_RECOVERED) {
+      H2_PEER_LOGI(pc->config.log,
+                   "Opus RTP reorder recovered next_sequence=%u ssrc=%u",
+                   (unsigned int)pc->artp_decoder.next_sequence,
+                   (unsigned int)pc->artp_decoder.ssrc);
+    } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LATE) {
+      H2_PEER_LOGW(pc->config.log,
+                   "Opus RTP late-or-duplicate next_sequence=%u ssrc=%u",
+                   (unsigned int)pc->artp_decoder.next_sequence,
+                   (unsigned int)pc->artp_decoder.ssrc);
+    } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_RESET) {
+      H2_PEER_LOGI(pc->config.log,
+                   "Opus RTP sequence reset next_sequence=%u ssrc=%u",
+                   (unsigned int)pc->artp_decoder.next_sequence,
+                   (unsigned int)pc->artp_decoder.ssrc);
+    }
     return packet_len;
   }
   H2_PEER_LOGW(pc->config.log, "Unknown data");

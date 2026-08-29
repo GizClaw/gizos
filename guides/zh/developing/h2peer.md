@@ -72,7 +72,7 @@ GizOS-owned RTP、RTCP、STUN 和 DCEP codec 使用固定宽度整数逐字段�
 
 Opus RTP 固定使用 RTP v2 和 payload type 111，因此无 marker 的前两个 byte 是 `80 6f`。当前 PAL 不提供 silence 或 talkspurt 边界，连续发送的 Opus packet 保持 marker 为 `0`；不能把每次 `peer_send_opus` 都当作新 talkspurt。SRTP protect 完成后如果 UDP/TURN transmit 暂时 backpressure，portable connection 保存一个 bounded protected RTP packet，并在后续 poll 或下一次 send 前原样重发；不能用相同 RTP sequence 再次执行 SRTP protect。只有该 pending packet 仍无法 flush 时，新的 Opus frame 才返回 `H2_PAL_ERR_WOULD_BLOCK`，并且不消费新 frame、不推进它的 RTP sequence 或 timestamp。
 
-接收方向在 SRTP decrypt 后按已协商的 RTP payload type 选择一个 audio 或 video decoder，不要求远端 SDP 提前声明固定 `a=ssrc`，也不把本地发送 SSRC 当作远端 SSRC。远端动态创建 Track、切换发送 SSRC 或省略 SDP SSRC attribute 时，合法的 Opus payload type 111 仍必须交付给 PAL callback；未知 payload type 保持丢弃。该路径不提供 duplicate suppression、reordering 或 jitter buffer，每个收到的 datagram 独立处理。
+接收方向在 SRTP decrypt 后按已协商的 RTP payload type 选择一个 audio 或 video decoder，不要求远端 SDP 提前声明固定 `a=ssrc`，也不把本地发送 SSRC 当作远端 SSRC。远端动态创建 Track、切换发送 SSRC 或省略 SDP SSRC attribute 时，合法的 Opus payload type 111 仍必须交付给 PAL callback；未知 payload type 保持丢弃。Opus decoder 按同一 SSRC 的 RTP sequence 使用一个 packet 的 bounded reorder slot：提前到达的 packet 暂存，缺失 sequence 随后到达时按序一起交付；只有下一个未来 packet 证明缺口仍未恢复时，才逐包投影为 `opus == NULL && opus_len == 0` 的 loss marker，让 codec owner 执行 PLC 而不压缩播放时间。迟到或重复 packet 保持丢弃；超过 50 个 sequence 的跳变或 SSRC 变化作为新 sequence 起点，不批量生成静音。这是接收端最小重排窗口，不是按 wall clock 自适应的完整 jitter buffer。
 
 ## Desktop Pion Compatibility Gate
 

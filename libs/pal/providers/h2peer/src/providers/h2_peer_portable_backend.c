@@ -112,7 +112,7 @@ static void h2_peer_portable_on_local_sdp(char *sdp, void *user) {
 
 static void h2_peer_portable_on_opus(uint8_t *data, size_t len, void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed || data == NULL ||
+    if (peer == NULL || peer->closed || (data == NULL && len != 0u) ||
         len > H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE) {
         return;
     }

@@ -37,10 +37,31 @@ typedef int (*RtpOnEncodedPacket)(
 typedef void (*RtpOnDecodedPacket)(
     uint8_t *packet, size_t bytes, void *user_data);
 
+typedef enum RtpDecodeEvent {
+  RTP_DECODE_EVENT_NONE = 0,
+  RTP_DECODE_EVENT_PACKET,
+  RTP_DECODE_EVENT_REORDER_WAIT,
+  RTP_DECODE_EVENT_REORDER_RECOVERED,
+  RTP_DECODE_EVENT_LOSS,
+  RTP_DECODE_EVENT_LATE,
+  RTP_DECODE_EVENT_RESET
+} RtpDecodeEvent;
+
 struct RtpDecoder {
   RtpPayloadType type;
   RtpOnDecodedPacket on_packet;
   void *user_data;
+  uint32_t ssrc;
+  uint32_t last_timestamp;
+  uint16_t next_sequence;
+  uint16_t last_loss_count;
+  uint16_t reorder_sequence;
+  uint32_t reorder_timestamp;
+  size_t reorder_payload_size;
+  RtpDecodeEvent last_event;
+  uint8_t sequence_initialized;
+  uint8_t reorder_pending;
+  uint8_t reorder_payload[CONFIG_MTU];
 };
 
 struct RtpEncoder {

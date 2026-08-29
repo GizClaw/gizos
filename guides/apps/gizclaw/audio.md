@@ -62,7 +62,7 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - 上行 input stream ID 与服务端产生的下行 response stream ID 不要求相同。`libs/gizclaw` 按 `transcript`、`assistant` label 分别绑定本轮第一个 response-local stream ID，并接受其 `:<suffix>` 子流；后续不匹配的 response ID 作为旧轮事件丢弃。RTP audio 仍由同一个 conversation generation 接收，不以 input stream ID 过滤。
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - Capture 和 playback 使用有界 buffer。复制成功后的切片和可配置有界 Opus transmit ring 由 `libs/gizclaw` 持有，调用方可以释放原始 PCM。每次编码后立即尝试按序排空 ring；transport 返回 `WOULD_BLOCK` 且 ring 已满时覆盖最旧 Opus packet，继续消费 PCM。`commit` 只把最后一个非空残片补零编码一次，ring 全部发送后才提交 EOS，排空期间仍可返回 `WOULD_BLOCK`，空输入不发送静音 packet。
-- Opus encode/decode、resample 或 channel conversion 属于 portable Audio/integration 层，不进入 board driver；当前 PCM uplink 只接受 libopus 原生支持的 sample rate、mono/stereo 和 S16LE，其他转换必须在调用入口前完成。
+- Opus encode/decode、resample 或 channel conversion 属于 portable Audio/integration 层，不进入 board driver；当前 PCM uplink 只接受 libopus 原生支持的 sample rate、mono/stereo 和 S16LE，其他转换必须在调用入口前完成。接收 provider 先在 bounded reorder window 内恢复 Opus RTP 乱序；确认缺失后才以 `opus == NULL && opus_len == 0` 逐包交付 loss marker。Decoder owner 必须按最近 packet duration 执行 Opus PLC，不能把缺失时间直接删除后拼接后续语音。
 - GizClaw service worker 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
 ## 打断与错误
