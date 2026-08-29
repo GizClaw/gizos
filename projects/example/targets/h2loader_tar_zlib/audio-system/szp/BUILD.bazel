@@ -48,6 +48,7 @@ firmware_native_component(
     ],
     native_srcs = [
         "//projects/example/apps/audio-system/app:src/app.c",
+        "//projects/example/apps/audio-system/app:src/task_names.c",
     ],
     tags = [
         "manual",

@@ -47,6 +47,7 @@ firmware_native_component(
     execution_unit = "ap",
     native_srcs = [
         "//projects/example/apps/bleikcp-speed/app:src/app.c",
+        "//projects/example/apps/bleikcp-speed/app:src/task_names.c",
         "//projects/example/apps/bleikcp-speed/app:src/protocol.c",
     ],
 )

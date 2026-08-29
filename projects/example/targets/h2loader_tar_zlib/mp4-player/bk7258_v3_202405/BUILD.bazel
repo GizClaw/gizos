@@ -48,6 +48,7 @@ firmware_native_component(
     execution_unit = "ap",
     native_srcs = [
         "//projects/example/apps/mp4-player/app:src/app.c",
+        "//projects/example/apps/mp4-player/app:src/task_names.c",
     ],
 )
 

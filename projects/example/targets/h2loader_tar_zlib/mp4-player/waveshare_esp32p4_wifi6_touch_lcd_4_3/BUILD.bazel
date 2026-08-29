@@ -49,6 +49,7 @@ firmware_native_component(
     ],
     native_srcs = [
         "//projects/example/apps/mp4-player/app:src/app.c",
+        "//projects/example/apps/mp4-player/app:src/task_names.c",
     ],
     tags = [
         "manual",
