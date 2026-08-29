@@ -7,6 +7,7 @@ load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
 load("@gizos//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy", "esp_target_task_policy")
 load("@gizos//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
+load("@gizos//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load(":consumer.bzl", "fake_firmware")
 
@@ -23,6 +24,24 @@ lvgl_font(
     font_name = "downstream_font_16",
     ranges = ["0x42=>0xF002"],
     symbol_sources = ["font_symbols.txt"],
+)
+
+ttf_subset_c(
+    name = "embedded_menu_font",
+    font = "font.ttf",
+    out_c = "embedded_menu_font.c",
+    out_h = "embedded_menu_font.h",
+    ranges = ["0x20-0x7E"],
+    symbol = "embedded_menu_font",
+    symbol_sources = ["font_symbols.txt"],
+)
+
+cc_test(
+    name = "embedded_menu_font_test",
+    srcs = [
+        ":embedded_menu_font",
+        "embedded_ttf_consumer.cc",
+    ],
 )
 
 cc_library(
@@ -43,7 +62,10 @@ cc_test(
 firmware_native_component(
     name = "font_native_component",
     srcs = ["font_consumer.c"],
-    native_srcs = [":downstream_font_16"],
+    native_srcs = [
+        ":downstream_font_16",
+        ":embedded_menu_font",
+    ],
     deps = ["@gizos//libs/lvgl:headers"],
 )
 
