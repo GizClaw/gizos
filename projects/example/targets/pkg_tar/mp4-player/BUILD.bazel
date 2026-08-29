@@ -65,6 +65,12 @@ pkg_tar(
     mode = "0644",
     portable_mtime = True,
     strip_prefix = ".",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 web_archive_serve(
@@ -74,8 +80,15 @@ web_archive_serve(
 
 py_test(
     name = "archive_test",
+    size = "small",
     srcs = ["archive_test.py"],
     args = ["$(location :mp4-player)"],
     data = [":mp4-player"],
     legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
