@@ -1,5 +1,6 @@
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
+#include "h2_loader_task_names.h"
 
 #include "driver/flash.h"
 #include "h2_loader_app_client.h"
@@ -215,7 +216,7 @@ static int handle_ble_session(void *user, h2_bleikcp_t *stream, uint16_t conn_ha
         .read_byte = h2_loader_ble_app_read_byte,
         .write_user = stream,
         .write = h2_loader_ble_app_write,
-        .task_name = "h2loader/appcmd",
+        .task_name = h2_loader_app_command_task_name,
         .stack_size = 8192u,
     };
     rc = h2_loader_app_client_start_return_console(&console);

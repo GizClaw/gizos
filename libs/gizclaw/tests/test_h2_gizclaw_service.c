@@ -1,5 +1,6 @@
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_task_names.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -291,7 +292,8 @@ static int fail_task_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_entry_t entry, void *ctx,
                            h2_pal_task_t **out_task) {
   (void)user;
-  (void)options;
+  assert(options != NULL);
+  assert(strcmp(options->name, h2_gizclaw_service_task_name) == 0);
   (void)entry;
   (void)ctx;
   *out_task = NULL;

@@ -1,4 +1,5 @@
 #include "h2_bleikcp_internal.h"
+#include "h2_bleikcp_task_names.h"
 
 #include <string.h>
 
@@ -284,14 +285,14 @@ int h2_bleikcp_server_open(
     server->rx_value_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
 
     h2_pal_mutex_config_t mutex_config = {
-        .name = "bleikcp/server",
+        .name = h2_bleikcp_server_task_name,
         .allocator = api->allocator,
         .flags = H2_PAL_MUTEX_FLAG_NONE,
     };
     rc = h2_pal_mutex_create(api->sync, &mutex_config, &server->mutex);
     if (rc != H2_PAL_OK) goto fail;
     h2_pal_cond_config_t cond_config = {
-        .name = "bleikcp/server",
+        .name = h2_bleikcp_server_task_name,
         .allocator = api->allocator,
     };
     rc = h2_pal_cond_create(api->sync, &cond_config, &server->cond);

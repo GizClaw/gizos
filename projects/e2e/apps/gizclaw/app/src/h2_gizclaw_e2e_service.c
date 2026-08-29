@@ -190,7 +190,7 @@ int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
       .task = fixture->runtime->task,
       .queue = fixture->runtime->queue,
       .sync = fixture->runtime->sync,
-      .task_options = {.name = "gizclaw-e2e-service", .min_stack_size = 32768u},
+      .task_options = {.min_stack_size = 32768u},
       .operation_capacity = H2_GIZCLAW_E2E_SERVICE_OPERATION_COUNT,
       .client_poll_timeout_ms = (int)H2_GIZCLAW_E2E_SERVICE_POLL_MS,
       .terminal = service_terminal,

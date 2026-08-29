@@ -1,4 +1,5 @@
 #include "h2loader_bleikcp_internal.h"
+#include "h2_loader_task_names.h"
 
 typedef struct h2loader_ble_session {
     const h2_pal_task_api_t *task_api;
@@ -35,7 +36,7 @@ static int handle_session(
     h2loader_ble_session_t session;
     h2_pal_task_t *task = NULL;
     const h2_pal_task_options_t options = {
-        .name = "h2loader/appcmd",
+        .name = h2_loader_app_command_task_name,
         .min_stack_size = 49152u,
     };
     (void)conn_handle;

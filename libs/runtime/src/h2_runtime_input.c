@@ -1,4 +1,5 @@
 #include "h2_runtime_internal.h"
+#include "h2_runtime_task_names.h"
 
 #include <string.h>
 
@@ -1318,9 +1319,7 @@ h2_pal_result_t h2_runtime_input_start(
     if (config != NULL) {
         selected = *config;
     }
-    if (selected.task_options.name == NULL) {
-        selected.task_options.name = "h2-runtime-input";
-    }
+    selected.task_options.name = h2_runtime_input_task_name;
     runtime->private_state->input_tick_ms =
         select_interval(selected.tick_ms, H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     runtime->private_state->input_button_poll_interval_ms = select_interval(
@@ -1383,7 +1382,7 @@ h2_pal_result_t h2_runtime_input_start(
     }
     if (has_nfc_source(runtime)) {
         h2_pal_task_options_t nfc_options = selected.task_options;
-        nfc_options.name = "h2-runtime-nfc";
+        nfc_options.name = h2_runtime_nfc_task_name;
         rc = h2_pal_task_start(
             runtime->task,
             &nfc_options,

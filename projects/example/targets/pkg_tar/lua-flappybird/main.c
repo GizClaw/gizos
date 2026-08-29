@@ -1,4 +1,5 @@
 #include "h2_lua_flappybird.h"
+#include "h2_lua_flappybird_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 
@@ -224,8 +225,11 @@ int main(void) {
     web_set_status("Host allocation failed");
     return 1;
   }
-  result = h2_pal_task_start(h2_web_platform_task_api(platform), NULL, run_app,
-                             &context, &app_task);
+  const h2_pal_task_options_t task_options = {
+      .name = h2_lua_flappybird_runner_task_name,
+  };
+  result = h2_pal_task_start(h2_web_platform_task_api(platform), &task_options,
+                             run_app, &context, &app_task);
   while (result == H2_PAL_OK && !context.done) {
     result = h2_web_platform_pump(platform, 64u, NULL);
     if (result == H2_PAL_OK)

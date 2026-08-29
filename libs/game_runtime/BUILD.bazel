@@ -121,6 +121,14 @@ cc_library(
 )
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_game_runtime_task_names.c"],
+    hdrs = ["include/h2_game_runtime_task_names.h"],
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
     name = "game_audio",
     srcs = ["src/h2_game_runtime_audio.cpp"],
     hdrs = ["include/h2_game_audio.h"],
@@ -133,6 +141,7 @@ cc_library(
     deps = [
         ":pixelroot32_audio",
         ":pixelroot32_compat",
+        ":task_names",
         "//libs/pal",
     ],
 )

@@ -1,4 +1,5 @@
 #include "h2_h2loader_web.h"
+#include "h2_h2loader_web_task_names.h"
 #include "h2_h2loader_web_status_json.h"
 
 #include "h2_h2loader_host.h"
@@ -575,7 +576,7 @@ static uint32_t start_job(h2_h2loader_web_client_t *client,
   } while (handle == 0u || find_job(client, handle) != NULL);
   job->handle = handle;
   const h2_pal_task_options_t options = {
-      .name = "h2loader-web-job",
+      .name = h2_h2loader_web_job_task_name,
       .min_stack_size = H2_WEB_JOB_STACK_SIZE,
   };
   h2_pal_result_t result = h2_pal_task_start(

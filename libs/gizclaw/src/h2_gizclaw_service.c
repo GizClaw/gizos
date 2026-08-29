@@ -1,5 +1,7 @@
 #include "h2_gizclaw_service_internal.h"
 
+#include "h2_gizclaw_task_names.h"
+
 #include <string.h>
 
 #ifdef H2_GIZCLAW_TESTING
@@ -358,6 +360,7 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
     return H2_PAL_ERR_NO_MEMORY;
   memset(service, 0, sizeof(*service));
   service->config = *config;
+  service->config.task_options.name = h2_gizclaw_service_task_name;
   service->client_config = *config->client_config;
   service->original_cancel = service->client_config.cancel_requested;
   service->original_cancel_user = service->client_config.cancel_user;

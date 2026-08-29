@@ -24,7 +24,10 @@ def _target_directory(relative_directory):
     package = native.package_name()
     return package + "/" + relative_directory if package else relative_directory
 
-def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
+def esp_target_task_policy(
+        name = "task_policy",
+        directory = "task_policy",
+        task_name_deps = []):
     """Declares one ESP policy owned by the calling firmware target package."""
     header = directory + "/h2_esp_target_task_policy.h"
     source = directory + "/h2_esp_target_task_policy.c"
@@ -36,7 +39,7 @@ def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
         component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
         data = [directory + "/CMakeLists.txt"],
-        deps = [_ESP_PAL_CORE],
+        deps = [_ESP_PAL_CORE] + task_name_deps,
     )
     cc_test(
         name = name + "_test",
@@ -53,13 +56,15 @@ def esp_target_task_policy(name = "task_policy", directory = "task_policy"):
             _PAL,
             _TRIE,
             _ESP_POLICY_TEST_SDK,
-        ],
+        ] + task_name_deps,
     )
 
 def bk7258_target_task_policy(
         ap_name = "ap_task_policy",
         cp_name = "cp_task_policy",
-        directory = "task_policy"):
+        directory = "task_policy",
+        ap_task_name_deps = [],
+        cp_task_name_deps = []):
     """Declares AP and CP policies owned by one BK7258 firmware target."""
     ap_directory = directory + "/ap"
     cp_directory = directory + "/cp"
@@ -77,7 +82,7 @@ def bk7258_target_task_policy(
         component_name = "h2_bk_target_task_policy",
         data = [ap_directory + "/CMakeLists.txt"],
         execution_unit = "ap",
-        deps = [_BK_AP_PAL_CORE],
+        deps = [_BK_AP_PAL_CORE] + ap_task_name_deps,
     )
     firmware_native_component(
         name = cp_name,
@@ -87,7 +92,7 @@ def bk7258_target_task_policy(
         component_name = "h2_bk_target_task_policy",
         data = [cp_directory + "/CMakeLists.txt"],
         execution_unit = "cp",
-        deps = [_BK_CP_PAL_CORE],
+        deps = [_BK_CP_PAL_CORE] + cp_task_name_deps,
     )
     cc_test(
         name = ap_name + "_test",
@@ -104,7 +109,7 @@ def bk7258_target_task_policy(
             _PAL,
             _TRIE,
             _BK_AP_POLICY_TEST_SDK,
-        ],
+        ] + ap_task_name_deps,
     )
     cc_test(
         name = cp_name + "_test",
@@ -120,5 +125,5 @@ def bk7258_target_task_policy(
         deps = [
             _PAL,
             _BK_CP_POLICY_TEST_SDK,
-        ],
+        ] + cp_task_name_deps,
     )

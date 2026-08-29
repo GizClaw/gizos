@@ -4,6 +4,13 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/task_names.c"],
+    hdrs = ["include/h2_smoke_audio_system_task_names.h"],
+    includes = ["include"],
+)
+
+cc_library(
     name = "audio_system",
     srcs = ["src/app.c"],
     hdrs = ["include/h2_smoke_audio_system.h"],
@@ -11,6 +18,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
+        ":task_names",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",

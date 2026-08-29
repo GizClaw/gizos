@@ -1,4 +1,5 @@
 #include "h2_esp_h2loader_ble.h"
+#include "h2_loader_task_names.h"
 
 #include "h2_esp_h2loader_iostreamikcp.h"
 #include "h2loader_bleikcp_internal.h"
@@ -67,7 +68,7 @@ static int handle_ble_session(
         .read_byte = h2_loader_ble_app_read_byte,
         .write_user = stream,
         .write = h2_loader_ble_app_write,
-        .task_name = "h2loader/appcmd",
+        .task_name = h2_loader_app_command_task_name,
         .stack_size = 8192u,
     };
     rc = h2_loader_app_client_start_return_console(&console);

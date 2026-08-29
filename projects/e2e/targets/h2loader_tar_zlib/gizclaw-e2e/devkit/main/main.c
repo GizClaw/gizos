@@ -7,6 +7,7 @@
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
 #include "h2_gizclaw_e2e.h"
+#include "h2_gizclaw_e2e_task_names.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
 #include "h2/pal/os/h2_pal_task.h"
@@ -213,7 +214,7 @@ static void image_entry(void *user) {
       .config = config,
   };
   const h2_pal_task_options_t wifi_options = {
-      .name = "gizclaw-wifi",
+      .name = h2_gizclaw_e2e_wifi_task_name,
       .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_WIFI_STACK_SIZE,
   };
   rc = h2_pal_task_start(runtime->task, &wifi_options, supervise_wifi,
@@ -281,7 +282,7 @@ static void image_entry(void *user) {
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       atomic_init(&s_runner.exited, false);
       const h2_pal_task_options_t runner_options = {
-          .name = "gizclaw-e2e",
+          .name = h2_gizclaw_e2e_launcher_task_name,
           .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_RUNNER_STACK_SIZE,
       };
       rc = h2_pal_task_start(runtime->task, &runner_options, run_e2e,

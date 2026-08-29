@@ -1,4 +1,5 @@
 #include "h2_showcase.h"
+#include "h2_showcase_task_names.h"
 
 #include "h2_gizclaw.h"
 #include "h2_lvgl_platform.h"
@@ -206,7 +207,7 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
   atomic_init(&app->gizclaw->stop, false);
   atomic_init(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_CONNECTING);
   const h2_pal_task_options_t options = {
-      .name = "showcase-gizclaw",
+      .name = h2_showcase_gizclaw_task_name,
       .min_stack_size = 16384u,
   };
   const h2_pal_result_t result =
@@ -844,7 +845,7 @@ static h2_pal_result_t audio_init(h2_showcase_app_t *app) {
     return result;
   }
   const h2_pal_task_options_t task_options = {
-      .name = "showcase-audio",
+      .name = h2_showcase_audio_task_name,
       .min_stack_size = 8192u,
   };
   result = h2_pal_task_start(app->runtime->task, &task_options,

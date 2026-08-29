@@ -1,4 +1,5 @@
 #include "h2loader_app.h"
+#include "h2_loader_task_names.h"
 
 #include <string.h>
 
@@ -173,7 +174,7 @@ int h2loader_app_run_with_command_service(
     }
     if (config->before_startup != NULL) {
         const h2_pal_task_options_t options = {
-            .name = "h2loader/appcmd",
+            .name = h2_loader_app_command_task_name,
             .min_stack_size = 49152u,
         };
         loader.force_command_mode = 1;
@@ -281,7 +282,7 @@ int h2loader_app_run_with_command_service(
     }
     if (serve_handle == NULL) {
         const h2_pal_task_options_t options = {
-            .name = "h2loader/appcmd",
+            .name = h2_loader_app_command_task_name,
             .min_stack_size = 49152u,
         };
         serve_context = (h2loader_serve_context_t){

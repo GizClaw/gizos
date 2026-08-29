@@ -3,6 +3,7 @@
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_firmware.h"
 #include "h2_gizclaw_e2e_internal.h"
+#include "h2_gizclaw_e2e_task_names.h"
 #include "h2_gizclaw_e2e_report.h"
 #include "h2_gizclaw_e2e_rpc.h"
 #include "h2_gizclaw_e2e_service.h"
@@ -433,7 +434,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   int rc = progress_init(&control->progress, runtime, config,
                          control->report.selected);
   const h2_pal_task_options_t task_options = {
-      .name = "gizclaw-e2e-runner",
+      .name = h2_gizclaw_e2e_runner_task_name,
       .min_stack_size = 32768u,
   };
   if (rc == H2_PAL_OK) {

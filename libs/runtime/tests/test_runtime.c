@@ -1,4 +1,5 @@
 #include "h2_runtime_internal.h"
+#include "h2_runtime_task_names.h"
 #include "h2_runtime_test.h"
 
 #include "h2/pal/hal/h2_pal_ble.h"
@@ -2649,7 +2650,7 @@ static void test_runtime_owns_input_task_lifecycle(void) {
     assert(runtime->private_state->input_imu_poll_interval_ms == 17u);
     assert(runtime->private_state->input_battery_poll_interval_ms == 19u);
     assert(runtime->private_state->input_temperature_poll_interval_ms == 23u);
-    assert(strcmp(env.task_state.options.name, "runtime-input-test") == 0);
+    assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
     assert(env.task_state.options.min_stack_size == 4096u);
 
     h2_runtime_button_state_t state;
@@ -2782,7 +2783,7 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
     assert(env.periphs.list_calls == 1u);
     assert(runtime->private_state->input_tick_ms == 5u);
     assert(runtime->private_state->input_button_poll_interval_ms == 9u);
-    assert(strcmp(env.task_state.options.name, "runtime-input-restart") == 0);
+    assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
     assert(atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 

@@ -1,4 +1,5 @@
 #include "h2_peer_internal.h"
+#include "h2_peer_task_names.h"
 
 #include "ice/h2_peer_ice.h"
 #include "media/h2_peer_rtp.h"
@@ -2349,7 +2350,7 @@ static h2_pal_result_t h2_peer_network_init(h2_pal_webrtc_peer_t *peer) {
     atomic_init(&peer->opus_rx_count, 0u);
     atomic_init(&peer->channel_ready, 0u);
     const h2_pal_task_options_t task_options = {
-        .name = "h2peer/net",
+        .name = h2_peer_network_task_name,
         .min_stack_size = H2_PEER_NETWORK_STACK_SIZE,
     };
     result = h2_pal_task_start(owner->config.task, &task_options,

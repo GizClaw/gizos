@@ -1,4 +1,5 @@
 #include "h2_lua_runtime_e2e.h"
+#include "h2_lua_runtime_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 
@@ -61,9 +62,12 @@ int main(void) {
   config.component_mapper = h2_lua_runtime_e2e_component_mapper();
   result = h2_runtime_init(&config, &runtime);
   if (result == H2_PAL_OK) {
+    const h2_pal_task_options_t task_options = {
+        .name = h2_lua_runtime_e2e_runner_task_name,
+    };
     context.runtime = runtime;
-    result = h2_pal_task_start(h2_web_platform_task_api(platform), NULL,
-                               run_e2e, &context, &app_task);
+    result = h2_pal_task_start(h2_web_platform_task_api(platform),
+                               &task_options, run_e2e, &context, &app_task);
   }
   while (result == H2_PAL_OK && !context.done) {
     result = h2_web_platform_pump(platform, 64u, NULL);

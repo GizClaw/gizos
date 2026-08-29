@@ -1,4 +1,5 @@
 #include "h2_h2loader_cli_internal.h"
+#include "h2_h2loader_cli_task_names.h"
 
 #include "h2_bleikcp.h"
 
@@ -266,7 +267,7 @@ static h2_bleikcp_config_t stream_config(void) {
         .output_retry_delay_ms = 2u,
         .setup_timeout_ms = SPEED_SETUP_TIMEOUT_MS,
         .worker_task_options = {
-            .name = "h2loader-cli-speed",
+            .name = h2_h2loader_cli_speed_task_name,
             .min_stack_size = 12u * 1024u,
         },
     };

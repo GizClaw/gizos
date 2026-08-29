@@ -1,4 +1,5 @@
 #include "h2_loader_ble.h"
+#include "h2_loader_task_names.h"
 
 #include "h2_loader_app_client.h"
 
@@ -383,7 +384,7 @@ static int h2_loader_ble_system_event(
 
 static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
     h2_pal_mutex_config_t mutex_config = {
-        .name = "h2loader/blelink",
+        .name = h2_loader_ble_link_task_name,
         .allocator = service->config.api.allocator,
         .flags = H2_PAL_MUTEX_FLAG_NONE,
     };
@@ -393,7 +394,7 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         return rc;
     }
     h2_pal_semaphore_config_t semaphore_config = {
-        .name = "h2loader/blelink",
+        .name = h2_loader_ble_link_task_name,
         .allocator = service->config.api.allocator,
         .initial_count = 0u,
         .max_count = 1u,
@@ -414,7 +415,7 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         return rc;
     }
     const h2_pal_task_options_t task_options = {
-        .name = "h2loader/blelink",
+        .name = h2_loader_ble_link_task_name,
         .min_stack_size = H2_LOADER_BLE_LINK_TASK_STACK_SIZE,
     };
     return h2_pal_task_start(

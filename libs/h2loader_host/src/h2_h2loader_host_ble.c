@@ -2,6 +2,7 @@
 
 #include "h2_bleikcp.h"
 #include "h2_h2loader_host_internal.h"
+#include "h2_h2loader_host_task_names.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -292,7 +293,7 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         .no_congestion_control = 0,
         .setup_timeout_ms = timeout_ms,
         .worker_task_options = {
-            .name = "h2loader-ble-client",
+            .name = h2_h2loader_host_ble_task_name,
             .min_stack_size = 8u * 1024u,
         },
     };
