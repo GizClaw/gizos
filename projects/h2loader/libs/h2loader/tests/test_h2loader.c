@@ -3029,8 +3029,7 @@ static void test_app_request_commits_once_before_ack_and_teardown(void) {
     context.lifecycle_set_result = H2_PAL_ERR_WRITE;
     assert(h2_loader_request_install_staged_with_transition(
         &loader, idle_reboot_transition, &context) == H2_PAL_ERR_WRITE);
-    assert(context.hold_calls == 1);
-    assert(context.hold_value == 0);
+    assert(context.hold_calls == 0);
     assert(context.commits == 0);
     assert(context.manual_hold == 1);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
@@ -3059,6 +3058,7 @@ static void test_app_request_commits_once_before_ack_and_teardown(void) {
     assert(context.manual_hold == 0);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
     assert(context.boot_intent == H2_LOADER_BOOT_INTENT_APP);
+    assert(context.hold_calls == 0);
     assert(context.reboot_transitions == 1);
     assert(context.commit_sequence < context.transition_sequence);
     assert(context.disruptive_calls == 0);

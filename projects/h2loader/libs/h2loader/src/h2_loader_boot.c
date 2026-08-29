@@ -2990,12 +2990,6 @@ static int request_install_staged(h2_loader_t *loader) {
     next_state = retry_pending_confirm ?
         H2_LOADER_INSTALL_STATE_INSTALLING :
         H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED;
-    if (loader->config.power != NULL) {
-        rc = h2_pal_power_set_hold(loader->config.power, 0);
-        if (rc != H2_PAL_OK && rc != H2_PAL_ERR_UNSUPPORTED) {
-            return rc;
-        }
-    }
     rc = pref_open(loader->config.pref, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
     if (rc != H2_PAL_OK) {
         return rc;
