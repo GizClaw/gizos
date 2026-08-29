@@ -13,6 +13,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
 )
 
 cc_library(
@@ -73,8 +74,8 @@ filegroup(
     name = "h2loader_web",
     srcs = [
         "src/h2loader.js",
-        "src/h2loader_protocol.js",
         "src/h2loader_ports.js",
+        "src/h2loader_protocol.js",
         ":h2loader_web_runtime",
     ],
 )
