@@ -3,8 +3,6 @@
 #include <string.h>
 
 #define H2_PEER_PORTABLE_RTP_MAX_CONCEALED_PACKETS 50u
-#define H2_PEER_PORTABLE_OPUS_TIMESTAMP_INCREMENT \
-  (CONFIG_AUDIO_DURATION * 48u)
 
 static void h2_peer_rtp_deliver(RtpDecoder *decoder,
                                 const uint8_t *payload,
@@ -21,36 +19,6 @@ static void h2_peer_rtp_deliver_loss(RtpDecoder *decoder, uint16_t count) {
   for (uint16_t missing = 0u; missing < count; ++missing) {
     decoder->on_packet(NULL, 0u, decoder->user_data);
   }
-}
-
-static uint16_t h2_peer_rtp_deliver_timestamp_gap(RtpDecoder *decoder,
-                                                   uint32_t timestamp) {
-  if (decoder->type != PT_OPUS) {
-    return 0u;
-  }
-  const uint32_t increment = H2_PEER_PORTABLE_OPUS_TIMESTAMP_INCREMENT;
-  const uint32_t delta = timestamp - decoder->last_timestamp;
-  if (delta <= increment || delta >= UINT32_C(0x80000000) ||
-      delta % increment != 0u) {
-    return 0u;
-  }
-  const uint32_t missing = delta / increment - 1u;
-  if (missing > H2_PEER_PORTABLE_RTP_MAX_CONCEALED_PACKETS) {
-    return 0u;
-  }
-  h2_peer_rtp_deliver_loss(decoder, (uint16_t)missing);
-  return (uint16_t)missing;
-}
-
-static uint16_t h2_peer_rtp_deliver_packet(RtpDecoder *decoder,
-                                           uint32_t timestamp,
-                                           const uint8_t *payload,
-                                           size_t payload_size) {
-  const uint16_t missing =
-      h2_peer_rtp_deliver_timestamp_gap(decoder, timestamp);
-  h2_peer_rtp_deliver(decoder, payload, payload_size);
-  decoder->last_timestamp = timestamp;
-  return missing;
 }
 
 static uint16_t h2_peer_read_be16(const uint8_t *data) {
@@ -209,8 +177,8 @@ static uint16_t h2_peer_rtp_reorder_drain(RtpDecoder *decoder) {
   RtpReorderPacket *packet =
       h2_peer_rtp_reorder_find(decoder, decoder->next_sequence);
   while (packet != NULL) {
-    decoder->last_timestamp_loss_count += h2_peer_rtp_deliver_packet(
-        decoder, packet->timestamp, packet->payload, packet->payload_size);
+    h2_peer_rtp_deliver(decoder, packet->payload, packet->payload_size);
+    decoder->last_timestamp = packet->timestamp;
     decoder->next_sequence++;
     packet->valid = 0u;
     decoder->reorder->count--;
@@ -239,7 +207,6 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
   }
   decoder->last_event = RTP_DECODE_EVENT_NONE;
   decoder->last_loss_count = 0u;
-  decoder->last_timestamp_loss_count = 0u;
   size_t offset = h2_peer_rtp_payload_offset(data, size);
   if (offset == 0u || (data[1] & 0x7fu) != (uint8_t)decoder->type) {
     return -1;
@@ -252,8 +219,7 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
     decoder->sequence_initialized = 1u;
     decoder->ssrc = ssrc;
     decoder->next_sequence = sequence;
-    decoder->last_timestamp =
-        timestamp - H2_PEER_PORTABLE_OPUS_TIMESTAMP_INCREMENT;
+    decoder->last_timestamp = timestamp;
     h2_peer_rtp_reorder_clear(decoder);
     decoder->last_event = RTP_DECODE_EVENT_RESET;
   }
@@ -285,8 +251,6 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
            decoder->reorder->count >=
                H2_PEER_PORTABLE_RTP_REORDER_CAPACITY) {
       h2_peer_rtp_deliver_loss(decoder, 1u);
-      decoder->last_timestamp +=
-          H2_PEER_PORTABLE_OPUS_TIMESTAMP_INCREMENT;
       decoder->next_sequence++;
       decoder->last_loss_count++;
       (void)h2_peer_rtp_reorder_drain(decoder);
@@ -301,7 +265,6 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
                                      &data[offset], payload_size)) {
         return -1;
       }
-      decoder->last_loss_count += decoder->last_timestamp_loss_count;
       decoder->last_event = decoder->last_loss_count == 0u
                                 ? RTP_DECODE_EVENT_REORDER_WAIT
                                 : RTP_DECODE_EVENT_LOSS;
@@ -310,32 +273,20 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
   }
   if (ahead != 0u) {
     h2_peer_rtp_deliver_loss(decoder, ahead);
-    decoder->last_timestamp +=
-        (uint32_t)ahead * H2_PEER_PORTABLE_OPUS_TIMESTAMP_INCREMENT;
     decoder->last_loss_count = ahead;
     decoder->last_event = RTP_DECODE_EVENT_LOSS;
   }
   if (decoder->last_loss_count != 0u) {
     decoder->last_event = RTP_DECODE_EVENT_LOSS;
   }
-  decoder->last_timestamp_loss_count += h2_peer_rtp_deliver_packet(
-      decoder, timestamp, &data[offset], payload_size);
-  decoder->last_loss_count += decoder->last_timestamp_loss_count;
-  if (decoder->last_loss_count != 0u) {
-    decoder->last_event = RTP_DECODE_EVENT_LOSS;
-  }
+  h2_peer_rtp_deliver(decoder, &data[offset], payload_size);
   if (decoder->last_event == RTP_DECODE_EVENT_NONE) {
     decoder->last_event = RTP_DECODE_EVENT_PACKET;
   }
   decoder->next_sequence = (uint16_t)(sequence + 1u);
-  const uint16_t timestamp_loss_before_drain =
-      decoder->last_timestamp_loss_count;
+  decoder->last_timestamp = timestamp;
   if (h2_peer_rtp_reorder_drain(decoder) != 0u) {
-    decoder->last_loss_count += (uint16_t)(
-        decoder->last_timestamp_loss_count - timestamp_loss_before_drain);
-    decoder->last_event = decoder->last_loss_count == 0u
-                              ? RTP_DECODE_EVENT_REORDER_RECOVERED
-                              : RTP_DECODE_EVENT_LOSS;
+    decoder->last_event = RTP_DECODE_EVENT_REORDER_RECOVERED;
   }
   return (int)size;
 }

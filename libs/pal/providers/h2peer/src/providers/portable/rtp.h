@@ -69,7 +69,6 @@ struct RtpDecoder {
   uint32_t last_timestamp;
   uint16_t next_sequence;
   uint16_t last_loss_count;
-  uint16_t last_timestamp_loss_count;
   RtpReorderBuffer *reorder;
   RtpDecodeEvent last_event;
   uint8_t sequence_initialized;

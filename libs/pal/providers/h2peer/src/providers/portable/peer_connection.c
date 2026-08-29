@@ -194,10 +194,8 @@ static int peer_connection_process_completed_packet(
         &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len);
     if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LOSS) {
       H2_PEER_LOGW(pc->config.log,
-                   "Opus RTP loss missing=%u timestamp_missing=%u "
-                   "next_sequence=%u ssrc=%u",
+                   "Opus RTP loss missing=%u next_sequence=%u ssrc=%u",
                    (unsigned int)pc->artp_decoder.last_loss_count,
-                   (unsigned int)pc->artp_decoder.last_timestamp_loss_count,
                    (unsigned int)pc->artp_decoder.next_sequence,
                    (unsigned int)pc->artp_decoder.ssrc);
     } else if (pc->artp_decoder.last_event ==
