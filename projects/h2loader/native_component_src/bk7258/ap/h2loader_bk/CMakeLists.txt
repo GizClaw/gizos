@@ -10,7 +10,8 @@ set(H2_BK_H2LOADER_SRCS
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_app_client.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_ble.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_boot.c"
-  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_status.c")
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_status.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_task_names.c")
 set(H2_BK_H2LOADER_PRIV_REQUIRES
   bk_common
   bk_cli

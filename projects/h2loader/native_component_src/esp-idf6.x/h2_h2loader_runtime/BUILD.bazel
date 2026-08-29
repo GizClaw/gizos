@@ -27,6 +27,7 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
     ],
     hdrs = glob(
         [
