@@ -1658,18 +1658,20 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
     if (ext_rc != 0) {
         return h2_esp_ble_map_rc(ext_rc);
     }
-    if (legacy && s_h2_esp_ble_legacy_scan_response_len > 0u) {
+    if (legacy) {
         mbuf = os_msys_get_pkthdr(0u, 0u);
         if (mbuf == NULL) {
             return H2_PAL_ERR_NO_MEMORY;
         }
-        ext_rc = os_mbuf_append(
-            mbuf,
-            s_h2_esp_ble_legacy_scan_response,
-            s_h2_esp_ble_legacy_scan_response_len);
-        if (ext_rc != 0) {
-            os_mbuf_free_chain(mbuf);
-            return h2_esp_ble_map_rc(ext_rc);
+        if (s_h2_esp_ble_legacy_scan_response_len > 0u) {
+            ext_rc = os_mbuf_append(
+                mbuf,
+                s_h2_esp_ble_legacy_scan_response,
+                s_h2_esp_ble_legacy_scan_response_len);
+            if (ext_rc != 0) {
+                os_mbuf_free_chain(mbuf);
+                return h2_esp_ble_map_rc(ext_rc);
+            }
         }
         ext_rc = ble_gap_ext_adv_rsp_set_data(
             H2_ESP_BLE_EXT_ADV_INSTANCE, mbuf);
@@ -1692,13 +1694,11 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
         if (data_rc != 0) {
             return h2_esp_ble_map_rc(data_rc);
         }
-        if (s_h2_esp_ble_legacy_scan_response_len > 0u) {
-            data_rc = ble_gap_adv_rsp_set_data(
-                s_h2_esp_ble_legacy_scan_response,
-                s_h2_esp_ble_legacy_scan_response_len);
-            if (data_rc != 0) {
-                return h2_esp_ble_map_rc(data_rc);
-            }
+        data_rc = ble_gap_adv_rsp_set_data(
+            s_h2_esp_ble_legacy_scan_response,
+            s_h2_esp_ble_legacy_scan_response_len);
+        if (data_rc != 0) {
+            return h2_esp_ble_map_rc(data_rc);
         }
         struct ble_gap_adv_params adv_params;
         memset(&adv_params, 0, sizeof(adv_params));

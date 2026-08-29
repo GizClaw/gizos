@@ -888,8 +888,6 @@ static int h2_esp_wifi_sta_connect(
         }
         if ((bits & H2_ESP_WIFI_EVENT_DISCONNECTED) == 0u ||
             s_h2_esp_wifi_sta_reconnect_enabled == 0 ||
-            s_h2_esp_wifi_sta_reconnect_attempts >=
-                H2_ESP_WIFI_STA_RECONNECT_ATTEMPTS ||
             remaining == 0u) {
             break;
         }
