@@ -200,5 +200,30 @@ int main(void) {
            (int)sizeof(remote_packet));
     assert(receive.audio_count == 24u && receive.audio_loss_count == 1u);
     assert(audio_decoder.last_event == RTP_DECODE_EVENT_RESET);
+
+    memset(&receive, 0, sizeof(receive));
+    rtp_decoder_init(&audio_decoder, CODEC_OPUS, test_receive_audio, &receive,
+                     &audio_reorder);
+    remote_packet[2] = 0x02u;
+    remote_packet[3] = 0x00u;
+    remote_packet[4] = 0u;
+    remote_packet[5] = 0u;
+    remote_packet[6] = 0u;
+    remote_packet[7] = 1u;
+    assert(rtp_decoder_decode(&audio_decoder, remote_packet,
+                              sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 1u && receive.audio_loss_count == 0u);
+
+    remote_packet[3] = 0x01u;
+    remote_packet[6] = 0x0bu;
+    remote_packet[7] = 0x41u;
+    assert(rtp_decoder_decode(&audio_decoder, remote_packet,
+                              sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 2u && receive.audio_loss_count == 2u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_LOSS);
+    assert(audio_decoder.last_loss_count == 2u);
+    assert(audio_decoder.last_timestamp_loss_count == 2u);
     return 0;
 }
