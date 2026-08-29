@@ -720,6 +720,19 @@ static int h2_bk_wifi_sta_connect(
         return rc;
     }
 
+    if (__atomic_load_n(
+            &s_h2_bk_wifi_connect_pending,
+            __ATOMIC_ACQUIRE) != 0) {
+        return timeout_ms == 0u &&
+            s_h2_bk_wifi_connect_status.ssid_len == config->ssid_len &&
+            memcmp(
+                s_h2_bk_wifi_connect_status.ssid,
+                config->ssid,
+                config->ssid_len) == 0
+            ? H2_PAL_OK
+            : H2_PAL_ERR_BUSY;
+    }
+
     h2_pal_wifi_sta_status_t cached_status;
     memset(&cached_status, 0, sizeof(cached_status));
     if (__atomic_load_n(
@@ -757,17 +770,6 @@ static int h2_bk_wifi_sta_connect(
         __ATOMIC_RELEASE);
     bk_err_t err = BK_OK;
     if (timeout_ms == 0u) {
-        if (__atomic_load_n(
-                &s_h2_bk_wifi_connect_pending,
-                __ATOMIC_ACQUIRE) != 0) {
-            return s_h2_bk_wifi_connect_status.ssid_len == config->ssid_len &&
-                memcmp(
-                    s_h2_bk_wifi_connect_status.ssid,
-                    config->ssid,
-                    config->ssid_len) == 0
-                ? H2_PAL_OK
-                : H2_PAL_ERR_BUSY;
-        }
         memset(
             &s_h2_bk_wifi_connect_status,
             0,
