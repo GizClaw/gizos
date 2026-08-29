@@ -291,6 +291,8 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         .tx_buffer_size = H2_H2LOADER_HOST_BLE_BUFFER_SIZE,
         .rx_buffer_size = H2_H2LOADER_HOST_BLE_BUFFER_SIZE,
         .no_congestion_control = 0,
+        .output_retry_count = 40u,
+        .output_retry_delay_ms = 2u,
         .setup_timeout_ms = timeout_ms,
         .worker_task_options = {
             .name = h2_h2loader_host_ble_task_name,

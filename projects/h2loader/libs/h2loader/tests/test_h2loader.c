@@ -3126,7 +3126,7 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
     assert(h2_loader_command_execute(&command, 3u, argv) == H2_PAL_OK);
     assert(strstr(io.output,
                "H2_LOADER_REBOOT target=app result=accepted") != NULL);
-    assert(io.flushes == 3u);
+    assert(io.flushes == 4u);
     assert(context.disruptive_calls == 1);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_APP);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
@@ -3140,6 +3140,7 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
            H2_PAL_ERR_TIMEOUT);
     assert(strstr(io.output,
                "H2_LOADER_REBOOT target=app result=accepted") != NULL);
+    assert(io.flushes == 6u);
     assert(context.disruptive_calls == 1);
     assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
 }

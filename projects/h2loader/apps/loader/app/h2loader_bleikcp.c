@@ -87,6 +87,7 @@ static int open_command_service(
         },
         .board = board,
         .capabilities = capabilities,
+        .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
         .handler = handle_session,
         .handler_user = &base,
     };

@@ -4,6 +4,25 @@ import unittest
 
 
 class BleAdvertisingContractTest(unittest.TestCase):
+    def test_loader_command_service_uses_legacy_advertising(self):
+        runfiles = Path(os.environ["TEST_SRCDIR"])
+        sources = list(runfiles.rglob("h2loader_bleikcp.c"))
+
+        self.assertEqual(1, len(sources), [str(path) for path in sources])
+        source = sources[0].read_text(encoding="utf-8")
+        config_start = source.index(
+            "const h2_loader_ble_service_config_t service_config = {"
+        )
+        config_end = source.index(
+            "h2_loader_ble_service_t *service = NULL;", config_start
+        )
+        config = source[config_start:config_end]
+
+        self.assertIn(
+            ".advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY",
+            config,
+        )
+
     def test_default_app_management_service_uses_legacy_advertising(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         sources = list(runfiles.rglob("h2_bk_h2loader_app_bleikcp.c"))
@@ -31,7 +50,7 @@ class BleAdvertisingContractTest(unittest.TestCase):
             "H2_LOADER_BLE_ADVERTISING_EXTENDED", capabilities_body
         )
 
-    def test_identity_uses_legacy_sized_manufacturer_data(self):
+    def test_legacy_advertising_keeps_service_uuid_primary(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         sources = list(runfiles.rglob("h2_loader_ble.c"))
 
@@ -45,8 +64,12 @@ class BleAdvertisingContractTest(unittest.TestCase):
 
         self.assertIn(".manufacturer_data = {", advertising_block)
         self.assertIn(".service_data = { 0 }", advertising_block)
+        self.assertIn(
+            ".service_uuid_count = additional_service_count + 1u",
+            advertising_block,
+        )
 
-    def test_host_accepts_identity_from_manufacturer_data(self):
+    def test_host_accepts_identity_or_private_service_uuid(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         sources = list(runfiles.rglob("h2_h2loader_host_discovery.c"))
 
@@ -59,6 +82,7 @@ class BleAdvertisingContractTest(unittest.TestCase):
         self.assertIn("result->service_data.len > 0u", parser_body)
         self.assertIn("result->manufacturer_data.data", parser_body)
         self.assertIn("result->manufacturer_data.len", parser_body)
+        self.assertIn("scan_result_has_service(result)", parser_body)
 
     def test_ethermind_uses_gatts_connection_identifiers(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])

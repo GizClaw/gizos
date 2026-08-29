@@ -10,6 +10,7 @@ py_test(
     data = [
         "src/h2_bk_h2loader_app_bleikcp.c",
         "//libs/h2loader_host:src/h2_h2loader_host_discovery.c",
+        "//projects/h2loader/apps/loader/app:h2loader_bleikcp.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_ble.c",
         "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_ble.c",
     ],

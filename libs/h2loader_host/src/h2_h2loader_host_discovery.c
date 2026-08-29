@@ -76,9 +76,7 @@ static int scan_result_has_service(
     for (size_t i = 0u; i < result->service_uuid_count; ++i) {
         const h2_pal_ble_uuid_t *uuid = &result->service_uuids[i];
         if (uuid->len == sizeof(h2_h2loader_host_ble_service_uuid) &&
-            memcmp(
-                uuid->data,
-                h2_h2loader_host_ble_service_uuid,
+            memcmp(uuid->data, h2_h2loader_host_ble_service_uuid,
                 sizeof(h2_h2loader_host_ble_service_uuid)) == 0) {
             return 1;
         }
@@ -98,11 +96,17 @@ static int parse_ble_identity(
     uint8_t version;
     uint32_t capabilities;
 
-    if (!scan_result_has_service(result) ||
-        result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
-        !result->connectable || payload == NULL || payload_len < 10u ||
-        memcmp(payload, "H2LD", 4u) != 0) {
+    if (result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
+        !result->connectable) {
         return 0;
+    }
+    if (payload == NULL || payload_len < 10u ||
+        memcmp(payload, "H2LD", 4u) != 0) {
+        /* CoreBluetooth may report a primary legacy packet without merging
+         * the scan response that carries H2Loader identity.  The private
+         * 128-bit service UUID is still an authoritative protocol candidate;
+         * connect and obtain the board/capabilities from status. */
+        return scan_result_has_service(result);
     }
     version = payload[4];
     capabilities = read_le32(&payload[6]);
@@ -207,7 +211,8 @@ static bool scan_ble_callback(
         candidate.display_name,
         sizeof(candidate.display_name),
         "h2l.%s",
-        strncmp(candidate.advertised_board, "fnv1a64:", 8u) == 0
+        candidate.advertised_board[0] == '\0' ||
+                strncmp(candidate.advertised_board, "fnv1a64:", 8u) == 0
             ? "unknown"
             : candidate.advertised_board);
     if (length <= 0 ||

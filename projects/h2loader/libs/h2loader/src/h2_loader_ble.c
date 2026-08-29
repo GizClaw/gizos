@@ -656,6 +656,8 @@ int h2_loader_ble_service_open(
     stream_config.tx_buffer_size = H2_LOADER_BLE_BUFFER_SIZE;
     stream_config.rx_buffer_size = H2_LOADER_BLE_BUFFER_SIZE;
     stream_config.no_congestion_control = 0;
+    stream_config.output_retry_count = 40u;
+    stream_config.output_retry_delay_ms = 2u;
     stream_config.on_event = h2_loader_ble_stream_event;
     rc = h2_bleikcp_server_open(
         &service->config.api, &stream_config, config->handler,

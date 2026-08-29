@@ -144,8 +144,13 @@ static int parse_global(
     h2_h2loader_cli_options_t *out) {
     memset(out, 0, sizeof(*out));
     out->transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;
-    out->wait_timeout_ms = 10000u;
-    out->read_timeout_ms = 2000u;
+    /* BK7258 can take more than 15 seconds to expose Loader transport after
+     * a reset-wired serial open. Keep the default bounded, but long enough
+     * that a healthy cold boot is not reported as a connection failure. */
+    out->wait_timeout_ms = 60000u;
+    /* Loader status and post-transition responses traverse BK's AP/CP UART
+     * tunnel and can take about 18 seconds on the physical board. */
+    out->read_timeout_ms = 60000u;
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] != '-') {
             if (out->no_ble &&
@@ -380,16 +385,28 @@ int h2_h2loader_cli_scan_candidates(
         : H2_H2LOADER_CLI_EXIT_RUNTIME;
 }
 
-static int scan_command(h2_h2loader_cli_context_t *context, int argc, const char *const *argv) {
+static int scan_command(
+    h2_h2loader_cli_context_t *context,
+    const h2_h2loader_cli_options_t *options,
+    int argc,
+    const char *const *argv) {
     h2_h2loader_host_candidate_t candidates[32];
     h2_h2loader_host_scan_result_t result;
-    uint32_t timeout = 10000u;
+    uint32_t timeout =
+        options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE
+            ? options->wait_timeout_ms
+            : 10000u;
     if (argc != 0) {
         if (argc != 2 || strcmp(argv[0], "--probe-timeout") != 0 ||
             !parse_seconds(argv[1], &timeout)) return H2_H2LOADER_CLI_EXIT_USAGE;
     }
     h2_h2loader_host_scan_config_t scan = {
-        .serial = context->config->serial,
+        /* An explicit BLE transport request must not spend the scan window
+         * opening every serial device on the Host. The default serial mode
+         * remains the combined serial + BLE discovery view. */
+        .serial = options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE
+            ? NULL
+            : context->config->serial,
         .ble = h2_h2loader_cli_acquire_ble(context),
         .sync = context->runtime->sync,
         .time = context->runtime->time,
@@ -656,6 +673,7 @@ static int send_command(
     h2_h2loader_host_catalog_entry_t asset = {0};
     h2_h2loader_host_status_t final_status = {0};
     h2_h2loader_cli_transport_t transport;
+    h2_h2loader_cli_options_t stage_options = *options;
     h2_h2loader_cli_send_progress_t progress = {
         .context = context,
     };
@@ -695,8 +713,14 @@ static int send_command(
         (void)h2_pal_fs_close(context->runtime->fs, source.file);
         return send_source_failure(context, "inspect", argv[1], rc);
     }
+    if (stage_options.wait_timeout_ms < 60000u) {
+        stage_options.wait_timeout_ms = 60000u;
+    }
+    if (stage_options.read_timeout_ms < 120000u) {
+        stage_options.read_timeout_ms = 120000u;
+    }
     h2_h2loader_cli_transport_init(
-        &transport, context, options, options->read_timeout_ms);
+        &transport, context, &stage_options, stage_options.read_timeout_ms);
     h2_h2loader_host_managed_operation_config_t operation = {
         .time = context->runtime->time,
         .transport = {
@@ -711,7 +735,7 @@ static int send_command(
         .on_progress = h2_h2loader_cli_send_progress,
         .progress_user = &progress,
         .reconnect_delay_ms = 250u,
-        .reconnect_attempts = 40u,
+        .reconnect_attempts = 240u,
     };
     (void)h2_pal_time_get_monotonic_ms(
         context->runtime->time, &progress.start_ms);
@@ -724,7 +748,12 @@ static int send_command(
         (void)h2_pal_fs_close(context->runtime->fs, source.file);
         source.file = NULL;
     }
-    if (rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    if (rc != H2_PAL_OK) {
+        h2_h2loader_cli_output(
+            context, H2_H2LOADER_CLI_STREAM_STDERR,
+            "h2loader: send failed code=%d\n", (int)rc);
+        return H2_H2LOADER_CLI_EXIT_RUNTIME;
+    }
     h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDOUT,
         "H2_LOADER_SEND result=OK bytes=%llu checksum=%s\n",
         (unsigned long long)asset.bytes, asset.sha256);
@@ -788,7 +817,9 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
     if (strcmp(command, "package") == 0) return h2_h2loader_cli_package_command(&context, argc, argv, 0);
     if (strcmp(command, "golden") == 0) return h2_h2loader_cli_package_command(&context, argc, argv, 1);
     if (strcmp(command, "check") == 0 && argc == 0) return check_command(&context);
-    if (strcmp(command, "scan") == 0) return scan_command(&context, argc, argv);
+    if (strcmp(command, "scan") == 0) {
+        return scan_command(&context, &options, argc, argv);
+    }
     if (strcmp(command, "send") == 0) return send_command(&context, &options, argc, argv);
     if (strcmp(command, "send-url") == 0) {
         return h2_h2loader_cli_server_command(&context, &options, argc, argv);

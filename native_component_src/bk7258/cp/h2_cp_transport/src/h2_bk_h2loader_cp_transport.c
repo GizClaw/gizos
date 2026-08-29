@@ -69,6 +69,16 @@ static void uart_rx_isr(uart_id_t uart_id, void *param) {
   }
 }
 
+static void uart_rx_poll(void) {
+  /* The RX interrupt drains the FIFO while this task is blocked forwarding a
+   * response to the host. Polling is still required for short frames that do
+   * not reliably raise RX-finish on BK7258. Exclude the ISR while manually
+   * invoking the same producer so the transport ring remains single-writer. */
+  uint32_t interrupt_level = rtos_enter_critical();
+  uart_rx_isr(s_uart_id, NULL);
+  rtos_exit_critical(interrupt_level);
+}
+
 static uint16_t uart_rx_read(uint8_t *buffer, uint16_t capacity) {
   uint32_t interrupt_level = rtos_enter_critical();
   size_t count = h2_bk_cp_byte_ring_pop(&s_uart_rx_ring, buffer, capacity);
@@ -188,14 +198,17 @@ static int write_physical_frame(void *user, uint16_t sequence,
 }
 
 static void transport_task(void *arg) {
-  uint8_t buffer[H2_BK_CP_MAILBOX_CHUNK_SIZE];
+  uint8_t uart_buffer[H2_BK_CP_UART_CHUNK_SIZE];
+  uint8_t mailbox_buffer[H2_BK_CP_MAILBOX_CHUNK_SIZE];
+  uint16_t uart_pending_offset = 0u;
+  uint16_t uart_pending_count = 0u;
   (void)arg;
 
   while (s_running) {
     /* RX-finish is not raised reliably for short frames on BK7258. Poll the
      * hardware FIFO so the 22-byte session-open frame cannot remain below the
      * interrupt threshold indefinitely. */
-    uart_rx_isr(s_uart_id, NULL);
+    uart_rx_poll();
     uint8_t ready_request = 0u;
     while (bk_mb_uart_read(MB_UART1, &ready_request,
                            sizeof(ready_request)) != 0u) {
@@ -205,6 +218,7 @@ static void transport_task(void *arg) {
           /* AP startup can reconfigure shared UART state after CP startup.
            * Restore the CP-owned receiver only when the AP endpoint is ready. */
           (void)bk_uart_set_enable_rx(s_uart_id, true);
+          (void)bk_uart_enable_rx_interrupt(s_uart_id);
           s_ap_ready = 1;
         }
         (void)mailbox_write_all(MB_UART1, &ready_ack, sizeof(ready_ack));
@@ -213,21 +227,32 @@ static void transport_task(void *arg) {
     if (uart_rx_take_overflow()) {
       os_printf("H2_BK_CP_TRANSPORT_ERROR reason=rx_overflow\r\n");
     }
-    uint16_t uart_count = s_ap_ready
-                              ? uart_rx_read(buffer, H2_BK_CP_UART_CHUNK_SIZE)
-                              : 0u;
-    if (uart_count != 0u) {
-      if (mailbox_write_all(MB_UART0, buffer, uart_count) != 0) {
-        break;
-      }
+    if (s_ap_ready && uart_pending_count == 0u) {
+      uart_pending_count =
+          uart_rx_read(uart_buffer, H2_BK_CP_UART_CHUNK_SIZE);
+      uart_pending_offset = 0u;
+    }
+    uint16_t uart_written = 0u;
+    if (uart_pending_count != 0u) {
+      /* Never wait for AP mailbox space here. The AP can stop consuming while
+       * it programs flash; blocking would also stop this task from draining
+       * the physical UART FIFO and permanently lose KCP frames. Keep the
+       * unsent tail locally, continue polling UART into the transport ring,
+       * and retry after the AP makes room. */
+      uart_written = bk_mb_uart_write(
+          MB_UART0, uart_buffer + uart_pending_offset, uart_pending_count);
+      uart_pending_offset += uart_written;
+      uart_pending_count -= uart_written;
     }
 
-    uint16_t mailbox_count = bk_mb_uart_read(MB_UART0, buffer, sizeof(buffer));
+    uint16_t mailbox_count =
+        bk_mb_uart_read(MB_UART0, mailbox_buffer, sizeof(mailbox_buffer));
     if (mailbox_count != 0u) {
-      (void)h2_bk_uart_tunnel_decoder_input(&s_decoder, buffer, mailbox_count,
-                                            write_physical_frame, NULL);
+      (void)h2_bk_uart_tunnel_decoder_input(
+          &s_decoder, mailbox_buffer, mailbox_count, write_physical_frame,
+          NULL);
     }
-    if (uart_count == 0u && mailbox_count == 0u) {
+    if (uart_written == 0u && mailbox_count == 0u) {
       rtos_delay_milliseconds(1u);
     }
   }
@@ -278,7 +303,7 @@ int h2_bk_h2loader_cp_transport_start(void) {
     return -1;
   }
   s_uart_rx_taken = 1;
-  (void)bk_uart_disable_rx_interrupt(s_uart_id);
+  (void)bk_uart_enable_rx_interrupt(s_uart_id);
   h2_bk_uart_tunnel_decoder_init(&s_decoder);
   s_running = 1;
   if (rtos_init_semaphore(&s_transport_done, 1) != kNoErr) {

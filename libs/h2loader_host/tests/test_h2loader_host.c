@@ -1287,6 +1287,7 @@ typedef struct operation_fixture {
     int cancelled;
     int bad_final_checksum;
     int stage_only;
+    int fail_stage_status_once;
     h2_pal_result_t stage_result;
     h2_pal_result_t activate_result;
     h2_pal_result_t rediscover_result;
@@ -1365,6 +1366,9 @@ static h2_pal_result_t operation_read_status(
     h2_h2loader_host_status_t *out_status) {
     operation_fixture_t *fixture = user;
     ++fixture->read_status_count;
+    if (fixture->fail_stage_status_once && fixture->read_status_count == 1) {
+        return H2_PAL_ERR_TIMEOUT;
+    }
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->asset.board);
     strcpy(out_status->target, fixture->asset.target);
@@ -1480,6 +1484,23 @@ static void test_managed_operation(void) {
     assert(fixture.rediscover_count == 0);
     assert(fixture.read_status_count == 1);
     assert(strcmp(final_status.staged_checksum, package_sha) == 0);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.fail_stage_status_once = 1;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(strcmp(final_status.staged_checksum, package_sha) == 0);
+    fixture.fail_stage_status_once = 0;
     fixture.stage_only = 0;
 
     h2_h2loader_host_upgrade_tracker_t tracker;
@@ -1918,7 +1939,7 @@ static const h2_pal_serial_host_vtable_t serial_control_vtable = {
     .close = serial_control_close,
 };
 
-static void test_serial_deasserts_rts(void) {
+static void test_serial_deasserts_dtr_and_rts(void) {
     h2_pal_time_api_t time = {0};
     serial_control_fixture_t fixture = {
         .set_result = H2_PAL_OK,
@@ -1941,7 +1962,9 @@ static void test_serial_deasserts_rts(void) {
     assert(connection == NULL);
     assert(fixture.event_count == 4u);
     assert(memcmp(fixture.events, "ostc", 4u) == 0);
-    assert(fixture.line_mask == H2_PAL_SERIAL_HOST_CONTROL_RTS);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
     assert(fixture.asserted_lines == 0u);
 
     memset(&fixture, 0, sizeof(fixture));
@@ -1972,6 +1995,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
-    test_serial_deasserts_rts();
+    test_serial_deasserts_dtr_and_rts();
     return 0;
 }

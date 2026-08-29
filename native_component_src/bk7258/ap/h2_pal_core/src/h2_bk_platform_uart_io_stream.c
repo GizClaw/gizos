@@ -30,9 +30,60 @@ static volatile int s_initialized;
 static uint16_t s_sequence;
 static int s_cp_ready;
 static uint32_t s_ready_requested_at;
+static beken_mutex_t s_write_mutex;
+static beken_mutex_t s_control_mutex;
+static uint8_t s_control_state;
+static uint8_t s_control_sequence_low;
+static uint16_t s_pending_tx_ack;
+static int s_pending_tx_ack_valid;
 
 static uint32_t elapsed_ms(uint32_t started) {
   return (uint32_t)rtos_get_time() - started;
+}
+
+static void control_byte(uint8_t value) {
+  if (s_control_state == 0u) {
+    if (value == H2_BK_UART_CP_READY_ACK) {
+      s_cp_ready = 1;
+    } else if (value == H2_BK_UART_TX_ACK_MAGIC) {
+      s_control_state = 1u;
+    }
+  } else if (s_control_state == 1u) {
+    s_control_state = value == H2_BK_UART_TX_ACK_VERSION ? 2u : 0u;
+  } else if (s_control_state == 2u) {
+    s_control_sequence_low = value;
+    s_control_state = 3u;
+  } else {
+    s_pending_tx_ack =
+        (uint16_t)s_control_sequence_low | ((uint16_t)value << 8u);
+    s_pending_tx_ack_valid = 1;
+    s_control_state = 0u;
+  }
+}
+
+static h2_pal_result_t poll_control_channel(void) {
+  if (rtos_lock_mutex(&s_control_mutex) != kNoErr) {
+    return H2_PAL_ERR_IO;
+  }
+  uint8_t value = 0u;
+  while (bk_mb_uart_read(MB_UART1, &value, sizeof(value)) != 0u) {
+    control_byte(value);
+  }
+  (void)rtos_unlock_mutex(&s_control_mutex);
+  return H2_PAL_OK;
+}
+
+static int take_tx_ack(uint16_t sequence) {
+  int matched = 0;
+  if (rtos_lock_mutex(&s_control_mutex) != kNoErr) {
+    return 0;
+  }
+  if (s_pending_tx_ack_valid && s_pending_tx_ack == sequence) {
+    s_pending_tx_ack_valid = 0;
+    matched = 1;
+  }
+  (void)rtos_unlock_mutex(&s_control_mutex);
+  return matched;
 }
 
 static h2_pal_result_t configure(void *user,
@@ -52,9 +103,22 @@ static h2_pal_result_t configure(void *user,
       (void)bk_mb_uart_dev_deinit(MB_UART0);
       return H2_PAL_ERR_IO;
     }
+    if (rtos_init_mutex(&s_control_mutex) != kNoErr) {
+      (void)bk_mb_uart_dev_deinit(MB_UART1);
+      (void)bk_mb_uart_dev_deinit(MB_UART0);
+      return H2_PAL_ERR_IO;
+    }
+    if (rtos_init_mutex(&s_write_mutex) != kNoErr) {
+      (void)rtos_deinit_mutex(&s_control_mutex);
+      (void)bk_mb_uart_dev_deinit(MB_UART1);
+      (void)bk_mb_uart_dev_deinit(MB_UART0);
+      return H2_PAL_ERR_IO;
+    }
     s_sequence = 0u;
     s_cp_ready = 0;
     s_ready_requested_at = 0u;
+    s_control_state = 0u;
+    s_pending_tx_ack_valid = 0;
     s_initialized = 1;
   }
   return H2_PAL_OK;
@@ -82,12 +146,17 @@ static h2_pal_result_t read_stream(void *user, void *buffer, size_t len,
           s_ready_requested_at = now;
         }
       }
-      uint8_t response = 0u;
-      while (bk_mb_uart_read(MB_UART1, &response, sizeof(response)) != 0u) {
-        if (response == H2_BK_UART_CP_READY_ACK) {
-          s_cp_ready = 1;
-          break;
-        }
+      h2_pal_result_t control_rc = poll_control_channel();
+      if (control_rc != H2_PAL_OK) {
+        return control_rc;
+      }
+    } else {
+      /* A command reader and KCP output can run on different tasks. Always
+       * drain the shared control mailbox through one parser so a reader that
+       * happens to observe a TX ACK preserves it for the frame writer. */
+      h2_pal_result_t control_rc = poll_control_channel();
+      if (control_rc != H2_PAL_OK) {
+        return control_rc;
       }
     }
     uint16_t count = bk_mb_uart_read(MB_UART0, buffer, (uint16_t)len);
@@ -132,30 +201,16 @@ static void write_le16(uint8_t out[2], uint16_t value) {
 
 static h2_pal_result_t wait_for_tx_ack(uint16_t sequence, uint32_t started,
                                        uint32_t timeout_ms) {
-  uint8_t state = 0u;
-  uint8_t sequence_low = 0u;
   do {
     if (!s_initialized) {
       return H2_PAL_ERR_CLOSED;
     }
-    uint8_t value = 0u;
-    if (bk_mb_uart_read(MB_UART1, &value, sizeof(value)) != 0u) {
-      if (state == 0u) {
-        state = value == H2_BK_UART_TX_ACK_MAGIC ? 1u : 0u;
-      } else if (state == 1u) {
-        state = value == H2_BK_UART_TX_ACK_VERSION ? 2u : 0u;
-      } else if (state == 2u) {
-        sequence_low = value;
-        state = 3u;
-      } else {
-        uint16_t ack_sequence =
-            (uint16_t)sequence_low | ((uint16_t)value << 8u);
-        if (ack_sequence == sequence) {
-          return H2_PAL_OK;
-        }
-        state = 0u;
-      }
-      continue;
+    h2_pal_result_t rc = poll_control_channel();
+    if (rc != H2_PAL_OK) {
+      return rc;
+    }
+    if (take_tx_ack(sequence)) {
+      return H2_PAL_OK;
     }
     if (timeout_ms == 0u || elapsed_ms(started) >= timeout_ms) {
       break;
@@ -214,6 +269,17 @@ static h2_pal_result_t write_stream(void *user, const void *buffer, size_t len,
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_written = 0u;
+  /* Command writes and KCP maintenance can emit from different tasks. Keep
+   * sequence allocation, mailbox framing, and the matching CP acknowledgement
+   * as one transaction; otherwise one writer can overwrite the other's
+   * single pending ACK and leave both sides retransmitting the first frame. */
+  if (rtos_lock_mutex(&s_write_mutex) != kNoErr) {
+    return H2_PAL_ERR_IO;
+  }
+  if (!s_initialized) {
+    (void)rtos_unlock_mutex(&s_write_mutex);
+    return H2_PAL_ERR_CLOSED;
+  }
   ++s_sequence;
   if (s_sequence == 0u) {
     ++s_sequence;
@@ -243,6 +309,7 @@ static h2_pal_result_t write_stream(void *user, const void *buffer, size_t len,
   if (rc == H2_PAL_OK) {
     *out_written = len;
   }
+  (void)rtos_unlock_mutex(&s_write_mutex);
   return rc;
 }
 
@@ -277,6 +344,8 @@ const h2_pal_uart_io_stream_api_t *h2_bk_platform_uart_io_stream_api(void) {
 void h2_bk_platform_uart_io_stream_deinit(void) {
   if (s_initialized) {
     s_initialized = 0;
+    (void)rtos_deinit_mutex(&s_write_mutex);
+    (void)rtos_deinit_mutex(&s_control_mutex);
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
   }

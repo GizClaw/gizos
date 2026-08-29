@@ -233,12 +233,21 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
              strcmp(status.staged_checksum, config->asset->sha256) != 0)) {
             rc = H2_PAL_ERR_INVALID_STATE;
         }
-        if (rc == H2_PAL_OK) *out_final_status = status;
-        return disconnect_after(config, rc);
-    }
-    rc = disconnect_after(config, rc);
-    if (rc != H2_PAL_OK) {
-        return rc;
+        if (rc == H2_PAL_OK) {
+            *out_final_status = status;
+            return disconnect_after(config, H2_PAL_OK);
+        }
+        /* A large package can be fully acknowledged before the device has
+           finished publishing and re-reading staged metadata. Treat a failed
+           same-session status read as a reconnect boundary and verify the
+           durable staged identity below instead of reporting a false send
+           failure after every byte was accepted. */
+        (void)disconnect_after(config, rc);
+    } else {
+        rc = disconnect_after(config, rc);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
     }
 
     attempts = config->reconnect_attempts == 0u

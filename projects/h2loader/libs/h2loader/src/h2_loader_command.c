@@ -1171,9 +1171,11 @@ static int h2loader_reboot_transition(void *user) {
         "H2_LOADER_REBOOT target=%s result=accepted\n",
         context->target);
     context->emitted = 1;
-    /* The lifecycle request is durable before this callback runs. Do not wait
-       for a peer ACK here: installation and the whole-device reset must start
-       even if the Host closes or the terminal response is lost. */
+    /* Give the transport a bounded chance to publish the accepted transition
+       before disruptive teardown. The lifecycle request is already durable,
+       so a missing peer ACK must not cancel installation or the whole-device
+       reset. */
+    (void)h2_command_flush(&self->command);
     return H2_PAL_OK;
 }
 

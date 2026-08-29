@@ -8,6 +8,7 @@ typedef struct discovery_fixture {
     uint32_t slept_ms;
     unsigned stop_calls;
     bool callback_requested_stop;
+    bool service_only;
 } discovery_fixture_t;
 
 static h2_pal_result_t fake_mutex_create(
@@ -70,8 +71,8 @@ static h2_pal_result_t fake_start_scan(
         .rssi = -40,
         .connectable = true,
         .manufacturer_data = {
-            .data = identity,
-            .len = sizeof(identity),
+            .data = fixture->service_only ? NULL : identity,
+            .len = fixture->service_only ? 0u : sizeof(identity),
         },
         .service_uuids = &service_uuid,
         .service_uuid_count = 1u,
@@ -107,8 +108,9 @@ static const h2_pal_ble_vtable_t ble_vtable = {
 
 static discovery_fixture_t run_scan(
     const char *endpoint,
+    bool service_only,
     h2_h2loader_host_candidate_t *candidate) {
-    discovery_fixture_t fixture = {0};
+    discovery_fixture_t fixture = { .service_only = service_only };
     const h2_pal_sync_api_t sync = {
         .user = &fixture,
         .vtable = &sync_vtable,
@@ -141,7 +143,7 @@ static discovery_fixture_t run_scan(
 static void test_target_endpoint_stops_scan_without_waiting(void) {
     h2_h2loader_host_candidate_t candidate;
     discovery_fixture_t fixture = run_scan(
-        "4:001122334455", &candidate);
+        "4:001122334455", false, &candidate);
 
     assert(strcmp(candidate.endpoint, "4:001122334455") == 0);
     assert(fixture.callback_requested_stop);
@@ -151,7 +153,7 @@ static void test_target_endpoint_stops_scan_without_waiting(void) {
 
 static void test_general_scan_keeps_full_window(void) {
     h2_h2loader_host_candidate_t candidate;
-    discovery_fixture_t fixture = run_scan(NULL, &candidate);
+    discovery_fixture_t fixture = run_scan(NULL, false, &candidate);
 
     assert(!fixture.callback_requested_stop);
     assert(fixture.sleep_calls == 1u);
@@ -161,16 +163,26 @@ static void test_general_scan_keeps_full_window(void) {
 static void test_unmatched_endpoint_keeps_full_window(void) {
     h2_h2loader_host_candidate_t candidate;
     discovery_fixture_t fixture = run_scan(
-        "4:ffeeddccbbaa", &candidate);
+        "4:ffeeddccbbaa", false, &candidate);
 
     assert(!fixture.callback_requested_stop);
     assert(fixture.sleep_calls == 4u);
     assert(fixture.slept_ms == 1000u);
 }
 
+static void test_private_service_uuid_is_discoverable_without_scan_response(void) {
+    h2_h2loader_host_candidate_t candidate;
+    discovery_fixture_t fixture = run_scan(NULL, true, &candidate);
+
+    assert(!fixture.callback_requested_stop);
+    assert(candidate.advertised_board[0] == '\0');
+    assert(strcmp(candidate.display_name, "h2l.unknown") == 0);
+}
+
 int main(void) {
     test_target_endpoint_stops_scan_without_waiting();
     test_general_scan_keeps_full_window();
     test_unmatched_endpoint_keeps_full_window();
+    test_private_service_uuid_is_discoverable_without_scan_response();
     return 0;
 }

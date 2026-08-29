@@ -32,6 +32,7 @@ typedef struct h2_bk_serial_transport {
   uint32_t pending_conv;
   uint32_t write_timeout_ms;
   int replacement_pending;
+  int close_pending;
   const atomic_bool *stop_requested;
 } h2_bk_serial_transport_t;
 
@@ -117,6 +118,16 @@ static h2_pal_result_t on_frame(void *user,
     transport->pending_conv = frame->conv;
     transport->replacement_pending = transport->stream != NULL;
     return H2_PAL_OK;
+  }
+  if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE &&
+      transport->stream != NULL && frame->conv == transport->conv) {
+    h2_pal_result_t rc = send_control(
+        transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
+    if (rc == H2_PAL_OK) {
+      transport->close_pending = 1;
+      transport->replacement_pending = 1;
+    }
+    return rc;
   }
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA &&
       transport->stream != NULL && frame->conv == transport->conv) {
@@ -360,13 +371,23 @@ static h2_command_io_api_t transport_io(h2_bk_serial_transport_t *transport) {
   return io;
 }
 
+static void deactivate_current(h2_bk_serial_transport_t *transport) {
+  if (transport == NULL) {
+    return;
+  }
+  h2_iostreamikcp_close(transport->stream);
+  transport->stream = NULL;
+  transport->conv = 0u;
+  transport->replacement_pending = 0;
+  transport->close_pending = 0;
+}
+
 static h2_pal_result_t activate_pending(h2_bk_serial_transport_t *transport) {
   if (transport == NULL || transport->pending_conv == 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   uint32_t conv = transport->pending_conv;
-  h2_iostreamikcp_close(transport->stream);
-  transport->stream = NULL;
+  deactivate_current(transport);
   const h2_iostreamikcp_config_t config = {
       .io = transport->physical_io,
       .allocator = transport->allocator,
@@ -407,6 +428,10 @@ serve_loader_iostreamikcp(h2_bk_serial_transport_t *transport,
   h2_loader_command_config_t serial_config = *command_config;
   serial_config.io = transport_io(transport);
   while (!transport_stop_requested(transport)) {
+    if (transport->close_pending && transport->pending_conv == 0u) {
+      deactivate_current(transport);
+      continue;
+    }
     if (transport->pending_conv != 0u) {
       rc = h2_loader_command_init(command, &serial_config);
       if (rc == H2_PAL_OK) {
@@ -506,6 +531,11 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
   for (;;) {
     if (atomic_load_explicit(&state->stop_requested, memory_order_acquire)) {
       return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
+    }
+    if (state->transport.close_pending &&
+        state->transport.pending_conv == 0u) {
+      deactivate_current(&state->transport);
+      return EOF;
     }
     if (state->transport.pending_conv != 0u) {
       h2_pal_result_t rc = activate_pending(&state->transport);
