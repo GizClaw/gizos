@@ -24,6 +24,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
 cc_library(
     name = "gizclaw",
     srcs = _FIRMWARE_COMPATIBLE_SRCS + select({
+        "@platforms//cpu:wasm32": ["src/h2_gizclaw_conversation.c"],
         "//tools/bazel/platforms:is_bk3633": [],
         "//tools/bazel/platforms:is_bk7258": [],
         "//tools/bazel/platforms:is_esp32p4": [],
@@ -61,12 +62,14 @@ cc_library(
     deps = [
         "//libs/pal",
     ] + select({
+        "@platforms//cpu:wasm32": ["//tools/bazel:vendor_third_party_gizclaw"],
         "//tools/bazel/platforms:is_bk3633": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_bk7258": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32p4": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32s3": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//conditions:default": ["//tools/bazel:vendor_third_party_gizclaw"],
     }) + select({
+        "@platforms//cpu:wasm32": ["//tools/bazel:vendor_third_party_opus"],
         "//tools/bazel/platforms:is_bk3633": [],
         "//tools/bazel/platforms:is_bk7258": [],
         "//tools/bazel/platforms:is_esp32p4": [],

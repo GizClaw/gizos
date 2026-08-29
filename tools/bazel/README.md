@@ -257,13 +257,7 @@ claim macOS, Windows, firmware, device, network, audio, or rendered UI coverage.
 
 ## Web archive preview
 
-Web `pkg_tar` owners can expose a local preview target with
-`web_archive_serve(name = "serve", archive = ":<archive>")` from
-`//tools/bazel:web_archive.bzl`. The runner extracts the archive into a temporary
-directory, rejects unsafe tar members, applies the archive's `_headers` policy,
-serves WASM with `application/wasm`, and removes the temporary directory when it
-exits. H2Loader is now distributed as `@gizclaw/h2loader`; its product frontend
-and local preview belong to `GizClaw/www`, not a GizOS `pkg_tar` target.
+Web `pkg_tar` owners can expose a local preview target with `web_archive_serve(name = "serve", archive = ":<archive>")` from `//tools/bazel:web_archive.bzl`. The runner extracts the archive into a temporary directory, rejects unsafe tar members, applies the archive's `_headers` policy, serves WASM with `application/wasm`, and removes the temporary directory when it exits. Development-only cross-origin requests can opt into the same-origin path `/_h2/http-proxy?url=<encoded-url>` by passing one `--http-proxy-origin <scheme://host:port>` flag for every exact allowed origin. The proxy is disabled without an allowlist, rejects credentials and fragments in target URLs, and does not forward browser cookies, origin, referrer or `Sec-*` headers. An artifact must explicitly select that path; production hosting should provide the required CORS policy or an equivalent trusted proxy. H2Loader is now distributed as `@gizclaw/h2loader`; its product frontend and local preview belong to `GizClaw/www`, not a GizOS `pkg_tar` target.
 
 CI targets use platform compatibility to expose the graph that belongs to the selected execution class. CI does not compute an affected target list. Each static platform job directly invokes:
 

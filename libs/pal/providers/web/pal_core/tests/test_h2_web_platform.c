@@ -59,6 +59,20 @@ static h2_pal_task_t *h2_web_auto_pump_task;
 
 static void h2_web_test_main_loop(void) {}
 
+static int h2_web_test_http_header(void *user,
+                                   const h2_pal_http_request_t *request,
+                                   h2_pal_http_str_t name,
+                                   h2_pal_http_str_t value) {
+  (void)request;
+  int *header_count = user;
+  if (name.len == 0u || name.data == NULL ||
+      (value.len != 0u && value.data == NULL)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *header_count += 1;
+  return H2_PAL_OK;
+}
+
 typedef struct h2_web_webrtc_test {
   const h2_pal_webrtc_api_t *api;
   int local_sdp;
@@ -636,10 +650,55 @@ int main(void) {
       h2_web_platform_display_api(platform) == NULL ||
       h2_web_platform_touch_api(platform) == NULL ||
       h2_web_platform_pref_api(platform) == NULL ||
+      h2_web_platform_http_api(platform) == NULL ||
+      h2_web_platform_crypto_api(platform) == NULL ||
+      h2_web_platform_audio_api(platform) == NULL ||
       h2_web_platform_serial_host_api(platform) == NULL ||
       h2_web_platform_webrtc_api(platform) == NULL) {
     return 4;
   }
+  const h2_pal_time_api_t *time = h2_web_platform_time_api(platform);
+  h2_pal_time_wall_status_t wall_status = {0};
+  uint64_t wall_ms = 0u;
+  if (h2_pal_time_get_wall_ms(time, &wall_ms) != H2_PAL_OK || wall_ms == 0u ||
+      h2_pal_time_get_wall_status(time, &wall_status) != H2_PAL_OK ||
+      !wall_status.valid || wall_status.source != H2_PAL_TIME_WALL_SOURCE_RTC ||
+      h2_pal_time_set_wall_ms(time, UINT64_C(1700000000000)) != H2_PAL_OK ||
+      h2_pal_time_get_wall_ms(time, &wall_ms) != H2_PAL_OK ||
+      wall_ms < UINT64_C(1700000000000) ||
+      wall_ms > UINT64_C(1700000001000) ||
+      h2_pal_time_get_wall_status(time, &wall_status) != H2_PAL_OK ||
+      wall_status.source != H2_PAL_TIME_WALL_SOURCE_SERVER_ALIGNED) {
+    return 102;
+  }
+  uint8_t random_bytes[32] = {0};
+  h2_pal_x25519_keypair_t keypair = {0};
+  if (h2_pal_crypto_random(h2_web_platform_crypto_api(platform), random_bytes,
+                           sizeof(random_bytes)) != H2_PAL_OK ||
+      h2_pal_crypto_x25519_keypair_generate(
+          h2_web_platform_crypto_api(platform), &keypair) != H2_PAL_OK) {
+    return 103;
+  }
+  int http_header_count = 0;
+  const h2_pal_http_request_t http_request = {
+      .method = H2_PAL_HTTP_GET,
+      .url = {.data = "data:text/plain,h2-web-http", .len = 27u},
+      .response_header_cb = h2_web_test_http_header,
+      .response_header_user = &http_header_count,
+      .timeout_ms = 1000,
+      .response_allocator = h2_web_platform_mem_api(),
+  };
+  h2_pal_http_response_t http_response;
+  h2_pal_http_response_reset(&http_response);
+  if (h2_pal_http_request(h2_web_platform_http_api(platform), &http_request,
+                          &http_response) != H2_PAL_OK ||
+      http_response.status_code != 200 || http_response.body_len != 11u ||
+      memcmp(http_response.body, "h2-web-http", 11u) != 0 ||
+      http_header_count == 0) {
+    return 104;
+  }
+  h2_pal_http_response_free(h2_web_platform_http_api(platform),
+                            &http_response);
   h2_web_webrtc_test_t webrtc_test = {0};
   const h2_pal_webrtc_callbacks_t webrtc_callbacks = {
       .user = &webrtc_test,

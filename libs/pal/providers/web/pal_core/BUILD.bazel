@@ -9,7 +9,10 @@ cc_library(
     name = "pal_core",
     srcs = [
         "src/h2_web_platform.c",
+        "src/h2_web_platform_audio.c",
+        "src/h2_web_platform_crypto.c",
         "src/h2_web_platform_display.c",
+        "src/h2_web_platform_http.c",
         "src/h2_web_platform_internal.h",
         "src/h2_web_platform_pref.c",
         "src/h2_web_platform_serial.c",
@@ -24,6 +27,7 @@ cc_library(
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/libco",
+        "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
 

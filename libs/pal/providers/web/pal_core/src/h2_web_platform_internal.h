@@ -23,9 +23,12 @@ struct h2_web_platform {
   size_t touch_head;
   size_t touch_count;
   h2_libco_t *executor;
+  h2_pal_time_api_t time_source_api;
   h2_pal_timer_t *timers;
   h2_pal_timer_api_t timer_api;
   h2_pal_pref_api_t pref_api;
+  h2_pal_http_api_t http_api;
+  h2_pal_audio_api_t audio_api;
   h2_pal_display_api_t display_api;
   h2_pal_touch_api_t touch_api;
   h2_pal_serial_host_api_t serial_api;
@@ -34,15 +37,25 @@ struct h2_web_platform {
   void *serial_state;
   h2_pal_webrtc_peer_t *webrtc_peers;
   bool pointer_installed;
+  bool crypto_ready;
+  h2_pal_time_wall_source_t wall_time_source;
   bool touch_opened;
+  bool speaker_started;
+  uint32_t speaker_volume_percent;
   bool pumping;
   bool shutting_down;
   bool pump_scheduled;
   uint64_t pump_deadline_ms;
+  int64_t wall_time_offset_ms;
 };
 
 void h2_web_platform_display_init(h2_web_platform_t *platform);
 void h2_web_platform_display_deinit(h2_web_platform_t *platform);
+void h2_web_platform_audio_init(h2_web_platform_t *platform);
+void h2_web_platform_audio_deinit(h2_web_platform_t *platform);
+int h2_web_platform_crypto_init(h2_web_platform_t *platform);
+void h2_web_platform_crypto_deinit(h2_web_platform_t *platform);
+void h2_web_platform_http_init(h2_web_platform_t *platform);
 void h2_web_platform_timer_init(h2_web_platform_t *platform);
 void h2_web_platform_timer_deinit(h2_web_platform_t *platform);
 void h2_web_platform_timer_dispatch(h2_web_platform_t *platform);

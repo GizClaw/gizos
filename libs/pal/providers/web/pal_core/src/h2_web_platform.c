@@ -66,6 +66,68 @@ static uint64_t h2_web_now_ms(void *user) {
   return (uint64_t)emscripten_get_now();
 }
 
+EM_JS(double, h2_web_date_now_ms, (), { return Date.now(); });
+
+static h2_pal_result_t h2_web_time_get_monotonic_ms(void *user,
+                                                     uint64_t *out_ms) {
+  if (user == NULL || out_ms == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_ms = h2_web_now_ms(user);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_web_time_get_monotonic_us(void *user,
+                                                     uint64_t *out_us) {
+  if (user == NULL || out_us == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_us = (uint64_t)(emscripten_get_now() * 1000.0);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_web_time_get_wall_ms(void *user, uint64_t *out_ms) {
+  h2_web_platform_t *platform = user;
+  if (platform == NULL || out_ms == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const int64_t adjusted = (int64_t)h2_web_date_now_ms() +
+                           platform->wall_time_offset_ms;
+  if (adjusted <= 0)
+    return H2_PAL_ERR_UNAVAILABLE;
+  *out_ms = (uint64_t)adjusted;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_web_time_set_wall_ms(void *user, uint64_t wall_ms) {
+  h2_web_platform_t *platform = user;
+  if (platform == NULL || wall_ms == 0u || wall_ms > (uint64_t)INT64_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  platform->wall_time_offset_ms =
+      (int64_t)wall_ms - (int64_t)h2_web_date_now_ms();
+  platform->wall_time_source = H2_PAL_TIME_WALL_SOURCE_SERVER_ALIGNED;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t
+h2_web_time_get_wall_status(void *user,
+                            h2_pal_time_wall_status_t *out_status) {
+  h2_web_platform_t *platform = user;
+  if (platform == NULL || out_status == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_status = (h2_pal_time_wall_status_t){
+      .valid = platform->wall_time_source != H2_PAL_TIME_WALL_SOURCE_UNKNOWN,
+      .source = platform->wall_time_source,
+  };
+  return H2_PAL_OK;
+}
+
+static const h2_pal_time_vtable_t h2_web_time_source_vtable = {
+    .get_monotonic_ms = h2_web_time_get_monotonic_ms,
+    .get_monotonic_us = h2_web_time_get_monotonic_us,
+    .get_wall_ms = h2_web_time_get_wall_ms,
+    .set_wall_ms = h2_web_time_set_wall_ms,
+    .get_wall_status = h2_web_time_get_wall_status,
+    .sleep_ms = NULL,
+};
+
 static h2_libco_result_t h2_web_poll_external(void *user,
                                                h2_libco_t *executor) {
   return h2_web_platform_serial_poll(user, executor);
@@ -163,11 +225,17 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   }
   platform->width = config->display_width;
   platform->height = config->display_height;
+  platform->time_source_api = (h2_pal_time_api_t){
+      .user = platform,
+      .vtable = &h2_web_time_source_vtable,
+  };
+  platform->wall_time_source = H2_PAL_TIME_WALL_SOURCE_RTC;
   const h2_libco_config_t executor_config = {
       .user = platform,
       .alloc = h2_web_alloc,
       .free = h2_web_free,
       .now_ms = h2_web_now_ms,
+      .time_source = &platform->time_source_api,
       .poll_external = h2_web_poll_external,
       .idle = h2_web_idle,
   };
@@ -177,11 +245,21 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   }
   h2_web_platform_timer_init(platform);
   h2_web_platform_pref_init(platform);
+  h2_web_platform_http_init(platform);
+  if (h2_web_platform_crypto_init(platform) != H2_PAL_OK) {
+    h2_web_platform_timer_deinit(platform);
+    (void)h2_libco_destroy(&platform->executor);
+    free(platform);
+    return NULL;
+  }
+  h2_web_platform_audio_init(platform);
   h2_web_platform_display_init(platform);
   h2_web_platform_webrtc_init(platform);
   if (h2_web_platform_serial_init(platform) != H2_PAL_OK) {
     h2_web_platform_webrtc_deinit(platform);
     h2_web_platform_display_deinit(platform);
+    h2_web_platform_audio_deinit(platform);
+    h2_web_platform_crypto_deinit(platform);
     h2_web_platform_timer_deinit(platform);
     (void)h2_libco_destroy(&platform->executor);
     free(platform);
@@ -208,6 +286,8 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   h2_web_platform_serial_deinit(platform);
   h2_web_platform_webrtc_deinit(platform);
   h2_web_platform_display_deinit(platform);
+  h2_web_platform_audio_deinit(platform);
+  h2_web_platform_crypto_deinit(platform);
   h2_web_platform_timer_deinit(platform);
   free(platform);
 }
@@ -289,6 +369,11 @@ h2_web_platform_timer_api(h2_web_platform_t *platform) {
 const h2_pal_display_api_t *
 h2_web_platform_display_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->display_api;
+}
+
+const h2_pal_audio_api_t *
+h2_web_platform_audio_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->audio_api;
 }
 
 const h2_pal_touch_api_t *

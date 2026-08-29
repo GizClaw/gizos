@@ -181,6 +181,35 @@ cc_library(
 )
 
 cc_library(
+    name = "platform_web",
+    srcs = [
+        "src/h2_lvgl_button.c",
+        "src/h2_lvgl_button_internal.h",
+        "src/h2_lvgl_fs.c",
+        "src/h2_lvgl_fs_internal.h",
+        "src/h2_lvgl_platform_web.c",
+        "src/h2_lvgl_touch.c",
+    ],
+    hdrs = [
+        "include/h2_lvgl_button.h",
+        "include/h2_lvgl_fs.h",
+        "include/h2_lvgl_osal.h",
+        "include/h2_lvgl_platform.h",
+        "include/h2_lvgl_touch.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":lvgl_web",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_library(
     name = "firmware",
     srcs = [
         "src/h2_lvgl_fs.c",

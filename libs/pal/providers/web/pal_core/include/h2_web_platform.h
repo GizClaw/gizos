@@ -74,8 +74,17 @@ const h2_pal_sync_api_t *
 h2_web_platform_sync_api(h2_web_platform_t *platform);
 const h2_pal_pref_api_t *
 h2_web_platform_pref_api(h2_web_platform_t *platform);
+/** Browser Fetch HTTP provider. Requests remain subject to browser CORS. */
+const h2_pal_http_api_t *
+h2_web_platform_http_api(h2_web_platform_t *platform);
+/** wolfCrypt provider seeded from browser cryptographic randomness. */
+const h2_pal_crypto_api_t *
+h2_web_platform_crypto_api(h2_web_platform_t *platform);
 const h2_pal_display_api_t *
 h2_web_platform_display_api(h2_web_platform_t *platform);
+/** Browser Web Audio playback provider. Microphone capture is unsupported. */
+const h2_pal_audio_api_t *
+h2_web_platform_audio_api(h2_web_platform_t *platform);
 const h2_pal_touch_api_t *
 h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *

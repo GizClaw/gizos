@@ -108,8 +108,7 @@ EM_JS(int, h2_web_webrtc_peer_create_js, (uintptr_t peer_address), {
           terminal(3);
           return;
         }
-        const buffer =
-            bytes.byteLength ? Module['_malloc'](bytes.byteLength) : 0;
+        const buffer = bytes.byteLength ? _malloc(bytes.byteLength) : 0;
         if (bytes.byteLength && !buffer) {
           terminal(3);
           return;
@@ -119,7 +118,7 @@ EM_JS(int, h2_web_webrtc_peer_create_js, (uintptr_t peer_address), {
         Module['_h2_web_webrtc_channel_message'](
             peer_address, channelAddress, buffer, bytes.byteLength, isText);
         if (buffer)
-          Module['_free'](buffer);
+          _free(buffer);
       };
     };
     entry.bindChannel = bindChannel;
@@ -142,8 +141,7 @@ EM_JS(int, h2_web_webrtc_peer_create_js, (uintptr_t peer_address), {
         return;
       const dc = event.channel;
       const labelBytes = new TextEncoder().encode(dc.label);
-      const label =
-          labelBytes.byteLength ? Module['_malloc'](labelBytes.byteLength) : 0;
+      const label = labelBytes.byteLength ? _malloc(labelBytes.byteLength) : 0;
       if (labelBytes.byteLength && !label) {
         try { dc.close(); }
         catch(_) {}
@@ -156,7 +154,7 @@ EM_JS(int, h2_web_webrtc_peer_create_js, (uintptr_t peer_address), {
           dc.id == null ? 0 : 1, dc.ordered ? 1 : 0,
           dc.maxRetransmits == null && dc.maxPacketLifeTime == null ? 1 : 0);
       if (label)
-        Module['_free'](label);
+        _free(label);
       if (!channelAddress) {
         try { dc.close(); }
         catch(_) {}
@@ -218,21 +216,26 @@ EM_ASYNC_JS(int, h2_web_webrtc_start_offer_js, (uintptr_t peer_address), {
   try {
     const pc = entry.pc;
     if (entry.mediaEnabled && !entry.localStream) {
-      if (!globalThis.navigator?.mediaDevices?.getUserMedia)
-        return -3;
-      const stream = await navigator.mediaDevices.getUserMedia({audio : true});
-      if (Module['h2WebRtcPeers']?.get(peer_address) !== entry) {
-        for (const track of stream.getTracks()) track.stop();
-        return -10;
+      if (globalThis.navigator?.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({audio : true});
+        if (Module['h2WebRtcPeers']?.get(peer_address) !== entry) {
+          for (const track of stream.getTracks()) track.stop();
+          return -10;
+        }
+        entry.localStream = stream;
+        const audioTracks = stream.getAudioTracks();
+        if (!audioTracks.length) {
+          for (const track of stream.getTracks()) track.stop();
+          entry.localStream = null;
+          pc.addTransceiver('audio', {direction : 'sendrecv'});
+          console.warn('H2 WebRTC: microphone unavailable; using a silent audio sender');
+        } else {
+          for (const track of audioTracks) pc.addTrack(track, stream);
+        }
+      } else {
+        pc.addTransceiver('audio', {direction : 'sendrecv'});
+        console.warn('H2 WebRTC: getUserMedia unavailable; using a silent audio sender');
       }
-      entry.localStream = stream;
-      const audioTracks = stream.getAudioTracks();
-      if (!audioTracks.length) {
-        for (const track of stream.getTracks()) track.stop();
-        entry.localStream = null;
-        return -3;
-      }
-      for (const track of audioTracks) pc.addTrack(track, stream);
     }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -253,19 +256,20 @@ EM_ASYNC_JS(int, h2_web_webrtc_start_offer_js, (uintptr_t peer_address), {
     if (typeof sdp !== 'string')
       return -4;
     const length = lengthBytesUTF8(sdp);
-    const buffer = Module['_malloc'](length + 1);
+    const buffer = _malloc(length + 1);
     if (!buffer)
       return -5;
     stringToUTF8(sdp, buffer, length + 1);
     Module['_h2_web_webrtc_local_sdp'](peer_address, 1, buffer, length);
-    Module['_free'](buffer);
+    _free(buffer);
     return Module['h2WebRtcPeers'] ?.get(peer_address) === entry ? 0 : -10;
   }
-  catch(_) {
+  catch(error) {
     if (entry.localStream) {
       for (const track of entry.localStream.getTracks()) track.stop();
       entry.localStream = null;
     }
+    console.error('H2 WebRTC: failed to create offer', error);
     return -4;
   }
 });

@@ -11,10 +11,14 @@ from pathlib import Path, PurePosixPath
 import tarfile
 import tempfile
 from typing import BinaryIO
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
 
 
 MAX_ARCHIVE_MEMBERS = 4096
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
+MAX_PROXY_BODY_BYTES = 64 * 1024 * 1024
 
 
 def _safe_parts(name: str) -> tuple[str, ...]:
@@ -112,7 +116,9 @@ def headers_for_path(
 
 
 def make_handler(
-    root: Path, policies: list[tuple[str, list[tuple[str, str]]]]
+    root: Path,
+    policies: list[tuple[str, list[tuple[str, str]]]],
+    proxy_origins: frozenset[str] = frozenset(),
 ) -> type[SimpleHTTPRequestHandler]:
     class WebArchiveHandler(SimpleHTTPRequestHandler):
         extensions_map = {
@@ -133,6 +139,106 @@ def make_handler(
             self.send_header("Cache-Control", "no-store")
             super().end_headers()
 
+        def _proxy_request(self) -> bool:
+            parsed_request = urlparse(self.path)
+            if parsed_request.path != "/_h2/http-proxy":
+                return False
+            values = parse_qs(parsed_request.query, keep_blank_values=True)
+            targets = values.get("url", [])
+            if len(targets) != 1:
+                self.send_error(400, "one url query parameter is required")
+                return True
+            target = targets[0]
+            parsed_target = urlparse(target)
+            origin = f"{parsed_target.scheme}://{parsed_target.netloc}"
+            if (
+                parsed_target.scheme not in {"http", "https"}
+                or not parsed_target.netloc
+                or parsed_target.username is not None
+                or parsed_target.fragment
+                or origin not in proxy_origins
+            ):
+                self.send_error(403, "proxy target origin is not allowed")
+                return True
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.send_error(400, "invalid Content-Length")
+                return True
+            if length < 0 or length > MAX_PROXY_BODY_BYTES:
+                self.send_error(413, "proxy request body is too large")
+                return True
+            body = self.rfile.read(length) if length else None
+            headers = {
+                name: value
+                for name, value in self.headers.items()
+                if name.lower()
+                not in {
+                    "connection",
+                    "content-length",
+                    "cookie",
+                    "host",
+                    "origin",
+                    "referer",
+                }
+                and not name.lower().startswith("sec-")
+            }
+            request = Request(
+                target,
+                data=body,
+                headers=headers,
+                method=self.command,
+            )
+            try:
+                response = urlopen(request, timeout=60)
+            except HTTPError as error:
+                response = error
+            except URLError as error:
+                self.send_error(502, f"upstream request failed: {error.reason}")
+                return True
+            with response:
+                payload = response.read(MAX_PROXY_BODY_BYTES + 1)
+                if len(payload) > MAX_PROXY_BODY_BYTES:
+                    self.send_error(502, "proxy response body is too large")
+                    return True
+                self.send_response(response.status)
+                for name, value in response.headers.items():
+                    if name.lower() not in {
+                        "connection",
+                        "content-length",
+                        "transfer-encoding",
+                    }:
+                        self.send_header(name, value)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(payload)
+            return True
+
+        def do_GET(self) -> None:
+            if not self._proxy_request():
+                super().do_GET()
+
+        def do_HEAD(self) -> None:
+            if not self._proxy_request():
+                super().do_HEAD()
+
+        def do_POST(self) -> None:
+            if not self._proxy_request():
+                self.send_error(405)
+
+        def do_PUT(self) -> None:
+            if not self._proxy_request():
+                self.send_error(405)
+
+        def do_PATCH(self) -> None:
+            if not self._proxy_request():
+                self.send_error(405)
+
+        def do_DELETE(self) -> None:
+            if not self._proxy_request():
+                self.send_error(405)
+
     return WebArchiveHandler
 
 
@@ -151,6 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--http-proxy-origin",
+        action="append",
+        default=[],
+        help="allow the opt-in local HTTP proxy to reach this exact origin",
+    )
     return parser
 
 
@@ -162,8 +274,9 @@ def main() -> int:
         raise SystemExit("port must be between 0 and 65535")
     with prepared_archive(args.archive.resolve()) as root:
         policies = read_header_policy(root)
+        proxy_origins = frozenset(args.http_proxy_origin)
         server = ThreadingHTTPServer(
-            (args.host, args.port), make_handler(root, policies)
+            (args.host, args.port), make_handler(root, policies, proxy_origins)
         )
         server.daemon_threads = True
         host, port = server.server_address[:2]
