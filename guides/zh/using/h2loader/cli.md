@@ -99,7 +99,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `check` 报告 BLE capability 时只检查平台是否提供 BLE Host，不启动它；`--no-ble` 下 BLE capability 报告为不可用。
 
-串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；BLE endpoint 只用于当前 Host/backend 生命周期内选择初始 candidate，连接后的 status 才提供 authoritative board/role/capability。v1/v2 尚无 `device_uid`，因此 CLI 不把 backend address 当成断线后可重新识别物理设备的 identity。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
+串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；显式 BLE management command 使用 `--port` 的 exact endpoint 做 targeted scan，不枚举串口，匹配后立即停止，未匹配时仍等待完整 bounded scan timeout。BLE endpoint 只用于当前 Host/backend 生命周期内选择初始 candidate，连接后的 status 才提供 authoritative board/role/capability。v1/v2 尚无 `device_uid`，因此 CLI 不把 backend address 当成断线后可重新识别物理设备的 identity。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
 
 `--ready` 和非零 `--post-delay` 是 serial boot-marker 调试参数，不能与 `--transport bleikcp` 组合；CLI 会在连接前拒绝，而不是悄悄忽略 transport-specific 参数。
 
@@ -201,7 +201,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --file /tmp/update.tar.zlib
 ```
 
-同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage。无响应 BLE write 遇到 controller queue backpressure 时最多重试 40 次、每次间隔 2 ms；如果 package 已完整确认但同连接暂时读不到 durable staged metadata，CLI 会 bounded reconnect，再核对 exact staged bytes/SHA-256。它不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
+同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage。无响应 BLE write 遇到 controller queue backpressure 时最多重试 40 次、每次间隔 2 ms；如果 package 已完整确认但同连接暂时读不到 durable staged metadata，CLI 只在旧 connection 成功 disconnect 后执行 bounded reconnect，再核对 exact staged bytes/SHA-256；teardown 失败不会打开并发替代 session。它不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \

@@ -1,4 +1,5 @@
 #include "h2_bk_platform_core.h"
+#include "h2_bk_uart_control_tracker.h"
 
 #include "driver/mb_uart_driver.h"
 #include "os/os.h"
@@ -21,44 +22,17 @@
 #define H2_BK_UART_TUNNEL_RECORD_DATA 2u
 #define H2_BK_UART_TUNNEL_RECORD_END 3u
 #define H2_BK_UART_BAUD_RATE 230400u
-#define H2_BK_UART_TX_ACK_MAGIC 0xa5u
-#define H2_BK_UART_TX_ACK_VERSION 1u
 #define H2_BK_UART_CP_READY_REQUEST 0x5au
-#define H2_BK_UART_CP_READY_ACK 0x5bu
 
 static volatile int s_initialized;
 static uint16_t s_sequence;
-static int s_cp_ready;
 static uint32_t s_ready_requested_at;
 static beken_mutex_t s_write_mutex;
 static beken_mutex_t s_control_mutex;
-static uint8_t s_control_state;
-static uint8_t s_control_sequence_low;
-static uint16_t s_pending_tx_ack;
-static int s_pending_tx_ack_valid;
+static h2_bk_uart_control_tracker_t s_control_tracker;
 
 static uint32_t elapsed_ms(uint32_t started) {
   return (uint32_t)rtos_get_time() - started;
-}
-
-static void control_byte(uint8_t value) {
-  if (s_control_state == 0u) {
-    if (value == H2_BK_UART_CP_READY_ACK) {
-      s_cp_ready = 1;
-    } else if (value == H2_BK_UART_TX_ACK_MAGIC) {
-      s_control_state = 1u;
-    }
-  } else if (s_control_state == 1u) {
-    s_control_state = value == H2_BK_UART_TX_ACK_VERSION ? 2u : 0u;
-  } else if (s_control_state == 2u) {
-    s_control_sequence_low = value;
-    s_control_state = 3u;
-  } else {
-    s_pending_tx_ack =
-        (uint16_t)s_control_sequence_low | ((uint16_t)value << 8u);
-    s_pending_tx_ack_valid = 1;
-    s_control_state = 0u;
-  }
 }
 
 static h2_pal_result_t poll_control_channel(void) {
@@ -67,7 +41,7 @@ static h2_pal_result_t poll_control_channel(void) {
   }
   uint8_t value = 0u;
   while (bk_mb_uart_read(MB_UART1, &value, sizeof(value)) != 0u) {
-    control_byte(value);
+    h2_bk_uart_control_tracker_feed(&s_control_tracker, value);
   }
   (void)rtos_unlock_mutex(&s_control_mutex);
   return H2_PAL_OK;
@@ -78,10 +52,8 @@ static int take_tx_ack(uint16_t sequence) {
   if (rtos_lock_mutex(&s_control_mutex) != kNoErr) {
     return 0;
   }
-  if (s_pending_tx_ack_valid && s_pending_tx_ack == sequence) {
-    s_pending_tx_ack_valid = 0;
-    matched = 1;
-  }
+  matched = h2_bk_uart_control_tracker_take_tx_ack(
+      &s_control_tracker, sequence);
   (void)rtos_unlock_mutex(&s_control_mutex);
   return matched;
 }
@@ -115,10 +87,8 @@ static h2_pal_result_t configure(void *user,
       return H2_PAL_ERR_IO;
     }
     s_sequence = 0u;
-    s_cp_ready = 0;
     s_ready_requested_at = 0u;
-    s_control_state = 0u;
-    s_pending_tx_ack_valid = 0;
+    h2_bk_uart_control_tracker_init(&s_control_tracker);
     s_initialized = 1;
   }
   return H2_PAL_OK;
@@ -137,7 +107,7 @@ static h2_pal_result_t read_stream(void *user, void *buffer, size_t len,
     if (!s_initialized) {
       return H2_PAL_ERR_CLOSED;
     }
-    if (!s_cp_ready) {
+    if (!h2_bk_uart_control_tracker_is_ready(&s_control_tracker)) {
       uint32_t now = (uint32_t)rtos_get_time();
       if (s_ready_requested_at == 0u ||
           elapsed_ms(s_ready_requested_at) >= 50u) {

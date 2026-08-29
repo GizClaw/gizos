@@ -242,7 +242,11 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
            same-session status read as a reconnect boundary and verify the
            durable staged identity below instead of reporting a false send
            failure after every byte was accepted. */
-        (void)disconnect_after(config, rc);
+        h2_pal_result_t close_rc =
+            config->transport.vtable->disconnect(config->transport.user);
+        if (close_rc != H2_PAL_OK) {
+            return close_rc;
+        }
     } else {
         rc = disconnect_after(config, rc);
         if (rc != H2_PAL_OK) {

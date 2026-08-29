@@ -1288,6 +1288,7 @@ typedef struct operation_fixture {
     int bad_final_checksum;
     int stage_only;
     int fail_stage_status_once;
+    h2_pal_result_t disconnect_result;
     h2_pal_result_t stage_result;
     h2_pal_result_t activate_result;
     h2_pal_result_t rediscover_result;
@@ -1357,8 +1358,9 @@ static h2_pal_result_t operation_activate(
 }
 
 static h2_pal_result_t operation_disconnect(void *user) {
-    ++((operation_fixture_t *)user)->disconnect_count;
-    return H2_PAL_OK;
+    operation_fixture_t *fixture = user;
+    ++fixture->disconnect_count;
+    return fixture->disconnect_result;
 }
 
 static h2_pal_result_t operation_read_status(
@@ -1501,6 +1503,25 @@ static void test_managed_operation(void) {
     assert(fixture.read_status_count == 1);
     assert(strcmp(final_status.staged_checksum, package_sha) == 0);
     fixture.fail_stage_status_once = 0;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.fail_stage_status_once = 1;
+    fixture.disconnect_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_IO);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.rediscover_count == 0);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 0);
+    fixture.fail_stage_status_once = 0;
+    fixture.disconnect_result = H2_PAL_OK;
     fixture.stage_only = 0;
 
     h2_h2loader_host_upgrade_tracker_t tracker;

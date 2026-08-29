@@ -96,6 +96,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_task.c"
   "src/h2_bk_platform_queue.c"
   "src/h2_bk_platform_time.c"
+  "src/h2_bk_uart_control_tracker.c"
   "src/h2_bk_platform_uart_io_stream.c"
   "src/h2_bk_platform_crypto.c"
   "src/h2_bk_platform_dtls.c"

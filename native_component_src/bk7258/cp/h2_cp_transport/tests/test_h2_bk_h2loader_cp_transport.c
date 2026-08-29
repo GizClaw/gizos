@@ -138,6 +138,24 @@ static void test_binary_ring_partial_read_and_wrap(void) {
   assert(memcmp(output, expected, sizeof(expected)) == 0);
 }
 
+static void test_short_session_frame_survives_single_producer_push(void) {
+  uint8_t storage[32];
+  h2_bk_cp_byte_ring_t ring;
+  const uint8_t session_frame[] = {
+      0x48u, 0x32u, 0x49u, 0x4bu, 0x43u, 0x50u, 0x01u, 0x00u,
+      0x16u, 0x00u, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u,
+      0x07u, 0x08u, 0x09u, 0x0au, 0x0bu, 0x0cu,
+  };
+  uint8_t output[sizeof(session_frame)] = {0};
+
+  h2_bk_cp_byte_ring_init(&ring, storage, sizeof(storage));
+  assert(h2_bk_cp_byte_ring_push(&ring, session_frame, sizeof(session_frame)) ==
+         sizeof(session_frame));
+  assert(h2_bk_cp_byte_ring_pop(&ring, output, sizeof(output)) ==
+         sizeof(session_frame));
+  assert(memcmp(output, session_frame, sizeof(session_frame)) == 0);
+}
+
 static void test_queue_full_fails_closed(void) {
   uint8_t storage[5];
   h2_bk_cp_byte_ring_t ring;
@@ -222,6 +240,7 @@ static void test_frame_stop_while_waiting_resumes_logs_without_ack(void) {
 
 int main(void) {
   test_binary_ring_partial_read_and_wrap();
+  test_short_session_frame_survives_single_producer_push();
   test_queue_full_fails_closed();
   test_mailbox_partial_write_backpressure();
   test_mailbox_stop_while_blocked();
