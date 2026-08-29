@@ -282,16 +282,9 @@ cc_test(
 cc_binary(
     name = "_wasm/platform_web_test",
     testonly = True,
-    srcs = [
-        "src/h2_lvgl_fs_internal.h",
-        "tests/test_public_headers.c",
-    ],
+    srcs = ["tests/test_platform_web.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = [
-        "src",
-        "tests",
-    ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [":platform_web"],
 )
