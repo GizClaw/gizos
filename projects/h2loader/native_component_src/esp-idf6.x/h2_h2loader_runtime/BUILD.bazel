@@ -21,6 +21,7 @@ firmware_native_component(
         ],
     ) + [
         "//projects/h2loader/apps/loader/app:app.c",
+        "//projects/h2loader/apps/loader/app:task_names.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_boot.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",

@@ -14,6 +14,7 @@ esp_target_task_policy(
         "//libs/gizclaw:task_names",
         "//libs/pal/providers/h2peer:task_names",
         "//projects/h2loader/libs/h2loader:task_names",
+        "//projects/h2loader/apps/loader/app:task_names",
     ],
 )
 
@@ -63,10 +64,10 @@ firmware_native_component(
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/opus_port",
         "//native_component_src/esp-idf6.x/zlib",
+        "//projects/e2e/apps/gizclaw/app:task_names",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
-        "//projects/e2e/apps/gizclaw/app:task_names",
     ],
 )
 

@@ -1,5 +1,9 @@
 #include "h2_bk_target_task_policy.h"
 
+#include "h2_smoke_audio_system_task_names.h"
+#include "h2loader_app_task_names.h"
+#include "h2_loader_task_names.h"
+
 #include "h2_bk_platform_core.h"
 
 #include <assert.h>
@@ -37,19 +41,18 @@ int main(void) {
   assert(h2_bk_target_task_policy_install() == H2_PAL_OK);
   assert(s_config.task_allocator == &s_allocator);
   assert_default_policy("dynamic-default");
-  assert(get_policy("$h2loader/appcmd", &policy) == H2_PAL_OK &&
+  assert(get_policy(H2LOADER_APP_COMMAND_TASK_NAME_VALUE, &policy) == H2_PAL_OK &&
          policy.core == 0u && policy.priority == 5u &&
          policy.min_stack_size == 8192u);
-  assert(get_policy("$h2loader/uartcmd", &policy) == H2_PAL_OK &&
+  assert(get_policy(H2_LOADER_UART_COMMAND_TASK_NAME_VALUE, &policy) == H2_PAL_OK &&
          policy.core == 0u && policy.priority == 5u &&
          policy.min_stack_size == 8192u);
-  assert(get_policy("audio-system/music", &policy) == H2_PAL_OK &&
+  assert(get_policy(H2_SMOKE_AUDIO_SYSTEM_MUSIC_TASK_NAME_VALUE, &policy) == H2_PAL_OK &&
          policy.core == 1u && policy.priority == 4u &&
          policy.min_stack_size == 4096u);
-  assert(get_policy("audio-system/mic", &policy) == H2_PAL_OK &&
+  assert(get_policy(H2_SMOKE_AUDIO_SYSTEM_MIC_TASK_NAME_VALUE, &policy) == H2_PAL_OK &&
          policy.core == 1u && policy.priority == 4u &&
          policy.min_stack_size == 4096u);
-  assert_default_policy("bleikcp-speed/kcp");
   assert_default_policy("unknown");
   assert(get_policy("", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);

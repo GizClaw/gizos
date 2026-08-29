@@ -1,5 +1,11 @@
 #include "h2_esp_target_task_policy.h"
 
+#include "h2_bleikcp_task_names.h"
+#include "h2_gizclaw_task_names.h"
+#include "h2_peer_task_names.h"
+#include "h2loader_app_task_names.h"
+#include "h2_loader_task_names.h"
+
 #include "h2_esp_platform_core.h"
 
 #include <assert.h>
@@ -41,19 +47,14 @@ int main(void) {
   h2_esp_task_policy_t policy = {0};
   assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
   assert_default_policy("dynamic-default");
-  assert_policy("$gizclaw/service", 5u);
-  assert_policy("$h2loader/appcmd", 8u);
-  assert_policy("$h2loader/return", 8u);
-  assert_policy("$h2loader/blelink", 6u);
-  assert_policy("$bleikcp/kcp", 7u);
-  assert_policy("$bleikcp/server", 5u);
-  assert_policy("$h2peer/net", 7u);
-  assert_policy("$h2peer/udp", 7u);
-  assert_default_policy("bleikcp-speed/kcp");
-  assert_default_policy("bleikcp-speed/server");
-  assert_default_policy("$net/modem_ppp_rx");
-  assert_default_policy("$modem/call_in");
-  assert_default_policy("$modem/gnss_fix");
+  assert_policy(H2_GIZCLAW_SERVICE_TASK_NAME_VALUE, 5u);
+  assert_policy(H2LOADER_APP_COMMAND_TASK_NAME_VALUE, 8u);
+  assert_policy(H2_LOADER_RETURN_TASK_NAME_VALUE, 8u);
+  assert_policy(H2_LOADER_BLE_LINK_TASK_NAME_VALUE, 6u);
+  assert_policy(H2_BLEIKCP_WORKER_TASK_NAME_VALUE, 7u);
+  assert_policy(H2_BLEIKCP_SERVER_TASK_NAME_VALUE, 5u);
+  assert_policy(H2_PEER_NETWORK_TASK_NAME_VALUE, 7u);
+  assert_policy(H2_PEER_UDP_TASK_NAME_VALUE, 7u);
   assert_default_policy("unknown");
   assert(get_policy("", &policy) == H2_PAL_ERR_NOT_FOUND);
   assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);

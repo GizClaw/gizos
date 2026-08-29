@@ -77,9 +77,9 @@ int h2_bleikcp_resolve_config(
     if (out->value.setup_timeout_ms == 0u) out->value.setup_timeout_ms = 5000u;
     if (out->value.output_retry_count == 0u) out->value.output_retry_count = 5u;
     if (out->value.output_retry_delay_ms == 0u) out->value.output_retry_delay_ms = 5u;
-    if (out->value.worker_task_options.name == NULL) out->value.worker_task_options.name = h2_bleikcp_worker_task_name;
+    out->value.worker_task_options.name = h2_bleikcp_worker_task_name;
     if (out->value.worker_task_options.min_stack_size < 6u * 1024u) out->value.worker_task_options.min_stack_size = 6u * 1024u;
-    if (out->value.server_task_options.name == NULL) out->value.server_task_options.name = h2_bleikcp_server_task_name;
+    out->value.server_task_options.name = h2_bleikcp_server_task_name;
     if (out->value.server_task_options.min_stack_size < 6u * 1024u) out->value.server_task_options.min_stack_size = 6u * 1024u;
 
     if (out->value.max_datagram_len < 50u || out->value.max_datagram_len > H2_PAL_BLE_ATT_MAX_VALUE_LEN ||

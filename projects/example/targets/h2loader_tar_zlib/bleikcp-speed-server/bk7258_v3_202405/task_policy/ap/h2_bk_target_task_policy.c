@@ -2,6 +2,7 @@
 
 #include "h2_bleikcp_speed_task_names.h"
 
+#include "h2loader_app_task_names.h"
 #include "h2_loader_task_names.h"
 
 #include "h2_bk_platform_core.h"
@@ -35,15 +36,15 @@ handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
 }
 
 static const h2_trie_route_t s_routes[] = {
-    {h2_loader_app_command_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_h2loader_policy},
-    {h2_loader_uart_command_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2LOADER_APP_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_h2loader_policy},
+    {H2_LOADER_UART_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_h2loader_policy},
     {h2_bleikcp_speed_task_prefix, H2_TRIE_ROUTE_PREFIX, handle_policy, &s_speed_policy},
 };
 
 enum {
-  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(h2_loader_app_command_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_loader_uart_command_task_name) +
+  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2LOADER_APP_COMMAND_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_UART_COMMAND_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(h2_bleikcp_speed_task_prefix),
 };
 

@@ -6,6 +6,7 @@ set(H2_BK_H2LOADER_SRCS
   "src/h2_bk_h2loader_iostreamikcp.c"
   "src/h2_bk_h2loader_ota_writer.c"
   "src/h2_bk_h2loader_power.c"
+  "${REPO_ROOT}/projects/h2loader/apps/loader/app/task_names.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_app_client.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_ble.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_boot.c"
@@ -39,6 +40,7 @@ armino_component_register(
   SRCS ${H2_COMPONENT_SOURCES}
   INCLUDE_DIRS
     "include"
+    "${REPO_ROOT}/projects/h2loader/apps/loader/app/include"
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/libs/bundle/include"
     "${REPO_ROOT}/libs/command/include"

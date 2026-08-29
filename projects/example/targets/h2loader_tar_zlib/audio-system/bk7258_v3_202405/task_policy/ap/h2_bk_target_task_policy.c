@@ -2,6 +2,7 @@
 
 #include "h2_smoke_audio_system_task_names.h"
 
+#include "h2loader_app_task_names.h"
 #include "h2_loader_task_names.h"
 
 #include "h2_bk_platform_core.h"
@@ -35,18 +36,18 @@ handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
 }
 
 static const h2_trie_route_t s_routes[] = {
-    {h2_loader_app_command_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_h2loader_policy},
-    {h2_loader_uart_command_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2LOADER_APP_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_h2loader_policy},
+    {H2_LOADER_UART_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_h2loader_policy},
-    {h2_smoke_audio_system_music_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_audio_policy},
-    {h2_smoke_audio_system_mic_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_audio_policy},
+    {H2_SMOKE_AUDIO_SYSTEM_MUSIC_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_audio_policy},
+    {H2_SMOKE_AUDIO_SYSTEM_MIC_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_audio_policy},
 };
 
 enum {
-  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(h2_loader_app_command_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_loader_uart_command_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_smoke_audio_system_music_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_smoke_audio_system_mic_task_name),
+  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2LOADER_APP_COMMAND_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_UART_COMMAND_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_SMOKE_AUDIO_SYSTEM_MUSIC_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_SMOKE_AUDIO_SYSTEM_MIC_TASK_NAME_VALUE),
 };
 
 static h2_trie_node_t s_route_nodes[ROUTE_NODE_CAPACITY];

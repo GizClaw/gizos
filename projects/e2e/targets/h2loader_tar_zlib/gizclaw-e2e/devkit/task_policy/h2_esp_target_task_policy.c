@@ -5,6 +5,7 @@
 
 #include "h2_peer_task_names.h"
 
+#include "h2loader_app_task_names.h"
 #include "h2_loader_task_names.h"
 
 #include "h2_esp_platform_core.h"
@@ -36,30 +37,30 @@ handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
 }
 
 static const h2_trie_route_t s_routes[] = {
-    {h2_gizclaw_service_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2_GIZCLAW_SERVICE_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_5_policy},
-    {h2_loader_app_command_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2LOADER_APP_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_8_policy},
-    {h2_loader_return_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2_LOADER_RETURN_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_8_policy},
-    {h2_loader_ble_link_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2_LOADER_BLE_LINK_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_6_policy},
-    {h2_bleikcp_worker_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
-    {h2_bleikcp_server_task_name, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2_BLEIKCP_WORKER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
+    {H2_BLEIKCP_SERVER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_5_policy},
-    {h2_peer_network_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
-    {h2_peer_udp_task_name, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
+    {H2_PEER_NETWORK_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
+    {H2_PEER_UDP_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
 };
 
 enum {
-  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(h2_gizclaw_service_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_loader_app_command_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_loader_return_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_loader_ble_link_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_bleikcp_worker_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_bleikcp_server_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_peer_network_task_name) +
-                        H2_TRIE_LITERAL_NODE_COUNT(h2_peer_udp_task_name),
+  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2_GIZCLAW_SERVICE_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2LOADER_APP_COMMAND_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_RETURN_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_BLE_LINK_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_BLEIKCP_WORKER_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_BLEIKCP_SERVER_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_PEER_NETWORK_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_PEER_UDP_TASK_NAME_VALUE),
 };
 
 static h2_trie_node_t s_route_nodes[ROUTE_NODE_CAPACITY];

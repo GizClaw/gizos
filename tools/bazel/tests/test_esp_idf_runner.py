@@ -503,12 +503,18 @@ class EspIdfRunnerTest(unittest.TestCase):
             "zeta": [Path("/repo/zeta_b.c"), Path("/repo/zeta_a.c")],
             "alpha": [Path("/repo/alpha.c")],
         }
+        includes = {
+            "zeta": [Path("/repo/zeta/include")],
+            "alpha": [Path("/repo/alpha/include")],
+        }
         manifest = runner.render_native_component_manifest(
-            "fixture-board", components, sources
+            "fixture-board", components, sources, includes
         )
         self.assertLess(manifest.index("/components/alpha"), manifest.index("/components/zeta"))
         self.assertLess(manifest.index("/repo/zeta_a.c"), manifest.index("/repo/zeta_b.c"))
         self.assertIn('set(H2_BAZEL_BOARD "fixture-board")', manifest)
+        self.assertIn("H2_BAZEL_COMPONENT_INCLUDES_ALPHA", manifest)
+        self.assertIn('/repo/alpha/include"', manifest)
 
     def test_native_component_manifest_rejects_undeclared_source_owner(self):
         with self.assertRaisesRegex(
@@ -518,6 +524,7 @@ class EspIdfRunnerTest(unittest.TestCase):
                 "fixture-board",
                 {"main": Path("/components/main")},
                 {"missing": [Path("/repo/missing.c")]},
+                {},
             )
 
     def test_native_component_sources_reject_duplicate_owners(self):

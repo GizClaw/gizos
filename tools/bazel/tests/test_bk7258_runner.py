@@ -84,8 +84,12 @@ if mode == "native-graph":
         "/components/cp/h2_transport\"",
         "H2_BAZEL_COMPONENT_SRCS_AP_H2_BOARD",
         "/components/board/board.c\"",
+        "H2_BAZEL_COMPONENT_INCLUDES_AP_H2_BOARD",
+        "/components/board/include\"",
         "H2_BAZEL_COMPONENT_SRCS_CP_H2_TRANSPORT",
         "/components/transport/transport.c\"",
+        "H2_BAZEL_COMPONENT_INCLUDES_CP_H2_TRANSPORT",
+        "/components/transport/include\"",
     )
     for value in expected:
         if value not in manifest_text:
@@ -472,6 +476,8 @@ class Bk7258RunnerTest(unittest.TestCase):
                     "ap:h2_board=components/board/CMakeLists.txt",
                     "--native-component-file",
                     "ap:h2_board=components/board/include/component.h",
+                    "--native-component-include",
+                    "ap:h2_board=components/board/include",
                     "--native-component-source",
                     "ap:h2_board=components/board/board.c",
                     "--native-component",
@@ -480,6 +486,8 @@ class Bk7258RunnerTest(unittest.TestCase):
                     "cp:h2_transport=components/transport/CMakeLists.txt",
                     "--native-component-file",
                     "cp:h2_transport=components/transport/include/component.h",
+                    "--native-component-include",
+                    "cp:h2_transport=components/transport/include",
                     "--native-component-source",
                     "cp:h2_transport=components/transport/transport.c",
                 ]

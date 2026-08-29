@@ -1,5 +1,6 @@
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
+#include "h2loader_app_task_names.h"
 #include "h2_loader_task_names.h"
 
 #include "h2_bk_platform_core.h"
@@ -466,7 +467,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
     return rc;
   }
   const h2_pal_task_options_t options = {
-      .name = h2_loader_app_command_task_name,
+      .name = h2loader_app_command_task_name,
       .min_stack_size = H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE,
   };
   rc = h2_pal_task_start(runtime->task, &options, loader_serial_task, state,

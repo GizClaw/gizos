@@ -9,6 +9,7 @@ package(default_visibility = ["//visibility:public"])
 bk7258_target_task_policy(
     ap_task_name_deps = [
         "//projects/h2loader/libs/h2loader:task_names",
+        "//projects/h2loader/apps/loader/app:task_names",
         "//projects/example/apps/audio-system/app:task_names",
     ],
 )
