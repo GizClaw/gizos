@@ -92,10 +92,10 @@ static h2_pal_result_t fake_scan_probe_candidate(
     }
     strcpy(out_status->board, "tiga");
     strcpy(out_status->target, "esp32s3");
-    strcpy(out_status->active_name, "h2loader");
     strcpy(out_status->active_version,
         strcmp(candidate->port_id, "port-a") == 0 ? "v1" : "v2");
-    out_status->states = UINT64_C(0x0000000000010915);
+    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
     return H2_PAL_OK;
 }
 

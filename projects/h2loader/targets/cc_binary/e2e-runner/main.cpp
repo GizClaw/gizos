@@ -310,6 +310,37 @@ void progress_event(void *user, const h2_h2loader_e2e_case_result_t *result) {
   std::fflush(stdout);
 }
 
+const char *status_role_name(h2_h2loader_host_active_role_t role) {
+  if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP)
+    return "app";
+  if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER)
+    return "loader";
+  return "unknown";
+}
+
+const char *boot_intent_name(h2_h2loader_host_boot_intent_t intent) {
+  if (intent == H2_H2LOADER_HOST_BOOT_INTENT_LOADER)
+    return "loader";
+  if (intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO)
+    return "auto";
+  return "unknown";
+}
+
+void write_metadata(std::ostream &output,
+                    const h2_h2loader_host_metadata_t &metadata) {
+  output << "{\"valid\": " << (metadata.valid != 0u ? "true" : "false")
+         << ", \"package_checksum\": \""
+         << json_escape(metadata.package_checksum)
+         << "\", \"package_size\": " << metadata.package_size
+         << ", \"image_checksum\": \""
+         << json_escape(metadata.image_checksum)
+         << "\", \"image_size\": " << metadata.image_size
+         << ", \"role\": \"" << status_role_name(metadata.role)
+         << "\", \"version\": \"" << json_escape(metadata.version)
+         << "\", \"board\": \"" << json_escape(metadata.board)
+         << "\", \"target\": \"" << json_escape(metadata.target) << "\"}";
+}
+
 bool write_report(const std::filesystem::path &path, const Options &options,
                   const h2_h2loader_e2e_result_t &result) {
   if (path.empty())
@@ -359,9 +390,22 @@ bool write_report(const std::filesystem::path &path, const Options &options,
              << "\", \"chip\": \"" << json_escape(entry.status.chip)
              << "\", \"capabilities\": " << entry.status.capabilities
              << ", \"command_availability\": "
-             << entry.status.command_availability << ", \"states\": \"0x"
-             << std::hex << std::setw(16) << std::setfill('0')
-             << entry.status.states << std::dec << "\"}";
+             << entry.status.command_availability << ", \"active_role\": \""
+             << status_role_name(entry.status.active_role)
+             << "\", \"active_version\": \""
+             << json_escape(entry.status.active_version)
+             << "\", \"active_checksum\": \""
+             << json_escape(entry.status.active_checksum)
+             << "\", \"running_partition\": "
+             << entry.status.running_partition << ", \"next_partition\": "
+             << entry.status.next_partition << ", \"boot_intent\": \""
+             << boot_intent_name(entry.status.boot_intent) << "\", \"stage\": ";
+      write_metadata(output, entry.status.stage);
+      output << ", \"partition_1\": ";
+      write_metadata(output, entry.status.partition_1);
+      output << ", \"partition_2\": ";
+      write_metadata(output, entry.status.partition_2);
+      output << ", \"last_result\": " << entry.status.last << "}";
     } else {
       output << "null";
     }

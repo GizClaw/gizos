@@ -89,7 +89,7 @@ typedef struct command_test_io {
     const char *input;
     size_t input_len;
     size_t input_offset;
-    char output[512];
+    char output[H2_LOADER_STATUS_LINE_MAX + 512u];
     size_t output_len;
     size_t writes;
     size_t flushes;
@@ -2549,7 +2549,16 @@ static void test_mfg_summary_validation_and_status_format(void) {
                    "H2_LOADER_STATUS board=format-board target=format-target "
                    "chip=format-chip capabilities=0x00000001 "
                    "command_availability=0x00000008 ")) == 0);
-    assert(strstr(output, "states=0x") != NULL);
+    assert(strstr(output, " active_role=app ") != NULL);
+    assert(strstr(output, " boot_intent=unknown ") != NULL);
+    assert(strstr(output, " stage_valid=0 ") != NULL);
+    assert(strstr(output, " partition_1_valid=0 ") != NULL);
+    assert(strstr(output, " partition_2_valid=0 ") != NULL);
+    assert(strstr(output, " mfg_mode=2 mfg_steps=") != NULL);
+    assert(strstr(output, "states=") == NULL);
+    assert(strstr(output, "install_state=") == NULL);
+    assert(strstr(output, "manual_hold=") == NULL);
+    assert(strstr(output, "upgrade_step=") == NULL);
     assert(h2_loader_states_pack(&status, &status.states) == H2_PAL_OK);
     assert(h2_loader_states_app_confirmed(status.states));
     assert(h2_loader_states_mfg_step(status.states, 0u) ==
@@ -2643,6 +2652,20 @@ static void test_status_format_fits_shared_line_capacity(void) {
         sizeof(status.loader_upgrade_step) - 1u);
     memset(status.loader_upgrade.candidate.image_sha256, '0',
         sizeof(status.loader_upgrade.candidate.image_sha256) - 1u);
+    status.stage.valid = 1;
+    status.stage.role = H2_LOADER_IMAGE_ROLE_APP;
+    status.stage.package_size = UINT64_MAX;
+    status.stage.image_size = UINT64_MAX;
+    memset(status.stage.package_checksum, '1',
+        sizeof(status.stage.package_checksum) - 1u);
+    memset(status.stage.image_checksum, '2',
+        sizeof(status.stage.image_checksum) - 1u);
+    memset(status.stage.version, '3', sizeof(status.stage.version) - 1u);
+    memset(status.stage.board, '4', sizeof(status.stage.board) - 1u);
+    memset(status.stage.target, '5', sizeof(status.stage.target) - 1u);
+    status.partition_1 = status.stage;
+    status.partition_1.role = H2_LOADER_IMAGE_ROLE_H2LOADER;
+    status.partition_2 = status.stage;
     status.mfg = (h2_loader_mfg_summary_t){
         .total = H2_LOADER_MFG_STEP_TOTAL,
     };
@@ -2653,7 +2676,10 @@ static void test_status_format_fits_shared_line_capacity(void) {
     assert(h2_loader_status_format(&status, output, sizeof(output)) == H2_PAL_OK);
     assert(strstr(
         output, "command_availability=0x00000003") != NULL);
-    assert(strstr(output, "states=0x") != NULL);
+    assert(strstr(output, "stage_valid=1") != NULL);
+    assert(strstr(output, "partition_1_valid=1") != NULL);
+    assert(strstr(output, "partition_2_valid=1") != NULL);
+    assert(strstr(output, "states=") == NULL);
 }
 
 static void test_command_availability_flags(void) {

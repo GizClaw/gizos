@@ -228,9 +228,9 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
              strcmp(status.target, config->asset->target) != 0 ||
              h2_h2loader_host_status_active_role(&status) !=
                  H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-             !h2_h2loader_host_status_staged_valid(&status) ||
-             status.staged_bytes != config->asset->bytes ||
-             strcmp(status.staged_checksum, config->asset->sha256) != 0)) {
+             !status.stage.valid ||
+             status.stage.package_size != config->asset->bytes ||
+             strcmp(status.stage.package_checksum, config->asset->sha256) != 0)) {
             rc = H2_PAL_ERR_INVALID_STATE;
         }
         if (rc == H2_PAL_OK) {
@@ -282,78 +282,13 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
             strcmp(status.target, config->asset->target) == 0 &&
             h2_h2loader_host_status_active_role(&status) ==
                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
-            h2_h2loader_host_status_staged_valid(&status) &&
-            status.staged_bytes == config->asset->bytes &&
-            strcmp(status.staged_checksum, config->asset->sha256) == 0) {
+            status.stage.valid &&
+            status.stage.package_size == config->asset->bytes &&
+            strcmp(status.stage.package_checksum, config->asset->sha256) == 0) {
             *out_final_status = status;
             return disconnect_after(config, H2_PAL_OK);
         }
         rc = disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
     }
     return rc;
-}
-
-h2_pal_result_t h2_h2loader_host_upgrade_tracker_init(
-    const h2_h2loader_host_status_t *status,
-    h2_h2loader_host_upgrade_tracker_t *out_tracker) {
-    if (out_tracker != NULL) {
-        memset(out_tracker, 0, sizeof(*out_tracker));
-    }
-    if (status == NULL || out_tracker == NULL ||
-        h2_h2loader_host_status_active_role(status) !=
-            H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-        !h2_h2loader_host_status_staged_valid(status) ||
-        !h2_h2loader_host_is_safe_identity(status->board) ||
-        !h2_h2loader_host_is_safe_identity(status->target) ||
-        !h2_h2loader_host_is_sha256(status->staged_checksum)) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memcpy(out_tracker->board, status->board, strlen(status->board) + 1u);
-    memcpy(out_tracker->target, status->target, strlen(status->target) + 1u);
-    memcpy(
-        out_tracker->package_sha256,
-        status->staged_checksum,
-        strlen(status->staged_checksum) + 1u);
-    return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_h2loader_host_upgrade_tracker_observe(
-    h2_h2loader_host_upgrade_tracker_t *tracker,
-    const h2_h2loader_host_status_t *status) {
-    if (tracker == NULL || status == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (!h2_h2loader_host_is_safe_identity(status->board) ||
-        !h2_h2loader_host_is_safe_identity(status->target) ||
-        h2_h2loader_host_status_upgrade_phase(status) == 0u ||
-        (status->upgrade_package_sha256[0] != '\0' &&
-         !h2_h2loader_host_is_sha256(status->upgrade_package_sha256))) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (strcmp(status->board, tracker->board) != 0 ||
-        strcmp(status->target, tracker->target) != 0 ||
-        h2_h2loader_host_status_active_role(status) !=
-            H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    if (status->upgrade_last != 0 ||
-        h2_h2loader_host_status_upgrade_phase(status) == 5u ||
-        h2_h2loader_host_status_upgrade_phase(status) == 6u) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    if (h2_h2loader_host_status_upgrade_phase(status) == 2u ||
-        h2_h2loader_host_status_upgrade_phase(status) == 3u ||
-        h2_h2loader_host_status_upgrade_phase(status) == 4u) {
-        tracker->observed_transition = 1u;
-        return H2_PAL_ERR_WOULD_BLOCK;
-    }
-    if (h2_h2loader_host_status_upgrade_phase(status) == 1u &&
-        tracker->observed_transition != 0u &&
-        !h2_h2loader_host_status_staged_valid(status) &&
-        strcmp(
-            status->upgrade_package_sha256,
-            tracker->package_sha256) == 0) {
-        return H2_PAL_OK;
-    }
-    return H2_PAL_ERR_WOULD_BLOCK;
 }

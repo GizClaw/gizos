@@ -26,6 +26,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
 #define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 230400u
+#define H2_H2LOADER_HOST_MFG_STEP_TOTAL 22u
 #define H2_H2LOADER_HOST_CAPABILITY_UART (UINT32_C(1) << 0)
 #define H2_H2LOADER_HOST_CAPABILITY_WIFI (UINT32_C(1) << 1)
 #define H2_H2LOADER_HOST_CAPABILITY_BLE (UINT32_C(1) << 2)
@@ -75,59 +76,53 @@ typedef enum h2_h2loader_host_active_role {
     H2_H2LOADER_HOST_ACTIVE_ROLE_APP = 2,
 } h2_h2loader_host_active_role_t;
 
+typedef enum h2_h2loader_host_boot_intent {
+    H2_H2LOADER_HOST_BOOT_INTENT_UNKNOWN = 0,
+    H2_H2LOADER_HOST_BOOT_INTENT_LOADER = 1,
+    H2_H2LOADER_HOST_BOOT_INTENT_AUTO = 2,
+} h2_h2loader_host_boot_intent_t;
+
+typedef struct h2_h2loader_host_metadata {
+    char package_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    char image_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    char version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    uint64_t package_size;
+    uint64_t image_size;
+    h2_h2loader_host_active_role_t role;
+    uint8_t valid;
+} h2_h2loader_host_metadata_t;
+
 typedef struct h2_h2loader_host_status {
     char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char chip[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char active_name[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char installed_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char installed_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char staged_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char staged_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char upgrade_step[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char upgrade_package_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    char candidate_board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char candidate_target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char candidate_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char candidate_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    h2_h2loader_host_metadata_t stage;
+    h2_h2loader_host_metadata_t partition_1;
+    h2_h2loader_host_metadata_t partition_2;
+    h2_h2loader_host_active_role_t active_role;
+    h2_h2loader_host_boot_intent_t boot_intent;
+    uint32_t mfg_mode;
+    uint8_t mfg_steps[H2_H2LOADER_HOST_MFG_STEP_TOTAL];
     uint32_t capabilities;
     uint32_t command_availability;
-    uint64_t states;
     uint32_t running_partition;
     uint32_t next_partition;
-    uint32_t canonical_partition;
-    uint32_t trial_partition;
-    uint64_t staged_bytes;
-    uint64_t candidate_bytes;
     int32_t last;
-    int32_t upgrade_last;
 } h2_h2loader_host_status_t;
 
 h2_h2loader_host_active_role_t h2_h2loader_host_status_active_role(
     const h2_h2loader_host_status_t *status);
 uint32_t h2_h2loader_host_status_boot_intent(
     const h2_h2loader_host_status_t *status);
-uint32_t h2_h2loader_host_status_install_state(
-    const h2_h2loader_host_status_t *status);
-uint32_t h2_h2loader_host_status_upgrade_phase(
-    const h2_h2loader_host_status_t *status);
 uint32_t h2_h2loader_host_status_mfg_mode(
     const h2_h2loader_host_status_t *status);
 uint32_t h2_h2loader_host_status_mfg_step(
     const h2_h2loader_host_status_t *status,
     uint32_t index);
-int h2_h2loader_host_status_flags_known(
-    const h2_h2loader_host_status_t *status);
-int h2_h2loader_host_status_app_confirmed(
-    const h2_h2loader_host_status_t *status);
-int h2_h2loader_host_status_manual_hold(
-    const h2_h2loader_host_status_t *status);
-int h2_h2loader_host_status_installed_valid(
-    const h2_h2loader_host_status_t *status);
-int h2_h2loader_host_status_staged_valid(
-    const h2_h2loader_host_status_t *status);
 
 typedef struct h2_h2loader_host_candidate {
     h2_h2loader_host_transport_t transport;
@@ -560,27 +555,6 @@ h2_pal_result_t h2_h2loader_host_managed_operation_run(
 h2_pal_result_t h2_h2loader_host_stage_operation_run(
     const h2_h2loader_host_managed_operation_config_t *config,
     h2_h2loader_host_status_t *out_final_status);
-
-typedef struct h2_h2loader_host_upgrade_tracker {
-    char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
-    char package_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
-    uint8_t observed_transition;
-} h2_h2loader_host_upgrade_tracker_t;
-
-/** Initialize final-state tracking from the authoritative staged Loader. */
-h2_pal_result_t h2_h2loader_host_upgrade_tracker_init(
-    const h2_h2loader_host_status_t *status,
-    h2_h2loader_host_upgrade_tracker_t *out_tracker);
-
-/**
- * Observe one reconnected status. Returns OK only for the completed candidate,
- * WOULD_BLOCK while the transition is pending, and INVALID_STATE on failure or
- * identity mismatch.
- */
-h2_pal_result_t h2_h2loader_host_upgrade_tracker_observe(
-    h2_h2loader_host_upgrade_tracker_t *tracker,
-    const h2_h2loader_host_status_t *status);
 
 #ifdef __cplusplus
 }

@@ -14,7 +14,7 @@
 #define H2_WEB_JOB_COUNT 24u
 #define H2_WEB_JOB_STACK_SIZE (128u * 1024u)
 #define H2_WEB_BLOB_SLICE_MAX (64u * 1024u)
-#define H2_WEB_JSON_SIZE 12288u
+#define H2_WEB_JSON_SIZE 32768u
 #define H2_WEB_ERROR_DETAIL_SIZE 256u
 // reboot-upgrade may install the staged image before acknowledging, so its
 // command read needs headroom: read timeout = command_timeout_ms + 30000.

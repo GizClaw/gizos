@@ -4,7 +4,6 @@ export {
   H2LoaderCapabilities,
   H2LoaderCommands,
   commandAvailable,
-  decodeH2LoaderStates,
 } from "./h2loader_protocol.js";
 
 const WOULD_BLOCK = -9;

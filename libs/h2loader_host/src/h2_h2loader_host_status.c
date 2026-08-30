@@ -3,6 +3,7 @@
 #include "h2_h2loader_host_internal.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -217,83 +218,192 @@ static int copy_field(
     return h2_h2loader_host_copy_text(out, out_size, value, len);
 }
 
-#define H2_STATES_ROLE_MASK UINT64_C(0x3)
-#define H2_STATES_INTENT_MASK (UINT64_C(0x3) << 2u)
-#define H2_STATES_INSTALL_MASK (UINT64_C(0xf) << 4u)
-#define H2_STATES_UPGRADE_MASK (UINT64_C(0x7) << 8u)
-#define H2_STATES_FLAGS_KNOWN (UINT64_C(1) << 11u)
-#define H2_STATES_APP_CONFIRMED (UINT64_C(1) << 12u)
-#define H2_STATES_MANUAL_HOLD (UINT64_C(1) << 13u)
-#define H2_STATES_INSTALLED_VALID (UINT64_C(1) << 14u)
-#define H2_STATES_STAGED_VALID (UINT64_C(1) << 15u)
-#define H2_STATES_MFG_MASK (UINT64_C(0x3) << 16u)
-#define H2_STATES_RESERVED_MASK (UINT64_C(0x3) << 62u)
+static int copy_optional_field(
+    const char **cursor,
+    const char *name,
+    char *out,
+    size_t out_size) {
+    const char *value;
+    size_t len;
+    if (!take_field(cursor, name, &value, &len)) return 0;
+    if (len == 1u && value[0] == '-') {
+        out[0] = '\0';
+        return 1;
+    }
+    return h2_h2loader_host_copy_text(out, out_size, value, len);
+}
 
-static uint32_t state_field(uint64_t states, uint64_t mask, uint32_t shift) {
-    return (uint32_t)((states & mask) >> shift);
+static int parse_role_value(
+    const char *value,
+    size_t len,
+    h2_h2loader_host_active_role_t *out_role) {
+    if (len == 3u && strncmp(value, "app", len) == 0) {
+        *out_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+        return 1;
+    }
+    if (len == 6u && strncmp(value, "loader", len) == 0) {
+        *out_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+        return 1;
+    }
+    if (len == 7u && strncmp(value, "unknown", len) == 0) {
+        *out_role = H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN;
+        return 1;
+    }
+    return 0;
+}
+
+static int parse_metadata_field(
+    const char **cursor,
+    const char *prefix,
+    h2_h2loader_host_metadata_t *out) {
+    char name[64];
+    const char *value;
+    size_t len;
+    uint32_t valid;
+#define META_NAME(suffix) \
+    do { \
+        if (snprintf(name, sizeof(name), "%s_%s", prefix, suffix) < 0 || \
+            strlen(name) >= sizeof(name)) return 0; \
+    } while (0)
+    META_NAME("valid");
+    if (!take_field(cursor, name, &value, &len) ||
+        !parse_u32(value, len, &valid) || valid > 1u) return 0;
+    out->valid = (uint8_t)valid;
+    META_NAME("package_checksum");
+    if (!copy_optional_field(cursor, name, out->package_checksum,
+            sizeof(out->package_checksum))) return 0;
+    META_NAME("package_size");
+    if (!take_field(cursor, name, &value, &len) ||
+        !parse_decimal_u64(value, len, &out->package_size)) return 0;
+    META_NAME("image_checksum");
+    if (!copy_optional_field(cursor, name, out->image_checksum,
+            sizeof(out->image_checksum))) return 0;
+    META_NAME("image_size");
+    if (!take_field(cursor, name, &value, &len) ||
+        !parse_decimal_u64(value, len, &out->image_size)) return 0;
+    META_NAME("role");
+    if (!take_field(cursor, name, &value, &len) ||
+        !parse_role_value(value, len, &out->role)) return 0;
+    META_NAME("version");
+    if (!copy_optional_field(cursor, name, out->version,
+            sizeof(out->version))) return 0;
+    META_NAME("board");
+    if (!copy_optional_field(cursor, name, out->board,
+            sizeof(out->board))) return 0;
+    META_NAME("target");
+    if (!copy_optional_field(cursor, name, out->target,
+            sizeof(out->target))) return 0;
+#undef META_NAME
+    return 1;
 }
 
 h2_h2loader_host_active_role_t h2_h2loader_host_status_active_role(
     const h2_h2loader_host_status_t *status) {
-    return status == NULL ? H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN :
-        (h2_h2loader_host_active_role_t)state_field(
-            status->states, H2_STATES_ROLE_MASK, 0u);
+    return status == NULL
+        ? H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN
+        : status->active_role;
 }
 uint32_t h2_h2loader_host_status_boot_intent(const h2_h2loader_host_status_t *status) {
-    return status == NULL ? 0u : state_field(status->states, H2_STATES_INTENT_MASK, 2u);
-}
-uint32_t h2_h2loader_host_status_install_state(const h2_h2loader_host_status_t *status) {
-    return status == NULL ? 0u : state_field(status->states, H2_STATES_INSTALL_MASK, 4u);
-}
-uint32_t h2_h2loader_host_status_upgrade_phase(const h2_h2loader_host_status_t *status) {
-    return status == NULL ? 0u : state_field(status->states, H2_STATES_UPGRADE_MASK, 8u);
+    return status == NULL ? 0u : (uint32_t)status->boot_intent;
 }
 uint32_t h2_h2loader_host_status_mfg_mode(const h2_h2loader_host_status_t *status) {
-    return status == NULL ? 0u : state_field(status->states, H2_STATES_MFG_MASK, 16u);
+    return status == NULL ? 0u : status->mfg_mode;
 }
 uint32_t h2_h2loader_host_status_mfg_step(
     const h2_h2loader_host_status_t *status, uint32_t index) {
-    return status == NULL || index >= 22u ? UINT32_MAX :
-        state_field(status->states, UINT64_C(0x3) << (18u + index * 2u),
-                    18u + index * 2u);
-}
-int h2_h2loader_host_status_flags_known(const h2_h2loader_host_status_t *status) {
-    return status != NULL && (status->states & H2_STATES_FLAGS_KNOWN) != 0u;
-}
-int h2_h2loader_host_status_app_confirmed(const h2_h2loader_host_status_t *status) {
-    return status != NULL && (status->states & H2_STATES_APP_CONFIRMED) != 0u;
-}
-int h2_h2loader_host_status_manual_hold(const h2_h2loader_host_status_t *status) {
-    return status != NULL && (status->states & H2_STATES_MANUAL_HOLD) != 0u;
-}
-int h2_h2loader_host_status_installed_valid(const h2_h2loader_host_status_t *status) {
-    return status != NULL && (status->states & H2_STATES_INSTALLED_VALID) != 0u;
-}
-int h2_h2loader_host_status_staged_valid(const h2_h2loader_host_status_t *status) {
-    return status != NULL && (status->states & H2_STATES_STAGED_VALID) != 0u;
+    return status == NULL || index >= H2_H2LOADER_HOST_MFG_STEP_TOTAL
+        ? UINT32_MAX : status->mfg_steps[index];
 }
 
-static int states_valid(uint64_t states) {
-    const uint64_t lifecycle = H2_STATES_APP_CONFIRMED |
-        H2_STATES_MANUAL_HOLD | H2_STATES_INSTALLED_VALID |
-        H2_STATES_STAGED_VALID;
-    const uint32_t role = state_field(states, H2_STATES_ROLE_MASK, 0u);
-    const uint32_t intent = state_field(states, H2_STATES_INTENT_MASK, 2u);
-    const uint32_t install = state_field(states, H2_STATES_INSTALL_MASK, 4u);
-    const uint32_t upgrade = state_field(states, H2_STATES_UPGRADE_MASK, 8u);
-    const uint32_t mfg = state_field(states, H2_STATES_MFG_MASK, 16u);
-    if ((states & H2_STATES_RESERVED_MASK) != 0u || role == 0u || role == 3u ||
-        intent == 3u || install > 9u || upgrade > 6u || mfg == 0u || mfg == 3u ||
-        ((states & H2_STATES_FLAGS_KNOWN) == 0u && (states & lifecycle) != 0u)) {
+static int metadata_valid(
+    const h2_h2loader_host_metadata_t *metadata,
+    int stage) {
+    if ((metadata->package_checksum[0] != '\0' &&
+         !h2_h2loader_host_is_sha256(metadata->package_checksum)) ||
+        (metadata->image_checksum[0] != '\0' &&
+         !h2_h2loader_host_is_sha256(metadata->image_checksum)) ||
+        (metadata->version[0] != '\0' &&
+         !h2_h2loader_host_is_safe_identity(metadata->version)) ||
+        (metadata->board[0] != '\0' &&
+         !h2_h2loader_host_is_safe_identity(metadata->board)) ||
+        (metadata->target[0] != '\0' &&
+         !h2_h2loader_host_is_safe_identity(metadata->target))) {
         return 0;
     }
-    if (mfg != 2u) {
-        for (uint32_t i = 0u; i < 22u; ++i) {
-            if (state_field(states, UINT64_C(0x3) << (18u + i * 2u),
-                            18u + i * 2u) != 0u) return 0;
+    if (!metadata->valid) return 1;
+    return metadata->image_checksum[0] != '\0' && metadata->image_size != 0u &&
+        metadata->role != H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN &&
+        metadata->version[0] != '\0' && metadata->board[0] != '\0' &&
+        metadata->target[0] != '\0' &&
+        (!stage || (metadata->package_checksum[0] != '\0' &&
+                    metadata->package_size != 0u));
+}
+
+static h2_pal_result_t parse_status_v2(
+    const char *cursor,
+    h2_h2loader_host_status_t *out_status) {
+    const char *value;
+    size_t len;
+
+    if (!take_field(&cursor, "active_role", &value, &len) ||
+        !parse_role_value(value, len, &out_status->active_role) ||
+        !copy_optional_field(&cursor, "active_version",
+            out_status->active_version, sizeof(out_status->active_version)) ||
+        !copy_optional_field(&cursor, "active_checksum",
+            out_status->active_checksum, sizeof(out_status->active_checksum)) ||
+        !take_field(&cursor, "running_partition", &value, &len) ||
+        !parse_u32(value, len, &out_status->running_partition) ||
+        !take_field(&cursor, "next_partition", &value, &len) ||
+        !parse_u32(value, len, &out_status->next_partition) ||
+        !take_field(&cursor, "boot_intent", &value, &len)) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    if (len == 6u && strncmp(value, "loader", len) == 0) {
+        out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_LOADER;
+    } else if (len == 4u && strncmp(value, "auto", len) == 0) {
+        out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    } else {
+        return H2_PAL_ERR_FORMAT;
+    }
+    if (!parse_metadata_field(&cursor, "stage", &out_status->stage) ||
+        !parse_metadata_field(&cursor, "partition_1", &out_status->partition_1) ||
+        !parse_metadata_field(&cursor, "partition_2", &out_status->partition_2) ||
+        !take_field(&cursor, "last_result", &value, &len) ||
+        !parse_i32(value, len, &out_status->last) ||
+        !take_field(&cursor, "mfg_mode", &value, &len) ||
+        !parse_u32(value, len, &out_status->mfg_mode) ||
+        (out_status->mfg_mode != 1u && out_status->mfg_mode != 2u) ||
+        !take_field(&cursor, "mfg_steps", &value, &len) ||
+        len != H2_H2LOADER_HOST_MFG_STEP_TOTAL) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    for (size_t index = 0u; index < len; ++index) {
+        if (value[index] < '0' || value[index] > '3') return H2_PAL_ERR_FORMAT;
+        out_status->mfg_steps[index] = (uint8_t)(value[index] - '0');
+        if (out_status->mfg_mode == 1u && out_status->mfg_steps[index] != 0u) {
+            return H2_PAL_ERR_FORMAT;
         }
     }
-    return 1;
+    if (*cursor == '\r') ++cursor;
+    if (*cursor == '\n') ++cursor;
+    if (*cursor != '\0' ||
+        out_status->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_UNKNOWN ||
+        (out_status->running_partition != 1u &&
+         out_status->running_partition != 2u) ||
+        (out_status->next_partition != 1u &&
+         out_status->next_partition != 2u) ||
+        !h2_h2loader_host_is_safe_identity(out_status->board) ||
+        !h2_h2loader_host_is_safe_identity(out_status->target) ||
+        !h2_h2loader_host_is_safe_identity(out_status->chip) ||
+        !h2_h2loader_host_is_safe_identity(out_status->active_version) ||
+        !h2_h2loader_host_is_sha256(out_status->active_checksum) ||
+        !metadata_valid(&out_status->stage, 1) ||
+        !metadata_valid(&out_status->partition_1, 0) ||
+        !metadata_valid(&out_status->partition_2, 0)) {
+        return H2_PAL_ERR_FORMAT;
+    }
+
+    return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_h2loader_host_status_parse(
@@ -314,86 +424,18 @@ h2_pal_result_t h2_h2loader_host_status_parse(
     cursor = line + sizeof(marker) - 1u;
 #define COPY(name, member) \
     if (!copy_field(&cursor, name, out_status->member, sizeof(out_status->member))) goto format_error
-#define U32(name, member) \
-    if (!take_field(&cursor, name, &value, &len) || !parse_u32(value, len, &out_status->member)) goto format_error
-#define U64(name, member) \
-    if (!take_field(&cursor, name, &value, &len) || !parse_decimal_u64(value, len, &out_status->member)) goto format_error
-#define I32(name, member) \
-    if (!take_field(&cursor, name, &value, &len) || !parse_i32(value, len, &out_status->member)) goto format_error
     COPY("board", board); COPY("target", target); COPY("chip", chip);
     if (!take_field(&cursor, "capabilities", &value, &len) || len != 10u ||
         !is_fixed_lower_hex(value, len) || !parse_u32(value, len, &out_status->capabilities)) goto format_error;
     if (!take_field(&cursor, "command_availability", &value, &len) || len != 10u ||
         !is_fixed_lower_hex(value, len) || !parse_u32(value, len, &out_status->command_availability)) goto format_error;
-    if (!take_field(&cursor, "states", &value, &len) || len != 18u ||
-        !is_fixed_lower_hex(value, len) || !parse_u64(value, len, 0, &out_status->states)) goto format_error;
-    COPY("active_name", active_name); COPY("active_version", active_version);
-    COPY("active_checksum", active_checksum); I32("last", last);
-    COPY("installed_version", installed_version); COPY("installed_checksum", installed_checksum);
-    COPY("staged_version", staged_version); COPY("staged_checksum", staged_checksum);
-    U64("staged_bytes", staged_bytes); U32("running_partition", running_partition);
-    U32("next_partition", next_partition); U32("canonical_partition", canonical_partition);
-    U32("trial_partition", trial_partition); I32("upgrade_last", upgrade_last);
-    COPY("upgrade_step", upgrade_step); COPY("upgrade_package_sha256", upgrade_package_sha256);
-    COPY("candidate_board", candidate_board); COPY("candidate_target", candidate_target);
-    COPY("candidate_version", candidate_version); U64("candidate_bytes", candidate_bytes);
-    COPY("candidate_sha256", candidate_sha256);
 #undef COPY
-#undef U32
-#undef U64
-#undef I32
-    if (*cursor == '\r') ++cursor;
-    if (*cursor == '\n') ++cursor;
-    if (*cursor != '\0') goto format_error;
-    if (!h2_h2loader_host_is_safe_identity(out_status->board) ||
-        !h2_h2loader_host_is_safe_identity(out_status->target) ||
-        !h2_h2loader_host_is_safe_identity(out_status->chip) ||
-        !h2_h2loader_host_is_safe_identity(out_status->active_name) ||
-        (out_status->active_version[0] != '\0' &&
-         !h2_h2loader_host_is_safe_identity(out_status->active_version)) ||
-        (out_status->upgrade_step[0] != '\0' &&
-         !h2_h2loader_host_is_safe_identity(out_status->upgrade_step)) ||
-        (out_status->capabilities & ~H2_H2LOADER_HOST_CAPABILITIES_ALL) != 0u ||
-        (out_status->command_availability & ~H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL) != 0u ||
-        !states_valid(out_status->states)) goto format_error;
-    if ((out_status->active_checksum[0] != '\0' &&
-         !h2_h2loader_host_is_sha256(out_status->active_checksum)) ||
-        (out_status->installed_checksum[0] != '\0' &&
-         !h2_h2loader_host_is_sha256(out_status->installed_checksum)) ||
-        (out_status->staged_checksum[0] != '\0' &&
-         !h2_h2loader_host_is_sha256(out_status->staged_checksum)) ||
-        (out_status->upgrade_package_sha256[0] != '\0' &&
-         !h2_h2loader_host_is_sha256(
-             out_status->upgrade_package_sha256)) ||
-        (out_status->candidate_sha256[0] != '\0' &&
-         !h2_h2loader_host_is_sha256(out_status->candidate_sha256))) goto format_error;
-    if (h2_h2loader_host_status_installed_valid(out_status) !=
-        (out_status->installed_version[0] != '\0' &&
-         out_status->installed_checksum[0] != '\0')) goto format_error;
-    if (h2_h2loader_host_status_staged_valid(out_status) !=
-        (out_status->staged_version[0] != '\0' &&
-         out_status->staged_checksum[0] != '\0')) goto format_error;
-    if ((out_status->installed_version[0] != '\0' &&
-         !h2_h2loader_host_is_safe_identity(out_status->installed_version)) ||
-        (out_status->staged_version[0] != '\0' &&
-         !h2_h2loader_host_is_safe_identity(out_status->staged_version)) ||
-        (!h2_h2loader_host_status_staged_valid(out_status) &&
-         out_status->staged_bytes != 0u) ||
-        (h2_h2loader_host_status_staged_valid(out_status) &&
-         out_status->staged_bytes == 0u)) goto format_error;
-    if ((out_status->candidate_board[0] == '\0') !=
-        (out_status->candidate_target[0] == '\0') ||
-        (out_status->candidate_board[0] == '\0') !=
-        (out_status->candidate_version[0] == '\0') ||
-        (out_status->candidate_board[0] == '\0') !=
-        (out_status->candidate_sha256[0] == '\0') ||
-        (out_status->candidate_board[0] == '\0' &&
-         out_status->candidate_bytes != 0u) ||
-        (out_status->candidate_board[0] != '\0' &&
-         (out_status->candidate_bytes == 0u ||
-          !h2_h2loader_host_is_safe_identity(out_status->candidate_board) ||
-          !h2_h2loader_host_is_safe_identity(out_status->candidate_target) ||
-          !h2_h2loader_host_is_safe_identity(out_status->candidate_version)))) goto format_error;
+    if ((out_status->capabilities & ~H2_H2LOADER_HOST_CAPABILITIES_ALL) != 0u ||
+        (out_status->command_availability &
+         ~H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL) != 0u ||
+        parse_status_v2(cursor, out_status) != H2_PAL_OK) {
+        goto format_error;
+    }
     return H2_PAL_OK;
 format_error:
     memset(out_status, 0, sizeof(*out_status));
@@ -403,6 +445,9 @@ format_error:
 h2_pal_result_t h2_h2loader_host_status_verify_asset(
     const h2_h2loader_host_status_t *status,
     const h2_h2loader_host_catalog_entry_t *asset) {
+    const h2_h2loader_host_metadata_t *active;
+    h2_h2loader_host_active_role_t expected_role;
+
     if (status == NULL || asset == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -411,42 +456,24 @@ h2_pal_result_t h2_h2loader_host_status_verify_asset(
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (asset->role == H2_H2LOADER_HOST_ASSET_ROLE_APP) {
-        int package_manifest = asset->identity_source ==
-            H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
-        if (h2_h2loader_host_status_active_role(status) !=
-                H2_H2LOADER_HOST_ACTIVE_ROLE_APP ||
-            h2_h2loader_host_status_staged_valid(status) ||
-            (!package_manifest &&
-             strcmp(status->active_name, asset->image) != 0) ||
-            (package_manifest &&
-             strcmp(status->active_version, asset->version) != 0) ||
-            h2_h2loader_host_status_install_state(status) != 6u ||
-            !h2_h2loader_host_status_app_confirmed(status) ||
-            !h2_h2loader_host_status_installed_valid(status) ||
-            strcmp(status->installed_checksum, asset->sha256) != 0 ||
-            !h2_h2loader_host_is_sha256(asset->image_sha256) ||
-            (status->active_checksum[0] != '\0' &&
-             strcmp(
-                 status->active_checksum,
-                 asset->image_sha256) != 0)) {
-            return H2_PAL_ERR_INVALID_STATE;
-        }
-        return H2_PAL_OK;
+        expected_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    } else if (asset->role == H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
+        expected_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    } else {
+        return H2_PAL_ERR_INVALID_ARG;
     }
-    if (asset->role == H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
-        int package_manifest = asset->identity_source ==
-            H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
-        if (h2_h2loader_host_status_active_role(status) !=
-                H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
-            h2_h2loader_host_status_staged_valid(status) ||
-            strcmp(status->active_version, asset->version) != 0 ||
-            (package_manifest &&
-             (!h2_h2loader_host_is_sha256(status->active_checksum) ||
-              strcmp(status->active_checksum, asset->image_sha256) != 0)) ||
-            h2_h2loader_host_status_upgrade_phase(status) != 1u) {
-            return H2_PAL_ERR_INVALID_STATE;
-        }
-        return H2_PAL_OK;
+    active = status->running_partition == 1u ? &status->partition_1 :
+        status->running_partition == 2u ? &status->partition_2 : NULL;
+    if (active == NULL || !active->valid || status->stage.valid ||
+        status->active_role != expected_role || active->role != expected_role ||
+        strcmp(status->active_version, asset->version) != 0 ||
+        strcmp(status->active_checksum, asset->image_sha256) != 0 ||
+        strcmp(active->version, asset->version) != 0 ||
+        strcmp(active->board, asset->board) != 0 ||
+        strcmp(active->target, asset->target) != 0 ||
+        strcmp(active->image_checksum, asset->image_sha256) != 0 ||
+        strcmp(active->package_checksum, asset->sha256) != 0) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
-    return H2_PAL_ERR_INVALID_ARG;
+    return H2_PAL_OK;
 }

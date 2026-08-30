@@ -505,9 +505,9 @@ static h2_pal_result_t run_send_url(h2_e2e_transport_context_t *context) {
   if (rc == H2_PAL_OK &&
       (strcmp(final_status.board, initial_status.board) != 0 ||
        strcmp(final_status.target, initial_status.target) != 0 ||
-       !h2_h2loader_host_status_staged_valid(&final_status) ||
-       final_status.staged_bytes != context->config->firmware_url_bytes ||
-       strcmp(final_status.staged_checksum,
+       !final_status.stage.valid ||
+       final_status.stage.package_size != context->config->firmware_url_bytes ||
+       strcmp(final_status.stage.package_checksum,
               context->config->firmware_url_sha256) != 0)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
