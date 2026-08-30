@@ -1,5 +1,8 @@
 #include "h2_pal.h"
 
+#include <assert.h>
+#include <string.h>
+
 static void use_firmware_info(void) {
     h2_pal_firmware_info_t info = { 0 };
     (void)h2_pal_firmware_info_get_current(NULL, &info);
@@ -15,6 +18,13 @@ static void use_audio_decoder(void) {
     h2_pal_audio_decoder_session_t *session = NULL;
     const h2_audio_decoder_config_t config = {0};
     (void)h2_pal_audio_decoder_open(NULL, &config, &session);
+}
+
+static void use_audio_task_names(void) {
+    assert(strcmp(h2_pal_audio_mic_task_name,
+                  H2_PAL_AUDIO_MIC_TASK_NAME_VALUE) == 0);
+    assert(strcmp(h2_pal_audio_mix_task_name,
+                  H2_PAL_AUDIO_MIX_TASK_NAME_VALUE) == 0);
 }
 
 static void use_wifi_csi(void) {
@@ -77,6 +87,7 @@ int main(void) {
     use_video_decoder();
     use_wifi_csi();
     use_audio_decoder();
+    use_audio_task_names();
     use_serial_host();
     use_crypto();
     use_dtls();
