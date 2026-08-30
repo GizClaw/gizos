@@ -126,8 +126,9 @@ h2_pal_result_t h2_h2loader_web_status_json_write(
   append_text(&writer, ",\"imageChecksum\":");
   append_json_string(&writer, status->active_checksum);
   append_format(&writer,
-                "},\"runningPartition\":%u,\"nextPartition\":%u,"
+                ",\"imageSize\":%llu},\"runningPartition\":%u,\"nextPartition\":%u,"
                 "\"bootIntent\":",
+                (unsigned long long)status->active_image_size,
                 (unsigned)status->running_partition,
                 (unsigned)status->next_partition);
   append_json_string(&writer, boot_intent_name(

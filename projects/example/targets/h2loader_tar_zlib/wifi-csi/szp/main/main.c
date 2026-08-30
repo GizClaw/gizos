@@ -1,8 +1,8 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_iostreamikcp.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_app_client.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_ble.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_smoke_wifi_csi.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -13,29 +13,10 @@
 
 #include <stdio.h>
 
-static h2_loader_app_client_t s_return_client;
-
 static int
 smoke_start_return_console(const h2_runtime_config_t *runtime_config) {
-  int rc;
-  h2_loader_app_client_config_t return_config = {
-      .pref = runtime_config->pref,
-      .power = runtime_config->power,
-      .allocator = runtime_config->mem,
-      .board = runtime_config->board,
-      .target = runtime_config->target,
-      .chip = runtime_config->chip,
-      .active_name = "smoke-wifi-csi",
-      .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
-      .h2loader_partition_id = 1u,
-  };
-  rc = h2_loader_app_client_init(&s_return_client, &return_config);
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
-
-  return h2_esp_h2loader_app_iostreamikcp_start(
-      &s_return_client, runtime_config->task, runtime_config->mem, 8192u);
+  return h2_esp_h2loader_app_commands_prepare_serial(
+      runtime_config, "smoke-wifi-csi", 1u, 3u);
 }
 
 static void smoke_confirm_app(h2_runtime_t *runtime) {
@@ -44,7 +25,7 @@ static void smoke_confirm_app(h2_runtime_t *runtime) {
     printf("H2_SMOKE_WIFI_CSI_FAIL stage=ota_confirm rc=%d\n", (int)confirm_rc);
     return;
   }
-  int rc = h2_loader_mark_app_confirmed(runtime->pref);
+  int rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc != H2_PAL_OK) {
     printf("H2_SMOKE_WIFI_CSI_FAIL stage=h2loader_confirm rc=%d\n", rc);
   }

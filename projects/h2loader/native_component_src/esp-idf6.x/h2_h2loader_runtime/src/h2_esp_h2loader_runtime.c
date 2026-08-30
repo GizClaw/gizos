@@ -9,6 +9,7 @@
 
 #include "esp_err.h"
 #include "esp_heap_caps.h"
+#include "esp_image_format.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "freertos/FreeRTOS.h"
@@ -93,6 +94,50 @@ static const esp_partition_t *image_partition(uint32_t partition_id) {
         return NULL;
     }
     return esp_partition_find_first(ESP_PARTITION_TYPE_APP, subtype, NULL);
+}
+
+static void digest_hex(const uint8_t digest[32], char out[65]) {
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0u; i < 32u; ++i) {
+        out[i * 2u] = hex[digest[i] >> 4u];
+        out[i * 2u + 1u] = hex[digest[i] & 0x0fu];
+    }
+    out[64] = '\0';
+}
+
+int h2_esp_h2loader_current_image_identity(
+    h2_loader_image_role_t role,
+    const char *board,
+    const char *target,
+    const char *version,
+    h2_loader_image_identity_t *out_identity) {
+    const esp_partition_t *running;
+    esp_partition_pos_t position;
+    esp_image_metadata_t metadata;
+    uint8_t digest[32];
+
+    if (board == NULL || target == NULL || version == NULL ||
+        out_identity == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    running = esp_ota_get_running_partition();
+    if (running == NULL) return H2_PAL_ERR_NOT_FOUND;
+    position.offset = running->address;
+    position.size = running->size;
+    if (esp_image_get_metadata(&position, &metadata) != ESP_OK ||
+        metadata.image_len == 0u || metadata.image_len > running->size ||
+        esp_partition_get_sha256(running, digest) != ESP_OK) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    memset(out_identity, 0, sizeof(*out_identity));
+    out_identity->format = 1u;
+    out_identity->role = role;
+    out_identity->image_size = metadata.image_len;
+    digest_hex(digest, out_identity->image_sha256);
+    (void)snprintf(out_identity->board, sizeof(out_identity->board), "%s", board);
+    (void)snprintf(out_identity->target, sizeof(out_identity->target), "%s", target);
+    (void)snprintf(out_identity->version, sizeof(out_identity->version), "%s", version);
+    return H2_PAL_OK;
 }
 
 static void image_writer_abort_internal(void) {
@@ -415,16 +460,16 @@ static const h2_loader_image_writer_api_t s_image_writer_api = {
 
 static const char *event_name(h2_loader_startup_event_t event) {
     switch (event) {
-    case H2_LOADER_STARTUP_EVENT_INSTALL_BEGIN:
-        return "install_begin";
-    case H2_LOADER_STARTUP_EVENT_INSTALL_SKIP_SAME_IDENTITY:
-        return "install_skip_same_identity";
-    case H2_LOADER_STARTUP_EVENT_BOOT_APP:
-        return "boot_app";
-    case H2_LOADER_STARTUP_EVENT_MAIN_FAILED:
-        return "main_failed";
-    case H2_LOADER_STARTUP_EVENT_INSTALL_FAILED:
-        return "install_failed";
+    case H2_LOADER_STARTUP_EVENT_WRITE_PARTITION_2:
+        return "write_partition_2";
+    case H2_LOADER_STARTUP_EVENT_COPY_PARTITION_1:
+        return "copy_partition_1";
+    case H2_LOADER_STARTUP_EVENT_BOOT_PARTITION_2:
+        return "boot_partition_2";
+    case H2_LOADER_STARTUP_EVENT_STAGE_FINISHED:
+        return "stage_finished";
+    case H2_LOADER_STARTUP_EVENT_RECOVERY_FAILED:
+        return "recovery_failed";
     default:
         return "unknown";
     }
@@ -437,14 +482,14 @@ static void on_event(void *user, h2_loader_startup_event_t event, int code) {
     if (context == NULL || context->config == NULL) {
         return;
     }
-    if (event == H2_LOADER_STARTUP_EVENT_INSTALL_BEGIN &&
+    if ((event == H2_LOADER_STARTUP_EVENT_WRITE_PARTITION_2 ||
+         event == H2_LOADER_STARTUP_EVENT_COPY_PARTITION_1) &&
         context->config->show_installing != NULL) {
         context->config->show_installing(context->config->user);
-    } else if (event == H2_LOADER_STARTUP_EVENT_BOOT_APP &&
+    } else if (event == H2_LOADER_STARTUP_EVENT_BOOT_PARTITION_2 &&
                context->config->show_launching != NULL) {
         context->config->show_launching(context->config->user);
-    } else if ((event == H2_LOADER_STARTUP_EVENT_MAIN_FAILED ||
-                event == H2_LOADER_STARTUP_EVENT_INSTALL_FAILED) &&
+    } else if (event == H2_LOADER_STARTUP_EVENT_RECOVERY_FAILED &&
                context->config->show_install_failed != NULL) {
         context->config->show_install_failed(context->config->user, code);
     }
@@ -502,6 +547,16 @@ static void digest_abort(void *user) {
     }
 }
 
+h2_loader_digest_api_t h2_esp_h2loader_digest_api(void) {
+    return (h2_loader_digest_api_t){
+        .user = &s_digest,
+        .start = digest_start,
+        .update = digest_update,
+        .finish = digest_finish,
+        .abort = digest_abort,
+    };
+}
+
 static uint64_t now_ms(void *user) {
     (void)user;
     return (uint64_t)xTaskGetTickCount() * (uint64_t)portTICK_PERIOD_MS;
@@ -556,12 +611,40 @@ static int confirm_pending_h2loader_boot(void) {
 }
 
 int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
-    if (runtime == NULL || runtime->pref == NULL) {
+    h2_loader_status_t status;
+    h2_loader_image_identity_t identity = {0};
+    h2_pal_firmware_info_t firmware_info;
+    if (runtime == NULL || runtime->pref == NULL || runtime->mem == NULL ||
+        runtime->fs == NULL || runtime->firmware_info == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     int rc = confirm_pending_h2loader_boot();
     if (rc == H2_PAL_OK) {
-        rc = h2_loader_mark_app_confirmed(runtime->pref);
+        rc = h2_loader_read_pref_status(runtime->pref, runtime->mem, &status);
+    }
+    if (rc == H2_PAL_OK && status.partition_2.valid) {
+        rc = h2_pal_firmware_info_get_current(
+            runtime->firmware_info, &firmware_info);
+        if (rc == H2_PAL_OK &&
+            strcmp(firmware_info.version, status.partition_2.version) != 0) {
+            rc = H2_PAL_ERR_INVALID_STATE;
+        }
+        if (rc == H2_PAL_OK) {
+            identity.format = 1u;
+            identity.role = H2_LOADER_IMAGE_ROLE_APP;
+            identity.image_size = status.partition_2.image_size;
+            (void)snprintf(identity.image_sha256, sizeof(identity.image_sha256),
+                "%s", status.partition_2.image_checksum);
+            (void)snprintf(identity.version, sizeof(identity.version), "%s",
+                status.partition_2.version);
+            (void)snprintf(identity.board, sizeof(identity.board), "%s",
+                status.partition_2.board);
+            (void)snprintf(identity.target, sizeof(identity.target), "%s",
+                status.partition_2.target);
+            rc = h2_loader_finalize_active_app(
+                runtime->pref, runtime->mem, runtime->fs,
+                H2_LOADER_STAGE_PATH, &identity, 2u, 2u);
+        }
     }
     if (rc == H2_PAL_OK) {
         rc = h2_esp_platform_pref_finalize_migration();
@@ -734,23 +817,14 @@ void h2_esp_h2loader_run_with_command_service_config(
         H2_LOADER_CAPABILITY_UART |
         H2_LOADER_CAPABILITY_WIFI |
         H2_LOADER_CAPABILITY_BLE;
-    config.loader.active_identity.format = 1u;
-    config.loader.active_identity.role = H2_LOADER_IMAGE_ROLE_H2LOADER;
-    (void)snprintf(
-        config.loader.active_identity.board,
-        sizeof(config.loader.active_identity.board),
-        "%s",
-        board);
-    (void)snprintf(
-        config.loader.active_identity.target,
-        sizeof(config.loader.active_identity.target),
-        "%s",
-        CONFIG_IDF_TARGET);
-    (void)snprintf(
-        config.loader.active_identity.version,
-        sizeof(config.loader.active_identity.version),
-        "%s",
-        firmware_info.version);
+    rc = h2_esp_h2loader_current_image_identity(
+        H2_LOADER_IMAGE_ROLE_H2LOADER, board, CONFIG_IDF_TARGET,
+        firmware_info.version, &config.loader.active_identity);
+    if (rc != H2_PAL_OK) {
+        printf("H2_LOADER_READY target=esp status=identity_fail code=%d\n", rc);
+        h2_esp_h2loader_command_transport_deinit(&s_command_transport);
+        return;
+    }
     config.loader.confirm_active_image = confirm_active_image;
     if (runtime_loader_config->mount_file_point != NULL) {
         config.loader.mount_user = &context;

@@ -593,13 +593,7 @@ static int app_write(void *user, const char *data, size_t len) {
 }
 
 static int arm_pending_app_rollback(const h2_pal_pref_api_t *pref) {
-  h2_loader_status_t status;
-  int rc = h2_loader_read_pref_status(pref, NULL, &status);
-  if (rc != H2_PAL_OK ||
-      status.install_state !=
-          H2_LOADER_INSTALL_STATE_INSTALLED_PENDING_CONFIRM) {
-    return rc;
-  }
+  if (pref == NULL) return H2_PAL_ERR_INVALID_ARG;
   return h2_bk_h2loader_prepare_pending_app_rollback();
 }
 

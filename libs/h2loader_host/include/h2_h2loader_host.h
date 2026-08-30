@@ -100,6 +100,7 @@ typedef struct h2_h2loader_host_status {
     char chip[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+    uint64_t active_image_size;
     h2_h2loader_host_metadata_t stage;
     h2_h2loader_host_metadata_t partition_1;
     h2_h2loader_host_metadata_t partition_2;

@@ -66,7 +66,7 @@ int h2_bk_h2loader_app_operation_lock(void);
 void h2_bk_h2loader_app_operation_unlock(void);
 int h2_bk_h2loader_reboot_to_loader(void);
 int h2_bk_h2loader_confirm_active_loader(void *user);
-int h2_bk_h2loader_confirm_current_app(const h2_pal_pref_api_t *pref);
+int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime);
 int h2_bk_h2loader_prepare_pending_app_restart(void);
 void h2_bk_h2loader_abort_for_crash_test(void);
 

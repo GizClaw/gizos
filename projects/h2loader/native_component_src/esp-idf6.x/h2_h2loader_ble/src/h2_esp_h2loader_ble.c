@@ -10,6 +10,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #define H2_ESP_H2LOADER_APP_BLE_START_ATTEMPTS 6u
 
 /* Private link contract with h2_h2loader_runtime. */
@@ -29,11 +32,16 @@ static h2_loader_app_client_t s_serial_client;
 static h2_esp_h2loader_app_ble_t s_ble;
 static int s_serial_started;
 
-static int h2_esp_optional_string_equal(const char *left, const char *right) {
-    if (left == NULL || right == NULL) {
-        return left == right;
-    }
-    return strcmp(left, right) == 0;
+static uint64_t app_now_ms(void *user) {
+    const h2_pal_time_api_t *time = user;
+    uint64_t value = 0u;
+    return h2_pal_time_get_monotonic_ms(time, &value) == H2_PAL_OK
+        ? value : 0u;
+}
+
+static void app_sleep_ms(void *user, uint32_t delay_ms) {
+    (void)user;
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
 }
 
 void h2_esp_h2loader_run_with_ble_config(
@@ -84,6 +92,9 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
     if (runtime_config == NULL || runtime_config->task == NULL ||
         runtime_config->sync == NULL || runtime_config->mem == NULL ||
         runtime_config->pref == NULL || runtime_config->power == NULL ||
+        runtime_config->firmware_info == NULL || runtime_config->time == NULL ||
+        runtime_config->fs == NULL || runtime_config->disk == NULL ||
+        runtime_config->http == NULL || runtime_config->wifi_sta == NULL ||
         runtime_config->board == NULL || runtime_config->target == NULL ||
         runtime_config->chip == NULL || config == NULL ||
         config->active_name == NULL || config->active_name[0] == '\0' ||
@@ -101,23 +112,30 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         .flags = H2_PAL_MUTEX_FLAG_RECURSIVE,
     };
     int cleanup_rc;
+    h2_pal_firmware_info_t firmware_info;
     int rc = h2_pal_mutex_create(
         runtime_config->sync, &mutex_config, &s_ble.operation_mutex);
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    rc = h2_pal_firmware_info_get_current(
+        runtime_config->firmware_info, &firmware_info);
+    if (rc != H2_PAL_OK) goto cleanup_mutex;
     s_ble.client_config = (h2_loader_app_client_config_t){
         .pref = runtime_config->pref,
         .power = runtime_config->power,
         .allocator = runtime_config->mem,
         .disk = runtime_config->disk,
+        .fs = runtime_config->fs,
+        .http = runtime_config->http,
+        .wifi = runtime_config->wifi_sta,
+        .wifi_settings = runtime_config->wifi_settings,
+        .digest = h2_esp_h2loader_digest_api(),
         .operation_sync = runtime_config->sync,
         .operation_mutex = s_ble.operation_mutex,
         .board = runtime_config->board,
         .target = runtime_config->target,
         .chip = runtime_config->chip,
-        .active_name = config->active_name,
-        .active_version = config->active_version,
         .hardware_capabilities = config->hardware_capabilities,
         .memory_stats = {
             .read = h2_esp_h2loader_memory_stats_read,
@@ -125,7 +143,18 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         .h2loader_partition_id = config->h2loader_partition_id,
         .app_partition_id = config->app_partition_id,
         .coredump_partition_id = config->coredump_partition_id,
+        .clock_user = (void *)runtime_config->time,
+        .now_ms = app_now_ms,
+        .sleep_ms = app_sleep_ms,
     };
+    rc = h2_esp_h2loader_current_image_identity(
+        H2_LOADER_IMAGE_ROLE_APP,
+        runtime_config->board,
+        runtime_config->target,
+        config->active_version != NULL && config->active_version[0] != '\0'
+            ? config->active_version : firmware_info.version,
+        &s_ble.client_config.active_identity);
+    if (rc != H2_PAL_OK) goto cleanup_mutex;
     rc = h2_loader_app_client_init(&s_serial_client, &s_ble.client_config);
     if (rc != H2_PAL_OK) {
         goto cleanup_mutex;
@@ -184,9 +213,9 @@ int h2_esp_h2loader_app_commands_start_with_config(
     if (!s_serial_started || s_ble.service != NULL) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if (strcmp(s_ble.client_config.active_name, config->active_name) != 0 ||
-        !h2_esp_optional_string_equal(
-            s_ble.client_config.active_version, config->active_version) ||
+    if ((config->active_version != NULL && config->active_version[0] != '\0' &&
+         strcmp(s_ble.client_config.active_identity.version,
+                config->active_version) != 0) ||
         s_ble.client_config.hardware_capabilities !=
             config->hardware_capabilities ||
         s_ble.client_config.h2loader_partition_id !=

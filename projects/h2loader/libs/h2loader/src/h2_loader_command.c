@@ -224,12 +224,6 @@ static int h2loader_publish_tmp_stage(h2_loader_command_t *self) {
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return rc;
     }
-    rc = h2_loader_prepare_stage_publish(self->config.loader);
-    if (rc != H2_PAL_OK) {
-        h2loader_stage_error(self, "prepare_publish", rc);
-        (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
-        return rc;
-    }
     (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_PREV_PATH);
     rc = h2_pal_fs_rename(self->config.fs, H2_LOADER_STAGE_TMP_PATH, H2_LOADER_STAGE_PATH);
     if (rc != H2_PAL_FS_OK) {
@@ -864,11 +858,7 @@ static h2_pal_result_t h2loader_root_handler(
     h2_pal_result_t availability = h2loader_require_command(
         self, argc, argv, NULL);
     if (availability != H2_PAL_OK) return availability;
-    if (argc < 2u) {
-        printf("usage: h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n");
-    } else {
-        printf("usage: h2loader <help|status|memory|stage|reboot app|loader|upgrade|coredump>\n");
-    }
+    printf("usage: h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n");
     return H2_PAL_OK;
 }
 
@@ -969,7 +959,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
 
     (void)command;
     if (argc >= 3u && strcmp(argv[2], "abort") == 0) {
-        rc = h2_loader_abort_stage(self->config.loader);
+        rc = h2_loader_cancel_stage(self->config.loader);
         printf("H2_LOADER_STAGE_ABORT result=%s code=%d\n",
             rc == H2_PAL_OK ? "OK" : "fail",
             rc);
@@ -989,7 +979,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
         if (rc != H2_PAL_OK) {
             return (h2_pal_result_t)rc;
         }
-        rc = h2_loader_begin_stage_replacement(
+        rc = h2_loader_begin_stage(
             self->config.loader,
             H2_LOADER_STAGE_TMP_PATH,
             H2_LOADER_STAGE_PREV_PATH);
@@ -1003,7 +993,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
         if (rc != H2_PAL_OK) {
             return (h2_pal_result_t)rc;
         }
-        rc = h2_loader_publish_stage(self->config.loader, (uint32_t)bytes, argv[5]);
+        rc = h2_loader_commit_stage(self->config.loader, bytes, argv[5]);
         h2loader_finish_stage_publish(self, rc);
         printf("H2_LOADER_STAGE result=%s code=%d\n",
             rc == H2_PAL_OK ? "OK" : "fail",
@@ -1020,7 +1010,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
         rc = H2_PAL_ERR_INVALID_ARG;
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_loader_begin_stage_replacement(
+        rc = h2_loader_begin_stage(
             self->config.loader,
             H2_LOADER_STAGE_TMP_PATH,
             H2_LOADER_STAGE_PREV_PATH);
@@ -1034,7 +1024,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
     if (rc != H2_PAL_OK) {
         return (h2_pal_result_t)rc;
     }
-    rc = h2_loader_publish_stage(self->config.loader, (uint32_t)bytes, argv[3]);
+    rc = h2_loader_commit_stage(self->config.loader, bytes, argv[3]);
     h2loader_finish_stage_publish(self, rc);
     printf("H2_LOADER_STAGE result=%s code=%d\n",
         rc == H2_PAL_OK ? "OK" : "fail",

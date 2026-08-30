@@ -26,7 +26,8 @@ struct Options {
   std::string ble_id;
   std::string expected_board;
   std::string expected_target;
-  std::filesystem::path firmware;
+  std::filesystem::path app_firmware;
+  std::filesystem::path loader_firmware;
   std::string firmware_url;
   std::string firmware_url_sha256;
   std::string wifi_ssid;
@@ -35,7 +36,6 @@ struct Options {
   std::uint64_t firmware_url_bytes = 0u;
   std::uint32_t repeat = 1u;
   std::uint32_t timeout_ms = 120000u;
-  bool reboot_loader = false;
   bool help = false;
 };
 
@@ -57,13 +57,13 @@ void usage(const char *program, FILE *stream) {
       "options:\n"
       "  --expected-board ID          require exact board identity\n"
       "  --expected-target ID         require exact target identity\n"
-      "  --firmware FILE              test direct send and stage abort\n"
+      "  --app-firmware FILE          APP update.tar.zlib for Stage/install\n"
+      "  --loader-firmware FILE       Loader update.tar.zlib for full lifecycle\n"
       "  --firmware-url URL           test device-side URL download\n"
       "  --url-bytes BYTES            expected URL payload size\n"
       "  --url-sha256 HEX             expected URL payload SHA-256\n"
       "  --wifi-ssid SSID             test scan/connect/disconnect\n"
       "  --wifi-password-env NAME     read Wi-Fi password from environment\n"
-      "  --reboot-loader              include disruptive Loader reboot\n"
       "  --repeat COUNT               repeat every selected transport (default "
       "1)\n"
       "  --timeout-ms MS              connect and command timeout (default "
@@ -113,7 +113,7 @@ bool parse_options(int argc, char **argv, Options *out) {
     kBle = 1ull << 1,
     kBoard = 1ull << 2,
     kTarget = 1ull << 3,
-    kFirmware = 1ull << 4,
+    kAppFirmware = 1ull << 4,
     kUrl = 1ull << 5,
     kUrlBytes = 1ull << 6,
     kUrlSha = 1ull << 7,
@@ -122,19 +122,13 @@ bool parse_options(int argc, char **argv, Options *out) {
     kRepeat = 1ull << 10,
     kTimeout = 1ull << 11,
     kReport = 1ull << 12,
-    kRebootLoader = 1ull << 13,
+    kLoaderFirmware = 1ull << 13,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
     const char *name = argv[index];
     if (std::strcmp(name, "--help") == 0 || std::strcmp(name, "-h") == 0) {
       out->help = true;
-      continue;
-    }
-    if (std::strcmp(name, "--reboot-loader") == 0) {
-      if (!set_once(kRebootLoader, &seen))
-        return false;
-      out->reboot_loader = true;
       continue;
     }
     if (index + 1 >= argc)
@@ -153,9 +147,12 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else if (std::strcmp(name, "--expected-target") == 0) {
       bit = kTarget;
       out->expected_target = value;
-    } else if (std::strcmp(name, "--firmware") == 0) {
-      bit = kFirmware;
-      out->firmware = value;
+    } else if (std::strcmp(name, "--app-firmware") == 0) {
+      bit = kAppFirmware;
+      out->app_firmware = value;
+    } else if (std::strcmp(name, "--loader-firmware") == 0) {
+      bit = kLoaderFirmware;
+      out->loader_firmware = value;
     } else if (std::strcmp(name, "--firmware-url") == 0) {
       bit = kUrl;
       out->firmware_url = value;
@@ -207,10 +204,12 @@ bool parse_options(int argc, char **argv, Options *out) {
   }
   if (out->wifi_ssid.empty() != out->wifi_password_env.empty())
     return false;
+  if (!out->loader_firmware.empty() && out->app_firmware.empty())
+    return false;
   const std::size_t cases = 1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
-                            (!out->firmware.empty() ? 2u : 0u) +
+                            (!out->app_firmware.empty() ? 2u : 0u) +
                             (has_url ? 2u : 0u) +
-                            (out->reboot_loader ? 1u : 0u);
+                            (!out->loader_firmware.empty() ? 4u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
   return cases * transports * out->repeat <= H2_H2LOADER_E2E_MAX_CASES;
@@ -361,8 +360,12 @@ bool write_report(const std::filesystem::path &path, const Options &options,
          << "  \"expected_target\": \"" << json_escape(options.expected_target)
          << "\",\n"
          << "  \"repeat\": " << options.repeat << ",\n"
-         << "  \"firmware\": {\"bytes\": " << result.firmware_bytes
-         << ", \"sha256\": \"" << result.firmware_sha256 << "\"},\n"
+         << "  \"app_firmware\": {\"bytes\": "
+         << result.app_firmware_bytes << ", \"sha256\": \""
+         << result.app_firmware_sha256 << "\"},\n"
+         << "  \"loader_firmware\": {\"bytes\": "
+         << result.loader_firmware_bytes << ", \"sha256\": \""
+         << result.loader_firmware_sha256 << "\"},\n"
          << "  \"firmware_url\": {\"bytes\": " << options.firmware_url_bytes
          << ", \"sha256\": \"" << json_escape(options.firmware_url_sha256)
          << "\"},\n"
@@ -396,7 +399,9 @@ bool write_report(const std::filesystem::path &path, const Options &options,
              << json_escape(entry.status.active_version)
              << "\", \"active_checksum\": \""
              << json_escape(entry.status.active_checksum)
-             << "\", \"running_partition\": "
+             << "\", \"active_image_size\": "
+             << entry.status.active_image_size
+             << ", \"running_partition\": "
              << entry.status.running_partition << ", \"next_partition\": "
              << entry.status.next_partition << ", \"boot_intent\": \""
              << boot_intent_name(entry.status.boot_intent) << "\", \"stage\": ";
@@ -429,12 +434,26 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  std::vector<std::uint8_t> firmware;
-  if (!options.firmware.empty()) {
-    options.firmware = resolve_input_path(options.firmware);
-    if (!load_file(options.firmware, &firmware)) {
-      std::fprintf(stderr, "h2loader-e2e: cannot read firmware: %s\n",
-                   options.firmware.string().c_str());
+  std::vector<std::uint8_t> app_firmware;
+  std::vector<std::uint8_t> loader_firmware;
+  if (!options.app_firmware.empty()) {
+    options.app_firmware = resolve_input_path(options.app_firmware);
+    if (!load_file(options.app_firmware, &app_firmware)) {
+      std::fprintf(stderr, "h2loader-e2e: cannot read APP firmware: %s\n",
+                   options.app_firmware.string().c_str());
+      return 2;
+    }
+  }
+  if (!options.loader_firmware.empty()) {
+    options.loader_firmware = resolve_input_path(options.loader_firmware);
+    if (!load_file(options.loader_firmware, &loader_firmware)) {
+      std::fprintf(stderr, "h2loader-e2e: cannot read Loader firmware: %s\n",
+                   options.loader_firmware.string().c_str());
+      return 2;
+    }
+    if (app_firmware.empty()) {
+      std::fprintf(stderr,
+                   "h2loader-e2e: --loader-firmware requires --app-firmware\n");
       return 2;
     }
   }
@@ -487,8 +506,11 @@ int main(int argc, char **argv) {
         .expected_target = options.expected_target.empty()
                                ? nullptr
                                : options.expected_target.c_str(),
-        .firmware = firmware.empty() ? nullptr : firmware.data(),
-        .firmware_size = firmware.size(),
+        .app_firmware = app_firmware.empty() ? nullptr : app_firmware.data(),
+        .app_firmware_size = app_firmware.size(),
+        .loader_firmware =
+            loader_firmware.empty() ? nullptr : loader_firmware.data(),
+        .loader_firmware_size = loader_firmware.size(),
         .firmware_url = options.firmware_url.empty()
                             ? nullptr
                             : options.firmware_url.c_str(),
@@ -503,11 +525,11 @@ int main(int argc, char **argv) {
         .wait_timeout_ms = options.timeout_ms,
         .command_timeout_ms = options.timeout_ms,
         .include_wifi = static_cast<std::uint8_t>(!options.wifi_ssid.empty()),
-        .include_send = static_cast<std::uint8_t>(!firmware.empty()),
+        .include_send = static_cast<std::uint8_t>(!app_firmware.empty()),
         .include_send_url =
             static_cast<std::uint8_t>(!options.firmware_url.empty()),
-        .include_reboot_loader =
-            static_cast<std::uint8_t>(options.reboot_loader),
+        .include_lifecycle =
+            static_cast<std::uint8_t>(!loader_firmware.empty()),
         .is_cancelled = is_cancelled,
         .on_case = case_event,
         .on_progress = progress_event,

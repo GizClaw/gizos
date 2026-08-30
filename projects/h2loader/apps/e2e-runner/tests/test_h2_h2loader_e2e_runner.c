@@ -28,8 +28,10 @@ static void test_full_sequence_for_both_transports(void) {
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
       .ble_endpoint = "4:001122334455",
-      .firmware = (const uint8_t *)"x",
-      .firmware_size = 1u,
+      .app_firmware = (const uint8_t *)"x",
+      .app_firmware_size = 1u,
+      .loader_firmware = (const uint8_t *)"y",
+      .loader_firmware_size = 1u,
       .firmware_url = "http://example.test/update.tar.zlib",
       .firmware_url_bytes = 1u,
       .firmware_url_sha256 =
@@ -40,7 +42,7 @@ static void test_full_sequence_for_both_transports(void) {
       .include_wifi = 1u,
       .include_send = 1u,
       .include_send_url = 1u,
-      .include_reboot_loader = 1u,
+      .include_lifecycle = 1u,
       .execute_case = execute_case,
       .execute_user = &fake,
   };
@@ -51,14 +53,14 @@ static void test_full_sequence_for_both_transports(void) {
   }
   assert(rc == H2_PAL_OK);
   assert(result.complete == 1);
-  assert(result.case_count == 18u);
-  assert(result.passed == 18u);
+  assert(result.case_count == 24u);
+  assert(result.passed == 24u);
   assert(result.failed == 0u);
-  assert(fake.count == 18u);
-  for (size_t i = 0u; i < 9u; ++i) {
+  assert(fake.count == 24u);
+  for (size_t i = 0u; i < 12u; ++i) {
     assert(fake.transports[i] == H2_H2LOADER_E2E_TRANSPORT_UART);
-    assert(fake.transports[i + 9u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
-    assert(fake.cases[i] == fake.cases[i + 9u]);
+    assert(fake.transports[i + 12u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
+    assert(fake.cases[i] == fake.cases[i + 12u]);
   }
 }
 
@@ -76,8 +78,8 @@ static void test_failure_is_reported_without_hiding_cleanup(void) {
   h2_h2loader_e2e_result_t result;
   const h2_h2loader_e2e_config_t config = {
       .uart_endpoint = "/dev/test",
-      .firmware = (const uint8_t *)"x",
-      .firmware_size = 1u,
+      .app_firmware = (const uint8_t *)"x",
+      .app_firmware_size = 1u,
       .repeat_count = 1u,
       .include_send = 1u,
       .execute_case = fail_send,

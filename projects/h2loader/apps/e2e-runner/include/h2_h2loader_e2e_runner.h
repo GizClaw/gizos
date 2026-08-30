@@ -27,7 +27,10 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND,
   H2_H2LOADER_E2E_CASE_SEND_URL,
   H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL,
-  H2_H2LOADER_E2E_CASE_REBOOT_LOADER,
+  H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE,
+  H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE,
+  H2_H2LOADER_E2E_CASE_INSTALL_APP,
+  H2_H2LOADER_E2E_CASE_INSTALL_LOADER,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -64,8 +67,10 @@ typedef struct h2_h2loader_e2e_config {
   const char *expected_board;
   const char *expected_target;
 
-  const uint8_t *firmware;
-  size_t firmware_size;
+  const uint8_t *app_firmware;
+  size_t app_firmware_size;
+  const uint8_t *loader_firmware;
+  size_t loader_firmware_size;
   const char *firmware_url;
   uint64_t firmware_url_bytes;
   const char *firmware_url_sha256;
@@ -78,7 +83,7 @@ typedef struct h2_h2loader_e2e_config {
   uint8_t include_wifi;
   uint8_t include_send;
   uint8_t include_send_url;
-  uint8_t include_reboot_loader;
+  uint8_t include_lifecycle;
 
   h2_h2loader_host_cancelled_fn is_cancelled;
   void *cancel_user;
@@ -99,8 +104,10 @@ typedef struct h2_h2loader_e2e_result {
   size_t passed;
   size_t failed;
   uint64_t elapsed_ms;
-  uint64_t firmware_bytes;
-  char firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t app_firmware_bytes;
+  char app_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t loader_firmware_bytes;
+  char loader_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   int complete;
 } h2_h2loader_e2e_result_t;
 

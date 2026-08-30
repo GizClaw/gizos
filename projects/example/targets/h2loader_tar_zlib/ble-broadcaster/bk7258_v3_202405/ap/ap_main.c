@@ -84,7 +84,7 @@ static void app_entry(void *user) {
         emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_STAGE stage=run_done");
         rtos_delay_milliseconds(500);
         emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_STAGE stage=confirm_begin");
-        rc = h2_bk_h2loader_confirm_current_app(runtime->pref);
+        rc = h2_bk_h2loader_confirm_current_app(runtime);
         if (rc != H2_PAL_OK) {
             emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_FAIL stage=confirm rc=%d", rc);
         } else {

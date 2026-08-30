@@ -84,14 +84,10 @@ int h2_loader_status_mfg_handoff_pending(
     }
     if (!staged_loader &&
         status->boot_intent == H2_LOADER_BOOT_INTENT_AUTO) {
-        if (status->install_state ==
-                H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED ||
-            status->install_state == H2_LOADER_INSTALL_STATE_INSTALLING) {
-            pending = 1;
-        } else if (status->install_state ==
-                   H2_LOADER_INSTALL_STATE_CONFIRMED) {
-            pending = status->app_confirmed && status->installed.valid;
-        }
+        pending = status->stage.valid ||
+            (status->partition_2.valid &&
+             !h2_loader_metadata_image_equal(
+                 &status->partition_1, &status->partition_2));
     }
     *out_pending = pending ? 1 : 0;
     return H2_PAL_OK;
@@ -181,7 +177,7 @@ int h2_loader_status_format(
     len = snprintf(out,
         out_len,
         "H2_LOADER_STATUS board=%s target=%s chip=%s capabilities=0x%08lx command_availability=0x%08lx "
-        "active_role=%s active_version=%s active_checksum=%s running_partition=%lu next_partition=%lu boot_intent=%s "
+        "active_role=%s active_version=%s active_checksum=%s active_image_size=%llu running_partition=%lu next_partition=%lu boot_intent=%s "
         "stage_valid=%u stage_package_checksum=%s stage_package_size=%llu stage_image_checksum=%s stage_image_size=%llu stage_role=%s stage_version=%s stage_board=%s stage_target=%s "
         "partition_1_valid=%u partition_1_package_checksum=%s partition_1_package_size=%llu partition_1_image_checksum=%s partition_1_image_size=%llu partition_1_role=%s partition_1_version=%s partition_1_board=%s partition_1_target=%s "
         "partition_2_valid=%u partition_2_package_checksum=%s partition_2_package_size=%llu partition_2_image_checksum=%s partition_2_image_size=%llu partition_2_role=%s partition_2_version=%s partition_2_board=%s partition_2_target=%s "
@@ -194,6 +190,7 @@ int h2_loader_status_format(
         active_role,
         VALUE_OR_DASH(status->active_version),
         VALUE_OR_DASH(status->active_checksum),
+        (unsigned long long)status->active_image_size,
         (unsigned long)status->running_partition_id,
         (unsigned long)status->next_partition_id,
         h2_loader_boot_intent_name(status->boot_intent),

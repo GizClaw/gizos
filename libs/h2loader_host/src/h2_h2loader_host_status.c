@@ -351,6 +351,8 @@ static h2_pal_result_t parse_status_v2(
             out_status->active_version, sizeof(out_status->active_version)) ||
         !copy_optional_field(&cursor, "active_checksum",
             out_status->active_checksum, sizeof(out_status->active_checksum)) ||
+        !take_field(&cursor, "active_image_size", &value, &len) ||
+        !parse_decimal_u64(value, len, &out_status->active_image_size) ||
         !take_field(&cursor, "running_partition", &value, &len) ||
         !parse_u32(value, len, &out_status->running_partition) ||
         !take_field(&cursor, "next_partition", &value, &len) ||
@@ -397,6 +399,7 @@ static h2_pal_result_t parse_status_v2(
         !h2_h2loader_host_is_safe_identity(out_status->chip) ||
         !h2_h2loader_host_is_safe_identity(out_status->active_version) ||
         !h2_h2loader_host_is_sha256(out_status->active_checksum) ||
+        out_status->active_image_size == 0u ||
         !metadata_valid(&out_status->stage, 1) ||
         !metadata_valid(&out_status->partition_1, 0) ||
         !metadata_valid(&out_status->partition_2, 0)) {

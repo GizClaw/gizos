@@ -268,9 +268,9 @@ static void test_typed_command_wire_contract(void) {
 
 static void test_typed_command_terminal_contract(void) {
     const h2_h2loader_host_command_contract_t contract = {
-        .line = "h2loader restart\n",
-        .marker = "H2_LOADER_RESTART ",
-        .success_token = "result=OK",
+        .line = "h2loader reboot app\n",
+        .marker = "H2_LOADER_REBOOT ",
+        .success_token = "target=app result=accepted",
     };
     const h2_h2loader_host_command_contract_t status_contract = {
         .line = "h2loader status\n",
@@ -278,38 +278,40 @@ static void test_typed_command_terminal_contract(void) {
         .marker_is_success = 1u,
     };
     static const uint8_t status_ok[] =
-        "noise\nH2_LOADER_STATUS intent=h2loader board=amoled target=esp32s3 "
-        "chip=esp32s3 state=confirmed app_confirmed=1 hold=0 last=0 "
-        "active_role=app capabilities=0x00000013\n";
+        "noise\nH2_LOADER_STATUS board=amoled target=esp32s3 chip=esp32s3 "
+        "capabilities=0x00000007 command_availability=0x000f3f3f "
+        "boot_intent=auto active_role=app active_version=v1 "
+        "active_checksum=abababababababababababababababababababababababababababababababab "
+        "active_image_size=1 running_partition=2 next_partition=2 last_result=0\n";
     static const uint8_t status_error_only[] =
         "H2_LOADER_STATUS_ERROR code=-4\n";
     static const uint8_t status_unsupported[] =
         "H2_LOADER_STATUS result=unsupported\n";
     static const uint8_t ok[] =
-        "noise\nH2_LOADER_RESTART result=OK\n";
+        "noise\nH2_LOADER_REBOOT target=app result=accepted\n";
     static const uint8_t unsupported[] =
-        "H2_LOADER_RESTART result=unsupported\n";
+        "H2_LOADER_REBOOT result=unsupported\n";
     static const uint8_t unavailable[] =
-        "H2_LOADER_RESTART result=unavailable\n";
+        "H2_LOADER_REBOOT result=unavailable\n";
     static const uint8_t usage[] =
-        "H2_LOADER_RESTART usage: h2loader restart\n";
+        "H2_LOADER_REBOOT usage: h2loader reboot app\n";
     static const uint8_t invalid[] =
-        "H2_LOADER_RESTART result=invalid_command\n";
+        "H2_LOADER_REBOOT result=invalid_command\n";
     static const uint8_t error[] =
-        "H2_LOADER_RESTART result=error\n";
+        "H2_LOADER_REBOOT result=error\n";
     static const uint8_t failed[] =
-        "H2_LOADER_RESTART result=fail\n";
+        "H2_LOADER_REBOOT result=fail\n";
     static const uint8_t marker_without_result[] =
-        "H2_LOADER_RESTART code=0\n";
+        "H2_LOADER_REBOOT code=0\n";
     static const uint8_t malformed_success[] =
-        "H2_LOADER_RESTART result=OKAY\n";
+        "H2_LOADER_REBOOT target=app result=accepted-extra\n";
     static const uint8_t incomplete[] = "result=OK\n";
     static const uint8_t stale_error[] =
-        "H2_LOADER_RESTART result=error\n"
-        "H2_LOADER_RESTART result=OK\n";
+        "H2_LOADER_REBOOT result=error\n"
+        "H2_LOADER_REBOOT target=app result=accepted\n";
     static const uint8_t unrelated_error[] =
         "diagnostic result=error\n"
-        "H2_LOADER_RESTART result=OK\n";
+        "H2_LOADER_REBOOT target=app result=accepted\n";
 
     assert(h2_h2loader_host_command_parse_terminal(
                ok, sizeof(ok) - 1u, &contract) ==
@@ -842,7 +844,7 @@ static void test_status(void) {
         v2_line, sizeof(v2_line),
         "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
         "capabilities=0x00000005 command_availability=0x00000008 "
-        "active_role=app active_version=v1 active_checksum=%s "
+        "active_role=app active_version=v1 active_checksum=%s active_image_size=4096 "
         "running_partition=2 next_partition=2 boot_intent=auto "
         "stage_valid=0 stage_package_checksum=- stage_package_size=0 "
         "stage_image_checksum=- stage_image_size=0 stage_role=unknown "

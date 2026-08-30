@@ -50,6 +50,17 @@ h2_pal_result_t h2_esp_h2loader_memory_stats_read(
     void *user,
     h2_loader_memory_stats_t *out_stats);
 
+/** Reads the running ESP image length and verified SHA-256 identity. */
+int h2_esp_h2loader_current_image_identity(
+    h2_loader_image_role_t role,
+    const char *board,
+    const char *target,
+    const char *version,
+    h2_loader_image_identity_t *out_identity);
+
+/** Shared streaming SHA-256 adapter used by APP and Loader commands. */
+h2_loader_digest_api_t h2_esp_h2loader_digest_api(void);
+
 #ifdef __cplusplus
 }
 #endif
