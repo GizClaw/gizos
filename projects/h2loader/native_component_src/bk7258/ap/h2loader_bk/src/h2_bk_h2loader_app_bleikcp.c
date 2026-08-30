@@ -59,24 +59,39 @@ static void app_digest_hex(const uint8_t digest[32], char out[65]) {
     out[64] = '\0';
 }
 
-static int current_app_identity(
+int h2_bk_h2loader_current_app_identity(
     h2_runtime_t *runtime,
     const char *version,
     h2_loader_image_identity_t *out_identity) {
+    h2_loader_status_t status;
+    const h2_loader_metadata_t *active = NULL;
     const h2_loader_image_reader_api_t *reader = h2_bk_h2loader_image_reader();
     uint8_t buffer[4096];
     uint8_t digest[32];
+    char digest_hex[65];
     uint64_t image_size = 0u;
     uint64_t offset = 0u;
-    int rc;
     if (runtime == NULL || version == NULL || out_identity == NULL ||
-        reader == NULL || reader->vtable == NULL ||
-        reader->vtable->get_capacity == NULL || reader->vtable->read == NULL) {
+        runtime->pref == NULL || runtime->mem == NULL || reader == NULL ||
+        reader->vtable == NULL || reader->vtable->get_capacity == NULL ||
+        reader->vtable->read == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = reader->vtable->get_capacity(
-        reader->user, H2_BK_H2LOADER_APP_PARTITION_ID, &image_size);
-    if (rc != H2_PAL_OK || image_size == 0u) return rc;
+    int rc = h2_loader_read_pref_status(runtime->pref, runtime->mem, &status);
+    if (rc == H2_PAL_OK && status.partition_2.valid &&
+        status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
+        status.partition_2.image_size != 0u &&
+        strcmp(status.partition_2.version, version) == 0 &&
+        strcmp(status.partition_2.board, runtime->board) == 0 &&
+        strcmp(status.partition_2.target, runtime->target) == 0) {
+        active = &status.partition_2;
+        image_size = active->image_size;
+    }
+    if (image_size == 0u) {
+        rc = reader->vtable->get_capacity(
+            reader->user, H2_BK_H2LOADER_APP_PARTITION_ID, &image_size);
+        if (rc != H2_PAL_OK || image_size == 0u) return rc;
+    }
     rc = app_digest_start(NULL);
     while (rc == H2_PAL_OK && offset < image_size) {
         size_t take = image_size - offset > sizeof(buffer)
@@ -91,11 +106,16 @@ static int current_app_identity(
         app_digest_abort(NULL);
         return rc;
     }
+    app_digest_hex(digest, digest_hex);
+    if (active != NULL && strcmp(digest_hex, active->image_checksum) != 0) {
+        return H2_PAL_ERR_FORMAT;
+    }
     memset(out_identity, 0, sizeof(*out_identity));
     out_identity->format = 1u;
     out_identity->role = H2_LOADER_IMAGE_ROLE_APP;
     out_identity->image_size = image_size;
-    app_digest_hex(digest, out_identity->image_sha256);
+    (void)snprintf(out_identity->image_sha256,
+        sizeof(out_identity->image_sha256), "%s", digest_hex);
     (void)snprintf(out_identity->board, sizeof(out_identity->board),
         "%s", runtime->board);
     (void)snprintf(out_identity->target, sizeof(out_identity->target),
@@ -304,7 +324,7 @@ int h2_bk_h2loader_init_app_client(
         .sleep_ms = app_sleep_ms,
     };
     h2_loader_app_client_config_t complete = config;
-    rc = current_app_identity(
+    rc = h2_bk_h2loader_current_app_identity(
         runtime, s_ble.active_version, &complete.active_identity);
     return rc == H2_PAL_OK
         ? h2_loader_app_client_init(client, &complete) : rc;

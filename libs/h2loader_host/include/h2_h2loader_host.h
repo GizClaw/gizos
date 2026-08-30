@@ -206,6 +206,8 @@ typedef struct h2_h2loader_host_serial_connection_config {
     const h2_pal_time_api_t *time;
     const h2_pal_mem_api_t *allocator;
     const char *port_id;
+    /** Reliable serial baud; zero selects the 115200 default. */
+    uint32_t baud_rate;
     uint32_t handshake_timeout_ms;
     uint32_t command_timeout_ms;
     uint32_t conversation_id;

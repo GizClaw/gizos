@@ -19,7 +19,7 @@ APP 和 Loader 使用同一个 Stage 实现。当前运行 APP 时，Host 可以
 APP 启动并完成平台 OTA image 确认后，必须核对：
 
 - 当前运行在 Partition 2。
-- 固件内嵌 identity 与 `partition_2` metadata 一致。
+- 当前 APP 的权威 identity 与 `partition_2` metadata 一致；静态字段来自构建，checksum/size 由运行分区计算。
 - Stage 与 Partition 2 的 image checksum 一致。
 
 全部一致后，APP 删除 `/dl/update.tar.zlib` 并清空 Stage metadata。流程不保存 `app_confirmed` 或 install state。

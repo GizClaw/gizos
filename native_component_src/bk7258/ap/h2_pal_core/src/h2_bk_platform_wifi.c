@@ -9,6 +9,9 @@
 
 #include <string.h>
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 static beken_semaphore_t s_h2_bk_wifi_scan_sem;
 static int s_h2_bk_wifi_events_registered;
 static int s_h2_bk_wifi_ap_active;
@@ -21,6 +24,20 @@ static int s_h2_bk_wifi_sta_status_valid;
 static h2_pal_wifi_sta_status_t s_h2_bk_wifi_sta_status;
 static int s_h2_bk_wifi_last_config_valid;
 static h2_pal_wifi_sta_config_t s_h2_bk_wifi_last_config;
+static StaticSemaphore_t s_h2_bk_wifi_request_mutex_control;
+static beken_mutex_t s_h2_bk_wifi_request_mutex;
+
+static int h2_bk_wifi_request_lock(void) {
+    return s_h2_bk_wifi_request_mutex != NULL &&
+        rtos_lock_mutex(&s_h2_bk_wifi_request_mutex) == kNoErr
+        ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+}
+
+static void h2_bk_wifi_request_unlock(void) {
+    if (s_h2_bk_wifi_request_mutex != NULL) {
+        (void)rtos_unlock_mutex(&s_h2_bk_wifi_request_mutex);
+    }
+}
 
 static int h2_bk_wifi_sta_get_status(
     h2_pal_wifi_sta_t *sta,
@@ -693,14 +710,16 @@ static void h2_bk_wifi_connect_worker(void *arg) {
 done:
         os_free(request);
     }
-    if (has_request &&
-        __atomic_load_n(
-            &s_h2_bk_wifi_connect_generation,
-            __ATOMIC_ACQUIRE) == generation) {
-        __atomic_store_n(
-            &s_h2_bk_wifi_connect_pending,
-            0,
-            __ATOMIC_RELEASE);
+    if (has_request && h2_bk_wifi_request_lock() == H2_PAL_OK) {
+        if (__atomic_load_n(
+                &s_h2_bk_wifi_connect_generation,
+                __ATOMIC_ACQUIRE) == generation) {
+            __atomic_store_n(
+                &s_h2_bk_wifi_connect_pending,
+                0,
+                __ATOMIC_RELEASE);
+        }
+        h2_bk_wifi_request_unlock();
     }
     rtos_delete_thread(NULL);
 }
@@ -720,10 +739,15 @@ static int h2_bk_wifi_sta_connect(
         return rc;
     }
 
+    rc = h2_bk_wifi_request_lock();
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+
     if (__atomic_load_n(
             &s_h2_bk_wifi_connect_pending,
             __ATOMIC_ACQUIRE) != 0) {
-        return timeout_ms == 0u &&
+        rc = timeout_ms == 0u &&
             s_h2_bk_wifi_connect_status.ssid_len == config->ssid_len &&
             memcmp(
                 s_h2_bk_wifi_connect_status.ssid,
@@ -731,6 +755,8 @@ static int h2_bk_wifi_sta_connect(
                 config->ssid_len) == 0
             ? H2_PAL_OK
             : H2_PAL_ERR_BUSY;
+        h2_bk_wifi_request_unlock();
+        return rc;
     }
 
     h2_pal_wifi_sta_status_t cached_status;
@@ -750,6 +776,7 @@ static int h2_bk_wifi_sta_connect(
             memcpy(cached_status.ssid, config->ssid, config->ssid_len);
             cached_status.ssid[config->ssid_len] = '\0';
             h2_bk_wifi_store_sta_status(&cached_status);
+            h2_bk_wifi_request_unlock();
             return H2_PAL_OK;
         }
     }
@@ -758,6 +785,7 @@ static int h2_bk_wifi_sta_connect(
         cached_status.ip_valid != 0u &&
         cached_status.ssid_len == config->ssid_len &&
         memcmp(cached_status.ssid, config->ssid, config->ssid_len) == 0) {
+        h2_bk_wifi_request_unlock();
         return H2_PAL_OK;
     }
 
@@ -793,6 +821,7 @@ static int h2_bk_wifi_sta_connect(
                 &s_h2_bk_wifi_connect_pending,
                 0,
                 __ATOMIC_RELEASE);
+            h2_bk_wifi_request_unlock();
             return H2_PAL_ERR_NO_MEMORY;
         }
         request->requested_config = *config;
@@ -813,9 +842,12 @@ static int h2_bk_wifi_sta_connect(
                 &s_h2_bk_wifi_connect_pending,
                 0,
                 __ATOMIC_RELEASE);
+            h2_bk_wifi_request_unlock();
             return H2_PAL_ERR_NO_MEMORY;
         }
+        h2_bk_wifi_request_unlock();
     } else {
+        h2_bk_wifi_request_unlock();
         wifi_link_status_t current_status;
         memset(&current_status, 0, sizeof(current_status));
         err = bk_wifi_sta_get_link_status(&current_status);
@@ -875,6 +907,10 @@ static int h2_bk_wifi_sta_connect(
 
 static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     (void)sta;
+    int lock_rc = h2_bk_wifi_request_lock();
+    if (lock_rc != H2_PAL_OK) {
+        return lock_rc;
+    }
     (void)__atomic_add_fetch(
         &s_h2_bk_wifi_connect_generation,
         1u,
@@ -883,6 +919,7 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
         &s_h2_bk_wifi_connect_pending,
         0,
         __ATOMIC_RELEASE);
+    h2_bk_wifi_request_unlock();
     /* BK's disconnect leaves the STA service and netif allocated. A later
      * start is then ignored, which can restore an IP-looking link without a
      * usable default route. Stop fully so the next connect recreates both. */
@@ -1115,6 +1152,10 @@ static h2_pal_wifi_ap_t s_h2_bk_wifi_ap = {
 };
 
 h2_pal_wifi_sta_t *h2_bk_platform_wifi_sta(void) {
+    if (s_h2_bk_wifi_request_mutex == NULL) {
+        s_h2_bk_wifi_request_mutex = (beken_mutex_t)xSemaphoreCreateMutexStatic(
+            &s_h2_bk_wifi_request_mutex_control);
+    }
     return &s_h2_bk_wifi_sta;
 }
 

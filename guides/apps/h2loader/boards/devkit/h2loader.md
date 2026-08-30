@@ -20,6 +20,6 @@ USB Serial/JTAG 是 canonical console；provider 只接受 launcher 声明的 al
 
 ## 预期表现
 
-先运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan`，只选择结构化 identity 为 `board=devkit`、`target=esp32s3`、`active_role=h2loader`、`transport=iostreamikcp` 的设备。随后用 scan 返回的 port 执行 `status`，确认 `upgrade_phase=idle`，再使用 `send --file <build-dir>/update.tar.zlib` 和 `upgrade` 完成 Loader self-update。
+先运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan`，只选择结构化 identity 为 `board=devkit`、`target=esp32s3`、`active_role=loader`、`transport=iostreamikcp` 的设备。随后用 scan 返回的 port 执行 `status`，确认没有有效 Stage，再使用 `send --file <build-dir>/update.tar.zlib` 和 `reboot upgrade` 完成 Loader self-update。
 
-`H2_LOADER_UPGRADE result=OK` 只表示升级已被接受。验收还必须等待 trial 与 canonical 重连，重新执行 `status`，确认 active version 等于构建版本、运行 canonical partition 且 `upgrade_phase=idle`，并在 power-cycle 后再次确认。已经安装 H2Loader 的正常路径不直接烧录；只有 self-update 无法执行、重新确认 board/target identity 且已获得 destructive recovery 授权时，才按恢复流程使用本 target 的 `.recovery.h2fb`。
+命令成功只表示重启请求已被接受。验收还必须等待 Partition 2 候选 Loader 启动并回写，重新连接后执行 `status`，确认 active version 等于构建版本、运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，并在 power-cycle 后再次确认。已经安装 H2Loader 的正常路径不直接烧录；只有 self-update 无法执行、重新确认 board/target identity 且已获得 destructive recovery 授权时，才按恢复流程使用本 target 的 `.recovery.h2fb`。

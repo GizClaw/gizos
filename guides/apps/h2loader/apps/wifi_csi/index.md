@@ -12,7 +12,7 @@ Wi-Fi CSI Smoke 是共享 Example project group 拥有的无线信道诊断 App�
 - 屏幕 route：`wifi-csi/dashboard`
 - 入口：H2Loader 启动 `wifi-csi` App image。
 - 健康终点：H2Loader command service、Runtime、Display、renderer 和诊断状态机可用，App image 已确认；CSI 可以进入 `running`，也可以停在明确的诊断错误状态。
-- 退出：H2Loader `restart`、`rollback` 或系统停止 App 时完成对称清理。
+- 退出：H2Loader `reboot app`、`reboot loader` 或系统停止 App 时完成对称清理。
 
 `szp` 与 `bk7258_v3_202405` 分别使用 ESP-IDF 和 Armino CSI provider。两块板都提供正常的 `wifi-csi` App image；能读到结构合法数据时显示曲线和统计，无 frame、invalid frame、SDK 不兼容或 provider error 时显示明确错误。Desktop/macOS 绑定 canonical unsupported，测试只允许使用明确标记为 `fake` 的输入验证 portable state 和 renderer。
 
@@ -46,7 +46,7 @@ flowchart LR
     Backoff --> Retry
     ErrorKind -- "否" --> DiagnosticError(["diagnostic_error"])
     DiagnosticError --> DiagnosticScreen[["wifi-csi/dashboard<br/>NO FRAMES / INVALID / SDK ERROR"]]
-    Stop[/"H2Loader restart、rollback 或 App stop"/] --> Shutdown["停止新 callback、清空 queue、释放 Display 与 Runtime"]
+    Stop[/"H2Loader reboot app、reboot loader 或 App stop"/] --> Shutdown["停止新 callback、清空 queue、释放 Display 与 Runtime"]
     Connecting --> Stop
     Capturing --> Stop
     Backoff --> Stop
@@ -75,7 +75,7 @@ App 从 `connecting` 开始；关联成功后启动 CSI。断开或瞬时 provid
 | CSI frame | Platform CSI provider callback | 复制固定上限的 metadata 和 I/Q sample，不能保留 SDK pointer |
 | `1 s` timer tick | Runtime time | 关闭统计 bucket，生成 frame rate、rolling metrics 和 screen snapshot |
 | Display dimensions | Display PAL | `szp` 选择 `320 × 240`；BK7258 V3 202405 选择 `800 × 480` landscape layout |
-| H2Loader command | H2Loader App client | 支持 `status`、`stats`、`restart`、`rollback` 和 coredump |
+| H2Loader command | H2Loader App client | 支持 `status`、`stats`、`reboot app|loader|upgrade` 和 coredump |
 
 Portable App 只能使用 Runtime/PAL 和 H2Loader public contract，不能 include ESP-IDF、Armino、BSP private header 或 board constant。Platform provider 负责把 SDK metadata 和 sample buffer 规范化为 PAL frame。
 
@@ -207,7 +207,7 @@ App 不需要 PIXA、Opus、Bundle data 或 Preference key。屏幕由 portable 
 
 ### Provider 真机验收
 
-ESP32-S3 SZP 与 BK7258 V3 202405 分别安装由 H2Loader 管理的 App package，并确认预期 board、target、`active_role=app`、App identity、`state=confirmed`、installed checksum 与 `upgrade_phase=idle`。
+ESP32-S3 SZP 与 BK7258 V3 202405 分别安装由 H2Loader 管理的 App package，并确认预期 board、target、`active_role=app`，active identity 与 package manifest 的 role/version/board/target/image checksum/size 一致，运行 Partition 2、Partition 2 metadata valid 且 Stage invalid。
 
 设备使用普通 `2.4 GHz` router，并固定 BSSID/channel、PAL 投递间隔以及设备与床/人体相对摆位，依次执行：
 
@@ -227,4 +227,4 @@ AVDK v3.1.1 验收 image 必须关闭 CP country-code scan event source、启用
 
 取得结构合法 frame 后，执行与 SZP 相同的场景步骤并确认子载波变化可重复。仅看到曲线变化仍不能证明人体姿态或睡眠状态，也不能替代后续算法验收。
 
-验收只要求 quiet、movement 和 stationary 三段在原始曲线与 rolling metrics 上可观察和可重复，不设人体存在、躺下或睡眠分类准确率。H2Loader `status`、`stats`、`restart`、`rollback` 和 coredump 在 App 运行期间保持可用，capture stop 后不得再收到旧 session callback。
+验收只要求 quiet、movement 和 stationary 三段在原始曲线与 rolling metrics 上可观察和可重复，不设人体存在、躺下或睡眠分类准确率。H2Loader `status`、`stats`、`reboot app|loader|upgrade` 和 coredump 在 App 运行期间保持可用，capture stop 后不得再收到旧 session callback。

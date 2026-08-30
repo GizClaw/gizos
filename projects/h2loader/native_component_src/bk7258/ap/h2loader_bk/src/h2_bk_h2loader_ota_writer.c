@@ -494,7 +494,6 @@ int h2_bk_h2loader_confirm_active_loader(void *user) {
 
 int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime) {
     const bk_logic_partition_t *partition;
-    h2_loader_status_t status;
     h2_loader_image_identity_t identity = {0};
     h2_pal_firmware_info_t firmware_info;
     uint8_t confirm_flag = 0xffu;
@@ -527,25 +526,12 @@ int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime) {
             return H2_PAL_ERR_IO;
         }
     }
-    rc = h2_loader_read_pref_status(runtime->pref, runtime->mem, &status);
-    if (rc != H2_PAL_OK || !status.partition_2.valid) return rc;
     rc = h2_pal_firmware_info_get_current(
         runtime->firmware_info, &firmware_info);
     if (rc != H2_PAL_OK) return rc;
-    if (strcmp(firmware_info.version, status.partition_2.version) != 0) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    identity.format = 1u;
-    identity.role = H2_LOADER_IMAGE_ROLE_APP;
-    identity.image_size = status.partition_2.image_size;
-    (void)snprintf(identity.image_sha256, sizeof(identity.image_sha256), "%s",
-        status.partition_2.image_checksum);
-    (void)snprintf(identity.version, sizeof(identity.version), "%s",
-        status.partition_2.version);
-    (void)snprintf(identity.board, sizeof(identity.board), "%s",
-        status.partition_2.board);
-    (void)snprintf(identity.target, sizeof(identity.target), "%s",
-        status.partition_2.target);
+    rc = h2_bk_h2loader_current_app_identity(
+        runtime, firmware_info.version, &identity);
+    if (rc != H2_PAL_OK) return rc;
     return h2_loader_finalize_active_app(
         runtime->pref, runtime->mem, runtime->fs,
         H2_LOADER_DEFAULT_PACKAGE_PATH, &identity,

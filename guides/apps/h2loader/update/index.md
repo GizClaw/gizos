@@ -16,6 +16,8 @@ Host CLI 对应 `send`、`send-url` 和 `stage abort`。传输成功只表示 St
 
 `update.tar.zlib` 的 manifest 包含 role、board、target、version、raw image size 和 raw image SHA-256。完整压缩 package SHA-256 与 raw image SHA-256 是两种不同 identity，不能互换。
 
+运行时 identity 不读取 Stage 或 Preference：role、version、board 和 target 由构建事实随固件链接；image size 和 SHA-256 由平台直接读取当前运行分区并计算。把 whole-image SHA-256 原样写回同一镜像会形成自引用，因此 checksum/size 采用运行分区的权威计算值，并必须与 package manifest 精确一致；无法读取或计算时启动失败关闭。
+
 持久化状态只描述三个槽位：
 
 - `stage`：已发布 package 及其 image identity。

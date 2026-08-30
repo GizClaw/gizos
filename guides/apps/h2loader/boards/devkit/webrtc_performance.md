@@ -27,4 +27,4 @@ H2LOADER_WIFI_CREDENTIALS='{"ssid":"<ssid>","password":"<password>"}' \
   //projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/devkit:package
 ```
 
-设备已有 H2Loader 且 command transport 可通信时，必须按标准 `rollback -> status -> send -> reboot` 流程安装，不能底层 erase 或 flash。有效结果必须包含 exact package checksum、`devkit/esp32s3` identity、LAN endpoint、selected UDP ICE pair、双向 exact 10 MiB、完整 performance summary 和三类 heap 的 KiB checkpoint。只有 firmware build 或 package stage 不能算真实设备通过。
+设备已有 H2Loader 且 command transport 可通信时，必须按标准 `status -> send -> reboot upgrade -> status` 流程安装，不能底层 erase 或 flash。有效结果必须包含 exact package checksum、`devkit/esp32s3` identity、LAN endpoint、selected UDP ICE pair、双向 exact 10 MiB、完整 performance summary 和三类 heap 的 KiB checkpoint。只有 firmware build 或 package Stage 不能算真实设备通过。

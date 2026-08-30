@@ -1864,6 +1864,10 @@ static void test_scheduler(void) {
         json.bytes, json.len, "\"operation\":\"managed\""));
     assert(buffer_contains(
         json.bytes, json.len, "\"final_boot_intent\":\"auto\""));
+    assert(buffer_contains(
+        json.bytes, json.len, "\"stage_valid\":0"));
+    assert(!buffer_contains(
+        json.bytes, json.len, "\"staged_valid\""));
     export_buffer_t csv = { 0 };
     assert(h2_h2loader_host_scheduler_export_csv(
                scheduler, export_write, &csv) == H2_PAL_OK);
@@ -1871,6 +1875,8 @@ static void test_scheduler(void) {
     assert(buffer_contains(csv.bytes, csv.len, "\"slot-2\""));
     assert(buffer_contains(csv.bytes, csv.len, "\"serial\""));
     assert(buffer_contains(csv.bytes, csv.len, "\"auto\""));
+    assert(buffer_contains(csv.bytes, csv.len, "stage_valid,error_detail"));
+    assert(!buffer_contains(csv.bytes, csv.len, "staged_valid"));
     assert(h2_h2loader_host_scheduler_close(&scheduler) == H2_PAL_OK);
     assert(scheduler == NULL);
 
@@ -1910,6 +1916,7 @@ typedef struct serial_control_fixture {
     size_t event_count;
     uint32_t line_mask;
     uint32_t asserted_lines;
+    uint32_t expected_baud;
 } serial_control_fixture_t;
 
 static h2_pal_result_t serial_control_open(
@@ -1919,7 +1926,7 @@ static h2_pal_result_t serial_control_open(
     h2_pal_serial_host_session_t **out_session) {
     serial_control_fixture_t *fixture = user;
     assert(strcmp(port_id, "control-port") == 0);
-    assert(config->baud_rate == H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD);
+    assert(config->baud_rate == fixture->expected_baud);
     fixture->events[fixture->event_count++] = 'o';
     *out_session = (h2_pal_serial_host_session_t *)fixture;
     return H2_PAL_OK;
@@ -1971,6 +1978,7 @@ static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
     serial_control_fixture_t fixture = {
         .set_result = H2_PAL_OK,
         .stream_result = H2_PAL_ERR_IO,
+        .expected_baud = 230400u,
     };
     h2_pal_serial_host_api_t serial = {
         .user = &fixture,
@@ -1981,6 +1989,7 @@ static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
         .time = &time,
         .allocator = &test_mem,
         .port_id = "control-port",
+        .baud_rate = 230400u,
     };
     h2_h2loader_host_serial_connection_t *connection = NULL;
 
@@ -1995,6 +2004,8 @@ static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
     memset(&fixture, 0, sizeof(fixture));
     fixture.set_result = H2_PAL_ERR_UNSUPPORTED;
     fixture.stream_result = H2_PAL_ERR_IO;
+    fixture.expected_baud = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD;
+    config.baud_rate = 0u;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
     assert(fixture.event_count == 3u);
@@ -2003,6 +2014,7 @@ static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
     memset(&fixture, 0, sizeof(fixture));
     fixture.set_result = H2_PAL_ERR_TIMEOUT;
     fixture.stream_result = H2_PAL_ERR_IO;
+    fixture.expected_baud = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
     assert(fixture.event_count == 3u);

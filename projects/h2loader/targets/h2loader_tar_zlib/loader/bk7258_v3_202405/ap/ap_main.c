@@ -241,28 +241,58 @@ static void command_digest_hex(const uint8_t digest[32], char out[65]) {
 }
 
 static int current_loader_identity(
+    const h2_pal_pref_api_t *pref,
+    const h2_pal_mem_api_t *allocator,
+    const h2_pal_power_api_t *power,
     const char *version,
     h2_loader_image_identity_t *out_identity) {
     const h2_loader_image_reader_api_t *reader = h2_bk_h2loader_image_reader();
+    h2_pal_power_boot_partition_t running;
+    h2_loader_status_t status;
+    const h2_loader_metadata_t *active = NULL;
     uint8_t buffer[4096];
     uint8_t digest[32];
+    char digest_hex[65];
     uint64_t image_size = 0u;
     uint64_t offset = 0u;
     int rc;
 
-    if (version == NULL || out_identity == NULL || reader == NULL ||
+    if (pref == NULL || allocator == NULL || power == NULL ||
+        version == NULL || out_identity == NULL || reader == NULL ||
         reader->vtable == NULL || reader->vtable->get_capacity == NULL ||
         reader->vtable->read == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = reader->vtable->get_capacity(
-        reader->user, H2_BK_H2LOADER_PRIMARY_PARTITION_ID, &image_size);
-    if (rc != H2_PAL_OK || image_size == 0u) return rc;
+    rc = h2_pal_power_get_running_boot_partition(power, &running);
+    if (rc != H2_PAL_OK ||
+        (running.id != H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
+         running.id != H2_BK_H2LOADER_APP_PARTITION_ID)) {
+        return rc == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : rc;
+    }
+    rc = h2_loader_read_pref_status(pref, allocator, &status);
+    active = rc == H2_PAL_OK
+        ? (running.id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID
+            ? &status.partition_1 : &status.partition_2)
+        : NULL;
+    if (active != NULL && active->valid &&
+        active->role == H2_LOADER_IMAGE_ROLE_H2LOADER &&
+        active->image_size != 0u && strcmp(active->version, version) == 0 &&
+        strcmp(active->board, "bk7258_v3_202405") == 0 &&
+        strcmp(active->target, "bk7258") == 0) {
+        image_size = active->image_size;
+    } else {
+        active = NULL;
+    }
+    if (image_size == 0u) {
+        rc = reader->vtable->get_capacity(
+            reader->user, running.id, &image_size);
+        if (rc != H2_PAL_OK || image_size == 0u) return rc;
+    }
     rc = command_digest_start(NULL);
     while (rc == H2_PAL_OK && offset < image_size) {
         size_t take = image_size - offset > sizeof(buffer)
             ? sizeof(buffer) : (size_t)(image_size - offset);
-        rc = reader->vtable->read(reader->user, H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
+        rc = reader->vtable->read(reader->user, running.id,
             offset, buffer, take);
         if (rc == H2_PAL_OK) rc = command_digest_update(NULL, buffer, take);
         offset += take;
@@ -272,11 +302,16 @@ static int current_loader_identity(
         command_digest_abort(NULL);
         return rc;
     }
+    command_digest_hex(digest, digest_hex);
+    if (active != NULL && strcmp(digest_hex, active->image_checksum) != 0) {
+        return H2_PAL_ERR_FORMAT;
+    }
     memset(out_identity, 0, sizeof(*out_identity));
     out_identity->format = 1u;
     out_identity->role = H2_LOADER_IMAGE_ROLE_H2LOADER;
     out_identity->image_size = image_size;
-    command_digest_hex(digest, out_identity->image_sha256);
+    (void)snprintf(out_identity->image_sha256,
+        sizeof(out_identity->image_sha256), "%s", digest_hex);
     (void)snprintf(out_identity->board, sizeof(out_identity->board),
         "%s", "bk7258_v3_202405");
     (void)snprintf(out_identity->target, sizeof(out_identity->target),
@@ -510,6 +545,7 @@ static void h2loader_startup_worker(void *user) {
         wait_forever();
     }
     rc = current_loader_identity(
+        config.pref, config.package.allocator, config.power,
         firmware_info.version, &config.active_identity);
     if (rc != H2_PAL_OK) {
         (void)h2_pal_mutex_unlock(

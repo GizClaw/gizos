@@ -35,6 +35,9 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_COREDUMP_DUMP,
   H2_H2LOADER_E2E_CASE_COREDUMP_ERASE,
   H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE,
+  H2_H2LOADER_E2E_CASE_MONITOR,
+  H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR,
+  H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -47,6 +50,8 @@ typedef struct h2_h2loader_e2e_case_result {
   uint64_t acknowledged_bytes;
   uint64_t total_bytes;
   size_t output_bytes;
+  size_t log_bytes;
+  uint32_t reconnect_attempts;
   uint8_t status_valid;
   h2_h2loader_host_status_t status;
 } h2_h2loader_e2e_case_result_t;
@@ -67,6 +72,7 @@ typedef struct h2_h2loader_e2e_config {
   const h2_pal_serial_host_api_t *serial;
   const h2_pal_ble_host_api_t *ble;
   const char *uart_endpoint;
+  uint32_t uart_baud_rate;
   const char *ble_endpoint;
   const char *expected_board;
   const char *expected_target;
@@ -84,12 +90,14 @@ typedef struct h2_h2loader_e2e_config {
   uint32_t repeat_count;
   uint32_t wait_timeout_ms;
   uint32_t command_timeout_ms;
+  uint32_t monitor_duration_ms;
   uint64_t expected_coredump_bytes;
   uint8_t include_wifi;
   uint8_t include_send;
   uint8_t include_send_url;
   uint8_t include_lifecycle;
   uint8_t include_coredump;
+  uint8_t include_monitor;
 
   h2_h2loader_host_cancelled_fn is_cancelled;
   void *cancel_user;

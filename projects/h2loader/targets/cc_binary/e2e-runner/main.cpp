@@ -37,6 +37,8 @@ struct Options {
   std::uint64_t coredump_bytes = 0u;
   std::uint32_t repeat = 1u;
   std::uint32_t timeout_ms = 120000u;
+  std::uint32_t baud = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD;
+  std::uint32_t monitor_ms = 0u;
   bool help = false;
 };
 
@@ -59,7 +61,8 @@ void usage(const char *program, FILE *stream) {
       "  --expected-board ID          require exact board identity\n"
       "  --expected-target ID         require exact target identity\n"
       "  --app-firmware FILE          APP update.tar.zlib for Stage/install\n"
-      "  --loader-firmware FILE       Loader update.tar.zlib for full lifecycle\n"
+      "  --loader-firmware FILE       Loader update.tar.zlib for full "
+      "lifecycle\n"
       "  --firmware-url URL           test device-side URL download\n"
       "  --url-bytes BYTES            expected URL payload size\n"
       "  --url-sha256 HEX             expected URL payload SHA-256\n"
@@ -71,6 +74,9 @@ void usage(const char *program, FILE *stream) {
       "1)\n"
       "  --timeout-ms MS              connect and command timeout (default "
       "120000)\n"
+      "  --baud RATE                  UART baud (default 115200)\n"
+      "  --monitor-ms MS              test monitor and reboot --monitor on "
+      "UART\n"
       "  --report FILE                write a JSON report\n"
       "  --help                       show this help\n",
       program);
@@ -127,6 +133,8 @@ bool parse_options(int argc, char **argv, Options *out) {
     kReport = 1ull << 12,
     kLoaderFirmware = 1ull << 13,
     kCoredumpBytes = 1ull << 14,
+    kBaud = 1ull << 15,
+    kMonitor = 1ull << 16,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -194,6 +202,18 @@ bool parse_options(int argc, char **argv, Options *out) {
       if (!parse_u64(value, 1u, 3600000u, &parsed))
         return false;
       out->timeout_ms = static_cast<std::uint32_t>(parsed);
+    } else if (std::strcmp(name, "--baud") == 0) {
+      bit = kBaud;
+      std::uint64_t parsed = 0u;
+      if (!parse_u64(value, 1200u, 4000000u, &parsed))
+        return false;
+      out->baud = static_cast<std::uint32_t>(parsed);
+    } else if (std::strcmp(name, "--monitor-ms") == 0) {
+      bit = kMonitor;
+      std::uint64_t parsed = 0u;
+      if (!parse_u64(value, 100u, 60000u, &parsed))
+        return false;
+      out->monitor_ms = static_cast<std::uint32_t>(parsed);
     } else if (std::strcmp(name, "--report") == 0) {
       bit = kReport;
       out->report = value;
@@ -219,6 +239,8 @@ bool parse_options(int argc, char **argv, Options *out) {
     return false;
   if (out->coredump_bytes != 0u && out->repeat != 1u)
     return false;
+  if (out->monitor_ms != 0u && out->uart.empty())
+    return false;
   const std::size_t cases = 1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
                             (!out->app_firmware.empty() ? 2u : 0u) +
                             (has_url ? 2u : 0u) +
@@ -226,7 +248,9 @@ bool parse_options(int argc, char **argv, Options *out) {
                             (out->coredump_bytes != 0u ? 4u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
-  return cases * transports * out->repeat <= H2_H2LOADER_E2E_MAX_CASES;
+  return (cases * transports + (out->monitor_ms != 0u ? 3u : 0u)) *
+             out->repeat <=
+         H2_H2LOADER_E2E_MAX_CASES;
 }
 
 std::filesystem::path resolve_input_path(const std::filesystem::path &path) {
@@ -345,13 +369,12 @@ void write_metadata(std::ostream &output,
          << ", \"package_checksum\": \""
          << json_escape(metadata.package_checksum)
          << "\", \"package_size\": " << metadata.package_size
-         << ", \"image_checksum\": \""
-         << json_escape(metadata.image_checksum)
-         << "\", \"image_size\": " << metadata.image_size
-         << ", \"role\": \"" << status_role_name(metadata.role)
-         << "\", \"version\": \"" << json_escape(metadata.version)
-         << "\", \"board\": \"" << json_escape(metadata.board)
-         << "\", \"target\": \"" << json_escape(metadata.target) << "\"}";
+         << ", \"image_checksum\": \"" << json_escape(metadata.image_checksum)
+         << "\", \"image_size\": " << metadata.image_size << ", \"role\": \""
+         << status_role_name(metadata.role) << "\", \"version\": \""
+         << json_escape(metadata.version) << "\", \"board\": \""
+         << json_escape(metadata.board) << "\", \"target\": \""
+         << json_escape(metadata.target) << "\"}";
 }
 
 bool write_report(const std::filesystem::path &path, const Options &options,
@@ -368,23 +391,24 @@ bool write_report(const std::filesystem::path &path, const Options &options,
          << "\",\n"
          << "  \"rc\": " << result.result << ",\n"
          << "  \"uart_endpoint\": \"" << json_escape(options.uart) << "\",\n"
+         << "  \"uart_baud_rate\": " << options.baud << ",\n"
          << "  \"ble_endpoint\": \"" << json_escape(options.ble_id) << "\",\n"
          << "  \"expected_board\": \"" << json_escape(options.expected_board)
          << "\",\n"
          << "  \"expected_target\": \"" << json_escape(options.expected_target)
          << "\",\n"
          << "  \"repeat\": " << options.repeat << ",\n"
-         << "  \"app_firmware\": {\"bytes\": "
-         << result.app_firmware_bytes << ", \"sha256\": \""
-         << result.app_firmware_sha256 << "\"},\n"
+         << "  \"monitor_duration_ms\": " << options.monitor_ms << ",\n"
+         << "  \"app_firmware\": {\"bytes\": " << result.app_firmware_bytes
+         << ", \"sha256\": \"" << result.app_firmware_sha256 << "\"},\n"
          << "  \"loader_firmware\": {\"bytes\": "
          << result.loader_firmware_bytes << ", \"sha256\": \""
          << result.loader_firmware_sha256 << "\"},\n"
          << "  \"firmware_url\": {\"bytes\": " << options.firmware_url_bytes
          << ", \"sha256\": \"" << json_escape(options.firmware_url_sha256)
          << "\"},\n"
-         << "  \"coredump\": {\"expected_bytes\": "
-         << options.coredump_bytes << "},\n"
+         << "  \"coredump\": {\"expected_bytes\": " << options.coredump_bytes
+         << "},\n"
          << "  \"summary\": {\"cases\": " << result.case_count
          << ", \"passed\": " << result.passed
          << ", \"failed\": " << result.failed
@@ -402,7 +426,10 @@ bool write_report(const std::filesystem::path &path, const Options &options,
            << ", \"elapsed_ms\": " << entry.elapsed_ms
            << ", \"acknowledged_bytes\": " << entry.acknowledged_bytes
            << ", \"total_bytes\": " << entry.total_bytes
-           << ", \"output_bytes\": " << entry.output_bytes << ", \"status\": ";
+           << ", \"output_bytes\": " << entry.output_bytes
+           << ", \"log_bytes\": " << entry.log_bytes
+           << ", \"reconnect_attempts\": " << entry.reconnect_attempts
+           << ", \"status\": ";
     if (entry.status_valid != 0u) {
       output << "{\"board\": \"" << json_escape(entry.status.board)
              << "\", \"target\": \"" << json_escape(entry.status.target)
@@ -415,11 +442,10 @@ bool write_report(const std::filesystem::path &path, const Options &options,
              << json_escape(entry.status.active_version)
              << "\", \"active_checksum\": \""
              << json_escape(entry.status.active_checksum)
-             << "\", \"active_image_size\": "
-             << entry.status.active_image_size
-             << ", \"running_partition\": "
-             << entry.status.running_partition << ", \"next_partition\": "
-             << entry.status.next_partition << ", \"boot_intent\": \""
+             << "\", \"active_image_size\": " << entry.status.active_image_size
+             << ", \"running_partition\": " << entry.status.running_partition
+             << ", \"next_partition\": " << entry.status.next_partition
+             << ", \"boot_intent\": \""
              << boot_intent_name(entry.status.boot_intent) << "\", \"stage\": ";
       write_metadata(output, entry.status.stage);
       output << ", \"partition_1\": ";
@@ -514,6 +540,7 @@ int main(int argc, char **argv) {
         .serial = h2::desktop::serial_host_api(),
         .ble = ble,
         .uart_endpoint = options.uart.empty() ? nullptr : options.uart.c_str(),
+        .uart_baud_rate = options.baud,
         .ble_endpoint =
             options.ble_id.empty() ? nullptr : options.ble_id.c_str(),
         .expected_board = options.expected_board.empty()
@@ -540,6 +567,7 @@ int main(int argc, char **argv) {
         .repeat_count = options.repeat,
         .wait_timeout_ms = options.timeout_ms,
         .command_timeout_ms = options.timeout_ms,
+        .monitor_duration_ms = options.monitor_ms,
         .expected_coredump_bytes = options.coredump_bytes,
         .include_wifi = static_cast<std::uint8_t>(!options.wifi_ssid.empty()),
         .include_send = static_cast<std::uint8_t>(!app_firmware.empty()),
@@ -549,6 +577,7 @@ int main(int argc, char **argv) {
             static_cast<std::uint8_t>(!loader_firmware.empty()),
         .include_coredump =
             static_cast<std::uint8_t>(options.coredump_bytes != 0u),
+        .include_monitor = static_cast<std::uint8_t>(options.monitor_ms != 0u),
         .is_cancelled = is_cancelled,
         .on_case = case_event,
         .on_progress = progress_event,

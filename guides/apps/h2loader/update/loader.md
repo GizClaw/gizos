@@ -20,7 +20,7 @@ Loader 只要确认自身 role 为 Loader 且运行在 Partition 2，就执行�
 1. 先确保异常重启仍选择 Partition 2。
 2. 提交 `partition_1.valid=false`。
 3. 从当前 Partition 2 完整读取自身 image，写入 Partition 1。
-4. 写入成功后用固件内嵌 identity 填充 Partition 1 metadata。
+4. 写入成功后用当前运行 Loader 的权威 identity 填充 Partition 1 metadata：静态字段来自构建，checksum/size 来自当前 Partition 2 原始镜像。
 5. 最后提交 `partition_1.valid=true`。
 6. 选择 Partition 1 并重启。
 

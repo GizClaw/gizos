@@ -101,6 +101,7 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
         .time = transport->context->runtime->time,
         .allocator = transport->context->runtime->mem,
         .port_id = transport->options->port,
+        .baud_rate = transport->options->baud_rate,
         .handshake_timeout_ms = transport->options->wait_timeout_ms,
         .command_timeout_ms = transport->command_timeout_ms,
         .ready_marker = transport->ready_marker,

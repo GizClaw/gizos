@@ -464,7 +464,9 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
         : config->command_timeout_ms;
     connection->post_command_delay_ms = config->post_command_delay_ms;
     const h2_pal_uart_io_stream_config_t uart_config = {
-        .baud_rate = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD,
+        .baud_rate = config->baud_rate == 0u
+            ? H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD
+            : config->baud_rate,
         .data_bits = 8u,
         .stop_bits = 1u,
         .parity = H2_PAL_UART_PARITY_NONE,

@@ -11,6 +11,7 @@ typedef struct h2_h2loader_cli_context h2_h2loader_cli_context_t;
 typedef struct h2_h2loader_cli_options {
     const char *port;
     const char *ready_marker;
+    uint32_t baud_rate;
     uint32_t wait_timeout_ms;
     uint32_t read_timeout_ms;
     uint32_t post_delay_ms;

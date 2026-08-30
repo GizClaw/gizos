@@ -22,6 +22,8 @@ class E2ERunnerCliTest(unittest.TestCase):
         self.assertIn("--uart ENDPOINT", result.stdout)
         self.assertIn("--ble-id ENDPOINT", result.stdout)
         self.assertIn("--coredump-bytes BYTES", result.stdout)
+        self.assertIn("--baud RATE", result.stdout)
+        self.assertIn("--monitor-ms MS", result.stdout)
 
     def test_endpoint_is_required(self):
         result = self.run_cli()
@@ -39,6 +41,18 @@ class E2ERunnerCliTest(unittest.TestCase):
 
     def test_repeat_must_be_positive(self):
         result = self.run_cli("--uart", "fake", "--repeat", "0")
+        self.assertEqual(result.returncode, 2)
+
+    def test_monitor_requires_uart_and_bounded_duration(self):
+        result = self.run_cli(
+            "--ble-id", "4:001122334455", "--monitor-ms", "500"
+        )
+        self.assertEqual(result.returncode, 2)
+        result = self.run_cli("--uart", "fake", "--monitor-ms", "0")
+        self.assertEqual(result.returncode, 2)
+
+    def test_baud_is_a_runtime_flag(self):
+        result = self.run_cli("--uart", "fake", "--baud", "0")
         self.assertEqual(result.returncode, 2)
 
     def test_coredump_is_single_run_and_requires_a_real_header(self):

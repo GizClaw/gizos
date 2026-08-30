@@ -186,7 +186,7 @@ Response 成功后双方立即开始全双工持续传输。Payload 由 `session
 
 ## 与 H2Loader BLE 共存
 
-Baseline App image 必须继续启动普通 H2Loader BLE command service，支持 `status`、`stats`、`restart`、`rollback` 和 `coredump`。测速不能改变同一 board 的 H2Loader Service UUID、Service Data identity 或 Host 合成的 `h2l.<board>` 显示名，也不能取代管理 service。
+Baseline App image 必须继续启动普通 H2Loader BLE command service，支持 `status`、`stats`、`reboot app|loader|upgrade` 和 `coredump`。测速不能改变同一 board 的 H2Loader Service UUID、Service Data identity 或 Host 合成的 `h2l.<board>` 显示名，也不能取代管理 service。
 
 H2Loader command transport 使用自己的 128-bit UUID。Server 将 H2Loader service UUID 与测速 `0xFEE0` 放在同一个 connectable Extended Advertising set；产品 invite beacon 等动态 non-connectable set 不属于本 App。测速与 command service 共享同一个 BLE Host，并注册彼此独立的 GATT service。
 
@@ -241,7 +241,7 @@ macOS BLE Loader `load` 是 Host 到设备的单向口径，不能与上表的�
 
 BK 两个端点的 connection 与 last-error 是 App 启动累计值，包含开始稳定计时前为打开日志监控产生的连接；稳定窗口内这些计数没有继续增加。三组稳定窗口均未出现 payload mismatch、queue overflow、task allocation fallback 或新的断连。TX/RX total 差异来自发送端 flush 与接收端读取时点以及稳定窗口前的累计数据，不作为 payload 正确性判断；deterministic offset 校验始终通过。
 
-Review 修复后的 `309f9bebf64c` 另以 BK Client ↔ SZP Server 做定向复测。BK package 通过 `send-url` 下载并校验 `1,487,678 B`，启动后报告 `state=confirmed`，首个会话双向 payload 均超过 `2 MiB`。随后让 SZP 通过 Loader rollback 主动断开，BK 恢复扫描且 UART 管理命令仍可用；SZP 重新启动原 Server App 后，BK 自动重连，第二个会话双向 payload 均超过 `3 MiB`，MTU、PHY 与 interval 仍为 `517`、`2M`、`15 ms`，未出现 payload mismatch 或 queue overflow。
+Review 修复后的 `309f9bebf64c` 另以 BK Client ↔ SZP Server 做定向复测。BK package 通过 `send-url` 下载并校验 `1,487,678 B`，启动后 active identity 与 package manifest 一致、Partition 2 metadata valid 且 Stage invalid，首个会话双向 payload 均超过 `2 MiB`。随后让 SZP 返回 Loader 主动断开，BK 恢复扫描且 UART 管理命令仍可用；SZP 重新启动原 Server App 后，BK 自动重连，第二个会话双向 payload 均超过 `3 MiB`，MTU、PHY 与 interval 仍为 `517`、`2M`、`15 ms`，未出现 payload mismatch 或 queue overflow。
 
 ## 验收页面原型
 
@@ -294,6 +294,6 @@ App 不需要 PIXA、Opus、Bundle data 或 Preference key。屏幕由 portable 
 - 没有 queue/buffer overflow 或 task allocation fallback。
 - 主动重启一端蓝牙、重启一端 App 和制造连接超时后，Server 恢复 advertising，Client 自动重新扫描、连接并建立新 session。
 - 每次恢复增加对应的 `connections`、`reconnects` 和 `disconnects`，同时保留最近的 last error。
-- session 结束后可重新通过 H2Loader actor 执行 `status`、`stats`、`restart` 和 `rollback`。
+- session 结束后可重新通过 H2Loader actor 执行 `status`、`stats` 和 `reboot app|loader|upgrade`。
 
 基线报告按 board pair、direction 与持续时间记录 5 秒 TX/RX 速度的 minimum、median、p95、maximum，以及 total bytes、connections、reconnects、disconnects、retransmits、queue high-water 与所有 last error。macOS native CLI 测试使用相同统计口径，但作为 Host backend 对照单独列出，不与设备对设备结果合并。

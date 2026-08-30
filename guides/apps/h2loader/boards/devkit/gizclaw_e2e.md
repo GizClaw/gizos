@@ -6,7 +6,7 @@
 
 Launcher 先初始化 Runtime 和 H2Loader App command service，再启动独立 Wi-Fi supervisor。Supervisor 从 Runtime `wifi_settings` 读取 Loader 已确认并保存的 STA 配置；没有 saved config 时每 10 秒报告一次 `NO_SAVED_WIFI`，连接失败或断开后同样等待 10 秒重试。日志不输出 SSID、Wi-Fi password、RegistrationToken、Firmware URL、原始音频或 unrestricted response body。
 
-`deploy-default` 是只绑定 RuntimeProfile `default` 的公开测试 identity，仍由 launcher-private config 固定进 image。Wi-Fi SSID 和 password 不编进 package；安装、重启和 rollback 后使用 ESP Wi-Fi settings PAL 持久化的配置。修改 endpoint 或 token 必须重新构建并通过 H2Loader 安装新 package；修改 Wi-Fi 只需先返回 Loader，成功执行 `wifi connect`，再启动 App。
+`deploy-default` 是只绑定 RuntimeProfile `default` 的公开测试 identity，仍由 launcher-private config 固定进 image。Wi-Fi SSID 和 password 不编进 package；安装或重启后使用 ESP Wi-Fi settings PAL 持久化的配置。修改 endpoint 或 token 必须重新构建并通过 H2Loader 安装新 package；修改 Wi-Fi 只需执行 `reboot loader` 返回 Loader，成功执行 `wifi connect`，再执行 `reboot app` 启动 App。
 
 主循环消费 Runtime system event。第一次收到 Wi-Fi `GOT_IP` 后创建唯一 runner，调用一次 `h2_gizclaw_e2e_run()` 的 `all` suite；后续断线和重连只更新连接状态，不重新运行。portable App 继续执行所有独立 case、反向 cleanup 和 terminal aggregation，不因单个错误提前退出。运行期间至少每 10 秒输出进度，完成后立即输出一次 summary，并每 10 秒重放同一 bounded final summary，便于晚接入 UART 的操作者取得结论。
 

@@ -229,6 +229,7 @@ void h2_h2loader_cli_send_progress(
 
 static const char help_text[] =
     "usage: h2loader [--port ENDPOINT] [--transport iostreamikcp|bleikcp]\n"
+    "                [--baud RATE]\n"
     "                [--ready MARKER]\n"
     "                [--wait-timeout SECONDS] [--read-timeout SECONDS]\n"
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
@@ -268,12 +269,27 @@ static int parse_nonnegative_seconds(const char *value, uint32_t *out_ms) {
     return parsed == 0.0 || *out_ms != 0u;
 }
 
+static int parse_baud(const char *value, uint32_t *out_baud) {
+    char *end = NULL;
+    unsigned long parsed;
+    if (value == NULL || value[0] == '\0' || value[0] == '-') return 0;
+    errno = 0;
+    parsed = strtoul(value, &end, 10);
+    if (errno != 0 || end == value || *end != '\0' ||
+        parsed < 1200u || parsed > 4000000u) {
+        return 0;
+    }
+    *out_baud = (uint32_t)parsed;
+    return 1;
+}
+
 static int parse_global(
     int argc,
     const char *const *argv,
     h2_h2loader_cli_options_t *out) {
     memset(out, 0, sizeof(*out));
     out->transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;
+    out->baud_rate = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD;
     /* BK7258 can take more than 15 seconds to expose Loader transport after
      * a reset-wired serial open. Keep the default bounded, but long enough
      * that a healthy cold boot is not reported as a connection failure. */
@@ -304,7 +320,9 @@ static int parse_global(
         }
         if (i + 1 >= argc) return 0;
         if (strcmp(argv[i], "--port") == 0) out->port = argv[++i];
-        else if (strcmp(argv[i], "--transport") == 0) {
+        else if (strcmp(argv[i], "--baud") == 0) {
+            if (!parse_baud(argv[++i], &out->baud_rate)) return 0;
+        } else if (strcmp(argv[i], "--transport") == 0) {
             const char *transport = argv[++i];
             if (strcmp(transport, "iostreamikcp") == 0) {
                 out->transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;

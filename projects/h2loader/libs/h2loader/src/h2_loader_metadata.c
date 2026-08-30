@@ -26,9 +26,11 @@ static int checksum_valid(const char *value, int optional) {
 }
 
 static int text_valid(const char *value) {
-    size_t len;
+    size_t len = 0u;
     if (value == NULL || value[0] == '\0') return 0;
-    len = strnlen(value, H2_LOADER_IDENTITY_TEXT_MAX);
+    while (len < H2_LOADER_IDENTITY_TEXT_MAX && value[len] != '\0') {
+        ++len;
+    }
     return len > 0u && len < H2_LOADER_IDENTITY_TEXT_MAX;
 }
 

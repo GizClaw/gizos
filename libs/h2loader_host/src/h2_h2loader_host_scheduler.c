@@ -472,7 +472,7 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_json(
             sizeof(numbers),
             ",\"result\":%d,\"started_ms\":%llu,\"finished_ms\":%llu,"
             "\"retry_count\":%" PRIu32 ",\"usb_vid\":%u,\"usb_pid\":%u,"
-            "\"staged_valid\":%u}",
+            "\"stage_valid\":%u}",
             (int)job->result,
             (unsigned long long)job->started_ms,
             (unsigned long long)job->finished_ms,
@@ -527,7 +527,7 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
         "asset_version,asset_sha256,asset_image_sha256,state,result,"
         "started_ms,finished_ms,retry_count,final_board,final_target,"
         "final_role,final_version,final_boot_intent,final_checksum,"
-        "staged_valid,error_detail\r\n");
+        "stage_valid,error_detail\r\n");
     for (size_t i = 0u; rc == H2_PAL_OK && i < scheduler->job_count; ++i) {
         const h2_h2loader_host_job_result_t *job = &scheduler->jobs[i];
         const char *fields[] = {

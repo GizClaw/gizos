@@ -23,7 +23,7 @@ bazel build --config=bk7258 \
 
 ## 平台配置
 
-CP 独占 UART0 RX 和 physical TX serializer，UART 固定为 230400 8N1。CP 不解析 H2IKCP 或 H2Loader command；AP 通过 mailbox-backed UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
+CP 独占 UART0 RX 和 physical TX serializer，managed UART 启动默认值为 115200 8N1；Host 可通过显式 `--baud` 对特殊固件覆盖该值。CP 不解析 H2IKCP 或 H2Loader command；AP 通过 mailbox-backed UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
 
 ## 预期表现
 
