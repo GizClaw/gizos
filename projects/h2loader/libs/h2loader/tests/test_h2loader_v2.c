@@ -34,8 +34,12 @@ typedef struct test_fixture {
   uint32_t next_partition;
   unsigned set_next_calls;
   unsigned reboot_calls;
+  unsigned prepare_calls;
+  unsigned transition_calls;
   int set_next_result;
   int reboot_result;
+  int prepare_result;
+  int transition_result;
 
   uint8_t partition_bytes[2][128];
   uint32_t writer_partition;
@@ -258,6 +262,21 @@ static h2_pal_result_t power_reboot(void *user, uint32_t reason) {
   return fixture->reboot_result;
 }
 
+static int prepare_disruptive(void *user,
+                              h2_loader_disruptive_action_t action) {
+  test_fixture_t *fixture = user;
+  assert(action >= H2_LOADER_DISRUPTIVE_REBOOT_LOADER &&
+         action <= H2_LOADER_DISRUPTIVE_REBOOT_APP);
+  ++fixture->prepare_calls;
+  return fixture->prepare_result;
+}
+
+static int reboot_transition(void *user) {
+  test_fixture_t *fixture = user;
+  ++fixture->transition_calls;
+  return fixture->transition_result;
+}
+
 static int image_capacity(void *user, uint32_t partition_id, uint64_t *out) {
   (void)user;
   if (partition_id != 1u && partition_id != 2u)
@@ -399,6 +418,8 @@ static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
   fixture->commit_result = H2_PAL_OK;
   fixture->set_next_result = H2_PAL_OK;
   fixture->reboot_result = H2_PAL_OK;
+  fixture->prepare_result = H2_PAL_OK;
+  fixture->transition_result = H2_PAL_OK;
   fixture->writer_begin_result = H2_PAL_OK;
   fixture->writer_write_result = H2_PAL_OK;
   fixture->writer_finish_result = H2_PAL_OK;
@@ -444,6 +465,8 @@ static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
           },
       .pref = &fixture->pref,
       .power = &fixture->power,
+      .before_disruptive = prepare_disruptive,
+      .disruptive_user = fixture,
       .board = "devkit",
       .target = "esp32s3",
       .chip = "esp32s3",
@@ -843,6 +866,46 @@ static void test_reboot_commands_only_set_intent_and_partition(void) {
   assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
   assert(fixture.next_partition == 1u);
   assert(fixture.reboot_calls == 1u);
+  assert(fixture.prepare_calls == 3u);
+}
+
+static void test_reboot_preparation_and_failures_do_not_arm_boot(void) {
+  test_fixture_t fixture;
+
+  fixture_init(&fixture, 1u);
+  fixture.prepare_result = H2_PAL_ERR_IO;
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  assert(h2_loader_reboot_app_with_transition(
+             &fixture.loader, reboot_transition, &fixture) == H2_PAL_ERR_IO);
+  assert(fixture.prepare_calls == 1u);
+  assert(fixture.transition_calls == 0u);
+  assert(fixture.set_next_calls == 0u);
+  assert(fixture.next_partition == 1u);
+  assert(fixture.loader.status.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
+
+  fixture_init(&fixture, 1u);
+  fixture.transition_result = H2_PAL_ERR_IO;
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  assert(h2_loader_reboot_app_with_transition(
+             &fixture.loader, reboot_transition, &fixture) == H2_PAL_ERR_IO);
+  assert(fixture.prepare_calls == 1u);
+  assert(fixture.transition_calls == 1u);
+  assert(fixture.set_next_calls == 2u);
+  assert(fixture.next_partition == 1u);
+  assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
+  assert(fixture.reboot_calls == 0u);
+
+  fixture_init(&fixture, 1u);
+  fixture.reboot_result = H2_PAL_ERR_IO;
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  assert(h2_loader_reboot_app_with_transition(
+             &fixture.loader, reboot_transition, &fixture) == H2_PAL_ERR_IO);
+  assert(fixture.prepare_calls == 1u);
+  assert(fixture.transition_calls == 1u);
+  assert(fixture.set_next_calls == 2u);
+  assert(fixture.next_partition == 1u);
+  assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
+  assert(fixture.reboot_calls == 1u);
 }
 
 static void
@@ -884,6 +947,7 @@ int main(void) {
   test_same_image_new_package_is_still_inspected();
   test_app_finalize_only_consumes_matching_stage();
   test_reboot_commands_only_set_intent_and_partition();
+  test_reboot_preparation_and_failures_do_not_arm_boot();
   test_stage_begin_invalidates_metadata_and_removes_old_package();
   puts("h2loader v2 boot tests passed");
   return 0;

@@ -499,9 +499,9 @@ typedef struct h2_h2loader_host_managed_transport_vtable {
      * Re-enumerate the original physical candidate.
      *
      * Implementations must use authoritative physical identity and must
-     * never switch to a name-matched candidate. BLE v1/v2 backend IDs and
-     * addresses are not authoritative across scans; callers must instead
-     * remain in one connection or fail until a device UID is available.
+     * never switch to a name-matched candidate. BLE public/random identity
+     * addresses are authoritative; transient public/random addresses and
+     * backend-only IDs are not and must fail lifecycle rediscovery.
      */
     h2_pal_result_t (*rediscover)(void *user);
 } h2_h2loader_host_managed_transport_vtable_t;

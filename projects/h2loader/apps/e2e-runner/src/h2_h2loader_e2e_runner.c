@@ -11,6 +11,9 @@
 #define H2_E2E_COMMAND_OUTPUT_CAPACITY 4096u
 #define H2_E2E_WIFI_SCAN_ATTEMPTS 3u
 #define H2_E2E_WIFI_SCAN_RETRY_DELAY_MS 500u
+#define H2_E2E_REMOVED_COMMAND_AVAILABILITY_MASK                            \
+  ((UINT32_C(1) << 6) | (UINT32_C(1) << 7) | (UINT32_C(1) << 14) |         \
+   (UINT32_C(1) << 15))
 
 typedef struct h2_e2e_transport_context {
   const h2_h2loader_e2e_config_t *config;
@@ -18,6 +21,8 @@ typedef struct h2_e2e_transport_context {
   h2_h2loader_host_serial_connection_t *serial_connection;
   h2_h2loader_host_ble_connection_t *ble_connection;
   h2_h2loader_host_candidate_t ble_candidate;
+  h2_pal_ble_addr_t authoritative_ble_address;
+  uint8_t authoritative_ble_address_valid;
   h2_h2loader_host_catalog_entry_t app_asset;
   h2_h2loader_host_catalog_entry_t loader_asset;
   h2_h2loader_e2e_case_result_t *case_result;
@@ -50,8 +55,16 @@ h2_h2loader_e2e_transport_name(h2_h2loader_e2e_transport_t transport) {
 
 const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
   switch (test_case) {
+  case H2_H2LOADER_E2E_CASE_HELP:
+    return "help";
   case H2_H2LOADER_E2E_CASE_STATUS:
     return "status";
+  case H2_H2LOADER_E2E_CASE_STATS:
+    return "stats";
+  case H2_H2LOADER_E2E_CASE_MEMORY:
+    return "memory";
+  case H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT:
+    return "legacy-commands-absent";
   case H2_H2LOADER_E2E_CASE_WIFI_SCAN:
     return "wifi-scan";
   case H2_H2LOADER_E2E_CASE_WIFI_CONNECT:
@@ -88,6 +101,8 @@ const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
     return "reboot-loader-monitor";
   case H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR:
     return "reboot-app-monitor";
+  case H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR:
+    return "reboot-upgrade-monitor";
   default:
     return "unknown";
   }
@@ -362,7 +377,25 @@ resolve_ble_candidate(h2_e2e_transport_context_t *context) {
   }
   if (matches == 0u)
     return H2_PAL_ERR_NOT_FOUND;
-  return matches == 1u ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  if (matches != 1u)
+    return H2_PAL_ERR_INVALID_STATE;
+  if (context->authoritative_ble_address_valid) {
+    return context->ble_candidate.ble_address.type ==
+                   context->authoritative_ble_address.type &&
+               memcmp(context->ble_candidate.ble_address.value,
+                      context->authoritative_ble_address.value,
+                      H2_PAL_BLE_ADDR_LEN) == 0
+           ? H2_PAL_OK
+           : H2_PAL_ERR_INVALID_STATE;
+  }
+  if (context->ble_candidate.ble_address.type ==
+          H2_PAL_BLE_ADDR_TYPE_PUBLIC_IDENTITY ||
+      context->ble_candidate.ble_address.type ==
+          H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY) {
+    context->authoritative_ble_address = context->ble_candidate.ble_address;
+    context->authoritative_ble_address_valid = 1u;
+  }
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t
@@ -491,8 +524,17 @@ static h2_pal_result_t managed_disconnect(void *user) {
 }
 
 static h2_pal_result_t managed_rediscover(void *user) {
-  (void)user;
-  return H2_PAL_OK;
+  h2_e2e_transport_context_t *context = user;
+  if (context->case_result != NULL) {
+    ++context->case_result->reconnect_attempts;
+  }
+  if (context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE &&
+      !context->authoritative_ble_address_valid) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  return context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE
+             ? resolve_ble_candidate(context)
+             : H2_PAL_OK;
 }
 
 static h2_pal_result_t
@@ -580,6 +622,22 @@ static h2_pal_result_t run_simple_command(h2_e2e_transport_context_t *context,
   }
   h2_pal_result_t close_rc = disconnect_transport(context);
   return rc == H2_PAL_OK ? close_rc : rc;
+}
+
+static h2_pal_result_t
+run_legacy_commands_absent(h2_e2e_transport_context_t *context) {
+  static const char expected_help[] =
+      "h2loader <help|status|stats|memory|wifi|stage|reboot "
+      "app|loader|upgrade|coredump>\n";
+  h2_pal_result_t rc =
+      run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP);
+  if (rc == H2_PAL_OK &&
+      ((context->case_result->status.command_availability &
+        H2_E2E_REMOVED_COMMAND_AVAILABILITY_MASK) != 0u ||
+       strcmp(context->command_output, expected_help) != 0)) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  return rc;
 }
 
 static h2_pal_result_t run_coredump_status(h2_e2e_transport_context_t *context,
@@ -812,6 +870,10 @@ static h2_pal_result_t
 reconnect_after_reboot(h2_e2e_transport_context_t *context,
                        uint32_t expected_partition,
                        h2_h2loader_host_status_t *out_status) {
+  if (context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE &&
+      !context->authoritative_ble_address_valid) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
   h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;
   for (uint32_t attempt = 0u; attempt < 120u && !cancelled(context->config);
        ++attempt) {
@@ -1000,11 +1062,32 @@ run_install(h2_e2e_transport_context_t *context,
   return rc;
 }
 
+static h2_pal_result_t
+run_install_monitor(h2_e2e_transport_context_t *context,
+                    const h2_h2loader_host_catalog_entry_t *asset,
+                    const uint8_t *firmware, size_t firmware_size) {
+  context->monitor_logs = 1u;
+  h2_pal_result_t rc = run_install(context, asset, firmware, firmware_size);
+  context->monitor_logs = 0u;
+  if (rc == H2_PAL_OK && context->monitor_output_bytes == 0u) {
+    rc = H2_PAL_ERR_NOT_FOUND;
+  }
+  return rc;
+}
+
 static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
                                          h2_h2loader_e2e_case_t test_case) {
   switch (test_case) {
+  case H2_H2LOADER_E2E_CASE_HELP:
+    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP);
   case H2_H2LOADER_E2E_CASE_STATUS:
     return run_status(context);
+  case H2_H2LOADER_E2E_CASE_STATS:
+    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS);
+  case H2_H2LOADER_E2E_CASE_MEMORY:
+    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_MEMORY);
+  case H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT:
+    return run_legacy_commands_absent(context);
   case H2_H2LOADER_E2E_CASE_WIFI_SCAN:
     return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN);
   case H2_H2LOADER_E2E_CASE_WIFI_CONNECT:
@@ -1059,6 +1142,12 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
                ? run_reboot_monitor(context,
                                     H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u)
                : H2_PAL_ERR_UNSUPPORTED;
+  case H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR:
+    return context->transport == H2_H2LOADER_E2E_TRANSPORT_UART
+               ? run_install_monitor(context, &context->app_asset,
+                                     context->config->app_firmware,
+                                     context->config->app_firmware_size)
+               : H2_PAL_ERR_UNSUPPORTED;
   default:
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -1082,7 +1171,7 @@ inspect_firmware(const h2_h2loader_e2e_config_t *config,
 }
 
 static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
-  size_t count = 1u;
+  size_t count = 5u;
   if (config->include_wifi)
     count += 3u;
   if (config->include_send)
@@ -1199,8 +1288,23 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
                                     h2_h2loader_e2e_transport_t transport,
                                     uint32_t iteration) {
   context->transport = transport;
+  append_case(config, result, context, transport, H2_H2LOADER_E2E_CASE_HELP,
+              iteration);
+  const size_t status_case_index = result->case_count;
   append_case(config, result, context, transport, H2_H2LOADER_E2E_CASE_STATUS,
               iteration);
+  append_case(config, result, context, transport, H2_H2LOADER_E2E_CASE_STATS,
+              iteration);
+  const h2_h2loader_e2e_case_result_t *status_case =
+      &result->cases[status_case_index];
+  if (status_case->result == H2_PAL_OK && status_case->status_valid &&
+      (status_case->status.command_availability &
+       H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY) != 0u) {
+    append_case(config, result, context, transport, H2_H2LOADER_E2E_CASE_MEMORY,
+                iteration);
+  }
+  append_case(config, result, context, transport,
+              H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT, iteration);
   if (config->include_wifi) {
     append_case(config, result, context, transport,
                 H2_H2LOADER_E2E_CASE_WIFI_SCAN, iteration);
@@ -1233,7 +1337,11 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
   }
   if (config->include_lifecycle) {
     append_case(config, result, context, transport,
-                H2_H2LOADER_E2E_CASE_INSTALL_APP, iteration);
+                config->include_monitor &&
+                        transport == H2_H2LOADER_E2E_TRANSPORT_UART
+                    ? H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR
+                    : H2_H2LOADER_E2E_CASE_INSTALL_APP,
+                iteration);
     if (config->include_monitor &&
         transport == H2_H2LOADER_E2E_TRANSPORT_UART) {
       append_case(config, result, context, transport,

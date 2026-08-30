@@ -351,6 +351,131 @@ static h2_pal_result_t run_command(h2_web_job_t *job,
   return result;
 }
 
+static int metadata_equal(const h2_h2loader_host_metadata_t *left,
+                          const h2_h2loader_host_metadata_t *right) {
+  return left->valid == right->valid && left->role == right->role &&
+         left->package_size == right->package_size &&
+         left->image_size == right->image_size &&
+         strcmp(left->package_checksum, right->package_checksum) == 0 &&
+         strcmp(left->image_checksum, right->image_checksum) == 0 &&
+         strcmp(left->version, right->version) == 0 &&
+         strcmp(left->board, right->board) == 0 &&
+         strcmp(left->target, right->target) == 0;
+}
+
+static h2_pal_result_t verify_reboot_status(
+    h2_h2loader_host_command_t command,
+    const h2_h2loader_host_status_t *initial,
+    const h2_h2loader_host_status_t *current) {
+  if (strcmp(initial->board, current->board) != 0 ||
+      strcmp(initial->target, current->target) != 0) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
+      command == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) {
+    const uint32_t expected_partition =
+        command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ? 2u : 1u;
+    const h2_h2loader_host_active_role_t expected_role =
+        command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP
+            ? H2_H2LOADER_HOST_ACTIVE_ROLE_APP
+            : H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    const h2_h2loader_host_boot_intent_t expected_intent =
+        command == H2_H2LOADER_HOST_COMMAND_REBOOT_APP
+            ? H2_H2LOADER_HOST_BOOT_INTENT_AUTO
+            : H2_H2LOADER_HOST_BOOT_INTENT_LOADER;
+    return current->running_partition == expected_partition &&
+                   current->active_role == expected_role &&
+                   current->boot_intent == expected_intent &&
+                   metadata_equal(&initial->stage, &current->stage)
+               ? H2_PAL_OK
+               : H2_PAL_ERR_INVALID_STATE;
+  }
+  if (command != H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE ||
+      !initial->stage.valid) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  h2_h2loader_host_catalog_entry_t asset = {0};
+  asset.bytes = initial->stage.package_size;
+  asset.role = initial->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP
+                   ? H2_H2LOADER_HOST_ASSET_ROLE_APP
+                   : initial->stage.role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER
+                         ? H2_H2LOADER_HOST_ASSET_ROLE_LOADER
+                         : (h2_h2loader_host_asset_role_t)0;
+  asset.operation = H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL;
+  (void)snprintf(asset.board, sizeof(asset.board), "%s", initial->stage.board);
+  (void)snprintf(asset.target, sizeof(asset.target), "%s",
+                 initial->stage.target);
+  (void)snprintf(asset.version, sizeof(asset.version), "%s",
+                 initial->stage.version);
+  (void)snprintf(asset.sha256, sizeof(asset.sha256), "%s",
+                 initial->stage.package_checksum);
+  (void)snprintf(asset.image_sha256, sizeof(asset.image_sha256), "%s",
+                 initial->stage.image_checksum);
+  h2_pal_result_t result =
+      h2_h2loader_host_status_verify_asset(current, &asset);
+  if (result != H2_PAL_OK ||
+      asset.role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
+    return result;
+  }
+  return current->running_partition == 1u &&
+                 metadata_equal(&current->partition_1,
+                                &current->partition_2)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
+}
+
+static h2_pal_result_t run_reboot(h2_web_job_t *job,
+                                  h2_h2loader_host_command_t command) {
+  h2_h2loader_host_status_t initial = {0};
+  h2_h2loader_host_status_t current = {0};
+  h2_pal_result_t result = job_connect(job, &initial);
+  if (result == H2_PAL_OK) {
+    h2_h2loader_host_command_request_t request = {
+        .command = command,
+        .status = &initial,
+        .is_cancelled = job_cancelled,
+        .cancel_user = job,
+    };
+    result = h2_h2loader_host_serial_execute_command(
+        job->connection, &request, &job->command_result);
+  }
+  h2_pal_result_t cleanup = job_disconnect(job);
+  if (result == H2_PAL_OK) result = cleanup;
+  if (result == H2_PAL_OK &&
+      job->command_result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
+    result = H2_PAL_ERR_IO;
+  }
+  for (uint32_t attempt = 0u; result == H2_PAL_OK && attempt < 240u;
+       ++attempt) {
+    if (job_cancelled(job)) return H2_PAL_EXIT;
+    result = h2_pal_time_sleep_ms(
+        h2_web_platform_time_api(job->client->platform), 500u);
+    if (result != H2_PAL_OK) break;
+    result = job_rediscover(job);
+    if (result != H2_PAL_OK) {
+      result = H2_PAL_OK;
+      continue;
+    }
+    result = job_connect(job, &current);
+    if (result != H2_PAL_OK) {
+      result = H2_PAL_OK;
+      continue;
+    }
+    result = verify_reboot_status(command, &initial, &current);
+    cleanup = job_disconnect(job);
+    if (result == H2_PAL_OK) {
+      if (cleanup != H2_PAL_OK) return cleanup;
+      job->status = current;
+      (void)snprintf(job->detail, sizeof(job->detail), "verified");
+      return H2_PAL_OK;
+    }
+    if (cleanup != H2_PAL_OK) return cleanup;
+    result = H2_PAL_OK;
+  }
+  (void)job_disconnect(job);
+  return result == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : result;
+}
+
 static h2_pal_result_t stage_blob(h2_web_job_t *job) {
   static const h2_h2loader_host_managed_transport_vtable_t transport_vtable = {
       .connect = job_connect,
@@ -406,16 +531,16 @@ static void job_entry(void *user) {
       job->result = run_command(job, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT);
       break;
     case H2_WEB_JOB_REBOOT_LOADER:
-      job->result = run_command(
+      job->result = run_reboot(
           job, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER);
       break;
     case H2_WEB_JOB_REBOOT_APP:
-      job->result = run_command(
+      job->result = run_reboot(
           job, H2_H2LOADER_HOST_COMMAND_REBOOT_APP);
       break;
     case H2_WEB_JOB_REBOOT_UPGRADE:
       job->command_timeout_ms = H2_WEB_INSTALL_COMMAND_TIMEOUT_MS;
-      job->result = run_command(
+      job->result = run_reboot(
           job, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE);
       break;
     default:

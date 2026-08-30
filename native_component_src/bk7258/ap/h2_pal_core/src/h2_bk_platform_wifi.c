@@ -26,6 +26,8 @@ static int s_h2_bk_wifi_last_config_valid;
 static h2_pal_wifi_sta_config_t s_h2_bk_wifi_last_config;
 static StaticSemaphore_t s_h2_bk_wifi_request_mutex_control;
 static beken_mutex_t s_h2_bk_wifi_request_mutex;
+static StaticSemaphore_t s_h2_bk_wifi_status_mutex_control;
+static beken_mutex_t s_h2_bk_wifi_status_mutex;
 
 static int h2_bk_wifi_request_lock(void) {
     return s_h2_bk_wifi_request_mutex != NULL &&
@@ -36,6 +38,18 @@ static int h2_bk_wifi_request_lock(void) {
 static void h2_bk_wifi_request_unlock(void) {
     if (s_h2_bk_wifi_request_mutex != NULL) {
         (void)rtos_unlock_mutex(&s_h2_bk_wifi_request_mutex);
+    }
+}
+
+static int h2_bk_wifi_status_lock(void) {
+    return s_h2_bk_wifi_status_mutex != NULL &&
+        rtos_lock_mutex(&s_h2_bk_wifi_status_mutex) == kNoErr
+        ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+}
+
+static void h2_bk_wifi_status_unlock(void) {
+    if (s_h2_bk_wifi_status_mutex != NULL) {
+        (void)rtos_unlock_mutex(&s_h2_bk_wifi_status_mutex);
     }
 }
 
@@ -150,25 +164,25 @@ static void h2_bk_wifi_post_sta_system_event(
 
 static void h2_bk_wifi_store_sta_status(
     const h2_pal_wifi_sta_status_t *status) {
-    if (status == NULL) {
+    if (status == NULL || h2_bk_wifi_status_lock() != H2_PAL_OK) {
         return;
     }
     s_h2_bk_wifi_sta_status = *status;
-    __atomic_store_n(
-        &s_h2_bk_wifi_sta_status_valid,
-        1,
-        __ATOMIC_RELEASE);
+    s_h2_bk_wifi_sta_status_valid = 1;
+    h2_bk_wifi_status_unlock();
 }
 
 static int h2_bk_wifi_load_sta_status(
     h2_pal_wifi_sta_status_t *out_status) {
-    if (out_status == NULL ||
-        __atomic_load_n(
-            &s_h2_bk_wifi_sta_status_valid,
-            __ATOMIC_ACQUIRE) == 0) {
+    if (out_status == NULL || h2_bk_wifi_status_lock() != H2_PAL_OK) {
+        return 0;
+    }
+    if (s_h2_bk_wifi_sta_status_valid == 0) {
+        h2_bk_wifi_status_unlock();
         return 0;
     }
     *out_status = s_h2_bk_wifi_sta_status;
+    h2_bk_wifi_status_unlock();
     return 1;
 }
 
@@ -1177,6 +1191,10 @@ h2_pal_wifi_sta_t *h2_bk_platform_wifi_sta(void) {
     if (s_h2_bk_wifi_request_mutex == NULL) {
         s_h2_bk_wifi_request_mutex = (beken_mutex_t)xSemaphoreCreateMutexStatic(
             &s_h2_bk_wifi_request_mutex_control);
+    }
+    if (s_h2_bk_wifi_status_mutex == NULL) {
+        s_h2_bk_wifi_status_mutex = (beken_mutex_t)xSemaphoreCreateMutexStatic(
+            &s_h2_bk_wifi_status_mutex_control);
     }
     return &s_h2_bk_wifi_sta;
 }

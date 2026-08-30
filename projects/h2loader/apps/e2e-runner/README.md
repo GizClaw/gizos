@@ -27,7 +27,9 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner -- \
   --report /tmp/h2loader-e2e.json
 ```
 
-The runner always executes `status`. Supplying Wi-Fi credentials enables
+The runner always executes `help`, `status`, and `stats`; it executes `memory`
+only when the authoritative `status.command_availability` advertises that
+conditional command. Supplying Wi-Fi credentials enables
 `scan`, `connect`, and idempotent `disconnect`; `--app-firmware` enables direct
 Stage plus abort, while adding `--loader-firmware` enables the complete APP and
 Loader dual-partition lifecycle. The URL triplet enables device-side download
@@ -36,3 +38,15 @@ transport before running erase and post-erase status; because it consumes the
 coredump it is limited to one iteration. Wi-Fi passwords are read only from the
 named environment variable and never written to console output or the JSON
 report.
+
+Every transport also executes `legacy-commands-absent`: it requires the exact
+new help surface and verifies that the removed restart, rollback, and hold
+availability bits are clear. Device command-parser unit tests separately send
+the removed spellings and require them to be unroutable; the Host public API
+does not regain an arbitrary-string escape hatch for this check.
+
+`--monitor-ms` adds the UART-only `monitor`, `reboot loader --monitor`,
+`reboot app --monitor`, and, when lifecycle testing is enabled,
+`reboot upgrade --monitor` cases. Monitor output contains only bytes that the
+Host transport has classified as non-iKCP serial logs. BLE deliberately has no
+monitor case because it does not carry the device's UART log stream.

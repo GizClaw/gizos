@@ -640,22 +640,46 @@ static int set_next_and_reboot(h2_loader_t *loader, uint32_t partition_id,
                                h2_loader_disruptive_action_t action,
                                h2_loader_reboot_transition_fn transition,
                                void *transition_user) {
-  int rc = pref_set_u32(loader->config.pref, "boot_intent", (uint32_t)intent);
+  h2_pal_power_boot_partition_t previous_next = {0};
+  h2_loader_boot_intent_t previous_intent = loader->status.boot_intent;
+  int rc = h2_pal_power_get_next_boot_partition(loader->config.power,
+                                                 &previous_next);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = h2_pal_power_set_next_boot_partition(loader->config.power, partition_id);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (transition != NULL) {
-    rc = transition(transition_user);
-    if (rc != H2_PAL_OK)
-      return rc;
-  }
   rc = prepare_disruptive(loader, action);
   if (rc != H2_PAL_OK)
     return rc;
-  return h2_pal_power_reboot(loader->config.power,
-                             H2_LOADER_REBOOT_REASON_DEFAULT);
+  rc = pref_set_u32(loader->config.pref, "boot_intent", (uint32_t)intent);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = h2_pal_power_set_next_boot_partition(loader->config.power, partition_id);
+  if (rc != H2_PAL_OK) {
+    (void)pref_set_u32(loader->config.pref, "boot_intent",
+                       (uint32_t)previous_intent);
+    return rc;
+  }
+  if (transition != NULL) {
+    rc = transition(transition_user);
+    if (rc != H2_PAL_OK) {
+      (void)h2_pal_power_set_next_boot_partition(loader->config.power,
+                                                  previous_next.id);
+      (void)pref_set_u32(loader->config.pref, "boot_intent",
+                         (uint32_t)previous_intent);
+      return rc;
+    }
+  }
+  rc = h2_pal_power_reboot(loader->config.power,
+                           H2_LOADER_REBOOT_REASON_DEFAULT);
+  if (rc != H2_PAL_OK) {
+    (void)h2_pal_power_set_next_boot_partition(loader->config.power,
+                                                previous_next.id);
+    (void)pref_set_u32(loader->config.pref, "boot_intent",
+                       (uint32_t)previous_intent);
+    return rc;
+  }
+  loader->status.boot_intent = intent;
+  loader->status.next_partition_id = partition_id;
+  return H2_PAL_OK;
 }
 
 static int copy_partition_2_to_1(h2_loader_t *loader) {

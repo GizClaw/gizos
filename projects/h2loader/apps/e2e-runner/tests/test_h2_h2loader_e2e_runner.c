@@ -19,9 +19,15 @@ static h2_pal_result_t execute_case(void *user,
   fake->transports[fake->count] = transport;
   ++fake->count;
   out_result->terminal = H2_H2LOADER_HOST_COMMAND_TERMINAL_OK;
+  if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
+    out_result->status_valid = 1u;
+    out_result->status.command_availability =
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL;
+  }
   if (test_case == H2_H2LOADER_E2E_CASE_MONITOR ||
       test_case == H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR ||
-      test_case == H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR) {
+      test_case == H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR ||
+      test_case == H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR) {
     out_result->log_bytes = 32u;
   }
   if (test_case == H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR ||
@@ -64,23 +70,23 @@ static void test_full_sequence_for_both_transports(void) {
   }
   assert(rc == H2_PAL_OK);
   assert(result.complete == 1);
-  assert(result.case_count == 32u);
-  assert(result.passed == 32u);
+  assert(result.case_count == 40u);
+  assert(result.passed == 40u);
   assert(result.failed == 0u);
-  assert(fake.count == 32u);
-  for (size_t i = 0u; i < 12u; ++i) {
+  assert(fake.count == 40u);
+  for (size_t i = 0u; i < 16u; ++i) {
     assert(fake.transports[i] == H2_H2LOADER_E2E_TRANSPORT_UART);
-    assert(fake.transports[i + 12u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
-    assert(fake.cases[i] == fake.cases[i + 12u]);
+    assert(fake.transports[i + 16u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
+    assert(fake.cases[i] == fake.cases[i + 16u]);
   }
-  assert(fake.cases[24] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
-  assert(fake.cases[25] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
-  assert(fake.cases[26] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
-  assert(fake.cases[27] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
-  assert(fake.cases[28] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
-  assert(fake.cases[29] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
-  assert(fake.cases[30] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
-  assert(fake.cases[31] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+  assert(fake.cases[32] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[33] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[34] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[35] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[36] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[37] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+  assert(fake.cases[38] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[39] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
 static h2_pal_result_t fail_send(void *user,
@@ -89,8 +95,41 @@ static h2_pal_result_t fail_send(void *user,
                                  h2_h2loader_e2e_case_result_t *out_result) {
   (void)user;
   (void)transport;
-  (void)out_result;
+  if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
+    out_result->status_valid = 1u;
+    out_result->status.command_availability =
+        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL;
+  }
   return test_case == H2_H2LOADER_E2E_CASE_SEND ? H2_PAL_ERR_IO : H2_PAL_OK;
+}
+
+static h2_pal_result_t execute_without_memory(
+    void *user, h2_h2loader_e2e_transport_t transport,
+    h2_h2loader_e2e_case_t test_case,
+    h2_h2loader_e2e_case_result_t *out_result) {
+  h2_pal_result_t rc = execute_case(user, transport, test_case, out_result);
+  if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
+    out_result->status.command_availability &=
+        ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY;
+  }
+  return rc;
+}
+
+static void test_memory_follows_authoritative_availability(void) {
+  fake_executor_t fake = {0};
+  h2_h2loader_e2e_result_t result;
+  const h2_h2loader_e2e_config_t config = {
+      .uart_endpoint = "/dev/test",
+      .repeat_count = 1u,
+      .execute_case = execute_without_memory,
+      .execute_user = &fake,
+  };
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_OK);
+  assert(result.case_count == 4u);
+  assert(fake.cases[0] == H2_H2LOADER_E2E_CASE_HELP);
+  assert(fake.cases[1] == H2_H2LOADER_E2E_CASE_STATUS);
+  assert(fake.cases[2] == H2_H2LOADER_E2E_CASE_STATS);
+  assert(fake.cases[3] == H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT);
 }
 
 static void test_failure_is_reported_without_hiding_cleanup(void) {
@@ -104,11 +143,11 @@ static void test_failure_is_reported_without_hiding_cleanup(void) {
       .execute_case = fail_send,
   };
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_IO);
-  assert(result.case_count == 3u);
+  assert(result.case_count == 7u);
   assert(result.failed == 1u);
-  assert(result.cases[2].test_case ==
+  assert(result.cases[6].test_case ==
          H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND);
-  assert(result.cases[2].result == H2_PAL_OK);
+  assert(result.cases[6].result == H2_PAL_OK);
 }
 
 static void test_invalid_configs(void) {
@@ -141,21 +180,26 @@ static void test_monitor_cases_are_uart_only_and_bounded(void) {
       .execute_user = &fake,
   };
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_OK);
-  assert(result.case_count == 5u);
-  assert(fake.cases[0] == H2_H2LOADER_E2E_CASE_STATUS);
-  assert(fake.cases[1] == H2_H2LOADER_E2E_CASE_MONITOR);
-  assert(fake.cases[2] == H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR);
-  assert(fake.cases[3] == H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR);
-  assert(fake.cases[4] == H2_H2LOADER_E2E_CASE_STATUS);
-  assert(result.cases[1].log_bytes == 32u);
-  assert(result.cases[1].reconnect_attempts == 0u);
-  assert(result.cases[2].log_bytes == 32u);
-  assert(result.cases[2].reconnect_attempts == 1u);
-  assert(result.cases[3].log_bytes == 32u);
-  assert(result.cases[3].reconnect_attempts == 1u);
-  for (size_t i = 0u; i < 4u; ++i)
+  assert(result.case_count == 13u);
+  assert(fake.cases[0] == H2_H2LOADER_E2E_CASE_HELP);
+  assert(fake.cases[1] == H2_H2LOADER_E2E_CASE_STATUS);
+  assert(fake.cases[2] == H2_H2LOADER_E2E_CASE_STATS);
+  assert(fake.cases[3] == H2_H2LOADER_E2E_CASE_MEMORY);
+  assert(fake.cases[4] == H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT);
+  assert(fake.cases[5] == H2_H2LOADER_E2E_CASE_MONITOR);
+  assert(fake.cases[6] == H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR);
+  assert(fake.cases[7] == H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR);
+  assert(fake.cases[8] == H2_H2LOADER_E2E_CASE_HELP);
+  assert(result.cases[5].log_bytes == 32u);
+  assert(result.cases[5].reconnect_attempts == 0u);
+  assert(result.cases[6].log_bytes == 32u);
+  assert(result.cases[6].reconnect_attempts == 1u);
+  assert(result.cases[7].log_bytes == 32u);
+  assert(result.cases[7].reconnect_attempts == 1u);
+  for (size_t i = 0u; i < 8u; ++i)
     assert(fake.transports[i] == H2_H2LOADER_E2E_TRANSPORT_UART);
-  assert(fake.transports[4] == H2_H2LOADER_E2E_TRANSPORT_BLE);
+  for (size_t i = 8u; i < 13u; ++i)
+    assert(fake.transports[i] == H2_H2LOADER_E2E_TRANSPORT_BLE);
 }
 
 static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
@@ -175,13 +219,17 @@ static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
       .execute_user = &fake,
   };
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_OK);
-  assert(result.case_count == 8u);
-  assert(fake.cases[0] == H2_H2LOADER_E2E_CASE_STATUS);
-  assert(fake.cases[1] == H2_H2LOADER_E2E_CASE_MONITOR);
-  assert(fake.cases[2] == H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR);
-  assert(fake.cases[3] == H2_H2LOADER_E2E_CASE_INSTALL_APP);
-  assert(fake.cases[4] == H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR);
-  assert(fake.cases[7] == H2_H2LOADER_E2E_CASE_INSTALL_LOADER);
+  assert(result.case_count == 12u);
+  assert(fake.cases[0] == H2_H2LOADER_E2E_CASE_HELP);
+  assert(fake.cases[1] == H2_H2LOADER_E2E_CASE_STATUS);
+  assert(fake.cases[2] == H2_H2LOADER_E2E_CASE_STATS);
+  assert(fake.cases[3] == H2_H2LOADER_E2E_CASE_MEMORY);
+  assert(fake.cases[4] == H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT);
+  assert(fake.cases[5] == H2_H2LOADER_E2E_CASE_MONITOR);
+  assert(fake.cases[6] == H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR);
+  assert(fake.cases[7] == H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR);
+  assert(fake.cases[8] == H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR);
+  assert(fake.cases[11] == H2_H2LOADER_E2E_CASE_INSTALL_LOADER);
 }
 
 static void test_names(void) {
@@ -189,17 +237,28 @@ static void test_names(void) {
                 "uart") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_SEND_URL),
                 "send-url") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_HELP),
+                "help") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_MEMORY),
+                "memory") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(
+                    H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT),
+                "legacy-commands-absent") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(
                     H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE),
                 "coredump-status-after-erase") == 0);
   assert(
       strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR),
              "reboot-app-monitor") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(
+                    H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR),
+                "reboot-upgrade-monitor") == 0);
 }
 
 int main(void) {
   test_full_sequence_for_both_transports();
   test_failure_is_reported_without_hiding_cleanup();
+  test_memory_follows_authoritative_availability();
   test_invalid_configs();
   test_monitor_cases_are_uart_only_and_bounded();
   test_monitor_runs_each_reboot_with_a_bootable_target();

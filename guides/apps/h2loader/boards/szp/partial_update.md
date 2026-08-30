@@ -18,8 +18,8 @@ bazel build --config=esp32s3  //projects/example/targets/h2loader_tar_zlib/parti
 
 ## 设备验收
 
-先用 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 选择返回 `board=szp`、`target=esp32s3` 的设备。安装 Bazel target 生成的标准 package，要求 marker 为 `app=v1 data=v1`，App 与 data 进度均报告 installed，并进入 pending-confirm。完成 confirmation 后重新安装完全相同的 package，要求 App 与 data 都报告 `detail=unchanged`，不出现 App writer/erase 或 data clear/write，最终状态保持 `confirmed`。
+先用 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 选择返回 `board=szp`、`target=esp32s3` 的设备。通过 `send` Stage Bazel target 生成的标准 package，再执行 `reboot upgrade`。要求 marker 为 `app=v1 data=v1`，App 与 data 的瞬时安装进度均完成；最终 authoritative status 必须运行在 Partition 2 APP、`partition_2.valid=true` 且 identity 与 package 一致，并且 `stage.valid=false`。重新 Stage 完全相同的 package 时，要求 App 与 data 都报告 `detail=unchanged`，不出现 App writer/erase 或 data clear/write，最终仍由相同 Partition 2 identity 完成 Stage 收尾。
 
-每一步都保存 package 中的 `manifest.image_sha256`、顶层 `checksum`、设备 `H2_LOADER_INSTALL_PROGRESS` 和最终 `H2_LOADER_STATUS`。`phase=2` 是 App，`phase=3` 是 data。不能只用重启后 App 能运行作为通过依据。
+每一步都保存 package 中的 `manifest.image_sha256`、顶层 `checksum`、设备瞬时安装进度和最终 `H2_LOADER_STATUS`。进度中的 image 与 data phase 只描述当前 I/O，不是持久化生命周期状态。不能只用重启后 App 能运行作为通过依据。
 
-若先清除 H2Loader Preference 中的 installed/confirmed 状态，再安装 App 内容相同的完整包，App partition 仍不得擦写，但启动必须重新进入 pending-confirm。这一步验证 Preference 只负责确认安全门，不负责判断内容是否变化。
+若先清除 `partition_2` metadata，再 Stage App 内容相同的完整包，启动时必须从当前固件 identity 与实际 checksum 重新建立可信的 Partition 2 记录；内容未变化时 App partition 仍不得擦写。流程不得重建 installed/confirmed phase。
