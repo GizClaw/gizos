@@ -207,6 +207,46 @@ static void command_digest_hex(const uint8_t digest[32], char out[65]) {
     out[64] = '\0';
 }
 
+static int saved_loader_identity(
+    const char *version,
+    h2_loader_image_identity_t *out_identity) {
+    h2_loader_metadata_t metadata;
+    int present = 0;
+    int rc;
+
+    if (version == NULL || out_identity == NULL || s_runtime == NULL ||
+        s_runtime->pref == NULL || s_runtime->mem == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    rc = h2_loader_metadata_read(
+        s_runtime->pref,
+        s_runtime->mem,
+        H2_LOADER_METADATA_SLOT_PARTITION_1,
+        &metadata,
+        &present);
+    if (rc != H2_PAL_OK) return rc;
+    if (!present || !metadata.valid ||
+        metadata.role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
+        strcmp(metadata.version, version) != 0 ||
+        strcmp(metadata.board, "bk7258_v3_202405") != 0 ||
+        strcmp(metadata.target, "bk7258") != 0) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+    memset(out_identity, 0, sizeof(*out_identity));
+    out_identity->format = 1u;
+    out_identity->role = metadata.role;
+    out_identity->image_size = metadata.image_size;
+    (void)snprintf(out_identity->image_sha256,
+        sizeof(out_identity->image_sha256), "%s", metadata.image_checksum);
+    (void)snprintf(out_identity->board,
+        sizeof(out_identity->board), "%s", metadata.board);
+    (void)snprintf(out_identity->target,
+        sizeof(out_identity->target), "%s", metadata.target);
+    (void)snprintf(out_identity->version,
+        sizeof(out_identity->version), "%s", metadata.version);
+    return H2_PAL_OK;
+}
+
 static int current_loader_identity(
     const char *version,
     h2_loader_image_identity_t *out_identity) {
@@ -222,6 +262,9 @@ static int current_loader_identity(
         reader->vtable->read == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    rc = saved_loader_identity(version, out_identity);
+    if (rc == H2_PAL_OK) return H2_PAL_OK;
+    if (rc != H2_PAL_ERR_NOT_FOUND) return rc;
     rc = reader->vtable->get_capacity(
         reader->user, H2_BK_H2LOADER_PRIMARY_PARTITION_ID, &image_size);
     if (rc != H2_PAL_OK || image_size == 0u) return rc;
