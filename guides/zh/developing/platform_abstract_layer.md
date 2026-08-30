@@ -316,6 +316,8 @@ PAL 保证返回 allocator-backed、CPU 可读的 linear plane，使 portable co
 
 `h2_pal_audio_decoder.h` 使用相同生命周期解码 raw AAC-LC access unit，并返回 allocator-backed、interleaved S16LE PCM。Audio Decoder PAL 与 Audio PAL 分离：前者只解码压缩数据，后者负责设备播放、track 和 volume。
 
+Native audio backend 创建的 microphone 与 mixer worker 使用 `h2_pal_audio_task_names.h` 中 header-only 的 `H2_PAL_AUDIO_MIC_TASK_NAME_VALUE`（`$audio/mic`）和 `H2_PAL_AUDIO_MIX_TASK_NAME_VALUE`（`$audio/mix`）。这些宏只统一跨 ESP-IDF 与 BK7258 的 diagnostic name，不增加 PAL storage、backend 或 link dependency；`//libs/pal:pal` 继续保持 header-only。
+
 不具备视频解码能力的 Runtime owner 仍绑定完整的 canonical unsupported API。当前 BK7258 和 ESP target 都不因编码能力或 display 能力推导出 H.264 decoder；只有经过 provider 实现和验证的 target 才绑定真实 decoder。
 
 ### BLE Host

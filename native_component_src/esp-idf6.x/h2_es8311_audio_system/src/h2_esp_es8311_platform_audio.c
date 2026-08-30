@@ -1,5 +1,6 @@
 #include "h2_audio_mixer.h"
 #include "h2_esp_es8311_audio_system.h"
+#include "h2/pal/hal/h2_pal_audio_task_names.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -600,7 +601,7 @@ static int es8311_audio_start_mic_task(h2_esp_es8311_audio_system_t *state) {
     state->mic_task_started = 1;
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         es8311_audio_mic_task,
-        "h2_audio_mic",
+        H2_PAL_AUDIO_MIC_TASK_NAME_VALUE,
         state->config.mic_task_stack_size,
         state,
         state->config.mic_task_priority,
@@ -693,7 +694,7 @@ static int es8311_audio_start_playback_task_locked(h2_esp_es8311_audio_system_t 
     state->playback_task_started = 1;
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         es8311_audio_playback_task,
-        "h2_audio_mix",
+        H2_PAL_AUDIO_MIX_TASK_NAME_VALUE,
         state->config.speaker_task_stack_size,
         state,
         state->config.speaker_task_priority,

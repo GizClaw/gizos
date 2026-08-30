@@ -1,5 +1,6 @@
 #include "h2_esp_es8311_es7210_audio_system.h"
 #include "h2_esp_es8311_es7210_gain.h"
+#include "h2/pal/hal/h2_pal_audio_task_names.h"
 
 #include "driver/gpio.h"
 #include "esp_check.h"
@@ -598,7 +599,7 @@ static int start_mic_task(h2_esp_es8311_es7210_audio_system_t *state) {
     state->mic_task_started = 1;
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         mic_task,
-        "h2_es7210_mic",
+        H2_PAL_AUDIO_MIC_TASK_NAME_VALUE,
         state->config.mic_task_stack_size,
         state,
         state->config.mic_task_priority,
@@ -607,7 +608,7 @@ static int start_mic_task(h2_esp_es8311_es7210_audio_system_t *state) {
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     state->mic_task_with_caps = ok == pdPASS ? 1 : 0;
     if (ok != pdPASS) {
-        ok = xTaskCreatePinnedToCore(mic_task, "h2_es7210_mic", state->config.mic_task_stack_size, state, state->config.mic_task_priority, &state->mic_task, state->config.mic_task_core_id);
+        ok = xTaskCreatePinnedToCore(mic_task, H2_PAL_AUDIO_MIC_TASK_NAME_VALUE, state->config.mic_task_stack_size, state, state->config.mic_task_priority, &state->mic_task, state->config.mic_task_core_id);
         state->mic_task_with_caps = 0;
     }
     if (ok != pdPASS) {
@@ -693,7 +694,7 @@ static int start_playback_task_locked(h2_esp_es8311_es7210_audio_system_t *state
     state->playback_task_started = 1;
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         playback_task,
-        "h2_audio_mix",
+        H2_PAL_AUDIO_MIX_TASK_NAME_VALUE,
         state->config.speaker_task_stack_size,
         state,
         state->config.speaker_task_priority,
@@ -703,7 +704,7 @@ static int start_playback_task_locked(h2_esp_es8311_es7210_audio_system_t *state
     state->playback_task_with_caps = ok == pdPASS ? 1 : 0;
     if (ok != pdPASS) {
         state->playback_task = NULL;
-        ok = xTaskCreatePinnedToCore(playback_task, "h2_audio_mix", state->config.speaker_task_stack_size, state, state->config.speaker_task_priority, &state->playback_task, state->config.speaker_task_core_id);
+        ok = xTaskCreatePinnedToCore(playback_task, H2_PAL_AUDIO_MIX_TASK_NAME_VALUE, state->config.speaker_task_stack_size, state, state->config.speaker_task_priority, &state->playback_task, state->config.speaker_task_core_id);
         state->playback_task_with_caps = 0;
     }
     if (ok != pdPASS) {
