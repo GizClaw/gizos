@@ -421,6 +421,11 @@ int h2_loader_begin_stage(
     if (rc == H2_PAL_OK) {
         rc = remove_optional_file(loader->config.package.fs, previous_path);
     }
+    if (rc == H2_PAL_OK) {
+        rc = remove_optional_file(
+            loader->config.package.fs,
+            loader->config.package.package_path);
+    }
     if (rc == H2_PAL_OK) memset(&loader->status.stage, 0, sizeof(loader->status.stage));
     return rc;
 }
@@ -433,6 +438,19 @@ int h2_loader_commit_stage(
     if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
     int rc = h2_loader_stage_publish(
         &loader->package, loader->config.pref, bytes, sha256, &stage);
+    if (rc == H2_PAL_OK) loader->status.stage = stage;
+    return rc;
+}
+
+int h2_loader_commit_inspected_stage(
+    h2_loader_t *loader,
+    uint64_t bytes,
+    const char *sha256,
+    const h2_loader_package_inspection_t *inspection) {
+    h2_loader_metadata_t stage;
+    if (loader == NULL) return H2_PAL_ERR_INVALID_ARG;
+    int rc = h2_loader_stage_commit_inspection(
+        loader->config.pref, bytes, sha256, inspection, &stage);
     if (rc == H2_PAL_OK) loader->status.stage = stage;
     return rc;
 }
@@ -477,6 +495,18 @@ static int inspect_current_stage(
         !stage_matches_inspection(&loader->status.stage, inspection)) {
         rc = H2_PAL_ERR_FORMAT;
     }
+    if (rc == H2_PAL_OK) {
+        inspection->staged.valid = 1;
+        inspection->staged.size = loader->status.stage.package_size;
+        copy_text(
+            inspection->staged.checksum,
+            sizeof(inspection->staged.checksum),
+            loader->status.stage.package_checksum);
+        copy_text(
+            inspection->staged.version,
+            sizeof(inspection->staged.version),
+            loader->status.stage.version);
+    }
     if (rc != H2_PAL_OK) {
         h2_loader_metadata_t invalid = {0};
         (void)h2_loader_metadata_write(
@@ -512,7 +542,9 @@ int h2_loader_finalize_active_app(
     uint32_t app_partition_id) {
     h2_loader_metadata_t stage;
     h2_loader_metadata_t partition;
-    int present;
+    h2_loader_metadata_t stored;
+    int stage_present;
+    int stored_present;
     int rc;
     if (pref == NULL || allocator == NULL || fs == NULL || package_path == NULL ||
         active_identity == NULL || active_identity->role != H2_LOADER_IMAGE_ROLE_APP ||
@@ -521,15 +553,36 @@ int h2_loader_finalize_active_app(
         return H2_PAL_ERR_INVALID_ARG;
     }
     metadata_from_identity(active_identity, &partition);
+    rc = h2_loader_metadata_read(pref, allocator,
+        H2_LOADER_METADATA_SLOT_STAGE, &stage, &stage_present);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_loader_metadata_read(pref, allocator,
+        H2_LOADER_METADATA_SLOT_PARTITION_2, &stored, &stored_present);
+    if (rc != H2_PAL_OK) return rc;
+    if (!stored_present || !stored.valid ||
+        !h2_loader_metadata_image_equal(&stored, &partition)) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (stage_present && stage.valid &&
+        h2_loader_metadata_image_equal(&stage, &partition)) {
+        rc = h2_loader_metadata_from_stage(&stage, &partition);
+        if (rc != H2_PAL_OK) return rc;
+    } else {
+        copy_text(partition.package_checksum, sizeof(partition.package_checksum),
+            stored.package_checksum);
+        partition.package_size = stored.package_size;
+    }
     rc = h2_loader_metadata_write(
         pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &partition);
     if (rc != H2_PAL_OK) return rc;
-    rc = h2_loader_metadata_read(pref, allocator,
-        H2_LOADER_METADATA_SLOT_STAGE, &stage, &present);
-    if (rc != H2_PAL_OK || !present || !stage.valid) return rc;
-    return h2_loader_metadata_image_equal(&stage, &partition)
-        ? finish_stage(pref, fs, package_path, &stage)
-        : H2_PAL_OK;
+    if (!stage_present || !stage.valid ||
+        !h2_loader_metadata_image_equal(&stage, &partition)) {
+        return H2_PAL_OK;
+    }
+    rc = finish_stage(pref, fs, package_path, &stage);
+    return rc == H2_PAL_OK
+        ? pref_set_i32(pref, "last_result", H2_PAL_OK)
+        : rc;
 }
 
 static int write_partition_2(
@@ -610,14 +663,19 @@ static int copy_partition_2_to_1(h2_loader_t *loader) {
     if (rc != H2_PAL_OK) return rc;
     metadata_from_identity(&loader->config.active_identity, &copied);
     if (h2_loader_metadata_image_equal(&loader->status.stage, &copied)) {
-        copy_text(copied.package_checksum, sizeof(copied.package_checksum),
-            loader->status.stage.package_checksum);
-        copied.package_size = loader->status.stage.package_size;
+        rc = h2_loader_metadata_from_stage(&loader->status.stage, &copied);
+        if (rc != H2_PAL_OK) return rc;
+        rc = h2_loader_metadata_write(loader->config.pref,
+            H2_LOADER_METADATA_SLOT_PARTITION_2, &copied);
+        if (rc != H2_PAL_OK) return rc;
+        loader->status.partition_2 = copied;
     }
     rc = h2_loader_metadata_write(loader->config.pref,
         H2_LOADER_METADATA_SLOT_PARTITION_1, &copied);
     if (rc != H2_PAL_OK) return rc;
     loader->status.partition_1 = copied;
+    rc = h2_loader_set_last_result(loader, H2_PAL_OK);
+    if (rc != H2_PAL_OK) return rc;
     return set_next_and_reboot(
         loader, loader->config.h2loader_partition_id,
         H2_LOADER_BOOT_INTENT_AUTO,
@@ -633,20 +691,25 @@ static int finish_loader_stage_if_converged(h2_loader_t *loader) {
             &loader->status.stage, &loader->status.partition_1)) {
         return H2_PAL_OK;
     }
-    h2_loader_metadata_t partition_1;
+    h2_loader_metadata_t partition;
     int rc = h2_loader_metadata_from_stage(
-        &loader->status.stage, &partition_1);
+        &loader->status.stage, &partition);
     if (rc != H2_PAL_OK) return rc;
     rc = h2_loader_metadata_write(loader->config.pref,
-        H2_LOADER_METADATA_SLOT_PARTITION_1, &partition_1);
+        H2_LOADER_METADATA_SLOT_PARTITION_2, &partition);
     if (rc != H2_PAL_OK) return rc;
-    loader->status.partition_1 = partition_1;
+    loader->status.partition_2 = partition;
+    rc = h2_loader_metadata_write(loader->config.pref,
+        H2_LOADER_METADATA_SLOT_PARTITION_1, &partition);
+    if (rc != H2_PAL_OK) return rc;
+    loader->status.partition_1 = partition;
     rc = finish_stage(loader->config.pref, loader->config.package.fs,
         loader->config.package.package_path, &loader->status.stage);
-    if (rc == H2_PAL_OK) {
-        emit_event(loader, H2_LOADER_STARTUP_EVENT_STAGE_FINISHED, H2_PAL_OK);
-    }
-    return rc;
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_loader_set_last_result(loader, H2_PAL_OK);
+    if (rc != H2_PAL_OK) return rc;
+    emit_event(loader, H2_LOADER_STARTUP_EVENT_STAGE_FINISHED, H2_PAL_OK);
+    return H2_PAL_OK;
 }
 
 static int mount_file_points(h2_loader_t *loader) {
@@ -708,15 +771,15 @@ int h2_loader_startup(
     if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
     rc = seed_running_metadata(loader);
     if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
+    if (loader->config.confirm_active_image != NULL) {
+        rc = loader->config.confirm_active_image(loader->config.confirm_user);
+        if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
+    }
 
     if (loader->config.active_identity.role != H2_LOADER_IMAGE_ROLE_H2LOADER) {
         return H2_PAL_OK;
     }
     if (loader->status.running_partition_id == loader->config.app_partition_id) {
-        if (loader->config.confirm_active_image != NULL) {
-            rc = loader->config.confirm_active_image(loader->config.confirm_user);
-            if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
-        }
         rc = copy_partition_2_to_1(loader);
         if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
         *out_action = H2_LOADER_STARTUP_ACTION_REBOOTING_H2LOADER;
@@ -736,10 +799,6 @@ int h2_loader_startup(
 
     rc = finish_loader_stage_if_converged(loader);
     if (rc != H2_PAL_OK) return fail_recovery(loader, rc);
-    if (h2_loader_metadata_image_equal(
-            &loader->status.partition_1, &loader->status.partition_2)) {
-        return H2_PAL_OK;
-    }
     if (loader->status.stage.valid) {
         rc = inspect_current_stage(loader, &inspection);
         if (rc != H2_PAL_OK) return fail_recovery(loader, rc);

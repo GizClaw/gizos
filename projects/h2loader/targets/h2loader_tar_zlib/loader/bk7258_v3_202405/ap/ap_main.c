@@ -10,6 +10,7 @@
 
 #include "bk_private/bk_init.h"
 #include "driver/flash.h"
+#include "driver/mb_uart_driver.h"
 #include "driver/wdt.h"
 #include "mbedtls/sha256.h"
 #include "os/os.h"
@@ -45,6 +46,38 @@ static char s_h2loader_startup_error_stage[24] = "none";
 static int s_h2loader_initialized;
 static volatile int s_h2loader_file_points_ready;
 static volatile int s_h2loader_mount_in_progress;
+
+static void h2loader_ap_probe(uint8_t stage) {
+    uint8_t value = (uint8_t)(0xe0u + stage);
+    (void)bk_mb_uart_dev_init(MB_UART1);
+    (void)bk_mb_uart_write(MB_UART1, &value, sizeof(value));
+}
+
+static int h2loader_probe_pref(void) {
+    h2_pal_pref_namespace_t *ns = NULL;
+    uint32_t boot_intent = 0u;
+    int32_t last_result = 0;
+    int rc = h2_pal_pref_open(
+        s_runtime->pref,
+        H2_LOADER_PREF_NAMESPACE,
+        H2_PAL_PREF_OPEN_READ_ONLY,
+        &ns);
+    if (rc != H2_PAL_OK) return rc;
+    h2loader_ap_probe(9u);
+    if (ns == NULL || ns->get_u32 == NULL || ns->get_i32 == NULL ||
+        ns->close == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    rc = ns->get_u32(ns, "boot_intent", &boot_intent);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND) return rc;
+    h2loader_ap_probe(10u);
+    rc = ns->get_i32(ns, "last_result", &last_result);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND) return rc;
+    h2loader_ap_probe(11u);
+    rc = ns->close(ns);
+    if (rc == H2_PAL_OK) h2loader_ap_probe(12u);
+    return rc;
+}
 
 static const char *startup_action_name(h2_loader_startup_action_t action) {
     switch (action) {
@@ -207,46 +240,6 @@ static void command_digest_hex(const uint8_t digest[32], char out[65]) {
     out[64] = '\0';
 }
 
-static int saved_loader_identity(
-    const char *version,
-    h2_loader_image_identity_t *out_identity) {
-    h2_loader_metadata_t metadata;
-    int present = 0;
-    int rc;
-
-    if (version == NULL || out_identity == NULL || s_runtime == NULL ||
-        s_runtime->pref == NULL || s_runtime->mem == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    rc = h2_loader_metadata_read(
-        s_runtime->pref,
-        s_runtime->mem,
-        H2_LOADER_METADATA_SLOT_PARTITION_1,
-        &metadata,
-        &present);
-    if (rc != H2_PAL_OK) return rc;
-    if (!present || !metadata.valid ||
-        metadata.role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
-        strcmp(metadata.version, version) != 0 ||
-        strcmp(metadata.board, "bk7258_v3_202405") != 0 ||
-        strcmp(metadata.target, "bk7258") != 0) {
-        return H2_PAL_ERR_NOT_FOUND;
-    }
-    memset(out_identity, 0, sizeof(*out_identity));
-    out_identity->format = 1u;
-    out_identity->role = metadata.role;
-    out_identity->image_size = metadata.image_size;
-    (void)snprintf(out_identity->image_sha256,
-        sizeof(out_identity->image_sha256), "%s", metadata.image_checksum);
-    (void)snprintf(out_identity->board,
-        sizeof(out_identity->board), "%s", metadata.board);
-    (void)snprintf(out_identity->target,
-        sizeof(out_identity->target), "%s", metadata.target);
-    (void)snprintf(out_identity->version,
-        sizeof(out_identity->version), "%s", metadata.version);
-    return H2_PAL_OK;
-}
-
 static int current_loader_identity(
     const char *version,
     h2_loader_image_identity_t *out_identity) {
@@ -262,9 +255,6 @@ static int current_loader_identity(
         reader->vtable->read == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = saved_loader_identity(version, out_identity);
-    if (rc == H2_PAL_OK) return H2_PAL_OK;
-    if (rc != H2_PAL_ERR_NOT_FOUND) return rc;
     rc = reader->vtable->get_capacity(
         reader->user, H2_BK_H2LOADER_PRIMARY_PARTITION_ID, &image_size);
     if (rc != H2_PAL_OK || image_size == 0u) return rc;
@@ -430,6 +420,7 @@ static const h2_pal_disk_api_t s_coredump_disk = {
 
 static void h2loader_startup_worker(void *user) {
     h2_pal_firmware_info_t firmware_info;
+    h2_loader_status_t probe_status;
     h2_loader_config_t config = {
         .package = {
             .fs = &s_h2loader_fs,
@@ -483,6 +474,7 @@ static void h2loader_startup_worker(void *user) {
     };
 
     (void)user;
+    h2loader_ap_probe(4u);
 
     int rc;
     const h2_pal_mutex_config_t operation_mutex_config = {
@@ -526,8 +518,25 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("active_identity", rc);
         wait_forever();
     }
+    h2loader_ap_probe(5u);
+
+    rc = h2loader_probe_pref();
+    if (rc != H2_PAL_OK) {
+        record_startup_error("pref_probe", rc);
+        wait_forever();
+    }
+
+    rc = h2_loader_read_pref_status(
+        config.pref, config.package.allocator, &probe_status);
+    if (rc != H2_PAL_OK) {
+        h2loader_ap_probe(15u);
+        record_startup_error("pref_status_probe", rc);
+        wait_forever();
+    }
+    h2loader_ap_probe(13u);
 
     rc = h2_loader_init(&s_h2loader, &config);
+    h2loader_ap_probe(14u);
     if (rc != H2_PAL_OK) {
         (void)h2_pal_mutex_unlock(
             s_runtime->sync,
@@ -535,6 +544,7 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("loader_init", rc);
         wait_forever();
     }
+    h2loader_ap_probe(6u);
     s_h2loader_initialized = 1;
     emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=loader_init rc=0\r\n");
     h2_bundle_installer_set_progress(&s_h2loader.package.installer, install_progress, NULL);
@@ -549,6 +559,7 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("iostreamikcp", rc);
         wait_forever();
     }
+    h2loader_ap_probe(7u);
     emergency_uart_write_string(
         0,
         "H2_BK_H2LOADER_STEP stage=iostreamikcp_start rc=0\r\n");
@@ -630,6 +641,7 @@ static void h2loader_startup_worker(void *user) {
             rc,
             startup_action_name(action));
         emergency_uart_write_string(0, line);
+        h2loader_ap_probe(8u);
         if (rc == H2_PAL_OK) {
             if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
                 const h2loader_app_command_service_api_t *command_service =
@@ -672,6 +684,7 @@ static void h2loader_ap_entry(void *user) {
     h2_runtime_config_t runtime_config;
 
     (void)user;
+    h2loader_ap_probe(2u);
 
     emergency_uart_write_string(0, "H2_BK_AP_ENTRY_EMERG image=h2loader\r\n");
     rtos_delay_milliseconds(500);
@@ -689,6 +702,7 @@ static void h2loader_ap_entry(void *user) {
         record_startup_error("runtime_init", rc);
         wait_forever();
     }
+    h2loader_ap_probe(3u);
 
     rc = h2_bk_h2loader_sd_fs_init(&s_h2loader_fs);
     if (rc != H2_PAL_OK) {
@@ -707,6 +721,7 @@ int main(void) {
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=before_bk_init\r\n");
     os_printf("H2_BK_AP_MAIN stage=before_bk_init\r\n");
     bk_init();
+    h2loader_ap_probe(1u);
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=after_bk_init\r\n");
     os_printf("H2_BK_AP_MAIN stage=after_bk_init\r\n");
     h2_pal_result_t rc = h2_bk7258_board_start_entry_task(

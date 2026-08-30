@@ -16,18 +16,23 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner -- \
   --ble-id 4:001122334455 \
   --expected-board devkit \
   --expected-target esp32s3 \
-  --firmware /absolute/path/devkit-loader-esp32s3.update.tar.zlib \
+  --app-firmware /absolute/path/devkit-app-esp32s3.update.tar.zlib \
+  --loader-firmware /absolute/path/devkit-loader-esp32s3.update.tar.zlib \
   --firmware-url http://192.168.1.2:8766/update.tar.zlib \
   --url-bytes 938442 \
   --url-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --wifi-ssid TEST-NETWORK \
   --wifi-password-env H2LOADER_E2E_WIFI_PASSWORD \
+  --coredump-bytes 16384 \
   --report /tmp/h2loader-e2e.json
 ```
 
 The runner always executes `status`. Supplying Wi-Fi credentials enables
-`scan`, `connect`, and idempotent `disconnect`; `--firmware` enables direct
-stage plus cleanup; the URL triplet enables device-side download plus cleanup.
-`--reboot-loader` is deliberately opt-in because it disrupts the active App. Wi-Fi
-passwords are read only from the named environment variable and never written
-to console output or the JSON report.
+`scan`, `connect`, and idempotent `disconnect`; `--app-firmware` enables direct
+Stage plus abort, while adding `--loader-firmware` enables the complete APP and
+Loader dual-partition lifecycle. The URL triplet enables device-side download
+plus abort. `--coredump-bytes` verifies a preloaded coredump over every selected
+transport before running erase and post-erase status; because it consumes the
+coredump it is limited to one iteration. Wi-Fi passwords are read only from the
+named environment variable and never written to console output or the JSON
+report.

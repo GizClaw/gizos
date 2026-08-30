@@ -203,6 +203,11 @@ int h2_loader_begin_stage(
     const char *previous_path);
 int h2_loader_commit_stage(
     h2_loader_t *loader, uint64_t bytes, const char *sha256);
+int h2_loader_commit_inspected_stage(
+    h2_loader_t *loader,
+    uint64_t bytes,
+    const char *sha256,
+    const h2_loader_package_inspection_t *inspection);
 int h2_loader_cancel_stage(h2_loader_t *loader);
 int h2_loader_finalize_active_app(
     const h2_pal_pref_api_t *pref,

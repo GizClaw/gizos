@@ -2,7 +2,7 @@
 
 官网：[ESP32-S3-A7670E-4G](https://docs.waveshare.com/ESP32-S3-A7670E-4G)
 
-仓库 board identity 为 `waveshare_esp32s3_a7670e_4g`，target 和 chip 均为 `esp32s3`。Loader 与所有 App image 通过 UART0 的 CH343 USB 串口提供 H2Loader command transport，console baud 为 `230400`；同时启用 BLE 5 LE H2Loader transport，不支持 Bluetooth Classic。
+仓库 board identity 为 `waveshare_esp32s3_a7670e_4g`，target 和 chip 均为 `esp32s3`。Loader 与所有 App image 通过 UART0 的 CH343 USB 串口提供 H2Loader command transport，console baud 为启动默认值 `115200`；同时启用 BLE 5 LE H2Loader transport，不支持 Bluetooth Classic。
 
 ## 硬件边界
 

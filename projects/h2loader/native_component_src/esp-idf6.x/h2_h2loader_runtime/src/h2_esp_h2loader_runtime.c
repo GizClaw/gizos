@@ -32,12 +32,30 @@ typedef struct h2_esp_h2loader_digest {
     int active;
 } h2_esp_h2loader_digest_t;
 
+typedef enum h2_esp_h2loader_digest_op {
+    H2_ESP_H2LOADER_DIGEST_START = 1,
+    H2_ESP_H2LOADER_DIGEST_UPDATE,
+    H2_ESP_H2LOADER_DIGEST_FINISH,
+    H2_ESP_H2LOADER_DIGEST_ABORT,
+} h2_esp_h2loader_digest_op_t;
+
+typedef struct h2_esp_h2loader_digest_call {
+    h2_esp_h2loader_digest_op_t op;
+    h2_esp_h2loader_digest_t *digest;
+    const uint8_t *data;
+    size_t len;
+    uint8_t output[32];
+    size_t output_len;
+    psa_status_t status;
+} h2_esp_h2loader_digest_call_t;
+
 static h2_esp_h2loader_digest_t s_digest;
 static int s_command_stop_requested;
 static h2_esp_h2loader_command_transport_t s_command_transport;
 
 typedef struct h2_esp_h2loader_confirm_call {
     int result;
+    int pending;
 } h2_esp_h2loader_confirm_call_t;
 
 typedef struct h2_esp_h2loader_image_writer {
@@ -46,7 +64,64 @@ typedef struct h2_esp_h2loader_image_writer {
     int active;
 } h2_esp_h2loader_image_writer_t;
 
+typedef struct h2_esp_h2loader_identity_call {
+    const esp_partition_t *partition;
+    esp_partition_pos_t position;
+    esp_image_metadata_t metadata;
+    uint8_t *scratch;
+    size_t scratch_capacity;
+    uint8_t digest[32];
+    int result;
+} h2_esp_h2loader_identity_call_t;
+
 static h2_esp_h2loader_image_writer_t s_image_writer;
+
+static void IRAM_ATTR identity_safe_callback(void *context) {
+    h2_esp_h2loader_identity_call_t *call =
+        (h2_esp_h2loader_identity_call_t *)context;
+    psa_hash_operation_t hash = PSA_HASH_OPERATION_INIT;
+    size_t digest_len = 0u;
+
+    call->result = esp_image_get_metadata(
+        &call->position, &call->metadata) == ESP_OK
+        ? H2_PAL_OK
+        : H2_PAL_ERR_FORMAT;
+    if (call->result == H2_PAL_OK &&
+        (call->metadata.image_len == 0u ||
+         call->metadata.image_len > call->partition->size)) {
+        call->result = H2_PAL_ERR_FORMAT;
+    }
+    if (call->result != H2_PAL_OK) {
+        return;
+    }
+    psa_status_t status = psa_crypto_init();
+    if (status == PSA_SUCCESS) {
+        status = psa_hash_setup(&hash, PSA_ALG_SHA_256);
+    }
+    for (size_t offset = 0u;
+         status == PSA_SUCCESS && offset < call->metadata.image_len;) {
+        size_t chunk = call->metadata.image_len - offset;
+        if (chunk > call->scratch_capacity) {
+            chunk = call->scratch_capacity;
+        }
+        if (esp_partition_read(
+                call->partition, offset, call->scratch, chunk) != ESP_OK) {
+            call->result = H2_PAL_ERR_IO;
+            (void)psa_hash_abort(&hash);
+            return;
+        }
+        status = psa_hash_update(&hash, call->scratch, chunk);
+        offset += chunk;
+    }
+    if (status == PSA_SUCCESS) {
+        status = psa_hash_finish(
+            &hash, call->digest, sizeof(call->digest), &digest_len);
+    }
+    (void)psa_hash_abort(&hash);
+    if (status != PSA_SUCCESS || digest_len != sizeof(call->digest)) {
+        call->result = H2_PAL_ERR_IO;
+    }
+}
 
 typedef enum h2_esp_h2loader_image_op {
     H2_ESP_H2LOADER_IMAGE_READ = 1,
@@ -112,9 +187,8 @@ int h2_esp_h2loader_current_image_identity(
     const char *version,
     h2_loader_image_identity_t *out_identity) {
     const esp_partition_t *running;
-    esp_partition_pos_t position;
-    esp_image_metadata_t metadata;
-    uint8_t digest[32];
+    h2_esp_h2loader_identity_call_t call;
+    h2_pal_result_t rc;
 
     if (board == NULL || target == NULL || version == NULL ||
         out_identity == NULL) {
@@ -122,18 +196,32 @@ int h2_esp_h2loader_current_image_identity(
     }
     running = esp_ota_get_running_partition();
     if (running == NULL) return H2_PAL_ERR_NOT_FOUND;
-    position.offset = running->address;
-    position.size = running->size;
-    if (esp_image_get_metadata(&position, &metadata) != ESP_OK ||
-        metadata.image_len == 0u || metadata.image_len > running->size ||
-        esp_partition_get_sha256(running, digest) != ESP_OK) {
-        return H2_PAL_ERR_FORMAT;
+    memset(&call, 0, sizeof(call));
+    call.partition = running;
+    call.position.offset = running->address;
+    call.position.size = running->size;
+    call.scratch_capacity = H2_LOADER_IMAGE_INTERNAL_CHUNK_SIZE;
+    call.scratch = heap_caps_malloc(
+        call.scratch_capacity, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (call.scratch == NULL) {
+        call.scratch_capacity = H2_LOADER_IMAGE_INTERNAL_FALLBACK_CHUNK_SIZE;
+        call.scratch = heap_caps_malloc(
+            call.scratch_capacity, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
+    if (call.scratch == NULL) return H2_PAL_ERR_NO_MEMORY;
+    rc = h2_esp_platform_safe_call(
+        identity_safe_callback,
+        &call,
+        sizeof(call),
+        H2_LOADER_IMAGE_TASK_STACK_DEPTH);
+    heap_caps_free(call.scratch);
+    if (rc != H2_PAL_OK) return rc;
+    if (call.result != H2_PAL_OK) return call.result;
     memset(out_identity, 0, sizeof(*out_identity));
     out_identity->format = 1u;
     out_identity->role = role;
-    out_identity->image_size = metadata.image_len;
-    digest_hex(digest, out_identity->image_sha256);
+    out_identity->image_size = call.metadata.image_len;
+    digest_hex(call.digest, out_identity->image_sha256);
     (void)snprintf(out_identity->board, sizeof(out_identity->board), "%s", board);
     (void)snprintf(out_identity->target, sizeof(out_identity->target), "%s", target);
     (void)snprintf(out_identity->version, sizeof(out_identity->version), "%s", version);
@@ -495,56 +583,122 @@ static void on_event(void *user, h2_loader_startup_event_t event, int code) {
     }
 }
 
-static int digest_start(void *user) {
-    h2_esp_h2loader_digest_t *digest = (h2_esp_h2loader_digest_t *)user;
-    if (digest == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (digest->active) {
-        (void)psa_hash_abort(&digest->sha);
-    }
-    digest->sha = psa_hash_operation_init();
-    if (psa_crypto_init() != PSA_SUCCESS ||
-        psa_hash_setup(&digest->sha, PSA_ALG_SHA_256) != PSA_SUCCESS) {
+static void IRAM_ATTR digest_safe_callback(void *context) {
+    h2_esp_h2loader_digest_call_t *call =
+        (h2_esp_h2loader_digest_call_t *)context;
+    h2_esp_h2loader_digest_t *digest = call->digest;
+
+    call->status = PSA_SUCCESS;
+    if (call->op == H2_ESP_H2LOADER_DIGEST_START) {
+        if (digest->active) {
+            (void)psa_hash_abort(&digest->sha);
+        }
+        digest->sha = psa_hash_operation_init();
+        call->status = psa_crypto_init();
+        if (call->status == PSA_SUCCESS) {
+            call->status = psa_hash_setup(&digest->sha, PSA_ALG_SHA_256);
+        }
+        digest->active = call->status == PSA_SUCCESS;
+        if (!digest->active) {
+            (void)psa_hash_abort(&digest->sha);
+        }
+    } else if (call->op == H2_ESP_H2LOADER_DIGEST_UPDATE) {
+        call->status = psa_hash_update(&digest->sha, call->data, call->len);
+    } else if (call->op == H2_ESP_H2LOADER_DIGEST_FINISH) {
+        call->status = psa_hash_finish(
+            &digest->sha, call->output, sizeof(call->output),
+            &call->output_len);
         (void)psa_hash_abort(&digest->sha);
         digest->active = 0;
-        return H2_PAL_ERR_IO;
+    } else if (call->op == H2_ESP_H2LOADER_DIGEST_ABORT) {
+        if (digest->active) {
+            (void)psa_hash_abort(&digest->sha);
+            digest->active = 0;
+        }
+    } else {
+        call->status = PSA_ERROR_INVALID_ARGUMENT;
     }
-    digest->active = 1;
-    return H2_PAL_OK;
+}
+
+static int digest_submit(h2_esp_h2loader_digest_call_t *call) {
+    h2_pal_result_t rc = h2_esp_platform_safe_call(
+        digest_safe_callback, call, sizeof(*call),
+        H2_LOADER_IMAGE_TASK_STACK_DEPTH);
+    return rc == H2_PAL_OK && call->status == PSA_SUCCESS
+        ? H2_PAL_OK
+        : (rc != H2_PAL_OK ? rc : H2_PAL_ERR_IO);
+}
+
+static int digest_start(void *user) {
+    h2_esp_h2loader_digest_t *digest = (h2_esp_h2loader_digest_t *)user;
+    h2_esp_h2loader_digest_call_t call = {
+        .op = H2_ESP_H2LOADER_DIGEST_START,
+        .digest = digest,
+    };
+    return digest == NULL ? H2_PAL_ERR_INVALID_ARG : digest_submit(&call);
 }
 
 static int digest_update(void *user, const uint8_t *data, size_t len) {
     h2_esp_h2loader_digest_t *digest = (h2_esp_h2loader_digest_t *)user;
+    uint8_t *scratch = NULL;
+    size_t scratch_capacity = 0u;
+    size_t completed = 0u;
+    int rc = H2_PAL_OK;
+
     if (digest == NULL || !digest->active || (data == NULL && len != 0u)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    return psa_hash_update(&digest->sha, data, len) == PSA_SUCCESS
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
+    if (len == 0u) return H2_PAL_OK;
+    rc = h2_esp_platform_safe_io_acquire(&scratch, &scratch_capacity);
+    if (rc != H2_PAL_OK) return rc;
+    if (scratch == NULL || scratch_capacity == 0u) {
+        h2_esp_platform_safe_io_release();
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    while (completed < len) {
+        size_t take = len - completed < scratch_capacity
+            ? len - completed
+            : scratch_capacity;
+        h2_esp_h2loader_digest_call_t call = {
+            .op = H2_ESP_H2LOADER_DIGEST_UPDATE,
+            .digest = digest,
+            .data = scratch,
+            .len = take,
+        };
+        memcpy(scratch, data + completed, take);
+        rc = digest_submit(&call);
+        if (rc != H2_PAL_OK) break;
+        completed += take;
+    }
+    h2_esp_platform_safe_io_release();
+    return rc;
 }
 
 static int digest_finish(void *user, uint8_t out_digest[32]) {
     h2_esp_h2loader_digest_t *digest = (h2_esp_h2loader_digest_t *)user;
-    psa_status_t status;
-    size_t digest_len = 0u;
+    h2_esp_h2loader_digest_call_t call = {
+        .op = H2_ESP_H2LOADER_DIGEST_FINISH,
+        .digest = digest,
+    };
+    int rc;
     if (digest == NULL || !digest->active || out_digest == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    status = psa_hash_finish(&digest->sha, out_digest, 32u, &digest_len);
-    (void)psa_hash_abort(&digest->sha);
-    digest->active = 0;
-    return status == PSA_SUCCESS && digest_len == 32u
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
+    rc = digest_submit(&call);
+    if (rc == H2_PAL_OK && call.output_len != sizeof(call.output)) {
+        rc = H2_PAL_ERR_IO;
+    }
+    if (rc == H2_PAL_OK) memcpy(out_digest, call.output, sizeof(call.output));
+    return rc;
 }
 
 static void digest_abort(void *user) {
     h2_esp_h2loader_digest_t *digest = (h2_esp_h2loader_digest_t *)user;
-    if (digest != NULL && digest->active) {
-        (void)psa_hash_abort(&digest->sha);
-        digest->active = 0;
-    }
+    h2_esp_h2loader_digest_call_t call = {
+        .op = H2_ESP_H2LOADER_DIGEST_ABORT,
+        .digest = digest,
+    };
+    if (digest != NULL) (void)digest_submit(&call);
 }
 
 h2_loader_digest_api_t h2_esp_h2loader_digest_api(void) {
@@ -595,15 +749,43 @@ static void IRAM_ATTR confirm_pending_h2loader_boot_safe(void *context) {
         call->result = H2_PAL_OK;
         return;
     }
-    call->result = esp_ota_mark_app_valid_cancel_rollback() == ESP_OK
+    err = esp_ota_mark_app_valid_cancel_rollback();
+    call->result = err == ESP_OK
+        ? H2_PAL_OK
+        : H2_PAL_ERR_IO;
+    if (call->result == H2_PAL_OK) {
+        call->pending = 1;
+    }
+}
+
+static int confirm_pending_h2loader_boot(int *out_was_pending) {
+    h2_esp_h2loader_confirm_call_t call = {0};
+    h2_pal_result_t rc = h2_esp_platform_safe_call(
+        confirm_pending_h2loader_boot_safe,
+        &call,
+        sizeof(call),
+        H2_LOADER_CONFIRM_TASK_STACK_DEPTH);
+    if (out_was_pending != NULL) {
+        *out_was_pending = rc == H2_PAL_OK && call.result == H2_PAL_OK
+            ? call.pending : 0;
+    }
+    return rc == H2_PAL_OK ? call.result : rc;
+}
+
+static void IRAM_ATTR rearm_pending_h2loader_boot_safe(void *context) {
+    h2_esp_h2loader_confirm_call_t *call =
+        (h2_esp_h2loader_confirm_call_t *)context;
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    call->result = running != NULL &&
+            esp_ota_set_boot_partition(running) == ESP_OK
         ? H2_PAL_OK
         : H2_PAL_ERR_IO;
 }
 
-static int confirm_pending_h2loader_boot(void) {
+static int rearm_pending_h2loader_boot(void) {
     h2_esp_h2loader_confirm_call_t call = {0};
     h2_pal_result_t rc = h2_esp_platform_safe_call(
-        confirm_pending_h2loader_boot_safe,
+        rearm_pending_h2loader_boot_safe,
         &call,
         sizeof(call),
         H2_LOADER_CONFIRM_TASK_STACK_DEPTH);
@@ -614,47 +796,63 @@ int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
     h2_loader_status_t status;
     h2_loader_image_identity_t identity = {0};
     h2_pal_firmware_info_t firmware_info;
+    h2_pal_power_boot_partition_t running_partition;
+    int was_pending = 0;
     if (runtime == NULL || runtime->pref == NULL || runtime->mem == NULL ||
-        runtime->fs == NULL || runtime->firmware_info == NULL) {
+        runtime->fs == NULL || runtime->firmware_info == NULL ||
+        runtime->power == NULL || runtime->board == NULL ||
+        runtime->target == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    int rc = confirm_pending_h2loader_boot();
+    int rc = confirm_pending_h2loader_boot(&was_pending);
     if (rc == H2_PAL_OK) {
         rc = h2_loader_read_pref_status(runtime->pref, runtime->mem, &status);
     }
-    if (rc == H2_PAL_OK && status.partition_2.valid) {
-        rc = h2_pal_firmware_info_get_current(
-            runtime->firmware_info, &firmware_info);
-        if (rc == H2_PAL_OK &&
-            strcmp(firmware_info.version, status.partition_2.version) != 0) {
+    if (rc == H2_PAL_OK && was_pending && !status.partition_2.valid) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+    }
+    if (rc == H2_PAL_OK && was_pending) {
+        rc = h2_pal_power_get_running_boot_partition(
+            runtime->power, &running_partition);
+        if (rc == H2_PAL_OK && running_partition.id != 2u) {
             rc = H2_PAL_ERR_INVALID_STATE;
         }
+    }
+    if (rc == H2_PAL_OK && was_pending) {
+        rc = h2_pal_firmware_info_get_current(
+            runtime->firmware_info, &firmware_info);
         if (rc == H2_PAL_OK) {
-            identity.format = 1u;
-            identity.role = H2_LOADER_IMAGE_ROLE_APP;
-            identity.image_size = status.partition_2.image_size;
-            (void)snprintf(identity.image_sha256, sizeof(identity.image_sha256),
-                "%s", status.partition_2.image_checksum);
-            (void)snprintf(identity.version, sizeof(identity.version), "%s",
-                status.partition_2.version);
-            (void)snprintf(identity.board, sizeof(identity.board), "%s",
-                status.partition_2.board);
-            (void)snprintf(identity.target, sizeof(identity.target), "%s",
-                status.partition_2.target);
+            rc = h2_esp_h2loader_current_image_identity(
+                H2_LOADER_IMAGE_ROLE_APP,
+                runtime->board,
+                runtime->target,
+                firmware_info.version,
+                &identity);
+        }
+        if (rc == H2_PAL_OK) {
             rc = h2_loader_finalize_active_app(
                 runtime->pref, runtime->mem, runtime->fs,
-                H2_LOADER_STAGE_PATH, &identity, 2u, 2u);
+                H2_LOADER_STAGE_PATH, &identity,
+                running_partition.id, 2u);
         }
     }
     if (rc == H2_PAL_OK) {
         rc = h2_esp_platform_pref_finalize_migration();
+    }
+    if (rc != H2_PAL_OK && was_pending) {
+        /* Confirmation changes the running slot to VALID before Pref and
+         * Stage cleanup. Re-arm the same slot after a later cleanup failure
+         * so a subsequent boot retries finalization. Ordinary same-slot
+         * reboot commands never enter this recovery path. */
+        int rearm_rc = rearm_pending_h2loader_boot();
+        if (rearm_rc != H2_PAL_OK) return rearm_rc;
     }
     return rc;
 }
 
 static int confirm_active_image(void *user) {
     (void)user;
-    return confirm_pending_h2loader_boot();
+    return confirm_pending_h2loader_boot(NULL);
 }
 
 static h2_loader_memory_region_stats_t memory_region_stats(uint32_t caps) {
@@ -689,12 +887,13 @@ static int prepare_loader(void *user, h2_loader_t *loader) {
     h2_esp_h2loader_context_t *context = (h2_esp_h2loader_context_t *)user;
     h2_runtime_t *runtime = context->runtime;
     (void)loader;
-    return h2_loader_package_recover_publish(
+    int rc = h2_loader_package_recover_publish(
         runtime->fs,
         runtime->pref,
         runtime->mem,
         H2_LOADER_STAGE_PATH,
         H2_LOADER_STAGE_PREV_PATH);
+    return rc;
 }
 
 static int serve_loader(

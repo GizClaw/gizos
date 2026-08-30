@@ -411,7 +411,9 @@ static h2_pal_result_t command_transport_read(
     size_t response_size,
     size_t *out_response_len,
     h2_h2loader_host_command_output_fn on_output,
-    void *output_user) {
+    void *output_user,
+    uint8_t stream_output,
+    size_t *out_output_bytes) {
     command_transport_fixture_t *fixture = user;
     ++fixture->read_count;
     snprintf(fixture->marker, sizeof(fixture->marker), "%s", marker);
@@ -419,17 +421,23 @@ static h2_pal_result_t command_transport_read(
     if (copied > response_size) {
         copied = response_size;
     }
-    memcpy(response, fixture->response, copied);
+    memcpy(
+        response,
+        stream_output && fixture->response_len > copied
+            ? &fixture->response[fixture->response_len - copied]
+            : fixture->response,
+        copied);
     *out_response_len = copied;
-    if (copied > 0u && on_output != NULL) {
+    *out_output_bytes = fixture->response_len;
+    if (fixture->response_len > 0u && on_output != NULL) {
         size_t delivered = 0u;
         size_t chunk_size = fixture->output_chunk_size == 0u
-            ? copied : fixture->output_chunk_size;
-        while (delivered < copied) {
-            size_t chunk = copied - delivered;
+            ? fixture->response_len : fixture->output_chunk_size;
+        while (delivered < fixture->response_len) {
+            size_t chunk = fixture->response_len - delivered;
             if (chunk > chunk_size) chunk = chunk_size;
             h2_pal_result_t output_rc = on_output(
-                output_user, &response[delivered], chunk);
+                output_user, &fixture->response[delivered], chunk);
             if (output_rc != H2_PAL_OK) return output_rc;
             delivered += chunk;
         }
@@ -509,6 +517,39 @@ static void test_typed_command_transport_execution(void) {
     assert(result.transport_result == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
+    {
+        static uint8_t coredump_response[9000];
+        static const char terminal[] =
+            "\nH2_LOADER_COREDUMP_DUMP result=OK bytes=4096 blank=0\n";
+        memset(coredump_response, 'a', sizeof(coredump_response));
+        memcpy(
+            &coredump_response[sizeof(coredump_response) - sizeof(terminal) + 1u],
+            terminal,
+            sizeof(terminal) - 1u);
+        request.command = H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
+        fixture.response = coredump_response;
+        fixture.response_len = sizeof(coredump_response);
+        fixture.read_result = H2_PAL_OK;
+        fixture.output_chunk_size = 64u;
+        fixture.output_count = 0u;
+        assert(h2_h2loader_host_command_execute_transport(
+                   &fixture,
+                   command_transport_write,
+                   command_transport_read,
+                   NULL,
+                   &request,
+                   &result) == H2_PAL_OK);
+        assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+        assert(result.output_bytes == sizeof(coredump_response));
+        assert(result.output_truncated == 1u);
+        assert(fixture.output_count > 1u);
+    }
+
+    request.command = H2_H2LOADER_HOST_COMMAND_STATUS;
+    fixture.response = ok;
+    fixture.response_len = sizeof(ok) - 1u;
+    fixture.read_result = H2_PAL_OK;
+    fixture.output_chunk_size = 0u;
     fixture.finish_count = 0u;
     assert(h2_h2loader_host_command_execute_transport(
                &fixture,
@@ -1229,6 +1270,8 @@ typedef struct operation_fixture {
     int bad_final_checksum;
     int stage_only;
     int fail_stage_status_once;
+    int disconnect_failure_call;
+    h2_h2loader_host_active_role_t initial_active_role;
     h2_pal_result_t disconnect_result;
     h2_pal_result_t stage_result;
     h2_pal_result_t activate_result;
@@ -1248,7 +1291,7 @@ static h2_pal_result_t operation_connect(
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->status_board);
     strcpy(out_status->target, fixture->asset.target);
-    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->active_role = fixture->initial_active_role;
     out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
     out_status->running_partition = 1u;
     out_status->next_partition = 1u;
@@ -1313,6 +1356,10 @@ static h2_pal_result_t operation_activate(
 static h2_pal_result_t operation_disconnect(void *user) {
     operation_fixture_t *fixture = user;
     ++fixture->disconnect_count;
+    if (fixture->disconnect_failure_call != 0 &&
+        fixture->disconnect_count != fixture->disconnect_failure_call) {
+        return H2_PAL_OK;
+    }
     return fixture->disconnect_result;
 }
 
@@ -1327,7 +1374,7 @@ static h2_pal_result_t operation_read_status(
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->asset.board);
     strcpy(out_status->target, fixture->asset.target);
-    out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    out_status->active_role = fixture->initial_active_role;
     out_status->stage.valid = 1u;
     out_status->stage.package_size = fixture->asset.bytes;
     strcpy(out_status->stage.package_checksum, fixture->asset.sha256);
@@ -1378,6 +1425,7 @@ static void test_managed_operation(void) {
         .sleep_ms = operation_sleep,
     };
     operation_fixture_t fixture = { 0 };
+    fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
     strcpy(fixture.status_board, "devkit");
     strcpy(fixture.asset.board, "devkit");
     strcpy(fixture.asset.target, "esp32s3");
@@ -1423,6 +1471,24 @@ static void test_managed_operation(void) {
            H2_H2LOADER_HOST_OPERATION_COMPLETE);
     assert(fixture.event_result[fixture.event_count - 1u] == H2_PAL_OK);
 
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.sleep_count = 0;
+    fixture.event_count = 0u;
+    fixture.disconnect_result = H2_PAL_ERR_UNSUPPORTED;
+    fixture.disconnect_failure_call = 1;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.activate_count == 1);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.event_phase[fixture.event_count - 1u] ==
+           H2_H2LOADER_HOST_OPERATION_COMPLETE);
+    fixture.disconnect_result = H2_PAL_OK;
+    fixture.disconnect_failure_call = 0;
+
     fixture.stage_only = 1;
     fixture.connect_count = 0;
     fixture.stage_count = 0;
@@ -1440,6 +1506,21 @@ static void test_managed_operation(void) {
     assert(fixture.rediscover_count == 0);
     assert(fixture.read_status_count == 1);
     assert(strcmp(final_status.stage.package_checksum, package_sha) == 0);
+
+    fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.read_status_count == 1);
+    fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
 
     fixture.connect_count = 0;
     fixture.stage_count = 0;
@@ -1885,7 +1966,7 @@ static const h2_pal_serial_host_vtable_t serial_control_vtable = {
     .close = serial_control_close,
 };
 
-static void test_serial_deasserts_dtr_and_rts(void) {
+static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
     h2_pal_time_api_t time = {0};
     serial_control_fixture_t fixture = {
         .set_result = H2_PAL_OK,
@@ -1906,11 +1987,9 @@ static void test_serial_deasserts_dtr_and_rts(void) {
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
     assert(connection == NULL);
-    assert(fixture.event_count == 4u);
-    assert(memcmp(fixture.events, "ostc", 4u) == 0);
-    assert(fixture.line_mask ==
-        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
-         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.event_count == 3u);
+    assert(memcmp(fixture.events, "otc", 3u) == 0);
+    assert(fixture.line_mask == 0u);
     assert(fixture.asserted_lines == 0u);
 
     memset(&fixture, 0, sizeof(fixture));
@@ -1918,16 +1997,16 @@ static void test_serial_deasserts_dtr_and_rts(void) {
     fixture.stream_result = H2_PAL_ERR_IO;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
-    assert(fixture.event_count == 4u);
-    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+    assert(fixture.event_count == 3u);
+    assert(memcmp(fixture.events, "otc", 3u) == 0);
 
     memset(&fixture, 0, sizeof(fixture));
     fixture.set_result = H2_PAL_ERR_TIMEOUT;
     fixture.stream_result = H2_PAL_ERR_IO;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
-        H2_PAL_ERR_TIMEOUT);
+        H2_PAL_ERR_IO);
     assert(fixture.event_count == 3u);
-    assert(memcmp(fixture.events, "osc", 3u) == 0);
+    assert(memcmp(fixture.events, "otc", 3u) == 0);
 }
 
 int main(void) {
@@ -1941,6 +2020,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
-    test_serial_deasserts_dtr_and_rts();
+    test_serial_connect_does_not_touch_dtr_or_rts();
     return 0;
 }

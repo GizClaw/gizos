@@ -15,6 +15,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #if defined(CONFIG_CLI) && CONFIG_CLI
 #error "h2_cp_transport requires the CP shell CLI input path to be disabled"
@@ -45,6 +46,19 @@ static h2_bk_cp_byte_ring_t s_uart_rx_ring;
 static uart_id_t s_uart_id = UART_ID_MAX;
 static int s_uart_rx_taken;
 static int s_ap_ready;
+
+static void write_ap_probe(uint8_t stage) {
+  char line[48];
+  int length = snprintf(line, sizeof(line),
+                        "H2_BK_AP_PROBE stage=%u\r\n", (unsigned)stage);
+  if (length <= 0 || (size_t)length >= sizeof(line)) {
+    return;
+  }
+  (void)bk_uart_set_enable_tx(s_uart_id, true);
+  if (bk_uart_write_bytes(s_uart_id, line, (uint32_t)length) == BK_OK) {
+    bk_uart_wait_tx_over(s_uart_id);
+  }
+}
 
 static void uart_rx_isr(uart_id_t uart_id, void *param) {
   uint8_t buffer[H2_BK_CP_UART_CHUNK_SIZE];
@@ -222,6 +236,8 @@ static void transport_task(void *arg) {
           s_ap_ready = 1;
         }
         (void)mailbox_write_all(MB_UART1, &ready_ack, sizeof(ready_ack));
+      } else if (ready_request >= 0xe1u && ready_request <= 0xefu) {
+        write_ap_probe((uint8_t)(ready_request - 0xe0u));
       }
     }
     if (uart_rx_take_overflow()) {
@@ -266,17 +282,17 @@ int h2_bk_h2loader_cp_transport_start(void) {
     return -1;
   }
   if (bk_mb_uart_dev_init(MB_UART0) != 0) {
-    return -1;
+    return -2;
   }
   if (bk_mb_uart_dev_init(MB_UART1) != 0) {
     (void)bk_mb_uart_dev_deinit(MB_UART0);
-    return -1;
+    return -3;
   }
   s_uart_rx_storage = psram_malloc(H2_BK_CP_UART_RX_QUEUE_SIZE);
   if (s_uart_rx_storage == NULL) {
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
-    return -1;
+    return -4;
   }
   h2_bk_cp_byte_ring_init(&s_uart_rx_ring, s_uart_rx_storage,
                           H2_BK_CP_UART_RX_QUEUE_SIZE);
@@ -290,7 +306,7 @@ int h2_bk_h2loader_cp_transport_start(void) {
     s_uart_rx_storage = NULL;
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
-    return -1;
+    return -5;
   }
   s_uart_id = (uart_id_t)uart_port;
   if (bk_uart_set_baud_rate(s_uart_id, H2_BK_CP_UART_BAUD_RATE) != BK_OK ||
@@ -300,7 +316,7 @@ int h2_bk_h2loader_cp_transport_start(void) {
     s_uart_rx_storage = NULL;
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
-    return -1;
+    return -6;
   }
   s_uart_rx_taken = 1;
   (void)bk_uart_enable_rx_interrupt(s_uart_id);
@@ -313,7 +329,7 @@ int h2_bk_h2loader_cp_transport_start(void) {
     uart_rx_release();
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
-    return -1;
+    return -7;
   }
   int rc = rtos_create_psram_thread(
       &s_transport_thread, BEKEN_APPLICATION_PRIORITY, "h2-uart-tunnel",

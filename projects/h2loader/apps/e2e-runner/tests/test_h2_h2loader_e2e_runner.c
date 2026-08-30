@@ -43,6 +43,8 @@ static void test_full_sequence_for_both_transports(void) {
       .include_send = 1u,
       .include_send_url = 1u,
       .include_lifecycle = 1u,
+      .expected_coredump_bytes = 16384u,
+      .include_coredump = 1u,
       .execute_case = execute_case,
       .execute_user = &fake,
   };
@@ -53,15 +55,25 @@ static void test_full_sequence_for_both_transports(void) {
   }
   assert(rc == H2_PAL_OK);
   assert(result.complete == 1);
-  assert(result.case_count == 24u);
-  assert(result.passed == 24u);
+  assert(result.case_count == 32u);
+  assert(result.passed == 32u);
   assert(result.failed == 0u);
-  assert(fake.count == 24u);
+  assert(fake.count == 32u);
   for (size_t i = 0u; i < 12u; ++i) {
     assert(fake.transports[i] == H2_H2LOADER_E2E_TRANSPORT_UART);
     assert(fake.transports[i + 12u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
     assert(fake.cases[i] == fake.cases[i + 12u]);
   }
+  assert(fake.cases[24] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[25] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[26] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[27] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[28] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[29] ==
+         H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+  assert(fake.cases[30] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[31] ==
+         H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
 static h2_pal_result_t fail_send(void *user,
@@ -100,6 +112,10 @@ static void test_invalid_configs(void) {
   config.include_wifi = 1u;
   config.execute_case = execute_case;
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
+  config.include_wifi = 0u;
+  config.include_coredump = 1u;
+  config.expected_coredump_bytes = 3u;
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
 }
 
 static void test_names(void) {
@@ -107,6 +123,9 @@ static void test_names(void) {
                 "uart") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_SEND_URL),
                 "send-url") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(
+                    H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE),
+                "coredump-status-after-erase") == 0);
 }
 
 int main(void) {

@@ -27,6 +27,6 @@ CP 独占 UART0 RX 和 physical TX serializer，UART 固定为 230400 8N1。CP �
 
 ## 预期表现
 
-运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=h2loader`、`transport=iostreamikcp` 的设备。用 scan 返回的 port 执行默认 `status`，确认 `upgrade_phase=idle`；再通过默认 `send --file <build-dir>/update.tar.zlib` 在同一 reliable session stage package。App image 需要更新时先执行 `rollback`，重新连接并确认 Loader role 后再发送 package。
+运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。
 
-验收必须看到 AP/CP transition、trial 与 canonical 启动、最终 `active_version=<version>`、canonical running partition、`upgrade_phase=idle` 和 power-cycle 后复查。`H2_LOADER_UPGRADE result=OK` 本身不是完成。已经安装 H2Loader 的正常路径不调用 `bk_loader`；只有 scan、status、reboot-loader 都无法通信或 Loader 无法自我恢复时，才按 `bk_loader.json` 烧录 combined image，并把它记录为恢复路径。不支持 reliable command contract 的旧 image 只能进入该 recovery 流程，不能使用 legacy raw H2Loader command 迁移。
+验收必须看到 Partition 2 候选 Loader 启动、自动回写、最终运行 Partition 1，且 Partition 1/2 metadata valid、image checksum 相同、Stage 已清理，并在 power-cycle 后复查。reboot accepted 本身不是完成。已经安装 H2Loader 的正常路径不调用 `bk_loader`；只有 scan、status、`reboot loader` 都无法通信或 Loader 无法自我恢复时，才按 `bk_loader.json` 烧录 combined image，并把它记录为恢复路径。不支持 reliable command contract 的旧 image 只能进入该 recovery 流程，不能使用 legacy raw H2Loader command 迁移。

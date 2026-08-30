@@ -23,6 +23,21 @@ int h2_loader_stage_publish(
     const char *package_checksum,
     h2_loader_metadata_t *out_stage);
 
+/**
+ * Commit Stage metadata for package bytes that were already checksum-verified
+ * and inspected before being published at the canonical package path.
+ *
+ * The caller must publish exactly the inspected package before calling this
+ * function. This is the final Pref transaction of a Stage replacement and is
+ * the only transaction that writes valid=true.
+ */
+int h2_loader_stage_commit_inspection(
+    const h2_pal_pref_api_t *pref,
+    uint64_t package_size,
+    const char *package_checksum,
+    const h2_loader_package_inspection_t *inspection,
+    h2_loader_metadata_t *out_stage);
+
 /** Remove the published package and its Stage metadata. */
 int h2_loader_stage_abort(
     const h2_pal_fs_api_t *fs,

@@ -25,7 +25,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_LIMIT 16u
 #define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
-#define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 230400u
+#define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 115200u
 #define H2_H2LOADER_HOST_MFG_STEP_TOTAL 22u
 #define H2_H2LOADER_HOST_CAPABILITY_UART (UINT32_C(1) << 0)
 #define H2_H2LOADER_HOST_CAPABILITY_WIFI (UINT32_C(1) << 1)
@@ -182,13 +182,9 @@ h2_pal_result_t h2_h2loader_host_status_parse(
 /**
  * @brief Verify the final live state for one managed asset.
  *
- * Release-catalog App assets require active app role/name, confirmed state,
- * matching installed package checksum and staged_valid=0. Standalone package
- * manifests carry no name, so they instead require matching version and the
- * same package/checksum state. When live status provides active_checksum, it
- * must match the image checksum. A standalone Loader package additionally
- * requires an exact active image checksum; release-catalog Loader behavior
- * remains version plus idle upgrade phase for compatibility.
+ * Success requires the active partition metadata and active identity to match
+ * the asset's role, version, board, target, image checksum, and source package
+ * checksum. Stage must already be finalized and cleared.
  */
 h2_pal_result_t h2_h2loader_host_status_verify_asset(
     const h2_h2loader_host_status_t *status,
@@ -225,11 +221,10 @@ typedef struct h2_h2loader_host_serial_connection_config {
 /**
  * @brief Open a reliable serial H2Loader session and complete SESSION_ACK.
  *
- * The call deasserts RTS immediately after Host Serial open so reset-wired
- * adapters release the target; it leaves DTR untouched and does not pulse RTS.
- * Unsupported control lines do not prevent the handshake. conversation_id
- * must be nonzero or a nonzero value is derived from the monotonic clock.
- * The connection borrows all injected PAL APIs and never falls back to raw
+ * A normal connection does not read or modify DTR/RTS; control-line changes
+ * are reserved for explicit flashing operations. conversation_id must be
+ * nonzero or a nonzero value is derived from the monotonic clock. The
+ * connection borrows all injected PAL APIs and never falls back to raw
  * transport.
  */
 h2_pal_result_t h2_h2loader_host_serial_connect(
@@ -321,7 +316,8 @@ typedef struct h2_h2loader_host_command_result {
     h2_h2loader_host_command_terminal_t terminal;
     /** Bytes captured by Host Core and offered to on_output. */
     size_t output_bytes;
-    /** Nonzero when the fixed response buffer filled. */
+    /** Nonzero when the fixed terminal-response capture buffer filled.
+     * Streaming on_output callbacks still receive every accepted byte. */
     uint8_t output_truncated;
     /** Nonzero when success requires reconnect and live-state verification. */
     uint8_t lifecycle_transition;
@@ -390,9 +386,9 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
     void *progress_user);
 
 /**
- * @brief Request the transition required by the staged asset.
+ * @brief Request AUTO installation of the staged asset.
  *
- * App assets use reboot; Loader assets use upgrade. A returned success only
+ * Both APP and Loader assets use `reboot upgrade`. A returned success only
  * confirms command acceptance. The caller must reconnect and call
  * status_verify_asset before presenting operation success.
  */

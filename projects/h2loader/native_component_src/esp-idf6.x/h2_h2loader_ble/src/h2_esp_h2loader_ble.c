@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define H2_ESP_H2LOADER_APP_COMMAND_STACK_SIZE (32u * 1024u)
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -77,7 +79,7 @@ static int handle_ble_session(
         .write_user = stream,
         .write = h2_loader_ble_app_write,
         .task_name = h2loader_app_command_task_name,
-        .stack_size = 8192u,
+        .stack_size = H2_ESP_H2LOADER_APP_COMMAND_STACK_SIZE,
     };
     rc = h2_loader_app_client_start_return_console(&console);
     if (rc != H2_PAL_OK) {
@@ -163,7 +165,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         &s_serial_client,
         runtime_config->task,
         runtime_config->mem,
-        8192u);
+        H2_ESP_H2LOADER_APP_COMMAND_STACK_SIZE);
     if (rc != H2_PAL_OK) {
         goto cleanup_mutex;
     }
@@ -189,7 +191,8 @@ int h2_esp_h2loader_app_commands_prepare_serial(
     const h2_esp_h2loader_app_commands_config_t config = {
         .active_name = active_name,
         .hardware_capabilities =
-            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI |
+            H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
         .app_partition_id = 2u,
         .coredump_partition_id = coredump_partition_id,
@@ -236,6 +239,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
         },
         .board = runtime->board,
         .capabilities = s_ble.client_config.hardware_capabilities,
+        .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
         .handler = handle_ble_session,
         .handler_user = &s_ble,
     };
@@ -283,7 +287,8 @@ int h2_esp_h2loader_app_commands_start(
     const h2_esp_h2loader_app_commands_config_t config = {
         .active_name = active_name,
         .hardware_capabilities =
-            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI |
+            H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
         .app_partition_id = 2u,
         .coredump_partition_id = coredump_partition_id,

@@ -340,6 +340,8 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
     uint8_t response[8192u];
     h2_h2loader_host_command_contract_t contract;
     size_t response_len = 0u;
+    size_t output_bytes = 0u;
+    uint8_t stream_output;
     h2_pal_result_t rc;
 
     if (out_result != NULL) {
@@ -355,6 +357,11 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
         return rc;
     }
     out_result->lifecycle_transition = contract.lifecycle_transition;
+    stream_output = request->command == H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
+    if (stream_output && request->on_output == NULL) {
+        out_result->transport_result = H2_PAL_ERR_INVALID_ARG;
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     if (request->is_cancelled != NULL &&
         request->is_cancelled(request->cancel_user)) {
         out_result->transport_result = H2_PAL_EXIT;
@@ -372,9 +379,12 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
         sizeof(response),
         &response_len,
         request->on_output,
-        request->output_user);
-    out_result->output_bytes = response_len;
-    out_result->output_truncated = rc == H2_PAL_ERR_NO_SPACE ? 1u : 0u;
+        request->output_user,
+        stream_output,
+        &output_bytes);
+    out_result->output_bytes = output_bytes;
+    out_result->output_truncated =
+        rc == H2_PAL_ERR_NO_SPACE || output_bytes > response_len ? 1u : 0u;
     if (request->is_cancelled != NULL &&
         request->is_cancelled(request->cancel_user)) {
         out_result->transport_result = H2_PAL_EXIT;

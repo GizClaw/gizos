@@ -545,6 +545,8 @@ static void test_partition_2_loader_copies_back_without_stage(void) {
     h2_loader_startup_action_t action;
     int present;
     fixture_init(&fixture, 2u);
+    fixture.last_result = H2_PAL_ERR_WRITE;
+    fixture.last_result_present = 1;
     memset(fixture.partition_bytes[1], 0x5a, 64u);
     assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
     assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
@@ -555,6 +557,32 @@ static void test_partition_2_loader_copies_back_without_stage(void) {
         &fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
     assert(present && p1.valid && p1.role == H2_LOADER_IMAGE_ROLE_H2LOADER);
     assert(strcmp(p1.image_checksum, SHA_A) == 0);
+    assert(fixture.last_result_present && fixture.last_result == H2_PAL_OK);
+}
+
+static void test_partition_2_loader_preserves_stage_origin_on_both_copies(void) {
+    test_fixture_t fixture;
+    h2_loader_startup_action_t action;
+    int present;
+    h2_loader_metadata_t stage = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+    stage.package_size = 1024u;
+    (void)snprintf(stage.package_checksum, sizeof(stage.package_checksum), "%s", SHA_B);
+    fixture_init(&fixture, 2u);
+    fixture.last_result = H2_PAL_ERR_WRITE;
+    fixture.last_result_present = 1;
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
+    assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+    assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
+    assert(action == H2_LOADER_STARTUP_ACTION_REBOOTING_H2LOADER);
+    h2_loader_metadata_t p1 = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
+    assert(present && p1.valid);
+    assert(strcmp(p1.package_checksum, SHA_B) == 0 && p1.package_size == 1024u);
+    h2_loader_metadata_t p2 = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &present);
+    assert(present && p2.valid);
+    assert(strcmp(p2.package_checksum, SHA_B) == 0 && p2.package_size == 1024u);
+    assert(fixture.last_result_present && fixture.last_result == H2_PAL_OK);
 }
 
 static void test_partition_2_copy_failure_keeps_partition_1_invalid(void) {
@@ -584,15 +612,54 @@ static void test_converged_loader_finishes_stage(void) {
     fixture.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
     fixture.boot_intent_present = 1;
     fixture.package_present = 1;
+    fixture.last_result = H2_PAL_ERR_WRITE;
+    fixture.last_result_present = 1;
     write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
-    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &stage);
-    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stage);
+    h2_loader_metadata_t partition = stage;
+    partition.package_checksum[0] = '\0';
+    partition.package_size = 0u;
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &partition);
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &partition);
     assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
     assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
     assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
     (void)read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
     assert(!present);
     assert(!fixture.package_present && fixture.package_removes == 1u);
+    h2_loader_metadata_t p1 = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
+    assert(present && strcmp(p1.package_checksum, SHA_B) == 0);
+    h2_loader_metadata_t p2 = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &present);
+    assert(present && strcmp(p2.package_checksum, SHA_B) == 0);
+    assert(fixture.last_result_present && fixture.last_result == H2_PAL_OK);
+}
+
+static void test_converged_loader_does_not_ignore_different_stage(void) {
+    test_fixture_t fixture;
+    h2_loader_startup_action_t action;
+    int present;
+    h2_loader_metadata_t loader =
+        metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+    h2_loader_metadata_t stage = metadata(H2_LOADER_IMAGE_ROLE_APP, SHA_B);
+    stage.package_size = 1024u;
+    (void)snprintf(stage.package_checksum, sizeof(stage.package_checksum),
+                   "%s", SHA_A);
+    fixture_init(&fixture, 1u);
+    fixture.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
+    fixture.boot_intent_present = 1;
+    fixture.package_present = 1;
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &loader);
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &loader);
+    assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+
+    /* This fixture deliberately lacks package read operations. The important
+     * invariant is that a different Stage is inspected instead of being
+     * silently skipped merely because P1 and P2 currently match. */
+    assert(h2_loader_startup(&fixture.loader, &action) != H2_PAL_OK);
+    (void)read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
+    assert(present && !fixture.loader.status.stage.valid);
 }
 
 static void test_app_finalize_only_consumes_matching_stage(void) {
@@ -605,6 +672,9 @@ static void test_app_finalize_only_consumes_matching_stage(void) {
     fixture_init(&fixture, 2u);
     fixture.package_present = 1;
     write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
+    h2_loader_metadata_t installed;
+    assert(h2_loader_metadata_from_stage(&stage, &installed) == H2_PAL_OK);
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &installed);
     assert(h2_loader_finalize_active_app(
                &fixture.pref, &fixture.mem, &fixture.fs,
                H2_LOADER_DEFAULT_PACKAGE_PATH, &app, 1u, 2u) ==
@@ -616,6 +686,19 @@ static void test_app_finalize_only_consumes_matching_stage(void) {
                H2_LOADER_DEFAULT_PACKAGE_PATH, &app, 2u, 2u) == H2_PAL_OK);
     (void)read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
     assert(!present && !fixture.package_present);
+    h2_loader_metadata_t p2 = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &present);
+    assert(present && p2.valid && strcmp(p2.package_checksum, SHA_B) == 0);
+    assert(p2.package_size == 1024u);
+    assert(fixture.last_result_present && fixture.last_result == H2_PAL_OK);
+
+    h2_loader_metadata_t invalid = {0};
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &invalid);
+    assert(h2_loader_finalize_active_app(
+               &fixture.pref, &fixture.mem, &fixture.fs,
+               H2_LOADER_DEFAULT_PACKAGE_PATH, &app, 2u, 2u) ==
+           H2_PAL_ERR_INVALID_STATE);
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &p2);
 
     fixture.package_present = 1;
     stage = metadata(H2_LOADER_IMAGE_ROLE_APP, SHA_B);
@@ -627,6 +710,10 @@ static void test_app_finalize_only_consumes_matching_stage(void) {
                H2_LOADER_DEFAULT_PACKAGE_PATH, &app, 2u, 2u) == H2_PAL_OK);
     (void)read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
     assert(present && fixture.package_present);
+    p2 = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &present);
+    assert(present && p2.valid && strcmp(p2.package_checksum, SHA_B) == 0);
+    assert(p2.package_size == 1024u);
 }
 
 static void test_reboot_commands_only_set_intent_and_partition(void) {
@@ -654,16 +741,45 @@ static void test_reboot_commands_only_set_intent_and_partition(void) {
     assert(fixture.reboot_calls == 1u);
 }
 
+static void test_stage_begin_invalidates_metadata_and_removes_old_package(void) {
+    test_fixture_t fixture;
+    fixture_init(&fixture, 1u);
+    assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+    h2_loader_metadata_t stage = metadata(H2_LOADER_IMAGE_ROLE_APP, SHA_B);
+    (void)snprintf(stage.package_checksum,
+        sizeof(stage.package_checksum), "%s", SHA_B);
+    stage.package_size = 64u;
+    write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
+    fixture.loader.status.stage = stage;
+    fixture.package_present = 1;
+
+    assert(h2_loader_begin_stage(
+               &fixture.loader,
+               "/dl/update.tar.zlib.tmp",
+               "/dl/update.tar.zlib.prev") == H2_PAL_OK);
+    assert(fixture.package_present == 0);
+    assert(fixture.package_removes == 1u);
+    int present = 0;
+    const h2_loader_metadata_t stored = read_metadata(
+        &fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
+    assert(present == 1);
+    assert(stored.valid == 0);
+    assert(fixture.loader.status.stage.valid == 0);
+}
+
 int main(void) {
     test_loader_intent_stays_and_seeds_partition_1();
     test_seed_running_metadata_preserves_package_origin();
     test_auto_without_partition_2_stays();
     test_auto_boots_valid_different_partition_2();
     test_partition_2_loader_copies_back_without_stage();
+    test_partition_2_loader_preserves_stage_origin_on_both_copies();
     test_partition_2_copy_failure_keeps_partition_1_invalid();
     test_converged_loader_finishes_stage();
+    test_converged_loader_does_not_ignore_different_stage();
     test_app_finalize_only_consumes_matching_stage();
     test_reboot_commands_only_set_intent_and_partition();
+    test_stage_begin_invalidates_metadata_and_removes_old_package();
     puts("h2loader v2 boot tests passed");
     return 0;
 }

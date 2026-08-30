@@ -34,6 +34,7 @@ struct Options {
   std::string wifi_password_env;
   std::filesystem::path report;
   std::uint64_t firmware_url_bytes = 0u;
+  std::uint64_t coredump_bytes = 0u;
   std::uint32_t repeat = 1u;
   std::uint32_t timeout_ms = 120000u;
   bool help = false;
@@ -64,6 +65,8 @@ void usage(const char *program, FILE *stream) {
       "  --url-sha256 HEX             expected URL payload SHA-256\n"
       "  --wifi-ssid SSID             test scan/connect/disconnect\n"
       "  --wifi-password-env NAME     read Wi-Fi password from environment\n"
+      "  --coredump-bytes BYTES       verify a preloaded coredump, then erase "
+      "it\n"
       "  --repeat COUNT               repeat every selected transport (default "
       "1)\n"
       "  --timeout-ms MS              connect and command timeout (default "
@@ -123,6 +126,7 @@ bool parse_options(int argc, char **argv, Options *out) {
     kTimeout = 1ull << 11,
     kReport = 1ull << 12,
     kLoaderFirmware = 1ull << 13,
+    kCoredumpBytes = 1ull << 14,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -171,6 +175,13 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else if (std::strcmp(name, "--wifi-password-env") == 0) {
       bit = kPasswordEnv;
       out->wifi_password_env = value;
+    } else if (std::strcmp(name, "--coredump-bytes") == 0) {
+      bit = kCoredumpBytes;
+      if (!parse_u64(value, sizeof(std::uint32_t),
+                     std::numeric_limits<std::uint64_t>::max(),
+                     &out->coredump_bytes)) {
+        return false;
+      }
     } else if (std::strcmp(name, "--repeat") == 0) {
       bit = kRepeat;
       std::uint64_t parsed = 0u;
@@ -206,10 +217,13 @@ bool parse_options(int argc, char **argv, Options *out) {
     return false;
   if (!out->loader_firmware.empty() && out->app_firmware.empty())
     return false;
+  if (out->coredump_bytes != 0u && out->repeat != 1u)
+    return false;
   const std::size_t cases = 1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
                             (!out->app_firmware.empty() ? 2u : 0u) +
                             (has_url ? 2u : 0u) +
-                            (!out->loader_firmware.empty() ? 4u : 0u);
+                            (!out->loader_firmware.empty() ? 4u : 0u) +
+                            (out->coredump_bytes != 0u ? 4u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
   return cases * transports * out->repeat <= H2_H2LOADER_E2E_MAX_CASES;
@@ -369,6 +383,8 @@ bool write_report(const std::filesystem::path &path, const Options &options,
          << "  \"firmware_url\": {\"bytes\": " << options.firmware_url_bytes
          << ", \"sha256\": \"" << json_escape(options.firmware_url_sha256)
          << "\"},\n"
+         << "  \"coredump\": {\"expected_bytes\": "
+         << options.coredump_bytes << "},\n"
          << "  \"summary\": {\"cases\": " << result.case_count
          << ", \"passed\": " << result.passed
          << ", \"failed\": " << result.failed
@@ -524,12 +540,15 @@ int main(int argc, char **argv) {
         .repeat_count = options.repeat,
         .wait_timeout_ms = options.timeout_ms,
         .command_timeout_ms = options.timeout_ms,
+        .expected_coredump_bytes = options.coredump_bytes,
         .include_wifi = static_cast<std::uint8_t>(!options.wifi_ssid.empty()),
         .include_send = static_cast<std::uint8_t>(!app_firmware.empty()),
         .include_send_url =
             static_cast<std::uint8_t>(!options.firmware_url.empty()),
         .include_lifecycle =
             static_cast<std::uint8_t>(!loader_firmware.empty()),
+        .include_coredump =
+            static_cast<std::uint8_t>(options.coredump_bytes != 0u),
         .is_cancelled = is_cancelled,
         .on_case = case_event,
         .on_progress = progress_event,

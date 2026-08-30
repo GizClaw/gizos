@@ -21,6 +21,7 @@ class E2ERunnerCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("--uart ENDPOINT", result.stdout)
         self.assertIn("--ble-id ENDPOINT", result.stdout)
+        self.assertIn("--coredump-bytes BYTES", result.stdout)
 
     def test_endpoint_is_required(self):
         result = self.run_cli()
@@ -38,6 +39,16 @@ class E2ERunnerCliTest(unittest.TestCase):
 
     def test_repeat_must_be_positive(self):
         result = self.run_cli("--uart", "fake", "--repeat", "0")
+        self.assertEqual(result.returncode, 2)
+
+    def test_coredump_is_single_run_and_requires_a_real_header(self):
+        result = self.run_cli(
+            "--uart", "fake", "--coredump-bytes", "3"
+        )
+        self.assertEqual(result.returncode, 2)
+        result = self.run_cli(
+            "--uart", "fake", "--coredump-bytes", "16384", "--repeat", "2"
+        )
         self.assertEqual(result.returncode, 2)
 
     def test_password_is_read_from_named_environment_variable(self):

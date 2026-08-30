@@ -31,6 +31,10 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_REBOOT_LOADER_PRESERVES_STAGE,
   H2_H2LOADER_E2E_CASE_INSTALL_APP,
   H2_H2LOADER_E2E_CASE_INSTALL_LOADER,
+  H2_H2LOADER_E2E_CASE_COREDUMP_STATUS,
+  H2_H2LOADER_E2E_CASE_COREDUMP_DUMP,
+  H2_H2LOADER_E2E_CASE_COREDUMP_ERASE,
+  H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -80,10 +84,12 @@ typedef struct h2_h2loader_e2e_config {
   uint32_t repeat_count;
   uint32_t wait_timeout_ms;
   uint32_t command_timeout_ms;
+  uint64_t expected_coredump_bytes;
   uint8_t include_wifi;
   uint8_t include_send;
   uint8_t include_send_url;
   uint8_t include_lifecycle;
+  uint8_t include_coredump;
 
   h2_h2loader_host_cancelled_fn is_cancelled;
   void *cancel_user;

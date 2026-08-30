@@ -1,6 +1,7 @@
 #include "h2_h2loader_cli_internal.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +11,133 @@ typedef struct open_source {
     const h2_pal_fs_api_t *fs;
     h2_pal_fs_file_t *file;
 } open_source_t;
+
+typedef struct coredump_file_sink {
+    h2_h2loader_cli_context_t *context;
+    const h2_pal_fs_api_t *fs;
+    h2_pal_fs_file_t *file;
+    uint64_t bytes_written;
+    uint64_t terminal_bytes;
+    char line[512];
+    size_t line_len;
+    int terminal_seen;
+} coredump_file_sink_t;
+
+static int parse_u64_decimal(
+    const char *text,
+    const char **out_end,
+    uint64_t *out_value) {
+    uint64_t value = 0u;
+    const char *cursor = text;
+    if (text == NULL || out_end == NULL || out_value == NULL ||
+        *cursor < '0' || *cursor > '9') return 0;
+    while (*cursor >= '0' && *cursor <= '9') {
+        uint8_t digit = (uint8_t)(*cursor - '0');
+        if (value > (UINT64_MAX - digit) / 10u) return 0;
+        value = value * 10u + digit;
+        ++cursor;
+    }
+    *out_end = cursor;
+    *out_value = value;
+    return 1;
+}
+
+static int hex_nibble(uint8_t value) {
+    if (value >= '0' && value <= '9') return value - '0';
+    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+    return -1;
+}
+
+static h2_pal_result_t coredump_write_all(
+    coredump_file_sink_t *sink,
+    const uint8_t *data,
+    size_t len) {
+    while (len > 0u) {
+        size_t written = 0u;
+        h2_pal_result_t rc = h2_pal_fs_write(
+            sink->fs, sink->file, data, len, &written);
+        if (rc != H2_PAL_OK) return rc;
+        if (written == 0u || written > len) return H2_PAL_ERR_IO;
+        data += written;
+        len -= written;
+    }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t coredump_file_line(
+    coredump_file_sink_t *sink,
+    const char *line,
+    size_t len) {
+    static const char data_prefix[] = "H2_LOADER_COREDUMP_DATA offset=";
+    static const char terminal_prefix[] =
+        "H2_LOADER_COREDUMP_DUMP result=OK bytes=";
+    if (len >= sizeof(data_prefix) - 1u &&
+        memcmp(line, data_prefix, sizeof(data_prefix) - 1u) == 0) {
+        const char *cursor = line + sizeof(data_prefix) - 1u;
+        const char *end = NULL;
+        uint64_t offset = 0u;
+        uint8_t decoded[128];
+        size_t decoded_len = 0u;
+        if (!parse_u64_decimal(cursor, &end, &offset) ||
+            offset != sink->bytes_written ||
+            (size_t)(line + len - end) < 5u || memcmp(end, " hex=", 5u) != 0) {
+            return H2_PAL_ERR_FORMAT;
+        }
+        cursor = end + 5u;
+        if (((size_t)(line + len - cursor) & 1u) != 0u ||
+            (size_t)(line + len - cursor) / 2u > sizeof(decoded)) {
+            return H2_PAL_ERR_FORMAT;
+        }
+        while (cursor < line + len) {
+            int high = hex_nibble((uint8_t)cursor[0]);
+            int low = hex_nibble((uint8_t)cursor[1]);
+            if (high < 0 || low < 0) return H2_PAL_ERR_FORMAT;
+            decoded[decoded_len++] = (uint8_t)((high << 4) | low);
+            cursor += 2;
+        }
+        h2_pal_result_t rc = coredump_write_all(sink, decoded, decoded_len);
+        if (rc == H2_PAL_OK) sink->bytes_written += decoded_len;
+        return rc;
+    }
+    if (len >= sizeof(terminal_prefix) - 1u &&
+        memcmp(line, terminal_prefix, sizeof(terminal_prefix) - 1u) == 0) {
+        const char *end = NULL;
+        if (!parse_u64_decimal(
+                line + sizeof(terminal_prefix) - 1u,
+                &end,
+                &sink->terminal_bytes) ||
+            sink->terminal_bytes != sink->bytes_written) {
+            return H2_PAL_ERR_FORMAT;
+        }
+        sink->terminal_seen = 1;
+    }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t coredump_file_output(
+    void *user,
+    const uint8_t *data,
+    size_t len) {
+    coredump_file_sink_t *sink = user;
+    if (sink == NULL || (data == NULL && len != 0u)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    for (size_t i = 0u; i < len; ++i) {
+        if (data[i] == '\n') {
+            size_t line_len = sink->line_len;
+            if (line_len > 0u && sink->line[line_len - 1u] == '\r') --line_len;
+            h2_pal_result_t rc = coredump_file_line(
+                sink, sink->line, line_len);
+            sink->line_len = 0u;
+            if (rc != H2_PAL_OK) return rc;
+            continue;
+        }
+        if (sink->line_len == sizeof(sink->line)) return H2_PAL_ERR_NO_SPACE;
+        sink->line[sink->line_len++] = (char)data[i];
+    }
+    return H2_PAL_OK;
+}
 
 static h2_pal_result_t cli_managed_connect(
     void *user,
@@ -109,7 +237,9 @@ static const char help_text[] =
     "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
-    "          wifi disconnect\n";
+    "          wifi disconnect\n"
+    "coredump: coredump status|erase\n"
+    "          coredump dump [--output <file>]\n";
 
 static int parse_seconds(const char *value, uint32_t *out_ms) {
     char *end = NULL;
@@ -419,7 +549,12 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "disconnect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
     if (argc >= 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "scan") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS;
-    if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "dump") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
+    if ((argc == 2 ||
+            (argc == 4 && strcmp(argv[2], "--output") == 0 &&
+                argv[3][0] != '\0')) &&
+        strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "dump") == 0) {
+        return H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
+    }
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "erase") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE;
     if (argc == 4 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "connect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT;
     return 0;
@@ -515,6 +650,9 @@ static int device_command(
     h2_h2loader_host_status_t status = {0};
     h2_h2loader_host_command_request_t request;
     h2_h2loader_host_command_result_t result = {0};
+    coredump_file_sink_t coredump_sink = {0};
+    char coredump_tmp_path[1024];
+    const char *coredump_output_path = NULL;
     h2_h2loader_host_command_t kind = command_kind(argc, argv);
     uint32_t wifi_scan_limit = 0u;
     uint32_t wifi_scan_timeout_ms = 0u;
@@ -525,6 +663,35 @@ static int device_command(
         return H2_H2LOADER_CLI_EXIT_USAGE;
     }
     if (kind == 0 || options->port == NULL) return H2_H2LOADER_CLI_EXIT_USAGE;
+    if (kind == H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP && argc == 4) {
+        int written;
+        coredump_output_path = argv[3];
+        written = snprintf(
+            coredump_tmp_path,
+            sizeof(coredump_tmp_path),
+            "%s.tmp",
+            coredump_output_path);
+        if (written < 0 || (size_t)written >= sizeof(coredump_tmp_path)) {
+            return H2_H2LOADER_CLI_EXIT_USAGE;
+        }
+        (void)h2_pal_fs_remove(context->runtime->fs, coredump_tmp_path);
+        rc = h2_pal_fs_open(
+            context->runtime->fs,
+            coredump_tmp_path,
+            H2_PAL_FS_OPEN_WRITE_TRUNCATE,
+            &coredump_sink.file);
+        if (rc != H2_PAL_OK) {
+            h2_h2loader_cli_output(
+                context,
+                H2_H2LOADER_CLI_STREAM_STDERR,
+                "h2loader: cannot open coredump output path=%s code=%d\n",
+                coredump_output_path,
+                rc);
+            return H2_H2LOADER_CLI_EXIT_RUNTIME;
+        }
+        coredump_sink.context = context;
+        coredump_sink.fs = context->runtime->fs;
+    }
     if (monitor_after && options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
         h2_h2loader_cli_output(
             context, H2_H2LOADER_CLI_STREAM_STDERR,
@@ -543,8 +710,10 @@ static int device_command(
         .status = &status,
         .is_cancelled = context->config->is_cancelled,
         .cancel_user = context->config->cancel_user,
-        .on_output = command_output,
-        .output_user = context,
+        .on_output = coredump_output_path != NULL
+            ? coredump_file_output : command_output,
+        .output_user = coredump_output_path != NULL
+            ? (void *)&coredump_sink : (void *)context,
     };
     if (kind == H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT) {
         request.ssid = argv[2];
@@ -562,6 +731,46 @@ static int device_command(
         if (rc == H2_PAL_EXIT) rc = H2_PAL_OK;
     }
     (void)h2_h2loader_cli_transport_disconnect(&transport);
+    if (coredump_output_path != NULL) {
+        int complete = rc == H2_PAL_OK &&
+            result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK &&
+            coredump_sink.terminal_seen && coredump_sink.line_len == 0u &&
+            coredump_sink.terminal_bytes == coredump_sink.bytes_written;
+        h2_pal_result_t file_rc = H2_PAL_OK;
+        if (complete) {
+            file_rc = h2_pal_fs_sync(coredump_sink.fs, coredump_sink.file);
+        }
+        h2_pal_result_t close_rc = h2_pal_fs_close(
+            coredump_sink.fs, coredump_sink.file);
+        coredump_sink.file = NULL;
+        if (file_rc == H2_PAL_OK) file_rc = close_rc;
+        if (complete && file_rc == H2_PAL_OK) {
+            h2_pal_result_t remove_rc = h2_pal_fs_remove(
+                coredump_sink.fs, coredump_output_path);
+            if (remove_rc != H2_PAL_OK &&
+                remove_rc != H2_PAL_FS_ERR_NOT_FOUND) {
+                file_rc = remove_rc;
+            }
+        }
+        if (complete && file_rc == H2_PAL_OK) {
+            file_rc = h2_pal_fs_rename(
+                coredump_sink.fs,
+                coredump_tmp_path,
+                coredump_output_path);
+        }
+        if (!complete || file_rc != H2_PAL_OK) {
+            (void)h2_pal_fs_remove(coredump_sink.fs, coredump_tmp_path);
+            if (rc == H2_PAL_OK) rc = file_rc != H2_PAL_OK
+                ? file_rc : H2_PAL_ERR_FORMAT;
+        } else {
+            h2_h2loader_cli_output(
+                context,
+                H2_H2LOADER_CLI_STREAM_STDOUT,
+                "H2_LOADER_COREDUMP_FILE result=OK path=%s bytes=%llu\n",
+                coredump_output_path,
+                (unsigned long long)coredump_sink.bytes_written);
+        }
+    }
     if (rc != H2_PAL_OK || result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
         h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDERR,
             "h2loader: command failed code=%d terminal=%d\n", rc, result.terminal);

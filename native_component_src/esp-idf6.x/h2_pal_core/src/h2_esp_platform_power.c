@@ -112,9 +112,21 @@ static void IRAM_ATTR power_ota_safe_callback(void *context) {
             break;
         case H2_ESP_POWER_OTA_SET_NEXT:
             call->partition = partition_for_id(call->partition_id);
-            call->result = call->partition != NULL
-                ? esp_ota_set_boot_partition(call->partition)
-                : ESP_ERR_NOT_FOUND;
+            if (call->partition == NULL) {
+                call->result = ESP_ERR_NOT_FOUND;
+                break;
+            }
+            {
+                const esp_partition_t *running =
+                    esp_ota_get_running_partition();
+                /* Re-selecting the running OTA slot changes its otadata state
+                 * back to NEW. A same-slot reboot must leave a confirmed image
+                 * VALID so callers can distinguish it from a real slot switch. */
+                call->result = running != NULL &&
+                        running->address == call->partition->address
+                    ? ESP_OK
+                    : esp_ota_set_boot_partition(call->partition);
+            }
             break;
         case H2_ESP_POWER_OTA_CONFIRM_RUNNING:
             call->result = esp_ota_mark_app_valid_cancel_rollback();

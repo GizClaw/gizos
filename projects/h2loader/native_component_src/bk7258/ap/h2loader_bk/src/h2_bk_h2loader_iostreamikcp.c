@@ -20,6 +20,7 @@
 #define H2_BK_SERIAL_MAX_FLUSH_TIMEOUT_MS 120000u
 #define H2_BK_SERIAL_MAX_WAITSND 64u
 #define H2_BK_SERIAL_POLL_INTERVAL_MS 10u
+#define H2_BK_SERIAL_WRITE_POLL_MS 1u
 #define H2_BK_SERIAL_PHYSICAL_READ_SIZE 512u
 #define H2_BK_SERIAL_SEGMENT_TIMEOUT_MS 60u
 #define H2_BK_SERIAL_RECEIVE_WINDOW 20u
@@ -260,7 +261,8 @@ static h2_pal_result_t command_write(void *user, const void *buffer, size_t len,
   h2_pal_result_t rc = h2_iostreamikcp_write(transport->stream, buffer, len);
   *out_written = rc == H2_PAL_OK ? len : 0u;
   if (rc == H2_PAL_OK) {
-    h2_pal_result_t poll_rc = poll_physical(transport, 0u);
+    h2_pal_result_t poll_rc =
+        poll_physical(transport, H2_BK_SERIAL_WRITE_POLL_MS);
     if (poll_rc != H2_PAL_OK && poll_rc != H2_PAL_ERR_TIMEOUT &&
         poll_rc != H2_PAL_ERR_WOULD_BLOCK) {
       return poll_rc;

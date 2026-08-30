@@ -21,7 +21,6 @@ int h2_loader_stage_publish(
     const char *package_checksum,
     h2_loader_metadata_t *out_stage) {
     h2_loader_package_inspection_t inspection;
-    h2_loader_metadata_t stage = {0};
     h2_pal_fs_stat_t stat;
     int rc;
     if (package == NULL || pref == NULL || package_checksum == NULL ||
@@ -45,17 +44,35 @@ int h2_loader_stage_publish(
     if (inspection.legacy || inspection.manifest.format == 0u) {
         return H2_PAL_ERR_FORMAT;
     }
+    return h2_loader_stage_commit_inspection(
+        pref, package_size, package_checksum, &inspection, out_stage);
+}
+
+int h2_loader_stage_commit_inspection(
+    const h2_pal_pref_api_t *pref,
+    uint64_t package_size,
+    const char *package_checksum,
+    const h2_loader_package_inspection_t *inspection,
+    h2_loader_metadata_t *out_stage) {
+    h2_loader_metadata_t stage = {0};
+    int rc;
+
+    if (pref == NULL || package_checksum == NULL || inspection == NULL ||
+        package_size == 0u || inspection->legacy ||
+        inspection->manifest.format == 0u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     stage.package_size = package_size;
-    stage.image_size = inspection.manifest.image_size;
-    stage.role = inspection.manifest.role;
+    stage.image_size = inspection->manifest.image_size;
+    stage.role = inspection->manifest.role;
     copy_text(stage.package_checksum, sizeof(stage.package_checksum),
         package_checksum);
     copy_text(stage.image_checksum, sizeof(stage.image_checksum),
-        inspection.manifest.image_sha256);
+        inspection->manifest.image_sha256);
     copy_text(stage.version, sizeof(stage.version),
-        inspection.manifest.version);
-    copy_text(stage.board, sizeof(stage.board), inspection.manifest.board);
-    copy_text(stage.target, sizeof(stage.target), inspection.manifest.target);
+        inspection->manifest.version);
+    copy_text(stage.board, sizeof(stage.board), inspection->manifest.board);
+    copy_text(stage.target, sizeof(stage.target), inspection->manifest.target);
     stage.valid = 1;
     rc = h2_loader_metadata_write(
         pref, H2_LOADER_METADATA_SLOT_STAGE, &stage);

@@ -215,22 +215,55 @@ static void h2loader_close_remove_tmp(h2_loader_command_t *self, h2_pal_fs_file_
     (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
 }
 
-static int h2loader_publish_tmp_stage(h2_loader_command_t *self) {
-    int rc = h2_loader_package_validate_path(
+static int h2loader_publish_tmp_stage(
+    h2_loader_command_t *self,
+    h2_loader_package_inspection_t *out_inspection) {
+    h2_loader_package_inspection_t inspection;
+    h2_pal_fs_stat_t current_stat;
+    int current_moved = 0;
+    int rc = h2_loader_package_inspect_path(
         &self->config.loader->package,
-        H2_LOADER_STAGE_TMP_PATH);
+        H2_LOADER_STAGE_TMP_PATH,
+        &inspection);
     if (rc != H2_PAL_OK) {
         h2loader_stage_error(self, "validate", rc);
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return rc;
     }
     (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_PREV_PATH);
+    rc = h2_pal_fs_stat(self->config.fs, H2_LOADER_STAGE_PATH, &current_stat);
+    if (rc == H2_PAL_FS_OK) {
+        if (current_stat.is_dir) {
+            h2loader_stage_error(self, "current_stage", H2_PAL_ERR_FORMAT);
+            (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+            return H2_PAL_ERR_FORMAT;
+        }
+        rc = h2_pal_fs_rename(
+            self->config.fs,
+            H2_LOADER_STAGE_PATH,
+            H2_LOADER_STAGE_PREV_PATH);
+        if (rc != H2_PAL_FS_OK) {
+            h2loader_stage_error(self, "rename_previous", rc);
+            (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+            return rc;
+        }
+        current_moved = 1;
+    } else if (rc != H2_PAL_FS_ERR_NOT_FOUND) {
+        h2loader_stage_error(self, "stat_current", rc);
+        (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+        return rc;
+    }
     rc = h2_pal_fs_rename(self->config.fs, H2_LOADER_STAGE_TMP_PATH, H2_LOADER_STAGE_PATH);
     if (rc != H2_PAL_FS_OK) {
         h2loader_stage_error(self, "rename_stage", rc);
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+        if (current_moved) {
+            (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_PREV_PATH);
+        }
+        return rc;
     }
-    return rc;
+    if (out_inspection != NULL) *out_inspection = inspection;
+    return H2_PAL_OK;
 }
 
 static void h2loader_finish_stage_publish(h2_loader_command_t *self, int stage_rc) {
@@ -246,7 +279,8 @@ static void h2loader_finish_stage_publish(h2_loader_command_t *self, int stage_r
 static int h2loader_receive_stage(
     h2_loader_command_t *self,
     size_t bytes,
-    const char *expected_sha256) {
+    const char *expected_sha256,
+    h2_loader_package_inspection_t *out_inspection) {
     uint8_t buffer[H2_LOADER_STAGE_CHUNK];
     uint8_t digest[32];
     char actual_sha256[65];
@@ -320,7 +354,7 @@ static int h2loader_receive_stage(
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return H2_PAL_ERR_FORMAT;
     }
-    return h2loader_publish_tmp_stage(self);
+    return h2loader_publish_tmp_stage(self, out_inspection);
 }
 
 typedef struct h2loader_download_context {
@@ -371,7 +405,8 @@ static int h2loader_stage_url(
     h2_loader_command_t *self,
     const char *url,
     size_t bytes,
-    const char *expected_sha256) {
+    const char *expected_sha256,
+    h2_loader_package_inspection_t *out_inspection) {
     uint8_t digest[32];
     char actual_sha256[65];
     h2_pal_fs_file_t *file = NULL;
@@ -506,7 +541,7 @@ static int h2loader_stage_url(
         fflush(stdout);
         return H2_PAL_ERR_FORMAT;
     }
-    rc = h2loader_publish_tmp_stage(self);
+    rc = h2loader_publish_tmp_stage(self, out_inspection);
     if (rc != H2_PAL_OK) {
         printf("H2_LOADER_DOWNLOAD state=error code=%d step=publish\n", rc);
         fflush(stdout);
@@ -835,7 +870,13 @@ static int h2loader_coredump_command(
             }
             data_line[(size_t)prefix_len + (take * 2u)] = '\n';
             data_line[(size_t)prefix_len + (take * 2u) + 1u] = '\0';
-            printf("%s", data_line);
+            rc = h2_command_write(
+                &self->command,
+                data_line,
+                (size_t)prefix_len + (take * 2u) + 1u);
+            if (rc != H2_PAL_OK) {
+                return rc;
+            }
             offset += take;
         }
         printf("H2_LOADER_COREDUMP_DUMP result=OK bytes=%llu blank=%d\n",
@@ -954,6 +995,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
     size_t argc,
     const char *const *argv) {
     h2_loader_command_t *self = (h2_loader_command_t *)user;
+    h2_loader_package_inspection_t inspection;
     size_t bytes = 0u;
     int rc;
 
@@ -989,11 +1031,12 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
                 rc);
             return (h2_pal_result_t)rc;
         }
-        rc = h2loader_stage_url(self, argv[3], bytes, argv[5]);
+        rc = h2loader_stage_url(self, argv[3], bytes, argv[5], &inspection);
         if (rc != H2_PAL_OK) {
             return (h2_pal_result_t)rc;
         }
-        rc = h2_loader_commit_stage(self->config.loader, bytes, argv[5]);
+        rc = h2_loader_commit_inspected_stage(
+            self->config.loader, bytes, argv[5], &inspection);
         h2loader_finish_stage_publish(self, rc);
         printf("H2_LOADER_STAGE result=%s code=%d\n",
             rc == H2_PAL_OK ? "OK" : "fail",
@@ -1016,7 +1059,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
             H2_LOADER_STAGE_PREV_PATH);
     }
     if (rc == H2_PAL_OK) {
-        rc = h2loader_receive_stage(self, bytes, argv[3]);
+        rc = h2loader_receive_stage(self, bytes, argv[3], &inspection);
     }
     printf("H2_LOADER_STAGE_RECEIVE result=%s code=%d\n",
         rc == H2_PAL_OK ? "OK" : "fail",
@@ -1024,7 +1067,8 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
     if (rc != H2_PAL_OK) {
         return (h2_pal_result_t)rc;
     }
-    rc = h2_loader_commit_stage(self->config.loader, bytes, argv[3]);
+    rc = h2_loader_commit_inspected_stage(
+        self->config.loader, bytes, argv[3], &inspection);
     h2loader_finish_stage_publish(self, rc);
     printf("H2_LOADER_STAGE result=%s code=%d\n",
         rc == H2_PAL_OK ? "OK" : "fail",

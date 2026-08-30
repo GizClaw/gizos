@@ -17,7 +17,6 @@
 #define H2_LOADER_SERIAL_RX_BUFFER 8192u
 #define H2_LOADER_SERIAL_TX_BUFFER 2048u
 #define H2_LOADER_CONSOLE_UART ((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM)
-#define H2_LOADER_UART_BAUD_RATE 230400u
 #define H2_LOADER_TRANSPORT_DEFAULT_WRITE_TIMEOUT_MS 5000u
 #define H2_LOADER_TRANSPORT_MAX_FLUSH_TIMEOUT_MS 120000u
 #define H2_LOADER_TRANSPORT_MAX_WAITSND 64u
@@ -74,7 +73,9 @@ h2_pal_result_t h2_esp_h2loader_console_init(void) {
         /* Route stdio through the UART driver's TX lock so a console character
          * cannot be enqueued inside one IO Stream iKCP frame write. */
         uart_vfs_dev_use_driver(H2_LOADER_CONSOLE_UART);
-        err = uart_set_baudrate(H2_LOADER_CONSOLE_UART, H2_LOADER_UART_BAUD_RATE);
+        err = uart_set_baudrate(
+            H2_LOADER_CONSOLE_UART,
+            CONFIG_ESP_CONSOLE_UART_BAUDRATE);
     }
     if (err == ESP_OK) {
         (void)uart_flush_input(H2_LOADER_CONSOLE_UART);

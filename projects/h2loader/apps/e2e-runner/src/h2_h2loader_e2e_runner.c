@@ -2,6 +2,7 @@
 
 #include "h2_h2loader_host_package.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define H2_E2E_BLE_CANDIDATE_CAPACITY 32u
@@ -23,6 +24,11 @@ typedef struct h2_e2e_transport_context {
   char command_output[H2_E2E_COMMAND_OUTPUT_CAPACITY];
   size_t command_output_size;
   uint32_t last_reported_percent;
+  char coredump_line[512];
+  size_t coredump_line_size;
+  uint64_t coredump_decoded_bytes;
+  uint64_t coredump_terminal_bytes;
+  uint8_t coredump_terminal_seen;
 } h2_e2e_transport_context_t;
 
 typedef struct h2_e2e_memory_source {
@@ -65,6 +71,14 @@ const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
     return "install-app";
   case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
     return "install-loader";
+  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
+    return "coredump-status";
+  case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
+    return "coredump-dump";
+  case H2_H2LOADER_E2E_CASE_COREDUMP_ERASE:
+    return "coredump-erase";
+  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE:
+    return "coredump-status-after-erase";
   default:
     return "unknown";
   }
@@ -134,6 +148,117 @@ static h2_pal_result_t count_output(void *user, const uint8_t *data,
     context->command_output[context->command_output_size] = '\0';
   }
   return H2_PAL_OK;
+}
+
+static int parse_u64_decimal(const char *text, const char **out_end,
+                             uint64_t *out_value) {
+  uint64_t value = 0u;
+  const char *cursor = text;
+  if (text == NULL || out_end == NULL || out_value == NULL || *cursor < '0' ||
+      *cursor > '9') {
+    return 0;
+  }
+  while (*cursor >= '0' && *cursor <= '9') {
+    const uint8_t digit = (uint8_t)(*cursor - '0');
+    if (value > (UINT64_MAX - digit) / 10u)
+      return 0;
+    value = value * 10u + digit;
+    ++cursor;
+  }
+  *out_end = cursor;
+  *out_value = value;
+  return 1;
+}
+
+static int hex_nibble(uint8_t value) {
+  if (value >= '0' && value <= '9')
+    return value - '0';
+  if (value >= 'a' && value <= 'f')
+    return value - 'a' + 10;
+  if (value >= 'A' && value <= 'F')
+    return value - 'A' + 10;
+  return -1;
+}
+
+static h2_pal_result_t
+coredump_output_line(h2_e2e_transport_context_t *context, const char *line,
+                     size_t len) {
+  static const char data_prefix[] = "H2_LOADER_COREDUMP_DATA offset=";
+  static const char terminal_prefix[] =
+      "H2_LOADER_COREDUMP_DUMP result=OK bytes=";
+  if (len >= sizeof(data_prefix) - 1u &&
+      memcmp(line, data_prefix, sizeof(data_prefix) - 1u) == 0) {
+    const char *cursor = line + sizeof(data_prefix) - 1u;
+    const char *end = NULL;
+    uint64_t offset = 0u;
+    if (!parse_u64_decimal(cursor, &end, &offset) ||
+        offset != context->coredump_decoded_bytes ||
+        (size_t)(line + len - end) < 5u || memcmp(end, " hex=", 5u) != 0) {
+      return H2_PAL_ERR_FORMAT;
+    }
+    cursor = end + 5u;
+    const size_t hex_size = (size_t)(line + len - cursor);
+    if ((hex_size & 1u) != 0u || hex_size / 2u > 128u)
+      return H2_PAL_ERR_FORMAT;
+    for (size_t i = 0u; i < hex_size; ++i) {
+      if (hex_nibble((uint8_t)cursor[i]) < 0)
+        return H2_PAL_ERR_FORMAT;
+    }
+    context->coredump_decoded_bytes += hex_size / 2u;
+    return H2_PAL_OK;
+  }
+  if (len >= sizeof(terminal_prefix) - 1u &&
+      memcmp(line, terminal_prefix, sizeof(terminal_prefix) - 1u) == 0) {
+    const char *end = NULL;
+    if (!parse_u64_decimal(line + sizeof(terminal_prefix) - 1u, &end,
+                           &context->coredump_terminal_bytes) ||
+        context->coredump_terminal_bytes != context->coredump_decoded_bytes) {
+      return H2_PAL_ERR_FORMAT;
+    }
+    context->coredump_terminal_seen = 1u;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t coredump_output(void *user, const uint8_t *data,
+                                       size_t len) {
+  h2_e2e_transport_context_t *context = user;
+  if (context == NULL || (data == NULL && len != 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  context->case_result->output_bytes += len;
+  for (size_t i = 0u; i < len; ++i) {
+    if (data[i] == '\n') {
+      size_t line_len = context->coredump_line_size;
+      if (line_len > 0u && context->coredump_line[line_len - 1u] == '\r')
+        --line_len;
+      h2_pal_result_t rc = coredump_output_line(
+          context, context->coredump_line, line_len);
+      context->coredump_line_size = 0u;
+      if (rc != H2_PAL_OK)
+        return rc;
+      continue;
+    }
+    if (context->coredump_line_size == sizeof(context->coredump_line))
+      return H2_PAL_ERR_NO_SPACE;
+    context->coredump_line[context->coredump_line_size++] = (char)data[i];
+  }
+  return H2_PAL_OK;
+}
+
+static int parse_coredump_status(const char *output, uint64_t *out_bytes,
+                                 int *out_blank) {
+  static const char stored_marker[] = " stored_bytes=";
+  static const char blank_marker[] = " blank=";
+  const char *stored = strstr(output, stored_marker);
+  const char *blank = strstr(output, blank_marker);
+  const char *end = NULL;
+  uint64_t blank_value = 0u;
+  return stored != NULL && blank != NULL &&
+         parse_u64_decimal(stored + sizeof(stored_marker) - 1u, &end,
+                           out_bytes) &&
+         parse_u64_decimal(blank + sizeof(blank_marker) - 1u, &end,
+                           &blank_value) &&
+         blank_value <= 1u && ((*out_blank = (int)blank_value), 1);
 }
 
 static int scan_contains_ssid(const h2_e2e_transport_context_t *context) {
@@ -375,6 +500,57 @@ static h2_pal_result_t run_simple_command(h2_e2e_transport_context_t *context,
       rc = H2_PAL_ERR_IO;
     }
   }
+  h2_pal_result_t close_rc = disconnect_transport(context);
+  return rc == H2_PAL_OK ? close_rc : rc;
+}
+
+static h2_pal_result_t
+run_coredump_status(h2_e2e_transport_context_t *context,
+                    uint64_t expected_bytes, int expected_blank) {
+  h2_pal_result_t rc = run_simple_command(
+      context, H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS);
+  uint64_t actual_bytes = 0u;
+  int actual_blank = -1;
+  if (rc == H2_PAL_OK &&
+      (!parse_coredump_status(context->command_output, &actual_bytes,
+                              &actual_blank) ||
+       actual_bytes != expected_bytes || actual_blank != expected_blank)) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  context->case_result->acknowledged_bytes = actual_bytes;
+  context->case_result->total_bytes = expected_bytes;
+  return rc;
+}
+
+static h2_pal_result_t run_coredump_dump(
+    h2_e2e_transport_context_t *context) {
+  h2_h2loader_host_status_t status;
+  h2_h2loader_host_command_result_t result = {0};
+  h2_pal_result_t rc = connect_transport(context, &status);
+  if (rc == H2_PAL_OK) {
+    const h2_h2loader_host_command_request_t request = {
+        .command = H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP,
+        .status = &status,
+        .is_cancelled = context->config->is_cancelled,
+        .cancel_user = context->config->cancel_user,
+        .on_output = coredump_output,
+        .output_user = context,
+    };
+    rc = execute_command(context, &request, &result);
+    context->case_result->terminal = result.terminal;
+    if (rc == H2_PAL_OK &&
+        (result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK ||
+         context->coredump_line_size != 0u ||
+         context->coredump_terminal_seen == 0u ||
+         context->coredump_terminal_bytes !=
+             context->config->expected_coredump_bytes)) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  context->case_result->acknowledged_bytes =
+      context->coredump_decoded_bytes;
+  context->case_result->total_bytes =
+      context->config->expected_coredump_bytes;
   h2_pal_result_t close_rc = disconnect_transport(context);
   return rc == H2_PAL_OK ? close_rc : rc;
 }
@@ -718,6 +894,16 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
     return run_install(context, &context->loader_asset,
                        context->config->loader_firmware,
                        context->config->loader_firmware_size);
+  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
+    return run_coredump_status(context,
+                               context->config->expected_coredump_bytes, 0);
+  case H2_H2LOADER_E2E_CASE_COREDUMP_DUMP:
+    return run_coredump_dump(context);
+  case H2_H2LOADER_E2E_CASE_COREDUMP_ERASE:
+    return run_simple_command(context,
+                              H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE);
+  case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE:
+    return run_coredump_status(context, 0u, 1);
   default:
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -750,6 +936,8 @@ static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
   if (config->include_send_url)
     count += 2u;
   if (config->include_lifecycle)
+    count += 4u;
+  if (config->include_coredump)
     count += 4u;
   return count;
 }
@@ -789,6 +977,11 @@ static int config_valid(const h2_h2loader_e2e_config_t *config) {
        !sha256_valid(config->firmware_url_sha256))) {
     return 0;
   }
+  if (config->include_coredump &&
+      (config->expected_coredump_bytes < sizeof(uint32_t) ||
+       config->repeat_count != 1u)) {
+    return 0;
+  }
   size_t transports = (config->uart_endpoint != NULL ? 1u : 0u) +
                       (config->ble_endpoint != NULL ? 1u : 0u);
   return cases_per_transport(config) * transports * config->repeat_count <=
@@ -809,6 +1002,10 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   context->command_output_size = 0u;
   context->command_output[0] = '\0';
   context->last_reported_percent = 0u;
+  context->coredump_line_size = 0u;
+  context->coredump_decoded_bytes = 0u;
+  context->coredump_terminal_bytes = 0u;
+  context->coredump_terminal_seen = 0u;
   if (config->on_case != NULL)
     config->on_case(config->case_user, entry, 1);
   uint64_t started = 0u;
@@ -871,6 +1068,32 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
   }
 }
 
+static void run_coredump_read_cases(
+    const h2_h2loader_e2e_config_t *config,
+    h2_h2loader_e2e_result_t *result,
+    h2_e2e_transport_context_t *context,
+    h2_h2loader_e2e_transport_t transport,
+    uint32_t iteration) {
+  context->transport = transport;
+  append_case(config, result, context, transport,
+              H2_H2LOADER_E2E_CASE_COREDUMP_STATUS, iteration);
+  append_case(config, result, context, transport,
+              H2_H2LOADER_E2E_CASE_COREDUMP_DUMP, iteration);
+}
+
+static void run_coredump_cleanup_cases(
+    const h2_h2loader_e2e_config_t *config,
+    h2_h2loader_e2e_result_t *result,
+    h2_e2e_transport_context_t *context,
+    h2_h2loader_e2e_transport_t transport,
+    uint32_t iteration) {
+  context->transport = transport;
+  append_case(config, result, context, transport,
+              H2_H2LOADER_E2E_CASE_COREDUMP_ERASE, iteration);
+  append_case(config, result, context, transport,
+              H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE, iteration);
+}
+
 h2_pal_result_t h2_h2loader_e2e_run(const h2_h2loader_e2e_config_t *config,
                                     h2_h2loader_e2e_result_t *out_result) {
   if (out_result != NULL)
@@ -929,6 +1152,24 @@ h2_pal_result_t h2_h2loader_e2e_run(const h2_h2loader_e2e_config_t *config,
     if (config->ble_endpoint != NULL && !cancelled(config)) {
       run_transport_iteration(config, out_result, &context,
                               H2_H2LOADER_E2E_TRANSPORT_BLE, iteration);
+    }
+    if (config->include_coredump && !cancelled(config)) {
+      if (config->uart_endpoint != NULL) {
+        run_coredump_read_cases(config, out_result, &context,
+                                H2_H2LOADER_E2E_TRANSPORT_UART, iteration);
+      }
+      if (config->ble_endpoint != NULL && !cancelled(config)) {
+        run_coredump_read_cases(config, out_result, &context,
+                                H2_H2LOADER_E2E_TRANSPORT_BLE, iteration);
+      }
+      if (config->uart_endpoint != NULL && !cancelled(config)) {
+        run_coredump_cleanup_cases(config, out_result, &context,
+                                   H2_H2LOADER_E2E_TRANSPORT_UART, iteration);
+      }
+      if (config->ble_endpoint != NULL && !cancelled(config)) {
+        run_coredump_cleanup_cases(config, out_result, &context,
+                                   H2_H2LOADER_E2E_TRANSPORT_BLE, iteration);
+      }
     }
   }
   (void)disconnect_transport(&context);

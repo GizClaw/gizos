@@ -114,7 +114,14 @@ h2_pal_result_t h2_h2loader_host_managed_operation_run(
     emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, H2_PAL_OK);
     rc = config->transport.vtable->activate(
         config->transport.user, config->asset);
-    rc = disconnect_after(config, rc);
+    /* An accepted activation is a durable remote transition. In particular,
+       BLE peers may disappear before local teardown finishes, so cleanup of
+       the old link must not turn a successfully accepted reboot into an
+       install failure. Reconnect and final identity verification remain the
+       authority for success. */
+    h2_pal_result_t close_rc =
+        config->transport.vtable->disconnect(config->transport.user);
+    (void)close_rc;
     if (rc != H2_PAL_OK) {
         emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, rc);
         return rc;
@@ -203,10 +210,12 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    h2_h2loader_host_active_role_t active_role =
+        h2_h2loader_host_status_active_role(&status);
     if (strcmp(status.board, config->asset->board) != 0 ||
         strcmp(status.target, config->asset->target) != 0 ||
-        h2_h2loader_host_status_active_role(&status) !=
-            H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
+        (active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+         active_role != H2_H2LOADER_HOST_ACTIVE_ROLE_APP)) {
         return disconnect_after(config, H2_PAL_ERR_INVALID_STATE);
     }
     rc = config->transport.vtable->stage(
@@ -226,8 +235,10 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
         if (rc == H2_PAL_OK &&
             (strcmp(status.board, config->asset->board) != 0 ||
              strcmp(status.target, config->asset->target) != 0 ||
-             h2_h2loader_host_status_active_role(&status) !=
-                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+             (h2_h2loader_host_status_active_role(&status) !=
+                  H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+              h2_h2loader_host_status_active_role(&status) !=
+                  H2_H2LOADER_HOST_ACTIVE_ROLE_APP) ||
              !status.stage.valid ||
              status.stage.package_size != config->asset->bytes ||
              strcmp(status.stage.package_checksum, config->asset->sha256) != 0)) {
@@ -280,8 +291,10 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
         }
         if (strcmp(status.board, config->asset->board) == 0 &&
             strcmp(status.target, config->asset->target) == 0 &&
-            h2_h2loader_host_status_active_role(&status) ==
-                H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+            (h2_h2loader_host_status_active_role(&status) ==
+                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+             h2_h2loader_host_status_active_role(&status) ==
+                 H2_H2LOADER_HOST_ACTIVE_ROLE_APP) &&
             status.stage.valid &&
             status.stage.package_size == config->asset->bytes &&
             strcmp(status.stage.package_checksum, config->asset->sha256) == 0) {
