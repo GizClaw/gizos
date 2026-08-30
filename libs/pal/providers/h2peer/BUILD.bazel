@@ -4,6 +4,13 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_peer_task_names.c"],
+    hdrs = ["include/h2_peer_task_names.h"],
+    includes = ["include"],
+)
+
+cc_library(
     name = "turn_refresh",
     srcs = ["src/turn/h2_peer_turn.c"],
     hdrs = ["src/turn/h2_peer_turn.h"],
@@ -128,6 +135,7 @@ cc_test(
     }),
     deps = [
         ":portable_protocol_providers",
+        ":task_names",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
@@ -271,6 +279,7 @@ cc_library(
     ],
     deps = [
         ":portable_protocol_providers",
+        ":task_names",
         "//libs/pal",
     ],
 )

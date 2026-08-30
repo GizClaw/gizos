@@ -115,6 +115,8 @@ def _esp_idf_firmware_impl(ctx):
                 component.execution_unit,
             ))
         args.add("--native-component", component.name + "=" + component.directory)
+        for include_root in component.include_roots:
+            args.add("--native-component-include", component.name + "=" + include_root)
         for source in component.srcs:
             args.add("--native-component-source", component.name + "=" + source.path)
 

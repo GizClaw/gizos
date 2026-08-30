@@ -1,4 +1,5 @@
 #include "h2_smoke_audio_system.h"
+#include "h2_smoke_audio_system_task_names.h"
 
 #include "opus.h"
 
@@ -530,11 +531,11 @@ int h2_smoke_audio_system_run(
     }
 
     const h2_pal_task_options_t music_task_options = {
-        .name = "audio-system-music",
+        .name = h2_smoke_audio_system_music_task_name,
         .min_stack_size = 24576u,
     };
     const h2_pal_task_options_t mic_task_options = {
-        .name = "audio-system-mic",
+        .name = h2_smoke_audio_system_mic_task_name,
         .min_stack_size = 8192u,
     };
     if (h2_pal_task_start(s_scene.task, &music_task_options, music_task, &s_scene, &s_scene.music_task) != H2_PAL_OK ||

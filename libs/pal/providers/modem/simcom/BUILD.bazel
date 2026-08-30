@@ -4,6 +4,13 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_simcom_task_names.c"],
+    hdrs = ["include/h2_simcom_task_names.h"],
+    includes = ["include"],
+)
+
+cc_library(
     name = "simcom_modem",
     srcs = [
         "src/h2_simcom_at.c",
@@ -19,5 +26,8 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    deps = ["//libs/pal"],
+    deps = [
+        ":task_names",
+        "//libs/pal",
+    ],
 )

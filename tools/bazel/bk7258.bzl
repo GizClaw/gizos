@@ -125,6 +125,8 @@ def _bk7258_firmware_impl(ctx):
     for component in native_components:
         component_key = "%s:%s" % (component.execution_unit, component.name)
         args.add("--native-component", component_key + "=" + component.directory)
+        for include_root in component.include_roots:
+            args.add("--native-component-include", component_key + "=" + include_root)
         for component_file in component.files:
             args.add("--native-component-file", component_key + "=" + component_file.path)
         for source in component.srcs:

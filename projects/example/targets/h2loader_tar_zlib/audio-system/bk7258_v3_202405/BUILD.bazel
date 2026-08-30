@@ -6,7 +6,13 @@ load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-bk7258_target_task_policy()
+bk7258_target_task_policy(
+    ap_task_name_deps = [
+        "//projects/h2loader/libs/h2loader:task_names",
+        "//projects/h2loader/apps/loader/app:task_names",
+        "//projects/example/apps/audio-system/app:task_names",
+    ],
+)
 
 firmware_lib_component(
     name = "firmware_lib",
@@ -41,6 +47,7 @@ firmware_native_component(
     execution_unit = "ap",
     native_srcs = [
         "//projects/example/apps/audio-system/app:src/app.c",
+        "//projects/example/apps/audio-system/app:src/task_names.c",
     ],
 )
 

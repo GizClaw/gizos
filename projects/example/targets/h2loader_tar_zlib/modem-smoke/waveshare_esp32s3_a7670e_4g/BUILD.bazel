@@ -6,7 +6,15 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-esp_target_task_policy()
+esp_target_task_policy(
+    task_name_deps = [
+        "//libs/bleikcp:task_names",
+        "//libs/pal/providers/h2peer:task_names",
+        "//libs/pal/providers/modem/simcom:task_names",
+        "//projects/h2loader/libs/h2loader:task_names",
+        "//projects/h2loader/apps/loader/app:task_names",
+    ],
+)
 
 firmware_lib_component(
     name = "firmware_lib",

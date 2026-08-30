@@ -1,4 +1,5 @@
 #include "h2_h2loader_serial_e2e.h"
+#include "h2_h2loader_serial_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 
@@ -315,7 +316,7 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_start(void) {
     app.port_id[0] = '\0';
   }
   const h2_pal_task_options_t task_options = {
-      .name = "h2loader-serial-e2e",
+      .name = h2_h2loader_serial_e2e_runner_task_name,
       .min_stack_size = H2_WEB_H2LOADER_TASK_STACK_SIZE,
   };
   result = h2_pal_task_start(h2_web_platform_task_api(app.platform),

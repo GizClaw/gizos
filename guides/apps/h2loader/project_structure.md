@@ -133,4 +133,6 @@ BK7258 entry 的 CMake project 继续拥有 AP/CP 与 linker 语义。每块 H2L
 
 每个 H2Loader-managed firmware target 拥有自己的 task-name policy，shared provider 不持有具体 task name。ESP launcher 在 `h2_esp_board_runtime_config()`、`h2_runtime_init()` 或直接 PAL task creation 前调用 `h2_esp_target_task_policy_install()`；BK AP launcher 在 board Runtime configuration 前、BK CP launcher 在 startup task creation 前调用 `h2_bk_target_task_policy_install()`。安装失败必须停止 startup。
 
+Portable task name 统一使用 `{mod}/{task_name}`。`mod` 可以包含多层路径，例如 `h2peer/net/request`。系统全局、library 和 third-party task 使用 `$` 前缀，例如 `$h2peer/net`；App-owned task 不加前缀，例如 `audio-system/music`。名称由实际创建 task 的 library 或 App 以 `const char[]` 导出，target-owned policy 注册必须引用该常量，不能复制字符串字面量。平台或三方库产生的线程名由对应适配层映射到 portable name，例如 LVGL 的 `swdraw` 映射为 `$lvgl/swdraw`。
+
 ESP policy declaration 位于 concrete target package 的 `task_policy/`；BK AP/CP declarations 位于同一 target package 的 `task_policy/<ap|cp>/`。底层 native firmware rule 分别通过 `task_policy` 或 `ap_task_policy`/`cp_task_policy` 接入 component，H2Loader wrapper 负责要求这些参数。Board layout 只保留硬件、SDK、partition、GPIO 与 RAM-region 输入；private task name 因而不会进入 GizOS public board layout。

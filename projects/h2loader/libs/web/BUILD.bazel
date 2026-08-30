@@ -7,6 +7,16 @@ load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBI
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_h2loader_web_task_names.c"],
+    hdrs = ["include/h2_h2loader_web_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+)
+
+cc_library(
     name = "h2loader_web_core",
     srcs = ["src/h2_h2loader_web.c"],
     hdrs = ["include/h2_h2loader_web.h"],
@@ -16,6 +26,7 @@ cc_library(
     tags = ["h2-ci-native-package"],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
+        ":task_names",
         "//libs/h2loader_host",
         "//libs/pal",
         "//libs/pal/providers/web/pal_core",
@@ -63,8 +74,8 @@ filegroup(
     name = "h2loader_web",
     srcs = [
         "src/h2loader.js",
-        "src/h2loader_protocol.js",
         "src/h2loader_ports.js",
+        "src/h2loader_protocol.js",
         ":h2loader_web_runtime",
     ],
 )

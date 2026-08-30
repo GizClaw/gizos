@@ -1,4 +1,5 @@
 #include "h2_lvgl_platform.h"
+#include "h2_lvgl_task_names.h"
 
 #include "lvgl.h"
 #include "osal/lv_os_private.h"
@@ -111,6 +112,15 @@ static void h2_lvgl_thread_entry(void *ctx) {
     }
 }
 
+static const char *h2_lvgl_task_name(const char *name) {
+    if (name == NULL) return NULL;
+    if (strcmp(name, "swdraw") == 0) return h2_lvgl_software_draw_task_name;
+    if (strcmp(name, "g2ddraw") == 0) return h2_lvgl_g2d_draw_task_name;
+    if (strcmp(name, "pxpdraw") == 0) return h2_lvgl_pxp_draw_task_name;
+    if (strcmp(name, "nemagfx") == 0) return h2_lvgl_nema_gfx_task_name;
+    return NULL;
+}
+
 int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config) {
     if (config == NULL ||
         config->allocator == NULL ||
@@ -156,8 +166,13 @@ lv_result_t lv_thread_init(
     state->callback = callback;
     state->user_data = user_data;
 
+    const char *portable_name = h2_lvgl_task_name(name);
+    if (portable_name == NULL) {
+        lvgl_free(state);
+        return LV_RESULT_INVALID;
+    }
     h2_pal_task_options_t options = {
-        .name = name,
+        .name = portable_name,
         .min_stack_size = stack_size,
     };
     int rc = h2_pal_task_start(

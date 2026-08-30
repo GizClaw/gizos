@@ -1,4 +1,5 @@
 #include "h2_pal_e2e.h"
+#include "h2_pal_e2e_task_names.h"
 #include "h2_pal_pref_e2e.h"
 
 #include <stdio.h>
@@ -317,8 +318,11 @@ static h2_pal_result_t h2_pal_e2e_core_timer(
 static h2_pal_result_t h2_pal_e2e_core_task(h2_runtime_t *runtime) {
   h2_pal_e2e_task_state_t state = {0};
   h2_pal_task_t *task = NULL;
+  const h2_pal_task_options_t options = {
+      .name = h2_pal_e2e_core_task_name,
+  };
   h2_pal_result_t result = h2_pal_task_start(
-      runtime->task, NULL, h2_pal_e2e_task_entry, &state, &task);
+      runtime->task, &options, h2_pal_e2e_task_entry, &state, &task);
   if (result == H2_PAL_OK) {
     result = h2_pal_task_join(runtime->task, task);
   }
@@ -344,7 +348,10 @@ static h2_pal_result_t h2_pal_e2e_core_queue(
   };
   h2_pal_task_t *task = NULL;
   if (result == H2_PAL_OK) {
-    result = h2_pal_task_start(runtime->task, NULL, h2_pal_e2e_queue_entry,
+    const h2_pal_task_options_t options = {
+        .name = h2_pal_e2e_queue_task_name,
+    };
+    result = h2_pal_task_start(runtime->task, &options, h2_pal_e2e_queue_entry,
                                &state, &task);
   }
   if (result == H2_PAL_OK) {
@@ -437,8 +444,11 @@ static h2_pal_result_t h2_pal_e2e_core_condition(
       .result = H2_PAL_ERR_INVALID_STATE,
   };
   if (result == H2_PAL_OK) {
+    const h2_pal_task_options_t options = {
+        .name = h2_pal_e2e_condition_task_name,
+    };
     result = h2_pal_task_start(
-        runtime->task, NULL, h2_pal_e2e_condition_entry, &state, &task);
+        runtime->task, &options, h2_pal_e2e_condition_entry, &state, &task);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_time_sleep_ms(runtime->time, 1u);
@@ -542,8 +552,13 @@ static h2_pal_result_t h2_pal_e2e_core_concurrency(
         started < H2_PAL_E2E_CONCURRENCY_CONSUMERS
             ? h2_pal_e2e_concurrency_consumer
             : h2_pal_e2e_concurrency_producer;
+    const h2_pal_task_options_t options = {
+        .name = started < H2_PAL_E2E_CONCURRENCY_CONSUMERS
+                    ? h2_pal_e2e_consumer_task_name
+                    : h2_pal_e2e_producer_task_name,
+    };
     result = h2_pal_task_start(
-        runtime->task, NULL, entry, &workers[started], &tasks[started]);
+        runtime->task, &options, entry, &workers[started], &tasks[started]);
     if (result == H2_PAL_OK) ++started;
     run->started = started;
   }

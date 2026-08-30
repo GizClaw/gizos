@@ -3,6 +3,7 @@
 #endif
 
 #include "h2_bleikcp_internal.h"
+#include "h2_bleikcp_task_names.h"
 
 #include <errno.h>
 #include <pthread.h>
@@ -606,6 +607,23 @@ static void test_flush_result_precedence(const h2_bleikcp_api_t *api) {
     CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
 }
 
+static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
+    const h2_bleikcp_config_t config = {
+        .worker_task_options = { "caller/worker", 7u * 1024u },
+        .server_task_options = { "caller/server", 8u * 1024u },
+    };
+    h2_bleikcp_resolved_config_t resolved;
+    CHECK(h2_bleikcp_resolve_config(api, &config, &resolved) == H2_PAL_OK);
+    CHECK(strcmp(
+              resolved.value.worker_task_options.name,
+              h2_bleikcp_worker_task_name) == 0);
+    CHECK(strcmp(
+              resolved.value.server_task_options.name,
+              h2_bleikcp_server_task_name) == 0);
+    CHECK(resolved.value.worker_task_options.min_stack_size == 7u * 1024u);
+    CHECK(resolved.value.server_task_options.min_stack_size == 8u * 1024u);
+}
+
 static void stream_event(
     void *user,
     h2_bleikcp_t *stream,
@@ -723,6 +741,7 @@ int main(void) {
         .system_event = &runtime.events,
         .allocator = &runtime.allocator,
     };
+    test_task_name_ownership(&api);
     test_flush_result_precedence(&api);
     handler_state_t handler_state = { .api = &api };
     event_state_t event_state = {0};

@@ -1,4 +1,5 @@
 #include "h2_pal_e2e.h"
+#include "h2_pal_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 
@@ -58,7 +59,11 @@ int main(void) {
   };
   h2_pal_task_t *task = NULL;
   if (result == H2_PAL_OK) {
-    result = h2_pal_task_start(config.task, NULL, h2_web_pal_run, &app, &task);
+    const h2_pal_task_options_t task_options = {
+        .name = h2_pal_e2e_runner_task_name,
+    };
+    result = h2_pal_task_start(config.task, &task_options, h2_web_pal_run,
+                               &app, &task);
   }
   int joined = 0;
   for (int turn = 0; result == H2_PAL_OK && turn < 128 && !joined; ++turn) {

@@ -3,6 +3,15 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 
 package(default_visibility = ["//visibility:public"])
 
+cc_library(
+    name = "task_names",
+    srcs = ["src/h2_gizclaw_task_names.c"],
+    hdrs = ["include/h2_gizclaw_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
 _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_client.c",
     "src/h2_gizclaw_internal.h",
@@ -59,6 +68,7 @@ cc_library(
         "include",
     ],
     deps = [
+        ":task_names",
         "//libs/pal",
     ] + select({
         "//tools/bazel/platforms:is_bk3633": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
@@ -122,6 +132,7 @@ cc_library(
     ],
     local_defines = ["H2_GIZCLAW_TESTING"],
     deps = [
+        ":task_names",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_gizclaw",
         "//tools/bazel:vendor_third_party_opus",

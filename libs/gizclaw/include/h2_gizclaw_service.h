@@ -83,6 +83,7 @@ typedef struct h2_gizclaw_service_config {
   const h2_pal_task_api_t *task;
   const h2_pal_queue_api_t *queue;
   const h2_pal_sync_api_t *sync;
+  /** Stack requirements for the system-owned `$gizclaw/service` task. */
   h2_pal_task_options_t task_options;
   /** Maximum admitted operations across all lifecycle states. */
   size_t operation_capacity;

@@ -4,6 +4,15 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/task_names.c"],
+    hdrs = ["include/h2_smoke_mp4_player_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
     name = "mp4_player",
     srcs = ["src/app.c"],
     hdrs = ["include/h2_smoke_mp4_player.h"],
@@ -11,6 +20,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
+        ":task_names",
         "//libs/mp4_decoder",
         "//libs/pal",
         "//libs/runtime",

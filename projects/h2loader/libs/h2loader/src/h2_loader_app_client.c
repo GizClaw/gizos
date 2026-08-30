@@ -1,4 +1,5 @@
 #include "h2_loader_app_client.h"
+#include "h2_loader_task_names.h"
 
 #include "h2_loader_boot.h"
 #include "h2_loader_status.h"
@@ -643,7 +644,7 @@ int h2_loader_app_client_start_return_console(
     console->write = config->write != NULL ? config->write : stdout_write;
     atomic_init(&console->stop_requested, false);
 
-    options.name = config->task_name != NULL ? config->task_name : "h2loader/appcmd";
+    options.name = config->task_name != NULL ? config->task_name : h2_loader_return_task_name;
     options.min_stack_size = config->stack_size != 0u ? config->stack_size : H2_LOADER_APP_CLIENT_MIN_STACK_SIZE;
     if (options.min_stack_size < H2_LOADER_APP_CLIENT_MIN_STACK_SIZE) {
         options.min_stack_size = H2_LOADER_APP_CLIENT_MIN_STACK_SIZE;
