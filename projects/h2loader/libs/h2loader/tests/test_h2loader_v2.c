@@ -224,23 +224,25 @@ static int fs_remove(void *user, const char *path) {
   return H2_PAL_FS_OK;
 }
 
-static int power_running(void *user,
-                         h2_pal_power_boot_partition_t *out_partition) {
+static h2_pal_result_t power_running(
+    void *user,
+    h2_pal_power_boot_partition_t *out_partition) {
   test_fixture_t *fixture = user;
   memset(out_partition, 0, sizeof(*out_partition));
   out_partition->id = fixture->running_partition;
   return H2_PAL_OK;
 }
 
-static int power_next(void *user,
-                      h2_pal_power_boot_partition_t *out_partition) {
+static h2_pal_result_t power_next(
+    void *user,
+    h2_pal_power_boot_partition_t *out_partition) {
   test_fixture_t *fixture = user;
   memset(out_partition, 0, sizeof(*out_partition));
   out_partition->id = fixture->next_partition;
   return H2_PAL_OK;
 }
 
-static int power_set_next(void *user, uint32_t partition_id) {
+static h2_pal_result_t power_set_next(void *user, uint32_t partition_id) {
   test_fixture_t *fixture = user;
   ++fixture->set_next_calls;
   if (fixture->set_next_result != H2_PAL_OK)
@@ -249,7 +251,7 @@ static int power_set_next(void *user, uint32_t partition_id) {
   return H2_PAL_OK;
 }
 
-static int power_reboot(void *user, uint32_t reason) {
+static h2_pal_result_t power_reboot(void *user, uint32_t reason) {
   test_fixture_t *fixture = user;
   (void)reason;
   ++fixture->reboot_calls;
