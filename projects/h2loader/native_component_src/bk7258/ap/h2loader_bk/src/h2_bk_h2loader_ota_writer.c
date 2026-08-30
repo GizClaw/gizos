@@ -508,10 +508,25 @@ int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime) {
 #if CONFIG_OTA_POSITION_INDEPENDENT_AB
     expected_exec = bk_ota_get_current_partition() == EXEX_A_PART ? EXEX_A_PART : EXEC_B_PART;
     expected_flag = expected_exec == EXEX_A_PART ? CONFIRM_EXEC_A : CONFIRM_EXEC_B;
-    bk_ota_double_check_for_execution();
 #else
     expected_exec = EXEC_B_PART;
     expected_flag = CONFIRM_EXEC_B;
+#endif
+    rc = h2_pal_firmware_info_get_current(
+        runtime->firmware_info, &firmware_info);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_bk_h2loader_current_app_identity(
+        runtime, firmware_info.version, &identity);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_loader_finalize_active_app(
+        runtime->pref, runtime->mem, runtime->fs,
+        H2_LOADER_DEFAULT_PACKAGE_PATH, &identity,
+        H2_BK_H2LOADER_APP_PARTITION_ID,
+        H2_BK_H2LOADER_APP_PARTITION_ID);
+    if (rc != H2_PAL_OK) return rc;
+#if CONFIG_OTA_POSITION_INDEPENDENT_AB
+    bk_ota_double_check_for_execution();
+#else
     bk_ota_confirm_update_partition(CONFIRM_EXEC_B);
 #endif
     partition = bk_flash_partition_get_info(BK_PARTITION_OTA_FINA_EXECUTIVE);
@@ -526,17 +541,7 @@ int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime) {
             return H2_PAL_ERR_IO;
         }
     }
-    rc = h2_pal_firmware_info_get_current(
-        runtime->firmware_info, &firmware_info);
-    if (rc != H2_PAL_OK) return rc;
-    rc = h2_bk_h2loader_current_app_identity(
-        runtime, firmware_info.version, &identity);
-    if (rc != H2_PAL_OK) return rc;
-    return h2_loader_finalize_active_app(
-        runtime->pref, runtime->mem, runtime->fs,
-        H2_LOADER_DEFAULT_PACKAGE_PATH, &identity,
-        H2_BK_H2LOADER_APP_PARTITION_ID,
-        H2_BK_H2LOADER_APP_PARTITION_ID);
+    return H2_PAL_OK;
 }
 
 int h2_bk_h2loader_prepare_pending_app_restart(void) {

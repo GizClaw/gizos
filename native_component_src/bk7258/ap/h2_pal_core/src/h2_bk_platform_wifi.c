@@ -685,9 +685,29 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                     &current_status, &request->requested_config)) {
                 break;
             }
-            if (bk_wifi_sta_set_config(&request->sdk_config) == BK_OK &&
-                bk_wifi_sta_start() == BK_OK &&
-                bk_wifi_sta_connect() == BK_OK) {
+            int current_generation = 0;
+            int started = 0;
+            bk_err_t start_err = BK_FAIL;
+            if (h2_bk_wifi_request_lock() == H2_PAL_OK) {
+                current_generation = __atomic_load_n(
+                    &s_h2_bk_wifi_connect_generation,
+                    __ATOMIC_ACQUIRE) == generation;
+                if (current_generation) {
+                    start_err = bk_wifi_sta_set_config(&request->sdk_config);
+                    if (start_err == BK_OK) {
+                        start_err = bk_wifi_sta_start();
+                        started = start_err == BK_OK;
+                    }
+                    if (start_err == BK_OK) {
+                        start_err = bk_wifi_sta_connect();
+                    }
+                }
+                h2_bk_wifi_request_unlock();
+            }
+            if (!current_generation) {
+                goto done;
+            }
+            if (start_err == BK_OK) {
                 for (uint32_t elapsed = 0u; elapsed < 15000u; elapsed += 100u) {
                     if (__atomic_load_n(
                             &s_h2_bk_wifi_connect_generation,
@@ -704,7 +724,9 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                     rtos_delay_milliseconds(100u);
                 }
             }
-            (void)bk_wifi_sta_stop();
+            if (started) {
+                (void)bk_wifi_sta_stop();
+            }
             rtos_delay_milliseconds(500u);
         }
 done:

@@ -745,7 +745,7 @@ static h2_pal_result_t run_send(h2_e2e_transport_context_t *context) {
 
 static h2_pal_result_t run_send_url(h2_e2e_transport_context_t *context) {
   h2_h2loader_host_status_t initial_status;
-  h2_h2loader_host_status_t final_status;
+  h2_h2loader_host_status_t final_status = {0};
   h2_h2loader_host_command_result_t result = {0};
   h2_pal_result_t rc = connect_transport(context, &initial_status);
   if (rc == H2_PAL_OK && context->config->wifi_ssid != NULL) {
@@ -786,7 +786,6 @@ static h2_pal_result_t run_send_url(h2_e2e_transport_context_t *context) {
     }
   }
   if (rc == H2_PAL_OK) {
-    memset(&final_status, 0, sizeof(final_status));
     rc = read_status(context, &final_status);
   }
   if (rc == H2_PAL_OK &&

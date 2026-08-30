@@ -114,17 +114,18 @@ h2_pal_result_t h2_h2loader_host_managed_operation_run(
     emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, H2_PAL_OK);
     rc = config->transport.vtable->activate(
         config->transport.user, config->asset);
-    /* An accepted activation is a durable remote transition. In particular,
-       BLE peers may disappear before local teardown finishes, so cleanup of
-       the old link must not turn a successfully accepted reboot into an
-       install failure. Reconnect and final identity verification remain the
-       authority for success. */
+    /* Transport adapters normalize an already-vanished reboot peer to OK.
+       Any remaining disconnect error means local teardown did not complete,
+       so rediscovery must not start on top of a live or indeterminate link. */
     h2_pal_result_t close_rc =
         config->transport.vtable->disconnect(config->transport.user);
-    (void)close_rc;
     if (rc != H2_PAL_OK) {
         emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, rc);
         return rc;
+    }
+    if (close_rc != H2_PAL_OK) {
+        emit_event(config, H2_H2LOADER_HOST_OPERATION_ACTIVATE, close_rc);
+        return close_rc;
     }
 
     attempts = config->reconnect_attempts == 0u

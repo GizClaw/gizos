@@ -756,42 +756,20 @@ static int confirm_pending_h2loader_boot(int *out_was_pending) {
   return rc == H2_PAL_OK ? call.result : rc;
 }
 
-static void IRAM_ATTR rearm_pending_h2loader_boot_safe(void *context) {
-  h2_esp_h2loader_confirm_call_t *call =
-      (h2_esp_h2loader_confirm_call_t *)context;
-  const esp_partition_t *running = esp_ota_get_running_partition();
-  call->result =
-      running != NULL && esp_ota_set_boot_partition(running) == ESP_OK
-          ? H2_PAL_OK
-          : H2_PAL_ERR_IO;
-}
-
-static int rearm_pending_h2loader_boot(void) {
-  h2_esp_h2loader_confirm_call_t call = {0};
-  h2_pal_result_t rc = h2_esp_platform_safe_call(
-      rearm_pending_h2loader_boot_safe, &call, sizeof(call),
-      H2_LOADER_CONFIRM_TASK_STACK_DEPTH);
-  return rc == H2_PAL_OK ? call.result : rc;
-}
-
 int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
   h2_loader_image_identity_t identity = {0};
   h2_pal_firmware_info_t firmware_info;
   h2_pal_power_boot_partition_t running_partition;
-  int was_pending = 0;
   if (runtime == NULL || runtime->pref == NULL || runtime->mem == NULL ||
       runtime->fs == NULL || runtime->firmware_info == NULL ||
       runtime->power == NULL || runtime->board == NULL ||
       runtime->target == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  int rc = confirm_pending_h2loader_boot(&was_pending);
-  if (rc == H2_PAL_OK) {
-    rc = h2_pal_power_get_running_boot_partition(runtime->power,
-                                                 &running_partition);
-    if (rc == H2_PAL_OK && running_partition.id != 2u) {
-      rc = H2_PAL_ERR_INVALID_STATE;
-    }
+  int rc = h2_pal_power_get_running_boot_partition(runtime->power,
+                                                   &running_partition);
+  if (rc == H2_PAL_OK && running_partition.id != 2u) {
+    rc = H2_PAL_ERR_INVALID_STATE;
   }
   if (rc == H2_PAL_OK) {
     rc = h2_pal_firmware_info_get_current(runtime->firmware_info,
@@ -810,14 +788,8 @@ int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
   if (rc == H2_PAL_OK) {
     rc = h2_esp_platform_pref_finalize_migration();
   }
-  if (rc != H2_PAL_OK && was_pending) {
-    /* Confirmation changes the running slot to VALID before Pref and
-     * Stage cleanup. Re-arm the same slot after a later cleanup failure
-     * so a subsequent boot retries finalization. Ordinary same-slot
-     * reboot commands never enter this recovery path. */
-    int rearm_rc = rearm_pending_h2loader_boot();
-    if (rearm_rc != H2_PAL_OK)
-      return rearm_rc;
+  if (rc == H2_PAL_OK) {
+    rc = confirm_pending_h2loader_boot(NULL);
   }
   return rc;
 }

@@ -1481,11 +1481,15 @@ static void test_managed_operation(void) {
     fixture.disconnect_result = H2_PAL_ERR_UNSUPPORTED;
     fixture.disconnect_failure_call = 1;
     assert(h2_h2loader_host_managed_operation_run(
-               &config, &final_status) == H2_PAL_OK);
+               &config, &final_status) == H2_PAL_ERR_UNSUPPORTED);
     assert(fixture.activate_count == 1);
-    assert(fixture.disconnect_count == 2);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.rediscover_count == 0);
+    assert(fixture.sleep_count == 0);
     assert(fixture.event_phase[fixture.event_count - 1u] ==
-           H2_H2LOADER_HOST_OPERATION_COMPLETE);
+           H2_H2LOADER_HOST_OPERATION_ACTIVATE);
+    assert(fixture.event_result[fixture.event_count - 1u] ==
+           H2_PAL_ERR_UNSUPPORTED);
     fixture.disconnect_result = H2_PAL_OK;
     fixture.disconnect_failure_call = 0;
 

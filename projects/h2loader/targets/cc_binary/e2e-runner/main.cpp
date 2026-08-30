@@ -579,8 +579,13 @@ int main(int argc, char **argv) {
             static_cast<std::uint8_t>(options.coredump_bytes != 0u),
         .include_monitor = static_cast<std::uint8_t>(options.monitor_ms != 0u),
         .is_cancelled = is_cancelled,
+        .cancel_user = nullptr,
         .on_case = case_event,
+        .case_user = nullptr,
         .on_progress = progress_event,
+        .progress_user = nullptr,
+        .execute_case = nullptr,
+        .execute_user = nullptr,
     };
     rc = h2_h2loader_e2e_run(&config, &result);
   } else {

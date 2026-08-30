@@ -44,6 +44,7 @@ static h2_h2loader_host_status_t test_status(void) {
       .boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO,
       .running_partition = 1u,
       .next_partition = 1u,
+      .active_image_size = UINT64_MAX,
       .mfg_mode = 1u,
   };
   (void)snprintf(status.board, sizeof(status.board), "bo\"ard\\\n");
@@ -109,6 +110,20 @@ static void assert_command_availability(
              h2_yyjson_json_api(provider), board, &board_value) == H2_PAL_OK);
   assert(board_value.len == strlen(status->board));
   assert(memcmp(board_value.data, status->board, board_value.len) == 0);
+  h2_pal_json_value_t *active = NULL;
+  assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "active",
+                                strlen("active"), &active) == H2_PAL_OK);
+  h2_pal_json_value_t *active_image_size = NULL;
+  assert(h2_pal_json_object_get(
+             h2_yyjson_json_api(provider), active, "imageSize",
+             strlen("imageSize"), &active_image_size) == H2_PAL_OK);
+  h2_pal_json_string_view_t active_image_size_value = {0};
+  assert(h2_pal_json_value_get_string(
+             h2_yyjson_json_api(provider), active_image_size,
+             &active_image_size_value) == H2_PAL_OK);
+  assert(active_image_size_value.len == strlen("18446744073709551615"));
+  assert(memcmp(active_image_size_value.data, "18446744073709551615",
+                active_image_size_value.len) == 0);
   h2_pal_json_value_t *stage = NULL;
   assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "stage",
                                 strlen("stage"), &stage) == H2_PAL_OK);
