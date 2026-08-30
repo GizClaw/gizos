@@ -129,7 +129,7 @@ static h2_pal_result_t safe_call_worker_init(void) {
     }
     s_safe_call_worker.task = xTaskCreateStaticPinnedToCore(
         safe_call_worker_task,
-        "esp/safe-call",
+        "$esp/safe-call",
         H2_ESP_SAFE_CALL_WORKER_STACK_DEPTH,
         &s_safe_call_worker,
         H2_ESP_SAFE_CALL_WORKER_PRIORITY,
