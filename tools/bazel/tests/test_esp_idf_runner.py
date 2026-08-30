@@ -36,6 +36,8 @@ if os.environ.get("H2_FIRMWARE_VERSION") != "test-version":
     raise SystemExit("runner did not provide the internal firmware version")
 if os.environ.get("H2_BAZEL_NATIVE_ARTIFACTS_ONLY") != "1":
     raise SystemExit("runner did not disable native package side effects")
+if not Path(os.environ.get("ESP_ROM_ELF_DIR", "")).name == "fixture-version":
+    raise SystemExit("runner did not provide the ESP-IDF ROM ELF directory")
 gizos_root = Path(os.environ["H2_GIZOS_ROOT"])
 if not gizos_root.joinpath(
     "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
@@ -210,6 +212,9 @@ class EspIdfRunnerTest(unittest.TestCase):
         python.symlink_to(sys.executable)
         self.tools = self.root / "idf-tools"
         self.tools.mkdir()
+        self.root.joinpath(
+            "tools", "esp-rom-elfs", "fixture-version"
+        ).mkdir(parents=True)
         self.tool_bin = self.root / "bin"
         self.tool_bin.mkdir()
         compiler_versions = {
