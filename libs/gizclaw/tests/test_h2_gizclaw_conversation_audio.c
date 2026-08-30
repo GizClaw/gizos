@@ -331,14 +331,25 @@ static int test_backpressure(h2_gizclaw_client_t *client,
   int16_t input[2560];
   for (size_t index = 0u; index < 2560u; ++index)
     input[index] = (int16_t)index;
-  for (size_t chunk = 0u; chunk < 5u; ++chunk) {
+  for (size_t chunk = 0u; chunk < 4u; ++chunk) {
     h2_audio_frame_t frame = mono_frame(input + chunk * 512u, 512u, format);
     fails += expect(h2_gizclaw_conversation_write_pcm(conversation, &frame) ==
                         H2_PAL_OK,
-                    "a full Opus ring continues consuming provider PCM");
+                    "PCM is accepted while conversation-owned storage remains");
   }
-  fails += expect(test->encode_calls == 8u,
-                  "blocked transport still encodes every complete interval");
+  h2_audio_frame_t blocked_frame = mono_frame(input + 4u * 512u, 512u, format);
+  fails += expect(h2_gizclaw_conversation_write_pcm(conversation,
+                                                    &blocked_frame) ==
+                      H2_PAL_ERR_WOULD_BLOCK &&
+                      test->encode_calls == 4u,
+                  "a full Opus ring rejects rather than drops provider PCM");
+  const size_t recovery_call = test->packet_calls;
+  test->packet_result_count = recovery_call;
+  fails += expect(h2_gizclaw_conversation_write_pcm(conversation,
+                                                    &blocked_frame) ==
+                          H2_PAL_OK &&
+                      test->encode_calls == 8u,
+                  "the rejected provider PCM is accepted after recovery");
   int16_t encoded[2560];
   for (size_t packet = 0u; packet < 8u; ++packet) {
     memcpy(encoded + packet * 320u, test->encoded_pcm[packet],
@@ -346,15 +357,13 @@ static int test_backpressure(h2_gizclaw_client_t *client,
   }
   fails += expect(memcmp(encoded, input, sizeof(input)) == 0,
                   "backpressure preserves PCM encoding order");
-  const size_t recovery_call = test->packet_calls;
-  test->packet_result_count = recovery_call;
-  fails += expect(h2_gizclaw_conversation_commit(conversation, 0u) == H2_PAL_OK,
-                  "commit drains the retained packets after recovery");
-  for (size_t packet = 0u; packet < 4u; ++packet) {
-    fails +=
-        expect(test->packet_first_bytes[recovery_call + packet] == packet + 5u,
-               "transport recovery sends the newest retained packets");
+  for (size_t packet = 0u; packet < 8u; ++packet) {
+    fails += expect(test->packet_first_bytes[recovery_call + packet] ==
+                        packet + 1u,
+                    "transport recovery sends every retained packet in order");
   }
+  fails += expect(h2_gizclaw_conversation_commit(conversation, 0u) == H2_PAL_OK,
+                  "commit succeeds after transport recovery");
   h2_gizclaw_conversation_deinit(conversation);
   return fails;
 }

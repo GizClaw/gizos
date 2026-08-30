@@ -510,10 +510,7 @@ static int drain_pcm_input(h2_gizclaw_conversation_t *conversation) {
   while (conversation->pcm_sample_count >= frame_values) {
     if (conversation->pending_opus_count ==
         H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY) {
-      conversation->pending_opus_head =
-          (conversation->pending_opus_head + 1u) %
-          H2_GIZCLAW_CONVERSATION_OPUS_TX_CAPACITY;
-      --conversation->pending_opus_count;
+      return H2_PAL_ERR_WOULD_BLOCK;
     }
     const size_t tail =
         (conversation->pending_opus_head + conversation->pending_opus_count) %

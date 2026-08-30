@@ -87,6 +87,11 @@ typedef void (*h2_pal_webrtc_channel_message_fn)(
     const h2_pal_webrtc_channel_info_t *info, const uint8_t *data, size_t len,
     int is_text);
 
+/*
+ * Delivers one received Opus packet. RTP-aware providers report one missing
+ * packet as opus == NULL and opus_len == 0 so codec owners can run packet-loss
+ * concealment without collapsing the playback timeline.
+ */
 typedef void (*h2_pal_webrtc_opus_frame_fn)(void *user,
                                             h2_pal_webrtc_peer_t *peer,
                                             const uint8_t *opus,
@@ -288,8 +293,9 @@ h2_pal_webrtc_peer_send_opus(const h2_pal_webrtc_api_t *api,
 /*
  * Receives one complete raw Opus packet in pull mode. Pull mode is selected
  * with H2_PAL_WEBRTC_RECEIVE_OPUS_PULL and a NULL on_opus_frame callback.
- * H2_PAL_ERR_NO_SPACE retains the packet and reports its required size in
- * out_opus_len.
+ * H2_PAL_OK with out_opus_len == 0 reports one missing RTP packet so the
+ * caller can run packet-loss concealment. H2_PAL_ERR_NO_SPACE retains a real
+ * packet and reports its required size in out_opus_len.
  */
 static inline h2_pal_result_t h2_pal_webrtc_peer_receive_opus(
     const h2_pal_webrtc_api_t *api, h2_pal_webrtc_peer_t *peer, uint8_t *opus,

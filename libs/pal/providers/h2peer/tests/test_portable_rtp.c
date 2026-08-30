@@ -12,6 +12,7 @@ typedef struct test_send_state {
 
 typedef struct test_receive_state {
     size_t audio_count;
+    size_t audio_loss_count;
     size_t video_count;
     uint8_t payload[8];
     size_t payload_len;
@@ -31,6 +32,10 @@ static int test_send(uint8_t *packet, size_t len, void *user) {
 
 static void test_receive_audio(uint8_t *payload, size_t len, void *user) {
     test_receive_state_t *state = (test_receive_state_t *)user;
+    if (payload == NULL && len == 0u) {
+        state->audio_loss_count++;
+        return;
+    }
     assert(len <= sizeof(state->payload));
     memcpy(state->payload, payload, len);
     state->payload_len = len;
@@ -66,9 +71,12 @@ int main(void) {
 
     RtpDecoder audio_decoder;
     RtpDecoder video_decoder;
+    RtpReorderBuffer audio_reorder;
     test_receive_state_t receive = {0};
-    rtp_decoder_init(&audio_decoder, CODEC_OPUS, test_receive_audio, &receive);
-    rtp_decoder_init(&video_decoder, CODEC_H264, test_receive_video, &receive);
+    rtp_decoder_init(&audio_decoder, CODEC_OPUS, test_receive_audio, &receive,
+                     &audio_reorder);
+    rtp_decoder_init(&video_decoder, CODEC_H264, test_receive_video, &receive,
+                     NULL);
     uint8_t remote_packet[] = {
         0x80u, 0x6fu, 0x12u, 0x34u, 0u, 0u, 0u, 1u,
         0xdeu, 0xadu, 0xbeu, 0xefu, 0xf8u, 0x55u,
@@ -97,10 +105,149 @@ int main(void) {
     assert(receive.audio_count == 2u && receive.video_count == 0u);
 
     remote_packet[1] = 0x6fu;
-    rtp_decoder_init(&video_decoder, CODEC_OPUS, test_receive_video, &receive);
+    rtp_decoder_init(&video_decoder, CODEC_OPUS, test_receive_video, &receive,
+                     NULL);
     assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
                                sizeof(remote_packet)) ==
            (int)sizeof(remote_packet));
-    assert(receive.audio_count == 3u && receive.video_count == 0u);
+    assert(receive.audio_count == 2u && receive.video_count == 0u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_LATE);
+
+    remote_packet[1] = 0x6fu;
+    remote_packet[2] = 0x12u;
+    remote_packet[3] = 0x37u;
+    remote_packet[4] = 0u;
+    remote_packet[5] = 0u;
+    remote_packet[6] = 0x0bu;
+    remote_packet[7] = 0x41u;
+    assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
+                               sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 2u && receive.audio_loss_count == 0u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_REORDER_WAIT);
+
+    remote_packet[2] = 0x12u;
+    remote_packet[3] = 0x35u;
+    remote_packet[4] = 0u;
+    remote_packet[5] = 0u;
+    remote_packet[6] = 0x03u;
+    remote_packet[7] = 0xc1u;
+    assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
+                               sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 3u && receive.audio_loss_count == 0u);
+
+    remote_packet[3] = 0x36u;
+    remote_packet[4] = 0u;
+    remote_packet[5] = 0u;
+    remote_packet[6] = 0x07u;
+    remote_packet[7] = 0x81u;
+    assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
+                               sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 5u && receive.audio_loss_count == 0u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_REORDER_RECOVERED);
+
+    remote_packet[3] = 0x40u;
+    remote_packet[6] = 0x30u;
+    remote_packet[7] = 0x01u;
+    assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
+                               sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 5u && receive.audio_loss_count == 0u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_REORDER_WAIT);
+
+    for (uint8_t sequence = 0x38u; sequence <= 0x3fu; ++sequence) {
+        remote_packet[3] = sequence;
+        remote_packet[6] = (uint8_t)(0x10u + (sequence - 0x38u) * 4u);
+        remote_packet[7] = 0x01u;
+        assert(rtp_decoders_decode(&audio_decoder, &video_decoder,
+                                   remote_packet, sizeof(remote_packet)) ==
+               (int)sizeof(remote_packet));
+    }
+    assert(receive.audio_count == 14u && receive.audio_loss_count == 0u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_REORDER_RECOVERED);
+
+    for (uint8_t sequence = 0x42u; sequence <= 0x49u; ++sequence) {
+        remote_packet[3] = sequence;
+        remote_packet[6] = (uint8_t)(0x40u + (sequence - 0x42u) * 4u);
+        remote_packet[7] = 0x01u;
+        assert(rtp_decoders_decode(&audio_decoder, &video_decoder,
+                                   remote_packet, sizeof(remote_packet)) ==
+               (int)sizeof(remote_packet));
+        assert(receive.audio_count == 14u && receive.audio_loss_count == 0u);
+        assert(audio_decoder.last_event == RTP_DECODE_EVENT_REORDER_WAIT);
+    }
+
+    remote_packet[3] = 0x4au;
+    remote_packet[6] = 0x60u;
+    remote_packet[7] = 0x01u;
+    assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
+                               sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 23u && receive.audio_loss_count == 1u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_LOSS);
+    assert(audio_decoder.last_loss_count == 1u);
+
+    remote_packet[2] = 0x01u;
+    remote_packet[3] = 0x00u;
+    remote_packet[4] = 0u;
+    remote_packet[5] = 0u;
+    remote_packet[6] = 0x70u;
+    remote_packet[7] = 0x01u;
+    assert(rtp_decoders_decode(&audio_decoder, &video_decoder, remote_packet,
+                               sizeof(remote_packet)) ==
+           (int)sizeof(remote_packet));
+    assert(receive.audio_count == 24u && receive.audio_loss_count == 1u);
+    assert(audio_decoder.last_event == RTP_DECODE_EVENT_RESET);
+
+    RtpDecoder pcma_decoder;
+    rtp_decoder_init(&pcma_decoder, CODEC_PCMA, test_receive_audio, &receive,
+                     NULL);
+    uint8_t pcma_packet[] = {
+        0x80u, 0x08u, 0x00u, 0x01u, 0u, 0u, 0u, 0u,
+        0x01u, 0x02u, 0x03u, 0x04u, 0x7fu,
+    };
+    const size_t audio_before_pcma = receive.audio_count;
+    const size_t loss_before_pcma = receive.audio_loss_count;
+    assert(rtp_decoder_decode(&pcma_decoder, pcma_packet,
+                              sizeof(pcma_packet)) ==
+           (int)sizeof(pcma_packet));
+    pcma_packet[3] = 0x03u;
+    assert(rtp_decoder_decode(&pcma_decoder, pcma_packet,
+                              sizeof(pcma_packet)) ==
+           (int)sizeof(pcma_packet));
+    assert(receive.audio_count == audio_before_pcma + 2u);
+    assert(receive.audio_loss_count == loss_before_pcma);
+
+    RtpDecoder timeout_decoder;
+    RtpReorderBuffer timeout_reorder;
+    rtp_decoder_init(&timeout_decoder, CODEC_OPUS, test_receive_audio, &receive,
+                     &timeout_reorder);
+    uint8_t timeout_packet[] = {
+        0x80u, 0x6fu, 0x00u, 0x10u, 0u, 0u, 0u, 1u,
+        0x05u, 0x06u, 0x07u, 0x08u, 0xf8u, 0x55u,
+    };
+    const size_t audio_before_timeout = receive.audio_count;
+    const size_t loss_before_timeout = receive.audio_loss_count;
+    assert(rtp_decoder_decode_at(&timeout_decoder, timeout_packet,
+                                 sizeof(timeout_packet), 1000u) ==
+           (int)sizeof(timeout_packet));
+    timeout_packet[3] = 0x12u;
+    assert(rtp_decoder_decode_at(&timeout_decoder, timeout_packet,
+                                 sizeof(timeout_packet), 1001u) ==
+           (int)sizeof(timeout_packet));
+    assert(timeout_reorder.count == 1u &&
+           timeout_decoder.last_event == RTP_DECODE_EVENT_REORDER_WAIT);
+    assert(rtp_decoder_service(&timeout_decoder, 1060u) == 0);
+    assert(timeout_reorder.count == 1u);
+    assert(receive.audio_count == audio_before_timeout + 1u);
+    assert(receive.audio_loss_count == loss_before_timeout);
+    assert(rtp_decoder_service(&timeout_decoder, 1061u) == 1);
+    assert(timeout_reorder.count == 0u &&
+           timeout_decoder.last_event == RTP_DECODE_EVENT_LOSS &&
+           timeout_decoder.last_loss_count == 1u);
+    assert(receive.audio_count == audio_before_timeout + 2u);
+    assert(receive.audio_loss_count == loss_before_timeout + 1u);
     return 0;
 }
