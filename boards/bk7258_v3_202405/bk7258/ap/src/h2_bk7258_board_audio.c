@@ -382,7 +382,7 @@ static int bk_audio_start_mic_task(h2_bk_audio_state_t *state) {
     }
     int ret = rtos_create_thread(&state->mic_thread,
         BEKEN_DEFAULT_WORKER_PRIORITY,
-        h2_pal_audio_mic_task_name,
+        H2_PAL_AUDIO_MIC_TASK_NAME_VALUE,
         (beken_thread_function_t)bk_audio_mic_task,
         4096,
         state);
@@ -400,7 +400,7 @@ static int bk_audio_start_playback_task(h2_bk_audio_state_t *state) {
     }
     int ret = rtos_create_thread(&state->playback_thread,
         BEKEN_DEFAULT_WORKER_PRIORITY,
-        h2_pal_audio_mix_task_name,
+        H2_PAL_AUDIO_MIX_TASK_NAME_VALUE,
         (beken_thread_function_t)bk_audio_playback_task,
         4096,
         state);

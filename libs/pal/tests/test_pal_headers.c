@@ -21,10 +21,8 @@ static void use_audio_decoder(void) {
 }
 
 static void use_audio_task_names(void) {
-    assert(strcmp(h2_pal_audio_mic_task_name,
-                  H2_PAL_AUDIO_MIC_TASK_NAME_VALUE) == 0);
-    assert(strcmp(h2_pal_audio_mix_task_name,
-                  H2_PAL_AUDIO_MIX_TASK_NAME_VALUE) == 0);
+    assert(strcmp(H2_PAL_AUDIO_MIC_TASK_NAME_VALUE, "$audio/mic") == 0);
+    assert(strcmp(H2_PAL_AUDIO_MIX_TASK_NAME_VALUE, "$audio/mix") == 0);
 }
 
 static void use_wifi_csi(void) {

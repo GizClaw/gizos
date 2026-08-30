@@ -21,10 +21,8 @@ static void use_audio_decoder() {
 }
 
 static void use_audio_task_names() {
-    assert(std::strcmp(h2_pal_audio_mic_task_name,
-                       H2_PAL_AUDIO_MIC_TASK_NAME_VALUE) == 0);
-    assert(std::strcmp(h2_pal_audio_mix_task_name,
-                       H2_PAL_AUDIO_MIX_TASK_NAME_VALUE) == 0);
+    assert(std::strcmp(H2_PAL_AUDIO_MIC_TASK_NAME_VALUE, "$audio/mic") == 0);
+    assert(std::strcmp(H2_PAL_AUDIO_MIX_TASK_NAME_VALUE, "$audio/mix") == 0);
 }
 
 static void use_wifi_csi() {

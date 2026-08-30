@@ -5,7 +5,6 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "pal",
-    srcs = ["src/h2_pal_audio_task_names.c"],
     hdrs = [
         "include/h2/pal/application/h2_pal_http.h",
         "include/h2/pal/application/h2_pal_mqtt.h",
