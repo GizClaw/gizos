@@ -47,9 +47,6 @@ typedef struct idle_trial_context {
     uint32_t running_partition;
     uint32_t selected_partition;
     int boot_selections;
-    int hold_calls;
-    int hold_value;
-    int hold_result;
     int confirms;
     int reboots;
     int reboot_transitions;
@@ -1755,13 +1752,6 @@ static h2_pal_result_t idle_power_select(void *user, uint32_t partition_id) {
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t idle_power_set_hold(void *user, int enabled) {
-    idle_trial_context_t *context = (idle_trial_context_t *)user;
-    context->hold_calls += 1;
-    context->hold_value = enabled;
-    return context->hold_result;
-}
-
 static h2_pal_result_t idle_power_reboot(void *user, uint32_t reason) {
     idle_trial_context_t *context = (idle_trial_context_t *)user;
     (void)reason;
@@ -2741,8 +2731,9 @@ static void test_command_availability_flags(void) {
                &loader,
                H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
                true) == H2_PAL_OK);
-    assert(h2_loader_request_install_staged(&loader) == H2_PAL_ERR_WRITE);
-    assert(context.commits == 2);
+    assert(h2_loader_request_install_staged(&loader) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(context.commits == 1);
 }
 
 static void test_command_availability_reflects_loader_state(void) {
@@ -2760,7 +2751,7 @@ static void test_command_availability_reflects_loader_state(void) {
     assert((status.command_availability &
             H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER) != 0u);
     assert((status.command_availability &
-            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u);
     assert((status.command_availability &
             H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT) == 0u);
     assert(h2_loader_request_install_staged(&fixture.loader) ==
@@ -2781,7 +2772,7 @@ static void test_command_availability_reflects_loader_state(void) {
     assert((status.command_availability &
             H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT) != 0u);
     assert((status.command_availability &
-            H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE) != 0u);
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE) != 0u);
 
     assert(h2_loader_set_command_availability(
                &fixture.loader,
@@ -2848,9 +2839,8 @@ static void assert_command_availability_gate(
 static void test_loader_commands_follow_command_availability(void) {
     static const char *const status[] = {"h2loader", "status"};
     static const char *const stage[] = {"h2loader", "stage", "abort"};
-    static const char *const upgrade[] = {"h2loader", "upgrade"};
+    static const char *const upgrade[] = {"h2loader", "reboot", "upgrade"};
     static const char *const reboot[] = {"h2loader", "reboot", "loader"};
-    static const char *const hold[] = {"h2loader", "hold", "on"};
     static const char *const coredump[] = {"h2loader", "coredump", "status"};
     h2_loader_t loader = {0};
     h2_loader_command_t command;
@@ -2863,24 +2853,22 @@ static void test_loader_commands_follow_command_availability(void) {
     assert_command_availability_gate(
         &command, &loader, H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT, 3u, stage);
     assert_command_availability_gate(
-        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE, 2u, upgrade);
+        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE, 3u, upgrade);
     assert_command_availability_gate(
         &command, &loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER, 3u, reboot);
-    assert_command_availability_gate(
-        &command, &loader, H2_LOADER_COMMAND_AVAILABLE_HOLD_ON, 3u, hold);
     assert_command_availability_gate(
         &command, &loader, H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS, 3u, coredump);
 }
 
 static void test_loader_commands_recheck_availability_after_operation_lock(void) {
-    static const char *const argv[] = {"h2loader", "hold", "on"};
+    static const char *const argv[] = {"h2loader", "status"};
     idle_trial_context_t idle_context = {0};
     h2_loader_t loader = {0};
     h2_loader_command_t command;
     command_test_io_t io = {0};
     capability_lock_test_context_t lock_context = {
         .loader = &loader,
-        .command = H2_LOADER_COMMAND_AVAILABLE_HOLD_ON,
+        .command = H2_LOADER_COMMAND_AVAILABLE_STATUS,
     };
     const h2_pal_sync_vtable_t sync_vtable = {
         .lock_mutex = capability_lock_test_lock,
@@ -2895,26 +2883,16 @@ static void test_loader_commands_recheck_availability_after_operation_lock(void)
         .user = &idle_context,
         .vtable = &pref_vtable,
     };
-    const h2_pal_power_vtable_t power_vtable = {
-        .set_hold = idle_power_set_hold,
-    };
-    const h2_pal_power_api_t power = {
-        .user = &idle_context,
-        .vtable = &power_vtable,
-    };
-
     loader.config.pref = &pref;
-    loader.config.power = &power;
     loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
     command.config.operation_sync = &sync;
     command.config.operation_mutex = (h2_pal_mutex_t *)&lock_context;
 
-    assert(h2_loader_command_execute(&command, 3u, argv) ==
+    assert(h2_loader_command_execute(&command, 2u, argv) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(lock_context.lock_calls == 1u);
     assert(lock_context.unlock_calls == 1u);
-    assert(idle_context.hold_calls == 0);
 }
 
 static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) {
@@ -2984,7 +2962,7 @@ static void test_reboot_h2loader_commits_and_acknowledges_before_teardown(void) 
         &loader, idle_reboot_transition, &context) == H2_PAL_ERR_IO);
     assert(context.disruptive_calls == 3);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_H2LOADER);
-    assert(context.boot_selections == 3);
+    assert(context.boot_selections == 4);
     assert(context.reboot_transitions == 3);
     assert(context.reboots_at_transition == 0);
     assert(context.reboots == 1);
@@ -3036,7 +3014,7 @@ static void test_loader_reboot_command_bypasses_incomplete_mfg_gate(void) {
     assert(h2_loader_command_execute(&command, 3u, argv) == H2_PAL_OK);
     assert(context.disruptive_calls == 1);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_H2LOADER);
-    assert(context.boot_selections == 0);
+    assert(context.boot_selections == 1);
     assert(context.reboots == 1);
     assert(strstr(io.output, "H2_LOADER_REBOOT target=loader result=accepted") != NULL);
     assert(strstr(io.output, "H2_LOADER_REBOOT_FINAL target=loader result=OK") != NULL);
@@ -3059,94 +3037,7 @@ static void test_loader_reboot_command_bypasses_incomplete_mfg_gate(void) {
     assert(context.reboots == 2);
 }
 
-static void test_app_request_commits_once_before_ack_and_teardown(void) {
-    idle_trial_context_t context = {
-        .running_partition = 1u,
-        .boot_intent = H2_LOADER_BOOT_INTENT_LOADER,
-        .install_state = H2_LOADER_INSTALL_STATE_IDLE,
-        .manual_hold = 1,
-        .installed_valid = 1,
-        .installed_version = "installed",
-        .installed_checksum = TEST_CD_SHA256,
-        .installed_size = 8u,
-    };
-    h2_loader_t loader = {0};
-    const h2_pal_pref_vtable_t pref_vtable = {.open = idle_pref_open};
-    const h2_pal_pref_api_t pref = {.user = &context, .vtable = &pref_vtable};
-    const h2_pal_power_vtable_t power_vtable = {
-        .get_running_boot_partition = idle_power_running,
-        .set_hold = idle_power_set_hold,
-    };
-    const h2_pal_power_api_t power = {.user = &context, .vtable = &power_vtable};
-    const h2_pal_mem_vtable_t mem_vtable = {
-        .alloc = idle_mem_alloc,
-        .free = idle_mem_free,
-    };
-    const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
-
-    loader.config.pref = &pref;
-    loader.config.package.allocator = &mem;
-    loader.config.power = &power;
-    loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
-    loader.config.disruptive_user = &context;
-    loader.config.before_disruptive = idle_before_disruptive;
-
-    context.lifecycle_set_fail_after = 2;
-    context.lifecycle_set_result = H2_PAL_ERR_WRITE;
-    assert(h2_loader_request_install_staged_with_transition(
-        &loader, idle_reboot_transition, &context) == H2_PAL_ERR_WRITE);
-    assert(context.hold_calls == 1);
-    assert(context.hold_value == 0);
-    assert(context.commits == 0);
-    assert(context.manual_hold == 1);
-    assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
-    assert(context.reboot_transitions == 0);
-    assert(context.disruptive_calls == 0);
-
-    context.lifecycle_set_fail_after = 0;
-    context.lifecycle_set_calls = 0;
-    context.commit_result = H2_PAL_ERR_WRITE;
-    assert(h2_loader_request_install_staged_with_transition(
-        &loader, idle_reboot_transition, &context) == H2_PAL_ERR_WRITE);
-    assert(context.commits == 1);
-    assert(context.manual_hold == 1);
-    assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
-    assert(context.reboot_transitions == 0);
-    assert(context.disruptive_calls == 0);
-
-    context.commit_result = H2_PAL_OK;
-    context.lifecycle_set_calls = 0;
-    context.reboot_transition_result = H2_PAL_ERR_TIMEOUT;
-    assert(h2_loader_request_install_staged_with_transition(
-        &loader, idle_reboot_transition, &context) == H2_PAL_ERR_TIMEOUT);
-    assert(context.commits == 2);
-    assert(context.manual_hold == 0);
-    assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
-    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
-    assert(context.reboot_transitions == 1);
-    assert(context.commit_sequence < context.transition_sequence);
-    assert(context.disruptive_calls == 0);
-
-    context.reboot_transition_result = H2_PAL_OK;
-    context.disruptive_result = H2_PAL_ERR_TIMEOUT;
-    assert(h2_loader_request_install_staged_with_transition(
-        &loader, idle_reboot_transition, &context) == H2_PAL_ERR_TIMEOUT);
-    assert(context.commits == 3);
-    assert(context.reboot_transitions == 2);
-    assert(context.transition_sequence < context.disruptive_sequence);
-    assert(context.disruptive_calls == 1);
-
-    context.reboot_transition_result = H2_PAL_ERR_TIMEOUT;
-    assert(h2_loader_install_staged_with_transition(
-        &loader, idle_reboot_transition, &context) == H2_PAL_ERR_TIMEOUT);
-    assert(context.commits == 4);
-    assert(context.reboot_transitions == 3);
-    assert(context.disruptive_calls == 1);
-}
-
-static void test_app_reboot_command_accepts_only_after_request_commit(void) {
+ static void test_app_reboot_only_selects_partition(void) {
     static const char *const argv[] = {"h2loader", "reboot", "app"};
     idle_trial_context_t context = {
         .installed_valid = 1,
@@ -3164,8 +3055,15 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
         .free = idle_mem_free,
     };
     const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
+    const h2_pal_power_vtable_t power_vtable = {
+        .set_next_boot_partition = idle_power_select,
+        .reboot = idle_power_reboot,
+    };
+    const h2_pal_power_api_t power = {.user = &context, .vtable = &power_vtable};
 
     loader.config.pref = &pref;
+    loader.config.power = &power;
+    loader.config.app_partition_id = 2u;
     loader.config.package.allocator = &mem;
     loader.config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
     loader.config.disruptive_user = &context;
@@ -3181,6 +3079,7 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
         "H2_LOADER_REBOOT target=app result=fail code=-14") != NULL);
     assert(io.flushes == 2u);
     assert(context.disruptive_calls == 0);
+    assert(context.boot_selections == 1);
 
     context.commit_result = H2_PAL_OK;
     context.install_state = H2_LOADER_INSTALL_STATE_IDLE;
@@ -3192,9 +3091,10 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
     assert(io.flushes == 4u);
     assert(context.disruptive_calls == 1);
     assert(context.disruptive_action == H2_LOADER_DISRUPTIVE_BOOT_APP);
-    assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
+    assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
+    assert(context.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
+    assert(context.selected_partition == 2u);
 
-    context.install_state = H2_LOADER_INSTALL_STATE_IDLE;
     context.disruptive_calls = 0;
     io.flush_result = H2_PAL_ERR_TIMEOUT;
     memset(io.output, 0, sizeof(io.output));
@@ -3205,7 +3105,7 @@ static void test_app_reboot_command_accepts_only_after_request_commit(void) {
                "H2_LOADER_REBOOT target=app result=accepted") != NULL);
     assert(io.flushes == 6u);
     assert(context.disruptive_calls == 1);
-    assert(context.install_state == H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED);
+    assert(context.install_state == H2_LOADER_INSTALL_STATE_IDLE);
 }
 
 static void test_boot_app_runs_disruptive_hook_before_reboot(void) {
@@ -3549,8 +3449,8 @@ static void test_successful_upgrade_recovery_clears_staged_candidate(void) {
 static void test_command_registration_and_help(void) {
     static const char input[] = "h2loader help\nh2loader\n";
     static const char expected[] =
-        "h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n"
-        "usage: h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n";
+        "h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n"
+        "usage: h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n";
     command_test_io_t io;
     h2_loader_t loader;
     h2_loader_command_t command;
@@ -3560,7 +3460,8 @@ static void test_command_registration_and_help(void) {
     io.input = input;
     io.input_len = sizeof(input) - 1u;
     assert(command_test_init(&command, &loader, &io) == H2_PAL_OK);
-    assert(command.command.definition_count == H2_LOADER_COMMAND_DEFINITION_CAPACITY);
+    assert(command.command.definition_count > 0u);
+    assert(command.command.definition_count <= H2_LOADER_COMMAND_DEFINITION_CAPACITY);
     assert(h2_loader_command_poll(&command, 10u) == H2_PAL_OK);
     assert(h2_loader_command_poll(&command, 10u) == H2_PAL_OK);
     assert(io.flushes == 2u);
@@ -4199,6 +4100,8 @@ static void test_app_client_requires_stable_hardware_capabilities(void) {
     assert(h2_loader_app_client_init(&client, &config) ==
            H2_PAL_ERR_INVALID_ARG);
     config.hardware_capabilities = H2_LOADER_CAPABILITY_UART;
+    config.h2loader_partition_id = 1u;
+    config.app_partition_id = 2u;
     config.disk = &disk;
     assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
     assert(client.config.hardware_capabilities == H2_LOADER_CAPABILITY_UART);
@@ -4252,7 +4155,7 @@ static void test_app_return_console_prepares_before_success(void) {
         .join = app_return_task_join,
     };
     app_return_test_context_t context = {
-        .input = "h2loader rollback\n",
+        .input = "h2loader reboot loader\n",
     };
     const h2_pal_pref_api_t pref = {
         .user = &context.lifecycle,
@@ -4273,6 +4176,7 @@ static void test_app_return_console_prepares_before_success(void) {
         .allocator = &mem,
         .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
         .h2loader_partition_id = 17u,
+        .app_partition_id = 23u,
         .reboot_reason = 23u,
     };
     h2_loader_app_client_t client;
@@ -4289,7 +4193,8 @@ static void test_app_return_console_prepares_before_success(void) {
     assert(h2_loader_app_client_start_return_console(&console_config) == H2_PAL_OK);
     assert(context.lifecycle.selected_partition == 17u);
     assert(context.lifecycle.reboots == 1);
-    assert(strstr(context.output, "H2_LOADER_ROLLBACK result=OK\n") != NULL);
+    assert(strstr(context.output,
+               "H2_LOADER_REBOOT target=loader result=accepted\n") != NULL);
     assert(context.successful_writes == 2u);
     assert(h2_loader_app_client_join_return_console(&client) == H2_PAL_OK);
 }
@@ -4311,7 +4216,7 @@ static void test_app_return_console_reboots_when_reply_fails(void) {
         .join = app_return_task_join,
     };
     app_return_test_context_t context = {
-        .input = "h2loader rollback\n",
+        .input = "h2loader reboot loader\n",
         .write_result = H2_PAL_ERR_IO,
     };
     const h2_pal_pref_api_t pref = {
@@ -4333,6 +4238,7 @@ static void test_app_return_console_reboots_when_reply_fails(void) {
         .allocator = &mem,
         .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
         .h2loader_partition_id = 17u,
+        .app_partition_id = 23u,
         .reboot_reason = 23u,
     };
     h2_loader_app_client_t client;
@@ -4436,8 +4342,7 @@ int main(void) {
     test_forced_command_mode_confirms_active_image();
     test_reboot_h2loader_commits_and_acknowledges_before_teardown();
     test_loader_reboot_command_bypasses_incomplete_mfg_gate();
-    test_app_request_commits_once_before_ack_and_teardown();
-    test_app_reboot_command_accepts_only_after_request_commit();
+    test_app_reboot_only_selects_partition();
     test_boot_app_runs_disruptive_hook_before_reboot();
     test_upgrade_does_not_cancel_mfg_before_validation();
     test_last_result_is_persisted();

@@ -105,8 +105,8 @@ static const char help_text[] =
     "                [--wait-timeout SECONDS] [--read-timeout SECONDS]\n"
     "                [--post-delay SECONDS] [--no-ble] COMMAND ...\n\n"
     "commands: package golden check scan status stats memory send send-url\n"
-    "          stage hold wifi reboot reboot-loader restart monitor\n"
-    "          rollback upgrade coredump bleikcp-speed\n\n"
+    "          stage wifi reboot monitor coredump bleikcp-speed\n\n"
+    "reboot:   reboot app|loader|upgrade [--monitor]\n"
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n";
@@ -429,20 +429,13 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 1 && strcmp(argv[0], "status") == 0) return H2_H2LOADER_HOST_COMMAND_STATUS;
     if (argc == 1 && strcmp(argv[0], "stats") == 0) return H2_H2LOADER_HOST_COMMAND_STATS;
     if (argc == 1 && strcmp(argv[0], "memory") == 0) return H2_H2LOADER_HOST_COMMAND_MEMORY;
-    if (argc == 1 && strcmp(argv[0], "restart") == 0) return H2_H2LOADER_HOST_COMMAND_APP_RESTART;
-    if (argc == 1 && strcmp(argv[0], "rollback") == 0) return H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK;
-    if (argc == 1 && strcmp(argv[0], "reboot") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP;
-    if (argc == 1 && strcmp(argv[0], "reboot-loader") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
-    if (argc == 1 && strcmp(argv[0], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE;
     if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
-        strcmp(argv[1], "app") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP;
+        strcmp(argv[1], "app") == 0) return H2_H2LOADER_HOST_COMMAND_REBOOT_APP;
     if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
-        strcmp(argv[1], "loader") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
+        strcmp(argv[1], "loader") == 0) return H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
-        strcmp(argv[1], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE;
+        strcmp(argv[1], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE;
     if (argc == 2 && strcmp(argv[0], "stage") == 0 && strcmp(argv[1], "abort") == 0) return H2_H2LOADER_HOST_COMMAND_STAGE_ABORT;
-    if (argc == 2 && strcmp(argv[0], "hold") == 0 && strcmp(argv[1], "on") == 0) return H2_H2LOADER_HOST_COMMAND_HOLD_ON;
-    if (argc == 2 && strcmp(argv[0], "hold") == 0 && strcmp(argv[1], "off") == 0) return H2_H2LOADER_HOST_COMMAND_HOLD_OFF;
     if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "disconnect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
     if (argc >= 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "scan") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS;
@@ -595,87 +588,6 @@ static int device_command(
         return H2_H2LOADER_CLI_EXIT_RUNTIME;
     }
     return H2_H2LOADER_CLI_EXIT_OK;
-}
-
-static int upgrade_command(
-    h2_h2loader_cli_context_t *context,
-    const h2_h2loader_cli_options_t *options,
-    int argc) {
-    h2_h2loader_cli_transport_t transport;
-    h2_h2loader_host_status_t status = {0};
-    h2_h2loader_host_upgrade_tracker_t tracker;
-    h2_h2loader_host_command_result_t result = {0};
-    h2_pal_result_t rc;
-    if (argc != 0 || options->port == NULL) {
-        return H2_H2LOADER_CLI_EXIT_USAGE;
-    }
-    if (options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE) {
-        h2_h2loader_cli_output(
-            context, H2_H2LOADER_CLI_STREAM_STDERR,
-            "h2loader: upgrade requires authoritative reconnect identity; "
-            "BLE v1/v2 has no device_uid\n");
-        return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    }
-    h2_h2loader_cli_transport_init(
-        &transport, context, options, options->read_timeout_ms);
-    rc = h2_h2loader_cli_transport_connect(&transport, &status);
-    if (rc == H2_PAL_OK) {
-        rc = h2_h2loader_host_upgrade_tracker_init(&status, &tracker);
-    }
-    if (rc == H2_PAL_OK) {
-        h2_h2loader_host_command_request_t request = {
-            .command = H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE,
-            .status = &status,
-            .is_cancelled = context->config->is_cancelled,
-            .cancel_user = context->config->cancel_user,
-            .on_output = command_output,
-            .output_user = context,
-        };
-        rc = h2_h2loader_cli_transport_execute(
-            &transport, &request, &result);
-        if (rc == H2_PAL_OK &&
-            result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
-            rc = H2_PAL_ERR_IO;
-        }
-    }
-    (void)h2_h2loader_cli_transport_disconnect(&transport);
-    if (rc != H2_PAL_OK) {
-        return H2_H2LOADER_CLI_EXIT_RUNTIME;
-    }
-    rc = H2_PAL_ERR_TIMEOUT;
-    for (uint32_t attempt = 0u; attempt < 60u; ++attempt) {
-        if (context->config->is_cancelled != NULL &&
-            context->config->is_cancelled(context->config->cancel_user)) {
-            rc = H2_PAL_EXIT;
-            break;
-        }
-        rc = h2_pal_time_sleep_ms(context->runtime->time, 1000u);
-        if (rc != H2_PAL_OK) {
-            break;
-        }
-        rc = h2_h2loader_cli_transport_rediscover(&transport);
-        if (rc == H2_PAL_OK) {
-            rc = h2_h2loader_cli_transport_connect(&transport, &status);
-        }
-        if (rc == H2_PAL_OK) {
-            rc = h2_h2loader_host_upgrade_tracker_observe(&tracker, &status);
-        }
-        (void)h2_h2loader_cli_transport_disconnect(&transport);
-        if (rc == H2_PAL_OK) {
-            h2_h2loader_cli_output(
-                context,
-                H2_H2LOADER_CLI_STREAM_STDOUT,
-                "H2_LOADER_UPGRADE result=OK transition=reconnected "
-                "active_version=%s\n",
-                status.active_version);
-            return H2_H2LOADER_CLI_EXIT_OK;
-        }
-        if (rc == H2_PAL_ERR_INVALID_STATE) {
-            break;
-        }
-        rc = H2_PAL_ERR_TIMEOUT;
-    }
-    return H2_H2LOADER_CLI_EXIT_RUNTIME;
 }
 
 static int monitor_command(
@@ -879,7 +791,6 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
         return h2_h2loader_cli_server_command(&context, &options, argc, argv);
     }
     if (strcmp(command, "monitor") == 0) return monitor_command(&context, &options, argc);
-    if (strcmp(command, "upgrade") == 0) return upgrade_command(&context, &options, argc);
     if (strcmp(command, "bleikcp-speed") == 0)
         return h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
     {

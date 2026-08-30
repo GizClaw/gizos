@@ -56,8 +56,8 @@ const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
     return "send-url";
   case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL:
     return "stage-abort-after-send-url";
-  case H2_H2LOADER_E2E_CASE_ROLLBACK:
-    return "rollback";
+  case H2_H2LOADER_E2E_CASE_REBOOT_LOADER:
+    return "reboot-loader";
   default:
     return "unknown";
   }
@@ -540,8 +540,8 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
     return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT);
   case H2_H2LOADER_E2E_CASE_SEND_URL:
     return run_send_url(context);
-  case H2_H2LOADER_E2E_CASE_ROLLBACK:
-    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK);
+  case H2_H2LOADER_E2E_CASE_REBOOT_LOADER:
+    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER);
   default:
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -571,7 +571,7 @@ static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
     count += 2u;
   if (config->include_send_url)
     count += 2u;
-  if (config->include_rollback)
+  if (config->include_reboot_loader)
     count += 1u;
   return count;
 }
@@ -676,9 +676,9 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
     append_case(config, result, context, transport,
                 H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL, iteration);
   }
-  if (config->include_rollback) {
+  if (config->include_reboot_loader) {
     append_case(config, result, context, transport,
-                H2_H2LOADER_E2E_CASE_ROLLBACK, iteration);
+                H2_H2LOADER_E2E_CASE_REBOOT_LOADER, iteration);
   }
 }
 

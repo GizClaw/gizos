@@ -123,6 +123,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
             .read = h2_esp_h2loader_memory_stats_read,
         },
         .h2loader_partition_id = config->h2loader_partition_id,
+        .app_partition_id = config->app_partition_id,
         .coredump_partition_id = config->coredump_partition_id,
     };
     rc = h2_loader_app_client_init(&s_serial_client, &s_ble.client_config);
@@ -161,6 +162,7 @@ int h2_esp_h2loader_app_commands_prepare_serial(
         .hardware_capabilities =
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
+        .app_partition_id = 2u,
         .coredump_partition_id = coredump_partition_id,
     };
     return h2_esp_h2loader_app_commands_prepare_serial_with_config(
@@ -254,6 +256,7 @@ int h2_esp_h2loader_app_commands_start(
         .hardware_capabilities =
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
+        .app_partition_id = 2u,
         .coredump_partition_id = coredump_partition_id,
     };
     return h2_esp_h2loader_app_commands_start_with_config(runtime, &config);

@@ -18,6 +18,7 @@ typedef struct h2_esp_h2loader_app_commands_config {
     const char *active_version;
     uint32_t hardware_capabilities;
     uint32_t h2loader_partition_id;
+    uint32_t app_partition_id;
     uint32_t coredump_partition_id;
 } h2_esp_h2loader_app_commands_config_t;
 

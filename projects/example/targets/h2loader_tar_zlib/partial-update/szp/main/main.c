@@ -23,6 +23,7 @@ static void image_entry(void *user) {
         .hardware_capabilities =
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = 1u,
+        .app_partition_id = 2u,
         .coredump_partition_id = 3u,
     };
     int rc;

@@ -193,6 +193,7 @@ int h2_bk_h2loader_init_app_client(
         .active_version = s_ble.active_version,
         .hardware_capabilities = hardware_capabilities,
         .h2loader_partition_id = H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
+        .app_partition_id = 2u,
         .coredump_partition_id = H2_BK_H2LOADER_COREDUMP_ADDR,
     };
     return h2_loader_app_client_init(client, &config);

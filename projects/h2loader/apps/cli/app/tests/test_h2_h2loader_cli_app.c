@@ -227,7 +227,7 @@ static void test_ble_transport_routes_the_shared_device_command(void) {
     assert(strstr(output.bytes, "command failed") != NULL);
 }
 
-static void test_ble_upgrade_fails_before_identity_unsafe_reconnect(void) {
+static void test_legacy_upgrade_is_rejected_before_connect(void) {
     const char *argv[] = {
         "h2loader", "--transport", "bleikcp", "--port",
         "1:001122334455", "upgrade",
@@ -238,9 +238,8 @@ static void test_ble_upgrade_fails_before_identity_unsafe_reconnect(void) {
     };
 
     assert(run_cli_with_ble(&output, 6, argv, &source) ==
-        H2_H2LOADER_CLI_EXIT_RUNTIME);
+        H2_H2LOADER_CLI_EXIT_USAGE);
     assert(source.calls == 0u);
-    assert(strstr(output.bytes, "BLE v1/v2 has no device_uid") != NULL);
 }
 
 static void test_check_reports_runtime_capabilities(void) {
@@ -503,7 +502,7 @@ static void test_send_reports_unreadable_file(void) {
 int main(void) {
     test_help_and_usage();
     test_ble_transport_routes_the_shared_device_command();
-    test_ble_upgrade_fails_before_identity_unsafe_reconnect();
+    test_legacy_upgrade_is_rejected_before_connect();
     test_check_reports_runtime_capabilities();
     test_ble_acquired_only_when_requested();
     test_bleikcp_speed_ble_lifecycle_boundaries();

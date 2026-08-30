@@ -35,7 +35,7 @@ struct Options {
   std::uint64_t firmware_url_bytes = 0u;
   std::uint32_t repeat = 1u;
   std::uint32_t timeout_ms = 120000u;
-  bool rollback = false;
+  bool reboot_loader = false;
   bool help = false;
 };
 
@@ -63,7 +63,7 @@ void usage(const char *program, FILE *stream) {
       "  --url-sha256 HEX             expected URL payload SHA-256\n"
       "  --wifi-ssid SSID             test scan/connect/disconnect\n"
       "  --wifi-password-env NAME     read Wi-Fi password from environment\n"
-      "  --rollback                   include disruptive rollback command\n"
+      "  --reboot-loader              include disruptive Loader reboot\n"
       "  --repeat COUNT               repeat every selected transport (default "
       "1)\n"
       "  --timeout-ms MS              connect and command timeout (default "
@@ -122,7 +122,7 @@ bool parse_options(int argc, char **argv, Options *out) {
     kRepeat = 1ull << 10,
     kTimeout = 1ull << 11,
     kReport = 1ull << 12,
-    kRollback = 1ull << 13,
+    kRebootLoader = 1ull << 13,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -131,10 +131,10 @@ bool parse_options(int argc, char **argv, Options *out) {
       out->help = true;
       continue;
     }
-    if (std::strcmp(name, "--rollback") == 0) {
-      if (!set_once(kRollback, &seen))
+    if (std::strcmp(name, "--reboot-loader") == 0) {
+      if (!set_once(kRebootLoader, &seen))
         return false;
-      out->rollback = true;
+      out->reboot_loader = true;
       continue;
     }
     if (index + 1 >= argc)
@@ -209,7 +209,8 @@ bool parse_options(int argc, char **argv, Options *out) {
     return false;
   const std::size_t cases = 1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
                             (!out->firmware.empty() ? 2u : 0u) +
-                            (has_url ? 2u : 0u) + (out->rollback ? 1u : 0u);
+                            (has_url ? 2u : 0u) +
+                            (out->reboot_loader ? 1u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
   return cases * transports * out->repeat <= H2_H2LOADER_E2E_MAX_CASES;
@@ -461,7 +462,8 @@ int main(int argc, char **argv) {
         .include_send = static_cast<std::uint8_t>(!firmware.empty()),
         .include_send_url =
             static_cast<std::uint8_t>(!options.firmware_url.empty()),
-        .include_rollback = static_cast<std::uint8_t>(options.rollback),
+        .include_reboot_loader =
+            static_cast<std::uint8_t>(options.reboot_loader),
         .is_cancelled = is_cancelled,
         .on_case = case_event,
         .on_progress = progress_event,

@@ -35,11 +35,11 @@ static uint32_t app_command_availability(
     uint32_t available = H2_LOADER_COMMAND_AVAILABLE_HELP |
         H2_LOADER_COMMAND_AVAILABLE_STATUS |
         H2_LOADER_COMMAND_AVAILABLE_STATS |
-        H2_LOADER_COMMAND_AVAILABLE_APP_RESTART;
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP |
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER |
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE;
     if (client->config.memory_stats.read != NULL)
         available |= H2_LOADER_COMMAND_AVAILABLE_MEMORY;
-    if (client->config.h2loader_partition_id != 0u)
-        available |= H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK;
     h2_pal_disk_partition_t partition;
     if (client->config.disk != NULL &&
         h2_pal_disk_get_partition(
@@ -82,16 +82,13 @@ static int split_args(char *line, const char **argv, int max_args) {
     return argc;
 }
 
-static int is_return_command(int argc, const char *const *argv) {
-    return argc == 2 &&
+static int is_reboot_command(int argc, const char *const *argv) {
+    return argc == 3 &&
         strcmp(argv[0], "h2loader") == 0 &&
-        strcmp(argv[1], "rollback") == 0;
-}
-
-static int is_restart_command(int argc, const char *const *argv) {
-    return argc == 2 &&
-        strcmp(argv[0], "h2loader") == 0 &&
-        strcmp(argv[1], "restart") == 0;
+        strcmp(argv[1], "reboot") == 0 &&
+        (strcmp(argv[2], "app") == 0 ||
+         strcmp(argv[2], "loader") == 0 ||
+         strcmp(argv[2], "upgrade") == 0);
 }
 
 static int is_status_command(int argc, const char *const *argv) {
@@ -128,8 +125,13 @@ static uint32_t app_console_command_bit(
             : H2_LOADER_COMMAND_AVAILABLE_STATUS;
     }
     if (is_memory_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_MEMORY;
-    if (is_restart_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_APP_RESTART;
-    if (is_return_command(argc, argv)) return H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK;
+    if (is_reboot_command(argc, argv)) {
+        if (strcmp(argv[2], "loader") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
+        if (strcmp(argv[2], "upgrade") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE;
+        return H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+    }
     if (is_coredump_command(argc, argv)) {
         if (argc == 3 && strcmp(argv[2], "dump") == 0)
             return H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP;
@@ -187,22 +189,57 @@ static int write_console_line(
     return console->write(console->write_user, console->status_line, len);
 }
 
-static int prepare_return_to_loader(h2_loader_app_client_t *client) {
+static int set_boot_intent(
+    h2_loader_app_client_t *client,
+    h2_loader_boot_intent_t intent) {
+    h2_pal_pref_namespace_t *ns = NULL;
     int rc;
+    int close_rc;
 
     if (client == NULL || client->config.pref == NULL || client->config.power == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = h2_loader_mark_return_requested(client->config.pref);
-    if (rc != H2_PAL_OK) {
-        return rc;
+    rc = h2_pal_pref_open(
+        client->config.pref,
+        H2_LOADER_PREF_NAMESPACE,
+        H2_PAL_PREF_OPEN_READ_WRITE,
+        &ns);
+    if (rc != H2_PAL_OK) return rc;
+    if (ns == NULL || ns->set_u32 == NULL || ns->commit == NULL) {
+        rc = H2_PAL_ERR_UNSUPPORTED;
+    } else {
+        rc = ns->set_u32(ns, "boot_intent", (uint32_t)intent);
+        if (rc == H2_PAL_OK) rc = ns->commit(ns);
     }
-    if (client->config.h2loader_partition_id == 0u) {
-        return H2_PAL_OK;
+    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
+    return rc == H2_PAL_OK ? close_rc : rc;
+}
+
+static int prepare_reboot(
+    h2_loader_app_client_t *client,
+    const char *target) {
+    uint32_t partition_id;
+    h2_loader_boot_intent_t intent;
+    int rc;
+
+    if (client == NULL || target == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (strcmp(target, "app") == 0) {
+        partition_id = client->config.app_partition_id;
+        intent = H2_LOADER_BOOT_INTENT_AUTO;
+    } else if (strcmp(target, "loader") == 0) {
+        partition_id = client->config.h2loader_partition_id;
+        intent = H2_LOADER_BOOT_INTENT_LOADER;
+    } else if (strcmp(target, "upgrade") == 0) {
+        partition_id = client->config.h2loader_partition_id;
+        intent = H2_LOADER_BOOT_INTENT_AUTO;
+    } else {
+        return H2_PAL_ERR_INVALID_ARG;
     }
-    return h2_pal_power_set_next_boot_partition(
-        client->config.power,
-        client->config.h2loader_partition_id);
+    if (partition_id == 0u) return H2_PAL_ERR_UNSUPPORTED;
+    rc = set_boot_intent(client, intent);
+    return rc == H2_PAL_OK
+        ? h2_pal_power_set_next_boot_partition(client->config.power, partition_id)
+        : rc;
 }
 
 static int write_status(h2_loader_app_client_return_console_t *console) {
@@ -493,7 +530,7 @@ static void return_console_task(void *ctx) {
         bool recognized = is_status_command(argc, argv) ||
             is_memory_command(argc, argv) ||
             is_help_command(argc, argv) || is_coredump_command(argc, argv) ||
-            is_return_command(argc, argv) || is_restart_command(argc, argv);
+            is_reboot_command(argc, argv);
         int lock_rc = H2_PAL_OK;
         if (recognized && console->client->config.operation_mutex != NULL) {
             lock_rc = h2_pal_mutex_lock(
@@ -523,33 +560,32 @@ static void return_console_task(void *ctx) {
             (void)write_memory(console);
         } else if (is_help_command(argc, argv)) {
             (void)write_console_line(console,
-                "h2loader <help|status|stats|memory|restart|rollback|coredump>");
+                "h2loader <help|status|stats|memory|reboot app|loader|upgrade|coredump>");
         } else if (is_coredump_command(argc, argv)) {
             (void)write_coredump(
                 console->client,
                 argc == 3 ? argv[2] : NULL,
                 console->write_user,
                 console->write);
-        } else if (is_return_command(argc, argv)) {
-            int return_rc = prepare_return_to_loader(console->client);
-            if (return_rc != H2_PAL_OK) {
+        } else if (is_reboot_command(argc, argv)) {
+            int reboot_rc = prepare_reboot(console->client, argv[2]);
+            if (reboot_rc != H2_PAL_OK) {
                 char response[64];
                 (void)snprintf(
                     response,
                     sizeof(response),
-                    "H2_LOADER_ROLLBACK result=error code=%d",
-                    return_rc);
+                    "H2_LOADER_REBOOT target=%s result=fail code=%d",
+                    argv[2],
+                    reboot_rc);
                 (void)write_console_line(console, response);
             } else {
-                (void)write_console_line(
-                    console, "H2_LOADER_ROLLBACK result=OK");
-                (void)h2_pal_power_reboot(
-                    console->client->config.power,
-                    console->client->config.reboot_reason);
-            }
-        } else if (is_restart_command(argc, argv)) {
-            if (write_console_line(
-                    console, "H2_LOADER_RESTART result=OK") == H2_PAL_OK) {
+                char response[96];
+                (void)snprintf(
+                    response,
+                    sizeof(response),
+                    "H2_LOADER_REBOOT target=%s result=accepted",
+                    argv[2]);
+                (void)write_console_line(console, response);
                 (void)h2_pal_power_reboot(
                     console->client->config.power,
                     console->client->config.reboot_reason);
@@ -569,6 +605,8 @@ int h2_loader_app_client_init(
     if (client == NULL || config == NULL || config->pref == NULL ||
         config->power == NULL || config->allocator == NULL ||
         config->hardware_capabilities == 0u ||
+        config->h2loader_partition_id == 0u ||
+        config->app_partition_id == 0u ||
         (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u ||
         ((config->operation_sync == NULL) !=
          (config->operation_mutex == NULL))) {
@@ -577,55 +615,6 @@ int h2_loader_app_client_init(
     memset(client, 0, sizeof(*client));
     client->config = *config;
     return H2_PAL_OK;
-}
-
-int h2_loader_app_client_restart(h2_loader_app_client_t *client) {
-    if (client == NULL || client->config.power == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    int rc = client->config.operation_mutex != NULL
-        ? h2_pal_mutex_lock(
-            client->config.operation_sync, client->config.operation_mutex)
-        : H2_PAL_OK;
-    if (rc != H2_PAL_OK) return rc;
-    if ((app_command_availability(client) &
-         H2_LOADER_COMMAND_AVAILABLE_APP_RESTART) == 0u) {
-        rc = H2_PAL_ERR_INVALID_STATE;
-    } else {
-        rc = h2_pal_power_reboot(
-            client->config.power, client->config.reboot_reason);
-    }
-    if (client->config.operation_mutex != NULL) {
-        int unlock_rc = h2_pal_mutex_unlock(
-            client->config.operation_sync, client->config.operation_mutex);
-        if (rc == H2_PAL_OK) rc = unlock_rc;
-    }
-    return rc;
-}
-
-int h2_loader_app_client_return_to_loader(h2_loader_app_client_t *client) {
-    if (client == NULL) return H2_PAL_ERR_INVALID_ARG;
-    int rc = client->config.operation_mutex != NULL
-        ? h2_pal_mutex_lock(
-            client->config.operation_sync, client->config.operation_mutex)
-        : H2_PAL_OK;
-    if (rc != H2_PAL_OK) return rc;
-    if ((app_command_availability(client) &
-         H2_LOADER_COMMAND_AVAILABLE_APP_ROLLBACK) == 0u) {
-        rc = H2_PAL_ERR_INVALID_STATE;
-    } else {
-        rc = prepare_return_to_loader(client);
-        if (rc == H2_PAL_OK) {
-            rc = h2_pal_power_reboot(
-                client->config.power, client->config.reboot_reason);
-        }
-    }
-    if (client->config.operation_mutex != NULL) {
-        int unlock_rc = h2_pal_mutex_unlock(
-            client->config.operation_sync, client->config.operation_mutex);
-        if (rc == H2_PAL_OK) rc = unlock_rc;
-    }
-    return rc;
 }
 
 int h2_loader_app_client_start_return_console(

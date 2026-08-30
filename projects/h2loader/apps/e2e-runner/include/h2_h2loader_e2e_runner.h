@@ -27,7 +27,7 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND,
   H2_H2LOADER_E2E_CASE_SEND_URL,
   H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL,
-  H2_H2LOADER_E2E_CASE_ROLLBACK,
+  H2_H2LOADER_E2E_CASE_REBOOT_LOADER,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -78,7 +78,7 @@ typedef struct h2_h2loader_e2e_config {
   uint8_t include_wifi;
   uint8_t include_send;
   uint8_t include_send_url;
-  uint8_t include_rollback;
+  uint8_t include_reboot_loader;
 
   h2_h2loader_host_cancelled_fn is_cancelled;
   void *cancel_user;

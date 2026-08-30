@@ -65,16 +65,12 @@ static uint32_t h2loader_command_bit(
     if (strcmp(argv[1], "status") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATUS;
     if (strcmp(argv[1], "stats") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATS;
     if (strcmp(argv[1], "memory") == 0) return H2_LOADER_COMMAND_AVAILABLE_MEMORY;
-    if (strcmp(argv[1], "upgrade") == 0) return H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE;
     if (strcmp(argv[1], "reboot") == 0) {
-        return argc >= 3u && strcmp(argv[2], "loader") == 0
-            ? H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER
-            : H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
-    }
-    if (strcmp(argv[1], "hold") == 0) {
-        return argc >= 3u && strcmp(argv[2], "off") == 0
-            ? H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF
-            : H2_LOADER_COMMAND_AVAILABLE_HOLD_ON;
+        if (argc >= 3u && strcmp(argv[2], "loader") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
+        if (argc >= 3u && strcmp(argv[2], "upgrade") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE;
+        return H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
     if (strcmp(argv[1], "stage") == 0) {
         if (argc >= 3u && strcmp(argv[2], "abort") == 0)
@@ -869,9 +865,9 @@ static h2_pal_result_t h2loader_root_handler(
         self, argc, argv, NULL);
     if (availability != H2_PAL_OK) return availability;
     if (argc < 2u) {
-        printf("usage: h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
+        printf("usage: h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n");
     } else {
-        printf("usage: h2loader <help|status|memory|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
+        printf("usage: h2loader <help|status|memory|stage|reboot app|loader|upgrade|coredump>\n");
     }
     return H2_PAL_OK;
 }
@@ -887,7 +883,7 @@ static h2_pal_result_t h2loader_help_handler(
     h2_pal_result_t availability = h2loader_require_command(
         self, argc, argv, NULL);
     if (availability != H2_PAL_OK) return availability;
-    printf("h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
+    printf("h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n");
     return H2_PAL_OK;
 }
 
@@ -1046,49 +1042,6 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
     return (h2_pal_result_t)rc;
 }
 
-typedef struct h2loader_upgrade_transition_context {
-    h2_loader_command_t *self;
-    int emitted;
-} h2loader_upgrade_transition_context_t;
-
-static int h2loader_upgrade_transition(void *user) {
-    h2loader_upgrade_transition_context_t *context =
-        (h2loader_upgrade_transition_context_t *)user;
-    h2_loader_command_t *self = context->self;
-    (void)printf(
-        "H2_LOADER_UPGRADE result=OK code=0 transition=reboot\n");
-    context->emitted = 1;
-    /* Waiting for the transport ACK is best-effort because the host may close
-     * the session as soon as it receives the accepted transition. */
-    (void)h2_command_flush(&self->command);
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t h2loader_upgrade_handler_unlocked(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    h2_loader_command_t *self = (h2_loader_command_t *)user;
-    h2loader_upgrade_transition_context_t transition = {
-        .self = self,
-    };
-    int rc;
-
-    (void)command;
-    (void)argc;
-    (void)argv;
-    rc = h2_loader_upgrade_start_with_transition(
-        self->config.loader, h2loader_upgrade_transition, &transition);
-    if (!transition.emitted || rc != H2_PAL_OK) {
-        printf("H2_LOADER_UPGRADE result=%s code=%d transition=%s\n",
-            rc == H2_PAL_OK ? "OK" : "fail",
-            rc,
-            rc == H2_PAL_OK ? "none" : "failed");
-    }
-    return (h2_pal_result_t)rc;
-}
-
 typedef struct h2loader_reboot_transition_context {
     h2_loader_command_t *self;
     const char *target;
@@ -1139,7 +1092,11 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
     int rc;
 
     (void)command;
-    if (argc >= 3u && strcmp(argv[2], "loader") == 0) {
+    if (argc != 3u) {
+        printf("usage: h2loader reboot <app|loader|upgrade>\n");
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (strcmp(argv[2], "loader") == 0) {
         transition.target = "loader";
         rc = h2_loader_reboot_h2loader_with_transition(
             self->config.loader,
@@ -1156,41 +1113,25 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
         }
         return (h2_pal_result_t)rc;
     }
-    if (argc >= 3u && strcmp(argv[2], "app") != 0) {
-        printf("usage: h2loader reboot [app|loader]\n");
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    transition.target = "app";
-    rc = self->config.defer_app_install ?
-        h2_loader_request_install_staged_with_transition(
-            self->config.loader,
-            h2loader_reboot_transition,
-            &transition) :
-        h2_loader_install_staged_with_transition(
+    if (strcmp(argv[2], "upgrade") == 0) {
+        transition.target = "upgrade";
+        rc = h2_loader_reboot_upgrade_with_transition(
             self->config.loader,
             h2loader_reboot_transition,
             &transition);
-    h2loader_reboot_failure(&transition, rc);
-    return (h2_pal_result_t)rc;
-}
-
-static h2_pal_result_t h2loader_hold_handler_unlocked(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    h2_loader_command_t *self = (h2_loader_command_t *)user;
-    int rc;
-
-    (void)command;
-    if (argc < 3u || (strcmp(argv[2], "on") != 0 && strcmp(argv[2], "off") != 0)) {
-        printf("usage: h2loader hold <on|off>\n");
-        return H2_PAL_OK;
+        h2loader_reboot_failure(&transition, rc);
+        return (h2_pal_result_t)rc;
     }
-    rc = h2_loader_set_hold(self->config.loader, strcmp(argv[2], "on") == 0);
-    printf("H2_LOADER_HOLD result=%s code=%d\n",
-        rc == H2_PAL_OK ? "OK" : "fail",
-        rc);
+    if (strcmp(argv[2], "app") != 0) {
+        printf("usage: h2loader reboot <app|loader|upgrade>\n");
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    transition.target = "app";
+    rc = h2_loader_reboot_app_with_transition(
+        self->config.loader,
+        h2loader_reboot_transition,
+        &transition);
+    h2loader_reboot_failure(&transition, rc);
     return (h2_pal_result_t)rc;
 }
 
@@ -1313,16 +1254,6 @@ static h2_pal_result_t h2loader_stage_handler(
         h2loader_stage_handler_unlocked);
 }
 
-static h2_pal_result_t h2loader_upgrade_handler(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    return h2loader_invoke_locked(
-        (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        h2loader_upgrade_handler_unlocked);
-}
-
 static h2_pal_result_t h2loader_reboot_handler(
     void *user,
     h2_command_t *command,
@@ -1331,16 +1262,6 @@ static h2_pal_result_t h2loader_reboot_handler(
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
         h2loader_reboot_handler_unlocked);
-}
-
-static h2_pal_result_t h2loader_hold_handler(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    return h2loader_invoke_locked(
-        (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        h2loader_hold_handler_unlocked);
 }
 
 static h2_pal_result_t h2loader_coredump_handler(
@@ -1367,9 +1288,7 @@ int h2_loader_command_init(
         {"h2loader memory", h2loader_memory_handler},
         {"h2loader wifi", h2loader_wifi_handler},
         {"h2loader stage", h2loader_stage_handler},
-        {"h2loader upgrade", h2loader_upgrade_handler},
         {"h2loader reboot", h2loader_reboot_handler},
-        {"h2loader hold", h2loader_hold_handler},
         {"h2loader coredump", h2loader_coredump_handler},
     };
     h2_command_config_t command_config;
@@ -1422,12 +1341,10 @@ int h2_loader_command_init(
             H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD |
             H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT |
             H2_LOADER_COMMAND_AVAILABLE_STAGE_URL |
-            H2_LOADER_COMMAND_AVAILABLE_HOLD_ON |
-            H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
-            H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE |
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;

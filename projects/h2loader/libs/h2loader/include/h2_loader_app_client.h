@@ -41,6 +41,7 @@ typedef struct h2_loader_app_client_config {
     /** Stable hardware facilities wired by the complete running App image. */
     uint32_t hardware_capabilities;
     uint32_t h2loader_partition_id;
+    uint32_t app_partition_id;
     uint32_t coredump_partition_id;
     uint32_t reboot_reason;
     /** Optional platform memory snapshot exposed by `h2loader memory`. */
@@ -74,8 +75,6 @@ typedef struct h2_loader_app_client_return_console_config {
 int h2_loader_app_client_init(
     h2_loader_app_client_t *client,
     const h2_loader_app_client_config_t *config);
-int h2_loader_app_client_restart(h2_loader_app_client_t *client);
-int h2_loader_app_client_return_to_loader(h2_loader_app_client_t *client);
 /**
  * Executes an App coredump subcommand over a caller-owned output stream.
  * The caller owns command serialization; a null subcommand selects status.

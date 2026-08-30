@@ -28,6 +28,6 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner -- \
 The runner always executes `status`. Supplying Wi-Fi credentials enables
 `scan`, `connect`, and idempotent `disconnect`; `--firmware` enables direct
 stage plus cleanup; the URL triplet enables device-side download plus cleanup.
-`--rollback` is deliberately opt-in because it changes the active App. Wi-Fi
+`--reboot-loader` is deliberately opt-in because it disrupts the active App. Wi-Fi
 passwords are read only from the named environment variable and never written
 to console output or the JSON report.

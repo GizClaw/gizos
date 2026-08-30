@@ -185,21 +185,11 @@ uint32_t h2_loader_get_command_availability(
         &loader->implemented_commands,
         H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED,
         H2_LOADER_COMMAND_AVAILABILITY_ALL);
-    if (!status->partition_2.valid && !status->installed.valid &&
-        !status->stage.valid && !status->staged.valid) {
-        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
-    }
     if (!mfg_gate_satisfied(loader, &status->mfg)) {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
-    if (status->manual_hold) {
-        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_HOLD_ON;
-    } else {
-        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF;
-    }
     if (!status->stage.valid && !status->staged.valid) {
         public_available &= ~H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT;
-        public_available &= ~H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE;
     }
     return public_available & atomic_availability_load(
         &loader->command_availability,
@@ -2389,7 +2379,7 @@ int h2_loader_upgrade_start_with_transition(
     if (rc != H2_PAL_OK) return rc;
     rc = require_command_available(
         loader, &loader->status,
-        H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE);
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE);
     if (rc != H2_PAL_OK) return rc;
     rc = upgrade_record_read(
         loader->config.pref,
@@ -2697,14 +2687,17 @@ int h2_loader_boot_h2loader(h2_loader_t *loader) {
     return select_and_reboot(loader, loader->config.h2loader_partition_id, H2_LOADER_BOOT_INTENT_LOADER);
 }
 
-int h2_loader_reboot_h2loader_with_transition(
+static int reboot_partition_with_transition(
     h2_loader_t *loader,
+    uint32_t partition_id,
+    h2_loader_boot_intent_t intent,
+    uint32_t command_bit,
+    h2_loader_disruptive_action_t disruptive_action,
     h2_loader_reboot_transition_fn transition,
     void *transition_user) {
-    h2_pal_power_boot_partition_t running;
     int rc;
 
-    if (loader == NULL || loader->config.power == NULL) {
+    if (loader == NULL || loader->config.power == NULL || partition_id == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     rc = h2_loader_read_status(loader, &loader->status);
@@ -2714,33 +2707,23 @@ int h2_loader_reboot_h2loader_with_transition(
     rc = require_command_available(
         loader,
         &loader->status,
-        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER);
+        command_bit);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    rc = h2_pal_power_get_running_boot_partition(loader->config.power, &running);
+    rc = h2_pal_power_set_next_boot_partition(loader->config.power, partition_id);
     if (rc != H2_PAL_OK) {
+        (void)pref_set_i32(loader->config.pref, "last_result", rc);
         return rc;
-    }
-    if (running.id != loader->config.h2loader_partition_id) {
-        if (running.id == 0u) {
-            return H2_PAL_ERR_INVALID_STATE;
-        }
-        rc = h2_pal_power_set_next_boot_partition(
-            loader->config.power, loader->config.h2loader_partition_id);
-        if (rc != H2_PAL_OK) {
-            (void)pref_set_i32(loader->config.pref, "last_result", rc);
-            return rc;
-        }
     }
     rc = pref_set_u32(
         loader->config.pref,
         "boot_intent",
-        (uint32_t)H2_LOADER_BOOT_INTENT_LOADER);
+        (uint32_t)intent);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
+    loader->status.boot_intent = intent;
     if (transition != NULL) {
         rc = transition(transition_user);
         if (rc != H2_PAL_OK) {
@@ -2750,12 +2733,54 @@ int h2_loader_reboot_h2loader_with_transition(
     if (loader->config.before_disruptive != NULL) {
         rc = loader->config.before_disruptive(
             loader->config.disruptive_user,
-            H2_LOADER_DISRUPTIVE_BOOT_H2LOADER);
+            disruptive_action);
         if (rc != H2_PAL_OK) {
             return rc;
         }
     }
     return h2_pal_power_reboot(loader->config.power, 0u);
+}
+
+int h2_loader_reboot_h2loader_with_transition(
+    h2_loader_t *loader,
+    h2_loader_reboot_transition_fn transition,
+    void *transition_user) {
+    return reboot_partition_with_transition(
+        loader,
+        loader != NULL ? loader->config.h2loader_partition_id : 0u,
+        H2_LOADER_BOOT_INTENT_LOADER,
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER,
+        H2_LOADER_DISRUPTIVE_BOOT_H2LOADER,
+        transition,
+        transition_user);
+}
+
+int h2_loader_reboot_app_with_transition(
+    h2_loader_t *loader,
+    h2_loader_reboot_transition_fn transition,
+    void *transition_user) {
+    return reboot_partition_with_transition(
+        loader,
+        loader != NULL ? loader->config.app_partition_id : 0u,
+        H2_LOADER_BOOT_INTENT_AUTO,
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP,
+        H2_LOADER_DISRUPTIVE_BOOT_APP,
+        transition,
+        transition_user);
+}
+
+int h2_loader_reboot_upgrade_with_transition(
+    h2_loader_t *loader,
+    h2_loader_reboot_transition_fn transition,
+    void *transition_user) {
+    return reboot_partition_with_transition(
+        loader,
+        loader != NULL ? loader->config.h2loader_partition_id : 0u,
+        H2_LOADER_BOOT_INTENT_AUTO,
+        H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE,
+        H2_LOADER_DISRUPTIVE_BOOT_H2LOADER,
+        transition,
+        transition_user);
 }
 
 int h2_loader_reboot_h2loader(h2_loader_t *loader) {
@@ -2878,6 +2903,9 @@ static int request_install_staged(h2_loader_t *loader) {
     rc = h2_loader_read_status(loader, &status);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    if (!status.stage.valid && !status.staged.valid) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
     rc = require_command_available(
         loader,

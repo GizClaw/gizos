@@ -35,19 +35,19 @@ uint32_t h2_h2loader_web_inspect_package(
     uint32_t blob_size);
 uint32_t h2_h2loader_web_status(
     h2_h2loader_web_client_t *client, const char *port_id);
-uint32_t h2_h2loader_web_install(
-    h2_h2loader_web_client_t *client, const char *port_id,
-    uint32_t blob_handle, uint32_t blob_size);
 uint32_t h2_h2loader_web_stage(
     h2_h2loader_web_client_t *client, const char *port_id,
     uint32_t blob_handle, uint32_t blob_size);
-uint32_t h2_h2loader_web_rollback(
-    h2_h2loader_web_client_t *client, const char *port_id);
-uint32_t h2_h2loader_web_restart(
+uint32_t h2_h2loader_web_stage_url(
+    h2_h2loader_web_client_t *client, const char *port_id,
+    const char *url, uint32_t expected_bytes, const char *expected_sha256);
+uint32_t h2_h2loader_web_abort_stage(
     h2_h2loader_web_client_t *client, const char *port_id);
 uint32_t h2_h2loader_web_reboot_loader(
     h2_h2loader_web_client_t *client, const char *port_id);
 uint32_t h2_h2loader_web_reboot_app(
+    h2_h2loader_web_client_t *client, const char *port_id);
+uint32_t h2_h2loader_web_reboot_upgrade(
     h2_h2loader_web_client_t *client, const char *port_id);
 
 /** Observe, cancel and release one asynchronous operation. */

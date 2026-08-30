@@ -45,7 +45,7 @@ cc_binary(
         "-sASYNCIFY=1",
         "-sENVIRONMENT=web",
         "-sEXPORT_ES6=1",
-        "-sEXPORTED_FUNCTIONS=['_main','_h2_h2loader_web_create','_h2_h2loader_web_request_port','_h2_h2loader_web_authorization_result','_h2_h2loader_web_authorization_port','_h2_h2loader_web_forget_port','_h2_h2loader_web_forget_result','_h2_h2loader_web_list_ports','_h2_h2loader_web_inspect_package','_h2_h2loader_web_status','_h2_h2loader_web_install','_h2_h2loader_web_stage','_h2_h2loader_web_rollback','_h2_h2loader_web_restart','_h2_h2loader_web_reboot_loader','_h2_h2loader_web_reboot_app','_h2_h2loader_web_job_done','_h2_h2loader_web_job_result','_h2_h2loader_web_job_json','_h2_h2loader_web_job_progress_json','_h2_h2loader_web_job_cancel','_h2_h2loader_web_job_release','_h2_h2loader_web_close_begin','_h2_h2loader_web_close_step']",
+        "-sEXPORTED_FUNCTIONS=['_main','_h2_h2loader_web_create','_h2_h2loader_web_request_port','_h2_h2loader_web_authorization_result','_h2_h2loader_web_authorization_port','_h2_h2loader_web_forget_port','_h2_h2loader_web_forget_result','_h2_h2loader_web_list_ports','_h2_h2loader_web_inspect_package','_h2_h2loader_web_status','_h2_h2loader_web_stage','_h2_h2loader_web_stage_url','_h2_h2loader_web_abort_stage','_h2_h2loader_web_reboot_loader','_h2_h2loader_web_reboot_app','_h2_h2loader_web_reboot_upgrade','_h2_h2loader_web_job_done','_h2_h2loader_web_job_result','_h2_h2loader_web_job_json','_h2_h2loader_web_job_progress_json','_h2_h2loader_web_job_cancel','_h2_h2loader_web_job_release','_h2_h2loader_web_close_begin','_h2_h2loader_web_close_step']",
         "-sEXPORTED_RUNTIME_METHODS=['ccall']",
         "-sEXPORT_NAME=createH2LoaderModule",
         "-sMODULARIZE=1",

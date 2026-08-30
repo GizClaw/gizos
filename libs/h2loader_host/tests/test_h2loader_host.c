@@ -45,12 +45,15 @@ static h2_h2loader_host_status_t command_status(
     return status;
 }
 
-static void test_typed_command_role_contract(void) {
+static void test_typed_command_role_parity(void) {
     h2_h2loader_host_status_t app = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS |
-            H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_RESTART |
-            H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_ROLLBACK |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP);
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
@@ -59,7 +62,7 @@ static void test_typed_command_role_contract(void) {
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |
-            H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE);
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE);
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
@@ -71,52 +74,54 @@ static void test_typed_command_role_contract(void) {
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
-               H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader, 0u, H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) ==
-           H2_PAL_ERR_INVALID_STATE);
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) ==
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &app, 0u, H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
-           H2_PAL_ERR_INVALID_STATE);
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_APP) ==
+           H2_PAL_OK);
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) == H2_PAL_OK);
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) ==
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) ==
            H2_PAL_ERR_INVALID_STATE);
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
-        H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE |
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE |
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN;
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) ==
-           H2_PAL_ERR_INVALID_STATE);
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader, 0u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_OK);
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader, 1u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_validate(
+               &loader, 1u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
     loader.command_availability &=
@@ -127,11 +132,11 @@ static void test_typed_command_role_contract(void) {
            H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) ==
-           H2_PAL_ERR_INVALID_STATE);
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app,
                1u,
-               H2_H2LOADER_HOST_COMMAND_APP_RESTART) ==
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) ==
            H2_PAL_ERR_INVALID_STATE);
     app.command_availability &=
         ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP;
@@ -171,15 +176,25 @@ static void test_typed_command_wire_contract(void) {
     assert(contract.success_token == NULL);
     assert(contract.marker_is_success == 1u);
 
-    request.command = H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK;
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     assert(h2_h2loader_host_command_contract(
                &request, &contract) == H2_PAL_OK);
-    assert(strcmp(contract.line, "h2loader rollback\n") == 0);
-    assert(strcmp(contract.marker, "H2_LOADER_ROLLBACK ") == 0);
-    assert(strcmp(contract.success_token, "result=OK") == 0);
+    assert(strcmp(contract.line, "h2loader reboot loader\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_REBOOT ") == 0);
+    assert(strcmp(contract.success_token, "result=accepted") == 0);
     assert(strcmp(contract.accepted_disconnect_token,
-                  "H2_LOADER_ROLLBACK result=OK") == 0);
+                  "H2_LOADER_REBOOT target=loader result=accepted") == 0);
     assert(contract.lifecycle_transition == 1u);
+
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE;
+    assert(h2_h2loader_host_command_contract(
+               &request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.line, "h2loader reboot upgrade\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_REBOOT ") == 0);
+    assert(strcmp(contract.success_token, "result=accepted") == 0);
+    assert(strcmp(
+               contract.accepted_disconnect_token,
+               "H2_LOADER_REBOOT target=upgrade result=accepted") == 0);
 
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
@@ -191,7 +206,7 @@ static void test_typed_command_wire_contract(void) {
     assert(strcmp(contract.marker, "H2_LOADER_STATUS ") == 0);
     assert(contract.marker_is_success == 1u);
 
-    request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     assert(h2_h2loader_host_command_contract(
                &request, &contract) == H2_PAL_OK);
     assert(strcmp(contract.line, "h2loader reboot loader\n") == 0);
@@ -581,7 +596,7 @@ static void test_typed_command_transport_execution(void) {
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
         H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
-    request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     request.status = &loader;
     fixture.output_result = H2_PAL_OK;
     fixture.response = reboot_ok;
@@ -671,52 +686,6 @@ static void test_typed_command_transport_execution(void) {
                &request,
                &result) == H2_PAL_ERR_TIMEOUT);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
-
-    /* restart/rollback: the device acks result=OK then reboots, dropping the
-     * link (CLOSED). The acknowledged line must resolve as accepted. */
-    static const uint8_t restart_ok[] = "H2_LOADER_RESTART result=OK\n";
-    static const uint8_t rollback_ok[] = "H2_LOADER_ROLLBACK result=OK\n";
-    h2_h2loader_host_status_t app_lifecycle = command_status(
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
-        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
-    request.command = H2_H2LOADER_HOST_COMMAND_APP_RESTART;
-    request.status = &app_lifecycle;
-    fixture.response = restart_ok;
-    fixture.response_len = sizeof(restart_ok) - 1u;
-    fixture.read_result = H2_PAL_ERR_CLOSED;
-    assert(h2_h2loader_host_command_execute_transport(
-               &fixture,
-               command_transport_write,
-               command_transport_read,
-               NULL,
-               &request,
-               &result) == H2_PAL_OK);
-    assert(result.transport_result == H2_PAL_ERR_CLOSED);
-    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
-
-    /* Same restart ack, but the browser reports a read timeout on reboot. */
-    fixture.read_result = H2_PAL_ERR_TIMEOUT;
-    assert(h2_h2loader_host_command_execute_transport(
-               &fixture,
-               command_transport_write,
-               command_transport_read,
-               NULL,
-               &request,
-               &result) == H2_PAL_OK);
-    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
-
-    request.command = H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK;
-    fixture.response = rollback_ok;
-    fixture.response_len = sizeof(rollback_ok) - 1u;
-    fixture.read_result = H2_PAL_ERR_CLOSED;
-    assert(h2_h2loader_host_command_execute_transport(
-               &fixture,
-               command_transport_write,
-               command_transport_read,
-               NULL,
-               &request,
-               &result) == H2_PAL_OK);
-    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
     static const uint8_t wifi_scan[] =
         "H2_LOADER_WIFI_SCAN_RESULT index=1 ssid_hex=666f6f\n"
@@ -2020,7 +1989,7 @@ static void test_serial_deasserts_dtr_and_rts(void) {
 }
 
 int main(void) {
-    test_typed_command_role_contract();
+    test_typed_command_role_parity();
     test_typed_command_wire_contract();
     test_typed_command_terminal_contract();
     test_typed_command_transport_execution();

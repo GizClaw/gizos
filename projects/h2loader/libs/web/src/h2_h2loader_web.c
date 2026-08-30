@@ -16,21 +16,21 @@
 #define H2_WEB_BLOB_SLICE_MAX (64u * 1024u)
 #define H2_WEB_JSON_SIZE 12288u
 #define H2_WEB_ERROR_DETAIL_SIZE 256u
-// reboot-app and the managed install's activate make the loader install the
-// staged app (decompress + flash) before acknowledging, so their command read
-// needs headroom: read timeout = command_timeout_ms + 30000 = 120s here.
+// reboot-upgrade may install the staged image before acknowledging, so its
+// command read needs headroom: read timeout = command_timeout_ms + 30000.
 #define H2_WEB_INSTALL_COMMAND_TIMEOUT_MS 90000u
+#define H2_WEB_STAGE_URL_MAX 512u
 
 typedef enum h2_web_job_kind {
   H2_WEB_JOB_LIST_PORTS = 1,
   H2_WEB_JOB_INSPECT = 2,
   H2_WEB_JOB_STATUS = 3,
-  H2_WEB_JOB_INSTALL = 4,
-  H2_WEB_JOB_ROLLBACK = 5,
-  H2_WEB_JOB_RESTART = 6,
-  H2_WEB_JOB_REBOOT_LOADER = 7,
-  H2_WEB_JOB_REBOOT_APP = 8,
-  H2_WEB_JOB_STAGE = 9,
+  H2_WEB_JOB_STAGE = 4,
+  H2_WEB_JOB_STAGE_URL = 5,
+  H2_WEB_JOB_ABORT_STAGE = 6,
+  H2_WEB_JOB_REBOOT_APP = 7,
+  H2_WEB_JOB_REBOOT_LOADER = 8,
+  H2_WEB_JOB_REBOOT_UPGRADE = 9,
 } h2_web_job_kind_t;
 
 typedef struct h2_web_job h2_web_job_t;
@@ -44,6 +44,9 @@ struct h2_web_job {
   char port_id[H2_PAL_SERIAL_HOST_PORT_ID_MAX_LEN];
   uint32_t blob_handle;
   uint32_t blob_size;
+  char url[H2_WEB_STAGE_URL_MAX];
+  char expected_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t expected_bytes;
   uint32_t command_timeout_ms;
   uint32_t read_token;
   size_t read_count;
@@ -74,6 +77,20 @@ struct h2_h2loader_web_client {
   h2_pal_result_t shutdown_result;
   int closing;
 };
+
+static int is_sha256(const char *value) {
+  if (value == NULL || strlen(value) != H2_H2LOADER_HOST_SHA256_HEX_LEN) {
+    return 0;
+  }
+  for (size_t index = 0u; index < H2_H2LOADER_HOST_SHA256_HEX_LEN; ++index) {
+    const char ch = value[index];
+    if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+          (ch >= 'A' && ch <= 'F'))) {
+      return 0;
+    }
+  }
+  return 1;
+}
 
 static h2_web_job_t *find_job(h2_h2loader_web_client_t *client,
                               uint32_t handle) {
@@ -313,43 +330,9 @@ static h2_pal_result_t run_command(h2_web_job_t *job,
     h2_h2loader_host_command_request_t request = {
         .command = command,
         .status = &initial,
-        .is_cancelled = job_cancelled,
-        .cancel_user = job,
-    };
-    result = h2_h2loader_host_serial_execute_command(
-        job->connection, &request, &job->command_result);
-  }
-  (void)job_disconnect(job);
-  if (result == H2_PAL_OK &&
-      job->command_result.terminal != H2_H2LOADER_HOST_COMMAND_TERMINAL_OK) {
-    result = H2_PAL_ERR_IO;
-  }
-  if (result == H2_PAL_OK) {
-    (void)snprintf(job->detail, sizeof(job->detail),
-                   "accepted-unverified");
-  }
-  return result;
-}
-
-static h2_pal_result_t restart_device(h2_web_job_t *job) {
-  h2_h2loader_host_status_t initial = {0};
-  h2_pal_result_t result = job_connect(job, &initial);
-  h2_h2loader_host_command_t command = H2_H2LOADER_HOST_COMMAND_HELP;
-  if (result == H2_PAL_OK &&
-      h2_h2loader_host_status_active_role(&initial) ==
-          H2_H2LOADER_HOST_ACTIVE_ROLE_APP) {
-    command = H2_H2LOADER_HOST_COMMAND_APP_RESTART;
-  } else if (result == H2_PAL_OK &&
-             h2_h2loader_host_status_active_role(&initial) ==
-                 H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
-    command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
-  } else if (result == H2_PAL_OK) {
-    result = H2_PAL_ERR_INVALID_STATE;
-  }
-  if (result == H2_PAL_OK) {
-    h2_h2loader_host_command_request_t request = {
-        .command = command,
-        .status = &initial,
+        .url = job->url,
+        .expected_bytes = job->expected_bytes,
+        .expected_sha256 = job->expected_sha256,
         .is_cancelled = job_cancelled,
         .cancel_user = job,
     };
@@ -400,56 +383,6 @@ static h2_pal_result_t stage_blob(h2_web_job_t *job) {
   return result;
 }
 
-static h2_pal_result_t install_blob(h2_web_job_t *job) {
-  static const h2_h2loader_host_managed_transport_vtable_t transport_vtable = {
-      .connect = job_connect,
-      .stage = job_stage,
-      .activate = job_activate,
-      .disconnect = job_disconnect,
-      .rediscover = job_rediscover,
-  };
-  h2_pal_result_t result = inspect_blob(job);
-  h2_h2loader_host_status_t initial = {0};
-  if (result == H2_PAL_OK) result = job_connect(job, &initial);
-  if (result == H2_PAL_OK &&
-      h2_h2loader_host_status_verify_asset(&initial, &job->asset) ==
-          H2_PAL_OK) {
-    job->status = initial;
-    (void)snprintf(job->detail, sizeof(job->detail), "already-target");
-    return job_disconnect(job);
-  }
-  if (result == H2_PAL_OK &&
-      (strcmp(initial.board, job->asset.board) != 0 ||
-       strcmp(initial.target, job->asset.target) != 0)) {
-    result = H2_PAL_ERR_INVALID_STATE;
-  }
-  if (job->connection != NULL) {
-    const h2_pal_result_t cleanup = job_disconnect(job);
-    if (result == H2_PAL_OK) result = cleanup;
-  }
-  if (result != H2_PAL_OK) return result;
-  h2_h2loader_host_managed_operation_config_t config = {
-      .time = h2_web_platform_time_api(job->client->platform),
-      .transport = {.user = job, .vtable = &transport_vtable},
-      .asset = &job->asset,
-      .read_payload = blob_read,
-      .payload_user = job,
-      .is_cancelled = job_cancelled,
-      .cancel_user = job,
-      .on_progress = job_progress,
-      .progress_user = job,
-      .on_event = job_event,
-      .event_user = job,
-      .reconnect_delay_ms = 250u,
-      .reconnect_attempts = 20u,
-  };
-  result = h2_h2loader_host_managed_operation_run(&config, &job->status);
-  if (result == H2_PAL_OK) {
-    (void)snprintf(job->detail, sizeof(job->detail), "verified");
-  }
-  return result;
-}
-
 static void job_entry(void *user) {
   h2_web_job_t *job = user;
   job->started = 1;
@@ -463,28 +396,27 @@ static void job_entry(void *user) {
     case H2_WEB_JOB_STATUS:
       job->result = read_status(job);
       break;
-    case H2_WEB_JOB_INSTALL:
-      job->command_timeout_ms = H2_WEB_INSTALL_COMMAND_TIMEOUT_MS;
-      job->result = install_blob(job);
-      break;
     case H2_WEB_JOB_STAGE:
       job->result = stage_blob(job);
       break;
-    case H2_WEB_JOB_ROLLBACK:
-      job->result = run_command(
-          job, H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK);
+    case H2_WEB_JOB_STAGE_URL:
+      job->result = run_command(job, H2_H2LOADER_HOST_COMMAND_STAGE_URL);
       break;
-    case H2_WEB_JOB_RESTART:
-      job->result = restart_device(job);
+    case H2_WEB_JOB_ABORT_STAGE:
+      job->result = run_command(job, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT);
       break;
     case H2_WEB_JOB_REBOOT_LOADER:
       job->result = run_command(
-          job, H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER);
+          job, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER);
       break;
     case H2_WEB_JOB_REBOOT_APP:
+      job->result = run_command(
+          job, H2_H2LOADER_HOST_COMMAND_REBOOT_APP);
+      break;
+    case H2_WEB_JOB_REBOOT_UPGRADE:
       job->command_timeout_ms = H2_WEB_INSTALL_COMMAND_TIMEOUT_MS;
       job->result = run_command(
-          job, H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP);
+          job, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE);
       break;
     default:
       job->result = H2_PAL_ERR_INVALID_ARG;
@@ -549,10 +481,13 @@ int h2_h2loader_web_forget_result(h2_h2loader_web_client_t *client) {
 
 static uint32_t start_job(h2_h2loader_web_client_t *client,
                           h2_web_job_kind_t kind, const char *port_id,
-                          uint32_t blob_handle, uint64_t blob_size) {
+                          uint32_t blob_handle, uint64_t blob_size,
+                          const char *url, uint64_t expected_bytes,
+                          const char *expected_sha256) {
   if (client == NULL || client->closing || blob_size > UINT32_MAX ||
       (port_id != NULL &&
-       strlen(port_id) >= H2_PAL_SERIAL_HOST_PORT_ID_MAX_LEN)) {
+       strlen(port_id) >= H2_PAL_SERIAL_HOST_PORT_ID_MAX_LEN) ||
+      (url != NULL && strlen(url) >= H2_WEB_STAGE_URL_MAX)) {
     return 0u;
   }
   h2_web_job_t *job = NULL;
@@ -568,8 +503,13 @@ static uint32_t start_job(h2_h2loader_web_client_t *client,
   job->kind = kind;
   job->blob_handle = blob_handle;
   job->blob_size = (uint32_t)blob_size;
+  job->expected_bytes = expected_bytes;
   job->phase = H2_H2LOADER_HOST_OPERATION_CONNECT;
   if (port_id != NULL) strcpy(job->port_id, port_id);
+  if (url != NULL) strcpy(job->url, url);
+  if (expected_sha256 != NULL) {
+    strcpy(job->expected_sha256, expected_sha256);
+  }
   uint32_t handle;
   do {
     handle = client->next_handle++;
@@ -591,53 +531,66 @@ static uint32_t start_job(h2_h2loader_web_client_t *client,
 }
 
 uint32_t h2_h2loader_web_list_ports(h2_h2loader_web_client_t *client) {
-  return start_job(client, H2_WEB_JOB_LIST_PORTS, NULL, 0u, 0u);
+  return start_job(client, H2_WEB_JOB_LIST_PORTS, NULL, 0u, 0u,
+                   NULL, 0u, NULL);
 }
 
 uint32_t h2_h2loader_web_inspect_package(
     h2_h2loader_web_client_t *client, uint32_t blob_handle,
     uint32_t blob_size) {
   if (blob_handle == 0u || blob_size == 0u) return 0u;
-  return start_job(client, H2_WEB_JOB_INSPECT, NULL, blob_handle, blob_size);
+  return start_job(client, H2_WEB_JOB_INSPECT, NULL, blob_handle, blob_size,
+                   NULL, 0u, NULL);
 }
 
 uint32_t h2_h2loader_web_status(h2_h2loader_web_client_t *client,
                                 const char *port_id) {
-  return start_job(client, H2_WEB_JOB_STATUS, port_id, 0u, 0u);
-}
-
-uint32_t h2_h2loader_web_install(h2_h2loader_web_client_t *client,
-                                 const char *port_id, uint32_t blob_handle,
-                                 uint32_t blob_size) {
-  if (blob_handle == 0u || blob_size == 0u) return 0u;
-  return start_job(client, H2_WEB_JOB_INSTALL, port_id, blob_handle, blob_size);
+  return start_job(client, H2_WEB_JOB_STATUS, port_id, 0u, 0u,
+                   NULL, 0u, NULL);
 }
 
 uint32_t h2_h2loader_web_stage(h2_h2loader_web_client_t *client,
                                const char *port_id, uint32_t blob_handle,
                                uint32_t blob_size) {
   if (blob_handle == 0u || blob_size == 0u) return 0u;
-  return start_job(client, H2_WEB_JOB_STAGE, port_id, blob_handle, blob_size);
+  return start_job(client, H2_WEB_JOB_STAGE, port_id, blob_handle, blob_size,
+                   NULL, 0u, NULL);
 }
 
-uint32_t h2_h2loader_web_rollback(h2_h2loader_web_client_t *client,
-                                  const char *port_id) {
-  return start_job(client, H2_WEB_JOB_ROLLBACK, port_id, 0u, 0u);
+uint32_t h2_h2loader_web_stage_url(h2_h2loader_web_client_t *client,
+                                   const char *port_id, const char *url,
+                                   uint32_t expected_bytes,
+                                   const char *expected_sha256) {
+  if (url == NULL || url[0] == '\0' || expected_bytes == 0u ||
+      !is_sha256(expected_sha256)) {
+    return 0u;
+  }
+  return start_job(client, H2_WEB_JOB_STAGE_URL, port_id, 0u, 0u,
+                   url, expected_bytes, expected_sha256);
 }
 
-uint32_t h2_h2loader_web_restart(h2_h2loader_web_client_t *client,
-                                 const char *port_id) {
-  return start_job(client, H2_WEB_JOB_RESTART, port_id, 0u, 0u);
+uint32_t h2_h2loader_web_abort_stage(h2_h2loader_web_client_t *client,
+                                     const char *port_id) {
+  return start_job(client, H2_WEB_JOB_ABORT_STAGE, port_id, 0u, 0u,
+                   NULL, 0u, NULL);
 }
 
 uint32_t h2_h2loader_web_reboot_loader(h2_h2loader_web_client_t *client,
                                        const char *port_id) {
-  return start_job(client, H2_WEB_JOB_REBOOT_LOADER, port_id, 0u, 0u);
+  return start_job(client, H2_WEB_JOB_REBOOT_LOADER, port_id, 0u, 0u,
+                   NULL, 0u, NULL);
 }
 
 uint32_t h2_h2loader_web_reboot_app(h2_h2loader_web_client_t *client,
                                     const char *port_id) {
-  return start_job(client, H2_WEB_JOB_REBOOT_APP, port_id, 0u, 0u);
+  return start_job(client, H2_WEB_JOB_REBOOT_APP, port_id, 0u, 0u,
+                   NULL, 0u, NULL);
+}
+
+uint32_t h2_h2loader_web_reboot_upgrade(h2_h2loader_web_client_t *client,
+                                        const char *port_id) {
+  return start_job(client, H2_WEB_JOB_REBOOT_UPGRADE, port_id, 0u, 0u,
+                   NULL, 0u, NULL);
 }
 
 int h2_h2loader_web_job_done(h2_h2loader_web_client_t *client,
@@ -768,8 +721,7 @@ const char *h2_h2loader_web_job_json(h2_h2loader_web_client_t *client,
                        "{\"detail\":");
   offset = append_json_string(client->json, client->json_capacity, offset,
                               job->detail);
-  if (job->kind == H2_WEB_JOB_STATUS || job->kind == H2_WEB_JOB_INSTALL ||
-      job->kind == H2_WEB_JOB_STAGE) {
+  if (job->kind == H2_WEB_JOB_STATUS || job->kind == H2_WEB_JOB_STAGE) {
     offset = append_text(client->json, client->json_capacity, offset,
                          ",\"status\":");
     size_t status_size = 0u;

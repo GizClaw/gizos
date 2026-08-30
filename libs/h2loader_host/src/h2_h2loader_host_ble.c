@@ -536,6 +536,8 @@ h2_pal_result_t h2_h2loader_host_ble_stage(
 h2_pal_result_t h2_h2loader_host_ble_activate(
     h2_h2loader_host_ble_connection_t *connection,
     const h2_h2loader_host_catalog_entry_t *asset) {
+    static const char accepted[] =
+        "H2_LOADER_REBOOT target=upgrade result=accepted";
     uint8_t response[H2_H2LOADER_HOST_BLE_RESPONSE_SIZE];
     size_t response_len = 0u;
     if (connection == NULL || asset == NULL ||
@@ -543,20 +545,18 @@ h2_pal_result_t h2_h2loader_host_ble_activate(
             H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (asset->role == H2_H2LOADER_HOST_ASSET_ROLE_APP) {
-        return ble_write_command(connection, "h2loader reboot\n");
-    }
-    if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
+    if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_APP &&
+        asset->role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_pal_result_t rc =
-        ble_write_command(connection, "h2loader upgrade\n");
+        ble_write_command(connection, "h2loader reboot upgrade\n");
     if (rc != H2_PAL_OK) {
         return rc;
     }
     rc = ble_read_until(
         connection,
-        "H2_LOADER_UPGRADE result=",
+        accepted,
         NULL,
         response,
         sizeof(response),
@@ -564,11 +564,9 @@ h2_pal_result_t h2_h2loader_host_ble_activate(
         connection->command_timeout_ms + 30000u,
         NULL,
         NULL);
-    if (rc != H2_PAL_OK) {
-        return rc;
+    if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
+        response_has_complete_marker(response, response_len, accepted)) {
+        return H2_PAL_OK;
     }
-    return marker_result_is_ok(
-        response, response_len, "H2_LOADER_UPGRADE result=")
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
+    return rc;
 }

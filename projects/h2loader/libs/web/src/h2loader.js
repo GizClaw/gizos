@@ -8,6 +8,7 @@ export {
 } from "./h2loader_protocol.js";
 
 const WOULD_BLOCK = -9;
+export const H2LOADER_SDK_VERSION = "0.2.0";
 const ERROR_NAMES = new Map([
   [-1, "invalid-argument"],
   [-2, "unavailable"],
@@ -171,6 +172,8 @@ export async function createH2Loader(options = {}) {
   const normalizeStatus = (status = {}) => ({...status});
 
   const api = {
+    version: H2LOADER_SDK_VERSION,
+
     supported() {
       return Boolean(globalThis.isSecureContext && globalThis.navigator?.serial);
     },
@@ -279,26 +282,6 @@ export async function createH2Loader(options = {}) {
       ).then((result) => immutable(normalizeStatus(result.status)));
     },
 
-    async install(port, blob, jobOptions = {}) {
-      const id = unwrapPort(port, "install");
-      const blobHandle = retainBlob(blob);
-      try {
-        const result = await runJob(
-          "install",
-          () =>
-            call(
-              "h2_h2loader_web_install",
-              "number",
-              ["number", "string", "number", "number"],
-              [client, id, blobHandle, blob.size],
-            ),
-          jobOptions,
-        );
-        return immutable({...normalizeStatus(result.status), detail: result.detail});
-      } finally {
-        module.h2LoaderWebBlobs.delete(blobHandle);
-      }
-    },
     async stage(port, blob, jobOptions = {}) {
       const id = unwrapPort(port, "stage");
       const blobHandle = retainBlob(blob);
@@ -320,28 +303,35 @@ export async function createH2Loader(options = {}) {
       }
     },
 
-    rollback(port, jobOptions = {}) {
-      const id = unwrapPort(port, "rollback");
+    stageUrl(port, url, expectedBytes, expectedSha256, jobOptions = {}) {
+      const id = unwrapPort(port, "stage-url");
+      if (typeof url !== "string" || url.length === 0 ||
+          !Number.isInteger(expectedBytes) || expectedBytes < 1 ||
+          expectedBytes > 0xffffffff ||
+          typeof expectedSha256 !== "string" ||
+          !/^[0-9a-fA-F]{64}$/.test(expectedSha256)) {
+        throw new H2LoaderError(-1, "stage-url", "invalid URL, size, or SHA-256");
+      }
       return runJob(
-        "rollback",
+        "stage-url",
         () =>
           call(
-            "h2_h2loader_web_rollback",
+            "h2_h2loader_web_stage_url",
             "number",
-            ["number", "string"],
-            [client, id],
+            ["number", "string", "string", "number", "string"],
+            [client, id, url, expectedBytes, expectedSha256.toLowerCase()],
           ),
         jobOptions,
       ).then(immutable);
     },
 
-    restart(port, jobOptions = {}) {
-      const id = unwrapPort(port, "restart");
+    abortStage(port, jobOptions = {}) {
+      const id = unwrapPort(port, "abort-stage");
       return runJob(
-        "restart",
+        "abort-stage",
         () =>
           call(
-            "h2_h2loader_web_restart",
+            "h2_h2loader_web_abort_stage",
             "number",
             ["number", "string"],
             [client, id],
@@ -371,6 +361,20 @@ export async function createH2Loader(options = {}) {
         () =>
           call(
             "h2_h2loader_web_reboot_app",
+            "number",
+            ["number", "string"],
+            [client, id],
+          ),
+        jobOptions,
+      ).then(immutable);
+    },
+    rebootUpgrade(port, jobOptions = {}) {
+      const id = unwrapPort(port, "reboot-upgrade");
+      return runJob(
+        "reboot-upgrade",
+        () =>
+          call(
+            "h2_h2loader_web_reboot_upgrade",
             "number",
             ["number", "string"],
             [client, id],

@@ -40,7 +40,7 @@ static void test_full_sequence_for_both_transports(void) {
       .include_wifi = 1u,
       .include_send = 1u,
       .include_send_url = 1u,
-      .include_rollback = 1u,
+      .include_reboot_loader = 1u,
       .execute_case = execute_case,
       .execute_user = &fake,
   };
