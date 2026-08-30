@@ -200,5 +200,54 @@ int main(void) {
            (int)sizeof(remote_packet));
     assert(receive.audio_count == 24u && receive.audio_loss_count == 1u);
     assert(audio_decoder.last_event == RTP_DECODE_EVENT_RESET);
+
+    RtpDecoder pcma_decoder;
+    rtp_decoder_init(&pcma_decoder, CODEC_PCMA, test_receive_audio, &receive,
+                     NULL);
+    uint8_t pcma_packet[] = {
+        0x80u, 0x08u, 0x00u, 0x01u, 0u, 0u, 0u, 0u,
+        0x01u, 0x02u, 0x03u, 0x04u, 0x7fu,
+    };
+    const size_t audio_before_pcma = receive.audio_count;
+    const size_t loss_before_pcma = receive.audio_loss_count;
+    assert(rtp_decoder_decode(&pcma_decoder, pcma_packet,
+                              sizeof(pcma_packet)) ==
+           (int)sizeof(pcma_packet));
+    pcma_packet[3] = 0x03u;
+    assert(rtp_decoder_decode(&pcma_decoder, pcma_packet,
+                              sizeof(pcma_packet)) ==
+           (int)sizeof(pcma_packet));
+    assert(receive.audio_count == audio_before_pcma + 2u);
+    assert(receive.audio_loss_count == loss_before_pcma);
+
+    RtpDecoder timeout_decoder;
+    RtpReorderBuffer timeout_reorder;
+    rtp_decoder_init(&timeout_decoder, CODEC_OPUS, test_receive_audio, &receive,
+                     &timeout_reorder);
+    uint8_t timeout_packet[] = {
+        0x80u, 0x6fu, 0x00u, 0x10u, 0u, 0u, 0u, 1u,
+        0x05u, 0x06u, 0x07u, 0x08u, 0xf8u, 0x55u,
+    };
+    const size_t audio_before_timeout = receive.audio_count;
+    const size_t loss_before_timeout = receive.audio_loss_count;
+    assert(rtp_decoder_decode_at(&timeout_decoder, timeout_packet,
+                                 sizeof(timeout_packet), 1000u) ==
+           (int)sizeof(timeout_packet));
+    timeout_packet[3] = 0x12u;
+    assert(rtp_decoder_decode_at(&timeout_decoder, timeout_packet,
+                                 sizeof(timeout_packet), 1001u) ==
+           (int)sizeof(timeout_packet));
+    assert(timeout_reorder.count == 1u &&
+           timeout_decoder.last_event == RTP_DECODE_EVENT_REORDER_WAIT);
+    assert(rtp_decoder_service(&timeout_decoder, 1060u) == 0);
+    assert(timeout_reorder.count == 1u);
+    assert(receive.audio_count == audio_before_timeout + 1u);
+    assert(receive.audio_loss_count == loss_before_timeout);
+    assert(rtp_decoder_service(&timeout_decoder, 1061u) == 1);
+    assert(timeout_reorder.count == 0u &&
+           timeout_decoder.last_event == RTP_DECODE_EVENT_LOSS &&
+           timeout_decoder.last_loss_count == 1u);
+    assert(receive.audio_count == audio_before_timeout + 2u);
+    assert(receive.audio_loss_count == loss_before_timeout + 1u);
     return 0;
 }

@@ -1,5 +1,6 @@
 #include "rtp.h"
 
+#include <limits.h>
 #include <string.h>
 
 #define H2_PEER_PORTABLE_RTP_MAX_CONCEALED_PACKETS 50u
@@ -132,6 +133,8 @@ static void h2_peer_rtp_reorder_clear(RtpDecoder *decoder) {
   if (decoder->reorder != NULL) {
     memset(decoder->reorder, 0, sizeof(*decoder->reorder));
   }
+  decoder->reorder_deadline_active = 0u;
+  decoder->reorder_deadline_ms = 0u;
 }
 
 static RtpReorderPacket *h2_peer_rtp_reorder_find(RtpDecoder *decoder,
@@ -152,7 +155,8 @@ static int h2_peer_rtp_reorder_store(RtpDecoder *decoder,
                                      uint16_t sequence,
                                      uint32_t timestamp,
                                      const uint8_t *payload,
-                                     size_t payload_size) {
+                                     size_t payload_size,
+                                     uint64_t now_ms) {
   if (decoder->reorder == NULL || payload_size > CONFIG_MTU ||
       h2_peer_rtp_reorder_find(decoder, sequence) != NULL) {
     return 0;
@@ -166,6 +170,13 @@ static int h2_peer_rtp_reorder_store(RtpDecoder *decoder,
       packet->timestamp = timestamp;
       packet->valid = 1u;
       decoder->reorder->count++;
+      if (!decoder->reorder_deadline_active) {
+        decoder->reorder_deadline_ms =
+            now_ms > UINT64_MAX - H2_PEER_PORTABLE_RTP_REORDER_TIMEOUT_MS
+                ? UINT64_MAX
+                : now_ms + H2_PEER_PORTABLE_RTP_REORDER_TIMEOUT_MS;
+        decoder->reorder_deadline_active = 1u;
+      }
       return 1;
     }
   }
@@ -185,7 +196,51 @@ static uint16_t h2_peer_rtp_reorder_drain(RtpDecoder *decoder) {
     delivered++;
     packet = h2_peer_rtp_reorder_find(decoder, decoder->next_sequence);
   }
+  if (decoder->reorder != NULL && decoder->reorder->count == 0u) {
+    decoder->reorder_deadline_active = 0u;
+    decoder->reorder_deadline_ms = 0u;
+  }
   return delivered;
+}
+
+static uint16_t h2_peer_rtp_reorder_nearest_ahead(RtpDecoder *decoder) {
+  uint16_t nearest = UINT16_MAX;
+  if (decoder->reorder == NULL) {
+    return nearest;
+  }
+  for (size_t i = 0u; i < H2_PEER_PORTABLE_RTP_REORDER_CAPACITY; ++i) {
+    const RtpReorderPacket *packet = &decoder->reorder->packets[i];
+    if (!packet->valid) {
+      continue;
+    }
+    const uint16_t ahead = (uint16_t)(packet->sequence - decoder->next_sequence);
+    if (ahead < UINT16_C(0x8000) && ahead < nearest) {
+      nearest = ahead;
+    }
+  }
+  return nearest;
+}
+
+static void h2_peer_rtp_reorder_flush(RtpDecoder *decoder) {
+  while (decoder->reorder != NULL && decoder->reorder->count != 0u) {
+    const uint16_t ahead = h2_peer_rtp_reorder_nearest_ahead(decoder);
+    if (ahead == UINT16_MAX) {
+      h2_peer_rtp_reorder_clear(decoder);
+      break;
+    }
+    if (ahead != 0u) {
+      h2_peer_rtp_deliver_loss(decoder, ahead);
+      decoder->next_sequence = (uint16_t)(decoder->next_sequence + ahead);
+      decoder->last_loss_count =
+          decoder->last_loss_count > UINT16_MAX - ahead
+              ? UINT16_MAX
+              : (uint16_t)(decoder->last_loss_count + ahead);
+    }
+    if (h2_peer_rtp_reorder_drain(decoder) == 0u) {
+      h2_peer_rtp_reorder_clear(decoder);
+      break;
+    }
+  }
 }
 
 void rtp_decoder_init(RtpDecoder *decoder, MediaCodec codec,
@@ -201,7 +256,8 @@ void rtp_decoder_init(RtpDecoder *decoder, MediaCodec codec,
   h2_peer_rtp_reorder_clear(decoder);
 }
 
-int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
+int rtp_decoder_decode_at(RtpDecoder *decoder, const uint8_t *data, size_t size,
+                          uint64_t now_ms) {
   if (decoder == NULL || data == NULL) {
     return -1;
   }
@@ -215,6 +271,11 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
   const uint32_t timestamp = h2_peer_read_be32(&data[4]);
   const uint32_t ssrc = h2_peer_read_be32(&data[8]);
   const size_t payload_size = size - offset;
+  if (decoder->type != PT_OPUS) {
+    h2_peer_rtp_deliver(decoder, &data[offset], payload_size);
+    decoder->last_event = RTP_DECODE_EVENT_PACKET;
+    return (int)size;
+  }
   if (!decoder->sequence_initialized || decoder->ssrc != ssrc) {
     decoder->sequence_initialized = 1u;
     decoder->ssrc = ssrc;
@@ -262,7 +323,7 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
     }
     if (ahead != 0u) {
       if (!h2_peer_rtp_reorder_store(decoder, sequence, timestamp,
-                                     &data[offset], payload_size)) {
+                                     &data[offset], payload_size, now_ms)) {
         return -1;
       }
       decoder->last_event = decoder->last_loss_count == 0u
@@ -291,20 +352,47 @@ int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
   return (int)size;
 }
 
-int rtp_decoders_decode(RtpDecoder *audio_decoder,
-                        RtpDecoder *video_decoder,
-                        const uint8_t *data,
-                        size_t size) {
+int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size) {
+  return rtp_decoder_decode_at(decoder, data, size, 0u);
+}
+
+int rtp_decoder_service(RtpDecoder *decoder, uint64_t now_ms) {
+  if (decoder == NULL || decoder->type != PT_OPUS ||
+      !decoder->reorder_deadline_active ||
+      now_ms < decoder->reorder_deadline_ms) {
+    return 0;
+  }
+  decoder->last_event = RTP_DECODE_EVENT_NONE;
+  decoder->last_loss_count = 0u;
+  h2_peer_rtp_reorder_flush(decoder);
+  decoder->last_event = decoder->last_loss_count == 0u
+                            ? RTP_DECODE_EVENT_REORDER_RECOVERED
+                            : RTP_DECODE_EVENT_LOSS;
+  return 1;
+}
+
+int rtp_decoders_decode_at(RtpDecoder *audio_decoder,
+                           RtpDecoder *video_decoder,
+                           const uint8_t *data,
+                           size_t size,
+                           uint64_t now_ms) {
   if (data == NULL) {
     return -1;
   }
   if (audio_decoder != NULL &&
-      rtp_decoder_decode(audio_decoder, data, size) >= 0) {
+      rtp_decoder_decode_at(audio_decoder, data, size, now_ms) >= 0) {
     return (int)size;
   }
   if (video_decoder != NULL &&
-      rtp_decoder_decode(video_decoder, data, size) >= 0) {
+      rtp_decoder_decode_at(video_decoder, data, size, now_ms) >= 0) {
     return (int)size;
   }
   return -1;
+}
+
+int rtp_decoders_decode(RtpDecoder *audio_decoder,
+                        RtpDecoder *video_decoder,
+                        const uint8_t *data,
+                        size_t size) {
+  return rtp_decoders_decode_at(audio_decoder, video_decoder, data, size, 0u);
 }

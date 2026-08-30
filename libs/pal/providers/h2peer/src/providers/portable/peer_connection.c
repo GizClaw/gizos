@@ -168,6 +168,53 @@ static void peer_connection_incoming_rtcp(
   }
 }
 
+static void peer_connection_log_audio_rtp_event(PeerConnection* pc) {
+  if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LOSS) {
+    H2_PEER_LOGW(pc->config.log,
+                 "Opus RTP loss missing=%u next_sequence=%u ssrc=%u",
+                 (unsigned int)pc->artp_decoder.last_loss_count,
+                 (unsigned int)pc->artp_decoder.next_sequence,
+                 (unsigned int)pc->artp_decoder.ssrc);
+  } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_REORDER_WAIT) {
+    H2_PEER_LOGD(pc->config.log,
+                 "Opus RTP reorder wait buffered=%u next_sequence=%u ssrc=%u",
+                 (unsigned int)pc->artp_reorder.count,
+                 (unsigned int)pc->artp_decoder.next_sequence,
+                 (unsigned int)pc->artp_decoder.ssrc);
+  } else if (pc->artp_decoder.last_event ==
+             RTP_DECODE_EVENT_REORDER_RECOVERED) {
+    H2_PEER_LOGI(pc->config.log,
+                 "Opus RTP reorder recovered next_sequence=%u ssrc=%u",
+                 (unsigned int)pc->artp_decoder.next_sequence,
+                 (unsigned int)pc->artp_decoder.ssrc);
+  } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LATE) {
+    H2_PEER_LOGW(pc->config.log,
+                 "Opus RTP late-or-duplicate next_sequence=%u ssrc=%u",
+                 (unsigned int)pc->artp_decoder.next_sequence,
+                 (unsigned int)pc->artp_decoder.ssrc);
+  } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_RESET) {
+    H2_PEER_LOGI(pc->config.log,
+                 "Opus RTP sequence reset next_sequence=%u ssrc=%u",
+                 (unsigned int)pc->artp_decoder.next_sequence,
+                 (unsigned int)pc->artp_decoder.ssrc);
+  }
+}
+
+static h2_pal_result_t peer_connection_service_audio_reorder(
+    PeerConnection* pc) {
+  if (pc->config.audio_codec != CODEC_OPUS) {
+    return H2_PAL_OK;
+  }
+  uint64_t now_ms = 0u;
+  if (h2_pal_time_get_monotonic_ms(pc->config.time, &now_ms) != H2_PAL_OK) {
+    return H2_PAL_ERR_IO;
+  }
+  if (rtp_decoder_service(&pc->artp_decoder, now_ms)) {
+    peer_connection_log_audio_rtp_event(pc);
+  }
+  return H2_PAL_OK;
+}
+
 static int peer_connection_process_completed_packet(
     PeerConnection* pc, uint8_t* packet, int packet_len) {
   if (rtcp_probe(packet, packet_len)) {
@@ -190,38 +237,14 @@ static int peer_connection_process_completed_packet(
   if (rtp_packet_validate(packet, packet_len)) {
     H2_PEER_LOGD(pc->config.log, "Got RTP packet");
     dtls_srtp_decrypt_rtp_packet(&pc->dtls_srtp, packet, &packet_len);
-    (void)rtp_decoders_decode(
-        &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len);
-    if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LOSS) {
-      H2_PEER_LOGW(pc->config.log,
-                   "Opus RTP loss missing=%u next_sequence=%u ssrc=%u",
-                   (unsigned int)pc->artp_decoder.last_loss_count,
-                   (unsigned int)pc->artp_decoder.next_sequence,
-                   (unsigned int)pc->artp_decoder.ssrc);
-    } else if (pc->artp_decoder.last_event ==
-               RTP_DECODE_EVENT_REORDER_WAIT) {
-      H2_PEER_LOGD(pc->config.log,
-                   "Opus RTP reorder wait buffered=%u next_sequence=%u ssrc=%u",
-                   (unsigned int)pc->artp_reorder.count,
-                   (unsigned int)pc->artp_decoder.next_sequence,
-                   (unsigned int)pc->artp_decoder.ssrc);
-    } else if (pc->artp_decoder.last_event ==
-               RTP_DECODE_EVENT_REORDER_RECOVERED) {
-      H2_PEER_LOGI(pc->config.log,
-                   "Opus RTP reorder recovered next_sequence=%u ssrc=%u",
-                   (unsigned int)pc->artp_decoder.next_sequence,
-                   (unsigned int)pc->artp_decoder.ssrc);
-    } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_LATE) {
-      H2_PEER_LOGW(pc->config.log,
-                   "Opus RTP late-or-duplicate next_sequence=%u ssrc=%u",
-                   (unsigned int)pc->artp_decoder.next_sequence,
-                   (unsigned int)pc->artp_decoder.ssrc);
-    } else if (pc->artp_decoder.last_event == RTP_DECODE_EVENT_RESET) {
-      H2_PEER_LOGI(pc->config.log,
-                   "Opus RTP sequence reset next_sequence=%u ssrc=%u",
-                   (unsigned int)pc->artp_decoder.next_sequence,
-                   (unsigned int)pc->artp_decoder.ssrc);
+    uint64_t now_ms = 0u;
+    if (h2_pal_time_get_monotonic_ms(pc->config.time, &now_ms) != H2_PAL_OK) {
+      return H2_PAL_ERR_IO;
     }
+    (void)rtp_decoders_decode_at(
+        &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len,
+        now_ms);
+    peer_connection_log_audio_rtp_event(pc);
     return packet_len;
   }
   H2_PEER_LOGW(pc->config.log, "Unknown data");
@@ -599,6 +622,10 @@ static h2_pal_result_t peer_connection_loop_internal(
       break;
     case PEER_CONNECTION_COMPLETED:
       if (agent_keepalive(&pc->agent) != 0) {
+        STATE_CHANGED(pc, PEER_CONNECTION_FAILED);
+        return H2_PAL_ERR_IO;
+      }
+      if (peer_connection_service_audio_reorder(pc) != H2_PAL_OK) {
         STATE_CHANGED(pc, PEER_CONNECTION_FAILED);
         return H2_PAL_ERR_IO;
       }

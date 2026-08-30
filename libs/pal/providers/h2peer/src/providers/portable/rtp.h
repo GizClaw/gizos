@@ -9,6 +9,7 @@
 
 #define H2_PEER_PORTABLE_RTP_HEADER_SIZE 12u
 #define H2_PEER_PORTABLE_RTP_REORDER_CAPACITY 8u
+#define H2_PEER_PORTABLE_RTP_REORDER_TIMEOUT_MS 60u
 
 typedef enum RtpPayloadType {
   PT_PCMU = 0,
@@ -70,7 +71,9 @@ struct RtpDecoder {
   uint16_t next_sequence;
   uint16_t last_loss_count;
   RtpReorderBuffer *reorder;
+  uint64_t reorder_deadline_ms;
   RtpDecodeEvent last_event;
+  uint8_t reorder_deadline_active;
   uint8_t sequence_initialized;
 };
 
@@ -92,10 +95,18 @@ void rtp_decoder_init(RtpDecoder *decoder, MediaCodec codec,
                       RtpOnDecodedPacket on_packet, void *user_data,
                       RtpReorderBuffer *reorder);
 int rtp_decoder_decode(RtpDecoder *decoder, const uint8_t *data, size_t size);
+int rtp_decoder_decode_at(RtpDecoder *decoder, const uint8_t *data, size_t size,
+                          uint64_t now_ms);
+int rtp_decoder_service(RtpDecoder *decoder, uint64_t now_ms);
 int rtp_decoders_decode(RtpDecoder *audio_decoder,
                         RtpDecoder *video_decoder,
                         const uint8_t *data,
                         size_t size);
+int rtp_decoders_decode_at(RtpDecoder *audio_decoder,
+                           RtpDecoder *video_decoder,
+                           const uint8_t *data,
+                           size_t size,
+                           uint64_t now_ms);
 uint32_t rtp_get_ssrc(uint8_t *packet);
 
 #endif
