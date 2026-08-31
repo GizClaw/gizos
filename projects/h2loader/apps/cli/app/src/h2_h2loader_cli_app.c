@@ -683,8 +683,8 @@ static h2_pal_result_t verify_upgrade_without_stage(
         return after->running_partition == 1u &&
                 after->next_partition == 1u &&
                 after->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
-                metadata_image_equal(&after->partition_1, candidate) &&
-                metadata_image_equal(&after->partition_2, candidate)
+                metadata_equal(&after->partition_1, candidate) &&
+                metadata_equal(&after->partition_2, candidate)
             ? H2_PAL_OK
             : H2_PAL_ERR_INVALID_STATE;
     }

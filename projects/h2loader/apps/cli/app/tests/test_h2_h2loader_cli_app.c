@@ -628,6 +628,10 @@ static void test_reboot_final_status_is_authoritative(void) {
     after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
     assert(h2_h2loader_cli_verify_reboot_status(
                H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_ERR_INVALID_STATE);
+    after.partition_1 = before.partition_2;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
            H2_PAL_OK);
     after.partition_1.image_size++;
     assert(h2_h2loader_cli_verify_reboot_status(
