@@ -18,6 +18,7 @@
 enum fake_output_mode {
   FAKE_OUTPUT_ZERO_CAPACITY = 0,
   FAKE_OUTPUT_PARTIAL_CAPACITY,
+  FAKE_OUTPUT_UNDERFLOW,
   FAKE_OUTPUT_SLOW_WRITE,
   FAKE_OUTPUT_AVAILABILITY_ERROR,
   FAKE_OUTPUT_WRITE_ERROR,
@@ -144,6 +145,11 @@ static long fake_output_write_available(void *user, void *stream) {
                    FAKE_OUTPUT_FRAME_SAMPLES
                ? FAKE_OUTPUT_PARTIAL_SAMPLES
                : 0;
+  case FAKE_OUTPUT_UNDERFLOW:
+    return atomic_load_explicit(&output->sample_count, memory_order_acquire) <
+                   FAKE_OUTPUT_FRAME_SAMPLES
+               ? FAKE_OUTPUT_FRAME_SAMPLES
+               : 0;
   case FAKE_OUTPUT_SLOW_WRITE:
   case FAKE_OUTPUT_WRITE_ERROR:
     return FAKE_OUTPUT_FRAME_SAMPLES;
@@ -176,6 +182,8 @@ static int fake_output_write(void *user, void *stream, const void *samples,
   atomic_store_explicit(&output->sample_count, offset + frames,
                         memory_order_release);
   atomic_store_explicit(&output->write_active, false, memory_order_release);
+  if (mode == FAKE_OUTPUT_UNDERFLOW)
+    return h2_portaudio_output_underflow_error_for_test();
   return 0;
 }
 
@@ -226,6 +234,16 @@ static void wait_for_int_at_least(atomic_int *value, int target) {
 static void wait_for_size_at_least(_Atomic size_t *value, size_t target) {
   for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
     if (atomic_load_explicit(value, memory_order_acquire) >= target)
+      return;
+    sleep_ms(1L);
+  }
+  _Exit(EXIT_FAILURE);
+}
+
+static void wait_for_underflow_count(h2_portaudio_t *provider,
+                                     uint64_t target) {
+  for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
+    if (h2_portaudio_output_underflow_count_for_test(provider) >= target)
       return;
     sleep_ms(1L);
   }
@@ -419,6 +437,31 @@ static void test_stop_waits_for_active_write(h2_pal_audio_t *audio,
   assert(!atomic_load(&output->control_during_write));
 }
 
+static void test_output_underflow_is_recoverable(h2_portaudio_t *provider,
+                                                 h2_pal_audio_t *audio,
+                                                 fake_output_t *output) {
+  fake_output_reset(output, FAKE_OUTPUT_UNDERFLOW);
+  int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
+  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  wait_for_underflow_count(provider, 1u);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(h2_portaudio_output_underflow_count_for_test(provider) == 1u);
+  assert(atomic_load(&output->write_count) == 1);
+  assert(atomic_load(&output->stop_count) == 1);
+  assert(atomic_load(&output->abort_count) == 0);
+  assert(atomic_load(&output->close_count) == 1);
+
+  fake_output_reset(output, FAKE_OUTPUT_ZERO_CAPACITY);
+  track = write_test_frame(audio, samples);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  wait_for_int_at_least(&output->availability_count, 1);
+  assert(h2_portaudio_output_underflow_count_for_test(provider) == 0u);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+}
+
 static void test_worker_failure_restart(h2_pal_audio_t *audio,
                                         fake_output_t *output,
                                         enum fake_output_mode failure_mode) {
@@ -567,6 +610,7 @@ int main(void) {
   test_zero_capacity_stop(audio, &output);
   test_partial_frame(audio, &output);
   test_stop_waits_for_active_write(audio, &output);
+  test_output_underflow_is_recoverable(provider, audio, &output);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_AVAILABILITY_ERROR);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_WRITE_ERROR);
   test_echo_reference_precedes_capture(provider, audio, &output);

@@ -31,6 +31,10 @@ int h2_portaudio_set_output_test_ops(
     h2_portaudio_t *provider,
     const h2_portaudio_output_test_ops_t *ops);
 
+int h2_portaudio_output_underflow_error_for_test(void);
+
+uint64_t h2_portaudio_output_underflow_count_for_test(h2_portaudio_t *provider);
+
 int h2_portaudio_set_echo_test_ops(h2_portaudio_t *provider,
                                    const h2_portaudio_echo_test_ops_t *ops);
 
