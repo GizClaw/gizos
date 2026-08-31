@@ -437,14 +437,15 @@ static h2_loader_metadata_t metadata(h2_loader_image_role_t role,
   return value;
 }
 
-static int power_list(void *user, h2_pal_power_boot_partition_cb_t cb,
-                      void *cb_user) {
+static h2_pal_result_t power_list(void *user,
+                                  h2_pal_power_boot_partition_cb_t cb,
+                                  void *cb_user) {
   test_fixture_t *fixture = user;
   h2_pal_power_boot_partition_t partition = {
       .id = 1u,
       .flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE,
   };
-  int rc = cb(cb_user, &partition);
+  h2_pal_result_t rc = cb(cb_user, &partition);
   if (rc != H2_PAL_OK)
     return rc;
   partition.id = 2u;
