@@ -124,6 +124,17 @@ bool h2_gizclaw_cancel_requested(
   return canceled || (original != NULL && original(original_user));
 }
 
+static bool original_cancel_requested(h2_gizclaw_service_t *service) {
+  h2_gizclaw_cancel_fn original = NULL;
+  void *original_user = NULL;
+  if (service != NULL && lock_service(service) == H2_PAL_OK) {
+    original = service->original_cancel;
+    original_user = service->original_cancel_user;
+    unlock_service(service);
+  }
+  return original != NULL && original(original_user);
+}
+
 static void free_operation_if_unreferenced(h2_gizclaw_operation_t *operation) {
   if (!operation->caller_reference && !operation->internal_reference) {
     h2_pal_mem_free(operation->service->config.client_config->allocator,
@@ -236,7 +247,8 @@ static void mark_terminal(h2_gizclaw_service_t *service,
 
 static bool complete_operation(h2_gizclaw_service_t *service,
                                h2_gizclaw_operation_t *operation,
-                               h2_pal_result_t operation_rc) {
+                               h2_pal_result_t operation_rc,
+                               bool original_canceled) {
   if (lock_service(service) != H2_PAL_OK)
     return true;
   if (service->current == operation)
@@ -244,7 +256,7 @@ static bool complete_operation(h2_gizclaw_service_t *service,
   const bool transport_closed = operation_rc == H2_PAL_ERR_CLOSED;
   const bool terminal_failure = transport_closed &&
                                 !operation->cancel_requested &&
-                                !service->stopping;
+                                (!service->stopping || original_canceled);
   if (terminal_failure) {
     service->stopping = true;
     service->terminal_pending = true;
@@ -279,7 +291,9 @@ static bool poll_pending_operations(h2_gizclaw_service_t *service) {
     }
     *cursor = operation->next_pending;
     operation->next_pending = NULL;
-    if (complete_operation(service, operation, rc))
+    const bool original_canceled =
+        rc == H2_PAL_ERR_CLOSED && original_cancel_requested(service);
+    if (complete_operation(service, operation, rc, original_canceled))
       return false;
   }
   return true;
@@ -297,7 +311,7 @@ static void complete_pending_as_closed(h2_gizclaw_service_t *service) {
     }
     (void)operation->poll(operation->user, service->client,
                           &operation->cancel_token);
-    (void)complete_operation(service, operation, H2_PAL_ERR_CLOSED);
+    (void)complete_operation(service, operation, H2_PAL_ERR_CLOSED, false);
     operation = next;
   }
 }
@@ -439,9 +453,15 @@ static void net_worker(void *ctx) {
         operation->next_pending = service->pending;
         service->pending = operation;
         unlock_service(service);
-      } else if (complete_operation(service, operation, operation_rc)) {
-        complete_queued_as_closed(service);
-        break;
+      } else {
+        const bool original_canceled =
+            operation_rc == H2_PAL_ERR_CLOSED &&
+            original_cancel_requested(service);
+        if (complete_operation(service, operation, operation_rc,
+                               original_canceled)) {
+          complete_queued_as_closed(service);
+          break;
+        }
       }
     } else if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_WOULD_BLOCK) {
       mark_terminal(service, rc);
