@@ -34,6 +34,7 @@ int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t *client,
 
 static int test_send_calls;
 static int test_poll_calls;
+static int test_last_poll_timeout_ms;
 static int test_send_would_block_count = 1;
 static h2_pal_result_t test_send_result = H2_PAL_OK;
 static h2_pal_result_t test_poll_result = H2_PAL_OK;
@@ -1780,6 +1781,7 @@ static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
                                       int timeout_ms) {
   (void)peer;
   test_poll_calls++;
+  test_last_poll_timeout_ms = timeout_ms;
   test_monotonic_ms += timeout_ms > 0 ? (uint64_t)timeout_ms : 1u;
   return test_poll_result;
 }
@@ -2062,8 +2064,8 @@ int main(void) {
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_OK &&
           offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
-          test_poll_calls == 1,
-      "adapter polls and retries when the bounded PAL queue is full");
+          test_poll_calls == 1 && test_last_poll_timeout_ms > 0,
+      "adapter waits for peer progress before retrying a full PAL queue");
   test_send_calls = 0;
   test_poll_calls = 0;
   test_send_would_block_count = 3000;
@@ -2072,7 +2074,8 @@ int main(void) {
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_ERR_TIMEOUT &&
-          offset == 0u && test_poll_calls == 2000,
+          offset == 0u && test_poll_calls == 40 &&
+          test_last_poll_timeout_ms == 50,
       "adapter bounds persistent PAL backpressure by the independent write "
       "timeout");
   test_send_calls = 0;

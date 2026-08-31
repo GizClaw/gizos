@@ -40,8 +40,9 @@ typedef struct h2_gizclaw_config {
      * @brief Maximum blocking time, in milliseconds, for a WebRTC channel
      * write.
      *
-     * Transient PAL backpressure is drained synchronously by polling the peer
-     * and retrying the same payload. The write stops on success, timeout,
+     * Transient PAL backpressure is drained synchronously by waiting for peer
+     * progress and retrying the same payload. Providers may wake the wait when
+     * their send queue becomes writable. The write stops on success, timeout,
      * cancellation, or a terminal transport error. Cancellation returns
      * `H2_PAL_ERR_CLOSED`. Zero reuses `connect_timeout_ms`; negative values
      * are invalid.

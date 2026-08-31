@@ -87,6 +87,7 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET);
 #undef H2_GIZCLAW_ASSERT_RPC_METHOD
 
 #define H2_GIZCLAW_LOCAL_CHANNEL_LABEL_CAPACITY 64u
+#define H2_GIZCLAW_WRITE_POLL_SLICE_MS 50u
 
 typedef struct h2_gizclaw_local_channel_state {
   bool create_in_progress;
@@ -1481,8 +1482,15 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
     if (client->webrtc_peer == NULL) {
       return GZC_ERR_WEBRTC;
     }
-    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer, 0);
-    if (rc != H2_PAL_OK) {
+    const uint64_t remaining_ms = (uint64_t)write_timeout_ms - elapsed_ms;
+    const int poll_timeout_ms =
+        (int)(remaining_ms < H2_GIZCLAW_WRITE_POLL_SLICE_MS
+                  ? remaining_ms
+                  : H2_GIZCLAW_WRITE_POLL_SLICE_MS);
+    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer,
+                                 poll_timeout_ms);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
+        rc != H2_PAL_ERR_WOULD_BLOCK) {
       return h2_gzc_media_result(rc);
     }
     if (!h2_gizclaw_channel_is_live(client, channel)) {
@@ -1500,8 +1508,9 @@ static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
   }
   /*
    * PAL backends expose backpressure through channel_send(WOULD_BLOCK).
-   * h2_gzc_channel_send synchronously polls until the bounded backend queue
-   * accepts the chunk, so the adapter itself never owns queued bytes.
+   * h2_gzc_channel_send synchronously waits for peer progress until the
+   * bounded backend queue accepts the chunk, so the adapter itself never owns
+   * queued bytes.
    */
   *out_bytes = 0u;
   return GZC_OK;
