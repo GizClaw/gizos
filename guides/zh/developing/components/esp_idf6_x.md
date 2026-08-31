@@ -45,11 +45,15 @@ Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board lay
 
 Netif provider 枚举现有 `esp_netif`，以 implementation index 优先、if-key 兜底
 建立稳定 identity，并映射 IPv4、MAC、DNS 与当前 default。没有 active netif
-时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。
+时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。Portable `set_default` 只接受
+inventory 返回的具体 identity，在 TCPIP context 中解析对应 `esp_netif` 后调用
+`esp_netif_set_default_netif()`；接口不存在或 IDF 提交失败时分别返回
+`NOT_FOUND` 或 `IO`。
 
 System Event init 建立默认 IPv4 接口 baseline。`esp_netif` inventory 和 default
-read 统一转交 TCPIP context；STA 获取/失去 IPv4、接口销毁，以及仓库内所有 PPP
-`esp_netif_set_default_netif()` promotion/restore 路径，都在变更提交后调用
+read 统一转交 TCPIP context；STA 获取/失去 IPv4、接口销毁、portable
+`set_default`，以及仓库内所有 PPP `esp_netif_set_default_netif()`
+promotion/restore 路径，都在变更提交后调用
 reconcile。一个 provider-owned mutex 把 default read、baseline compare/update 和
 event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向覆盖；Netif
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook

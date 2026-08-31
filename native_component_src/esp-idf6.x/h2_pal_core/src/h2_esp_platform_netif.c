@@ -274,6 +274,41 @@ static h2_pal_result_t esp_netif_get_dns_servers(
     return H2_PAL_ERR_NOT_FOUND;
 }
 
+typedef struct h2_esp_default_select {
+    const h2_pal_netif_ref_t *ref;
+    esp_netif_t *netif;
+} h2_esp_default_select_t;
+
+static esp_err_t resolve_default_in_tcpip(void *ctx) {
+    h2_esp_default_select_t *select = ctx;
+    esp_netif_t *netif = NULL;
+    while ((netif = esp_netif_next_unsafe(netif)) != NULL) {
+        h2_pal_netif_ref_t candidate;
+        if (netif_ref(netif, &candidate) == H2_PAL_OK &&
+            h2_pal_netif_ref_equal(&candidate, select->ref)) {
+            select->netif = netif;
+            break;
+        }
+    }
+    return ESP_OK;
+}
+
+static h2_pal_result_t esp_netif_set_default(void *user,
+                                             const h2_pal_netif_ref_t *ref) {
+    (void)user;
+    h2_esp_default_select_t select = {.ref = ref, .netif = NULL};
+    if (esp_netif_tcpip_exec(resolve_default_in_tcpip, &select) != ESP_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    if (select.netif == NULL) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+    if (esp_netif_set_default_netif(select.netif) != ESP_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    return h2_esp_platform_netif_reconcile_default();
+}
+
 typedef struct h2_esp_default_read {
     h2_pal_netif_ref_t ref;
     h2_pal_result_t result;
@@ -421,6 +456,7 @@ const h2_pal_netif_api_t *h2_esp_platform_netif_api(void) {
         .find = esp_netif_find,
         .get_status = esp_netif_get_status,
         .get_dns_servers = esp_netif_get_dns_servers,
+        .set_default = esp_netif_set_default,
     };
     static const h2_pal_netif_api_t api = {.user = NULL, .vtable = &vtable};
     return &api;
