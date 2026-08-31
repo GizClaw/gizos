@@ -1132,6 +1132,7 @@ static void test_reboot_commands_only_set_intent_and_partition(void) {
   fixture_init(&fixture, 1u);
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
   fixture.loader.status.partition_2.valid = 1;
+  fixture.loader.status.partition_2.role = H2_LOADER_IMAGE_ROLE_APP;
   assert(h2_loader_reboot_app_with_transition(&fixture.loader, NULL, NULL) ==
          H2_PAL_OK);
   assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
@@ -1161,6 +1162,7 @@ static void test_reboot_preparation_and_failures_do_not_arm_boot(void) {
   fixture.prepare_result = H2_PAL_ERR_IO;
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
   fixture.loader.status.partition_2.valid = 1;
+  fixture.loader.status.partition_2.role = H2_LOADER_IMAGE_ROLE_APP;
   assert(h2_loader_reboot_app_with_transition(
              &fixture.loader, reboot_transition, &fixture) == H2_PAL_ERR_IO);
   assert(fixture.prepare_calls == 1u);
@@ -1173,6 +1175,7 @@ static void test_reboot_preparation_and_failures_do_not_arm_boot(void) {
   fixture.transition_result = H2_PAL_ERR_IO;
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
   fixture.loader.status.partition_2.valid = 1;
+  fixture.loader.status.partition_2.role = H2_LOADER_IMAGE_ROLE_APP;
   assert(h2_loader_reboot_app_with_transition(
              &fixture.loader, reboot_transition, &fixture) == H2_PAL_ERR_IO);
   assert(fixture.prepare_calls == 1u);
@@ -1186,6 +1189,7 @@ static void test_reboot_preparation_and_failures_do_not_arm_boot(void) {
   fixture.reboot_result = H2_PAL_ERR_IO;
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
   fixture.loader.status.partition_2.valid = 1;
+  fixture.loader.status.partition_2.role = H2_LOADER_IMAGE_ROLE_APP;
   assert(h2_loader_reboot_app_with_transition(
              &fixture.loader, reboot_transition, &fixture) == H2_PAL_ERR_IO);
   assert(fixture.prepare_calls == 1u);
@@ -1212,6 +1216,13 @@ static void test_reboot_app_requires_bootable_partition_and_mfg_gate(void) {
   assert(fixture.reboot_calls == 0u);
 
   fixture.loader.status.partition_2.valid = 1;
+  assert((h2_loader_get_command_availability(
+              &fixture.loader, &fixture.loader.status) &
+          H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
+  assert(h2_loader_reboot_app_with_transition(&fixture.loader, NULL, NULL) ==
+         H2_PAL_ERR_INVALID_STATE);
+
+  fixture.loader.status.partition_2.role = H2_LOADER_IMAGE_ROLE_APP;
   assert((h2_loader_get_command_availability(
               &fixture.loader, &fixture.loader.status) &
           H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u);
