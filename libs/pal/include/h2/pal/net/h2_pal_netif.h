@@ -112,6 +112,9 @@ typedef struct h2_pal_netif_vtable {
         h2_pal_netif_dns_server_t *out_servers,
         size_t max_servers,
         size_t *out_count);
+    h2_pal_result_t (*set_default)(
+        void *user,
+        const h2_pal_netif_ref_t *ref);
 } h2_pal_netif_vtable_t;
 
 typedef struct h2_pal_netif_api {
@@ -269,6 +272,24 @@ static inline h2_pal_result_t h2_pal_netif_get_dns_servers(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return api->vtable->get_dns_servers(api->user, ref, out_servers, max_servers, out_count);
+}
+
+/**
+ * @brief Select an existing concrete interface as the IPv4 default route.
+ *
+ * Route policy belongs to the caller. PAL only commits the requested
+ * platform route and reports the resulting default-route change event.
+ */
+static inline h2_pal_result_t h2_pal_netif_set_default(
+    const h2_pal_netif_api_t *api,
+    const h2_pal_netif_ref_t *ref) {
+    if (!h2_pal_netif_ref_is_concrete(ref)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (api == NULL || api->vtable == NULL || api->vtable->set_default == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return api->vtable->set_default(api->user, ref);
 }
 
 #ifdef __cplusplus

@@ -33,11 +33,18 @@ static h2_pal_result_t unsupported_netif_get_dns_servers(void *p0, const h2_pal_
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_netif_set_default(void *p0, const h2_pal_netif_ref_t *p1) {
+    (void)p0;
+    (void)p1;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_netif_vtable_t unsupported_netif_vtable = {
     .list = unsupported_netif_list,
     .find = unsupported_netif_find,
     .get_status = unsupported_netif_get_status,
     .get_dns_servers = unsupported_netif_get_dns_servers,
+    .set_default = unsupported_netif_set_default,
 };
 static const h2_pal_netif_api_t unsupported_netif_api = { .user = NULL, .vtable = &unsupported_netif_vtable };
 const h2_pal_netif_api_t *h2_pal_unsupported_netif_api(void) { return &unsupported_netif_api; }
