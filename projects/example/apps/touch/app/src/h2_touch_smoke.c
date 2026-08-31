@@ -119,9 +119,12 @@ static void touch_smoke_process_events(h2_touch_smoke_state_t *state) {
       touch_smoke_log_event(state, "up");
       changed = 1;
     } else if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) {
-      ++state->action_count;
-      touch_smoke_log_event(state, "action");
-      changed = 1;
+      if (event.payload_size >= sizeof(h2_runtime_button_action_event_t) &&
+          h2_runtime_button_action_is_released(event.payload)) {
+        ++state->action_count;
+        touch_smoke_log_event(state, "action");
+        changed = 1;
+      }
     }
   }
   if (changed) {

@@ -718,7 +718,14 @@ int main(void) {
       "click_subscription=runtime.components.on(7,runtime.event.BUTTON_ACTION,"
       "function(e) "
       "if e.component_id==7 and type(e.component_kind)=='number' and "
-      "e.click_count==1 then n=n+1 end end)\n"
+      "e.pressed_at_ms==1 and e.released_at_ms==2 and e.gesture_kind==2 and "
+      "e.duration_ms==1 then "
+      "n=n+1 elseif e.released_at_ms==0 and e.gesture_kind==1 and "
+      "e.duration_ms==0 then n=n+8 "
+      "elseif e.released_at_ms==0 and e.gesture_kind==3 and "
+      "e.duration_ms==500 then n=n+1024 "
+      "elseif e.released_at_ms==610 and e.gesture_kind==3 and "
+      "e.duration_ms==600 then n=n+2048 end end)\n"
       "assert(click_subscription~=removed and not "
       "runtime.components.off(removed))\n"
       "runtime.components.on(7,runtime.event.BUTTON_DOWN,function(e) "
@@ -761,7 +768,10 @@ int main(void) {
   h2_lua_host_t *host = create_host(runtime);
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   static const h2_lua_arg_t file_args[] = {{"value", "ok"}};
-  h2_runtime_button_action_event_t click = {1u, 2u, 1u};
+  h2_runtime_button_action_event_t click = {
+      .pressed_at_ms = 1u,
+      .released_at_ms = 2u,
+  };
   h2_runtime_button_down_event_t down = {11u};
   h2_runtime_button_up_event_t up = {11u, 12u};
   h2_runtime_nfc_state_t nfc = {
@@ -1106,6 +1116,31 @@ int main(void) {
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_NOT_FOUND);
   click_event.component_id = 7u;
+  click.pressed_at_ms = 3u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.pressed_at_ms = 1u;
+  click.released_at_ms = 0u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click.released_at_ms = 3u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.released_at_ms = 2u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click = (h2_runtime_button_action_event_t){
+      .pressed_at_ms = 10u,
+      .released_at_ms = 0u,
+  };
+  click_event.timestamp_ms = 10u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click_event.timestamp_ms = 510u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click.released_at_ms = 610u;
+  click_event.timestamp_ms = 610u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   assert(h2_lua_dispatch_runtime_event(host, job_id, &down_event) == H2_PAL_OK);
@@ -1128,7 +1163,7 @@ int main(void) {
             (unsigned long long)event_status.resume_count);
   }
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
-  assert(strcmp(status(host, job_id).message, "ready:1015") == 0);
+  assert(strcmp(status(host, job_id).message, "ready:4095") == 0);
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_CLOSED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);

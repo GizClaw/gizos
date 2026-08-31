@@ -526,7 +526,9 @@ static void starboy_poll_buttons(
         }
         if (app->config.enable_theme_button &&
             event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
-            event.component_id == H2_STARBOY_COMPONENT_THEME_BUTTON) {
+            event.component_id == H2_STARBOY_COMPONENT_THEME_BUTTON &&
+            event.payload_size >= sizeof(h2_runtime_button_action_event_t) &&
+            h2_runtime_button_action_is_released(event.payload)) {
             h2_starboy_behavior_randomize_palette(
                 &app->behavior, now_ms);
             printf(

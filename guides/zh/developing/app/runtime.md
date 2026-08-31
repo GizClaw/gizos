@@ -103,7 +103,12 @@ App 不 include board header，不保存固定 `periph_id`，也不按 PAL 枚�
 Runtime event 使用稳定的 `component_id` 标识事件来自哪个逻辑组件。游戏 app 收到 button event 后按逻辑 ID 解释输入，不需要知道当前 board 的物理接线：
 
 ```c
-if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) {
+if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+    event->payload_size == sizeof(h2_runtime_button_action_event_t)) {
+    const h2_runtime_button_action_event_t *action = event->payload;
+    if (!h2_runtime_button_action_is_released(action)) {
+        return;
+    }
     switch (event->component_id) {
     case H2_GAME_COMPONENT_BUTTON_UP:
         h2_game_dispatch_move(game, H2_GAME_DIRECTION_UP);
@@ -129,7 +134,7 @@ Button、NFC 和 IMU 输入由 Runtime-owned private task 读取并转换为 Run
 
 阻塞式 portable App entry 应通过 `h2_runtime_wait_event()` 等到 Runtime event 或自己的绝对 deadline，而不是在 App source 中调用 target scheduler、libco wait/yield 或固定短 sleep。Target 可以用 OS thread、RTOS task 或 cooperative provider 实现同一个同步 Runtime/PAL contract；该差异不能进入 App public API。
 
-物理边沿立即产生 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` 和 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP`；每次松开后立即产生一个独立的 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`，携带 `pressed_at_ms`、`released_at_ms` 和连续点击计数 `click_count`，Runtime 不等待或合并连续点击，也没有 hold 或 long-press event。App 必须按当前交互需要选择一种语义，不能把同一个 button 的边沿和 action event 重复投影成两次 action；长按由业务层根据 `BUTTON_ACTION` 的两个时间戳判断，需要在仍按住时触发的动作读取 Button state 的 `pressed`/`pressed_at_ms`（state 同时带当前 `click_count`）；双击等连续点击策略由业务层根据 `click_count` 判断。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
+每次到达 Button poll deadline，按下状态都会产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` sample 和一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`；松开时产生 `BUTTON_UP` 和最后一个 action。Action 只携带 `pressed_at_ms`、`released_at_ms`：按住时释放时间为 0，松开时释放时间等于事件时间。Runtime 不使用单独的 100 ms action cadence，也不定义 phase、short press、long press 或 click count。App 用事件时间等于按下时间识别首次 sample，用零释放时间识别持续按住，用非零释放时间识别松开，并自行计算长按、双击等策略；不能把同一 sample 的 `BUTTON_DOWN` 与 action 重复投影成两次操作。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
 
 ## 通过 Component ID 调用 API
 

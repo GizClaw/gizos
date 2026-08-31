@@ -982,7 +982,7 @@ static void test_publication_counts_and_event_ceiling(void) {
         last_sequence = event.sequence;
         event_count += 1u;
     }
-    assert(event_count == 3u);
+    assert(event_count == 4u);
     const unsigned int active_index = atomic_load_explicit(
         &publication->active_index, memory_order_acquire);
     const h2_runtime_state_bank_t *active =
@@ -1064,6 +1064,8 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
     assert(h2_runtime_poll_event(runtime, &event) ==
            H2_PAL_ERR_WOULD_BLOCK);
 
@@ -1082,6 +1084,9 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
     assert(event.component_id == 1u);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(event.component_id == 2u);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
     assert(event.component_id == 2u);
     assert(h2_runtime_poll_event(runtime, &event) ==
            H2_PAL_ERR_WOULD_BLOCK);

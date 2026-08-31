@@ -69,12 +69,13 @@ h2_pal_result_t h2_runtime_test_button_up(
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t released_at_ms);
 
+/** Injects one two-timestamp Button Action observed at `observed_at_ms`. */
 h2_pal_result_t h2_runtime_test_button_action(
     h2_runtime_test_control_t *control,
     h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
     h2_runtime_timestamp_ms_t released_at_ms,
-    uint16_t click_count);
+    h2_runtime_timestamp_ms_t observed_at_ms);
 
 /**
  * Closes the exclusive test-input session and publishes an empty snapshot.

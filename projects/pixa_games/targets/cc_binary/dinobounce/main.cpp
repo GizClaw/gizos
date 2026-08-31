@@ -50,7 +50,11 @@ void handle_input(void *game, const h2_game_input_event_t *event) {
 bool handle_event(void *, h2_game_runtime_t *runtime,
                   const h2_runtime_event_t *event) {
   if (event->component != H2_RUNTIME_COMPONENT_BUTTON ||
-      event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) {
+      event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION ||
+      event->payload_size < sizeof(h2_runtime_button_action_event_t) ||
+      !h2_runtime_button_action_is_released(
+          static_cast<const h2_runtime_button_action_event_t *>(
+              event->payload))) {
     return true;
   }
   std::uint8_t button = 0u;

@@ -53,10 +53,16 @@ static int handle_runtime_event(
     if (event->component != H2_RUNTIME_COMPONENT_BUTTON) {
         return H2_GAME_RUNTIME_OK;
     }
+    if (event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION ||
+        event->payload_size < sizeof(h2_runtime_button_action_event_t)) {
+        return H2_GAME_RUNTIME_OK;
+    }
+    const h2_runtime_button_action_event_t *action = event->payload;
     h2_game_input_type_t type;
-    if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
+    if (action->released_at_ms == 0u &&
+        event->timestamp_ms == action->pressed_at_ms) {
         type = H2_GAME_INPUT_BUTTON_DOWN;
-    } else if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+    } else if (h2_runtime_button_action_is_released(action)) {
         type = H2_GAME_INPUT_BUTTON_UP;
     } else {
         return H2_GAME_RUNTIME_OK;

@@ -43,7 +43,7 @@ Game 只关心自己需要的 button role 和 gesture。Role 表达 game-local �
 
 每个 game 子文档列出最小 required button set。Host 必须完整映射这些 role，多余的 host button 不需要传入 game。Game input interface 必须保留该 game 需要的 press、release、click、long press、click count 或 duration 语义，不能把所有输入压成一个无来源的 callback。
 
-Runtime 对 App 输出即时的 button down/up event，并在每次松开后输出一个携带 `pressed_at_ms`、`released_at_ms` 和 `click_count` 的 action event；Runtime 没有 long-press event。Host 根据 game role 声明的 gesture 直接投影对应 Runtime event，long press 和 duration 由 Host 从 action 的时间戳或 Button state 的 `pressed`/`pressed_at_ms` 推导；消费 down/up 的 role 不能再把同一个 component 后续产生的 action event 重复投影为第二次 game action。Button component state 用于初始化或恢复当前快照，不需要由 Host 轮询并重新推断已经存在的边沿 event。
+Runtime 在每个按下状态的 poll 输出 button down sample 和 action，松开时输出 button up 和最后一个 action。Action 只有 `pressed_at_ms`、`released_at_ms`；按住时释放时间为 0。Host 根据 game role 自行从 action 与事件时间识别首次、持续、释放或 long press；消费 action 的 role 不能再把同一个 sample 的 button down 重复投影为第二次 game action。Button component state 用于初始化或恢复当前快照，不需要由 Host 轮询并重新推断已经存在的 event。
 
 ## Host Integration
 

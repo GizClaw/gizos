@@ -14,7 +14,7 @@ extern "C" {
     ((size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u)
 #endif
 
-#define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 3u
+#define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 4u
 #define H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY 16u
 
 typedef enum h2_runtime_input_source_kind {
@@ -107,8 +107,6 @@ typedef struct h2_runtime_button_recognizer {
     int initialized;
     int is_pressed;
     h2_runtime_timestamp_ms_t pressed_at_ms;
-    h2_runtime_timestamp_ms_t last_released_at_ms;
-    uint16_t click_count;
 } h2_runtime_button_recognizer_t;
 
 typedef struct h2_runtime_button_push_edge {
