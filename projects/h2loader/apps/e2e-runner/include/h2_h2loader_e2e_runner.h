@@ -43,6 +43,7 @@ typedef enum h2_h2loader_e2e_case {
   H2_H2LOADER_E2E_CASE_REBOOT_LOADER_MONITOR,
   H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR,
   H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR,
+  H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP,
 } h2_h2loader_e2e_case_t;
 
 typedef struct h2_h2loader_e2e_case_result {
@@ -86,6 +87,8 @@ typedef struct h2_h2loader_e2e_config {
   size_t app_firmware_size;
   const uint8_t *loader_firmware;
   size_t loader_firmware_size;
+  const uint8_t *crash_firmware;
+  size_t crash_firmware_size;
   const char *firmware_url;
   uint64_t firmware_url_bytes;
   const char *firmware_url_sha256;
@@ -103,6 +106,7 @@ typedef struct h2_h2loader_e2e_config {
   uint8_t include_lifecycle;
   uint8_t include_coredump;
   uint8_t include_monitor;
+  uint8_t include_crash;
 
   h2_h2loader_host_cancelled_fn is_cancelled;
   void *cancel_user;
@@ -127,6 +131,9 @@ typedef struct h2_h2loader_e2e_result {
   char app_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
   uint64_t loader_firmware_bytes;
   char loader_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t crash_firmware_bytes;
+  char crash_firmware_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
+  uint64_t coredump_bytes;
   int complete;
 } h2_h2loader_e2e_result_t;
 

@@ -192,6 +192,11 @@ static void test_invalid_configs(void) {
   config.include_coredump = 0u;
   config.include_monitor = 1u;
   assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
+  config.include_monitor = 0u;
+  config.include_crash = 1u;
+  config.crash_firmware = (const uint8_t *)"z";
+  config.crash_firmware_size = 1u;
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_ARG);
 }
 
 static void test_monitor_cases_are_uart_only_and_bounded(void) {
@@ -259,6 +264,32 @@ static void test_monitor_runs_each_reboot_with_a_bootable_target(void) {
   assert(fake.cases[11] == H2_H2LOADER_E2E_CASE_INSTALL_LOADER);
 }
 
+static void test_crash_app_runs_once_before_cross_transport_coredump(void) {
+  fake_executor_t fake = {0};
+  h2_h2loader_e2e_result_t result;
+  const h2_h2loader_e2e_config_t config = {
+      .uart_endpoint = "/dev/test",
+      .ble_endpoint = "4:001122334455",
+      .crash_firmware = (const uint8_t *)"z",
+      .crash_firmware_size = 1u,
+      .repeat_count = 1u,
+      .include_coredump = 1u,
+      .include_crash = 1u,
+      .execute_case = execute_case,
+      .execute_user = &fake,
+  };
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_OK);
+  assert(result.case_count == 19u);
+  assert(fake.cases[10] == H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP);
+  assert(fake.transports[10] == H2_H2LOADER_E2E_TRANSPORT_UART);
+  assert(fake.cases[11] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[12] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[13] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[14] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[15] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[18] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+}
+
 static void test_names(void) {
   assert(strcmp(h2_h2loader_e2e_transport_name(H2_H2LOADER_E2E_TRANSPORT_UART),
                 "uart") == 0);
@@ -280,6 +311,9 @@ static void test_names(void) {
   assert(strcmp(h2_h2loader_e2e_case_name(
                     H2_H2LOADER_E2E_CASE_REBOOT_UPGRADE_MONITOR),
                 "reboot-upgrade-monitor") == 0);
+  assert(
+      strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_INSTALL_CRASH_APP),
+             "install-crash-app") == 0);
 }
 
 int main(void) {
@@ -290,6 +324,7 @@ int main(void) {
   test_invalid_configs();
   test_monitor_cases_are_uart_only_and_bounded();
   test_monitor_runs_each_reboot_with_a_bootable_target();
+  test_crash_app_runs_once_before_cross_transport_coredump();
   test_names();
   return 0;
 }

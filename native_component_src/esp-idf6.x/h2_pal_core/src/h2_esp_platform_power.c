@@ -21,6 +21,7 @@ typedef enum h2_esp_power_ota_op {
     H2_ESP_POWER_OTA_GET_RUNNING = 1,
     H2_ESP_POWER_OTA_GET_NEXT,
     H2_ESP_POWER_OTA_SET_NEXT,
+    H2_ESP_POWER_OTA_GET_STATE,
     H2_ESP_POWER_OTA_CONFIRM_RUNNING,
     H2_ESP_POWER_REBOOT,
 } h2_esp_power_ota_op_t;
@@ -30,6 +31,7 @@ typedef struct h2_esp_power_ota_call {
     const esp_partition_t *partition;
     uint32_t partition_id;
     esp_err_t result;
+    esp_ota_img_states_t state;
 } h2_esp_power_ota_call_t;
 
 static int s_h2_esp_power_hold;
@@ -128,6 +130,12 @@ static void IRAM_ATTR power_ota_safe_callback(void *context) {
                     : esp_ota_set_boot_partition(call->partition);
             }
             break;
+        case H2_ESP_POWER_OTA_GET_STATE:
+            call->partition = partition_for_id(call->partition_id);
+            call->result = call->partition == NULL
+                ? ESP_ERR_NOT_FOUND
+                : esp_ota_get_state_partition(call->partition, &call->state);
+            break;
         case H2_ESP_POWER_OTA_CONFIRM_RUNNING:
             call->result = esp_ota_mark_app_valid_cancel_rollback();
             break;
@@ -218,6 +226,21 @@ static void fill_boot_partition(
     }
 }
 
+static int power_partition_is_bootable(uint32_t partition_id) {
+    h2_esp_power_ota_call_t *call =
+        power_ota_call_alloc(H2_ESP_POWER_OTA_GET_STATE);
+    if (call == NULL) {
+        return 0;
+    }
+    call->partition_id = partition_id;
+    h2_pal_result_t rc = power_ota_call(call);
+    int bootable = rc == H2_PAL_OK &&
+        call->state != ESP_OTA_IMG_INVALID &&
+        call->state != ESP_OTA_IMG_ABORTED;
+    heap_caps_free(call);
+    return bootable;
+}
+
 static h2_pal_result_t power_get_capabilities(void *user, h2_pal_power_capabilities_t *out_capabilities) {
     (void)user;
     if (out_capabilities == NULL) {
@@ -298,6 +321,9 @@ static h2_pal_result_t power_list_boot_partitions(
     app = partition_for_id(H2_ESP_POWER_PARTITION_APP);
     if (loader != NULL) {
         fill_boot_partition(loader, H2_ESP_POWER_PARTITION_LOADER, &partition);
+        if (!power_partition_is_bootable(H2_ESP_POWER_PARTITION_LOADER)) {
+            partition.flags &= ~H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE;
+        }
         rc = cb(cb_user, &partition);
         if (rc != H2_PAL_OK) {
             return rc;
@@ -305,6 +331,9 @@ static h2_pal_result_t power_list_boot_partitions(
     }
     if (app != NULL) {
         fill_boot_partition(app, H2_ESP_POWER_PARTITION_APP, &partition);
+        if (!power_partition_is_bootable(H2_ESP_POWER_PARTITION_APP)) {
+            partition.flags &= ~H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE;
+        }
         rc = cb(cb_user, &partition);
         if (rc != H2_PAL_OK) {
             return rc;

@@ -289,6 +289,41 @@ static int refresh_partitions(h2_loader_t *loader, h2_loader_status_t *status) {
   return H2_PAL_OK;
 }
 
+typedef struct h2_loader_bootable_probe {
+  uint32_t partition_id;
+  int found;
+  int bootable;
+} h2_loader_bootable_probe_t;
+
+static h2_pal_result_t
+probe_bootable_partition(void *user,
+                         const h2_pal_power_boot_partition_t *partition) {
+  h2_loader_bootable_probe_t *probe = user;
+  if (partition->id == probe->partition_id) {
+    probe->found = 1;
+    probe->bootable =
+        (partition->flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE) != 0u;
+  }
+  return H2_PAL_OK;
+}
+
+static int partition_is_bootable(h2_loader_t *loader, uint32_t partition_id,
+                                 int *out_bootable) {
+  h2_loader_bootable_probe_t probe = {.partition_id = partition_id};
+  int rc = h2_pal_power_list_boot_partitions(loader->config.power,
+                                             probe_bootable_partition, &probe);
+  if (rc == H2_PAL_ERR_UNSUPPORTED) {
+    *out_bootable = 1;
+    return H2_PAL_OK;
+  }
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (!probe.found)
+    return H2_PAL_ERR_NOT_FOUND;
+  *out_bootable = probe.bootable;
+  return H2_PAL_OK;
+}
+
 int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status) {
   int rc;
   if (loader == NULL || out_status == NULL)
@@ -791,6 +826,36 @@ static int finish_loader_stage_if_converged(h2_loader_t *loader) {
   return H2_PAL_OK;
 }
 
+static int finish_rolled_back_app_stage(h2_loader_t *loader) {
+  h2_loader_metadata_t invalid = {0};
+  int bootable = 1;
+  if (!loader->status.stage.valid ||
+      loader->status.stage.role != H2_LOADER_IMAGE_ROLE_APP ||
+      !h2_loader_metadata_image_equal(&loader->status.stage,
+                                      &loader->status.partition_2)) {
+    return H2_PAL_OK;
+  }
+  int rc =
+      partition_is_bootable(loader, loader->config.app_partition_id, &bootable);
+  if (rc != H2_PAL_OK || bootable)
+    return rc;
+  rc = h2_loader_metadata_write(loader->config.pref,
+                                H2_LOADER_METADATA_SLOT_PARTITION_2, &invalid);
+  if (rc != H2_PAL_OK)
+    return rc;
+  loader->status.partition_2 = invalid;
+  rc = finish_stage(loader->config.pref, loader->config.package.fs,
+                    loader->config.package.package_path, &loader->status.stage);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = h2_loader_set_last_result(loader, H2_PAL_ERR_INVALID_STATE);
+  if (rc == H2_PAL_OK) {
+    emit_event(loader, H2_LOADER_STARTUP_EVENT_STAGE_FINISHED,
+               H2_PAL_ERR_INVALID_STATE);
+  }
+  return rc;
+}
+
 static int mount_file_points(h2_loader_t *loader) {
   int rc;
   if (loader->config.mount_file_point == NULL)
@@ -883,6 +948,9 @@ int h2_loader_startup(h2_loader_t *loader,
   }
 
   rc = finish_loader_stage_if_converged(loader);
+  if (rc != H2_PAL_OK)
+    return fail_recovery(loader, rc);
+  rc = finish_rolled_back_app_stage(loader);
   if (rc != H2_PAL_OK)
     return fail_recovery(loader, rc);
   if (loader->status.stage.valid) {

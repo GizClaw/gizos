@@ -18,6 +18,7 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner -- \
   --expected-target esp32s3 \
   --app-firmware /absolute/path/devkit-app-esp32s3.update.tar.zlib \
   --loader-firmware /absolute/path/devkit-loader-esp32s3.update.tar.zlib \
+  --crash-firmware /absolute/path/devkit-crash-before-confirm-esp32s3.update.tar.zlib \
   --firmware-url http://192.168.1.2:8766/update.tar.zlib \
   --url-bytes 938442 \
   --url-sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
@@ -33,9 +34,12 @@ conditional command. Supplying Wi-Fi credentials enables
 `scan`, `connect`, and idempotent `disconnect`; `--app-firmware` enables direct
 Stage plus abort, while adding `--loader-firmware` enables the complete APP and
 Loader dual-partition lifecycle. The URL triplet enables device-side download
-plus abort. `--coredump-bytes` verifies a preloaded coredump over every selected
-transport before running erase and post-erase status; because it consumes the
-coredump it is limited to one iteration. Wi-Fi passwords are read only from the
+plus abort. `--crash-firmware` stages the crash-before-confirm APP once, requires
+the platform rollback to return to Loader with a failed Stage and a non-empty
+coredump, then verifies that coredump over every selected transport before
+erasing it. `--coredump-bytes` retains the lower-level mode for an already
+preloaded coredump. Both coredump modes consume the dump and are limited to one
+iteration. Wi-Fi passwords are read only from the
 named environment variable and never written to console output or the JSON
 report.
 

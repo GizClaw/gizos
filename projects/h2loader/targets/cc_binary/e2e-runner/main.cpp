@@ -28,6 +28,7 @@ struct Options {
   std::string expected_target;
   std::filesystem::path app_firmware;
   std::filesystem::path loader_firmware;
+  std::filesystem::path crash_firmware;
   std::string firmware_url;
   std::string firmware_url_sha256;
   std::string wifi_ssid;
@@ -63,6 +64,8 @@ void usage(const char *program, FILE *stream) {
       "  --app-firmware FILE          APP update.tar.zlib for Stage/install\n"
       "  --loader-firmware FILE       Loader update.tar.zlib for full "
       "lifecycle\n"
+      "  --crash-firmware FILE        crash-before-confirm APP; verify "
+      "rollback and coredump\n"
       "  --firmware-url URL           test device-side URL download\n"
       "  --url-bytes BYTES            expected URL payload size\n"
       "  --url-sha256 HEX             expected URL payload SHA-256\n"
@@ -135,6 +138,7 @@ bool parse_options(int argc, char **argv, Options *out) {
     kCoredumpBytes = 1ull << 14,
     kBaud = 1ull << 15,
     kMonitor = 1ull << 16,
+    kCrashFirmware = 1ull << 17,
   };
   std::uint64_t seen = 0u;
   for (int index = 1; index < argc; ++index) {
@@ -165,6 +169,9 @@ bool parse_options(int argc, char **argv, Options *out) {
     } else if (std::strcmp(name, "--loader-firmware") == 0) {
       bit = kLoaderFirmware;
       out->loader_firmware = value;
+    } else if (std::strcmp(name, "--crash-firmware") == 0) {
+      bit = kCrashFirmware;
+      out->crash_firmware = value;
     } else if (std::strcmp(name, "--firmware-url") == 0) {
       bit = kUrl;
       out->firmware_url = value;
@@ -239,16 +246,20 @@ bool parse_options(int argc, char **argv, Options *out) {
     return false;
   if (out->coredump_bytes != 0u && out->repeat != 1u)
     return false;
+  if (!out->crash_firmware.empty() &&
+      (out->repeat != 1u || out->coredump_bytes != 0u))
+    return false;
   if (out->monitor_ms != 0u && out->uart.empty())
     return false;
-  const std::size_t cases = 1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
-                            (!out->app_firmware.empty() ? 2u : 0u) +
-                            (has_url ? 2u : 0u) +
+  const std::size_t cases =
+      1u + (!out->wifi_ssid.empty() ? 3u : 0u) +
+      (!out->app_firmware.empty() ? 2u : 0u) + (has_url ? 2u : 0u) +
                             (!out->loader_firmware.empty() ? 4u : 0u) +
-                            (out->coredump_bytes != 0u ? 4u : 0u);
+      (out->coredump_bytes != 0u || !out->crash_firmware.empty() ? 4u : 0u);
   const std::size_t transports =
       (!out->uart.empty() ? 1u : 0u) + (!out->ble_id.empty() ? 1u : 0u);
-  return (cases * transports + (out->monitor_ms != 0u ? 3u : 0u)) *
+  return (cases * transports + (out->monitor_ms != 0u ? 3u : 0u) +
+          (!out->crash_firmware.empty() ? 1u : 0u)) *
              out->repeat <=
          H2_H2LOADER_E2E_MAX_CASES;
 }
@@ -404,10 +415,12 @@ bool write_report(const std::filesystem::path &path, const Options &options,
          << "  \"loader_firmware\": {\"bytes\": "
          << result.loader_firmware_bytes << ", \"sha256\": \""
          << result.loader_firmware_sha256 << "\"},\n"
+         << "  \"crash_firmware\": {\"bytes\": " << result.crash_firmware_bytes
+         << ", \"sha256\": \"" << result.crash_firmware_sha256 << "\"},\n"
          << "  \"firmware_url\": {\"bytes\": " << options.firmware_url_bytes
          << ", \"sha256\": \"" << json_escape(options.firmware_url_sha256)
          << "\"},\n"
-         << "  \"coredump\": {\"expected_bytes\": " << options.coredump_bytes
+         << "  \"coredump\": {\"expected_bytes\": " << result.coredump_bytes
          << "},\n"
          << "  \"summary\": {\"cases\": " << result.case_count
          << ", \"passed\": " << result.passed
@@ -480,6 +493,7 @@ int main(int argc, char **argv) {
 
   std::vector<std::uint8_t> app_firmware;
   std::vector<std::uint8_t> loader_firmware;
+  std::vector<std::uint8_t> crash_firmware;
   if (!options.app_firmware.empty()) {
     options.app_firmware = resolve_input_path(options.app_firmware);
     if (!load_file(options.app_firmware, &app_firmware)) {
@@ -498,6 +512,14 @@ int main(int argc, char **argv) {
     if (app_firmware.empty()) {
       std::fprintf(stderr,
                    "h2loader-e2e: --loader-firmware requires --app-firmware\n");
+      return 2;
+    }
+  }
+  if (!options.crash_firmware.empty()) {
+    options.crash_firmware = resolve_input_path(options.crash_firmware);
+    if (!load_file(options.crash_firmware, &crash_firmware)) {
+      std::fprintf(stderr, "h2loader-e2e: cannot read crash firmware: %s\n",
+                   options.crash_firmware.string().c_str());
       return 2;
     }
   }
@@ -556,6 +578,9 @@ int main(int argc, char **argv) {
         .loader_firmware =
             loader_firmware.empty() ? nullptr : loader_firmware.data(),
         .loader_firmware_size = loader_firmware.size(),
+        .crash_firmware =
+            crash_firmware.empty() ? nullptr : crash_firmware.data(),
+        .crash_firmware_size = crash_firmware.size(),
         .firmware_url = options.firmware_url.empty()
                             ? nullptr
                             : options.firmware_url.c_str(),
@@ -577,9 +602,10 @@ int main(int argc, char **argv) {
             static_cast<std::uint8_t>(!options.firmware_url.empty()),
         .include_lifecycle =
             static_cast<std::uint8_t>(!loader_firmware.empty()),
-        .include_coredump =
-            static_cast<std::uint8_t>(options.coredump_bytes != 0u),
+        .include_coredump = static_cast<std::uint8_t>(
+            options.coredump_bytes != 0u || !crash_firmware.empty()),
         .include_monitor = static_cast<std::uint8_t>(options.monitor_ms != 0u),
+        .include_crash = static_cast<std::uint8_t>(!crash_firmware.empty()),
         .is_cancelled = is_cancelled,
         .cancel_user = nullptr,
         .on_case = case_event,

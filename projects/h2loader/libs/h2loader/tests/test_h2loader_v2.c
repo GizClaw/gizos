@@ -41,6 +41,7 @@ typedef struct test_fixture {
 
   uint32_t running_partition;
   uint32_t next_partition;
+  int app_partition_bootable;
   unsigned set_next_calls;
   unsigned set_next_fail_at;
   unsigned reboot_calls;
@@ -436,6 +437,23 @@ static h2_loader_metadata_t metadata(h2_loader_image_role_t role,
   return value;
 }
 
+static int power_list(void *user, h2_pal_power_boot_partition_cb_t cb,
+                      void *cb_user) {
+  test_fixture_t *fixture = user;
+  h2_pal_power_boot_partition_t partition = {
+      .id = 1u,
+      .flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE,
+  };
+  int rc = cb(cb_user, &partition);
+  if (rc != H2_PAL_OK)
+    return rc;
+  partition.id = 2u;
+  partition.flags = fixture->app_partition_bootable
+                        ? H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE
+                        : H2_PAL_POWER_BOOT_PARTITION_FLAG_NONE;
+  return cb(cb_user, &partition);
+}
+
 static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
   static const h2_pal_pref_vtable_t pref_vtable = {.open = pref_open};
   static const h2_pal_mem_vtable_t mem_vtable = {
@@ -444,6 +462,7 @@ static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
   };
   static const h2_pal_fs_vtable_t fs_vtable = {.remove = fs_remove};
   static const h2_pal_power_vtable_t power_vtable = {
+      .list_boot_partitions = power_list,
       .get_running_boot_partition = power_running,
       .get_next_boot_partition = power_next,
       .set_next_boot_partition = power_set_next,
@@ -479,6 +498,7 @@ static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
   fixture->digest_finish_result = H2_PAL_OK;
   fixture->running_partition = running_partition;
   fixture->next_partition = running_partition;
+  fixture->app_partition_bootable = 1;
   fixture->digest_byte = 0xabu;
   fixture->pref = (h2_pal_pref_api_t){
       .user = fixture,
@@ -925,6 +945,39 @@ static void test_same_image_new_package_is_still_inspected(void) {
   assert(present && !fixture.loader.status.stage.valid);
 }
 
+static void test_rolled_back_app_finishes_failed_stage(void) {
+  test_fixture_t fixture;
+  h2_loader_startup_action_t action;
+  int present;
+  h2_loader_metadata_t p1 = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+  h2_loader_metadata_t stage = metadata(H2_LOADER_IMAGE_ROLE_APP, SHA_B);
+  stage.package_size = 1024u;
+  (void)snprintf(stage.package_checksum, sizeof(stage.package_checksum), "%s",
+                 SHA_A);
+  fixture_init(&fixture, 1u);
+  fixture.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
+  fixture.boot_intent_present = 1;
+  fixture.package_present = 1;
+  fixture.app_partition_bootable = 0;
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &p1);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stage);
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+
+  assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
+  assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
+  (void)read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
+  assert(!present);
+  h2_loader_metadata_t p2 =
+      read_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &present);
+  assert(present && !p2.valid);
+  assert(!fixture.package_present && fixture.package_removes == 1u);
+  assert(fixture.last_result_present &&
+         fixture.last_result == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.writer_offset == 0u);
+  assert(fixture.reboot_calls == 0u);
+}
+
 static void test_app_finalize_only_consumes_matching_stage(void) {
   test_fixture_t fixture;
   int present;
@@ -1176,6 +1229,7 @@ int main(void) {
   test_converged_loader_finishes_stage();
   test_converged_loader_does_not_ignore_different_stage();
   test_same_image_new_package_is_still_inspected();
+  test_rolled_back_app_finishes_failed_stage();
   test_app_finalize_only_consumes_matching_stage();
   test_app_confirmation_is_between_metadata_and_stage_cleanup();
   test_reboot_commands_only_set_intent_and_partition();
