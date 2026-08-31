@@ -801,7 +801,7 @@ static void test_memory_semantic_button_and_component_state_operations(void) {
   int32_t value = 0;
   assert(h2_app_test_snapshot_get_i32(
              &snapshot, "app.last_event_kind", &value) == H2_PAL_OK);
-  assert(value == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(value == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
   assert(h2_app_test_snapshot_get_i32(
              &snapshot, "ui.button_pressed", &value) == H2_PAL_OK);
   assert(value == 1);

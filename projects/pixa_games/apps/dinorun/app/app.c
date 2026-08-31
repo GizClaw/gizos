@@ -110,13 +110,18 @@ static int handle_runtime_event(
         event->component_id != H2_PIXA_GAMES_DINORUN_COMPONENT_RECORD) {
         return H2_GAME_RUNTIME_OK;
     }
-    if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+    if (event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION ||
+        event->payload_size < sizeof(h2_runtime_button_action_event_t)) {
+        return H2_GAME_RUNTIME_OK;
+    }
+    const h2_runtime_button_action_event_t *action = event->payload;
+    if (h2_runtime_button_action_is_released(action)) {
         return send_input(
             state,
             H2_GAME_INPUT_BUTTON_UP,
             (uint32_t)event->timestamp_ms);
     }
-    if (event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
+    if (!h2_runtime_button_action_is_pressed(action)) {
         return H2_GAME_RUNTIME_OK;
     }
 

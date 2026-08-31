@@ -351,14 +351,15 @@ H2_APP_TEST_CASE(saved_wifi_connect_and_delete) {
 }
 ```
 
-`H2_APP_TEST_BUTTON_ACTION` 注入 `click_count == 1` 的单次 action；需要连续点击
+`H2_APP_TEST_BUTTON_ACTION` 注入 `click_count == 1`、phase 为 `RELEASED` 的完整 action；需要连续点击
 序号（例如 tapdoki 十连击 reset）时使用
 `H2_APP_TEST_BUTTON_ACTION_COUNT(test, component_id, pressed, released, count)`，
 或直接调用 `h2_app_test_session_button_action()` 传入 `click_count`。
 
-`H2_APP_TEST_BUTTON_DOWN` / `UP` 用于必须区分 pressed/released 的场景，例如
-Record 或按住期间触发的长按。不能用 action 代替；Runtime 没有 hold 注入
-helper，长按由 scenario 先 `DOWN`，再按所需时长 `UP` 或设置 Button state 表达：
+`H2_APP_TEST_BUTTON_DOWN` / `UP` 在 App Test scenario 中投影为 phase 分别为
+`PRESSED` / `RELEASED` 的 semantic action，使 scenario 与 App 当前消费的契约一致。
+需要直接验证 Runtime raw `BUTTON_DOWN` / `BUTTON_UP` event 的测试应使用 Test
+Control event injection。长按等 gesture 仍由 scenario 根据 action phase 和时间表达：
 
 ```c
 H2_APP_TEST_BUTTON_DOWN(test, EXAMPLE_BUTTON_RECORD, 500u);

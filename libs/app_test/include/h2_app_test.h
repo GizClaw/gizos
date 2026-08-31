@@ -251,12 +251,14 @@ h2_pal_result_t h2_app_test_session_set_component_state(
     size_t state_size, uint32_t timeout_ms,
     h2_app_test_snapshot_t *snapshot);
 
+/** Inject one semantic Button Action with phase PRESSED. */
 h2_pal_result_t h2_app_test_session_button_down(
     h2_app_test_session_t *session,
     h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms, uint32_t timeout_ms,
     h2_app_test_snapshot_t *snapshot);
 
+/** Inject one semantic Button Action with phase RELEASED. */
 h2_pal_result_t h2_app_test_session_button_up(
     h2_app_test_session_t *session,
     h2_runtime_component_id_t component_id,
@@ -266,8 +268,8 @@ h2_pal_result_t h2_app_test_session_button_up(
 
 /**
  * Inject one BUTTON_ACTION with the Runtime payload the App receives in
- * production; `click_count` is the one-based consecutive-click count and
- * must be non-zero.
+ * production. Its phase is RELEASED; `click_count` is the one-based
+ * consecutive-click count and must be non-zero.
  */
 h2_pal_result_t h2_app_test_session_button_action(
     h2_app_test_session_t *session,

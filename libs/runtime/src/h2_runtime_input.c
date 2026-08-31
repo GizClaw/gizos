@@ -472,6 +472,8 @@ static h2_pal_result_t update_button_pressed(
     int emit_down = 0;
     int emit_up = 0;
     int emit_action = 0;
+    h2_runtime_button_action_phase_t action_phase =
+        H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED;
     int state_changed = 0;
     if (button->initialized == 0) {
         button->initialized = 1;
@@ -484,6 +486,7 @@ static h2_pal_result_t update_button_pressed(
             source->button_state.pressed_at_ms = now_ms;
             source->button_state.click_count = button->click_count;
             emit_down = 1;
+            emit_action = 1;
         } else {
             source->button_state.pressed = false;
             source->button_state.pressed_at_ms = 0u;
@@ -503,6 +506,12 @@ static h2_pal_result_t update_button_pressed(
         source->button_state.pressed_at_ms = now_ms;
         source->button_state.click_count = button->click_count;
         emit_down = 1;
+        emit_action = 1;
+        state_changed = 1;
+    } else if (is_pressed != 0 && button->is_pressed != 0) {
+        emit_down = 1;
+        emit_action = 1;
+        action_phase = H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING;
         state_changed = 1;
     } else if (is_pressed == 0 && button->is_pressed != 0) {
         button->is_pressed = 0;
@@ -511,6 +520,7 @@ static h2_pal_result_t update_button_pressed(
         source->button_state.pressed_at_ms = 0u;
         emit_up = 1;
         emit_action = 1;
+        action_phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED;
         state_changed = 1;
     }
     if (source->button_state.result != H2_PAL_OK) {
@@ -556,10 +566,19 @@ static h2_pal_result_t update_button_pressed(
         }
     }
     if (emit_action != 0) {
+        const uint64_t elapsed_ms = now_ms >= button->pressed_at_ms
+                                        ? now_ms - button->pressed_at_ms
+                                        : 0u;
         const h2_runtime_button_action_event_t event = {
             .pressed_at_ms = button->pressed_at_ms,
-            .released_at_ms = now_ms,
+            .released_at_ms =
+                action_phase == H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED
+                    ? now_ms
+                    : 0u,
             .click_count = button->click_count,
+            .phase = action_phase,
+            .duration_ms = elapsed_ms > UINT32_MAX ? UINT32_MAX
+                                                   : (uint32_t)elapsed_ms,
         };
         return append_input_event(
             runtime,

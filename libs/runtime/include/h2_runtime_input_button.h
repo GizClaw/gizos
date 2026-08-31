@@ -4,10 +4,10 @@
 /*
  * Scope: App-visible button event and state payloads.
  * Tunable macro defaults live in h2_runtime_input_button_defs.h.
- * Apps receive immediate down/up edges plus one BUTTON_ACTION per release
- * that carries the press/release timestamps and the consecutive click count.
- * Product code derives long-press and multi-click semantics from those
- * timestamps, the click count, and the pressed/pressed_at_ms state snapshot.
+ * Apps receive one BUTTON_DOWN sample and one phased BUTTON_ACTION on every
+ * due poll while pressed, followed by BUTTON_UP and RELEASED action events.
+ * Runtime reports objective timing and click-count data; product code owns
+ * short-press, long-press, and other gesture policy.
  */
 
 #include "h2/pal/core/h2_pal_errors.h"
@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-/** Immediate button-down edge payload. */
+/** Button-down sample emitted on every due poll while pressed. */
 typedef struct h2_runtime_button_down_event {
     /** Runtime monotonic timestamp when the pressed state was first observed. */
     h2_runtime_timestamp_ms_t pressed_at_ms;
@@ -33,19 +33,35 @@ typedef struct h2_runtime_button_up_event {
     h2_runtime_timestamp_ms_t released_at_ms;
 } h2_runtime_button_up_event_t;
 
-/**
- * Completed press/release action payload, emitted once per release.
- *
- * `released_at_ms - pressed_at_ms` is the press duration; `click_count` is the
- * one-based position in the current consecutive-click sequence (presses whose
- * gap does not exceed H2_RUNTIME_BUTTON_CLICK_GAP_MS keep counting).
- */
+typedef enum h2_runtime_button_action_phase {
+    H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED = 1,
+    H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING,
+    H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED,
+} h2_runtime_button_action_phase_t;
+
+/** Objective Button action emitted throughout one physical press. */
 typedef struct h2_runtime_button_action_event {
     h2_runtime_timestamp_ms_t pressed_at_ms;
+    /** Zero until the RELEASED action. */
     h2_runtime_timestamp_ms_t released_at_ms;
     /** One-based count in the current consecutive-click sequence. */
     uint16_t click_count;
+    h2_runtime_button_action_phase_t phase;
+    /** Monotonic elapsed time since pressed_at_ms. */
+    uint32_t duration_ms;
 } h2_runtime_button_action_event_t;
+
+static inline bool h2_runtime_button_action_is_released(
+    const h2_runtime_button_action_event_t *action) {
+    return action != NULL &&
+           action->phase == H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED;
+}
+
+static inline bool h2_runtime_button_action_is_pressed(
+    const h2_runtime_button_action_event_t *action) {
+    return action != NULL &&
+           action->phase == H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED;
+}
 
 /**
  * Raw button state snapshot.
@@ -74,7 +90,7 @@ typedef enum h2_runtime_button_edge {
  * Push one ordered raw edge for a mapped PUSH_EDGE Button periph.
  *
  * The producer identifies its PAL periph, not the App component. Runtime uses
- * the existing component mapping, owns timestamp/gesture/state/event
+ * the existing component mapping, owns timestamp/state/event
  * generation, and rejects unknown, unmapped, non-Button, or POLL_STATE
  * sources. Runtime serializes this operation with its input task and Runtime
  * Test Control. The adapter must call it from task/event-dispatch context, not

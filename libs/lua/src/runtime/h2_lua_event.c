@@ -152,6 +152,8 @@ static void push_event(lua_State *state, const h2_runtime_event_t *event) {
     push_u64(state, "pressed_at_ms", value->pressed_at_ms);
     push_u64(state, "released_at_ms", value->released_at_ms);
     push_u64(state, "click_count", value->click_count);
+    push_u64(state, "action_phase", value->phase);
+    push_u64(state, "duration_ms", value->duration_ms);
     break;
   }
   case H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE: {

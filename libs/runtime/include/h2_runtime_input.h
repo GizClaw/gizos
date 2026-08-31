@@ -45,7 +45,7 @@ typedef struct h2_runtime_input_poll_config {
  * the private input task (plus the NFC task when an NFC reader is mapped).
  * The input source table, the writer mutex and the state publication are
  * built once by `h2_runtime_init()`; a start does not rebuild them and does
- * not reset component state or recognizer state.
+ * not reset component state or Button action state.
  *
  * @param runtime Initialized Runtime instance.
  * @param config Poll cadences and task policy; a null pointer selects every

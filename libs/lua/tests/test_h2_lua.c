@@ -718,7 +718,8 @@ int main(void) {
       "click_subscription=runtime.components.on(7,runtime.event.BUTTON_ACTION,"
       "function(e) "
       "if e.component_id==7 and type(e.component_kind)=='number' and "
-      "e.click_count==1 then n=n+1 end end)\n"
+      "e.click_count==1 and e.action_phase==3 and e.duration_ms==1 then "
+      "n=n+1 end end)\n"
       "assert(click_subscription~=removed and not "
       "runtime.components.off(removed))\n"
       "runtime.components.on(7,runtime.event.BUTTON_DOWN,function(e) "
@@ -761,7 +762,13 @@ int main(void) {
   h2_lua_host_t *host = create_host(runtime);
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   static const h2_lua_arg_t file_args[] = {{"value", "ok"}};
-  h2_runtime_button_action_event_t click = {1u, 2u, 1u};
+  h2_runtime_button_action_event_t click = {
+      .pressed_at_ms = 1u,
+      .released_at_ms = 2u,
+      .click_count = 1u,
+      .phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED,
+      .duration_ms = 1u,
+  };
   h2_runtime_button_down_event_t down = {11u};
   h2_runtime_button_up_event_t up = {11u, 12u};
   h2_runtime_nfc_state_t nfc = {

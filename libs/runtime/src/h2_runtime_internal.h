@@ -14,7 +14,7 @@ extern "C" {
     ((size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u)
 #endif
 
-#define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 3u
+#define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 4u
 #define H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY 16u
 
 typedef enum h2_runtime_input_source_kind {

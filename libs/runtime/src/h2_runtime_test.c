@@ -268,8 +268,23 @@ static h2_pal_result_t validate_event(
     }
     if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) {
         const h2_runtime_button_action_event_t *event = payload;
+        const uint64_t released_duration_ms =
+            event->released_at_ms >= event->pressed_at_ms
+                ? event->released_at_ms - event->pressed_at_ms
+                : 0u;
+        const uint32_t expected_released_duration =
+            released_duration_ms > UINT32_MAX ? UINT32_MAX
+                                              : (uint32_t)released_duration_ms;
         if (event->click_count == 0u ||
-            event->released_at_ms < event->pressed_at_ms) {
+            event->phase < H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED ||
+            event->phase > H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED ||
+            (event->phase == H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED &&
+             (event->released_at_ms < event->pressed_at_ms ||
+              event->duration_ms != expected_released_duration)) ||
+            (event->phase != H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED &&
+             event->released_at_ms != 0u) ||
+            (event->phase == H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED &&
+             event->duration_ms != 0u)) {
             return H2_PAL_ERR_FORMAT;
         }
     } else if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
@@ -670,6 +685,10 @@ h2_pal_result_t h2_runtime_test_button_action(
         .pressed_at_ms = pressed_at_ms,
         .released_at_ms = released_at_ms,
         .click_count = click_count,
+        .phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED,
+        .duration_ms = released_at_ms - pressed_at_ms > UINT32_MAX
+                           ? UINT32_MAX
+                           : (uint32_t)(released_at_ms - pressed_at_ms),
     };
     const h2_runtime_button_state_t state = {
         .pressed = false,
@@ -683,6 +702,50 @@ h2_pal_result_t h2_runtime_test_button_action(
         &state,
         H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,
         released_at_ms,
+        &event,
+        sizeof(event));
+}
+
+h2_pal_result_t h2_runtime_test_button_action_phase(
+    h2_runtime_test_control_t *control,
+    h2_runtime_component_id_t component_id,
+    h2_runtime_button_action_phase_t phase,
+    h2_runtime_timestamp_ms_t pressed_at_ms,
+    h2_runtime_timestamp_ms_t observed_at_ms,
+    uint16_t click_count) {
+    if (phase < H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED ||
+        phase > H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED ||
+        observed_at_ms < pressed_at_ms || click_count == 0u ||
+        (phase == H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED &&
+         observed_at_ms != pressed_at_ms)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    const uint64_t elapsed_ms = observed_at_ms - pressed_at_ms;
+    const h2_runtime_button_action_event_t event = {
+        .pressed_at_ms = pressed_at_ms,
+        .released_at_ms =
+            phase == H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED ? observed_at_ms
+                                                              : 0u,
+        .click_count = click_count,
+        .phase = phase,
+        .duration_ms = elapsed_ms > UINT32_MAX ? UINT32_MAX
+                                               : (uint32_t)elapsed_ms,
+    };
+    const h2_runtime_button_state_t state = {
+        .pressed = phase != H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED,
+        .pressed_at_ms =
+            phase != H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED ? pressed_at_ms
+                                                               : 0u,
+        .click_count = click_count,
+        .updated_at_ms = observed_at_ms,
+        .result = H2_PAL_OK,
+    };
+    return set_button_state_and_emit(
+        control,
+        component_id,
+        &state,
+        H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,
+        observed_at_ms,
         &event,
         sizeof(event));
 }

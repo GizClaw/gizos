@@ -283,7 +283,7 @@ Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表�
 
 `h2_pal_touch_api_t` 描述一个已经校准到逻辑 viewport 的 single-pointer Touch source。Provider 通过 `open -> get_info -> poll_event -> close` 交付 raw `DOWN`、`MOVE`、`UP` edge；`poll_event` 没有新 edge 时返回 `H2_PAL_ERR_WOULD_BLOCK`。坐标变换、axis inversion、Linux evdev identity 和 controller protocol 属于 component/BSP，不能进入 portable App。Multi-touch contact lifecycle 不属于 V1 contract，provider 不能把多个 contact 混成同一个不稳定 pointer stream。
 
-Touch PAL 不识别 click、long press、swipe 或其它 gesture，也不把屏幕区域映射成业务按键。LVGL adapter 消费 Touch PAL 形成 pointer indev；widget 需要复用 Runtime button gesture 时，launcher 把 App Button component 映射到 `PUSH_EDGE` periph，adapter 再把 widget 的 raw pressed/released edge 写入同一 button recognizer。
+Touch PAL 不识别 click、long press、swipe 或其它 gesture，也不把屏幕区域映射成业务按键。LVGL adapter 消费 Touch PAL 形成 pointer indev；widget 需要复用 Runtime Button action contract 时，launcher 把 App Button component 映射到 `PUSH_EDGE` periph，adapter 再把 widget 的 raw pressed/released edge 写入同一 objective action pipeline。Runtime 输出 phase 和时间，App 决定 gesture。
 
 ### NFC reader 与卡模拟
 

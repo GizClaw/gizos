@@ -76,6 +76,15 @@ h2_pal_result_t h2_runtime_test_button_action(
     h2_runtime_timestamp_ms_t released_at_ms,
     uint16_t click_count);
 
+/** Inject one objective Button Action phase and matching state snapshot. */
+h2_pal_result_t h2_runtime_test_button_action_phase(
+    h2_runtime_test_control_t *control,
+    h2_runtime_component_id_t component_id,
+    h2_runtime_button_action_phase_t phase,
+    h2_runtime_timestamp_ms_t pressed_at_ms,
+    h2_runtime_timestamp_ms_t observed_at_ms,
+    uint16_t click_count);
+
 /**
  * Closes the exclusive test-input session and publishes an empty snapshot.
  *

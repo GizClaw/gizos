@@ -28,13 +28,13 @@ evdev button provider 通过 `EVIOCGNAME` 发现 BSP 指定的设备，再用 `E
 
 GPIO button provider 枚举全部数字后缀的 `/dev/gpiochip*` 节点，通过 `GPIO_GET_CHIPINFO_IOCTL` 按 BSP 指定的 stable chip label 发现 character device，再以 input 方式请求 line handle 并读取当前逻辑状态；枚举不假定 `gpiochipN` 的编号上限。BSP 通过 process-wide `h2_linux_configure_gpio_buttons()` 传入 `periph_id`、chip label、zero-based line offset 和 active level，provider 同步复制 mapping 与 label，并在第一次 read 时完成发现和 request。没有匹配 chip/line 返回 `H2_PAL_ERR_NOT_FOUND`，多个有效 chip 使用同一 label 返回 `H2_PAL_ERR_INVALID_STATE`，访问权限不足返回 `H2_PAL_ERR_UNAVAILABLE`，line 已被内核或其它 userspace consumer 占用返回 `H2_PAL_ERR_BUSY`。成功 handle 保留到 read failure、reconfigure 或进程退出；设备移除导致的 read failure 会关闭旧 handle，下一次 read 重新发现。Reconfigure 在提交新 copy 前关闭全部旧 handle，close 失败则返回 `H2_PAL_ERR_IO` 并保留旧 mapping 供后续 lazy reacquire。配置、read 与 reconfigure 不提供并发安全，BSP 必须在 Runtime 初始化并启动 input task 前完成配置。目标 Linux image 必须先保证 ownership 唯一，provider 不擅自解绑其它 driver。
 
-两个 button provider 当前都只实现 single-button 当前状态读取。evdev 路径使用 Linux input 已确认的状态；GPIO provider 不额外实现物理 debounce，需要 debounce 的 board 必须在电气、内核或独立 target component 层提供稳定状态。Runtime 只负责从 pressed/released 产生 down/up 边沿和带时间戳、click count 的 action，launcher 负责 App component mapping。
+两个 button provider 当前都只实现 single-button 当前状态读取。evdev 路径使用 Linux input 已确认的状态；GPIO provider 不额外实现物理 debounce，需要 debounce 的 board 必须在电气、内核或独立 target component 层提供稳定状态。Runtime 只负责从 pressed/released 产生 down/up sample 和带 phase、时间戳、click count 的客观 action，launcher 负责 App component mapping，gesture policy 属于 App。
 
 ## Touch
 
 evdev Touch provider 枚举全部名称符合 `/dev/input/event[0-9]+` 的 node，通过 `EVIOCGNAME` 按 BSP 提供的 stable device name 发现设备，不对 `eventN` 编号设置上限。Open 必须通过 `EVIOCGABS` 取得有效的 `ABS_MT_POSITION_X/Y` minimum 与 maximum；缺少 axis 或 `maximum <= minimum` 返回 `H2_PAL_ERR_UNSUPPORTED`。每个 raw axis 先 clamp 到 `[minimum, maximum]`，再以整数向下取整公式 `(clamped - minimum) * (logical_size - 1) / (maximum - minimum)` 映射到 logical range；之后依次应用 `swap_xy`、`invert_x` 与 `invert_y`。当前 contract 支持 legacy single-contact Type A stream：首次 `DOWN` 要求 `BTN_TOUCH=1` 与 X/Y 坐标都出现在同一个 `SYN_REPORT` logical report 中；每个 `SYN_REPORT` 都清除本 report 的坐标和 contact 有效标记，不能用更早 report 的坐标补齐按下事件。成功建立 contact 后保留最后已知 raw X/Y；后续 report 只更新出现的 axis，未出现的 axis 沿用该 contact 的最后值，因此单轴变化可以形成 `MOVE`，带单轴更新的 `BTN_TOUCH=0` 也以最终坐标形成 `UP`。设备消失后下一次 open 重新发现，BSP 不能保存易变的 `eventN`。
 
-Provider 不创建 input task，也不调用 LVGL。LVGL/App thread 通过 Touch PAL 的 nonblocking `poll_event` 消费 edge；gesture 和 widget hit-test 分别属于 Runtime 或 LVGL，`libs/lvgl` adapter 只把 widget edge 写入 launcher 映射的 `PUSH_EDGE` Button periph。
+Provider 不创建 input task，也不调用 LVGL。LVGL/App thread 通过 Touch PAL 的 nonblocking `poll_event` 消费 edge；gesture policy 属于 App，widget hit-test 属于 LVGL，`libs/lvgl` adapter 只把 widget edge 写入 launcher 映射的 `PUSH_EDGE` Button periph。
 
 ## Netif 与 System Event
 

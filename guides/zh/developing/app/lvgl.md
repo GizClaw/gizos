@@ -114,7 +114,7 @@ LV_EVENT_CLICKED
 → subject binding 更新 UI
 ```
 
-需要让一个 LVGL widget 表现为 Runtime button 时，App 定义稳定的 Button `component_id`，launcher 把它映射到 `PUSH_EDGE` single-button periph，App 再调用 `h2_lvgl_button_bind()`。Adapter 通过 Runtime mapping 解析并验证这个 periph，只把 `LV_EVENT_PRESSED` 投影为 `DOWN`，把 `LV_EVENT_RELEASED`、`LV_EVENT_PRESS_LOST` 或 pressed 状态下的 delete 投影为 `UP`；带时间戳和 click count 的 `ACTION` 仍由 Runtime recognizer 生成。Adapter 对每个 `(runtime, periph_id)` 只允许一个 live binding；第二个 producer 或重复 bind 尚未删除的 binding 返回 `H2_PAL_ERR_BUSY`，不会安装 callback。`LV_EVENT_DELETE` 在必要时先投影 `UP`，再释放 producer ownership，使同一 periph 可以绑定新 widget。Runtime private writer boundary 负责串行化 widget edge、input task 和 Test Control；LVGL callback 仍只在唯一 LVGL thread 执行。
+需要让一个 LVGL widget 表现为 Runtime button 时，App 定义稳定的 Button `component_id`，launcher 把它映射到 `PUSH_EDGE` single-button periph，App 再调用 `h2_lvgl_button_bind()`。Adapter 通过 Runtime mapping 解析并验证这个 periph，只把 `LV_EVENT_PRESSED` 投影为 `DOWN`，把 `LV_EVENT_RELEASED`、`LV_EVENT_PRESS_LOST` 或 pressed 状态下的 delete 投影为 `UP`；带 phase、时间和 click count 的客观 `ACTION` 仍由 Runtime 生成，click、long press 等 gesture 由 App 判断。Adapter 对每个 `(runtime, periph_id)` 只允许一个 live binding；第二个 producer 或重复 bind 尚未删除的 binding 返回 `H2_PAL_ERR_BUSY`，不会安装 callback。`LV_EVENT_DELETE` 在必要时先投影 `UP`，再释放 producer ownership，使同一 periph 可以绑定新 widget。Runtime private writer boundary 负责串行化 widget edge、input task 和 Test Control；LVGL callback 仍只在唯一 LVGL thread 执行。
 
 不是每个 widget action 都应该伪装成 button。Save、route change、text edit 等 screen-local action 仍由 widget callback 直接进入 App transition；widget callback 可以读取创建它时传入的 component prop 和当前 route-local subject，但不能直接决定跨页面业务状态。
 
@@ -137,7 +137,7 @@ Subject 必须在所有 observer 和 widget 解除绑定前保持有效。String
 
 H106 使用这套模型组织系统状态、route、screen-local flow 和 component prop：
 
-- App handler 消费 Runtime system/component event；只有 mapped `PUSH_EDGE` Button periph 通过 public producer 进入 button recognizer，其他 UI input、timer 和 completion 不调用 private Runtime producer。H106 Main App 的 PIXA completion 在同一 main loop 同步产生，audio worker 只发布 atomic result，再由该 main loop poll 并 transition。
+- App handler 消费 Runtime system/component event；只有 mapped `PUSH_EDGE` Button periph 通过 public producer 进入 objective Button action pipeline，其他 UI input、timer 和 completion 不调用 private Runtime producer。H106 Main App 的 PIXA completion 在同一 main loop 同步产生，audio worker 只发布 atomic result，再由该 main loop poll 并 transition。
 - H106 transition 把 event 转换成 network、input、power、audio 或 feature state。
 - Global 和 screen subject 保存 UI 可观察状态。
 - 手写 LVGL screen/component 只通过 binding 和 prop 消费 subject。

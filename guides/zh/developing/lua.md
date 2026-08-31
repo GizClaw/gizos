@@ -58,6 +58,11 @@ resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。
 每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行，
 因此可以 yield，并受相同的 quantum、取消和超时约束。
 
+Button `ACTION` callback 收到 Runtime 的客观字段：`action_phase`、
+`pressed_at_ms`、`released_at_ms`、`duration_ms` 和 `click_count`。Lua Runtime
+只负责把这些字段投影到 VM，不提供 Button `gesture_kind`，也不内置 long press
+阈值；Lua App 根据自己的产品策略组合 phase、时间和点击计数。
+
 ## Lua surface
 
 | 模块 | 首期接口 | backing / 边界 |

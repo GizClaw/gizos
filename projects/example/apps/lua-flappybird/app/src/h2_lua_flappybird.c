@@ -93,7 +93,9 @@ h2_lua_flappybird_run(h2_runtime_t *runtime,
       }
       if (config->back_component_id != H2_RUNTIME_COMPONENT_ID_NONE &&
           event.component_id == config->back_component_id &&
-          event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) {
+          event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+          event.payload_size >= sizeof(h2_runtime_button_action_event_t) &&
+          h2_runtime_button_action_is_released(event.payload)) {
         (void)h2_lua_job_cancel(host, job_id);
       } else if (supported_event(event.kind)) {
         result = h2_lua_dispatch_runtime_event(host, job_id, &event);

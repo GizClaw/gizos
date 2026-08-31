@@ -173,7 +173,12 @@ int main(void) {
       }
       saw_down |= event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN;
       saw_up |= event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP;
-      saw_action |= event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION;
+      if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+          event.payload_size >= sizeof(h2_runtime_button_action_event_t)) {
+        h2_runtime_button_action_event_t button_action;
+        memcpy(&button_action, event.payload, sizeof(button_action));
+        saw_action |= h2_runtime_button_action_is_released(&button_action);
+      }
     }
     if (result != H2_PAL_OK) {
       break;

@@ -1100,7 +1100,7 @@ static void test_runtime_uses_initialization_capacities(void) {
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     assert(runtime->private_state->input_source_capacity == 3u);
     assert(runtime->private_state->component_mapping_capacity == 6u);
-    assert(runtime->private_state->input_pending_event_capacity == 3u);
+    assert(runtime->private_state->input_pending_event_capacity == 4u);
     assert(runtime->private_state->event_payload_capacity == payload_capacity);
     assert(runtime->private_state->event_queue->item_size ==
            offsetof(h2_runtime_queued_event_t, payload) + payload_capacity);
@@ -1284,6 +1284,19 @@ static h2_runtime_event_t event_with_payload(uint8_t *payload) {
         .payload = payload,
         .payload_capacity = H2_RUNTIME_EVENT_PAYLOAD_MAX,
     };
+}
+
+static h2_runtime_button_action_event_t poll_button_action(
+    h2_runtime_t *runtime,
+    h2_runtime_event_t *event,
+    h2_runtime_button_action_phase_t phase) {
+    assert(h2_runtime_poll_event(runtime, event) == H2_PAL_OK);
+    assert(event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+    assert(event->payload_size == sizeof(h2_runtime_button_action_event_t));
+    h2_runtime_button_action_event_t action;
+    memcpy(&action, event->payload, sizeof(action));
+    assert(action.phase == phase);
+    return action;
 }
 
 static void assert_system_event_mapping(
@@ -1977,6 +1990,8 @@ static void test_event_small_buffer_does_not_dequeue(void) {
     h2_runtime_event_t event = event_with_payload(payload);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
     env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
     env.time_state.now_ms = H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -2032,6 +2047,11 @@ static void test_button_action_emits_on_release(void) {
     h2_runtime_button_down_event_t down;
     memcpy(&down, event.payload, sizeof(down));
     assert(down.pressed_at_ms == 10u);
+    h2_runtime_button_action_event_t action = poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
+    assert(action.pressed_at_ms == 10u);
+    assert(action.released_at_ms == 0u);
+    assert(action.duration_ms == 0u);
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
     env.time_state.now_ms = 40u;
@@ -2044,13 +2064,11 @@ static void test_button_action_emits_on_release(void) {
     memcpy(&up, event.payload, sizeof(up));
     assert(up.pressed_at_ms == 10u);
     assert(up.released_at_ms == 40u);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+    action = poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED);
     assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
     assert(event.component_id == 1u);
-    h2_runtime_button_action_event_t click;
-    memcpy(&click, event.payload, sizeof(click));
-    assert(click.click_count == 1u);
+    assert(action.click_count == 1u);
 
     h2_runtime_button_state_t state;
     assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
@@ -2058,6 +2076,48 @@ static void test_button_action_emits_on_release(void) {
     assert(state.pressed_at_ms == 0u);
     assert(state.updated_at_ms == 40u);
     assert(state.result == H2_PAL_OK);
+
+    h2_runtime_deinit(runtime);
+}
+
+static void test_button_action_emits_on_every_pressed_poll(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms = 10u;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    h2_runtime_button_action_event_t action = poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
+    assert(action.duration_ms == 0u);
+
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    h2_runtime_button_down_event_t down;
+    memcpy(&down, event.payload, sizeof(down));
+    assert(down.pressed_at_ms == 10u);
+    action = poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING);
+    assert(action.released_at_ms == 0u);
+    assert(action.duration_ms == H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
+
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    action = poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED);
+    assert(action.released_at_ms == env.time_state.now_ms);
+    assert(action.duration_ms == 2u * H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
 
     h2_runtime_deinit(runtime);
 }
@@ -2075,6 +2135,8 @@ static void test_button_rapid_clicks_emit_separate_events(void) {
     h2_runtime_event_t event = event_with_payload(payload);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
     env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
     env.time_state.now_ms = 40u;
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -2091,6 +2153,8 @@ static void test_button_rapid_clicks_emit_separate_events(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
 
     h2_runtime_button_state_t state;
     assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
@@ -2110,7 +2174,7 @@ static void test_button_rapid_clicks_emit_separate_events(void) {
     h2_runtime_deinit(runtime);
 }
 
-static void test_button_held_polls_stay_silent_and_release_emits_action(void) {
+static void test_button_held_polls_publish_samples_and_release_action(void) {
     test_runtime_env_t env;
     test_env_init(&env);
     add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
@@ -2123,12 +2187,16 @@ static void test_button_held_polls_stay_silent_and_release_emits_action(void) {
     h2_runtime_event_t event = event_with_payload(payload);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
 
-    /* Holding the button produces no further events; the pressed state
-     * snapshot carries pressed_at_ms so Apps can measure the hold. */
+    /* Every due pressed poll publishes the retained press timestamp. */
     env.time_state.now_ms = 10u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING);
     h2_runtime_button_state_t state;
     assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
            H2_PAL_OK);
@@ -2141,10 +2209,8 @@ static void test_button_held_polls_stay_silent_and_release_emits_action(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-    h2_runtime_button_action_event_t action;
-    memcpy(&action, event.payload, sizeof(action));
+    h2_runtime_button_action_event_t action = poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED);
     assert(action.pressed_at_ms == 10u);
     assert(action.released_at_ms == 10u + 2u * H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     assert(action.click_count == 1u);
@@ -2161,6 +2227,8 @@ static void test_button_held_polls_stay_silent_and_release_emits_action(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
     assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
            H2_PAL_OK);
     assert(state.pressed);
@@ -2169,7 +2237,7 @@ static void test_button_held_polls_stay_silent_and_release_emits_action(void) {
     h2_runtime_deinit(runtime);
 }
 
-static void test_push_button_uses_mapping_and_runtime_gesture_recognizer(void) {
+static void test_push_button_uses_mapping_and_retained_pressed_state(void) {
     test_runtime_env_t env;
     test_env_init(&env);
     const h2_pal_periph_single_button_payload_t push_payload = {
@@ -2198,11 +2266,16 @@ static void test_push_button_uses_mapping_and_runtime_gesture_recognizer(void) {
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
     assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
     assert(event.component_id == 1u);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
 
     env.time_state.now_ms = 10u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(env.button_state.single_reads == 0u);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING);
 
     env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
     assert(h2_runtime_button_push_edge(
@@ -2210,8 +2283,8 @@ static void test_push_button_uses_mapping_and_runtime_gesture_recognizer(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED);
     assert(h2_runtime_poll_event(runtime, &event) ==
            H2_PAL_ERR_WOULD_BLOCK);
 
@@ -2221,14 +2294,16 @@ static void test_push_button_uses_mapping_and_runtime_gesture_recognizer(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
     env.time_state.now_ms += 100u;
     assert(h2_runtime_button_push_edge(
                runtime, 77u, H2_RUNTIME_BUTTON_EDGE_UP) == H2_PAL_OK);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
-    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
-    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED);
     assert(h2_runtime_poll_event(runtime, &event) ==
            H2_PAL_ERR_WOULD_BLOCK);
     assert(h2_runtime_button_push_edge(
@@ -2789,7 +2864,7 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
 
     /*
      * The first frame after a start republishes the current hardware state.
-     * Recognizer state is not reset, because a start switches the poller on
+     * Button action state is not reset, because a start switches the poller on
      * and does not touch component state: the click count from before the
      * stop is still the most recent thing the Runtime observed.
      */
@@ -2803,6 +2878,8 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(
+        runtime, &event, H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED);
     env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
     env.time_state.now_ms = 130u;
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -3359,9 +3436,10 @@ int main(void) {
     test_event_small_buffer_does_not_dequeue();
     test_event_queue_timeout_drops_event();
     test_button_action_emits_on_release();
+    test_button_action_emits_on_every_pressed_poll();
     test_button_rapid_clicks_emit_separate_events();
-    test_button_held_polls_stay_silent_and_release_emits_action();
-    test_push_button_uses_mapping_and_runtime_gesture_recognizer();
+    test_button_held_polls_publish_samples_and_release_action();
+    test_push_button_uses_mapping_and_retained_pressed_state();
     test_test_control_discards_stale_push_edges();
     test_button_push_rejects_non_push_and_invalid_payload();
     test_nfc_discovery_and_state();

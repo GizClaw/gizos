@@ -110,7 +110,7 @@ echo leds > /sys/bus/platform/drivers/leds-gpio/unbind || exit 1
 
 ## Touch Runtime 验收
 
-Touch smoke 同时验证 Linux evdev Touch provider、Touch PAL、LVGL pointer indev，以及 LVGL widget 写入 mapped `PUSH_EDGE` Runtime Button periph 的链路。它不把 raw Touch 做成 Runtime pull input：Touch edge 由 LVGL indev 消费，widget 只向 Runtime 注入 down/up，Runtime 再识别 click 和 long press。
+Touch smoke 同时验证 Linux evdev Touch provider、Touch PAL、LVGL pointer indev，以及 LVGL widget 写入 mapped `PUSH_EDGE` Runtime Button periph 的链路。它不把 raw Touch 做成 Runtime pull input：Touch edge 由 LVGL indev 消费，widget 只向 Runtime 注入 down/up，Runtime 生成客观 phased action；click 和 long press 由 App 判断。
 
 先停止其它 framebuffer owner，再把 executable 推入临时目录并保持 foreground shell：
 

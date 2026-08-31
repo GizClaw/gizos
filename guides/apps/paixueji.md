@@ -141,7 +141,7 @@ flowchart TD
 | `paixueji.conversation_button` | 按满 `500 ms` | 从当前普通页面直接开始 AI 对话；对话状态覆盖当前模式，但不改变当前角色或模式 |
 | `paixueji.shutter_button` | 短按 | 仅在魔拍模式且相机 ready 时拍摄当前画面；其它模式不触发拍照 |
 
-Runtime 负责把 board 按键识别为 down、up 和带时间戳与 click count 的 action event；长按由 App 根据 action 的时间戳或 Button state 判断。Portable App 只消费逻辑 component id，不读取 GPIO 或 board `periph_id`。拍摄进行中、系统更新和关机等不可打断阶段不接受新的对话或拍照动作。
+Runtime 负责按 poll cadence 把 board 按键发布为 down/up 和带 phase、时间戳与 click count 的客观 action event；长按由 App 根据 action 判断。Portable App 只消费逻辑 component id，不读取 GPIO 或 board `periph_id`。拍摄进行中、系统更新和关机等不可打断阶段不接受新的对话或拍照动作。
 
 ## 应用页与设置
 

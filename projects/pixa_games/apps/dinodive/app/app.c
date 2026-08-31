@@ -107,7 +107,9 @@ static int handle_runtime_event(
     h2_pixa_games_dinodive_state_t *state,
     const h2_runtime_event_t *event) {
     if (event->component != H2_RUNTIME_COMPONENT_BUTTON ||
-        event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
+        event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION ||
+        event->payload_size < sizeof(h2_runtime_button_action_event_t) ||
+        !h2_runtime_button_action_is_pressed(event->payload)) {
         return H2_GAME_RUNTIME_OK;
     }
     if (event->component_id == H2_PIXA_GAMES_DINODIVE_COMPONENT_LEFT) {
