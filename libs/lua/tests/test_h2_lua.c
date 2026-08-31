@@ -1119,6 +1119,18 @@ int main(void) {
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_NOT_FOUND);
   click_event.component_id = 7u;
+  click.phase = (h2_runtime_button_action_phase_t)99;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED;
+  click.duration_ms = 2u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.duration_ms = 1u;
+  click.released_at_ms = 3u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.released_at_ms = 2u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   click = (h2_runtime_button_action_event_t){
@@ -1128,15 +1140,18 @@ int main(void) {
       .phase = H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED,
       .duration_ms = 0u,
   };
+  click_event.timestamp_ms = 10u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   click.phase = H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING;
   click.duration_ms = 500u;
+  click_event.timestamp_ms = 510u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   click.released_at_ms = 610u;
   click.phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED;
   click.duration_ms = 600u;
+  click_event.timestamp_ms = 610u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   assert(h2_lua_dispatch_runtime_event(host, job_id, &down_event) == H2_PAL_OK);

@@ -30,6 +30,33 @@ _Static_assert(sizeof(h2_runtime_imu_gesture_event_t) <=
 _Static_assert(sizeof(h2_pal_result_t) <= H2_RUNTIME_EVENT_PAYLOAD_MAX,
                "error event exceeds Lua delivery storage");
 
+static int button_action_is_valid(const h2_runtime_event_t *event) {
+  const h2_runtime_button_action_event_t *value = event->payload;
+  uint64_t elapsed_ms;
+  uint32_t expected_duration_ms;
+  if (value->click_count == 0u ||
+      value->phase < H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED ||
+      value->phase > H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED) {
+    return 0;
+  }
+  if (value->phase == H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED) {
+    if (value->released_at_ms < value->pressed_at_ms ||
+        event->timestamp_ms != value->released_at_ms) {
+      return 0;
+    }
+    elapsed_ms = value->released_at_ms - value->pressed_at_ms;
+  } else {
+    if (value->released_at_ms != 0u ||
+        event->timestamp_ms < value->pressed_at_ms) {
+      return 0;
+    }
+    elapsed_ms = event->timestamp_ms - value->pressed_at_ms;
+  }
+  expected_duration_ms =
+      elapsed_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed_ms;
+  return value->duration_ms == expected_duration_ms;
+}
+
 static int payload_size_is_valid(const h2_runtime_event_t *event) {
   size_t expected = 0u;
   h2_runtime_component_t expected_component = H2_RUNTIME_COMPONENT_NONE;
@@ -70,6 +97,10 @@ static int payload_size_is_valid(const h2_runtime_event_t *event) {
   if (event->kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE &&
       ((const h2_runtime_nfc_state_t *)event->payload)->uid_len >
           H2_PAL_NFC_UID_MAX_LEN) {
+    return 0;
+  }
+  if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+      !button_action_is_valid(event)) {
     return 0;
   }
   return 1;
