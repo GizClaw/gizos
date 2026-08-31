@@ -3,7 +3,6 @@
 
 #include "h2_gizclaw_config.h"
 #include "h2_gizclaw_types.h"
-#include "h2_gizclaw_workflow.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -122,17 +121,13 @@ int h2_gizclaw_client_workspace_create(h2_gizclaw_client_t *client,
 /**
  * @brief Set the client-selected input mode for one Workspace.
  *
- * The driver selects the upstream typed Workspace parameters object. The
- * The operation first reloads the client-owned Workspace and rejects any
- * driver-specific parameters beyond agent type and input. It then replaces
- * that minimal parameter object with the requested input mode, so existing
- * driver overrides can never be discarded silently. Callers must reload or
- * activate the Workspace before starting a new conversation with the updated
- * mode.
+ * The client reads the Workspace's existing typed parameters and updates only
+ * their input mode. Workflow driver configuration remains server-owned and is
+ * not exposed through this API. Callers must reload or activate the Workspace
+ * before starting a new conversation with the updated mode.
  */
 int h2_gizclaw_client_workspace_set_input(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t name,
-    h2_gizclaw_workflow_driver_t driver,
     h2_gizclaw_workspace_input_mode_t input_mode,
     h2_gizclaw_workspace_t *out_workspace);
 

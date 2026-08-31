@@ -12,6 +12,8 @@
 
 GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和 app workflow 由调用方负责。
 
+Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。调用方只选择 Workspace 的 PTT 或 Realtime input mode；client 先读取现有 typed `WorkspaceParameters`，仅在参数对象恰好包含 agent type 和 input 时按同一类型更新 input，遇到未知类型或额外、缺失、重复字段时在 PUT 前拒绝，不能覆盖服务端管理的参数。
+
 ## Request service
 
 `h2_gizclaw_service_t` 使用调用方注入的 PAL Task、Queue、Sync 和 client config 创建一个 client-owning worker。`submit` 进行 bounded admission 并返回 opaque operation handle；worker FIFO receive typed run callback，组合 caller cancel、service stop 和 operation cancel。普通 API operation 执行完成后只把 operation 放入 completion queue；需要多步交互的 conversation operation 可以在 client I/O 步骤之间调用 `h2_gizclaw_operation_dispatch_call()`，同步请求 dispatch caller 完成一次有界的 Audio 或产品状态步骤，再由同一个 worker 继续写入 PCM、poll reply 或关闭 conversation。App main loop 调用有界、非阻塞的 `dispatch`，progress 和 completion callback 才在 dispatch caller thread 执行。Service 不依赖 Runtime，不产生 Runtime event，也不读取或修改产品 state、LVGL subject 或 widget。

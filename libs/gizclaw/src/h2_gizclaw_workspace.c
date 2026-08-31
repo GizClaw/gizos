@@ -934,65 +934,70 @@ static bool protobuf_find_bytes(const uint8_t *data, size_t len,
   return true;
 }
 
-static int
-workspace_parameters_replaceable(const uint8_t *response, size_t response_len,
-                                 h2_gizclaw_workflow_driver_t driver) {
-  uint32_t driver_field = 0u;
+static int workspace_parameters_input_shape(const uint8_t *response,
+                                            size_t response_len,
+                                            uint32_t *out_parameters_tag) {
+  const uint8_t *workspace = NULL;
+  size_t workspace_len = 0u;
+  bool found = false;
+  if (out_parameters_tag == NULL ||
+      !protobuf_find_bytes(response, response_len, 1u, &workspace,
+                           &workspace_len, &found) ||
+      !found)
+    return H2_PAL_ERR_FORMAT;
+
+  const uint8_t *parameters = NULL;
+  size_t parameters_len = 0u;
+  if (!protobuf_find_bytes(workspace, workspace_len, 4u, &parameters,
+                           &parameters_len, &found) ||
+      !found)
+    return H2_PAL_ERR_INVALID_STATE;
+
+  size_t offset = 0u;
+  uint32_t parameters_tag = 0u;
+  const uint8_t *typed = NULL;
+  size_t typed_len = 0u;
+  while (offset < parameters_len) {
+    uint64_t key = 0u;
+    uint64_t value_len = 0u;
+    if (!protobuf_read_varint(parameters, parameters_len, &offset, &key) ||
+        key == 0u || key >> 3u > UINT32_MAX || (key & 0x07u) != 2u ||
+        !protobuf_read_varint(parameters, parameters_len, &offset,
+                              &value_len) ||
+        value_len > SIZE_MAX || (size_t)value_len > parameters_len - offset)
+      return H2_PAL_ERR_FORMAT;
+    if (parameters_tag != 0u)
+      return H2_PAL_ERR_INVALID_STATE;
+    parameters_tag = (uint32_t)(key >> 3u);
+    typed = parameters + offset;
+    typed_len = (size_t)value_len;
+    offset += typed_len;
+  }
+
   uint32_t input_field = 0u;
-  switch (driver) {
-  case H2_GIZCLAW_WORKFLOW_DRIVER_FLOWCRAFT:
-    driver_field = 1u;
-    input_field = 4u;
+  switch (parameters_tag) {
+  case gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag:
+    input_field = gizclaw_rpc_v1_FlowcraftWorkspaceParameters_input_tag;
     break;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_DOUBAO_REALTIME:
-    driver_field = 2u;
-    input_field = 5u;
+  case gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_workspace_parameters_tag:
+    input_field = gizclaw_rpc_v1_DoubaoRealtimeWorkspaceParameters_input_tag;
     break;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_AST_TRANSLATE:
-    driver_field = 3u;
-    input_field = 5u;
+  case gizclaw_rpc_v1_WorkspaceParameters_asttranslate_workspace_parameters_tag:
+    input_field = gizclaw_rpc_v1_ASTTranslateWorkspaceParameters_input_tag;
     break;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_CHATROOM:
-    driver_field = 4u;
-    input_field = 3u;
+  case gizclaw_rpc_v1_WorkspaceParameters_chat_room_workspace_parameters_tag:
+    input_field = gizclaw_rpc_v1_ChatRoomWorkspaceParameters_input_tag;
+    break;
+  case gizclaw_rpc_v1_WorkspaceParameters_eino_workspace_parameters_tag:
+    input_field = gizclaw_rpc_v1_EinoWorkspaceParameters_input_tag;
     break;
   default:
     return H2_PAL_ERR_UNSUPPORTED;
   }
 
-  const uint8_t *workspace = NULL;
-  size_t workspace_len = 0u;
-  bool found = false;
-  if (!protobuf_find_bytes(response, response_len, 1u, &workspace,
-                           &workspace_len, &found) ||
-      !found)
-    return H2_PAL_ERR_FORMAT;
-  const uint8_t *parameters = NULL;
-  size_t parameters_len = 0u;
-  if (!protobuf_find_bytes(workspace, workspace_len, 4u, &parameters,
-                           &parameters_len, &found))
-    return H2_PAL_ERR_FORMAT;
-  if (!found)
-    return H2_PAL_OK;
-  const uint8_t *typed = NULL;
-  size_t typed_len = 0u;
-  if (!protobuf_find_bytes(parameters, parameters_len, driver_field, &typed,
-                           &typed_len, &found) ||
-      !found)
-    return H2_PAL_ERR_INVALID_STATE;
-
-  size_t parameters_offset = 0u;
-  while (parameters_offset < parameters_len) {
-    uint64_t key = 0u;
-    if (!protobuf_read_varint(parameters, parameters_len, &parameters_offset,
-                              &key) ||
-        key == 0u || key >> 3u > UINT32_MAX ||
-        (uint32_t)(key >> 3u) != driver_field || (key & 0x07u) != 2u ||
-        !protobuf_skip(parameters, parameters_len, &parameters_offset, 2u))
-      return H2_PAL_ERR_FORMAT;
-  }
-
-  size_t offset = 0u;
+  offset = 0u;
+  bool has_agent_type = false;
+  bool has_input = false;
   while (offset < typed_len) {
     uint64_t key = 0u;
     if (!protobuf_read_varint(typed, typed_len, &offset, &key) || key == 0u ||
@@ -1000,17 +1005,24 @@ workspace_parameters_replaceable(const uint8_t *response, size_t response_len,
       return H2_PAL_ERR_FORMAT;
     const uint32_t field = (uint32_t)(key >> 3u);
     const uint8_t wire_type = (uint8_t)(key & 0x07u);
-    if ((field != 1u && field != input_field) || wire_type != 0u)
+    if ((field != 1u && field != input_field) || wire_type != 0u ||
+        (field == 1u && has_agent_type) ||
+        (field == input_field && has_input))
       return H2_PAL_ERR_INVALID_STATE;
+    has_agent_type = has_agent_type || field == 1u;
+    has_input = has_input || field == input_field;
     if (!protobuf_skip(typed, typed_len, &offset, wire_type))
       return H2_PAL_ERR_FORMAT;
   }
+  if (!has_agent_type || !has_input)
+    return H2_PAL_ERR_INVALID_STATE;
+  *out_parameters_tag = parameters_tag;
   return H2_PAL_OK;
 }
 
 static int workspace_input_preflight(h2_gizclaw_client_t *client,
                                      h2_gizclaw_str_t name,
-                                     h2_gizclaw_workflow_driver_t driver) {
+                                     uint32_t *out_parameters_tag) {
   gizclaw_rpc_v1_WorkspaceGetRequest request =
       gizclaw_rpc_v1_WorkspaceGetRequest_init_zero;
   text_encode_t name_text = {.data = name.data, .len = name.len};
@@ -1021,27 +1033,26 @@ static int workspace_input_preflight(h2_gizclaw_client_t *client,
                         gizclaw_rpc_v1_WorkspaceGetRequest_fields, &request,
                         &response);
   if (rc == H2_PAL_OK) {
-    rc = workspace_parameters_replaceable(response.result_payload,
-                                          response.result_payload_len, driver);
+    rc = workspace_parameters_input_shape(response.result_payload,
+                                          response.result_payload_len,
+                                          out_parameters_tag);
   }
   h2_gizclaw_rpc_response_deinit(client, &response);
   return rc;
 }
 
-static int
-workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
-                               h2_gizclaw_workflow_driver_t driver,
-                               h2_gizclaw_workspace_input_mode_t input_mode) {
+static int workspace_parameters_set_input(
+    gizclaw_rpc_v1_WorkspaceParameters *parameters, uint32_t parameters_tag,
+    h2_gizclaw_workspace_input_mode_t input_mode) {
   if (parameters == NULL || !workspace_input_mode_valid(input_mode))
     return H2_PAL_ERR_INVALID_ARG;
   const gizclaw_rpc_v1_WorkspaceInputMode wire_input =
       input_mode == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
           ? gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_REALTIME
           : gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_PUSH_TO_TALK;
-  switch (driver) {
-  case H2_GIZCLAW_WORKFLOW_DRIVER_FLOWCRAFT:
-    parameters->which_value =
-        gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag;
+  parameters->which_value = parameters_tag;
+  switch (parameters_tag) {
+  case gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag:
     parameters->value.flowcraft_workspace_parameters =
         (gizclaw_rpc_v1_FlowcraftWorkspaceParameters)
             gizclaw_rpc_v1_FlowcraftWorkspaceParameters_init_zero;
@@ -1050,9 +1061,7 @@ workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
     parameters->value.flowcraft_workspace_parameters.has_input = true;
     parameters->value.flowcraft_workspace_parameters.input = wire_input;
     return H2_PAL_OK;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_DOUBAO_REALTIME:
-    parameters->which_value =
-        gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_workspace_parameters_tag;
+  case gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_workspace_parameters_tag:
     parameters->value.doubao_realtime_workspace_parameters =
         (gizclaw_rpc_v1_DoubaoRealtimeWorkspaceParameters)
             gizclaw_rpc_v1_DoubaoRealtimeWorkspaceParameters_init_zero;
@@ -1061,9 +1070,7 @@ workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
     parameters->value.doubao_realtime_workspace_parameters.has_input = true;
     parameters->value.doubao_realtime_workspace_parameters.input = wire_input;
     return H2_PAL_OK;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_AST_TRANSLATE:
-    parameters->which_value =
-        gizclaw_rpc_v1_WorkspaceParameters_asttranslate_workspace_parameters_tag;
+  case gizclaw_rpc_v1_WorkspaceParameters_asttranslate_workspace_parameters_tag:
     parameters->value.asttranslate_workspace_parameters =
         (gizclaw_rpc_v1_ASTTranslateWorkspaceParameters)
             gizclaw_rpc_v1_ASTTranslateWorkspaceParameters_init_zero;
@@ -1072,9 +1079,7 @@ workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
     parameters->value.asttranslate_workspace_parameters.has_input = true;
     parameters->value.asttranslate_workspace_parameters.input = wire_input;
     return H2_PAL_OK;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_CHATROOM:
-    parameters->which_value =
-        gizclaw_rpc_v1_WorkspaceParameters_chat_room_workspace_parameters_tag;
+  case gizclaw_rpc_v1_WorkspaceParameters_chat_room_workspace_parameters_tag:
     parameters->value.chat_room_workspace_parameters =
         (gizclaw_rpc_v1_ChatRoomWorkspaceParameters)
             gizclaw_rpc_v1_ChatRoomWorkspaceParameters_init_zero;
@@ -1083,8 +1088,15 @@ workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
     parameters->value.chat_room_workspace_parameters.has_input = true;
     parameters->value.chat_room_workspace_parameters.input = wire_input;
     return H2_PAL_OK;
-  case H2_GIZCLAW_WORKFLOW_DRIVER_UNSPECIFIED:
-  case H2_GIZCLAW_WORKFLOW_DRIVER_PET:
+  case gizclaw_rpc_v1_WorkspaceParameters_eino_workspace_parameters_tag:
+    parameters->value.eino_workspace_parameters =
+        (gizclaw_rpc_v1_EinoWorkspaceParameters)
+            gizclaw_rpc_v1_EinoWorkspaceParameters_init_zero;
+    parameters->value.eino_workspace_parameters.agent_type =
+        gizclaw_rpc_v1_EinoWorkspaceParametersAgentType_EINO_WORKSPACE_PARAMETERS_AGENT_TYPE_EINO;
+    parameters->value.eino_workspace_parameters.has_input = true;
+    parameters->value.eino_workspace_parameters.input = wire_input;
+    return H2_PAL_OK;
   default:
     return H2_PAL_ERR_UNSUPPORTED;
   }
@@ -1092,20 +1104,24 @@ workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
 
 int h2_gizclaw_client_workspace_set_input(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t name,
-    h2_gizclaw_workflow_driver_t driver,
     h2_gizclaw_workspace_input_mode_t input_mode,
     h2_gizclaw_workspace_t *out_workspace) {
   if (out_workspace != NULL)
     memset(out_workspace, 0, sizeof(*out_workspace));
   if (client == NULL || out_workspace == NULL ||
       !valid_token(name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES) ||
-      !workspace_input_mode_valid(input_mode)) {
+      !workspace_input_mode_valid(input_mode))
     return H2_PAL_ERR_INVALID_ARG;
-  }
   const h2_pal_mem_api_t *allocator =
       h2_gizclaw_client_allocator_internal(client);
   if (allocator == NULL)
     return H2_PAL_ERR_INVALID_STATE;
+
+  uint32_t parameters_tag = 0u;
+  int rc = workspace_input_preflight(client, name, &parameters_tag);
+  if (rc != H2_PAL_OK)
+    return rc;
+
   gizclaw_rpc_v1_WorkspacePutRequest request =
       gizclaw_rpc_v1_WorkspacePutRequest_init_zero;
   text_encode_t name_text = {.data = name.data, .len = name.len};
@@ -1113,13 +1129,11 @@ int h2_gizclaw_client_workspace_set_input(
   request.name.arg = &name_text;
   request.has_body = true;
   request.body.has_parameters = true;
-  int rc = workspace_parameters_set_input(&request.body.parameters, driver,
-                                          input_mode);
+  rc = workspace_parameters_set_input(&request.body.parameters, parameters_tag,
+                                      input_mode);
   if (rc != H2_PAL_OK)
     return rc;
-  rc = workspace_input_preflight(client, name, driver);
-  if (rc != H2_PAL_OK)
-    return rc;
+
   h2_gizclaw_rpc_response_t response = {0};
   rc = call_message(client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
                     gizclaw_rpc_v1_WorkspacePutRequest_fields, &request,

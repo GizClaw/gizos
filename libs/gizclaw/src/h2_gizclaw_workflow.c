@@ -211,14 +211,10 @@ static bool decode_workflow_object(pb_istream_t *stream,
               .data = out->collection,
               .len = text[1].decoded_len,
           },
-          H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES) ||
-      decoded.driver <=
-          gizclaw_rpc_v1_WorkflowDriver_WORKFLOW_DRIVER_UNSPECIFIED ||
-      decoded.driver > gizclaw_rpc_v1_WorkflowDriver_WORKFLOW_DRIVER_PET) {
+          H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES)) {
     workflow_clear(allocator, out);
     return false;
   }
-  out->driver = (h2_gizclaw_workflow_driver_t)decoded.driver;
   return true;
 }
 

@@ -152,8 +152,6 @@ static int run_catalog_workspace(h2_gizclaw_e2e_fixture_t *fixture) {
          fixture->workflow_name);
 
   h2_gizclaw_workflow_t workflow = {0};
-  h2_gizclaw_workflow_driver_t workflow_driver =
-      H2_GIZCLAW_WORKFLOW_DRIVER_UNSPECIFIED;
   char *profile_name = NULL;
   char *profile_revision = NULL;
   rc = checked("h2_gizclaw_client_workflow_get", "catalog",
@@ -167,8 +165,6 @@ static int run_catalog_workspace(h2_gizclaw_e2e_fixture_t *fixture) {
        strcmp(profile_name, fixture->runtime_profile_name) != 0)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
-  if (rc == H2_PAL_OK)
-    workflow_driver = workflow.driver;
   h2_gizclaw_workflow_get_deinit(client, &workflow, profile_name,
                                  profile_revision);
   if (rc != H2_PAL_OK)
@@ -224,8 +220,7 @@ static int run_catalog_workspace(h2_gizclaw_e2e_fixture_t *fixture) {
   rc = checked("h2_gizclaw_client_workspace_set_input", "workspace",
                h2_gizclaw_client_workspace_set_input(
                    client, h2_gizclaw_e2e_str(fixture->workspace_name),
-                   workflow_driver, H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-                   &workspace));
+                   H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK, &workspace));
   if (rc == H2_PAL_OK && !h2_gizclaw_e2e_workspace_response_ready(
                              &workspace, fixture->workspace_name)) {
     rc = H2_PAL_ERR_INVALID_STATE;
