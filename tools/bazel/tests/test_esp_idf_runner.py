@@ -36,6 +36,8 @@ if os.environ.get("H2_FIRMWARE_VERSION") != "test-version":
     raise SystemExit("runner did not provide the internal firmware version")
 if os.environ.get("H2_BAZEL_NATIVE_ARTIFACTS_ONLY") != "1":
     raise SystemExit("runner did not disable native package side effects")
+if not Path(os.environ.get("ESP_ROM_ELF_DIR", "")).name == "fixture-version":
+    raise SystemExit("runner did not provide the ESP-IDF ROM ELF directory")
 gizos_root = Path(os.environ["H2_GIZOS_ROOT"])
 if not gizos_root.joinpath(
     "native_component_src/esp-idf6.x/cmake/h2_bazel_archive.cmake"
@@ -210,6 +212,9 @@ class EspIdfRunnerTest(unittest.TestCase):
         python.symlink_to(sys.executable)
         self.tools = self.root / "idf-tools"
         self.tools.mkdir()
+        self.root.joinpath(
+            "tools", "esp-rom-elfs", "fixture-version"
+        ).mkdir(parents=True)
         self.tool_bin = self.root / "bin"
         self.tool_bin.mkdir()
         compiler_versions = {
@@ -442,6 +447,28 @@ class EspIdfRunnerTest(unittest.TestCase):
         metadata = json.loads(output.joinpath("flasher_args.json").read_text())
         self.assertEqual(metadata["flash_files"]["0x10000"], "fixture.bin")
         self.assertFalse(self.project.joinpath("generated.lock").exists())
+
+    def test_missing_rom_elf_version_fails_closed(self):
+        shutil.rmtree(self.root / "tools" / "esp-rom-elfs" / "fixture-version")
+
+        result, _ = self._run(name="missing-rom-elf-version")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ESP-IDF ROM ELF tools must contain exactly one installed version",
+            result.stderr,
+        )
+
+    def test_multiple_rom_elf_versions_fail_closed(self):
+        self.root.joinpath("tools", "esp-rom-elfs", "second-version").mkdir()
+
+        result, _ = self._run(name="multiple-rom-elf-versions")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ESP-IDF ROM ELF tools must contain exactly one installed version",
+            result.stderr,
+        )
 
     def test_allowlisted_cmake_variable_reaches_idf(self):
         result, _ = self._run(

@@ -33,10 +33,11 @@ Preference 只保存状态，不能代替实际内容比较：
 
 App 与 data 不提供整体事务回滚。如果 data 已更新而 App write 失败，设备保留失败状态并停在 Loader，不发布新的 installed identity，也不自动启动 App。
 
-App install command 的接受边界先于上述 package 校验和安装。Loader 先清除平台
-hold（平台支持时），再在同一个 `h2loader` Preference transaction 中写入
-`manual_hold=0`、`INSTALL_REQUESTED`（重试 pending-confirm 时为 `INSTALLING`）和
-`boot_intent=APP`，并只 commit 一次。commit 成功后才输出并 flush
+App install command 的接受边界先于上述 package 校验和安装。Loader 不改变平台
+physical power hold；该 hold 的生命周期继续由平台或产品 owner 管理。Loader 只在同一个
+`h2loader` Preference transaction 中写入 `manual_hold=0`、`INSTALL_REQUESTED`
+（重试 pending-confirm 时为 `INSTALLING`）和 `boot_intent=APP`，并只 commit 一次。
+commit 成功后才输出并 flush
 `H2_LOADER_REBOOT target=app result=accepted`，随后才调用 MFG
 `before_disruptive` 停止和 join worker，再进入安装或启动流程。
 
