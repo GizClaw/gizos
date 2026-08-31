@@ -83,7 +83,7 @@ JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。当前 export
 
 `projects/e2e/targets/pkg_tar/h2loader-serial/` 只验证 Browser Host Serial contract；它不是产品 UI。[H2Loader Web SDK](/apps/h2loader/apps/batch_loader/) 通过本 Core 与 Web PAL 提供 authoritative status、managed operation、progress 与 final verification，但不暴露 destructive recovery。产品 React UI 位于 `GizClaw/www`，只消费发布的 `@gizclaw/h2loader` Promise API。
 
-Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。Host reliable serial connection 在 `open()` 后不读取或设置 DTR/RTS，直接借出 stream；Web 边界也遵守相同规则。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。Darwin default-route 查询使用 non-blocking route socket 和一秒 monotonic deadline，保证 Host shutdown/join 不会因为无路由响应永久阻塞。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
+Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。Host reliable serial connection 在 `open()` 后、借出 stream 前 deassert DTR/RTS；Web 边界通过 `setSignals()` 执行相同操作，只有 canonical `UNSUPPORTED` 可继续。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。Darwin default-route 查询使用 non-blocking route socket 和一秒 monotonic deadline，保证 Host shutdown/join 不会因为无路由响应永久阻塞。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
 
 ## Validation
 

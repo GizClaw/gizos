@@ -13,7 +13,7 @@ Display image 使用 board 共用的 P4 partition table：2 MB `h2loader`、8 MB
 
 ## sdkconfig
 
-Display 使用 480 × 800 RGB565 ST7701 MIPI-DSI panel、两条 500 Mbps data lane、30 MHz DPI clock、LDO channel 3 和 GPIO 26 inverted backlight。command service 同时启用 BLE iKCP 与 `115200` baud UART iKCP，panic coredump 写入 flash。
+Display 使用 480 × 800 RGB565 ST7701 MIPI-DSI panel、两条 500 Mbps data lane、30 MHz DPI clock、LDO channel 3 和 GPIO 26 inverted backlight。command service 同时启用 BLE iKCP 与 `230400` baud UART iKCP，panic coredump 写入 flash。
 
 ## 预期表现
 
