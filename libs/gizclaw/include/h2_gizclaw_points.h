@@ -68,14 +68,15 @@ typedef void (*h2_gizclaw_points_list_completion_fn)(
 #if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_points_get(h2_gizclaw_client_t *client,
                                  h2_gizclaw_points_account_t *out_account);
-void h2_gizclaw_points_account_deinit(h2_gizclaw_client_t *client,
-                                      h2_gizclaw_points_account_t *account);
 int h2_gizclaw_client_points_transactions_list(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t cursor, size_t limit,
     h2_gizclaw_points_transaction_page_t *out_page);
+#endif
+
+void h2_gizclaw_points_account_deinit(h2_gizclaw_client_t *client,
+                                      h2_gizclaw_points_account_t *account);
 void h2_gizclaw_points_transaction_page_deinit(
     h2_gizclaw_client_t *client, h2_gizclaw_points_transaction_page_t *page);
-#endif
 
 /**
  * Read the current caller's Points account through server.points.get.

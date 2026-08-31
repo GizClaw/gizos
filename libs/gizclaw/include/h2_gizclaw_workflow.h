@@ -88,6 +88,7 @@ int h2_gizclaw_client_workflow_get(h2_gizclaw_client_t *client,
                                    h2_gizclaw_workflow_t *out_workflow,
                                    char **out_runtime_profile_name,
                                    char **out_runtime_profile_revision);
+#endif
 
 const char *
 h2_gizclaw_workflow_display_name(const h2_gizclaw_workflow_t *workflow,
@@ -104,7 +105,6 @@ void h2_gizclaw_workflow_get_deinit(h2_gizclaw_client_t *client,
                                     char *runtime_profile_revision);
 void h2_gizclaw_workflow_page_deinit(h2_gizclaw_client_t *client,
                                      h2_gizclaw_workflow_page_t *page);
-#endif
 
 #if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_workflow_decode_list_for_test(
