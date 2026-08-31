@@ -2,20 +2,28 @@
 
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/os/h2_pal_time.h"
+#include "h2_gizclaw_service.h"
 
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
 #define H2_SMOKE_GIZCLAW_DEFAULT_WIFI_CONNECT_TIMEOUT_MS 30000u
 #define H2_SMOKE_GIZCLAW_DEFAULT_SERVER_INFO_TIMEOUT_MS 10000u
-#define H2_SMOKE_GIZCLAW_DEFAULT_POLL_WINDOW_MS 3000u
+#define H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS 30000u
 #define H2_SMOKE_GIZCLAW_POLL_SLICE_MS 100
 #define H2_SMOKE_GIZCLAW_WIFI_CONNECT_ATTEMPTS 3u
+#define H2_SMOKE_GIZCLAW_SPEED_BYTES (1024u * 1024u)
 
 typedef struct smoke_wifi_scan_state {
     int found;
 } smoke_wifi_scan_state_t;
+
+typedef struct smoke_async_state {
+    atomic_bool complete;
+    atomic_int result;
+} smoke_async_state_t;
 
 static int smoke_str_empty(h2_gizclaw_str_t value) {
     return value.data == NULL || value.len == 0u;
@@ -245,30 +253,62 @@ static int smoke_server_info_preflight(
     return rc;
 }
 
-static int smoke_poll_window(
-    h2_gizclaw_client_t *client,
+static void smoke_ping_complete(
+    void *user,
+    h2_gizclaw_ping_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_ping_result_t *ping) {
+    smoke_async_state_t *state = (smoke_async_state_t *)user;
+    int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
+    if (rc == H2_PAL_OK && ping == NULL) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+    }
+    atomic_store_explicit(&state->result, rc, memory_order_release);
+    atomic_store_explicit(&state->complete, true, memory_order_release);
+    h2_gizclaw_ping_request_release(request);
+}
+
+static void smoke_speedtest_complete(
+    void *user,
+    h2_gizclaw_speedtest_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_speedtest_result_t *speedtest) {
+    smoke_async_state_t *state = (smoke_async_state_t *)user;
+    int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
+    if (rc == H2_PAL_OK && speedtest == NULL) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+    }
+    atomic_store_explicit(&state->result, rc, memory_order_release);
+    atomic_store_explicit(&state->complete, true, memory_order_release);
+    h2_gizclaw_speedtest_request_release(request);
+}
+
+static void smoke_async_reset(smoke_async_state_t *state) {
+    atomic_store_explicit(&state->result, H2_PAL_OK, memory_order_relaxed);
+    atomic_store_explicit(&state->complete, false, memory_order_release);
+}
+
+static int smoke_async_wait(
+    smoke_async_state_t *state,
     const h2_pal_time_api_t *time,
-    uint32_t window_ms) {
+    uint32_t timeout_ms) {
     uint64_t start_ms = 0;
     int rc = h2_pal_time_get_monotonic_ms(time, &start_ms);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    uint32_t effective_window = window_ms == 0u ? H2_SMOKE_GIZCLAW_DEFAULT_POLL_WINDOW_MS : window_ms;
-    for (;;) {
-        rc = h2_gizclaw_client_poll(client, H2_SMOKE_GIZCLAW_POLL_SLICE_MS);
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
+    while (!atomic_load_explicit(&state->complete, memory_order_acquire)) {
         uint64_t now_ms = 0;
         rc = h2_pal_time_get_monotonic_ms(time, &now_ms);
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        if (h2_pal_time_elapsed_ms(start_ms, now_ms) >= effective_window) {
-            return H2_PAL_OK;
+        if (h2_pal_time_elapsed_ms(start_ms, now_ms) >= timeout_ms) {
+            return H2_PAL_ERR_TIMEOUT;
         }
+        (void)h2_pal_time_sleep_ms(time, H2_SMOKE_GIZCLAW_POLL_SLICE_MS);
     }
+    return atomic_load_explicit(&state->result, memory_order_acquire);
 }
 
 h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
@@ -280,6 +320,9 @@ h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
         runtime->webrtc == NULL ||
         runtime->crypto == NULL ||
         runtime->time == NULL ||
+        runtime->task == NULL ||
+        runtime->queue == NULL ||
+        runtime->sync == NULL ||
         runtime->wifi_sta == NULL ||
         runtime->wifi_settings == NULL ||
         smoke_str_empty(config->server_endpoint) ||
@@ -315,31 +358,66 @@ h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
         .time = runtime->time,
         .log = runtime->log,
     };
-    h2_gizclaw_client_t *client = NULL;
-    rc = h2_gizclaw_client_init(&gizclaw_config, &client);
+    const h2_gizclaw_service_config_t service_config = {
+        .client_config = &gizclaw_config,
+        .task = runtime->task,
+        .queue = runtime->queue,
+        .sync = runtime->sync,
+        .operation_capacity = 1u,
+        .client_poll_timeout_ms = H2_SMOKE_GIZCLAW_POLL_SLICE_MS,
+    };
+    h2_gizclaw_service_t *service = NULL;
+    smoke_async_state_t async_state;
+    atomic_init(&async_state.complete, false);
+    atomic_init(&async_state.result, H2_PAL_OK);
+
+    rc = h2_gizclaw_service_init(&service_config, &service);
     if (rc == H2_PAL_OK) {
-        rc = h2_gizclaw_client_connect(client);
+        rc = h2_gizclaw_service_start(service);
+    }
+    h2_gizclaw_ping_request_t *ping_request = NULL;
+    if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_service_ping_async(
+            service,
+            1u,
+            H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS,
+            smoke_ping_complete,
+            &async_state,
+            &ping_request);
     }
     if (rc == H2_PAL_OK) {
-        rc = smoke_poll_window(client, runtime->time, config->poll_window_ms);
+        rc = smoke_async_wait(
+            &async_state, runtime->time, H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS);
+    }
+    h2_gizclaw_speedtest_request_t *speedtest_request = NULL;
+    smoke_async_reset(&async_state);
+    if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_service_speedtest_async(
+            service,
+            2u,
+            H2_SMOKE_GIZCLAW_SPEED_BYTES,
+            H2_SMOKE_GIZCLAW_SPEED_BYTES,
+            H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS,
+            smoke_speedtest_complete,
+            &async_state,
+            &speedtest_request);
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_gizclaw_client_ping(client);
+        rc = smoke_async_wait(
+            &async_state, runtime->time, H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS);
     }
-    if (rc == H2_PAL_OK) {
-        rc = h2_gizclaw_client_speedtest(client);
-    }
-    if (rc == H2_PAL_OK) {
-        rc = smoke_poll_window(client, runtime->time, config->poll_window_ms);
-    }
-    int close_rc = client == NULL ? H2_PAL_OK : h2_gizclaw_client_close(client);
-    h2_gizclaw_client_deinit(client);
+    int close_rc = service == NULL ? H2_PAL_OK : h2_gizclaw_service_stop(service);
+    int deinit_rc = service == NULL ? H2_PAL_OK : h2_gizclaw_service_deinit(service);
     if (rc != H2_PAL_OK) {
         smoke_print_fail("run", rc);
         return H2_SMOKE_GIZCLAW_FAIL;
     }
     if (close_rc != H2_PAL_OK) {
         smoke_print_fail("close", close_rc);
+        return H2_SMOKE_GIZCLAW_FAIL;
+    }
+    if (deinit_rc != H2_PAL_OK) {
+        smoke_print_fail("deinit", deinit_rc);
         return H2_SMOKE_GIZCLAW_FAIL;
     }
     printf("PASS gizclaw-ping-speed endpoint=%.*s\n",
