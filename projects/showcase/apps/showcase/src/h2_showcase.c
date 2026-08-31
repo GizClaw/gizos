@@ -1144,7 +1144,8 @@ static void process_runtime_events(h2_showcase_app_t *app) {
     if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
         event.payload_size >= sizeof(h2_runtime_button_action_event_t)) {
       const h2_runtime_button_action_event_t *action = event.payload;
-      if (h2_runtime_button_action_is_pressed(action)) {
+      if (action->released_at_ms == 0u &&
+          event.timestamp_ms == action->pressed_at_ms) {
         h2_showcase_state_button_down(&app->state, event.timestamp_ms);
       } else if (h2_runtime_button_action_is_released(action)) {
         h2_showcase_state_button_up(&app->state, event.timestamp_ms);

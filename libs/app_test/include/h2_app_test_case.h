@@ -105,17 +105,11 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
   } while (0)
 
 #define H2_APP_TEST_BUTTON_ACTION(test_, component_id_, pressed_, released_)    \
-  H2_APP_TEST_BUTTON_ACTION_COUNT((test_), (component_id_), (pressed_),        \
-                                  (released_), 1u)
-
-/* Inject one BUTTON_ACTION carrying a consecutive-click count. */
-#define H2_APP_TEST_BUTTON_ACTION_COUNT(test_, component_id_, pressed_,        \
-                                        released_, click_count_)               \
   do {                                                                         \
     H2_APP_TEST_REQUIRE((test_),                                               \
                         h2_app_test_session_button_action(                      \
                             (test_)->session, (component_id_), (pressed_),     \
-                            (released_), (click_count_), 0u,                   \
+                            (released_), 0u,                                   \
                             &(test_)->snapshot));                              \
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
   } while (0)
@@ -126,11 +120,11 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
     H2_APP_TEST_REQUIRE((test_),                                               \
                         h2_app_test_session_button_action(                      \
                             (test_)->session, (component_id_), (pressed_),     \
-                            (released_), 1u, 0u, &(test_)->snapshot));         \
+                            (released_), 0u, &(test_)->snapshot));             \
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), (expected_result_));               \
   } while (0)
 
-/* Inject one semantic Button Action with phase PRESSED. */                    \
+/* Inject one held Button Action at its first observation. */                  \
 #define H2_APP_TEST_BUTTON_DOWN(test_, component_id_, timestamp_)              \
   do {                                                                         \
     const size_t h2_app_test_button_index_ = (size_t)(component_id_);          \
@@ -144,7 +138,7 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
   } while (0)
 
-/* Inject one semantic Button Action with phase RELEASED. */                   \
+/* Inject one released Button Action. */                                      \
 #define H2_APP_TEST_BUTTON_UP(test_, component_id_, timestamp_)                \
   do {                                                                         \
     const size_t h2_app_test_button_index_ = (size_t)(component_id_);          \

@@ -99,23 +99,21 @@ semantic helper。
 ```text
 button_down
   state = PRESSED
-  event = BUTTON_ACTION(PRESSED)
+  event = BUTTON_ACTION(pressed_at_ms, released_at_ms=0)
 
 button_up
   state = released
-  event = BUTTON_ACTION(RELEASED)
+  event = BUTTON_ACTION(pressed_at_ms, released_at_ms)
 
 button_action
   state = released
-  event = BUTTON_ACTION(RELEASED)
+  event = BUTTON_ACTION(pressed_at_ms, released_at_ms)
 ```
 
-`button_action()` 携带 `pressed_at_ms`、`released_at_ms` 和 `click_count`，
-`click_count` 由调用方显式给出（`H2_APP_TEST_BUTTON_ACTION` 固定为 1，
-`H2_APP_TEST_BUTTON_ACTION_COUNT` 可给出连续点击序号，0 被拒绝），App 收到的
-payload 与 Runtime 生产路径一致。Scenario 的 `button_down()` / `button_up()`
-分别投影 `PRESSED` / `RELEASED` action；更细的 `HOLDING` sample 可以通过 Test
-Control 的 phased action helper 注入。长按阈值属于产品策略。每个 helper 失败时不能只改 state
+`button_action()` 只携带 `pressed_at_ms` 和 `released_at_ms`，App 收到的 payload
+与 Runtime 生产路径一致。Scenario 的 `button_down()` 投影释放时间为 0 的 action，
+`button_up()` 投影释放时间非零的 action；更细的 held sample 可以直接通过 Test
+Control 的 two-timestamp action helper 注入并提供观察时间。长按阈值属于产品策略。每个 helper 失败时不能只改 state
 或只入队 event。
 
 ## Session State Machine

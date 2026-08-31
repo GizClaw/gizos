@@ -28,7 +28,7 @@ evdev button provider 通过 `EVIOCGNAME` 发现 BSP 指定的设备，再用 `E
 
 GPIO button provider 枚举全部数字后缀的 `/dev/gpiochip*` 节点，通过 `GPIO_GET_CHIPINFO_IOCTL` 按 BSP 指定的 stable chip label 发现 character device，再以 input 方式请求 line handle 并读取当前逻辑状态；枚举不假定 `gpiochipN` 的编号上限。BSP 通过 process-wide `h2_linux_configure_gpio_buttons()` 传入 `periph_id`、chip label、zero-based line offset 和 active level，provider 同步复制 mapping 与 label，并在第一次 read 时完成发现和 request。没有匹配 chip/line 返回 `H2_PAL_ERR_NOT_FOUND`，多个有效 chip 使用同一 label 返回 `H2_PAL_ERR_INVALID_STATE`，访问权限不足返回 `H2_PAL_ERR_UNAVAILABLE`，line 已被内核或其它 userspace consumer 占用返回 `H2_PAL_ERR_BUSY`。成功 handle 保留到 read failure、reconfigure 或进程退出；设备移除导致的 read failure 会关闭旧 handle，下一次 read 重新发现。Reconfigure 在提交新 copy 前关闭全部旧 handle，close 失败则返回 `H2_PAL_ERR_IO` 并保留旧 mapping 供后续 lazy reacquire。配置、read 与 reconfigure 不提供并发安全，BSP 必须在 Runtime 初始化并启动 input task 前完成配置。目标 Linux image 必须先保证 ownership 唯一，provider 不擅自解绑其它 driver。
 
-两个 button provider 当前都只实现 single-button 当前状态读取。evdev 路径使用 Linux input 已确认的状态；GPIO provider 不额外实现物理 debounce，需要 debounce 的 board 必须在电气、内核或独立 target component 层提供稳定状态。Runtime 只负责从 pressed/released 产生 down/up sample 和带 phase、时间戳、click count 的客观 action，launcher 负责 App component mapping，gesture policy 属于 App。
+两个 button provider 当前都只实现 single-button 当前状态读取。evdev 路径使用 Linux input 已确认的状态；GPIO provider 不额外实现物理 debounce，需要 debounce 的 board 必须在电气、内核或独立 target component 层提供稳定状态。Runtime 只负责从 pressed/released 产生 down/up sample 和只带按下、释放时间戳的客观 action，launcher 负责 App component mapping，gesture policy 属于 App。
 
 ## Touch
 

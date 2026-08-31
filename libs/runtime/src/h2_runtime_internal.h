@@ -107,8 +107,6 @@ typedef struct h2_runtime_button_recognizer {
     int initialized;
     int is_pressed;
     h2_runtime_timestamp_ms_t pressed_at_ms;
-    h2_runtime_timestamp_ms_t last_released_at_ms;
-    uint16_t click_count;
 } h2_runtime_button_recognizer_t;
 
 typedef struct h2_runtime_button_push_edge {

@@ -718,13 +718,13 @@ int main(void) {
       "click_subscription=runtime.components.on(7,runtime.event.BUTTON_ACTION,"
       "function(e) "
       "if e.component_id==7 and type(e.component_kind)=='number' and "
-      "e.click_count==1 and e.action_phase==3 and e.gesture_kind==2 and "
+      "e.pressed_at_ms==1 and e.released_at_ms==2 and e.gesture_kind==2 and "
       "e.duration_ms==1 then "
-      "n=n+1 elseif e.action_phase==1 and e.gesture_kind==1 and "
+      "n=n+1 elseif e.released_at_ms==0 and e.gesture_kind==1 and "
       "e.duration_ms==0 then n=n+8 "
-      "elseif e.action_phase==2 and e.gesture_kind==3 and "
+      "elseif e.released_at_ms==0 and e.gesture_kind==3 and "
       "e.duration_ms==500 then n=n+1024 "
-      "elseif e.action_phase==3 and e.gesture_kind==3 and "
+      "elseif e.released_at_ms==610 and e.gesture_kind==3 and "
       "e.duration_ms==600 then n=n+2048 end end)\n"
       "assert(click_subscription~=removed and not "
       "runtime.components.off(removed))\n"
@@ -771,9 +771,6 @@ int main(void) {
   h2_runtime_button_action_event_t click = {
       .pressed_at_ms = 1u,
       .released_at_ms = 2u,
-      .click_count = 1u,
-      .phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED,
-      .duration_ms = 1u,
   };
   h2_runtime_button_down_event_t down = {11u};
   h2_runtime_button_up_event_t up = {11u, 12u};
@@ -1119,14 +1116,13 @@ int main(void) {
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_NOT_FOUND);
   click_event.component_id = 7u;
-  click.phase = (h2_runtime_button_action_phase_t)99;
+  click.pressed_at_ms = 3u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_INVALID_ARG);
-  click.phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED;
-  click.duration_ms = 2u;
+  click.pressed_at_ms = 1u;
+  click.released_at_ms = 0u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
-         H2_PAL_ERR_INVALID_ARG);
-  click.duration_ms = 1u;
+         H2_PAL_OK);
   click.released_at_ms = 3u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_INVALID_ARG);
@@ -1136,21 +1132,14 @@ int main(void) {
   click = (h2_runtime_button_action_event_t){
       .pressed_at_ms = 10u,
       .released_at_ms = 0u,
-      .click_count = 1u,
-      .phase = H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED,
-      .duration_ms = 0u,
   };
   click_event.timestamp_ms = 10u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
-  click.phase = H2_RUNTIME_BUTTON_ACTION_PHASE_HOLDING;
-  click.duration_ms = 500u;
   click_event.timestamp_ms = 510u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   click.released_at_ms = 610u;
-  click.phase = H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED;
-  click.duration_ms = 600u;
   click_event.timestamp_ms = 610u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);

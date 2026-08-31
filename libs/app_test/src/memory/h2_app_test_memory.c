@@ -224,28 +224,26 @@ static h2_pal_result_t memory_inject(
         operation->data.component_state.data,
         operation->data.component_state.size);
   case H2_APP_TEST_OPERATION_BUTTON_DOWN:
-    return h2_runtime_test_button_action_phase(
+    return h2_runtime_test_button_action(
         memory->control,
         operation->data.button.component_id,
-        H2_RUNTIME_BUTTON_ACTION_PHASE_PRESSED,
         operation->data.button.pressed_at_ms,
-        operation->data.button.pressed_at_ms,
-        1u);
+        0u,
+        operation->data.button.pressed_at_ms);
   case H2_APP_TEST_OPERATION_BUTTON_UP:
-    return h2_runtime_test_button_action_phase(
+    return h2_runtime_test_button_action(
         memory->control,
         operation->data.button.component_id,
-        H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED,
         operation->data.button.pressed_at_ms,
         operation->data.button.released_at_ms,
-        1u);
+        operation->data.button.released_at_ms);
   case H2_APP_TEST_OPERATION_BUTTON_ACTION:
     return h2_runtime_test_button_action(
         memory->control,
         operation->data.button.component_id,
         operation->data.button.pressed_at_ms,
         operation->data.button.released_at_ms,
-        operation->data.button.click_count);
+        operation->data.button.released_at_ms);
   default:
     return H2_PAL_ERR_INVALID_ARG;
   }

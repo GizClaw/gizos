@@ -134,7 +134,7 @@ Button、NFC 和 IMU 输入由 Runtime-owned private task 读取并转换为 Run
 
 阻塞式 portable App entry 应通过 `h2_runtime_wait_event()` 等到 Runtime event 或自己的绝对 deadline，而不是在 App source 中调用 target scheduler、libco wait/yield 或固定短 sleep。Target 可以用 OS thread、RTOS task 或 cooperative provider 实现同一个同步 Runtime/PAL contract；该差异不能进入 App public API。
 
-每次到达 Button poll deadline，按下状态都会产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` sample 和一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`。首次 sample 的 action phase 是 `PRESSED`，后续保持按下的 sample 是 `HOLDING`；松开时产生 `BUTTON_UP` 和 phase 为 `RELEASED` 的 action。Action 携带 `pressed_at_ms`、`released_at_ms`、`duration_ms` 和连续点击计数 `click_count`。Runtime 不使用单独的 100 ms action cadence，也不定义 short press、long press 等 gesture。App 必须按当前交互选择 phase：边沿触发通常只消费 `PRESSED`，click-like 操作通常只消费 `RELEASED`，持续操作可以消费 `HOLDING`；长按和双击等策略由业务层根据 phase、时间和 `click_count` 判断，不能把同一 sample 的 `BUTTON_DOWN` 与 action 重复投影成两次操作。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
+每次到达 Button poll deadline，按下状态都会产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` sample 和一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`；松开时产生 `BUTTON_UP` 和最后一个 action。Action 只携带 `pressed_at_ms`、`released_at_ms`：按住时释放时间为 0，松开时释放时间等于事件时间。Runtime 不使用单独的 100 ms action cadence，也不定义 phase、short press、long press 或 click count。App 用事件时间等于按下时间识别首次 sample，用零释放时间识别持续按住，用非零释放时间识别松开，并自行计算长按、双击等策略；不能把同一 sample 的 `BUTTON_DOWN` 与 action 重复投影成两次操作。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
 
 ## 通过 Component ID 调用 API
 

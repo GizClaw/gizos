@@ -121,7 +121,8 @@ static int handle_runtime_event(
             H2_GAME_INPUT_BUTTON_UP,
             (uint32_t)event->timestamp_ms);
     }
-    if (!h2_runtime_button_action_is_pressed(action)) {
+    if (action->released_at_ms != 0u ||
+        event->timestamp_ms != action->pressed_at_ms) {
         return H2_GAME_RUNTIME_OK;
     }
 

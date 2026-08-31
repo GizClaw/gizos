@@ -57,7 +57,8 @@ bool handle_event(void *game, h2_game_runtime_t *runtime,
   const auto *action =
       static_cast<const h2_runtime_button_action_event_t *>(event->payload);
   h2_game_input_type_t type;
-  if (h2_runtime_button_action_is_pressed(action)) {
+  if (action->released_at_ms == 0u &&
+      event->timestamp_ms == action->pressed_at_ms) {
     type = H2_GAME_INPUT_BUTTON_DOWN;
   } else if (h2_runtime_button_action_is_released(action)) {
     type = H2_GAME_INPUT_BUTTON_UP;
