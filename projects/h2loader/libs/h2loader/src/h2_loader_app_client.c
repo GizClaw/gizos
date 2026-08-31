@@ -174,6 +174,12 @@ int h2_loader_app_client_init(
     return h2_loader_init(&client->loader, &loader_config);
 }
 
+int h2_loader_app_client_reboot_loader(h2_loader_app_client_t *client) {
+    if (client == NULL) return H2_PAL_ERR_INVALID_ARG;
+    return h2_loader_reboot_h2loader_with_transition(
+        &client->loader, NULL, NULL);
+}
+
 int h2_loader_app_client_coredump(
     h2_loader_app_client_t *client, const char *subcommand,
     void *write_user, h2_loader_app_client_write_fn write) {

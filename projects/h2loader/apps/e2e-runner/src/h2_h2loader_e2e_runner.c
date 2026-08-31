@@ -1135,7 +1135,8 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
     if (rc == H2_PAL_ERR_INVALID_STATE)
       return rc;
     if (rc == H2_PAL_OK && status.running_partition == 1u &&
-        !status.stage.valid && !status.partition_2.valid &&
+        status.boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_LOADER &&
+        status.stage.valid && status.partition_2.valid &&
         status.last == H2_PAL_ERR_INVALID_STATE) {
       context->case_result->status = status;
       context->case_result->status_valid = 1u;

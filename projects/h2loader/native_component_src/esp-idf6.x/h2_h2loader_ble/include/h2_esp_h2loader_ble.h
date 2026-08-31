@@ -54,6 +54,12 @@ int h2_esp_h2loader_app_commands_start(
     uint32_t h2loader_partition_id,
     uint32_t coredump_partition_id);
 
+/**
+ * Persist Loader boot intent through the prepared App command client and
+ * reboot into the H2Loader partition. The serial service must be prepared.
+ */
+int h2_esp_h2loader_app_commands_reboot_loader(void);
+
 /** Pauses the App command service advertisement while a Central scan runs. */
 int h2_esp_h2loader_app_commands_pause_ble_advertising(void);
 

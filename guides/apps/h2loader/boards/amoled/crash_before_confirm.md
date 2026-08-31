@@ -1,8 +1,8 @@
 # AMOLED Crash Before Confirm
 
 `crash-before-confirm` 在 H2Loader command service ready 后、ESP OTA image confirm
-前主动触发 panic。它用于验证未确认 APP 的 Bootloader rollback、Loader 对失败 Stage
-的收尾，以及 UART/BLE coredump 流式读取；一次 panic 或重启本身不算通过。
+前主动触发 panic。它用于验证未确认 APP 的 Bootloader rollback、Loader 对失败候选
+的保留，以及 UART/BLE coredump 流式读取；一次 panic 或重启本身不算通过。
 
 ## 构建
 
@@ -45,13 +45,16 @@ managed UART 启动默认值为 230400。
 runner 只发送一次 crash APP Stage 并执行 `reboot upgrade`。ESP Bootloader 必须把
 未确认的 Partition 2 标记为 `INVALID` 或 `ABORTED` 并回退 Partition 1；OTA 状态
 查询失败必须作为错误向上传递，不能冒充 rollback。Loader 只在明确看到失败的
-Partition 2 时清理匹配 Stage、记录 `last_result=INVALID_STATE`，且不得再次写入同一
-APP 形成 crash loop。
+Partition 2 时记录 `last_result=INVALID_STATE`、持久化 `boot_intent=LOADER` 并停留在
+Loader；Partition 2 metadata、匹配 Stage 与 package 必须保留，不能自动再次写入或
+启动同一 APP 形成 crash loop。操作员随后可显式执行 `reboot app --monitor` 重新观察
+同一候选，不需要重新传包。
 
 随后 UART 和 BLE 都必须通过 `coredump status`、完整 `dump`、`erase` 与清空后的
 status。dump 按流式 chunk 写入 Host，不受单个响应缓冲区大小限制；报告中的实际
 字节数、终态、重连次数和最终 P1/P2/Stage metadata 都必须来自设备响应。
 
-2026-08-31 的 AMOLED 实板运行在完整 erase 和重新刷入当前 Loader 后通过 19/19：
-自动 rollback 与 Stage 收尾通过，UART 和 BLE 均完整读取 23,264 bytes coredump，
-随后 erase 和空状态复查通过。
+2026-08-31 的 AMOLED 实板运行在完整 erase 和重新刷入当时 Loader 后通过 19/19；
+该历史证据采用旧的失败 Stage 清理合同。当前合同改为 rollback 后保留 Partition 2、
+Stage 和 package，并以 `boot_intent=LOADER` 停留，必须重新取得对应实板证据。UART 和
+BLE coredump 流式读取证据仍为 23,264 bytes，随后 erase 和空状态复查通过。
