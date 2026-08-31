@@ -18,4 +18,4 @@ bazel build --config=esp32s3 \
 - 240×240 动画在黑色背景上居中，没有裁剪、拉伸或旋转。
 - 扬声器播放 MP4 内嵌的 startup 音频。
 - 4.667 秒素材结束后音视频持续循环。
-- `status` 返回 `active_role=app`、`active_name=mp4-player-small`、`state=confirmed`，且 `staged_valid=0`。
+- `status` 返回 `active_role=app`，active identity 与 package manifest 一致，运行 Partition 2、Partition 2 metadata valid 且 Stage invalid。

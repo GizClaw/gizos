@@ -52,8 +52,11 @@ typedef enum h2_pal_ble_addr_type {
     H2_PAL_BLE_ADDR_TYPE_UNKNOWN = 0,
     H2_PAL_BLE_ADDR_TYPE_PUBLIC = 1,
     H2_PAL_BLE_ADDR_TYPE_RANDOM = 2,
+    /** Controller-provided resolvable identity addresses only. */
     H2_PAL_BLE_ADDR_TYPE_PUBLIC_IDENTITY = 3,
     H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY = 4,
+    /** Opaque backend selector represented in the fixed address storage. */
+    H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID = 5,
 } h2_pal_ble_addr_type_t;
 
 typedef struct h2_pal_ble_addr {

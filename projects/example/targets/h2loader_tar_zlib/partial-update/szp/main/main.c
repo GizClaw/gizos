@@ -1,7 +1,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_partial_update_smoke.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -23,6 +23,7 @@ static void image_entry(void *user) {
         .hardware_capabilities =
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = 1u,
+        .app_partition_id = 2u,
         .coredump_partition_id = 3u,
     };
     int rc;
@@ -57,7 +58,7 @@ static void image_entry(void *user) {
         rc = h2_esp_platform_confirm_running_app();
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_loader_mark_app_confirmed(runtime->pref);
+        rc = h2_esp_h2loader_app_confirm(runtime);
     }
     if (rc != H2_PAL_OK) {
         printf("H2_PARTIAL_UPDATE_SMOKE result=FAIL stage=confirm rc=%d\n", rc);

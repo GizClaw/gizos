@@ -39,8 +39,11 @@ identify a device because multiple authorized devices can share them.
 
 ## Status protocol
 
-`status(port)`, `install(port, blob)`, and `stage(port, blob)` return the exact
-connected status contract. `capabilities` is stable hardware presence only:
+`status(port)` and `stage(port, blob)` return the exact connected status
+contract. The breaking `0.2.0` lifecycle API is `stage`, `stageUrl`,
+`abortStage`, `rebootApp`, `rebootLoader`, and `rebootUpgrade`; the former
+`install`, `rollback`, and `restart` entry points are not part of this version.
+`capabilities` is stable hardware presence only:
 UART bit 0, Wi-Fi bit 1, and BLE bit 2. `commandAvailability` is the required
 20-bit device-owned command mask; `0` authoritatively means that no command is
 currently available. The SDK exports `H2LoaderCapabilities`,
@@ -48,12 +51,18 @@ currently available. The SDK exports `H2LoaderCapabilities`,
 assignments. Host Core and firmware check the same command bit again at the
 execution boundary.
 
-Lifecycle and manufacturing state is carried only in `states`, formatted as
-`0x` plus 16 lowercase hexadecimal digits. Use `decodeH2LoaderStates()` to
-obtain named role, boot intent, install state, upgrade phase, flags, MFG mode,
-and the 22 two-bit MFG step values. Status objects do not contain duplicate
-scalar role/state/validity fields. `stagedBytes` and `candidateBytes` remain
-decimal strings so values are not rounded by JavaScript numbers.
+Lifecycle state is returned directly as `deviceUid`, `activeRole`, `activeVersion`,
+`activeChecksum`, `activeImageSize`, `runningPartition`, `nextPartition`,
+`bootIntent`, `stage`, `partition1`, `partition2`, and `lastResult`. Metadata
+contains the package and image identity plus `valid`. Removed install-state,
+loader-upgrade, manual-hold, and app-confirmed fields are not reconstructed by
+the SDK. Unsigned 64-bit sizes are decimal strings so JavaScript does not round
+them.
+
+`deviceUid` is the connected firmware's stable lowercase 12-hex physical
+identity. BLE endpoint IDs and addresses select a discovery candidate only;
+after every reboot/reconnect the Host must read status again and reject a
+different `deviceUid`.
 
 This is a lockstep protocol version: there is no legacy `H2_APP_STATUS`,
 missing-field fallback, capability-to-command inference, or role reconstruction.

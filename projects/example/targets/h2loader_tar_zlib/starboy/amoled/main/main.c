@@ -3,7 +3,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_starboy.h"
 
 #include "esp_random.h"
@@ -220,7 +220,7 @@ static h2_pal_result_t confirm_healthy(void *user) {
     }
     h2_pal_result_t rc = h2_esp_platform_confirm_running_app();
     if (rc == H2_PAL_OK) {
-        rc = h2_loader_mark_app_confirmed(state->runtime->pref);
+        rc = h2_esp_h2loader_app_confirm(state->runtime);
     }
     if (rc == H2_PAL_OK) {
         state->confirmed = 1;

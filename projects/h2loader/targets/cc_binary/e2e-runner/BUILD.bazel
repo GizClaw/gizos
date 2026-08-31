@@ -1,0 +1,41 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "e2e-runner",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/runtime",
+        "//projects/h2loader/apps/e2e-runner:h2loader_e2e_runner",
+    ],
+)
+
+py_test(
+    name = "e2e_runner_cli_test",
+    size = "small",
+    srcs = ["test_e2e_runner_cli.py"],
+    args = ["$(location :e2e-runner)"],
+    data = [":e2e-runner"],
+    legacy_create_init = 0,
+    main = "test_e2e_runner_cli.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_macos_arm64": [],
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

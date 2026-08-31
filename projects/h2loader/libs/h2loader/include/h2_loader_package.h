@@ -171,21 +171,23 @@ int h2_loader_package_init(h2_loader_package_t *package, const h2_loader_package
 int h2_loader_package_recover_publish(
     const h2_pal_fs_api_t *fs,
     const h2_pal_pref_api_t *pref,
+    const h2_pal_mem_api_t *allocator,
     const char *package_path,
     const char *previous_path);
-int h2_loader_package_read_staged_identity(
-    h2_loader_package_t *package,
-    const h2_pal_pref_api_t *pref,
-    h2_loader_identity_t *out_identity);
 int h2_loader_package_validate_path(h2_loader_package_t *package, const char *archive_path);
+int h2_loader_package_verify_path(
+    h2_loader_package_t *package,
+    const char *archive_path,
+    uint64_t expected_size,
+    const char *expected_sha256);
+int h2_loader_package_inspect_path(
+    h2_loader_package_t *package,
+    const char *archive_path,
+    h2_loader_package_inspection_t *out_inspection);
 int h2_loader_package_manifest_parse(
     const void *data,
     size_t len,
     h2_loader_package_manifest_t *out_manifest);
-int h2_loader_package_inspect(
-    h2_loader_package_t *package,
-    const h2_pal_pref_api_t *pref,
-    h2_loader_package_inspection_t *out_inspection);
 /**
  * Builds a read-only plan by comparing the package identities with installed
  * App partition bytes and /data/.checksum. No destination content is changed.

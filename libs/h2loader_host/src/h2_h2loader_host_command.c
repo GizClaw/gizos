@@ -41,20 +41,16 @@ h2_pal_result_t h2_h2loader_host_command_validate(
         case H2_H2LOADER_HOST_COMMAND_MEMORY:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY;
             break;
-        case H2_H2LOADER_HOST_COMMAND_APP_RESTART:
-            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_RESTART;
-            lifecycle = 1;
-            break;
-        case H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK:
-            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_ROLLBACK;
-            lifecycle = 1;
-            break;
-        case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP:
+        case H2_H2LOADER_HOST_COMMAND_REBOOT_APP:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
             lifecycle = 1;
             break;
-        case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER:
+        case H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
+            lifecycle = 1;
+            break;
+        case H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE:
+            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE;
             lifecycle = 1;
             break;
         case H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS:
@@ -72,12 +68,6 @@ h2_pal_result_t h2_h2loader_host_command_validate(
         case H2_H2LOADER_HOST_COMMAND_STAGE_URL:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL;
             break;
-        case H2_H2LOADER_HOST_COMMAND_HOLD_ON:
-            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_HOLD_ON;
-            break;
-        case H2_H2LOADER_HOST_COMMAND_HOLD_OFF:
-            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_HOLD_OFF;
-            break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN;
             break;
@@ -87,17 +77,15 @@ h2_pal_result_t h2_h2loader_host_command_validate(
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
             availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
             break;
-        case H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE:
-            availability = H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE;
-            lifecycle = 1;
-            break;
         default:
             return H2_PAL_ERR_INVALID_ARG;
     }
     if (lifecycle && operation_active != 0u) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if ((status->command_availability & availability) == 0u) {
+    if ((status->command_availability & availability) == 0u &&
+        !(command == H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT &&
+          (status->capabilities & H2_H2LOADER_HOST_CAPABILITY_WIFI) != 0u)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     return H2_PAL_OK;
@@ -143,26 +131,7 @@ h2_pal_result_t h2_h2loader_host_command_contract(
             out_contract->marker = "H2_LOADER_MEMORY ";
             out_contract->success_token = "result=OK";
             break;
-        case H2_H2LOADER_HOST_COMMAND_APP_RESTART:
-            SET_LINE("h2loader restart\n");
-            out_contract->marker = "H2_LOADER_RESTART ";
-            out_contract->success_token = "result=OK";
-            /* The device prints result=OK then immediately reboots, dropping
-             * the USB CDC link (surfaced as CLOSED). Accept the acknowledged
-             * line even when the reboot disconnects the follow-up read. */
-            out_contract->accepted_disconnect_token =
-                "H2_LOADER_RESTART result=OK";
-            out_contract->lifecycle_transition = 1u;
-            break;
-        case H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK:
-            SET_LINE("h2loader rollback\n");
-            out_contract->marker = "H2_LOADER_ROLLBACK ";
-            out_contract->success_token = "result=OK";
-            out_contract->accepted_disconnect_token =
-                "H2_LOADER_ROLLBACK result=OK";
-            out_contract->lifecycle_transition = 1u;
-            break;
-        case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP:
+        case H2_H2LOADER_HOST_COMMAND_REBOOT_APP:
             SET_LINE("h2loader reboot app\n");
             out_contract->marker = "H2_LOADER_REBOOT ";
             out_contract->success_token = "result=accepted";
@@ -170,12 +139,20 @@ h2_pal_result_t h2_h2loader_host_command_contract(
                 "H2_LOADER_REBOOT target=app result=accepted";
             out_contract->lifecycle_transition = 1u;
             break;
-        case H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER:
+        case H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER:
             SET_LINE("h2loader reboot loader\n");
             out_contract->marker = "H2_LOADER_REBOOT ";
             out_contract->success_token = "result=accepted";
             out_contract->accepted_disconnect_token =
                 "H2_LOADER_REBOOT target=loader result=accepted";
+            out_contract->lifecycle_transition = 1u;
+            break;
+        case H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE:
+            SET_LINE("h2loader reboot upgrade\n");
+            out_contract->marker = "H2_LOADER_REBOOT ";
+            out_contract->success_token = "result=accepted";
+            out_contract->accepted_disconnect_token =
+                "H2_LOADER_REBOOT target=upgrade result=accepted";
             out_contract->lifecycle_transition = 1u;
             break;
         case H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS:
@@ -191,14 +168,6 @@ h2_pal_result_t h2_h2loader_host_command_contract(
         case H2_H2LOADER_HOST_COMMAND_STAGE_ABORT:
             SET_LINE("h2loader stage abort\n");
             out_contract->marker = "H2_LOADER_STAGE_ABORT ";
-            out_contract->success_token = "result=OK";
-            break;
-        case H2_H2LOADER_HOST_COMMAND_HOLD_ON:
-        case H2_H2LOADER_HOST_COMMAND_HOLD_OFF:
-            (void)snprintf(out_contract->line, sizeof(out_contract->line),
-                "h2loader hold %s\n",
-                request->command == H2_H2LOADER_HOST_COMMAND_HOLD_ON ? "on" : "off");
-            out_contract->marker = "H2_LOADER_HOLD ";
             out_contract->success_token = "result=OK";
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_SCAN: {
@@ -232,20 +201,12 @@ h2_pal_result_t h2_h2loader_host_command_contract(
                 return H2_PAL_ERR_INVALID_ARG;
             }
             out_contract->marker = "H2_LOADER_WIFI ";
-            out_contract->success_token = "result=connected";
+            out_contract->success_token = "result=connecting";
             break;
         case H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT:
             SET_LINE("h2loader wifi disconnect\n");
             out_contract->marker = "H2_LOADER_WIFI ";
             out_contract->success_token = "result=disconnected";
-            break;
-        case H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE:
-            SET_LINE("h2loader upgrade\n");
-            out_contract->marker = "H2_LOADER_UPGRADE ";
-            out_contract->success_token = "result=OK";
-            out_contract->accepted_disconnect_token =
-                "H2_LOADER_UPGRADE result=OK";
-            out_contract->lifecycle_transition = 1u;
             break;
         case H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE:
             SET_LINE("h2loader coredump erase\n");
@@ -379,6 +340,8 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
     uint8_t response[8192u];
     h2_h2loader_host_command_contract_t contract;
     size_t response_len = 0u;
+    size_t output_bytes = 0u;
+    uint8_t stream_output;
     h2_pal_result_t rc;
 
     if (out_result != NULL) {
@@ -394,6 +357,11 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
         return rc;
     }
     out_result->lifecycle_transition = contract.lifecycle_transition;
+    stream_output = request->command == H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
+    if (stream_output && request->on_output == NULL) {
+        out_result->transport_result = H2_PAL_ERR_INVALID_ARG;
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     if (request->is_cancelled != NULL &&
         request->is_cancelled(request->cancel_user)) {
         out_result->transport_result = H2_PAL_EXIT;
@@ -411,9 +379,12 @@ h2_pal_result_t h2_h2loader_host_command_execute_transport(
         sizeof(response),
         &response_len,
         request->on_output,
-        request->output_user);
-    out_result->output_bytes = response_len;
-    out_result->output_truncated = rc == H2_PAL_ERR_NO_SPACE ? 1u : 0u;
+        request->output_user,
+        stream_output,
+        &output_bytes);
+    out_result->output_bytes = output_bytes;
+    out_result->output_truncated =
+        rc == H2_PAL_ERR_NO_SPACE || output_bytes > response_len ? 1u : 0u;
     if (request->is_cancelled != NULL &&
         request->is_cancelled(request->cancel_user)) {
         out_result->transport_result = H2_PAL_EXIT;

@@ -228,9 +228,6 @@ h2_pal_result_t h2_h2loader_host_scheduler_complete(
          !terminated(final_status->board, sizeof(final_status->board)) ||
          !terminated(final_status->target, sizeof(final_status->target)) ||
          !terminated(
-             final_status->active_name,
-             sizeof(final_status->active_name)) ||
-         !terminated(
              final_status->active_version,
              sizeof(final_status->active_version)))) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -393,13 +390,10 @@ static const char *role_name(uint8_t role) {
     }
 }
 
-static const char *install_state_name(uint32_t state) {
-    static const char *const names[] = {
-        "unknown", "idle", "staged", "install_requested", "installing",
-        "installed_pending_confirm", "confirmed", "install_failed",
-        "return_requested", "main_failed",
-    };
-    return state < sizeof(names) / sizeof(names[0]) ? names[state] : "invalid";
+static const char *boot_intent_name(h2_h2loader_host_boot_intent_t intent) {
+    if (intent == H2_H2LOADER_HOST_BOOT_INTENT_LOADER) return "loader";
+    if (intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO) return "auto";
+    return "unknown";
 }
 
 h2_pal_result_t h2_h2loader_host_scheduler_export_json(
@@ -464,12 +458,10 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_json(
             "final_role", role_name((uint8_t)
                 h2_h2loader_host_status_active_role(&job->final_status)))
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
-        H2_JSON_FIELD("final_name", job->final_status.active_name)
-        if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
         H2_JSON_FIELD("final_version", job->final_status.active_version)
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
-        H2_JSON_FIELD("final_state", install_state_name(
-            h2_h2loader_host_status_install_state(&job->final_status)))
+        H2_JSON_FIELD("final_boot_intent",
+            boot_intent_name(job->final_status.boot_intent))
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
         H2_JSON_FIELD("final_checksum", job->final_status.active_checksum)
         if (rc == H2_PAL_OK) rc = write_text(write, write_user, ",");
@@ -480,15 +472,14 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_json(
             sizeof(numbers),
             ",\"result\":%d,\"started_ms\":%llu,\"finished_ms\":%llu,"
             "\"retry_count\":%" PRIu32 ",\"usb_vid\":%u,\"usb_pid\":%u,"
-            "\"staged_valid\":%u}",
+            "\"stage_valid\":%u}",
             (int)job->result,
             (unsigned long long)job->started_ms,
             (unsigned long long)job->finished_ms,
             job->retry_count,
             (unsigned)job->input.candidate.usb_vid,
             (unsigned)job->input.candidate.usb_pid,
-            (unsigned)h2_h2loader_host_status_staged_valid(
-                &job->final_status));
+            (unsigned)job->final_status.stage.valid);
         if (count < 0 || (size_t)count >= sizeof(numbers)) {
             return H2_PAL_ERR_NO_SPACE;
         }
@@ -535,8 +526,8 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
         "usb_vid,usb_pid,usb_serial,board,target,operation,asset_name,"
         "asset_version,asset_sha256,asset_image_sha256,state,result,"
         "started_ms,finished_ms,retry_count,final_board,final_target,"
-        "final_role,final_name,final_version,final_state,final_checksum,"
-        "staged_valid,error_detail\r\n");
+        "final_role,final_version,final_boot_intent,final_checksum,"
+        "stage_valid,error_detail\r\n");
     for (size_t i = 0u; rc == H2_PAL_OK && i < scheduler->job_count; ++i) {
         const h2_h2loader_host_job_result_t *job = &scheduler->jobs[i];
         const char *fields[] = {
@@ -610,10 +601,8 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
             job->final_status.target,
             role_name((uint8_t)h2_h2loader_host_status_active_role(
                 &job->final_status)),
-            job->final_status.active_name,
             job->final_status.active_version,
-            install_state_name(h2_h2loader_host_status_install_state(
-                &job->final_status)),
+            boot_intent_name(job->final_status.boot_intent),
             job->final_status.active_checksum,
         };
         for (size_t field = 0u;
@@ -631,8 +620,7 @@ h2_pal_result_t h2_h2loader_host_scheduler_export_csv(
             staged,
             sizeof(staged),
             ",%u,",
-            (unsigned)h2_h2loader_host_status_staged_valid(
-                &job->final_status));
+            (unsigned)job->final_status.stage.valid);
         if (staged_count < 0 || (size_t)staged_count >= sizeof(staged)) {
             return H2_PAL_ERR_NO_SPACE;
         }

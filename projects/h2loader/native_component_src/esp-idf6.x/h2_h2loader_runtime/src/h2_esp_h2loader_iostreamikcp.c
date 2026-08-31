@@ -17,7 +17,6 @@
 #define H2_LOADER_SERIAL_RX_BUFFER 8192u
 #define H2_LOADER_SERIAL_TX_BUFFER 2048u
 #define H2_LOADER_CONSOLE_UART ((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM)
-#define H2_LOADER_UART_BAUD_RATE 230400u
 #define H2_LOADER_TRANSPORT_DEFAULT_WRITE_TIMEOUT_MS 5000u
 #define H2_LOADER_TRANSPORT_MAX_FLUSH_TIMEOUT_MS 120000u
 #define H2_LOADER_TRANSPORT_MAX_WAITSND 64u
@@ -74,7 +73,9 @@ h2_pal_result_t h2_esp_h2loader_console_init(void) {
         /* Route stdio through the UART driver's TX lock so a console character
          * cannot be enqueued inside one IO Stream iKCP frame write. */
         uart_vfs_dev_use_driver(H2_LOADER_CONSOLE_UART);
-        err = uart_set_baudrate(H2_LOADER_CONSOLE_UART, H2_LOADER_UART_BAUD_RATE);
+        err = uart_set_baudrate(
+            H2_LOADER_CONSOLE_UART,
+            CONFIG_ESP_CONSOLE_UART_BAUDRATE);
     }
     if (err == ESP_OK) {
         (void)uart_flush_input(H2_LOADER_CONSOLE_UART);
@@ -125,6 +126,9 @@ static h2_pal_result_t transport_send_control(
 static h2_pal_result_t transport_on_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
     h2_esp_h2loader_command_transport_t *transport = user;
     if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN) {
+        if (frame->conv == 0u) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
         if (frame->conv == transport->conv && transport->stream != NULL) {
             return transport_send_control(
                 transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
@@ -132,6 +136,16 @@ static h2_pal_result_t transport_on_frame(void *user, const h2_iostreamikcp_fram
         transport->pending_conv = frame->conv;
         transport->replacement_pending = transport->stream != NULL;
         return H2_PAL_OK;
+    }
+    if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE &&
+        transport->stream != NULL && frame->conv == transport->conv) {
+        h2_pal_result_t rc = transport_send_control(
+            transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
+        if (rc == H2_PAL_OK) {
+            transport->close_pending = 1;
+            transport->replacement_pending = 1;
+        }
+        return rc;
     }
     if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA &&
         transport->stream != NULL && frame->conv == transport->conv) {
@@ -382,6 +396,7 @@ h2_pal_result_t h2_esp_h2loader_command_transport_activate_pending(
     transport->conv = conv;
     transport->pending_conv = 0u;
     transport->replacement_pending = 0;
+    transport->close_pending = 0;
     rc = transport_send_control(
         transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, conv);
     if (rc != H2_PAL_OK) {
@@ -402,6 +417,23 @@ int h2_esp_h2loader_command_transport_replacement_pending(
     return transport != NULL && transport->replacement_pending;
 }
 
+int h2_esp_h2loader_command_transport_close_pending(
+    const h2_esp_h2loader_command_transport_t *transport) {
+    return transport != NULL && transport->close_pending;
+}
+
+void h2_esp_h2loader_command_transport_deactivate(
+    h2_esp_h2loader_command_transport_t *transport) {
+    if (transport == NULL) {
+        return;
+    }
+    h2_iostreamikcp_close(transport->stream);
+    transport->stream = NULL;
+    transport->conv = 0u;
+    transport->replacement_pending = 0;
+    transport->close_pending = 0;
+}
+
 static int app_read_byte(void *user, uint32_t timeout_ms) {
     h2_esp_h2loader_app_iostreamikcp_t *state = user;
     uint8_t value = 0u;
@@ -411,6 +443,11 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
         return EOF;
     }
     for (;;) {
+        if (state->transport.close_pending &&
+            state->transport.pending_conv == 0u) {
+            h2_esp_h2loader_command_transport_deactivate(&state->transport);
+            return EOF;
+        }
         if (state->transport.pending_conv != 0u) {
             h2_pal_result_t rc = h2_esp_h2loader_command_transport_activate_pending(
                 &state->transport);

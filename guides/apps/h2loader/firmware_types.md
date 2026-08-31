@@ -12,7 +12,7 @@ H2Loader 使用以下存储。它们不一定都是 Flash 上的 partition：
 | `app` | App firmware；Loader 更新期间临时保存 trial Loader | App 的正常运行位置，也是 Loader self-upgrade 的中继位置 |
 | `dl` | `update.tar.zlib` candidate 和 staging 临时文件 | 接收、校验、替换和发布更新包 |
 | `data` | App 数据和 `/data/.checksum` | 保存随 App package 安装的数据与内容版本 |
-| `preference` | Boot intent、安装/确认状态、staged identity 和 Loader upgrade phase | 跨重启保存 H2Loader 状态 |
+| `preference` | `boot_intent` 与 Stage、Partition 1、Partition 2 metadata | 跨重启保存实际镜像 identity；不保存安装流程 phase |
 | `coredump` | 固件崩溃数据 | 供 Loader/App command 查询、导出和擦除 |
 
 ESP target 的 `preference` 是独立的 256 KiB internal LittleFS partition；24 KiB `nvs` 仍保留给 ESP-IDF system state，H2 PAL 不再把新 Preference 值写入其中。BK7258、BK3633 和 Desktop 继续使用各自已声明的 backend。
@@ -50,13 +50,15 @@ Loader 固件负责接收和校验更新包、安装 App 固件与数据、选�
 
 Loader 固件报告 `active_role=loader`。支持 BLE 的 Board 通过固定 Service UUID 和 Service Data 广播 H2Loader GATT service，不携带 local name；Host 根据 Service Data 中的 Board 合成 `h2l.<board>` 显示名。连接后的 `stats` 是设备身份和当前角色的最终依据。
 
-### Loader 支持的指令
+### 统一设备指令
+
+APP 和 Loader 注册同一命令集合；memory、Wi-Fi 和 Coredump 是否可用由 PAL provider 与动态 command availability 决定：
 
 | 指令 | 作用 |
 | --- | --- |
 | `h2loader help` | 输出 Loader 支持的指令。 |
-| `h2loader status` | 输出设备、Board、Target、版本、运行固件、安装、确认和更新状态。 |
-| `h2loader stats` | `status` 的别名，输出相同的结构化状态。 |
+| `h2loader status` | 输出 active identity、运行/下次分区、`boot_intent`、三份 metadata、`last_result`、capabilities 和 command availability。 |
+| `h2loader stats` | 输出运行统计。 |
 | `h2loader memory` | 输出 internal RAM、IRAM 和 PSRAM 的容量、空闲量与最小空闲量；没有 memory stats provider 时返回 unsupported。 |
 | `h2loader wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]` | 有界扫描 Wi-Fi AP；每个 callback 立即输出一条安全编码的结果，最后输出独立 terminal summary。serial IO Stream iKCP 与 BLE-iKCP 使用同一 typed command。 |
 | `h2loader wifi connect <ssid> <password>` | 连接 Wi-Fi，等待取得 IP，并在连接成功后保存同一份 STA 配置供 App 重启后使用。 |
@@ -64,20 +66,16 @@ Loader 固件报告 `active_role=loader`。支持 BLE 的 Board 通过固定 Ser
 | `h2loader stage <bytes> <sha256>` | 替换已有 staged candidate，再从当前 command transport 接收指定长度的更新包；完整校验 archive SHA-256 后才发布到 `/dl`。 |
 | `h2loader stage url <url> <bytes> <sha256>` | 替换已有 staged candidate，再通过 HTTP 下载更新包；完整校验长度与 SHA-256 后才发布到 `/dl`。 |
 | `h2loader stage abort` | 放弃当前或已经发布的 staged package。 |
-| `h2loader upgrade` | 当 staged package 的 role 为 Loader 时，开始 Loader self-upgrade。 |
-| `h2loader reboot` | 安装 staged App package 并启动 App；没有可安装内容时按当前 Loader 状态处理。 |
-| `h2loader reboot app` | 显式安装 staged App package 并启动 App。 |
-| `h2loader reboot loader` | 保持 Loader role 并重启，不启动 App。 |
-| `h2loader hold on` | 开启 manual hold，使设备停留在 Loader。 |
-| `h2loader hold off` | 关闭 manual hold，允许后续启动 App。 |
+| `h2loader reboot app` | 设置 AUTO、选择 Partition 2 并重启；不消费 Stage。 |
+| `h2loader reboot loader` | 设置 LOADER、选择 Partition 1 并重启；不消费 Stage。 |
+| `h2loader reboot upgrade` | 设置 AUTO、选择 Partition 1 并重启，由 Loader 执行完整升级检查。 |
 | `h2loader coredump status` | 查询 Coredump partition 和有效数据大小；省略子命令时默认为 `status`。 |
 | `h2loader coredump dump` | 按顺序输出当前 Coredump 数据。 |
 | `h2loader coredump erase` | 擦除 Coredump partition。 |
 
-Wi-Fi、memory stats 或 Coredump 的底层能力不可用时，对应指令仍属于 Loader command contract，但返回明确的 unsupported/error，不通过隐藏指令或空响应表示不支持。
+Wi-Fi、memory stats 或 Coredump 的底层能力不可用时，对应命令不出现在 availability 中；直接调用返回统一的 unsupported/unavailable 响应。旧的 `restart`、`rollback`、无参数 `reboot`、`reboot ota`、`reboot-loader`、独立 `upgrade` 和 `hold on/off` 已删除。
 
-`h2loader reboot app` 与 `h2loader reboot loader` 在执行重启前输出
-`H2_LOADER_REBOOT target=<app|loader> result=accepted`。Loader-to-Loader reboot 若底层 reboot call 同步返回，还必须输出 `H2_LOADER_REBOOT_FINAL target=loader result=<OK|fail> code=<result>`；Host 不把 `accepted` 当 terminal success，只接受 `FINAL result=OK`，或 `accepted` 之后旧 transport 明确关闭，timeout 仍然失败。以上回执都不表示目标固件已经成功启动；Host 仍须断开旧 session、重新发现同一物理设备并用新的 live status 验证预期 role 与 identity。
+三个 reboot 命令在执行重启前输出对应 accepted marker。它只表示 durable 请求已经提交；Host 仍须断开旧 session、重新发现同一物理设备并用新的 live status 验证预期 role、partition、identity 和 Stage 终态。
 
 ## App 固件
 
@@ -91,18 +89,4 @@ projects/<owner>/targets/h2loader_tar_zlib/<app>/<board>/
 
 App 固件在业务逻辑之前启动 H2Loader App command service，并在达到 command-ready/healthy point 后确认当前 image。它报告 `active_role=app`。同一 Board 的 Loader 与 App 广播相同的 H2Loader Service UUID 和 Board identity；Host 合成相同的 `h2l.<board>` 显示名，并通过 `active_role` 区分当前运行的固件。
 
-### App 支持的指令
-
-| 指令 | 作用 |
-| --- | --- |
-| `h2loader help` | 输出 App 固件支持的指令。 |
-| `h2loader status` | 输出设备、Board、Target、版本、当前 App identity 和确认状态。 |
-| `h2loader stats` | `status` 的别名，输出相同的结构化状态。 |
-| `h2loader memory` | 输出 App 当前的 internal RAM、IRAM 与 PSRAM 统计；没有 provider 时返回 unsupported。 |
-| `h2loader restart` | 重启当前 App，不写入 return request，也不改变 staged package。 |
-| `h2loader rollback` | 写入 return request，选择 Loader 固件并重启。 |
-| `h2loader coredump status` | 查询 Coredump partition 和有效数据大小；省略子命令时默认为 `status`。 |
-| `h2loader coredump dump` | 按顺序输出当前 Coredump 数据。 |
-| `h2loader coredump erase` | 擦除 Coredump partition。 |
-
-App 固件不支持 `stage`、`upgrade`、`reboot app`、`hold` 或 Wi-Fi staging。这些改变安装状态或选择新固件的操作只由 Loader 固件执行。
+APP 复用上面的完整设备命令实现，包括 Stage payload/url/abort 和三个 reboot 命令。APP 与 Loader 共享 Pref、DL 路径、package validator、digest、HTTP/Wi-Fi provider 和 operation mutex，不复制另一套协议或发布逻辑。

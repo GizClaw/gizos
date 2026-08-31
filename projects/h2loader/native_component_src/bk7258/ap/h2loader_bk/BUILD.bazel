@@ -1,6 +1,23 @@
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
+
+py_test(
+    name = "ble_advertising_contract_test",
+    srcs = ["tests/test_ble_advertising_contract.py"],
+    data = [
+        "src/h2_bk_h2loader_app_bleikcp.c",
+        "//libs/h2loader_host:src/h2_h2loader_host_discovery.c",
+        "//projects/h2loader/apps/loader/app:h2loader_bleikcp.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_ble.c",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_ble.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_ble_advertising_contract.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
 
 firmware_native_component(
     name = "h2loader_bk",
@@ -43,6 +60,11 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_ble.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_boot.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_metadata.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_mfg.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
     ],

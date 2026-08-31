@@ -2,7 +2,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_target_task_policy.h"
 
 #include <stdio.h>
@@ -11,7 +11,7 @@ static int confirm_ready(void *user) {
     h2_runtime_t *runtime = user;
     int rc = h2_esp_platform_confirm_running_app();
     return rc == H2_PAL_OK
-        ? h2_loader_mark_app_confirmed(runtime->pref)
+        ? h2_esp_h2loader_app_confirm(runtime)
         : rc;
 }
 
@@ -31,6 +31,7 @@ static void image_entry(void *user) {
         .hardware_capabilities =
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = 1u,
+        .app_partition_id = 2u,
         .coredump_partition_id = 3u,
     };
     int rc = h2_esp_board_runtime_config(&config);

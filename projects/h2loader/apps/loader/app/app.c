@@ -113,7 +113,6 @@ int h2loader_app_run_with_command_service(
     if (loader_config.chip == NULL) {
         loader_config.chip = runtime->chip;
     }
-
     memset(&loader, 0, sizeof(loader));
     rc = h2_loader_init(&loader, &loader_config);
     if (rc != H2_PAL_OK) {
@@ -249,11 +248,7 @@ int h2loader_app_run_with_command_service(
             }
             if (before_startup_rc == H2_PAL_EXIT && rc == H2_PAL_OK &&
                 action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE &&
-                config->rearm_before_startup != NULL &&
-                loader.status.install_state !=
-                    H2_LOADER_INSTALL_STATE_INSTALL_FAILED &&
-                loader.status.install_state !=
-                    H2_LOADER_INSTALL_STATE_MAIN_FAILED) {
+                config->rearm_before_startup != NULL) {
                 config->rearm_before_startup(config->before_startup_user);
                 continue;
             }

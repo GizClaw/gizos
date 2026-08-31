@@ -2,6 +2,7 @@
 
 #include "h2_bundle_tar.h"
 #include "h2_bundle_types.h"
+#include "h2_loader_metadata.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -353,23 +354,33 @@ static void digest_to_hex(
     out_hex[H2_LOADER_SHA256_SIZE * 2u] = '\0';
 }
 
-static int verify_archive_checksum(
+int h2_loader_package_verify_path(
     h2_loader_package_t *package,
-    const h2_loader_identity_t *identity) {
+    const char *archive_path,
+    uint64_t expected_size,
+    const char *expected_sha256) {
     uint8_t buffer[H2_LOADER_VALIDATE_IO_BUF_SIZE];
     uint8_t digest[H2_LOADER_SHA256_SIZE];
     char actual_checksum[H2_LOADER_SHA256_SIZE * 2u + 1u];
     h2_pal_fs_file_t *archive = NULL;
+    h2_pal_fs_stat_t stat;
     int rc;
 
-    if (package == NULL || identity == NULL || !is_sha256_hex(identity->checksum) ||
+    if (package == NULL || archive_path == NULL || expected_size == 0u ||
+        !is_sha256_hex(expected_sha256) ||
         package->config.digest.start == NULL || package->config.digest.update == NULL ||
         package->config.digest.finish == NULL || package->config.digest.abort == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (package->config.fs != NULL && package->config.fs->vtable != NULL &&
+        package->config.fs->vtable->stat != NULL) {
+        rc = h2_pal_fs_stat(package->config.fs, archive_path, &stat);
+        if (rc != H2_PAL_FS_OK) return rc;
+        if (stat.is_dir || stat.size != expected_size) return H2_PAL_ERR_FORMAT;
+    }
     rc = h2_pal_fs_open(
         package->config.fs,
-        package->config.package_path,
+        archive_path,
         H2_PAL_FS_OPEN_READ,
         &archive);
     if (rc != H2_PAL_FS_OK) {
@@ -414,8 +425,19 @@ static int verify_archive_checksum(
         return rc;
     }
     digest_to_hex(digest, actual_checksum);
-    return strcmp(actual_checksum, identity->checksum) == 0 ?
+    return strcmp(actual_checksum, expected_sha256) == 0 ?
         H2_PAL_OK : H2_PAL_ERR_FORMAT;
+}
+
+static int verify_archive_checksum(
+    h2_loader_package_t *package,
+    const h2_loader_identity_t *identity) {
+    if (identity == NULL) return H2_PAL_ERR_INVALID_ARG;
+    return h2_loader_package_verify_path(
+        package,
+        package != NULL ? package->config.package_path : NULL,
+        identity->size,
+        identity->checksum);
 }
 
 static void copy_text(char *dst, size_t dst_len, const char *src) {
@@ -740,139 +762,6 @@ static int hash_partition(
     }
     digest_to_hex(digest, out_sha256);
     return H2_PAL_OK;
-}
-
-static int read_pref_string(
-    const h2_pal_pref_api_t *pref,
-    const h2_pal_mem_api_t *allocator,
-    const char *key,
-    char *out,
-    size_t out_len) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    char *value = NULL;
-    int rc;
-
-    if (out == NULL || out_len == 0u) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    out[0] = '\0';
-    if (pref == NULL || allocator == NULL || key == NULL) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    rc = h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->get_string == NULL) {
-        if (ns != NULL && ns->close != NULL) {
-            (void)ns->close(ns);
-        }
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    rc = ns->get_string(ns, allocator, key, &value);
-    if (rc == H2_PAL_OK && value != NULL) {
-        copy_text(out, out_len, value);
-        h2_pal_mem_free(allocator, value);
-    }
-    if (ns->close != NULL) {
-        (void)ns->close(ns);
-    }
-    return rc;
-}
-
-static int read_pref_u32(
-    const h2_pal_pref_api_t *pref,
-    const char *key,
-    uint32_t *out_value) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    if (pref == NULL || key == NULL || out_value == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_value = 0u;
-    rc = h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->get_u32 == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-    } else {
-        rc = ns->get_u32(ns, key, out_value);
-    }
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
-}
-
-static int read_pref_bool(
-    const h2_pal_pref_api_t *pref,
-    const char *key,
-    int *out_value) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    if (pref == NULL || key == NULL || out_value == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    *out_value = 0;
-    rc = h2_pal_pref_open(pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->get_bool == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-    } else {
-        rc = ns->get_bool(ns, key, out_value);
-    }
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
-}
-
-static int clear_staged_publish_metadata(const h2_pal_pref_api_t *pref) {
-    h2_pal_pref_namespace_t *ns = NULL;
-    int rc;
-    int close_rc;
-
-    rc = h2_pal_pref_open(
-        pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (ns == NULL || ns->remove == NULL) {
-        rc = H2_PAL_ERR_UNSUPPORTED;
-        goto out;
-    }
-    rc = ns->remove(ns, "staged_version");
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        rc = H2_PAL_OK;
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "staged_checksum");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "staged_size");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK) {
-        rc = ns->remove(ns, "publish_committed");
-        if (rc == H2_PAL_ERR_NOT_FOUND) {
-            rc = H2_PAL_OK;
-        }
-    }
-    if (rc == H2_PAL_OK && ns->commit != NULL) {
-        rc = ns->commit(ns);
-    }
-
-out:
-    close_rc = ns != NULL && ns->close != NULL ? ns->close(ns) : H2_PAL_OK;
-    return rc == H2_PAL_OK ? close_rc : rc;
 }
 
 static int layout_validator_start_entry(
@@ -1316,8 +1205,10 @@ int h2_loader_package_init(h2_loader_package_t *package, const h2_loader_package
 int h2_loader_package_recover_publish(
     const h2_pal_fs_api_t *fs,
     const h2_pal_pref_api_t *pref,
+    const h2_pal_mem_api_t *allocator,
     const char *package_path,
     const char *previous_path) {
+    h2_loader_metadata_t stage = {0};
     h2_pal_fs_stat_t package_stat;
     h2_pal_fs_stat_t previous_stat;
     h2_pal_fs_stat_t temporary_stat;
@@ -1325,13 +1216,13 @@ int h2_loader_package_recover_publish(
     int package_exists = 0;
     int previous_exists = 0;
     int temporary_exists = 0;
-    int publish_committed = 0;
-    int publish_marker_present = 0;
+    int stage_present = 0;
     int malformed_candidate = 0;
     int discard_candidate;
     int rc;
 
-    if (fs == NULL || pref == NULL || package_path == NULL || previous_path == NULL) {
+    if (fs == NULL || pref == NULL || allocator == NULL ||
+        package_path == NULL || previous_path == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     rc = snprintf(
@@ -1366,21 +1257,20 @@ int h2_loader_package_recover_publish(
     } else if (rc != H2_PAL_FS_ERR_NOT_FOUND) {
         return rc;
     }
-    rc = read_pref_bool(pref, "publish_committed", &publish_committed);
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        publish_marker_present = 0;
-    } else if (rc != H2_PAL_OK) {
-        return rc;
-    } else {
-        publish_marker_present = 1;
-    }
+    rc = h2_loader_metadata_read(
+        pref,
+        allocator,
+        H2_LOADER_METADATA_SLOT_STAGE,
+        &stage,
+        &stage_present);
+    if (rc != H2_PAL_OK) return rc;
     discard_candidate =
         malformed_candidate ||
-        (previous_exists &&
-            (!publish_marker_present || !publish_committed)) ||
         temporary_exists ||
-        (package_exists && publish_marker_present && !publish_committed) ||
-        !package_exists;
+        !package_exists ||
+        !stage_present ||
+        !stage.valid ||
+        (package_exists && package_stat.size != stage.package_size);
     if (temporary_exists) {
         rc = h2_pal_fs_remove(fs, temporary_path);
         if (rc != H2_PAL_FS_OK && rc != H2_PAL_FS_ERR_NOT_FOUND) {
@@ -1400,65 +1290,8 @@ int h2_loader_package_recover_publish(
         }
     }
     return discard_candidate ?
-        clear_staged_publish_metadata(pref) :
+        h2_loader_metadata_clear(pref, H2_LOADER_METADATA_SLOT_STAGE) :
         H2_PAL_OK;
-}
-
-int h2_loader_package_read_staged_identity(
-    h2_loader_package_t *package,
-    const h2_pal_pref_api_t *pref,
-    h2_loader_identity_t *out_identity) {
-    h2_pal_fs_stat_t stat;
-    uint32_t staged_size = 0u;
-    int rc;
-
-    if (package == NULL || out_identity == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    memset(out_identity, 0, sizeof(*out_identity));
-    if (package->config.fs == NULL) {
-        return H2_PAL_ERR_UNSUPPORTED;
-    }
-    rc = h2_pal_fs_stat(package->config.fs, package->config.package_path, &stat);
-    if (rc == H2_PAL_FS_ERR_NOT_FOUND) {
-        return H2_PAL_OK;
-    }
-    if (rc != H2_PAL_FS_OK) {
-        return rc;
-    }
-    if (stat.is_dir) {
-        return H2_PAL_OK;
-    }
-    rc = read_pref_string(pref, package->config.allocator, "staged_checksum",
-        out_identity->checksum, sizeof(out_identity->checksum));
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        return H2_PAL_OK;
-    }
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    rc = read_pref_u32(pref, "staged_size", &staged_size);
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        return H2_PAL_OK;
-    }
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (!is_sha256_hex(out_identity->checksum) || stat.size != (uint64_t)staged_size) {
-        memset(out_identity, 0, sizeof(*out_identity));
-        return H2_PAL_OK;
-    }
-    rc = read_pref_string(pref, package->config.allocator, "staged_version",
-        out_identity->version, sizeof(out_identity->version));
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-        copy_text(out_identity->version, sizeof(out_identity->version), out_identity->checksum);
-    } else if (rc != H2_PAL_OK) {
-        memset(out_identity, 0, sizeof(*out_identity));
-        return rc;
-    }
-    out_identity->valid = 1;
-    out_identity->size = stat.size;
-    return H2_PAL_OK;
 }
 
 static void layout_validator_abort(h2_loader_layout_validator_t *validator) {
@@ -1471,7 +1304,7 @@ static void layout_validator_abort(h2_loader_layout_validator_t *validator) {
     }
 }
 
-static int h2_loader_package_inspect_path(
+int h2_loader_package_inspect_path(
     h2_loader_package_t *package,
     const char *archive_path,
     h2_loader_package_inspection_t *out_inspection) {
@@ -1566,35 +1399,6 @@ static int h2_loader_package_inspect_path(
 int h2_loader_package_validate_path(h2_loader_package_t *package, const char *archive_path) {
     h2_loader_package_inspection_t inspection;
     return h2_loader_package_inspect_path(package, archive_path, &inspection);
-}
-
-int h2_loader_package_inspect(
-    h2_loader_package_t *package,
-    const h2_pal_pref_api_t *pref,
-    h2_loader_package_inspection_t *out_inspection) {
-    h2_loader_identity_t staged;
-    int rc;
-
-    if (package == NULL || pref == NULL || out_inspection == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    rc = h2_loader_package_read_staged_identity(package, pref, &staged);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    if (!staged.valid) {
-        return H2_PAL_ERR_NOT_FOUND;
-    }
-    rc = verify_archive_checksum(package, &staged);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    rc = h2_loader_package_inspect_path(package, package->config.package_path, out_inspection);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    out_inspection->staged = staged;
-    return H2_PAL_OK;
 }
 
 static int installed_data_checksum_matches(

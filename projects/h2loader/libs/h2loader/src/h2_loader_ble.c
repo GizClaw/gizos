@@ -11,8 +11,8 @@
 #define H2_LOADER_BLE_ADV_SID 0u
 #define H2_LOADER_BLE_IO_TIMEOUT_MS 5000u
 #define H2_LOADER_BLE_WINDOW 32u
-#define H2_LOADER_BLE_INPUT_FRAME_CAPACITY 64u
-#define H2_LOADER_BLE_BUFFER_SIZE (32u * 1024u)
+#define H2_LOADER_BLE_INPUT_FRAME_CAPACITY 16u
+#define H2_LOADER_BLE_BUFFER_SIZE (8u * 1024u)
 #define H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN 11u
 #define H2_LOADER_BLE_COMPACT_SERVICE_DATA_LEN 18u
 #define H2_LOADER_BLE_LINK_INTERVAL_MS 15u
@@ -84,6 +84,7 @@ struct h2_loader_ble_service {
     h2_loader_ble_service_config_t config;
     h2_bleikcp_server_t *server;
     h2_pal_ble_adv_set_t *adv_set;
+    h2_pal_ble_adv_params_t adv_params;
     h2_pal_system_event_subscription_t *event_subscriptions[
         H2_LOADER_BLE_EVENT_SUBSCRIPTION_COUNT];
     h2_pal_mutex_t *link_mutex;
@@ -139,7 +140,10 @@ static int h2_loader_ble_service_update_advertising(
     bool stop_first) {
     h2_pal_ble_uuid_t services[
         1u + H2_LOADER_BLE_MAX_ADDITIONAL_ADVERTISED_SERVICES];
-    if (service == NULL || service->adv_set == NULL ||
+    if (service == NULL ||
+        (service->config.advertising_mode ==
+             H2_LOADER_BLE_ADVERTISING_EXTENDED &&
+         service->adv_set == NULL) ||
         additional_service_count >
             H2_LOADER_BLE_MAX_ADDITIONAL_ADVERTISED_SERVICES ||
         (additional_service_count > 0u && additional_services == NULL)) {
@@ -152,30 +156,47 @@ static int h2_loader_ble_service_update_advertising(
     for (size_t i = 0u; i < additional_service_count; ++i) {
         services[i + 1u] = additional_services[i];
     }
-    const h2_pal_ble_adv_data_t adv_data = {
+    h2_pal_ble_adv_data_t adv_data = {
         .local_name = NULL,
         .service_uuids = services,
         .service_uuid_count = additional_service_count + 1u,
-        .manufacturer_data = { 0 },
-        .service_data_uuid = services[0],
-        .service_data = {
+    };
+    if (service->config.advertising_mode ==
+        H2_LOADER_BLE_ADVERTISING_LEGACY) {
+        adv_data.manufacturer_data = (h2_pal_ble_bytes_t){
             .data = service->service_data,
             .len = service->service_data_len,
-        },
-    };
+        };
+    } else {
+        adv_data.service_data_uuid = services[0];
+        adv_data.service_data = (h2_pal_ble_bytes_t){
+            .data = service->service_data,
+            .len = service->service_data_len,
+        };
+    }
+    const bool legacy = service->config.advertising_mode ==
+        H2_LOADER_BLE_ADVERTISING_LEGACY;
     int rc = stop_first
-        ? h2_pal_ble_adv_set_stop(service->config.api.ble, service->adv_set)
+        ? legacy
+            ? h2_pal_ble_stop_advertising(service->config.api.ble)
+            : h2_pal_ble_adv_set_stop(
+                  service->config.api.ble, service->adv_set)
         : H2_PAL_OK;
     if (stop_first && rc == H2_PAL_ERR_INVALID_STATE) {
         rc = H2_PAL_OK;
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_pal_ble_adv_set_set_data(
-            service->config.api.ble, service->adv_set, &adv_data);
+        rc = legacy
+            ? h2_pal_ble_set_adv_data(service->config.api.ble, &adv_data)
+            : h2_pal_ble_adv_set_set_data(
+                  service->config.api.ble, service->adv_set, &adv_data);
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_pal_ble_adv_set_start(
-            service->config.api.ble, service->adv_set);
+        rc = legacy
+            ? h2_pal_ble_start_advertising(
+                  service->config.api.ble, &service->adv_params)
+            : h2_pal_ble_adv_set_start(
+                  service->config.api.ble, service->adv_set);
     }
     return rc;
 }
@@ -350,8 +371,7 @@ static int h2_loader_ble_system_event(
             service->active_att_mtu = 0u;
             service->active_mtu_confirmed = false;
         }
-        service->advertising_restart_pending =
-            service->adv_set != NULL && !service->closing &&
+        service->advertising_restart_pending = !service->closing &&
             !service->advertising_paused;
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
@@ -361,10 +381,17 @@ static int h2_loader_ble_system_event(
             service->config.api.sync, service->mtu_semaphore);
         return H2_PAL_OK;
     }
-    if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED &&
-        event->payload_size == sizeof(h2_pal_ble_adv_set_event_t)) {
-        const h2_pal_ble_adv_set_event_t *advertising = event->payload;
-        if (advertising->set != service->adv_set) {
+    if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED) {
+        if (service->config.advertising_mode ==
+                H2_LOADER_BLE_ADVERTISING_EXTENDED) {
+            if (event->payload_size != sizeof(h2_pal_ble_adv_set_event_t)) {
+                return H2_PAL_OK;
+            }
+            const h2_pal_ble_adv_set_event_t *advertising = event->payload;
+            if (advertising->set != service->adv_set) {
+                return H2_PAL_OK;
+            }
+        } else if (event->payload_size != 0u) {
             return H2_PAL_OK;
         }
         (void)h2_pal_mutex_lock(
@@ -656,6 +683,8 @@ int h2_loader_ble_service_open(
     stream_config.tx_buffer_size = H2_LOADER_BLE_BUFFER_SIZE;
     stream_config.rx_buffer_size = H2_LOADER_BLE_BUFFER_SIZE;
     stream_config.no_congestion_control = 0;
+    stream_config.output_retry_count = 40u;
+    stream_config.output_retry_delay_ms = 2u;
     stream_config.on_event = h2_loader_ble_stream_event;
     rc = h2_bleikcp_server_open(
         &service->config.api, &stream_config, config->handler,
@@ -693,11 +722,14 @@ int h2_loader_ble_service_open(
             0u :
             H2_LOADER_BLE_ADV_SID,
     };
-    rc = h2_pal_ble_adv_set_create(
-        config->api.ble, &adv_params, &service->adv_set);
-    if (rc != H2_PAL_OK) {
-        rc = h2_loader_ble_open_error("adv_create", rc);
-        goto fail;
+    service->adv_params = adv_params;
+    if (config->advertising_mode == H2_LOADER_BLE_ADVERTISING_EXTENDED) {
+        rc = h2_pal_ble_adv_set_create(
+            config->api.ble, &adv_params, &service->adv_set);
+        if (rc != H2_PAL_OK) {
+            rc = h2_loader_ble_open_error("adv_create", rc);
+            goto fail;
+        }
     }
     for (size_t i = 0u; i < H2_LOADER_BLE_EVENT_SUBSCRIPTION_COUNT; ++i) {
         rc = h2_pal_system_event_subscribe(
@@ -733,6 +765,9 @@ fail:
     }
     if (service->adv_set != NULL) {
         (void)h2_pal_ble_adv_set_destroy(config->api.ble, service->adv_set);
+    } else if (service->config.advertising_mode ==
+               H2_LOADER_BLE_ADVERTISING_LEGACY) {
+        (void)h2_pal_ble_stop_advertising(config->api.ble);
     }
     if (service->server != NULL) {
         (void)h2_bleikcp_server_close(service->server);
@@ -759,9 +794,18 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t *service) {
     if (link_rc != H2_PAL_OK) {
         return link_rc;
     }
-    adv_rc = service->adv_set != NULL
-        ? h2_pal_ble_adv_set_destroy(service->config.api.ble, service->adv_set)
-        : H2_PAL_OK;
+    adv_rc = service->config.advertising_mode ==
+            H2_LOADER_BLE_ADVERTISING_LEGACY
+        ? h2_pal_ble_stop_advertising(service->config.api.ble)
+        : service->adv_set != NULL
+            ? h2_pal_ble_adv_set_destroy(
+                  service->config.api.ble, service->adv_set)
+            : H2_PAL_OK;
+    if (adv_rc == H2_PAL_ERR_INVALID_STATE &&
+        service->config.advertising_mode ==
+            H2_LOADER_BLE_ADVERTISING_LEGACY) {
+        adv_rc = H2_PAL_OK;
+    }
     server_rc = service->server != NULL
         ? h2_bleikcp_server_close(service->server)
         : H2_PAL_OK;
@@ -772,7 +816,10 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t *service) {
 
 int h2_loader_ble_service_pause_advertising(
     h2_loader_ble_service_t *service) {
-    if (service == NULL || service->adv_set == NULL) {
+    if (service == NULL ||
+        (service->config.advertising_mode ==
+             H2_LOADER_BLE_ADVERTISING_EXTENDED &&
+         service->adv_set == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     (void)h2_pal_mutex_lock(
@@ -781,8 +828,11 @@ int h2_loader_ble_service_pause_advertising(
     service->advertising_restart_pending = false;
     (void)h2_pal_mutex_unlock(
         service->config.api.sync, service->link_mutex);
-    int rc = h2_pal_ble_adv_set_stop(
-        service->config.api.ble, service->adv_set);
+    int rc = service->config.advertising_mode ==
+            H2_LOADER_BLE_ADVERTISING_LEGACY
+        ? h2_pal_ble_stop_advertising(service->config.api.ble)
+        : h2_pal_ble_adv_set_stop(
+              service->config.api.ble, service->adv_set);
     if (rc == H2_PAL_OK || rc == H2_PAL_ERR_INVALID_STATE) {
         return H2_PAL_OK;
     }
@@ -796,7 +846,10 @@ int h2_loader_ble_service_pause_advertising(
 
 int h2_loader_ble_service_resume_advertising(
     h2_loader_ble_service_t *service) {
-    if (service == NULL || service->adv_set == NULL) {
+    if (service == NULL ||
+        (service->config.advertising_mode ==
+             H2_LOADER_BLE_ADVERTISING_EXTENDED &&
+         service->adv_set == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     (void)h2_pal_mutex_lock(
@@ -808,8 +861,12 @@ int h2_loader_ble_service_resume_advertising(
     for (uint32_t attempt = 0u;
          attempt < H2_LOADER_BLE_ADV_RESUME_RETRY_COUNT;
          ++attempt) {
-        rc = h2_pal_ble_adv_set_start(
-            service->config.api.ble, service->adv_set);
+        rc = service->config.advertising_mode ==
+                H2_LOADER_BLE_ADVERTISING_LEGACY
+            ? h2_pal_ble_start_advertising(
+                  service->config.api.ble, &service->adv_params)
+            : h2_pal_ble_adv_set_start(
+                  service->config.api.ble, service->adv_set);
         if (rc == H2_PAL_OK || rc == H2_PAL_ERR_INVALID_STATE) {
             return H2_PAL_OK;
         }

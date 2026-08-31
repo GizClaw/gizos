@@ -18,10 +18,10 @@ P4 的 32 MB flash 中，当前布局使用前 14.2 MB：包含 2 MB `h2loader`�
 
 ## sdkconfig
 
-P4 启用 octal PSRAM、ESP-Hosted SDIO、remote Wi-Fi、NimBLE host、extended advertising 与 Hosted VHCI；Hosted transport mempool 和默认 worker task 使用 PSRAM，避免完整 Loader 启动时耗尽内部 RAM。本地 Bluetooth controller 禁用；PAL 在 NimBLE 启动和停止时通过 Hosted RPC 对称管理 C6 Bluetooth controller。`app_main()` 只创建独立的 Board entry task，因此 ESP-IDF main task stack 固定为 8 KiB，避免在 PSRAM/XIP mapping 完成后为 64 KiB startup stack 申请 internal RAM 失败。UART0 console 和 UART iKCP 使用 `230400` baud。panic coredump 写入 flash，最多记录 16 个 task。
+P4 启用 octal PSRAM、ESP-Hosted SDIO、remote Wi-Fi、NimBLE host、extended advertising 与 Hosted VHCI；Hosted transport mempool 和默认 worker task 使用 PSRAM，避免完整 Loader 启动时耗尽内部 RAM。本地 Bluetooth controller 禁用；PAL 在 NimBLE 启动和停止时通过 Hosted RPC 对称管理 C6 Bluetooth controller。`app_main()` 只创建独立的 Board entry task，因此 ESP-IDF main task stack 固定为 8 KiB，避免在 PSRAM/XIP mapping 完成后为 64 KiB startup stack 申请 internal RAM 失败。UART0 console 和 UART iKCP 使用固定 `230400` baud。panic coredump 写入 flash，最多记录 16 个 task。
 
 ## 预期表现
 
-C6 ready 后，Loader 通过 UART 与 BLE iKCP 接受 command session。`bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 的结构化 identity 必须为 `board=waveshare_esp32p4_wifi6_touch_lcd_4_3`、`target=esp32p4`、`active_role=h2loader`，服务 ready 时输出 `H2_LOADER_READY target=esp status=ready`。
+C6 ready 后，Loader 通过 UART 与 BLE iKCP 接受 command session。`bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 的结构化 identity 必须为 `board=waveshare_esp32p4_wifi6_touch_lcd_4_3`、`target=esp32p4`、`active_role=loader`，服务 ready 时输出 `H2_LOADER_READY target=esp status=ready`。
 
-Hosted 初始化失败不得伪装成 Wi-Fi/BLE ready；保留 UART session 用于查询状态和恢复。正常升级验收覆盖 trial、canonical 重连、最终 version、running partition、`upgrade_phase=idle` 和 power-cycle 后复查。
+Hosted 初始化失败不得伪装成 Wi-Fi/BLE ready；保留 UART session 用于查询状态和恢复。正常 Loader 更新使用 `send` 和 `reboot upgrade`，验收覆盖 Partition 2 候选 Loader 启动和 Partition 1 回写；最终 `status` 必须显示目标 version、运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，并在 power-cycle 后复查。

@@ -11,6 +11,7 @@ typedef struct h2_h2loader_cli_context h2_h2loader_cli_context_t;
 typedef struct h2_h2loader_cli_options {
     const char *port;
     const char *ready_marker;
+    uint32_t baud_rate;
     uint32_t wait_timeout_ms;
     uint32_t read_timeout_ms;
     uint32_t post_delay_ms;
@@ -25,11 +26,13 @@ typedef struct h2_h2loader_cli_transport {
     h2_h2loader_host_serial_connection_t *serial_connection;
     h2_h2loader_host_ble_connection_t *ble_connection;
     h2_h2loader_host_candidate_t ble_candidate;
+    char authoritative_device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
     const char *ready_marker;
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
     uint32_t command_timeout_ms;
     uint8_t ble_candidate_valid;
+    uint8_t authoritative_device_uid_valid;
 } h2_h2loader_cli_transport_t;
 
 typedef struct h2_h2loader_cli_server_options {
@@ -119,6 +122,11 @@ int h2_h2loader_cli_scan_candidates(
     h2_h2loader_cli_scan_probe_fn probe,
     void *probe_user);
 
+h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
+    h2_h2loader_host_command_t kind,
+    const h2_h2loader_host_status_t *before,
+    const h2_h2loader_host_status_t *after);
+
 int h2_h2loader_cli_package_command(
     h2_h2loader_cli_context_t *context,
     int argc,
@@ -183,6 +191,10 @@ h2_pal_result_t h2_h2loader_cli_transport_disconnect(
 
 h2_pal_result_t h2_h2loader_cli_transport_rediscover(
     h2_h2loader_cli_transport_t *transport);
+
+int h2_h2loader_cli_reconnect_must_fail_closed(
+    const h2_h2loader_cli_transport_t *transport,
+    h2_pal_result_t connect_result);
 
 h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(
     h2_h2loader_cli_transport_t *transport,

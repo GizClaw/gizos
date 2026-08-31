@@ -63,7 +63,7 @@ Portable App 的阻塞入口是 `h2_tap_reset_run(h2_runtime_t *, const h2_tap_r
 
 Desktop 入口直接调用同一个 `h2_tap_reset_run()`，不依赖 mobile adapter，也不复制 App source 或重写页面。共享 Desktop adapter 和 Runtime assembly 放在 `projects/example/libs/desktop/tap-reset/`；macOS 的 native entry、`Info.plist` 和 `rules_apple` bundle rule 放在同级 `macos/`。
 
-Example 不能 include target SDK、board API、launcher private type 或 H2Loader package/image policy，也不能自行确认 H2Loader image。Board 与 platform launcher 决定自己能够组装哪些 Example；没有入口表示该平台不提供对应 Example，不由 portable App 按平台身份分支或把 required behavior 转换成运行时 `SKIP`。H2Loader-managed artifact 位于 `projects/example/targets/h2loader_tar_zlib/<app>/<board>/`，负责 Runtime assembly、App client、confirmation、package identity、board wiring 和 release output，但不改变 Example ownership。`crash-before-confirm` 只执行 launcher 注入的 crash callback，`partial-update` 只观察 Runtime filesystem 中的 package data；H2Loader rollback 和 partial-update 判定属于外部验收流程。
+Example 不能 include target SDK、board API、launcher private type 或 H2Loader package/image policy，也不能自行实现 H2Loader Stage 收尾。Board 与 platform launcher 决定自己能够组装哪些 Example；没有入口表示该平台不提供对应 Example，不由 portable App 按平台身份分支或把 required behavior 转换成运行时 `SKIP`。H2Loader-managed artifact 位于 `projects/example/targets/h2loader_tar_zlib/<app>/<board>/`，负责 Runtime assembly、App client、固件 identity、board wiring 和 release output，但不改变 Example ownership。`crash-before-confirm` 只执行 launcher 注入的 crash callback，`partial-update` 只观察 Runtime filesystem 中的 package data；H2Loader 的 metadata transaction、断电恢复和 partial-update 判定属于外部验收流程。
 
 拥有稳定 case registry、机器结果与跨 launcher 验收合同的 runnable test App 属于 [E2E 测试 App](/apps/e2e)，不作为 Example 维护。
 

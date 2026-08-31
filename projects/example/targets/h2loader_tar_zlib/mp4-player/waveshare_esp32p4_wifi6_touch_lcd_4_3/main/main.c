@@ -2,7 +2,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_smoke_mp4_player.h"
 #include "h2_tinyh264.h"
 #include "h2_esp_target_task_policy.h"
@@ -16,7 +16,7 @@ static h2_pal_result_t confirm_ready(void *user) {
     h2_runtime_t *runtime = user;
     h2_pal_result_t result = h2_esp_platform_confirm_running_app();
     if (result == H2_PAL_OK) {
-        result = (h2_pal_result_t)h2_loader_mark_app_confirmed(runtime->pref);
+        result = (h2_pal_result_t)h2_esp_h2loader_app_confirm(runtime);
     }
     if (result == H2_PAL_OK) {
         printf("H2_MP4_PLAYER_IMAGE_READY board=waveshare_esp32p4_wifi6_touch_lcd_4_3\n");

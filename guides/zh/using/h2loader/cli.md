@@ -78,11 +78,11 @@ ESP build 和 flash 需要 ESP-IDF 环境；BK 操作需要 BK SDK、toolchain �
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan
 ```
 
-扫描输出 JSON；serial candidate 的 transport 是 `iostreamikcp`，BLE candidate 是 `bleikcp`。CLI 按枚举顺序对每个 serial candidate 恰好执行一次 reliable connect、live status 和 disconnect；成功 entry 的 `port` 是后续 `--port` 可原样复用的 opaque ID，并同时返回 authoritative `board`、`target`、`active_role`、`active_name`、`active_version`、`state`、`probe_result="ok"` 和 `probe_code=0`。失败 entry 仍保留 exact `port` 与 `endpoint`，使用 `probe_result="error"` 和 exact PAL `probe_code`，上述 identity field 为空；一个端口失败不隐藏其他 serial 或 BLE candidate。
+扫描输出 JSON；serial candidate 的 transport 是 `iostreamikcp`，BLE candidate 是 `bleikcp`。CLI 按枚举顺序对每个 serial candidate 恰好执行一次 reliable connect、live status 和 disconnect；成功 entry 的 `port` 是后续 `--port` 可原样复用的 opaque ID，并同时返回 authoritative `board`、`target`、active identity、running/next partition、`boot_intent`、Stage/Partition metadata、`probe_result="ok"` 和 `probe_code=0`。失败 entry 仍保留 exact `port` 与 `endpoint`，使用 `probe_result="error"` 和 exact PAL `probe_code`，上述 identity field 为空；一个端口失败不隐藏其他 serial 或 BLE candidate。
 
 `--probe-timeout` 默认 10 秒，并分别作为每个串口的 handshake timeout 和 status command timeout，同时也是 BLE discovery allowance。N 个无响应串口的最坏耗时可达到 BLE allowance 加 `N × (handshake timeout + status timeout)` 与有界 open/close overhead。CLI 在 candidate 之间检查 cancellation，当前正在进行的 bounded connect 不变为异步取消；每个已打开 connection 都会在继续或返回前关闭。
 
-BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。BLE entry 的广播 board 仍只是 discovery evidence，不与 serial entry 配对，也不提升为 live identity。CLI 不以串口文件名、USB metadata、BLE display name、广播 board 或候选顺序猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
+BLE 的 `port` 为空，后续命令把 scan 返回的 `endpoint` 作为 `--port`。Legacy H2Loader advertisement 保留 management service UUID；compact identity 可以来自新固件的 manufacturer data，也兼容旧固件的 Service Data，并可由 scan response 补全。CoreBluetooth 没有合并 scan response 时，完整、connectable 且携带 private management service UUID 的 primary packet 仍作为 unknown-board candidate 返回，权威 identity 只在连接后的 status 中取得。BLE entry 的广播 board 仍只是 discovery evidence，不与 serial entry 配对，也不提升为 live identity。CLI 不以串口文件名、USB metadata、BLE display name、广播 board 或候选顺序猜测设备。所有后续管理命令都使用同一套命令解析、typed request、状态门禁与终止结果，只由 `--transport` 选择连接 adapter：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
@@ -99,11 +99,11 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `check` 报告 BLE capability 时只检查平台是否提供 BLE Host，不启动它；`--no-ble` 下 BLE capability 报告为不可用。
 
-串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；BLE endpoint 只用于当前 Host/backend 生命周期内选择初始 candidate，连接后的 status 才提供 authoritative board/role/capability。v1/v2 尚无 `device_uid`，因此 CLI 不把 backend address 当成断线后可重新识别物理设备的 identity。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
+串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；显式 BLE management command 使用 `--port` 的 exact endpoint 做 targeted scan，不枚举串口，匹配后立即停止，未匹配时仍等待完整 bounded scan timeout。BLE endpoint 只负责选择 candidate；连接后的 status 提供 authoritative `device_uid`、board、role 和 capability，其中 UID 是设备固件报告的 BLE public/identity MAC（12 位小写十六进制）。CLI 在生命周期命令前锁定 UID，重启后重新发现并拒绝 UID 缺失或不同的连接；backend address 不能替代 UID。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
 
 `--ready` 和非零 `--post-delay` 是 serial boot-marker 调试参数，不能与 `--transport bleikcp` 组合；CLI 会在连接前拒绝，而不是悄悄忽略 transport-specific 参数。
 
-Reliable UART transport 固定使用 `230400` baud，Loader 与 app image 使用相同 contract，CLI 不提供 baud 参数。打开 ESP 原生 USB Serial/JTAG endpoint 时不更新 DTR/RTS，避免只读命令重启 target；外置 USB-UART endpoint 在打开前明确将两条 control line 置低，CH340 连接的 BK target 依赖这一既有 transport 行为退出 BootROM/reset 状态并确认 reliable session。Host、ESP UART backend 和 BK AP/CP tunnel 都保留一次 encoded frame 的写边界，不增加固定 write gap；设备 console 与 protocol frame 通过 target TX serializer 串行化。进度与最终成功仍以 peer ACK 和 package checksum 为准。
+Reliable UART transport 默认使用 `230400` baud，Loader 与 APP image 使用相同 contract；全局 `--baud RATE` 只用于连接另行配置的镜像。Host Serial 打开 endpoint 后、借出 byte stream 前明确 deassert DTR/RTS；endpoint 返回 canonical `UNSUPPORTED` 时继续，任何其它 control-line 错误立即终止连接。每次 disconnect 都发送 `SESSION_CLOSE`，设备释放旧 session 后下一次 open 使用新的非零 session ID 握手。Host、ESP UART backend 和 BK AP/CP tunnel 都保留一次 encoded frame 的写边界，不增加固定 write gap；设备 console 与 protocol frame 通过 target TX serializer 串行化。进度与最终成功仍以 peer ACK 和 package checksum 为准。
 
 IO Stream iKCP 的 `send` 由 receiver window、CWND、ACK 和重传提供 backpressure，不使用固定 256-byte/10 ms 发送节流。Host 按 KCP MSS 组织 single-segment message，并以不超过 6 KiB（BK 20-segment receive window 内）的 delivery batch 输出 `acked bytes / total / percent / rate` 进度；进度表示 peer 已确认的数据，不是仅写入本机串口 buffer。
 
@@ -139,7 +139,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以通过 Runtime `wifi_settings` 读取并重新连接。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
 
-该命令只允许用于 `status` 报告 `active_role=h2loader` 的设备。App image 上调用会被 Host Core 拒绝；CLI 不提供任意 raw command 旁路。主动断开当前连接：
+该命令是否可用只由当前连接的 `command_availability` 决定；APP 与 Loader 使用相同命令和响应，不由 Host 根据 role 另设限制。CLI 不提供任意 raw command 旁路。主动断开当前连接：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
@@ -177,20 +177,13 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- golden --out /tmp/golden.tar.zlib
 ```
 
-Loader image 使用 `--role h2loader`，且不能包含 `--data-dir`。将 package stage 到已支持自升级的设备后，显式执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> upgrade`；仅 stage 不会自动升级 Loader。
+Loader image 使用 `--role h2loader`，且不能包含 `--data-dir`。将 package Stage 到设备后，显式执行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot upgrade`；仅 Stage 不会安装固件。
 
 ## Stage 和启动
 
-设备当前运行 App image 时，必须先返回 H2Loader，再发送新的 App package。不要直接在运行中的 App 上执行 `send` 或 `send-url`；更新流程只通过 App command transport 执行 `rollback`，package download、stage 和安装由 H2Loader image 执行。
+APP 与 Loader 都直接支持 `send`、`send-url` 和 `stage abort`。Host 不先切换 role；两种固件调用同一 Stage 实现，把完整 package identity 持久化到 `stage` metadata。发送完成后必须看到 Stage 成功终态，并由随后读取的 `status` 证明 `stage.valid=true`、package size/checksum 和 image identity 与输入包完全一致。
 
-```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> rollback
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
-```
-
-继续更新前，`status` 必须报告 `active_role=h2loader`。发送完成后必须看到 `H2_LOADER_DOWNLOAD state=done` 和 `H2_LOADER_STAGE result=OK`；随后使用 `reboot` 触发安装和启动，再次查询状态，直到设备报告 `active_role=app`、`state=confirmed`，且 `installed_checksum` 等于本次 stage 返回的 checksum。
-
-新的 `send` 或 `send-url` 会在接收 bytes 前自动删除已有 staged candidate，不需要先执行 `stage abort`。替换开始后，旧 candidate 不再作为失败回退；如果新传输、校验或发布失败，设备清理临时内容并报告 `staged_valid=0`。这类失败只表示当前没有 staged candidate，不会创建 App rollback、改变 boot target，或修改已安装 App、确认、hold 和已有 recovery 状态。
+新的 `send` 或 `send-url` 会在接收 bytes 前原子替换已有 candidate，不需要先执行 `stage abort`。替换开始后，旧 candidate 不再作为失败回退；如果新传输、校验或发布失败，设备清理临时内容并保持 `stage.valid=false`。这类失败不会修改 `partition_1`、`partition_2` 或 `boot_intent`。
 
 通过同一串口直接发送 package：
 
@@ -201,7 +194,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   --file /tmp/update.tar.zlib
 ```
 
-同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage，并在断开前通过同一 connection 读取 status、核对 exact staged bytes/SHA-256，不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
+同一 `send` 流程也可以显式选择 BLE management endpoint；package bytes 通过当前 BLE-iKCP session stage。无响应 BLE write 遇到 controller queue backpressure 时最多重试 40 次、每次间隔 2 ms；如果 package 已完整确认但同连接暂时读不到 durable staged metadata，CLI 只在旧 connection 成功 disconnect 后执行 bounded reconnect，再核对 exact staged bytes/SHA-256；teardown 失败不会打开并发替代 session。它不会改写命令、另建 BLE 指令表或跨 scan 猜测物理设备：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
@@ -242,12 +235,12 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 串口和 BLE 共用 Wi-Fi setup、typed `STAGE_URL` 以及 exact staged bytes/SHA-256 验证。BLE 在同一 connection 内完成 URL 下载 terminal 和 staged status 验证，随后才断开；不按 display name、board 或 backend address 跨扫描替换设备，也不会重放已经接受的 URL command。
 
-需要重启并重新识别物理设备的 Loader `upgrade` 在 serial 上继续使用 stable USB identity。BLE v1/v2 没有 `device_uid`，CLI 会在连接和发送 upgrade 前明确拒绝 `--transport bleikcp`；协议提供 authoritative UID 后才能开放 BLE upgrade lifecycle verification。普通 `status`、Wi-Fi、stage、hold、restart、rollback、reboot、coredump、`send` 和 `send-url` 仍使用同一命令解析和 typed request，其中 lifecycle command 的成功只表示当前 connection 上的 accepted terminal，不伪造重连验收。
+`reboot app|loader|upgrade` 在串口与 BLE 上发送相同的 typed request。Host 只有在收到 accepted/final 终态并按当前 transport 完成 bounded reconnect、重新读取 authoritative status 后，才把生命周期动作记为成功；仅 accepted、断线或重新发现一个同名 endpoint 都不能伪造 PASS。
 
 当前 PAL Net contract 没有 TCP listener/accept，因此 native CLI 暂不支持
 `send-url --file`，也不会在 target 中维护 POSIX 或 Win32 listener。
 
-`send-url` 是 package transport，不是唯一的 Loader stage 路径。ESP target 上如果 `send-url` 返回 `state=error`、`checksum_fail`、`step=size`、重复停在同一字节数，或者网络路径不能稳定传完整包，保持设备在 `active_role=h2loader`，改用默认 `iostreamikcp` transport 的 UART `send` 发送同一个 package：
+`send-url` 是 package transport，不是唯一的 Stage 路径。ESP target 上如果 `send-url` 返回 `state=error`、`checksum_fail`、`step=size`、重复停在同一字节数，或者网络路径不能稳定传完整包，保持设备在当前可管理 role，改用默认 `iostreamikcp` transport 的 UART `send` 发送同一个 package：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
@@ -259,26 +252,13 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 不要为了绕过 transport 故障改变 package 内容、降低验收条件或直接进入底层烧录。UART `send` 成功必须收到 `H2_LOADER_STAGE_RECEIVE result=OK` 和 `H2_LOADER_STAGE result=OK`；URL staging 成功仍必须收到 `H2_LOADER_DOWNLOAD state=done` 和 `H2_LOADER_STAGE result=OK`。
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot upgrade
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
 ```
 
-`reboot` 后如果 `status` 持续报告 `active_role=h2loader state=install-requested`，说明 install intent 和 staged package 已经持久化，但 Loader 当前 lifecycle 没有完成转换。只要 Loader command transport 仍可通信，就必须在 Loader 内恢复，不能要求使用者按 Reset，也不能调用 esptool、切换 DTR/RTS、断电或重新烧录：
+`reboot upgrade` 设置 `boot_intent=AUTO` 并从 Partition 1 重新进入基于真实 metadata/checksum 的流程。APP package 完成后必须证明 active role 为 APP、运行在 Partition 2、Stage 已收尾且 Partition 2 identity 与 package 一致。Loader package 先在 Partition 2 启动候选 Loader，再安全回写 Partition 1；完成后必须运行在 Partition 1，Partition 1/2 identity 和 checksum 一致，Stage 已收尾。流程不持久化 install phase。
 
-```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot-loader
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> status
-```
-
-`reboot-loader` 必须完成 Loader 自身的软件重启并重新出现 `H2_LOADER_READY ... status=ready`。随后再次执行 `reboot`，让新启动的 Loader 消费已经持久化的 install intent。Tiga 等带有 MFG 或 modem 清理任务的 board 可能需要较长时间完成转换；转换命令仍在运行时不要用新的 `status` session 替换它。最终验收条件不变：`active_role=app`、`state=confirmed`，且 `installed_checksum` 等于本次 staged package checksum。
-
-只有 scan、status、`reboot-loader` 等 Loader recovery command 都无法通信，并且对应 board 使用文档明确进入 recovery 时，才允许使用底层 reset 或 flash。
-
-新 BK Loader 使用默认 reliable `send` 接收 package，不依赖 Wi-Fi。新 BK App 不暴露 stage；先执行 `rollback`，等待重新枚举并确认 `active_role=h2loader`，再发送 package。
-
-不支持 reliable command contract 的旧 BK7258 image 不能通过 legacy raw H2Loader command 迁移。只有默认 `scan`、`status`、`reboot-loader` 等 Loader recovery command 都无法通信，并且对应 board 文档明确进入 recovery 时，才允许使用独立的 BootROM recovery 流程。
+如果仍能通过 `status` 通信，就根据 `boot_intent`、running/next partition 和三份 metadata 诊断；不要用 Reset、DTR/RTS、断电或重新烧录掩盖 lifecycle 错误。只有 H2Loader reliable command transport 无法通信，并且对应 board 文档明确进入 recovery 时，才允许使用底层 erase/flash 或 BootROM recovery。BK APP 与 Loader 也都使用同一 Stage contract；当前 BK 实板验收因硬件不可用而保持 deferred，不能由 build 结果代替。
 
 可共享的 Serial port、USB/BLE identity、板型映射，以及带日期的最后一次 Loader、App 或 MFG 验证基线可以记录在 `.env/users/<os-user>.md` 并提交到 Git；历史验证基线不代表设备当前实时状态。本地 package URL、Wi-Fi credential、private endpoint 和其他 secret 不能写进仓库文档或提交到 Git。H2Loader 不从 Markdown operator context 或仓库默认值取得凭据。
 
@@ -290,36 +270,31 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `stage abort` 不是下一次 `send` 或 `send-url` 的前置步骤。只有调用方要放弃当前 candidate、且尚未开始替换时才需要显式执行。
 
-需要放弃本次更新并启动原来已经确认的 App 时，先执行 `stage abort`，确认 `staged_valid=0` 且 `installed_valid=1`，再执行 `reboot`。如果仍停在 `install-requested`，同样先执行上面的 `reboot-loader` recovery，再由 Loader 启动 installed App；不要用硬件 reset 代替 Loader rollback。
-
-控制 Loader hold：
-
-```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> hold on
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> hold off
-```
+需要放弃本次更新时执行 `stage abort`，并确认 `stage.valid=false`；该命令不改变两个 Partition。随后可按意图执行 `reboot app` 或 `reboot loader`。`reboot app` 与 `reboot loader` 都不消费 Stage，只有 `reboot upgrade` 进入 AUTO 安装流程。
 
 ## App 操作
 
-重新启动当前 app：
+启动 Partition 2：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> restart
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot app
 ```
 
-重新启动并继续读取串口日志：
+启动 Partition 1 并停留在 Loader：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> restart-monitor
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot loader
 ```
 
-`restart-monitor` 在发送共享的 typed `restart` 后继续读取串口外的 raw boot log，因此这一条 host-side 组合命令只支持 `iostreamikcp`；BLE 上的设备 `restart` 指令本身仍通过统一命令集使用。显式为 `restart-monitor` 选择 `bleikcp` 会在发送 restart 前失败，不会偷偷改用串口或产生半完成的重启。
-
-返回 Loader：
+串口可以单独监控普通日志，或在 reboot 后持续监控：
 
 ```sh
-bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> rollback
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> monitor
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot app --monitor
+bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- --port <serial-port> reboot loader --monitor
 ```
+
+`monitor` 是 Host-only UART 操作，输出 iostreamikcp 已判定不是 iKCP frame 的日志 bytes；设备协议中没有 `monitor` 命令。`--monitor` 在 reboot accepted 后处理断线、重连并继续输出同类日志。BLE 可以执行三个 reboot 命令，但显式请求 monitoring 会在发送 reboot 前被拒绝。
 
 ## Coredump
 

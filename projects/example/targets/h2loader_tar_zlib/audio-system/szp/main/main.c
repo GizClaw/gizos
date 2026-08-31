@@ -1,7 +1,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_smoke_audio_system.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -18,7 +18,7 @@ static void smoke_confirm_app(h2_runtime_t *runtime) {
         printf("H2_SMOKE_AUDIO_FAIL stage=ota_confirm rc=%d\n", (int)confirm_rc);
         return;
     }
-    int rc = h2_loader_mark_app_confirmed(runtime->pref);
+    int rc = h2_esp_h2loader_app_confirm(runtime);
     if (rc != H2_PAL_OK) {
         printf("H2_SMOKE_AUDIO_FAIL stage=h2loader_confirm rc=%d\n", rc);
     }

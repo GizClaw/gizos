@@ -19,26 +19,26 @@ Linux Host Serial 归 `libs/pal/providers/linux/serial_host`，Darwin Host Seria
 
 ## Discovery 与 identity
 
-一次 scan 同时启动 BLE 扫描并枚举串口。两个 provider 分别返回 result；一边 permission、timeout 或 unavailable 不会丢弃另一边的候选。不同 transport、相同名称或广播 board 不会自动合并。
+一次普通 scan 同时启动 BLE 扫描并枚举串口。两个 provider 分别返回 result；一边 permission、timeout 或 unavailable 不会丢弃另一边的候选。不同 transport、相同名称或广播 board 不会自动合并。调用方也可提供当前 BLE backend 生命周期内的 exact `ble_endpoint`：匹配候选完成格式化后立即请求停止扫描；未匹配时以最长 250 ms 的 slice 轮询直到完整 `ble_timeout_ms`，不提供 endpoint 时仍等待一次完整扫描窗口。
 
-Candidate 的 endpoint、USB VID/PID/serial、display name 和 BLE advertisement 不是 authoritative identity。Connect 后必须读取唯一的严格 `H2_LOADER_STATUS`：固定字段顺序与宽度，`capabilities` 只表示 UART/Wi-Fi/BLE 硬件，`command_availability` 表示逐命令 gate，`states` 是唯一的 lifecycle/MFG 状态来源。BLE 广播的明文 board 只做连接后交叉检查。
+Candidate 的 endpoint、USB VID/PID/serial、display name、主机侧可见的 BLE address 和 advertisement 都不是 authoritative physical identity；PAL 的 address type 只描述 controller/backend selector，CoreBluetooth 截断 UUID 明确标记为 `PLATFORM_ID`，不能冒充 BLE identity address。Lifecycle 首次连接从严格 `H2_LOADER_STATUS` 锁定 12 位小写十六进制 `device_uid`；它由设备固件读取 BLE public/identity MAC 后报告。重启后可用 endpoint 重新发现候选，但新连接必须先匹配 UID，再验证 board/target/role/partition。Legacy BLE advertisement 保留 H2Loader service UUID，并把 compact Loader identity 放在 manufacturer data；payload 可以位于 primary advertisement 或独立 scan response。Host 为兼容既有固件也接受相同格式的 Service Data。macOS CoreBluetooth 没有合并 scan response 时，只要 primary packet 是 connectable、完整并携带 private H2Loader service UUID，Host 仍把它保留为 protocol candidate，连接后再从严格 status 取得 authoritative UID、board 与 capability。该 status 保持固定字段顺序与宽度，`capabilities` 只表示 UART/Wi-Fi/BLE 硬件，`command_availability` 表示逐命令 gate；lifecycle 的唯一来源是 `device_uid`、active identity、running/next partition、`boot_intent`、Stage、Partition 1、Partition 2 和 `last_result`。BLE 广播的明文 board 只做连接后交叉检查。
 
 Serial candidate 只尝试 reliable iostreamikcp command transport。Host Core scan 只返回 frozen discovery metadata；native CLI 在 scan snapshot 完成后按顺序使用 candidate 的 exact opaque `port_id` 执行一次 connect/status/disconnect，并把 live identity 或 exact per-candidate PAL failure 投影到 JSON。Timeout 不会触发 retry、legacy raw status probe、transport fallback 或 BLE/serial pairing，也不会产生第二种可管理设备协议；用户可见的在线设备、Firmware action 与 Console session 只来自 reliable serial 或 BLE-iKCP live status 成功。
 
 ## Typed command
 
 Console 和 Firmware 生命周期动作只能使用
-`h2_h2loader_host_command_t` 是闭集。Request 必须携带从同一 authoritative connection 获得的 live status 和当前 operation fence；Host Core 只检查该命令的 `command_availability` bit，再叠加 Host 自己的 managed-operation serialization。Host 不从 role、hardware capability 或 packed state 重建设备 availability。Stage abort、hold、Wi-Fi、coredump erase、staged Loader upgrade 与 URL stage 都使用 closed typed request 和 bounded parameter field；任意文本 command 不属于这个 API。
+`h2_h2loader_host_command_t` 是闭集。Request 必须携带从同一 authoritative connection 获得的 live status 和当前 operation fence；Host Core 只检查该命令的 `command_availability` bit，再叠加 Host 自己的 managed-operation serialization。Host 不从 role 或 hardware capability 重建设备 availability。Help/status/stats、条件 memory、Stage abort/URL、Wi-Fi、coredump 与 `reboot app|loader|upgrade` 都使用 closed typed request 和 bounded parameter field；任意文本 command 不属于这个 API。
 
 Firmware 先以 command registration 声明 implemented mask，再由产品 owner 通过 `h2_loader_set_command_availability(loader, flags, available)` 原子 set/clear 运行时 gate。它们只能额外限制 Loader 自身的 MFG、artifact 与 lifecycle 校验。connected status 发布 effective mask，执行路径在所需 operation lock 内重新计算；BLE advertisement 不携带该动态值，serial 与 BLE-iKCP 都以 connected status 为准。
 
-Browser SDK 始终投影固定的 `commandAvailability` number、`states` 十六进制 string，以及 `stagedBytes`/`candidateBytes` 十进制 string。`H2LoaderCapabilities`、`H2LoaderCommands`、`commandAvailable()` 与 `decodeH2LoaderStates()` 是唯一公共解码入口。Status object 不重复提供 role/state/validity scalar；旧字段缺失、`H2_APP_STATUS` 或字段乱序都直接 fail closed，不存在 fallback。
+Browser SDK 0.2.0 投影 `deviceUid`、`commandAvailability`、`capabilities`、`active` identity、`runningPartition`、`nextPartition`、`bootIntent`、`stage`、`partition1`、`partition2`、`lastResult` 和 MFG 信息。`H2LoaderCapabilities`、`H2LoaderCommands` 与 `commandAvailable()` 是公共解码入口；生命周期没有旧 packed states、installed/staged scalar 或 APP 专用 status fallback。SDK 的 breaking lifecycle API 只有 `stage`、`stageUrl`、`abortStage`、`rebootApp`、`rebootLoader` 和 `rebootUpgrade`。
 
-Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。
+Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。BLE-iKCP 的无响应写允许在 `WOULD_BLOCK` 后最多重试 40 次、每次间隔 2 ms；Host 与 Loader/App 两端使用相同 bounded backpressure，超过预算仍返回原始 transport error。
 
-Native CLI 在 command parser 之后只创建一个 transport-neutral session。`iostreamikcp` 与 `bleikcp` adapter 分别拥有连接资源，但 `status`、typed command、payload stage 和 disconnect 调用点相同；`send`、`send-url`、Wi-Fi 与 lifecycle command 不注册 transport-specific handler。BLE endpoint 只在当前 Host/backend 生命周期内选择初始 candidate，不能提升为跨扫描物理 identity。`send` 和 `send-url` 必须在同一 BLE connection 内完成 stage terminal 与 exact staged bytes/SHA-256 status 验证，再断开。需要断线后重新识别设备的 Loader upgrade 在 BLE v1/v2 上发送前 fail closed，直到 Service Data 提供 authoritative `device_uid`；不能按 display name、board 或 backend address选择替代设备。
+Native CLI 在 command parser 之后只创建一个 transport-neutral session。`iostreamikcp` 与 `bleikcp` adapter 分别拥有连接资源，但 `status`、typed command、payload stage 和 disconnect 调用点相同；`send`、`send-url`、Wi-Fi 与 lifecycle command 不注册 transport-specific handler。Serial disconnect 先发送带当前 session ID 的 `SESSION_CLOSE` control frame；Loader/App 收到后只停用该 session，不把它当作 command payload，下一次 open 必须重新握手。BLE endpoint 只负责发现；CLI 从首次 status 锁定 `device_uid`，跨重启的新 connection 必须匹配 UID，缺失或不同都 fail closed。`send` 和 `send-url` 优先在同一 BLE connection 内完成 Stage terminal 与 exact package bytes/SHA-256 status 验证；如果 package 已被完整确认，但同连接的 durable metadata status 暂时不可读，Host 只有在旧 transport disconnect 成功后才能做 bounded reconnect，并按 UID 拒绝替代设备后重新验证。Teardown 失败直接返回其错误，不能同时打开替代 session，也不能按 display name 或 board 选择另一个设备。
 
-App restart/rollback 的 `result=OK` 与 Loader reboot 的 `result=accepted` 只表示设备端接受请求。Loader-to-Loader reboot 继续等待 `H2_LOADER_REBOOT_FINAL`：同步返回时必须得到 `result=OK`，同步失败必须得到 `result=fail`；真正执行重启而不返回时，只有已收到 `accepted` 后 transport 明确关闭才算 transition accepted，timeout 仍是失败。Caller 只有持有 stable USB identity 或未来 BLE `device_uid` 时才能重新发现同一物理设备、重连并读取 live status；只有 board/target 与预期 role 匹配，App restart 还匹配原 App name/version，才能投影 lifecycle success。BLE v1/v2 只返回 accepted terminal，不把 backend address 伪装成重连验收。
+三个 reboot 的 `result=accepted` 只表示设备端接受请求。同步返回时还必须得到 `H2_LOADER_REBOOT_FINAL result=OK`；设备真正重启时，Host 在 accepted 后处理 transport close，并通过 bounded reconnect 读取 live status。只有 board/target、预期 role、running partition、boot intent 和三份 metadata 满足请求后的状态，才能投影 lifecycle success；timeout、同名替代 endpoint 或单独的 accepted 都不是成功。
 
 ## Catalog 与 operation
 
@@ -46,16 +46,16 @@ App restart/rollback 的 `result=OK` 与 Loader reboot 的 `result=accepted` 只
 
 浏览器从本地选择 standalone format-1 `.update.tar.zlib` 时没有 Release catalog。Host Core 的 package inspector 通过 caller 提供的 offset reader 按 bounded chunk 读取，计算 archive SHA-256，流式解压 zlib，并复用 Bundle USTAR path contract 校验 manifest、checksum、data 与唯一 App image。它输出 `identity_source=PACKAGE_MANIFEST` 的 immutable managed asset；format 1 不携带 App image name，因此 `image` 为空。只有这个显式 identity source 可以省略 name，既有 `RELEASE_CATALOG=0` caller 仍必须严格匹配 catalog image name，不能从文件名或 chooser label 推断 identity。
 
-Standalone APP 的最终校验要求 board、target、role、version、confirmed state、有效 installed package checksum、clean staging，并在 live status 提供 active checksum 时精确匹配 image checksum；由于 package 不携带 App name，只把 live `active_name` 作为证据显示。Standalone Loader 还必须精确匹配 active image checksum、idle upgrade phase 和 clean staging。预操作 already-target 与重连后的成功判定调用同一个 verification contract，只有版本相同不能跳过。
+Standalone package 的最终校验要求 board、target、role、version、image size/checksum 与对应 Partition metadata 完全匹配，并且 Stage 已按角色流程收尾。APP 必须运行在 Partition 2；Loader 自升级必须完成 P2-to-P1 回写、运行在 Partition 1，且 Partition 1/2 identity 一致。预操作 already-target 与重连后的成功判定调用同一个 verification contract，只有版本相同不能跳过。
 
 Managed operation 对串口和 BLE 使用同一个状态机：
 
 1. Connect 并读取 live status。
 2. 校验 board/target 与 asset。
-3. Stage 完整 package；中断不自动换 transport 或重放。
-4. Activate App 或 Loader。
+3. Stage 完整 package。`CLOSED`/`TIMEOUT` 只允许一次同 transport、同 `device_uid` 的受限恢复：重连后若 exact bytes/SHA-256 Stage 已持久化则继续；若 Stage 为空则从 offset 0 完整重放一次；若 UID 不同、已有其它有效 Stage 或再次中断则 fail closed。
+4. 执行 `reboot upgrade` 进入 AUTO 流程。
 5. Disconnect、重新发现并重连。
-6. App 要求 role/name、`state=confirmed`、匹配的 installed package checksum 以及 `staged_valid=0`；live status 提供 `active_checksum` 时还必须匹配 catalog 中的 image checksum，未提供该可选字段的旧实现仍由 package checksum 验证。Loader 要求目标版本、idle upgrade phase 和 clean staging。
+6. APP 要求运行在 Partition 2、active/Partition 2 identity 匹配 package 且 `stage.valid=false`；Loader 要求运行在 Partition 1、Partition 1/2 identity 与 package 匹配且 `stage.valid=false`。
 
 传输完成、命令 accepted 或进程退出都不是成功。
 
@@ -75,7 +75,7 @@ Scheduler 在 controller thread 上冻结 fixture slot、candidate snapshot 和 
 
 Launcher 的 managed factory batch 最多并发四个隔离 worker。只要 batch 包含 destructive recovery，就必须把整批并发限制为一，因为当前 ESP flasher callback boundary 是 process-global；不能用 UI 上的并发设置绕过。每个 recovery slot 仍需在入队时完成与单设备恢复相同的两次 timeout probe、短期授权和两项人工确认，执行时重新校验授权时效，写入后执行同样的 live Loader final verification。
 
-JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。Format 2 记录 catalog format、fixture slot、transport、endpoint/candidate/USB identity snapshot、board/target、managed/recovery path、asset identity 与两种 checksum、时间、retry、final live board/target/role/name/version/state/checksum/staged state，以及 exact error。Export 是操作记录，不会把空的 endpoint metadata 升格为 authoritative identity。Launcher 只在整批 terminal 后导出，并先写入、sync 临时文件再替换最终文件；export worker 存续期间 controller 不得修改 scheduler。
+JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。当前 export 记录 catalog format、fixture slot、transport、endpoint/candidate/USB identity snapshot、board/target、operation、asset identity 与两种 checksum、时间、retry、final live board/target/role/version/boot intent/checksum、`stage_valid` 以及 exact error。Export 是操作记录，不会把空的 endpoint metadata 升格为 authoritative identity。Launcher 只在整批 terminal 后导出，并先写入、sync 临时文件再替换最终文件；export worker 存续期间 controller 不得修改 scheduler。
 
 ## Browser Host Serial
 
@@ -83,7 +83,7 @@ JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。Format 2 记�
 
 `projects/e2e/targets/pkg_tar/h2loader-serial/` 只验证 Browser Host Serial contract；它不是产品 UI。[H2Loader Web SDK](/apps/h2loader/apps/batch_loader/) 通过本 Core 与 Web PAL 提供 authoritative status、managed operation、progress 与 final verification，但不暴露 destructive recovery。产品 React UI 位于 `GizClaw/www`，只消费发布的 `@gizclaw/h2loader` Promise API。
 
-Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。DTR/RTS output 使用 `setSignals()`，控制线读取返回 canonical unsupported；normal managed install 不改变控制线。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
+Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。Host reliable serial connection 在 `open()` 后、借出 stream 前 deassert DTR/RTS；Web 边界通过 `setSignals()` 执行相同操作，只有 canonical `UNSUPPORTED` 可继续。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。Darwin default-route 查询使用 non-blocking route socket 和一秒 monotonic deadline，保证 Host shutdown/join 不会因为无路由响应永久阻塞。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
 
 ## Validation
 
@@ -93,4 +93,4 @@ bazel test //projects/h2loader/libs/web:all
 bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
 
-Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 ESP 与 BK 的 live discovery、authoritative identity、安装或文档允许的 recovery、reboot，以及最终 role/state/checksum/staged state。
+Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。

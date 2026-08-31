@@ -1,6 +1,7 @@
 #include "h2_darwin_netif_internal.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <net/if.h>
 #include <net/route.h>
 #include <netinet/in.h>
@@ -8,6 +9,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 h2_pal_result_t h2_darwin_netif_os_default_name(
@@ -16,12 +18,8 @@ h2_pal_result_t h2_darwin_netif_os_default_name(
     if (fd < 0) {
         return H2_PAL_ERR_IO;
     }
-    const struct timeval receive_timeout = {
-        .tv_sec = 1,
-        .tv_usec = 0,
-    };
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout,
-                   sizeof(receive_timeout)) != 0) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
         close(fd);
         return H2_PAL_ERR_IO;
     }
@@ -43,11 +41,41 @@ h2_pal_result_t h2_darwin_netif_os_default_name(
         return H2_PAL_ERR_IO;
     }
     uint8_t response[2048];
+    struct timespec started;
+    if (clock_gettime(CLOCK_MONOTONIC, &started) != 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
     for (;;) {
-        ssize_t size;
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            close(fd);
+            return H2_PAL_ERR_IO;
+        }
+        int64_t elapsed_ms =
+            (int64_t)(now.tv_sec - started.tv_sec) * 1000 +
+            (int64_t)(now.tv_nsec - started.tv_nsec) / 1000000;
+        if (elapsed_ms >= 1000) {
+            close(fd);
+            return H2_PAL_ERR_TIMEOUT;
+        }
+        struct pollfd wait = {.fd = fd, .events = POLLIN};
+        int poll_rc;
         do {
-            size = read(fd, response, sizeof(response));
-        } while (size < 0 && errno == EINTR);
+            poll_rc = poll(&wait, 1u, (int)(1000 - elapsed_ms));
+        } while (poll_rc < 0 && errno == EINTR);
+        if (poll_rc == 0) {
+            close(fd);
+            return H2_PAL_ERR_TIMEOUT;
+        }
+        if (poll_rc < 0 || (wait.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            close(fd);
+            return H2_PAL_ERR_IO;
+        }
+        ssize_t size = read(fd, response, sizeof(response));
+        if (size < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            continue;
+        }
         if (size <= 0) {
             close(fd);
             return H2_PAL_ERR_IO;

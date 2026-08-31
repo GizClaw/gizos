@@ -3,6 +3,9 @@
 #include "h2loader_app_task_names.h"
 
 #include "driver/flash.h"
+#include "components/system.h"
+#include "mbedtls/sha256.h"
+#include "os/os.h"
 #include "h2_loader_app_client.h"
 #include "h2_loader_ble.h"
 #include "h2_loader_boot.h"
@@ -18,10 +21,122 @@ typedef struct h2_bk_h2loader_app_ble {
     h2_loader_ble_service_t *service;
     h2_pal_mutex_t *operation_mutex;
     char active_version[H2_PAL_FIRMWARE_VERSION_MAX];
+    char device_uid[13];
 } h2_bk_h2loader_app_ble_t;
 
 static h2_bk_h2loader_app_ble_t s_ble;
 static int s_started;
+static mbedtls_sha256_context s_app_sha;
+
+static int app_digest_start(void *user) {
+    (void)user;
+    mbedtls_sha256_init(&s_app_sha);
+    return mbedtls_sha256_starts(&s_app_sha, 0) == 0
+        ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
+static int app_digest_update(void *user, const uint8_t *data, size_t len) {
+    (void)user;
+    return mbedtls_sha256_update(&s_app_sha, data, len) == 0
+        ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
+static int app_digest_finish(void *user, uint8_t out_digest[32]) {
+    (void)user;
+    return mbedtls_sha256_finish(&s_app_sha, out_digest) == 0
+        ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
+static void app_digest_abort(void *user) {
+    (void)user;
+    mbedtls_sha256_free(&s_app_sha);
+}
+
+static void app_digest_hex(const uint8_t digest[32], char out[65]) {
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0u; i < 32u; ++i) {
+        out[i * 2u] = hex[digest[i] >> 4u];
+        out[i * 2u + 1u] = hex[digest[i] & 0x0fu];
+    }
+    out[64] = '\0';
+}
+
+int h2_bk_h2loader_current_app_identity(
+    h2_runtime_t *runtime,
+    const char *version,
+    h2_loader_image_identity_t *out_identity) {
+    h2_loader_status_t status;
+    const h2_loader_metadata_t *active = NULL;
+    const h2_loader_image_reader_api_t *reader = h2_bk_h2loader_image_reader();
+    uint8_t buffer[4096];
+    uint8_t digest[32];
+    char digest_hex[65];
+    uint64_t image_size = 0u;
+    uint64_t offset = 0u;
+    if (runtime == NULL || version == NULL || out_identity == NULL ||
+        runtime->pref == NULL || runtime->mem == NULL || reader == NULL ||
+        reader->vtable == NULL ||
+        reader->vtable->read == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int rc = h2_loader_read_pref_status(runtime->pref, runtime->mem, &status);
+    if (rc == H2_PAL_OK && status.partition_2.valid &&
+        status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
+        status.partition_2.image_size != 0u &&
+        strcmp(status.partition_2.version, version) == 0 &&
+        strcmp(status.partition_2.board, runtime->board) == 0 &&
+        strcmp(status.partition_2.target, runtime->target) == 0) {
+        active = &status.partition_2;
+        image_size = active->image_size;
+    }
+    if (image_size == 0u) {
+        rc = h2_bk_h2loader_managed_app_image_size(&image_size);
+        if (rc != H2_PAL_OK || image_size == 0u) return rc;
+    }
+    rc = app_digest_start(NULL);
+    while (rc == H2_PAL_OK && offset < image_size) {
+        size_t take = image_size - offset > sizeof(buffer)
+            ? sizeof(buffer) : (size_t)(image_size - offset);
+        rc = reader->vtable->read(reader->user,
+            H2_BK_H2LOADER_APP_PARTITION_ID, offset, buffer, take);
+        if (rc == H2_PAL_OK) rc = app_digest_update(NULL, buffer, take);
+        offset += take;
+    }
+    if (rc == H2_PAL_OK) rc = app_digest_finish(NULL, digest);
+    if (rc != H2_PAL_OK) {
+        app_digest_abort(NULL);
+        return rc;
+    }
+    app_digest_hex(digest, digest_hex);
+    if (active != NULL && strcmp(digest_hex, active->image_checksum) != 0) {
+        return H2_PAL_ERR_FORMAT;
+    }
+    memset(out_identity, 0, sizeof(*out_identity));
+    out_identity->format = 1u;
+    out_identity->role = H2_LOADER_IMAGE_ROLE_APP;
+    out_identity->image_size = image_size;
+    (void)snprintf(out_identity->image_sha256,
+        sizeof(out_identity->image_sha256), "%s", digest_hex);
+    (void)snprintf(out_identity->board, sizeof(out_identity->board),
+        "%s", runtime->board);
+    (void)snprintf(out_identity->target, sizeof(out_identity->target),
+        "%s", runtime->target);
+    (void)snprintf(out_identity->version, sizeof(out_identity->version),
+        "%s", version);
+    return H2_PAL_OK;
+}
+
+static uint64_t app_now_ms(void *user) {
+    const h2_pal_time_api_t *time = user;
+    uint64_t value = 0u;
+    return h2_pal_time_get_monotonic_ms(time, &value) == H2_PAL_OK
+        ? value : 0u;
+}
+
+static void app_sleep_ms(void *user, uint32_t delay_ms) {
+    (void)user;
+    rtos_delay_milliseconds(delay_ms);
+}
 
 int h2_bk_h2loader_prepare_app_operation(h2_runtime_t *runtime) {
     if (runtime == NULL || runtime->sync == NULL || runtime->mem == NULL) {
@@ -169,11 +284,21 @@ int h2_bk_h2loader_init_app_client(
         return rc;
     }
     h2_pal_firmware_info_t firmware_info;
+    uint8_t ble_mac[6];
     rc = h2_pal_firmware_info_get_current(
         runtime->firmware_info, &firmware_info);
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    rc = bk_get_mac(ble_mac, MAC_TYPE_BLUETOOTH);
+    if (rc != BK_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    (void)snprintf(
+        s_ble.device_uid,
+        sizeof(s_ble.device_uid),
+        "%02x%02x%02x%02x%02x%02x",
+        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
     (void)snprintf(
         s_ble.active_version,
         sizeof(s_ble.active_version),
@@ -184,18 +309,37 @@ int h2_bk_h2loader_init_app_client(
         .power = h2_bk_h2loader_app_power_api(runtime->pref),
         .allocator = runtime->mem,
         .disk = &s_coredump_disk,
+        .fs = runtime->fs,
+        .http = runtime->http,
+        .wifi = runtime->wifi_sta,
+        .wifi_settings = runtime->wifi_settings,
+        .digest = {
+            .start = app_digest_start,
+            .update = app_digest_update,
+            .finish = app_digest_finish,
+            .abort = app_digest_abort,
+        },
         .operation_sync = runtime->sync,
         .operation_mutex = s_ble.operation_mutex,
+        .wifi_operation_sync = runtime->sync,
+        .wifi_operation_mutex = s_ble.operation_mutex,
         .board = runtime->board,
         .target = runtime->target,
         .chip = runtime->chip,
-        .active_name = active_name,
-        .active_version = s_ble.active_version,
+        .device_uid = s_ble.device_uid,
         .hardware_capabilities = hardware_capabilities,
         .h2loader_partition_id = H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
+        .app_partition_id = 2u,
         .coredump_partition_id = H2_BK_H2LOADER_COREDUMP_ADDR,
+        .clock_user = (void *)runtime->time,
+        .now_ms = app_now_ms,
+        .sleep_ms = app_sleep_ms,
     };
-    return h2_loader_app_client_init(client, &config);
+    h2_loader_app_client_config_t complete = config;
+    rc = h2_bk_h2loader_current_app_identity(
+        runtime, s_ble.active_version, &complete.active_identity);
+    return rc == H2_PAL_OK
+        ? h2_loader_app_client_init(client, &complete) : rc;
 }
 
 static int handle_ble_session(void *user, h2_bleikcp_t *stream, uint16_t conn_handle) {

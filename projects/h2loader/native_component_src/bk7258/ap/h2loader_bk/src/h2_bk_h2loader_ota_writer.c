@@ -395,6 +395,25 @@ static const bk_logic_partition_t *image_partition(uint32_t partition_id) {
     return NULL;
 }
 
+int h2_bk_h2loader_managed_app_image_size(uint64_t *out_size) {
+    const bk_logic_partition_t *primary;
+    const bk_logic_partition_t *trial;
+    if (out_size == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    primary = image_partition(H2_BK_H2LOADER_PRIMARY_PARTITION_ID);
+    trial = image_partition(H2_BK_H2LOADER_APP_PARTITION_ID);
+    if (primary == NULL || trial == NULL ||
+        primary->partition_length != trial->partition_length) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+    /* BK packages contain app_ab_crc.rbl, a fixed, padded A/B managed image.
+     * Its manifest size is therefore the validated A/B window length, not an
+     * arbitrary executable partition capacity with unowned trailing bytes. */
+    *out_size = trial->partition_length;
+    return H2_PAL_OK;
+}
+
 static int image_get_capacity(void *user, uint32_t partition_id, uint64_t *out_capacity) {
     const bk_logic_partition_t *partition;
     (void)user;
@@ -492,45 +511,56 @@ int h2_bk_h2loader_confirm_active_loader(void *user) {
     return H2_PAL_OK;
 }
 
-int h2_bk_h2loader_confirm_current_app(const h2_pal_pref_api_t *pref) {
+int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime) {
     const bk_logic_partition_t *partition;
-    h2_loader_status_t status;
+    h2_loader_image_identity_t identity = {0};
+    h2_pal_firmware_info_t firmware_info;
     uint8_t confirm_flag = 0xffu;
     uint8_t expected_flag;
     uint8_t expected_exec;
     int rc;
 
-    if (pref == NULL) {
+    if (runtime == NULL || runtime->pref == NULL || runtime->mem == NULL ||
+        runtime->fs == NULL || runtime->firmware_info == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    rc = h2_loader_read_pref_status(pref, NULL, &status);
-    if (rc != H2_PAL_OK) {
-        return rc;
     }
 #if CONFIG_OTA_POSITION_INDEPENDENT_AB
     expected_exec = bk_ota_get_current_partition() == EXEX_A_PART ? EXEX_A_PART : EXEC_B_PART;
     expected_flag = expected_exec == EXEX_A_PART ? CONFIRM_EXEC_A : CONFIRM_EXEC_B;
-    bk_ota_double_check_for_execution();
 #else
     expected_exec = EXEC_B_PART;
     expected_flag = CONFIRM_EXEC_B;
+#endif
+    rc = h2_pal_firmware_info_get_current(
+        runtime->firmware_info, &firmware_info);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_bk_h2loader_current_app_identity(
+        runtime, firmware_info.version, &identity);
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_loader_finalize_active_app(
+        runtime->pref, runtime->mem, runtime->fs,
+        H2_LOADER_DEFAULT_PACKAGE_PATH, &identity,
+        H2_BK_H2LOADER_APP_PARTITION_ID,
+        H2_BK_H2LOADER_APP_PARTITION_ID);
+    if (rc != H2_PAL_OK) return rc;
+#if CONFIG_OTA_POSITION_INDEPENDENT_AB
+    bk_ota_double_check_for_execution();
+#else
     bk_ota_confirm_update_partition(CONFIRM_EXEC_B);
 #endif
-    if (status.install_state == H2_LOADER_INSTALL_STATE_INSTALLED_PENDING_CONFIRM) {
-        partition = bk_flash_partition_get_info(BK_PARTITION_OTA_FINA_EXECUTIVE);
-        if (partition == NULL ||
-            bk_flash_read_bytes(
-                partition->partition_start_addr + 8u,
-                &confirm_flag,
-                sizeof(confirm_flag)) != BK_OK ||
-            confirm_flag != expected_flag) {
-            rc = write_execution_flags(expected_exec, expected_exec, expected_flag);
-            if (rc != BK_OK) {
-                return H2_PAL_ERR_IO;
-            }
+    partition = bk_flash_partition_get_info(BK_PARTITION_OTA_FINA_EXECUTIVE);
+    if (partition == NULL ||
+        bk_flash_read_bytes(
+            partition->partition_start_addr + 8u,
+            &confirm_flag,
+            sizeof(confirm_flag)) != BK_OK ||
+        confirm_flag != expected_flag) {
+        rc = write_execution_flags(expected_exec, expected_exec, expected_flag);
+        if (rc != BK_OK) {
+            return H2_PAL_ERR_IO;
         }
     }
-    return h2_loader_mark_app_confirmed(pref);
+    return H2_PAL_OK;
 }
 
 int h2_bk_h2loader_prepare_pending_app_restart(void) {

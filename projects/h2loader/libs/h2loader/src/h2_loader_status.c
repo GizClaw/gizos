@@ -83,15 +83,11 @@ int h2_loader_status_mfg_handoff_pending(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (!staged_loader &&
-        status->boot_intent == H2_LOADER_BOOT_INTENT_APP) {
-        if (status->install_state ==
-                H2_LOADER_INSTALL_STATE_INSTALL_REQUESTED ||
-            status->install_state == H2_LOADER_INSTALL_STATE_INSTALLING) {
-            pending = 1;
-        } else if (status->install_state ==
-                   H2_LOADER_INSTALL_STATE_CONFIRMED) {
-            pending = status->app_confirmed && status->installed.valid;
-        }
+        status->boot_intent == H2_LOADER_BOOT_INTENT_AUTO) {
+        pending = status->stage.valid ||
+            (status->partition_2.valid &&
+             !h2_loader_metadata_image_equal(
+                 &status->partition_1, &status->partition_2));
     }
     *out_pending = pending ? 1 : 0;
     return H2_PAL_OK;
@@ -152,56 +148,89 @@ int h2_loader_status_format(
     char *out,
     size_t out_len) {
     int len;
-    uint64_t states;
     const char *board;
     const char *target;
     const char *chip;
+    const char *device_uid;
+    const char *active_role;
+    char mfg_steps[H2_LOADER_MFG_STEP_TOTAL + 1u];
 
     if (status == NULL || out == NULL || out_len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (h2_loader_states_pack(status, &states) != H2_PAL_OK) {
+    if (h2_loader_mfg_summary_validate(&status->mfg) != H2_PAL_OK) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     board = default_if_empty(status->board, "unknown");
     target = default_if_empty(status->target, "unknown");
     chip = default_if_empty(status->chip, target);
+    device_uid = default_if_empty(status->device_uid, "unknown");
+    active_role = status->active_role == H2_LOADER_ACTIVE_ROLE_APP ? "app" :
+        status->active_role == H2_LOADER_ACTIVE_ROLE_H2LOADER ? "loader" :
+        "unknown";
+    for (size_t index = 0u; index < H2_LOADER_MFG_STEP_TOTAL; ++index) {
+        mfg_steps[index] = (char)('0' + status->mfg.step_status[index]);
+    }
+    mfg_steps[H2_LOADER_MFG_STEP_TOTAL] = '\0';
+#define VALUE_OR_DASH(value) ((value)[0] != '\0' ? (value) : "-")
+#define ROLE_NAME(value) \
+    ((value) == H2_LOADER_IMAGE_ROLE_APP ? "app" : \
+     (value) == H2_LOADER_IMAGE_ROLE_H2LOADER ? "loader" : "unknown")
     len = snprintf(out,
         out_len,
-        "H2_LOADER_STATUS board=%s target=%s chip=%s capabilities=0x%08lx command_availability=0x%08lx states=0x%016llx "
-        "active_name=%s active_version=%s active_checksum=%s last=%d "
-        "installed_version=%s installed_checksum=%s "
-        "staged_version=%s staged_checksum=%s staged_bytes=%llu "
-        "running_partition=%lu next_partition=%lu canonical_partition=%lu trial_partition=%lu "
-        "upgrade_last=%ld upgrade_step=%s upgrade_package_sha256=%s candidate_board=%s candidate_target=%s "
-        "candidate_version=%s candidate_bytes=%llu candidate_sha256=%s",
+        "H2_LOADER_STATUS board=%s target=%s chip=%s device_uid=%s capabilities=0x%08lx command_availability=0x%08lx "
+        "active_role=%s active_version=%s active_checksum=%s active_image_size=%llu running_partition=%lu next_partition=%lu boot_intent=%s "
+        "stage_valid=%u stage_package_checksum=%s stage_package_size=%llu stage_image_checksum=%s stage_image_size=%llu stage_role=%s stage_version=%s stage_board=%s stage_target=%s "
+        "partition_1_valid=%u partition_1_package_checksum=%s partition_1_package_size=%llu partition_1_image_checksum=%s partition_1_image_size=%llu partition_1_role=%s partition_1_version=%s partition_1_board=%s partition_1_target=%s "
+        "partition_2_valid=%u partition_2_package_checksum=%s partition_2_package_size=%llu partition_2_image_checksum=%s partition_2_image_size=%llu partition_2_role=%s partition_2_version=%s partition_2_board=%s partition_2_target=%s "
+        "last_result=%d mfg_mode=%u mfg_steps=%s",
         board,
         target,
         chip,
+        device_uid,
         (unsigned long)status->capabilities,
         (unsigned long)status->command_availability,
-        (unsigned long long)states,
-        default_if_empty(status->active_name, "unknown"),
-        default_if_empty(status->active_version, ""),
-        default_if_empty(status->active_checksum, ""),
-        status->last_result,
-        status->installed.version,
-        status->installed.checksum,
-        status->staged.version,
-        status->staged.checksum,
-        (unsigned long long)status->staged.size,
+        active_role,
+        VALUE_OR_DASH(status->active_version),
+        VALUE_OR_DASH(status->active_checksum),
+        (unsigned long long)status->active_image_size,
         (unsigned long)status->running_partition_id,
         (unsigned long)status->next_partition_id,
-        (unsigned long)status->loader_upgrade.canonical_partition,
-        (unsigned long)status->loader_upgrade.trial_partition,
-        (long)status->loader_upgrade.last_result,
-        status->loader_upgrade_step,
-        status->loader_upgrade.package_sha256,
-        status->loader_upgrade.candidate.board,
-        status->loader_upgrade.candidate.target,
-        status->loader_upgrade.candidate.version,
-        (unsigned long long)status->loader_upgrade.candidate.image_size,
-        status->loader_upgrade.candidate.image_sha256);
+        h2_loader_boot_intent_name(status->boot_intent),
+        (unsigned)(status->stage.valid != 0),
+        VALUE_OR_DASH(status->stage.package_checksum),
+        (unsigned long long)status->stage.package_size,
+        VALUE_OR_DASH(status->stage.image_checksum),
+        (unsigned long long)status->stage.image_size,
+        ROLE_NAME(status->stage.role),
+        VALUE_OR_DASH(status->stage.version),
+        VALUE_OR_DASH(status->stage.board),
+        VALUE_OR_DASH(status->stage.target),
+        (unsigned)(status->partition_1.valid != 0),
+        VALUE_OR_DASH(status->partition_1.package_checksum),
+        (unsigned long long)status->partition_1.package_size,
+        VALUE_OR_DASH(status->partition_1.image_checksum),
+        (unsigned long long)status->partition_1.image_size,
+        ROLE_NAME(status->partition_1.role),
+        VALUE_OR_DASH(status->partition_1.version),
+        VALUE_OR_DASH(status->partition_1.board),
+        VALUE_OR_DASH(status->partition_1.target),
+        (unsigned)(status->partition_2.valid != 0),
+        VALUE_OR_DASH(status->partition_2.package_checksum),
+        (unsigned long long)status->partition_2.package_size,
+        VALUE_OR_DASH(status->partition_2.image_checksum),
+        (unsigned long long)status->partition_2.image_size,
+        ROLE_NAME(status->partition_2.role),
+        VALUE_OR_DASH(status->partition_2.version),
+        VALUE_OR_DASH(status->partition_2.board),
+        VALUE_OR_DASH(status->partition_2.target),
+        status->last_result,
+        (unsigned)(status->mfg.total == 0u
+            ? H2_LOADER_MFG_MODE_DISABLED
+            : H2_LOADER_MFG_MODE_ENABLED),
+        mfg_steps);
+#undef ROLE_NAME
+#undef VALUE_OR_DASH
     if (len < 0 || (size_t)len >= out_len) {
         return H2_PAL_ERR_NO_SPACE;
     }

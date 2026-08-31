@@ -95,7 +95,7 @@ static void h2_bk_libco_smoke_app_entry(void *user) {
                                  rc);
     h2_bk_libco_smoke_wait_forever();
   }
-  rc = h2_bk_h2loader_confirm_current_app(runtime->pref);
+  rc = h2_bk_h2loader_confirm_current_app(runtime);
   if (rc != H2_PAL_OK) {
     h2_bk_libco_smoke_log_marker(runtime, H2_PAL_LOG_ERROR,
                                  "H2_BK_LIBCO_SMOKE_FAIL stage=confirm rc=%d",

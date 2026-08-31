@@ -61,6 +61,7 @@ firmware_native_component(
         "//native_component_src/esp-idf6.x/opus_port",
         "//native_component_src/esp-idf6.x/zlib",
         "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
     ],
 )

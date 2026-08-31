@@ -151,7 +151,7 @@ static void h2_corebluetooth_address(
     [peripheral.identifier getUUIDBytes:bytes];
     memset(outAddress, 0, sizeof(*outAddress));
     memcpy(outAddress->value, &bytes[10], H2_PAL_BLE_ADDR_LEN);
-    outAddress->type = H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY;
+    outAddress->type = H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID;
 }
 
 static NSString *h2_corebluetooth_address_key(
@@ -1021,7 +1021,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     memset(&connection, 0, sizeof(connection));
     connection.conn_handle = H2_COREBLUETOOTH_CONN_HANDLE;
     connection.role = H2_PAL_BLE_ROLE_PERIPHERAL;
-    connection.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY;
+    connection.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID;
     uuid_t bytes;
     [central.identifier getUUIDBytes:bytes];
     memcpy(connection.peer_addr.value, &bytes[10], H2_PAL_BLE_ADDR_LEN);
@@ -1305,7 +1305,7 @@ didUnsubscribeFromCharacteristic:(CBCharacteristic *)characteristic {
         uuid_t bytes;
         [central.identifier getUUIDBytes:bytes];
         memcpy(info.peer_addr.value, &bytes[10], H2_PAL_BLE_ADDR_LEN);
-        info.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY;
+        info.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID;
         self.peripheralConnected = NO;
         self.subscribedCentral = nil;
         h2_corebluetooth_post(

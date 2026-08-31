@@ -162,16 +162,21 @@ static h2_pal_result_t ble_read_until(
     size_t *out_len,
     uint32_t timeout_ms,
     h2_h2loader_host_command_output_fn on_output,
-    void *output_user) {
+    void *output_user,
+    uint8_t stream_output,
+    size_t *out_output_bytes) {
+    uint8_t input[1024];
     size_t length = 0u;
+    size_t output_bytes = 0u;
     uint64_t deadline_ms = 0u;
     *out_len = 0u;
+    if (out_output_bytes != NULL) *out_output_bytes = 0u;
     h2_pal_result_t rc = ble_deadline_after(
         connection->time, timeout_ms, &deadline_ms);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    while (length < response_size) {
+    for (;;) {
         uint32_t remaining_ms = 0u;
         rc = ble_remaining_timeout(
             connection->time, deadline_ms, &remaining_ms);
@@ -182,36 +187,62 @@ static h2_pal_result_t ble_read_until(
         size_t read = 0u;
         rc = h2_bleikcp_read(
             connection->stream,
-            &response[length],
-            response_size - length,
+            input,
+            sizeof(input),
             &read,
             remaining_ms);
         if (rc != H2_PAL_OK) {
             *out_len = length;
+            if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
             return rc;
         }
         if (read == 0u) {
             *out_len = length;
+            if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
             return H2_PAL_ERR_TIMEOUT;
         }
+        output_bytes += read;
         if (on_output != NULL) {
-            rc = on_output(output_user, &response[length], read);
+            rc = on_output(output_user, input, read);
             if (rc != H2_PAL_OK) {
-                length += read;
                 *out_len = length;
+                if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
                 return rc;
             }
         }
-        length += read;
+        if (stream_output) {
+            if (read >= response_size) {
+                memcpy(response, &input[read - response_size], response_size);
+                length = response_size;
+            } else {
+                size_t discard = length + read > response_size
+                    ? length + read - response_size : 0u;
+                if (discard != 0u) {
+                    memmove(response, &response[discard], length - discard);
+                    length -= discard;
+                }
+                memcpy(&response[length], input, read);
+                length += read;
+            }
+        } else {
+            size_t capture = read > response_size - length
+                ? response_size - length : read;
+            memcpy(&response[length], input, capture);
+            length += capture;
+            if (capture != read) {
+                *out_len = length;
+                if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
+                return H2_PAL_ERR_NO_SPACE;
+            }
+        }
         if (response_has_complete_marker(response, length, marker_a) &&
             (marker_b == NULL ||
              response_has_complete_marker(response, length, marker_b))) {
             *out_len = length;
+            if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
             return H2_PAL_OK;
         }
     }
-    *out_len = length;
-    return H2_PAL_ERR_NO_SPACE;
 }
 
 h2_pal_result_t h2_h2loader_host_ble_connect(
@@ -291,6 +322,8 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         .tx_buffer_size = H2_H2LOADER_HOST_BLE_BUFFER_SIZE,
         .rx_buffer_size = H2_H2LOADER_HOST_BLE_BUFFER_SIZE,
         .no_congestion_control = 0,
+        .output_retry_count = 40u,
+        .output_retry_delay_ms = 2u,
         .setup_timeout_ms = timeout_ms,
         .worker_task_options = {
             .name = h2_h2loader_host_ble_task_name,
@@ -355,6 +388,20 @@ h2_pal_result_t h2_h2loader_host_ble_disconnect(
     }
     const h2_pal_mem_api_t *allocator = connection->allocator;
     h2_pal_mem_free(allocator, connection);
+    /* Teardown is idempotent. CoreBluetooth reports UNSUPPORTED when the
+       peripheral has already disappeared, while stream teardown can report
+       CLOSED for the same completed state. Neither means local resources are
+       still live or that the preceding device operation failed. */
+    if (stream_rc == H2_PAL_ERR_CLOSED ||
+        stream_rc == H2_PAL_ERR_NOT_FOUND ||
+        stream_rc == H2_PAL_ERR_UNSUPPORTED) {
+        stream_rc = H2_PAL_OK;
+    }
+    if (disconnect_rc == H2_PAL_ERR_CLOSED ||
+        disconnect_rc == H2_PAL_ERR_NOT_FOUND ||
+        disconnect_rc == H2_PAL_ERR_UNSUPPORTED) {
+        disconnect_rc = H2_PAL_OK;
+    }
     return stream_rc != H2_PAL_OK ? stream_rc : disconnect_rc;
 }
 
@@ -384,6 +431,8 @@ h2_pal_result_t h2_h2loader_host_ble_read_status(
         &response_len,
         connection->command_timeout_ms,
         NULL,
+        NULL,
+        0u,
         NULL);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -409,7 +458,9 @@ static h2_pal_result_t ble_command_read(
     size_t response_size,
     size_t *out_response_len,
     h2_h2loader_host_command_output_fn on_output,
-    void *output_user) {
+    void *output_user,
+    uint8_t stream_output,
+    size_t *out_output_bytes) {
     h2_h2loader_host_ble_connection_t *connection = transport;
     return ble_read_until(
         connection,
@@ -420,7 +471,9 @@ static h2_pal_result_t ble_command_read(
         out_response_len,
         connection->command_timeout_ms + 30000u,
         on_output,
-        output_user);
+        output_user,
+        stream_output,
+        out_output_bytes);
 }
 
 h2_pal_result_t h2_h2loader_host_ble_execute_command(
@@ -515,6 +568,8 @@ h2_pal_result_t h2_h2loader_host_ble_stage(
         &response_len,
         connection->command_timeout_ms + 30000u,
         NULL,
+        NULL,
+        0u,
         NULL);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -534,6 +589,8 @@ h2_pal_result_t h2_h2loader_host_ble_stage(
 h2_pal_result_t h2_h2loader_host_ble_activate(
     h2_h2loader_host_ble_connection_t *connection,
     const h2_h2loader_host_catalog_entry_t *asset) {
+    static const char accepted[] =
+        "H2_LOADER_REBOOT target=upgrade result=accepted";
     uint8_t response[H2_H2LOADER_HOST_BLE_RESPONSE_SIZE];
     size_t response_len = 0u;
     if (connection == NULL || asset == NULL ||
@@ -541,32 +598,30 @@ h2_pal_result_t h2_h2loader_host_ble_activate(
             H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (asset->role == H2_H2LOADER_HOST_ASSET_ROLE_APP) {
-        return ble_write_command(connection, "h2loader reboot\n");
-    }
-    if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
+    if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_APP &&
+        asset->role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_pal_result_t rc =
-        ble_write_command(connection, "h2loader upgrade\n");
+        ble_write_command(connection, "h2loader reboot upgrade\n");
     if (rc != H2_PAL_OK) {
         return rc;
     }
     rc = ble_read_until(
         connection,
-        "H2_LOADER_UPGRADE result=",
+        accepted,
         NULL,
         response,
         sizeof(response),
         &response_len,
         connection->command_timeout_ms + 30000u,
         NULL,
+        NULL,
+        0u,
         NULL);
-    if (rc != H2_PAL_OK) {
-        return rc;
+    if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
+        response_has_complete_marker(response, response_len, accepted)) {
+        return H2_PAL_OK;
     }
-    return marker_result_is_ok(
-        response, response_len, "H2_LOADER_UPGRADE result=")
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
+    return rc;
 }

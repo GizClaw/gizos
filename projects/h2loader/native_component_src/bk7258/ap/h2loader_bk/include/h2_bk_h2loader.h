@@ -33,6 +33,7 @@ int h2_bk_h2loader_clear_data(void *user, const char *path);
 const h2_bundle_app_writer_t *h2_bk_h2loader_ota_app_writer(void);
 const h2_loader_image_reader_api_t *h2_bk_h2loader_image_reader(void);
 const h2_loader_image_writer_api_t *h2_bk_h2loader_image_writer(void);
+int h2_bk_h2loader_managed_app_image_size(uint64_t *out_size);
 int h2_bk_h2loader_commit_staged_app_boot(void);
 const h2_pal_power_api_t *h2_bk_h2loader_power_api(void);
 int h2_bk_h2loader_start_app_iostreamikcp(h2_runtime_t *runtime,
@@ -66,7 +67,7 @@ int h2_bk_h2loader_app_operation_lock(void);
 void h2_bk_h2loader_app_operation_unlock(void);
 int h2_bk_h2loader_reboot_to_loader(void);
 int h2_bk_h2loader_confirm_active_loader(void *user);
-int h2_bk_h2loader_confirm_current_app(const h2_pal_pref_api_t *pref);
+int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime);
 int h2_bk_h2loader_prepare_pending_app_restart(void);
 void h2_bk_h2loader_abort_for_crash_test(void);
 

@@ -29,7 +29,7 @@ static void emit_marker(const char *fmt, ...) {
 
 static int confirm_ready(void *user) {
     h2_runtime_t *runtime = user;
-    int rc = h2_bk_h2loader_confirm_current_app(runtime->pref);
+    int rc = h2_bk_h2loader_confirm_current_app(runtime);
     emit_marker("H2_BK_SPEED_STAGE stage=confirm rc=%d", rc);
     return rc;
 }

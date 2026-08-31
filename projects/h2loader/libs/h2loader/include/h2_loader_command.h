@@ -39,7 +39,7 @@ typedef struct h2_loader_command_config {
     int defer_app_install;
 } h2_loader_command_config_t;
 
-#define H2_LOADER_COMMAND_DEFINITION_CAPACITY 11u
+#define H2_LOADER_COMMAND_DEFINITION_CAPACITY 9u
 #define H2_LOADER_COMMAND_ROUTE_NODE_CAPACITY 64u
 #define H2_LOADER_COMMAND_INPUT_BUFFER_SIZE 1024u
 #define H2_LOADER_COMMAND_ARGV_CAPACITY 8u

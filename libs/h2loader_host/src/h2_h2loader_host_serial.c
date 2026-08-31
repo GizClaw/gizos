@@ -8,6 +8,7 @@
 
 #define H2_H2LOADER_HOST_SERIAL_POLL_MS 10u
 #define H2_H2LOADER_HOST_SERIAL_SESSION_RETRY_MS 200u
+#define H2_H2LOADER_HOST_SERIAL_SESSION_CLOSE_TIMEOUT_MS 1000u
 #define H2_H2LOADER_HOST_SERIAL_RESPONSE_ACK_GRACE_MS 100u
 #define H2_H2LOADER_HOST_SERIAL_RECEIVE_WINDOW 64u
 #define H2_H2LOADER_HOST_SERIAL_RX_SIZE (64u * 1024u)
@@ -21,9 +22,12 @@ struct h2_h2loader_host_serial_connection {
     h2_pal_serial_host_session_t *session;
     const h2_pal_uart_io_stream_api_t *uart;
     h2_iostreamikcp_t *stream;
+    uint32_t conversation_id;
     uint32_t command_timeout_ms;
     uint32_t post_command_delay_ms;
 };
+
+static h2_pal_result_t serial_finish_command_response(void *transport);
 
 typedef struct session_ack_context {
     uint32_t conversation_id;
@@ -81,9 +85,10 @@ static h2_pal_result_t uart_write_all(
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t serial_handshake(
+static h2_pal_result_t serial_session_control(
     h2_h2loader_host_serial_connection_t *connection,
     uint32_t conversation_id,
+    uint8_t request_flags,
     uint32_t timeout_ms) {
     h2_iostreamikcp_filter_t filter;
     h2_iostreamikcp_frame_t open_frame;
@@ -104,7 +109,7 @@ static h2_pal_result_t serial_handshake(
     uint64_t now = 0u;
     uint64_t next_send = 0u;
 
-    open_frame.flags = H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN;
+    open_frame.flags = request_flags;
     open_frame.conv = conversation_id;
     open_frame.payload = control;
     open_frame.payload_len = sizeof(control);
@@ -296,13 +301,18 @@ static h2_pal_result_t serial_read_until(
     size_t *out_len,
     uint32_t timeout_ms,
     h2_h2loader_host_command_output_fn on_output,
-    void *output_user) {
+    void *output_user,
+    uint8_t stream_output,
+    size_t *out_output_bytes) {
+    uint8_t input[1024];
     uint64_t start = 0u;
     uint64_t now = 0u;
     size_t length = 0u;
+    size_t output_bytes = 0u;
     h2_pal_result_t rc;
 
     *out_len = 0u;
+    if (out_output_bytes != NULL) *out_output_bytes = 0u;
     rc = serial_now(connection->time, &start);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -317,39 +327,67 @@ static h2_pal_result_t serial_read_until(
         }
         for (;;) {
             size_t read = 0u;
-            if (length == response_size) {
+            if (!stream_output && length == response_size) {
                 *out_len = length;
+                if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
                 return H2_PAL_ERR_NO_SPACE;
             }
             rc = h2_iostreamikcp_read(
                 connection->stream,
-                &response[length],
-                response_size - length,
+                input,
+                sizeof(input),
                 &read);
             if (rc == H2_PAL_ERR_WOULD_BLOCK) {
                 break;
             }
             if (rc != H2_PAL_OK) {
                 *out_len = length;
+                if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
                 return rc;
             }
             if (read == 0u) {
                 break;
             }
+            output_bytes += read;
             if (on_output != NULL) {
-                rc = on_output(output_user, &response[length], read);
+                rc = on_output(output_user, input, read);
                 if (rc != H2_PAL_OK) {
-                    length += read;
                     *out_len = length;
+                    if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
                     return rc;
                 }
             }
-            length += read;
+            if (stream_output) {
+                if (read >= response_size) {
+                    memcpy(response, &input[read - response_size], response_size);
+                    length = response_size;
+                } else {
+                    size_t discard = length + read > response_size
+                        ? length + read - response_size : 0u;
+                    if (discard != 0u) {
+                        memmove(response, &response[discard], length - discard);
+                        length -= discard;
+                    }
+                    memcpy(&response[length], input, read);
+                    length += read;
+                }
+            } else {
+                size_t capture = read > response_size - length
+                    ? response_size - length : read;
+                memcpy(&response[length], input, capture);
+                length += capture;
+                if (capture != read) {
+                    *out_len = length;
+                    if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
+                    return H2_PAL_ERR_NO_SPACE;
+                }
+            }
         }
         if (response_has_complete_marker(response, length, marker_a) &&
             (marker_b == NULL ||
              response_has_complete_marker(response, length, marker_b))) {
             *out_len = length;
+            if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
             return h2_iostreamikcp_flush(connection->stream);
         }
         rc = serial_now(connection->time, &now);
@@ -359,6 +397,7 @@ static h2_pal_result_t serial_read_until(
         }
     }
     *out_len = length;
+    if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
     return H2_PAL_ERR_TIMEOUT;
 }
 
@@ -425,7 +464,9 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
         : config->command_timeout_ms;
     connection->post_command_delay_ms = config->post_command_delay_ms;
     const h2_pal_uart_io_stream_config_t uart_config = {
-        .baud_rate = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD,
+        .baud_rate = config->baud_rate == 0u
+            ? H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD
+            : config->baud_rate,
         .data_bits = 8u,
         .stop_bits = 1u,
         .parity = H2_PAL_UART_PARITY_NONE,
@@ -439,6 +480,15 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
         &uart_config,
         &connection->session);
     if (rc != H2_PAL_OK) {
+        goto fail;
+    }
+    rc = h2_pal_serial_host_set_control_lines(
+        config->serial,
+        connection->session,
+        H2_PAL_SERIAL_HOST_CONTROL_DTR |
+            H2_PAL_SERIAL_HOST_CONTROL_RTS,
+        0u);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_UNSUPPORTED) {
         goto fail;
     }
     rc = h2_pal_serial_host_session_stream(
@@ -467,9 +517,10 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
             conversation_id = 1u;
         }
     }
-    rc = serial_handshake(
+    rc = serial_session_control(
         connection,
         conversation_id,
+        H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN,
         config->handshake_timeout_ms == 0u
             ? H2_H2LOADER_HOST_DEFAULT_COMMAND_TIMEOUT_MS
             : config->handshake_timeout_ms);
@@ -493,6 +544,7 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
     if (rc != H2_PAL_OK) {
         goto fail;
     }
+    connection->conversation_id = conversation_id;
     *out_connection = connection;
     return H2_PAL_OK;
 
@@ -539,6 +591,23 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect(
     }
     *inout_connection = NULL;
     if (connection->stream != NULL) {
+        /* A status/stage operation can return as soon as the final response is
+         * decoded, while the peer is still waiting for the KCP ACK to cross
+         * the AP/CP UART tunnel. Pump a bounded grace period before closing so
+         * the next short-lived CLI process does not inherit a peer stuck
+         * flushing the previous session. */
+        (void)serial_finish_command_response(connection);
+        /* Retire the peer's KCP session explicitly. Otherwise an immediate
+         * next CLI process must interrupt an old command flush with its OPEN,
+         * and that replacement frame can be lost in BK's CP/AP UART tunnel.
+         * Peers without CLOSE support simply time out this best-effort step. */
+        if (connection->conversation_id != 0u) {
+            (void)serial_session_control(
+                connection,
+                connection->conversation_id,
+                H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE,
+                H2_H2LOADER_HOST_SERIAL_SESSION_CLOSE_TIMEOUT_MS);
+        }
         h2_iostreamikcp_close(connection->stream);
         connection->stream = NULL;
     }
@@ -575,6 +644,8 @@ h2_pal_result_t h2_h2loader_host_serial_read_status(
         &response_len,
         connection->command_timeout_ms,
         NULL,
+        NULL,
+        0u,
         NULL);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -600,7 +671,9 @@ static h2_pal_result_t serial_command_read(
     size_t response_size,
     size_t *out_response_len,
     h2_h2loader_host_command_output_fn on_output,
-    void *output_user) {
+    void *output_user,
+    uint8_t stream_output,
+    size_t *out_output_bytes) {
     h2_h2loader_host_serial_connection_t *connection = transport;
     return serial_read_until(
         connection,
@@ -611,7 +684,9 @@ static h2_pal_result_t serial_command_read(
         out_response_len,
         connection->command_timeout_ms + 30000u,
         on_output,
-        output_user);
+        output_user,
+        stream_output,
+        out_output_bytes);
 }
 
 static h2_pal_result_t serial_finish_command_response(void *transport) {
@@ -748,7 +823,18 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
         &response_len,
         connection->command_timeout_ms + 30000u,
         NULL,
+        NULL,
+        0u,
         NULL);
+    /* Every payload byte has already been KCP-acknowledged here.  BK can
+     * publish the durable candidate but lose the final terminal while its
+     * AP/CP UART path is quiesced for Flash sync.  Let the managed operation
+     * verify exact staged bytes/SHA from live status (and reconnect if this
+     * session is no longer usable); explicit device error terminals still
+     * reach the marker checks below and fail. */
+    if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_CLOSED) {
+        return H2_PAL_OK;
+    }
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -765,6 +851,8 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
 h2_pal_result_t h2_h2loader_host_serial_activate(
     h2_h2loader_host_serial_connection_t *connection,
     const h2_h2loader_host_catalog_entry_t *asset) {
+    static const char accepted[] =
+        "H2_LOADER_REBOOT target=upgrade result=accepted";
     uint8_t response[H2_H2LOADER_HOST_SERIAL_RESPONSE_SIZE];
     size_t response_len = 0u;
 
@@ -773,54 +861,30 @@ h2_pal_result_t h2_h2loader_host_serial_activate(
             H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (asset->role == H2_H2LOADER_HOST_ASSET_ROLE_APP) {
-        h2_pal_result_t rc =
-            serial_write_command(connection, "h2loader reboot\n");
-        if (rc != H2_PAL_OK) {
-            return rc;
-        }
-        rc = serial_read_until(
-            connection,
-            "H2_LOADER_REBOOT target=app result=accepted",
-            NULL,
-            response,
-            sizeof(response),
-            &response_len,
-            connection->command_timeout_ms + 30000u,
-            NULL,
-            NULL);
-        if (rc == H2_PAL_ERR_CLOSED &&
-            response_has_complete_marker(
-                response,
-                response_len,
-                "H2_LOADER_REBOOT target=app result=accepted")) {
-            return H2_PAL_OK;
-        }
-        return rc;
-    }
-    if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
+    if (asset->role != H2_H2LOADER_HOST_ASSET_ROLE_APP &&
+        asset->role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_pal_result_t rc =
-        serial_write_command(connection, "h2loader upgrade\n");
+        serial_write_command(connection, "h2loader reboot upgrade\n");
     if (rc != H2_PAL_OK) {
         return rc;
     }
     rc = serial_read_until(
         connection,
-        "H2_LOADER_UPGRADE result=",
+        accepted,
         NULL,
         response,
         sizeof(response),
         &response_len,
         connection->command_timeout_ms + 30000u,
         NULL,
+        NULL,
+        0u,
         NULL);
-    if (rc != H2_PAL_OK) {
-        return rc;
+    if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&
+        response_has_complete_marker(response, response_len, accepted)) {
+        return H2_PAL_OK;
     }
-    return marker_result_is_ok(
-        response, response_len, "H2_LOADER_UPGRADE result=")
-        ? H2_PAL_OK
-        : H2_PAL_ERR_IO;
+    return rc;
 }

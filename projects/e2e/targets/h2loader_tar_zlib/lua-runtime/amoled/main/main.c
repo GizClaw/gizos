@@ -1,7 +1,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_lua_runtime_e2e.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -62,7 +62,7 @@ static void image_entry(void *user) {
   if (result == H2_PAL_OK)
     result = h2_esp_platform_confirm_running_app();
   if (result == H2_PAL_OK)
-    result = h2_loader_mark_app_confirmed(runtime->pref);
+    result = h2_esp_h2loader_app_confirm(runtime);
   if (result != H2_PAL_OK && runtime == NULL)
     esp_restart();
   hold_for_recovery();

@@ -56,7 +56,7 @@ Batch Loader 产品 Web UI 已迁移到 `GizClaw/www`。本仓库的 `libs/web/`
 这里是 H2Loader 的 project-local library，保存 Loader firmware 与 H2Loader-managed App firmware 共用的稳定 API 和跨平台实现，包括：
 
 - Package、image identity 与安装状态。
-- App confirm、restart、rollback 与 return-to-loader。
+- App Stage 收尾、`reboot app|loader|upgrade` 与 return-to-loader。
 - Loader/App boot intent。
 - Device command handler 与结构化 status/stats。
 

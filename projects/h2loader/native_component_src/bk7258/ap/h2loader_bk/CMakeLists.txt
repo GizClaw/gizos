@@ -10,6 +10,11 @@ set(H2_BK_H2LOADER_SRCS
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_app_client.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_ble.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_boot.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_command.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_metadata.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_mfg.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_package.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_stage.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_status.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_task_names.c")
 set(H2_BK_H2LOADER_PRIV_REQUIRES
@@ -19,6 +24,7 @@ set(H2_BK_H2LOADER_PRIV_REQUIRES
   driver
   h2_firmware_lib
   h2_pal_core
+  psa_mbedtls
   ota)
 
 if(NOT DEFINED H2_BK_H2LOADER_ENABLE_FATFS)

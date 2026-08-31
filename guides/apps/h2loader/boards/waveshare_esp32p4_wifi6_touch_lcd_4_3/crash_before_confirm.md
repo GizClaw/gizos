@@ -13,7 +13,7 @@ Crash Before Confirm image 使用 board 共用的 P4 partition table，并将 pa
 
 ## sdkconfig
 
-App 启用 flash coredump、16-task 上限、2048-byte coredump stack 和 panic reboot。BLE 与 UART iKCP command service 在触发 crash 前启动，UART0 使用 `230400` baud。
+App 启用 flash coredump、16-task 上限、2048-byte coredump stack 和 panic reboot。BLE 与 UART iKCP command service 在触发 crash 前启动，UART0 使用固定 `230400` baud。
 
 ## 预期表现
 

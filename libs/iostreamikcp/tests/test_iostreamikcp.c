@@ -165,6 +165,7 @@ static void test_session_control_frames(void) {
     CHECK(H2_IOSTREAMIKCP_FRAME_FLAG_DATA == 0x00u);
     CHECK(H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN == 0x01u);
     CHECK(H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK == 0x02u);
+    CHECK(H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE == 0x04u);
     uint8_t payload[H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN];
     uint8_t encoded[64];
     size_t encoded_len = 0u;
@@ -192,6 +193,10 @@ static void test_session_control_frames(void) {
     frame.flags = H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK;
     CHECK(h2_iostreamikcp_frame_encode(&frame, encoded, sizeof(encoded), &encoded_len) == H2_PAL_OK);
     CHECK(encoded[7] == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK);
+
+    frame.flags = H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE;
+    CHECK(h2_iostreamikcp_frame_encode(&frame, encoded, sizeof(encoded), &encoded_len) == H2_PAL_OK);
+    CHECK(encoded[7] == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE);
 
     payload[0] ^= 1u;
     CHECK(h2_iostreamikcp_frame_encode(&frame, encoded, sizeof(encoded), &encoded_len) ==

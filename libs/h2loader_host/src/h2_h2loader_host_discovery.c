@@ -17,7 +17,10 @@ typedef struct h2_h2loader_host_scan_context {
     size_t required_capacity;
     h2_pal_ble_addr_t ble_seen[128];
     size_t ble_seen_count;
+    int ble_endpoint_found;
 } h2_h2loader_host_scan_context_t;
+
+#define H2_H2LOADER_HOST_BLE_SCAN_POLL_MS 250u
 
 static uint32_t read_le32(const uint8_t *data) {
     return (uint32_t)data[0] | ((uint32_t)data[1] << 8u) |
@@ -73,9 +76,7 @@ static int scan_result_has_service(
     for (size_t i = 0u; i < result->service_uuid_count; ++i) {
         const h2_pal_ble_uuid_t *uuid = &result->service_uuids[i];
         if (uuid->len == sizeof(h2_h2loader_host_ble_service_uuid) &&
-            memcmp(
-                uuid->data,
-                h2_h2loader_host_ble_service_uuid,
+            memcmp(uuid->data, h2_h2loader_host_ble_service_uuid,
                 sizeof(h2_h2loader_host_ble_service_uuid)) == 0) {
             return 1;
         }
@@ -86,16 +87,26 @@ static int scan_result_has_service(
 static int parse_ble_identity(
     const h2_pal_ble_scan_result_t *result,
     h2_h2loader_host_candidate_t *out_candidate) {
-    const uint8_t *payload = result->service_data.data;
-    size_t payload_len = result->service_data.len;
+    const uint8_t *payload = result->service_data.len > 0u
+        ? result->service_data.data
+        : result->manufacturer_data.data;
+    size_t payload_len = result->service_data.len > 0u
+        ? result->service_data.len
+        : result->manufacturer_data.len;
     uint8_t version;
     uint32_t capabilities;
 
-    if (!scan_result_has_service(result) ||
-        result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
-        !result->connectable || payload == NULL || payload_len < 10u ||
-        memcmp(payload, "H2LD", 4u) != 0) {
+    if (result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
+        !result->connectable) {
         return 0;
+    }
+    if (payload == NULL || payload_len < 10u ||
+        memcmp(payload, "H2LD", 4u) != 0) {
+        /* CoreBluetooth may report a primary legacy packet without merging
+         * the scan response that carries H2Loader identity.  The private
+         * 128-bit service UUID is still an authoritative protocol candidate;
+         * connect and obtain the board/capabilities from status. */
+        return scan_result_has_service(result);
     }
     version = payload[4];
     capabilities = read_le32(&payload[6]);
@@ -200,7 +211,8 @@ static bool scan_ble_callback(
         candidate.display_name,
         sizeof(candidate.display_name),
         "h2l.%s",
-        strncmp(candidate.advertised_board, "fnv1a64:", 8u) == 0
+        candidate.advertised_board[0] == '\0' ||
+                strncmp(candidate.advertised_board, "fnv1a64:", 8u) == 0
             ? "unknown"
             : candidate.advertised_board);
     if (length <= 0 ||
@@ -208,7 +220,43 @@ static bool scan_ble_callback(
         return false;
     }
     scan_add_candidate(context, &candidate);
+    if (context->config->ble_endpoint != NULL &&
+        strcmp(candidate.endpoint, context->config->ble_endpoint) == 0) {
+        (void)h2_pal_mutex_lock(context->config->sync, context->mutex);
+        context->ble_endpoint_found = 1;
+        (void)h2_pal_mutex_unlock(context->config->sync, context->mutex);
+        return true;
+    }
     return false;
+}
+
+static int scan_ble_endpoint_found(
+    h2_h2loader_host_scan_context_t *context) {
+    int found;
+    (void)h2_pal_mutex_lock(context->config->sync, context->mutex);
+    found = context->ble_endpoint_found;
+    (void)h2_pal_mutex_unlock(context->config->sync, context->mutex);
+    return found;
+}
+
+static h2_pal_result_t wait_for_ble_scan(
+    h2_h2loader_host_scan_context_t *context) {
+    uint32_t remaining_ms = context->config->ble_timeout_ms;
+    if (context->config->ble_endpoint == NULL) {
+        return h2_pal_time_sleep_ms(context->config->time, remaining_ms);
+    }
+    while (remaining_ms > 0u && !scan_ble_endpoint_found(context)) {
+        uint32_t sleep_ms = remaining_ms < H2_H2LOADER_HOST_BLE_SCAN_POLL_MS
+            ? remaining_ms
+            : H2_H2LOADER_HOST_BLE_SCAN_POLL_MS;
+        h2_pal_result_t rc = h2_pal_time_sleep_ms(
+            context->config->time, sleep_ms);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+        remaining_ms -= sleep_ms;
+    }
+    return H2_PAL_OK;
 }
 
 static h2_pal_result_t scan_serial(
@@ -346,8 +394,7 @@ h2_pal_result_t h2_h2loader_host_scan(
         out_result->serial_result = scan_serial(&context);
     }
     if (ble_started) {
-        h2_pal_result_t sleep_rc = h2_pal_time_sleep_ms(
-            config->time, config->ble_timeout_ms);
+        h2_pal_result_t sleep_rc = wait_for_ble_scan(&context);
         h2_pal_result_t stop_rc = h2_pal_ble_stop_scan(config->ble);
         out_result->ble_result =
             sleep_rc == H2_PAL_OK ? stop_rc : sleep_rc;
