@@ -1123,8 +1123,8 @@ run_install(h2_e2e_transport_context_t *context,
 static h2_pal_result_t
 run_install_crash_app(h2_e2e_transport_context_t *context) {
   h2_h2loader_host_status_t status;
-  h2_h2loader_host_metadata_t staged_candidate;
-  int32_t staged_last;
+  h2_h2loader_host_metadata_t staged_candidate = {0};
+  int32_t staged_last = 0;
   h2_h2loader_host_command_result_t result = {0};
   h2_pal_result_t rc = run_stage_payload(context, &context->crash_asset,
                                          context->config->crash_firmware,
