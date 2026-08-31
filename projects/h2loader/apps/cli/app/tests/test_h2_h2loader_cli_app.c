@@ -228,6 +228,22 @@ static void test_ble_transport_routes_the_shared_device_command(void) {
     assert(strstr(output.bytes, "command failed") != NULL);
 }
 
+static void test_ble_uid_mismatch_stops_reconnect(void) {
+    h2_h2loader_cli_transport_t transport = {0};
+    h2_h2loader_cli_options_t options = {
+        .transport = H2_H2LOADER_HOST_TRANSPORT_BLE,
+    };
+    transport.options = &options;
+
+    assert(h2_h2loader_cli_reconnect_must_fail_closed(
+        &transport, H2_PAL_ERR_INVALID_STATE));
+    assert(!h2_h2loader_cli_reconnect_must_fail_closed(
+        &transport, H2_PAL_ERR_TIMEOUT));
+    options.transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL;
+    assert(!h2_h2loader_cli_reconnect_must_fail_closed(
+        &transport, H2_PAL_ERR_INVALID_STATE));
+}
+
 static void test_legacy_upgrade_is_rejected_before_connect(void) {
     const char *argv[] = {
         "h2loader", "--transport", "bleikcp", "--port",
@@ -582,6 +598,7 @@ static void test_reboot_final_status_is_authoritative(void) {
 int main(void) {
     test_help_and_usage();
     test_ble_transport_routes_the_shared_device_command();
+    test_ble_uid_mismatch_stops_reconnect();
     test_legacy_upgrade_is_rejected_before_connect();
     test_check_reports_runtime_capabilities();
     test_ble_acquired_only_when_requested();

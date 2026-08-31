@@ -162,6 +162,13 @@ h2_pal_result_t h2_h2loader_host_managed_operation_run(
         memset(&status, 0, sizeof(status));
         rc = config->transport.vtable->connect(
             config->transport.user, &status);
+        if (rc == H2_PAL_ERR_INVALID_STATE) {
+            emit_event(
+                config,
+                H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY,
+                rc);
+            return rc;
+        }
         if (rc != H2_PAL_OK) {
             continue;
         }
@@ -287,6 +294,9 @@ h2_pal_result_t h2_h2loader_host_stage_operation_run(
         }
         memset(&status, 0, sizeof(status));
         rc = config->transport.vtable->connect(config->transport.user, &status);
+        if (rc == H2_PAL_ERR_INVALID_STATE) {
+            return rc;
+        }
         if (rc != H2_PAL_OK) {
             continue;
         }

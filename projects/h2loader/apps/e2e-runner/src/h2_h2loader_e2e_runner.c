@@ -885,6 +885,8 @@ reconnect_after_reboot(h2_e2e_transport_context_t *context,
     if (rc != H2_PAL_OK)
       return rc;
     rc = connect_transport(context, out_status);
+    if (rc == H2_PAL_ERR_INVALID_STATE)
+      return rc;
     if (rc == H2_PAL_OK &&
         out_status->running_partition == expected_partition) {
       return H2_PAL_OK;

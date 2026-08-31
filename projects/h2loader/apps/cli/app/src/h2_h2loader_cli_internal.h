@@ -192,6 +192,10 @@ h2_pal_result_t h2_h2loader_cli_transport_disconnect(
 h2_pal_result_t h2_h2loader_cli_transport_rediscover(
     h2_h2loader_cli_transport_t *transport);
 
+int h2_h2loader_cli_reconnect_must_fail_closed(
+    const h2_h2loader_cli_transport_t *transport,
+    h2_pal_result_t connect_result);
+
 h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(
     h2_h2loader_cli_transport_t *transport,
     h2_h2loader_host_cancelled_fn is_cancelled,

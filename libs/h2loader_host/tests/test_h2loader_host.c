@@ -1287,6 +1287,7 @@ typedef struct operation_fixture {
     h2_pal_result_t stage_result;
     h2_pal_result_t activate_result;
     h2_pal_result_t rediscover_result;
+    h2_pal_result_t reconnect_connect_result;
     h2_h2loader_host_operation_phase_t event_phase[32];
     h2_pal_result_t event_result[32];
     size_t event_count;
@@ -1299,6 +1300,10 @@ static h2_pal_result_t operation_connect(
     h2_h2loader_host_status_t *out_status) {
     operation_fixture_t *fixture = user;
     ++fixture->connect_count;
+    if (fixture->connect_count > 1 &&
+        fixture->reconnect_connect_result != H2_PAL_OK) {
+        return fixture->reconnect_connect_result;
+    }
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->status_board);
     strcpy(out_status->target, fixture->asset.target);
@@ -1481,6 +1486,23 @@ static void test_managed_operation(void) {
     assert(fixture.event_phase[fixture.event_count - 1u] ==
            H2_H2LOADER_HOST_OPERATION_COMPLETE);
     assert(fixture.event_result[fixture.event_count - 1u] == H2_PAL_OK);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.sleep_count = 0;
+    fixture.event_count = 0u;
+    fixture.reconnect_connect_result = H2_PAL_ERR_INVALID_STATE;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.sleep_count == 1);
+    assert(fixture.event_phase[fixture.event_count - 1u] ==
+           H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY);
+    fixture.reconnect_connect_result = H2_PAL_OK;
 
     fixture.connect_count = 0;
     fixture.stage_count = 0;

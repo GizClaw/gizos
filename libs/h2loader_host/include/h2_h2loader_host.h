@@ -499,12 +499,12 @@ typedef struct h2_h2loader_host_managed_transport_vtable {
         h2_h2loader_host_status_t *out_status);
     h2_pal_result_t (*disconnect)(void *user);
     /**
-     * Re-enumerate the original physical candidate.
+     * Re-enumerate the original discovery candidate.
      *
-     * Implementations must use authoritative physical identity and must
-     * never switch to a name-matched candidate. BLE public/random identity
-     * addresses are authoritative; transient public/random addresses and
-     * backend-only IDs are not and must fail lifecycle rediscovery.
+     * An endpoint or PAL address may select a candidate, but it is not the
+     * authoritative physical identity. The following connect/status probe
+     * must match the device_uid locked from the device BLE identity MAC.
+     * Implementations must never switch to a name-matched candidate.
      */
     h2_pal_result_t (*rediscover)(void *user);
 } h2_h2loader_host_managed_transport_vtable_t;

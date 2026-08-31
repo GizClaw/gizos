@@ -202,6 +202,14 @@ h2_pal_result_t h2_h2loader_cli_transport_rediscover(
     return resolve_ble_candidate(transport);
 }
 
+int h2_h2loader_cli_reconnect_must_fail_closed(
+    const h2_h2loader_cli_transport_t *transport,
+    h2_pal_result_t connect_result) {
+    return transport != NULL && transport->options != NULL &&
+        transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE &&
+        connect_result == H2_PAL_ERR_INVALID_STATE;
+}
+
 h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(
     h2_h2loader_cli_transport_t *transport,
     h2_h2loader_host_cancelled_fn is_cancelled,

@@ -715,6 +715,9 @@ static h2_pal_result_t reconnect_and_verify_reboot(
         rc = h2_h2loader_cli_transport_rediscover(transport);
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_transport_connect(transport, out_status);
+            if (h2_h2loader_cli_reconnect_must_fail_closed(transport, rc)) {
+                return rc;
+            }
         }
         if (rc == H2_PAL_OK) {
             rc = h2_h2loader_cli_verify_reboot_status(kind, before, out_status);
@@ -746,6 +749,10 @@ static h2_pal_result_t monitor_transport(
             rc = h2_h2loader_cli_transport_rediscover(transport);
             if (rc == H2_PAL_OK) {
                 rc = h2_h2loader_cli_transport_connect(transport, &status);
+                if (h2_h2loader_cli_reconnect_must_fail_closed(
+                        transport, rc)) {
+                    return rc;
+                }
             }
             if (rc == H2_PAL_OK && before_reboot != NULL) {
                 rc = h2_h2loader_cli_verify_reboot_status(
