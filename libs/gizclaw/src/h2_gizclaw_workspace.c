@@ -558,8 +558,8 @@ static int history_audio_event(void *user,
   if (event->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE) {
     if (context->metadata_received)
       return context->result = H2_PAL_ERR_FORMAT;
-    gizclaw_rpc_v1_WorkspaceHistoryAudioGetResponse decoded =
-        gizclaw_rpc_v1_WorkspaceHistoryAudioGetResponse_init_zero;
+    gizclaw_rpc_v1_WorkspaceHistoryAudioDownloadResponse decoded =
+        gizclaw_rpc_v1_WorkspaceHistoryAudioDownloadResponse_init_zero;
     text_decode_t text[3];
     const h2_pal_mem_api_t *allocator =
         h2_gizclaw_client_allocator_internal(context->client);
@@ -574,7 +574,7 @@ static int history_audio_event(void *user,
     pb_istream_t stream = pb_istream_from_buffer(event->result_payload.data,
                                                  event->result_payload.len);
     if (!pb_decode(&stream,
-                   gizclaw_rpc_v1_WorkspaceHistoryAudioGetResponse_fields,
+                   gizclaw_rpc_v1_WorkspaceHistoryAudioDownloadResponse_fields,
                    &decoded) ||
         decoded.size_bytes <= 0 || context->info->history_id == NULL ||
         context->info->history_id[0] == '\0' ||
@@ -617,8 +617,8 @@ int h2_gizclaw_client_workspace_history_audio_get(
       h2_gizclaw_client_allocator_internal(client);
   if (allocator == NULL)
     return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_WorkspaceHistoryAudioGetRequest request =
-      gizclaw_rpc_v1_WorkspaceHistoryAudioGetRequest_init_zero;
+  gizclaw_rpc_v1_WorkspaceHistoryAudioDownloadRequest request =
+      gizclaw_rpc_v1_WorkspaceHistoryAudioDownloadRequest_init_zero;
   text_encode_t text[2] = {
       {.data = history_id.data, .len = history_id.len},
       {.data = workspace_name.data, .len = workspace_name.len},
@@ -629,9 +629,9 @@ int h2_gizclaw_client_workspace_history_audio_get(
   request.workspace_name.arg = &text[1];
   uint8_t *payload = NULL;
   size_t payload_len = 0u;
-  int rc = encode_message(allocator,
-                          gizclaw_rpc_v1_WorkspaceHistoryAudioGetRequest_fields,
-                          &request, &payload, &payload_len);
+  int rc = encode_message(
+      allocator, gizclaw_rpc_v1_WorkspaceHistoryAudioDownloadRequest_fields,
+      &request, &payload, &payload_len);
   history_audio_context_t context = {
       .client = client,
       .write = write,
@@ -641,7 +641,7 @@ int h2_gizclaw_client_workspace_history_audio_get(
   };
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_client_rpc_call_stream(
-        client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_HISTORY_AUDIO_GET,
+        client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_HISTORY_AUDIO_DOWNLOAD,
         (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
         history_audio_event, &context);
   }

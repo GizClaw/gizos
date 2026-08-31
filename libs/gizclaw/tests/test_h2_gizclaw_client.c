@@ -344,8 +344,8 @@ static bool test_encode_message_audio_response(uint8_t *buffer, size_t capacity,
                                                const char *history_name,
                                                size_t audio_len,
                                                size_t *out_len) {
-  gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse response =
-      gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse_init_zero;
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse response =
+      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
   (void)snprintf(response.friend_group_name, sizeof(response.friend_group_name),
                  "%s", friend_group_name);
   (void)snprintf(response.history_name, sizeof(response.history_name), "%s",
@@ -355,7 +355,7 @@ static bool test_encode_message_audio_response(uint8_t *buffer, size_t capacity,
   response.size_bytes = (int64_t)audio_len;
   pb_ostream_t stream = pb_ostream_from_buffer(buffer, capacity);
   if (!pb_encode(&stream,
-                 gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse_fields,
+                 gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
                  &response)) {
     return false;
   }
@@ -372,7 +372,7 @@ static int test_message_audio_rpc_call(void *user, h2_gizclaw_client_t *client,
   (void)client;
   ++mock->calls;
   mock->request_matches =
-      method == H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET &&
+      method == H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD &&
       params_payload.len == mock->expected_request_len &&
       memcmp(params_payload.data, mock->expected_request,
              mock->expected_request_len) == 0;
@@ -1877,6 +1877,10 @@ int main(void) {
                   "peer delete wire method remains 93");
   fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET == 95,
                   "friend group message audio get wire method remains 95");
+  fails += expect(
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD ==
+          H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET,
+      "friend group message audio get compatibility alias remains available");
 
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
