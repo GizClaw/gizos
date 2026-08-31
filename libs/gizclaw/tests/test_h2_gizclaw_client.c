@@ -653,9 +653,11 @@ static int test_speed_test_adapter(h2_gizclaw_client_t *client) {
       "speedtest accepts SDK completion after response, data, and EOS");
   fails += expect(
       test.requested_up_bytes == 0 && test.requested_down_bytes == 1024 &&
+          result.upload_bytes == 0u && result.upload_elapsed_ms == 0u &&
+          result.upload_bits_per_second == 0u &&
           result.download_bytes == 1024u && result.elapsed_ms == 20u &&
           result.download_bits_per_second == 409600u,
-      "speedtest uses the dedicated download result and direction duration");
+      "speedtest leaves an unrequested upload direction empty");
 
   test.response.down_bytes = 1023;
   result = (h2_gizclaw_speedtest_result_t){

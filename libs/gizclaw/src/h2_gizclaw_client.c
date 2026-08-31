@@ -375,6 +375,8 @@ static int h2_gzc_http_canceled(void *user) {
 
 static uint64_t h2_gizclaw_bits_per_second(uint64_t bytes,
                                            uint64_t elapsed_ms) {
+  if (elapsed_ms == 0u)
+    return 0u;
   uint64_t whole = bytes / elapsed_ms;
   if (whole > UINT64_MAX / 8000u) {
     return UINT64_MAX;
