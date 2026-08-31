@@ -45,7 +45,9 @@ typedef struct h2_gizclaw_config {
      * their send queue becomes writable. The write stops on success, timeout,
      * cancellation, or a terminal transport error. Cancellation returns
      * `H2_PAL_ERR_CLOSED`. Zero reuses `connect_timeout_ms`; negative values
-     * are invalid.
+     * are invalid. A provider that unexpectedly returns
+     * `H2_PAL_ERR_WOULD_BLOCK` from a positive-timeout peer poll is rate
+     * limited with a logged 10 ms PAL Time backoff before retry.
      */
     int write_timeout_ms;
     const h2_pal_mem_api_t *allocator;

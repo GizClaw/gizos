@@ -35,6 +35,11 @@ int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t *client,
 static int test_send_calls;
 static int test_poll_calls;
 static int test_last_poll_timeout_ms;
+static int test_sleep_calls;
+static uint32_t test_last_sleep_ms;
+static h2_pal_result_t test_sleep_result = H2_PAL_OK;
+static int test_warn_logs;
+static char test_last_log_message[H2_PAL_LOG_MESSAGE_MAX];
 static int test_send_would_block_count = 1;
 static h2_pal_result_t test_send_result = H2_PAL_OK;
 static h2_pal_result_t test_poll_result = H2_PAL_OK;
@@ -1758,6 +1763,28 @@ static h2_pal_result_t test_get_monotonic_ms(void *user, uint64_t *out_ms) {
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t test_sleep_ms(void *user, uint32_t ms) {
+  (void)user;
+  ++test_sleep_calls;
+  test_last_sleep_ms = ms;
+  if (test_sleep_result == H2_PAL_OK) {
+    test_monotonic_ms += ms;
+  }
+  return test_sleep_result;
+}
+
+static int test_log_write(void *user, h2_pal_log_level_t level,
+                          const char *scope, const char *message) {
+  (void)user;
+  assert(strcmp(scope, "gizclaw") == 0);
+  if (level == H2_PAL_LOG_WARN) {
+    ++test_warn_logs;
+    (void)snprintf(test_last_log_message, sizeof(test_last_log_message), "%s",
+                   message);
+  }
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t test_get_monotonic_ms_unsupported(void *user,
                                                          uint64_t *out_ms) {
   (void)user;
@@ -1782,7 +1809,9 @@ static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
   (void)peer;
   test_poll_calls++;
   test_last_poll_timeout_ms = timeout_ms;
-  test_monotonic_ms += timeout_ms > 0 ? (uint64_t)timeout_ms : 1u;
+  if (test_poll_result != H2_PAL_ERR_WOULD_BLOCK) {
+    test_monotonic_ms += timeout_ms > 0 ? (uint64_t)timeout_ms : 1u;
+  }
   return test_poll_result;
 }
 
@@ -1914,6 +1943,7 @@ int main(void) {
   const h2_pal_crypto_api_t crypto = {0};
   const h2_pal_time_vtable_t time_vtable = {
       .get_monotonic_ms = test_get_monotonic_ms,
+      .sleep_ms = test_sleep_ms,
   };
   const h2_pal_time_api_t time = {
       .user = NULL,
@@ -1924,6 +1954,14 @@ int main(void) {
   config.webrtc = &webrtc;
   config.crypto = &crypto;
   config.time = &time;
+  const h2_pal_log_vtable_t log_vtable = {
+      .write = test_log_write,
+  };
+  const h2_pal_log_api_t log = {
+      .user = NULL,
+      .vtable = &log_vtable,
+  };
+  config.log = &log;
   config.cancel_requested = test_cancel;
 
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)0x1;
@@ -2066,6 +2104,23 @@ int main(void) {
           offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
           test_poll_calls == 1 && test_last_poll_timeout_ms > 0,
       "adapter waits for peer progress before retrying a full PAL queue");
+  test_send_calls = 0;
+  test_poll_calls = 0;
+  test_sleep_calls = 0;
+  test_warn_logs = 0;
+  test_send_would_block_count = 1;
+  test_poll_result = H2_PAL_ERR_WOULD_BLOCK;
+  offset = 0u;
+  blocked = false;
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
+                                      &offset, &blocked) == GZC_OK &&
+          offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
+          test_poll_calls == 1 && test_sleep_calls == 1 &&
+          test_last_sleep_ms == 10u && test_warn_logs == 1 &&
+          strstr(test_last_log_message, "rc=-9 backoff_ms=10") != NULL,
+      "adapter warns and backs off when peer poll unexpectedly would block");
+  test_poll_result = H2_PAL_OK;
   test_send_calls = 0;
   test_poll_calls = 0;
   test_send_would_block_count = 3000;
