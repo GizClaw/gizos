@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_WORKFLOW_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
@@ -46,6 +47,37 @@ typedef struct h2_gizclaw_workflow_page {
   char *runtime_profile_revision;
 } h2_gizclaw_workflow_page_t;
 
+typedef struct h2_gizclaw_workflow_request h2_gizclaw_workflow_request_t;
+
+typedef void (*h2_gizclaw_workflows_list_completion_fn)(
+    void *user, h2_gizclaw_workflow_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_workflow_page_t *page);
+
+typedef void (*h2_gizclaw_workflow_get_completion_fn)(
+    void *user, h2_gizclaw_workflow_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_workflow_t *workflow, const char *runtime_profile_name,
+    const char *runtime_profile_revision);
+
+h2_pal_result_t h2_gizclaw_service_workflows_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_workflows_list_completion_fn completion,
+    void *user, h2_gizclaw_workflow_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workflow_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_workflow_get_completion_fn completion,
+    void *user, h2_gizclaw_workflow_request_t **out_request);
+
+h2_pal_result_t
+h2_gizclaw_workflow_request_cancel(h2_gizclaw_workflow_request_t *request);
+
+void h2_gizclaw_workflow_request_release(
+    h2_gizclaw_workflow_request_t *request);
+
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_workflows_list(h2_gizclaw_client_t *client,
                                      h2_gizclaw_str_t collection,
                                      h2_gizclaw_str_t cursor, size_t limit,
@@ -56,6 +88,7 @@ int h2_gizclaw_client_workflow_get(h2_gizclaw_client_t *client,
                                    h2_gizclaw_workflow_t *out_workflow,
                                    char **out_runtime_profile_name,
                                    char **out_runtime_profile_revision);
+#endif
 
 const char *
 h2_gizclaw_workflow_display_name(const h2_gizclaw_workflow_t *workflow,

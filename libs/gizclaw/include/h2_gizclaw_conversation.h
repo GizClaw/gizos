@@ -2,8 +2,8 @@
 #define H2_GIZCLAW_CONVERSATION_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
-#include "h2/pal/hal/h2_pal_audio.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -18,6 +18,8 @@ extern "C" {
 #define H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES 63u
 
 typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
+typedef struct h2_gizclaw_conversation_request
+    h2_gizclaw_conversation_request_t;
 
 /** One ordered result emitted by a conversation generation. */
 typedef enum h2_gizclaw_conversation_event_kind {
@@ -32,10 +34,11 @@ typedef enum h2_gizclaw_conversation_event_kind {
 /**
  * Result of one poll.
  *
- * `generation` is the caller-provided generation from `open`. Audio, text, and
- * error views are borrowed until the next poll or deinit. `REPLY_DONE` is the
- * service terminal; callers must still drain locally accepted playback before
- * publishing their own conversation completion.
+ * `generation` is the caller-provided generation from `open`. `audio` contains
+ * one raw Opus packet for `REPLY_AUDIO`. Audio, text, and error views are
+ * borrowed until the next poll or deinit. `REPLY_DONE` is the service terminal;
+ * callers must still drain locally accepted playback before publishing their
+ * own conversation completion.
  */
 typedef struct h2_gizclaw_conversation_event {
   h2_gizclaw_conversation_event_kind_t kind;
@@ -48,6 +51,37 @@ typedef struct h2_gizclaw_conversation_event {
   bool retryable;
 } h2_gizclaw_conversation_event_t;
 
+typedef h2_pal_result_t (*h2_gizclaw_conversation_request_event_fn)(
+    void *user, h2_gizclaw_conversation_request_t *request,
+    const h2_gizclaw_conversation_event_t *event);
+
+typedef void (*h2_gizclaw_conversation_request_completion_fn)(
+    void *user, h2_gizclaw_conversation_request_t *request,
+    const h2_gizclaw_operation_result_t *operation_result);
+
+/** Create one service-owned conversation generation. */
+h2_pal_result_t h2_gizclaw_service_conversation_create(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t workspace_name, uint64_t generation, int timeout_ms,
+    h2_gizclaw_conversation_request_event_fn on_event,
+    h2_gizclaw_conversation_request_completion_fn completion, void *user,
+    h2_gizclaw_conversation_request_t **out_request);
+
+/** Queue one complete Opus packet without blocking. */
+h2_pal_result_t h2_gizclaw_conversation_request_write_opus(
+    h2_gizclaw_conversation_request_t *request, const uint8_t *opus,
+    size_t opus_len, uint64_t timestamp_ms);
+
+/** Queue EOS after all previously accepted packets. */
+h2_pal_result_t h2_gizclaw_conversation_request_commit(
+    h2_gizclaw_conversation_request_t *request, uint64_t timestamp_ms);
+
+h2_pal_result_t h2_gizclaw_conversation_request_cancel(
+    h2_gizclaw_conversation_request_t *request);
+
+void h2_gizclaw_conversation_request_release(
+    h2_gizclaw_conversation_request_t *request);
+
 /**
  * Opens one generation for an already active Workspace.
  *
@@ -56,65 +90,38 @@ typedef struct h2_gizclaw_conversation_event {
  * simultaneous open returns `H2_PAL_ERR_INVALID_STATE`. Success sends the input
  * BOS and transfers ownership of the returned conversation to the caller. The
  * caller must eventually call `deinit`. Conversation operations are not thread
- * safe; one caller must own and serialize open, input, poll, commit, cancel, and
- * deinit for the complete lifetime.
+ * safe; one caller must own and serialize open, input, poll, commit, cancel,
+ * and deinit for the complete lifetime.
  */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_conversation_open(h2_gizclaw_client_t *client,
                                  h2_gizclaw_str_t workspace_name,
                                  uint64_t generation, int timeout_ms,
                                  h2_gizclaw_conversation_t **out_conversation);
 
-/** True while the generation accepts microphone input. */
+/** True while the generation accepts encoded Opus input. */
 bool h2_gizclaw_conversation_input_ready(
     const h2_gizclaw_conversation_t *conversation);
 
 /**
- * Selects conversation-owned PCM input and copies its provider format.
+ * Sends one complete caller-encoded Opus packet.
  *
- * The format must describe S16LE mono or stereo PCM at an Opus-supported
- * sample rate. `frame_samples_per_channel` is the largest complete provider
- * chunk accepted by one `write_pcm` call; it is not an Opus frame duration.
- * `opus_complexity` must be in the libopus range 0 through 10. Configure
- * exactly once, before any raw Opus packet is written. The caller retains
- * ownership of `format`.
- */
-int h2_gizclaw_conversation_configure_pcm(
-    h2_gizclaw_conversation_t *conversation,
-    const h2_audio_pcm_format_t *format, int opus_complexity);
-
-/**
- * Consumes one complete provider-sized PCM frame.
- *
- * The frame data is borrowed only for this call. Success means the complete
- * frame was copied into conversation-owned state, including when transport
- * backpressure leaves encoded Opus packets in the bounded transmit ring. A
- * full ring preserves every accepted packet and returns
- * `H2_PAL_ERR_WOULD_BLOCK` when the supplied frame cannot be accepted; the
- * caller must retain and retry that same frame. Other errors are terminal for
- * PCM input and the frame must not be retried.
- */
-int h2_gizclaw_conversation_write_pcm(h2_gizclaw_conversation_t *conversation,
-                                      const h2_audio_frame_t *frame);
-
-/**
- * Sends one complete raw Opus packet. `timestamp_ms` remains for source
- * compatibility and is not serialized into the media payload.
- *
- * `H2_PAL_ERR_WOULD_BLOCK` means the packet was not accepted and the caller
- * must retain and retry the same packet before advancing its input stream.
+ * GizClaw does not read microphones or encode PCM. The caller owns capture,
+ * framing, Opus encoder state, and packet lifetime. The packet is borrowed
+ * only for this call. `timestamp_ms` remains for source compatibility and is
+ * not serialized into the media payload. `H2_PAL_ERR_WOULD_BLOCK` means the
+ * packet was not accepted and the caller must retain it, wait for transport
+ * progress, and retry the same packet before advancing its input stream.
  */
 int h2_gizclaw_conversation_write_opus(h2_gizclaw_conversation_t *conversation,
                                        const uint8_t *opus, size_t opus_len,
                                        uint64_t timestamp_ms);
 
 /**
- * Ends microphone input after all accepted audio has been sent.
+ * Ends encoded Opus input after all accepted packets have been sent.
  *
- * In PCM mode, commit drains complete 20 ms intervals and zero-pads one
- * non-empty final partial interval exactly once before EOS. Empty PCM input
- * does not manufacture an Opus packet. The operation is idempotent after
- * success. `H2_PAL_ERR_WOULD_BLOCK` preserves pending PCM or Opus state and
- * must be retried.
+ * The operation is idempotent after success. `H2_PAL_ERR_WOULD_BLOCK` means
+ * the EOS boundary was not accepted and must be retried.
  */
 int h2_gizclaw_conversation_commit(h2_gizclaw_conversation_t *conversation,
                                    uint64_t timestamp_ms);
@@ -145,6 +152,7 @@ void h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation);
  * open until the complete client connection is closed.
  */
 void h2_gizclaw_conversation_deinit(h2_gizclaw_conversation_t *conversation);
+#endif
 
 #ifdef __cplusplus
 }

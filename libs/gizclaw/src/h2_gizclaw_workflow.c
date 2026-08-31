@@ -2,12 +2,14 @@
 
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_service_internal.h"
 
 #include "payload/ai.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
 #include <limits.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -282,6 +284,58 @@ static int decode_list(const h2_pal_mem_api_t *allocator, const uint8_t *data,
   return H2_PAL_OK;
 }
 
+static int decode_get(const h2_pal_mem_api_t *allocator, const uint8_t *data,
+                      size_t len, h2_gizclaw_workflow_t *out_workflow,
+                      char **out_runtime_profile_name,
+                      char **out_runtime_profile_revision) {
+  int rc = H2_PAL_OK;
+  pb_istream_t stream = pb_istream_from_buffer(data, len);
+  bool found_value = false;
+  while (stream.bytes_left > 0u && rc == H2_PAL_OK) {
+    pb_wire_type_t wire_type;
+    uint32_t tag;
+    bool eof;
+    if (!pb_decode_tag(&stream, &wire_type, &tag, &eof)) {
+      rc = H2_PAL_ERR_FORMAT;
+      break;
+    }
+    if (eof)
+      break;
+    if (tag == gizclaw_rpc_v1_WorkflowGetResponse_value_tag &&
+        wire_type == PB_WT_STRING) {
+      pb_istream_t substream;
+      if (!pb_make_string_substream(&stream, &substream) ||
+          !decode_workflow_object(&substream, out_workflow, allocator) ||
+          !pb_close_string_substream(&stream, &substream)) {
+        rc = H2_PAL_ERR_FORMAT;
+      } else {
+        found_value = true;
+      }
+    } else if (!pb_skip_field(&stream, wire_type)) {
+      rc = H2_PAL_ERR_FORMAT;
+    }
+  }
+  if (rc == H2_PAL_OK && !found_value)
+    rc = H2_PAL_ERR_FORMAT;
+  if (rc == H2_PAL_OK) {
+    gizclaw_rpc_v1_WorkflowGetResponse metadata =
+        gizclaw_rpc_v1_WorkflowGetResponse_init_zero;
+    text_decode_t text[2];
+    set_text_decoder(&metadata.runtime_profile_name, &text[0], allocator,
+                     out_runtime_profile_name, 255u);
+    set_text_decoder(&metadata.runtime_profile_revision, &text[1], allocator,
+                     out_runtime_profile_revision, 255u);
+    pb_istream_t metadata_stream = pb_istream_from_buffer(data, len);
+    if (!pb_decode(&metadata_stream,
+                   gizclaw_rpc_v1_WorkflowGetResponse_fields, &metadata) ||
+        *out_runtime_profile_name == NULL ||
+        *out_runtime_profile_revision == NULL) {
+      rc = H2_PAL_ERR_FORMAT;
+    }
+  }
+  return rc;
+}
+
 int h2_gizclaw_client_workflows_list(h2_gizclaw_client_t *client,
                                      h2_gizclaw_str_t collection,
                                      h2_gizclaw_str_t cursor, size_t limit,
@@ -461,6 +515,230 @@ int h2_gizclaw_client_workflow_get(h2_gizclaw_client_t *client,
     *out_runtime_profile_revision = NULL;
   }
   return rc;
+}
+
+typedef enum workflow_request_kind {
+  WORKFLOW_REQUEST_LIST = 0,
+  WORKFLOW_REQUEST_GET,
+} workflow_request_kind_t;
+
+typedef union workflow_completion {
+  h2_gizclaw_workflows_list_completion_fn list;
+  h2_gizclaw_workflow_get_completion_fn get;
+} workflow_completion_t;
+
+struct h2_gizclaw_workflow_request {
+  h2_gizclaw_async_rpc_t *rpc;
+  const h2_pal_mem_api_t *allocator;
+  workflow_request_kind_t kind;
+  size_t limit;
+  workflow_completion_t completion;
+  void *completion_user;
+  union {
+    h2_gizclaw_workflow_page_t page;
+    struct {
+      h2_gizclaw_workflow_t workflow;
+      char *profile_name;
+      char *profile_revision;
+    } get;
+  } result;
+  atomic_bool terminal;
+};
+
+static void workflow_page_clear(const h2_pal_mem_api_t *allocator,
+                                h2_gizclaw_workflow_page_t *page) {
+  for (size_t index = 0u; index < page->count; ++index)
+    workflow_clear(allocator, &page->items[index]);
+  h2_pal_mem_free(allocator, page->items);
+  h2_pal_mem_free(allocator, page->next_cursor);
+  h2_pal_mem_free(allocator, page->runtime_profile_name);
+  h2_pal_mem_free(allocator, page->runtime_profile_revision);
+  memset(page, 0, sizeof(*page));
+}
+
+static void workflow_rpc_complete(
+    void *user, h2_gizclaw_async_rpc_t *rpc,
+    const h2_gizclaw_operation_result_t *operation_result,
+    const h2_gizclaw_rpc_response_t *response) {
+  (void)rpc;
+  h2_gizclaw_workflow_request_t *request = user;
+  h2_gizclaw_operation_result_t result = *operation_result;
+  if (result.result == H2_PAL_OK)
+    result.result = (h2_pal_result_t)response_status(response);
+  if (result.result == H2_PAL_OK) {
+    if (request->kind == WORKFLOW_REQUEST_LIST) {
+      result.result = (h2_pal_result_t)decode_list(
+          request->allocator, response->result_payload,
+          response->result_payload_len, request->limit, &request->result.page);
+    } else {
+      result.result = (h2_pal_result_t)decode_get(
+          request->allocator, response->result_payload,
+          response->result_payload_len, &request->result.get.workflow,
+          &request->result.get.profile_name,
+          &request->result.get.profile_revision);
+    }
+  }
+  if (result.result != H2_PAL_OK) {
+    if (request->kind == WORKFLOW_REQUEST_LIST) {
+      workflow_page_clear(request->allocator, &request->result.page);
+    } else {
+      workflow_clear(request->allocator, &request->result.get.workflow);
+      h2_pal_mem_free(request->allocator, request->result.get.profile_name);
+      h2_pal_mem_free(request->allocator,
+                      request->result.get.profile_revision);
+      request->result.get.profile_name = NULL;
+      request->result.get.profile_revision = NULL;
+    }
+  }
+  atomic_store_explicit(&request->terminal, true, memory_order_release);
+  if (request->kind == WORKFLOW_REQUEST_LIST) {
+    request->completion.list(
+        request->completion_user, request, &result,
+        result.result == H2_PAL_OK ? &request->result.page : NULL);
+  } else {
+    request->completion.get(
+        request->completion_user, request, &result,
+        result.result == H2_PAL_OK ? &request->result.get.workflow : NULL,
+        result.result == H2_PAL_OK ? request->result.get.profile_name : NULL,
+        result.result == H2_PAL_OK ? request->result.get.profile_revision
+                                   : NULL);
+  }
+}
+
+static h2_pal_result_t submit_workflow_request(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    workflow_request_kind_t kind, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_rpc_bytes_t payload, size_t limit, uint32_t timeout_ms,
+    workflow_completion_t completion, void *user,
+    h2_gizclaw_workflow_request_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || timeout_ms == 0u ||
+      (kind == WORKFLOW_REQUEST_LIST ? completion.list == NULL
+                                     : completion.get == NULL) ||
+      out_request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  h2_gizclaw_workflow_request_t *request =
+      h2_pal_mem_alloc(allocator, sizeof(*request));
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(request, 0, sizeof(*request));
+  request->allocator = allocator;
+  request->kind = kind;
+  request->limit = limit;
+  request->completion_user = user;
+  request->completion = completion;
+  const h2_pal_result_t rc = h2_gizclaw_service_rpc_call_async(
+      service, identity, method, payload, timeout_ms, workflow_rpc_complete,
+      request, &request->rpc);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(allocator, request);
+    return rc;
+  }
+  *out_request = request;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_service_workflows_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_workflows_list_completion_fn completion,
+    void *user, h2_gizclaw_workflow_request_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL ||
+      !valid_kebab(collection, H2_GIZCLAW_WORKFLOW_COLLECTION_MAX_BYTES) ||
+      !valid_optional_text(cursor, 255u) || limit == 0u ||
+      limit > H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS
+#if SIZE_MAX > INT64_MAX
+      || limit > (size_t)INT64_MAX
+#endif
+  ) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  gizclaw_rpc_v1_WorkflowListRequest message =
+      gizclaw_rpc_v1_WorkflowListRequest_init_zero;
+  text_encode_t collection_text = {
+      .data = collection.data, .len = collection.len};
+  text_encode_t cursor_text = {.data = cursor.data, .len = cursor.len};
+  message.collection.funcs.encode = encode_text;
+  message.collection.arg = &collection_text;
+  if (cursor.len > 0u) {
+    message.cursor.funcs.encode = encode_text;
+    message.cursor.arg = &cursor_text;
+  }
+  message.has_limit = true;
+  message.limit = (int64_t)limit;
+  uint8_t *payload = NULL;
+  size_t payload_len = 0u;
+  h2_pal_result_t rc = (h2_pal_result_t)encode_message(
+      allocator, gizclaw_rpc_v1_WorkflowListRequest_fields, &message,
+      &payload, &payload_len);
+  if (rc == H2_PAL_OK) {
+    rc = submit_workflow_request(
+        service, identity, WORKFLOW_REQUEST_LIST,
+        H2_GIZCLAW_RPC_SERVER_WORKFLOW_LIST,
+        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len}, limit,
+        timeout_ms, (workflow_completion_t){.list = completion}, user,
+        out_request);
+  }
+  h2_pal_mem_free(allocator, payload);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_service_workflow_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_workflow_get_completion_fn completion,
+    void *user, h2_gizclaw_workflow_request_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || !h2_gizclaw_runtime_alias_valid_internal(name))
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  gizclaw_rpc_v1_WorkflowGetRequest message =
+      gizclaw_rpc_v1_WorkflowGetRequest_init_zero;
+  text_encode_t name_text = {.data = name.data, .len = name.len};
+  message.name.funcs.encode = encode_text;
+  message.name.arg = &name_text;
+  uint8_t *payload = NULL;
+  size_t payload_len = 0u;
+  h2_pal_result_t rc = (h2_pal_result_t)encode_message(
+      allocator, gizclaw_rpc_v1_WorkflowGetRequest_fields, &message, &payload,
+      &payload_len);
+  if (rc == H2_PAL_OK) {
+    rc = submit_workflow_request(
+        service, identity, WORKFLOW_REQUEST_GET,
+        H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET,
+        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len}, 0u,
+        timeout_ms, (workflow_completion_t){.get = completion}, user,
+        out_request);
+  }
+  h2_pal_mem_free(allocator, payload);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_workflow_request_cancel(h2_gizclaw_workflow_request_t *request) {
+  return request == NULL ? H2_PAL_ERR_INVALID_ARG
+                         : h2_gizclaw_async_rpc_cancel(request->rpc);
+}
+
+void h2_gizclaw_workflow_request_release(
+    h2_gizclaw_workflow_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire))
+    return;
+  h2_gizclaw_async_rpc_release(request->rpc);
+  if (request->kind == WORKFLOW_REQUEST_LIST) {
+    workflow_page_clear(request->allocator, &request->result.page);
+  } else {
+    workflow_clear(request->allocator, &request->result.get.workflow);
+    h2_pal_mem_free(request->allocator, request->result.get.profile_name);
+    h2_pal_mem_free(request->allocator, request->result.get.profile_revision);
+  }
+  h2_pal_mem_free(request->allocator, request);
 }
 
 const char *

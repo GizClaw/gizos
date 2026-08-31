@@ -1,10 +1,34 @@
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_report.h"
 
-#include <inttypes.h>
 #include <stdio.h>
 
 enum { H2_GIZCLAW_E2E_CONCURRENT_REQUESTS = 3 };
+
+static int run_recovery_ping(h2_gizclaw_e2e_fixture_t *fixture,
+                             h2_gizclaw_client_t *client) {
+  h2_gizclaw_rpc_request_t *request = NULL;
+  int rc = h2_gizclaw_client_rpc_request_start(
+      client, H2_GIZCLAW_RPC_ALL_PING, (h2_gizclaw_rpc_bytes_t){0}, 30000u,
+      &request);
+  h2_gizclaw_rpc_response_t response = {0};
+  while (rc == H2_PAL_OK &&
+         (rc = h2_gizclaw_rpc_request_result(request, &response)) ==
+             H2_PAL_ERR_WOULD_BLOCK &&
+         h2_gizclaw_e2e_fixture_has_time(fixture, 50u)) {
+    rc = h2_gizclaw_client_poll(client, 50);
+    if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
+      rc = H2_PAL_OK;
+  }
+  if (rc == H2_PAL_ERR_WOULD_BLOCK)
+    rc = H2_PAL_ERR_TIMEOUT;
+  if (rc == H2_PAL_OK && response.has_error)
+    rc = H2_PAL_ERR_IO;
+  h2_gizclaw_rpc_response_deinit(client, &response);
+  h2_gizclaw_rpc_request_cancel(request);
+  h2_gizclaw_rpc_request_destroy(request);
+  return rc;
+}
 
 int h2_gizclaw_e2e_concurrency_classify(
     int requests_result, int recovery_result, int observation_result,
@@ -109,9 +133,7 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
   const int observation_result = h2_gizclaw_e2e_fixture_rpc_channel_observation(
       &max_open_channels, &unique_stream_ids, &open_channels);
 
-  h2_gizclaw_ping_result_t recovery_ping = {0};
-  const int recovery_result =
-      h2_gizclaw_client_ping_measure(client, &recovery_ping);
+  const int recovery_result = run_recovery_ping(fixture, client);
   const int result = h2_gizclaw_e2e_concurrency_classify(
       requests_result, recovery_result, observation_result, started_requests,
       completed_requests, max_open_channels, unique_stream_ids, open_channels);
@@ -120,12 +142,10 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
          "requested_requests=%u started_requests=%zu completed_requests=%zu "
          "max_open_channels=%zu "
          "unique_stream_ids=%zu open_channels=%zu observation_rc=%d "
-         "requests_rc=%d recovery_rc=%d recovery_rtt_ms=%" PRIu64
-         " result=%s rc=%d\n",
+         "requests_rc=%d recovery_rc=%d result=%s rc=%d\n",
          H2_GIZCLAW_E2E_CONCURRENT_REQUESTS, started_requests,
          completed_requests, max_open_channels, unique_stream_ids,
          open_channels, observation_result, requests_result, recovery_result,
-         recovery_ping.round_trip_ms, result == H2_PAL_OK ? "PASS" : "FAIL",
-         result);
+         result == H2_PAL_OK ? "PASS" : "FAIL", result);
   return result;
 }

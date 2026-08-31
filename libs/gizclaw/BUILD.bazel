@@ -13,16 +13,22 @@ cc_library(
 )
 
 _FIRMWARE_COMPATIBLE_SRCS = [
+    "src/h2_gizclaw_async_rpc.c",
+    "src/h2_gizclaw_async_stream.c",
     "src/h2_gizclaw_client.c",
+    "src/h2_gizclaw_diagnostics.c",
     "src/h2_gizclaw_internal.h",
     "src/h2_gizclaw_pet.c",
+    "src/h2_gizclaw_peer_async.c",
     "src/h2_gizclaw_points.c",
     "src/h2_gizclaw_profile.c",
     "src/h2_gizclaw_profile_internal.h",
     "src/h2_gizclaw_registration.c",
+    "src/h2_gizclaw_registration_internal.h",
     "src/h2_gizclaw_service.c",
     "src/h2_gizclaw_service_internal.h",
     "src/h2_gizclaw_social.c",
+    "src/h2_gizclaw_social_async.c",
     "src/h2_gizclaw_social_ops.c",
     "src/h2_gizclaw_speech.c",
     "src/h2_gizclaw_telemetry.c",
@@ -76,12 +82,6 @@ cc_library(
         "//tools/bazel/platforms:is_esp32p4": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32s3": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//conditions:default": ["//tools/bazel:vendor_third_party_gizclaw"],
-    }) + select({
-        "//tools/bazel/platforms:is_bk3633": [],
-        "//tools/bazel/platforms:is_bk7258": [],
-        "//tools/bazel/platforms:is_esp32p4": [],
-        "//tools/bazel/platforms:is_esp32s3": [],
-        "//conditions:default": ["//tools/bazel:vendor_third_party_opus"],
     }),
 )
 
@@ -89,16 +89,22 @@ cc_library(
     name = "gizclaw_test_support",
     testonly = True,
     srcs = [
+        "src/h2_gizclaw_async_rpc.c",
+        "src/h2_gizclaw_async_stream.c",
         "src/h2_gizclaw_client.c",
         "src/h2_gizclaw_conversation.c",
+        "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_internal.h",
+        "src/h2_gizclaw_peer_async.c",
         "src/h2_gizclaw_pet.c",
         "src/h2_gizclaw_points.c",
         "src/h2_gizclaw_profile.c",
         "src/h2_gizclaw_profile_internal.h",
         "src/h2_gizclaw_registration.c",
+        "src/h2_gizclaw_registration_internal.h",
         "src/h2_gizclaw_service.c",
         "src/h2_gizclaw_social.c",
+        "src/h2_gizclaw_social_async.c",
         "src/h2_gizclaw_social_ops.c",
         "src/h2_gizclaw_speech.c",
         "src/h2_gizclaw_telemetry.c",
@@ -135,7 +141,6 @@ cc_library(
         ":task_names",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_gizclaw",
-        "//tools/bazel:vendor_third_party_opus",
     ],
 )
 
@@ -144,6 +149,7 @@ cc_test(
     srcs = [
         "src/h2_gizclaw_internal.h",
         "src/h2_gizclaw_profile_internal.h",
+        "src/h2_gizclaw_registration_internal.h",
         "tests/test_h2_gizclaw_client.c",
         "tests/test_h2_gizclaw_conversation_audio.c",
         "tests/test_h2_gizclaw_home.c",

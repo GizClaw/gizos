@@ -1,12 +1,14 @@
 #include "h2_gizclaw_pet.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_service_internal.h"
 
 #include "payload/gameplay.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
 #include <limits.h>
+#include <stdatomic.h>
 #include <string.h>
 
 typedef struct text_arg {
@@ -731,3 +733,391 @@ void h2_gizclaw_pet_pixa_info_deinit(h2_gizclaw_client_t *client,
   h2_pal_mem_free(m, i->source_path);
   memset(i, 0, sizeof(*i));
 }
+
+struct h2_gizclaw_pet_request {
+  const h2_pal_mem_api_t *allocator;
+  h2_gizclaw_operation_t *operation;
+  const h2_gizclaw_cancel_token_t *cancel_token;
+  h2_gizclaw_pet_request_kind_t kind;
+  h2_gizclaw_pet_completion_fn completion;
+  void *completion_user;
+  h2_gizclaw_pet_result_t result;
+  char *text[6];
+  size_t limit;
+  h2_gizclaw_pet_adopt_options_t adopt;
+  h2_gizclaw_pet_drive_options_t drive;
+  h2_gizclaw_pet_game_result_t game;
+  h2_gizclaw_pet_pixa_write_fn write;
+  void *write_user;
+  atomic_bool terminal;
+};
+
+static h2_gizclaw_str_t pet_request_span(const char *text) {
+  return (h2_gizclaw_str_t){.data = text,
+                            .len = text == NULL ? 0u : strlen(text)};
+}
+
+static char *pet_request_copy(const h2_pal_mem_api_t *allocator,
+                              h2_gizclaw_str_t value) {
+  if (value.len > 0u && value.data == NULL)
+    return NULL;
+  char *copy = h2_pal_mem_alloc(allocator, value.len + 1u);
+  if (copy == NULL)
+    return NULL;
+  if (value.len > 0u)
+    memcpy(copy, value.data, value.len);
+  copy[value.len] = '\0';
+  return copy;
+}
+
+static void pet_request_pet_clear(const h2_pal_mem_api_t *allocator,
+                                  h2_gizclaw_pet_t *pet) {
+  h2_pal_mem_free(allocator, pet->name);
+  h2_pal_mem_free(allocator, pet->pet_def_name);
+  h2_pal_mem_free(allocator, pet->display_name);
+  h2_pal_mem_free(allocator, pet->workspace_name);
+  h2_pal_mem_free(allocator, pet->died_at);
+  h2_pal_mem_free(allocator, pet->state_settled_at);
+  h2_pal_mem_free(allocator, pet->updated_at);
+  memset(pet, 0, sizeof(*pet));
+}
+
+static void pet_request_result_clear(h2_gizclaw_pet_request_t *request) {
+  if (request->kind == H2_GIZCLAW_PET_LIST) {
+    h2_gizclaw_pet_page_t *page = &request->result.value.page;
+    for (size_t index = 0u; index < page->count; ++index)
+      pet_request_pet_clear(request->allocator, &page->items[index]);
+    h2_pal_mem_free(request->allocator, page->items);
+    h2_pal_mem_free(request->allocator, page->next_cursor);
+    memset(page, 0, sizeof(*page));
+  } else if (request->kind == H2_GIZCLAW_PET_PIXA_DOWNLOAD) {
+    h2_gizclaw_pet_pixa_info_t *info = &request->result.value.pixa;
+    h2_pal_mem_free(request->allocator, info->pet_name);
+    h2_pal_mem_free(request->allocator, info->pet_def_name);
+    h2_pal_mem_free(request->allocator, info->source_path);
+    memset(info, 0, sizeof(*info));
+  } else if (request->kind == H2_GIZCLAW_PET_ACTIONS_GET) {
+    h2_gizclaw_pet_actions_t *actions = &request->result.value.actions;
+    h2_pal_mem_free(request->allocator, actions->pet_name);
+    h2_pal_mem_free(request->allocator, actions->pet_def_name);
+    h2_pal_mem_free(request->allocator, actions->feed);
+    h2_pal_mem_free(request->allocator, actions->bathe);
+    h2_pal_mem_free(request->allocator, actions->play);
+    h2_pal_mem_free(request->allocator, actions->heal);
+    h2_pal_mem_free(request->allocator, actions->idle);
+    h2_pal_mem_free(request->allocator, actions->sick);
+    h2_pal_mem_free(request->allocator, actions->dead);
+    h2_pal_mem_free(request->allocator, actions->sleep);
+    for (size_t index = 0u; index < actions->clip_name_count; ++index) {
+      h2_pal_mem_free(request->allocator, actions->clip_names[index].id);
+      h2_pal_mem_free(request->allocator,
+                      actions->clip_names[index].pixa_clip_name);
+    }
+    h2_pal_mem_free(request->allocator, actions->clip_names);
+    memset(actions, 0, sizeof(*actions));
+  } else {
+    pet_request_pet_clear(request->allocator, &request->result.value.pet);
+  }
+}
+
+typedef struct pet_write_dispatch {
+  h2_gizclaw_pet_request_t *request;
+  const uint8_t *data;
+  size_t len;
+} pet_write_dispatch_t;
+
+static h2_pal_result_t pet_dispatch_write(void *user) {
+  pet_write_dispatch_t *dispatch = user;
+  return (h2_pal_result_t)dispatch->request->write(
+      dispatch->request->write_user, dispatch->data, dispatch->len);
+}
+
+static int pet_request_write(void *user, const uint8_t *data, size_t len) {
+  h2_gizclaw_pet_request_t *request = user;
+  pet_write_dispatch_t dispatch = {
+      .request = request, .data = data, .len = len};
+  return (int)h2_gizclaw_operation_dispatch_call(request->cancel_token,
+                                                 pet_dispatch_write, &dispatch);
+}
+
+static h2_pal_result_t
+pet_request_run(void *user, h2_gizclaw_client_t *client,
+                const h2_gizclaw_cancel_token_t *cancel_token) {
+  h2_gizclaw_pet_request_t *request = user;
+  request->cancel_token = cancel_token;
+  h2_pal_result_t rc = H2_PAL_ERR_INVALID_STATE;
+  switch (request->kind) {
+  case H2_GIZCLAW_PET_LIST:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_list(
+        client, pet_request_span(request->text[0]), request->limit,
+        &request->result.value.page);
+    break;
+  case H2_GIZCLAW_PET_GET:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_get(
+        client, pet_request_span(request->text[0]), &request->result.value.pet);
+    break;
+  case H2_GIZCLAW_PET_ADOPT:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_adopt(
+        client, &request->adopt, &request->result.value.pet);
+    break;
+  case H2_GIZCLAW_PET_DELETE:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_delete(
+        client, pet_request_span(request->text[0]), &request->result.value.pet);
+    break;
+  case H2_GIZCLAW_PET_DRIVE:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_drive(
+        client, &request->drive, &request->result.value.pet);
+    break;
+  case H2_GIZCLAW_PET_PIXA_DOWNLOAD:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_pixa_download(
+        client, pet_request_span(request->text[0]), pet_request_write, request,
+        &request->result.value.pixa);
+    break;
+  case H2_GIZCLAW_PET_ACTIONS_GET:
+    rc = (h2_pal_result_t)h2_gizclaw_client_pet_actions_get(
+        client, pet_request_span(request->text[0]),
+        &request->result.value.actions);
+    break;
+  }
+  request->cancel_token = NULL;
+  return rc;
+}
+
+static void
+pet_request_complete(void *user, h2_gizclaw_operation_t *operation,
+                     const h2_gizclaw_operation_result_t *operation_result) {
+  (void)operation;
+  h2_gizclaw_pet_request_t *request = user;
+  h2_gizclaw_operation_result_t result = *operation_result;
+  if (result.result != H2_PAL_OK)
+    pet_request_result_clear(request);
+  atomic_store_explicit(&request->terminal, true, memory_order_release);
+  request->completion(request->completion_user, request, &result,
+                      result.result == H2_PAL_OK ? &request->result : NULL);
+}
+
+static h2_gizclaw_pet_request_t *
+pet_request_allocate(h2_gizclaw_service_t *service,
+                     h2_gizclaw_pet_request_kind_t kind,
+                     h2_gizclaw_pet_completion_fn completion, void *user) {
+  if (service == NULL || completion == NULL)
+    return NULL;
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  h2_gizclaw_pet_request_t *request =
+      h2_pal_mem_alloc(allocator, sizeof(*request));
+  if (request == NULL)
+    return NULL;
+  memset(request, 0, sizeof(*request));
+  request->allocator = allocator;
+  request->kind = kind;
+  request->result.kind = kind;
+  request->completion = completion;
+  request->completion_user = user;
+  return request;
+}
+
+static void pet_request_free_unsubmitted(h2_gizclaw_pet_request_t *request) {
+  if (request == NULL)
+    return;
+  for (size_t index = 0u; index < 6u; ++index)
+    h2_pal_mem_free(request->allocator, request->text[index]);
+  h2_pal_mem_free(request->allocator, request);
+}
+
+static h2_pal_result_t
+pet_request_submit(h2_gizclaw_service_t *service, uint64_t identity,
+                   h2_gizclaw_pet_request_t *request,
+                   h2_gizclaw_pet_request_t **out_request) {
+  const h2_pal_result_t rc = h2_gizclaw_service_submit(
+      service, identity, pet_request_run, pet_request_complete, request,
+      &request->operation);
+  if (rc != H2_PAL_OK) {
+    pet_request_free_unsubmitted(request);
+    return rc;
+  }
+  *out_request = request;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t pet_request_copy_at(h2_gizclaw_pet_request_t *request,
+                                           size_t index,
+                                           h2_gizclaw_str_t value) {
+  request->text[index] = pet_request_copy(request->allocator, value);
+  return request->text[index] == NULL ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK;
+}
+
+#define PET_ASYNC_VALIDATE(service, completion, out_request)                   \
+  do {                                                                         \
+    if ((out_request) != NULL)                                                 \
+      *(out_request) = NULL;                                                   \
+    if ((service) == NULL || (completion) == NULL || (out_request) == NULL)    \
+      return H2_PAL_ERR_INVALID_ARG;                                           \
+  } while (0)
+
+h2_pal_result_t h2_gizclaw_service_pet_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  PET_ASYNC_VALIDATE(service, completion, out_request);
+  if (limit == 0u || (cursor.len > 0u && cursor.data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_pet_request_t *request =
+      pet_request_allocate(service, H2_GIZCLAW_PET_LIST, completion, user);
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  request->limit = limit;
+  if (pet_request_copy_at(request, 0u, cursor) != H2_PAL_OK) {
+    pet_request_free_unsubmitted(request);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  return pet_request_submit(service, identity, request, out_request);
+}
+
+static h2_pal_result_t pet_single_name_submit(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_request_kind_t kind, h2_gizclaw_pet_completion_fn completion,
+    void *user, h2_gizclaw_pet_request_t **out_request) {
+  PET_ASYNC_VALIDATE(service, completion, out_request);
+  if (pet_name.data == NULL || pet_name.len == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_pet_request_t *request =
+      pet_request_allocate(service, kind, completion, user);
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  if (pet_request_copy_at(request, 0u, pet_name) != H2_PAL_OK) {
+    pet_request_free_unsubmitted(request);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  return pet_request_submit(service, identity, request, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_pet_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  return pet_single_name_submit(service, identity, pet_name, H2_GIZCLAW_PET_GET,
+                                completion, user, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_pet_delete_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  return pet_single_name_submit(service, identity, pet_name,
+                                H2_GIZCLAW_PET_DELETE, completion, user,
+                                out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_pet_actions_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  return pet_single_name_submit(service, identity, pet_name,
+                                H2_GIZCLAW_PET_ACTIONS_GET, completion, user,
+                                out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_pet_adopt_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_pet_adopt_options_t *options,
+    h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  PET_ASYNC_VALIDATE(service, completion, out_request);
+  if (options == NULL || options->name.data == NULL || options->name.len == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_pet_request_t *request =
+      pet_request_allocate(service, H2_GIZCLAW_PET_ADOPT, completion, user);
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  if (pet_request_copy_at(request, 0u, options->name) != H2_PAL_OK ||
+      pet_request_copy_at(request, 1u, options->display_name) != H2_PAL_OK) {
+    pet_request_free_unsubmitted(request);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  request->adopt.name = pet_request_span(request->text[0]);
+  request->adopt.display_name = pet_request_span(request->text[1]);
+  return pet_request_submit(service, identity, request, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_pet_drive_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_pet_drive_options_t *options,
+    h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  PET_ASYNC_VALIDATE(service, completion, out_request);
+  if (options == NULL || options->pet_name.data == NULL ||
+      options->pet_name.len == 0u ||
+      (options->game_result != NULL &&
+       !valid_game_result(options->game_result)))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_pet_request_t *request =
+      pet_request_allocate(service, H2_GIZCLAW_PET_DRIVE, completion, user);
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  const h2_gizclaw_pet_game_result_t *game = options->game_result;
+  const h2_gizclaw_str_t values[6] = {
+      options->pet_name,
+      options->idempotency_key,
+      game != NULL ? game->game_name : (h2_gizclaw_str_t){0},
+      game != NULL ? game->difficulty : (h2_gizclaw_str_t){0},
+      game != NULL ? game->outcome : (h2_gizclaw_str_t){0},
+      game != NULL ? game->occurred_at : (h2_gizclaw_str_t){0},
+  };
+  for (size_t index = 0u; index < 6u; ++index) {
+    if (pet_request_copy_at(request, index, values[index]) != H2_PAL_OK) {
+      pet_request_free_unsubmitted(request);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+  }
+  request->drive = *options;
+  request->drive.pet_name = pet_request_span(request->text[0]);
+  request->drive.idempotency_key = pet_request_span(request->text[1]);
+  if (game != NULL) {
+    request->game = *game;
+    request->game.game_name = pet_request_span(request->text[2]);
+    request->game.difficulty = pet_request_span(request->text[3]);
+    request->game.outcome = pet_request_span(request->text[4]);
+    request->game.occurred_at = pet_request_span(request->text[5]);
+    request->drive.game_result = &request->game;
+  }
+  return pet_request_submit(service, identity, request, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_pet_pixa_download_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_pixa_write_fn write, void *write_user,
+    h2_gizclaw_pet_completion_fn completion, void *user,
+    h2_gizclaw_pet_request_t **out_request) {
+  PET_ASYNC_VALIDATE(service, completion, out_request);
+  if (write == NULL || pet_name.data == NULL || pet_name.len == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_pet_request_t *request = pet_request_allocate(
+      service, H2_GIZCLAW_PET_PIXA_DOWNLOAD, completion, user);
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  request->write = write;
+  request->write_user = write_user;
+  if (pet_request_copy_at(request, 0u, pet_name) != H2_PAL_OK) {
+    pet_request_free_unsubmitted(request);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  return pet_request_submit(service, identity, request, out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_pet_request_cancel(h2_gizclaw_pet_request_t *request) {
+  if (request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  return h2_gizclaw_operation_cancel(request->operation);
+}
+
+void h2_gizclaw_pet_request_release(h2_gizclaw_pet_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire))
+    return;
+  h2_gizclaw_operation_release(request->operation);
+  pet_request_result_clear(request);
+  pet_request_free_unsubmitted(request);
+}
+
+#undef PET_ASYNC_VALIDATE

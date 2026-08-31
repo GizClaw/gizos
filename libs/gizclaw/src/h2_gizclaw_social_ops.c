@@ -1,4 +1,6 @@
+#define H2_GIZCLAW_INTERNAL_SYNC_API
 #include "h2_gizclaw_social.h"
+#undef H2_GIZCLAW_INTERNAL_SYNC_API
 
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_rpc.h"
@@ -1335,13 +1337,14 @@ static int message_audio_event(void *user,
   if (event->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE) {
     if (context->metadata_received)
       return context->result = H2_PAL_ERR_FORMAT;
-    gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse_init_zero;
+    gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse decoded =
+        gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(event->result_payload.data,
                                                  event->result_payload.len);
-    if (!pb_decode(&stream,
-                   gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse_fields,
-                   &decoded) ||
+    if (!pb_decode(
+            &stream,
+            gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
+            &decoded) ||
         decoded.size_bytes <= 0 || decoded.friend_group_name[0] == '\0' ||
         decoded.history_name[0] == '\0' ||
         strncmp(decoded.mime_type, "audio/", 6u) != 0 ||
@@ -1386,7 +1389,7 @@ static int message_audio_event(void *user,
   return 0;
 }
 
-int h2_gizclaw_client_friend_group_message_audio_get(
+int h2_gizclaw_client_friend_group_message_audio_download(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t friend_group_name,
     h2_gizclaw_str_t history_id,
     h2_gizclaw_friend_group_message_audio_write_fn write, void *user,
@@ -1400,8 +1403,8 @@ int h2_gizclaw_client_friend_group_message_audio_get(
       h2_gizclaw_client_allocator_internal(client);
   if (allocator == NULL)
     return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_FriendGroupMessageAudioGetRequest request =
-      gizclaw_rpc_v1_FriendGroupMessageAudioGetRequest_init_zero;
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest request =
+      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_init_zero;
   if (!copy_fixed_text(request.friend_group_name,
                        sizeof(request.friend_group_name), friend_group_name) ||
       !copy_fixed_text(request.history_name, sizeof(request.history_name),
@@ -1411,7 +1414,7 @@ int h2_gizclaw_client_friend_group_message_audio_get(
   uint8_t *payload = NULL;
   size_t payload_len = 0u;
   int rc = encode_message(
-      allocator, gizclaw_rpc_v1_FriendGroupMessageAudioGetRequest_fields,
+      allocator, gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_fields,
       &request, &payload, &payload_len);
   message_audio_context_t context = {
       .client = client,
@@ -1422,7 +1425,7 @@ int h2_gizclaw_client_friend_group_message_audio_get(
   };
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_client_rpc_call_stream(
-        client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET,
+        client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD,
         (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
         message_audio_event, &context);
   }

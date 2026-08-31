@@ -1,4 +1,6 @@
+#define H2_GIZCLAW_INTERNAL_SYNC_API
 #include "h2_gizclaw_social.h"
+#undef H2_GIZCLAW_INTERNAL_SYNC_API
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_rpc.h"
 
@@ -470,11 +472,11 @@ int h2_gizclaw_client_contact_create(h2_gizclaw_client_t *client,
     set_bounded_text_decoder(&decoded.value.phone_number, &decoded_text[2],
                              allocator, &out_contact->phone_number,
                              H2_GIZCLAW_CONTACT_PHONE_NUMBER_MAX_BYTES);
-    set_bounded_text_decoder(&decoded.value.created_at, &decoded_text[3], allocator,
-                             &out_contact->created_at,
+    set_bounded_text_decoder(&decoded.value.created_at, &decoded_text[3],
+                             allocator, &out_contact->created_at,
                              H2_GIZCLAW_CONTACT_TIMESTAMP_MAX_BYTES);
-    set_bounded_text_decoder(&decoded.value.updated_at, &decoded_text[4], allocator,
-                             &out_contact->updated_at,
+    set_bounded_text_decoder(&decoded.value.updated_at, &decoded_text[4],
+                             allocator, &out_contact->updated_at,
                              H2_GIZCLAW_CONTACT_TIMESTAMP_MAX_BYTES);
     pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
                                                  response.result_payload_len);

@@ -16,6 +16,7 @@ typedef int32_t h2_gizclaw_rpc_method_t;
 
 enum {
   H2_GIZCLAW_RPC_ALL_PING = 1,
+  H2_GIZCLAW_RPC_ALL_SPEED_TEST_RUN = 2,
   H2_GIZCLAW_RPC_CLIENT_INFO_GET = 3,
   H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET = 4,
   H2_GIZCLAW_RPC_SERVER_INFO_GET = 5,
@@ -31,7 +32,7 @@ enum {
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE = 28,
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_HISTORY_LIST = 29,
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_HISTORY_GET = 30,
-  H2_GIZCLAW_RPC_SERVER_WORKSPACE_HISTORY_AUDIO_GET = 31,
+  H2_GIZCLAW_RPC_SERVER_WORKSPACE_HISTORY_AUDIO_DOWNLOAD = 31,
   H2_GIZCLAW_RPC_SERVER_WORKFLOW_LIST = 32,
   H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET = 33,
   H2_GIZCLAW_RPC_SERVER_CONTACT_LIST = 38,
@@ -78,7 +79,7 @@ enum {
   H2_GIZCLAW_RPC_SERVER_SPEECH_SYNTHESIZE = 92,
   H2_GIZCLAW_RPC_SERVER_PEER_DELETE = 93,
   H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT = 94,
-  H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET = 95,
+  H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD = 95,
 };
 
 enum {
@@ -148,10 +149,12 @@ typedef int (*h2_gizclaw_rpc_provider_fn)(
     h2_gizclaw_rpc_provider_response_t *out_response);
 
 /** Call any unary GizClaw RPC with an already protobuf-encoded payload. */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_rpc_call(h2_gizclaw_client_t *client,
                                h2_gizclaw_rpc_method_t method,
                                h2_gizclaw_rpc_bytes_t params_payload,
                                h2_gizclaw_rpc_response_t *out_response);
+#endif
 
 /**
  * Start one request-owned unary RPC on the connected client's Peer service.
@@ -166,6 +169,20 @@ int h2_gizclaw_client_rpc_request_start(h2_gizclaw_client_t *client,
                                         h2_gizclaw_rpc_bytes_t params_payload,
                                         uint32_t timeout_ms,
                                         h2_gizclaw_rpc_request_t **out_request);
+
+/** Start one mixed-frame RPC advanced exclusively by client poll. */
+int h2_gizclaw_client_rpc_request_start_stream(
+    h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_rpc_bytes_t params_payload, uint32_t timeout_ms,
+    h2_gizclaw_rpc_stream_fn on_event, void *user,
+    h2_gizclaw_rpc_request_t **out_request);
+
+/** Copy and queue one binary request frame without polling. */
+int h2_gizclaw_rpc_request_write(h2_gizclaw_rpc_request_t *request,
+                                 const uint8_t *data, size_t len);
+
+/** Queue request EOS without polling. */
+int h2_gizclaw_rpc_request_finish_write(h2_gizclaw_rpc_request_t *request);
 
 /**
  * Inspect one request without polling.
@@ -189,11 +206,13 @@ void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t *request);
  * The callback receives exactly one RESPONSE, zero or more DATA events, then
  * one EOS event on success. Returning a non-zero value cancels the call.
  */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
                                       h2_gizclaw_rpc_method_t method,
                                       h2_gizclaw_rpc_bytes_t params_payload,
                                       h2_gizclaw_rpc_stream_fn on_event,
                                       void *user);
+#endif
 
 void h2_gizclaw_rpc_response_deinit(h2_gizclaw_client_t *client,
                                     h2_gizclaw_rpc_response_t *response);

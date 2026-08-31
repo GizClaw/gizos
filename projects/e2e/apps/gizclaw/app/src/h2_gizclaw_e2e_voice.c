@@ -102,58 +102,72 @@ static int decode_opus_packet(OpusDecoder *decoder, const uint8_t *packet,
   return H2_PAL_OK;
 }
 
-static int write_pcm(h2_gizclaw_e2e_fixture_t *fixture,
-                     h2_gizclaw_conversation_t *conversation,
-                     size_t *out_frames) {
-  const h2_audio_pcm_format_t format = {
-      .sample_rate_hz = H2_GIZCLAW_E2E_PCM_RATE_HZ,
-      .frame_samples_per_channel = H2_GIZCLAW_E2E_PCM_FRAME_SAMPLES,
-      .channels = 1u,
-      .sample_format = H2_AUDIO_SAMPLE_S16LE,
-  };
-  int rc = h2_gizclaw_conversation_configure_pcm(conversation, &format, 0);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_configure_pcm",
-                          "voice-uplink", rc);
-  if (rc != H2_PAL_OK)
-    return rc;
+static int write_opus(h2_gizclaw_e2e_fixture_t *fixture,
+                      h2_gizclaw_conversation_t *conversation,
+                      size_t *out_frames) {
+  const int encoder_size = opus_encoder_get_size(1);
+  if (encoder_size <= 0)
+    return H2_PAL_ERR_FORMAT;
+  OpusEncoder *encoder =
+      h2_pal_mem_alloc(fixture->allocator, (size_t)encoder_size);
+  if (encoder == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  if (opus_encoder_init(encoder, H2_GIZCLAW_E2E_PCM_RATE_HZ, 1,
+                        OPUS_APPLICATION_VOIP) != OPUS_OK ||
+      opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(0)) != OPUS_OK) {
+    h2_pal_mem_free(fixture->allocator, encoder);
+    return H2_PAL_ERR_FORMAT;
+  }
   const size_t frame_bytes = H2_GIZCLAW_E2E_PCM_FRAME_SAMPLES * sizeof(int16_t);
-  uint8_t frame_data[H2_GIZCLAW_E2E_PCM_FRAME_SAMPLES * sizeof(int16_t)];
+  opus_int16 pcm[H2_GIZCLAW_E2E_PCM_FRAME_SAMPLES];
+  uint8_t opus[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
   size_t offset = 0u;
+  int rc = H2_PAL_OK;
   while (offset < fixture->pcm_len) {
     const size_t remaining = fixture->pcm_len - offset;
     const size_t bytes = remaining < frame_bytes ? remaining : frame_bytes;
-    memcpy(frame_data, fixture->pcm + offset, bytes);
-    h2_audio_frame_t frame =
-        h2_audio_frame_for_buffer(frame_data, sizeof(frame_data), format);
-    frame.bytes = bytes;
-    frame.samples_per_channel = (uint16_t)(bytes / sizeof(int16_t));
+    memset(pcm, 0, sizeof(pcm));
+    memcpy(pcm, fixture->pcm + offset, bytes);
+    const int opus_len =
+        opus_encode(encoder, pcm, H2_GIZCLAW_E2E_PCM_FRAME_SAMPLES, opus,
+                    (opus_int32)sizeof(opus));
+    if (opus_len <= 0) {
+      rc = H2_PAL_ERR_FORMAT;
+      break;
+    }
     do {
-      rc = h2_gizclaw_conversation_write_pcm(conversation, &frame);
+      rc = h2_gizclaw_conversation_write_opus(conversation, opus,
+                                              (size_t)opus_len, 0u);
       if (rc == H2_PAL_ERR_WOULD_BLOCK) {
         if (!h2_gizclaw_e2e_fixture_has_time(fixture, 1000u)) {
-          h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_write_pcm",
+          h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_write_opus",
                                   "voice-uplink", H2_PAL_ERR_TIMEOUT);
-          return H2_PAL_ERR_TIMEOUT;
+          rc = H2_PAL_ERR_TIMEOUT;
+          break;
         }
         (void)h2_pal_time_sleep_ms(fixture->time, 10u);
       }
     } while (rc == H2_PAL_ERR_WOULD_BLOCK);
     if (rc != H2_PAL_OK) {
-      h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_write_pcm",
+      h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_write_opus",
                               "voice-uplink", rc);
-      return rc;
+      break;
     }
     offset += bytes;
     ++*out_frames;
   }
-  h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_write_pcm", "voice-uplink",
-                          H2_PAL_OK);
-  do {
-    rc = h2_gizclaw_conversation_commit(conversation, 0u);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK)
-      (void)h2_pal_time_sleep_ms(fixture->time, 10u);
-  } while (rc == H2_PAL_ERR_WOULD_BLOCK &&
-           h2_gizclaw_e2e_fixture_has_time(fixture, 1000u));
+  memset(encoder, 0, (size_t)encoder_size);
+  h2_pal_mem_free(fixture->allocator, encoder);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_write_opus", "voice-uplink",
+                          rc);
+  if (rc == H2_PAL_OK) {
+    do {
+      rc = h2_gizclaw_conversation_commit(conversation, 0u);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK)
+        (void)h2_pal_time_sleep_ms(fixture->time, 10u);
+    } while (rc == H2_PAL_ERR_WOULD_BLOCK &&
+             h2_gizclaw_e2e_fixture_has_time(fixture, 1000u));
+  }
   h2_gizclaw_e2e_evidence("h2_gizclaw_conversation_commit", "voice-uplink", rc);
   return rc;
 }
@@ -447,10 +461,10 @@ static int verify_history(h2_gizclaw_e2e_fixture_t *fixture,
   }
   byte_buffer_t audio = {.allocator = fixture->allocator};
   h2_gizclaw_workspace_history_audio_info_t info = {0};
-  rc = h2_gizclaw_client_workspace_history_audio_get(
+  rc = h2_gizclaw_client_workspace_history_audio_download(
       client, h2_gizclaw_e2e_str(fixture->workspace_name),
       h2_gizclaw_e2e_str(history_id), append_audio, &audio, &info);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_client_workspace_history_audio_get",
+  h2_gizclaw_e2e_evidence("h2_gizclaw_client_workspace_history_audio_download",
                           "history", rc);
   if (rc == H2_PAL_OK &&
       (audio.len == 0u || info.received_bytes != audio.len ||
@@ -542,7 +556,7 @@ int h2_gizclaw_e2e_run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   size_t downlink_packets = 0u;
   uint64_t downlink_samples = 0u;
   if (rc == H2_PAL_OK)
-    rc = write_pcm(fixture, conversation, &uplink_frames);
+    rc = write_opus(fixture, conversation, &uplink_frames);
   if (rc == H2_PAL_OK)
     rc = collect_reply(fixture, conversation, generation, &downlink_packets,
                        &downlink_samples);

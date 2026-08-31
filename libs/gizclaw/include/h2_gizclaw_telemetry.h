@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_TELEMETRY_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
@@ -93,6 +94,21 @@ typedef struct h2_gizclaw_telemetry_frame {
   size_t observation_count;
 } h2_gizclaw_telemetry_frame_t;
 
+typedef struct h2_gizclaw_telemetry_request h2_gizclaw_telemetry_request_t;
+typedef void (*h2_gizclaw_telemetry_completion_fn)(
+    void *user, h2_gizclaw_telemetry_request_t *request,
+    const h2_gizclaw_operation_result_t *result);
+
+h2_pal_result_t h2_gizclaw_service_telemetry_send_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_telemetry_frame_t *frame,
+    h2_gizclaw_telemetry_completion_fn completion, void *user,
+    h2_gizclaw_telemetry_request_t **out_request);
+h2_pal_result_t
+h2_gizclaw_telemetry_request_cancel(h2_gizclaw_telemetry_request_t *request);
+void h2_gizclaw_telemetry_request_release(
+    h2_gizclaw_telemetry_request_t *request);
+
 /**
  * Encode and submit one latest-state frame as GizClaw direct packet 0x40.
  *
@@ -100,9 +116,10 @@ typedef struct h2_gizclaw_telemetry_frame {
  * queues or retries a frame; the product scheduler owns coalescing and retry
  * policy.
  */
-int h2_gizclaw_client_telemetry_send(
-    h2_gizclaw_client_t *client,
-    const h2_gizclaw_telemetry_frame_t *frame);
+#if defined(H2_GIZCLAW_TESTING)
+int h2_gizclaw_client_telemetry_send(h2_gizclaw_client_t *client,
+                                     const h2_gizclaw_telemetry_frame_t *frame);
+#endif
 
 #ifdef __cplusplus
 }

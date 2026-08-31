@@ -1,8 +1,20 @@
 #include "h2_gizclaw_profile.h"
+#include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_profile_internal.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_service_internal.h"
 
+#include <stdatomic.h>
 #include <string.h>
+
+struct h2_gizclaw_profile_request {
+  h2_gizclaw_async_rpc_t *rpc;
+  const h2_pal_mem_api_t *allocator;
+  h2_gizclaw_profile_completion_fn completion;
+  void *completion_user;
+  h2_gizclaw_profile_t profile;
+  atomic_bool terminal;
+};
 
 static int read_varint(const uint8_t *data, size_t len, size_t *offset,
                        uint64_t *out) {
@@ -122,10 +134,9 @@ static int decode_device_info(const uint8_t *data, size_t len,
   return H2_PAL_OK;
 }
 
-static int encode_profile_text_request(h2_gizclaw_str_t text,
-                                       size_t max_bytes, uint8_t field_key,
-                                       uint8_t *out, size_t capacity,
-                                       size_t *out_len) {
+static int encode_profile_text_request(h2_gizclaw_str_t text, size_t max_bytes,
+                                       uint8_t field_key, uint8_t *out,
+                                       size_t capacity, size_t *out_len) {
   if (out == NULL || out_len == NULL || text.data == NULL || text.len == 0u ||
       text.len > max_bytes) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -145,11 +156,10 @@ static int encode_profile_text_request(h2_gizclaw_str_t text,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_profile_encode_name_request(h2_gizclaw_str_t name,
-                                           uint8_t *out, size_t capacity,
-                                           size_t *out_len) {
-  return encode_profile_text_request(
-      name, H2_GIZCLAW_PROFILE_NAME_MAX_BYTES, 0x0au, out, capacity, out_len);
+int h2_gizclaw_profile_encode_name_request(h2_gizclaw_str_t name, uint8_t *out,
+                                           size_t capacity, size_t *out_len) {
+  return encode_profile_text_request(name, H2_GIZCLAW_PROFILE_NAME_MAX_BYTES,
+                                     0x0au, out, capacity, out_len);
 }
 
 int h2_gizclaw_profile_encode_emoji_request(h2_gizclaw_str_t emoji,
@@ -184,75 +194,181 @@ int h2_gizclaw_profile_decode_info_response(const uint8_t *data, size_t len,
   return H2_PAL_ERR_FORMAT;
 }
 
-static int response_status(const h2_gizclaw_rpc_response_t *response) {
-  return response != NULL && !response->has_error ? H2_PAL_OK : H2_PAL_ERR_IO;
-}
-
-int h2_gizclaw_client_profile_get(h2_gizclaw_client_t *client,
-                                  h2_gizclaw_profile_t *out_profile) {
+static int client_profile_call(h2_gizclaw_client_t *client,
+                               h2_gizclaw_rpc_method_t method,
+                               h2_gizclaw_rpc_bytes_t payload,
+                               h2_gizclaw_profile_t *out_profile) {
   if (client == NULL || out_profile == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_profile, 0, sizeof(*out_profile));
   h2_gizclaw_rpc_response_t response = {0};
-  int rc = h2_gizclaw_client_rpc_call(client, H2_GIZCLAW_RPC_SERVER_INFO_GET,
-                                      (h2_gizclaw_rpc_bytes_t){0}, &response);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK)
+  int rc = h2_gizclaw_client_rpc_call(client, method, payload, &response);
+  if (rc == H2_PAL_OK && response.has_error)
+    rc = H2_PAL_ERR_IO;
+  if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_profile_decode_info_response(
         response.result_payload, response.result_payload_len, out_profile);
+  }
   h2_gizclaw_rpc_response_deinit(client, &response);
   return rc;
+}
+
+int h2_gizclaw_client_profile_get(h2_gizclaw_client_t *client,
+                                  h2_gizclaw_profile_t *out_profile) {
+  return client_profile_call(client, H2_GIZCLAW_RPC_SERVER_INFO_GET,
+                             (h2_gizclaw_rpc_bytes_t){0}, out_profile);
 }
 
 int h2_gizclaw_client_profile_put_name(h2_gizclaw_client_t *client,
                                        h2_gizclaw_str_t name,
                                        h2_gizclaw_profile_t *out_profile) {
-  if (client == NULL || out_profile == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_profile, 0, sizeof(*out_profile));
   uint8_t payload[H2_GIZCLAW_PROFILE_NAME_MAX_BYTES + 8u];
   size_t payload_len = 0u;
-  int rc = h2_gizclaw_profile_encode_name_request(
+  const int rc = h2_gizclaw_profile_encode_name_request(
       name, payload, sizeof(payload), &payload_len);
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        &response);
+  if (rc != H2_PAL_OK) {
+    if (out_profile != NULL)
+      memset(out_profile, 0, sizeof(*out_profile));
+    return rc;
   }
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_profile_decode_info_response(
-        response.result_payload, response.result_payload_len, out_profile);
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
+  return client_profile_call(
+      client, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
+      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
+      out_profile);
 }
 
 int h2_gizclaw_client_profile_put_emoji(h2_gizclaw_client_t *client,
                                         h2_gizclaw_str_t emoji,
                                         h2_gizclaw_profile_t *out_profile) {
-  if (client == NULL || out_profile == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_profile, 0, sizeof(*out_profile));
   uint8_t payload[H2_GIZCLAW_PROFILE_EMOJI_MAX_BYTES + 8u];
   size_t payload_len = 0u;
-  int rc = h2_gizclaw_profile_encode_emoji_request(
+  const int rc = h2_gizclaw_profile_encode_emoji_request(
       emoji, payload, sizeof(payload), &payload_len);
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        &response);
+  if (rc != H2_PAL_OK) {
+    if (out_profile != NULL)
+      memset(out_profile, 0, sizeof(*out_profile));
+    return rc;
   }
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_profile_decode_info_response(
-        response.result_payload, response.result_payload_len, out_profile);
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
+  return client_profile_call(
+      client, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
+      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
+      out_profile);
+}
+
+static void
+profile_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc,
+                     const h2_gizclaw_operation_result_t *operation_result,
+                     const h2_gizclaw_rpc_response_t *response) {
+  (void)rpc;
+  h2_gizclaw_profile_request_t *request = user;
+  h2_gizclaw_operation_result_t result = *operation_result;
+  if (result.result == H2_PAL_OK) {
+    if (response == NULL || response->has_error) {
+      result.result = H2_PAL_ERR_IO;
+    } else {
+      result.result = (h2_pal_result_t)h2_gizclaw_profile_decode_info_response(
+          response->result_payload, response->result_payload_len,
+          &request->profile);
+    }
+  }
+  atomic_store_explicit(&request->terminal, true, memory_order_release);
+  request->completion(request->completion_user, request, &result,
+                      result.result == H2_PAL_OK ? &request->profile : NULL);
+}
+
+static h2_pal_result_t
+submit_profile_request(h2_gizclaw_service_t *service, uint64_t identity,
+                       h2_gizclaw_rpc_method_t method,
+                       h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
+                       h2_gizclaw_profile_completion_fn completion, void *user,
+                       h2_gizclaw_profile_request_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || timeout_ms == 0u || completion == NULL ||
+      out_request == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  h2_gizclaw_profile_request_t *request =
+      h2_pal_mem_alloc(allocator, sizeof(*request));
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(request, 0, sizeof(*request));
+  request->allocator = allocator;
+  request->completion = completion;
+  request->completion_user = user;
+  const h2_pal_result_t rc = h2_gizclaw_service_rpc_call_async(
+      service, identity, method, payload, timeout_ms, profile_rpc_complete,
+      request, &request->rpc);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(allocator, request);
+    return rc;
+  }
+  *out_request = request;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_service_profile_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
+    h2_gizclaw_profile_completion_fn completion, void *user,
+    h2_gizclaw_profile_request_t **out_request) {
+  return submit_profile_request(
+      service, identity, H2_GIZCLAW_RPC_SERVER_INFO_GET,
+      (h2_gizclaw_rpc_bytes_t){0}, timeout_ms, completion, user, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_profile_put_name_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_profile_completion_fn completion,
+    void *user, h2_gizclaw_profile_request_t **out_request) {
+  uint8_t payload[H2_GIZCLAW_PROFILE_NAME_MAX_BYTES + 8u];
+  size_t payload_len = 0u;
+  const h2_pal_result_t rc =
+      (h2_pal_result_t)h2_gizclaw_profile_encode_name_request(
+          name, payload, sizeof(payload), &payload_len);
+  if (rc != H2_PAL_OK) {
+    if (out_request != NULL)
+      *out_request = NULL;
+    return rc;
+  }
+  return submit_profile_request(
+      service, identity, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
+      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len}, timeout_ms,
+      completion, user, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_service_profile_put_emoji_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t emoji,
+    uint32_t timeout_ms, h2_gizclaw_profile_completion_fn completion,
+    void *user, h2_gizclaw_profile_request_t **out_request) {
+  uint8_t payload[H2_GIZCLAW_PROFILE_EMOJI_MAX_BYTES + 8u];
+  size_t payload_len = 0u;
+  const h2_pal_result_t rc =
+      (h2_pal_result_t)h2_gizclaw_profile_encode_emoji_request(
+          emoji, payload, sizeof(payload), &payload_len);
+  if (rc != H2_PAL_OK) {
+    if (out_request != NULL)
+      *out_request = NULL;
+    return rc;
+  }
+  return submit_profile_request(
+      service, identity, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
+      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len}, timeout_ms,
+      completion, user, out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_profile_request_cancel(h2_gizclaw_profile_request_t *request) {
+  if (request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  return h2_gizclaw_async_rpc_cancel(request->rpc);
+}
+
+void h2_gizclaw_profile_request_release(h2_gizclaw_profile_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire)) {
+    return;
+  }
+  h2_gizclaw_async_rpc_release(request->rpc);
+  h2_pal_mem_free(request->allocator, request);
 }

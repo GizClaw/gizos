@@ -30,7 +30,7 @@ flowchart LR
 
 每个并发 RPC 或 HTTP round trip 再增加一条临时 service DataChannel。
 H2 嵌入式 C Client 的双向测速同样在一条 request-owned Peer RPC
-DataChannel 上执行，并在调用返回前关闭该 channel。1 MiB 双向测速使用
+DataChannel 上执行，并在异步请求完成前关闭该 channel。1 MiB 双向测速使用
 独立于连接超时的有界写入超时，避免低吞吐链路被连接建立期限提前终止。
 
 H2Peer Desktop 性能 gate 按这个 App 拓扑在同一 PeerConnection 上并发运行三条
@@ -52,6 +52,24 @@ Agent Event Stream 中的 BOS/EOS 是按 `stream_id` 划分的业务边界：
   connection 及其四条必需 transport，不能只重新建立 Event 订阅。
 
 RPC stream 的 EOS 是 request-scoped RPC framing 终止标记，与 Agent Event Stream 中的 `type=eos` 不是同一个事件。
+
+## GizClaw service task ownership
+
+应用只通过 `h2_gizclaw_service` 提交 RPC、speech 和 conversation 请求，不直接调用会自行
+轮询的阻塞 Client helper。Service 固定创建两个系统 task：
+
+- `$gizclaw/net` 独占 C SDK Client 的 create、connect、request start、poll、cancel、close
+  和 deinit。所有 unary request handle、mixed-frame stream、speech upload 与 conversation
+  都由这个 task 推进；其他 task 只能提交、写入有界输入队列或请求取消。
+- `$gizclaw/resp_dispatch` 消费有界 response record，在不持有 service mutex 的情况下调用
+  application callback。Unary 请求恰好产生一个 terminal callback；download、speech 和
+  conversation 可以先按 wire 顺序多次调用 progress/event callback，再产生一个 terminal
+  callback。
+
+提交函数在返回前验证并复制 borrowed input。Response 结构由 request handle 持有，只在
+callback 期间借给调用方；terminal callback 返回后，调用方释放 handle。Service stop 会先
+让所有已接收请求得到 finished、canceled 或 service-closed 终态并完成 callback dispatch，
+再 join 两个 task。这样同一 Client 不会同时被后台 poll 与应用 task 的同步 RPC 轮询。
 
 ## DataChannel 终态 ownership
 

@@ -15,11 +15,14 @@ typedef struct test_env {
   atomic_uint poll_count;
   atomic_uint event_handler_count;
   atomic_uint event_dispatch_count;
+  atomic_uint event_callback_count;
   atomic_uint close_count;
   atomic_uint deinit_count;
   atomic_uint cleanup_count;
   atomic_uint run_count;
   atomic_uint run_exit_count;
+  atomic_uint async_start_count;
+  atomic_uint async_poll_count;
   atomic_uint prepare_count;
   atomic_uint progress_call_count;
   atomic_uint progress_callback_count;
@@ -27,6 +30,7 @@ typedef struct test_env {
   atomic_bool run_gate;
   atomic_bool connect_gate;
   atomic_bool event_dispatch_gate;
+  atomic_bool event_emitted;
   atomic_bool original_cancel;
   h2_pal_result_t init_result;
   h2_pal_result_t connect_result;
@@ -35,14 +39,17 @@ typedef struct test_env {
   h2_pal_result_t prepare_result;
   h2_pal_result_t progress_result;
   h2_pal_result_t progress_call_result;
+  h2_gizclaw_client_event_fn installed_event_handler;
+  void *installed_event_user;
+  bool release_in_completion;
   h2_gizclaw_service_t *service;
   h2_gizclaw_operation_t *cancel_from_progress;
   uint64_t completed[8];
   h2_gizclaw_operation_terminal_kind_t terminal_kinds[8];
   h2_pal_result_t completion_results[8];
-  size_t completion_count;
-  pthread_t dispatch_thread;
-  unsigned terminal_count;
+  atomic_size_t completion_count;
+  pthread_t app_thread;
+  atomic_uint terminal_count;
   h2_pal_result_t terminal_result;
 } test_env_t;
 
@@ -81,7 +88,9 @@ fake_client_set_event_handler(h2_gizclaw_client_t *client,
                               void *event_user) {
   assert(client == (h2_gizclaw_client_t *)s_env);
   assert(on_event != NULL);
-  assert(event_user == s_env);
+  assert(event_user != NULL);
+  s_env->installed_event_handler = on_event;
+  s_env->installed_event_user = event_user;
   atomic_fetch_add_explicit(&s_env->event_handler_count, 1u,
                             memory_order_relaxed);
   return H2_PAL_OK;
@@ -94,6 +103,17 @@ static h2_pal_result_t fake_client_dispatch_event(h2_gizclaw_client_t *client) {
   while (!atomic_load_explicit(&s_env->event_dispatch_gate,
                                memory_order_acquire)) {
     sched_yield();
+  }
+  if (s_env->installed_event_handler != NULL &&
+      !atomic_exchange_explicit(&s_env->event_emitted, true,
+                                memory_order_acq_rel)) {
+    s_env->installed_event_handler(
+        s_env->installed_event_user,
+        &(h2_gizclaw_client_event_t){
+            .kind = H2_GIZCLAW_CLIENT_EVENT_WORKSPACE_HISTORY_UPDATED,
+            .workspace_name = {.data = "workspace", .len = 9u},
+            .last_updated_at_unix_ms = 123u,
+        });
   }
   return s_env->event_dispatch_result;
 }
@@ -112,7 +132,7 @@ static void fake_client_deinit(h2_gizclaw_client_t *client) {
 static void cleanup_client(void *user, h2_gizclaw_client_t *client) {
   test_env_t *env = user;
   assert(client == (h2_gizclaw_client_t *)env);
-  assert(!pthread_equal(pthread_self(), env->dispatch_thread));
+  assert(!pthread_equal(pthread_self(), env->app_thread));
   assert(atomic_load_explicit(&env->close_count, memory_order_acquire) == 0u);
   atomic_fetch_add_explicit(&env->cleanup_count, 1u, memory_order_release);
 }
@@ -133,8 +153,15 @@ static bool original_cancel_requested(void *user) {
 }
 
 static void receive_event(void *user, const h2_gizclaw_client_event_t *event) {
-  (void)user;
-  (void)event;
+  test_env_t *env = user;
+  assert(!pthread_equal(pthread_self(), env->app_thread));
+  assert(event != NULL);
+  assert(event->kind == H2_GIZCLAW_CLIENT_EVENT_WORKSPACE_HISTORY_UPDATED);
+  assert(event->workspace_name.len == 9u);
+  assert(memcmp(event->workspace_name.data, "workspace", 9u) == 0);
+  assert(event->last_updated_at_unix_ms == 123u);
+  atomic_fetch_add_explicit(&env->event_callback_count, 1u,
+                            memory_order_release);
 }
 
 static h2_pal_result_t prepare_client(void *user,
@@ -184,6 +211,29 @@ run_io_failure(void *user, h2_gizclaw_client_t *client,
 }
 
 static h2_pal_result_t
+start_pending(void *user, h2_gizclaw_client_t *client,
+              const h2_gizclaw_cancel_token_t *cancel_token) {
+  test_env_t *env = user;
+  assert(client == (h2_gizclaw_client_t *)env);
+  assert(!h2_gizclaw_cancel_requested(cancel_token));
+  atomic_fetch_add_explicit(&env->async_start_count, 1u, memory_order_release);
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static h2_pal_result_t
+poll_pending(void *user, h2_gizclaw_client_t *client,
+             const h2_gizclaw_cancel_token_t *cancel_token) {
+  test_env_t *env = user;
+  assert(client == (h2_gizclaw_client_t *)env);
+  if (h2_gizclaw_cancel_requested(cancel_token))
+    return H2_PAL_ERR_CLOSED;
+  const unsigned count = atomic_fetch_add_explicit(
+                             &env->async_poll_count, 1u, memory_order_release) +
+                         1u;
+  return count >= 3u ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static h2_pal_result_t
 run_transport_closed(void *user, h2_gizclaw_client_t *client,
                      const h2_gizclaw_cancel_token_t *cancel_token) {
   test_env_t *env = user;
@@ -195,7 +245,7 @@ run_transport_closed(void *user, h2_gizclaw_client_t *client,
 
 static h2_pal_result_t record_progress(void *user) {
   test_env_t *env = user;
-  assert(pthread_equal(pthread_self(), env->dispatch_thread));
+  assert(!pthread_equal(pthread_self(), env->app_thread));
   atomic_fetch_add_explicit(&env->progress_callback_count, 1u,
                             memory_order_relaxed);
   if (env->cancel_from_progress != NULL) {
@@ -224,13 +274,17 @@ run_progress_call(void *user, h2_gizclaw_client_t *client,
 static void record_completion(void *user, h2_gizclaw_operation_t *operation,
                               const h2_gizclaw_operation_result_t *result) {
   test_env_t *env = user;
-  assert(pthread_equal(pthread_self(), env->dispatch_thread));
-  assert(env->completion_count < 8u);
-  env->completed[env->completion_count] = result->identity;
-  env->terminal_kinds[env->completion_count] = result->terminal_kind;
-  env->completion_results[env->completion_count] = result->result;
-  ++env->completion_count;
-  h2_gizclaw_operation_release(operation);
+  assert(!pthread_equal(pthread_self(), env->app_thread));
+  const size_t index =
+      atomic_load_explicit(&env->completion_count, memory_order_relaxed);
+  assert(index < 8u);
+  env->completed[index] = result->identity;
+  env->terminal_kinds[index] = result->terminal_kind;
+  env->completion_results[index] = result->result;
+  atomic_store_explicit(&env->completion_count, index + 1u,
+                        memory_order_release);
+  if (env->release_in_completion)
+    h2_gizclaw_operation_release(operation);
 }
 
 static void
@@ -254,8 +308,8 @@ submit_and_cancel_from_completion(void *user, h2_gizclaw_operation_t *operation,
 
 static void record_terminal(void *user, h2_pal_result_t result) {
   test_env_t *env = user;
-  assert(pthread_equal(pthread_self(), env->dispatch_thread));
-  ++env->terminal_count;
+  assert(!pthread_equal(pthread_self(), env->app_thread));
+  atomic_fetch_add_explicit(&env->terminal_count, 1u, memory_order_release);
   env->terminal_result = result;
 }
 
@@ -268,24 +322,21 @@ static void wait_for_count(atomic_uint *value, unsigned expected) {
   assert(false && "worker did not make progress");
 }
 
-static size_t dispatch_until(h2_gizclaw_service_t *service, test_env_t *env,
-                             size_t completion_count, unsigned terminal_count,
-                             unsigned progress_callback_count) {
-  size_t total_dispatched = 0u;
+static void wait_until(test_env_t *env, size_t completion_count,
+                       unsigned terminal_count,
+                       unsigned progress_callback_count) {
   for (unsigned spin = 0u; spin < 1000000u; ++spin) {
-    size_t dispatched = 0u;
-    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-    total_dispatched += dispatched;
-    if (env->completion_count >= completion_count &&
-        env->terminal_count >= terminal_count &&
+    if (atomic_load_explicit(&env->completion_count, memory_order_acquire) >=
+            completion_count &&
+        atomic_load_explicit(&env->terminal_count, memory_order_acquire) >=
+            terminal_count &&
         atomic_load_explicit(&env->progress_callback_count,
                              memory_order_acquire) >= progress_callback_count) {
-      return total_dispatched;
+      return;
     }
     sched_yield();
   }
   assert(false && "worker did not enqueue callback");
-  return total_dispatched;
 }
 
 static int fail_task_start(void *user, const h2_pal_task_options_t *options,
@@ -293,7 +344,7 @@ static int fail_task_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_t **out_task) {
   (void)user;
   assert(options != NULL);
-  assert(strcmp(options->name, h2_gizclaw_service_task_name) == 0);
+  assert(strcmp(options->name, h2_gizclaw_resp_dispatch_task_name) == 0);
   (void)entry;
   (void)ctx;
   *out_task = NULL;
@@ -315,7 +366,8 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   env->event_dispatch_result = H2_PAL_ERR_WOULD_BLOCK;
   env->prepare_result = H2_PAL_OK;
   env->progress_result = H2_PAL_OK;
-  env->dispatch_thread = pthread_self();
+  env->release_in_completion = true;
+  env->app_thread = pthread_self();
   atomic_init(&env->connect_gate, true);
   atomic_init(&env->event_dispatch_gate, true);
   atomic_init(&env->run_gate, false);
@@ -332,7 +384,9 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
       .task = h2_desktop_platform_task_api(),
       .queue = h2_desktop_platform_queue_api(),
       .sync = h2_desktop_platform_sync_api(),
-      .task_options = {.name = "gizclaw-test", .min_stack_size = 0u},
+      .net_task_options = {.name = "gizclaw-net-test", .min_stack_size = 0u},
+      .resp_dispatch_task_options = {
+          .name = "gizclaw-dispatch-test", .min_stack_size = 0u},
       .operation_capacity = capacity,
       .client_poll_timeout_ms = 1,
       .on_event = receive_event,
@@ -375,24 +429,40 @@ static void test_fifo_capacity_and_dispatch(void) {
          1u);
   assert(atomic_load_explicit(&env.event_dispatch_count, memory_order_acquire) >
          0u);
-  assert(env.completion_count == 0u);
-
-  size_t dispatched = 99u;
-  assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 1u);
+  wait_for_count(&env.event_callback_count, 1u);
+  wait_until(&env, 2u, 0u, 0u);
   assert(env.completed[0] == 1u);
-  assert(dispatch_until(service, &env, 2u, 0u, 0u) == 1u);
   assert(env.completed[1] == 2u);
-  assert(h2_gizclaw_service_dispatch(service, 8u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 0u);
-  assert(h2_gizclaw_service_dispatch(service, 0u, NULL) ==
-         H2_PAL_ERR_INVALID_ARG);
 
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(atomic_load(&env.close_count) == 1u);
   assert(atomic_load(&env.deinit_count) == 1u);
   assert(atomic_load(&env.cleanup_count) == 1u);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_pending_operation_does_not_block_following_work(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+
+  h2_gizclaw_operation_t *pending = NULL;
+  assert(h2_gizclaw_service_submit_async_internal(
+             service, 4u, start_pending, poll_pending, record_completion, &env,
+             &pending) == H2_PAL_OK);
+  wait_for_count(&env.async_start_count, 1u);
+
+  h2_gizclaw_operation_t *immediate = NULL;
+  assert(h2_gizclaw_service_submit(service, 5u, run_immediate,
+                                   record_completion, &env,
+                                   &immediate) == H2_PAL_OK);
+  wait_for_count(&env.run_count, 1u);
+  wait_for_count(&env.async_poll_count, 3u);
+  wait_until(&env, 2u, 0u, 0u);
+  assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_FINISHED);
+  assert(env.terminal_kinds[1] == H2_GIZCLAW_OPERATION_FINISHED);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
@@ -412,14 +482,7 @@ static void test_queued_cancel_and_stop_drain(void) {
   assert(h2_gizclaw_operation_cancel(second) == H2_PAL_OK);
   atomic_store_explicit(&env.run_gate, true, memory_order_release);
   wait_for_count(&env.run_count, 1u);
-  for (unsigned spin = 0u; spin < 1000000u && env.completion_count < 2u;
-       ++spin) {
-    size_t dispatched = 0u;
-    assert(h2_gizclaw_service_dispatch(service, 3u, &dispatched) == H2_PAL_OK);
-    if (env.completion_count < 2u)
-      sched_yield();
-  }
-  assert(env.completion_count == 2u);
+  wait_until(&env, 2u, 0u, 0u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_FINISHED);
   assert(env.terminal_kinds[1] == H2_GIZCLAW_OPERATION_CANCELED);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
@@ -436,13 +499,10 @@ static void test_stop_cancels_running_without_inline_callback(void) {
                                    &operation) == H2_PAL_OK);
   wait_for_count(&env.run_count, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(env.completion_count == 0u);
-  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
-  size_t dispatched = 0u;
-  assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 1u);
+  assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
+         1u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
-  assert(env.terminal_count == 0u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 0u);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
@@ -458,10 +518,10 @@ static void test_connect_failure_is_terminal(void) {
                                    &operation) == H2_PAL_OK);
   atomic_store_explicit(&env.connect_gate, true, memory_order_release);
   wait_for_count(&env.connect_count, 1u);
-  assert(dispatch_until(service, &env, 1u, 1u, 0u) == 1u);
+  wait_until(&env, 1u, 1u, 0u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_IO);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -487,53 +547,37 @@ static void test_event_dispatch_failure_is_terminal(void) {
   assert(atomic_load_explicit(&env.deinit_count, memory_order_acquire) == 1u);
   assert(atomic_load_explicit(&env.cleanup_count, memory_order_acquire) == 1u);
 
-  size_t dispatched = 0u;
-  assert(h2_gizclaw_service_dispatch(service, 2u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 1u);
-  assert(env.completion_count == 1u);
+  wait_until(&env, 1u, 1u, 0u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
   assert(env.completion_results[0] == H2_PAL_ERR_CLOSED);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_IO);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
 static void test_operation_error_and_transport_closed(void) {
   test_env_t env;
-  h2_gizclaw_service_t *service = create_service(&env, 1u);
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   h2_gizclaw_operation_t *operation = NULL;
   assert(h2_gizclaw_service_submit(service, 31u, run_io_failure,
                                    record_completion, &env,
                                    &operation) == H2_PAL_OK);
   wait_for_count(&env.run_count, 1u);
-  size_t dispatched = 0u;
-  for (unsigned spin = 0u; spin < 1000000u && env.completion_count == 0u;
-       ++spin) {
-    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-    if (env.completion_count == 0u)
-      sched_yield();
-  }
-  assert(env.completion_count == 1u);
+  wait_until(&env, 1u, 0u, 0u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_FINISHED);
   assert(env.completion_results[0] == H2_PAL_ERR_IO);
-  assert(env.terminal_count == 0u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 0u);
 
   operation = NULL;
   assert(h2_gizclaw_service_submit(service, 32u, run_transport_closed,
                                    record_completion, &env,
                                    &operation) == H2_PAL_OK);
   wait_for_count(&env.run_count, 2u);
-  for (unsigned spin = 0u; spin < 1000000u && env.completion_count < 2u;
-       ++spin) {
-    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-    if (env.completion_count < 2u)
-      sched_yield();
-  }
-  assert(env.completion_count == 2u);
+  wait_until(&env, 2u, 1u, 0u);
   assert(env.terminal_kinds[1] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
   assert(env.completion_results[1] == H2_PAL_ERR_CLOSED);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -542,6 +586,7 @@ static void test_operation_error_and_transport_closed(void) {
 static void test_running_cancel_is_idempotent_and_late_safe(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 1u);
+  env.release_in_completion = false;
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   h2_gizclaw_operation_t *operation = NULL;
   assert(h2_gizclaw_service_submit(service, 35u, run_until_released,
@@ -552,8 +597,9 @@ static void test_running_cancel_is_idempotent_and_late_safe(void) {
   assert(h2_gizclaw_operation_cancel(operation) == H2_PAL_OK);
   wait_for_count(&env.run_exit_count, 1u);
   assert(h2_gizclaw_operation_cancel(operation) == H2_PAL_OK);
-  assert(dispatch_until(service, &env, 1u, 0u, 0u) == 1u);
+  wait_until(&env, 1u, 0u, 0u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_CANCELED);
+  h2_gizclaw_operation_release(operation);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -567,8 +613,7 @@ static void test_callback_can_submit_cancel_and_release(void) {
                                    submit_and_cancel_from_completion, &env,
                                    &first) == H2_PAL_OK);
   wait_for_count(&env.run_count, 1u);
-  (void)dispatch_until(service, &env, 3u, 0u, 0u);
-  assert(env.completion_count == 3u);
+  wait_until(&env, 3u, 0u, 0u);
   assert(env.completed[1] == 42u);
   assert(env.terminal_kinds[1] == H2_GIZCLAW_OPERATION_FINISHED);
   assert(env.completed[2] == 41u);
@@ -584,9 +629,9 @@ static void test_prepare_init_and_poll_failures_are_terminal(void) {
   env.prepare_result = H2_PAL_ERR_IO;
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   wait_for_count(&env.prepare_count, 1u);
-  (void)dispatch_until(service, &env, 0u, 1u, 0u);
+  wait_until(&env, 0u, 1u, 0u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_IO);
   assert(atomic_load(&env.init_count) == 0u);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -595,9 +640,9 @@ static void test_prepare_init_and_poll_failures_are_terminal(void) {
   env.init_result = H2_PAL_ERR_NO_MEMORY;
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   wait_for_count(&env.init_count, 1u);
-  (void)dispatch_until(service, &env, 0u, 1u, 0u);
+  wait_until(&env, 0u, 1u, 0u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_NO_MEMORY);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 
@@ -605,9 +650,9 @@ static void test_prepare_init_and_poll_failures_are_terminal(void) {
   env.poll_result = H2_PAL_ERR_IO;
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   wait_for_count(&env.poll_count, 1u);
-  (void)dispatch_until(service, &env, 0u, 1u, 0u);
+  wait_until(&env, 0u, 1u, 0u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_IO);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -633,10 +678,9 @@ static void test_original_cancel_and_unstarted_lifecycle(void) {
   wait_for_count(&env.run_count, 1u);
   wait_for_count(&env.run_exit_count, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  size_t dispatched = 0u;
-  assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 1u);
-  assert(env.terminal_count == 1u);
+  assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
+         1u);
+  assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -650,7 +694,7 @@ static void test_task_start_failure_can_deinit(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
-static void test_progress_runs_on_dispatch_thread_and_returns_result(void) {
+static void test_progress_runs_on_resp_dispatch_task_and_returns_result(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 1u);
   env.progress_result = H2_PAL_ERR_IO;
@@ -660,45 +704,13 @@ static void test_progress_runs_on_dispatch_thread_and_returns_result(void) {
                                    record_completion, &env,
                                    &operation) == H2_PAL_OK);
   wait_for_count(&env.progress_call_count, 1u);
-  assert(atomic_load_explicit(&env.progress_exit_count, memory_order_acquire) ==
-         0u);
-  assert(dispatch_until(service, &env, 0u, 0u, 1u) == 1u);
+  wait_until(&env, 0u, 0u, 1u);
   wait_for_count(&env.progress_exit_count, 1u);
   assert(env.progress_call_result == H2_PAL_ERR_IO);
   assert(atomic_load(&env.progress_callback_count) == 1u);
-  size_t dispatched = 0u;
-  for (unsigned spin = 0u; spin < 1000000u && env.completion_count == 0u;
-       ++spin) {
-    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-    if (env.completion_count == 0u)
-      sched_yield();
-  }
-  assert(env.completion_count == 1u);
+  wait_until(&env, 1u, 0u, 1u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_FINISHED);
   assert(env.completion_results[0] == H2_PAL_ERR_IO);
-  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-}
-
-static void test_cancel_while_progress_pending_skips_progress_callback(void) {
-  test_env_t env;
-  h2_gizclaw_service_t *service = create_service(&env, 1u);
-  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-  h2_gizclaw_operation_t *operation = NULL;
-  assert(h2_gizclaw_service_submit(service, 61u, run_progress_call,
-                                   record_completion, &env,
-                                   &operation) == H2_PAL_OK);
-  wait_for_count(&env.progress_call_count, 1u);
-  assert(h2_gizclaw_operation_cancel(operation) == H2_PAL_OK);
-  wait_for_count(&env.progress_exit_count, 1u);
-  size_t dispatched = 0u;
-  assert(h2_gizclaw_service_dispatch(service, 2u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 1u);
-  assert(atomic_load(&env.progress_callback_count) == 0u);
-  assert(env.completion_count == 1u);
-  assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_CANCELED);
-  assert(h2_gizclaw_service_dispatch(service, 2u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 0u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -713,23 +725,16 @@ static void test_cancel_after_progress_claim_waits_for_callback(void) {
                                    &operation) == H2_PAL_OK);
   env.cancel_from_progress = operation;
   wait_for_count(&env.progress_call_count, 1u);
-  assert(dispatch_until(service, &env, 0u, 0u, 1u) == 1u);
+  wait_until(&env, 0u, 0u, 1u);
   wait_for_count(&env.progress_exit_count, 1u);
   assert(atomic_load(&env.progress_callback_count) == 1u);
-  size_t dispatched = 0u;
-  for (unsigned spin = 0u; spin < 1000000u && env.completion_count == 0u;
-       ++spin) {
-    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
-    if (env.completion_count == 0u)
-      sched_yield();
-  }
-  assert(env.completion_count == 1u);
+  wait_until(&env, 1u, 0u, 1u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_CANCELED);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
-static void test_stop_while_progress_pending_drains_once(void) {
+static void test_stop_racing_progress_drains_once(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 1u);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
@@ -740,19 +745,17 @@ static void test_stop_while_progress_pending_drains_once(void) {
   wait_for_count(&env.progress_call_count, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   wait_for_count(&env.progress_exit_count, 1u);
-  size_t dispatched = 0u;
-  assert(h2_gizclaw_service_dispatch(service, 2u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 1u);
-  assert(atomic_load(&env.progress_callback_count) == 0u);
-  assert(env.completion_count == 1u);
-  assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
-  assert(h2_gizclaw_service_dispatch(service, 2u, &dispatched) == H2_PAL_OK);
-  assert(dispatched == 0u);
+  assert(atomic_load(&env.progress_callback_count) <= 1u);
+  assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
+         1u);
+  assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED ||
+         env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_FINISHED);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
 int main(void) {
   test_fifo_capacity_and_dispatch();
+  test_pending_operation_does_not_block_following_work();
   test_queued_cancel_and_stop_drain();
   test_stop_cancels_running_without_inline_callback();
   test_connect_failure_is_terminal();
@@ -763,10 +766,9 @@ int main(void) {
   test_prepare_init_and_poll_failures_are_terminal();
   test_original_cancel_and_unstarted_lifecycle();
   test_task_start_failure_can_deinit();
-  test_progress_runs_on_dispatch_thread_and_returns_result();
-  test_cancel_while_progress_pending_skips_progress_callback();
+  test_progress_runs_on_resp_dispatch_task_and_returns_result();
   test_cancel_after_progress_claim_waits_for_callback();
-  test_stop_while_progress_pending_drains_once();
+  test_stop_racing_progress_drains_once();
   h2_gizclaw_service_test_set_client_ops(NULL);
   puts("h2_gizclaw service tests passed");
   return 0;

@@ -37,7 +37,9 @@ handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
 }
 
 static const h2_trie_route_t s_routes[] = {
-    {H2_GIZCLAW_SERVICE_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
+    {H2_GIZCLAW_NET_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
+     &s_priority_5_policy},
+    {H2_GIZCLAW_RESP_DISPATCH_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_5_policy},
     {H2LOADER_APP_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_8_policy},
@@ -53,7 +55,8 @@ static const h2_trie_route_t s_routes[] = {
 };
 
 enum {
-  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2_GIZCLAW_SERVICE_TASK_NAME_VALUE) +
+  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2_GIZCLAW_NET_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_GIZCLAW_RESP_DISPATCH_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(H2LOADER_APP_COMMAND_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_RETURN_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_BLE_LINK_TASK_NAME_VALUE) +
