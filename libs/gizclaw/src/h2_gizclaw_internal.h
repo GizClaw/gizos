@@ -124,11 +124,6 @@ typedef int (*h2_gizclaw_test_client_poll_fn)(void *user, gzc_client_t *client,
 typedef int (*h2_gizclaw_test_conversation_packet_send_fn)(
     void *user, gzc_client_t *client, uint8_t protocol, const uint8_t *payload,
     size_t payload_len);
-typedef int (*h2_gizclaw_test_conversation_encode_fn)(void *user, void *encoder,
-                                                      const int16_t *pcm,
-                                                      int frame_samples,
-                                                      uint8_t *opus,
-                                                      int opus_capacity);
 void h2_gizclaw_test_set_event_ops(h2_gizclaw_test_event_send_fn send,
                                    h2_gizclaw_test_event_read_fn read,
                                    h2_gizclaw_test_event_close_fn close,
@@ -138,10 +133,7 @@ void h2_gizclaw_test_set_packet_read(h2_gizclaw_test_packet_read_fn read,
 void h2_gizclaw_test_set_client_poll(h2_gizclaw_test_client_poll_fn poll,
                                      void *user);
 void h2_gizclaw_test_set_conversation_ops(
-    h2_gizclaw_test_conversation_packet_send_fn packet_send,
-    h2_gizclaw_test_conversation_encode_fn encode, void *user);
-int h2_gizclaw_test_conversation_opus_complexity(
-    h2_gizclaw_conversation_t *conversation);
+    h2_gizclaw_test_conversation_packet_send_fn packet_send, void *user);
 
 gzc_event_stream_t *
 h2_gizclaw_test_replace_event_stream(h2_gizclaw_client_t *client,
