@@ -2,12 +2,14 @@
 #define H2_GIZCLAW_INTERNAL_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_client.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_types.h"
 #include "h2/pal/os/h2_pal_mem.h"
 
 #include "gzc_buffer.h"
 #include "gzc_event.h"
+#include "pb.h"
 
 typedef struct gzc_client gzc_client_t;
 typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
@@ -35,7 +37,15 @@ int h2_gizclaw_provider_result_to_gzc(int result);
 
 const h2_pal_mem_api_t *
 h2_gizclaw_client_allocator_internal(h2_gizclaw_client_t *client);
+int h2_gizclaw_client_monotonic_ms_internal(h2_gizclaw_client_t *client,
+                                            uint64_t *out_ms);
 gzc_client_t *h2_gizclaw_client_gzc_internal(h2_gizclaw_client_t *client);
+int h2_gizclaw_encode_pb_message(h2_gizclaw_client_t *client,
+                                 const pb_msgdesc_t *fields,
+                                 const void *message,
+                                 gzc_buf_t *out_payload);
+int h2_gizclaw_decode_pb_message(gzc_str_t payload,
+                                 const pb_msgdesc_t *fields, void *message);
 void h2_gizclaw_client_log_rpc_error_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
     int error_code, const char *error_message, size_t error_message_len);
@@ -105,6 +115,19 @@ typedef int (*h2_gizclaw_test_speed_test_fn)(
     h2_gizclaw_test_speed_test_result_t *out_result);
 void h2_gizclaw_test_set_speed_test(h2_gizclaw_test_speed_test_fn speed_test,
                                     void *user);
+
+/* Legacy synchronous diagnostics remain visible only to migration tests until
+ * their async service coverage replaces them. They are not public API. */
+int h2_gizclaw_client_ping(h2_gizclaw_client_t *client);
+int h2_gizclaw_client_ping_measure(h2_gizclaw_client_t *client,
+                                   h2_gizclaw_ping_result_t *out_result);
+int h2_gizclaw_client_speedtest(h2_gizclaw_client_t *client);
+int h2_gizclaw_client_speedtest_measure(
+    h2_gizclaw_client_t *client, size_t upload_bytes, size_t download_bytes,
+    h2_gizclaw_speedtest_result_t *out_result);
+int h2_gizclaw_client_speedtest_download(
+    h2_gizclaw_client_t *client, size_t download_bytes,
+    h2_gizclaw_speedtest_result_t *out_result);
 
 typedef int (*h2_gizclaw_test_event_send_fn)(void *user,
                                              gzc_event_stream_t *stream,

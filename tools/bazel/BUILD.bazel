@@ -7,6 +7,11 @@ load(":release_bundle.bzl", "firmware_release_bundle")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "gizclaw_local.BUILD.bazel",
+    "nanopb_local.BUILD.bazel",
+])
+
 py_library(
     name = "coverage_report",
     srcs = ["coverage_report.py"],

@@ -160,7 +160,7 @@ int h2_gizclaw_client_workspace_history_list(
     h2_gizclaw_workspace_history_order_t order,
     h2_gizclaw_workspace_history_page_t *out_page);
 
-int h2_gizclaw_client_workspace_history_audio_get(
+int h2_gizclaw_client_workspace_history_audio_download(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t workspace_name,
     h2_gizclaw_str_t history_id,
     h2_gizclaw_workspace_history_audio_write_fn write, void *user,

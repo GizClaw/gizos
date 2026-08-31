@@ -294,7 +294,7 @@ int h2_gizclaw_client_friend_group_message_get(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
     h2_gizclaw_str_t history_id,
     h2_gizclaw_friend_group_message_t *out_message);
-int h2_gizclaw_client_friend_group_message_audio_get(
+int h2_gizclaw_client_friend_group_message_audio_download(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t friend_group_name,
     h2_gizclaw_str_t history_id,
     h2_gizclaw_friend_group_message_audio_write_fn write, void *user,

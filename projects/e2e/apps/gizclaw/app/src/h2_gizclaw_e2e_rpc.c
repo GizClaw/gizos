@@ -1,7 +1,9 @@
 #include "h2_gizclaw_e2e_rpc.h"
 #include "h2_gizclaw_e2e_report.h"
+#include "h2_gizclaw_service.h"
 
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -63,49 +65,151 @@ bool h2_gizclaw_e2e_workspace_response_ready(
          expected_name != NULL && strcmp(workspace->name, expected_name) == 0;
 }
 
+typedef struct connectivity_state {
+  h2_gizclaw_e2e_fixture_t *fixture;
+  h2_gizclaw_service_t *service;
+  atomic_bool complete;
+  atomic_int result;
+  h2_gizclaw_ping_result_t ping;
+  h2_gizclaw_speedtest_result_t speed;
+} connectivity_state_t;
+
+static void connectivity_ping_complete(
+    void *user, h2_gizclaw_ping_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_ping_result_t *ping) {
+  connectivity_state_t *state = user;
+  int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
+  if (rc == H2_PAL_OK && ping == NULL)
+    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK)
+    state->ping = *ping;
+  atomic_store_explicit(&state->result, rc, memory_order_release);
+  atomic_store_explicit(&state->complete, true, memory_order_release);
+  h2_gizclaw_ping_request_release(request);
+}
+
+static void connectivity_speed_complete(
+    void *user, h2_gizclaw_speedtest_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_speedtest_result_t *speedtest) {
+  connectivity_state_t *state = user;
+  int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
+  if (rc == H2_PAL_OK && speedtest == NULL)
+    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK)
+    state->speed = *speedtest;
+  atomic_store_explicit(&state->result, rc, memory_order_release);
+  atomic_store_explicit(&state->complete, true, memory_order_release);
+  h2_gizclaw_speedtest_request_release(request);
+}
+
+static int connectivity_wait(connectivity_state_t *state) {
+  while (!atomic_load_explicit(&state->complete, memory_order_acquire)) {
+    if (!h2_gizclaw_e2e_fixture_has_time(state->fixture, 10u))
+      return H2_PAL_ERR_TIMEOUT;
+    const int rc = h2_pal_time_sleep_ms(state->fixture->time, 10u);
+    if (rc != H2_PAL_OK)
+      return rc;
+  }
+  return atomic_load_explicit(&state->result, memory_order_acquire);
+}
+
+static void connectivity_reset(connectivity_state_t *state) {
+  memset(&state->speed, 0, sizeof(state->speed));
+  atomic_store_explicit(&state->result, H2_PAL_OK, memory_order_relaxed);
+  atomic_store_explicit(&state->complete, false, memory_order_release);
+}
+
 int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
-  if (fixture == NULL) {
+  if (fixture == NULL || fixture->runtime == NULL ||
+      fixture->runtime->task == NULL || fixture->runtime->queue == NULL ||
+      fixture->runtime->sync == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_gizclaw_client_t *client = fixture->actors[H2_GIZCLAW_E2E_OWNER].client;
-  h2_gizclaw_ping_result_t ping = {0};
-  int rc = checked("h2_gizclaw_client_ping_measure", "core",
-                   h2_gizclaw_client_ping_measure(client, &ping));
+  h2_gizclaw_config_t client_config;
+  memset(&client_config, 0, sizeof(client_config));
+  int rc = h2_gizclaw_e2e_fixture_transfer_actor_to_service(
+      fixture, H2_GIZCLAW_E2E_OWNER, &client_config);
   if (rc != H2_PAL_OK)
     return rc;
-  rc =
-      checked("h2_gizclaw_client_ping", "core", h2_gizclaw_client_ping(client));
-  if (rc != H2_PAL_OK)
-    return rc;
-  h2_gizclaw_speedtest_result_t speed = {0};
-  rc = h2_gizclaw_client_speedtest_measure(client, H2_GIZCLAW_E2E_SPEED_BYTES,
-                                           0u, &speed);
+  connectivity_state_t state;
+  memset(&state, 0, sizeof(state));
+  state.fixture = fixture;
+  atomic_init(&state.complete, false);
+  atomic_init(&state.result, H2_PAL_OK);
+  const h2_gizclaw_service_config_t config = {
+      .client_config = &client_config,
+      .task = fixture->runtime->task,
+      .queue = fixture->runtime->queue,
+      .sync = fixture->runtime->sync,
+      .net_task_options = {.min_stack_size = 32768u},
+      .resp_dispatch_task_options = {.min_stack_size = 32768u},
+      .operation_capacity = 1u,
+      .client_poll_timeout_ms = 10,
+  };
+  rc = h2_gizclaw_service_init(&config, &state.service);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_start(state.service);
+
+  h2_gizclaw_ping_request_t *ping_request = NULL;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_service_ping_async(state.service, 1u, 30000u,
+                                       connectivity_ping_complete, &state,
+                                       &ping_request);
+  }
+  if (rc == H2_PAL_OK)
+    rc = connectivity_wait(&state);
+  rc = checked("h2_gizclaw_service_ping_async", "core", rc);
+
+  h2_gizclaw_speedtest_request_t *speed_request = NULL;
+  connectivity_reset(&state);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_service_speedtest_async(
+        state.service, 2u, H2_GIZCLAW_E2E_SPEED_BYTES, 0u, 30000u,
+        connectivity_speed_complete, &state, &speed_request);
+  }
+  if (rc == H2_PAL_OK)
+    rc = connectivity_wait(&state);
   if (rc == H2_PAL_OK &&
-      (speed.upload_bytes != H2_GIZCLAW_E2E_SPEED_BYTES ||
-       speed.upload_bits_per_second < H2_GIZCLAW_E2E_UPLOAD_MIN_BPS)) {
+      (state.speed.upload_bytes != H2_GIZCLAW_E2E_SPEED_BYTES ||
+       state.speed.upload_bits_per_second < H2_GIZCLAW_E2E_UPLOAD_MIN_BPS)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
-  rc = checked("h2_gizclaw_client_speedtest_measure", "diagnostics", rc);
+  rc = checked("h2_gizclaw_service_speedtest_async", "diagnostics", rc);
   printf("H2_GIZCLAW_E2E stage=upload result=%s bytes=%" PRIu64 " bps=%" PRIu64
          " attempts=%u\n",
-         rc == H2_PAL_OK ? "PASS" : "FAIL", speed.upload_bytes,
-         speed.upload_bits_per_second, 1u);
-  if (rc != H2_PAL_OK)
-    return rc;
+         rc == H2_PAL_OK ? "PASS" : "FAIL", state.speed.upload_bytes,
+         state.speed.upload_bits_per_second, 1u);
 
-  memset(&speed, 0, sizeof(speed));
-  rc = h2_gizclaw_client_speedtest_download(client, H2_GIZCLAW_E2E_SPEED_BYTES,
-                                            &speed);
+  connectivity_reset(&state);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_service_speedtest_async(
+        state.service, 3u, 0u, H2_GIZCLAW_E2E_SPEED_BYTES, 30000u,
+        connectivity_speed_complete, &state, &speed_request);
+  }
+  if (rc == H2_PAL_OK)
+    rc = connectivity_wait(&state);
   if (rc == H2_PAL_OK &&
-      (speed.download_bytes != H2_GIZCLAW_E2E_SPEED_BYTES ||
-       speed.download_bits_per_second < H2_GIZCLAW_E2E_DOWNLOAD_MIN_BPS)) {
+      (state.speed.download_bytes != H2_GIZCLAW_E2E_SPEED_BYTES ||
+       state.speed.download_bits_per_second < H2_GIZCLAW_E2E_DOWNLOAD_MIN_BPS)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
-  rc = checked("h2_gizclaw_client_speedtest_download", "diagnostics", rc);
+  rc = checked("h2_gizclaw_service_speedtest_async", "diagnostics", rc);
   printf("H2_GIZCLAW_E2E stage=download result=%s bytes=%" PRIu64
          " bps=%" PRIu64 " attempts=%u\n",
-         rc == H2_PAL_OK ? "PASS" : "FAIL", speed.download_bytes,
-         speed.download_bits_per_second, 1u);
+         rc == H2_PAL_OK ? "PASS" : "FAIL", state.speed.download_bytes,
+         state.speed.download_bits_per_second, 1u);
+  const int stop_rc = state.service == NULL
+                          ? H2_PAL_OK
+                          : h2_gizclaw_service_stop(state.service);
+  const int deinit_rc = state.service == NULL
+                            ? H2_PAL_OK
+                            : h2_gizclaw_service_deinit(state.service);
+  if (rc == H2_PAL_OK)
+    rc = stop_rc;
+  if (rc == H2_PAL_OK)
+    rc = deinit_rc;
   return rc;
 }
 
@@ -589,8 +693,8 @@ static int run_group(h2_gizclaw_e2e_fixture_t *fixture) {
   if (history_id[0] != '\0' && audio_available) {
     group_audio_counter_t audio = {0};
     h2_gizclaw_friend_group_message_audio_info_t info = {0};
-    rc = checked("h2_gizclaw_client_friend_group_message_audio_get", "group",
-                 h2_gizclaw_client_friend_group_message_audio_get(
+    rc = checked("h2_gizclaw_client_friend_group_message_audio_download", "group",
+                 h2_gizclaw_client_friend_group_message_audio_download(
                      owner, h2_gizclaw_e2e_str(fixture->friend_group_name),
                      h2_gizclaw_e2e_str(history_id), count_group_audio, &audio,
                      &info));

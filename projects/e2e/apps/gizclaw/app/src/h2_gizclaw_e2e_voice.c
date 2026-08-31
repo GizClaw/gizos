@@ -461,10 +461,10 @@ static int verify_history(h2_gizclaw_e2e_fixture_t *fixture,
   }
   byte_buffer_t audio = {.allocator = fixture->allocator};
   h2_gizclaw_workspace_history_audio_info_t info = {0};
-  rc = h2_gizclaw_client_workspace_history_audio_get(
+  rc = h2_gizclaw_client_workspace_history_audio_download(
       client, h2_gizclaw_e2e_str(fixture->workspace_name),
       h2_gizclaw_e2e_str(history_id), append_audio, &audio, &info);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_client_workspace_history_audio_get",
+  h2_gizclaw_e2e_evidence("h2_gizclaw_client_workspace_history_audio_download",
                           "history", rc);
   if (rc == H2_PAL_OK &&
       (audio.len == 0u || info.received_bytes != audio.len ||

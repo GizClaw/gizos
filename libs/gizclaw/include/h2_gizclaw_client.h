@@ -49,6 +49,32 @@ typedef struct h2_gizclaw_speedtest_result {
   uint64_t upload_bits_per_second;
 } h2_gizclaw_speedtest_result_t;
 
+typedef struct h2_gizclaw_service h2_gizclaw_service_t;
+typedef struct h2_gizclaw_operation_result h2_gizclaw_operation_result_t;
+typedef struct h2_gizclaw_ping_request h2_gizclaw_ping_request_t;
+typedef struct h2_gizclaw_speedtest_request h2_gizclaw_speedtest_request_t;
+
+typedef void (*h2_gizclaw_ping_completion_fn)(
+    void *user, h2_gizclaw_ping_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_ping_result_t *ping);
+
+typedef void (*h2_gizclaw_speedtest_completion_fn)(
+    void *user, h2_gizclaw_speedtest_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_speedtest_result_t *speedtest);
+
+/** Submit one Ping request to the service-owned network task. */
+h2_pal_result_t h2_gizclaw_service_ping_async(
+    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
+    h2_gizclaw_ping_completion_fn completion, void *user,
+    h2_gizclaw_ping_request_t **out_request);
+
+h2_pal_result_t
+h2_gizclaw_ping_request_cancel(h2_gizclaw_ping_request_t *request);
+
+void h2_gizclaw_ping_request_release(h2_gizclaw_ping_request_t *request);
+
 int h2_gizclaw_client_init(const h2_gizclaw_config_t *config, h2_gizclaw_client_t **out_client);
 
 /**
@@ -86,38 +112,18 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
 int h2_gizclaw_client_set_event_handler(
     h2_gizclaw_client_t *client, h2_gizclaw_client_event_fn on_event,
     void *event_user);
-int h2_gizclaw_client_ping(h2_gizclaw_client_t *client);
-int h2_gizclaw_client_ping_measure(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_ping_result_t *out_result);
+/** Submit a full-duplex speed test without polling on the calling task. */
+h2_pal_result_t h2_gizclaw_service_speedtest_async(
+    h2_gizclaw_service_t *service, uint64_t identity, size_t upload_bytes,
+    size_t download_bytes, uint32_t timeout_ms,
+    h2_gizclaw_speedtest_completion_fn completion, void *user,
+    h2_gizclaw_speedtest_request_t **out_request);
 
-/** Run a bidirectional speed test using one megabyte in each direction. */
-int h2_gizclaw_client_speedtest(h2_gizclaw_client_t *client);
+h2_pal_result_t h2_gizclaw_speedtest_request_cancel(
+    h2_gizclaw_speedtest_request_t *request);
 
-/**
- * Run a full-duplex speed test of the exact requested byte lengths.
- *
- * The blocking call succeeds only after the SDK validates the response,
- * transfers both directions completely, and consumes EOS. Upload and download
- * rates use their respective SDK-reported direction durations; a completed
- * non-empty direction with a zero duration is reported as one millisecond. At
- * least one direction must be non-empty and neither may exceed
- * `H2_GIZCLAW_SPEEDTEST_MAX_BYTES`. The call owns one request-scoped Peer RPC
- * channel until it returns. On any failure `out_result` is cleared.
- */
-int h2_gizclaw_client_speedtest_measure(
-    h2_gizclaw_client_t *client, size_t upload_bytes, size_t download_bytes,
-    h2_gizclaw_speedtest_result_t *out_result);
-
-/**
- * Run a download-only speed test of exactly `download_bytes`.
- *
- * The blocking call succeeds only after the SDK validates the response,
- * receives exactly the requested body bytes, and consumes EOS. On any failure
- * `out_result` is cleared.
- */
-int h2_gizclaw_client_speedtest_download(
-    h2_gizclaw_client_t *client, size_t download_bytes,
-    h2_gizclaw_speedtest_result_t *out_result);
+void h2_gizclaw_speedtest_request_release(
+    h2_gizclaw_speedtest_request_t *request);
 
 /**
  * Request idempotent deletion handoff for the authenticated Peer.

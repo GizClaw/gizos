@@ -26,6 +26,7 @@ typedef struct h2_gizclaw_speech_request_message {
 struct h2_gizclaw_speech_extract_request {
   h2_gizclaw_service_t *service;
   h2_gizclaw_operation_t *operation;
+  h2_gizclaw_rpc_request_t *rpc_request;
   h2_pal_queue_t *queue;
   h2_gizclaw_speech_extract_request_completion_fn completion;
   void *completion_user;
@@ -38,6 +39,9 @@ struct h2_gizclaw_speech_extract_request {
   char instruction[H2_GIZCLAW_SPEECH_REQUEST_INSTRUCTION_MAX];
   char transcript[H2_GIZCLAW_SPEECH_REQUEST_TRANSCRIPT_MAX];
   char result_json[H2_GIZCLAW_SPEECH_REQUEST_RESULT_MAX];
+  h2_gizclaw_speech_request_message_t pending_message;
+  bool has_pending_message;
+  bool write_finished;
   atomic_bool committed;
   atomic_bool terminal;
 };
@@ -50,7 +54,7 @@ typedef enum h2_gizclaw_speech_upload_kind {
 struct h2_gizclaw_speech_upload {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_client_t *client;
-  gzc_rpc_speech_upload_t *gzc_upload;
+  h2_gizclaw_rpc_request_t *request;
   h2_gizclaw_speech_upload_kind_t kind;
 };
 
@@ -68,6 +72,8 @@ static int result_from_gzc(int result) {
     return H2_PAL_ERR_CLOSED;
   case GZC_ERR_UNSUPPORTED:
     return H2_PAL_ERR_UNSUPPORTED;
+  case GZC_ERR_WOULD_BLOCK:
+    return H2_PAL_ERR_WOULD_BLOCK;
   default:
     return H2_PAL_ERR_IO;
   }
@@ -116,13 +122,86 @@ static void free_upload(h2_gizclaw_speech_upload_t *upload) {
 static void cancel_upload(h2_gizclaw_speech_upload_t *upload) {
   if (upload == NULL)
     return;
-  if (upload->gzc_upload != NULL) {
-    if (upload->kind == H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT)
-      gzc_rpc_speech_extract_cancel(upload->gzc_upload);
-    else
-      gzc_rpc_speech_transcribe_cancel(upload->gzc_upload);
-  }
+  h2_gizclaw_rpc_request_destroy(upload->request);
   free_upload(upload);
+}
+
+static int speech_upload_stream_event(
+    void *user, const h2_gizclaw_rpc_stream_event_t *event) {
+  (void)user;
+  return event != NULL ? GZC_OK : GZC_ERR_INVALID_ARGUMENT;
+}
+
+static int speech_upload_open(
+    h2_gizclaw_client_t *client, h2_gizclaw_speech_upload_kind_t kind,
+    h2_gizclaw_rpc_method_t method, const pb_msgdesc_t *request_fields,
+    const void *request_message, h2_gizclaw_speech_upload_t **out_upload) {
+  h2_gizclaw_speech_upload_t *upload = allocate_upload(client, kind);
+  if (upload == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  gzc_buf_t params;
+  gzc_buf_init(&params);
+  int rc = h2_gizclaw_encode_pb_message(client, request_fields,
+                                        request_message, &params);
+  if (rc == GZC_OK) {
+    rc = h2_gizclaw_client_rpc_request_start_stream(
+        client, method,
+        (h2_gizclaw_rpc_bytes_t){.data = params.data, .len = params.len},
+        30000u, speech_upload_stream_event, upload, &upload->request);
+  }
+  gzc_buf_free(&params,
+               gzc_client_platform(h2_gizclaw_client_gzc_internal(client)));
+  if (rc != H2_PAL_OK && rc != GZC_OK) {
+    free_upload(upload);
+    return rc;
+  }
+  *out_upload = upload;
+  return H2_PAL_OK;
+}
+
+static int speech_upload_write(h2_gizclaw_speech_upload_t *upload,
+                               const uint8_t *data, size_t len) {
+  size_t offset = 0u;
+  while (offset < len) {
+    size_t count = len - offset;
+    if (count > GZC_RPC_MAX_FRAME_SIZE)
+      count = GZC_RPC_MAX_FRAME_SIZE;
+    int rc = h2_gizclaw_rpc_request_write(upload->request, data + offset,
+                                          count);
+    if (rc == H2_PAL_OK) {
+      offset += count;
+      continue;
+    }
+    if (rc != H2_PAL_ERR_WOULD_BLOCK)
+      return rc;
+    rc = h2_gizclaw_client_poll(upload->client, 10);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
+        rc != H2_PAL_ERR_WOULD_BLOCK) {
+      return rc;
+    }
+  }
+  return H2_PAL_OK;
+}
+
+static int speech_upload_finish(h2_gizclaw_speech_upload_t *upload,
+                                h2_gizclaw_rpc_response_t *out_response) {
+  int rc;
+  while ((rc = h2_gizclaw_rpc_request_finish_write(upload->request)) ==
+         H2_PAL_ERR_WOULD_BLOCK) {
+    rc = h2_gizclaw_client_poll(upload->client, 10);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
+        rc != H2_PAL_ERR_WOULD_BLOCK) {
+      return rc;
+    }
+  }
+  while (rc == H2_PAL_OK &&
+         (rc = h2_gizclaw_rpc_request_result(upload->request, out_response)) ==
+             H2_PAL_ERR_WOULD_BLOCK) {
+    rc = h2_gizclaw_client_poll(upload->client, 10);
+    if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
+      rc = H2_PAL_OK;
+  }
+  return rc;
 }
 
 int h2_gizclaw_client_speech_transcribe_open(
@@ -144,29 +223,19 @@ int h2_gizclaw_client_speech_transcribe_open(
   }
   request.has_language = options->language.len > 0u;
 
-  h2_gizclaw_speech_upload_t *upload =
-      allocate_upload(client, H2_GIZCLAW_SPEECH_UPLOAD_TRANSCRIBE);
-  if (upload == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-
-  const int rc = gzc_rpc_speech_transcribe_open(
-      h2_gizclaw_client_gzc_internal(client), &request, &upload->gzc_upload);
-  if (rc != GZC_OK) {
-    free_upload(upload);
-    return result_from_gzc(rc);
-  }
-  *out_upload = upload;
-  return H2_PAL_OK;
+  return speech_upload_open(
+      client, H2_GIZCLAW_SPEECH_UPLOAD_TRANSCRIBE,
+      H2_GIZCLAW_RPC_SERVER_SPEECH_TRANSCRIBE,
+      gizclaw_rpc_v1_SpeechTranscribeRequest_fields, &request, out_upload);
 }
 
 int h2_gizclaw_speech_transcribe_write(h2_gizclaw_speech_upload_t *upload,
                                        const uint8_t *data, size_t len) {
   if (upload == NULL || upload->kind != H2_GIZCLAW_SPEECH_UPLOAD_TRANSCRIBE ||
-      upload->gzc_upload == NULL || data == NULL || len == 0u) {
+      upload->request == NULL || data == NULL || len == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return result_from_gzc(
-      gzc_rpc_speech_transcribe_write(upload->gzc_upload, data, len));
+  return speech_upload_write(upload, data, len);
 }
 
 int h2_gizclaw_speech_transcribe_finish(h2_gizclaw_speech_upload_t *upload,
@@ -174,43 +243,37 @@ int h2_gizclaw_speech_transcribe_finish(h2_gizclaw_speech_upload_t *upload,
                                         size_t transcript_capacity,
                                         size_t *out_transcript_len) {
   if (upload == NULL || upload->kind != H2_GIZCLAW_SPEECH_UPLOAD_TRANSCRIBE ||
-      upload->gzc_upload == NULL || out_transcript == NULL ||
+      upload->request == NULL || out_transcript == NULL ||
       transcript_capacity == 0u || out_transcript_len == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   out_transcript[0] = '\0';
   *out_transcript_len = 0u;
-  const h2_pal_mem_api_t *allocator = upload->allocator;
-  gizclaw_rpc_v1_SpeechTranscribeResponse *response =
-      h2_pal_mem_alloc(allocator, sizeof(*response));
-  if (response == NULL) {
-    gzc_rpc_speech_transcribe_cancel(upload->gzc_upload);
-    free_upload(upload);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  *response = (gizclaw_rpc_v1_SpeechTranscribeResponse)
+  h2_gizclaw_rpc_response_t rpc_response = {0};
+  int rc = speech_upload_finish(upload, &rpc_response);
+  gizclaw_rpc_v1_SpeechTranscribeResponse response =
       gizclaw_rpc_v1_SpeechTranscribeResponse_init_zero;
-  gzc_rpc_error_t error = {0};
-  const int gzc_rc =
-      gzc_rpc_speech_transcribe_finish(upload->gzc_upload, response, &error);
-  upload->gzc_upload = NULL;
-  if (gzc_rc == GZC_ERR_RPC) {
-    h2_gizclaw_client_log_rpc_error_internal(
-        upload->client, H2_GIZCLAW_RPC_SERVER_SPEECH_TRANSCRIBE, error.code,
-        error.message.data, error.message.len);
-  }
-  int rc = result_from_gzc(gzc_rc);
+  if (rc == H2_PAL_OK && rpc_response.has_error)
+    rc = H2_PAL_ERR_IO;
   if (rc == H2_PAL_OK) {
-    const size_t len = bounded_string_length(response->transcript,
-                                             sizeof(response->transcript));
-    if (len >= sizeof(response->transcript) || len >= transcript_capacity) {
+    rc = result_from_gzc(h2_gizclaw_decode_pb_message(
+        gzc_str_from_parts((const char *)rpc_response.result_payload,
+                           rpc_response.result_payload_len),
+        gizclaw_rpc_v1_SpeechTranscribeResponse_fields, &response));
+  }
+  if (rc == H2_PAL_OK) {
+    const size_t len =
+        bounded_string_length(response.transcript, sizeof(response.transcript));
+    if (len >= sizeof(response.transcript) || len >= transcript_capacity) {
       rc = H2_PAL_ERR_NO_MEMORY;
     } else {
-      memcpy(out_transcript, response->transcript, len + 1u);
+      memcpy(out_transcript, response.transcript, len + 1u);
       *out_transcript_len = len;
     }
   }
-  h2_pal_mem_free(allocator, response);
+  h2_gizclaw_rpc_response_deinit(upload->client, &rpc_response);
+  h2_gizclaw_rpc_request_destroy(upload->request);
+  upload->request = NULL;
   free_upload(upload);
   return rc;
 }
@@ -246,74 +309,59 @@ int h2_gizclaw_client_speech_extract_open(
   request.has_language = options->language.len > 0u;
   request.has_instruction = options->instruction.len > 0u;
 
-  h2_gizclaw_speech_upload_t *upload =
-      allocate_upload(client, H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT);
-  if (upload == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  const int rc = gzc_rpc_speech_extract_open(
-      h2_gizclaw_client_gzc_internal(client), &request, &upload->gzc_upload);
-  if (rc != GZC_OK) {
-    free_upload(upload);
-    return result_from_gzc(rc);
-  }
-  *out_upload = upload;
-  return H2_PAL_OK;
+  return speech_upload_open(
+      client, H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT,
+      H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT,
+      gizclaw_rpc_v1_SpeechExtractRequest_fields, &request, out_upload);
 }
 
 int h2_gizclaw_speech_extract_write(h2_gizclaw_speech_upload_t *upload,
                                     const uint8_t *data, size_t len) {
   if (upload == NULL || upload->kind != H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT ||
-      upload->gzc_upload == NULL || data == NULL || len == 0u) {
+      upload->request == NULL || data == NULL || len == 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  return result_from_gzc(
-      gzc_rpc_speech_extract_write(upload->gzc_upload, data, len));
+  return speech_upload_write(upload, data, len);
 }
 
 int h2_gizclaw_speech_extract_finish(
     h2_gizclaw_speech_upload_t *upload,
     h2_gizclaw_speech_extract_result_fn on_result, void *user) {
   if (upload == NULL || upload->kind != H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT ||
-      upload->gzc_upload == NULL || on_result == NULL) {
+      upload->request == NULL || on_result == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  const h2_pal_mem_api_t *allocator = upload->allocator;
-  gizclaw_rpc_v1_SpeechExtractResponse *response =
-      h2_pal_mem_alloc(allocator, sizeof(*response));
-  if (response == NULL) {
-    gzc_rpc_speech_extract_cancel(upload->gzc_upload);
-    free_upload(upload);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  *response = (gizclaw_rpc_v1_SpeechExtractResponse)
+  h2_gizclaw_rpc_response_t rpc_response = {0};
+  int rc = speech_upload_finish(upload, &rpc_response);
+  gizclaw_rpc_v1_SpeechExtractResponse response =
       gizclaw_rpc_v1_SpeechExtractResponse_init_zero;
-  gzc_rpc_error_t error = {0};
-  const int gzc_rc =
-      gzc_rpc_speech_extract_finish(upload->gzc_upload, response, &error);
-  upload->gzc_upload = NULL;
-  if (gzc_rc == GZC_ERR_RPC) {
-    h2_gizclaw_client_log_rpc_error_internal(
-        upload->client, H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT, error.code,
-        error.message.data, error.message.len);
+  if (rc == H2_PAL_OK && rpc_response.has_error)
+    rc = H2_PAL_ERR_IO;
+  if (rc == H2_PAL_OK) {
+    rc = result_from_gzc(h2_gizclaw_decode_pb_message(
+        gzc_str_from_parts((const char *)rpc_response.result_payload,
+                           rpc_response.result_payload_len),
+        gizclaw_rpc_v1_SpeechExtractResponse_fields, &response));
   }
-  int rc = result_from_gzc(gzc_rc);
   if (rc == H2_PAL_OK) {
     const size_t transcript_len = bounded_string_length(
-        response->transcript, sizeof(response->transcript));
+        response.transcript, sizeof(response.transcript));
     const size_t result_json_len = bounded_string_length(
-        response->result_json, sizeof(response->result_json));
-    if (transcript_len >= sizeof(response->transcript) ||
-        result_json_len >= sizeof(response->result_json)) {
+        response.result_json, sizeof(response.result_json));
+    if (transcript_len >= sizeof(response.transcript) ||
+        result_json_len >= sizeof(response.result_json)) {
       rc = H2_PAL_ERR_FORMAT;
     } else {
       rc = on_result(user,
-                     (h2_gizclaw_str_t){.data = response->transcript,
+                     (h2_gizclaw_str_t){.data = response.transcript,
                                         .len = transcript_len},
-                     (h2_gizclaw_str_t){.data = response->result_json,
+                     (h2_gizclaw_str_t){.data = response.result_json,
                                         .len = result_json_len});
     }
   }
-  h2_pal_mem_free(allocator, response);
+  h2_gizclaw_rpc_response_deinit(upload->client, &rpc_response);
+  h2_gizclaw_rpc_request_destroy(upload->request);
+  upload->request = NULL;
   free_upload(upload);
   return rc;
 }
@@ -341,56 +389,142 @@ static bool copy_owned_text(char *storage, size_t capacity,
   return true;
 }
 
-static int receive_request_result(void *user, h2_gizclaw_str_t transcript,
-                                  h2_gizclaw_str_t result_json) {
-  h2_gizclaw_speech_extract_request_t *request = user;
-  if (transcript.len >= sizeof(request->transcript) ||
-      result_json.len >= sizeof(request->result_json))
-    return H2_PAL_ERR_NO_MEMORY;
-  memcpy(request->transcript, transcript.data, transcript.len);
-  request->transcript[transcript.len] = '\0';
-  memcpy(request->result_json, result_json.data, result_json.len);
-  request->result_json[result_json.len] = '\0';
-  return H2_PAL_OK;
+static int speech_request_stream_event(
+    void *user, const h2_gizclaw_rpc_stream_event_t *event) {
+  (void)user;
+  return event != NULL ? GZC_OK : GZC_ERR_INVALID_ARGUMENT;
 }
 
-static h2_pal_result_t
-speech_request_run(void *user, h2_gizclaw_client_t *client,
-                   const h2_gizclaw_cancel_token_t *cancel_token) {
+static void speech_request_destroy_rpc(
+    h2_gizclaw_speech_extract_request_t *request) {
+  h2_gizclaw_rpc_request_destroy(request->rpc_request);
+  request->rpc_request = NULL;
+}
+
+static h2_pal_result_t speech_request_poll(
+    void *user, h2_gizclaw_client_t *client,
+    const h2_gizclaw_cancel_token_t *cancel_token) {
   h2_gizclaw_speech_extract_request_t *request = user;
-  h2_gizclaw_speech_upload_t *upload = NULL;
-  h2_pal_result_t rc = (h2_pal_result_t)h2_gizclaw_client_speech_extract_open(
-      client, &request->options, &upload);
-  bool finished = false;
-  while (rc == H2_PAL_OK && !finished) {
-    if (h2_gizclaw_cancel_requested(cancel_token)) {
-      rc = H2_PAL_ERR_CLOSED;
-      break;
+  if (h2_gizclaw_cancel_requested(cancel_token)) {
+    speech_request_destroy_rpc(request);
+    return H2_PAL_ERR_CLOSED;
+  }
+  if (!request->write_finished) {
+    if (!request->has_pending_message) {
+      const int queue_rc = h2_pal_queue_recv(
+          request->service->config.queue, request->queue,
+          &request->pending_message, H2_PAL_QUEUE_NO_WAIT);
+      if (queue_rc == H2_PAL_QUEUE_OK) {
+        request->has_pending_message = true;
+      } else if (queue_rc != H2_PAL_QUEUE_ERR_TIMEOUT &&
+                 queue_rc != H2_PAL_ERR_WOULD_BLOCK) {
+        speech_request_destroy_rpc(request);
+        return queue_rc == H2_PAL_QUEUE_ERR_CLOSED ? H2_PAL_ERR_CLOSED
+                                                   : H2_PAL_ERR_IO;
+      }
     }
-    h2_gizclaw_speech_request_message_t message = {0};
-    const int queue_rc =
-        h2_pal_queue_recv(request->service->config.queue, request->queue,
-                          &message, H2_GIZCLAW_SPEECH_REQUEST_WAIT_MS);
-    if (queue_rc == H2_PAL_QUEUE_ERR_TIMEOUT)
-      continue;
-    if (queue_rc != H2_PAL_QUEUE_OK) {
-      rc = queue_rc == H2_PAL_QUEUE_ERR_CLOSED ? H2_PAL_ERR_CLOSED
-                                               : H2_PAL_ERR_IO;
-      break;
+    if (request->has_pending_message) {
+      h2_pal_result_t rc;
+      if (request->pending_message.len == 0u) {
+        rc = h2_gizclaw_rpc_request_finish_write(request->rpc_request);
+        if (rc == H2_PAL_OK)
+          request->write_finished = true;
+      } else {
+        rc = h2_gizclaw_rpc_request_write(
+            request->rpc_request, request->pending_message.opus,
+            request->pending_message.len);
+      }
+      if (rc == H2_PAL_ERR_WOULD_BLOCK)
+        return rc;
+      if (rc != H2_PAL_OK) {
+        speech_request_destroy_rpc(request);
+        return rc;
+      }
+      request->has_pending_message = false;
+      memset(&request->pending_message, 0, sizeof(request->pending_message));
     }
-    if (message.len == 0u) {
-      rc = (h2_pal_result_t)h2_gizclaw_speech_extract_finish(
-          upload, receive_request_result, request);
-      upload = NULL;
-      finished = true;
+    if (!request->write_finished)
+      return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  h2_gizclaw_rpc_response_t rpc_response = {0};
+  h2_pal_result_t rc = h2_gizclaw_rpc_request_result(request->rpc_request,
+                                                      &rpc_response);
+  if (rc == H2_PAL_ERR_WOULD_BLOCK)
+    return rc;
+  if (rc == H2_PAL_OK && rpc_response.has_error)
+    rc = H2_PAL_ERR_IO;
+  gizclaw_rpc_v1_SpeechExtractResponse response =
+      gizclaw_rpc_v1_SpeechExtractResponse_init_zero;
+  if (rc == H2_PAL_OK) {
+    rc = result_from_gzc(h2_gizclaw_decode_pb_message(
+        gzc_str_from_parts((const char *)rpc_response.result_payload,
+                           rpc_response.result_payload_len),
+        gizclaw_rpc_v1_SpeechExtractResponse_fields, &response));
+  }
+  if (rc == H2_PAL_OK) {
+    const size_t transcript_len = bounded_string_length(
+        response.transcript, sizeof(response.transcript));
+    const size_t result_len =
+        bounded_string_length(response.result_json, sizeof(response.result_json));
+    if (transcript_len >= sizeof(request->transcript) ||
+        result_len >= sizeof(request->result_json)) {
+      rc = H2_PAL_ERR_NO_MEMORY;
     } else {
-      rc = (h2_pal_result_t)h2_gizclaw_speech_extract_write(
-          upload, message.opus, message.len);
+      memcpy(request->transcript, response.transcript, transcript_len + 1u);
+      memcpy(request->result_json, response.result_json, result_len + 1u);
     }
   }
-  if (upload != NULL)
-    h2_gizclaw_speech_extract_cancel(upload);
+  h2_gizclaw_rpc_response_deinit(client, &rpc_response);
+  speech_request_destroy_rpc(request);
   return rc;
+}
+
+static h2_pal_result_t speech_request_start(
+    void *user, h2_gizclaw_client_t *client,
+    const h2_gizclaw_cancel_token_t *cancel_token) {
+  h2_gizclaw_speech_extract_request_t *request = user;
+  if (h2_gizclaw_cancel_requested(cancel_token))
+    return H2_PAL_ERR_CLOSED;
+  gizclaw_rpc_v1_SpeechExtractRequest params_message =
+      gizclaw_rpc_v1_SpeechExtractRequest_init_zero;
+  if (!copy_request_text(params_message.asr_model_name,
+                         sizeof(params_message.asr_model_name),
+                         request->options.asr_model_name, true) ||
+      !copy_request_text(params_message.extract_model_name,
+                         sizeof(params_message.extract_model_name),
+                         request->options.extract_model_name, true) ||
+      !copy_request_text(params_message.content_type,
+                         sizeof(params_message.content_type),
+                         request->options.content_type, true) ||
+      !copy_request_text(params_message.language,
+                         sizeof(params_message.language),
+                         request->options.language, false) ||
+      !copy_request_text(params_message.schema_json,
+                         sizeof(params_message.schema_json),
+                         request->options.schema_json, true) ||
+      !copy_request_text(params_message.instruction,
+                         sizeof(params_message.instruction),
+                         request->options.instruction, false)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  params_message.has_language = request->options.language.len > 0u;
+  params_message.has_instruction = request->options.instruction.len > 0u;
+  gzc_buf_t params;
+  gzc_buf_init(&params);
+  int rc = h2_gizclaw_encode_pb_message(
+      client, gizclaw_rpc_v1_SpeechExtractRequest_fields, &params_message,
+      &params);
+  if (rc == GZC_OK) {
+    rc = h2_gizclaw_client_rpc_request_start_stream(
+        client, H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT,
+        (h2_gizclaw_rpc_bytes_t){.data = params.data, .len = params.len},
+        30000u, speech_request_stream_event, request, &request->rpc_request);
+  }
+  gzc_buf_free(&params,
+               gzc_client_platform(h2_gizclaw_client_gzc_internal(client)));
+  if (rc != H2_PAL_OK && rc != GZC_OK)
+    return rc;
+  return speech_request_poll(user, client, cancel_token);
 }
 
 static void
@@ -453,9 +587,9 @@ int h2_gizclaw_service_speech_extract_create(
   int rc = h2_pal_queue_create(service->config.queue, &queue_config,
                                &request->queue);
   if (rc == H2_PAL_QUEUE_OK) {
-    rc = h2_gizclaw_service_submit(service, identity, speech_request_run,
-                                   speech_request_complete, request,
-                                   &request->operation);
+    rc = h2_gizclaw_service_submit_async_internal(
+        service, identity, speech_request_start, speech_request_poll,
+        speech_request_complete, request, &request->operation);
   }
   if (rc != H2_PAL_OK) {
     if (request->queue != NULL)
