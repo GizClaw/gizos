@@ -962,11 +962,12 @@ static int workspace_parameters_input_shape(const uint8_t *response,
     uint64_t value_len = 0u;
     if (!protobuf_read_varint(parameters, parameters_len, &offset, &key) ||
         key == 0u || key >> 3u > UINT32_MAX || (key & 0x07u) != 2u ||
-        parameters_tag != 0u ||
         !protobuf_read_varint(parameters, parameters_len, &offset,
                               &value_len) ||
         value_len > SIZE_MAX || (size_t)value_len > parameters_len - offset)
       return H2_PAL_ERR_FORMAT;
+    if (parameters_tag != 0u)
+      return H2_PAL_ERR_INVALID_STATE;
     parameters_tag = (uint32_t)(key >> 3u);
     typed = parameters + offset;
     typed_len = (size_t)value_len;

@@ -1501,6 +1501,29 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
                       incomplete_mock.request_matches,
                   "incomplete Workspace parameters stop before PUT");
 
+  const uint8_t duplicate_parameters_response[] = {
+      0x0a, 0x0e, 0x22, 0x0c, 0x0a, 0x04, 0x08, 0x01,
+      0x20, 0x01, 0x0a, 0x04, 0x08, 0x01, 0x20, 0x01,
+  };
+  test_contact_rpc_t duplicate_parameters_mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+      .expected_request = workspace_get_request,
+      .expected_request_len = sizeof(workspace_get_request),
+      .response = duplicate_parameters_response,
+      .response_len = sizeof(duplicate_parameters_response),
+  };
+  h2_gizclaw_test_set_rpc_call(test_contact_rpc_call,
+                               &duplicate_parameters_mock);
+  fails += expect(h2_gizclaw_client_workspace_set_input(
+                      client,
+                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                      H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                      &workspace) == H2_PAL_ERR_INVALID_STATE,
+                  "workspace input update rejects duplicate parameter oneofs");
+  fails += expect(duplicate_parameters_mock.calls == 1 &&
+                      duplicate_parameters_mock.request_matches,
+                  "duplicate Workspace parameter oneofs stop before PUT");
+
   const uint8_t *workspace_request = workspace_get_request;
   uint8_t workspace_response[128];
   size_t workspace_response_len = 0u;
