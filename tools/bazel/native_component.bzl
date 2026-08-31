@@ -73,11 +73,11 @@ def _firmware_native_component_impl(ctx):
             continue
         elif CcInfo in dependency:
             # Native compilation consumes public repository headers, not a
-            # host/cross archive emitted for a different build boundary.
+            # host/cross archive emitted for a different build boundary. Only
+            # propagate declared include roots: individual header directories
+            # may contain private compatibility shims that shadow SDK headers.
             compilation_context = dependency[CcInfo].compilation_context
             transitive.append(compilation_context.headers)
-            for header in compilation_context.headers.to_list():
-                include_roots[header.dirname] = True
             for roots in [
                 compilation_context.includes,
                 compilation_context.quote_includes,
