@@ -801,6 +801,11 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t *service) {
             ? h2_pal_ble_adv_set_destroy(
                   service->config.api.ble, service->adv_set)
             : H2_PAL_OK;
+    if (adv_rc == H2_PAL_ERR_INVALID_STATE &&
+        service->config.advertising_mode ==
+            H2_LOADER_BLE_ADVERTISING_LEGACY) {
+        adv_rc = H2_PAL_OK;
+    }
     server_rc = service->server != NULL
         ? h2_bleikcp_server_close(service->server)
         : H2_PAL_OK;

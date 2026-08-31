@@ -63,6 +63,7 @@ static int h2loader_probe_pref(void) {
         H2_LOADER_PREF_NAMESPACE,
         H2_PAL_PREF_OPEN_READ_ONLY,
         &ns);
+    if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;
     if (rc != H2_PAL_OK) return rc;
     h2loader_ap_probe(9u);
     if (ns == NULL || ns->get_u32 == NULL || ns->get_i32 == NULL ||

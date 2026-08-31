@@ -36,6 +36,23 @@ class CpStartupContractTest(unittest.TestCase):
         self.assertIn("SHELL_IO_CTRL_TX_RESUME", transport)
         self.assertNotIn("H2_BK_CP_HOST_FRAME", transport)
 
+        semaphore_failure = transport.index(
+            "if (rtos_init_semaphore(&s_transport_done, 1) != kNoErr)"
+        )
+        release = transport.index("uart_rx_release();", semaphore_failure)
+        free = transport.index("psram_free(s_uart_rx_storage);", semaphore_failure)
+        self.assertLess(release, free)
+
+        launchers = list(runfiles.rglob("bk7258_v3_202405/ap/ap_main.c"))
+        self.assertEqual(1, len(launchers), [str(path) for path in launchers])
+        launcher = launchers[0].read_text(encoding="utf-8")
+        probe = launcher.index("static int h2loader_probe_pref(void)")
+        namespace_missing = launcher.index(
+            "if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;", probe
+        )
+        generic_failure = launcher.index("if (rc != H2_PAL_OK) return rc;", probe)
+        self.assertLess(namespace_missing, generic_failure)
+
 
 if __name__ == "__main__":
     unittest.main()

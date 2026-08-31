@@ -324,9 +324,9 @@ int h2_bk_h2loader_cp_transport_start(void) {
   s_running = 1;
   if (rtos_init_semaphore(&s_transport_done, 1) != kNoErr) {
     s_running = 0;
+    uart_rx_release();
     psram_free(s_uart_rx_storage);
     s_uart_rx_storage = NULL;
-    uart_rx_release();
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
     return -7;
@@ -339,9 +339,9 @@ int h2_bk_h2loader_cp_transport_start(void) {
   } else {
     s_running = 0;
     (void)rtos_deinit_semaphore(&s_transport_done);
+    uart_rx_release();
     psram_free(s_uart_rx_storage);
     s_uart_rx_storage = NULL;
-    uart_rx_release();
     (void)bk_mb_uart_dev_deinit(MB_UART1);
     (void)bk_mb_uart_dev_deinit(MB_UART0);
   }

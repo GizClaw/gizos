@@ -120,6 +120,9 @@ uint32_t h2_loader_get_command_availability(const h2_loader_t *loader,
                    H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
                    H2_LOADER_COMMAND_AVAILABLE_STAGE_URL);
   }
+  if (!status->partition_2.valid || !mfg_gate_satisfied(loader)) {
+    available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
+  }
   return available;
 }
 
@@ -995,6 +998,8 @@ int h2_loader_reboot_app_with_transition(
     void *transition_user) {
   if (loader == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  if (!loader->status.partition_2.valid || !mfg_gate_satisfied(loader))
+    return H2_PAL_ERR_INVALID_STATE;
   return set_next_and_reboot(
       loader, loader->config.app_partition_id, H2_LOADER_BOOT_INTENT_AUTO,
       H2_LOADER_DISRUPTIVE_REBOOT_APP, transition, transition_user);

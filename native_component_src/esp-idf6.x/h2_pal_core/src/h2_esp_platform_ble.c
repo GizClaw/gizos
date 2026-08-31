@@ -1567,14 +1567,19 @@ static h2_pal_result_t h2_esp_ble_set_adv_data(
     h2_pal_ble_adv_data_t legacy_primary = *data;
     legacy_primary.local_name = NULL;
     legacy_primary.manufacturer_data = (h2_pal_ble_bytes_t){ 0 };
+    uint8_t legacy_primary_encoded[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
     size_t legacy_primary_len = 0u;
     rc = h2_esp_ble_encode_adv_data(
         &legacy_primary,
-        s_h2_esp_ble_legacy_adv_data,
+        legacy_primary_encoded,
         &legacy_primary_len);
     size_t legacy_scan_response_len = 0u;
     bool legacy_valid = rc == H2_PAL_OK &&
         legacy_primary_len <= H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN;
+    if (legacy_valid) {
+        memcpy(s_h2_esp_ble_legacy_adv_data,
+            legacy_primary_encoded, legacy_primary_len);
+    }
     if (legacy_valid && data->manufacturer_data.len > 0u) {
         legacy_valid = h2_esp_ble_adv_put(
             s_h2_esp_ble_legacy_scan_response,

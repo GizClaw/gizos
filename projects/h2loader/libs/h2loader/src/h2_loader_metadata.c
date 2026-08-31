@@ -204,6 +204,7 @@ int h2_loader_metadata_read(
     *out_present = 0;
     rc = h2_pal_pref_open(
         pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
+    if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;
     if (rc != H2_PAL_OK) return rc;
     if (ns == NULL || ns->get_blob == NULL || ns->close == NULL) {
         rc = H2_PAL_ERR_UNSUPPORTED;

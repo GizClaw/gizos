@@ -150,6 +150,7 @@ static void test_exact_v2_routes_and_help(void) {
   assert(memcmp(fixture.output, expected, sizeof(expected) - 1u) == 0);
   const h2_loader_status_t status = {
       .capabilities = H2_LOADER_CAPABILITIES_ALL,
+      .partition_2 = {.valid = 1},
   };
   assert(h2_loader_get_command_availability(&loader, &status) ==
          H2_LOADER_COMMAND_AVAILABILITY_ALL);

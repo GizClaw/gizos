@@ -19,6 +19,7 @@ typedef struct metadata_pref_fixture {
     int set_blob_result;
     int remove_result;
     int commit_result;
+    int open_result;
     unsigned commits;
 } metadata_pref_fixture_t;
 
@@ -102,6 +103,7 @@ static int metadata_pref_open(
     metadata_pref_fixture_t *fixture = user;
     (void)mode;
     assert(strcmp(name_space, H2_LOADER_PREF_NAMESPACE) == 0);
+    if (fixture->open_result != H2_PAL_OK) return fixture->open_result;
     fixture->ns = (h2_pal_pref_namespace_t){
         .user = fixture,
         .close = metadata_pref_close,
@@ -309,12 +311,41 @@ static void test_preference_commit_is_atomic(void) {
     assert(present == 0 && read.valid == 0);
 }
 
+static void test_missing_namespace_is_empty_metadata(void) {
+    static const h2_pal_pref_vtable_t pref_vtable = {
+        .open = metadata_pref_open,
+    };
+    static const h2_pal_mem_vtable_t mem_vtable = {
+        .alloc = metadata_alloc,
+        .free = metadata_free,
+    };
+    metadata_pref_fixture_t fixture = {
+        .open_result = H2_PAL_ERR_NOT_FOUND,
+    };
+    const h2_pal_pref_api_t pref = {
+        .user = &fixture,
+        .vtable = &pref_vtable,
+    };
+    const h2_pal_mem_api_t mem = {
+        .vtable = &mem_vtable,
+    };
+    h2_loader_metadata_t metadata = {0};
+    int present = 1;
+
+    assert(h2_loader_metadata_read(
+               &pref, &mem, H2_LOADER_METADATA_SLOT_STAGE,
+               &metadata, &present) == H2_PAL_OK);
+    assert(present == 0);
+    assert(metadata.valid == 0);
+}
+
 int main(void) {
     test_slot_keys();
     test_round_trip_preserves_complete_identity();
     test_slot_validation();
     test_decoder_rejects_wrong_slot_and_corruption();
     test_preference_commit_is_atomic();
+    test_missing_namespace_is_empty_metadata();
     puts("h2loader metadata tests passed");
     return 0;
 }
