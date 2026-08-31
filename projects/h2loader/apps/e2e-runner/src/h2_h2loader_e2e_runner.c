@@ -1182,9 +1182,21 @@ run_install_monitor(h2_e2e_transport_context_t *context,
 static h2_pal_result_t require_case_active_role(
     h2_e2e_transport_context_t *context, h2_pal_result_t rc,
     h2_h2loader_host_active_role_t expected_role) {
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  /* Command helpers normally save their authoritative post-status. Keep the
+   * role assertion self-contained if a future helper returns success without
+   * doing so. connect_transport reads and records status for both transports. */
+  if (!context->case_result->status_valid) {
+    h2_h2loader_host_status_t status;
+    rc = connect_transport(context, &status);
+    h2_pal_result_t close_rc = disconnect_transport(context);
+    if (rc == H2_PAL_OK)
+      rc = close_rc;
+  }
   if (rc == H2_PAL_OK &&
-      (!context->case_result->status_valid ||
-       context->case_result->status.active_role != expected_role)) {
+      context->case_result->status.active_role != expected_role) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   return rc;
