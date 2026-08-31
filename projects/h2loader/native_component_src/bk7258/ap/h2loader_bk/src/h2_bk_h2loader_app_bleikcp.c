@@ -73,7 +73,7 @@ int h2_bk_h2loader_current_app_identity(
     uint64_t offset = 0u;
     if (runtime == NULL || version == NULL || out_identity == NULL ||
         runtime->pref == NULL || runtime->mem == NULL || reader == NULL ||
-        reader->vtable == NULL || reader->vtable->get_capacity == NULL ||
+        reader->vtable == NULL ||
         reader->vtable->read == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -88,8 +88,7 @@ int h2_bk_h2loader_current_app_identity(
         image_size = active->image_size;
     }
     if (image_size == 0u) {
-        rc = reader->vtable->get_capacity(
-            reader->user, H2_BK_H2LOADER_APP_PARTITION_ID, &image_size);
+        rc = h2_bk_h2loader_managed_app_image_size(&image_size);
         if (rc != H2_PAL_OK || image_size == 0u) return rc;
     }
     rc = app_digest_start(NULL);

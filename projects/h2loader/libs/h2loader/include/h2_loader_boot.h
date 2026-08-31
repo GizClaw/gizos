@@ -217,6 +217,16 @@ int h2_loader_finalize_active_app(
     const h2_loader_image_identity_t *active_identity,
     uint32_t running_partition_id,
     uint32_t app_partition_id);
+int h2_loader_finalize_active_app_with_confirmation(
+    const h2_pal_pref_api_t *pref,
+    const h2_pal_mem_api_t *allocator,
+    const h2_pal_fs_api_t *fs,
+    const char *package_path,
+    const h2_loader_image_identity_t *active_identity,
+    uint32_t running_partition_id,
+    uint32_t app_partition_id,
+    h2_loader_reboot_transition_fn confirm,
+    void *confirm_user);
 int h2_loader_set_last_result(h2_loader_t *loader, int result);
 int h2_loader_reboot_h2loader_with_transition(
     h2_loader_t *loader,

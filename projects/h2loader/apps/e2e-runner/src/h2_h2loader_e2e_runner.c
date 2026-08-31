@@ -37,6 +37,8 @@ typedef struct h2_e2e_transport_context {
   uint64_t monitor_deadline_ms;
   size_t monitor_output_bytes;
   uint8_t monitor_logs;
+  uint32_t authoritative_command_availability;
+  uint8_t authoritative_command_availability_valid;
 } h2_e2e_transport_context_t;
 
 typedef struct h2_e2e_memory_source {
@@ -632,7 +634,8 @@ run_legacy_commands_absent(h2_e2e_transport_context_t *context) {
   h2_pal_result_t rc =
       run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP);
   if (rc == H2_PAL_OK &&
-      ((context->case_result->status.command_availability &
+      (!context->authoritative_command_availability_valid ||
+       (context->authoritative_command_availability &
         H2_E2E_REMOVED_COMMAND_AVAILABILITY_MASK) != 0u ||
        strcmp(context->command_output, expected_help) != 0)) {
     rc = H2_PAL_ERR_INVALID_STATE;
@@ -1269,6 +1272,13 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
                       ? config->execute_case(config->execute_user, transport,
                                              test_case, entry)
                       : execute_real_case(context, test_case);
+  if (entry->result == H2_PAL_OK &&
+      test_case == H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT &&
+      (!context->authoritative_command_availability_valid ||
+       (context->authoritative_command_availability &
+        H2_E2E_REMOVED_COMMAND_AVAILABILITY_MASK) != 0u)) {
+    entry->result = H2_PAL_ERR_INVALID_STATE;
+  }
   (void)now_ms(config, &finished);
   entry->elapsed_ms = finished >= started ? finished - started : 0u;
   if (entry->result == H2_PAL_OK) {
@@ -1288,6 +1298,8 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
                                     h2_h2loader_e2e_transport_t transport,
                                     uint32_t iteration) {
   context->transport = transport;
+  context->authoritative_command_availability = 0u;
+  context->authoritative_command_availability_valid = 0u;
   append_case(config, result, context, transport, H2_H2LOADER_E2E_CASE_HELP,
               iteration);
   const size_t status_case_index = result->case_count;
@@ -1297,6 +1309,11 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
               iteration);
   const h2_h2loader_e2e_case_result_t *status_case =
       &result->cases[status_case_index];
+  if (status_case->result == H2_PAL_OK && status_case->status_valid) {
+    context->authoritative_command_availability =
+        status_case->status.command_availability;
+    context->authoritative_command_availability_valid = 1u;
+  }
   if (status_case->result == H2_PAL_OK && status_case->status_valid &&
       (status_case->status.command_availability &
        H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY) != 0u) {

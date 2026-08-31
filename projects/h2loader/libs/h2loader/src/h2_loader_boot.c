@@ -527,11 +527,12 @@ static int finish_stage(const h2_pal_pref_api_t *pref,
   return rc;
 }
 
-int h2_loader_finalize_active_app(
+int h2_loader_finalize_active_app_with_confirmation(
     const h2_pal_pref_api_t *pref, const h2_pal_mem_api_t *allocator,
     const h2_pal_fs_api_t *fs, const char *package_path,
     const h2_loader_image_identity_t *active_identity,
-    uint32_t running_partition_id, uint32_t app_partition_id) {
+    uint32_t running_partition_id, uint32_t app_partition_id,
+    h2_loader_reboot_transition_fn confirm, void *confirm_user) {
   h2_loader_metadata_t stage;
   h2_loader_metadata_t partition;
   h2_loader_metadata_t stored;
@@ -562,8 +563,11 @@ int h2_loader_finalize_active_app(
      * erased or contains stale P2 metadata. Seed the slot from the image, but
      * keep Stage intact because there is no durable proof that this exact
      * source package (including data-only contents) was installed. */
-    return h2_loader_metadata_write(
+    rc = h2_loader_metadata_write(
         pref, H2_LOADER_METADATA_SLOT_PARTITION_2, &partition);
+    if (rc != H2_PAL_OK)
+      return rc;
+    return confirm != NULL ? confirm(confirm_user) : H2_PAL_OK;
   }
   stage_installed =
       stage_present && stage.valid &&
@@ -583,11 +587,30 @@ int h2_loader_finalize_active_app(
                                 &partition);
   if (rc != H2_PAL_OK)
     return rc;
+  /* Persist the running APP identity before platform confirmation, but retain
+   * Stage until confirmation succeeds. A reset at either boundary therefore
+   * leaves enough durable evidence to retry without confirming an image whose
+   * metadata was never committed or discarding its source package early. */
+  if (confirm != NULL) {
+    rc = confirm(confirm_user);
+    if (rc != H2_PAL_OK)
+      return rc;
+  }
   if (!stage_installed) {
     return H2_PAL_OK;
   }
   rc = finish_stage(pref, fs, package_path, &stage);
   return rc == H2_PAL_OK ? pref_set_i32(pref, "last_result", H2_PAL_OK) : rc;
+}
+
+int h2_loader_finalize_active_app(
+    const h2_pal_pref_api_t *pref, const h2_pal_mem_api_t *allocator,
+    const h2_pal_fs_api_t *fs, const char *package_path,
+    const h2_loader_image_identity_t *active_identity,
+    uint32_t running_partition_id, uint32_t app_partition_id) {
+  return h2_loader_finalize_active_app_with_confirmation(
+      pref, allocator, fs, package_path, active_identity, running_partition_id,
+      app_partition_id, NULL, NULL);
 }
 
 static int write_partition_2(h2_loader_t *loader,
@@ -725,6 +748,14 @@ static int copy_partition_2_to_1(h2_loader_t *loader) {
 }
 
 static int finish_loader_stage_if_converged(h2_loader_t *loader) {
+  /* APP packages can carry an independent data tree. Only a Loader package is
+   * complete when both executable partitions converge on the Stage image;
+   * APP Stage completion belongs to the running APP finalizer, which also
+   * proves the installed package source identity. */
+  if (!loader->status.stage.valid ||
+      loader->status.stage.role != H2_LOADER_IMAGE_ROLE_H2LOADER) {
+    return H2_PAL_OK;
+  }
   if (!h2_loader_metadata_image_equal(&loader->status.partition_1,
                                       &loader->status.partition_2)) {
     return H2_PAL_OK;

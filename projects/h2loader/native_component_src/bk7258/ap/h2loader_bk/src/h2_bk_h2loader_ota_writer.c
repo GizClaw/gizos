@@ -395,6 +395,25 @@ static const bk_logic_partition_t *image_partition(uint32_t partition_id) {
     return NULL;
 }
 
+int h2_bk_h2loader_managed_app_image_size(uint64_t *out_size) {
+    const bk_logic_partition_t *primary;
+    const bk_logic_partition_t *trial;
+    if (out_size == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    primary = image_partition(H2_BK_H2LOADER_PRIMARY_PARTITION_ID);
+    trial = image_partition(H2_BK_H2LOADER_APP_PARTITION_ID);
+    if (primary == NULL || trial == NULL ||
+        primary->partition_length != trial->partition_length) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+    /* BK packages contain app_ab_crc.rbl, a fixed, padded A/B managed image.
+     * Its manifest size is therefore the validated A/B window length, not an
+     * arbitrary executable partition capacity with unowned trailing bytes. */
+    *out_size = trial->partition_length;
+    return H2_PAL_OK;
+}
+
 static int image_get_capacity(void *user, uint32_t partition_id, uint64_t *out_capacity) {
     const bk_logic_partition_t *partition;
     (void)user;

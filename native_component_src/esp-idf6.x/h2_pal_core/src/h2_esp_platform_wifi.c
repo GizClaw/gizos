@@ -23,6 +23,7 @@ static int s_h2_esp_wifi_events_registered;
 static int s_h2_esp_wifi_sta_disconnect_reason;
 static int s_h2_esp_wifi_sta_reconnect_enabled;
 static uint32_t s_h2_esp_wifi_sta_reconnect_attempts;
+static portMUX_TYPE s_h2_esp_wifi_sta_reconnect_lock = portMUX_INITIALIZER_UNLOCKED;
 static StaticSemaphore_t s_h2_esp_wifi_safe_mutex_storage;
 static SemaphoreHandle_t s_h2_esp_wifi_safe_mutex;
 static portMUX_TYPE s_h2_esp_wifi_safe_mutex_init_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -58,6 +59,46 @@ typedef struct h2_esp_wifi_safe_call {
 
 static size_t h2_esp_wifi_strnlen(const uint8_t *value, size_t max_len);
 static int h2_esp_wifi_map_error(esp_err_t err);
+
+static void h2_esp_wifi_sta_reconnect_disable(void) {
+    portENTER_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    s_h2_esp_wifi_sta_reconnect_enabled = 0;
+    s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+    portEXIT_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+}
+
+static void h2_esp_wifi_sta_reconnect_enable(void) {
+    portENTER_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    s_h2_esp_wifi_sta_reconnect_enabled = 1;
+    s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+    portEXIT_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+}
+
+static void h2_esp_wifi_sta_reconnect_reset_attempts(void) {
+    portENTER_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+    portEXIT_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+}
+
+static int h2_esp_wifi_sta_reconnect_is_enabled(void) {
+    int enabled;
+    portENTER_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    enabled = s_h2_esp_wifi_sta_reconnect_enabled;
+    portEXIT_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    return enabled;
+}
+
+static int h2_esp_wifi_sta_reconnect_claim_attempt(void) {
+    int reconnect = 0;
+    portENTER_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    if (s_h2_esp_wifi_sta_reconnect_enabled != 0 &&
+        s_h2_esp_wifi_sta_reconnect_attempts < H2_ESP_WIFI_STA_RECONNECT_ATTEMPTS) {
+        ++s_h2_esp_wifi_sta_reconnect_attempts;
+        reconnect = 1;
+    }
+    portEXIT_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
+    return reconnect;
+}
 
 static SemaphoreHandle_t h2_esp_wifi_safe_mutex(void) {
     portENTER_CRITICAL(&s_h2_esp_wifi_safe_mutex_init_lock);
@@ -259,8 +300,7 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
         return H2_PAL_OK;
     }
 
-    s_h2_esp_wifi_sta_reconnect_enabled = 0;
-    s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+    h2_esp_wifi_sta_reconnect_disable();
     int rc = h2_esp_wifi_teardown_driver();
     if (rc != H2_PAL_OK) {
         return rc;
@@ -295,7 +335,7 @@ static void h2_esp_wifi_event_handler(
         memset(&status, 0, sizeof(status));
         status.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
         s_h2_esp_wifi_sta_disconnect_reason = 0;
-        s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+        h2_esp_wifi_sta_reconnect_reset_attempts();
         const wifi_event_sta_connected_t *connected = (const wifi_event_sta_connected_t *)event_data;
         if (connected != NULL) {
             status.ssid_len = h2_esp_wifi_strnlen(connected->ssid, H2_PAL_WIFI_SSID_MAX);
@@ -323,10 +363,7 @@ static void h2_esp_wifi_event_handler(
         xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED | H2_ESP_WIFI_EVENT_GOT_IP);
         xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
         h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
-        if (s_h2_esp_wifi_sta_reconnect_enabled != 0 &&
-            s_h2_esp_wifi_sta_reconnect_attempts <
-                H2_ESP_WIFI_STA_RECONNECT_ATTEMPTS) {
-            s_h2_esp_wifi_sta_reconnect_attempts++;
+        if (h2_esp_wifi_sta_reconnect_claim_attempt()) {
             (void)esp_wifi_connect();
         }
         (void)h2_esp_platform_netif_reconcile_default();
@@ -804,8 +841,7 @@ static int h2_esp_wifi_sta_connect(
         return rc;
     }
 
-    s_h2_esp_wifi_sta_reconnect_enabled = 0;
-    s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+    h2_esp_wifi_sta_reconnect_disable();
 
     wifi_ap_record_t current_ap;
     memset(&current_ap, 0, sizeof(current_ap));
@@ -854,10 +890,10 @@ static int h2_esp_wifi_sta_connect(
     memcpy(connecting_status.ssid, config->ssid, config->ssid_len);
     connecting_status.ssid[connecting_status.ssid_len] = '\0';
     h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING, &connecting_status);
-    s_h2_esp_wifi_sta_reconnect_enabled = 1;
+    h2_esp_wifi_sta_reconnect_enable();
     err = esp_wifi_connect();
     if (err != ESP_OK) {
-        s_h2_esp_wifi_sta_reconnect_enabled = 0;
+        h2_esp_wifi_sta_reconnect_disable();
         return h2_esp_wifi_map_error(err);
     }
     if (timeout_ms == 0u) {
@@ -887,7 +923,7 @@ static int h2_esp_wifi_sta_connect(
             }
         }
         if ((bits & H2_ESP_WIFI_EVENT_DISCONNECTED) == 0u ||
-            s_h2_esp_wifi_sta_reconnect_enabled == 0 ||
+            !h2_esp_wifi_sta_reconnect_is_enabled() ||
             remaining == 0u) {
             break;
         }
@@ -900,8 +936,7 @@ static int h2_esp_wifi_sta_connect(
 
 static int h2_esp_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     (void)sta;
-    s_h2_esp_wifi_sta_reconnect_enabled = 0;
-    s_h2_esp_wifi_sta_reconnect_attempts = 0u;
+    h2_esp_wifi_sta_reconnect_disable();
     if (s_h2_esp_wifi_started == 0) {
         if (s_h2_esp_wifi_events != NULL) {
             xEventGroupClearBits(

@@ -39,6 +39,17 @@ coredump it is limited to one iteration. Wi-Fi passwords are read only from the
 named environment variable and never written to console output or the JSON
 report.
 
+The report contract is UTF-8 JSON with schema string
+`h2loader-e2e-report/v1`. Top-level fields are emitted in fixed order:
+`schema`, `result`, `rc`, UART endpoint/baud, BLE endpoint, expected identity,
+repeat/monitor settings, APP/Loader/URL/coredump identity objects, `summary`,
+then execution-ordered `cases`. Each case records transport, iteration, name,
+PASS/FAIL plus numeric PAL result, terminal enum, elapsed/acknowledged/total/
+output/log byte counts, reconnect attempts, and either `null` or the complete
+authoritative status with Stage/P1/P2 metadata. Raw logs and Wi-Fi credential
+values are never serialized. Missing hardware is a handoff gate, never a fake
+case or PASS in this report.
+
 Every transport also executes `legacy-commands-absent`: it requires the exact
 new help surface and verifies that the removed restart, rollback, and hold
 availability bits are clear. Device command-parser unit tests separately send

@@ -115,6 +115,17 @@ static h2_pal_result_t execute_without_memory(
   return rc;
 }
 
+static h2_pal_result_t execute_with_removed_availability(
+    void *user, h2_h2loader_e2e_transport_t transport,
+    h2_h2loader_e2e_case_t test_case,
+    h2_h2loader_e2e_case_result_t *out_result) {
+  h2_pal_result_t rc = execute_case(user, transport, test_case, out_result);
+  if (test_case == H2_H2LOADER_E2E_CASE_STATUS) {
+    out_result->status.command_availability |= UINT32_C(1) << 6;
+  }
+  return rc;
+}
+
 static void test_memory_follows_authoritative_availability(void) {
   fake_executor_t fake = {0};
   h2_h2loader_e2e_result_t result;
@@ -130,6 +141,22 @@ static void test_memory_follows_authoritative_availability(void) {
   assert(fake.cases[1] == H2_H2LOADER_E2E_CASE_STATUS);
   assert(fake.cases[2] == H2_H2LOADER_E2E_CASE_STATS);
   assert(fake.cases[3] == H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT);
+}
+
+static void test_legacy_check_uses_preceding_status_availability(void) {
+  fake_executor_t fake = {0};
+  h2_h2loader_e2e_result_t result;
+  const h2_h2loader_e2e_config_t config = {
+      .uart_endpoint = "/dev/test",
+      .repeat_count = 1u,
+      .execute_case = execute_with_removed_availability,
+      .execute_user = &fake,
+  };
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_ERR_INVALID_STATE);
+  assert(result.case_count == 5u);
+  assert(result.cases[4].test_case ==
+         H2_H2LOADER_E2E_CASE_LEGACY_COMMANDS_ABSENT);
+  assert(result.cases[4].result == H2_PAL_ERR_INVALID_STATE);
 }
 
 static void test_failure_is_reported_without_hiding_cleanup(void) {
@@ -259,6 +286,7 @@ int main(void) {
   test_full_sequence_for_both_transports();
   test_failure_is_reported_without_hiding_cleanup();
   test_memory_follows_authoritative_availability();
+  test_legacy_check_uses_preceding_status_availability();
   test_invalid_configs();
   test_monitor_cases_are_uart_only_and_bounded();
   test_monitor_runs_each_reboot_with_a_bootable_target();

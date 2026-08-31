@@ -756,6 +756,8 @@ static int confirm_pending_h2loader_boot(int *out_was_pending) {
   return rc == H2_PAL_OK ? call.result : rc;
 }
 
+static int confirm_active_image(void *user);
+
 int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
   h2_loader_image_identity_t identity = {0};
   h2_pal_firmware_info_t firmware_info;
@@ -781,12 +783,9 @@ int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
     }
   }
   if (rc == H2_PAL_OK) {
-    rc = confirm_pending_h2loader_boot(NULL);
-  }
-  if (rc == H2_PAL_OK) {
-    rc = h2_loader_finalize_active_app(runtime->pref, runtime->mem, runtime->fs,
-                                       H2_LOADER_STAGE_PATH, &identity,
-                                       running_partition.id, 2u);
+    rc = h2_loader_finalize_active_app_with_confirmation(
+        runtime->pref, runtime->mem, runtime->fs, H2_LOADER_STAGE_PATH,
+        &identity, running_partition.id, 2u, confirm_active_image, NULL);
   }
   if (rc == H2_PAL_OK) {
     rc = h2_esp_platform_pref_finalize_migration();
