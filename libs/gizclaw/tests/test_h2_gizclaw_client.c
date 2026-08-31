@@ -5,6 +5,7 @@
 #include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_profile_internal.h"
+#include "h2_gizclaw_registration_internal.h"
 #include "h2_gizclaw_registration.h"
 #include "h2_gizclaw_social.h"
 #include "h2_gizclaw_speech.h"
@@ -350,8 +351,8 @@ static bool test_encode_message_audio_response(uint8_t *buffer, size_t capacity,
                                                const char *history_name,
                                                size_t audio_len,
                                                size_t *out_len) {
-  gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse response =
-      gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse_init_zero;
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse response =
+      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
   (void)snprintf(response.friend_group_name, sizeof(response.friend_group_name),
                  "%s", friend_group_name);
   (void)snprintf(response.history_name, sizeof(response.history_name), "%s",
@@ -361,7 +362,7 @@ static bool test_encode_message_audio_response(uint8_t *buffer, size_t capacity,
   response.size_bytes = (int64_t)audio_len;
   pb_ostream_t stream = pb_ostream_from_buffer(buffer, capacity);
   if (!pb_encode(&stream,
-                 gizclaw_rpc_v1_FriendGroupMessageAudioGetResponse_fields,
+                 gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
                  &response)) {
     return false;
   }
@@ -378,7 +379,7 @@ static int test_message_audio_rpc_call(void *user, h2_gizclaw_client_t *client,
   (void)client;
   ++mock->calls;
   mock->request_matches =
-      method == H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET &&
+      method == H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD &&
       params_payload.len == mock->expected_request_len &&
       memcmp(params_payload.data, mock->expected_request,
              mock->expected_request_len) == 0;
@@ -455,7 +456,7 @@ static int test_message_audio_stream(h2_gizclaw_client_t *client) {
   h2_gizclaw_test_set_rpc_call_stream(test_message_audio_rpc_call, &mock);
   test_audio_sink_t sink = {0};
   h2_gizclaw_friend_group_message_audio_info_t info = {0};
-  int rc = h2_gizclaw_client_friend_group_message_audio_get(
+  int rc = h2_gizclaw_client_friend_group_message_audio_download(
       client, (h2_gizclaw_str_t){.data = "group-a", .len = 7u},
       (h2_gizclaw_str_t){.data = "history-1", .len = 9u}, test_audio_write,
       &sink, &info);
@@ -479,7 +480,7 @@ static int test_message_audio_stream(h2_gizclaw_client_t *client) {
                   "friend group audio mismatch fixture encodes");
   mock.response_len = response_len;
   sink = (test_audio_sink_t){0};
-  rc = h2_gizclaw_client_friend_group_message_audio_get(
+  rc = h2_gizclaw_client_friend_group_message_audio_download(
       client, (h2_gizclaw_str_t){.data = "group-a", .len = 7u},
       (h2_gizclaw_str_t){.data = "history-1", .len = 9u}, test_audio_write,
       &sink, &info);
@@ -495,7 +496,7 @@ static int test_message_audio_stream(h2_gizclaw_client_t *client) {
   mock.response_len = response_len;
   mock.eos_count = 0u;
   sink = (test_audio_sink_t){0};
-  rc = h2_gizclaw_client_friend_group_message_audio_get(
+  rc = h2_gizclaw_client_friend_group_message_audio_download(
       client, (h2_gizclaw_str_t){.data = "group-a", .len = 7u},
       (h2_gizclaw_str_t){.data = "history-1", .len = 9u}, test_audio_write,
       &sink, &info);
@@ -505,7 +506,7 @@ static int test_message_audio_stream(h2_gizclaw_client_t *client) {
 
   mock.eos_count = 2u;
   sink = (test_audio_sink_t){0};
-  rc = h2_gizclaw_client_friend_group_message_audio_get(
+  rc = h2_gizclaw_client_friend_group_message_audio_download(
       client, (h2_gizclaw_str_t){.data = "group-a", .len = 7u},
       (h2_gizclaw_str_t){.data = "history-1", .len = 9u}, test_audio_write,
       &sink, &info);
@@ -652,9 +653,11 @@ static int test_speed_test_adapter(h2_gizclaw_client_t *client) {
       "speedtest accepts SDK completion after response, data, and EOS");
   fails += expect(
       test.requested_up_bytes == 0 && test.requested_down_bytes == 1024 &&
+          result.upload_bytes == 0u && result.upload_elapsed_ms == 0u &&
+          result.upload_bits_per_second == 0u &&
           result.download_bytes == 1024u && result.elapsed_ms == 20u &&
           result.download_bits_per_second == 409600u,
-      "speedtest uses the dedicated download result and direction duration");
+      "speedtest leaves an unrequested upload direction empty");
 
   test.response.down_bytes = 1023;
   result = (h2_gizclaw_speedtest_result_t){
@@ -1092,6 +1095,7 @@ static int test_rpc_sequence_call(void *user, h2_gizclaw_client_t *client,
 }
 
 static int test_stable_registration_token_reuse(h2_gizclaw_client_t *client) {
+  (void)client;
   int fails = 0;
   const char token[] = "stable-product-token";
   const uint8_t request[] = {
@@ -1103,26 +1107,23 @@ static int test_stable_registration_token_reuse(h2_gizclaw_client_t *client) {
   fails += expect(test_encode_registration_response(response, sizeof(response),
                                                     &response_len),
                   "registration response fixture encodes");
-  test_contact_rpc_t mock = {
-      .expected_method = H2_GIZCLAW_RPC_SERVER_REGISTER,
-      .expected_request = request,
-      .expected_request_len = sizeof(request),
-      .response = response,
-      .response_len = response_len,
-  };
-  h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &mock);
   for (size_t attempt = 0u; attempt < 2u; ++attempt) {
+    uint8_t encoded[128];
+    size_t encoded_len = 0u;
     h2_gizclaw_registration_result_t registration = {0};
     fails += expect(
-        h2_gizclaw_client_register(client, token, &registration) == H2_PAL_OK,
-        "stable product token can establish each connection snapshot");
+        h2_gizclaw_registration_encode_request(
+            token, encoded, sizeof(encoded), &encoded_len) == H2_PAL_OK &&
+            encoded_len == sizeof(request) &&
+            memcmp(encoded, request, sizeof(request)) == 0,
+        "stable product token encodes for each connection snapshot");
+    fails += expect(h2_gizclaw_registration_decode_response(
+                        response, response_len, &registration) == H2_PAL_OK,
+                    "registration response decodes");
     fails +=
         expect(strcmp(registration.runtime_profile_name, "demo-test") == 0,
                "repeated registration preserves the product binding response");
   }
-  fails += expect(mock.calls == 2 && mock.request_matches,
-                  "stable product token is forwarded for every registration");
-  h2_gizclaw_test_set_rpc_call(NULL, NULL);
   return fails;
 }
 
@@ -1906,7 +1907,7 @@ int main(void) {
                   "register wire method remains 90");
   fails += expect(H2_GIZCLAW_RPC_SERVER_PEER_DELETE == 93,
                   "peer delete wire method remains 93");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET == 95,
+  fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD == 95,
                   "friend group message audio get wire method remains 95");
 
   h2_gizclaw_config_t config;
@@ -2310,34 +2311,12 @@ int main(void) {
       "stream rpc rejects null client and callback");
   fails += expect(h2_gizclaw_client_close(NULL) == H2_PAL_ERR_INVALID_ARG,
                   "close rejects null client");
-  h2_gizclaw_registration_result_t registration = {0};
-  fails += expect(h2_gizclaw_client_register(NULL, "token", &registration) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "registration rejects null client");
-  fails += expect(registration.runtime_profile_name[0] == '\0',
-                  "failed registration clears output");
-  h2_gizclaw_points_account_t points_account = {0};
-  h2_gizclaw_points_transaction_page_t points_page = {0};
-  fails += expect(h2_gizclaw_client_points_get(NULL, &points_account) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "points get rejects null client");
-  fails += expect(h2_gizclaw_client_points_transactions_list(
-                      NULL, (h2_gizclaw_str_t){0}, 8u, &points_page) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "points list rejects null client");
-  h2_gizclaw_profile_t profile = {0};
   h2_gizclaw_friend_group_page_t friend_groups = {0};
   fails += expect(h2_gizclaw_client_friend_groups_list(
                       NULL, (h2_gizclaw_str_t){0}, 8u, &friend_groups) ==
                       H2_PAL_ERR_INVALID_ARG,
                   "friend group list rejects null client");
-  fails += expect(h2_gizclaw_client_profile_get(NULL, &profile) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "profile get rejects null client");
-  fails += expect(h2_gizclaw_client_profile_put_emoji(
-                      NULL, (h2_gizclaw_str_t){.data = "🤖", .len = 4u},
-                      &profile) == H2_PAL_ERR_INVALID_ARG,
-                  "profile put rejects null client");
+  h2_gizclaw_profile_t profile = {0};
   h2_gizclaw_pet_t pet = {0};
   const h2_gizclaw_pet_adopt_options_t adopt = {
       .name = {.data = "pet-test-1", .len = 10u},
@@ -2563,7 +2542,7 @@ int main(void) {
                      H2_PAL_ERR_INVALID_ARG &&
                  h2_gizclaw_client_friend_group_message_get(
                      NULL, id, id, &message) == H2_PAL_ERR_INVALID_ARG &&
-                 h2_gizclaw_client_friend_group_message_audio_get(
+                 h2_gizclaw_client_friend_group_message_audio_download(
                      NULL, id, id, NULL, NULL, NULL) == H2_PAL_ERR_INVALID_ARG,
              "friend group message operations reject invalid arguments");
   fails += expect(h2_gizclaw_provider_result_to_gzc(H2_PAL_ERR_NOT_FOUND) ==

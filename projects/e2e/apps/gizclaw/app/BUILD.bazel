@@ -41,6 +41,9 @@ cc_library(
         "include",
         "src",
     ],
+    # The E2E suite remains the migration harness for removed synchronous
+    # entry points; production consumers only see the service-owned async API.
+    local_defines = ["H2_GIZCLAW_TESTING"],
     # The opus vendor build crashes the JieLi pi32v2 clang 4.0.1 backend.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [

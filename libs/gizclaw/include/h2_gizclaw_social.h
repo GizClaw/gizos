@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_SOCIAL_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
@@ -39,6 +40,7 @@ typedef struct h2_gizclaw_contact_page {
   char *next_cursor;
 } h2_gizclaw_contact_page_t;
 
+#if defined(H2_GIZCLAW_TESTING) || defined(H2_GIZCLAW_INTERNAL_SYNC_API)
 /**
  * List Contacts visible to the authenticated Peer.
  *
@@ -104,6 +106,7 @@ void h2_gizclaw_contact_deinit(h2_gizclaw_client_t *client,
 /** Release all storage owned by a Contact page. */
 void h2_gizclaw_contact_page_deinit(h2_gizclaw_client_t *client,
                                     h2_gizclaw_contact_page_t *page);
+#endif
 
 /** Caller role returned with a FriendGroup snapshot. */
 typedef enum h2_gizclaw_friend_group_role {
@@ -130,6 +133,7 @@ typedef struct h2_gizclaw_friend_group_page {
   char *next_cursor;
 } h2_gizclaw_friend_group_page_t;
 
+#if defined(H2_GIZCLAW_TESTING) || defined(H2_GIZCLAW_INTERNAL_SYNC_API)
 /**
  * List FriendGroups visible to the authenticated Peer.
  *
@@ -146,6 +150,7 @@ int h2_gizclaw_client_friend_groups_list(
 /** Release all storage owned by a FriendGroup page. */
 void h2_gizclaw_friend_group_page_deinit(h2_gizclaw_client_t *client,
                                          h2_gizclaw_friend_group_page_t *page);
+#endif
 
 /** Owned Friend relationship and its optional projected profile information. */
 typedef struct h2_gizclaw_friend {
@@ -227,6 +232,187 @@ typedef struct h2_gizclaw_friend_group_message_page {
   char *next_cursor;
 } h2_gizclaw_friend_group_message_page_t;
 
+typedef struct h2_gizclaw_social_request h2_gizclaw_social_request_t;
+
+typedef enum h2_gizclaw_social_request_kind {
+  H2_GIZCLAW_SOCIAL_CONTACTS_LIST = 0,
+  H2_GIZCLAW_SOCIAL_CONTACT_GET,
+  H2_GIZCLAW_SOCIAL_CONTACT_CREATE,
+  H2_GIZCLAW_SOCIAL_CONTACT_PUT,
+  H2_GIZCLAW_SOCIAL_CONTACT_DELETE,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUPS_LIST,
+  H2_GIZCLAW_SOCIAL_FRIENDS_LIST,
+  H2_GIZCLAW_SOCIAL_FRIEND_INFO_GET,
+  H2_GIZCLAW_SOCIAL_FRIEND_ADD,
+  H2_GIZCLAW_SOCIAL_FRIEND_DELETE,
+  H2_GIZCLAW_SOCIAL_FRIEND_INVITE_TOKEN_GET,
+  H2_GIZCLAW_SOCIAL_FRIEND_INVITE_TOKEN_CREATE,
+  H2_GIZCLAW_SOCIAL_FRIEND_INVITE_TOKEN_CLEAR,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_GET,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_CREATE,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_PUT,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_DELETE,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_JOIN,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_INVITE_TOKEN_GET,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_INVITE_TOKEN_CREATE,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_INVITE_TOKEN_CLEAR,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MEMBERS_LIST,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MEMBER_PUT,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MEMBER_DELETE,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MESSAGES_LIST,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MESSAGE_GET,
+  H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MESSAGE_AUDIO_DOWNLOAD,
+} h2_gizclaw_social_request_kind_t;
+
+typedef struct h2_gizclaw_social_result {
+  h2_gizclaw_social_request_kind_t kind;
+  union {
+    h2_gizclaw_contact_page_t contact_page;
+    h2_gizclaw_contact_t contact;
+    h2_gizclaw_friend_group_page_t friend_group_page;
+    h2_gizclaw_friend_page_t friend_page;
+    h2_gizclaw_friend_t friend_value;
+    h2_gizclaw_invite_token_t invite_token;
+    h2_gizclaw_friend_group_t friend_group;
+    h2_gizclaw_friend_group_member_page_t member_page;
+    h2_gizclaw_friend_group_member_t member;
+    h2_gizclaw_friend_group_message_page_t message_page;
+    h2_gizclaw_friend_group_message_t message;
+    h2_gizclaw_friend_group_message_audio_info_t message_audio;
+  } value;
+} h2_gizclaw_social_result_t;
+
+typedef void (*h2_gizclaw_social_completion_fn)(
+    void *user, h2_gizclaw_social_request_t *request,
+    const h2_gizclaw_operation_result_t *operation_result,
+    const h2_gizclaw_social_result_t *result);
+
+h2_pal_result_t h2_gizclaw_service_contacts_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_contact_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_contact_create_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_contact_put_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_contact_delete_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_groups_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friends_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_info_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_id, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_add_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t invite_token, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_delete_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_id, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_invite_token_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_invite_token_create_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_invite_token_clear_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_create_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_put_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_delete_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_join_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t invite_token, h2_gizclaw_str_t name,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_invite_token_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_invite_token_create_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_invite_token_clear_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_social_completion_fn completion,
+    void *user, h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_members_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t cursor, size_t limit,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_member_put_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t member_id,
+    h2_gizclaw_friend_group_role_t role,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_member_delete_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t member_id,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_messages_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t cursor, size_t limit,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_message_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t history_id,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t h2_gizclaw_service_friend_group_message_audio_download_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_group_name, h2_gizclaw_str_t history_id,
+    h2_gizclaw_friend_group_message_audio_write_fn write, void *write_user,
+    h2_gizclaw_social_completion_fn completion, void *user,
+    h2_gizclaw_social_request_t **out_request);
+h2_pal_result_t
+h2_gizclaw_social_request_cancel(h2_gizclaw_social_request_t *request);
+void h2_gizclaw_social_request_release(h2_gizclaw_social_request_t *request);
+
+#if defined(H2_GIZCLAW_TESTING) || defined(H2_GIZCLAW_INTERNAL_SYNC_API)
 int h2_gizclaw_client_friends_list(h2_gizclaw_client_t *client,
                                    h2_gizclaw_str_t cursor, size_t limit,
                                    h2_gizclaw_friend_page_t *out_page);
@@ -294,7 +480,7 @@ int h2_gizclaw_client_friend_group_message_get(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
     h2_gizclaw_str_t history_id,
     h2_gizclaw_friend_group_message_t *out_message);
-int h2_gizclaw_client_friend_group_message_audio_get(
+int h2_gizclaw_client_friend_group_message_audio_download(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t friend_group_name,
     h2_gizclaw_str_t history_id,
     h2_gizclaw_friend_group_message_audio_write_fn write, void *user,
@@ -319,6 +505,7 @@ void h2_gizclaw_friend_group_message_page_deinit(
 void h2_gizclaw_friend_group_message_audio_info_deinit(
     h2_gizclaw_client_t *client,
     h2_gizclaw_friend_group_message_audio_info_t *info);
+#endif
 
 #ifdef __cplusplus
 }
