@@ -18,6 +18,7 @@
 enum fake_output_mode {
   FAKE_OUTPUT_ZERO_CAPACITY = 0,
   FAKE_OUTPUT_PARTIAL_CAPACITY,
+  FAKE_OUTPUT_UNDERFLOW,
   FAKE_OUTPUT_SLOW_WRITE,
   FAKE_OUTPUT_AVAILABILITY_ERROR,
   FAKE_OUTPUT_WRITE_ERROR,
@@ -31,6 +32,7 @@ enum {
 
 typedef struct fake_output {
   atomic_int mode;
+  atomic_int open_result;
   atomic_int open_count;
   atomic_int start_count;
   atomic_int availability_count;
@@ -44,6 +46,23 @@ typedef struct fake_output {
   _Atomic size_t sample_count;
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
 } fake_output_t;
+
+enum fake_device_mode {
+  FAKE_DEVICE_AVAILABLE = 0,
+  FAKE_DEVICE_MISSING,
+  FAKE_DEVICE_INFO_MISSING,
+};
+
+typedef struct fake_device {
+  enum fake_device_mode mode;
+  int device;
+  int no_device;
+  double high_output_latency;
+  int info_count;
+  int open_count;
+  int observed_device;
+  double observed_latency;
+} fake_device_t;
 
 typedef struct mic_reader {
   h2_pal_audio_t *audio;
@@ -87,6 +106,7 @@ static void sleep_ms(long milliseconds) {
 
 static void fake_output_init(fake_output_t *output) {
   atomic_init(&output->mode, FAKE_OUTPUT_ZERO_CAPACITY);
+  atomic_init(&output->open_result, 0);
   atomic_init(&output->open_count, 0);
   atomic_init(&output->start_count, 0);
   atomic_init(&output->availability_count, 0);
@@ -104,6 +124,7 @@ static void fake_output_init(fake_output_t *output) {
 static void fake_output_reset(fake_output_t *output,
                               enum fake_output_mode mode) {
   atomic_store(&output->mode, mode);
+  atomic_store(&output->open_result, 0);
   atomic_store(&output->open_count, 0);
   atomic_store(&output->start_count, 0);
   atomic_store(&output->availability_count, 0);
@@ -121,7 +142,40 @@ static void fake_output_reset(fake_output_t *output,
 static int fake_output_open(void *user, void **out_stream) {
   fake_output_t *output = user;
   atomic_fetch_add(&output->open_count, 1);
+  const int result = atomic_load(&output->open_result);
+  if (result != 0) {
+    *out_stream = NULL;
+    return result;
+  }
   *out_stream = output;
+  return 0;
+}
+
+static int fake_default_output_device(void *user) {
+  fake_device_t *device = user;
+  return device->mode == FAKE_DEVICE_MISSING ? device->no_device
+                                              : device->device;
+}
+
+static int fake_default_high_output_latency(void *user, int device,
+                                            double *out_latency) {
+  fake_device_t *fake = user;
+  assert(device == fake->device);
+  ++fake->info_count;
+  if (fake->mode == FAKE_DEVICE_INFO_MISSING)
+    return h2_portaudio_internal_error_for_test();
+  *out_latency = fake->high_output_latency;
+  return 0;
+}
+
+static int fake_open_output_device(void *user, int device,
+                                   double suggested_latency,
+                                   void **out_stream) {
+  fake_device_t *fake = user;
+  ++fake->open_count;
+  fake->observed_device = device;
+  fake->observed_latency = suggested_latency;
+  *out_stream = fake;
   return 0;
 }
 
@@ -143,6 +197,11 @@ static long fake_output_write_available(void *user, void *stream) {
     return atomic_load_explicit(&output->sample_count, memory_order_acquire) <
                    FAKE_OUTPUT_FRAME_SAMPLES
                ? FAKE_OUTPUT_PARTIAL_SAMPLES
+               : 0;
+  case FAKE_OUTPUT_UNDERFLOW:
+    return atomic_load_explicit(&output->sample_count, memory_order_acquire) <
+                   FAKE_OUTPUT_FRAME_SAMPLES
+               ? FAKE_OUTPUT_FRAME_SAMPLES
                : 0;
   case FAKE_OUTPUT_SLOW_WRITE:
   case FAKE_OUTPUT_WRITE_ERROR:
@@ -176,6 +235,8 @@ static int fake_output_write(void *user, void *stream, const void *samples,
   atomic_store_explicit(&output->sample_count, offset + frames,
                         memory_order_release);
   atomic_store_explicit(&output->write_active, false, memory_order_release);
+  if (mode == FAKE_OUTPUT_UNDERFLOW)
+    return h2_portaudio_output_underflow_error_for_test();
   return 0;
 }
 
@@ -226,6 +287,16 @@ static void wait_for_int_at_least(atomic_int *value, int target) {
 static void wait_for_size_at_least(_Atomic size_t *value, size_t target) {
   for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
     if (atomic_load_explicit(value, memory_order_acquire) >= target)
+      return;
+    sleep_ms(1L);
+  }
+  _Exit(EXIT_FAILURE);
+}
+
+static void wait_for_underflow_count(h2_portaudio_t *provider,
+                                     uint64_t target) {
+  for (int elapsed_ms = 0; elapsed_ms < 1000; ++elapsed_ms) {
+    if (h2_portaudio_output_underflow_count_for_test(provider) >= target)
       return;
     sleep_ms(1L);
   }
@@ -360,6 +431,75 @@ static h2_pal_audio_track_t *write_test_frame(h2_pal_audio_t *audio,
   return track;
 }
 
+static void test_default_output_device_selection(void) {
+  fake_device_t device = {
+      .mode = FAKE_DEVICE_AVAILABLE,
+      .device = 37,
+      .no_device = h2_portaudio_no_device_for_test(),
+      .high_output_latency = 0.375,
+  };
+  const h2_portaudio_device_ops_t ops = {
+      .user = &device,
+      .default_output_device = fake_default_output_device,
+      .default_high_output_latency = fake_default_high_output_latency,
+      .open_output = fake_open_output_device,
+  };
+  void *stream = NULL;
+  assert(h2_portaudio_open_default_output_for_test(&ops, &stream) == 0);
+  assert(stream == &device);
+  assert(device.info_count == 1);
+  assert(device.open_count == 1);
+  assert(device.observed_device == device.device);
+  assert(device.observed_latency == device.high_output_latency);
+
+  device.mode = FAKE_DEVICE_MISSING;
+  device.info_count = 0;
+  device.open_count = 0;
+  stream = &device;
+  assert(h2_portaudio_open_default_output_for_test(&ops, &stream) ==
+         h2_portaudio_device_unavailable_error_for_test());
+  assert(stream == NULL);
+  assert(device.info_count == 0);
+  assert(device.open_count == 0);
+
+  device.mode = FAKE_DEVICE_INFO_MISSING;
+  stream = &device;
+  assert(h2_portaudio_open_default_output_for_test(&ops, &stream) ==
+         h2_portaudio_internal_error_for_test());
+  assert(stream == NULL);
+  assert(device.info_count == 1);
+  assert(device.open_count == 0);
+}
+
+static void test_output_open_error_policy(h2_portaudio_t *provider,
+                                          h2_pal_audio_t *audio,
+                                          fake_output_t *output) {
+  const int errors[] = {
+      h2_portaudio_device_unavailable_error_for_test(),
+      h2_portaudio_internal_error_for_test(),
+  };
+  for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+    fake_output_reset(output, FAKE_OUTPUT_ZERO_CAPACITY);
+    atomic_store(&output->open_result, errors[i]);
+    assert(h2_portaudio_set_require_real_devices_for_test(provider, 0) ==
+           H2_AUDIO_OK);
+    assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+    assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+    assert(atomic_load(&output->open_count) == 1);
+    assert(atomic_load(&output->start_count) == 0);
+
+    fake_output_reset(output, FAKE_OUTPUT_ZERO_CAPACITY);
+    atomic_store(&output->open_result, errors[i]);
+    assert(h2_portaudio_set_require_real_devices_for_test(provider, 1) ==
+           H2_AUDIO_OK);
+    assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_ERR_UNAVAILABLE);
+    assert(atomic_load(&output->open_count) == 1);
+    assert(atomic_load(&output->start_count) == 0);
+  }
+  assert(h2_portaudio_set_require_real_devices_for_test(provider, 0) ==
+         H2_AUDIO_OK);
+}
+
 static void test_zero_capacity_stop(h2_pal_audio_t *audio,
                                     fake_output_t *output) {
   fake_output_reset(output, FAKE_OUTPUT_ZERO_CAPACITY);
@@ -417,6 +557,31 @@ static void test_stop_waits_for_active_write(h2_pal_audio_t *audio,
   assert(atomic_load(&output->abort_count) == 0);
   assert(atomic_load(&output->close_count) == 1);
   assert(!atomic_load(&output->control_during_write));
+}
+
+static void test_output_underflow_is_recoverable(h2_portaudio_t *provider,
+                                                 h2_pal_audio_t *audio,
+                                                 fake_output_t *output) {
+  fake_output_reset(output, FAKE_OUTPUT_UNDERFLOW);
+  int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES] = {0};
+  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  wait_for_underflow_count(provider, 1u);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(h2_portaudio_output_underflow_count_for_test(provider) == 1u);
+  assert(atomic_load(&output->write_count) == 1);
+  assert(atomic_load(&output->stop_count) == 1);
+  assert(atomic_load(&output->abort_count) == 0);
+  assert(atomic_load(&output->close_count) == 1);
+
+  fake_output_reset(output, FAKE_OUTPUT_ZERO_CAPACITY);
+  track = write_test_frame(audio, samples);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  wait_for_int_at_least(&output->availability_count, 1);
+  assert(h2_portaudio_output_underflow_count_for_test(provider) == 0u);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
 }
 
 static void test_worker_failure_restart(h2_pal_audio_t *audio,
@@ -517,6 +682,7 @@ static void test_echo_reference_precedes_capture(h2_portaudio_t *provider,
 }
 
 int main(void) {
+  test_default_output_device_selection();
   const h2_portaudio_config_t config = {
       .allocator = h2_desktop_platform_default_allocator(),
       .queue = h2_desktop_platform_queue_api(),
@@ -565,8 +731,10 @@ int main(void) {
   assert(h2_pal_audio_stop_mic(audio) == H2_AUDIO_OK);
 
   test_zero_capacity_stop(audio, &output);
+  test_output_open_error_policy(provider, audio, &output);
   test_partial_frame(audio, &output);
   test_stop_waits_for_active_write(audio, &output);
+  test_output_underflow_is_recoverable(provider, audio, &output);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_AVAILABILITY_ERROR);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_WRITE_ERROR);
   test_echo_reference_precedes_capture(provider, audio, &output);

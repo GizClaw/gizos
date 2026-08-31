@@ -6,10 +6,6 @@
  * Product or board profile code may override macros before including this file.
  */
 
-#ifndef H2_RUNTIME_BUTTON_CLICK_GAP_MS
-#define H2_RUNTIME_BUTTON_CLICK_GAP_MS 250u
-#endif
-
 #ifndef H2_RUNTIME_BUTTON_POLL_INTERVAL_MS
 #define H2_RUNTIME_BUTTON_POLL_INTERVAL_MS 20u
 #endif

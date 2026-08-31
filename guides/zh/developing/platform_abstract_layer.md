@@ -283,7 +283,7 @@ Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表�
 
 `h2_pal_touch_api_t` 描述一个已经校准到逻辑 viewport 的 single-pointer Touch source。Provider 通过 `open -> get_info -> poll_event -> close` 交付 raw `DOWN`、`MOVE`、`UP` edge；`poll_event` 没有新 edge 时返回 `H2_PAL_ERR_WOULD_BLOCK`。坐标变换、axis inversion、Linux evdev identity 和 controller protocol 属于 component/BSP，不能进入 portable App。Multi-touch contact lifecycle 不属于 V1 contract，provider 不能把多个 contact 混成同一个不稳定 pointer stream。
 
-Touch PAL 不识别 click、long press、swipe 或其它 gesture，也不把屏幕区域映射成业务按键。LVGL adapter 消费 Touch PAL 形成 pointer indev；widget 需要复用 Runtime button gesture 时，launcher 把 App Button component 映射到 `PUSH_EDGE` periph，adapter 再把 widget 的 raw pressed/released edge 写入同一 button recognizer。
+Touch PAL 不识别 click、long press、swipe 或其它 gesture，也不把屏幕区域映射成业务按键。LVGL adapter 消费 Touch PAL 形成 pointer indev；widget 需要复用 Runtime Button action contract 时，launcher 把 App Button component 映射到 `PUSH_EDGE` periph，adapter 再把 widget 的 raw pressed/released edge 写入同一 objective action pipeline。Runtime 输出 phase 和时间，App 决定 gesture。
 
 ### NFC reader 与卡模拟
 
@@ -364,10 +364,16 @@ Host Serial PAL 不解析 H2Loader response、不推断 board、不合并 BLE id
 
 ### Netif 快照与默认路径事件
 
-`h2_pal_netif_api_t` 是同步、只读的接口快照能力。`list` 不保留 callback，
-`find` 返回可供后续查询使用的具体 NAME 或 ID，DEFAULT 只在调用时解析当前
-IPv4 默认接口。读取接口状态不得启动 Wi-Fi、建立 PPP、修改 route priority
-或创建 socket。
+`h2_pal_netif_api_t` 提供同步接口快照和显式默认路径提交能力。`list` 不保留
+callback，`find` 返回可供后续查询或提交使用的具体 NAME 或 ID，DEFAULT 只在
+读取调用时解析当前 IPv4 默认接口。读取接口状态不得启动 Wi-Fi、建立 PPP、
+修改 route priority 或创建 socket。
+
+`h2_pal_netif_set_default()` 只接受已经由 inventory 解析出的具体 NAME 或 ID，
+并把该接口提交为平台 IPv4 default。Wi-Fi、modem 或其它接口的选择策略属于
+调用方；PAL 不比较连接质量、费用或 route priority，也不建立连接。没有该
+写能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`，接口不存在时返回
+`H2_PAL_ERR_NOT_FOUND`，底层提交失败时返回 `H2_PAL_ERR_IO`。
 
 默认 IPv4 接口发生已提交的变化时，平台通过既有 System Event 发布
 `H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED`。payload 的有效一侧必须是
@@ -375,9 +381,9 @@ IPv4 默认接口。读取接口状态不得启动 Wi-Fi、建立 PPP、修改 r
 Event init 时只建立 baseline，不发布初始事件；相同 route notification 必须
 去重。异步 `post()` 必须在返回前复制 borrowed payload。
 
-PAL 不提供独立 NetMon API，也不拥有路由选择、UDP socket 或重连策略。Desktop
+PAL 不提供独立 NetMon API，也不拥有路由选择策略、UDP socket 或重连策略。Desktop
 和 Linux target 监听操作系统 route notification；ESP-IDF 与 BK7258 AP 在各自
-Wi-Fi/PPP route owner 完成变更后 reconcile。
+Wi-Fi/PPP route owner 或 `set_default` 完成变更后 reconcile。
 
 PAL 使用显式 API object 表达能力。每个 `xxx_api_t` 由 `user + vtable` 组成：`user` 指向实现状态，所有 operation 都定义在对应的 `xxx_vtable_t` 中。
 

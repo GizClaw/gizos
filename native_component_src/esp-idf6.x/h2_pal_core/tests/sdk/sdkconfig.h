@@ -1,0 +1,6 @@
+#ifndef TEST_SDKCONFIG_H
+#define TEST_SDKCONFIG_H
+
+#define CONFIG_SPIRAM_XIP_FROM_PSRAM 1
+
+#endif

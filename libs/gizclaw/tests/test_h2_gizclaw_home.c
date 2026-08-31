@@ -201,8 +201,6 @@ int h2_gizclaw_home_tests(void) {
       expect(workflow_page.count == 1u &&
                  strcmp(workflow_page.items[0].collection, "assistants") == 0 &&
                  strcmp(workflow_page.items[0].name, "story.aesop") == 0 &&
-                 workflow_page.items[0].driver ==
-                     H2_GIZCLAW_WORKFLOW_DRIVER_FLOWCRAFT &&
                  strcmp(h2_gizclaw_workflow_display_name(
                             &workflow_page.items[0], "zh-CN"),
                         "全能对话") == 0 &&
@@ -212,6 +210,26 @@ int h2_gizclaw_home_tests(void) {
                  strcmp(workflow_page.runtime_profile_name, "demo") == 0 &&
                  strcmp(workflow_page.runtime_profile_revision, "r1") == 0,
              "workflow projection preserves collection name i18n and revision");
+  h2_gizclaw_workflow_page_deinit(client, &workflow_page);
+
+  uint8_t future_workflow_list[sizeof(workflow_list)];
+  memcpy(future_workflow_list, workflow_list, sizeof(future_workflow_list));
+  bool driver_replaced = false;
+  for (size_t index = 0u; index + 1u < sizeof(future_workflow_list); ++index) {
+    if (future_workflow_list[index] == 0x20u &&
+        future_workflow_list[index + 1u] == 0x01u) {
+      future_workflow_list[index + 1u] = 0x7fu;
+      driver_replaced = true;
+      break;
+    }
+  }
+  fails += expect(driver_replaced, "workflow fixture driver is replaced");
+  fails += expect(h2_gizclaw_workflow_decode_list_for_test(
+                      client, future_workflow_list,
+                      sizeof(future_workflow_list), 4u, &workflow_page) ==
+                      H2_PAL_OK &&
+                      workflow_page.count == 1u,
+                  "workflow list ignores unknown driver metadata");
   h2_gizclaw_workflow_page_deinit(client, &workflow_page);
 
   uint8_t invalid_workflow_list[sizeof(workflow_list)];

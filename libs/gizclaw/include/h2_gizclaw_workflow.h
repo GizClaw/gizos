@@ -21,15 +21,6 @@ extern "C" {
 #define H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS 64u
 #define H2_GIZCLAW_WORKFLOW_I18N_MAX_ITEMS 8u
 
-typedef enum h2_gizclaw_workflow_driver {
-  H2_GIZCLAW_WORKFLOW_DRIVER_UNSPECIFIED = 0,
-  H2_GIZCLAW_WORKFLOW_DRIVER_FLOWCRAFT = 1,
-  H2_GIZCLAW_WORKFLOW_DRIVER_DOUBAO_REALTIME = 2,
-  H2_GIZCLAW_WORKFLOW_DRIVER_AST_TRANSLATE = 3,
-  H2_GIZCLAW_WORKFLOW_DRIVER_CHATROOM = 4,
-  H2_GIZCLAW_WORKFLOW_DRIVER_PET = 5,
-} h2_gizclaw_workflow_driver_t;
-
 typedef struct h2_gizclaw_workflow_i18n {
   char *locale;
   char *display_name;
@@ -40,7 +31,6 @@ typedef struct h2_gizclaw_workflow_i18n {
 typedef struct h2_gizclaw_workflow {
   char *collection;
   char *name;
-  h2_gizclaw_workflow_driver_t driver;
   h2_gizclaw_workflow_i18n_t *i18n;
   size_t i18n_count;
   char *workspace_lang_pair;

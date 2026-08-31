@@ -2,6 +2,17 @@
 
 #include <string.h>
 
+/* Keep the PR #82 Lua-facing Button gesture contract without making gesture
+ * policy part of the shared Runtime payload.  Its values are press=1,
+ * short_press=2, long_press=3. */
+#define H2_LUA_BUTTON_LONG_PRESS_MS 500u
+
+enum h2_lua_button_gesture_kind {
+  H2_LUA_BUTTON_GESTURE_PRESS = 1,
+  H2_LUA_BUTTON_GESTURE_SHORT_PRESS,
+  H2_LUA_BUTTON_GESTURE_LONG_PRESS,
+};
+
 _Static_assert(sizeof(h2_runtime_button_down_event_t) <=
                    H2_RUNTIME_EVENT_PAYLOAD_MAX,
                "button down event exceeds Lua delivery storage");
@@ -18,6 +29,14 @@ _Static_assert(sizeof(h2_runtime_imu_gesture_event_t) <=
                "IMU event exceeds Lua delivery storage");
 _Static_assert(sizeof(h2_pal_result_t) <= H2_RUNTIME_EVENT_PAYLOAD_MAX,
                "error event exceeds Lua delivery storage");
+
+static int button_action_is_valid(const h2_runtime_event_t *event) {
+  const h2_runtime_button_action_event_t *value = event->payload;
+  return event->timestamp_ms >= value->pressed_at_ms &&
+         (value->released_at_ms == 0u ||
+          (value->released_at_ms == event->timestamp_ms &&
+           value->released_at_ms >= value->pressed_at_ms));
+}
 
 static int payload_size_is_valid(const h2_runtime_event_t *event) {
   size_t expected = 0u;
@@ -59,6 +78,10 @@ static int payload_size_is_valid(const h2_runtime_event_t *event) {
   if (event->kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE &&
       ((const h2_runtime_nfc_state_t *)event->payload)->uid_len >
           H2_PAL_NFC_UID_MAX_LEN) {
+    return 0;
+  }
+  if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+      !button_action_is_valid(event)) {
     return 0;
   }
   return 1;
@@ -128,8 +151,30 @@ static void push_i32(lua_State *state, const char *name, int32_t value) {
   lua_setfield(state, -2, name);
 }
 
+static uint32_t button_duration_ms(
+    const h2_runtime_event_t *event,
+    const h2_runtime_button_action_event_t *value) {
+  const uint64_t observed_at_ms = value->released_at_ms != 0u
+                                      ? value->released_at_ms
+                                      : event->timestamp_ms;
+  const uint64_t duration_ms = observed_at_ms - value->pressed_at_ms;
+  return duration_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)duration_ms;
+}
+
+static uint64_t button_gesture_kind(
+    const h2_runtime_event_t *event,
+    const h2_runtime_button_action_event_t *value) {
+  if (button_duration_ms(event, value) >= H2_LUA_BUTTON_LONG_PRESS_MS) {
+    return H2_LUA_BUTTON_GESTURE_LONG_PRESS;
+  }
+  if (value->released_at_ms != 0u) {
+    return H2_LUA_BUTTON_GESTURE_SHORT_PRESS;
+  }
+  return H2_LUA_BUTTON_GESTURE_PRESS;
+}
+
 static void push_event(lua_State *state, const h2_runtime_event_t *event) {
-  lua_createtable(state, 0, 10);
+  lua_createtable(state, 0, 11);
   push_u64(state, "component_id", event->component_id);
   push_u64(state, "component_kind", event->component);
   push_u64(state, "event_type", event->kind);
@@ -151,7 +196,8 @@ static void push_event(lua_State *state, const h2_runtime_event_t *event) {
     const h2_runtime_button_action_event_t *value = event->payload;
     push_u64(state, "pressed_at_ms", value->pressed_at_ms);
     push_u64(state, "released_at_ms", value->released_at_ms);
-    push_u64(state, "click_count", value->click_count);
+    push_u64(state, "gesture_kind", button_gesture_kind(event, value));
+    push_u64(state, "duration_ms", button_duration_ms(event, value));
     break;
   }
   case H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE: {

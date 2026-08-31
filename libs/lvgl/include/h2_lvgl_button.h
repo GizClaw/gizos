@@ -21,9 +21,10 @@ typedef struct h2_lvgl_button {
  *
  * The component must map to a SINGLE_BUTTON periph whose delivery mode is
  * PUSH_EDGE. The caller-owned binding and Runtime must outlive the LVGL object.
- * Runtime continues to own click and long-press recognition. Only one live
- * LVGL object may produce edges for a mapped periph; the same periph can be
- * rebound after its previous object is deleted.
+ * Runtime converts the edges into objective phased Button Actions. The App
+ * owns click, long-press, and other gesture policy. Only one live LVGL object
+ * may produce edges for a mapped periph; the same periph can be rebound after
+ * its previous object is deleted.
  */
 h2_pal_result_t h2_lvgl_button_bind(
     h2_lvgl_button_t *binding,

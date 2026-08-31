@@ -58,6 +58,8 @@ resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。
 每个 Runtime event callback 也作为同一 VM 内的短生命周期 scheduler task 执行，
 因此可以 yield，并受相同的 quantum、取消和超时约束。
 
+Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_at_ms`。Lua Runtime 在投影到 VM 时自行计算 `duration_ms`，并保持 PR #82 的 Button `gesture_kind` 接口：普通按压为 1、短按为 2、长按为 3，兼容阈值为 500 ms。这个分类只属于 Lua adapter，不进入共享的 `libs/runtime` Button payload；Lua App 无需因底层 Runtime 删除 gesture policy 而更改接口。
+
 ## Lua surface
 
 | 模块 | 首期接口 | backing / 边界 |

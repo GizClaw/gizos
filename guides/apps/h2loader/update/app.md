@@ -28,4 +28,6 @@ APP 启动并完成平台 OTA image 确认后，必须核对：
 
 `reboot app` 只选择 Partition 2 并重启，不安装或清理 Stage。`reboot loader` 只返回 Partition 1 且设置 `boot_intent=LOADER`，同样不消费 Stage。只有 `reboot upgrade` 进入 AUTO 安装检查。
 
+Loader 不改变平台的 physical power hold；该 hold 的生命周期继续由平台或产品 owner 管理。
+
 命令返回 accepted 只证明请求已提交；Host 必须在重连后验证 active identity、运行分区、Partition metadata 和 Stage 终态，才能报告安装成功。

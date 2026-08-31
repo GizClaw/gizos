@@ -59,7 +59,7 @@ projects/example/targets/macos_application/tap-reset/    # macOS/rules_apple ent
 
 Portable App 的阻塞入口是 `h2_tap_reset_run(h2_runtime_t *, const h2_tap_reset_config_t *)`。内存、Display 和 Time capability 全部通过 Runtime 使用；App 不 include UIKit、Android JNI、Emscripten 或 launcher private type。
 
-公共 Runtime 暴露 Touch PAL，`touch` Example 通过 `libs/lvgl` adapter 把 raw down/move/up 接入 LVGL pointer indev；App 定义稳定的 Button component，launcher 把它映射到 `PUSH_EDGE` periph，widget 的 down/up 再进入 Runtime 的公共 button recognizer。Portable App 不知道 evdev device、controller、board calibration 或实际按键来源。现有 `tap-reset` Mobile/Web adapter 仍使用其 stable pointer snapshot config，不把平台 SDK 类型带入 portable App。`should_stop` 是调用方拥有的阻塞入口 lifecycle config。
+公共 Runtime 暴露 Touch PAL，`touch` Example 通过 `libs/lvgl` adapter 把 raw down/move/up 接入 LVGL pointer indev；App 定义稳定的 Button component，launcher 把它映射到 `PUSH_EDGE` periph，widget 的 down/up 再进入 Runtime 的客观 phased action pipeline。Portable App 不知道 evdev device、controller、board calibration 或实际按键来源，gesture 由 App 判断。现有 `tap-reset` Mobile/Web adapter 仍使用其 stable pointer snapshot config，不把平台 SDK 类型带入 portable App。`should_stop` 是调用方拥有的阻塞入口 lifecycle config。
 
 Desktop 入口直接调用同一个 `h2_tap_reset_run()`，不依赖 mobile adapter，也不复制 App source 或重写页面。共享 Desktop adapter 和 Runtime assembly 放在 `projects/example/libs/desktop/tap-reset/`；macOS 的 native entry、`Info.plist` 和 `rules_apple` bundle rule 放在同级 `macos/`。
 

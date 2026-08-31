@@ -105,7 +105,9 @@ static int handle_runtime_event(
     h2_pixa_games_dinobounce_state_t *state,
     const h2_runtime_event_t *event) {
     if (event->component != H2_RUNTIME_COMPONENT_BUTTON ||
-        event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) return H2_GAME_RUNTIME_OK;
+        event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION ||
+        event->payload_size < sizeof(h2_runtime_button_action_event_t) ||
+        !h2_runtime_button_action_is_released(event->payload)) return H2_GAME_RUNTIME_OK;
     uint8_t button = 0u;
     if (event->component_id == H2_PIXA_GAMES_DINOBOUNCE_COMPONENT_LEFT) button = H2_DINOBOUNCE_BUTTON_LEFT;
     else if (event->component_id == H2_PIXA_GAMES_DINOBOUNCE_COMPONENT_RIGHT) button = H2_DINOBOUNCE_BUTTON_RIGHT;

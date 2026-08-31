@@ -20,7 +20,7 @@ Host 负责 Runtime event 到 game button role 的映射、route、暂停或退�
 | `right` | down | 命中 `guard_right` cue 时完成右侧格挡。 |
 | `action` | down | 命中 `strike` cue 时发动反击。 |
 
-三种输入都在 button down 边沿生效。Button up、click、long press 和持续按住不产生额外判定；Host 不能把同一次 down 后生成的 click 再投影为第二次 action。
+三种输入都只在 action 的事件时间等于 `pressed_at_ms` 时生效。后续 held action、released action、click 和 long press 不产生额外判定；Host 不能把同一个 poll sample 的 button down 再投影为第二次 action。
 
 输入必须保留 Runtime event 的 monotonic timestamp。Game 使用 event timestamp 与 cue 的目标时间比较，不使用收到输入时的 render frame 时间代替。每个输入最多消费一个 cue；首个版本不生成判定窗口重叠的 cue。
 
@@ -199,7 +199,7 @@ Reset 保留当前 deterministic random sequence，不回到创建时的 seed；
 - Desktop 和目标设备在相同 seed、起始 timestamp 和输入序列下产生相同的 cue、judgment、HP、score、phase 和 result。
 - Render tick 被重组或短暂丢帧时，cue target timestamp、judgment 和 music bar position 不漂移。
 - `perfect`、`good`、early miss、late miss、wrong-role miss、无输入 miss 和额外输入分别具有边界测试。
-- 每个 Runtime button down 只产生一次 game input；后续 click 或 long press 不重复触发 judgment。
+- 每次实体按压只有首次 action 产生一次 game input；后续 held、released action 或 App gesture 不重复触发 judgment。
 - Audio disabled 或 audio write 失败时，完整战斗仍可通过视觉 cue 完成，且只输出一次 `audio_error`。
 - Music、cue hit 和 result sound 同时调度时不超过 8 个 voice，command queue overflow 有可观测测试。
 - Ready、Battle 和 Result 在 `240 × 240` Desktop 与目标 display 上与验收 SVG 保持布局、shape、颜色和文字层级一致。
