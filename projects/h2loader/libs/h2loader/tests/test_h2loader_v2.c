@@ -963,6 +963,8 @@ static void test_rolled_back_app_leaves_partition_2_state_untouched(void) {
   write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &stage);
   write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &p1);
   write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stage);
+  fixture.last_result = H2_PAL_ERR_WRITE;
+  fixture.last_result_present = 1;
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
   unsigned commits_before_startup = fixture.commits;
 
@@ -979,7 +981,8 @@ static void test_rolled_back_app_leaves_partition_2_state_untouched(void) {
   assert(fixture.package_present && fixture.package_removes == 0u);
   assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
   assert(fixture.loader.status.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
-  assert(!fixture.last_result_present);
+  assert(fixture.last_result_present);
+  assert(fixture.last_result == H2_PAL_ERR_WRITE);
   assert(fixture.commits == commits_before_startup);
   assert(fixture.writer_offset == 0u);
   assert(fixture.reboot_calls == 0u);
