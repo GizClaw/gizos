@@ -2,9 +2,9 @@
 
 #include <string.h>
 
-/* Keep the Lua-facing Button gesture contract stable without making gesture
- * policy part of the shared Runtime payload.  These values match the existing
- * Lua API: press=1, short_press=2, long_press=3. */
+/* Keep the PR #82 Lua-facing Button gesture contract without making gesture
+ * policy part of the shared Runtime payload.  Its values are press=1,
+ * short_press=2, long_press=3. */
 #define H2_LUA_BUTTON_LONG_PRESS_MS 500u
 
 enum h2_lua_button_gesture_kind {
