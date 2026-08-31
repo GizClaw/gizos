@@ -51,13 +51,14 @@ currently available. The SDK exports `H2LoaderCapabilities`,
 assignments. Host Core and firmware check the same command bit again at the
 execution boundary.
 
-Lifecycle state is returned directly as `deviceUid`, `activeRole`, `activeVersion`,
-`activeChecksum`, `activeImageSize`, `runningPartition`, `nextPartition`,
-`bootIntent`, `stage`, `partition1`, `partition2`, and `lastResult`. Metadata
-contains the package and image identity plus `valid`. Removed install-state,
-loader-upgrade, manual-hold, and app-confirmed fields are not reconstructed by
-the SDK. Unsigned 64-bit sizes are decimal strings so JavaScript does not round
-them.
+Lifecycle state is returned directly as `deviceUid`, `active`,
+`runningPartition`, `nextPartition`, `bootIntent`, `stage`, `partition1`,
+`partition2`, `lastResult`, and `mfg`. The `active` object contains `role`,
+`version`, `imageChecksum`, and `imageSize`. Stage and partition metadata contain
+`valid`, `packageChecksum`, `packageSize`, `imageChecksum`, `imageSize`, `role`,
+`version`, `board`, and `target`. Removed install-state, loader-upgrade,
+manual-hold, and app-confirmed fields are not reconstructed by the SDK. Unsigned
+64-bit sizes are decimal strings so JavaScript does not round them.
 
 `deviceUid` is the connected firmware's stable lowercase 12-hex physical
 identity. BLE endpoint IDs and addresses select a discovery candidate only;
