@@ -1394,16 +1394,15 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   fails +=
       expect(h2_gizclaw_client_workspace_set_input(
                  client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKFLOW_DRIVER_FLOWCRAFT,
                  H2_GIZCLAW_WORKSPACE_INPUT_REALTIME, &workspace) == H2_PAL_OK,
-             "workspace put accepts a typed input-mode update");
+             "workspace input update follows the existing parameter shape");
   fails += expect(
       workspace_sequence.next_step == workspace_sequence.step_count &&
           workspace_steps[0].calls == 1 && workspace_steps[0].request_matches &&
           workspace_steps[1].calls == 1 && workspace_steps[1].request_matches &&
           strcmp(workspace.name, "workspace-1") == 0 &&
           strcmp(workspace.workflow_name, "chat") == 0 && workspace.available,
-      "workspace put encodes method 27 and owns its snapshot");
+      "workspace input update discovers parameters before PUT");
   h2_gizclaw_workspace_deinit(client, &workspace);
 
   uint8_t overridden_get_response[128];
@@ -1423,26 +1422,84 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   fails +=
       expect(h2_gizclaw_client_workspace_set_input(
                  client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKFLOW_DRIVER_FLOWCRAFT,
                  H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
                  &workspace) == H2_PAL_ERR_INVALID_STATE,
-             "workspace put refuses to discard existing driver overrides");
+             "workspace input update refuses to discard parameter overrides");
   fails += expect(override_mock.calls == 1 && override_mock.request_matches &&
                       workspace.name == NULL,
                   "workspace override rejection stops before PUT");
 
+  uint8_t unsupported_get_response[128];
+  memcpy(unsupported_get_response, workspace_get_response,
+         workspace_get_response_len);
+  bool parameters_tag_replaced = false;
+  for (size_t index = 0u; index + 3u < workspace_get_response_len; ++index) {
+    if (unsupported_get_response[index] == 0x22u &&
+        unsupported_get_response[index + 1u] == 0x06u &&
+        unsupported_get_response[index + 2u] == 0x0au &&
+        unsupported_get_response[index + 3u] == 0x04u) {
+      unsupported_get_response[index + 2u] = 0x7au;
+      parameters_tag_replaced = true;
+      break;
+    }
+  }
+  fails += expect(parameters_tag_replaced,
+                  "workspace parameter fixture tag is replaced");
+  test_contact_rpc_t unsupported_mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+      .expected_request = workspace_get_request,
+      .expected_request_len = sizeof(workspace_get_request),
+      .response = unsupported_get_response,
+      .response_len = workspace_get_response_len,
+  };
+  h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &unsupported_mock);
   workspace.name = (char *)0x1;
-  const int calls_before_unsupported_driver = override_mock.calls;
-  fails +=
-      expect(h2_gizclaw_client_workspace_set_input(
-                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKFLOW_DRIVER_PET,
-                 H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-                 &workspace) == H2_PAL_ERR_UNSUPPORTED &&
-                 workspace.name == NULL,
-             "workspace put rejects drivers without a mutable input mode");
-  fails += expect(override_mock.calls == calls_before_unsupported_driver,
-                  "workspace put rejects unsupported drivers before RPC");
+  fails += expect(h2_gizclaw_client_workspace_set_input(
+                      client,
+                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                      H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+                      &workspace) == H2_PAL_ERR_UNSUPPORTED &&
+                      workspace.name == NULL,
+                  "workspace input update rejects unsupported parameter types");
+  fails += expect(unsupported_mock.calls == 1 &&
+                      unsupported_mock.request_matches,
+                  "unsupported Workspace parameters stop before PUT");
+
+  uint8_t incomplete_get_response[128];
+  memcpy(incomplete_get_response, workspace_get_response,
+         workspace_get_response_len);
+  bool input_field_replaced = false;
+  for (size_t index = 0u; index + 7u < workspace_get_response_len; ++index) {
+    if (incomplete_get_response[index] == 0x22u &&
+        incomplete_get_response[index + 1u] == 0x06u &&
+        incomplete_get_response[index + 2u] == 0x0au &&
+        incomplete_get_response[index + 3u] == 0x04u &&
+        incomplete_get_response[index + 4u] == 0x08u &&
+        incomplete_get_response[index + 6u] == 0x20u) {
+      incomplete_get_response[index + 6u] = 0x08u;
+      input_field_replaced = true;
+      break;
+    }
+  }
+  fails += expect(input_field_replaced,
+                  "workspace input fixture field is replaced");
+  test_contact_rpc_t incomplete_mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+      .expected_request = workspace_get_request,
+      .expected_request_len = sizeof(workspace_get_request),
+      .response = incomplete_get_response,
+      .response_len = workspace_get_response_len,
+  };
+  h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &incomplete_mock);
+  fails += expect(h2_gizclaw_client_workspace_set_input(
+                      client,
+                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                      H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                      &workspace) == H2_PAL_ERR_INVALID_STATE,
+                  "workspace input update rejects an incomplete parameter shape");
+  fails += expect(incomplete_mock.calls == 1 &&
+                      incomplete_mock.request_matches,
+                  "incomplete Workspace parameters stop before PUT");
 
   const uint8_t *workspace_request = workspace_get_request;
   uint8_t workspace_response[128];
