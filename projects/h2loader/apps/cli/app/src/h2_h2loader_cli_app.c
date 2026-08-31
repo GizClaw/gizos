@@ -641,6 +641,56 @@ static int metadata_matches_stage(
         strcmp(partition->target, stage->target) == 0;
 }
 
+static int metadata_image_equal(
+    const h2_h2loader_host_metadata_t *left,
+    const h2_h2loader_host_metadata_t *right) {
+    return left->valid && right->valid && left->role == right->role &&
+        left->image_size == right->image_size &&
+        strcmp(left->image_checksum, right->image_checksum) == 0 &&
+        strcmp(left->version, right->version) == 0 &&
+        strcmp(left->board, right->board) == 0 &&
+        strcmp(left->target, right->target) == 0;
+}
+
+static h2_pal_result_t verify_upgrade_without_stage(
+    const h2_h2loader_host_status_t *before,
+    const h2_h2loader_host_status_t *after) {
+    const h2_h2loader_host_metadata_t *candidate = &before->partition_2;
+    const int different_candidate = candidate->valid &&
+        !metadata_image_equal(&before->partition_1, candidate);
+
+    if (after->stage.valid ||
+        after->boot_intent != H2_H2LOADER_HOST_BOOT_INTENT_AUTO ||
+        after->last != H2_PAL_OK) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (!different_candidate) {
+        return after->running_partition == 1u &&
+                after->next_partition == 1u &&
+                after->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER
+            ? H2_PAL_OK
+            : H2_PAL_ERR_INVALID_STATE;
+    }
+    if (candidate->role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP) {
+        return after->running_partition == 2u &&
+                after->next_partition == 2u &&
+                after->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP &&
+                metadata_equal(&after->partition_2, candidate)
+            ? H2_PAL_OK
+            : H2_PAL_ERR_INVALID_STATE;
+    }
+    if (candidate->role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER) {
+        return after->running_partition == 1u &&
+                after->next_partition == 1u &&
+                after->active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+                metadata_image_equal(&after->partition_1, candidate) &&
+                metadata_image_equal(&after->partition_2, candidate)
+            ? H2_PAL_OK
+            : H2_PAL_ERR_INVALID_STATE;
+    }
+    return H2_PAL_ERR_INVALID_STATE;
+}
+
 static int reboot_command_kind(h2_h2loader_host_command_t kind) {
     return kind == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
         kind == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER ||
@@ -674,6 +724,9 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
         expected_partition = 1u;
         expected_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
         expected_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    } else if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
+               !before->stage.valid) {
+        return verify_upgrade_without_stage(before, after);
     } else {
         return H2_PAL_ERR_INVALID_STATE;
     }

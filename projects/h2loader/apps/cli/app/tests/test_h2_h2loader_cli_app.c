@@ -593,6 +593,46 @@ static void test_reboot_final_status_is_authoritative(void) {
     assert(h2_h2loader_cli_verify_reboot_status(
                H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
            H2_PAL_ERR_INVALID_STATE);
+
+    memset(&before, 0, sizeof(before));
+    memset(&after, 0, sizeof(after));
+    before.partition_1 = lifecycle_metadata(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER, "ee");
+    after.partition_1 = before.partition_1;
+    after.running_partition = 1u;
+    after.next_partition = 1u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_OK);
+
+    before.partition_2 = lifecycle_metadata(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP, "ff");
+    after.partition_2 = before.partition_2;
+    after.running_partition = 2u;
+    after.next_partition = 2u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_OK);
+
+    before.partition_2 = lifecycle_metadata(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER, "11");
+    after.partition_1 = before.partition_2;
+    after.partition_1.package_checksum[0] = '\0';
+    after.partition_1.package_size = 0u;
+    after.partition_2 = before.partition_2;
+    after.running_partition = 1u;
+    after.next_partition = 1u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_OK);
+    after.partition_1.image_size++;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_ERR_INVALID_STATE);
 }
 
 int main(void) {
