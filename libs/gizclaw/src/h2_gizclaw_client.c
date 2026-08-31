@@ -87,6 +87,8 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MESSAGES_AUDIO_GET);
 #undef H2_GIZCLAW_ASSERT_RPC_METHOD
 
 #define H2_GIZCLAW_LOCAL_CHANNEL_LABEL_CAPACITY 64u
+#define H2_GIZCLAW_WRITE_POLL_BACKOFF_MS 10u
+#define H2_GIZCLAW_WRITE_POLL_SLICE_MS 50u
 
 typedef struct h2_gizclaw_local_channel_state {
   bool create_in_progress;
@@ -672,6 +674,19 @@ static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t *client,
   (void)h2_pal_log_write(client->config.log,
                          rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
                          "gizclaw", message);
+}
+
+static void h2_gizclaw_log_webrtc_poll_backoff(
+    h2_gizclaw_client_t *client, uint32_t backoff_ms) {
+  if (client == NULL || client->config.log == NULL) {
+    return;
+  }
+  char message[96];
+  (void)snprintf(message, sizeof(message),
+                 "webrtc_stage=peer_poll rc=%d backoff_ms=%u",
+                 H2_PAL_ERR_WOULD_BLOCK, (unsigned int)backoff_ms);
+  (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                         message);
 }
 
 static void h2_gizclaw_log_infof(h2_gizclaw_client_t *client, const char *fmt,
@@ -1481,8 +1496,25 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
     if (client->webrtc_peer == NULL) {
       return GZC_ERR_WEBRTC;
     }
-    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer, 0);
-    if (rc != H2_PAL_OK) {
+    const uint64_t remaining_ms = (uint64_t)write_timeout_ms - elapsed_ms;
+    const int poll_timeout_ms =
+        (int)(remaining_ms < H2_GIZCLAW_WRITE_POLL_SLICE_MS
+                  ? remaining_ms
+                  : H2_GIZCLAW_WRITE_POLL_SLICE_MS);
+    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer,
+                                 poll_timeout_ms);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+      const uint32_t backoff_ms =
+          remaining_ms < H2_GIZCLAW_WRITE_POLL_BACKOFF_MS
+              ? (uint32_t)remaining_ms
+              : H2_GIZCLAW_WRITE_POLL_BACKOFF_MS;
+      h2_gizclaw_log_webrtc_poll_backoff(client, backoff_ms);
+      rc = h2_pal_time_sleep_ms(client->config.time, backoff_ms);
+      if (rc != H2_PAL_OK) {
+        h2_gizclaw_log_webrtc_rc(client, "peer_poll_backoff", rc);
+        return GZC_ERR_WEBRTC;
+      }
+    } else if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
       return h2_gzc_media_result(rc);
     }
     if (!h2_gizclaw_channel_is_live(client, channel)) {
@@ -1500,8 +1532,9 @@ static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
   }
   /*
    * PAL backends expose backpressure through channel_send(WOULD_BLOCK).
-   * h2_gzc_channel_send synchronously polls until the bounded backend queue
-   * accepts the chunk, so the adapter itself never owns queued bytes.
+   * h2_gzc_channel_send synchronously waits for peer progress until the
+   * bounded backend queue accepts the chunk, so the adapter itself never owns
+   * queued bytes.
    */
   *out_bytes = 0u;
   return GZC_OK;
