@@ -1281,6 +1281,10 @@ typedef struct operation_fixture {
     int bad_final_checksum;
     int stage_only;
     int fail_stage_status_once;
+    int stage_missing_after_reconnect;
+    int stage_mismatch_after_reconnect;
+    int transient_stage_failures;
+    h2_pal_result_t transient_stage_result;
     int disconnect_failure_call;
     h2_h2loader_host_active_role_t initial_active_role;
     h2_pal_result_t disconnect_result;
@@ -1313,9 +1317,15 @@ static h2_pal_result_t operation_connect(
     out_status->next_partition = 1u;
     if (fixture->connect_count > 1) {
         if (fixture->stage_only) {
-            out_status->stage.valid = 1u;
-            out_status->stage.package_size = fixture->asset.bytes;
-            strcpy(out_status->stage.package_checksum, fixture->asset.sha256);
+            if (!fixture->stage_missing_after_reconnect) {
+                out_status->stage.valid = 1u;
+                out_status->stage.package_size = fixture->asset.bytes;
+                strcpy(
+                    out_status->stage.package_checksum,
+                    fixture->stage_mismatch_after_reconnect
+                        ? "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                        : fixture->asset.sha256);
+            }
             return H2_PAL_OK;
         }
         out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
@@ -1357,8 +1367,15 @@ static h2_pal_result_t operation_stage(
     (void)cancel_user;
     (void)on_progress;
     (void)progress_user;
-    ++((operation_fixture_t *)user)->stage_count;
-    return ((operation_fixture_t *)user)->stage_result;
+    operation_fixture_t *fixture = user;
+    ++fixture->stage_count;
+    if (fixture->transient_stage_failures > 0) {
+        --fixture->transient_stage_failures;
+        return fixture->transient_stage_result == H2_PAL_OK
+            ? H2_PAL_ERR_CLOSED
+            : fixture->transient_stage_result;
+    }
+    return fixture->stage_result;
 }
 
 static h2_pal_result_t operation_activate(
@@ -1494,6 +1511,24 @@ static void test_managed_operation(void) {
     fixture.rediscover_count = 0;
     fixture.sleep_count = 0;
     fixture.event_count = 0u;
+    fixture.transient_stage_failures = 1;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 3);
+    assert(fixture.stage_count == 2);
+    assert(fixture.activate_count == 1);
+    assert(fixture.disconnect_count == 3);
+    assert(fixture.rediscover_count == 2);
+    assert(fixture.sleep_count == 2);
+    assert(final_status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.sleep_count = 0;
+    fixture.event_count = 0u;
     fixture.reconnect_connect_result = H2_PAL_ERR_INVALID_STATE;
     assert(h2_h2loader_host_managed_operation_run(
                &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
@@ -1575,6 +1610,75 @@ static void test_managed_operation(void) {
     assert(fixture.read_status_count == 1);
     assert(strcmp(final_status.stage.package_checksum, package_sha) == 0);
     fixture.fail_stage_status_once = 0;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.transient_stage_failures = 1;
+    fixture.transient_stage_result = H2_PAL_ERR_TIMEOUT;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 1);
+    fixture.transient_stage_result = H2_PAL_OK;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.stage_missing_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 2);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 1);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.stage_missing_after_reconnect = 0;
+    fixture.stage_mismatch_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.sleep_count == 1);
+    fixture.stage_mismatch_after_reconnect = 0;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.transient_stage_failures = 1;
+    fixture.reconnect_connect_result = H2_PAL_ERR_INVALID_STATE;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.sleep_count == 1);
+    fixture.reconnect_connect_result = H2_PAL_OK;
+    fixture.stage_missing_after_reconnect = 0;
 
     fixture.connect_count = 0;
     fixture.stage_count = 0;

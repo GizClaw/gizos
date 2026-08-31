@@ -52,7 +52,7 @@ Managed operation 对串口和 BLE 使用同一个状态机：
 
 1. Connect 并读取 live status。
 2. 校验 board/target 与 asset。
-3. Stage 完整 package；中断不自动换 transport 或重放。
+3. Stage 完整 package。`CLOSED`/`TIMEOUT` 只允许一次同 transport、同 `device_uid` 的受限恢复：重连后若 exact bytes/SHA-256 Stage 已持久化则继续；若 Stage 为空则从 offset 0 完整重放一次；若 UID 不同、已有其它有效 Stage 或再次中断则 fail closed。
 4. 执行 `reboot upgrade` 进入 AUTO 流程。
 5. Disconnect、重新发现并重连。
 6. APP 要求运行在 Partition 2、active/Partition 2 identity 匹配 package 且 `stage.valid=false`；Loader 要求运行在 Partition 1、Partition 1/2 identity 与 package 匹配且 `stage.valid=false`。

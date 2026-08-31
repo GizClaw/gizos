@@ -540,7 +540,9 @@ typedef struct h2_h2loader_host_managed_operation_config {
  *
  * Success is emitted only after a post-reboot rediscovery, authoritative
  * reconnect and status_verify_asset(). Every successful connect is paired
- * with disconnect, including failure and cancellation paths.
+ * with disconnect, including failure and cancellation paths. A CLOSED or
+ * TIMEOUT during Stage permits one same-identity reconnect: an already durable
+ * matching Stage is accepted, otherwise an empty Stage is retransmitted once.
  */
 h2_pal_result_t h2_h2loader_host_managed_operation_run(
     const h2_h2loader_host_managed_operation_config_t *config,
@@ -552,7 +554,9 @@ h2_pal_result_t h2_h2loader_host_managed_operation_run(
  * This transport-neutral operation does not activate the asset. Success
  * requires rediscovery of the original candidate, matching board/target and
  * exact staged bytes/package checksum. Every successful connect is paired
- * with disconnect on success, cancellation and failure paths.
+ * with disconnect on success, cancellation and failure paths. A CLOSED or
+ * TIMEOUT during Stage permits one same-identity reconnect: an already durable
+ * matching Stage is accepted, otherwise an empty Stage is retransmitted once.
  */
 h2_pal_result_t h2_h2loader_host_stage_operation_run(
     const h2_h2loader_host_managed_operation_config_t *config,
