@@ -50,11 +50,16 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --report <report.json>
 ```
 
-2026-08-31 的 PR #64 早期实板验收曾显式使用 115200：UART 19/19 PASS，BLE
-16/16 PASS。两者都覆盖 `help/status/stats/memory`、旧命令从 help 与 availability
-消失、Wi-Fi scan/connect/disconnect、payload/URL Stage、两种 abort、APP 安装、普通
-reboot 不消费 Stage 和 Loader P2-to-P1 copy-back；UART 另覆盖 standalone monitor 及三种
-`reboot ... --monitor`。最终状态均为 Loader / Partition 1、Stage invalid、Partition 1/2
-valid 且 Loader package/image checksum 相同。独立的预置 coredump fixture 报告为 UART/BLE
-10/10 PASS，每种传输都流式读取 23200 bytes 后 erase；它证明大于 8 KiB 的输出不会再聚合到
-固定响应缓冲区。
+2026-08-31 的 PR #64 head `b6370c4` 在默认 230400 contract 下完成当前实板验收：UART
+31/31 PASS、BLE 28/28 PASS，合计 59/59 PASS。Loader 与 APP 环境都分别覆盖
+`help/status/stats/memory`、旧命令从 help 与 availability 消失、Wi-Fi
+scan/connect/disconnect、payload/URL Stage 和两种 abort；每个 APP case 的 authoritative
+status 都确认 `active_role=app`。生命周期还覆盖 APP 安装、普通 reboot 不消费 Stage、Loader
+P2-to-P1 copy-back；UART 另覆盖 standalone monitor 及三种 `reboot ... --monitor`。最终 UART
+与 BLE status 均为 Loader `pr64-b6370c4` / Partition 1、`boot_intent=AUTO`、Stage
+invalid，Partition 1/2 都持有同一个 935403-byte Loader package checksum
+`c339a76f587c12900f258981fa3e15e01aac536c4d64a5c8d21b1e334f9ca8ec` 和 image
+checksum `8d2d88b5b52c4f1ea17315a4f4fb409880a323f5270cd2b9af8ea405c29193c6`。
+
+独立的预置 coredump fixture 报告为 UART/BLE 10/10 PASS，每种传输都流式读取 23200
+bytes 后 erase；它证明大于 8 KiB 的输出不会再聚合到固定响应缓冲区。
