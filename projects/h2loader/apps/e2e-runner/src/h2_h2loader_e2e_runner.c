@@ -1124,7 +1124,6 @@ static h2_pal_result_t
 run_install_crash_app(h2_e2e_transport_context_t *context) {
   h2_h2loader_host_status_t status;
   h2_h2loader_host_metadata_t staged_candidate;
-  h2_h2loader_host_boot_intent_t staged_boot_intent;
   int32_t staged_last;
   h2_h2loader_host_command_result_t result = {0};
   h2_pal_result_t rc = run_stage_payload(context, &context->crash_asset,
@@ -1139,7 +1138,6 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
   }
   if (rc == H2_PAL_OK) {
     staged_candidate = status.stage;
-    staged_boot_intent = status.boot_intent;
     staged_last = status.last;
   }
   if (rc == H2_PAL_OK) {
@@ -1175,7 +1173,7 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
     if (rc == H2_PAL_OK && status.running_partition == 1u &&
         metadata_equal(&status.stage, &staged_candidate) &&
         metadata_equal(&status.partition_2, &staged_candidate) &&
-        status.boot_intent == staged_boot_intent &&
+        status.boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO &&
         status.last == staged_last) {
       context->case_result->status = status;
       context->case_result->status_valid = 1u;
