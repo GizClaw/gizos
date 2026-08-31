@@ -131,6 +131,7 @@ static void gizclaw_registration_complete(
     atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
                           memory_order_release);
     gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
+    atomic_store_explicit(&state->stop, true, memory_order_release);
   }
   h2_gizclaw_registration_request_release(request);
 }
@@ -142,6 +143,7 @@ static void gizclaw_terminal(void *user, h2_pal_result_t result) {
     atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
                           memory_order_release);
     gizclaw_log(state->app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
+    atomic_store_explicit(&state->stop, true, memory_order_release);
   }
 }
 
