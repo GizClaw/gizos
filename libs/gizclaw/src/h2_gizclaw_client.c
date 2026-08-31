@@ -1488,14 +1488,6 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
     if (!h2_gizclaw_channel_is_live(client, channel)) {
       return GZC_ERR_CLOSED;
     }
-    rc = h2_pal_time_sleep_ms(client->config.time, 1u);
-    if (rc == H2_PAL_ERR_UNSUPPORTED) {
-      rc = h2_pal_webrtc_peer_poll(client->config.webrtc,
-                                  client->webrtc_peer, 1);
-    }
-    if (rc != H2_PAL_OK) {
-      return h2_gzc_media_result(rc);
-    }
   }
 }
 
