@@ -1,9 +1,9 @@
 #ifndef H2_GIZCLAW_REGISTRATION_H
 #define H2_GIZCLAW_REGISTRATION_H
 
-#include "h2_gizclaw_types.h"
-#include "h2_gizclaw_service.h"
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2_gizclaw_service.h"
+#include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
 
@@ -27,9 +27,11 @@ typedef void (*h2_gizclaw_registration_completion_fn)(
     const h2_gizclaw_registration_result_t *registration);
 
 /** Register from a caller that exclusively owns and polls this client. */
+#if defined(H2_GIZCLAW_TESTING)
 h2_pal_result_t
 h2_gizclaw_client_register(h2_gizclaw_client_t *client, const char *token,
                            h2_gizclaw_registration_result_t *out_result);
+#endif
 
 /**
  * @brief Apply a stable pre-distributed RegistrationToken to a connected Peer.

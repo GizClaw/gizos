@@ -1,11 +1,11 @@
 #ifndef H2_GIZCLAW_INTERNAL_H
 #define H2_GIZCLAW_INTERNAL_H
 
-#include "h2_gizclaw_config.h"
+#include "h2/pal/os/h2_pal_mem.h"
 #include "h2_gizclaw_client.h"
+#include "h2_gizclaw_config.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_types.h"
-#include "h2/pal/os/h2_pal_mem.h"
 
 #include "gzc_buffer.h"
 #include "gzc_event.h"
@@ -42,13 +42,14 @@ int h2_gizclaw_client_monotonic_ms_internal(h2_gizclaw_client_t *client,
 gzc_client_t *h2_gizclaw_client_gzc_internal(h2_gizclaw_client_t *client);
 int h2_gizclaw_encode_pb_message(h2_gizclaw_client_t *client,
                                  const pb_msgdesc_t *fields,
-                                 const void *message,
-                                 gzc_buf_t *out_payload);
-int h2_gizclaw_decode_pb_message(gzc_str_t payload,
-                                 const pb_msgdesc_t *fields, void *message);
-void h2_gizclaw_client_log_rpc_error_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
-    int error_code, const char *error_message, size_t error_message_len);
+                                 const void *message, gzc_buf_t *out_payload);
+int h2_gizclaw_decode_pb_message(gzc_str_t payload, const pb_msgdesc_t *fields,
+                                 void *message);
+void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
+                                              h2_gizclaw_rpc_method_t method,
+                                              int error_code,
+                                              const char *error_message,
+                                              size_t error_message_len);
 int h2_gizclaw_client_conversation_acquire_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation,
     gzc_event_stream_t **out_events, uint64_t *out_stream_sequence);
@@ -77,6 +78,16 @@ int h2_gizclaw_event_stream_read_internal(gzc_event_stream_t *stream,
 int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
                                            uint8_t *out_protocol,
                                            gzc_buf_t *out_payload);
+int h2_gizclaw_client_rpc_call(h2_gizclaw_client_t *client,
+                               h2_gizclaw_rpc_method_t method,
+                               h2_gizclaw_rpc_bytes_t params_payload,
+                               h2_gizclaw_rpc_response_t *out_response);
+int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
+                                      h2_gizclaw_rpc_method_t method,
+                                      h2_gizclaw_rpc_bytes_t params_payload,
+                                      h2_gizclaw_rpc_stream_fn on_event,
+                                      void *user);
+int h2_gizclaw_client_delete_peer(h2_gizclaw_client_t *client);
 
 #if defined(H2_GIZCLAW_TESTING)
 #include "gzc_telemetry.h"
@@ -128,7 +139,6 @@ int h2_gizclaw_client_speedtest_measure(
 int h2_gizclaw_client_speedtest_download(
     h2_gizclaw_client_t *client, size_t download_bytes,
     h2_gizclaw_speedtest_result_t *out_result);
-
 typedef int (*h2_gizclaw_test_event_send_fn)(void *user,
                                              gzc_event_stream_t *stream,
                                              const gzc_peer_event_t *event);

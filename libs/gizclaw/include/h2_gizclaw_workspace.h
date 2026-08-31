@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_WORKSPACE_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
@@ -101,6 +102,96 @@ typedef struct h2_gizclaw_workspace_activation {
   h2_gizclaw_workspace_runtime_state_t runtime_state;
 } h2_gizclaw_workspace_activation_t;
 
+typedef struct h2_gizclaw_workspace_request h2_gizclaw_workspace_request_t;
+
+typedef enum h2_gizclaw_workspace_request_kind {
+  H2_GIZCLAW_WORKSPACE_LIST = 0,
+  H2_GIZCLAW_WORKSPACE_GET,
+  H2_GIZCLAW_WORKSPACE_CREATE,
+  H2_GIZCLAW_WORKSPACE_SET_INPUT,
+  H2_GIZCLAW_WORKSPACE_DELETE,
+  H2_GIZCLAW_WORKSPACE_ACTIVATE,
+  H2_GIZCLAW_WORKSPACE_HISTORY_LIST,
+  H2_GIZCLAW_WORKSPACE_HISTORY_AUDIO_DOWNLOAD,
+} h2_gizclaw_workspace_request_kind_t;
+
+typedef struct h2_gizclaw_workspace_get_result {
+  h2_gizclaw_workspace_t workspace;
+  char *runtime_profile_name;
+  char *runtime_profile_revision;
+} h2_gizclaw_workspace_get_result_t;
+
+typedef struct h2_gizclaw_workspace_result {
+  h2_gizclaw_workspace_request_kind_t kind;
+  union {
+    h2_gizclaw_workspace_page_t page;
+    h2_gizclaw_workspace_get_result_t get;
+    h2_gizclaw_workspace_t workspace;
+    h2_gizclaw_workspace_activation_t activation;
+    h2_gizclaw_workspace_history_page_t history_page;
+    h2_gizclaw_workspace_history_audio_info_t history_audio;
+  } value;
+} h2_gizclaw_workspace_result_t;
+
+typedef void (*h2_gizclaw_workspace_completion_fn)(
+    void *user, h2_gizclaw_workspace_request_t *request,
+    const h2_gizclaw_operation_result_t *operation_result,
+    const h2_gizclaw_workspace_result_t *result);
+
+h2_pal_result_t h2_gizclaw_service_workspaces_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_get_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_create_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow_name,
+    h2_gizclaw_str_t name, h2_gizclaw_workspace_completion_fn completion,
+    void *user, h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_set_input_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_workspace_input_mode_t input_mode,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_delete_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_activate_async(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_history_list_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t workspace_name, h2_gizclaw_str_t cursor, size_t limit,
+    h2_gizclaw_workspace_history_order_t order,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t h2_gizclaw_service_workspace_history_audio_download_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t workspace_name, h2_gizclaw_str_t history_id,
+    h2_gizclaw_workspace_history_audio_write_fn write, void *write_user,
+    h2_gizclaw_workspace_completion_fn completion, void *user,
+    h2_gizclaw_workspace_request_t **out_request);
+
+h2_pal_result_t
+h2_gizclaw_workspace_request_cancel(h2_gizclaw_workspace_request_t *request);
+void h2_gizclaw_workspace_request_release(
+    h2_gizclaw_workspace_request_t *request);
+
+#if defined(H2_GIZCLAW_TESTING)
+
 int h2_gizclaw_client_workspaces_list(h2_gizclaw_client_t *client,
                                       h2_gizclaw_str_t collection,
                                       h2_gizclaw_str_t cursor, size_t limit,
@@ -165,6 +256,7 @@ int h2_gizclaw_client_workspace_history_audio_download(
     h2_gizclaw_str_t history_id,
     h2_gizclaw_workspace_history_audio_write_fn write, void *user,
     h2_gizclaw_workspace_history_audio_info_t *out_info);
+#endif
 
 bool h2_gizclaw_workspace_activation_ready(
     const h2_gizclaw_workspace_activation_t *activation,

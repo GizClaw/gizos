@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_CONVERSATION_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
@@ -17,6 +18,8 @@ extern "C" {
 #define H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES 63u
 
 typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
+typedef struct h2_gizclaw_conversation_request
+    h2_gizclaw_conversation_request_t;
 
 /** One ordered result emitted by a conversation generation. */
 typedef enum h2_gizclaw_conversation_event_kind {
@@ -48,6 +51,37 @@ typedef struct h2_gizclaw_conversation_event {
   bool retryable;
 } h2_gizclaw_conversation_event_t;
 
+typedef h2_pal_result_t (*h2_gizclaw_conversation_request_event_fn)(
+    void *user, h2_gizclaw_conversation_request_t *request,
+    const h2_gizclaw_conversation_event_t *event);
+
+typedef void (*h2_gizclaw_conversation_request_completion_fn)(
+    void *user, h2_gizclaw_conversation_request_t *request,
+    const h2_gizclaw_operation_result_t *operation_result);
+
+/** Create one service-owned conversation generation. */
+h2_pal_result_t h2_gizclaw_service_conversation_create(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t workspace_name, uint64_t generation, int timeout_ms,
+    h2_gizclaw_conversation_request_event_fn on_event,
+    h2_gizclaw_conversation_request_completion_fn completion, void *user,
+    h2_gizclaw_conversation_request_t **out_request);
+
+/** Queue one complete Opus packet without blocking. */
+h2_pal_result_t h2_gizclaw_conversation_request_write_opus(
+    h2_gizclaw_conversation_request_t *request, const uint8_t *opus,
+    size_t opus_len, uint64_t timestamp_ms);
+
+/** Queue EOS after all previously accepted packets. */
+h2_pal_result_t h2_gizclaw_conversation_request_commit(
+    h2_gizclaw_conversation_request_t *request, uint64_t timestamp_ms);
+
+h2_pal_result_t h2_gizclaw_conversation_request_cancel(
+    h2_gizclaw_conversation_request_t *request);
+
+void h2_gizclaw_conversation_request_release(
+    h2_gizclaw_conversation_request_t *request);
+
 /**
  * Opens one generation for an already active Workspace.
  *
@@ -56,9 +90,10 @@ typedef struct h2_gizclaw_conversation_event {
  * simultaneous open returns `H2_PAL_ERR_INVALID_STATE`. Success sends the input
  * BOS and transfers ownership of the returned conversation to the caller. The
  * caller must eventually call `deinit`. Conversation operations are not thread
- * safe; one caller must own and serialize open, input, poll, commit, cancel, and
- * deinit for the complete lifetime.
+ * safe; one caller must own and serialize open, input, poll, commit, cancel,
+ * and deinit for the complete lifetime.
  */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_conversation_open(h2_gizclaw_client_t *client,
                                  h2_gizclaw_str_t workspace_name,
                                  uint64_t generation, int timeout_ms,
@@ -117,6 +152,7 @@ void h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation);
  * open until the complete client connection is closed.
  */
 void h2_gizclaw_conversation_deinit(h2_gizclaw_conversation_t *conversation);
+#endif
 
 #ifdef __cplusplus
 }

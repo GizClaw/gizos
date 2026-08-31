@@ -1,4 +1,5 @@
 #include "h2_gizclaw_registration.h"
+#include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_registration_internal.h"
 
 #include "h2_gizclaw_service_internal.h"
@@ -19,8 +20,7 @@ struct h2_gizclaw_registration_request {
 };
 
 int h2_gizclaw_registration_encode_request(const char *token, uint8_t *out,
-                                            size_t capacity,
-                                            size_t *out_len) {
+                                           size_t capacity, size_t *out_len) {
   if (token == NULL || token[0] == '\0' || out == NULL || out_len == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   const size_t token_len = strlen(token);
@@ -88,15 +88,14 @@ h2_gizclaw_client_register(h2_gizclaw_client_t *client, const char *token,
   return result;
 }
 
-static void registration_rpc_complete(
-    void *user, h2_gizclaw_async_rpc_t *rpc,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_rpc_response_t *response) {
+static void
+registration_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc,
+                          const h2_gizclaw_operation_result_t *operation_result,
+                          const h2_gizclaw_rpc_response_t *response) {
   (void)rpc;
   h2_gizclaw_registration_request_t *request = user;
   h2_gizclaw_operation_result_t result = *operation_result;
-  if (result.result == H2_PAL_OK &&
-      (response == NULL || response->has_error)) {
+  if (result.result == H2_PAL_OK && (response == NULL || response->has_error)) {
     result.result = H2_PAL_ERR_IO;
   }
   if (result.result == H2_PAL_OK) {
@@ -105,9 +104,9 @@ static void registration_rpc_complete(
         &request->registration);
   }
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(
-      request->completion_user, request, &result,
-      result.result == H2_PAL_OK ? &request->registration : NULL);
+  request->completion(request->completion_user, request, &result,
+                      result.result == H2_PAL_OK ? &request->registration
+                                                 : NULL);
 }
 
 h2_pal_result_t h2_gizclaw_service_register_async(

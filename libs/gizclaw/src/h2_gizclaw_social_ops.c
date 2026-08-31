@@ -1,4 +1,6 @@
+#define H2_GIZCLAW_INTERNAL_SYNC_API
 #include "h2_gizclaw_social.h"
+#undef H2_GIZCLAW_INTERNAL_SYNC_API
 
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_rpc.h"
@@ -1339,9 +1341,10 @@ static int message_audio_event(void *user,
         gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(event->result_payload.data,
                                                  event->result_payload.len);
-    if (!pb_decode(&stream,
-                   gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
-                   &decoded) ||
+    if (!pb_decode(
+            &stream,
+            gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
+            &decoded) ||
         decoded.size_bytes <= 0 || decoded.friend_group_name[0] == '\0' ||
         decoded.history_name[0] == '\0' ||
         strncmp(decoded.mime_type, "audio/", 6u) != 0 ||

@@ -57,8 +57,8 @@ typedef void (*h2_gizclaw_workflows_list_completion_fn)(
 typedef void (*h2_gizclaw_workflow_get_completion_fn)(
     void *user, h2_gizclaw_workflow_request_t *request,
     const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_workflow_t *workflow,
-    const char *runtime_profile_name, const char *runtime_profile_revision);
+    const h2_gizclaw_workflow_t *workflow, const char *runtime_profile_name,
+    const char *runtime_profile_revision);
 
 h2_pal_result_t h2_gizclaw_service_workflows_list_async(
     h2_gizclaw_service_t *service, uint64_t identity,
@@ -77,6 +77,7 @@ h2_gizclaw_workflow_request_cancel(h2_gizclaw_workflow_request_t *request);
 void h2_gizclaw_workflow_request_release(
     h2_gizclaw_workflow_request_t *request);
 
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_workflows_list(h2_gizclaw_client_t *client,
                                      h2_gizclaw_str_t collection,
                                      h2_gizclaw_str_t cursor, size_t limit,
@@ -103,6 +104,7 @@ void h2_gizclaw_workflow_get_deinit(h2_gizclaw_client_t *client,
                                     char *runtime_profile_revision);
 void h2_gizclaw_workflow_page_deinit(h2_gizclaw_client_t *client,
                                      h2_gizclaw_workflow_page_t *page);
+#endif
 
 #if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_workflow_decode_list_for_test(

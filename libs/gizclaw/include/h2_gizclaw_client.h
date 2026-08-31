@@ -53,6 +53,7 @@ typedef struct h2_gizclaw_service h2_gizclaw_service_t;
 typedef struct h2_gizclaw_operation_result h2_gizclaw_operation_result_t;
 typedef struct h2_gizclaw_ping_request h2_gizclaw_ping_request_t;
 typedef struct h2_gizclaw_speedtest_request h2_gizclaw_speedtest_request_t;
+typedef struct h2_gizclaw_peer_delete_request h2_gizclaw_peer_delete_request_t;
 
 typedef void (*h2_gizclaw_ping_completion_fn)(
     void *user, h2_gizclaw_ping_request_t *request,
@@ -63,6 +64,10 @@ typedef void (*h2_gizclaw_speedtest_completion_fn)(
     void *user, h2_gizclaw_speedtest_request_t *request,
     const h2_gizclaw_operation_result_t *result,
     const h2_gizclaw_speedtest_result_t *speedtest);
+
+typedef void (*h2_gizclaw_peer_delete_completion_fn)(
+    void *user, h2_gizclaw_peer_delete_request_t *request,
+    const h2_gizclaw_operation_result_t *result);
 
 /** Submit one Ping request to the service-owned network task. */
 h2_pal_result_t h2_gizclaw_service_ping_async(
@@ -75,7 +80,8 @@ h2_gizclaw_ping_request_cancel(h2_gizclaw_ping_request_t *request);
 
 void h2_gizclaw_ping_request_release(h2_gizclaw_ping_request_t *request);
 
-int h2_gizclaw_client_init(const h2_gizclaw_config_t *config, h2_gizclaw_client_t **out_client);
+int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
+                           h2_gizclaw_client_t **out_client);
 
 /**
  * Establish the GizClaw Peer connection and all mandatory transports.
@@ -108,10 +114,11 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
                                      h2_gizclaw_client_event_fn on_event,
                                      void *event_user);
 
-/** Set the connection-scoped event handler used when dispatch has no override. */
-int h2_gizclaw_client_set_event_handler(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_event_fn on_event,
-    void *event_user);
+/** Set the connection-scoped event handler used when dispatch has no override.
+ */
+int h2_gizclaw_client_set_event_handler(h2_gizclaw_client_t *client,
+                                        h2_gizclaw_client_event_fn on_event,
+                                        void *event_user);
 /** Submit a full-duplex speed test without polling on the calling task. */
 h2_pal_result_t h2_gizclaw_service_speedtest_async(
     h2_gizclaw_service_t *service, uint64_t identity, size_t upload_bytes,
@@ -119,11 +126,20 @@ h2_pal_result_t h2_gizclaw_service_speedtest_async(
     h2_gizclaw_speedtest_completion_fn completion, void *user,
     h2_gizclaw_speedtest_request_t **out_request);
 
-h2_pal_result_t h2_gizclaw_speedtest_request_cancel(
-    h2_gizclaw_speedtest_request_t *request);
+h2_pal_result_t
+h2_gizclaw_speedtest_request_cancel(h2_gizclaw_speedtest_request_t *request);
 
 void h2_gizclaw_speedtest_request_release(
     h2_gizclaw_speedtest_request_t *request);
+
+h2_pal_result_t h2_gizclaw_service_delete_peer_async(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_peer_delete_completion_fn completion, void *user,
+    h2_gizclaw_peer_delete_request_t **out_request);
+h2_pal_result_t h2_gizclaw_peer_delete_request_cancel(
+    h2_gizclaw_peer_delete_request_t *request);
+void h2_gizclaw_peer_delete_request_release(
+    h2_gizclaw_peer_delete_request_t *request);
 
 /**
  * Request idempotent deletion handoff for the authenticated Peer.
@@ -131,7 +147,9 @@ void h2_gizclaw_speedtest_request_release(
  * This blocking call returns success only after the Server response and EOS
  * have been received. The Server may retire the connection after success.
  */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_delete_peer(h2_gizclaw_client_t *client);
+#endif
 
 /**
  * Close the complete Peer connection and invalidate active conversation leases.

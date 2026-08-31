@@ -149,10 +149,12 @@ typedef int (*h2_gizclaw_rpc_provider_fn)(
     h2_gizclaw_rpc_provider_response_t *out_response);
 
 /** Call any unary GizClaw RPC with an already protobuf-encoded payload. */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_rpc_call(h2_gizclaw_client_t *client,
                                h2_gizclaw_rpc_method_t method,
                                h2_gizclaw_rpc_bytes_t params_payload,
                                h2_gizclaw_rpc_response_t *out_response);
+#endif
 
 /**
  * Start one request-owned unary RPC on the connected client's Peer service.
@@ -180,8 +182,7 @@ int h2_gizclaw_rpc_request_write(h2_gizclaw_rpc_request_t *request,
                                  const uint8_t *data, size_t len);
 
 /** Queue request EOS without polling. */
-int h2_gizclaw_rpc_request_finish_write(
-    h2_gizclaw_rpc_request_t *request);
+int h2_gizclaw_rpc_request_finish_write(h2_gizclaw_rpc_request_t *request);
 
 /**
  * Inspect one request without polling.
@@ -205,11 +206,13 @@ void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t *request);
  * The callback receives exactly one RESPONSE, zero or more DATA events, then
  * one EOS event on success. Returning a non-zero value cancels the call.
  */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
                                       h2_gizclaw_rpc_method_t method,
                                       h2_gizclaw_rpc_bytes_t params_payload,
                                       h2_gizclaw_rpc_stream_fn on_event,
                                       void *user);
+#endif
 
 void h2_gizclaw_rpc_response_deinit(h2_gizclaw_client_t *client,
                                     h2_gizclaw_rpc_response_t *response);

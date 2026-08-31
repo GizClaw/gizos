@@ -24,7 +24,9 @@ typedef struct h2_gizclaw_profile {
 
 typedef struct h2_gizclaw_profile_request h2_gizclaw_profile_request_t;
 
-/** Read the profile from a caller that exclusively owns and polls this client. */
+#if defined(H2_GIZCLAW_TESTING)
+/** Read the profile from a caller that exclusively owns and polls this client.
+ */
 int h2_gizclaw_client_profile_get(h2_gizclaw_client_t *client,
                                   h2_gizclaw_profile_t *out_profile);
 
@@ -37,6 +39,7 @@ int h2_gizclaw_client_profile_put_name(h2_gizclaw_client_t *client,
 int h2_gizclaw_client_profile_put_emoji(h2_gizclaw_client_t *client,
                                         h2_gizclaw_str_t emoji,
                                         h2_gizclaw_profile_t *out_profile);
+#endif
 
 /** Completion for one task-safe profile request. */
 typedef void (*h2_gizclaw_profile_completion_fn)(
@@ -76,9 +79,9 @@ h2_pal_result_t h2_gizclaw_service_profile_put_emoji_async(
 h2_pal_result_t
 h2_gizclaw_profile_request_cancel(h2_gizclaw_profile_request_t *request);
 
-/** Release one terminal profile request. Calls before completion are ignored. */
-void h2_gizclaw_profile_request_release(
-    h2_gizclaw_profile_request_t *request);
+/** Release one terminal profile request. Calls before completion are ignored.
+ */
+void h2_gizclaw_profile_request_release(h2_gizclaw_profile_request_t *request);
 
 #ifdef __cplusplus
 }

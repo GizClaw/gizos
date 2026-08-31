@@ -2,12 +2,13 @@
 #include "h2_showcase_task_names.h"
 
 #include "h2_gizclaw.h"
+#include "h2_gizclaw_task_names.h"
 #include "h2_lvgl_platform.h"
 #include "h2_lvgl_touch.h"
 #include "h2_mp4_decoder.h"
 #include "h2_showcase_state.h"
-#include "lvgl.h"
 #include "include/lvgl/font/lv_tiny_ttf.h"
+#include "lvgl.h"
 
 #include <limits.h>
 #include <stdatomic.h>
@@ -38,6 +39,7 @@ typedef enum h2_showcase_gizclaw_status {
 typedef struct h2_showcase_gizclaw_state {
   struct h2_showcase_app *app;
   h2_pal_task_t *task;
+  h2_gizclaw_service_t *service;
   atomic_bool stop;
   atomic_int status;
 } h2_showcase_gizclaw_state_t;
@@ -112,6 +114,37 @@ static void gizclaw_log(h2_showcase_app_t *app, h2_pal_log_level_t level,
   }
 }
 
+static void gizclaw_registration_complete(
+    void *user, h2_gizclaw_registration_request_t *request,
+    const h2_gizclaw_operation_result_t *result,
+    const h2_gizclaw_registration_result_t *registration) {
+  h2_showcase_gizclaw_state_t *state = user;
+  h2_showcase_app_t *app = state->app;
+  if (result->result == H2_PAL_OK && registration != NULL &&
+      strcmp(registration->runtime_profile_name,
+             app->config->gizclaw_runtime_profile_name) == 0) {
+    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,
+                          memory_order_release);
+    gizclaw_log(app, H2_PAL_LOG_INFO,
+                "H2_SHOWCASE_GIZCLAW connected profile=showcase");
+  } else {
+    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          memory_order_release);
+    gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
+  }
+  h2_gizclaw_registration_request_release(request);
+}
+
+static void gizclaw_terminal(void *user, h2_pal_result_t result) {
+  (void)result;
+  h2_showcase_gizclaw_state_t *state = user;
+  if (!gizclaw_cancel_requested(state)) {
+    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          memory_order_release);
+    gizclaw_log(state->app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
+  }
+}
+
 static void gizclaw_task_entry(void *context) {
   h2_showcase_gizclaw_state_t *state = context;
   h2_showcase_app_t *app = state->app;
@@ -137,38 +170,47 @@ static void gizclaw_task_entry(void *context) {
       .cancel_requested = gizclaw_cancel_requested,
       .cancel_user = state,
   };
-  h2_gizclaw_client_t *client = NULL;
-  h2_pal_result_t result = h2_gizclaw_client_init(&config, &client);
+  const h2_gizclaw_service_config_t service_config = {
+      .client_config = &config,
+      .task = app->runtime->task,
+      .queue = app->runtime->queue,
+      .sync = app->runtime->sync,
+      .net_task_options = {.name = h2_gizclaw_net_task_name,
+                           .min_stack_size = 16384u},
+      .resp_dispatch_task_options = {.name = h2_gizclaw_resp_dispatch_task_name,
+                                     .min_stack_size = 8192u},
+      .operation_capacity = 4u,
+      .client_poll_timeout_ms = H2_SHOWCASE_GIZCLAW_POLL_MS,
+      .terminal = gizclaw_terminal,
+      .terminal_user = state,
+  };
+  h2_pal_result_t result =
+      h2_gizclaw_service_init(&service_config, &state->service);
   if (result == H2_PAL_OK) {
-    result = h2_gizclaw_client_connect(client);
+    result = h2_gizclaw_service_start(state->service);
   }
-  h2_gizclaw_registration_result_t registration = {0};
+  h2_gizclaw_registration_request_t *registration = NULL;
   if (result == H2_PAL_OK) {
-    result = h2_gizclaw_client_register(
-        client, showcase->gizclaw_registration_token, &registration);
-  }
-  if (result == H2_PAL_OK &&
-      strcmp(registration.runtime_profile_name,
-             showcase->gizclaw_runtime_profile_name) != 0) {
-    gizclaw_log(app, H2_PAL_LOG_ERROR,
-                "H2_SHOWCASE_GIZCLAW unexpected_runtime_profile");
-    result = H2_PAL_ERR_INVALID_STATE;
+    result = h2_gizclaw_service_register_async(
+        state->service, 1u, showcase->gizclaw_registration_token, 30000u,
+        gizclaw_registration_complete, state, &registration);
   }
   if (result == H2_PAL_OK) {
-    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,
-                          memory_order_release);
-    gizclaw_log(app, H2_PAL_LOG_INFO,
-                "H2_SHOWCASE_GIZCLAW connected profile=showcase");
     while (!gizclaw_cancel_requested(state)) {
-      result = h2_gizclaw_client_poll(client, H2_SHOWCASE_GIZCLAW_POLL_MS);
-      if (result != H2_PAL_OK) {
+      if (h2_pal_time_sleep_ms(app->runtime->time,
+                               H2_SHOWCASE_GIZCLAW_POLL_MS) != H2_PAL_OK)
         break;
-      }
     }
   }
-  if (client != NULL) {
-    (void)h2_gizclaw_client_close(client);
-    h2_gizclaw_client_deinit(client);
+  if (state->service != NULL) {
+    const h2_pal_result_t stop_result = h2_gizclaw_service_stop(state->service);
+    if (result == H2_PAL_OK)
+      result = stop_result;
+    const h2_pal_result_t deinit_result =
+        h2_gizclaw_service_deinit(state->service);
+    if (result == H2_PAL_OK)
+      result = deinit_result;
+    state->service = NULL;
   }
   if (!gizclaw_cancel_requested(state) && result != H2_PAL_OK) {
     atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,

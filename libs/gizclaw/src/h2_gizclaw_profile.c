@@ -1,4 +1,5 @@
 #include "h2_gizclaw_profile.h"
+#include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_profile_internal.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_service_internal.h"
@@ -133,10 +134,9 @@ static int decode_device_info(const uint8_t *data, size_t len,
   return H2_PAL_OK;
 }
 
-static int encode_profile_text_request(h2_gizclaw_str_t text,
-                                       size_t max_bytes, uint8_t field_key,
-                                       uint8_t *out, size_t capacity,
-                                       size_t *out_len) {
+static int encode_profile_text_request(h2_gizclaw_str_t text, size_t max_bytes,
+                                       uint8_t field_key, uint8_t *out,
+                                       size_t capacity, size_t *out_len) {
   if (out == NULL || out_len == NULL || text.data == NULL || text.len == 0u ||
       text.len > max_bytes) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -156,11 +156,10 @@ static int encode_profile_text_request(h2_gizclaw_str_t text,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_profile_encode_name_request(h2_gizclaw_str_t name,
-                                           uint8_t *out, size_t capacity,
-                                           size_t *out_len) {
-  return encode_profile_text_request(
-      name, H2_GIZCLAW_PROFILE_NAME_MAX_BYTES, 0x0au, out, capacity, out_len);
+int h2_gizclaw_profile_encode_name_request(h2_gizclaw_str_t name, uint8_t *out,
+                                           size_t capacity, size_t *out_len) {
+  return encode_profile_text_request(name, H2_GIZCLAW_PROFILE_NAME_MAX_BYTES,
+                                     0x0au, out, capacity, out_len);
 }
 
 int h2_gizclaw_profile_encode_emoji_request(h2_gizclaw_str_t emoji,
@@ -256,10 +255,10 @@ int h2_gizclaw_client_profile_put_emoji(h2_gizclaw_client_t *client,
       out_profile);
 }
 
-static void profile_rpc_complete(
-    void *user, h2_gizclaw_async_rpc_t *rpc,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_rpc_response_t *response) {
+static void
+profile_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc,
+                     const h2_gizclaw_operation_result_t *operation_result,
+                     const h2_gizclaw_rpc_response_t *response) {
   (void)rpc;
   h2_gizclaw_profile_request_t *request = user;
   h2_gizclaw_operation_result_t result = *operation_result;
@@ -277,11 +276,12 @@ static void profile_rpc_complete(
                       result.result == H2_PAL_OK ? &request->profile : NULL);
 }
 
-static h2_pal_result_t submit_profile_request(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, h2_gizclaw_rpc_bytes_t payload,
-    uint32_t timeout_ms, h2_gizclaw_profile_completion_fn completion,
-    void *user, h2_gizclaw_profile_request_t **out_request) {
+static h2_pal_result_t
+submit_profile_request(h2_gizclaw_service_t *service, uint64_t identity,
+                       h2_gizclaw_rpc_method_t method,
+                       h2_gizclaw_rpc_bytes_t payload, uint32_t timeout_ms,
+                       h2_gizclaw_profile_completion_fn completion, void *user,
+                       h2_gizclaw_profile_request_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
   if (service == NULL || timeout_ms == 0u || completion == NULL ||
@@ -323,9 +323,9 @@ h2_pal_result_t h2_gizclaw_service_profile_put_name_async(
     void *user, h2_gizclaw_profile_request_t **out_request) {
   uint8_t payload[H2_GIZCLAW_PROFILE_NAME_MAX_BYTES + 8u];
   size_t payload_len = 0u;
-  const h2_pal_result_t rc = (h2_pal_result_t)
-      h2_gizclaw_profile_encode_name_request(name, payload, sizeof(payload),
-                                             &payload_len);
+  const h2_pal_result_t rc =
+      (h2_pal_result_t)h2_gizclaw_profile_encode_name_request(
+          name, payload, sizeof(payload), &payload_len);
   if (rc != H2_PAL_OK) {
     if (out_request != NULL)
       *out_request = NULL;
@@ -333,8 +333,8 @@ h2_pal_result_t h2_gizclaw_service_profile_put_name_async(
   }
   return submit_profile_request(
       service, identity, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
-      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-      timeout_ms, completion, user, out_request);
+      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len}, timeout_ms,
+      completion, user, out_request);
 }
 
 h2_pal_result_t h2_gizclaw_service_profile_put_emoji_async(
@@ -343,9 +343,9 @@ h2_pal_result_t h2_gizclaw_service_profile_put_emoji_async(
     void *user, h2_gizclaw_profile_request_t **out_request) {
   uint8_t payload[H2_GIZCLAW_PROFILE_EMOJI_MAX_BYTES + 8u];
   size_t payload_len = 0u;
-  const h2_pal_result_t rc = (h2_pal_result_t)
-      h2_gizclaw_profile_encode_emoji_request(emoji, payload, sizeof(payload),
-                                              &payload_len);
+  const h2_pal_result_t rc =
+      (h2_pal_result_t)h2_gizclaw_profile_encode_emoji_request(
+          emoji, payload, sizeof(payload), &payload_len);
   if (rc != H2_PAL_OK) {
     if (out_request != NULL)
       *out_request = NULL;
@@ -353,8 +353,8 @@ h2_pal_result_t h2_gizclaw_service_profile_put_emoji_async(
   }
   return submit_profile_request(
       service, identity, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
-      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-      timeout_ms, completion, user, out_request);
+      (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len}, timeout_ms,
+      completion, user, out_request);
 }
 
 h2_pal_result_t
@@ -364,8 +364,7 @@ h2_gizclaw_profile_request_cancel(h2_gizclaw_profile_request_t *request) {
   return h2_gizclaw_async_rpc_cancel(request->rpc);
 }
 
-void h2_gizclaw_profile_request_release(
-    h2_gizclaw_profile_request_t *request) {
+void h2_gizclaw_profile_request_release(h2_gizclaw_profile_request_t *request) {
   if (request == NULL ||
       !atomic_load_explicit(&request->terminal, memory_order_acquire)) {
     return;
