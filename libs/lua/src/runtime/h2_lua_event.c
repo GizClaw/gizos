@@ -2,6 +2,17 @@
 
 #include <string.h>
 
+/* Keep the Lua-facing Button gesture contract stable without making gesture
+ * policy part of the shared Runtime payload.  These values match the existing
+ * Lua API: press=1, short_press=2, long_press=3. */
+#define H2_LUA_BUTTON_LONG_PRESS_MS 500u
+
+enum h2_lua_button_gesture_kind {
+  H2_LUA_BUTTON_GESTURE_PRESS = 1,
+  H2_LUA_BUTTON_GESTURE_SHORT_PRESS,
+  H2_LUA_BUTTON_GESTURE_LONG_PRESS,
+};
+
 _Static_assert(sizeof(h2_runtime_button_down_event_t) <=
                    H2_RUNTIME_EVENT_PAYLOAD_MAX,
                "button down event exceeds Lua delivery storage");
@@ -128,8 +139,19 @@ static void push_i32(lua_State *state, const char *name, int32_t value) {
   lua_setfield(state, -2, name);
 }
 
+static uint64_t button_gesture_kind(
+    const h2_runtime_button_action_event_t *value) {
+  if (value->duration_ms >= H2_LUA_BUTTON_LONG_PRESS_MS) {
+    return H2_LUA_BUTTON_GESTURE_LONG_PRESS;
+  }
+  if (value->phase == H2_RUNTIME_BUTTON_ACTION_PHASE_RELEASED) {
+    return H2_LUA_BUTTON_GESTURE_SHORT_PRESS;
+  }
+  return H2_LUA_BUTTON_GESTURE_PRESS;
+}
+
 static void push_event(lua_State *state, const h2_runtime_event_t *event) {
-  lua_createtable(state, 0, 10);
+  lua_createtable(state, 0, 11);
   push_u64(state, "component_id", event->component_id);
   push_u64(state, "component_kind", event->component);
   push_u64(state, "event_type", event->kind);
@@ -153,6 +175,7 @@ static void push_event(lua_State *state, const h2_runtime_event_t *event) {
     push_u64(state, "released_at_ms", value->released_at_ms);
     push_u64(state, "click_count", value->click_count);
     push_u64(state, "action_phase", value->phase);
+    push_u64(state, "gesture_kind", button_gesture_kind(value));
     push_u64(state, "duration_ms", value->duration_ms);
     break;
   }

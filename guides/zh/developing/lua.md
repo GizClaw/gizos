@@ -60,8 +60,10 @@ resume、callback 和资源释放都在 owning worker 或 stop/join 后执行。
 
 Button `ACTION` callback 收到 Runtime 的客观字段：`action_phase`、
 `pressed_at_ms`、`released_at_ms`、`duration_ms` 和 `click_count`。Lua Runtime
-只负责把这些字段投影到 VM，不提供 Button `gesture_kind`，也不内置 long press
-阈值；Lua App 根据自己的产品策略组合 phase、时间和点击计数。
+在投影到 VM 时保持既有的 Button `gesture_kind` 接口：普通按压为 1、短按为 2、
+长按为 3，并使用 500 ms 兼容阈值从 action phase 和 duration 分类。这个分类只属于
+Lua adapter，不进入共享的 `libs/runtime` Button payload；Lua App 无需因底层 Runtime
+删除 gesture policy 而更改接口。
 
 ## Lua surface
 
