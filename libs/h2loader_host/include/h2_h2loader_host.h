@@ -26,7 +26,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_LIMIT 16u
 #define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
-#define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 230400u
+#define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 115200u
 #define H2_H2LOADER_HOST_MFG_STEP_TOTAL 22u
 #define H2_H2LOADER_HOST_CAPABILITY_UART (UINT32_C(1) << 0)
 #define H2_H2LOADER_HOST_CAPABILITY_WIFI (UINT32_C(1) << 1)
@@ -209,7 +209,7 @@ typedef struct h2_h2loader_host_serial_connection_config {
     const h2_pal_time_api_t *time;
     const h2_pal_mem_api_t *allocator;
     const char *port_id;
-    /** Reliable serial baud; zero selects the 230400 default. */
+    /** Reliable serial baud; zero selects the 115200 default. */
     uint32_t baud_rate;
     uint32_t handshake_timeout_ms;
     uint32_t command_timeout_ms;

@@ -23,6 +23,7 @@ class E2ERunnerCliTest(unittest.TestCase):
         self.assertIn("--ble-id ENDPOINT", result.stdout)
         self.assertIn("--coredump-bytes BYTES", result.stdout)
         self.assertIn("--baud RATE", result.stdout)
+        self.assertIn("UART baud (default 115200)", result.stdout)
         self.assertIn("--monitor-ms MS", result.stdout)
 
     def test_endpoint_is_required(self):

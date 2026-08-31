@@ -18,7 +18,7 @@ P4 的 32 MB flash 中，当前布局使用前 14.2 MB：包含 2 MB `h2loader`�
 
 ## sdkconfig
 
-P4 启用 octal PSRAM、ESP-Hosted SDIO、remote Wi-Fi、NimBLE host、extended advertising 与 Hosted VHCI；Hosted transport mempool 和默认 worker task 使用 PSRAM，避免完整 Loader 启动时耗尽内部 RAM。本地 Bluetooth controller 禁用；PAL 在 NimBLE 启动和停止时通过 Hosted RPC 对称管理 C6 Bluetooth controller。`app_main()` 只创建独立的 Board entry task，因此 ESP-IDF main task stack 固定为 8 KiB，避免在 PSRAM/XIP mapping 完成后为 64 KiB startup stack 申请 internal RAM 失败。UART0 console 和 UART iKCP 使用固定 `230400` baud。panic coredump 写入 flash，最多记录 16 个 task。
+P4 启用 octal PSRAM、ESP-Hosted SDIO、remote Wi-Fi、NimBLE host、extended advertising 与 Hosted VHCI；Hosted transport mempool 和默认 worker task 使用 PSRAM，避免完整 Loader 启动时耗尽内部 RAM。本地 Bluetooth controller 禁用；PAL 在 NimBLE 启动和停止时通过 Hosted RPC 对称管理 C6 Bluetooth controller。`app_main()` 只创建独立的 Board entry task，因此 ESP-IDF main task stack 固定为 8 KiB，避免在 PSRAM/XIP mapping 完成后为 64 KiB startup stack 申请 internal RAM 失败。UART0 console 和 UART iKCP 使用固定 `115200` baud。panic coredump 写入 flash，最多记录 16 个 task。
 
 ## 预期表现
 
