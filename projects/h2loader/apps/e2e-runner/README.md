@@ -33,8 +33,11 @@ only when the authoritative `status.command_availability` advertises that
 conditional command. Supplying Wi-Fi credentials enables
 `scan`, `connect`, and idempotent `disconnect`; `--app-firmware` enables direct
 Stage plus abort, while adding `--loader-firmware` enables the complete APP and
-Loader dual-partition lifecycle. The URL triplet enables device-side download
-plus abort. `--crash-firmware` stages the crash-before-confirm APP once, requires
+Loader dual-partition lifecycle. When lifecycle and URL inputs are both present,
+the runner repeats payload Stage, URL Stage, and abort after entering APP, and
+requires every resulting status to prove the expected active role. The URL
+triplet enables device-side download plus abort. `--crash-firmware` stages the
+crash-before-confirm APP once, requires
 the platform rollback to return to Loader with a failed Stage and a non-empty
 coredump, then verifies that coredump over every selected transport before
 erasing it. `--coredump-bytes` retains the lower-level mode for an already

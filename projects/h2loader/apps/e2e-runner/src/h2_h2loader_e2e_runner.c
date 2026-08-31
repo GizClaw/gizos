@@ -90,6 +90,14 @@ const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
     return "reboot-loader-preserves-stage";
   case H2_H2LOADER_E2E_CASE_INSTALL_APP:
     return "install-app";
+  case H2_H2LOADER_E2E_CASE_APP_SEND:
+    return "app-send";
+  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
+    return "app-stage-abort-after-send";
+  case H2_H2LOADER_E2E_CASE_APP_SEND_URL:
+    return "app-send-url";
+  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL:
+    return "app-stage-abort-after-send-url";
   case H2_H2LOADER_E2E_CASE_INSTALL_LOADER:
     return "install-loader";
   case H2_H2LOADER_E2E_CASE_COREDUMP_STATUS:
@@ -1155,6 +1163,17 @@ run_install_monitor(h2_e2e_transport_context_t *context,
   return rc;
 }
 
+static h2_pal_result_t require_case_active_role(
+    h2_e2e_transport_context_t *context, h2_pal_result_t rc,
+    h2_h2loader_host_active_role_t expected_role) {
+  if (rc == H2_PAL_OK &&
+      (!context->case_result->status_valid ||
+       context->case_result->status.active_role != expected_role)) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  return rc;
+}
+
 static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
                                          h2_h2loader_e2e_case_t test_case) {
   switch (test_case) {
@@ -1175,12 +1194,29 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
   case H2_H2LOADER_E2E_CASE_WIFI_DISCONNECT:
     return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT);
   case H2_H2LOADER_E2E_CASE_SEND:
-    return run_send(context);
+    return require_case_active_role(
+        context, run_send(context), H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+  case H2_H2LOADER_E2E_CASE_APP_SEND:
+    return require_case_active_role(
+        context, run_send(context), H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
   case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND:
   case H2_H2LOADER_E2E_CASE_STAGE_ABORT_AFTER_SEND_URL:
-    return run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT);
+    return require_case_active_role(
+        context,
+        run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
+  case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL:
+    return require_case_active_role(
+        context,
+        run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
   case H2_H2LOADER_E2E_CASE_SEND_URL:
-    return run_send_url(context);
+    return require_case_active_role(
+        context, run_send_url(context), H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+  case H2_H2LOADER_E2E_CASE_APP_SEND_URL:
+    return require_case_active_role(
+        context, run_send_url(context), H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
   case H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE:
     return run_reboot_preserves_stage(
         context, H2_H2LOADER_HOST_COMMAND_REBOOT_APP, 2u,
@@ -1261,6 +1297,10 @@ static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
     count += 2u;
   if (config->include_lifecycle)
     count += 4u;
+  if (config->include_lifecycle && config->include_send)
+    count += 2u;
+  if (config->include_lifecycle && config->include_send_url)
+    count += 2u;
   if (config->include_coredump)
     count += 4u;
   return count;
@@ -1448,6 +1488,19 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
         transport == H2_H2LOADER_E2E_TRANSPORT_UART) {
       append_case(config, result, context, transport,
                   H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR, iteration);
+    }
+    if (config->include_send) {
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_SEND, iteration);
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND, iteration);
+    }
+    if (config->include_send_url) {
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_SEND_URL, iteration);
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL,
+                  iteration);
     }
     append_case(config, result, context, transport,
                 H2_H2LOADER_E2E_CASE_REBOOT_APP_PRESERVES_STAGE, iteration);

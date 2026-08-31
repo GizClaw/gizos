@@ -6,8 +6,8 @@
 
 typedef struct fake_executor {
   size_t count;
-  h2_h2loader_e2e_case_t cases[40];
-  h2_h2loader_e2e_transport_t transports[40];
+  h2_h2loader_e2e_case_t cases[64];
+  h2_h2loader_e2e_transport_t transports[64];
 } fake_executor_t;
 
 static h2_pal_result_t execute_case(void *user,
@@ -70,23 +70,28 @@ static void test_full_sequence_for_both_transports(void) {
   }
   assert(rc == H2_PAL_OK);
   assert(result.complete == 1);
-  assert(result.case_count == 40u);
-  assert(result.passed == 40u);
+  assert(result.case_count == 48u);
+  assert(result.passed == 48u);
   assert(result.failed == 0u);
-  assert(fake.count == 40u);
-  for (size_t i = 0u; i < 16u; ++i) {
+  assert(fake.count == 48u);
+  for (size_t i = 0u; i < 20u; ++i) {
     assert(fake.transports[i] == H2_H2LOADER_E2E_TRANSPORT_UART);
-    assert(fake.transports[i + 16u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
-    assert(fake.cases[i] == fake.cases[i + 16u]);
+    assert(fake.transports[i + 20u] == H2_H2LOADER_E2E_TRANSPORT_BLE);
+    assert(fake.cases[i] == fake.cases[i + 20u]);
   }
-  assert(fake.cases[32] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
-  assert(fake.cases[33] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
-  assert(fake.cases[34] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
-  assert(fake.cases[35] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
-  assert(fake.cases[36] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
-  assert(fake.cases[37] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
-  assert(fake.cases[38] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
-  assert(fake.cases[39] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+  assert(fake.cases[13] == H2_H2LOADER_E2E_CASE_APP_SEND);
+  assert(fake.cases[14] == H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND);
+  assert(fake.cases[15] == H2_H2LOADER_E2E_CASE_APP_SEND_URL);
+  assert(fake.cases[16] ==
+         H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND_URL);
+  assert(fake.cases[40] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[41] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[42] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS);
+  assert(fake.cases[43] == H2_H2LOADER_E2E_CASE_COREDUMP_DUMP);
+  assert(fake.cases[44] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[45] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
+  assert(fake.cases[46] == H2_H2LOADER_E2E_CASE_COREDUMP_ERASE);
+  assert(fake.cases[47] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
 static h2_pal_result_t fail_send(void *user,
@@ -295,6 +300,8 @@ static void test_names(void) {
                 "uart") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_SEND_URL),
                 "send-url") == 0);
+  assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_APP_SEND_URL),
+                "app-send-url") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_HELP),
                 "help") == 0);
   assert(strcmp(h2_h2loader_e2e_case_name(H2_H2LOADER_E2E_CASE_MEMORY),
