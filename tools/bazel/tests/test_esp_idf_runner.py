@@ -448,6 +448,28 @@ class EspIdfRunnerTest(unittest.TestCase):
         self.assertEqual(metadata["flash_files"]["0x10000"], "fixture.bin")
         self.assertFalse(self.project.joinpath("generated.lock").exists())
 
+    def test_missing_rom_elf_version_fails_closed(self):
+        shutil.rmtree(self.root / "tools" / "esp-rom-elfs" / "fixture-version")
+
+        result, _ = self._run(name="missing-rom-elf-version")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ESP-IDF ROM ELF tools must contain exactly one installed version",
+            result.stderr,
+        )
+
+    def test_multiple_rom_elf_versions_fail_closed(self):
+        self.root.joinpath("tools", "esp-rom-elfs", "second-version").mkdir()
+
+        result, _ = self._run(name="multiple-rom-elf-versions")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "ESP-IDF ROM ELF tools must contain exactly one installed version",
+            result.stderr,
+        )
+
     def test_allowlisted_cmake_variable_reaches_idf(self):
         result, _ = self._run(
             name="cmake-variable",
