@@ -23,16 +23,26 @@ typedef struct test_fixture {
   uint8_t pending_data[640];
   size_t pending_len;
   int pending_remove;
+  unsigned set_blob_calls;
+  unsigned set_blob_fail_at;
+  int set_u32_result;
+  int set_i32_result;
   uint32_t boot_intent;
   int boot_intent_present;
   int32_t last_result;
   int last_result_present;
+  uint32_t pending_boot_intent;
+  int pending_boot_intent_present;
+  int32_t pending_last_result;
+  int pending_last_result_present;
   int commit_result;
+  unsigned commit_fail_at;
   unsigned commits;
 
   uint32_t running_partition;
   uint32_t next_partition;
   unsigned set_next_calls;
+  unsigned set_next_fail_at;
   unsigned reboot_calls;
   unsigned prepare_calls;
   unsigned transition_calls;
@@ -42,6 +52,7 @@ typedef struct test_fixture {
   int transition_result;
 
   uint8_t partition_bytes[2][128];
+  int reader_result;
   uint32_t writer_partition;
   size_t writer_offset;
   int writer_active;
@@ -50,6 +61,7 @@ typedef struct test_fixture {
   int writer_finish_result;
   unsigned writer_aborts;
   uint8_t digest_byte;
+  int digest_finish_result;
 
   int package_present;
   unsigned package_removes;
@@ -105,6 +117,11 @@ static int pref_get_blob(h2_pal_pref_namespace_t *ns,
 static int pref_set_blob(h2_pal_pref_namespace_t *ns, const char *key,
                          const void *data, size_t len) {
   test_fixture_t *fixture = ns->user;
+  ++fixture->set_blob_calls;
+  if (fixture->set_blob_fail_at != 0u &&
+      fixture->set_blob_calls == fixture->set_blob_fail_at) {
+    return H2_PAL_ERR_WRITE;
+  }
   assert(find_record(fixture, key) != NULL);
   assert(len <= sizeof(fixture->pending_data));
   fixture->pending_key = key;
@@ -139,9 +156,11 @@ static int pref_set_u32(h2_pal_pref_namespace_t *ns, const char *key,
   test_fixture_t *fixture = ns->user;
   assert(strcmp(key, "boot_intent") == 0 ||
          strcmp(key, "mfg_acceptance_revision") == 0);
+  if (fixture->set_u32_result != H2_PAL_OK)
+    return fixture->set_u32_result;
   if (strcmp(key, "boot_intent") == 0) {
-    fixture->boot_intent = value;
-    fixture->boot_intent_present = 2;
+    fixture->pending_boot_intent = value;
+    fixture->pending_boot_intent_present = 1;
   }
   return H2_PAL_OK;
 }
@@ -160,16 +179,33 @@ static int pref_set_i32(h2_pal_pref_namespace_t *ns, const char *key,
                         int32_t value) {
   test_fixture_t *fixture = ns->user;
   assert(strcmp(key, "last_result") == 0);
-  fixture->last_result = value;
-  fixture->last_result_present = 2;
+  if (fixture->set_i32_result != H2_PAL_OK)
+    return fixture->set_i32_result;
+  fixture->pending_last_result = value;
+  fixture->pending_last_result_present = 1;
   return H2_PAL_OK;
+}
+
+static void pref_discard_pending(test_fixture_t *fixture) {
+  fixture->pending_key = NULL;
+  fixture->pending_len = 0u;
+  fixture->pending_remove = 0;
+  fixture->pending_boot_intent_present = 0;
+  fixture->pending_last_result_present = 0;
 }
 
 static int pref_commit(h2_pal_pref_namespace_t *ns) {
   test_fixture_t *fixture = ns->user;
   ++fixture->commits;
-  if (fixture->commit_result != H2_PAL_OK)
-    return fixture->commit_result;
+  if (fixture->commit_result != H2_PAL_OK ||
+      (fixture->commit_fail_at != 0u &&
+       fixture->commits == fixture->commit_fail_at)) {
+    int result = fixture->commit_result != H2_PAL_OK
+                     ? fixture->commit_result
+                     : H2_PAL_ERR_WRITE;
+    pref_discard_pending(fixture);
+    return result;
+  }
   if (fixture->pending_key != NULL) {
     pref_record_t *record = find_record(fixture, fixture->pending_key);
     assert(record != NULL);
@@ -184,10 +220,15 @@ static int pref_commit(h2_pal_pref_namespace_t *ns) {
     fixture->pending_key = NULL;
     fixture->pending_remove = 0;
   }
-  if (fixture->boot_intent_present == 2)
+  if (fixture->pending_boot_intent_present) {
+    fixture->boot_intent = fixture->pending_boot_intent;
     fixture->boot_intent_present = 1;
-  if (fixture->last_result_present == 2)
+  }
+  if (fixture->pending_last_result_present) {
+    fixture->last_result = fixture->pending_last_result;
     fixture->last_result_present = 1;
+  }
+  pref_discard_pending(fixture);
   return H2_PAL_OK;
 }
 
@@ -249,8 +290,13 @@ static h2_pal_result_t power_next(
 static h2_pal_result_t power_set_next(void *user, uint32_t partition_id) {
   test_fixture_t *fixture = user;
   ++fixture->set_next_calls;
-  if (fixture->set_next_result != H2_PAL_OK)
-    return fixture->set_next_result;
+  if (fixture->set_next_result != H2_PAL_OK ||
+      (fixture->set_next_fail_at != 0u &&
+       fixture->set_next_calls == fixture->set_next_fail_at)) {
+    return fixture->set_next_result != H2_PAL_OK
+               ? fixture->set_next_result
+               : H2_PAL_ERR_IO;
+  }
   fixture->next_partition = partition_id;
   return H2_PAL_OK;
 }
@@ -288,6 +334,8 @@ static int image_capacity(void *user, uint32_t partition_id, uint64_t *out) {
 static int image_read(void *user, uint32_t partition_id, uint64_t offset,
                       void *data, size_t len) {
   test_fixture_t *fixture = user;
+  if (fixture->reader_result != H2_PAL_OK)
+    return fixture->reader_result;
   if ((partition_id != 1u && partition_id != 2u) || offset + len > 128u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -352,6 +400,8 @@ static int digest_update(void *user, const uint8_t *data, size_t len) {
 
 static int digest_finish(void *user, uint8_t out[32]) {
   test_fixture_t *fixture = user;
+  if (fixture->digest_finish_result != H2_PAL_OK)
+    return fixture->digest_finish_result;
   memset(out, fixture->digest_byte, 32u);
   return H2_PAL_OK;
 }
@@ -416,6 +466,8 @@ static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
   fixture->records[2].key = "partition_2";
   fixture->records[3].key = "mfg";
   fixture->commit_result = H2_PAL_OK;
+  fixture->set_u32_result = H2_PAL_OK;
+  fixture->set_i32_result = H2_PAL_OK;
   fixture->set_next_result = H2_PAL_OK;
   fixture->reboot_result = H2_PAL_OK;
   fixture->prepare_result = H2_PAL_OK;
@@ -423,6 +475,8 @@ static void fixture_init(test_fixture_t *fixture, uint32_t running_partition) {
   fixture->writer_begin_result = H2_PAL_OK;
   fixture->writer_write_result = H2_PAL_OK;
   fixture->writer_finish_result = H2_PAL_OK;
+  fixture->reader_result = H2_PAL_OK;
+  fixture->digest_finish_result = H2_PAL_OK;
   fixture->running_partition = running_partition;
   fixture->next_partition = running_partition;
   fixture->digest_byte = 0xabu;
@@ -662,6 +716,124 @@ static void test_partition_2_copy_failure_keeps_partition_1_invalid(void) {
   assert(present && !p1.valid);
 }
 
+static void prepare_partition_2_loader(test_fixture_t *fixture) {
+  h2_loader_metadata_t p2 =
+      metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+  fixture_init(fixture, 2u);
+  memset(fixture->partition_bytes[1], 0x5a, 64u);
+  write_metadata(fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &p2);
+}
+
+static void assert_partition_2_retry_converges(test_fixture_t *fixture) {
+  h2_loader_startup_action_t action;
+  int present;
+  fixture->commit_fail_at = 0u;
+  fixture->set_blob_fail_at = 0u;
+  fixture->set_u32_result = H2_PAL_OK;
+  fixture->set_i32_result = H2_PAL_OK;
+  fixture->set_next_fail_at = 0u;
+  fixture->set_next_result = H2_PAL_OK;
+  fixture->writer_begin_result = H2_PAL_OK;
+  fixture->writer_write_result = H2_PAL_OK;
+  fixture->writer_finish_result = H2_PAL_OK;
+  fixture->reader_result = H2_PAL_OK;
+  fixture->digest_finish_result = H2_PAL_OK;
+  fixture->prepare_result = H2_PAL_OK;
+  fixture->reboot_result = H2_PAL_OK;
+  fixture->set_next_calls = 0u;
+  fixture->running_partition = 2u;
+  assert(fixture->next_partition == 2u);
+  assert(h2_loader_init(&fixture->loader, &fixture->config) == H2_PAL_OK);
+  assert(h2_loader_startup(&fixture->loader, &action) == H2_PAL_OK);
+  assert(action == H2_LOADER_STARTUP_ACTION_REBOOTING_H2LOADER);
+  assert(fixture->next_partition == 1u);
+  h2_loader_metadata_t p1 =
+      read_metadata(fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
+  assert(present && p1.valid && strcmp(p1.image_checksum, SHA_A) == 0);
+}
+
+static void assert_partition_2_failure_is_retryable(test_fixture_t *fixture,
+                                                    int expected) {
+  h2_loader_startup_action_t action;
+  int present = 0;
+  assert(h2_loader_init(&fixture->loader, &fixture->config) == H2_PAL_OK);
+  assert(h2_loader_startup(&fixture->loader, &action) == expected);
+  assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
+  assert(fixture->next_partition == 2u);
+  h2_loader_metadata_t p1 =
+      read_metadata(fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &present);
+  assert(!present || !p1.valid ||
+         strcmp(p1.image_checksum, SHA_A) == 0);
+  assert_partition_2_retry_converges(fixture);
+}
+
+static void test_partition_2_copy_recovers_from_every_durable_boundary(void) {
+  /* With P2 metadata pre-seeded, copy-back commits P1 invalid, P1 valid,
+   * last_result, then boot_intent. Interrupt each transaction and require a
+   * reset-style re-entry from P2 to converge safely. */
+  for (unsigned commit_offset = 1u; commit_offset <= 4u; ++commit_offset) {
+    test_fixture_t fixture;
+    prepare_partition_2_loader(&fixture);
+    fixture.commit_fail_at = fixture.commits + commit_offset;
+    assert_partition_2_failure_is_retryable(&fixture, H2_PAL_ERR_WRITE);
+  }
+
+  for (unsigned set_blob_offset = 1u; set_blob_offset <= 2u;
+       ++set_blob_offset) {
+    test_fixture_t fixture;
+    prepare_partition_2_loader(&fixture);
+    fixture.set_blob_fail_at = fixture.set_blob_calls + set_blob_offset;
+    assert_partition_2_failure_is_retryable(&fixture, H2_PAL_ERR_WRITE);
+  }
+
+  test_fixture_t pref_fixture;
+  prepare_partition_2_loader(&pref_fixture);
+  pref_fixture.set_i32_result = H2_PAL_ERR_WRITE;
+  assert_partition_2_failure_is_retryable(&pref_fixture, H2_PAL_ERR_WRITE);
+
+  prepare_partition_2_loader(&pref_fixture);
+  pref_fixture.set_u32_result = H2_PAL_ERR_WRITE;
+  assert_partition_2_failure_is_retryable(&pref_fixture, H2_PAL_ERR_WRITE);
+
+  for (unsigned writer_step = 0u; writer_step < 3u; ++writer_step) {
+    test_fixture_t fixture;
+    prepare_partition_2_loader(&fixture);
+    if (writer_step == 0u)
+      fixture.writer_begin_result = H2_PAL_ERR_WRITE;
+    else if (writer_step == 1u)
+      fixture.writer_write_result = H2_PAL_ERR_WRITE;
+    else
+      fixture.writer_finish_result = H2_PAL_ERR_WRITE;
+    assert_partition_2_failure_is_retryable(&fixture, H2_PAL_ERR_WRITE);
+    if (writer_step != 0u)
+      assert(fixture.writer_aborts >= 1u);
+  }
+
+  prepare_partition_2_loader(&pref_fixture);
+  pref_fixture.reader_result = H2_PAL_ERR_IO;
+  assert_partition_2_failure_is_retryable(&pref_fixture, H2_PAL_ERR_IO);
+
+  prepare_partition_2_loader(&pref_fixture);
+  pref_fixture.digest_finish_result = H2_PAL_ERR_IO;
+  assert_partition_2_failure_is_retryable(&pref_fixture, H2_PAL_ERR_IO);
+
+  for (unsigned set_next_call = 1u; set_next_call <= 2u; ++set_next_call) {
+    test_fixture_t fixture;
+    prepare_partition_2_loader(&fixture);
+    fixture.set_next_fail_at = set_next_call;
+    assert_partition_2_failure_is_retryable(&fixture, H2_PAL_ERR_IO);
+  }
+
+  test_fixture_t fixture;
+  prepare_partition_2_loader(&fixture);
+  fixture.prepare_result = H2_PAL_ERR_IO;
+  assert_partition_2_failure_is_retryable(&fixture, H2_PAL_ERR_IO);
+
+  prepare_partition_2_loader(&fixture);
+  fixture.reboot_result = H2_PAL_ERR_IO;
+  assert_partition_2_failure_is_retryable(&fixture, H2_PAL_ERR_IO);
+}
+
 static void test_converged_loader_finishes_stage(void) {
   test_fixture_t fixture;
   h2_loader_startup_action_t action;
@@ -891,6 +1063,14 @@ static void test_app_confirmation_is_between_metadata_and_stage_cleanup(void) {
              reboot_transition, &fixture) == H2_PAL_ERR_WRITE);
   assert(fixture.transition_calls == 0u);
   assert(fixture.package_present);
+  fixture.commit_result = H2_PAL_OK;
+  assert(h2_loader_finalize_active_app_with_confirmation(
+             &fixture.pref, &fixture.mem, &fixture.fs,
+             H2_LOADER_DEFAULT_PACKAGE_PATH, &app, 2u, 2u,
+             reboot_transition, &fixture) == H2_PAL_OK);
+  assert(fixture.transition_calls == 1u);
+  (void)read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
+  assert(!present && !fixture.package_present);
 }
 
 static void test_reboot_commands_only_set_intent_and_partition(void) {
@@ -992,6 +1172,7 @@ int main(void) {
   test_partition_2_loader_copies_back_without_stage();
   test_partition_2_loader_preserves_stage_origin_on_both_copies();
   test_partition_2_copy_failure_keeps_partition_1_invalid();
+  test_partition_2_copy_recovers_from_every_durable_boundary();
   test_converged_loader_finishes_stage();
   test_converged_loader_does_not_ignore_different_stage();
   test_same_image_new_package_is_still_inspected();

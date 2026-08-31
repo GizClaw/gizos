@@ -16,6 +16,8 @@ typedef struct metadata_pref_fixture {
     size_t persisted_len;
     size_t pending_len;
     int pending_remove;
+    int set_blob_result;
+    int remove_result;
     int commit_result;
     unsigned commits;
 } metadata_pref_fixture_t;
@@ -58,6 +60,8 @@ static int metadata_pref_set_blob(
     size_t len) {
     metadata_pref_fixture_t *fixture = ns->user;
     assert(strcmp(key, "stage") == 0);
+    if (fixture->set_blob_result != H2_PAL_OK)
+        return fixture->set_blob_result;
     assert(len <= sizeof(fixture->pending));
     memcpy(fixture->pending, data, len);
     fixture->pending_len = len;
@@ -70,6 +74,8 @@ static int metadata_pref_remove(
     const char *key) {
     metadata_pref_fixture_t *fixture = ns->user;
     assert(strcmp(key, "stage") == 0);
+    if (fixture->remove_result != H2_PAL_OK)
+        return fixture->remove_result;
     fixture->pending_remove = 1;
     return fixture->persisted_len == 0u
         ? H2_PAL_ERR_NOT_FOUND : H2_PAL_OK;
@@ -239,6 +245,8 @@ static void test_preference_commit_is_atomic(void) {
     const h2_loader_metadata_t stage = valid_stage();
     h2_loader_metadata_t read = {0};
     int present = 0;
+    fixture.set_blob_result = H2_PAL_OK;
+    fixture.remove_result = H2_PAL_OK;
 
     assert(h2_loader_metadata_write(
                &pref, H2_LOADER_METADATA_SLOT_STAGE, &stage) == H2_PAL_OK);
@@ -252,8 +260,21 @@ static void test_preference_commit_is_atomic(void) {
     assert(present == 1);
     assert(h2_loader_metadata_image_equal(&stage, &read));
 
-    fixture.commit_result = H2_PAL_ERR_WRITE;
+    fixture.set_blob_result = H2_PAL_ERR_WRITE;
     h2_loader_metadata_t invalid = {0};
+    assert(h2_loader_metadata_write(
+               &pref, H2_LOADER_METADATA_SLOT_STAGE, &invalid) ==
+           H2_PAL_ERR_WRITE);
+    assert(h2_loader_metadata_read(
+               &pref,
+               &mem,
+               H2_LOADER_METADATA_SLOT_STAGE,
+               &read,
+               &present) == H2_PAL_OK);
+    assert(present == 1 && read.valid == 1);
+    fixture.set_blob_result = H2_PAL_OK;
+
+    fixture.commit_result = H2_PAL_ERR_WRITE;
     assert(h2_loader_metadata_write(
                &pref, H2_LOADER_METADATA_SLOT_STAGE, &invalid) ==
            H2_PAL_ERR_WRITE);
@@ -266,6 +287,17 @@ static void test_preference_commit_is_atomic(void) {
     assert(present == 1 && read.valid == 1);
 
     fixture.commit_result = H2_PAL_OK;
+    fixture.remove_result = H2_PAL_ERR_WRITE;
+    assert(h2_loader_metadata_clear(
+               &pref, H2_LOADER_METADATA_SLOT_STAGE) == H2_PAL_ERR_WRITE);
+    assert(h2_loader_metadata_read(
+               &pref,
+               &mem,
+               H2_LOADER_METADATA_SLOT_STAGE,
+               &read,
+               &present) == H2_PAL_OK);
+    assert(present == 1 && read.valid == 1);
+    fixture.remove_result = H2_PAL_OK;
     assert(h2_loader_metadata_clear(
                &pref, H2_LOADER_METADATA_SLOT_STAGE) == H2_PAL_OK);
     assert(h2_loader_metadata_read(

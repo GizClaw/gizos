@@ -177,9 +177,38 @@ static void test_removed_commands_are_unroutable(void) {
   }
 }
 
+static void test_command_availability_is_runtime_and_capability_bounded(void) {
+  h2_loader_t loader = {0};
+  h2_loader_status_t status = {
+      .capabilities = H2_LOADER_CAPABILITIES_ALL,
+  };
+  const uint32_t core = H2_LOADER_COMMAND_AVAILABLE_HELP |
+                        H2_LOADER_COMMAND_AVAILABLE_STATUS;
+  assert(h2_loader_set_implemented_commands(&loader, core) == H2_PAL_OK);
+  assert(h2_loader_get_command_availability(&loader, &status) == core);
+
+  assert(h2_loader_set_implemented_commands(
+             &loader, H2_LOADER_COMMAND_AVAILABILITY_ALL) == H2_PAL_OK);
+  assert(h2_loader_set_command_availability(
+             &loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE, false) ==
+         H2_PAL_OK);
+  assert((h2_loader_get_command_availability(&loader, &status) &
+          H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE) == 0u);
+
+  status.capabilities &= ~H2_LOADER_CAPABILITY_WIFI;
+  const uint32_t available =
+      h2_loader_get_command_availability(&loader, &status);
+  assert((available & H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN) == 0u);
+  assert((available & H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT) == 0u);
+  assert((available & H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT) == 0u);
+  assert((available & H2_LOADER_COMMAND_AVAILABLE_STAGE_URL) == 0u);
+  assert((available & H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD) != 0u);
+}
+
 int main(void) {
   test_exact_v2_routes_and_help();
   test_removed_commands_are_unroutable();
+  test_command_availability_is_runtime_and_capability_bounded();
   puts("h2loader v2 command tests passed");
   return 0;
 }
