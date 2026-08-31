@@ -48,18 +48,11 @@ http_archive = use_repo_rule(
 
 http_archive(
     name = "h2_gizclaw_c_sdk",
-    build_file = "//tools/bazel:gizclaw_local.BUILD.bazel",
-    sha256 = "6e0a36810d7b40a25b7b09768d5a4b498dd2c07f547c95ae0fa8d427ddec3af8",
-    strip_prefix = "gizclaw-75b8049e7bb090451fa8e0e65ed3b74e927d9dd8",
-    urls = ["https://github.com/GizClaw/gizclaw/archive/75b8049e7bb090451fa8e0e65ed3b74e927d9dd8.tar.gz"],
-)
-
-http_archive(
-    name = "h2_gizclaw_nanopb",
-    build_file = "//tools/bazel:nanopb_local.BUILD.bazel",
-    sha256 = "10e5f014e91a540959cdb82ce486a25fb9a369cabefae128d9bda4ccb3598e30",
-    strip_prefix = "nanopb-cad3c18ef15a663e30e3e43e3a752b66378adec1",
-    urls = ["https://github.com/GizClaw/nanopb/archive/cad3c18ef15a663e30e3e43e3a752b66378adec1.tar.gz"],
+    integrity = "sha256-G+Z8xTjAz2Ta7ox+qKJ2Hgte7YaUtUjSVrQK0FDpGJI=",
+    strip_prefix = "gizclaw-c-sdk-0.12.0",
+    urls = [
+        "https://github.com/GizClaw/gizclaw/releases/download/v0.12.0/gizclaw-c-sdk-0.12.0.tar.gz",
+    ],
 )
 
 # Playwright 1.52.0 uses Chromium headless shell revision 1169. Keep the two
