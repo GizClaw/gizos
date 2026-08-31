@@ -90,6 +90,22 @@ const char *h2_h2loader_e2e_case_name(h2_h2loader_e2e_case_t test_case) {
     return "reboot-loader-preserves-stage";
   case H2_H2LOADER_E2E_CASE_INSTALL_APP:
     return "install-app";
+  case H2_H2LOADER_E2E_CASE_APP_HELP:
+    return "app-help";
+  case H2_H2LOADER_E2E_CASE_APP_STATUS:
+    return "app-status";
+  case H2_H2LOADER_E2E_CASE_APP_STATS:
+    return "app-stats";
+  case H2_H2LOADER_E2E_CASE_APP_MEMORY:
+    return "app-memory";
+  case H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT:
+    return "app-legacy-commands-absent";
+  case H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN:
+    return "app-wifi-scan";
+  case H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT:
+    return "app-wifi-connect";
+  case H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT:
+    return "app-wifi-disconnect";
   case H2_H2LOADER_E2E_CASE_APP_SEND:
     return "app-send";
   case H2_H2LOADER_E2E_CASE_APP_STAGE_ABORT_AFTER_SEND:
@@ -1193,6 +1209,38 @@ static h2_pal_result_t execute_real_case(h2_e2e_transport_context_t *context,
     return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT);
   case H2_H2LOADER_E2E_CASE_WIFI_DISCONNECT:
     return run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT);
+  case H2_H2LOADER_E2E_CASE_APP_HELP:
+    return require_case_active_role(
+        context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_HELP),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_STATUS:
+    return require_case_active_role(context, run_status(context),
+                                    H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_STATS:
+    return require_case_active_role(
+        context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_STATS),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_MEMORY:
+    return require_case_active_role(
+        context, run_simple_command(context, H2_H2LOADER_HOST_COMMAND_MEMORY),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT:
+    return require_case_active_role(context, run_legacy_commands_absent(context),
+                                    H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN:
+    return require_case_active_role(
+        context, run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT:
+    return require_case_active_role(
+        context,
+        run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_CONNECT),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+  case H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT:
+    return require_case_active_role(
+        context,
+        run_wifi_command(context, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT),
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
   case H2_H2LOADER_E2E_CASE_SEND:
     return require_case_active_role(
         context, run_send(context), H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
@@ -1297,6 +1345,10 @@ static size_t cases_per_transport(const h2_h2loader_e2e_config_t *config) {
     count += 2u;
   if (config->include_lifecycle)
     count += 4u;
+  if (config->include_lifecycle)
+    count += 5u;
+  if (config->include_lifecycle && config->include_wifi)
+    count += 3u;
   if (config->include_lifecycle && config->include_send)
     count += 2u;
   if (config->include_lifecycle && config->include_send_url)
@@ -1488,6 +1540,38 @@ static void run_transport_iteration(const h2_h2loader_e2e_config_t *config,
         transport == H2_H2LOADER_E2E_TRANSPORT_UART) {
       append_case(config, result, context, transport,
                   H2_H2LOADER_E2E_CASE_REBOOT_APP_MONITOR, iteration);
+    }
+    append_case(config, result, context, transport,
+                H2_H2LOADER_E2E_CASE_APP_HELP, iteration);
+    const size_t app_status_case_index = result->case_count;
+    append_case(config, result, context, transport,
+                H2_H2LOADER_E2E_CASE_APP_STATUS, iteration);
+    append_case(config, result, context, transport,
+                H2_H2LOADER_E2E_CASE_APP_STATS, iteration);
+    const h2_h2loader_e2e_case_result_t *app_status_case =
+        &result->cases[app_status_case_index];
+    if (app_status_case->result == H2_PAL_OK &&
+        app_status_case->status_valid) {
+      context->authoritative_command_availability =
+          app_status_case->status.command_availability;
+      context->authoritative_command_availability_valid = 1u;
+    }
+    if (app_status_case->result == H2_PAL_OK &&
+        app_status_case->status_valid &&
+        (app_status_case->status.command_availability &
+         H2_H2LOADER_HOST_COMMAND_AVAILABLE_MEMORY) != 0u) {
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_MEMORY, iteration);
+    }
+    append_case(config, result, context, transport,
+                H2_H2LOADER_E2E_CASE_APP_LEGACY_COMMANDS_ABSENT, iteration);
+    if (config->include_wifi) {
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_WIFI_SCAN, iteration);
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_WIFI_CONNECT, iteration);
+      append_case(config, result, context, transport,
+                  H2_H2LOADER_E2E_CASE_APP_WIFI_DISCONNECT, iteration);
     }
     if (config->include_send) {
       append_case(config, result, context, transport,

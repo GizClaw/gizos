@@ -34,8 +34,9 @@ conditional command. Supplying Wi-Fi credentials enables
 `scan`, `connect`, and idempotent `disconnect`; `--app-firmware` enables direct
 Stage plus abort, while adding `--loader-firmware` enables the complete APP and
 Loader dual-partition lifecycle. When lifecycle and URL inputs are both present,
-the runner repeats payload Stage, URL Stage, and abort after entering APP, and
-requires every resulting status to prove the expected active role. The URL
+the runner repeats the command surface, Wi-Fi cases, payload Stage, URL Stage,
+and abort after entering APP, and requires every resulting status to prove the
+expected active role. The URL
 triplet enables device-side download plus abort. `--crash-firmware` stages the
 crash-before-confirm APP once, requires
 the platform rollback to return to Loader with a failed Stage and a non-empty
