@@ -7,5 +7,10 @@ typedef void (*TaskFunction_t)(void *);
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry, const char *name,
     uint32_t stack_size, void *ctx, UBaseType_t priority,
     TaskHandle_t *out_task, BaseType_t core);
+TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t entry,
+    const char *name, uint32_t stack_size, void *ctx,
+    UBaseType_t priority, StackType_t *stack, StaticTask_t *task_storage,
+    BaseType_t core);
+StackType_t *xTaskGetStackStart(TaskHandle_t task);
 void vTaskDelete(TaskHandle_t task);
 #endif
