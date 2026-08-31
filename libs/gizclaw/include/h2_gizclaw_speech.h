@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_SPEECH_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stddef.h>
@@ -12,6 +13,15 @@ extern "C" {
 #endif
 
 typedef struct h2_gizclaw_speech_upload h2_gizclaw_speech_upload_t;
+typedef struct h2_gizclaw_speech_extract_request
+    h2_gizclaw_speech_extract_request_t;
+
+#define H2_GIZCLAW_SPEECH_OPUS_MAX_BYTES 1275u
+
+typedef void (*h2_gizclaw_speech_extract_request_completion_fn)(
+    void *user, h2_gizclaw_speech_extract_request_t *request,
+    const h2_gizclaw_operation_result_t *operation_result,
+    h2_gizclaw_str_t transcript, h2_gizclaw_str_t result_json);
 
 typedef struct h2_gizclaw_speech_transcribe_options {
   h2_gizclaw_str_t model_name;
@@ -92,6 +102,36 @@ int h2_gizclaw_speech_extract_finish(
 
 /** Cancel and consume an open extraction upload. A NULL upload is ignored. */
 void h2_gizclaw_speech_extract_cancel(h2_gizclaw_speech_upload_t *upload);
+
+/**
+ * Create one task-safe, service-owned incremental extraction request.
+ *
+ * The service worker owns all client calls. Callers may feed complete Opus
+ * packets from another task and then commit or cancel the request. Options are
+ * copied before this function returns. Completion runs from service dispatch.
+ */
+int h2_gizclaw_service_speech_extract_create(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_speech_extract_options_t *options,
+    h2_gizclaw_speech_extract_request_completion_fn completion, void *user,
+    h2_gizclaw_speech_extract_request_t **out_request);
+
+/** Queue one complete Opus packet without blocking. */
+int h2_gizclaw_speech_extract_request_write_opus(
+    h2_gizclaw_speech_extract_request_t *request, const uint8_t *opus,
+    size_t opus_len);
+
+/** Queue EOS after every previously accepted Opus packet. */
+int h2_gizclaw_speech_extract_request_commit(
+    h2_gizclaw_speech_extract_request_t *request);
+
+/** Request task-safe cooperative cancellation. */
+int h2_gizclaw_speech_extract_request_cancel(
+    h2_gizclaw_speech_extract_request_t *request);
+
+/** Release a terminal request after its completion callback returns. */
+void h2_gizclaw_speech_extract_request_release(
+    h2_gizclaw_speech_extract_request_t *request);
 
 #ifdef __cplusplus
 }

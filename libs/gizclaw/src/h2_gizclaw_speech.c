@@ -1,12 +1,46 @@
 #include "h2_gizclaw_speech.h"
 #include "h2_gizclaw_internal.h"
+#include "h2_gizclaw_service_internal.h"
 
 #include "gzc_common.h"
 #include "gzc_rpc.h"
 #include "payload/ai.pb.h"
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <string.h>
+
+#define H2_GIZCLAW_SPEECH_REQUEST_QUEUE_ITEMS 8u
+#define H2_GIZCLAW_SPEECH_REQUEST_WAIT_MS 100u
+#define H2_GIZCLAW_SPEECH_REQUEST_TEXT_MAX 128u
+#define H2_GIZCLAW_SPEECH_REQUEST_SCHEMA_MAX 1024u
+#define H2_GIZCLAW_SPEECH_REQUEST_INSTRUCTION_MAX 512u
+#define H2_GIZCLAW_SPEECH_REQUEST_TRANSCRIPT_MAX 1024u
+#define H2_GIZCLAW_SPEECH_REQUEST_RESULT_MAX 2048u
+
+typedef struct h2_gizclaw_speech_request_message {
+  size_t len;
+  uint8_t opus[H2_GIZCLAW_SPEECH_OPUS_MAX_BYTES];
+} h2_gizclaw_speech_request_message_t;
+
+struct h2_gizclaw_speech_extract_request {
+  h2_gizclaw_service_t *service;
+  h2_gizclaw_operation_t *operation;
+  h2_pal_queue_t *queue;
+  h2_gizclaw_speech_extract_request_completion_fn completion;
+  void *completion_user;
+  h2_gizclaw_speech_extract_options_t options;
+  char asr_model[H2_GIZCLAW_SPEECH_REQUEST_TEXT_MAX];
+  char extract_model[H2_GIZCLAW_SPEECH_REQUEST_TEXT_MAX];
+  char content_type[H2_GIZCLAW_SPEECH_REQUEST_TEXT_MAX];
+  char language[H2_GIZCLAW_SPEECH_REQUEST_TEXT_MAX];
+  char schema[H2_GIZCLAW_SPEECH_REQUEST_SCHEMA_MAX];
+  char instruction[H2_GIZCLAW_SPEECH_REQUEST_INSTRUCTION_MAX];
+  char transcript[H2_GIZCLAW_SPEECH_REQUEST_TRANSCRIPT_MAX];
+  char result_json[H2_GIZCLAW_SPEECH_REQUEST_RESULT_MAX];
+  atomic_bool committed;
+  atomic_bool terminal;
+};
 
 typedef enum h2_gizclaw_speech_upload_kind {
   H2_GIZCLAW_SPEECH_UPLOAD_TRANSCRIBE = 0,
@@ -286,4 +320,215 @@ int h2_gizclaw_speech_extract_finish(
 
 void h2_gizclaw_speech_extract_cancel(h2_gizclaw_speech_upload_t *upload) {
   cancel_upload(upload);
+}
+
+static bool copy_owned_text(char *storage, size_t capacity,
+                            h2_gizclaw_str_t value, bool required,
+                            h2_gizclaw_str_t *out) {
+  if (value.len == 0u) {
+    if (required)
+      return false;
+    storage[0] = '\0';
+    *out = (h2_gizclaw_str_t){.data = storage, .len = 0u};
+    return true;
+  }
+  if (value.data == NULL || value.len >= capacity ||
+      memchr(value.data, '\0', value.len) != NULL)
+    return false;
+  memcpy(storage, value.data, value.len);
+  storage[value.len] = '\0';
+  *out = (h2_gizclaw_str_t){.data = storage, .len = value.len};
+  return true;
+}
+
+static int receive_request_result(void *user, h2_gizclaw_str_t transcript,
+                                  h2_gizclaw_str_t result_json) {
+  h2_gizclaw_speech_extract_request_t *request = user;
+  if (transcript.len >= sizeof(request->transcript) ||
+      result_json.len >= sizeof(request->result_json))
+    return H2_PAL_ERR_NO_MEMORY;
+  memcpy(request->transcript, transcript.data, transcript.len);
+  request->transcript[transcript.len] = '\0';
+  memcpy(request->result_json, result_json.data, result_json.len);
+  request->result_json[result_json.len] = '\0';
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t
+speech_request_run(void *user, h2_gizclaw_client_t *client,
+                   const h2_gizclaw_cancel_token_t *cancel_token) {
+  h2_gizclaw_speech_extract_request_t *request = user;
+  h2_gizclaw_speech_upload_t *upload = NULL;
+  h2_pal_result_t rc = (h2_pal_result_t)h2_gizclaw_client_speech_extract_open(
+      client, &request->options, &upload);
+  bool finished = false;
+  while (rc == H2_PAL_OK && !finished) {
+    if (h2_gizclaw_cancel_requested(cancel_token)) {
+      rc = H2_PAL_ERR_CLOSED;
+      break;
+    }
+    h2_gizclaw_speech_request_message_t message = {0};
+    const int queue_rc =
+        h2_pal_queue_recv(request->service->config.queue, request->queue,
+                          &message, H2_GIZCLAW_SPEECH_REQUEST_WAIT_MS);
+    if (queue_rc == H2_PAL_QUEUE_ERR_TIMEOUT)
+      continue;
+    if (queue_rc != H2_PAL_QUEUE_OK) {
+      rc = queue_rc == H2_PAL_QUEUE_ERR_CLOSED ? H2_PAL_ERR_CLOSED
+                                               : H2_PAL_ERR_IO;
+      break;
+    }
+    if (message.len == 0u) {
+      rc = (h2_pal_result_t)h2_gizclaw_speech_extract_finish(
+          upload, receive_request_result, request);
+      upload = NULL;
+      finished = true;
+    } else {
+      rc = (h2_pal_result_t)h2_gizclaw_speech_extract_write(
+          upload, message.opus, message.len);
+    }
+  }
+  if (upload != NULL)
+    h2_gizclaw_speech_extract_cancel(upload);
+  return rc;
+}
+
+static void
+speech_request_complete(void *user, h2_gizclaw_operation_t *operation,
+                        const h2_gizclaw_operation_result_t *result) {
+  (void)operation;
+  h2_gizclaw_speech_extract_request_t *request = user;
+  atomic_store_explicit(&request->terminal, true, memory_order_release);
+  request->completion(request->completion_user, request, result,
+                      (h2_gizclaw_str_t){.data = request->transcript,
+                                         .len = strlen(request->transcript)},
+                      (h2_gizclaw_str_t){.data = request->result_json,
+                                         .len = strlen(request->result_json)});
+}
+
+int h2_gizclaw_service_speech_extract_create(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_speech_extract_options_t *options,
+    h2_gizclaw_speech_extract_request_completion_fn completion, void *user,
+    h2_gizclaw_speech_extract_request_t **out_request) {
+  if (service == NULL || options == NULL || completion == NULL ||
+      out_request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_request = NULL;
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  h2_gizclaw_speech_extract_request_t *request =
+      h2_pal_mem_alloc(allocator, sizeof(*request));
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(request, 0, sizeof(*request));
+  request->service = service;
+  request->completion = completion;
+  request->completion_user = user;
+  if (!copy_owned_text(request->asr_model, sizeof(request->asr_model),
+                       options->asr_model_name, true,
+                       &request->options.asr_model_name) ||
+      !copy_owned_text(request->extract_model, sizeof(request->extract_model),
+                       options->extract_model_name, true,
+                       &request->options.extract_model_name) ||
+      !copy_owned_text(request->content_type, sizeof(request->content_type),
+                       options->content_type, true,
+                       &request->options.content_type) ||
+      !copy_owned_text(request->language, sizeof(request->language),
+                       options->language, false, &request->options.language) ||
+      !copy_owned_text(request->schema, sizeof(request->schema),
+                       options->schema_json, true,
+                       &request->options.schema_json) ||
+      !copy_owned_text(request->instruction, sizeof(request->instruction),
+                       options->instruction, false,
+                       &request->options.instruction)) {
+    h2_pal_mem_free(allocator, request);
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  const h2_pal_queue_config_t queue_config = {
+      .name = "$gizclaw/rec-request",
+      .item_size = sizeof(h2_gizclaw_speech_request_message_t),
+      .item_count = H2_GIZCLAW_SPEECH_REQUEST_QUEUE_ITEMS,
+      .allocator = allocator,
+  };
+  int rc = h2_pal_queue_create(service->config.queue, &queue_config,
+                               &request->queue);
+  if (rc == H2_PAL_QUEUE_OK) {
+    rc = h2_gizclaw_service_submit(service, identity, speech_request_run,
+                                   speech_request_complete, request,
+                                   &request->operation);
+  }
+  if (rc != H2_PAL_OK) {
+    if (request->queue != NULL)
+      h2_pal_queue_destroy(service->config.queue, request->queue);
+    h2_pal_mem_free(allocator, request);
+    return rc;
+  }
+  *out_request = request;
+  return H2_PAL_OK;
+}
+
+int h2_gizclaw_speech_extract_request_write_opus(
+    h2_gizclaw_speech_extract_request_t *request, const uint8_t *opus,
+    size_t opus_len) {
+  if (request == NULL || opus == NULL || opus_len == 0u ||
+      opus_len > H2_GIZCLAW_SPEECH_OPUS_MAX_BYTES)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc =
+      h2_pal_mutex_lock(request->service->config.sync, request->service->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (atomic_load_explicit(&request->committed, memory_order_acquire) ||
+      atomic_load_explicit(&request->terminal, memory_order_acquire)) {
+    rc = H2_PAL_ERR_CLOSED;
+  } else {
+    h2_gizclaw_speech_request_message_t message = {.len = opus_len};
+    memcpy(message.opus, opus, opus_len);
+    rc = (h2_pal_result_t)h2_pal_queue_send(request->service->config.queue,
+                                            request->queue, &message,
+                                            H2_PAL_QUEUE_NO_WAIT);
+  }
+  (void)h2_pal_mutex_unlock(request->service->config.sync,
+                            request->service->mutex);
+  return rc;
+}
+
+int h2_gizclaw_speech_extract_request_commit(
+    h2_gizclaw_speech_extract_request_t *request) {
+  if (request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc =
+      h2_pal_mutex_lock(request->service->config.sync, request->service->mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (atomic_load_explicit(&request->committed, memory_order_acquire) ||
+      atomic_load_explicit(&request->terminal, memory_order_acquire)) {
+    rc = H2_PAL_ERR_CLOSED;
+  } else {
+    const h2_gizclaw_speech_request_message_t message = {0};
+    rc = (h2_pal_result_t)h2_pal_queue_send(request->service->config.queue,
+                                            request->queue, &message,
+                                            H2_PAL_QUEUE_NO_WAIT);
+    if (rc == H2_PAL_OK)
+      atomic_store_explicit(&request->committed, true, memory_order_release);
+  }
+  (void)h2_pal_mutex_unlock(request->service->config.sync,
+                            request->service->mutex);
+  return rc;
+}
+
+int h2_gizclaw_speech_extract_request_cancel(
+    h2_gizclaw_speech_extract_request_t *request) {
+  if (request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  return h2_gizclaw_operation_cancel(request->operation);
+}
+
+void h2_gizclaw_speech_extract_request_release(
+    h2_gizclaw_speech_extract_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire))
+    return;
+  h2_gizclaw_operation_release(request->operation);
+  h2_pal_queue_destroy(request->service->config.queue, request->queue);
+  h2_pal_mem_free(request->service->config.client_config->allocator, request);
 }
