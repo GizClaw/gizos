@@ -47,7 +47,10 @@ typedef struct h2_gizclaw_config {
      * `H2_PAL_ERR_CLOSED`. Zero reuses `connect_timeout_ms`; negative values
      * are invalid. A provider that unexpectedly returns
      * `H2_PAL_ERR_WOULD_BLOCK` from a positive-timeout peer poll is rate
-     * limited with a logged 10 ms PAL Time backoff before retry.
+     * limited with a logged PAL Time backoff of the lesser of 10 ms and the
+     * remaining write timeout. `sleep_ms` remains optional: if this exceptional
+     * fallback needs it and the operation is unsupported or fails, the write
+     * stops with `H2_PAL_ERR_IO`.
      */
     int write_timeout_ms;
     const h2_pal_mem_api_t *allocator;

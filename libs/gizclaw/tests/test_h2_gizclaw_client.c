@@ -2120,6 +2120,21 @@ int main(void) {
           test_last_sleep_ms == 10u && test_warn_logs == 1 &&
           strstr(test_last_log_message, "rc=-9 backoff_ms=10") != NULL,
       "adapter warns and backs off when peer poll unexpectedly would block");
+  test_send_calls = 0;
+  test_poll_calls = 0;
+  test_sleep_calls = 0;
+  test_warn_logs = 0;
+  test_send_would_block_count = 1;
+  test_sleep_result = H2_PAL_ERR_UNSUPPORTED;
+  offset = 0u;
+  blocked = false;
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
+                                      &offset, &blocked) == GZC_ERR_WEBRTC &&
+          offset == 0u && test_send_calls == 1 && test_poll_calls == 1 &&
+          test_sleep_calls == 1 && test_warn_logs == 1,
+      "adapter stops when the optional peer poll backoff is unsupported");
+  test_sleep_result = H2_PAL_OK;
   test_poll_result = H2_PAL_OK;
   test_send_calls = 0;
   test_poll_calls = 0;
@@ -2133,6 +2148,32 @@ int main(void) {
           test_last_poll_timeout_ms == 50,
       "adapter bounds persistent PAL backpressure by the independent write "
       "timeout");
+  config.write_timeout_ms = 7;
+  h2_gizclaw_client_t *short_timeout_client = NULL;
+  fails += expect(h2_gizclaw_client_init(&config, &short_timeout_client) ==
+                      H2_PAL_OK &&
+                      short_timeout_client != NULL,
+                  "client accepts a write timeout below the backoff cap");
+  test_send_calls = 0;
+  test_poll_calls = 0;
+  test_sleep_calls = 0;
+  test_warn_logs = 0;
+  test_send_would_block_count = 2;
+  test_poll_result = H2_PAL_ERR_WOULD_BLOCK;
+  offset = 0u;
+  blocked = false;
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(short_timeout_client, channel, payload,
+                                      sizeof(payload), &offset, &blocked) ==
+              GZC_ERR_TIMEOUT &&
+          offset == 0u && test_send_calls == 2 && test_poll_calls == 1 &&
+          test_sleep_calls == 1 && test_last_sleep_ms == 7u &&
+          test_warn_logs == 1 &&
+          strstr(test_last_log_message, "backoff_ms=7") != NULL,
+      "adapter caps peer poll backoff to the remaining write timeout");
+  h2_gizclaw_client_deinit(short_timeout_client);
+  config.write_timeout_ms = 2000;
+  test_poll_result = H2_PAL_OK;
   test_send_calls = 0;
   test_poll_calls = 0;
   test_cancel_requested = true;
