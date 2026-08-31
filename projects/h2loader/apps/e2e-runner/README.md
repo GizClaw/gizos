@@ -39,9 +39,10 @@ and abort after entering APP, and requires every resulting status to prove the
 expected active role. The URL
 triplet enables device-side download plus abort. `--crash-firmware` stages the
 crash-before-confirm APP once, requires
-the platform rollback to return to Loader with the failed APP candidate and
-Stage retained, `boot_intent=LOADER`, and a non-empty coredump, then verifies
-that coredump over every selected transport before erasing it.
+the platform rollback to return to Loader without changing the Stage,
+Partition 2 metadata, package, boot intent, or last result, and with a non-empty
+coredump, then verifies that coredump over every selected transport before
+erasing it.
 `--coredump-bytes` retains the lower-level mode for an already
 preloaded coredump. Both coredump modes consume the dump and are limited to one
 iteration. Wi-Fi passwords are read only from the

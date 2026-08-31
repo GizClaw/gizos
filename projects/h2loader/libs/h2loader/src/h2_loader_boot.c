@@ -831,12 +831,12 @@ static int finish_loader_stage_if_converged(h2_loader_t *loader) {
   return H2_PAL_OK;
 }
 
-static int retain_rolled_back_app_candidate(h2_loader_t *loader,
-                                            int *out_retained) {
+static int detect_rolled_back_app(h2_loader_t *loader,
+                                  int *out_rolled_back) {
   int bootable = 1;
-  if (loader == NULL || out_retained == NULL)
+  if (loader == NULL || out_rolled_back == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  *out_retained = 0;
+  *out_rolled_back = 0;
   if (!loader->status.stage.valid ||
       loader->status.stage.role != H2_LOADER_IMAGE_ROLE_APP ||
       !h2_loader_metadata_image_equal(&loader->status.stage,
@@ -845,17 +845,10 @@ static int retain_rolled_back_app_candidate(h2_loader_t *loader,
   }
   int rc =
       partition_is_bootable(loader, loader->config.app_partition_id, &bootable);
-  if (rc != H2_PAL_OK || bootable)
-    return rc;
-  rc = pref_set_u32(loader->config.pref, "boot_intent",
-                    (uint32_t)H2_LOADER_BOOT_INTENT_LOADER);
   if (rc != H2_PAL_OK)
     return rc;
-  loader->status.boot_intent = H2_LOADER_BOOT_INTENT_LOADER;
-  rc = h2_loader_set_last_result(loader, H2_PAL_ERR_INVALID_STATE);
-  if (rc == H2_PAL_OK)
-    *out_retained = 1;
-  return rc;
+  *out_rolled_back = !bootable;
+  return H2_PAL_OK;
 }
 
 static int mount_file_points(h2_loader_t *loader) {
@@ -908,7 +901,7 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
 int h2_loader_startup(h2_loader_t *loader,
                       h2_loader_startup_action_t *out_action) {
   h2_loader_package_inspection_t inspection;
-  int rolled_back_app_retained = 0;
+  int app_rolled_back = 0;
   int rc;
   if (loader == NULL || out_action == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -953,10 +946,10 @@ int h2_loader_startup(h2_loader_t *loader,
   rc = finish_loader_stage_if_converged(loader);
   if (rc != H2_PAL_OK)
     return fail_recovery(loader, rc);
-  rc = retain_rolled_back_app_candidate(loader, &rolled_back_app_retained);
+  rc = detect_rolled_back_app(loader, &app_rolled_back);
   if (rc != H2_PAL_OK)
     return fail_recovery(loader, rc);
-  if (rolled_back_app_retained)
+  if (app_rolled_back)
     return H2_PAL_OK;
   if (loader->status.stage.valid) {
     rc = inspect_current_stage(loader, &inspection);

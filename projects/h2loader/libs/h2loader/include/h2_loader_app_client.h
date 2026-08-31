@@ -88,13 +88,6 @@ int h2_loader_app_client_init(
     h2_loader_app_client_t *client,
     const h2_loader_app_client_config_t *config);
 /**
- * Persist Loader boot intent and reboot the running App into Partition 1.
- *
- * The client must have completed initialization. On real hardware a successful
- * call does not return because the power backend reboots the device.
- */
-int h2_loader_app_client_reboot_loader(h2_loader_app_client_t *client);
-/**
  * Executes an App coredump subcommand over a caller-owned output stream.
  * The caller owns command serialization; a null subcommand selects status.
  */

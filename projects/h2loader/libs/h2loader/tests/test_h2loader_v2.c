@@ -946,7 +946,7 @@ static void test_same_image_new_package_is_still_inspected(void) {
   assert(present && !fixture.loader.status.stage.valid);
 }
 
-static void test_rolled_back_app_retains_candidate_and_stays_in_loader(void) {
+static void test_rolled_back_app_leaves_partition_2_state_untouched(void) {
   test_fixture_t fixture;
   h2_loader_startup_action_t action;
   int present;
@@ -964,6 +964,7 @@ static void test_rolled_back_app_retains_candidate_and_stays_in_loader(void) {
   write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &p1);
   write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &stage);
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  unsigned commits_before_startup = fixture.commits;
 
   assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
   assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
@@ -976,10 +977,10 @@ static void test_rolled_back_app_retains_candidate_and_stays_in_loader(void) {
   assert(present && p2.valid);
   assert(h2_loader_metadata_image_equal(&p2, &stage));
   assert(fixture.package_present && fixture.package_removes == 0u);
-  assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
-  assert(fixture.loader.status.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
-  assert(fixture.last_result_present &&
-         fixture.last_result == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
+  assert(fixture.loader.status.boot_intent == H2_LOADER_BOOT_INTENT_AUTO);
+  assert(!fixture.last_result_present);
+  assert(fixture.commits == commits_before_startup);
   assert(fixture.writer_offset == 0u);
   assert(fixture.reboot_calls == 0u);
 }
@@ -1278,7 +1279,7 @@ int main(void) {
   test_converged_loader_finishes_stage();
   test_converged_loader_does_not_ignore_different_stage();
   test_same_image_new_package_is_still_inspected();
-  test_rolled_back_app_retains_candidate_and_stays_in_loader();
+  test_rolled_back_app_leaves_partition_2_state_untouched();
   test_app_finalize_only_consumes_matching_stage();
   test_app_confirmation_is_between_metadata_and_stage_cleanup();
   test_reboot_commands_only_set_intent_and_partition();

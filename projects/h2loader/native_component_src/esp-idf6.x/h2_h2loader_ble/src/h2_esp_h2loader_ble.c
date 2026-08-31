@@ -311,13 +311,6 @@ int h2_esp_h2loader_app_commands_start(
     return h2_esp_h2loader_app_commands_start_with_config(runtime, &config);
 }
 
-int h2_esp_h2loader_app_commands_reboot_loader(void) {
-    if (!s_serial_started) {
-        return H2_PAL_ERR_INVALID_STATE;
-    }
-    return h2_loader_app_client_reboot_loader(&s_serial_client);
-}
-
 int h2_esp_h2loader_app_commands_pause_ble_advertising(void) {
     if (s_ble.service == NULL) {
         return H2_PAL_ERR_INVALID_STATE;
