@@ -434,6 +434,8 @@ bool write_report(const std::filesystem::path &path, const Options &options,
       output << "{\"board\": \"" << json_escape(entry.status.board)
              << "\", \"target\": \"" << json_escape(entry.status.target)
              << "\", \"chip\": \"" << json_escape(entry.status.chip)
+             << "\", \"device_uid\": \""
+             << json_escape(entry.status.device_uid)
              << "\", \"capabilities\": " << entry.status.capabilities
              << ", \"command_availability\": "
              << entry.status.command_availability << ", \"active_role\": \""

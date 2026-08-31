@@ -113,7 +113,6 @@ int h2loader_app_run_with_command_service(
     if (loader_config.chip == NULL) {
         loader_config.chip = runtime->chip;
     }
-
     memset(&loader, 0, sizeof(loader));
     rc = h2_loader_init(&loader, &loader_config);
     if (rc != H2_PAL_OK) {

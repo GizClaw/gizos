@@ -98,6 +98,7 @@ typedef enum h2_loader_disruptive_action {
 } h2_loader_disruptive_action_t;
 
 #define H2_LOADER_MFG_STEP_TOTAL 22u
+#define H2_LOADER_DEVICE_UID_MAX 13u
 
 typedef enum h2_loader_mfg_step_status {
     H2_LOADER_MFG_STEP_UNTESTED = 0,
@@ -128,6 +129,7 @@ typedef struct h2_loader_status {
     char board[H2_LOADER_IDENTITY_TEXT_MAX];
     char target[H2_LOADER_IDENTITY_TEXT_MAX];
     char chip[H2_LOADER_IDENTITY_TEXT_MAX];
+    char device_uid[H2_LOADER_DEVICE_UID_MAX];
     h2_loader_active_role_t active_role;
     char active_name[H2_LOADER_IDENTITY_TEXT_MAX];
     char active_version[H2_LOADER_IDENTITY_TEXT_MAX];
@@ -148,6 +150,8 @@ typedef struct h2_loader_config {
     const char *accepted_board_alias;
     const char *target;
     const char *chip;
+    /** Device BLE public/identity MAC as 12 lowercase hexadecimal digits. */
+    const char *device_uid;
     uint32_t h2loader_partition_id;
     uint32_t app_partition_id;
     uint32_t mfg_required_total;

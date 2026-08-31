@@ -13,7 +13,7 @@ Build or run the desktop Target with flags after Bazel's `--` separator:
 ```sh
 bazel run //projects/h2loader/targets/cc_binary/e2e-runner -- \
   --uart /dev/cu.usbmodem11401 \
-  --ble-id 4:001122334455 \
+  --ble-id <endpoint-returned-by-scan> \
   --expected-board devkit \
   --expected-target esp32s3 \
   --app-firmware /absolute/path/devkit-app-esp32s3.update.tar.zlib \
@@ -46,7 +46,9 @@ repeat/monitor settings, APP/Loader/URL/coredump identity objects, `summary`,
 then execution-ordered `cases`. Each case records transport, iteration, name,
 PASS/FAIL plus numeric PAL result, terminal enum, elapsed/acknowledged/total/
 output/log byte counts, reconnect attempts, and either `null` or the complete
-authoritative status with Stage/P1/P2 metadata. Raw logs and Wi-Fi credential
+authoritative status with `device_uid` and Stage/P1/P2 metadata. The first BLE
+status locks the UID; every reconnect must return the same UID before role,
+partition, Stage, or checksum acceptance continues. Raw logs and Wi-Fi credential
 values are never serialized. Missing hardware is a handoff gate, never a fake
 case or PASS in this report.
 

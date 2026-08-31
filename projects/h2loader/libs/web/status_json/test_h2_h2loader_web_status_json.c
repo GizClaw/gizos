@@ -50,6 +50,7 @@ static h2_h2loader_host_status_t test_status(void) {
   (void)snprintf(status.board, sizeof(status.board), "bo\"ard\\\n");
   (void)snprintf(status.target, sizeof(status.target), "target");
   (void)snprintf(status.chip, sizeof(status.chip), "chip");
+  (void)snprintf(status.device_uid, sizeof(status.device_uid), "102030405060");
   (void)snprintf(status.active_version, sizeof(status.active_version), "1.2.3");
   (void)snprintf(status.active_checksum, sizeof(status.active_checksum), "aa");
   status.stage.valid = 1u;
@@ -110,6 +111,16 @@ static void assert_command_availability(
              h2_yyjson_json_api(provider), board, &board_value) == H2_PAL_OK);
   assert(board_value.len == strlen(status->board));
   assert(memcmp(board_value.data, status->board, board_value.len) == 0);
+  h2_pal_json_value_t *device_uid = NULL;
+  assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root,
+                                "deviceUid", strlen("deviceUid"),
+                                &device_uid) == H2_PAL_OK);
+  h2_pal_json_string_view_t device_uid_value = {0};
+  assert(h2_pal_json_value_get_string(h2_yyjson_json_api(provider), device_uid,
+                                      &device_uid_value) == H2_PAL_OK);
+  assert(device_uid_value.len == strlen(status->device_uid));
+  assert(memcmp(device_uid_value.data, status->device_uid,
+                device_uid_value.len) == 0);
   h2_pal_json_value_t *active = NULL;
   assert(h2_pal_json_object_get(h2_yyjson_json_api(provider), root, "active",
                                 strlen("active"), &active) == H2_PAL_OK);
@@ -146,6 +157,7 @@ static void test_maximum_projection_fits(h2_yyjson_json_t *provider) {
   fill_string(status.board, sizeof(status.board), 0x1f);
   fill_string(status.target, sizeof(status.target), 0x1f);
   fill_string(status.chip, sizeof(status.chip), 0x1f);
+  fill_string(status.device_uid, sizeof(status.device_uid), 'd');
   fill_string(status.active_version, sizeof(status.active_version), 0x1f);
   fill_string(status.active_checksum, sizeof(status.active_checksum), 0x1f);
   h2_h2loader_host_metadata_t *slots[] = {

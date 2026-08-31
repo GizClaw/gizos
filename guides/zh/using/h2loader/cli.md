@@ -99,7 +99,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 `check` 报告 BLE capability 时只检查平台是否提供 BLE Host，不启动它；`--no-ble` 下 BLE capability 报告为不可用。
 
-串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；显式 BLE management command 使用 `--port` 的 exact endpoint 做 targeted scan，不枚举串口，匹配后立即停止，未匹配时仍等待完整 bounded scan timeout。BLE endpoint 只用于当前 Host/backend 生命周期内选择初始 candidate，连接后的 status 才提供 authoritative board/role/capability。v1/v2 尚无 `device_uid`，因此 CLI 不把 backend address 当成断线后可重新识别物理设备的 identity。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
+串口 command transport 只保留 `iostreamikcp`；BLE management command transport 使用 `bleikcp`。两者不注册各自的命令表，而是执行相同的 Host command contract 和设备 `h2loader` registry。每次打开串口都会使用新的非零 session ID 完成握手；显式 BLE management command 使用 `--port` 的 exact endpoint 做 targeted scan，不枚举串口，匹配后立即停止，未匹配时仍等待完整 bounded scan timeout。BLE endpoint 只负责选择 candidate；连接后的 status 提供 authoritative `device_uid`、board、role 和 capability，其中 UID 是设备固件报告的 BLE public/identity MAC（12 位小写十六进制）。CLI 在生命周期命令前锁定 UID，重启后重新发现并拒绝 UID 缺失或不同的连接；backend address 不能替代 UID。`--transport raw` 会在解析参数时被拒绝。BootROM recovery 是对应 board 文档定义的独立流程，不属于 H2Loader command transport。
 
 `--ready` 和非零 `--post-delay` 是 serial boot-marker 调试参数，不能与 `--transport bleikcp` 组合；CLI 会在连接前拒绝，而不是悄悄忽略 transport-specific 参数。
 

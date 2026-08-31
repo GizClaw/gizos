@@ -9,6 +9,7 @@
 #include "h2_bk_target_task_policy.h"
 
 #include "bk_private/bk_init.h"
+#include "components/system.h"
 #include "driver/flash.h"
 #include "driver/mb_uart_driver.h"
 #include "driver/wdt.h"
@@ -456,6 +457,8 @@ static const h2_pal_disk_api_t s_coredump_disk = {
 static void h2loader_startup_worker(void *user) {
     h2_pal_firmware_info_t firmware_info;
     h2_loader_status_t probe_status;
+    uint8_t ble_mac[6];
+    char device_uid[13];
     h2_loader_config_t config = {
         .package = {
             .fs = &s_h2loader_fs,
@@ -512,6 +515,17 @@ static void h2loader_startup_worker(void *user) {
     h2loader_ap_probe(4u);
 
     int rc;
+    rc = bk_get_mac(ble_mac, MAC_TYPE_BLUETOOTH);
+    if (rc != BK_OK) {
+        record_startup_error("device_uid", rc);
+        wait_forever();
+    }
+    (void)snprintf(
+        device_uid,
+        sizeof(device_uid),
+        "%02x%02x%02x%02x%02x%02x",
+        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
+    config.device_uid = device_uid;
     const h2_pal_mutex_config_t operation_mutex_config = {
         .name = "h2loader-operation",
         .allocator = s_runtime->mem,

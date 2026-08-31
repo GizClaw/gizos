@@ -16,7 +16,8 @@
 extern "C" {
 #endif
 
-#define H2_H2LOADER_HOST_STATUS_LINE_MAX 4096u
+#define H2_H2LOADER_HOST_STATUS_LINE_MAX 4352u
+#define H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN 13u
 #define H2_H2LOADER_HOST_ENDPOINT_MAX_LEN H2_PAL_SERIAL_HOST_ENDPOINT_MAX_LEN
 #define H2_H2LOADER_HOST_DISPLAY_NAME_MAX_LEN 256u
 #define H2_H2LOADER_HOST_CANDIDATE_ID_MAX_LEN 512u
@@ -98,6 +99,8 @@ typedef struct h2_h2loader_host_status {
     char board[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char target[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char chip[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
+    /** Stable physical-device UID used to verify post-reboot BLE identity. */
+    char device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
     char active_version[H2_H2LOADER_HOST_IDENTITY_MAX_LEN];
     char active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
     uint64_t active_image_size;

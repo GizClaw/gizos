@@ -3,6 +3,7 @@
 #include "h2loader_app_task_names.h"
 
 #include "driver/flash.h"
+#include "components/system.h"
 #include "mbedtls/sha256.h"
 #include "os/os.h"
 #include "h2_loader_app_client.h"
@@ -20,6 +21,7 @@ typedef struct h2_bk_h2loader_app_ble {
     h2_loader_ble_service_t *service;
     h2_pal_mutex_t *operation_mutex;
     char active_version[H2_PAL_FIRMWARE_VERSION_MAX];
+    char device_uid[13];
 } h2_bk_h2loader_app_ble_t;
 
 static h2_bk_h2loader_app_ble_t s_ble;
@@ -282,11 +284,21 @@ int h2_bk_h2loader_init_app_client(
         return rc;
     }
     h2_pal_firmware_info_t firmware_info;
+    uint8_t ble_mac[6];
     rc = h2_pal_firmware_info_get_current(
         runtime->firmware_info, &firmware_info);
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    rc = bk_get_mac(ble_mac, MAC_TYPE_BLUETOOTH);
+    if (rc != BK_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    (void)snprintf(
+        s_ble.device_uid,
+        sizeof(s_ble.device_uid),
+        "%02x%02x%02x%02x%02x%02x",
+        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
     (void)snprintf(
         s_ble.active_version,
         sizeof(s_ble.active_version),
@@ -314,6 +326,7 @@ int h2_bk_h2loader_init_app_client(
         .board = runtime->board,
         .target = runtime->target,
         .chip = runtime->chip,
+        .device_uid = s_ble.device_uid,
         .hardware_capabilities = hardware_capabilities,
         .h2loader_partition_id = H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
         .app_partition_id = 2u,

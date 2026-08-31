@@ -166,6 +166,7 @@ int h2_loader_app_client_init(
     loader_config.board = config->board;
     loader_config.target = config->target;
     loader_config.chip = config->chip;
+    loader_config.device_uid = config->device_uid;
     loader_config.h2loader_partition_id = config->h2loader_partition_id;
     loader_config.app_partition_id = config->app_partition_id;
     loader_config.hardware_capabilities = config->hardware_capabilities;

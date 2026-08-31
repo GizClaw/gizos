@@ -10,6 +10,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_image_format.h"
+#include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "freertos/FreeRTOS.h"
@@ -905,6 +906,8 @@ void h2_esp_h2loader_run_with_command_service_config(
   h2loader_app_config_t config;
   int rc;
   const char *board;
+  uint8_t ble_mac[6];
+  char device_uid[13];
   h2_esp_h2loader_context_t context;
   h2_pal_firmware_info_t firmware_info;
 
@@ -917,6 +920,14 @@ void h2_esp_h2loader_run_with_command_service_config(
     return;
   }
   board = runtime_loader_config->board;
+  rc = esp_read_mac(ble_mac, ESP_MAC_BT);
+  if (rc != ESP_OK) {
+    printf("H2_LOADER_READY target=esp status=device_uid_fail code=%d\n", rc);
+    return;
+  }
+  (void)snprintf(device_uid, sizeof(device_uid),
+                 "%02x%02x%02x%02x%02x%02x", ble_mac[0], ble_mac[1],
+                 ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
   rc = h2_pal_firmware_info_get_current(runtime->firmware_info, &firmware_info);
   if (rc != H2_PAL_OK) {
     printf("H2_LOADER_READY target=esp status=firmware_info_fail code=%d\n",
@@ -949,6 +960,7 @@ void h2_esp_h2loader_run_with_command_service_config(
   config.loader.package.progress = runtime_loader_config->install_progress;
   config.loader.board = board;
   config.loader.target = CONFIG_IDF_TARGET;
+  config.loader.device_uid = device_uid;
   config.loader.h2loader_partition_id = 1u;
   config.loader.app_partition_id = 2u;
   config.loader.mfg_required_total = runtime_loader_config->mfg_required_total;

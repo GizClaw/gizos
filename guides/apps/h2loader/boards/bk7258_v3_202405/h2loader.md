@@ -26,6 +26,8 @@ bazel build --config=bk7258 \
 
 CP 独占 UART0 RX 和 physical TX serializer，managed UART 启动默认值为 115200 8N1；Host 可通过显式 `--baud` 对特殊固件覆盖该值。CP 不解析 H2IKCP 或 H2Loader command；AP 通过 mailbox-backed UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
 
+Host 的 managed serial open/read/write/close 不执行任何 DTR/RTS 操作；modem line 只能出现在另行授权的 BootROM recovery。APP 与 Loader status 都从设备端同一个 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`，BLE 重启后以该 UID 验证设备，而不是信任 endpoint/address。
+
 ## 预期表现
 
 运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。

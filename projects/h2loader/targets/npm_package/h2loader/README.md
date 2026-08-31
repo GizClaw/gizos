@@ -51,13 +51,18 @@ currently available. The SDK exports `H2LoaderCapabilities`,
 assignments. Host Core and firmware check the same command bit again at the
 execution boundary.
 
-Lifecycle state is returned directly as `activeRole`, `activeVersion`,
+Lifecycle state is returned directly as `deviceUid`, `activeRole`, `activeVersion`,
 `activeChecksum`, `activeImageSize`, `runningPartition`, `nextPartition`,
 `bootIntent`, `stage`, `partition1`, `partition2`, and `lastResult`. Metadata
 contains the package and image identity plus `valid`. Removed install-state,
 loader-upgrade, manual-hold, and app-confirmed fields are not reconstructed by
 the SDK. Unsigned 64-bit sizes are decimal strings so JavaScript does not round
 them.
+
+`deviceUid` is the connected firmware's stable lowercase 12-hex physical
+identity. BLE endpoint IDs and addresses select a discovery candidate only;
+after every reboot/reconnect the Host must read status again and reject a
+different `deviceUid`.
 
 This is a lockstep protocol version: there is no legacy `H2_APP_STATUS`,
 missing-field fallback, capability-to-command inference, or role reconstruction.

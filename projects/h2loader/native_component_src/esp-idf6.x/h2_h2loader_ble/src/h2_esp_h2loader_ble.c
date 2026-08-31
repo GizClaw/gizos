@@ -7,6 +7,8 @@
 #include "h2_loader_ble.h"
 #include "h2_loader_boot.h"
 
+#include "esp_mac.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -28,6 +30,7 @@ typedef struct h2_esp_h2loader_app_ble {
     h2_loader_app_client_config_t client_config;
     h2_loader_ble_service_t *service;
     h2_pal_mutex_t *operation_mutex;
+    char device_uid[13];
 } h2_esp_h2loader_app_ble_t;
 
 static h2_loader_app_client_t s_serial_client;
@@ -114,6 +117,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         .flags = H2_PAL_MUTEX_FLAG_RECURSIVE,
     };
     int cleanup_rc;
+    uint8_t ble_mac[6];
     h2_pal_firmware_info_t firmware_info;
     int rc = h2_pal_mutex_create(
         runtime_config->sync, &mutex_config, &s_ble.operation_mutex);
@@ -123,6 +127,16 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
     rc = h2_pal_firmware_info_get_current(
         runtime_config->firmware_info, &firmware_info);
     if (rc != H2_PAL_OK) goto cleanup_mutex;
+    rc = esp_read_mac(ble_mac, ESP_MAC_BT);
+    if (rc != ESP_OK) {
+        rc = H2_PAL_ERR_IO;
+        goto cleanup_mutex;
+    }
+    (void)snprintf(
+        s_ble.device_uid,
+        sizeof(s_ble.device_uid),
+        "%02x%02x%02x%02x%02x%02x",
+        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
     s_ble.client_config = (h2_loader_app_client_config_t){
         .pref = runtime_config->pref,
         .power = runtime_config->power,
@@ -138,6 +152,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         .board = runtime_config->board,
         .target = runtime_config->target,
         .chip = runtime_config->chip,
+        .device_uid = s_ble.device_uid,
         .hardware_capabilities = config->hardware_capabilities,
         .memory_stats = {
             .read = h2_esp_h2loader_memory_stats_read,

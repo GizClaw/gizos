@@ -92,6 +92,7 @@ static h2_pal_result_t fake_scan_probe_candidate(
     }
     strcpy(out_status->board, "tiga");
     strcpy(out_status->target, "esp32s3");
+    strcpy(out_status->device_uid, "102030405060");
     strcpy(out_status->active_version,
         strcmp(candidate->port_id, "port-a") == 0 ? "v1" : "v2");
     out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
@@ -399,6 +400,9 @@ static void test_scan_binds_live_status_to_exact_serial_port(void) {
     assert(strstr(
         output.bytes,
         "\"active_version\": \"v2\"") != NULL);
+    assert(strstr(
+        output.bytes,
+        "\"device_uid\": \"102030405060\"") != NULL);
 
     memset(&output, 0, sizeof(output));
     memset(&probe, 0, sizeof(probe));
@@ -499,6 +503,82 @@ static void test_send_reports_unreadable_file(void) {
     assert(strstr(output.bytes, "PAL filesystem mount") != NULL);
 }
 
+static h2_h2loader_host_metadata_t lifecycle_metadata(
+    h2_h2loader_host_active_role_t role, const char *checksum) {
+    h2_h2loader_host_metadata_t metadata = {
+        .package_size = 10u,
+        .image_size = 20u,
+        .role = role,
+        .valid = 1u,
+    };
+    strcpy(metadata.package_checksum, checksum);
+    strcpy(metadata.image_checksum, checksum);
+    strcpy(metadata.version, "v2");
+    strcpy(metadata.board, "devkit");
+    strcpy(metadata.target, "esp32s3");
+    return metadata;
+}
+
+static void test_reboot_final_status_is_authoritative(void) {
+    h2_h2loader_host_status_t before = {0};
+    h2_h2loader_host_status_t after = {0};
+    before.stage = lifecycle_metadata(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER, "aa");
+    after.stage = before.stage;
+    after.running_partition = 2u;
+    after.next_partition = 2u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP, &before, &after) ==
+           H2_PAL_OK);
+    strcpy(after.stage.image_checksum, "bb");
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP, &before, &after) ==
+           H2_PAL_ERR_INVALID_STATE);
+    after.stage = before.stage;
+    after.running_partition = 1u;
+    after.next_partition = 1u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_LOADER;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER, &before, &after) ==
+           H2_PAL_OK);
+
+    before.stage = lifecycle_metadata(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_APP, "cc");
+    memset(&after, 0, sizeof(after));
+    after.partition_2 = before.stage;
+    after.running_partition = 2u;
+    after.next_partition = 2u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_OK);
+    after.stage = before.stage;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_ERR_INVALID_STATE);
+
+    before.stage = lifecycle_metadata(
+        H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER, "dd");
+    memset(&after, 0, sizeof(after));
+    after.partition_1 = before.stage;
+    after.partition_2 = before.stage;
+    after.running_partition = 1u;
+    after.next_partition = 1u;
+    after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+    after.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_OK);
+    after.partition_2.image_size++;
+    assert(h2_h2loader_cli_verify_reboot_status(
+               H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE, &before, &after) ==
+           H2_PAL_ERR_INVALID_STATE);
+}
+
 int main(void) {
     test_help_and_usage();
     test_ble_transport_routes_the_shared_device_command();
@@ -511,6 +591,7 @@ int main(void) {
     test_parser_defaults_and_json_escaping();
     test_send_progress_reports_acknowledged_delivery();
     test_send_reports_unreadable_file();
+    test_reboot_final_status_is_authoritative();
     puts("h2loader cli app tests passed");
     return 0;
 }

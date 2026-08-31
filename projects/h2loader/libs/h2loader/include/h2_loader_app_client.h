@@ -43,6 +43,8 @@ typedef struct h2_loader_app_client_config {
     const char *board;
     const char *target;
     const char *chip;
+    /** Device-reported BLE public/identity MAC as 12 lowercase hex digits. */
+    const char *device_uid;
     h2_loader_image_identity_t active_identity;
     /** Stable hardware facilities wired by the complete running App image. */
     uint32_t hardware_capabilities;

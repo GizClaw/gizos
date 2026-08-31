@@ -114,6 +114,8 @@ h2_pal_result_t h2_h2loader_web_status_json_write(
   append_json_string(&writer, status->target);
   append_text(&writer, ",\"chip\":");
   append_json_string(&writer, status->chip);
+  append_text(&writer, ",\"deviceUid\":");
+  append_json_string(&writer, status->device_uid);
   append_format(&writer,
                 ",\"capabilities\":%u,\"commandAvailability\":%u",
                 (unsigned int)status->capabilities,

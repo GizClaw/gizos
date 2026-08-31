@@ -151,6 +151,7 @@ int h2_loader_status_format(
     const char *board;
     const char *target;
     const char *chip;
+    const char *device_uid;
     const char *active_role;
     char mfg_steps[H2_LOADER_MFG_STEP_TOTAL + 1u];
 
@@ -163,6 +164,7 @@ int h2_loader_status_format(
     board = default_if_empty(status->board, "unknown");
     target = default_if_empty(status->target, "unknown");
     chip = default_if_empty(status->chip, target);
+    device_uid = default_if_empty(status->device_uid, "unknown");
     active_role = status->active_role == H2_LOADER_ACTIVE_ROLE_APP ? "app" :
         status->active_role == H2_LOADER_ACTIVE_ROLE_H2LOADER ? "loader" :
         "unknown";
@@ -176,7 +178,7 @@ int h2_loader_status_format(
      (value) == H2_LOADER_IMAGE_ROLE_H2LOADER ? "loader" : "unknown")
     len = snprintf(out,
         out_len,
-        "H2_LOADER_STATUS board=%s target=%s chip=%s capabilities=0x%08lx command_availability=0x%08lx "
+        "H2_LOADER_STATUS board=%s target=%s chip=%s device_uid=%s capabilities=0x%08lx command_availability=0x%08lx "
         "active_role=%s active_version=%s active_checksum=%s active_image_size=%llu running_partition=%lu next_partition=%lu boot_intent=%s "
         "stage_valid=%u stage_package_checksum=%s stage_package_size=%llu stage_image_checksum=%s stage_image_size=%llu stage_role=%s stage_version=%s stage_board=%s stage_target=%s "
         "partition_1_valid=%u partition_1_package_checksum=%s partition_1_package_size=%llu partition_1_image_checksum=%s partition_1_image_size=%llu partition_1_role=%s partition_1_version=%s partition_1_board=%s partition_1_target=%s "
@@ -185,6 +187,7 @@ int h2_loader_status_format(
         board,
         target,
         chip,
+        device_uid,
         (unsigned long)status->capabilities,
         (unsigned long)status->command_availability,
         active_role,

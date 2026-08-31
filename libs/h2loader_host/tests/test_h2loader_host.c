@@ -880,10 +880,11 @@ static void test_status(void) {
     static const char checksum[] =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
     h2_h2loader_host_status_t status;
-    char v2_line[4096];
+    char v2_line[H2_H2LOADER_HOST_STATUS_LINE_MAX];
     int v2_len = snprintf(
         v2_line, sizeof(v2_line),
         "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
+        "device_uid=102030405060 "
         "capabilities=0x00000005 command_availability=0x00000008 "
         "active_role=app active_version=v1 active_checksum=%s active_image_size=4096 "
         "running_partition=2 next_partition=2 boot_intent=auto "
@@ -909,11 +910,20 @@ static void test_status(void) {
     assert(strcmp(status.partition_2.package_checksum, checksum) == 0);
     assert(status.stage.valid == 0u);
     assert(strcmp(status.board, "devkit") == 0);
+    assert(strcmp(status.device_uid, "102030405060") == 0);
     assert(h2_h2loader_host_status_active_role(&status) ==
            H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
     assert(status.capabilities == 5u);
     assert(status.command_availability == UINT32_C(0x08));
     assert(status.running_partition == 2u);
+
+    char invalid_uid[sizeof(v2_line)];
+    strcpy(invalid_uid, v2_line);
+    char *uid = strstr(invalid_uid, "device_uid=102030405060");
+    assert(uid != NULL);
+    uid[strlen("device_uid=")] = 'A';
+    assert(h2_h2loader_host_status_parse(invalid_uid, &status) ==
+           H2_PAL_ERR_FORMAT);
 
     char noncanonical_hex[sizeof(v2_line)];
     strcpy(noncanonical_hex, v2_line);
@@ -964,6 +974,7 @@ static void test_status(void) {
 
     assert(h2_h2loader_host_status_parse(
         "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
+        "device_uid=102030405060 "
         "capabilities=0x00000005 command_availability=0x00000008 "
         "states=0x000000000001586a\n", &status) == H2_PAL_ERR_FORMAT);
 }

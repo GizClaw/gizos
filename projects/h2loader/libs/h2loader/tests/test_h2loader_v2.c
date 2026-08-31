@@ -512,6 +512,7 @@ static void test_max_status_fits_public_capacity(void) {
   fill_max_text(status.board, sizeof(status.board), 'b');
   fill_max_text(status.target, sizeof(status.target), 't');
   fill_max_text(status.chip, sizeof(status.chip), 'c');
+  fill_max_text(status.device_uid, sizeof(status.device_uid), 'd');
   fill_max_text(status.active_version, sizeof(status.active_version), 'v');
   fill_max_text(status.active_checksum, sizeof(status.active_checksum), 'a');
   status.active_role = H2_LOADER_ACTIVE_ROLE_H2LOADER;

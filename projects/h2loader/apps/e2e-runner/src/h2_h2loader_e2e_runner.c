@@ -3,6 +3,7 @@
 #include "h2_h2loader_host_package.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 #define H2_E2E_BLE_CANDIDATE_CAPACITY 32u
@@ -21,8 +22,8 @@ typedef struct h2_e2e_transport_context {
   h2_h2loader_host_serial_connection_t *serial_connection;
   h2_h2loader_host_ble_connection_t *ble_connection;
   h2_h2loader_host_candidate_t ble_candidate;
-  h2_pal_ble_addr_t authoritative_ble_address;
-  uint8_t authoritative_ble_address_valid;
+  char authoritative_device_uid[H2_H2LOADER_HOST_DEVICE_UID_MAX_LEN];
+  uint8_t authoritative_device_uid_valid;
   h2_h2loader_host_catalog_entry_t app_asset;
   h2_h2loader_host_catalog_entry_t loader_asset;
   h2_h2loader_e2e_case_result_t *case_result;
@@ -381,22 +382,6 @@ resolve_ble_candidate(h2_e2e_transport_context_t *context) {
     return H2_PAL_ERR_NOT_FOUND;
   if (matches != 1u)
     return H2_PAL_ERR_INVALID_STATE;
-  if (context->authoritative_ble_address_valid) {
-    return context->ble_candidate.ble_address.type ==
-                   context->authoritative_ble_address.type &&
-               memcmp(context->ble_candidate.ble_address.value,
-                      context->authoritative_ble_address.value,
-                      H2_PAL_BLE_ADDR_LEN) == 0
-           ? H2_PAL_OK
-           : H2_PAL_ERR_INVALID_STATE;
-  }
-  if (context->ble_candidate.ble_address.type ==
-          H2_PAL_BLE_ADDR_TYPE_PUBLIC_IDENTITY ||
-      context->ble_candidate.ble_address.type ==
-          H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY) {
-    context->authoritative_ble_address = context->ble_candidate.ble_address;
-    context->authoritative_ble_address_valid = 1u;
-  }
   return H2_PAL_OK;
 }
 
@@ -456,6 +441,21 @@ connect_transport(h2_e2e_transport_context_t *context,
       (!text_matches(config->expected_board, out_status->board) ||
        !text_matches(config->expected_target, out_status->target))) {
     rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  if (rc == H2_PAL_OK &&
+      context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE) {
+    if (!context->authoritative_device_uid_valid) {
+      if (out_status->device_uid[0] != '\0' &&
+          strcmp(out_status->device_uid, "unknown") != 0) {
+        (void)snprintf(context->authoritative_device_uid,
+                       sizeof(context->authoritative_device_uid), "%s",
+                       out_status->device_uid);
+        context->authoritative_device_uid_valid = 1u;
+      }
+    } else if (strcmp(context->authoritative_device_uid,
+                      out_status->device_uid) != 0) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+    }
   }
   if (rc == H2_PAL_OK && context->case_result != NULL) {
     context->case_result->status = *out_status;
@@ -531,7 +531,7 @@ static h2_pal_result_t managed_rediscover(void *user) {
     ++context->case_result->reconnect_attempts;
   }
   if (context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE &&
-      !context->authoritative_ble_address_valid) {
+      !context->authoritative_device_uid_valid) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
   return context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE
@@ -874,7 +874,7 @@ reconnect_after_reboot(h2_e2e_transport_context_t *context,
                        uint32_t expected_partition,
                        h2_h2loader_host_status_t *out_status) {
   if (context->transport == H2_H2LOADER_E2E_TRANSPORT_BLE &&
-      !context->authoritative_ble_address_valid) {
+      !context->authoritative_device_uid_valid) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
   h2_pal_result_t rc = H2_PAL_ERR_TIMEOUT;

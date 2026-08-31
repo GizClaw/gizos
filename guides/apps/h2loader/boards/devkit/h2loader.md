@@ -11,6 +11,8 @@ bazel build --config=esp32s3 \
 
 USB Serial/JTAG 是 canonical console；provider 只接受 launcher 声明的 allowlisted build variables，不能用文档暴露第二套 native build tree。内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 managed package 和 release metadata；ESP-IDF app descriptor 和 package manifest 使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
 
+managed UART 默认 115200 且不操作 DTR/RTS。APP 与 Loader status 都从设备端 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`；BLE endpoint 只负责发现，任何重启后的连接都必须先匹配 UID。
+
 ## Partition layout
 
 待补充 H2Loader image 使用的 partition table 和各分区用途。

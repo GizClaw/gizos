@@ -260,6 +260,8 @@ static void status_from_config(const h2_loader_config_t *config,
   }
   (void)h2_loader_status_set_device(status, config->board, config->target,
                                     config->chip);
+  copy_text(status->device_uid, sizeof(status->device_uid),
+            config->device_uid);
   if (role != H2_LOADER_ACTIVE_ROLE_UNKNOWN) {
     (void)h2_loader_status_set_active(
         status, role, role == H2_LOADER_ACTIVE_ROLE_APP ? "app" : "loader",

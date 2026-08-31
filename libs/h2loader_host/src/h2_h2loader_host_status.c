@@ -156,6 +156,18 @@ static int is_fixed_lower_hex(const char *value, size_t len) {
     return 1;
 }
 
+static int device_uid_valid(const char *value) {
+    if (strcmp(value, "unknown") == 0) return 1;
+    if (strlen(value) != 12u) return 0;
+    for (size_t i = 0u; i < 12u; ++i) {
+        if (!((value[i] >= '0' && value[i] <= '9') ||
+              (value[i] >= 'a' && value[i] <= 'f'))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int parse_i32(const char *value, size_t len, int32_t *out_value) {
     char text[32];
     char *end = NULL;
@@ -397,6 +409,7 @@ static h2_pal_result_t parse_status_v2(
         !h2_h2loader_host_is_safe_identity(out_status->board) ||
         !h2_h2loader_host_is_safe_identity(out_status->target) ||
         !h2_h2loader_host_is_safe_identity(out_status->chip) ||
+        !device_uid_valid(out_status->device_uid) ||
         !h2_h2loader_host_is_safe_identity(out_status->active_version) ||
         !h2_h2loader_host_is_sha256(out_status->active_checksum) ||
         out_status->active_image_size == 0u ||
@@ -428,6 +441,7 @@ h2_pal_result_t h2_h2loader_host_status_parse(
 #define COPY(name, member) \
     if (!copy_field(&cursor, name, out_status->member, sizeof(out_status->member))) goto format_error
     COPY("board", board); COPY("target", target); COPY("chip", chip);
+    COPY("device_uid", device_uid);
     if (!take_field(&cursor, "capabilities", &value, &len) || len != 10u ||
         !is_fixed_lower_hex(value, len) || !parse_u32(value, len, &out_status->capabilities)) goto format_error;
     if (!take_field(&cursor, "command_availability", &value, &len) || len != 10u ||
