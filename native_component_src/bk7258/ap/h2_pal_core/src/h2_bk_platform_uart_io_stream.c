@@ -21,7 +21,7 @@
 #define H2_BK_UART_TUNNEL_RECORD_BEGIN 1u
 #define H2_BK_UART_TUNNEL_RECORD_DATA 2u
 #define H2_BK_UART_TUNNEL_RECORD_END 3u
-#define H2_BK_UART_BAUD_RATE 115200u
+#define H2_BK_UART_BAUD_RATE 230400u
 #define H2_BK_UART_CP_READY_REQUEST 0x5au
 
 static volatile int s_initialized;

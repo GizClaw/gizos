@@ -2114,7 +2114,7 @@ static const h2_pal_serial_host_vtable_t serial_control_vtable = {
     .close = serial_control_close,
 };
 
-static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
+static void test_serial_connect_deasserts_dtr_and_rts(void) {
     h2_pal_time_api_t time = {0};
     serial_control_fixture_t fixture = {
         .set_result = H2_PAL_OK,
@@ -2137,9 +2137,11 @@ static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
     assert(connection == NULL);
-    assert(fixture.event_count == 3u);
-    assert(memcmp(fixture.events, "otc", 3u) == 0);
-    assert(fixture.line_mask == 0u);
+    assert(fixture.event_count == 4u);
+    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
     assert(fixture.asserted_lines == 0u);
 
     memset(&fixture, 0, sizeof(fixture));
@@ -2149,17 +2151,25 @@ static void test_serial_connect_does_not_touch_dtr_or_rts(void) {
     config.baud_rate = 0u;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
-    assert(fixture.event_count == 3u);
-    assert(memcmp(fixture.events, "otc", 3u) == 0);
+    assert(fixture.event_count == 4u);
+    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
 
     memset(&fixture, 0, sizeof(fixture));
     fixture.set_result = H2_PAL_ERR_TIMEOUT;
     fixture.stream_result = H2_PAL_ERR_IO;
     fixture.expected_baud = H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
-        H2_PAL_ERR_IO);
+        H2_PAL_ERR_TIMEOUT);
     assert(fixture.event_count == 3u);
-    assert(memcmp(fixture.events, "otc", 3u) == 0);
+    assert(memcmp(fixture.events, "osc", 3u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
 }
 
 int main(void) {
@@ -2173,6 +2183,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
-    test_serial_connect_does_not_touch_dtr_or_rts();
+    test_serial_connect_deasserts_dtr_and_rts();
     return 0;
 }
