@@ -94,7 +94,7 @@ PR Agent 阶段完成前，必须逐条确认：
 
 两个 status 使用互不相同且不与 Check Run 重名的 context。每个 trusted publisher 只能写自己的 context，不能 enumerate、rerequest、patch、clone 或 complete 另一个 policy 的 status 或 Check Run。Reusable review 产生的 native comment 和 OpenAI stage Check Run 只保留详细 evidence，不具备 merge eligibility，也不能替代 aggregate status。
 
-OpenAI review 只在 Pull Request 评论以 `@codex` 开头时显式启动；PR open、reopen、ready for review 和 head synchronize 不自动执行 review。显式请求必须先为 API 返回的最新 head 发布 `pending`，publisher 在 final publication 前重新读取 live Pull Request API 并核对 PR number、base SHA 和 head SHA。只有 exact current head 的完整 evidence 可以发布 `success`；stale identity、workflow failure、missing 或 malformed evidence、API failure 和 policy blocker 全部 fail closed。旧 head 的 status 可以保留诊断 evidence，但不能满足当前 head 的 ruleset；push 新 head 后必须再次评论 `@codex` 才能生成该 head 的 eligibility status。
+同仓库 PR 的 OpenAI review 只在 Pull Request 评论以 `@codex` 开头时显式启动；fork PR 则只接受 trusted ownership evaluator 在当前-head CODEOWNER approval 后发出的 `workflow_dispatch`，普通 `@codex` 评论不能提前启动。PR open、reopen、ready for review 和 head synchronize 本身不执行 review。启动后必须先为 API 返回的最新 head 发布 `pending`，publisher 在 final publication 前重新读取 live Pull Request API 并核对 PR number、base SHA 和 head SHA。只有 exact current head 的完整 evidence 可以发布 `success`；stale identity、workflow failure、missing 或 malformed evidence、API failure 和 policy blocker 全部 fail closed。旧 head 的 status 可以保留诊断 evidence，但不能满足当前 head 的 ruleset；push 新 head 后，同仓库 PR 必须再次评论 `@codex`，fork PR 必须重新审批当前 head。
 
 Aggregate policy status 与 trusted publisher job conclusion 是两个独立结果。`OpenAI review eligibility` publisher 消费 pinned reusable reviewer 输出的 `READINESS_EVIDENCE`，当前格式由 `schema_version: 2` 标识；repository、PR、base/head、snapshot、trusted policy、workflow source、stage verdict 和 blocker 全部有效且一致时，policy blocker 发布 `failure`，但 publisher job 成功，完整 PASS evidence 则发布 `success` 且 publisher job 成功。Review execution、identity、evidence consistency、generation ownership 或 API/publication 失败时，publisher 在安全可行时发布 `failure`，并让 job 失败。Publisher job 成功只证明可信发布流程正常，不能替代 required aggregate status 的 policy verdict。
 
@@ -106,11 +106,12 @@ Token-bearing publisher 只从 trusted default-branch event 运行，并 checkou
 
 ## Ownership eligibility
 
-`Ownership eligibility` 只报告 merge eligibility，不代表 CI、Agent 或作者提交了 GitHub `APPROVE` review。
+`Ownership eligibility` 报告 merge eligibility，但不代表 Agent 或作者提交了 GitHub `APPROVE` review。对于 fork PR，匹配 CODEOWNER 对当前 head 的独立 `APPROVED` review 在满足 ownership policy 后，还会从受保护的 `main` workflow 定义 dispatch 完整 CI 和 OpenAI review，并把当前 PR head SHA 绑定为唯一受审 revision。相同 head 已成功请求这两项检查时，后续 ownership reevaluation 不重复 dispatch；新 head 必须重新审批。
 
 - PR create、head update 等事件通过 `pull_request_target` 从 default branch 运行 evaluator。Review submit 或 dismiss 先由 read-only `pull_request_review` workflow 发出完成信号，再由 default-branch `workflow_run` evaluator 读取 API evidence；有 `statuses: write` 的阶段不能运行 PR workflow code、checkout PR head 或执行前一阶段 artifact。
 - PR 作者是整个 PR 的唯一 ownership subject。协作者后来 push 到 PR branch 的 commit 仍统一视为 PR 作者提出的改动，不能按 commit author、committer 或 pusher 改写 ownership identity。
 - PR 作者是所有改动路径的直接 user owner 时，status 可以通过，不再要求作者对自己的 PR 执行 GitHub 不允许的 self-approval。
+- Fork PR 在 ownership status 通过之外，仍需至少一名匹配改动路径的非作者 CODEOWNER 审批当前 head 才会启动完整 CI 和 OpenAI review。该 trusted evaluator 不 checkout 或执行 PR code；两个独立 run 都使用 `main` 上的 workflow 定义，并绑定已审批的 exact head。Fork 上的 `@codex` 评论不能绕过这道批准门。
 - 任一路径不属于作者时，该路径必须由匹配的非作者直接 user owner 审批当前 head。旧 head 的 approval、作者自己的 review 和不匹配该路径的 reviewer 都不能满足条件。
 - Rename 同时检查原路径和目标路径，不能通过移动文件丢弃原 ownership。
 - Missing owner、unsupported CODEOWNERS pattern、team/email owner、API 或 evidence 不完整时 fail closed。需要 team ownership 时先实现可信的 team membership resolution，不能静默降级为任意 write collaborator。

@@ -20,6 +20,10 @@ const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(SCRIPT_DIRECTORY, "../../..");
 const RUN_SCRIPT = resolve(SCRIPT_DIRECTORY, "run.mjs");
+const OWNERSHIP_WORKFLOW = resolve(
+  REPOSITORY_ROOT,
+  ".github/workflows/ownership-approval.yml",
+);
 const CODEOWNERS = `
 * @idy
 /boards/example_devkit/ @Sid9017
@@ -56,6 +60,7 @@ async function runPublishedCheck({
   latestTargetUrl = runUrl,
   statusHistory = null,
   statusPublicationFailure = false,
+  headRepository = "GizClaw/gizos",
 }) {
   const baseSha = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: REPOSITORY_ROOT,
@@ -83,8 +88,8 @@ async function runPublishedCheck({
         state: "open",
         changed_files: files.length,
         user: {login: author},
-        head: {sha: HEAD},
-        base: {sha: baseSha},
+        head: {sha: HEAD, repo: {full_name: headRepository}},
+        base: {sha: baseSha, ref: "main"},
       };
     } else if (
       request.method === "GET" &&
@@ -115,6 +120,17 @@ async function runPublishedCheck({
       }
       statusHistory?.unshift(body);
       payload = {id: requests.length};
+    } else if (
+      request.method === "POST" &&
+      request.url === "/repos/GizClaw/gizos/actions/workflows/ci.yml/dispatches"
+    ) {
+      payload = null;
+    } else if (
+      request.method === "POST" &&
+      request.url ===
+        "/repos/GizClaw/gizos/actions/workflows/openai-pr-review.yml/dispatches"
+    ) {
+      payload = null;
     } else if (request.url.startsWith("/repos/GizClaw/gizos/pulls/1/files?")) {
       payload = files;
     } else if (request.url.startsWith("/repos/GizClaw/gizos/pulls/1/reviews?")) {
@@ -136,8 +152,8 @@ async function runPublishedCheck({
   const pullRequest = {
     number: 1,
     user: {login: author},
-    head: {sha: HEAD},
-    base: {sha: baseSha},
+    head: {sha: HEAD, repo: {full_name: headRepository}},
+    base: {sha: baseSha, ref: "main"},
   };
   const event =
     eventKind === "workflow_run"
@@ -359,6 +375,7 @@ test("cross-owner path requires its direct owner's approval", () => {
   });
   assert.equal(approved.success, true);
   assert.equal(approved.approved.length, 1);
+  assert.deepEqual(approved.approvalApprovers, ["sid9017"]);
 });
 
 test("stale, author, and unrelated approvals do not satisfy the policy", () => {
@@ -465,6 +482,7 @@ test("status summary bounds and escapes untrusted path text", () => {
   const result = {
     success: false,
     paths: ["bad\npath"],
+    approvalApprovers: [],
     selfOwned: [],
     approved: [],
     blockers: [`bad\npath: ${"x".repeat(70000)}`],
@@ -494,6 +512,86 @@ test("runner publishes pending then successful Ownership eligibility statuses", 
     statuses.every(
       (request) => request.body.context !== "OpenAI review eligibility",
     ),
+  );
+});
+
+test("trusted ownership workflow can dispatch approved fork CI", async () => {
+  const workflow = await readFile(OWNERSHIP_WORKFLOW, "utf8");
+  assert.match(workflow, /permissions:\n  actions: write\n/);
+  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.sha/);
+});
+
+test("runner dispatches exact-head CI and OpenAI review after fork approval", async () => {
+  const result = await runPublishedCheck({
+    files: [file("README.md")],
+    reviews: [review("idy")],
+    author: "contributor",
+    eventKind: "workflow_run",
+    headRepository: "contributor/gizos",
+  });
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  const dispatches = result.requests.filter(
+    (request) =>
+      request.url ===
+      "/repos/GizClaw/gizos/actions/workflows/ci.yml/dispatches",
+  );
+  assert.deepEqual(dispatches.map(({body}) => body), [
+    {ref: "main", inputs: {checkout_sha: HEAD}},
+  ]);
+  const reviews = result.requests.filter(
+    (request) =>
+      request.url ===
+      "/repos/GizClaw/gizos/actions/workflows/openai-pr-review.yml/dispatches",
+  );
+  assert.deepEqual(reviews.map(({body}) => body), [
+    {
+      ref: "main",
+      inputs: {pull_request_number: "1", head_sha: HEAD},
+    },
+  ]);
+  const statuses = result.requests.filter(
+    (request) => request.url === `/repos/GizClaw/gizos/statuses/${HEAD}`,
+  );
+  assert.equal(
+    statuses.at(-1).body.description,
+    "Ownership passed; approved fork checks were requested",
+  );
+});
+
+test("runner does not dispatch fork CI without an independent approval", async () => {
+  const result = await runPublishedCheck({
+    files: [file("README.md")],
+    author: "idy",
+    headRepository: "idy/gizos",
+  });
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  assert.equal(
+    result.requests.some((request) => request.url.endsWith("/dispatches")),
+    false,
+  );
+});
+
+test("runner does not redispatch approved fork CI for the same head", async () => {
+  const statusHistory = [
+    {
+      context: "Ownership eligibility",
+      state: "success",
+      description: "Ownership passed; approved fork checks were requested",
+      target_url: "https://github.example/actions/runs/previous",
+    },
+  ];
+  const result = await runPublishedCheck({
+    files: [file("README.md")],
+    reviews: [review("idy")],
+    author: "contributor",
+    eventKind: "workflow_run",
+    headRepository: "contributor/gizos",
+    statusHistory,
+  });
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  assert.equal(
+    result.requests.some((request) => request.url.endsWith("/dispatches")),
+    false,
   );
 });
 
