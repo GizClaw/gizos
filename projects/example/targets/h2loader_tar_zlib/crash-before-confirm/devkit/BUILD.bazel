@@ -71,6 +71,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [
         ":crash_before_confirm_launcher",
     ],

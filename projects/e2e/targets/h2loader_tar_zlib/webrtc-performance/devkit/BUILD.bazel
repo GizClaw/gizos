@@ -65,6 +65,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     cmake_variables = [
         "H2_WEBRTC_PERF_ENDPOINT",
         "H2_WEBRTC_PERF_STUN_URL",
