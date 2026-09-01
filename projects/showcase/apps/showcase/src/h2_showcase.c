@@ -115,12 +115,14 @@ static void gizclaw_log(h2_showcase_app_t *app, h2_pal_log_level_t level,
 }
 
 static void gizclaw_registration_complete(
-    void *user, h2_gizclaw_registration_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_registration_result_t *registration) {
+    void *user, h2_gizclaw_registration_request_t *request) {
   h2_showcase_gizclaw_state_t *state = user;
   h2_showcase_app_t *app = state->app;
-  if (result->result == H2_PAL_OK && registration != NULL &&
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_registration_request_operation_result(request);
+  const h2_gizclaw_registration_result_t *registration =
+      h2_gizclaw_registration_request_response(request);
+  if (result != NULL && result->result == H2_PAL_OK && registration != NULL &&
       strcmp(registration->runtime_profile_name,
              app->config->gizclaw_runtime_profile_name) == 0) {
     atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,

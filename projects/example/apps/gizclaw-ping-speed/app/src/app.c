@@ -255,10 +255,12 @@ static int smoke_server_info_preflight(
 
 static void smoke_ping_complete(
     void *user,
-    h2_gizclaw_ping_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_ping_result_t *ping) {
+    h2_gizclaw_ping_request_t *request) {
     smoke_async_state_t *state = (smoke_async_state_t *)user;
+    const h2_gizclaw_operation_result_t *result =
+        h2_gizclaw_ping_request_operation_result(request);
+    const h2_gizclaw_ping_result_t *ping =
+        h2_gizclaw_ping_request_response(request);
     int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
     if (rc == H2_PAL_OK && ping == NULL) {
         rc = H2_PAL_ERR_INVALID_STATE;
@@ -270,10 +272,12 @@ static void smoke_ping_complete(
 
 static void smoke_speedtest_complete(
     void *user,
-    h2_gizclaw_speedtest_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_speedtest_result_t *speedtest) {
+    h2_gizclaw_speedtest_request_t *request) {
     smoke_async_state_t *state = (smoke_async_state_t *)user;
+    const h2_gizclaw_operation_result_t *result =
+        h2_gizclaw_speedtest_request_operation_result(request);
+    const h2_gizclaw_speedtest_result_t *speedtest =
+        h2_gizclaw_speedtest_request_response(request);
     int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
     if (rc == H2_PAL_OK && speedtest == NULL) {
         rc = H2_PAL_ERR_INVALID_STATE;
