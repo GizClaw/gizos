@@ -210,6 +210,7 @@ struct h2_gizclaw_points_request {
     h2_gizclaw_points_list_completion_fn list;
   } completion;
   void *completion_user;
+  h2_gizclaw_operation_result_t operation_result;
   union {
     h2_gizclaw_points_account_t account;
     h2_gizclaw_points_transaction_page_t page;
@@ -357,11 +358,11 @@ void h2_gizclaw_points_transaction_page_deinit(
   page_deinit(h2_gizclaw_client_allocator_internal(client), page);
 }
 
-static void points_rpc_complete(
-    void *user, h2_gizclaw_async_rpc_t *rpc,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_rpc_response_t *response) {
-  (void)rpc;
+static void points_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc) {
+  const h2_gizclaw_operation_result_t *operation_result =
+      h2_gizclaw_async_rpc_operation_result(rpc);
+  const h2_gizclaw_rpc_response_t *response =
+      h2_gizclaw_async_rpc_response(rpc);
   h2_gizclaw_points_request_t *request = user;
   h2_gizclaw_operation_result_t result = *operation_result;
   if (result.result == H2_PAL_OK &&
@@ -379,16 +380,12 @@ static void points_rpc_complete(
     else
       page_deinit(request->allocator, &request->result.page);
   }
+  request->operation_result = result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  if (request->kind == POINTS_GET) {
-    request->completion.get(
-        request->completion_user, request, &result,
-        result.result == H2_PAL_OK ? &request->result.account : NULL);
-  } else {
-    request->completion.list(
-        request->completion_user, request, &result,
-        result.result == H2_PAL_OK ? &request->result.page : NULL);
-  }
+  if (request->kind == POINTS_GET)
+    request->completion.get(request->completion_user, request);
+  else
+    request->completion.list(request->completion_user, request);
 }
 
 static h2_gizclaw_points_request_t *allocate_request(
@@ -490,6 +487,40 @@ h2_gizclaw_points_request_cancel(h2_gizclaw_points_request_t *request) {
   if (request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   return h2_gizclaw_async_rpc_cancel(request->rpc);
+}
+
+h2_pal_result_t h2_gizclaw_points_request_wait(
+    h2_gizclaw_points_request_t *request, uint32_t timeout_ms) {
+  return request == NULL ? H2_PAL_ERR_INVALID_ARG
+                         : h2_gizclaw_async_rpc_wait(request->rpc, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *h2_gizclaw_points_request_operation_result(
+    const h2_gizclaw_points_request_t *request) {
+  return request != NULL &&
+                 atomic_load_explicit(&request->terminal, memory_order_acquire)
+             ? &request->operation_result
+             : NULL;
+}
+
+const h2_gizclaw_points_account_t *h2_gizclaw_points_request_account(
+    const h2_gizclaw_points_request_t *request) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_points_request_operation_result(request);
+  return result != NULL && result->result == H2_PAL_OK &&
+                 request->kind == POINTS_GET
+             ? &request->result.account
+             : NULL;
+}
+
+const h2_gizclaw_points_transaction_page_t *h2_gizclaw_points_request_page(
+    const h2_gizclaw_points_request_t *request) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_points_request_operation_result(request);
+  return result != NULL && result->result == H2_PAL_OK &&
+                 request->kind == POINTS_LIST
+             ? &request->result.page
+             : NULL;
 }
 
 void h2_gizclaw_points_request_release(h2_gizclaw_points_request_t *request) {

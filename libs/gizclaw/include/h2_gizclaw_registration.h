@@ -22,9 +22,7 @@ typedef struct h2_gizclaw_registration_request
     h2_gizclaw_registration_request_t;
 
 typedef void (*h2_gizclaw_registration_completion_fn)(
-    void *user, h2_gizclaw_registration_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_registration_result_t *registration);
+    void *user, h2_gizclaw_registration_request_t *request);
 
 /** Register from a caller that exclusively owns and polls this client. */
 #if defined(H2_GIZCLAW_TESTING)
@@ -46,6 +44,14 @@ h2_pal_result_t h2_gizclaw_service_register_async(
 
 h2_pal_result_t h2_gizclaw_registration_request_cancel(
     h2_gizclaw_registration_request_t *request);
+h2_pal_result_t h2_gizclaw_registration_request_wait(
+    h2_gizclaw_registration_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_registration_request_operation_result(
+    const h2_gizclaw_registration_request_t *request);
+const h2_gizclaw_registration_result_t *
+h2_gizclaw_registration_request_response(
+    const h2_gizclaw_registration_request_t *request);
 
 void h2_gizclaw_registration_request_release(
     h2_gizclaw_registration_request_t *request);

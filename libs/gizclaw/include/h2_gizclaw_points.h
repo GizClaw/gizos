@@ -56,14 +56,10 @@ typedef struct h2_gizclaw_points_transaction_page {
 typedef struct h2_gizclaw_points_request h2_gizclaw_points_request_t;
 
 typedef void (*h2_gizclaw_points_get_completion_fn)(
-    void *user, h2_gizclaw_points_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_points_account_t *account);
+    void *user, h2_gizclaw_points_request_t *request);
 
 typedef void (*h2_gizclaw_points_list_completion_fn)(
-    void *user, h2_gizclaw_points_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_points_transaction_page_t *page);
+    void *user, h2_gizclaw_points_request_t *request);
 
 #if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_client_points_get(h2_gizclaw_client_t *client,
@@ -106,6 +102,14 @@ h2_pal_result_t h2_gizclaw_service_points_transactions_list_async(
 
 h2_pal_result_t
 h2_gizclaw_points_request_cancel(h2_gizclaw_points_request_t *request);
+h2_pal_result_t h2_gizclaw_points_request_wait(
+    h2_gizclaw_points_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *h2_gizclaw_points_request_operation_result(
+    const h2_gizclaw_points_request_t *request);
+const h2_gizclaw_points_account_t *h2_gizclaw_points_request_account(
+    const h2_gizclaw_points_request_t *request);
+const h2_gizclaw_points_transaction_page_t *h2_gizclaw_points_request_page(
+    const h2_gizclaw_points_request_t *request);
 
 /** Release the terminal request and all result storage borrowed by callback. */
 void h2_gizclaw_points_request_release(h2_gizclaw_points_request_t *request);

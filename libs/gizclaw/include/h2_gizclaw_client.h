@@ -56,18 +56,13 @@ typedef struct h2_gizclaw_speedtest_request h2_gizclaw_speedtest_request_t;
 typedef struct h2_gizclaw_peer_delete_request h2_gizclaw_peer_delete_request_t;
 
 typedef void (*h2_gizclaw_ping_completion_fn)(
-    void *user, h2_gizclaw_ping_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_ping_result_t *ping);
+    void *user, h2_gizclaw_ping_request_t *request);
 
 typedef void (*h2_gizclaw_speedtest_completion_fn)(
-    void *user, h2_gizclaw_speedtest_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_speedtest_result_t *speedtest);
+    void *user, h2_gizclaw_speedtest_request_t *request);
 
 typedef void (*h2_gizclaw_peer_delete_completion_fn)(
-    void *user, h2_gizclaw_peer_delete_request_t *request,
-    const h2_gizclaw_operation_result_t *result);
+    void *user, h2_gizclaw_peer_delete_request_t *request);
 
 /** Submit one Ping request to the service-owned network task. */
 h2_pal_result_t h2_gizclaw_service_ping_async(
@@ -77,6 +72,12 @@ h2_pal_result_t h2_gizclaw_service_ping_async(
 
 h2_pal_result_t
 h2_gizclaw_ping_request_cancel(h2_gizclaw_ping_request_t *request);
+h2_pal_result_t h2_gizclaw_ping_request_wait(
+    h2_gizclaw_ping_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *h2_gizclaw_ping_request_operation_result(
+    const h2_gizclaw_ping_request_t *request);
+const h2_gizclaw_ping_result_t *
+h2_gizclaw_ping_request_response(const h2_gizclaw_ping_request_t *request);
 
 void h2_gizclaw_ping_request_release(h2_gizclaw_ping_request_t *request);
 
@@ -128,6 +129,13 @@ h2_pal_result_t h2_gizclaw_service_speedtest_async(
 
 h2_pal_result_t
 h2_gizclaw_speedtest_request_cancel(h2_gizclaw_speedtest_request_t *request);
+h2_pal_result_t h2_gizclaw_speedtest_request_wait(
+    h2_gizclaw_speedtest_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_speedtest_request_operation_result(
+    const h2_gizclaw_speedtest_request_t *request);
+const h2_gizclaw_speedtest_result_t *h2_gizclaw_speedtest_request_response(
+    const h2_gizclaw_speedtest_request_t *request);
 
 void h2_gizclaw_speedtest_request_release(
     h2_gizclaw_speedtest_request_t *request);
@@ -138,6 +146,11 @@ h2_pal_result_t h2_gizclaw_service_delete_peer_async(
     h2_gizclaw_peer_delete_request_t **out_request);
 h2_pal_result_t h2_gizclaw_peer_delete_request_cancel(
     h2_gizclaw_peer_delete_request_t *request);
+h2_pal_result_t h2_gizclaw_peer_delete_request_wait(
+    h2_gizclaw_peer_delete_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_peer_delete_request_operation_result(
+    const h2_gizclaw_peer_delete_request_t *request);
 void h2_gizclaw_peer_delete_request_release(
     h2_gizclaw_peer_delete_request_t *request);
 

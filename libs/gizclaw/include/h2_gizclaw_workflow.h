@@ -50,15 +50,10 @@ typedef struct h2_gizclaw_workflow_page {
 typedef struct h2_gizclaw_workflow_request h2_gizclaw_workflow_request_t;
 
 typedef void (*h2_gizclaw_workflows_list_completion_fn)(
-    void *user, h2_gizclaw_workflow_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_workflow_page_t *page);
+    void *user, h2_gizclaw_workflow_request_t *request);
 
 typedef void (*h2_gizclaw_workflow_get_completion_fn)(
-    void *user, h2_gizclaw_workflow_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_workflow_t *workflow, const char *runtime_profile_name,
-    const char *runtime_profile_revision);
+    void *user, h2_gizclaw_workflow_request_t *request);
 
 h2_pal_result_t h2_gizclaw_service_workflows_list_async(
     h2_gizclaw_service_t *service, uint64_t identity,
@@ -73,6 +68,19 @@ h2_pal_result_t h2_gizclaw_service_workflow_get_async(
 
 h2_pal_result_t
 h2_gizclaw_workflow_request_cancel(h2_gizclaw_workflow_request_t *request);
+h2_pal_result_t h2_gizclaw_workflow_request_wait(
+    h2_gizclaw_workflow_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_workflow_request_operation_result(
+    const h2_gizclaw_workflow_request_t *request);
+const h2_gizclaw_workflow_page_t *h2_gizclaw_workflow_request_page(
+    const h2_gizclaw_workflow_request_t *request);
+const h2_gizclaw_workflow_t *h2_gizclaw_workflow_request_workflow(
+    const h2_gizclaw_workflow_request_t *request);
+const char *h2_gizclaw_workflow_request_runtime_profile_name(
+    const h2_gizclaw_workflow_request_t *request);
+const char *h2_gizclaw_workflow_request_runtime_profile_revision(
+    const h2_gizclaw_workflow_request_t *request);
 
 void h2_gizclaw_workflow_request_release(
     h2_gizclaw_workflow_request_t *request);

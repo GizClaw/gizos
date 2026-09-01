@@ -62,9 +62,7 @@ typedef void (*h2_gizclaw_operation_completion_fn)(
 
 /** Completion for one service-owned asynchronous unary RPC. */
 typedef void (*h2_gizclaw_async_rpc_completion_fn)(
-    void *user, h2_gizclaw_async_rpc_t *rpc,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_rpc_response_t *response);
+    void *user, h2_gizclaw_async_rpc_t *rpc);
 
 /** One mixed-frame event delivered on the service dispatch caller thread. */
 typedef h2_pal_result_t (*h2_gizclaw_async_stream_event_fn)(
@@ -73,9 +71,7 @@ typedef h2_pal_result_t (*h2_gizclaw_async_stream_event_fn)(
 
 /** Terminal completion for one service-owned mixed-frame RPC. */
 typedef void (*h2_gizclaw_async_stream_completion_fn)(
-    void *user, h2_gizclaw_async_stream_t *stream,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_rpc_response_t *response);
+    void *user, h2_gizclaw_async_stream_t *stream);
 
 /**
  * Report one fatal connection failure on the dispatch caller thread.
@@ -193,6 +189,18 @@ h2_pal_result_t h2_gizclaw_service_rpc_call_async(
 /** Request task-safe, idempotent cancellation of an asynchronous RPC. */
 h2_pal_result_t h2_gizclaw_async_rpc_cancel(h2_gizclaw_async_rpc_t *rpc);
 
+/** Wait until this RPC's callback has returned; another task must dispatch. */
+h2_pal_result_t h2_gizclaw_async_rpc_wait(h2_gizclaw_async_rpc_t *rpc,
+                                          uint32_t timeout_ms);
+
+/** Return the terminal operation result embedded in this RPC, or NULL. */
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_async_rpc_operation_result(const h2_gizclaw_async_rpc_t *rpc);
+
+/** Return the successful response embedded in this RPC, or NULL. */
+const h2_gizclaw_rpc_response_t *
+h2_gizclaw_async_rpc_response(const h2_gizclaw_async_rpc_t *rpc);
+
 /** Release one terminal RPC handle. Calls before completion are ignored. */
 void h2_gizclaw_async_rpc_release(h2_gizclaw_async_rpc_t *rpc);
 
@@ -206,11 +214,32 @@ h2_pal_result_t h2_gizclaw_service_rpc_stream_async(
 
 h2_pal_result_t
 h2_gizclaw_async_stream_cancel(h2_gizclaw_async_stream_t *stream);
+h2_pal_result_t h2_gizclaw_async_stream_wait(h2_gizclaw_async_stream_t *stream,
+                                             uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_async_stream_operation_result(
+    const h2_gizclaw_async_stream_t *stream);
+const h2_gizclaw_rpc_response_t *
+h2_gizclaw_async_stream_response(const h2_gizclaw_async_stream_t *stream);
 
 void h2_gizclaw_async_stream_release(h2_gizclaw_async_stream_t *stream);
 
 /** Request task-safe, idempotent cooperative cancellation without blocking. */
 h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation);
+
+/**
+ * Block the calling task until the operation callback has returned.
+ *
+ * Another task must continue calling `h2_gizclaw_service_dispatch()`. A
+ * timeout does not cancel or release the operation. Exactly one caller may
+ * wait on an operation, and the caller remains responsible for releasing it.
+ */
+h2_pal_result_t h2_gizclaw_operation_wait(h2_gizclaw_operation_t *operation,
+                                          uint32_t timeout_ms);
+
+/** Return the response-owning operation's terminal result, or NULL if pending. */
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_operation_result(const h2_gizclaw_operation_t *operation);
 
 /** Release the caller-owned operation handle exactly once; this is task-safe.
  */

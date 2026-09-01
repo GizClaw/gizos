@@ -110,10 +110,10 @@ static void async_rpc_complete(
     void *user, h2_gizclaw_operation_t *operation,
     const h2_gizclaw_operation_result_t *result) {
   (void)operation;
+  (void)result;
   h2_gizclaw_async_rpc_t *rpc = user;
   atomic_store_explicit(&rpc->terminal, true, memory_order_release);
-  rpc->completion(rpc->completion_user, rpc, result,
-                  result->result == H2_PAL_OK ? &rpc->response : NULL);
+  rpc->completion(rpc->completion_user, rpc);
 }
 
 h2_pal_result_t h2_gizclaw_service_rpc_call_async(
@@ -165,6 +165,31 @@ h2_pal_result_t h2_gizclaw_async_rpc_cancel(h2_gizclaw_async_rpc_t *rpc) {
   if (rpc == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   return h2_gizclaw_operation_cancel(rpc->operation);
+}
+
+h2_pal_result_t h2_gizclaw_async_rpc_wait(h2_gizclaw_async_rpc_t *rpc,
+                                          uint32_t timeout_ms) {
+  if (rpc == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  return h2_gizclaw_operation_wait(rpc->operation, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_async_rpc_operation_result(const h2_gizclaw_async_rpc_t *rpc) {
+  if (rpc == NULL ||
+      !atomic_load_explicit(&rpc->terminal, memory_order_acquire)) {
+    return NULL;
+  }
+  return h2_gizclaw_operation_result(rpc->operation);
+}
+
+const h2_gizclaw_rpc_response_t *
+h2_gizclaw_async_rpc_response(const h2_gizclaw_async_rpc_t *rpc) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_async_rpc_operation_result(rpc);
+  if (result == NULL || result->result != H2_PAL_OK)
+    return NULL;
+  return &rpc->response;
 }
 
 void h2_gizclaw_async_rpc_release(h2_gizclaw_async_rpc_t *rpc) {

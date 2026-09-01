@@ -183,7 +183,7 @@ static int result_from_gzc(int result) {
   }
 }
 
-int h2_gizclaw_client_telemetry_send(
+static int telemetry_send_on_net(
     h2_gizclaw_client_t *client, const h2_gizclaw_telemetry_frame_t *frame) {
   if (client == NULL || frame == NULL || frame->sequence == 0u ||
       frame->observations == NULL || frame->observation_count == 0u ||
@@ -213,11 +213,19 @@ int h2_gizclaw_client_telemetry_send(
   return result_from_gzc(gzc_client_send_telemetry(gzc, &mapped));
 }
 
+#if defined(H2_GIZCLAW_TESTING)
+int h2_gizclaw_client_telemetry_send(
+    h2_gizclaw_client_t *client, const h2_gizclaw_telemetry_frame_t *frame) {
+  return telemetry_send_on_net(client, frame);
+}
+#endif
+
 struct h2_gizclaw_telemetry_request {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_operation_t *operation;
   h2_gizclaw_telemetry_completion_fn completion;
   void *completion_user;
+  h2_gizclaw_operation_result_t operation_result;
   h2_gizclaw_telemetry_frame_t frame;
   h2_gizclaw_telemetry_observation_t
       observations[H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS];
@@ -300,16 +308,16 @@ telemetry_run(void *user, h2_gizclaw_client_t *client,
   if (h2_gizclaw_cancel_requested(cancel_token))
     return H2_PAL_ERR_CLOSED;
   h2_gizclaw_telemetry_request_t *request = user;
-  return (h2_pal_result_t)h2_gizclaw_client_telemetry_send(client,
-                                                           &request->frame);
+  return (h2_pal_result_t)telemetry_send_on_net(client, &request->frame);
 }
 
 static void telemetry_complete(void *user, h2_gizclaw_operation_t *operation,
                                const h2_gizclaw_operation_result_t *result) {
   (void)operation;
   h2_gizclaw_telemetry_request_t *request = user;
+  request->operation_result = *result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request, result);
+  request->completion(request->completion_user, request);
 }
 
 h2_pal_result_t h2_gizclaw_service_telemetry_send_async(
@@ -349,6 +357,22 @@ h2_gizclaw_telemetry_request_cancel(h2_gizclaw_telemetry_request_t *request) {
   if (request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   return h2_gizclaw_operation_cancel(request->operation);
+}
+
+h2_pal_result_t h2_gizclaw_telemetry_request_wait(
+    h2_gizclaw_telemetry_request_t *request, uint32_t timeout_ms) {
+  return request == NULL
+             ? H2_PAL_ERR_INVALID_ARG
+             : h2_gizclaw_operation_wait(request->operation, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_telemetry_request_operation_result(
+    const h2_gizclaw_telemetry_request_t *request) {
+  return request != NULL &&
+                 atomic_load_explicit(&request->terminal, memory_order_acquire)
+             ? &request->operation_result
+             : NULL;
 }
 
 void h2_gizclaw_telemetry_request_release(

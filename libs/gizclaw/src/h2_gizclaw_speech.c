@@ -51,6 +51,7 @@ struct h2_gizclaw_speech_request {
   char instruction[H2_GIZCLAW_SPEECH_REQUEST_INSTRUCTION_MAX];
   char transcript[H2_GIZCLAW_SPEECH_REQUEST_TRANSCRIPT_MAX];
   char result_json[H2_GIZCLAW_SPEECH_REQUEST_RESULT_MAX];
+  h2_gizclaw_operation_result_t operation_result;
   h2_gizclaw_speech_request_message_t pending_message;
   bool has_pending_message;
   bool write_finished;
@@ -588,17 +589,12 @@ speech_request_complete(void *user, h2_gizclaw_operation_t *operation,
                         const h2_gizclaw_operation_result_t *result) {
   (void)operation;
   h2_gizclaw_speech_extract_request_t *request = user;
+  request->operation_result = *result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  const h2_gizclaw_str_t transcript = {.data = request->transcript,
-                                       .len = strlen(request->transcript)};
   if (request->kind == H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT) {
-    request->completion.extract(
-        request->completion_user, request, result, transcript,
-        (h2_gizclaw_str_t){.data = request->result_json,
-                           .len = strlen(request->result_json)});
+    request->completion.extract(request->completion_user, request);
   } else {
-    request->completion.transcribe(request->completion_user, request, result,
-                                   transcript);
+    request->completion.transcribe(request->completion_user, request);
   }
 }
 
@@ -775,6 +771,38 @@ int h2_gizclaw_speech_extract_request_cancel(
   return h2_gizclaw_operation_cancel(request->operation);
 }
 
+int h2_gizclaw_speech_extract_request_wait(
+    h2_gizclaw_speech_extract_request_t *request, uint32_t timeout_ms) {
+  return request == NULL ? H2_PAL_ERR_INVALID_ARG
+                         : h2_gizclaw_operation_wait(request->operation,
+                                                     timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_speech_extract_request_operation_result(
+    const h2_gizclaw_speech_extract_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire))
+    return NULL;
+  return &request->operation_result;
+}
+
+h2_gizclaw_str_t h2_gizclaw_speech_extract_request_transcript(
+    const h2_gizclaw_speech_extract_request_t *request) {
+  if (h2_gizclaw_speech_extract_request_operation_result(request) == NULL)
+    return (h2_gizclaw_str_t){0};
+  return (h2_gizclaw_str_t){.data = request->transcript,
+                            .len = strlen(request->transcript)};
+}
+
+h2_gizclaw_str_t h2_gizclaw_speech_extract_request_result_json(
+    const h2_gizclaw_speech_extract_request_t *request) {
+  if (h2_gizclaw_speech_extract_request_operation_result(request) == NULL)
+    return (h2_gizclaw_str_t){0};
+  return (h2_gizclaw_str_t){.data = request->result_json,
+                            .len = strlen(request->result_json)};
+}
+
 void h2_gizclaw_speech_extract_request_release(
     h2_gizclaw_speech_extract_request_t *request) {
   if (request == NULL ||
@@ -799,6 +827,22 @@ int h2_gizclaw_speech_transcribe_request_commit(
 int h2_gizclaw_speech_transcribe_request_cancel(
     h2_gizclaw_speech_transcribe_request_t *request) {
   return h2_gizclaw_speech_extract_request_cancel(request);
+}
+
+int h2_gizclaw_speech_transcribe_request_wait(
+    h2_gizclaw_speech_transcribe_request_t *request, uint32_t timeout_ms) {
+  return h2_gizclaw_speech_extract_request_wait(request, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_speech_transcribe_request_operation_result(
+    const h2_gizclaw_speech_transcribe_request_t *request) {
+  return h2_gizclaw_speech_extract_request_operation_result(request);
+}
+
+h2_gizclaw_str_t h2_gizclaw_speech_transcribe_request_transcript(
+    const h2_gizclaw_speech_transcribe_request_t *request) {
+  return h2_gizclaw_speech_extract_request_transcript(request);
 }
 
 void h2_gizclaw_speech_transcribe_request_release(

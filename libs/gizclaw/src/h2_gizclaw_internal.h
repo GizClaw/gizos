@@ -87,6 +87,17 @@ int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
                                       h2_gizclaw_rpc_bytes_t params_payload,
                                       h2_gizclaw_rpc_stream_fn on_event,
                                       void *user);
+typedef int (*h2_gizclaw_rpc_call_interceptor_fn)(
+    void *user, h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_rpc_bytes_t params_payload,
+    h2_gizclaw_rpc_response_t *out_response);
+typedef int (*h2_gizclaw_rpc_stream_interceptor_fn)(
+    void *user, h2_gizclaw_client_t *client, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_rpc_bytes_t params_payload, h2_gizclaw_rpc_stream_fn on_event,
+    void *event_user);
+void h2_gizclaw_client_set_rpc_interceptor_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_rpc_call_interceptor_fn call,
+    h2_gizclaw_rpc_stream_interceptor_fn stream, void *user);
 int h2_gizclaw_client_delete_peer(h2_gizclaw_client_t *client);
 
 #if defined(H2_GIZCLAW_TESTING)

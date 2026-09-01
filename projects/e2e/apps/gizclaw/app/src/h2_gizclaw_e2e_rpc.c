@@ -75,10 +75,12 @@ typedef struct connectivity_state {
 } connectivity_state_t;
 
 static void connectivity_ping_complete(
-    void *user, h2_gizclaw_ping_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_ping_result_t *ping) {
+    void *user, h2_gizclaw_ping_request_t *request) {
   connectivity_state_t *state = user;
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_ping_request_operation_result(request);
+  const h2_gizclaw_ping_result_t *ping =
+      h2_gizclaw_ping_request_response(request);
   int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
   if (rc == H2_PAL_OK && ping == NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
@@ -90,10 +92,12 @@ static void connectivity_ping_complete(
 }
 
 static void connectivity_speed_complete(
-    void *user, h2_gizclaw_speedtest_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_speedtest_result_t *speedtest) {
+    void *user, h2_gizclaw_speedtest_request_t *request) {
   connectivity_state_t *state = user;
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_speedtest_request_operation_result(request);
+  const h2_gizclaw_speedtest_result_t *speedtest =
+      h2_gizclaw_speedtest_request_response(request);
   int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
   if (rc == H2_PAL_OK && speedtest == NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
@@ -102,6 +106,17 @@ static void connectivity_speed_complete(
   atomic_store_explicit(&state->result, rc, memory_order_release);
   atomic_store_explicit(&state->complete, true, memory_order_release);
   h2_gizclaw_speedtest_request_release(request);
+}
+
+static void connectivity_telemetry_complete(
+    void *user, h2_gizclaw_telemetry_request_t *request) {
+  connectivity_state_t *state = user;
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_telemetry_request_operation_result(request);
+  const int rc = result == NULL ? H2_PAL_ERR_INVALID_STATE : result->result;
+  atomic_store_explicit(&state->result, rc, memory_order_release);
+  atomic_store_explicit(&state->complete, true, memory_order_release);
+  h2_gizclaw_telemetry_request_release(request);
 }
 
 static int connectivity_wait(connectivity_state_t *state) {
@@ -1193,9 +1208,62 @@ static int run_telemetry(h2_gizclaw_e2e_fixture_t *fixture) {
       .observations = observations,
       .observation_count = sizeof(observations) / sizeof(observations[0]),
   };
-  return checked("h2_gizclaw_client_telemetry_send", "telemetry",
-                 h2_gizclaw_client_telemetry_send(
-                     fixture->actors[H2_GIZCLAW_E2E_OWNER].client, &frame));
+  h2_gizclaw_config_t client_config;
+  memset(&client_config, 0, sizeof(client_config));
+  rc = h2_gizclaw_e2e_fixture_transfer_actor_to_service(
+      fixture, H2_GIZCLAW_E2E_OWNER, &client_config);
+  if (rc != H2_PAL_OK)
+    return checked("h2_gizclaw_service_telemetry_send_async", "telemetry", rc);
+
+  connectivity_state_t state;
+  memset(&state, 0, sizeof(state));
+  state.fixture = fixture;
+  atomic_init(&state.complete, false);
+  atomic_init(&state.result, H2_PAL_OK);
+  const h2_gizclaw_service_config_t config = {
+      .client_config = &client_config,
+      .task = fixture->runtime->task,
+      .queue = fixture->runtime->queue,
+      .sync = fixture->runtime->sync,
+      .net_task_options = {.min_stack_size = 32768u},
+      .operation_capacity = 1u,
+      .client_poll_timeout_ms = 10,
+  };
+  rc = h2_gizclaw_service_init(&config, &state.service);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_start(state.service);
+  h2_gizclaw_telemetry_request_t *request = NULL;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_service_telemetry_send_async(
+        state.service, 10u, &frame, connectivity_telemetry_complete, &state,
+        &request);
+  }
+  if (rc == H2_PAL_OK)
+    rc = connectivity_wait(&state);
+  if (rc != H2_PAL_OK && request != NULL)
+    (void)h2_gizclaw_telemetry_request_cancel(request);
+  const int stop_rc = state.service == NULL
+                          ? H2_PAL_OK
+                          : h2_gizclaw_service_stop(state.service);
+  if (state.service != NULL) {
+    for (;;) {
+      size_t dispatched = 0u;
+      const int dispatch_rc =
+          h2_gizclaw_service_dispatch(state.service, 8u, &dispatched);
+      if (rc == H2_PAL_OK)
+        rc = dispatch_rc;
+      if (dispatch_rc != H2_PAL_OK || dispatched == 0u)
+        break;
+    }
+  }
+  const int deinit_rc = state.service == NULL
+                            ? H2_PAL_OK
+                            : h2_gizclaw_service_deinit(state.service);
+  if (rc == H2_PAL_OK)
+    rc = stop_rc;
+  if (rc == H2_PAL_OK)
+    rc = deinit_rc;
+  return checked("h2_gizclaw_service_telemetry_send_async", "telemetry", rc);
 }
 
 int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {

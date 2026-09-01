@@ -43,9 +43,7 @@ int h2_gizclaw_client_profile_put_emoji(h2_gizclaw_client_t *client,
 
 /** Completion for one task-safe profile request. */
 typedef void (*h2_gizclaw_profile_completion_fn)(
-    void *user, h2_gizclaw_profile_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_profile_t *profile);
+    void *user, h2_gizclaw_profile_request_t *request);
 
 /** Read the current caller's public profile without blocking the caller. */
 h2_pal_result_t h2_gizclaw_service_profile_get_async(
@@ -78,6 +76,12 @@ h2_pal_result_t h2_gizclaw_service_profile_put_emoji_async(
 /** Request task-safe, idempotent cancellation of a profile request. */
 h2_pal_result_t
 h2_gizclaw_profile_request_cancel(h2_gizclaw_profile_request_t *request);
+h2_pal_result_t h2_gizclaw_profile_request_wait(
+    h2_gizclaw_profile_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *h2_gizclaw_profile_request_operation_result(
+    const h2_gizclaw_profile_request_t *request);
+const h2_gizclaw_profile_t *
+h2_gizclaw_profile_request_response(const h2_gizclaw_profile_request_t *request);
 
 /** Release one terminal profile request. Calls before completion are ignored.
  */

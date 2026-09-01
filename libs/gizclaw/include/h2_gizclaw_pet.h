@@ -143,9 +143,7 @@ typedef struct h2_gizclaw_pet_result {
 } h2_gizclaw_pet_result_t;
 
 typedef void (*h2_gizclaw_pet_completion_fn)(
-    void *user, h2_gizclaw_pet_request_t *request,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_pet_result_t *result);
+    void *user, h2_gizclaw_pet_request_t *request);
 
 h2_pal_result_t h2_gizclaw_service_pet_list_async(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
@@ -180,6 +178,12 @@ h2_pal_result_t h2_gizclaw_service_pet_actions_get_async(
     h2_gizclaw_pet_request_t **out_request);
 h2_pal_result_t
 h2_gizclaw_pet_request_cancel(h2_gizclaw_pet_request_t *request);
+h2_pal_result_t h2_gizclaw_pet_request_wait(
+    h2_gizclaw_pet_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *h2_gizclaw_pet_request_operation_result(
+    const h2_gizclaw_pet_request_t *request);
+const h2_gizclaw_pet_result_t *
+h2_gizclaw_pet_request_response(const h2_gizclaw_pet_request_t *request);
 void h2_gizclaw_pet_request_release(h2_gizclaw_pet_request_t *request);
 
 #if defined(H2_GIZCLAW_TESTING)

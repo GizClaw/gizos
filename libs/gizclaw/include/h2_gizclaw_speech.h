@@ -19,14 +19,10 @@ typedef struct h2_gizclaw_speech_request h2_gizclaw_speech_transcribe_request_t;
 #define H2_GIZCLAW_SPEECH_OPUS_MAX_BYTES 1275u
 
 typedef void (*h2_gizclaw_speech_extract_request_completion_fn)(
-    void *user, h2_gizclaw_speech_extract_request_t *request,
-    const h2_gizclaw_operation_result_t *operation_result,
-    h2_gizclaw_str_t transcript, h2_gizclaw_str_t result_json);
+    void *user, h2_gizclaw_speech_extract_request_t *request);
 
 typedef void (*h2_gizclaw_speech_transcribe_request_completion_fn)(
-    void *user, h2_gizclaw_speech_transcribe_request_t *request,
-    const h2_gizclaw_operation_result_t *operation_result,
-    h2_gizclaw_str_t transcript);
+    void *user, h2_gizclaw_speech_transcribe_request_t *request);
 
 typedef struct h2_gizclaw_speech_transcribe_options {
   h2_gizclaw_str_t model_name;
@@ -126,6 +122,13 @@ int h2_gizclaw_speech_transcribe_request_commit(
 
 int h2_gizclaw_speech_transcribe_request_cancel(
     h2_gizclaw_speech_transcribe_request_t *request);
+int h2_gizclaw_speech_transcribe_request_wait(
+    h2_gizclaw_speech_transcribe_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_speech_transcribe_request_operation_result(
+    const h2_gizclaw_speech_transcribe_request_t *request);
+h2_gizclaw_str_t h2_gizclaw_speech_transcribe_request_transcript(
+    const h2_gizclaw_speech_transcribe_request_t *request);
 
 void h2_gizclaw_speech_transcribe_request_release(
     h2_gizclaw_speech_transcribe_request_t *request);
@@ -155,6 +158,15 @@ int h2_gizclaw_speech_extract_request_commit(
 /** Request task-safe cooperative cancellation. */
 int h2_gizclaw_speech_extract_request_cancel(
     h2_gizclaw_speech_extract_request_t *request);
+int h2_gizclaw_speech_extract_request_wait(
+    h2_gizclaw_speech_extract_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_speech_extract_request_operation_result(
+    const h2_gizclaw_speech_extract_request_t *request);
+h2_gizclaw_str_t h2_gizclaw_speech_extract_request_transcript(
+    const h2_gizclaw_speech_extract_request_t *request);
+h2_gizclaw_str_t h2_gizclaw_speech_extract_request_result_json(
+    const h2_gizclaw_speech_extract_request_t *request);
 
 /** Release a terminal request after its completion callback returns. */
 void h2_gizclaw_speech_extract_request_release(

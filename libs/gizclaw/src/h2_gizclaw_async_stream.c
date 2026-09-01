@@ -85,10 +85,10 @@ static void stream_complete(
     void *user, h2_gizclaw_operation_t *operation,
     const h2_gizclaw_operation_result_t *result) {
   (void)operation;
+  (void)result;
   h2_gizclaw_async_stream_t *stream = user;
   atomic_store_explicit(&stream->terminal, true, memory_order_release);
-  stream->completion(stream->callback_user, stream, result,
-                     result->result == H2_PAL_OK ? &stream->response : NULL);
+  stream->completion(stream->callback_user, stream);
 }
 
 h2_pal_result_t h2_gizclaw_service_rpc_stream_async(
@@ -140,6 +140,31 @@ h2_pal_result_t
 h2_gizclaw_async_stream_cancel(h2_gizclaw_async_stream_t *stream) {
   return stream == NULL ? H2_PAL_ERR_INVALID_ARG
                         : h2_gizclaw_operation_cancel(stream->operation);
+}
+
+h2_pal_result_t h2_gizclaw_async_stream_wait(h2_gizclaw_async_stream_t *stream,
+                                             uint32_t timeout_ms) {
+  return stream == NULL
+             ? H2_PAL_ERR_INVALID_ARG
+             : h2_gizclaw_operation_wait(stream->operation, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_async_stream_operation_result(
+    const h2_gizclaw_async_stream_t *stream) {
+  if (stream == NULL ||
+      !atomic_load_explicit(&stream->terminal, memory_order_acquire))
+    return NULL;
+  return h2_gizclaw_operation_result(stream->operation);
+}
+
+const h2_gizclaw_rpc_response_t *
+h2_gizclaw_async_stream_response(const h2_gizclaw_async_stream_t *stream) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_async_stream_operation_result(stream);
+  if (result == NULL || result->result != H2_PAL_OK)
+    return NULL;
+  return &stream->response;
 }
 
 void h2_gizclaw_async_stream_release(h2_gizclaw_async_stream_t *stream) {

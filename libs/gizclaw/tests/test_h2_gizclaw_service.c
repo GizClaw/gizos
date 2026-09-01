@@ -23,6 +23,9 @@ typedef struct test_env {
   atomic_uint run_exit_count;
   atomic_uint async_start_count;
   atomic_uint async_poll_count;
+  atomic_uint rpc_start_count;
+  atomic_uint rpc_result_count;
+  atomic_uint rpc_destroy_count;
   atomic_uint prepare_count;
   atomic_uint progress_call_count;
   atomic_uint progress_callback_count;
@@ -51,6 +54,9 @@ typedef struct test_env {
   pthread_t app_thread;
   atomic_uint terminal_count;
   h2_pal_result_t terminal_result;
+  atomic_bool sync_rpc_returned;
+  h2_pal_result_t sync_rpc_result;
+  h2_gizclaw_async_rpc_t *sync_rpc;
 } test_env_t;
 
 static test_env_t *s_env;
@@ -147,6 +153,58 @@ static const h2_gizclaw_service_client_ops_t s_client_ops = {
     .deinit = fake_client_deinit,
 };
 
+static int fake_rpc_start(h2_gizclaw_client_t *client,
+                          h2_gizclaw_rpc_method_t method,
+                          h2_gizclaw_rpc_bytes_t params_payload,
+                          uint32_t timeout_ms,
+                          h2_gizclaw_rpc_request_t **out_request) {
+  assert(client == (h2_gizclaw_client_t *)s_env);
+  assert(method == H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET);
+  assert(params_payload.len == 3u);
+  assert(memcmp(params_payload.data, "req", 3u) == 0);
+  assert(timeout_ms == 1234u);
+  atomic_fetch_add_explicit(&s_env->rpc_start_count, 1u, memory_order_release);
+  *out_request = (h2_gizclaw_rpc_request_t *)s_env;
+  return H2_PAL_OK;
+}
+
+static int fake_rpc_result(h2_gizclaw_rpc_request_t *request,
+                           h2_gizclaw_rpc_response_t *out_response) {
+  assert(request == (h2_gizclaw_rpc_request_t *)s_env);
+  const unsigned count = atomic_fetch_add_explicit(&s_env->rpc_result_count, 1u,
+                                                   memory_order_release) +
+                         1u;
+  if (count < 2u)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  const h2_pal_mem_api_t *allocator =
+      s_env->service->config.client_config->allocator;
+  uint8_t *payload = h2_pal_mem_alloc(allocator, 3u);
+  assert(payload != NULL);
+  memcpy(payload, "rsp", 3u);
+  *out_response = (h2_gizclaw_rpc_response_t){
+      .result_payload = payload,
+      .result_payload_len = 3u,
+  };
+  return H2_PAL_OK;
+}
+
+static void fake_rpc_cancel(h2_gizclaw_rpc_request_t *request) {
+  assert(request == (h2_gizclaw_rpc_request_t *)s_env);
+}
+
+static void fake_rpc_destroy(h2_gizclaw_rpc_request_t *request) {
+  assert(request == (h2_gizclaw_rpc_request_t *)s_env);
+  atomic_fetch_add_explicit(&s_env->rpc_destroy_count, 1u,
+                            memory_order_release);
+}
+
+static const h2_gizclaw_async_rpc_ops_t s_rpc_ops = {
+    .start = fake_rpc_start,
+    .result = fake_rpc_result,
+    .cancel = fake_rpc_cancel,
+    .destroy = fake_rpc_destroy,
+};
+
 static bool original_cancel_requested(void *user) {
   test_env_t *env = user;
   return atomic_load_explicit(&env->original_cancel, memory_order_acquire);
@@ -227,8 +285,8 @@ poll_pending(void *user, h2_gizclaw_client_t *client,
   assert(client == (h2_gizclaw_client_t *)env);
   if (h2_gizclaw_cancel_requested(cancel_token))
     return H2_PAL_ERR_CLOSED;
-  const unsigned count = atomic_fetch_add_explicit(
-                             &env->async_poll_count, 1u, memory_order_release) +
+  const unsigned count = atomic_fetch_add_explicit(&env->async_poll_count, 1u,
+                                                   memory_order_release) +
                          1u;
   return count >= 3u ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
 }
@@ -275,6 +333,7 @@ static void record_completion(void *user, h2_gizclaw_operation_t *operation,
                               const h2_gizclaw_operation_result_t *result) {
   test_env_t *env = user;
   assert(pthread_equal(pthread_self(), env->app_thread));
+  assert(h2_gizclaw_operation_result(operation) == result);
   const size_t index =
       atomic_load_explicit(&env->completion_count, memory_order_relaxed);
   assert(index < 8u);
@@ -340,6 +399,26 @@ static void wait_until(test_env_t *env, size_t completion_count,
     sched_yield();
   }
   assert(false && "caller did not dispatch callback");
+}
+
+static void record_rpc_completion(void *user, h2_gizclaw_async_rpc_t *rpc) {
+  test_env_t *env = user;
+  assert(pthread_equal(pthread_self(), env->app_thread));
+  assert(rpc == env->sync_rpc);
+}
+
+static void *run_sync_rpc(void *user) {
+  test_env_t *env = user;
+  env->sync_rpc_result = h2_gizclaw_service_rpc_call_async(
+      env->service, 70u, H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET,
+      (h2_gizclaw_rpc_bytes_t){.data = (const uint8_t *)"req", .len = 3u},
+      1234u, record_rpc_completion, env, &env->sync_rpc);
+  if (env->sync_rpc_result == H2_PAL_OK) {
+    env->sync_rpc_result = h2_gizclaw_async_rpc_wait(
+        env->sync_rpc, H2_PAL_SYNC_WAIT_FOREVER);
+  }
+  atomic_store_explicit(&env->sync_rpc_returned, true, memory_order_release);
+  return NULL;
 }
 
 static int fail_task_start(void *user, const h2_pal_task_options_t *options,
@@ -431,8 +510,8 @@ static void test_fifo_capacity_and_dispatch(void) {
   assert(atomic_load_explicit(&env.event_dispatch_count, memory_order_acquire) >
          0u);
   wait_until(&env, 2u, 0u, 0u);
-  assert(atomic_load_explicit(&env.event_callback_count, memory_order_acquire) ==
-         1u);
+  assert(atomic_load_explicit(&env.event_callback_count,
+                              memory_order_acquire) == 1u);
   assert(env.completed[0] == 1u);
   assert(env.completed[1] == 2u);
 
@@ -758,6 +837,48 @@ static void test_stop_racing_progress_drains_once(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+static void test_sync_rpc_waits_on_semaphore_and_external_dispatch(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 1u);
+  h2_gizclaw_async_rpc_test_set_ops(&s_rpc_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+
+  pthread_t waiter;
+  assert(pthread_create(&waiter, NULL, run_sync_rpc, &env) == 0);
+  wait_for_count(&env.rpc_start_count, 1u);
+  wait_for_count(&env.rpc_result_count, 2u);
+  assert(!atomic_load_explicit(&env.sync_rpc_returned, memory_order_acquire));
+
+  size_t total_dispatched = 0u;
+  for (unsigned spin = 0u;
+       spin < 1000000u &&
+       !atomic_load_explicit(&env.sync_rpc_returned, memory_order_acquire);
+       ++spin) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
+    total_dispatched += dispatched;
+    if (dispatched == 0u)
+      sched_yield();
+  }
+  assert(total_dispatched >= 1u);
+  assert(pthread_join(waiter, NULL) == 0);
+  assert(env.sync_rpc_result == H2_PAL_OK);
+  const h2_gizclaw_operation_result_t *operation_result =
+      h2_gizclaw_async_rpc_operation_result(env.sync_rpc);
+  const h2_gizclaw_rpc_response_t *response =
+      h2_gizclaw_async_rpc_response(env.sync_rpc);
+  assert(operation_result != NULL && operation_result->result == H2_PAL_OK);
+  assert(response != NULL && response->result_payload_len == 3u);
+  assert(memcmp(response->result_payload, "rsp", 3u) == 0);
+  assert(atomic_load_explicit(&env.rpc_destroy_count, memory_order_acquire) ==
+         1u);
+
+  h2_gizclaw_async_rpc_release(env.sync_rpc);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 int main(void) {
   test_fifo_capacity_and_dispatch();
   test_pending_operation_does_not_block_following_work();
@@ -774,6 +895,7 @@ int main(void) {
   test_progress_runs_on_caller_thread_and_returns_result();
   test_cancel_after_progress_claim_waits_for_callback();
   test_stop_racing_progress_drains_once();
+  test_sync_rpc_waits_on_semaphore_and_external_dispatch();
   h2_gizclaw_service_test_set_client_ops(NULL);
   puts("h2_gizclaw service tests passed");
   return 0;

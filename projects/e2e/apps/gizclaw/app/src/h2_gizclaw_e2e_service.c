@@ -33,10 +33,12 @@ static void keep_first_atomic_failure(int candidate, atomic_int *result) {
 }
 
 static void registration_completion(
-    void *user, h2_gizclaw_registration_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_registration_result_t *registration) {
+    void *user, h2_gizclaw_registration_request_t *request) {
   service_case_state_t *state = user;
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_registration_request_operation_result(request);
+  const h2_gizclaw_registration_result_t *registration =
+      h2_gizclaw_registration_request_response(request);
   int callback_rc = H2_PAL_OK;
   if (state == NULL || request == NULL || result == NULL)
     return;

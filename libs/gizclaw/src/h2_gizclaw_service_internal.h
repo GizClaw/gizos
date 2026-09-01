@@ -4,6 +4,7 @@
 #include "h2_gizclaw_service.h"
 
 #include <stdbool.h>
+#include <stdatomic.h>
 
 typedef enum h2_gizclaw_operation_state {
   H2_GIZCLAW_OPERATION_QUEUED = 0,
@@ -26,6 +27,8 @@ struct h2_gizclaw_operation {
   h2_gizclaw_operation_completion_fn completion;
   void *user;
   h2_gizclaw_operation_result_t result;
+  h2_pal_semaphore_t *completed;
+  atomic_bool terminal;
   h2_gizclaw_operation_state_t state;
   bool cancel_requested;
   bool caller_reference;

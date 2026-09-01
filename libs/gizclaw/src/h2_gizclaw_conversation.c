@@ -37,6 +37,7 @@ struct h2_gizclaw_conversation_request {
   int timeout_ms;
   h2_gizclaw_conversation_request_message_t pending_message;
   h2_gizclaw_conversation_event_t dispatch_event;
+  h2_gizclaw_operation_result_t operation_result;
   bool has_pending_message;
   atomic_bool committed;
   atomic_bool terminal;
@@ -627,8 +628,9 @@ conversation_request_complete(void *user, h2_gizclaw_operation_t *operation,
                               const h2_gizclaw_operation_result_t *result) {
   (void)operation;
   h2_gizclaw_conversation_request_t *request = user;
+  request->operation_result = *result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->user, request, result);
+  request->completion(request->user, request);
 }
 
 h2_pal_result_t h2_gizclaw_service_conversation_create(
@@ -736,6 +738,22 @@ h2_pal_result_t h2_gizclaw_conversation_request_cancel(
   if (request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   return h2_gizclaw_operation_cancel(request->operation);
+}
+
+h2_pal_result_t h2_gizclaw_conversation_request_wait(
+    h2_gizclaw_conversation_request_t *request, uint32_t timeout_ms) {
+  return request == NULL ? H2_PAL_ERR_INVALID_ARG
+                         : h2_gizclaw_operation_wait(request->operation,
+                                                     timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_conversation_request_operation_result(
+    const h2_gizclaw_conversation_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire))
+    return NULL;
+  return &request->operation_result;
 }
 
 void h2_gizclaw_conversation_request_release(

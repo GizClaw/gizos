@@ -137,6 +137,8 @@ static bool original_cancel_requested(h2_gizclaw_service_t *service) {
 
 static void free_operation_if_unreferenced(h2_gizclaw_operation_t *operation) {
   if (!operation->caller_reference && !operation->internal_reference) {
+    (void)h2_pal_semaphore_destroy(operation->service->config.sync,
+                                   operation->completed);
     h2_pal_mem_free(operation->service->config.client_config->allocator,
                     operation);
   }
@@ -531,10 +533,15 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
     return;
   }
 
-  operation->completion(operation->user, operation, &operation->result);
   if (lock_service(service) != H2_PAL_OK)
     return;
   operation->state = H2_GIZCLAW_OPERATION_TERMINAL;
+  unlock_service(service);
+  atomic_store_explicit(&operation->terminal, true, memory_order_release);
+  operation->completion(operation->user, operation, &operation->result);
+  (void)h2_pal_semaphore_give(service->config.sync, operation->completed);
+  if (lock_service(service) != H2_PAL_OK)
+    return;
   operation->internal_reference = false;
   --service->active_count;
   free_operation_if_unreferenced(operation);
@@ -736,6 +743,19 @@ static h2_pal_result_t submit_operation(
   operation->caller_reference = true;
   operation->internal_reference = true;
   operation->cancel_token.operation = operation;
+  const h2_pal_semaphore_config_t completed_config = {
+      .name = "$gizclaw/request-wait",
+      .allocator = service->config.client_config->allocator,
+      .initial_count = 0u,
+      .max_count = 1u,
+  };
+  rc = h2_pal_semaphore_create(service->config.sync, &completed_config,
+                               &operation->completed);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(service->config.client_config->allocator, operation);
+    unlock_service(service);
+    return rc;
+  }
   ++service->active_count;
   ++service->caller_reference_count;
   rc = (h2_pal_result_t)h2_pal_queue_send(service->config.queue,
@@ -744,6 +764,8 @@ static h2_pal_result_t submit_operation(
   if (rc != H2_PAL_OK) {
     --service->active_count;
     --service->caller_reference_count;
+    (void)h2_pal_semaphore_destroy(service->config.sync,
+                                   operation->completed);
     h2_pal_mem_free(service->config.client_config->allocator, operation);
     unlock_service(service);
     return rc == H2_PAL_ERR_FULL ? H2_PAL_ERR_WOULD_BLOCK : rc;
@@ -759,7 +781,7 @@ h2_gizclaw_service_submit(h2_gizclaw_service_t *service, uint64_t identity,
                           h2_gizclaw_operation_completion_fn completion,
                           void *user, h2_gizclaw_operation_t **out_operation) {
   return submit_operation(service, identity, run, NULL, completion, user,
-                          out_operation);
+                           out_operation);
 }
 
 h2_pal_result_t h2_gizclaw_service_submit_async_internal(
@@ -789,6 +811,22 @@ h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation) {
   }
   unlock_service(service);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_operation_wait(h2_gizclaw_operation_t *operation,
+                                          uint32_t timeout_ms) {
+  if (operation == NULL || operation->service == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  return h2_pal_semaphore_take(operation->service->config.sync,
+                               operation->completed, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_operation_result(const h2_gizclaw_operation_t *operation) {
+  if (operation == NULL ||
+      !atomic_load_explicit(&operation->terminal, memory_order_acquire))
+    return NULL;
+  return &operation->result;
 }
 
 void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation) {

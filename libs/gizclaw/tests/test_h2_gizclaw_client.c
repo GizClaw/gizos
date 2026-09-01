@@ -5,8 +5,8 @@
 #include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_profile_internal.h"
-#include "h2_gizclaw_registration_internal.h"
 #include "h2_gizclaw_registration.h"
+#include "h2_gizclaw_registration_internal.h"
 #include "h2_gizclaw_social.h"
 #include "h2_gizclaw_speech.h"
 #include "h2_gizclaw_telemetry.h"
@@ -835,7 +835,7 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   (void)snprintf(
       test.read_event.payload.workspace_history_updated.workspace_name,
       sizeof(test.read_event.payload.workspace_history_updated.workspace_name),
-                 "%s", "social-group-1");
+      "%s", "social-group-1");
   test.read_event.payload.workspace_history_updated.last_updated_at_unix_ms =
       1234;
   h2_gizclaw_test_set_event_ops(test_event_send, test_event_read,
@@ -857,13 +857,13 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   test_workspace_history_notification_t notification = {0};
   fails +=
       expect(h2_gizclaw_client_dispatch_event(
-                      client, 0, test_workspace_history_notification,
-                      &notification) == H2_PAL_OK &&
-                      notification.calls == 1u &&
-                      strcmp(notification.workspace_name, "social-group-1") == 0 &&
-                      notification.last_updated_at_unix_ms == 1234,
-                  "client routes workspace history updates independently of "
-                  "the active conversation");
+                 client, 0, test_workspace_history_notification,
+                 &notification) == H2_PAL_OK &&
+                 notification.calls == 1u &&
+                 strcmp(notification.workspace_name, "social-group-1") == 0 &&
+                 notification.last_updated_at_unix_ms == 1234,
+             "client routes workspace history updates independently of "
+             "the active conversation");
   test.read_result = GZC_ERR_WOULD_BLOCK;
   fails += expect(h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL) ==
                           H2_PAL_ERR_WOULD_BLOCK &&
@@ -875,12 +875,12 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   test.read_result = GZC_ERR_RPC;
   fails +=
       expect(h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL) ==
-                          H2_PAL_ERR_IO &&
-                      test.read_count == 3u && test.close_count == 1u &&
-                      !h2_gizclaw_conversation_input_ready(conversation) &&
-                      h2_gizclaw_test_client_terminal_closed(client),
-                  "malformed client Event dispatch invalidates the conversation and "
-                  "poisons the client");
+                     H2_PAL_ERR_IO &&
+                 test.read_count == 3u && test.close_count == 1u &&
+                 !h2_gizclaw_conversation_input_ready(conversation) &&
+                 h2_gizclaw_test_client_terminal_closed(client),
+             "malformed client Event dispatch invalidates the conversation and "
+             "poisons the client");
   fails += expect(
       h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED,
       "client poll remains closed after the mandatory Event transport closes");
@@ -1112,8 +1112,8 @@ static int test_stable_registration_token_reuse(h2_gizclaw_client_t *client) {
     size_t encoded_len = 0u;
     h2_gizclaw_registration_result_t registration = {0};
     fails += expect(
-        h2_gizclaw_registration_encode_request(
-            token, encoded, sizeof(encoded), &encoded_len) == H2_PAL_OK &&
+        h2_gizclaw_registration_encode_request(token, encoded, sizeof(encoded),
+                                               &encoded_len) == H2_PAL_OK &&
             encoded_len == sizeof(request) &&
             memcmp(encoded, request, sizeof(request)) == 0,
         "stable product token encodes for each connection snapshot");
@@ -1410,6 +1410,55 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
           strcmp(workspace.name, "workspace-1") == 0 &&
           strcmp(workspace.workflow_name, "chat") == 0 && workspace.available,
       "workspace input update discovers parameters before PUT");
+  h2_gizclaw_workspace_deinit(client, &workspace);
+
+  const uint8_t inherited_workspace_get_response[] = {
+      0x0a, 0x15, 0x1a, 0x0b, 'w',  'o', 'r', 'k', 's', 'p',  'a',  'c',
+      'e',  '-',  '1',  0x32, 0x04, 'c', 'h', 'a', 't', 0x58, 0x01,
+  };
+  const uint8_t workflow_get_request[] = {0x0a, 0x04, 'c', 'h', 'a', 't'};
+  const uint8_t workflow_get_response[] = {
+      0x0a, 0x08, 0x0a, 0x04, 'c', 'h', 'a', 't', 0x20, 0x01,
+  };
+  test_contact_rpc_t inherited_steps[] = {
+      {
+          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+          .expected_request = workspace_get_request,
+          .expected_request_len = sizeof(workspace_get_request),
+          .response = inherited_workspace_get_response,
+          .response_len = sizeof(inherited_workspace_get_response),
+      },
+      {
+          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET,
+          .expected_request = workflow_get_request,
+          .expected_request_len = sizeof(workflow_get_request),
+          .response = workflow_get_response,
+          .response_len = sizeof(workflow_get_response),
+      },
+      {
+          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
+          .expected_request = workspace_put_request,
+          .expected_request_len = sizeof(workspace_put_request),
+          .response = workspace_put_response,
+          .response_len = workspace_put_response_len,
+      },
+  };
+  test_rpc_sequence_t inherited_sequence = {
+      .steps = inherited_steps,
+      .step_count = sizeof(inherited_steps) / sizeof(inherited_steps[0]),
+  };
+  h2_gizclaw_test_set_rpc_call(test_rpc_sequence_call, &inherited_sequence);
+  fails +=
+      expect(h2_gizclaw_client_workspace_set_input(
+                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME, &workspace) == H2_PAL_OK,
+             "workspace input update resolves inherited Workflow parameters");
+  fails += expect(
+      inherited_sequence.next_step == inherited_sequence.step_count &&
+          inherited_steps[0].calls == 1 && inherited_steps[0].request_matches &&
+          inherited_steps[1].calls == 1 && inherited_steps[1].request_matches &&
+          inherited_steps[2].calls == 1 && inherited_steps[2].request_matches,
+      "inherited Workspace input follows get, Workflow get, and PUT");
   h2_gizclaw_workspace_deinit(client, &workspace);
 
   uint8_t overridden_get_response[128];
@@ -1926,8 +1975,9 @@ int main(void) {
                   "register wire method remains 90");
   fails += expect(H2_GIZCLAW_RPC_SERVER_PEER_DELETE == 93,
                   "peer delete wire method remains 93");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD == 95,
-                  "friend group message audio get wire method remains 95");
+  fails +=
+      expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD == 95,
+             "friend group message audio get wire method remains 95");
 
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
@@ -2171,7 +2221,7 @@ int main(void) {
   config.write_timeout_ms = 7;
   h2_gizclaw_client_t *short_timeout_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &short_timeout_client) ==
-                      H2_PAL_OK &&
+                          H2_PAL_OK &&
                       short_timeout_client != NULL,
                   "client accepts a write timeout below the backoff cap");
   test_send_calls = 0;
@@ -2182,15 +2232,15 @@ int main(void) {
   test_poll_result = H2_PAL_ERR_WOULD_BLOCK;
   offset = 0u;
   blocked = false;
-  fails += expect(
-      h2_gizclaw_test_try_write_bytes(short_timeout_client, channel, payload,
-                                      sizeof(payload), &offset, &blocked) ==
-              GZC_ERR_TIMEOUT &&
-          offset == 0u && test_send_calls == 2 && test_poll_calls == 1 &&
-          test_sleep_calls == 1 && test_last_sleep_ms == 7u &&
-          test_warn_logs == 1 &&
-          strstr(test_last_log_message, "backoff_ms=7") != NULL,
-      "adapter caps peer poll backoff to the remaining write timeout");
+  fails +=
+      expect(h2_gizclaw_test_try_write_bytes(short_timeout_client, channel,
+                                             payload, sizeof(payload), &offset,
+                                             &blocked) == GZC_ERR_TIMEOUT &&
+                 offset == 0u && test_send_calls == 2 && test_poll_calls == 1 &&
+                 test_sleep_calls == 1 && test_last_sleep_ms == 7u &&
+                 test_warn_logs == 1 &&
+                 strstr(test_last_log_message, "backoff_ms=7") != NULL,
+             "adapter caps peer poll backoff to the remaining write timeout");
   h2_gizclaw_client_deinit(short_timeout_client);
   config.write_timeout_ms = 2000;
   test_poll_result = H2_PAL_OK;

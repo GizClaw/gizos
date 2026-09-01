@@ -1,0 +1,8 @@
+#ifndef H2_GIZCLAW_SOCIAL_INTERNAL_H
+#define H2_GIZCLAW_SOCIAL_INTERNAL_H
+
+#define H2_GIZCLAW_INTERNAL_SYNC_API
+#include "h2_gizclaw_social.h"
+#undef H2_GIZCLAW_INTERNAL_SYNC_API
+
+#endif

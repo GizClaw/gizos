@@ -534,6 +534,7 @@ struct h2_gizclaw_workflow_request {
   size_t limit;
   workflow_completion_t completion;
   void *completion_user;
+  h2_gizclaw_operation_result_t operation_result;
   union {
     h2_gizclaw_workflow_page_t page;
     struct {
@@ -556,11 +557,11 @@ static void workflow_page_clear(const h2_pal_mem_api_t *allocator,
   memset(page, 0, sizeof(*page));
 }
 
-static void workflow_rpc_complete(
-    void *user, h2_gizclaw_async_rpc_t *rpc,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_rpc_response_t *response) {
-  (void)rpc;
+static void workflow_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc) {
+  const h2_gizclaw_operation_result_t *operation_result =
+      h2_gizclaw_async_rpc_operation_result(rpc);
+  const h2_gizclaw_rpc_response_t *response =
+      h2_gizclaw_async_rpc_response(rpc);
   h2_gizclaw_workflow_request_t *request = user;
   h2_gizclaw_operation_result_t result = *operation_result;
   if (result.result == H2_PAL_OK)
@@ -590,19 +591,12 @@ static void workflow_rpc_complete(
       request->result.get.profile_revision = NULL;
     }
   }
+  request->operation_result = result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  if (request->kind == WORKFLOW_REQUEST_LIST) {
-    request->completion.list(
-        request->completion_user, request, &result,
-        result.result == H2_PAL_OK ? &request->result.page : NULL);
-  } else {
-    request->completion.get(
-        request->completion_user, request, &result,
-        result.result == H2_PAL_OK ? &request->result.get.workflow : NULL,
-        result.result == H2_PAL_OK ? request->result.get.profile_name : NULL,
-        result.result == H2_PAL_OK ? request->result.get.profile_revision
-                                   : NULL);
-  }
+  if (request->kind == WORKFLOW_REQUEST_LIST)
+    request->completion.list(request->completion_user, request);
+  else
+    request->completion.get(request->completion_user, request);
 }
 
 static h2_pal_result_t submit_workflow_request(
@@ -723,6 +717,55 @@ h2_pal_result_t
 h2_gizclaw_workflow_request_cancel(h2_gizclaw_workflow_request_t *request) {
   return request == NULL ? H2_PAL_ERR_INVALID_ARG
                          : h2_gizclaw_async_rpc_cancel(request->rpc);
+}
+
+h2_pal_result_t h2_gizclaw_workflow_request_wait(
+    h2_gizclaw_workflow_request_t *request, uint32_t timeout_ms) {
+  return request == NULL ? H2_PAL_ERR_INVALID_ARG
+                         : h2_gizclaw_async_rpc_wait(request->rpc, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_workflow_request_operation_result(
+    const h2_gizclaw_workflow_request_t *request) {
+  return request != NULL &&
+                 atomic_load_explicit(&request->terminal, memory_order_acquire)
+             ? &request->operation_result
+             : NULL;
+}
+
+const h2_gizclaw_workflow_page_t *h2_gizclaw_workflow_request_page(
+    const h2_gizclaw_workflow_request_t *request) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_workflow_request_operation_result(request);
+  return result != NULL && result->result == H2_PAL_OK &&
+                 request->kind == WORKFLOW_REQUEST_LIST
+             ? &request->result.page
+             : NULL;
+}
+
+const h2_gizclaw_workflow_t *h2_gizclaw_workflow_request_workflow(
+    const h2_gizclaw_workflow_request_t *request) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_workflow_request_operation_result(request);
+  return result != NULL && result->result == H2_PAL_OK &&
+                 request->kind == WORKFLOW_REQUEST_GET
+             ? &request->result.get.workflow
+             : NULL;
+}
+
+const char *h2_gizclaw_workflow_request_runtime_profile_name(
+    const h2_gizclaw_workflow_request_t *request) {
+  return h2_gizclaw_workflow_request_workflow(request) != NULL
+             ? request->result.get.profile_name
+             : NULL;
+}
+
+const char *h2_gizclaw_workflow_request_runtime_profile_revision(
+    const h2_gizclaw_workflow_request_t *request) {
+  return h2_gizclaw_workflow_request_workflow(request) != NULL
+             ? request->result.get.profile_revision
+             : NULL;
 }
 
 void h2_gizclaw_workflow_request_release(

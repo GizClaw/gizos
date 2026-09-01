@@ -126,6 +126,9 @@ struct h2_gizclaw_client {
   h2_gizclaw_conversation_t *active_conversation;
   h2_gizclaw_client_event_fn event_handler;
   void *event_handler_user;
+  h2_gizclaw_rpc_call_interceptor_fn rpc_call_interceptor;
+  h2_gizclaw_rpc_stream_interceptor_fn rpc_stream_interceptor;
+  void *rpc_interceptor_user;
   uint64_t next_conversation_stream_sequence;
   bool terminal_closed;
 };
@@ -1749,6 +1752,10 @@ int h2_gizclaw_client_rpc_call(h2_gizclaw_client_t *client,
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(out_response, 0, sizeof(*out_response));
+  if (client->rpc_call_interceptor != NULL) {
+    return client->rpc_call_interceptor(client->rpc_interceptor_user, client,
+                                        method, params_payload, out_response);
+  }
 #if defined(H2_GIZCLAW_TESTING)
   if (s_test_rpc_call != NULL) {
     return s_test_rpc_call(s_test_rpc_call_user, client, method, params_payload,
@@ -1971,6 +1978,11 @@ int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
       (params_payload.len > 0u && params_payload.data == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (client->rpc_stream_interceptor != NULL) {
+    return client->rpc_stream_interceptor(
+        client->rpc_interceptor_user, client, method, params_payload, on_event,
+        user);
+  }
 #if defined(H2_GIZCLAW_TESTING)
   if (s_test_rpc_call_stream != NULL) {
     return s_test_rpc_call_stream(s_test_rpc_call_stream_user, client, method,
@@ -2001,6 +2013,16 @@ int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
   h2_gizclaw_rpc_response_deinit(client, &response);
   h2_gizclaw_rpc_request_destroy(request);
   return rc;
+}
+
+void h2_gizclaw_client_set_rpc_interceptor_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_rpc_call_interceptor_fn call,
+    h2_gizclaw_rpc_stream_interceptor_fn stream, void *user) {
+  if (client == NULL)
+    return;
+  client->rpc_call_interceptor = call;
+  client->rpc_stream_interceptor = stream;
+  client->rpc_interceptor_user = user;
 }
 
 int h2_gizclaw_client_ping_measure(h2_gizclaw_client_t *client,

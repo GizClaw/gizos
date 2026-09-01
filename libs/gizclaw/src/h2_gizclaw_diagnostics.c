@@ -17,6 +17,7 @@ struct h2_gizclaw_ping_request {
   const h2_pal_time_api_t *time;
   h2_gizclaw_ping_completion_fn completion;
   void *completion_user;
+  h2_gizclaw_operation_result_t operation_result;
   h2_gizclaw_ping_result_t result;
   uint64_t started_ms;
   atomic_bool terminal;
@@ -28,6 +29,7 @@ struct h2_gizclaw_speedtest_request {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_speedtest_completion_fn completion;
   void *completion_user;
+  h2_gizclaw_operation_result_t operation_result;
   h2_gizclaw_rpc_request_t *rpc;
   h2_gizclaw_rpc_response_t response;
   h2_gizclaw_speedtest_result_t result;
@@ -56,11 +58,11 @@ static h2_pal_result_t encode_message(const pb_msgdesc_t *fields,
   return H2_PAL_OK;
 }
 
-static void ping_rpc_complete(
-    void *user, h2_gizclaw_async_rpc_t *rpc,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_rpc_response_t *response) {
-  (void)rpc;
+static void ping_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc) {
+  const h2_gizclaw_operation_result_t *operation_result =
+      h2_gizclaw_async_rpc_operation_result(rpc);
+  const h2_gizclaw_rpc_response_t *response =
+      h2_gizclaw_async_rpc_response(rpc);
   h2_gizclaw_ping_request_t *request = user;
   h2_gizclaw_operation_result_t result = *operation_result;
   if (result.result == H2_PAL_OK &&
@@ -85,9 +87,9 @@ static void ping_rpc_complete(
       }
     }
   }
+  request->operation_result = result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request, &result,
-                      result.result == H2_PAL_OK ? &request->result : NULL);
+  request->completion(request->completion_user, request);
 }
 
 h2_pal_result_t h2_gizclaw_service_ping_async(
@@ -136,6 +138,28 @@ h2_pal_result_t
 h2_gizclaw_ping_request_cancel(h2_gizclaw_ping_request_t *request) {
   return request == NULL ? H2_PAL_ERR_INVALID_ARG
                          : h2_gizclaw_async_rpc_cancel(request->rpc);
+}
+
+h2_pal_result_t h2_gizclaw_ping_request_wait(
+    h2_gizclaw_ping_request_t *request, uint32_t timeout_ms) {
+  return request == NULL ? H2_PAL_ERR_INVALID_ARG
+                         : h2_gizclaw_async_rpc_wait(request->rpc, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *h2_gizclaw_ping_request_operation_result(
+    const h2_gizclaw_ping_request_t *request) {
+  return request != NULL &&
+                 atomic_load_explicit(&request->terminal, memory_order_acquire)
+             ? &request->operation_result
+             : NULL;
+}
+
+const h2_gizclaw_ping_result_t *h2_gizclaw_ping_request_response(
+    const h2_gizclaw_ping_request_t *request) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_ping_request_operation_result(request);
+  return result != NULL && result->result == H2_PAL_OK ? &request->result
+                                                       : NULL;
 }
 
 void h2_gizclaw_ping_request_release(h2_gizclaw_ping_request_t *request) {
@@ -300,9 +324,9 @@ static void speedtest_complete(
           request->result.download_bytes, request->result.elapsed_ms);
     }
   }
+  request->operation_result = result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request, &result,
-                      result.result == H2_PAL_OK ? &request->result : NULL);
+  request->completion(request->completion_user, request);
 }
 
 h2_pal_result_t h2_gizclaw_service_speedtest_async(
@@ -344,6 +368,30 @@ h2_pal_result_t h2_gizclaw_speedtest_request_cancel(
     h2_gizclaw_speedtest_request_t *request) {
   return request == NULL ? H2_PAL_ERR_INVALID_ARG
                          : h2_gizclaw_operation_cancel(request->operation);
+}
+
+h2_pal_result_t h2_gizclaw_speedtest_request_wait(
+    h2_gizclaw_speedtest_request_t *request, uint32_t timeout_ms) {
+  return request == NULL
+             ? H2_PAL_ERR_INVALID_ARG
+             : h2_gizclaw_operation_wait(request->operation, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_speedtest_request_operation_result(
+    const h2_gizclaw_speedtest_request_t *request) {
+  return request != NULL &&
+                 atomic_load_explicit(&request->terminal, memory_order_acquire)
+             ? &request->operation_result
+             : NULL;
+}
+
+const h2_gizclaw_speedtest_result_t *h2_gizclaw_speedtest_request_response(
+    const h2_gizclaw_speedtest_request_t *request) {
+  const h2_gizclaw_operation_result_t *result =
+      h2_gizclaw_speedtest_request_operation_result(request);
+  return result != NULL && result->result == H2_PAL_OK ? &request->result
+                                                       : NULL;
 }
 
 void h2_gizclaw_speedtest_request_release(

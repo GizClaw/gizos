@@ -56,8 +56,7 @@ typedef h2_pal_result_t (*h2_gizclaw_conversation_request_event_fn)(
     const h2_gizclaw_conversation_event_t *event);
 
 typedef void (*h2_gizclaw_conversation_request_completion_fn)(
-    void *user, h2_gizclaw_conversation_request_t *request,
-    const h2_gizclaw_operation_result_t *operation_result);
+    void *user, h2_gizclaw_conversation_request_t *request);
 
 /** Create one service-owned conversation generation. */
 h2_pal_result_t h2_gizclaw_service_conversation_create(
@@ -78,6 +77,11 @@ h2_pal_result_t h2_gizclaw_conversation_request_commit(
 
 h2_pal_result_t h2_gizclaw_conversation_request_cancel(
     h2_gizclaw_conversation_request_t *request);
+h2_pal_result_t h2_gizclaw_conversation_request_wait(
+    h2_gizclaw_conversation_request_t *request, uint32_t timeout_ms);
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_conversation_request_operation_result(
+    const h2_gizclaw_conversation_request_t *request);
 
 void h2_gizclaw_conversation_request_release(
     h2_gizclaw_conversation_request_t *request);

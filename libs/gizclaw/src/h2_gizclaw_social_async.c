@@ -1,7 +1,10 @@
-#define H2_GIZCLAW_INTERNAL_SYNC_API
-#include "h2_gizclaw_social.h"
-#undef H2_GIZCLAW_INTERNAL_SYNC_API
+#include "h2_gizclaw_social_internal.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_internal.h"
+
+#include "payload/social.pb.h"
+#include "pb_decode.h"
+#include "pb_encode.h"
 
 #include <stdatomic.h>
 #include <string.h>
@@ -16,12 +19,18 @@ struct h2_gizclaw_social_request {
   h2_gizclaw_social_completion_fn completion;
   void *completion_user;
   h2_gizclaw_social_result_t result;
+  h2_gizclaw_operation_result_t operation_result;
+  h2_gizclaw_rpc_request_t *rpc_request;
+  h2_gizclaw_rpc_response_t rpc_response;
+  h2_gizclaw_async_stream_t *stream;
   char *text[3];
   size_t limit;
   h2_gizclaw_friend_group_role_t role;
   h2_gizclaw_friend_group_message_audio_write_fn write;
   void *write_user;
   atomic_bool terminal;
+  bool metadata_received;
+  bool eos_received;
 };
 
 static h2_gizclaw_str_t social_span(const char *text) {
@@ -236,14 +245,153 @@ static int social_write(void *user, const uint8_t *data, size_t len) {
       request->cancel_token, social_dispatch_write, &dispatch);
 }
 
-static h2_pal_result_t
-social_run(void *user, h2_gizclaw_client_t *client,
-           const h2_gizclaw_cancel_token_t *cancel_token) {
+static bool social_copy_fixed(char *out, size_t capacity,
+                              h2_gizclaw_str_t value) {
+  if (out == NULL || value.data == NULL || value.len == 0u ||
+      value.len >= capacity)
+    return false;
+  memcpy(out, value.data, value.len);
+  out[value.len] = '\0';
+  return true;
+}
+
+static h2_pal_result_t social_audio_event(
+    void *user, h2_gizclaw_async_stream_t *stream,
+    const h2_gizclaw_rpc_stream_event_t *event) {
+  (void)stream;
   h2_gizclaw_social_request_t *request = user;
+  h2_gizclaw_friend_group_message_audio_info_t *info =
+      &request->result.value.message_audio;
+  if (event == NULL || request->eos_received)
+    return H2_PAL_ERR_FORMAT;
+  if (event->has_error) {
+    return event->error_code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND
+               ? H2_PAL_ERR_NOT_FOUND
+               : event->error_code == H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND
+                     ? H2_PAL_ERR_UNSUPPORTED
+                     : H2_PAL_ERR_IO;
+  }
+  if (event->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE) {
+    if (request->metadata_received)
+      return H2_PAL_ERR_FORMAT;
+    gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse decoded =
+        gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
+    pb_istream_t input = pb_istream_from_buffer(event->result_payload.data,
+                                                event->result_payload.len);
+    if (!pb_decode(
+            &input,
+            gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
+            &decoded) ||
+        decoded.size_bytes <= 0 || decoded.friend_group_name[0] == '\0' ||
+        decoded.history_name[0] == '\0' ||
+        strncmp(decoded.mime_type, "audio/", 6u) != 0)
+      return H2_PAL_ERR_FORMAT;
+    info->friend_group_name = social_copy(
+        request->allocator,
+        (h2_gizclaw_str_t){decoded.friend_group_name,
+                           strlen(decoded.friend_group_name)});
+    info->history_id = social_copy(
+        request->allocator,
+        (h2_gizclaw_str_t){decoded.history_name,
+                           strlen(decoded.history_name)});
+    info->mime_type = social_copy(
+        request->allocator,
+        (h2_gizclaw_str_t){decoded.mime_type, strlen(decoded.mime_type)});
+    if (info->friend_group_name == NULL || info->history_id == NULL ||
+        info->mime_type == NULL)
+      return H2_PAL_ERR_NO_MEMORY;
+    info->size_bytes = (uint64_t)decoded.size_bytes;
+    request->metadata_received = true;
+    return H2_PAL_OK;
+  }
+  if (event->kind == H2_GIZCLAW_RPC_STREAM_DATA) {
+    if (!request->metadata_received ||
+        info->received_bytes > info->size_bytes ||
+        event->data.len > info->size_bytes - info->received_bytes)
+      return H2_PAL_ERR_FORMAT;
+    const h2_pal_result_t rc = (h2_pal_result_t)request->write(
+        request->write_user, event->data.data, event->data.len);
+    if (rc == H2_PAL_OK)
+      info->received_bytes += event->data.len;
+    return rc;
+  }
+  if (event->kind != H2_GIZCLAW_RPC_STREAM_EOS ||
+      !request->metadata_received ||
+      info->received_bytes != info->size_bytes)
+    return H2_PAL_ERR_FORMAT;
+  request->eos_received = true;
+  return H2_PAL_OK;
+}
+
+static void social_audio_complete(void *user,
+                                  h2_gizclaw_async_stream_t *stream) {
+  h2_gizclaw_social_request_t *request = user;
+  const h2_gizclaw_operation_result_t *operation_result =
+      h2_gizclaw_async_stream_operation_result(stream);
+  request->operation_result = operation_result == NULL
+                                  ? (h2_gizclaw_operation_result_t){
+                                        .result = H2_PAL_ERR_INVALID_STATE}
+                                  : *operation_result;
+  const h2_gizclaw_friend_group_message_audio_info_t *info =
+      &request->result.value.message_audio;
+  if (request->operation_result.result == H2_PAL_OK &&
+      (!request->metadata_received || !request->eos_received ||
+       info->friend_group_name == NULL || info->history_id == NULL ||
+       strcmp(info->friend_group_name, request->text[0]) != 0 ||
+       strcmp(info->history_id, request->text[1]) != 0)) {
+    request->operation_result.result = H2_PAL_ERR_FORMAT;
+  }
+  if (request->operation_result.result != H2_PAL_OK)
+    social_result_clear(request);
+  atomic_store_explicit(&request->terminal, true, memory_order_release);
+  request->completion(request->completion_user, request);
+}
+
+static h2_pal_result_t social_audio_submit(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_social_request_t *request) {
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest message =
+      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_init_zero;
+  if (!social_copy_fixed(message.friend_group_name,
+                         sizeof(message.friend_group_name),
+                         social_span(request->text[0])) ||
+      !social_copy_fixed(message.history_name, sizeof(message.history_name),
+                         social_span(request->text[1])))
+    return H2_PAL_ERR_INVALID_ARG;
+  pb_ostream_t sizing = PB_OSTREAM_SIZING;
+  if (!pb_encode(
+          &sizing,
+          gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_fields,
+          &message))
+    return H2_PAL_ERR_FORMAT;
+  uint8_t *payload = h2_pal_mem_alloc(
+      request->allocator,
+      sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
+  if (payload == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  pb_ostream_t output = pb_ostream_from_buffer(payload, sizing.bytes_written);
+  h2_pal_result_t rc =
+      pb_encode(&output,
+                gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_fields,
+                &message)
+          ? H2_PAL_OK
+          : H2_PAL_ERR_FORMAT;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_service_rpc_stream_async(
+        service, identity,
+        H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD,
+        (h2_gizclaw_rpc_bytes_t){payload, output.bytes_written}, 30000u,
+        social_audio_event, social_audio_complete, request, &request->stream);
+  }
+  h2_pal_mem_free(request->allocator, payload);
+  return rc;
+}
+
+static h2_pal_result_t social_execute(h2_gizclaw_social_request_t *request,
+                                     h2_gizclaw_client_t *client) {
   const h2_gizclaw_str_t a = social_span(request->text[0]);
   const h2_gizclaw_str_t b = social_span(request->text[1]);
   const h2_gizclaw_str_t c = social_span(request->text[2]);
-  request->cancel_token = cancel_token;
   h2_pal_result_t rc = H2_PAL_ERR_INVALID_STATE;
   switch (request->kind) {
   case H2_GIZCLAW_SOCIAL_CONTACTS_LIST:
@@ -355,6 +503,76 @@ social_run(void *user, h2_gizclaw_client_t *client,
         &request->result.value.message_audio);
     break;
   }
+  return rc;
+}
+
+static int social_capture_rpc(void *user, h2_gizclaw_client_t *client,
+                              h2_gizclaw_rpc_method_t method,
+                              h2_gizclaw_rpc_bytes_t params_payload,
+                              h2_gizclaw_rpc_response_t *out_response) {
+  (void)out_response;
+  h2_gizclaw_social_request_t *request = user;
+  if (request->rpc_request != NULL)
+    return H2_PAL_ERR_INVALID_STATE;
+  const int rc = h2_gizclaw_client_rpc_request_start(
+      client, method, params_payload, 5000u, &request->rpc_request);
+  return rc == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : rc;
+}
+
+static int social_replay_rpc(void *user, h2_gizclaw_client_t *client,
+                             h2_gizclaw_rpc_method_t method,
+                             h2_gizclaw_rpc_bytes_t params_payload,
+                             h2_gizclaw_rpc_response_t *out_response) {
+  (void)client;
+  (void)method;
+  (void)params_payload;
+  h2_gizclaw_social_request_t *request = user;
+  *out_response = request->rpc_response;
+  memset(&request->rpc_response, 0, sizeof(request->rpc_response));
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t
+social_start(void *user, h2_gizclaw_client_t *client,
+             const h2_gizclaw_cancel_token_t *cancel_token) {
+  h2_gizclaw_social_request_t *request = user;
+  if (h2_gizclaw_cancel_requested(cancel_token))
+    return H2_PAL_ERR_CLOSED;
+  request->cancel_token = cancel_token;
+  h2_gizclaw_client_set_rpc_interceptor_internal(
+      client, social_capture_rpc, NULL, request);
+  const h2_pal_result_t rc = social_execute(request, client);
+  h2_gizclaw_client_set_rpc_interceptor_internal(client, NULL, NULL, NULL);
+  if (rc != H2_PAL_ERR_WOULD_BLOCK || request->rpc_request == NULL) {
+    request->cancel_token = NULL;
+    return rc == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_ERR_INVALID_STATE : rc;
+  }
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static h2_pal_result_t
+social_poll(void *user, h2_gizclaw_client_t *client,
+            const h2_gizclaw_cancel_token_t *cancel_token) {
+  h2_gizclaw_social_request_t *request = user;
+  if (h2_gizclaw_cancel_requested(cancel_token)) {
+    h2_gizclaw_rpc_request_cancel(request->rpc_request);
+    h2_gizclaw_rpc_request_destroy(request->rpc_request);
+    request->rpc_request = NULL;
+    request->cancel_token = NULL;
+    return H2_PAL_ERR_CLOSED;
+  }
+  h2_pal_result_t rc = (h2_pal_result_t)h2_gizclaw_rpc_request_result(
+      request->rpc_request, &request->rpc_response);
+  if (rc == H2_PAL_ERR_WOULD_BLOCK)
+    return rc;
+  h2_gizclaw_rpc_request_destroy(request->rpc_request);
+  request->rpc_request = NULL;
+  if (rc == H2_PAL_OK) {
+    h2_gizclaw_client_set_rpc_interceptor_internal(
+        client, social_replay_rpc, NULL, request);
+    rc = social_execute(request, client);
+    h2_gizclaw_client_set_rpc_interceptor_internal(client, NULL, NULL, NULL);
+  }
   request->cancel_token = NULL;
   return rc;
 }
@@ -367,9 +585,9 @@ social_complete(void *user, h2_gizclaw_operation_t *operation,
   h2_gizclaw_operation_result_t result = *operation_result;
   if (result.result != H2_PAL_OK)
     social_result_clear(request);
+  request->operation_result = result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request, &result,
-                      result.result == H2_PAL_OK ? &request->result : NULL);
+  request->completion(request->completion_user, request);
 }
 
 static void social_free(h2_gizclaw_social_request_t *request) {
@@ -457,8 +675,11 @@ social_submit(h2_gizclaw_service_t *service, uint64_t identity,
     }
   }
   const h2_pal_result_t rc =
-      h2_gizclaw_service_submit(service, identity, social_run, social_complete,
-                                request, &request->operation);
+      kind == H2_GIZCLAW_SOCIAL_FRIEND_GROUP_MESSAGE_AUDIO_DOWNLOAD
+          ? social_audio_submit(service, identity, request)
+          : h2_gizclaw_service_submit_async_internal(
+                service, identity, social_start, social_poll, social_complete,
+                request, &request->operation);
   if (rc != H2_PAL_OK) {
     social_free(request);
     return rc;
@@ -716,14 +937,47 @@ h2_pal_result_t
 h2_gizclaw_social_request_cancel(h2_gizclaw_social_request_t *request) {
   if (request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_operation_cancel(request->operation);
+  return request->stream != NULL
+             ? h2_gizclaw_async_stream_cancel(request->stream)
+             : h2_gizclaw_operation_cancel(request->operation);
+}
+
+h2_pal_result_t
+h2_gizclaw_social_request_wait(h2_gizclaw_social_request_t *request,
+                               uint32_t timeout_ms) {
+  if (request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  return request->stream != NULL
+             ? h2_gizclaw_async_stream_wait(request->stream, timeout_ms)
+             : h2_gizclaw_operation_wait(request->operation, timeout_ms);
+}
+
+const h2_gizclaw_operation_result_t *
+h2_gizclaw_social_request_operation_result(
+    const h2_gizclaw_social_request_t *request) {
+  if (request == NULL ||
+      !atomic_load_explicit(&request->terminal, memory_order_acquire))
+    return NULL;
+  return &request->operation_result;
+}
+
+const h2_gizclaw_social_result_t *
+h2_gizclaw_social_request_result(const h2_gizclaw_social_request_t *request) {
+  const h2_gizclaw_operation_result_t *operation_result =
+      h2_gizclaw_social_request_operation_result(request);
+  if (operation_result == NULL || operation_result->result != H2_PAL_OK)
+    return NULL;
+  return &request->result;
 }
 
 void h2_gizclaw_social_request_release(h2_gizclaw_social_request_t *request) {
   if (request == NULL ||
       !atomic_load_explicit(&request->terminal, memory_order_acquire))
     return;
-  h2_gizclaw_operation_release(request->operation);
+  if (request->stream != NULL)
+    h2_gizclaw_async_stream_release(request->stream);
+  else
+    h2_gizclaw_operation_release(request->operation);
   social_result_clear(request);
   social_free(request);
 }
