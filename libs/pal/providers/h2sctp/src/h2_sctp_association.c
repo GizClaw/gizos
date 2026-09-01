@@ -567,7 +567,10 @@ h2_pal_result_t h2_sctp_association_input_impl(
         association->state == H2_PAL_SCTP_STATE_FAILED) {
         return H2_PAL_ERR_CLOSED;
     }
-    if (packet_len > association->config.max_packet_size) {
+    /* max_packet_size is this endpoint's transmit budget. A peer may run a
+     * larger path MTU, so inbound packets are bounded by the wire limit and
+     * by the caller's own receive buffer, not by the local emit size. */
+    if (packet_len > H2_SCTP_MAX_INBOUND_PACKET_SIZE) {
         return H2_PAL_ERR_FORMAT;
     }
     if (association->pending_emit != NULL) {

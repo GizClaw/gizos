@@ -4,6 +4,8 @@
 #include <string.h>
 
 #define H2_IPERF_SCTP_MIN_PACKET_BUF 2048u
+/* RFC 9260 chunk type carried at the start of every SCTP packet payload. */
+#define H2_IPERF_SCTP_CHUNK_INIT 1u
 #define H2_IPERF_SCTP_EMIT_FAILURE_LIMIT 1000u
 #define H2_IPERF_SCTP_DRAIN_PACKETS 32u
 #define H2_IPERF_SEND_SLICE_MS 100u
@@ -527,6 +529,12 @@ h2_pal_result_t h2_iperf_stream_sctp_accept(
         uint16_t src_port = (uint16_t)(((uint16_t)stream->packet_buf[0] << 8u) | stream->packet_buf[1]);
         uint16_t dst_port = (uint16_t)(((uint16_t)stream->packet_buf[2] << 8u) | stream->packet_buf[3]);
         if (dst_port != local_sctp_port || src_port == 0u) {
+            continue;
+        }
+        /* Only an INIT chunk opens a passive association. Late SACK, HEARTBEAT
+         * or SHUTDOWN traffic from the previous test on the shared
+         * encapsulation socket must not seed the next association. */
+        if (got < 12 + 4 || stream->packet_buf[12] != H2_IPERF_SCTP_CHUNK_INIT) {
             continue;
         }
         stream->peer = from;

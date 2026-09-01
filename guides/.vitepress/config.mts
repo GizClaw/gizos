@@ -141,6 +141,8 @@ const appItems = [
               { text: "Audio System", link: "/apps/h2loader/boards/amoled/audio_system" },
               { text: "GizClaw Ping Speed", link: "/apps/h2loader/boards/amoled/gizclaw_ping_speed" },
               { text: "Crash Before Confirm", link: "/apps/h2loader/boards/amoled/crash_before_confirm" },
+              { text: "iperf", link: "/apps/h2loader/boards/amoled/iperf" },
+              { text: "WebRTC Performance", link: "/apps/h2loader/boards/amoled/webrtc_performance" },
             ],
           },
           {

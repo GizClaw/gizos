@@ -37,7 +37,8 @@ validation target 都不得依赖、include、link、load 或执行 vendor usrsc
 ## Budgets and flow
 
 - `max_packet_size` 位于 `H2_PAL_SCTP_MIN_PACKET_SIZE..UINT16_MAX`；一个 callback
-  只交付一个完整 packet。
+  只交付一个完整 packet。它只约束本端发出的 packet；入站 packet 以 IP datagram 上限
+  65535 bytes 和调用方自己的 receive buffer 为界，对端使用更大的 path MTU 时不会被丢弃。
 - `max_message_size` 同时约束发送和 reassembly；send budget 至少容纳一个最大 message
   加一个 packet，receive budget 至少 1500 bytes 且不小于最大 message。
 - 双方协商 RFC 8260 后发送 I-DATA，并以 I-FORWARD-TSN 跳过 abandoned message；
