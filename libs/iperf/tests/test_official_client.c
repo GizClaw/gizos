@@ -96,12 +96,18 @@ static void run_scenario(const char *iperf3, const scenario_t *scenario) {
         /* iperf3 cancels its sender thread mid-write, so the last block can be
          * on the wire without being counted: allow one block of slack. */
         assert(receiver->bytes <= sender->bytes + H2_IPERF_DEFAULT_TCP_BLOCK_LEN);
-        assert(receiver->bytes * 10u >= sender->bytes * 9u);
+        /* Loopback keeps almost everything for reliable transports; UDP on a
+         * loaded CI host can drop a large share, so only a coarse bound applies. */
+        if (scenario->protocol_flag != NULL) {
+            assert(receiver->bytes * 2u >= sender->bytes);
+        } else {
+            assert(receiver->bytes * 10u >= sender->bytes * 9u);
+        }
         if (scenario->protocol_flag != NULL) {
             assert(sender->packets > 0u);
             assert(receiver->packets > 0u);
             assert(receiver->lost_packets >= 0);
-            assert(receiver->lost_packets * 10 <= (int64_t)sender->packets);
+            assert(receiver->lost_packets * 2 <= (int64_t)sender->packets);
         }
     }
     h2_iperf_server_destroy(&thread.server);

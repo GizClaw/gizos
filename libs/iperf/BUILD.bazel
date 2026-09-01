@@ -111,6 +111,7 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     linkopts = ["-lpthread"],
+    tags = ["exclusive"],
     target_compatible_with = _HOST_TEST_COMPATIBILITY,
     deps = [":test_support"],
 )
@@ -125,6 +126,7 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     data = ["@h2_vendor_iperf//:iperf3"],
+    tags = ["exclusive"],
     target_compatible_with = _HOST_TEST_COMPATIBILITY,
     deps = [":test_support"],
 )
@@ -139,6 +141,7 @@ cc_test(
     copts = H2_WARNING_COPTS,
     data = ["@h2_vendor_iperf//:iperf3"],
     linkopts = ["-lpthread"],
+    tags = ["exclusive"],
     target_compatible_with = _HOST_TEST_COMPATIBILITY,
     deps = [":test_support"],
 )

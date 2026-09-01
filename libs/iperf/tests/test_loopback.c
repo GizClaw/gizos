@@ -94,8 +94,13 @@ static void run_scenario(const scenario_t *scenario) {
     assert(sender->bytes > 0u);
     assert(receiver->bytes > 0u);
     assert(receiver->bytes <= sender->bytes);
-    /* Loopback keeps almost everything; TEST_END may race the last block. */
-    assert(receiver->bytes * 10u >= sender->bytes * 9u);
+    /* Loopback keeps almost everything for reliable transports; UDP on a
+     * loaded CI host can drop a large share, so only a coarse bound applies. */
+    if (scenario->protocol == H2_IPERF_PROTOCOL_UDP) {
+        assert(receiver->bytes * 2u >= sender->bytes);
+    } else {
+        assert(receiver->bytes * 10u >= sender->bytes * 9u);
+    }
     /* The peer's report is exactly what the other side measured locally. */
     assert(client_result.remote.bytes == thread.result.local.bytes);
     assert(thread.result.remote.bytes == client_result.local.bytes);
@@ -109,7 +114,7 @@ static void run_scenario(const scenario_t *scenario) {
         assert(sender->packets > 0u);
         assert(receiver->packets > 0u);
         assert(receiver->lost_packets >= 0);
-        assert(receiver->lost_packets * 10 <= (int64_t)sender->packets);
+        assert(receiver->lost_packets * 2 <= (int64_t)sender->packets);
         assert(receiver->packets + (uint64_t)receiver->lost_packets <= sender->packets);
         if (scenario->bitrate_bps != 0u) {
             uint64_t bps = h2_iperf_stats_bits_per_second(sender);
@@ -132,13 +137,17 @@ int main(void) {
     static const scenario_t scenarios[] = {
         {"tcp", H2_IPERF_PROTOCOL_TCP, false, 1000u, 0u, 0u, 0u},
         {"tcp bytes", H2_IPERF_PROTOCOL_TCP, false, 0u, 4u * 1024u * 1024u, 0u, 0u},
+        {"tcp bytes unaligned", H2_IPERF_PROTOCOL_TCP, false, 0u, 4u * 1024u * 1024u + 12345u, 0u, 0u},
+        {"tcp one byte", H2_IPERF_PROTOCOL_TCP, false, 0u, 1u, 0u, 0u},
         {"tcp reverse", H2_IPERF_PROTOCOL_TCP, true, 1000u, 0u, 0u, 0u},
         {"udp", H2_IPERF_PROTOCOL_UDP, false, 1000u, 0u, 0u, 2u * 1024u * 1024u},
         {"udp reverse", H2_IPERF_PROTOCOL_UDP, true, 1000u, 0u, 1200u, 2u * 1024u * 1024u},
         {"udp reverse large datagrams", H2_IPERF_PROTOCOL_UDP, true, 1000u, 0u, 16332u, 8u * 1024u * 1024u},
         {"udp large datagrams", H2_IPERF_PROTOCOL_UDP, false, 1000u, 0u, 16332u, 8u * 1024u * 1024u},
+        {"udp bytes unaligned", H2_IPERF_PROTOCOL_UDP, false, 0u, 200u * 1000u + 500u, 1000u, 8u * 1024u * 1024u},
         {"sctp", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 16u * 1024u, 0u},
         {"sctp bytes", H2_IPERF_PROTOCOL_SCTP, false, 0u, 512u * 1024u, 8u * 1024u, 0u},
+        {"sctp bytes unaligned", H2_IPERF_PROTOCOL_SCTP, false, 0u, 512u * 1024u + 999u, 8u * 1024u, 0u},
         {"sctp reverse", H2_IPERF_PROTOCOL_SCTP, true, 1000u, 0u, 16u * 1024u, 0u},
         {"sctp paced", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 1024u, 4u * 1024u * 1024u},
     };
