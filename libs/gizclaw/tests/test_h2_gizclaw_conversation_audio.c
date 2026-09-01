@@ -187,6 +187,8 @@ static int test_validation(h2_gizclaw_client_t *client) {
 
 int h2_gizclaw_conversation_audio_tests(void) {
   int fails = 0;
+  fails += expect(h2_gizclaw_test_audio_rings(),
+                  "SPSC PCM and packet rings preserve wrap order and bounds");
   test_audio_state_t test = {0};
   const h2_pal_mem_vtable_t mem_vtable = {
       .alloc = test_alloc,

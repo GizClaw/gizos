@@ -2,7 +2,9 @@
 
 #include "h2_gizclaw_client.h"
 #include "h2_gizclaw_internal.h"
+#include "h2_gizclaw_pcm_ring.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_task_names.h"
 #include "h2_gizclaw_workspace.h"
 
 #include "events/peer_event.pb.h"
@@ -10,24 +12,62 @@
 #include "gzc_client.h"
 #include "gzc_common.h"
 #include "gzc_event.h"
+#include "opus.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
 #define H2_GIZCLAW_CONVERSATION_REQUEST_QUEUE_ITEMS 8u
+#define H2_GIZCLAW_CONVERSATION_ENCODE_TASK_STACK_SIZE 65536u
+#define H2_GIZCLAW_CONVERSATION_DECODE_TASK_STACK_SIZE 49152u
+#define H2_GIZCLAW_CONVERSATION_OPUS_FRAME_SAMPLES 320u
+#define H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES                               \
+  (H2_GIZCLAW_CONVERSATION_OPUS_FRAME_SAMPLES * sizeof(int16_t))
+#define H2_GIZCLAW_CONVERSATION_AUDIO_PERIOD_MS 20u
+#define H2_GIZCLAW_CONVERSATION_DECODE_MAX_SAMPLES 5760u
+#define H2_GIZCLAW_CONVERSATION_PCM_RING_BYTES                                 \
+  (H2_GIZCLAW_CONVERSATION_PCM_CHUNK_MAX_BYTES *                               \
+   H2_GIZCLAW_CONVERSATION_REQUEST_QUEUE_ITEMS)
+
+typedef enum h2_gizclaw_audio_message_kind {
+  H2_GIZCLAW_AUDIO_MESSAGE_PCM = 0,
+  H2_GIZCLAW_AUDIO_MESSAGE_OPUS,
+  H2_GIZCLAW_AUDIO_MESSAGE_EOS,
+} h2_gizclaw_audio_message_kind_t;
 
 typedef struct h2_gizclaw_conversation_request_message {
+  h2_gizclaw_audio_message_kind_t kind;
   size_t len;
-  uint64_t timestamp_ms;
-  uint8_t opus[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
+  uint8_t data[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
 } h2_gizclaw_conversation_request_message_t;
+
+typedef struct h2_gizclaw_conversation_pcm_message {
+  h2_gizclaw_audio_message_kind_t kind;
+  size_t len;
+  uint8_t data[H2_GIZCLAW_CONVERSATION_PCM_CHUNK_MAX_BYTES];
+} h2_gizclaw_conversation_pcm_message_t;
+
+typedef struct h2_gizclaw_audio_ring {
+  h2_gizclaw_service_t *service;
+  uint8_t *items;
+  size_t item_size;
+  size_t capacity;
+  atomic_size_t write_index;
+  atomic_size_t read_index;
+  atomic_bool closed;
+} h2_gizclaw_audio_ring_t;
 
 struct h2_gizclaw_conversation_request {
   h2_gizclaw_service_t *service;
   h2_gizclaw_operation_t *operation;
   h2_gizclaw_conversation_t *conversation;
-  h2_pal_queue_t *queue;
+  h2_gizclaw_pcm_ring_t pcm_uplink;
+  h2_gizclaw_audio_ring_t opus_uplink;
+  h2_gizclaw_audio_ring_t opus_downlink;
+  h2_gizclaw_pcm_ring_t pcm_downlink;
+  h2_pal_task_t *encode_task;
+  h2_pal_task_t *decode_task;
   h2_gizclaw_conversation_request_event_fn on_event;
   h2_gizclaw_conversation_request_completion_fn completion;
   void *user;
@@ -36,6 +76,9 @@ struct h2_gizclaw_conversation_request {
   uint64_t generation;
   int timeout_ms;
   h2_gizclaw_conversation_request_message_t pending_message;
+  h2_gizclaw_conversation_request_message_t pending_downlink_message;
+  h2_gizclaw_conversation_pcm_message_t dispatch_pcm_message;
+  h2_gizclaw_conversation_event_t pending_terminal_event;
   h2_gizclaw_conversation_event_t dispatch_event;
   uint64_t identity;
   atomic_size_t queued_frames;
@@ -44,8 +87,12 @@ struct h2_gizclaw_conversation_request {
   atomic_size_t reply_bytes;
   h2_gizclaw_operation_result_t operation_result;
   bool has_pending_message;
+  bool has_pending_downlink_message;
   atomic_bool committed;
   atomic_bool terminal;
+  atomic_bool downlink_eos;
+  atomic_int audio_result;
+  bool terminal_waiting_for_audio;
 };
 
 struct h2_gizclaw_conversation {
@@ -102,6 +149,318 @@ static int gzc_to_pal(int rc) {
     return H2_PAL_ERR_WOULD_BLOCK;
   default:
     return H2_PAL_ERR_IO;
+  }
+}
+
+static h2_pal_result_t audio_ring_init(h2_gizclaw_audio_ring_t *ring,
+                                       h2_gizclaw_service_t *service,
+                                       size_t item_size, size_t capacity) {
+  if (ring == NULL || service == NULL || item_size == 0u || capacity == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(ring, 0, sizeof(*ring));
+  ring->service = service;
+  ring->item_size = item_size;
+  ring->capacity = capacity;
+  ring->items = h2_pal_mem_alloc(service->config.client_config->allocator,
+                                 item_size * capacity);
+  if (ring->items == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  atomic_init(&ring->write_index, 0u);
+  atomic_init(&ring->read_index, 0u);
+  atomic_init(&ring->closed, false);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t audio_ring_send(h2_gizclaw_audio_ring_t *ring,
+                                       const void *item) {
+  if (ring == NULL || ring->items == NULL || item == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (atomic_load_explicit(&ring->closed, memory_order_acquire))
+    return H2_PAL_ERR_CLOSED;
+  const size_t write =
+      atomic_load_explicit(&ring->write_index, memory_order_relaxed);
+  const size_t read =
+      atomic_load_explicit(&ring->read_index, memory_order_acquire);
+  if (write - read >= ring->capacity)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  memcpy(ring->items + (write % ring->capacity) * ring->item_size, item,
+         ring->item_size);
+  atomic_store_explicit(&ring->write_index, write + 1u, memory_order_release);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t audio_ring_recv(h2_gizclaw_audio_ring_t *ring,
+                                       void *out_item) {
+  if (ring == NULL || ring->items == NULL || out_item == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const size_t read =
+      atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+  const size_t write =
+      atomic_load_explicit(&ring->write_index, memory_order_acquire);
+  if (read == write) {
+    return atomic_load_explicit(&ring->closed, memory_order_acquire)
+               ? H2_PAL_ERR_CLOSED
+               : H2_PAL_ERR_WOULD_BLOCK;
+  }
+  memcpy(out_item, ring->items + (read % ring->capacity) * ring->item_size,
+         ring->item_size);
+  atomic_store_explicit(&ring->read_index, read + 1u, memory_order_release);
+  return H2_PAL_OK;
+}
+
+static void audio_ring_close(h2_gizclaw_audio_ring_t *ring) {
+  if (ring == NULL || ring->items == NULL ||
+      atomic_exchange_explicit(&ring->closed, true, memory_order_acq_rel))
+    return;
+}
+
+static void audio_ring_deinit(h2_gizclaw_audio_ring_t *ring) {
+  if (ring == NULL || ring->items == NULL)
+    return;
+  h2_pal_mem_free(ring->service->config.client_config->allocator, ring->items);
+  memset(ring, 0, sizeof(*ring));
+}
+
+static h2_pal_result_t
+audio_period_sleep(const h2_gizclaw_conversation_request_t *request) {
+  return h2_pal_time_sleep_ms(request->service->config.client_config->time,
+                              H2_GIZCLAW_CONVERSATION_AUDIO_PERIOD_MS);
+}
+
+#if defined(H2_GIZCLAW_TESTING)
+bool h2_gizclaw_test_audio_rings(void) {
+  uint8_t pcm_storage[8] = {0};
+  h2_gizclaw_pcm_ring_t pcm = {
+      .bytes = pcm_storage,
+      .capacity = sizeof(pcm_storage),
+  };
+  atomic_init(&pcm.write_index, 0u);
+  atomic_init(&pcm.read_index, 0u);
+  atomic_init(&pcm.closed, false);
+  const uint8_t first[] = {1u, 2u, 3u, 4u, 5u, 6u};
+  const uint8_t second[] = {7u, 8u, 9u, 10u, 11u, 12u};
+  uint8_t actual[8] = {0};
+  if (h2_gizclaw_pcm_ring_write(&pcm, first, sizeof(first)) != H2_PAL_OK ||
+      h2_gizclaw_pcm_ring_read(&pcm, actual, 4u) != H2_PAL_OK ||
+      memcmp(actual, first, 4u) != 0 ||
+      h2_gizclaw_pcm_ring_write(&pcm, second, sizeof(second)) != H2_PAL_OK ||
+      h2_gizclaw_pcm_ring_write(&pcm, first, 1u) != H2_PAL_ERR_WOULD_BLOCK ||
+      h2_gizclaw_pcm_ring_read(&pcm, actual, sizeof(actual)) != H2_PAL_OK)
+    return false;
+  const uint8_t expected[] = {5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u};
+  if (memcmp(actual, expected, sizeof(expected)) != 0)
+    return false;
+
+  uint32_t item_storage[2] = {0u};
+  h2_gizclaw_audio_ring_t items = {
+      .items = (uint8_t *)item_storage,
+      .item_size = sizeof(item_storage[0]),
+      .capacity = 2u,
+  };
+  atomic_init(&items.write_index, 0u);
+  atomic_init(&items.read_index, 0u);
+  atomic_init(&items.closed, false);
+  const uint32_t one = 17u;
+  const uint32_t two = 29u;
+  uint32_t output = 0u;
+  return audio_ring_send(&items, &one) == H2_PAL_OK &&
+         audio_ring_send(&items, &two) == H2_PAL_OK &&
+         audio_ring_send(&items, &one) == H2_PAL_ERR_WOULD_BLOCK &&
+         audio_ring_recv(&items, &output) == H2_PAL_OK && output == one &&
+         audio_ring_recv(&items, &output) == H2_PAL_OK && output == two &&
+         audio_ring_recv(&items, &output) == H2_PAL_ERR_WOULD_BLOCK;
+}
+#endif
+
+static h2_pal_result_t
+audio_encode_opus(OpusEncoder *encoder, const int16_t *samples,
+                  h2_gizclaw_conversation_request_message_t *message) {
+  *message = (h2_gizclaw_conversation_request_message_t){
+      .kind = H2_GIZCLAW_AUDIO_MESSAGE_OPUS};
+  const int encoded =
+      opus_encode(encoder, samples, H2_GIZCLAW_CONVERSATION_OPUS_FRAME_SAMPLES,
+                  message->data, (opus_int32)sizeof(message->data));
+  if (encoded <= 0)
+    return H2_PAL_ERR_FORMAT;
+  message->len = (size_t)encoded;
+  return H2_PAL_OK;
+}
+
+static void conversation_encode_task(void *user) {
+  h2_gizclaw_conversation_request_t *request = user;
+  const h2_pal_mem_api_t *mem =
+      request->service->config.client_config->allocator;
+  h2_pal_result_t rc = H2_PAL_OK;
+  const int encoder_size =
+      opus_encoder_get_size(H2_GIZCLAW_CONVERSATION_PCM_CHANNELS);
+  OpusEncoder *encoder =
+      encoder_size > 0 ? h2_pal_mem_alloc(mem, (size_t)encoder_size) : NULL;
+  int16_t samples[H2_GIZCLAW_CONVERSATION_OPUS_FRAME_SAMPLES];
+  h2_gizclaw_conversation_request_message_t pending = {0};
+  bool has_pending = false;
+  if (encoder == NULL ||
+      opus_encoder_init(encoder, H2_GIZCLAW_CONVERSATION_PCM_SAMPLE_RATE_HZ,
+                        H2_GIZCLAW_CONVERSATION_PCM_CHANNELS,
+                        OPUS_APPLICATION_VOIP) != OPUS_OK ||
+      opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(0)) != OPUS_OK) {
+    rc = H2_PAL_ERR_NO_MEMORY;
+  }
+  h2_gizclaw_service_log_request(
+      request->service, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+      "audio/uplink", "state_idle", request->identity, rc, 0, 0u, 0u);
+  bool active = false;
+  while (rc == H2_PAL_OK) {
+    if (has_pending) {
+      rc = audio_ring_send(&request->opus_uplink, &pending);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+        rc = audio_period_sleep(request);
+        continue;
+      }
+      if (rc != H2_PAL_OK)
+        break;
+      has_pending = false;
+      if (pending.kind == H2_GIZCLAW_AUDIO_MESSAGE_EOS) {
+        h2_gizclaw_service_log_request(
+            request->service,
+            rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+            "audio/uplink", "state_eos", request->identity, rc, 0,
+            atomic_load_explicit(&request->queued_frames, memory_order_relaxed),
+            atomic_load_explicit(&request->queued_bytes, memory_order_relaxed));
+        break;
+      }
+    }
+    rc = h2_gizclaw_pcm_ring_read(&request->pcm_uplink, (uint8_t *)samples,
+                                  H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+      if (atomic_load_explicit(&request->committed, memory_order_acquire)) {
+        const size_t remaining =
+            h2_gizclaw_pcm_ring_available(&request->pcm_uplink);
+        if (remaining != 0u) {
+          rc = h2_gizclaw_pcm_ring_read(&request->pcm_uplink,
+                                        (uint8_t *)samples, remaining);
+          if (rc == H2_PAL_OK) {
+            memset((uint8_t *)samples + remaining, 0,
+                   H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES - remaining);
+            rc = audio_encode_opus(encoder, samples, &pending);
+            has_pending = rc == H2_PAL_OK;
+          }
+        } else {
+          pending = (h2_gizclaw_conversation_request_message_t){
+              .kind = H2_GIZCLAW_AUDIO_MESSAGE_EOS};
+          has_pending = true;
+          rc = H2_PAL_OK;
+        }
+      } else {
+        rc = H2_PAL_OK;
+      }
+    } else if (rc == H2_PAL_OK) {
+      if (!active) {
+        active = true;
+        h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
+                                       "audio/uplink", "state_bos",
+                                       request->identity, H2_PAL_OK, 0, 0u, 0u);
+      }
+      rc = audio_encode_opus(encoder, samples, &pending);
+      has_pending = rc == H2_PAL_OK;
+    }
+    if (rc == H2_PAL_OK)
+      rc = audio_period_sleep(request);
+  }
+  if (encoder != NULL)
+    h2_pal_mem_free(mem, encoder);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_CLOSED) {
+    int expected = H2_PAL_OK;
+    (void)atomic_compare_exchange_strong_explicit(
+        &request->audio_result, &expected, rc, memory_order_release,
+        memory_order_relaxed);
+    h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_ERROR,
+                                   "audio/uplink", "failed", request->identity,
+                                   rc, 0, 0u, 0u);
+  }
+}
+
+static void conversation_decode_task(void *user) {
+  h2_gizclaw_conversation_request_t *request = user;
+  const h2_pal_mem_api_t *mem =
+      request->service->config.client_config->allocator;
+  h2_pal_result_t rc = H2_PAL_OK;
+  const int decoder_size =
+      opus_decoder_get_size(H2_GIZCLAW_CONVERSATION_PCM_CHANNELS);
+  OpusDecoder *decoder =
+      decoder_size > 0 ? h2_pal_mem_alloc(mem, (size_t)decoder_size) : NULL;
+  int16_t *decoded = h2_pal_mem_alloc(
+      mem, H2_GIZCLAW_CONVERSATION_DECODE_MAX_SAMPLES * sizeof(int16_t));
+  if (decoder == NULL || decoded == NULL ||
+      opus_decoder_init(decoder, H2_GIZCLAW_CONVERSATION_PCM_SAMPLE_RATE_HZ,
+                        H2_GIZCLAW_CONVERSATION_PCM_CHANNELS) != OPUS_OK)
+    rc = H2_PAL_ERR_NO_MEMORY;
+  bool active = false;
+  size_t decoded_bytes = 0u;
+  size_t decoded_offset = 0u;
+  while (rc == H2_PAL_OK) {
+    if (decoded_offset < decoded_bytes) {
+      size_t chunk = decoded_bytes - decoded_offset;
+      if (chunk > H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES)
+        chunk = H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES;
+      rc = h2_gizclaw_pcm_ring_write(&request->pcm_downlink,
+                                     (const uint8_t *)decoded + decoded_offset,
+                                     chunk);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+        rc = audio_period_sleep(request);
+        continue;
+      }
+      if (rc != H2_PAL_OK)
+        break;
+      decoded_offset += chunk;
+      rc = audio_period_sleep(request);
+      continue;
+    }
+    h2_gizclaw_conversation_request_message_t input = {0};
+    rc = audio_ring_recv(&request->opus_downlink, &input);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+      rc = audio_period_sleep(request);
+      continue;
+    }
+    if (rc != H2_PAL_OK)
+      break;
+    if (input.kind == H2_GIZCLAW_AUDIO_MESSAGE_EOS) {
+      atomic_store_explicit(&request->downlink_eos, true, memory_order_release);
+      h2_gizclaw_service_log_request(
+          request->service,
+          rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+          "audio/downlink", "state_eos", request->identity, rc, 0,
+          atomic_load_explicit(&request->reply_frames, memory_order_relaxed),
+          atomic_load_explicit(&request->reply_bytes, memory_order_relaxed));
+      break;
+    }
+    if (input.kind != H2_GIZCLAW_AUDIO_MESSAGE_OPUS)
+      continue;
+    if (!active) {
+      active = true;
+      h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
+                                     "audio/downlink", "state_bos",
+                                     request->identity, H2_PAL_OK, 0, 0u, 0u);
+    }
+    const int samples = opus_decode(
+        decoder, input.len == 0u ? NULL : input.data, (opus_int32)input.len,
+        decoded, H2_GIZCLAW_CONVERSATION_DECODE_MAX_SAMPLES, 0);
+    if (samples <= 0) {
+      rc = H2_PAL_ERR_FORMAT;
+      break;
+    }
+    decoded_bytes = (size_t)samples * sizeof(int16_t);
+    decoded_offset = 0u;
+  }
+  h2_pal_mem_free(mem, decoder);
+  h2_pal_mem_free(mem, decoded);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_CLOSED) {
+    int expected = H2_PAL_OK;
+    (void)atomic_compare_exchange_strong_explicit(
+        &request->audio_result, &expected, rc, memory_order_release,
+        memory_order_relaxed);
+    h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_ERROR,
+                                   "audio/downlink", "failed",
+                                   request->identity, rc, 0, 0u, 0u);
   }
 }
 
@@ -559,42 +918,102 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     conversation_request_close(request);
     return H2_PAL_ERR_CLOSED;
   }
+  const h2_pal_result_t audio_rc = (h2_pal_result_t)atomic_load_explicit(
+      &request->audio_result, memory_order_acquire);
+  if (audio_rc != H2_PAL_OK) {
+    conversation_request_close(request);
+    return audio_rc;
+  }
+  const size_t pcm_available =
+      h2_gizclaw_pcm_ring_available(&request->pcm_downlink);
+  const bool downlink_eos =
+      atomic_load_explicit(&request->downlink_eos, memory_order_acquire);
+  request->dispatch_pcm_message.kind = H2_GIZCLAW_AUDIO_MESSAGE_PCM;
+  request->dispatch_pcm_message.len =
+      pcm_available >= H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES
+          ? H2_GIZCLAW_CONVERSATION_OPUS_FRAME_BYTES
+          : (downlink_eos ? pcm_available : 0u);
+  const h2_pal_result_t pcm_queue_rc =
+      request->dispatch_pcm_message.len == 0u
+          ? H2_PAL_ERR_WOULD_BLOCK
+          : h2_gizclaw_pcm_ring_read(&request->pcm_downlink,
+                                     request->dispatch_pcm_message.data,
+                                     request->dispatch_pcm_message.len);
+  if (pcm_queue_rc == H2_PAL_OK) {
+    request->dispatch_event = (h2_gizclaw_conversation_event_t){
+        .kind = H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO,
+        .generation = request->generation,
+        .audio = request->dispatch_pcm_message.data,
+        .audio_len = request->dispatch_pcm_message.len,
+    };
+    const h2_pal_result_t dispatch_rc = h2_gizclaw_operation_dispatch_call(
+        cancel_token, conversation_request_dispatch_event, request);
+    if (dispatch_rc != H2_PAL_OK)
+      return dispatch_rc;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  } else if (pcm_queue_rc != H2_PAL_ERR_WOULD_BLOCK) {
+    return pcm_queue_rc;
+  }
+  if (request->terminal_waiting_for_audio && downlink_eos &&
+      h2_gizclaw_pcm_ring_available(&request->pcm_downlink) == 0u) {
+    request->terminal_waiting_for_audio = false;
+    request->dispatch_event = request->pending_terminal_event;
+    const h2_pal_result_t dispatch_rc = h2_gizclaw_operation_dispatch_call(
+        cancel_token, conversation_request_dispatch_event, request);
+    conversation_request_close(request);
+    return dispatch_rc;
+  }
+  if (request->has_pending_downlink_message) {
+    const h2_pal_result_t downlink_rc = audio_ring_send(
+        &request->opus_downlink, &request->pending_downlink_message);
+    if (downlink_rc == H2_PAL_ERR_WOULD_BLOCK)
+      return downlink_rc;
+    if (downlink_rc != H2_PAL_OK) {
+      h2_gizclaw_service_log_request(
+          request->service, H2_PAL_LOG_ERROR, "audio/downlink",
+          "ring_write_failed", request->identity, downlink_rc, 0,
+          atomic_load_explicit(&request->reply_frames, memory_order_relaxed),
+          atomic_load_explicit(&request->reply_bytes, memory_order_relaxed));
+      conversation_request_close(request);
+      return downlink_rc;
+    }
+    if (request->pending_downlink_message.kind == H2_GIZCLAW_AUDIO_MESSAGE_EOS)
+      request->terminal_waiting_for_audio = true;
+    request->has_pending_downlink_message = false;
+    memset(&request->pending_downlink_message, 0,
+           sizeof(request->pending_downlink_message));
+  }
   if (!request->has_pending_message) {
-    const int queue_rc =
-        h2_pal_queue_recv(request->service->config.queue, request->queue,
-                          &request->pending_message, H2_PAL_QUEUE_NO_WAIT);
-    if (queue_rc == H2_PAL_QUEUE_OK) {
+    const h2_pal_result_t queue_rc =
+        audio_ring_recv(&request->opus_uplink, &request->pending_message);
+    if (queue_rc == H2_PAL_OK) {
       request->has_pending_message = true;
-    } else if (queue_rc != H2_PAL_QUEUE_ERR_TIMEOUT &&
-               queue_rc != H2_PAL_ERR_WOULD_BLOCK) {
-      const h2_pal_result_t queue_result = queue_rc == H2_PAL_QUEUE_ERR_CLOSED
-                                               ? H2_PAL_ERR_CLOSED
-                                               : H2_PAL_ERR_IO;
+    } else if (queue_rc != H2_PAL_ERR_WOULD_BLOCK) {
       h2_gizclaw_service_log_request(
           request->service, H2_PAL_LOG_ERROR, "conversation",
-          "queue_recv_failed", request->identity, queue_result, queue_rc,
+          "queue_recv_failed", request->identity, queue_rc, 0,
           request->queued_frames, request->queued_bytes);
       conversation_request_close(request);
-      return queue_result;
+      return queue_rc;
     }
   }
   if (request->has_pending_message) {
     h2_pal_result_t rc;
-    if (request->pending_message.len == 0u) {
-      rc = h2_gizclaw_conversation_commit(
-          request->conversation, request->pending_message.timestamp_ms);
+    if (request->pending_message.kind == H2_GIZCLAW_AUDIO_MESSAGE_EOS) {
+      rc = h2_gizclaw_conversation_commit(request->conversation, 0u);
     } else {
-      rc = h2_gizclaw_conversation_write_opus(
-          request->conversation, request->pending_message.opus,
-          request->pending_message.len, request->pending_message.timestamp_ms);
+      rc = h2_gizclaw_conversation_write_opus(request->conversation,
+                                              request->pending_message.data,
+                                              request->pending_message.len, 0u);
     }
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
       return rc;
     if (rc != H2_PAL_OK) {
       h2_gizclaw_service_log_request(
           request->service, H2_PAL_LOG_ERROR, "conversation",
-          request->pending_message.len == 0u ? "commit_send_failed"
-                                             : "opus_send_failed",
+          request->pending_message.kind == H2_GIZCLAW_AUDIO_MESSAGE_EOS
+              ? "commit_send_failed"
+              : "opus_send_failed",
           request->identity, rc, 0, request->queued_frames,
           request->queued_bytes);
       conversation_request_close(request);
@@ -621,29 +1040,53 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE)
     return H2_PAL_ERR_WOULD_BLOCK;
   if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO) {
+    if (event.audio_len > sizeof(request->pending_downlink_message.data)) {
+      h2_gizclaw_service_log_request(
+          request->service, H2_PAL_LOG_ERROR, "audio/downlink",
+          "packet_too_large", request->identity, H2_PAL_ERR_FORMAT, 0,
+          event.audio_len, sizeof(request->pending_downlink_message.data));
+      conversation_request_close(request);
+      return H2_PAL_ERR_FORMAT;
+    }
     atomic_fetch_add_explicit(&request->reply_frames, 1u, memory_order_relaxed);
     atomic_fetch_add_explicit(&request->reply_bytes, event.audio_len,
                               memory_order_relaxed);
+    request->pending_downlink_message =
+        (h2_gizclaw_conversation_request_message_t){
+            .kind = H2_GIZCLAW_AUDIO_MESSAGE_OPUS, .len = event.audio_len};
+    if (event.audio_len != 0u)
+      memcpy(request->pending_downlink_message.data, event.audio,
+             event.audio_len);
+    request->has_pending_downlink_message = true;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  const bool terminal =
+      event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE ||
+      event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR;
+  if (terminal) {
+    request->pending_terminal_event = event;
+    request->pending_downlink_message =
+        (h2_gizclaw_conversation_request_message_t){
+            .kind = H2_GIZCLAW_AUDIO_MESSAGE_EOS};
+    request->has_pending_downlink_message = true;
+    return H2_PAL_ERR_WOULD_BLOCK;
   }
   request->dispatch_event = event;
   rc = h2_gizclaw_operation_dispatch_call(
       cancel_token, conversation_request_dispatch_event, request);
-  const bool terminal =
-      event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE ||
-      event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR;
-  if (terminal || rc != H2_PAL_OK) {
+  if (rc != H2_PAL_OK) {
     h2_gizclaw_service_log_request(
         request->service, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
-        "conversation", terminal ? "terminal_event" : "event_dispatch_failed",
-        request->identity, rc, (int)event.kind,
+        "conversation", "event_dispatch_failed", request->identity, rc,
+        (int)event.kind,
         atomic_load_explicit(&request->reply_frames, memory_order_relaxed),
         atomic_load_explicit(&request->reply_bytes, memory_order_relaxed));
   }
-  if (rc != H2_PAL_OK || terminal)
+  if (rc != H2_PAL_OK)
     conversation_request_close(request);
   if (rc != H2_PAL_OK)
     return rc;
-  return terminal ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
+  return H2_PAL_ERR_WOULD_BLOCK;
 }
 
 static h2_pal_result_t
@@ -706,6 +1149,10 @@ h2_pal_result_t h2_gizclaw_service_conversation_create(
       on_event == NULL || completion == NULL || out_request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_request = NULL;
+  if (service->config.client_config->time == NULL ||
+      service->config.client_config->time->vtable == NULL ||
+      service->config.client_config->time->vtable->sleep_ms == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
   const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
   h2_gizclaw_conversation_request_t *request =
       h2_pal_mem_alloc(allocator, sizeof(*request));
@@ -722,25 +1169,63 @@ h2_pal_result_t h2_gizclaw_service_conversation_create(
   request->workspace_name_len = workspace_name.len;
   memcpy(request->workspace_name, workspace_name.data, workspace_name.len);
   request->workspace_name[workspace_name.len] = '\0';
-  const h2_pal_queue_config_t queue_config = {
-      .name = "$gizclaw/conversation-request",
-      .item_size = sizeof(h2_gizclaw_conversation_request_message_t),
-      .item_count = H2_GIZCLAW_CONVERSATION_REQUEST_QUEUE_ITEMS,
-      .allocator = allocator,
-  };
-  h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_create(
-      service->config.queue, &queue_config, &request->queue);
-  if (rc == H2_PAL_OK) {
+  atomic_init(&request->committed, false);
+  atomic_init(&request->terminal, false);
+  atomic_init(&request->downlink_eos, false);
+  atomic_init(&request->audio_result, H2_PAL_OK);
+  atomic_init(&request->queued_frames, 0u);
+  atomic_init(&request->queued_bytes, 0u);
+  atomic_init(&request->reply_frames, 0u);
+  atomic_init(&request->reply_bytes, 0u);
+  h2_pal_result_t rc = h2_gizclaw_pcm_ring_init(
+      &request->pcm_uplink, service->config.client_config->allocator,
+      H2_GIZCLAW_CONVERSATION_PCM_RING_BYTES);
+  if (rc == H2_PAL_OK)
+    rc = audio_ring_init(&request->opus_uplink, service,
+                         sizeof(h2_gizclaw_conversation_request_message_t),
+                         H2_GIZCLAW_CONVERSATION_REQUEST_QUEUE_ITEMS);
+  if (rc == H2_PAL_OK)
+    rc = audio_ring_init(&request->opus_downlink, service,
+                         sizeof(h2_gizclaw_conversation_request_message_t),
+                         H2_GIZCLAW_CONVERSATION_REQUEST_QUEUE_ITEMS);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_pcm_ring_init(&request->pcm_downlink,
+                                  service->config.client_config->allocator,
+                                  H2_GIZCLAW_CONVERSATION_PCM_RING_BYTES);
+  const h2_pal_task_options_t encode_options = {
+      .name = H2_GIZCLAW_AUDIO_UPLINK_TASK_NAME_VALUE,
+      .min_stack_size = H2_GIZCLAW_CONVERSATION_ENCODE_TASK_STACK_SIZE};
+  const h2_pal_task_options_t decode_options = {
+      .name = H2_GIZCLAW_AUDIO_DOWNLINK_TASK_NAME_VALUE,
+      .min_stack_size = H2_GIZCLAW_CONVERSATION_DECODE_TASK_STACK_SIZE};
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_task_start(service->config.task, &encode_options,
+                           conversation_encode_task, request,
+                           &request->encode_task);
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_task_start(service->config.task, &decode_options,
+                           conversation_decode_task, request,
+                           &request->decode_task);
+  if (rc == H2_PAL_OK)
     rc = h2_gizclaw_service_submit_async_internal(
         service, identity, conversation_request_start,
         conversation_request_poll, conversation_request_complete, request,
         &request->operation);
-  }
   if (rc != H2_PAL_OK) {
     h2_gizclaw_service_log_request(service, H2_PAL_LOG_ERROR, "conversation",
                                    "create_failed", identity, rc, 0, 0u, 0u);
-    if (request->queue != NULL)
-      h2_pal_queue_destroy(service->config.queue, request->queue);
+    h2_gizclaw_pcm_ring_close(&request->pcm_uplink);
+    audio_ring_close(&request->opus_uplink);
+    audio_ring_close(&request->opus_downlink);
+    h2_gizclaw_pcm_ring_close(&request->pcm_downlink);
+    if (request->encode_task != NULL)
+      (void)h2_pal_task_join(service->config.task, request->encode_task);
+    if (request->decode_task != NULL)
+      (void)h2_pal_task_join(service->config.task, request->decode_task);
+    h2_gizclaw_pcm_ring_deinit(&request->pcm_uplink);
+    audio_ring_deinit(&request->opus_uplink);
+    audio_ring_deinit(&request->opus_downlink);
+    h2_gizclaw_pcm_ring_deinit(&request->pcm_downlink);
     h2_pal_mem_free(allocator, request);
     return rc;
   }
@@ -750,64 +1235,54 @@ h2_pal_result_t h2_gizclaw_service_conversation_create(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_conversation_request_write_opus(
-    h2_gizclaw_conversation_request_t *request, const uint8_t *opus,
-    size_t opus_len, uint64_t timestamp_ms) {
-  if (request == NULL || opus == NULL || opus_len == 0u ||
-      opus_len > H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES)
+h2_pal_result_t h2_gizclaw_conversation_request_write_pcm(
+    h2_gizclaw_conversation_request_t *request, const uint8_t *pcm,
+    size_t pcm_len) {
+  if (request == NULL || pcm == NULL || pcm_len == 0u ||
+      pcm_len > H2_GIZCLAW_CONVERSATION_PCM_CHUNK_MAX_BYTES ||
+      pcm_len % sizeof(int16_t) != 0u)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_pal_result_t rc =
-      h2_pal_mutex_lock(request->service->config.sync, request->service->mutex);
-  if (rc != H2_PAL_OK)
-    return rc;
+  h2_pal_result_t rc = H2_PAL_OK;
   if (atomic_load_explicit(&request->committed, memory_order_acquire) ||
       atomic_load_explicit(&request->terminal, memory_order_acquire)) {
     rc = H2_PAL_ERR_CLOSED;
-  } else {
-    h2_gizclaw_conversation_request_message_t message = {
-        .len = opus_len, .timestamp_ms = timestamp_ms};
-    memcpy(message.opus, opus, opus_len);
-    rc = (h2_pal_result_t)h2_pal_queue_send(request->service->config.queue,
-                                            request->queue, &message,
-                                            H2_PAL_QUEUE_NO_WAIT);
+  }
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_pcm_ring_write(&request->pcm_uplink, pcm, pcm_len);
     if (rc == H2_PAL_OK) {
-      ++request->queued_frames;
-      request->queued_bytes += opus_len;
+      atomic_fetch_add_explicit(&request->queued_frames, 1u,
+                                memory_order_relaxed);
+      atomic_fetch_add_explicit(&request->queued_bytes, pcm_len,
+                                memory_order_relaxed);
     }
   }
-  (void)h2_pal_mutex_unlock(request->service->config.sync,
-                            request->service->mutex);
-  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) {
+  if (rc != H2_PAL_OK) {
     h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_ERROR, "conversation", "enqueue_failed",
-        request->identity, rc, 0, request->queued_frames,
-        request->queued_bytes);
+        request->service,
+        rc == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_LOG_WARN : H2_PAL_LOG_ERROR,
+        "audio/uplink", "ring_write_failed", request->identity, rc, 0,
+        request->queued_frames, request->queued_bytes);
   }
   return rc;
 }
 
 h2_pal_result_t h2_gizclaw_conversation_request_commit(
-    h2_gizclaw_conversation_request_t *request, uint64_t timestamp_ms) {
+    h2_gizclaw_conversation_request_t *request) {
   if (request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_pal_result_t rc =
-      h2_pal_mutex_lock(request->service->config.sync, request->service->mutex);
-  if (rc != H2_PAL_OK)
-    return rc;
+  h2_pal_result_t rc = H2_PAL_OK;
   if (atomic_load_explicit(&request->committed, memory_order_acquire) ||
       atomic_load_explicit(&request->terminal, memory_order_acquire)) {
     rc = H2_PAL_ERR_CLOSED;
-  } else {
-    const h2_gizclaw_conversation_request_message_t message = {
-        .timestamp_ms = timestamp_ms};
-    rc = (h2_pal_result_t)h2_pal_queue_send(request->service->config.queue,
-                                            request->queue, &message,
-                                            H2_PAL_QUEUE_NO_WAIT);
-    if (rc == H2_PAL_OK)
-      atomic_store_explicit(&request->committed, true, memory_order_release);
   }
-  (void)h2_pal_mutex_unlock(request->service->config.sync,
-                            request->service->mutex);
+  if (rc == H2_PAL_OK) {
+    bool expected = false;
+    if (!atomic_compare_exchange_strong_explicit(&request->committed, &expected,
+                                                 true, memory_order_acq_rel,
+                                                 memory_order_acquire)) {
+      rc = H2_PAL_ERR_CLOSED;
+    }
+  }
   h2_gizclaw_service_log_request(
       request->service, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
       "conversation", "commit", request->identity, rc, 0,
@@ -845,6 +1320,15 @@ void h2_gizclaw_conversation_request_release(
       !atomic_load_explicit(&request->terminal, memory_order_acquire))
     return;
   h2_gizclaw_operation_release(request->operation);
-  h2_pal_queue_destroy(request->service->config.queue, request->queue);
+  h2_gizclaw_pcm_ring_close(&request->pcm_uplink);
+  audio_ring_close(&request->opus_uplink);
+  audio_ring_close(&request->opus_downlink);
+  h2_gizclaw_pcm_ring_close(&request->pcm_downlink);
+  (void)h2_pal_task_join(request->service->config.task, request->encode_task);
+  (void)h2_pal_task_join(request->service->config.task, request->decode_task);
+  h2_gizclaw_pcm_ring_deinit(&request->pcm_uplink);
+  audio_ring_deinit(&request->opus_uplink);
+  audio_ring_deinit(&request->opus_downlink);
+  h2_gizclaw_pcm_ring_deinit(&request->pcm_downlink);
   h2_pal_mem_free(request->service->config.client_config->allocator, request);
 }

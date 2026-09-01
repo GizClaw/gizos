@@ -178,6 +178,7 @@ void h2_gizclaw_test_set_client_poll(h2_gizclaw_test_client_poll_fn poll,
                                      void *user);
 void h2_gizclaw_test_set_conversation_ops(
     h2_gizclaw_test_conversation_packet_send_fn packet_send, void *user);
+bool h2_gizclaw_test_audio_rings(void);
 
 gzc_event_stream_t *
 h2_gizclaw_test_replace_event_stream(h2_gizclaw_client_t *client,

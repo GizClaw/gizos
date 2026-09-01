@@ -14,6 +14,9 @@ extern "C" {
 #endif
 
 #define H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES 1275u
+#define H2_GIZCLAW_CONVERSATION_PCM_CHUNK_MAX_BYTES 1280u
+#define H2_GIZCLAW_CONVERSATION_PCM_SAMPLE_RATE_HZ 16000u
+#define H2_GIZCLAW_CONVERSATION_PCM_CHANNELS 1u
 #define H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES 4096u
 #define H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES 63u
 
@@ -35,7 +38,8 @@ typedef enum h2_gizclaw_conversation_event_kind {
  * Result of one poll.
  *
  * `generation` is the caller-provided generation from `open`. `audio` contains
- * one raw Opus packet for `REPLY_AUDIO`. Audio, text, and error views are
+ * signed 16-bit little-endian, 16 kHz mono PCM for `REPLY_AUDIO`. Audio, text,
+ * and error views are
  * borrowed until the next poll or deinit. `REPLY_DONE` is the service terminal;
  * callers must still drain locally accepted playback before publishing their
  * own conversation completion.
@@ -66,19 +70,27 @@ h2_pal_result_t h2_gizclaw_service_conversation_create(
     h2_gizclaw_conversation_request_completion_fn completion, void *user,
     h2_gizclaw_conversation_request_t **out_request);
 
-/** Queue one complete Opus packet without blocking. */
-h2_pal_result_t h2_gizclaw_conversation_request_write_opus(
-    h2_gizclaw_conversation_request_t *request, const uint8_t *opus,
-    size_t opus_len, uint64_t timestamp_ms);
+/**
+ * Try to append one 16 kHz mono S16LE PCM chunk to the SPSC uplink ring.
+ *
+ * This call never waits. `H2_PAL_ERR_WOULD_BLOCK` means the chunk was not
+ * accepted and the realtime producer may drop it rather than accumulating
+ * latency. The producer that writes PCM also owns `commit()` ordering.
+ */
+h2_pal_result_t h2_gizclaw_conversation_request_write_pcm(
+    h2_gizclaw_conversation_request_t *request, const uint8_t *pcm,
+    size_t pcm_len);
 
-/** Queue EOS after all previously accepted packets. */
+/** Publish EOS after all previously accepted PCM bytes. This call never waits.
+ */
 h2_pal_result_t h2_gizclaw_conversation_request_commit(
-    h2_gizclaw_conversation_request_t *request, uint64_t timestamp_ms);
+    h2_gizclaw_conversation_request_t *request);
 
 h2_pal_result_t h2_gizclaw_conversation_request_cancel(
     h2_gizclaw_conversation_request_t *request);
-h2_pal_result_t h2_gizclaw_conversation_request_wait(
-    h2_gizclaw_conversation_request_t *request, uint32_t timeout_ms);
+h2_pal_result_t
+h2_gizclaw_conversation_request_wait(h2_gizclaw_conversation_request_t *request,
+                                     uint32_t timeout_ms);
 const h2_gizclaw_operation_result_t *
 h2_gizclaw_conversation_request_operation_result(
     const h2_gizclaw_conversation_request_t *request);

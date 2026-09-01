@@ -20,6 +20,8 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_internal.h",
     "src/h2_gizclaw_pet.c",
     "src/h2_gizclaw_peer_async.c",
+    "src/h2_gizclaw_pcm_ring.c",
+    "src/h2_gizclaw_pcm_ring.h",
     "src/h2_gizclaw_points.c",
     "src/h2_gizclaw_profile.c",
     "src/h2_gizclaw_profile_internal.h",
@@ -77,6 +79,7 @@ cc_library(
     deps = [
         ":task_names",
         "//libs/pal",
+        "//tools/bazel:vendor_third_party_opus",
     ] + select({
         "//tools/bazel/platforms:is_bk3633": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_bk7258": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
@@ -96,6 +99,8 @@ cc_library(
         "src/h2_gizclaw_conversation.c",
         "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_internal.h",
+        "src/h2_gizclaw_pcm_ring.c",
+        "src/h2_gizclaw_pcm_ring.h",
         "src/h2_gizclaw_peer_async.c",
         "src/h2_gizclaw_pet.c",
         "src/h2_gizclaw_points.c",
@@ -143,6 +148,7 @@ cc_library(
         ":task_names",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_gizclaw",
+        "//tools/bazel:vendor_third_party_opus",
     ],
 )
 
