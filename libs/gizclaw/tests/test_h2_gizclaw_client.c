@@ -1418,23 +1418,43 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
                       overridden_get_response, sizeof(overridden_get_response),
                       true, &overridden_get_response_len),
                   "workspace override response fixture encodes");
-  test_contact_rpc_t override_mock = {
-      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
-      .expected_request = workspace_get_request,
-      .expected_request_len = sizeof(workspace_get_request),
-      .response = overridden_get_response,
-      .response_len = overridden_get_response_len,
+  const uint8_t overridden_put_request[] = {
+      0x0a, 0x0a, 0x22, 0x08, 0x0a, 0x06, 0x08, 0x01, 0x18,
+      0x01, 0x20, 0x02, 0x12, 0x0b, 'w',  'o',  'r',  'k',
+      's',  'p',  'a',  'c',  'e',  '-',  '1',
   };
-  h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &override_mock);
+  test_contact_rpc_t override_steps[] = {
+      {
+          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+          .expected_request = workspace_get_request,
+          .expected_request_len = sizeof(workspace_get_request),
+          .response = overridden_get_response,
+          .response_len = overridden_get_response_len,
+      },
+      {
+          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
+          .expected_request = overridden_put_request,
+          .expected_request_len = sizeof(overridden_put_request),
+          .response = workspace_put_response,
+          .response_len = workspace_put_response_len,
+      },
+  };
+  test_rpc_sequence_t override_sequence = {
+      .steps = override_steps,
+      .step_count = sizeof(override_steps) / sizeof(override_steps[0]),
+  };
+  h2_gizclaw_test_set_rpc_call(test_rpc_sequence_call, &override_sequence);
   fails +=
       expect(h2_gizclaw_client_workspace_set_input(
                  client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-                 &workspace) == H2_PAL_ERR_INVALID_STATE,
-             "workspace input update refuses to discard parameter overrides");
-  fails += expect(override_mock.calls == 1 && override_mock.request_matches &&
-                      workspace.name == NULL,
-                  "workspace override rejection stops before PUT");
+                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME, &workspace) == H2_PAL_OK,
+             "workspace input update preserves parameter overrides");
+  fails += expect(
+      override_sequence.next_step == override_sequence.step_count &&
+          override_steps[0].calls == 1 && override_steps[0].request_matches &&
+          override_steps[1].calls == 1 && override_steps[1].request_matches,
+      "workspace override survives the input-only update");
+  h2_gizclaw_workspace_deinit(client, &workspace);
 
   uint8_t unsupported_get_response[128];
   memcpy(unsupported_get_response, workspace_get_response,
@@ -1461,16 +1481,16 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   };
   h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &unsupported_mock);
   workspace.name = (char *)0x1;
-  fails += expect(h2_gizclaw_client_workspace_set_input(
-                      client,
-                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                      H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-                      &workspace) == H2_PAL_ERR_UNSUPPORTED &&
-                      workspace.name == NULL,
-                  "workspace input update rejects unsupported parameter types");
-  fails += expect(unsupported_mock.calls == 1 &&
-                      unsupported_mock.request_matches,
-                  "unsupported Workspace parameters stop before PUT");
+  fails +=
+      expect(h2_gizclaw_client_workspace_set_input(
+                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                 H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+                 &workspace) == H2_PAL_ERR_UNSUPPORTED &&
+                 workspace.name == NULL,
+             "workspace input update rejects unsupported parameter types");
+  fails +=
+      expect(unsupported_mock.calls == 1 && unsupported_mock.request_matches,
+             "unsupported Workspace parameters stop before PUT");
 
   uint8_t incomplete_get_response[128];
   memcpy(incomplete_get_response, workspace_get_response,
@@ -1488,8 +1508,8 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
       break;
     }
   }
-  fails += expect(input_field_replaced,
-                  "workspace input fixture field is replaced");
+  fails +=
+      expect(input_field_replaced, "workspace input fixture field is replaced");
   test_contact_rpc_t incomplete_mock = {
       .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
       .expected_request = workspace_get_request,
@@ -1498,14 +1518,13 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
       .response_len = workspace_get_response_len,
   };
   h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &incomplete_mock);
-  fails += expect(h2_gizclaw_client_workspace_set_input(
-                      client,
-                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                      H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-                      &workspace) == H2_PAL_ERR_INVALID_STATE,
-                  "workspace input update rejects an incomplete parameter shape");
-  fails += expect(incomplete_mock.calls == 1 &&
-                      incomplete_mock.request_matches,
+  fails +=
+      expect(h2_gizclaw_client_workspace_set_input(
+                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                 &workspace) == H2_PAL_ERR_INVALID_STATE,
+             "workspace input update rejects an incomplete parameter shape");
+  fails += expect(incomplete_mock.calls == 1 && incomplete_mock.request_matches,
                   "incomplete Workspace parameters stop before PUT");
 
   const uint8_t duplicate_parameters_response[] = {
@@ -1521,12 +1540,12 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   };
   h2_gizclaw_test_set_rpc_call(test_contact_rpc_call,
                                &duplicate_parameters_mock);
-  fails += expect(h2_gizclaw_client_workspace_set_input(
-                      client,
-                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                      H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-                      &workspace) == H2_PAL_ERR_INVALID_STATE,
-                  "workspace input update rejects duplicate parameter oneofs");
+  fails +=
+      expect(h2_gizclaw_client_workspace_set_input(
+                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                 &workspace) == H2_PAL_ERR_INVALID_STATE,
+             "workspace input update rejects duplicate parameter oneofs");
   fails += expect(duplicate_parameters_mock.calls == 1 &&
                       duplicate_parameters_mock.request_matches,
                   "duplicate Workspace parameter oneofs stop before PUT");
