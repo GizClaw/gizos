@@ -24,7 +24,7 @@ bazel build --config=bk7258 \
 
 ## 平台配置
 
-CP 独占 UART0 RX 和 physical TX serializer，managed UART 固定为 115200 8N1；Host 的默认值与固件一致，显式 `--baud` 只用于连接另行配置的镜像。CP 不解析 H2IKCP 或 H2Loader command；AP 通过 mailbox-backed UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
+CP 独占 UART0 RX 和 physical TX serializer，managed UART 固定为 460800 8N1；Host 的默认值与固件一致，固件启动时由 CP defaults 和 AP 编译期配置直接应用，显式 `--baud` 只用于连接另行配置的镜像。CP 不解析 H2IKCP 或 H2Loader command；AP 通过 mailbox-backed UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
 
 Host 打开 managed serial 后、借出 stream 前明确 deassert DTR/RTS；不支持控制线的 endpoint 只有返回 canonical `UNSUPPORTED` 才可继续，其它错误立即终止连接。APP 与 Loader status 都从设备端同一个 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`，BLE 重启后以该 UID 验证设备，而不是信任 endpoint/address。
 
