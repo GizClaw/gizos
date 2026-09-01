@@ -822,17 +822,21 @@ h2_pal_result_t h2_iperf_run_sender(h2_iperf_run_t *run) {
             }
         }
         /* Never overshoot a byte budget: the final block is truncated to the
-         * remaining bytes. A UDP datagram must carry its full header, so the
-         * datagram before the last one shrinks instead whenever the remainder
-         * would otherwise be smaller than a header. */
+         * remaining bytes. A UDP datagram must carry its full header, so when
+         * the bytes left after this datagram would be fewer than a header,
+         * this datagram shrinks to leave exactly one header-sized final
+         * datagram. This runs on every iteration, so with a limit of 3005 and
+         * 1000-byte datagrams the sizes are 1000, 1000, 993, 12. */
         size_t budget = run->block_len;
         if (run->byte_limit != 0u) {
             uint64_t remaining = run->byte_limit - run->bytes;
             if (remaining <= budget) {
                 budget = (size_t)remaining;
-            } else if (stream->protocol == H2_IPERF_PROTOCOL_UDP &&
-                       remaining - budget < header) {
-                budget = (size_t)(remaining - header);
+            } else if (stream->protocol == H2_IPERF_PROTOCOL_UDP) {
+                uint64_t left_after_this = remaining - budget;
+                if (left_after_this < header) {
+                    budget = (size_t)(remaining - header);
+                }
             }
         }
         int sent;
