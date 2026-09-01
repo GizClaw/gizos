@@ -11,11 +11,10 @@ extern "C" {
 
 typedef int (*h2_esp_h2loader_mount_fn)(const char *path);
 
-/** Board-owned callbacks and MFG policy borrowed for the Loader lifetime. */
+/** Board-owned callbacks and MFG UI borrowed for the Loader lifetime. */
 typedef struct h2_esp_h2loader_config {
     const char *board;
     h2_esp_h2loader_mount_fn mount_file_point;
-    uint32_t mfg_required_total;
     void *user;
     int (*run_mfg)(void *user, h2_loader_t *loader,
                    const h2_pal_sync_api_t *operation_sync,
@@ -32,7 +31,7 @@ typedef struct h2_esp_h2loader_config {
     void (*show_launching)(void *user);
 } h2_esp_h2loader_config_t;
 
-/** Runs the blocking ESP H2Loader with an optional board MFG gate and UI. */
+/** Runs the blocking ESP H2Loader with optional board MFG and UI. */
 void h2_esp_h2loader_run_with_config(
     h2_runtime_t *runtime,
     const h2_esp_h2loader_config_t *config);

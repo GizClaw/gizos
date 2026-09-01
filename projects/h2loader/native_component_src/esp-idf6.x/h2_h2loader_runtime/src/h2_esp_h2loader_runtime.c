@@ -967,7 +967,6 @@ void h2_esp_h2loader_run_with_command_service_config(
   config.loader.device_uid = device_uid;
   config.loader.h2loader_partition_id = 1u;
   config.loader.app_partition_id = 2u;
-  config.loader.mfg_required_total = runtime_loader_config->mfg_required_total;
   config.loader.hardware_capabilities = H2_LOADER_CAPABILITY_UART |
                                         H2_LOADER_CAPABILITY_WIFI |
                                         H2_LOADER_CAPABILITY_BLE;

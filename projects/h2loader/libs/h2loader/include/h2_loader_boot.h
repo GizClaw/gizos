@@ -154,7 +154,6 @@ typedef struct h2_loader_config {
     const char *device_uid;
     uint32_t h2loader_partition_id;
     uint32_t app_partition_id;
-    uint32_t mfg_required_total;
     uint32_t hardware_capabilities;
     h2_loader_image_identity_t active_identity;
     void *confirm_user;
@@ -172,12 +171,10 @@ typedef struct h2_loader {
     h2_loader_package_t package;
     h2_loader_status_t status;
     int force_command_mode;
-    h2_loader_atomic_flag_t mfg_gate_bypass;
     h2_loader_atomic_flag_t implemented_commands;
     h2_loader_atomic_flag_t command_availability;
 } h2_loader_t;
 
-int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled);
 int h2_loader_set_implemented_commands(h2_loader_t *loader, uint32_t commands);
 int h2_loader_set_command_availability(
     h2_loader_t *loader, uint32_t flags, bool available);

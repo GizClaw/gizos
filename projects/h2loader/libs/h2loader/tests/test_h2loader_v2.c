@@ -1209,7 +1209,7 @@ static void test_reboot_preparation_and_failures_do_not_arm_boot(void) {
   assert(fixture.reboot_calls == 1u);
 }
 
-static void test_reboot_app_requires_bootable_partition_and_mfg_gate(void) {
+static void test_reboot_app_requires_bootable_partition(void) {
   test_fixture_t fixture;
   fixture_init(&fixture, 1u);
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
@@ -1235,13 +1235,6 @@ static void test_reboot_app_requires_bootable_partition_and_mfg_gate(void) {
   assert((h2_loader_get_command_availability(
               &fixture.loader, &fixture.loader.status) &
           H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u);
-  fixture.config.mfg_required_total = 1u;
-  fixture.loader.config.mfg_required_total = 1u;
-  assert((h2_loader_get_command_availability(
-              &fixture.loader, &fixture.loader.status) &
-          H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
-  assert(h2_loader_reboot_app_with_transition(&fixture.loader, NULL, NULL) ==
-         H2_PAL_ERR_INVALID_STATE);
 }
 
 static void
@@ -1287,7 +1280,7 @@ int main(void) {
   test_app_confirmation_is_between_metadata_and_stage_cleanup();
   test_reboot_commands_only_set_intent_and_partition();
   test_reboot_preparation_and_failures_do_not_arm_boot();
-  test_reboot_app_requires_bootable_partition_and_mfg_gate();
+  test_reboot_app_requires_bootable_partition();
   test_stage_begin_invalidates_metadata_and_removes_old_package();
   puts("h2loader v2 boot tests passed");
   return 0;

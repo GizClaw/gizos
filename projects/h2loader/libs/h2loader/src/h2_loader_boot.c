@@ -71,22 +71,6 @@ static uint32_t load_availability(const h2_loader_atomic_flag_t *value) {
              : H2_LOADER_COMMAND_AVAILABILITY_ALL;
 }
 
-static int mfg_gate_satisfied(const h2_loader_t *loader) {
-  return loader != NULL &&
-         (atomic_load(&loader->mfg_gate_bypass) != 0 ||
-          loader->config.mfg_required_total == 0u ||
-          h2_loader_mfg_summary_is_passed(&loader->status.mfg,
-                                          loader->config.mfg_required_total));
-}
-
-int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
-  if (loader == NULL || (enabled != 0 && enabled != 1)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  atomic_store(&loader->mfg_gate_bypass, enabled);
-  return H2_PAL_OK;
-}
-
 int h2_loader_set_implemented_commands(h2_loader_t *loader, uint32_t commands) {
   if (loader == NULL ||
       (commands & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
@@ -121,8 +105,7 @@ uint32_t h2_loader_get_command_availability(const h2_loader_t *loader,
                    H2_LOADER_COMMAND_AVAILABLE_STAGE_URL);
   }
   if (!status->partition_2.valid ||
-      status->partition_2.role != H2_LOADER_IMAGE_ROLE_APP ||
-      !mfg_gate_satisfied(loader)) {
+      status->partition_2.role != H2_LOADER_IMAGE_ROLE_APP) {
     available &= ~H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
   }
   return available;
@@ -965,8 +948,6 @@ int h2_loader_startup(h2_loader_t *loader,
     rc = finish_loader_stage_if_converged(loader);
     return rc == H2_PAL_OK ? H2_PAL_OK : fail_recovery(loader, rc);
   }
-  if (!mfg_gate_satisfied(loader))
-    return H2_PAL_OK;
   emit_event(loader, H2_LOADER_STARTUP_EVENT_BOOT_PARTITION_2, H2_PAL_OK);
   rc = set_next_and_reboot(loader, loader->config.app_partition_id,
                            H2_LOADER_BOOT_INTENT_AUTO,
@@ -994,8 +975,7 @@ int h2_loader_reboot_app_with_transition(
   if (loader == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (!loader->status.partition_2.valid ||
-      loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP ||
-      !mfg_gate_satisfied(loader))
+      loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP)
     return H2_PAL_ERR_INVALID_STATE;
   return set_next_and_reboot(
       loader, loader->config.app_partition_id, H2_LOADER_BOOT_INTENT_AUTO,
