@@ -7,7 +7,10 @@ _ESP_LAYOUTS = {
     ("esp32s3", "amoled"): struct(root = "//boards/amoled/esp32s3/layouts/h2loader"),
     ("esp32s3", "devkit"): struct(
         root = "//boards/devkit/esp32s3/layouts/h2loader",
-        support = ["//boards/devkit/esp32s3/layouts/h2loader:loader_uart.defaults"],
+        consoles = {
+            "uart": "loader_uart.defaults",
+            "usb": "loader_usb.defaults",
+        },
     ),
     ("esp32s3", "szp"): struct(root = "//boards/szp/esp32s3/layouts/h2loader"),
     ("esp32s3", "waveshare_esp32s3_a7670e_4g"): struct(root = "//boards/waveshare_esp32s3_a7670e_4g/esp32s3/layouts/h2loader"),
@@ -46,7 +49,7 @@ def _require_target_policy(policy, field, target, board):
         fail("H2Loader firmware target %s/%s is missing %s" % (target, board, field))
     return policy
 
-def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = "h2loader", layout_files = None, **kwargs):
+def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = "h2loader", layout_files = None, console = None, **kwargs):
     """Declares ESP-IDF firmware from one repository-owned board layout.
 
     Every board owns exactly one canonical sdkconfig.defaults; a layout only
@@ -73,6 +76,25 @@ def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = 
             "project_support_files": [layout_root + ":sdkconfig.h2loader.defaults"],
             "support_files": getattr(entry, "support", []),
         }
+        consoles = getattr(entry, "consoles", {})
+        if consoles:
+            if console not in consoles:
+                fail("H2Loader firmware target %s/%s requires console to be one of %s" % (
+                    target,
+                    board,
+                    ", ".join(sorted(consoles)),
+                ))
+            console_defaults = consoles[console]
+            layout_files["support_files"] = layout_files["support_files"] + [
+                layout_root + ":" + console_defaults,
+            ]
+            cmake_definitions = dict(kwargs.pop("cmake_definitions", {}))
+            if "H2_ESP_CONSOLE_DEFAULTS" in cmake_definitions:
+                fail("H2_ESP_CONSOLE_DEFAULTS is owned by console")
+            cmake_definitions["H2_ESP_CONSOLE_DEFAULTS"] = console_defaults
+            kwargs["cmake_definitions"] = cmake_definitions
+        elif console != None:
+            fail("H2Loader firmware target %s/%s does not define console profiles" % (target, board))
     else:
         layout_files = _require_layout_files(
             layout_files,

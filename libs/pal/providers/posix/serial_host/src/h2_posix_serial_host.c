@@ -14,6 +14,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#include <IOKit/serial/ioss.h>
+#endif
+
 struct h2_pal_serial_host_session {
     int fd;
     int closed;
@@ -140,7 +144,13 @@ static h2_pal_result_t configure_locked(
     h2_pal_serial_host_session_t *session,
     const h2_pal_uart_io_stream_config_t *config) {
     struct termios attributes;
+#if defined(__APPLE__)
+    struct termios original_attributes;
+#endif
     speed_t speed;
+#if defined(__APPLE__)
+    int use_arbitrary_speed = 0;
+#endif
 
     if (session->closed) {
         return H2_PAL_ERR_CLOSED;
@@ -158,11 +168,22 @@ static h2_pal_result_t configure_locked(
     }
     speed = baud_constant(config->baud_rate);
     if (speed == (speed_t)0) {
+#if defined(__APPLE__)
+        if (config->baud_rate == 0u) {
+            return H2_PAL_ERR_UNSUPPORTED;
+        }
+        speed = B9600;
+        use_arbitrary_speed = 1;
+#else
         return H2_PAL_ERR_UNSUPPORTED;
+#endif
     }
     if (tcgetattr(session->fd, &attributes) != 0) {
         return map_io_error(errno);
     }
+#if defined(__APPLE__)
+    original_attributes = attributes;
+#endif
 
     cfmakeraw(&attributes);
     attributes.c_cflag |= CLOCAL | CREAD;
@@ -222,6 +243,19 @@ static h2_pal_result_t configure_locked(
     if (tcsetattr(session->fd, TCSANOW, &attributes) != 0) {
         return map_io_error(errno);
     }
+#if defined(__APPLE__)
+    if (use_arbitrary_speed) {
+        speed_t arbitrary_speed = (speed_t)config->baud_rate;
+        if (ioctl(session->fd, IOSSIOSPEED, &arbitrary_speed) != 0) {
+            const int error_number = errno;
+            (void)tcsetattr(session->fd, TCSANOW, &original_attributes);
+            if (error_number == EINVAL || error_number == ENOTTY) {
+                return H2_PAL_ERR_UNSUPPORTED;
+            }
+            return map_io_error(error_number);
+        }
+    }
+#endif
     return H2_PAL_OK;
 }
 

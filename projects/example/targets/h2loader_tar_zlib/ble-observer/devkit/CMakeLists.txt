@@ -21,9 +21,12 @@ if(NOT EXISTS "${H2_ESP_COMPONENT_DIR}")
   message(FATAL_ERROR "ESP component directory is missing: ${H2_ESP_COMPONENT_DIR}")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
+if(NOT DEFINED H2_ESP_CONSOLE_DEFAULTS)
+  message(FATAL_ERROR "Bazel target did not select H2_ESP_CONSOLE_DEFAULTS")
+endif()
 set(
   SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
+  "${H2_ESP_BOARD_DIR}/layouts/h2loader/${H2_ESP_CONSOLE_DEFAULTS};${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 
 set(H2_ESP_BOARD_ALIAS_DIR "${CMAKE_BINARY_DIR}/h2_esp_board")

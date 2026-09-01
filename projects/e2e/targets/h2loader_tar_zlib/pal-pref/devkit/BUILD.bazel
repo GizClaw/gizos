@@ -65,6 +65,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [":pal_pref_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_pal_pref_e2e",
