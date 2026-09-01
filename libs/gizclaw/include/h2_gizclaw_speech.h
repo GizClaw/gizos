@@ -16,7 +16,7 @@ typedef struct h2_gizclaw_speech_upload h2_gizclaw_speech_upload_t;
 typedef struct h2_gizclaw_speech_request h2_gizclaw_speech_extract_request_t;
 typedef struct h2_gizclaw_speech_request h2_gizclaw_speech_transcribe_request_t;
 
-#define H2_GIZCLAW_SPEECH_OPUS_MAX_BYTES 1275u
+#define H2_GIZCLAW_SPEECH_AUDIO_CHUNK_MAX_BYTES 1280u
 
 typedef void (*h2_gizclaw_speech_extract_request_completion_fn)(
     void *user, h2_gizclaw_speech_extract_request_t *request);
@@ -113,12 +113,12 @@ int h2_gizclaw_service_speech_transcribe_create(
     h2_gizclaw_speech_transcribe_request_completion_fn completion, void *user,
     h2_gizclaw_speech_transcribe_request_t **out_request);
 
-int h2_gizclaw_speech_transcribe_request_write_opus(
-    h2_gizclaw_speech_transcribe_request_t *request, const uint8_t *opus,
-    size_t opus_len);
+int h2_gizclaw_speech_transcribe_request_write_audio(
+    h2_gizclaw_speech_transcribe_request_t *request, const uint8_t *audio,
+    size_t audio_len, uint32_t timeout_ms);
 
 int h2_gizclaw_speech_transcribe_request_commit(
-    h2_gizclaw_speech_transcribe_request_t *request);
+    h2_gizclaw_speech_transcribe_request_t *request, uint32_t timeout_ms);
 
 int h2_gizclaw_speech_transcribe_request_cancel(
     h2_gizclaw_speech_transcribe_request_t *request);
@@ -136,9 +136,10 @@ void h2_gizclaw_speech_transcribe_request_release(
 /**
  * Create one task-safe, service-owned incremental extraction request.
  *
- * The service worker owns all client calls. Callers may feed complete Opus
- * packets from another task and then commit or cancel the request. Options are
- * copied before this function returns. Completion runs from service dispatch.
+ * The service worker owns all client calls. Callers may feed audio chunks that
+ * match `options.content_type` from another task and then commit or cancel the
+ * request. Options are copied before this function returns. Completion runs
+ * from service dispatch.
  */
 int h2_gizclaw_service_speech_extract_create(
     h2_gizclaw_service_t *service, uint64_t identity,
@@ -146,14 +147,14 @@ int h2_gizclaw_service_speech_extract_create(
     h2_gizclaw_speech_extract_request_completion_fn completion, void *user,
     h2_gizclaw_speech_extract_request_t **out_request);
 
-/** Queue one complete Opus packet without blocking. */
-int h2_gizclaw_speech_extract_request_write_opus(
-    h2_gizclaw_speech_extract_request_t *request, const uint8_t *opus,
-    size_t opus_len);
+/** Queue one audio chunk, waiting at most `timeout_ms` for backpressure. */
+int h2_gizclaw_speech_extract_request_write_audio(
+    h2_gizclaw_speech_extract_request_t *request, const uint8_t *audio,
+    size_t audio_len, uint32_t timeout_ms);
 
-/** Queue EOS after every previously accepted Opus packet. */
+/** Queue EOS after every previously accepted audio chunk. */
 int h2_gizclaw_speech_extract_request_commit(
-    h2_gizclaw_speech_extract_request_t *request);
+    h2_gizclaw_speech_extract_request_t *request, uint32_t timeout_ms);
 
 /** Request task-safe cooperative cancellation. */
 int h2_gizclaw_speech_extract_request_cancel(

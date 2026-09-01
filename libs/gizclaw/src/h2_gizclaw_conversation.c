@@ -37,6 +37,11 @@ struct h2_gizclaw_conversation_request {
   int timeout_ms;
   h2_gizclaw_conversation_request_message_t pending_message;
   h2_gizclaw_conversation_event_t dispatch_event;
+  uint64_t identity;
+  atomic_size_t queued_frames;
+  atomic_size_t queued_bytes;
+  size_t reply_frames;
+  size_t reply_bytes;
   h2_gizclaw_operation_result_t operation_result;
   bool has_pending_message;
   atomic_bool committed;
@@ -547,6 +552,10 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   (void)client;
   h2_gizclaw_conversation_request_t *request = user;
   if (h2_gizclaw_cancel_requested(cancel_token)) {
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_WARN, "conversation", "poll_cancelled",
+        request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
+        request->queued_bytes);
     conversation_request_close(request);
     return H2_PAL_ERR_CLOSED;
   }
@@ -558,9 +567,15 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
       request->has_pending_message = true;
     } else if (queue_rc != H2_PAL_QUEUE_ERR_TIMEOUT &&
                queue_rc != H2_PAL_ERR_WOULD_BLOCK) {
+      const h2_pal_result_t queue_result = queue_rc == H2_PAL_QUEUE_ERR_CLOSED
+                                               ? H2_PAL_ERR_CLOSED
+                                               : H2_PAL_ERR_IO;
+      h2_gizclaw_service_log_request(
+          request->service, H2_PAL_LOG_ERROR, "conversation",
+          "queue_recv_failed", request->identity, queue_result, queue_rc,
+          request->queued_frames, request->queued_bytes);
       conversation_request_close(request);
-      return queue_rc == H2_PAL_QUEUE_ERR_CLOSED ? H2_PAL_ERR_CLOSED
-                                                 : H2_PAL_ERR_IO;
+      return queue_result;
     }
   }
   if (request->has_pending_message) {
@@ -576,6 +591,12 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
       return rc;
     if (rc != H2_PAL_OK) {
+      h2_gizclaw_service_log_request(
+          request->service, H2_PAL_LOG_ERROR, "conversation",
+          request->pending_message.len == 0u ? "commit_send_failed"
+                                             : "opus_send_failed",
+          request->identity, rc, 0, request->queued_frames,
+          request->queued_bytes);
       conversation_request_close(request);
       return rc;
     }
@@ -589,17 +610,31 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
     return H2_PAL_ERR_WOULD_BLOCK;
   if (rc != H2_PAL_OK) {
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_ERROR, "conversation", "poll_failed",
+        request->identity, rc, 0, request->reply_frames, request->reply_bytes);
     conversation_request_close(request);
     return rc;
   }
   if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE)
     return H2_PAL_ERR_WOULD_BLOCK;
+  if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO) {
+    ++request->reply_frames;
+    request->reply_bytes += event.audio_len;
+  }
   request->dispatch_event = event;
   rc = h2_gizclaw_operation_dispatch_call(
       cancel_token, conversation_request_dispatch_event, request);
   const bool terminal =
       event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE ||
       event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR;
+  if (terminal || rc != H2_PAL_OK) {
+    h2_gizclaw_service_log_request(
+        request->service, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+        "conversation", terminal ? "terminal_event" : "event_dispatch_failed",
+        request->identity, rc, (int)event.kind, request->reply_frames,
+        request->reply_bytes);
+  }
   if (rc != H2_PAL_OK || terminal)
     conversation_request_close(request);
   if (rc != H2_PAL_OK)
@@ -611,15 +646,29 @@ static h2_pal_result_t
 conversation_request_start(void *user, h2_gizclaw_client_t *client,
                            const h2_gizclaw_cancel_token_t *cancel_token) {
   h2_gizclaw_conversation_request_t *request = user;
-  if (h2_gizclaw_cancel_requested(cancel_token))
+  if (h2_gizclaw_cancel_requested(cancel_token)) {
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_WARN, "conversation", "start_cancelled",
+        request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
+        request->queued_bytes);
     return H2_PAL_ERR_CLOSED;
+  }
   h2_pal_result_t rc = h2_gizclaw_conversation_open(
       client,
       (h2_gizclaw_str_t){.data = request->workspace_name,
                          .len = request->workspace_name_len},
       request->generation, request->timeout_ms, &request->conversation);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_ERROR, "conversation", "open_failed",
+        request->identity, rc, 0, request->queued_frames,
+        request->queued_bytes);
     return rc;
+  }
+  h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
+                                 "conversation", "opened", request->identity,
+                                 H2_PAL_OK, 0, request->queued_frames,
+                                 request->queued_bytes);
   return conversation_request_poll(user, client, cancel_token);
 }
 
@@ -630,6 +679,15 @@ conversation_request_complete(void *user, h2_gizclaw_operation_t *operation,
   h2_gizclaw_conversation_request_t *request = user;
   request->operation_result = *result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
+  h2_gizclaw_service_log_request(
+      request->service,
+      result->result == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+      "conversation", "completed", request->identity, result->result, 0,
+      request->queued_frames, request->queued_bytes);
+  h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
+                                 "conversation", "reply_summary",
+                                 request->identity, result->result, 0,
+                                 request->reply_frames, request->reply_bytes);
   request->completion(request->user, request);
 }
 
@@ -650,6 +708,7 @@ h2_pal_result_t h2_gizclaw_service_conversation_create(
     return H2_PAL_ERR_NO_MEMORY;
   memset(request, 0, sizeof(*request));
   request->service = service;
+  request->identity = identity;
   request->on_event = on_event;
   request->completion = completion;
   request->user = user;
@@ -673,11 +732,15 @@ h2_pal_result_t h2_gizclaw_service_conversation_create(
         &request->operation);
   }
   if (rc != H2_PAL_OK) {
+    h2_gizclaw_service_log_request(service, H2_PAL_LOG_ERROR, "conversation",
+                                   "create_failed", identity, rc, 0, 0u, 0u);
     if (request->queue != NULL)
       h2_pal_queue_destroy(service->config.queue, request->queue);
     h2_pal_mem_free(allocator, request);
     return rc;
   }
+  h2_gizclaw_service_log_request(service, H2_PAL_LOG_INFO, "conversation",
+                                 "created", identity, H2_PAL_OK, 0, 0u, 0u);
   *out_request = request;
   return H2_PAL_OK;
 }
@@ -702,9 +765,19 @@ h2_pal_result_t h2_gizclaw_conversation_request_write_opus(
     rc = (h2_pal_result_t)h2_pal_queue_send(request->service->config.queue,
                                             request->queue, &message,
                                             H2_PAL_QUEUE_NO_WAIT);
+    if (rc == H2_PAL_OK) {
+      ++request->queued_frames;
+      request->queued_bytes += opus_len;
+    }
   }
   (void)h2_pal_mutex_unlock(request->service->config.sync,
                             request->service->mutex);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) {
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_ERROR, "conversation", "enqueue_failed",
+        request->identity, rc, 0, request->queued_frames,
+        request->queued_bytes);
+  }
   return rc;
 }
 
@@ -730,6 +803,10 @@ h2_pal_result_t h2_gizclaw_conversation_request_commit(
   }
   (void)h2_pal_mutex_unlock(request->service->config.sync,
                             request->service->mutex);
+  h2_gizclaw_service_log_request(
+      request->service, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+      "conversation", "commit", request->identity, rc, 0,
+      request->queued_frames, request->queued_bytes);
   return rc;
 }
 
@@ -740,11 +817,12 @@ h2_pal_result_t h2_gizclaw_conversation_request_cancel(
   return h2_gizclaw_operation_cancel(request->operation);
 }
 
-h2_pal_result_t h2_gizclaw_conversation_request_wait(
-    h2_gizclaw_conversation_request_t *request, uint32_t timeout_ms) {
-  return request == NULL ? H2_PAL_ERR_INVALID_ARG
-                         : h2_gizclaw_operation_wait(request->operation,
-                                                     timeout_ms);
+h2_pal_result_t
+h2_gizclaw_conversation_request_wait(h2_gizclaw_conversation_request_t *request,
+                                     uint32_t timeout_ms) {
+  return request == NULL
+             ? H2_PAL_ERR_INVALID_ARG
+             : h2_gizclaw_operation_wait(request->operation, timeout_ms);
 }
 
 const h2_gizclaw_operation_result_t *

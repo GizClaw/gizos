@@ -3,8 +3,8 @@
 
 #include "h2_gizclaw_service.h"
 
-#include <stdbool.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 
 typedef enum h2_gizclaw_operation_state {
   H2_GIZCLAW_OPERATION_QUEUED = 0,
@@ -86,6 +86,13 @@ h2_pal_result_t h2_gizclaw_service_submit_async_internal(
     h2_gizclaw_operation_completion_fn completion, void *user,
     h2_gizclaw_operation_t **out_operation);
 
+void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
+                                    h2_pal_log_level_t level,
+                                    const char *request_kind, const char *stage,
+                                    uint64_t identity, h2_pal_result_t result,
+                                    int detail_code, size_t frame_count,
+                                    size_t byte_count);
+
 #ifdef H2_GIZCLAW_TESTING
 typedef struct h2_gizclaw_service_client_ops {
   h2_pal_result_t (*init)(const h2_gizclaw_config_t *config,
@@ -113,8 +120,7 @@ typedef struct h2_gizclaw_async_rpc_ops {
   void (*destroy)(h2_gizclaw_rpc_request_t *request);
 } h2_gizclaw_async_rpc_ops_t;
 
-void h2_gizclaw_async_rpc_test_set_ops(
-    const h2_gizclaw_async_rpc_ops_t *ops);
+void h2_gizclaw_async_rpc_test_set_ops(const h2_gizclaw_async_rpc_ops_t *ops);
 #endif
 
 #endif
