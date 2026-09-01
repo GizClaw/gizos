@@ -1043,6 +1043,32 @@ static int metadata_same_image(const h2_h2loader_host_metadata_t *a,
          strcmp(a->board, b->board) == 0 && strcmp(a->target, b->target) == 0;
 }
 
+static int metadata_equal(const h2_h2loader_host_metadata_t *a,
+                          const h2_h2loader_host_metadata_t *b) {
+  return a->valid == b->valid && a->package_size == b->package_size &&
+         a->image_size == b->image_size && a->role == b->role &&
+         strcmp(a->package_checksum, b->package_checksum) == 0 &&
+         strcmp(a->image_checksum, b->image_checksum) == 0 &&
+         strcmp(a->version, b->version) == 0 &&
+         strcmp(a->board, b->board) == 0 && strcmp(a->target, b->target) == 0;
+}
+
+static int
+metadata_matches_asset(const h2_h2loader_host_metadata_t *metadata,
+                       const h2_h2loader_host_catalog_entry_t *asset) {
+  h2_h2loader_host_active_role_t role =
+      asset->role == H2_H2LOADER_HOST_ASSET_ROLE_APP
+          ? H2_H2LOADER_HOST_ACTIVE_ROLE_APP
+          : H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+  return metadata->valid && metadata->role == role &&
+         metadata->package_size == asset->bytes &&
+         strcmp(metadata->package_checksum, asset->sha256) == 0 &&
+         strcmp(metadata->image_checksum, asset->image_sha256) == 0 &&
+         strcmp(metadata->version, asset->version) == 0 &&
+         strcmp(metadata->board, asset->board) == 0 &&
+         strcmp(metadata->target, asset->target) == 0;
+}
+
 static h2_pal_result_t
 run_install(h2_e2e_transport_context_t *context,
             const h2_h2loader_host_catalog_entry_t *asset,
@@ -1097,6 +1123,8 @@ run_install(h2_e2e_transport_context_t *context,
 static h2_pal_result_t
 run_install_crash_app(h2_e2e_transport_context_t *context) {
   h2_h2loader_host_status_t status;
+  h2_h2loader_host_metadata_t staged_candidate = {0};
+  int32_t staged_last = 0;
   h2_h2loader_host_command_result_t result = {0};
   h2_pal_result_t rc = run_stage_payload(context, &context->crash_asset,
                                          context->config->crash_firmware,
@@ -1104,6 +1132,14 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
   if (rc != H2_PAL_OK)
     return rc;
   rc = connect_transport(context, &status);
+  if (rc == H2_PAL_OK &&
+      !metadata_matches_asset(&status.stage, &context->crash_asset)) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  if (rc == H2_PAL_OK) {
+    staged_candidate = status.stage;
+    staged_last = status.last;
+  }
   if (rc == H2_PAL_OK) {
     const h2_h2loader_host_command_request_t request = {
         .command = H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE,
@@ -1135,8 +1171,10 @@ run_install_crash_app(h2_e2e_transport_context_t *context) {
     if (rc == H2_PAL_ERR_INVALID_STATE)
       return rc;
     if (rc == H2_PAL_OK && status.running_partition == 1u &&
-        !status.stage.valid && !status.partition_2.valid &&
-        status.last == H2_PAL_ERR_INVALID_STATE) {
+        metadata_equal(&status.stage, &staged_candidate) &&
+        metadata_equal(&status.partition_2, &staged_candidate) &&
+        status.boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO &&
+        status.last == staged_last) {
       context->case_result->status = status;
       context->case_result->status_valid = 1u;
       (void)disconnect_transport(context);

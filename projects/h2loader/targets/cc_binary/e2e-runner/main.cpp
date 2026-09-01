@@ -77,7 +77,7 @@ void usage(const char *program, FILE *stream) {
       "1)\n"
       "  --timeout-ms MS              connect and command timeout (default "
       "120000)\n"
-      "  --baud RATE                  UART baud (default 230400)\n"
+      "  --baud RATE                  UART baud (default 115200)\n"
       "  --monitor-ms MS              test monitor and reboot --monitor on "
       "UART\n"
       "  --report FILE                write a JSON report\n"

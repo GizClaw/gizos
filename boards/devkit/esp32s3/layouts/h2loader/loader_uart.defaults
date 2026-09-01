@@ -1,4 +1,4 @@
 # DevKit command transport follows the board's native USB Serial/JTAG console.
-# UART-backed ESP targets use the same 230400 host contract.
-CONFIG_ESP_CONSOLE_UART_BAUDRATE=230400
-CONFIG_ESPTOOLPY_MONITOR_BAUD=230400
+# UART-backed ESP targets use the same 115200 host contract.
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+CONFIG_ESPTOOLPY_MONITOR_BAUD=115200
