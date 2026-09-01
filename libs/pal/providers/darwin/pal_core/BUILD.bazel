@@ -152,6 +152,7 @@ cc_test(
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
         ":serial_host",
+        "//libs/pal/providers/posix/serial_host:serial_host_internal",
         "//libs/pal/providers/posix/serial_host:serial_host_test_support",
     ],
 )
