@@ -7,6 +7,7 @@
 typedef struct test_env {
     int create_count;
     int destroy_count;
+    h2_pal_result_t destroy_result;
     h2_pal_result_t firmware_result;
     h2_pal_result_t power_result;
     h2_pal_power_boot_partition_t partition;
@@ -28,7 +29,7 @@ static h2_pal_result_t destroy_mutex(void *user, h2_pal_mutex_t *mutex) {
     test_env_t *env = user;
     assert(mutex == (h2_pal_mutex_t *)env);
     ++env->destroy_count;
-    return H2_PAL_OK;
+    return env->destroy_result;
 }
 
 static h2_pal_result_t get_firmware(
@@ -89,6 +90,7 @@ static void expect_failure(
     assert(env->destroy_count == 1);
     assert(preflight.operation_mutex == NULL);
     assert(preflight.app_partition_id == 0u);
+    assert(preflight.firmware_info.version[0] == '\0');
 }
 
 int main(void) {
@@ -97,6 +99,13 @@ int main(void) {
         .power_result = H2_PAL_OK,
     };
     expect_failure(&firmware_failure, H2_PAL_ERR_IO);
+
+    test_env_t cleanup_failure = {
+        .destroy_result = H2_PAL_ERR_BUSY,
+        .firmware_result = H2_PAL_ERR_IO,
+        .power_result = H2_PAL_OK,
+    };
+    expect_failure(&cleanup_failure, H2_PAL_ERR_BUSY);
 
     test_env_t provider_failure = {
         .firmware_result = H2_PAL_OK,
