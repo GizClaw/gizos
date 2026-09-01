@@ -15,6 +15,8 @@ CoreBluetooth 借用调用方提供的完整 Memory PAL API，不拥有或销毁
 
 CoreBluetooth provider 不提供独立 legacy scan-response 配置；`h2_pal_ble_adv_set_set_scan_response_data()` 由完整 vtable entry 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不能依赖零初始化 slot，也不能把 scan-response 内容合并进 primary advertising data。
 
+CoreBluetooth 也不提供逐字节 primary advertising sequence 或 scan interval/window 的 controller-unit surface。`h2_pal_ble_adv_set_set_encoded_data()` 与 exact `interval_units_625us/window_units_625us` 因此都在保存数据、callback 或改变 activity state 前返回 `H2_PAL_ERR_UNSUPPORTED`；provider 不能把 dictionary-based advertising 或系统调度描述成 exact request，也不能 round 或静默降级。
+
 ## Lifecycle 与依赖
 
 SystemEvent init 创建 wake descriptor 与 joinable route-monitor thread；任何 partial failure 都回收本次已创建的资源。Deinit 唤醒并 join worker、等待 in-flight callback、清空 subscription，再关闭 descriptor。默认 route 消失、恢复或改变才发布 Netif event，重复状态不重复发布。

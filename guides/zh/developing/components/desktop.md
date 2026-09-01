@@ -68,6 +68,8 @@ Desktop unit tests 使用 test-only bounded SystemEvent provider 验证 `NULL`�
 
 Desktop BLE simulator 显式实现完整 `h2_pal_ble_vtable_t` shape，但独立 legacy scan-response operation 返回 `H2_PAL_ERR_UNSUPPORTED`，且不修改 advertising-set state。Simulator 继续只保存既有 primary advertising data；不能因为 portable contract 增加可选 operation 就伪造 native scan-response 支持。
 
+Simulator 支持 handle-scoped exact primary data，并在 `h2_pal_ble_adv_set_set_encoded_data()` 成功返回前复制完整 byte sequence；重复 AD type、顺序和值保持不变，运行中的 replacement 只更新目标 set，空 sequence 清除 primary data。该行为只证明 deterministic simulator state，不代表任何 RF controller 接受或发射了相同 bytes。Desktop scan 没有可表达 controller interval/window 的 native surface，因此 exact `interval_units_625us/window_units_625us` 在保存 callback 或改变 scan state 前返回 `H2_PAL_ERR_UNSUPPORTED`；不能 round 或降级到 millisecond form。
+
 ## Display 与进程生命周期
 
 一个 `display` 配置只创建一个 SDL window。SDL 只承担 host window、event 和 framebuffer presentation；firmware UI 仍通过 LVGL 渲染到 Display PAL，不在 SDL 层维护另一套 widget 或 XML layout。
