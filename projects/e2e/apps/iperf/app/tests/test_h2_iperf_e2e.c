@@ -56,6 +56,23 @@ static void test_rejects_invalid_config(void) {
     assert(h2_iperf_e2e_run(&config, &report) == H2_PAL_ERR_INVALID_ARG);
     config.case_count = 1u;
     assert(h2_iperf_e2e_run(&config, NULL) == H2_PAL_ERR_INVALID_ARG);
+    /* Ledger identifiers are bounded tokens, never escaped. */
+    config.target = "amoled\"x";
+    assert(h2_iperf_e2e_run(&config, &report) == H2_PAL_ERR_INVALID_ARG);
+    config.target = "0123456789012345678901234567890123";
+    assert(h2_iperf_e2e_run(&config, &report) == H2_PAL_ERR_INVALID_ARG);
+    config.target = "host-1.local";
+    const h2_iperf_e2e_case_t bad_id[] = {
+        {"tcp tx", H2_IPERF_PROTOCOL_TCP, false, 0u, 0u, 0u},
+    };
+    config.cases = bad_id;
+    assert(h2_iperf_e2e_run(&config, &report) == H2_PAL_ERR_INVALID_ARG);
+    const h2_iperf_e2e_case_t long_id[] = {
+        {"0123456789012345678901234567890123", H2_IPERF_PROTOCOL_TCP, false, 0u,
+         0u, 0u},
+    };
+    config.cases = long_id;
+    assert(h2_iperf_e2e_run(&config, &report) == H2_PAL_ERR_INVALID_ARG);
     h2_iperf_test_env_deinit(&env);
 }
 

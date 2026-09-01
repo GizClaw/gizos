@@ -49,10 +49,30 @@ static const char *protocol_name(h2_iperf_protocol_t protocol) {
     }
 }
 
+/* Ledger identifiers are emitted verbatim inside JSON strings, so they are
+ * restricted to a bounded token alphabet instead of being escaped. */
+static bool identifier_is_valid(const char *text, size_t max_len) {
+    if (text == NULL || text[0] == '\0') {
+        return false;
+    }
+    for (size_t i = 0u; text[i] != '\0'; ++i) {
+        if (i >= max_len) {
+            return false;
+        }
+        const char c = text[i];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+                        c == '.';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool case_is_valid(const h2_iperf_e2e_case_t *test_case) {
-    if (test_case == NULL || test_case->id == NULL ||
-        test_case->id[0] == '\0' ||
-        strlen(test_case->id) > H2_IPERF_E2E_CASE_ID_MAX) {
+    if (test_case == NULL ||
+        !identifier_is_valid(test_case->id, H2_IPERF_E2E_CASE_ID_MAX)) {
         return false;
     }
     return test_case->protocol == H2_IPERF_PROTOCOL_TCP ||
@@ -62,7 +82,8 @@ static bool case_is_valid(const h2_iperf_e2e_case_t *test_case) {
 
 static bool config_is_valid(const h2_iperf_e2e_config_t *config) {
     if (config == NULL || config->pal.mem == NULL || config->pal.net == NULL ||
-        config->pal.time == NULL || config->target == NULL) {
+        config->pal.time == NULL ||
+        !identifier_is_valid(config->target, H2_IPERF_E2E_TARGET_MAX)) {
         return false;
     }
     if (config->server_host == NULL &&
@@ -118,7 +139,9 @@ void h2_iperf_e2e_log_case(
     const char *target,
     const h2_iperf_e2e_case_t *test_case,
     const h2_iperf_e2e_case_result_t *result) {
-    if (target == NULL || test_case == NULL || result == NULL) {
+    if (!identifier_is_valid(target, H2_IPERF_E2E_TARGET_MAX) ||
+        test_case == NULL || result == NULL ||
+        !identifier_is_valid(result->id, H2_IPERF_E2E_CASE_ID_MAX)) {
         return;
     }
     emit(log,

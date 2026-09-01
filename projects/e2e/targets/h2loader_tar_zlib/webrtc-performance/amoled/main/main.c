@@ -134,13 +134,16 @@ static int load_wifi_config(h2_runtime_t *runtime,
                                                    out_config);
 }
 
-static void apply_power_save(h2_runtime_t *runtime) {
+/* The selected policy must be in effect before any measurement, otherwise
+ * the summary would label results with a mode that was never applied. */
+static int apply_power_save(h2_runtime_t *runtime) {
   const h2_pal_wifi_power_save_t mode =
       (h2_pal_wifi_power_save_t)H2_WEBRTC_PERF_POWER_SAVE;
   const int rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta, mode);
   printf("H2_WEBRTC_PERF_AMOLED stage=power_save mode=%d rc=%d\n", (int)mode,
          rc);
   fflush(stdout);
+  return rc;
 }
 
 static void wait_for_wifi(h2_runtime_t *runtime,
@@ -219,7 +222,10 @@ static void image_entry(void *user) {
     fail("wifi_settings", rc, 1);
   }
   wait_for_wifi(runtime, &wifi);
-  apply_power_save(runtime);
+  rc = apply_power_save(runtime);
+  if (rc != H2_PAL_OK) {
+    fail("power_save", rc, 1);
+  }
   memory_checkpoint("wifi_ready");
   h2_webrtc_performance_amoled_context_t context = {.runtime = runtime};
   const int url_len = snprintf(context.offer_url, sizeof(context.offer_url),

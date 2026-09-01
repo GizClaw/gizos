@@ -22,12 +22,18 @@
 extern "C" {
 #endif
 
-/** Longest case ID accepted by the registry, excluding the terminator. */
+/**
+ * Longest case ID and target label, excluding the terminator. Both are
+ * written verbatim into JSON ledger strings, so they must consist only of
+ * ASCII letters, digits, `_`, `-` and `.`.
+ */
 #define H2_IPERF_E2E_CASE_ID_MAX 31u
+#define H2_IPERF_E2E_TARGET_MAX 31u
 
 /** One client run against the configured server. */
 typedef struct h2_iperf_e2e_case {
-    /** Stable case identifier printed in the result ledger. */
+    /** Stable case identifier for the ledger; bounded by
+     * H2_IPERF_E2E_CASE_ID_MAX and limited to the ledger token alphabet. */
     const char *id;
     h2_iperf_protocol_t protocol;
     /** True when the server sends and this endpoint receives. */
@@ -46,7 +52,8 @@ typedef void (*h2_iperf_e2e_checkpoint_fn)(void *user, const char *name);
 typedef struct h2_iperf_e2e_config {
     /** Borrowed PAL views; `sctp` may be NULL when no SCTP case is selected. */
     h2_iperf_config_t pal;
-    /** Launcher label printed in every ledger line, for example "amoled". */
+    /** Launcher label in every ledger line, for example "amoled"; bounded by
+     * H2_IPERF_E2E_TARGET_MAX and limited to the ledger token alphabet. */
     const char *target;
     /** Optional host name resolved through the PAL resolver. */
     const char *server_host;
@@ -106,8 +113,8 @@ extern const size_t h2_iperf_e2e_default_case_count;
 /**
  * Runs the whole matrix and returns H2_PAL_OK only when every case passed.
  *
- * Missing PAL views or an invalid case list return H2_PAL_ERR_INVALID_ARG
- * before any traffic; an SCTP case without `pal.sctp` reports
+ * Missing PAL views, an invalid target label or an invalid case list return
+ * H2_PAL_ERR_INVALID_ARG before any traffic; an SCTP case without `pal.sctp` reports
  * H2_PAL_ERR_UNSUPPORTED for that case and the run continues.
  */
 h2_pal_result_t h2_iperf_e2e_run(

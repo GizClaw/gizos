@@ -15,6 +15,10 @@ if(NOT DEFINED IDF_TARGET)
   set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
+# sdkconfig.h2loader.defaults is not checked in next to this launcher: the
+# h2loader_esp_idf_firmware rule copies the board layout file from
+# boards/amoled/esp32s3/layouts/h2loader/ into the project directory before
+# the native build runs, so it is appended after the board defaults here.
 set(SDKCONFIG_DEFAULTS
   "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)

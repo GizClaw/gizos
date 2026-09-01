@@ -8,13 +8,12 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # middle ground between the ESP-IDF "minimum" and "default" ranks so UDP,
 # SCTP and H2Peer traffic is not throttled by two in-flight TX frames or a
 # four-frame Block Ack window. Dynamic RX buffers and the TX cache live in
-# PSRAM through CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP; the static RX buffers
-# cost about 1.6 KiB of internal DMA memory each.
+# PSRAM through CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP, which also forces the
+# static TX buffer type; static RX and TX buffers cost about 1.6 KiB of
+# internal DMA memory each and are allocated at Wi-Fi init.
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
-# CONFIG_ESP_WIFI_STATIC_TX_BUFFER is not set
-CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER=y
-CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
 CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=16
 CONFIG_ESP_WIFI_RX_BA_WIN=12
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=32
