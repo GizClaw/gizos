@@ -37,7 +37,6 @@ H2LOADER_E2E_WIFI_PASSWORD='<password>' \
 bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --uart <serial-endpoint> \
   --ble-id <ble-endpoint> \
-  --baud 115200 \
   --expected-board devkit \
   --expected-target esp32s3 \
   --app-firmware <devkit-e2e-app-esp32s3.update.tar.zlib> \
@@ -51,7 +50,7 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --report <report.json>
 ```
 
-2026-08-31 的 PR #64 head `b6370c4` 在当时的 230400 contract 下完成实板验收；当前默认 contract 已改为 115200：UART
+2026-08-31 的 PR #64 head `b6370c4` 在当时的 230400 contract 下完成实板验收；当前 managed UART 默认 contract 已改为 460800：UART
 31/31 PASS、BLE 28/28 PASS，合计 59/59 PASS。Loader 与 APP 环境都分别覆盖
 `help/status/stats/memory`、旧命令从 help 与 availability 消失、Wi-Fi
 scan/connect/disconnect、payload/URL Stage 和两种 abort；每个 APP case 的 authoritative

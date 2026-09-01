@@ -2147,7 +2147,7 @@ static void test_serial_connect_deasserts_dtr_and_rts(void) {
     memset(&fixture, 0, sizeof(fixture));
     fixture.set_result = H2_PAL_ERR_UNSUPPORTED;
     fixture.stream_result = H2_PAL_ERR_IO;
-    fixture.expected_baud = 115200u;
+    fixture.expected_baud = 460800u;
     config.baud_rate = 0u;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_IO);
@@ -2161,7 +2161,7 @@ static void test_serial_connect_deasserts_dtr_and_rts(void) {
     memset(&fixture, 0, sizeof(fixture));
     fixture.set_result = H2_PAL_ERR_TIMEOUT;
     fixture.stream_result = H2_PAL_ERR_IO;
-    fixture.expected_baud = 115200u;
+    fixture.expected_baud = 460800u;
     assert(h2_h2loader_host_serial_connect(&config, &connection) ==
         H2_PAL_ERR_TIMEOUT);
     assert(fixture.event_count == 3u);
