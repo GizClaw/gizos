@@ -179,8 +179,6 @@ static void gizclaw_task_entry(void *context) {
       .sync = app->runtime->sync,
       .net_task_options = {.name = h2_gizclaw_net_task_name,
                            .min_stack_size = 16384u},
-      .resp_dispatch_task_options = {.name = h2_gizclaw_resp_dispatch_task_name,
-                                     .min_stack_size = 8192u},
       .operation_capacity = 4u,
       .client_poll_timeout_ms = H2_SHOWCASE_GIZCLAW_POLL_MS,
       .terminal = gizclaw_terminal,
@@ -199,6 +197,10 @@ static void gizclaw_task_entry(void *context) {
   }
   if (result == H2_PAL_OK) {
     while (!gizclaw_cancel_requested(state)) {
+      size_t dispatched = 0u;
+      result = h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+      if (result != H2_PAL_OK)
+        break;
       if (h2_pal_time_sleep_ms(app->runtime->time,
                                H2_SHOWCASE_GIZCLAW_POLL_MS) != H2_PAL_OK)
         break;
@@ -208,6 +210,15 @@ static void gizclaw_task_entry(void *context) {
     const h2_pal_result_t stop_result = h2_gizclaw_service_stop(state->service);
     if (result == H2_PAL_OK)
       result = stop_result;
+    for (;;) {
+      size_t dispatched = 0u;
+      const h2_pal_result_t dispatch_result =
+          h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+      if (result == H2_PAL_OK)
+        result = dispatch_result;
+      if (dispatch_result != H2_PAL_OK || dispatched == 0u)
+        break;
+    }
     const h2_pal_result_t deinit_result =
         h2_gizclaw_service_deinit(state->service);
     if (result == H2_PAL_OK)

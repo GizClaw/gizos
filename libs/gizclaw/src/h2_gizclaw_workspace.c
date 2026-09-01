@@ -936,13 +936,50 @@ static bool protobuf_find_bytes(const uint8_t *data, size_t len,
   return true;
 }
 
-static int workspace_parameters_input_shape(const uint8_t *response,
-                                            size_t response_len,
-                                            uint32_t *out_parameters_tag) {
+static size_t protobuf_varint_size(uint64_t value) {
+  size_t size = 1u;
+  while (value >= 0x80u) {
+    value >>= 7u;
+    ++size;
+  }
+  return size;
+}
+
+static bool protobuf_write_varint(uint8_t *data, size_t capacity,
+                                  size_t *offset, uint64_t value) {
+  do {
+    if (*offset >= capacity)
+      return false;
+    uint8_t byte = (uint8_t)(value & 0x7fu);
+    value >>= 7u;
+    if (value != 0u)
+      byte |= 0x80u;
+    data[(*offset)++] = byte;
+  } while (value != 0u);
+  return true;
+}
+
+static bool protobuf_write_bytes(uint8_t *data, size_t capacity, size_t *offset,
+                                 const uint8_t *value, size_t value_len) {
+  if (value_len > capacity - *offset)
+    return false;
+  memcpy(data + *offset, value, value_len);
+  *offset += value_len;
+  return true;
+}
+
+static int workspace_parameters_patch_input(
+    const h2_pal_mem_api_t *allocator, const uint8_t *response,
+    size_t response_len, h2_gizclaw_workspace_input_mode_t input_mode,
+    h2_gizclaw_str_t name, uint8_t **out_request, size_t *out_request_len) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (out_request_len != NULL)
+    *out_request_len = 0u;
   const uint8_t *workspace = NULL;
   size_t workspace_len = 0u;
   bool found = false;
-  if (out_parameters_tag == NULL ||
+  if (allocator == NULL || out_request == NULL || out_request_len == NULL ||
       !protobuf_find_bytes(response, response_len, 1u, &workspace,
                            &workspace_len, &found) ||
       !found)
@@ -997,111 +1034,108 @@ static int workspace_parameters_input_shape(const uint8_t *response,
     return H2_PAL_ERR_UNSUPPORTED;
   }
 
-  offset = 0u;
-  bool has_agent_type = false;
-  bool has_input = false;
-  while (offset < typed_len) {
-    uint64_t key = 0u;
-    if (!protobuf_read_varint(typed, typed_len, &offset, &key) || key == 0u ||
-        key >> 3u > UINT32_MAX)
-      return H2_PAL_ERR_FORMAT;
-    const uint32_t field = (uint32_t)(key >> 3u);
-    const uint8_t wire_type = (uint8_t)(key & 0x07u);
-    if ((field != 1u && field != input_field) || wire_type != 0u ||
-        (field == 1u && has_agent_type) || (field == input_field && has_input))
-      return H2_PAL_ERR_INVALID_STATE;
-    has_agent_type = has_agent_type || field == 1u;
-    has_input = has_input || field == input_field;
-    if (!protobuf_skip(typed, typed_len, &offset, wire_type))
-      return H2_PAL_ERR_FORMAT;
-  }
-  if (!has_agent_type || !has_input)
-    return H2_PAL_ERR_INVALID_STATE;
-  *out_parameters_tag = parameters_tag;
-  return H2_PAL_OK;
-}
-
-static int workspace_input_preflight(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_str_t name,
-                                     uint32_t *out_parameters_tag) {
-  gizclaw_rpc_v1_WorkspaceGetRequest request =
-      gizclaw_rpc_v1_WorkspaceGetRequest_init_zero;
-  text_encode_t name_text = {.data = name.data, .len = name.len};
-  request.name.funcs.encode = encode_text;
-  request.name.arg = &name_text;
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_message(client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
-                        gizclaw_rpc_v1_WorkspaceGetRequest_fields, &request,
-                        &response);
-  if (rc == H2_PAL_OK) {
-    rc = workspace_parameters_input_shape(response.result_payload,
-                                          response.result_payload_len,
-                                          out_parameters_tag);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-static int
-workspace_parameters_set_input(gizclaw_rpc_v1_WorkspaceParameters *parameters,
-                               uint32_t parameters_tag,
-                               h2_gizclaw_workspace_input_mode_t input_mode) {
-  if (parameters == NULL || !workspace_input_mode_valid(input_mode))
-    return H2_PAL_ERR_INVALID_ARG;
-  const gizclaw_rpc_v1_WorkspaceInputMode wire_input =
+  const uint64_t wire_input =
       input_mode == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
           ? gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_REALTIME
           : gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_PUSH_TO_TALK;
-  parameters->which_value = parameters_tag;
-  switch (parameters_tag) {
-  case gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag:
-    parameters->value.flowcraft_workspace_parameters =
-        (gizclaw_rpc_v1_FlowcraftWorkspaceParameters)
-            gizclaw_rpc_v1_FlowcraftWorkspaceParameters_init_zero;
-    parameters->value.flowcraft_workspace_parameters.agent_type =
-        gizclaw_rpc_v1_FlowcraftWorkspaceParametersAgentType_FLOWCRAFT_WORKSPACE_PARAMETERS_AGENT_TYPE_FLOWCRAFT;
-    parameters->value.flowcraft_workspace_parameters.has_input = true;
-    parameters->value.flowcraft_workspace_parameters.input = wire_input;
-    return H2_PAL_OK;
-  case gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_workspace_parameters_tag:
-    parameters->value.doubao_realtime_workspace_parameters =
-        (gizclaw_rpc_v1_DoubaoRealtimeWorkspaceParameters)
-            gizclaw_rpc_v1_DoubaoRealtimeWorkspaceParameters_init_zero;
-    parameters->value.doubao_realtime_workspace_parameters.agent_type =
-        gizclaw_rpc_v1_DoubaoRealtimeWorkspaceParametersAgentType_DOUBAO_REALTIME_WORKSPACE_PARAMETERS_AGENT_TYPE_DOUBAO_REALTIME;
-    parameters->value.doubao_realtime_workspace_parameters.has_input = true;
-    parameters->value.doubao_realtime_workspace_parameters.input = wire_input;
-    return H2_PAL_OK;
-  case gizclaw_rpc_v1_WorkspaceParameters_asttranslate_workspace_parameters_tag:
-    parameters->value.asttranslate_workspace_parameters =
-        (gizclaw_rpc_v1_ASTTranslateWorkspaceParameters)
-            gizclaw_rpc_v1_ASTTranslateWorkspaceParameters_init_zero;
-    parameters->value.asttranslate_workspace_parameters.agent_type =
-        gizclaw_rpc_v1_ASTTranslateWorkspaceParametersAgentType_ASTTRANSLATE_WORKSPACE_PARAMETERS_AGENT_TYPE_AST_TRANSLATE;
-    parameters->value.asttranslate_workspace_parameters.has_input = true;
-    parameters->value.asttranslate_workspace_parameters.input = wire_input;
-    return H2_PAL_OK;
-  case gizclaw_rpc_v1_WorkspaceParameters_chat_room_workspace_parameters_tag:
-    parameters->value.chat_room_workspace_parameters =
-        (gizclaw_rpc_v1_ChatRoomWorkspaceParameters)
-            gizclaw_rpc_v1_ChatRoomWorkspaceParameters_init_zero;
-    parameters->value.chat_room_workspace_parameters.agent_type =
-        gizclaw_rpc_v1_ChatRoomWorkspaceParametersAgentType_CHAT_ROOM_WORKSPACE_PARAMETERS_AGENT_TYPE_CHATROOM;
-    parameters->value.chat_room_workspace_parameters.has_input = true;
-    parameters->value.chat_room_workspace_parameters.input = wire_input;
-    return H2_PAL_OK;
-  case gizclaw_rpc_v1_WorkspaceParameters_eino_workspace_parameters_tag:
-    parameters->value.eino_workspace_parameters =
-        (gizclaw_rpc_v1_EinoWorkspaceParameters)
-            gizclaw_rpc_v1_EinoWorkspaceParameters_init_zero;
-    parameters->value.eino_workspace_parameters.agent_type =
-        gizclaw_rpc_v1_EinoWorkspaceParametersAgentType_EINO_WORKSPACE_PARAMETERS_AGENT_TYPE_EINO;
-    parameters->value.eino_workspace_parameters.has_input = true;
-    parameters->value.eino_workspace_parameters.input = wire_input;
-    return H2_PAL_OK;
-  default:
-    return H2_PAL_ERR_UNSUPPORTED;
+  if (typed_len > SIZE_MAX - 16u)
+    return H2_PAL_ERR_NO_MEMORY;
+  uint8_t *patched = h2_pal_mem_alloc(allocator, typed_len + 16u);
+  if (patched == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+
+  offset = 0u;
+  size_t patched_len = 0u;
+  bool has_agent_type = false;
+  bool has_input = false;
+  while (offset < typed_len) {
+    const size_t field_start = offset;
+    uint64_t key = 0u;
+    if (!protobuf_read_varint(typed, typed_len, &offset, &key) || key == 0u ||
+        key >> 3u > UINT32_MAX) {
+      h2_pal_mem_free(allocator, patched);
+      return H2_PAL_ERR_FORMAT;
+    }
+    const uint32_t field = (uint32_t)(key >> 3u);
+    const uint8_t wire_type = (uint8_t)(key & 0x07u);
+    if ((field == 1u && (wire_type != 0u || has_agent_type)) ||
+        (field == input_field && (wire_type != 0u || has_input)) ||
+        !protobuf_skip(typed, typed_len, &offset, wire_type)) {
+      h2_pal_mem_free(allocator, patched);
+      return H2_PAL_ERR_INVALID_STATE;
+    }
+    has_agent_type = has_agent_type || field == 1u;
+    if (field == input_field) {
+      has_input = true;
+      if (!protobuf_write_varint(patched, typed_len + 16u, &patched_len, key) ||
+          !protobuf_write_varint(patched, typed_len + 16u, &patched_len,
+                                 wire_input)) {
+        h2_pal_mem_free(allocator, patched);
+        return H2_PAL_ERR_NO_MEMORY;
+      }
+    } else if (!protobuf_write_bytes(patched, typed_len + 16u, &patched_len,
+                                     typed + field_start,
+                                     offset - field_start)) {
+      h2_pal_mem_free(allocator, patched);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
   }
+  if (!has_agent_type) {
+    h2_pal_mem_free(allocator, patched);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (!has_input &&
+      (!protobuf_write_varint(patched, typed_len + 16u, &patched_len,
+                              ((uint64_t)input_field << 3u)) ||
+       !protobuf_write_varint(patched, typed_len + 16u, &patched_len,
+                              wire_input))) {
+    h2_pal_mem_free(allocator, patched);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (name.len > SIZE_MAX - 32u || patched_len > SIZE_MAX - name.len - 32u) {
+    h2_pal_mem_free(allocator, patched);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+
+  const uint64_t parameters_key = ((uint64_t)parameters_tag << 3u) | 2u;
+  const size_t encoded_parameters_len = protobuf_varint_size(parameters_key) +
+                                        protobuf_varint_size(patched_len) +
+                                        patched_len;
+  const size_t body_len = 1u + protobuf_varint_size(encoded_parameters_len) +
+                          encoded_parameters_len;
+  const size_t request_len = 1u + protobuf_varint_size(body_len) + body_len +
+                             1u + protobuf_varint_size(name.len) + name.len;
+  uint8_t *request = h2_pal_mem_alloc(allocator, request_len);
+  if (request == NULL) {
+    h2_pal_mem_free(allocator, patched);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  size_t request_offset = 0u;
+  const bool encoded =
+      protobuf_write_varint(request, request_len, &request_offset, 0x0au) &&
+      protobuf_write_varint(request, request_len, &request_offset, body_len) &&
+      protobuf_write_varint(request, request_len, &request_offset, 0x22u) &&
+      protobuf_write_varint(request, request_len, &request_offset,
+                            encoded_parameters_len) &&
+      protobuf_write_varint(request, request_len, &request_offset,
+                            parameters_key) &&
+      protobuf_write_varint(request, request_len, &request_offset,
+                            patched_len) &&
+      protobuf_write_bytes(request, request_len, &request_offset, patched,
+                           patched_len) &&
+      protobuf_write_varint(request, request_len, &request_offset, 0x12u) &&
+      protobuf_write_varint(request, request_len, &request_offset, name.len) &&
+      protobuf_write_bytes(request, request_len, &request_offset,
+                           (const uint8_t *)name.data, name.len) &&
+      request_offset == request_len;
+  h2_pal_mem_free(allocator, patched);
+  if (!encoded) {
+    h2_pal_mem_free(allocator, request);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  *out_request = request;
+  *out_request_len = request_len;
+  return H2_PAL_OK;
 }
 
 int h2_gizclaw_client_workspace_set_input(
@@ -1119,27 +1153,32 @@ int h2_gizclaw_client_workspace_set_input(
   if (allocator == NULL)
     return H2_PAL_ERR_INVALID_STATE;
 
-  uint32_t parameters_tag = 0u;
-  int rc = workspace_input_preflight(client, name, &parameters_tag);
-  if (rc != H2_PAL_OK)
-    return rc;
-
-  gizclaw_rpc_v1_WorkspacePutRequest request =
-      gizclaw_rpc_v1_WorkspacePutRequest_init_zero;
+  gizclaw_rpc_v1_WorkspaceGetRequest get_request =
+      gizclaw_rpc_v1_WorkspaceGetRequest_init_zero;
   text_encode_t name_text = {.data = name.data, .len = name.len};
-  request.name.funcs.encode = encode_text;
-  request.name.arg = &name_text;
-  request.has_body = true;
-  request.body.has_parameters = true;
-  rc = workspace_parameters_set_input(&request.body.parameters, parameters_tag,
-                                      input_mode);
-  if (rc != H2_PAL_OK)
-    return rc;
+  get_request.name.funcs.encode = encode_text;
+  get_request.name.arg = &name_text;
 
   h2_gizclaw_rpc_response_t response = {0};
-  rc = call_message(client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
-                    gizclaw_rpc_v1_WorkspacePutRequest_fields, &request,
-                    &response);
+  int rc = call_message(client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+                        gizclaw_rpc_v1_WorkspaceGetRequest_fields, &get_request,
+                        &response);
+  uint8_t *put_request = NULL;
+  size_t put_request_len = 0u;
+  if (rc == H2_PAL_OK) {
+    rc = workspace_parameters_patch_input(
+        allocator, response.result_payload, response.result_payload_len,
+        input_mode, name, &put_request, &put_request_len);
+  }
+  h2_gizclaw_rpc_response_deinit(client, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  rc = h2_gizclaw_client_rpc_call(
+      client, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
+      (h2_gizclaw_rpc_bytes_t){.data = put_request, .len = put_request_len},
+      &response);
+  h2_pal_mem_free(allocator, put_request);
   if (rc == H2_PAL_OK) {
     rc = decode_workspace_put_value(allocator, response.result_payload,
                                     response.result_payload_len, out_workspace);

@@ -290,6 +290,7 @@ static void smoke_async_reset(smoke_async_state_t *state) {
 
 static int smoke_async_wait(
     smoke_async_state_t *state,
+    h2_gizclaw_service_t *service,
     const h2_pal_time_api_t *time,
     uint32_t timeout_ms) {
     uint64_t start_ms = 0;
@@ -298,6 +299,10 @@ static int smoke_async_wait(
         return rc;
     }
     while (!atomic_load_explicit(&state->complete, memory_order_acquire)) {
+        rc = h2_gizclaw_service_dispatch(service, 8u, NULL);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
         uint64_t now_ms = 0;
         rc = h2_pal_time_get_monotonic_ms(time, &now_ms);
         if (rc != H2_PAL_OK) {
@@ -387,7 +392,8 @@ h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
     }
     if (rc == H2_PAL_OK) {
         rc = smoke_async_wait(
-            &async_state, runtime->time, H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS);
+            &async_state, service, runtime->time,
+            H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS);
     }
     h2_gizclaw_speedtest_request_t *speedtest_request = NULL;
     smoke_async_reset(&async_state);
@@ -404,9 +410,19 @@ h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
     }
     if (rc == H2_PAL_OK) {
         rc = smoke_async_wait(
-            &async_state, runtime->time, H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS);
+            &async_state, service, runtime->time,
+            H2_SMOKE_GIZCLAW_OPERATION_TIMEOUT_MS);
     }
     int close_rc = service == NULL ? H2_PAL_OK : h2_gizclaw_service_stop(service);
+    if (close_rc == H2_PAL_OK && service != NULL) {
+        for (;;) {
+            size_t dispatched = 0u;
+            close_rc = h2_gizclaw_service_dispatch(service, 8u, &dispatched);
+            if (close_rc != H2_PAL_OK || dispatched == 0u) {
+                break;
+            }
+        }
+    }
     int deinit_rc = service == NULL ? H2_PAL_OK : h2_gizclaw_service_deinit(service);
     if (rc != H2_PAL_OK) {
         smoke_print_fail("run", rc);

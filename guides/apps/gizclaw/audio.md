@@ -62,7 +62,7 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - Capture、encoded uplink 和 playback 都使用 App-owned 有界 buffer。`h2_gizclaw_conversation_write_opus()` 成功后调用方可以释放 packet；`WOULD_BLOCK` 表示 packet 未被接受，调用方必须保留并等待 transport progress 后重试，不能覆盖或跳过。`commit` 只提交 EOS；Audio Task 必须在此前完成最后一个非空 PCM 残片的补齐和编码，空输入不制造静音 packet。
 - Opus encode/decode、resample 或 channel conversion 属于 portable Audio/integration 层，不进入 board driver 或 `libs/gizclaw`。接收 provider 只对 Opus RTP 使用八包 bounded reorder window；第一包 future packet 启动 60 ms monotonic deadline，窗口滑出或 deadline 到期确认缺失后才以 `opus == NULL && opus_len == 0` 逐包交付 loss marker 并按序排空已缓存尾包。Decoder owner 必须按最近 packet duration 执行 Opus PLC，不能把缺失时间直接删除后拼接后续语音；PCMA、PCMU 与 H264 保持直接 payload delivery，不接收 Opus loss marker。
-- GizClaw service worker 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
+- GizClaw service network task 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
 ## 打断与错误
 
@@ -82,7 +82,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 输入 PCM 由 App-owned Audio Task 切片并编码成 raw Opus packet，再通过 GizClaw 和 WebRTC audio RTP 上行；`WOULD_BLOCK` 不丢包、不改写 payload。
 - 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Chatroom 可以终止于 transcript route，Agent workflow 可以终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
-- 后台 Audio/GizClaw callback 不直接更新 LVGL。
+- 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。
 
 ## Desktop E2E 边界
