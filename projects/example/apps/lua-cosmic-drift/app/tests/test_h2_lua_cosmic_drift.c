@@ -1,0 +1,165 @@
+#include "h2_lua_cosmic_drift.h"
+
+#include "h2_desktop_platform.h"
+#include "h2_smoke_host_runtime.h"
+
+#include <assert.h>
+
+typedef struct fixture {
+  size_t display_open;
+  size_t draw;
+  size_t present;
+  size_t display_close;
+  size_t touch_open;
+  size_t touch_close;
+  size_t touch_event_sent;
+  size_t ready;
+} fixture_t;
+
+static int display_open(void *user) {
+  ((fixture_t *)user)->display_open++;
+  return H2_PAL_OK;
+}
+
+static int display_info(void *user, h2_display_info_t *out_info) {
+  (void)user;
+  *out_info = (h2_display_info_t){368, 448, H2_DISPLAY_PIXEL_RGB565};
+  return H2_PAL_OK;
+}
+
+static int draw_bitmap(void *user, const h2_display_rect_t *rect,
+                       const void *pixels, size_t stride,
+                       h2_display_pixel_format_t format) {
+  fixture_t *fixture = user;
+  assert(rect->x == 0 && rect->y == 0 && rect->width == 368 &&
+         rect->height == 448);
+  assert(pixels != NULL && stride == 368u * sizeof(uint16_t));
+  assert(format == H2_DISPLAY_PIXEL_RGB565);
+  fixture->draw++;
+  return H2_PAL_OK;
+}
+
+static int display_present(void *user) {
+  ((fixture_t *)user)->present++;
+  return H2_PAL_OK;
+}
+
+static int display_close(void *user) {
+  ((fixture_t *)user)->display_close++;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t touch_open(void *user) {
+  ((fixture_t *)user)->touch_open++;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out_info) {
+  (void)user;
+  *out_info = (h2_pal_touch_info_t){368u, 448u};
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out_event) {
+  fixture_t *fixture = user;
+  if (fixture->touch_event_sent != 0u) {
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  fixture->touch_event_sent++;
+  *out_event = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 280, 220};
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t touch_close(void *user) {
+  ((fixture_t *)user)->touch_close++;
+  return H2_PAL_OK;
+}
+
+static int should_stop(void *user) {
+  fixture_t *fixture = user;
+  return fixture->ready != 0u && fixture->present >= 6u;
+}
+
+static int never_stop(void *user) {
+  (void)user;
+  return 0;
+}
+
+static h2_pal_result_t ready(void *user) {
+  ((fixture_t *)user)->ready++;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t fail_ready(void *user) {
+  ((fixture_t *)user)->ready++;
+  return H2_PAL_ERR_INVALID_STATE;
+}
+
+int main(void) {
+  static const h2_pal_display_vtable_t display_vtable = {
+      .open = display_open,
+      .get_info = display_info,
+      .draw_bitmap = draw_bitmap,
+      .present = display_present,
+      .close = display_close,
+  };
+  static const h2_pal_touch_vtable_t touch_vtable = {
+      .open = touch_open,
+      .get_info = touch_info,
+      .poll_event = touch_poll,
+      .close = touch_close,
+  };
+  fixture_t fixture = {0};
+  const h2_pal_display_api_t display = {&fixture, &display_vtable};
+  const h2_pal_touch_api_t touch = {&fixture, &touch_vtable};
+  h2_runtime_config_t runtime_config = h2_smoke_host_runtime_config(
+      "test", "desktop", "host", h2_desktop_platform_default_allocator(),
+      h2_desktop_platform_time_api(), h2_desktop_platform_queue_api(),
+      &display);
+  runtime_config.log = h2_desktop_platform_log_api();
+  runtime_config.task = h2_desktop_platform_task_api();
+  runtime_config.sync = h2_desktop_platform_sync_api();
+  runtime_config.touch = &touch;
+  h2_runtime_t *runtime = NULL;
+  assert(h2_runtime_init(&runtime_config, &runtime) == H2_PAL_OK);
+  assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+  const h2_lua_cosmic_drift_config_t valid_config = {
+      .back_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
+      .should_stop = should_stop,
+      .should_stop_user = &fixture,
+  };
+  assert(h2_lua_cosmic_drift_run(NULL, &valid_config) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_cosmic_drift_run(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_cosmic_drift_run(
+             runtime, &(h2_lua_cosmic_drift_config_t){
+                          .back_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
+                      }) == H2_PAL_ERR_INVALID_ARG);
+
+  assert(h2_lua_cosmic_drift_run(
+             runtime, &(h2_lua_cosmic_drift_config_t){
+                          .back_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
+                          .should_stop = never_stop,
+                          .on_ready = fail_ready,
+                          .on_ready_user = &fixture,
+                      }) == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.ready == 1u);
+  assert(fixture.display_open == 1u && fixture.display_close == 1u);
+  assert(fixture.touch_open == 1u && fixture.touch_close == 1u);
+
+  fixture = (fixture_t){0};
+  assert(h2_lua_cosmic_drift_run(
+             runtime, &(h2_lua_cosmic_drift_config_t){
+                          .back_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
+                          .should_stop = should_stop,
+                          .should_stop_user = &fixture,
+                          .on_ready = ready,
+                          .on_ready_user = &fixture,
+                      }) == H2_PAL_OK);
+  assert(fixture.ready == 1u);
+  assert(fixture.display_open == 1u && fixture.display_close == 1u);
+  assert(fixture.touch_open == 1u && fixture.touch_close == 1u);
+  assert(fixture.draw >= 6u && fixture.present >= 6u);
+  h2_runtime_deinit(runtime);
+  return 0;
+}

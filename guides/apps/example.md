@@ -15,6 +15,7 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `display` | Raw Display PAL RGB565 color bars |
 | `gizclaw-ping-speed` | GizClaw connect、ping 与 speed RPC flow |
 | `log` | 单次 Runtime Log `Hello World` 输出 |
+| `lua-cosmic-drift` | 一个 compiled Lua cosmic evolution game 的分组运动、互食、引力捕获、升级、Desktop hover 与 Touch 控制 |
 | `lua-flappybird` | 一个 compiled Lua Skill 的绘制、触摸、碰撞、计分、重开与 Back 取消 |
 | `lvgl-smoke` | Full-frame LVGL rendering 与持续刷新 |
 | `modem-smoke` | Modem、SIM、registration、PPP 与 ICMP stages |
@@ -64,6 +65,8 @@ Portable App 的阻塞入口是 `h2_tap_reset_run(h2_runtime_t *, const h2_tap_r
 Desktop 入口直接调用同一个 `h2_tap_reset_run()`，不依赖 mobile adapter，也不复制 App source 或重写页面。共享 Desktop adapter 和 Runtime assembly 放在 `projects/example/libs/desktop/tap-reset/`；macOS 的 native entry、`Info.plist` 和 `rules_apple` bundle rule 放在同级 `macos/`。
 
 Example 不能 include target SDK、board API、launcher private type 或 H2Loader package/image policy，也不能自行实现 H2Loader Stage 收尾。Board 与 platform launcher 决定自己能够组装哪些 Example；没有入口表示该平台不提供对应 Example，不由 portable App 按平台身份分支或把 required behavior 转换成运行时 `SKIP`。H2Loader-managed artifact 位于 `projects/example/targets/h2loader_tar_zlib/<app>/<board>/`，负责 Runtime assembly、App client、固件 identity、board wiring 和 release output，但不改变 Example ownership。`crash-before-confirm` 只执行 launcher 注入的 crash callback，`partial-update` 只观察 Runtime filesystem 中的 package data；H2Loader 的 metadata transaction、断电恢复和 partial-update 判定属于外部验收流程。
+
+`lua-cosmic-drift` 的 Lua source、simulation、collision、upgrade 和 rendering 归 `projects/example/apps/lua-cosmic-drift/`；portable C App 只拥有 Runtime event consumption、Lua host/job 生命周期、Back 取消和清理。Desktop hover-to-touch adapter 与 executable 归 `projects/example/targets/cc_binary/lua-cosmic-drift/`，AMOLED Runtime/BSP wiring、task policy、image identity 和 H2Loader package 归 `projects/example/targets/h2loader_tar_zlib/lua-cosmic-drift/amoled/`。两条 target 路径消费同一 App 和同一份 compiled Lua resource，不在 Flappy Bird、board 或 PAL provider 中复制游戏行为。
 
 拥有稳定 case registry、机器结果与跨 launcher 验收合同的 runnable test App 属于 [E2E 测试 App](/apps/e2e)，不作为 Example 维护。
 

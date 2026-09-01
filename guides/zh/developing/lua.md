@@ -72,7 +72,7 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `capability` | `call(name, payload, options)` | 冻结的 C registry；支持 immediate/pending/cancel/late completion |
 | `delay` | `delay_ms`、`delay_us` | ESP-Claw profile；毫秒等待 yield，微秒等待使用 Runtime monotonic time |
 | `system` | `time`、`date`、`millis`、`uptime` | Runtime Time；固定 UTC offset |
-| `display` | upstream Flappy 使用的 drawing、frame、text 和 `deinit` 方法 | 直接使用 Runtime singleton Display API |
+| `display` | `clear`、`fill_rect`、`draw_line`、`fill_circle`、`draw_circle`、圆角矩形、三角形、frame、text、`present` 和 `deinit` | 直接使用 Runtime singleton Display API；图元裁剪到 framebuffer |
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
 | `audio` | `new_output`，以及每条 Track 的 `write/info/close` | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format；PAL 混合多条 Track，不接收 codec handle |
@@ -85,6 +85,8 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 负责混音。每个持有 Track 的 job 获取一个 Host 级 speaker user；关闭该 job 的最后
 一条 Track 或回收 job 时释放它，只有同一 Host 的最后一个 speaker user 释放后才停止
 Speaker。一个 job 结束不能中断另一个仍在写 Track 的 job。
+
+`display.draw_circle(cx, cy, radius, color)` 绘制裁剪到 framebuffer 的一像素圆周。圆心允许处于 Display 宽高的一倍负边界到两倍正边界内，半径必须位于 `0..min(display.width, display.height)`；超出范围、Display 未打开或颜色无效时保持现有 Lua argument/error 合同并确定性失败。`clear`、矩形、圆和圆角矩形可以批量写 framebuffer，但 `present` 仍只提交所有待绘制图元的 dirty bounding union，不改变像素结果或 Lua 调用合同。
 
 ### Audio Track 的帧契约
 

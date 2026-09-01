@@ -1,0 +1,11 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "lua-cosmic-drift",
+    srcs = [
+        "README.md",
+        "data/skills/cosmic-drift/SKILL.md",
+        "data/skills/cosmic-drift/scripts/main.lua",
+        "//projects/example/apps/lua-cosmic-drift/app:lua_cosmic_drift",
+    ],
+)
