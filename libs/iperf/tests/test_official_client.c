@@ -64,6 +64,11 @@ static void run_scenario(const char *iperf3, const scenario_t *scenario) {
     argv[argc++] = "0";
     if (scenario->protocol_flag != NULL) {
         argv[argc++] = (char *)scenario->protocol_flag;
+        /* Keep UDP datagrams below iperf3's default socket buffer: for larger
+         * blocks it shrinks its own receive buffer to a single datagram, which
+         * drops most of a reverse test on a loaded CI host. */
+        argv[argc++] = "-l";
+        argv[argc++] = "1200";
     }
     if (scenario->reverse) {
         argv[argc++] = "-R";
