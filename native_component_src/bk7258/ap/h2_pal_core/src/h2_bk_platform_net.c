@@ -802,6 +802,93 @@ static h2_pal_result_t bk_net_tcp_connect(
         : H2_PAL_ERR_IO;
 }
 
+static int bk_net_tcp_listen(
+    void *user,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind_config,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    (void)user;
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    h2_pal_net_addr_t bind_addr;
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.family = family;
+    if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
+        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+            return H2_PAL_ERR_UNSUPPORTED;
+        }
+        if (bind_config->source_addr.family != family) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        bind_addr = bind_config->source_addr;
+    }
+    bind_addr.port = port;
+    int lwip_family = family_to_lwip(family);
+    if (lwip_family < 0) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    int fd = socket(lwip_family, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_storage storage;
+    socklen_t sock_len = 0;
+    int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+    if (rc != H2_PAL_OK) {
+        close(fd);
+        return rc;
+    }
+    if (bind(fd, (struct sockaddr *)&storage, sock_len) < 0 ||
+        listen(fd, 4) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    if (getsockname(fd, (struct sockaddr *)&storage, &sock_len) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t bk_net_tcp_accept(
+    void *user,
+    h2_pal_net_socket_t listen_fd,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_peer_addr,
+    uint32_t timeout_ms) {
+    (void)user;
+    if (listen_fd < 0 || out_socket == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    int ready = wait_fd(listen_fd, 0, timeout_ms);
+    if (ready != H2_PAL_OK) {
+        return (h2_pal_result_t)ready;
+    }
+    struct sockaddr_storage storage;
+    socklen_t sock_len = sizeof(storage);
+    int fd = accept(listen_fd, (struct sockaddr *)&storage, &sock_len);
+    if (fd < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            return H2_PAL_ERR_WOULD_BLOCK;
+        }
+        return H2_PAL_ERR_IO;
+    }
+    if (out_peer_addr != NULL) {
+        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_peer_addr);
+    }
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
 static int bk_net_tcp_send(void *user, h2_pal_net_socket_t socket_fd, const uint8_t *data, size_t len) {
     (void)user;
     if (socket_fd < 0 || (data == NULL && len != 0u)) {
@@ -1134,6 +1221,8 @@ const h2_pal_net_api_t *h2_bk_platform_net_api(void) {
         .tcp_recv = bk_net_tcp_recv,
         .tls_wrap = bk_net_tls_wrap,
         .close = bk_net_close,
+        .tcp_listen = bk_net_tcp_listen,
+        .tcp_accept = bk_net_tcp_accept,
     };
     static const h2_pal_net_api_t api = {
         .user = NULL,

@@ -283,6 +283,19 @@ int main(void) {
     assert(h2_pal_net_tcp_send_timeout(
                unsupported_net, 1, &tcp_byte, sizeof(tcp_byte), 1u) ==
            H2_PAL_ERR_UNSUPPORTED);
+    assert(unsupported_net->vtable->tcp_listen != NULL);
+    assert(unsupported_net->vtable->tcp_accept != NULL);
+    h2_pal_net_socket_t listen_socket = 7;
+    h2_pal_net_addr_t listen_addr;
+    assert(h2_pal_net_tcp_listen(
+               unsupported_net, H2_PAL_NET_FAMILY_IPV4, 0u, NULL,
+               &listen_socket, &listen_addr) == H2_PAL_ERR_UNSUPPORTED);
+    assert(listen_socket == -1);
+    h2_pal_net_socket_t accepted_socket = 7;
+    assert(h2_pal_net_tcp_accept(
+               unsupported_net, 1, &accepted_socket, NULL, 1u) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(accepted_socket == -1);
     const h2_pal_webrtc_ice_server_t ice_server = {
         .url = {.data = "stun:example.invalid", .len = 20u},
     };

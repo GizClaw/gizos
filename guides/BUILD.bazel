@@ -49,6 +49,7 @@ api_reference(
         "//libs/game_runtime",
         "//libs/gizclaw",
         "//libs/iostreamikcp",
+        "//libs/iperf",
         "//libs/lvgl",
         "//libs/mp4_decoder",
         "//libs/ntp",

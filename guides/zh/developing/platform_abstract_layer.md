@@ -215,6 +215,8 @@ consumer 把 DNS 纳入自己的总 deadline，并在每次 bounded poll 之间�
 
 Net PAL 的 `tcp_connect` 是可跨 poll 继续的 bounded connect operation：`H2_PAL_ERR_TIMEOUT` 或 `H2_PAL_ERR_WOULD_BLOCK` 保留同一个 socket 和进行中的 connection attempt，caller 使用相同 remote address 再次调用；`H2_PAL_OK` 才表示连接完成，其他 error 终止本次 attempt。`tcp_send_timeout` 是 raw TCP 的 bounded send operation，不改变既有 `tcp_send` consumer。正返回值是本次已提交的 byte 数，可以小于请求长度；调用方保留并重试余下 bytes。`timeout_ms == 0` 且没有 progress 返回 `H2_PAL_ERR_WOULD_BLOCK`，正 timeout 到期且没有 progress 返回 `H2_PAL_ERR_TIMEOUT`。Orderly close 或 reset 返回 `H2_PAL_ERR_CLOSED`，其他 socket failure 返回 `H2_PAL_ERR_IO`；error return 不消费 bytes，单次调用不能阻塞超过给定 timeout。Desktop、ESP-IDF 6.x 与 BK7258 backend 都提供相同 raw TCP client contract；`tls_wrap` 后的同一 opaque socket 由 Net backend 路由到平台 TLS context。HTTPS 默认使用 `REQUIRED` 验证；缺少可用 platform trust 与显式 root CA 时必须 fail closed，不能自动切换为 `VERIFY_NONE`。
 
+Net PAL 的 `tcp_listen` 与 `tcp_accept` 是 raw TCP 的 server-side contract：`tcp_listen` 绑定并监听（`port == 0` 选择 ephemeral port，`out_bind_addr` 报告实际绑定地址），`tcp_accept` 在 `timeout_ms` 内接受一个连接并返回新的 opaque socket；`H2_PAL_ERR_TIMEOUT` 与 `H2_PAL_ERR_WOULD_BLOCK` 保留 listener 可继续使用。这两项是可选能力，没有实现的 backend 由 checked wrapper 返回 `H2_PAL_ERR_UNSUPPORTED`；Desktop（POSIX）backend 提供实现，`libs/iperf` 的 server 依赖它。
+
 SCTP PAL 以 association 为 opaque handle，通过同步 `emit_packet` callback 交付完整
 SCTP packet，并由调用方把收到的完整 packet 送回 provider。所有 timer 都由调用方提供的
 absolute monotonic milliseconds 驱动；provider 不创建 socket、线程或 task。Consumer 可以用 `association_is_writable` 查询 association 是否同时具备发送缓存、peer receive window、congestion window 和 packet emit 能力；false 表示应先推进输入、ACK 或 timer，不能把它当成某个 stream 的 open 状态。`libs/pal/providers/h2sctp`

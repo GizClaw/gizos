@@ -22,6 +22,7 @@ export const apiSources = [
   { id: "h2peer", roots: ["libs/pal/providers/h2peer/include"] },
   { id: "h2sctp", roots: ["libs/pal/providers/h2sctp/include"] },
   { id: "iostreamikcp", roots: ["libs/iostreamikcp/include"] },
+  { id: "iperf", roots: ["libs/iperf/include"] },
   { id: "libco", roots: ["libs/pal/providers/libco/include"] },
   { id: "lvgl", roots: ["libs/lvgl/include"] },
   { id: "mp4_decoder", roots: ["libs/mp4_decoder/include"] },

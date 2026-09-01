@@ -1,0 +1,160 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST_TEST_COMPATIBILITY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# iperf3-compatible client and server built only on PAL contracts. Data
+# streams use PAL TCP, PAL UDP, or the PAL SCTP association carried in UDP
+# (RFC 6951), so the same code validates the userspace SCTP stack WebRTC
+# depends on against iperf3 semantics.
+cc_library(
+    name = "iperf",
+    srcs = [
+        "src/h2_iperf_client.c",
+        "src/h2_iperf_ctrl.c",
+        "src/h2_iperf_internal.h",
+        "src/h2_iperf_json.c",
+        "src/h2_iperf_server.c",
+        "src/h2_iperf_stream.c",
+    ],
+    hdrs = ["include/h2_iperf.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)
+
+# Host-only fixtures: concrete PAL providers, a free-port helper, and a
+# process spawner for the vendored official iperf3 binary.
+cc_library(
+    name = "test_support",
+    testonly = True,
+    srcs = ["tests/h2_iperf_test_support.c"],
+    hdrs = ["tests/h2_iperf_test_support.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["tests"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = _HOST_TEST_COMPATIBILITY,
+    deps = [
+        ":iperf",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/pal_core:core",
+        "//libs/pal/providers/h2sctp",
+    ] + select({
+        "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core:host_os"],
+        "//conditions:default": ["//libs/pal/providers/linux/pal_core"],
+    }),
+)
+
+cc_test(
+    name = "public_headers_test",
+    srcs = ["tests/test_public_headers.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":iperf"],
+)
+
+cc_test(
+    name = "public_headers_cpp_test",
+    srcs = ["tests/test_public_headers.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":iperf"],
+)
+
+cc_test(
+    name = "json_test",
+    srcs = [
+        "src/h2_iperf_internal.h",
+        "tests/test_json.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":iperf"],
+)
+
+# PAL client against PAL server over loopback for TCP, UDP, and SCTP.
+cc_test(
+    name = "loopback_test",
+    timeout = "moderate",
+    srcs = ["tests/test_loopback.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-lpthread"],
+    target_compatible_with = _HOST_TEST_COMPATIBILITY,
+    deps = [":test_support"],
+)
+
+# PAL client against the official iperf3 server (TCP and UDP; the official
+# build has no kernel SCTP on macOS or in containers).
+cc_test(
+    name = "official_server_test",
+    timeout = "moderate",
+    srcs = ["tests/test_official_server.c"],
+    args = ["$(rootpath @h2_vendor_iperf//:iperf3)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["@h2_vendor_iperf//:iperf3"],
+    target_compatible_with = _HOST_TEST_COMPATIBILITY,
+    deps = [":test_support"],
+)
+
+# Official iperf3 client against the PAL server (TCP and UDP).
+cc_test(
+    name = "official_client_test",
+    timeout = "moderate",
+    srcs = ["tests/test_official_client.c"],
+    args = ["$(rootpath @h2_vendor_iperf//:iperf3)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["@h2_vendor_iperf//:iperf3"],
+    linkopts = ["-lpthread"],
+    target_compatible_with = _HOST_TEST_COMPATIBILITY,
+    deps = [":test_support"],
+)
+
+# PAL SCTP client against an external kernel-SCTP iperf3 server reachable via
+# RFC 6951 UDP encapsulation. Needs a Linux host with
+# `sysctl net.sctp.udp_port=9899` and `iperf3 -s`; select it with
+# H2_IPERF_SCTP_SERVER=<ipv4>[:<port>[:<udp-port>]].
+cc_test(
+    name = "official_server_sctp_test",
+    timeout = "moderate",
+    srcs = ["tests/test_official_server_sctp.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    env_inherit = ["H2_IPERF_SCTP_SERVER"],
+    tags = ["manual"],
+    target_compatible_with = _HOST_TEST_COMPATIBILITY,
+    deps = [":test_support"],
+)
