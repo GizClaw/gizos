@@ -6,7 +6,7 @@
 #include <string.h>
 
 typedef struct event_capture {
-    h2_pal_ble_adv_set_event_t events[12];
+    h2_pal_ble_adv_set_event_t events[16];
     size_t count;
 } event_capture_t;
 
@@ -14,7 +14,7 @@ static h2_pal_result_t capture_event(
     void *user, const h2_pal_system_event_t *event) {
     event_capture_t *capture = user;
     assert(event->payload_size == sizeof(h2_pal_ble_adv_set_event_t));
-    assert(capture->count < 12u);
+    assert(capture->count < 16u);
     memcpy(&capture->events[capture->count++], event->payload,
            sizeof(h2_pal_ble_adv_set_event_t));
     return H2_PAL_OK;
@@ -387,6 +387,53 @@ int main(void) {
     assert(capture.events[capture.count - 1u].set == failed_before_start);
     assert(capture.events[capture.count - 1u].status == H2_PAL_OK);
 
+    static const uint8_t scan_response_queued_update[] = {
+        2u, 0xffu, 0x0fu,
+    };
+    assert(h2_pal_ble_adv_set_set_scan_response_data(
+               api, failed_before_start, &scan_response) == H2_PAL_OK);
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               api, failed_before_start, scan_response_queued_update,
+               sizeof(scan_response_queued_update)) == H2_PAL_OK);
+    size_t scan_response_failure_stop_count = message_count_with_id(
+        GAPM_ACTIVITY_STOP_CMD);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &scan_response_failed, TASK_APP, TASK_GAPM);
+    assert(message_count_with_id(GAPM_ACTIVITY_STOP_CMD) ==
+           scan_response_failure_stop_count + 1u);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &stop_complete, TASK_APP, TASK_GAPM);
+    const struct gapm_activity_stopped_ind scan_response_failed_stopped = {
+        .actv_idx = 11u,
+        .actv_type = GAPM_ACTV_TYPE_ADV,
+    };
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_ACTIVITY_STOPPED_IND, &scan_response_failed_stopped,
+        TASK_APP, TASK_GAPM);
+    assert(h2_bk3633_platform_system_event_dispatch_next(NULL) == H2_PAL_OK);
+    assert(capture.events[capture.count - 1u].set == failed_before_start);
+    assert(capture.events[capture.count - 1u].status == H2_PAL_ERR_IO);
+
+    assert(h2_pal_ble_adv_set_start(api, failed_before_start) == H2_PAL_OK);
+    const struct gapm_set_adv_data_cmd *scan_response_restart_data =
+        last_message_with_id(GAPM_SET_ADV_DATA_CMD)->payload;
+    assert(scan_response_restart_data->operation == GAPM_SET_ADV_DATA);
+    assert(scan_response_restart_data->length ==
+           sizeof(scan_response_queued_update));
+    assert(memcmp(
+               scan_response_restart_data->data,
+               scan_response_queued_update,
+               sizeof(scan_response_queued_update)) == 0);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &data_complete, TASK_APP, TASK_GAPM);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &scan_response_complete, TASK_APP, TASK_GAPM);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &start_complete, TASK_APP, TASK_GAPM);
+    assert(h2_bk3633_platform_system_event_dispatch_next(NULL) == H2_PAL_OK);
+    assert(capture.events[capture.count - 1u].set == failed_before_start);
+    assert(capture.events[capture.count - 1u].status == H2_PAL_OK);
+
     static const uint8_t destroy_update[] = { 2u, 0xffu, 0x10u };
     size_t destroy_stop_count = message_count_with_id(
         GAPM_ACTIVITY_STOP_CMD);
@@ -470,7 +517,32 @@ int main(void) {
     assert(h2_bk3633_platform_system_event_dispatch_next(NULL) == H2_PAL_OK);
     assert(capture.events[capture.count - 1u].set == failed_before_start);
     assert(capture.events[capture.count - 1u].status == H2_PAL_OK);
+
+    static const uint8_t stopped_pending_update[] = {
+        2u, 0xffu, 0x3fu,
+    };
+    assert(h2_pal_ble_adv_set_set_scan_response_data(
+               api, failed_before_start, &scan_response) == H2_PAL_OK);
+    size_t stopped_pending_data_count = message_count_with_id(
+        GAPM_SET_ADV_DATA_CMD);
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               api, failed_before_start, stopped_pending_update,
+               sizeof(stopped_pending_update)) == H2_PAL_OK);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &scan_response_complete, TASK_APP, TASK_GAPM);
+    assert(message_count_with_id(GAPM_SET_ADV_DATA_CMD) ==
+           stopped_pending_data_count);
     assert(h2_pal_ble_adv_set_start(api, failed_before_start) == H2_PAL_OK);
+    const struct gapm_set_adv_data_cmd *stopped_restart_data =
+        last_message_with_id(GAPM_SET_ADV_DATA_CMD)->payload;
+    assert(stopped_restart_data->operation == GAPM_SET_ADV_DATA);
+    assert(stopped_restart_data->length == sizeof(stopped_pending_update));
+    assert(memcmp(
+               stopped_restart_data->data,
+               stopped_pending_update,
+               sizeof(stopped_pending_update)) == 0);
+    (void)h2_bk3633_platform_ble_dispatch(
+        GAPM_CMP_EVT, &data_complete, TASK_APP, TASK_GAPM);
     (void)h2_bk3633_platform_ble_dispatch(
         GAPM_CMP_EVT, &start_complete, TASK_APP, TASK_GAPM);
     assert(h2_bk3633_platform_system_event_dispatch_next(NULL) == H2_PAL_OK);
