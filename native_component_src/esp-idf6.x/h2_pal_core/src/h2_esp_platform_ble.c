@@ -1,6 +1,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_ble_indication_tracker.h"
+#include "h2_esp_ble_exact_adapter.h"
 
 #include "sdkconfig.h"
 
@@ -1857,10 +1858,23 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
         return H2_PAL_ERR_INVALID_ARG;
     }
     const bool legacy = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY;
-    h2_pal_ble_adv_data_t primary_data = *data;
+    h2_pal_ble_adv_data_t primary_data;
+    uint8_t scan_response[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
+    size_t scan_response_len = 0u;
     if (legacy) {
-        primary_data.local_name = NULL;
-        primary_data.manufacturer_data = (h2_pal_ble_bytes_t){ 0 };
+        h2_pal_result_t placement_rc =
+            h2_esp_ble_prepare_legacy_structured_data(
+                data,
+                &primary_data,
+                scan_response,
+                sizeof(scan_response),
+                &scan_response_len);
+        if (placement_rc != H2_PAL_OK) {
+            h2_esp_ble_unlock_adv();
+            return placement_rc;
+        }
+    } else {
+        primary_data = *data;
     }
     uint8_t encoded[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
     size_t encoded_len = 0u;
@@ -1874,31 +1888,6 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
         encoded_len > H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN) {
         h2_esp_ble_unlock_adv();
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    uint8_t scan_response[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
-    size_t scan_response_len = 0u;
-    if (legacy && data->manufacturer_data.len > 0u &&
-        !h2_esp_ble_adv_put(
-            scan_response,
-            &scan_response_len,
-            H2_ESP_BLE_AD_TYPE_MANUFACTURER,
-            data->manufacturer_data.data,
-            data->manufacturer_data.len)) {
-        h2_esp_ble_unlock_adv();
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (legacy && data->local_name != NULL) {
-        size_t name_len = strlen(data->local_name);
-        if (name_len + 2u > sizeof(scan_response) ||
-            !h2_esp_ble_adv_put(
-                scan_response,
-                &scan_response_len,
-                H2_ESP_BLE_AD_TYPE_NAME_COMPLETE,
-                (const uint8_t *)data->local_name,
-                name_len)) {
-            h2_esp_ble_unlock_adv();
-            return H2_PAL_ERR_INVALID_ARG;
-        }
     }
     struct os_mbuf *mbuf = os_msys_get_pkthdr(0u, 0u);
     if (mbuf == NULL) {
@@ -1938,6 +1927,64 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
     set->data_staged = true;
     h2_esp_ble_unlock_adv();
     return H2_PAL_OK;
+#endif
+}
+
+#if CONFIG_BT_NIMBLE_EXT_ADV
+static h2_pal_result_t h2_esp_ble_submit_exact_data(
+    void *user,
+    uint8_t instance,
+    const uint8_t *data,
+    size_t len) {
+    (void)user;
+    struct os_mbuf *mbuf = os_msys_get_pkthdr(0u, 0u);
+    if (mbuf == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    int rc = len == 0u ? 0 : os_mbuf_append(mbuf, data, len);
+    if (rc != 0) {
+        os_mbuf_free_chain(mbuf);
+        return h2_esp_ble_map_rc(rc);
+    }
+    return h2_esp_ble_map_rc(ble_gap_ext_adv_set_data(instance, mbuf));
+}
+#endif
+
+static h2_pal_result_t h2_esp_ble_adv_set_set_encoded_data(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    (void)ble;
+#if !CONFIG_BT_NIMBLE_EXT_ADV
+    (void)set;
+    (void)encoded_data;
+    (void)encoded_data_len;
+    return H2_PAL_ERR_UNSUPPORTED;
+#else
+    h2_pal_result_t lock_rc = h2_esp_ble_lock_adv();
+    if (lock_rc != H2_PAL_OK) {
+        return lock_rc;
+    }
+    if (!h2_esp_ble_adv_set_valid_unlocked(set)) {
+        h2_esp_ble_unlock_adv();
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
+                          ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN
+                          : H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN;
+    h2_pal_result_t rc = h2_esp_ble_exact_submit(
+        set->instance,
+        encoded_data,
+        encoded_data_len,
+        capacity,
+        h2_esp_ble_submit_exact_data,
+        NULL);
+    if (rc == H2_PAL_OK) {
+        set->data_staged = true;
+    }
+    h2_esp_ble_unlock_adv();
+    return rc;
 #endif
 }
 
@@ -2095,8 +2142,12 @@ static h2_pal_result_t h2_esp_ble_start_scan(
         struct ble_gap_ext_disc_params ext_params;
         memset(&ext_params, 0, sizeof(ext_params));
         ext_params.passive = params->mode == H2_PAL_BLE_SCAN_MODE_PASSIVE ? 1 : 0;
-        ext_params.itvl = h2_esp_ble_ext_scan_ms_to_units625(params->interval_ms);
-        ext_params.window = h2_esp_ble_ext_scan_ms_to_units625(params->window_ms);
+        h2_esp_ble_resolve_scan_units(
+            params,
+            h2_esp_ble_ext_scan_ms_to_units625(params->interval_ms),
+            h2_esp_ble_ext_scan_ms_to_units625(params->window_ms),
+            &ext_params.itvl,
+            &ext_params.window);
         h2_pal_ble_scan_phy_mask_t mask = params->phy_mask == 0u
                                              ? H2_PAL_BLE_SCAN_PHY_1M
                                              : params->phy_mask;
@@ -2126,8 +2177,12 @@ static h2_pal_result_t h2_esp_ble_start_scan(
         memset(&disc_params, 0, sizeof(disc_params));
         disc_params.filter_duplicates = 1;
         disc_params.passive = params->mode == H2_PAL_BLE_SCAN_MODE_PASSIVE ? 1 : 0;
-        disc_params.itvl = h2_esp_ble_ms_to_units625(params->interval_ms);
-        disc_params.window = h2_esp_ble_ms_to_units625(params->window_ms);
+        h2_esp_ble_resolve_scan_units(
+            params,
+            h2_esp_ble_ms_to_units625(params->interval_ms),
+            h2_esp_ble_ms_to_units625(params->window_ms),
+            &disc_params.itvl,
+            &disc_params.window);
         int32_t duration_ms = params->timeout_ms == 0u ? BLE_HS_FOREVER : (int32_t)params->timeout_ms;
         rc = h2_esp_ble_map_rc(ble_gap_disc(
             s_h2_esp_ble_own_addr_type,
@@ -3049,6 +3104,20 @@ h2_esp_ble_adv_set_set_scan_response_data_unsupported(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+#if !CONFIG_BT_NIMBLE_ENABLED
+static h2_pal_result_t h2_esp_ble_adv_set_set_encoded_data_unsupported(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *data,
+    size_t len) {
+    (void)ble;
+    (void)set;
+    (void)data;
+    (void)len;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+#endif
+
 static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
 #if CONFIG_BT_NIMBLE_ENABLED
     .start = (h2_pal_result_t (*)(void *))h2_esp_ble_start,
@@ -3058,6 +3127,7 @@ static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
     .stop_advertising = (h2_pal_result_t (*)(void *))h2_esp_ble_stop_advertising,
     .adv_set_create = (h2_pal_result_t (*)(void *, const h2_pal_ble_adv_params_t *, h2_pal_ble_adv_set_t **))h2_esp_ble_adv_set_create,
     .adv_set_set_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_esp_ble_adv_set_set_data,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_esp_ble_adv_set_set_encoded_data,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_esp_ble_adv_set_set_scan_response_data_unsupported,
     .adv_set_start = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_esp_ble_adv_set_start,
     .adv_set_stop = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_esp_ble_adv_set_stop,
@@ -3083,6 +3153,7 @@ static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
 #else
     .start = (h2_pal_result_t (*)(void *))h2_esp_ble_unsupported_start,
     .stop = (h2_pal_result_t (*)(void *))h2_esp_ble_unsupported_stop,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_esp_ble_adv_set_set_encoded_data_unsupported,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_esp_ble_adv_set_set_scan_response_data_unsupported,
     .connect = (h2_pal_result_t (*)(void *, const h2_pal_ble_addr_t *, const h2_pal_ble_connect_params_t *, uint16_t *))h2_esp_ble_unsupported_connect,
     .update_connection = (h2_pal_result_t (*)(void *, uint16_t, const h2_pal_ble_connection_params_t *))h2_esp_ble_unsupported_update_connection,
