@@ -62,7 +62,7 @@ ICE candidate、STUN/TURN attribute、nominated pair、UDP bind/receive/send 和
 
 `h2_peer_poll()` 使用调用方给出的 timeout 等待并派发 event queue，不再由 App task 同步驱动 socket。PAL callback 收到的 SDP、Opus 和 DataChannel payload 是 callback 期间有效的 borrowed buffer。`H2_PAL_ERR_WOULD_BLOCK` 是可重试的瞬态结果，不能消费调用方尚未成功提交的完整 message 或 frame。Portable connection 进入 `FAILED` 后，event 排空后的 poll 稳定返回 `H2_PAL_ERR_IO`；进入 `DISCONNECTED` 或 `CLOSED` 后稳定返回 `H2_PAL_ERR_CLOSED`，不能继续用成功 poll 掩盖 terminal transport。
 
-连接完成后的 direct UDP receive 与协议处理都在 owner task：每轮先用 timeout 0 逐包处理，遇到 `WOULD_BLOCK` 或达到 16 包上限后检查 control、RTP 和 DataChannel readiness。用户侧 ready snapshot 处理完后，owner 用最多 `1 ms` 的 UDP receive 代替纯 sleep；若 transport 当前不能等待，才退回 `1 ms` sleep。SCTP 整体拥塞时只保留 DataChannel ready snapshot并优先处理 UDP ACK、timer 和 RTP；恢复可写后继续处理 snapshot，再取得下一批 ready bits。TCP、TURN 和 ICE selection 阶段同样保留单 owner 的 bounded receive 路径。DataChannel 最大 message 仍为 64 KiB；256 KiB 只是 association receive credit，由 target 注入的 Memory PAL 按实际接收量动态分配，不在 association 创建时预留整块内存。
+连接完成后的 direct UDP receive 与协议处理都在 owner task：每轮先用 timeout 0 逐包处理，遇到 `WOULD_BLOCK` 或达到 16 包上限后检查 control、RTP 和 DataChannel readiness。用户侧 ready snapshot 处理完后，owner 用最多 `10 ms` 的 UDP receive 代替纯 sleep；若 transport 当前不能等待，才退回 `10 ms` sleep。SCTP 整体拥塞时只保留 DataChannel ready snapshot并优先处理 UDP ACK、timer 和 RTP；恢复可写后继续处理 snapshot，再取得下一批 ready bits。TCP、TURN 和 ICE selection 阶段同样保留单 owner 的 bounded receive 路径。DataChannel 最大 message 仍为 64 KiB；256 KiB 只是 association receive credit，由 target 注入的 Memory PAL 按实际接收量动态分配，不在 association 创建时预留整块内存。
 
 Protocol owner 使用必填的微秒 monotonic clock 统计每轮耗时，并每五秒通过 `h2peer/perf` 汇总一次。日志中的 `command`、`send`、`transport` 和 `idle` 都按 `count/average_us/max_us` 输出；`idle` 包含等待合并 wakeup gate 的时间，其余类别只统计 active round。不能逐轮写串口日志，否则日志 I/O 会改变被测吞吐与调度。
 
