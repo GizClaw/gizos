@@ -40,8 +40,8 @@ struct h2_gizclaw_conversation_request {
   uint64_t identity;
   atomic_size_t queued_frames;
   atomic_size_t queued_bytes;
-  size_t reply_frames;
-  size_t reply_bytes;
+  atomic_size_t reply_frames;
+  atomic_size_t reply_bytes;
   h2_gizclaw_operation_result_t operation_result;
   bool has_pending_message;
   atomic_bool committed;
@@ -612,15 +612,18 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   if (rc != H2_PAL_OK) {
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_ERROR, "conversation", "poll_failed",
-        request->identity, rc, 0, request->reply_frames, request->reply_bytes);
+        request->identity, rc, 0,
+        atomic_load_explicit(&request->reply_frames, memory_order_relaxed),
+        atomic_load_explicit(&request->reply_bytes, memory_order_relaxed));
     conversation_request_close(request);
     return rc;
   }
   if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE)
     return H2_PAL_ERR_WOULD_BLOCK;
   if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO) {
-    ++request->reply_frames;
-    request->reply_bytes += event.audio_len;
+    atomic_fetch_add_explicit(&request->reply_frames, 1u, memory_order_relaxed);
+    atomic_fetch_add_explicit(&request->reply_bytes, event.audio_len,
+                              memory_order_relaxed);
   }
   request->dispatch_event = event;
   rc = h2_gizclaw_operation_dispatch_call(
@@ -632,8 +635,9 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     h2_gizclaw_service_log_request(
         request->service, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
         "conversation", terminal ? "terminal_event" : "event_dispatch_failed",
-        request->identity, rc, (int)event.kind, request->reply_frames,
-        request->reply_bytes);
+        request->identity, rc, (int)event.kind,
+        atomic_load_explicit(&request->reply_frames, memory_order_relaxed),
+        atomic_load_explicit(&request->reply_bytes, memory_order_relaxed));
   }
   if (rc != H2_PAL_OK || terminal)
     conversation_request_close(request);
@@ -684,10 +688,11 @@ conversation_request_complete(void *user, h2_gizclaw_operation_t *operation,
       result->result == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
       "conversation", "completed", request->identity, result->result, 0,
       request->queued_frames, request->queued_bytes);
-  h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
-                                 "conversation", "reply_summary",
-                                 request->identity, result->result, 0,
-                                 request->reply_frames, request->reply_bytes);
+  h2_gizclaw_service_log_request(
+      request->service, H2_PAL_LOG_INFO, "conversation", "reply_summary",
+      request->identity, result->result, 0,
+      atomic_load_explicit(&request->reply_frames, memory_order_relaxed),
+      atomic_load_explicit(&request->reply_bytes, memory_order_relaxed));
   request->completion(request->user, request);
 }
 

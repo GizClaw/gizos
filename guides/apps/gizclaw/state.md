@@ -55,6 +55,12 @@ Server 主动调用 Client 时，C SDK 只负责 request framing、method dispat
 
 取消操作先使当前 App request generation 失效，再调用 operation cancel。取消是幂等的；queued、running 或 progress-pending operation 仍由 service 持有，最终恰好产生一次 completion callback。Progress-pending 取消会唤醒 worker，已经排队但尚未执行的 progress callback 不再接触产品资源。连接断开时 service 将受影响 operation 标记为 `SERVICE_CLOSED`，App callback 再根据 typed operation 决定失败或恢复行为，不能把未由 GizClaw API 返回的 connection phase 当作 SDK 事实。
 
+配置 Log PAL 后，service、Conversation 与 Speech request 会输出 compact lifecycle
+记录：`request`、`stage`、`identity`、`rc`、`detail`、`frames` 和 `bytes`。这些字段用于
+定位 queue、RPC、transport、cancel 和 dispatch 边界，不定义新的产品状态，也不能替代
+terminal callback。调用者任务和 `$gizclaw/net` 共享的统计计数使用原子访问；日志不得
+为诊断引入跨任务 data race。
+
 ## Subject 投影
 
 页面只创建自己需要的 subject，例如 `chat_phase`、`connection_badge` 或 `ota_progress`。长期 GizClaw state 仍由 App 持有；切换页面时销毁页面 observer 和局部 subject，不销毁 client connection。
@@ -72,3 +78,4 @@ App 初始化依次建立 client config、service 和 app-owned state，再启�
 - 页面退出后的迟到 result 因 generation 不匹配而被丢弃。
 - Subject 不承担请求队列、event bus、网络回调或 Audio callback。
 - Desktop 与设备端使用相同 state、generation 和失败语义。
+- 配置 Log PAL 时，请求失败日志包含 identity、stage、result、detail 与 bounded frame/byte 统计，且不改变 callback lifecycle。

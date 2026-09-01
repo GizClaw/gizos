@@ -64,6 +64,21 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Opus encode/decode、resample 或 channel conversion 属于 portable Audio/integration 层，不进入 board driver 或 `libs/gizclaw`。接收 provider 只对 Opus RTP 使用八包 bounded reorder window；第一包 future packet 启动 60 ms monotonic deadline，窗口滑出或 deadline 到期确认缺失后才以 `opus == NULL && opus_len == 0` 逐包交付 loss marker 并按序排空已缓存尾包。Decoder owner 必须按最近 packet duration 执行 Opus PLC，不能把缺失时间直接删除后拼接后续语音；PCMA、PCMU 与 H264 保持直接 payload delivery，不接收 Opus loss marker。
 - GizClaw service network task 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
+### Speech RPC 音频流
+
+Service-owned Speech Transcribe 与 Speech Extract 使用
+`h2_gizclaw_speech_*_request_write_audio()` 接受由 `options.content_type`
+描述的音频 bytes；SDK 不从函数名推断 Opus，也不执行编码或转码。单个 chunk 最大
+为 `H2_GIZCLAW_SPEECH_AUDIO_CHUNK_MAX_BYTES`（1280 bytes），成功返回后调用方可以
+释放源 buffer。
+
+每个 Speech request 拥有八项 FIFO queue。`timeout_ms` 原样传递给 PAL queue：`0`
+表示不等待，有限值表示 bounded backpressure，返回 timeout 时本次 chunk 或 EOS 未被
+接受。`commit(timeout_ms)` 只在所有先前接受的 audio chunk 之后排入唯一 EOS；成功
+commit 后以及 terminal completion 后的新 write/commit 都返回 `H2_PAL_ERR_CLOSED`。
+Completion 仍只由 App main loop 调用 service dispatch 后执行，terminal transcript、
+result JSON 与 operation result 继续由 request handle 持有到 release。
+
 ## 打断与错误
 
 新的 record action 可以按产品交互模式取消当前回复或结束自然对话，但必须产生显式 cancel command。取消顺序为使 App generation 失效、停止新输入、取消 GizClaw operation、停止/关闭 Audio，并等待 matching completion callback 清理 operation context。Disconnect、mic failure、decode failure、speaker failure 和 timeout 都返回带 generation 的 domain error。
@@ -80,6 +95,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 当前 active workspace 在整个 generation 内保持稳定。
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Audio Task 切片并编码成 raw Opus packet，再通过 GizClaw 和 WebRTC audio RTP 上行；`WOULD_BLOCK` 不丢包、不改写 payload。
+- Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
 - 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Chatroom 可以终止于 transcript route，Agent workflow 可以终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。

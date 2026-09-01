@@ -483,7 +483,7 @@ speech_request_poll(void *user, h2_gizclaw_client_t *client,
   if (rc == H2_PAL_ERR_WOULD_BLOCK)
     return rc;
   const int rpc_error_code =
-      rpc_response.has_error ? rpc_response.error_code : 0;
+      rc == H2_PAL_OK && rpc_response.has_error ? rpc_response.error_code : 0;
   if (rc == H2_PAL_OK && rpc_response.has_error)
     rc = H2_PAL_ERR_IO;
   if (request->kind == H2_GIZCLAW_SPEECH_UPLOAD_EXTRACT) {
@@ -927,3 +927,66 @@ void h2_gizclaw_speech_transcribe_request_release(
     h2_gizclaw_speech_transcribe_request_t *request) {
   h2_gizclaw_speech_extract_request_release(request);
 }
+
+#ifdef H2_GIZCLAW_TESTING
+int h2_gizclaw_speech_test_request_create(
+    h2_gizclaw_service_t *service,
+    h2_gizclaw_speech_extract_request_t **out_request) {
+  if (service == NULL || out_request == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_request = NULL;
+  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  h2_gizclaw_speech_extract_request_t *request =
+      h2_pal_mem_alloc(allocator, sizeof(*request));
+  if (request == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(request, 0, sizeof(*request));
+  request->service = service;
+  const h2_pal_queue_config_t queue_config = {
+      .name = "$gizclaw/speech-request-test",
+      .item_size = sizeof(h2_gizclaw_speech_request_message_t),
+      .item_count = H2_GIZCLAW_SPEECH_REQUEST_QUEUE_ITEMS,
+      .allocator = allocator,
+  };
+  const int rc = h2_pal_queue_create(service->config.queue, &queue_config,
+                                     &request->queue);
+  if (rc != H2_PAL_OK) {
+    h2_pal_mem_free(allocator, request);
+    return rc;
+  }
+  *out_request = request;
+  return H2_PAL_OK;
+}
+
+int h2_gizclaw_speech_test_request_receive(
+    h2_gizclaw_speech_extract_request_t *request, uint8_t *out_audio,
+    size_t audio_capacity, size_t *out_audio_len, uint32_t timeout_ms) {
+  if (request == NULL || out_audio_len == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_speech_request_message_t message;
+  const int rc = h2_pal_queue_recv(request->service->config.queue,
+                                   request->queue, &message, timeout_ms);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (message.len > audio_capacity || (message.len > 0u && out_audio == NULL))
+    return H2_PAL_ERR_NO_SPACE;
+  if (message.len > 0u)
+    memcpy(out_audio, message.audio, message.len);
+  *out_audio_len = message.len;
+  return H2_PAL_OK;
+}
+
+void h2_gizclaw_speech_test_request_set_terminal(
+    h2_gizclaw_speech_extract_request_t *request) {
+  if (request != NULL)
+    atomic_store_explicit(&request->terminal, true, memory_order_release);
+}
+
+void h2_gizclaw_speech_test_request_destroy(
+    h2_gizclaw_speech_extract_request_t *request) {
+  if (request == NULL)
+    return;
+  h2_pal_queue_destroy(request->service->config.queue, request->queue);
+  h2_pal_mem_free(request->service->config.client_config->allocator, request);
+}
+#endif

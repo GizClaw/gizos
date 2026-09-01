@@ -60,6 +60,65 @@ typedef struct test_env {
 } test_env_t;
 
 static test_env_t *s_env;
+static atomic_uint s_queue_send_timeout_ms;
+
+static int test_queue_create(void *user, const h2_pal_queue_config_t *config,
+                             h2_pal_queue_t **out_queue) {
+  (void)user;
+  return h2_pal_queue_create(h2_desktop_platform_queue_api(), config,
+                             out_queue);
+}
+
+static void test_queue_destroy(void *user, h2_pal_queue_t *queue) {
+  (void)user;
+  h2_pal_queue_destroy(h2_desktop_platform_queue_api(), queue);
+}
+
+static int test_queue_send(void *user, h2_pal_queue_t *queue, const void *item,
+                           uint32_t timeout_ms) {
+  (void)user;
+  atomic_store_explicit(&s_queue_send_timeout_ms, timeout_ms,
+                        memory_order_release);
+  return h2_pal_queue_send(h2_desktop_platform_queue_api(), queue, item,
+                           timeout_ms);
+}
+
+static int test_queue_send_latest(void *user, h2_pal_queue_t *queue,
+                                  const void *item) {
+  (void)user;
+  return h2_pal_queue_send_latest(h2_desktop_platform_queue_api(), queue, item);
+}
+
+static int test_queue_recv(void *user, h2_pal_queue_t *queue, void *out_item,
+                           uint32_t timeout_ms) {
+  (void)user;
+  return h2_pal_queue_recv(h2_desktop_platform_queue_api(), queue, out_item,
+                           timeout_ms);
+}
+
+static int test_queue_reset(void *user, h2_pal_queue_t *queue) {
+  (void)user;
+  return h2_pal_queue_reset(h2_desktop_platform_queue_api(), queue);
+}
+
+static int test_queue_close(void *user, h2_pal_queue_t *queue) {
+  (void)user;
+  return h2_pal_queue_close(h2_desktop_platform_queue_api(), queue);
+}
+
+static const h2_pal_queue_vtable_t s_queue_vtable = {
+    .create = test_queue_create,
+    .destroy = test_queue_destroy,
+    .send = test_queue_send,
+    .send_latest = test_queue_send_latest,
+    .recv = test_queue_recv,
+    .reset = test_queue_reset,
+    .close = test_queue_close,
+};
+
+static const h2_pal_queue_api_t s_queue_api = {
+    .vtable = &s_queue_vtable,
+};
 
 static h2_pal_result_t fake_client_init(const h2_gizclaw_config_t *config,
                                         h2_gizclaw_client_t **out_client) {
@@ -414,8 +473,8 @@ static void *run_sync_rpc(void *user) {
       (h2_gizclaw_rpc_bytes_t){.data = (const uint8_t *)"req", .len = 3u},
       1234u, record_rpc_completion, env, &env->sync_rpc);
   if (env->sync_rpc_result == H2_PAL_OK) {
-    env->sync_rpc_result = h2_gizclaw_async_rpc_wait(
-        env->sync_rpc, H2_PAL_SYNC_WAIT_FOREVER);
+    env->sync_rpc_result =
+        h2_gizclaw_async_rpc_wait(env->sync_rpc, H2_PAL_SYNC_WAIT_FOREVER);
   }
   atomic_store_explicit(&env->sync_rpc_returned, true, memory_order_release);
   return NULL;
@@ -464,7 +523,7 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   h2_gizclaw_service_config_t config = {
       .client_config = &client_config,
       .task = h2_desktop_platform_task_api(),
-      .queue = h2_desktop_platform_queue_api(),
+      .queue = &s_queue_api,
       .sync = h2_desktop_platform_sync_api(),
       .net_task_options = {.name = "gizclaw-net-test", .min_stack_size = 0u},
       .operation_capacity = capacity,
@@ -879,6 +938,74 @@ static void test_sync_rpc_waits_on_semaphore_and_external_dispatch(void) {
   h2_gizclaw_async_rpc_test_set_ops(NULL);
 }
 
+static void test_speech_audio_backpressure_and_terminal_writes(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 1u);
+  h2_gizclaw_speech_extract_request_t *extract = NULL;
+  assert(h2_gizclaw_speech_test_request_create(service, &extract) == H2_PAL_OK);
+
+  for (uint8_t value = 0u; value < 8u; ++value) {
+    assert(h2_gizclaw_speech_extract_request_write_audio(
+               extract, &value, sizeof(value), (uint32_t)value + 1u) ==
+           H2_PAL_OK);
+    assert(atomic_load_explicit(&s_queue_send_timeout_ms,
+                                memory_order_acquire) == (uint32_t)value + 1u);
+  }
+  const uint8_t overflow = 0xffu;
+  assert(h2_gizclaw_speech_extract_request_write_audio(
+             extract, &overflow, sizeof(overflow), 5u) == H2_PAL_ERR_TIMEOUT);
+  assert(atomic_load_explicit(&s_queue_send_timeout_ms, memory_order_acquire) ==
+         5u);
+
+  uint8_t received = 0xffu;
+  size_t received_len = 0u;
+  assert(h2_gizclaw_speech_test_request_receive(
+             extract, &received, sizeof(received), &received_len,
+             H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK);
+  assert(received_len == 1u && received == 0u);
+  assert(h2_gizclaw_speech_extract_request_commit(extract, 11u) == H2_PAL_OK);
+  assert(atomic_load_explicit(&s_queue_send_timeout_ms, memory_order_acquire) ==
+         11u);
+  assert(h2_gizclaw_speech_extract_request_write_audio(
+             extract, &overflow, sizeof(overflow), 13u) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_speech_extract_request_commit(extract, 13u) ==
+         H2_PAL_ERR_CLOSED);
+
+  for (uint8_t expected = 1u; expected < 8u; ++expected) {
+    received = 0xffu;
+    received_len = 0u;
+    assert(h2_gizclaw_speech_test_request_receive(
+               extract, &received, sizeof(received), &received_len,
+               H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK);
+    assert(received_len == 1u && received == expected);
+  }
+  received_len = 1u;
+  assert(h2_gizclaw_speech_test_request_receive(
+             extract, NULL, 0u, &received_len, H2_PAL_QUEUE_NO_WAIT) ==
+         H2_PAL_OK);
+  assert(received_len == 0u);
+  h2_gizclaw_speech_test_request_destroy(extract);
+
+  h2_gizclaw_speech_extract_request_t *transcribe_storage = NULL;
+  assert(h2_gizclaw_speech_test_request_create(service, &transcribe_storage) ==
+         H2_PAL_OK);
+  h2_gizclaw_speech_transcribe_request_t *transcribe = transcribe_storage;
+  const uint8_t audio[] = {0x11u, 0x22u};
+  assert(h2_gizclaw_speech_transcribe_request_write_audio(
+             transcribe, audio, sizeof(audio), 17u) == H2_PAL_OK);
+  assert(atomic_load_explicit(&s_queue_send_timeout_ms, memory_order_acquire) ==
+         17u);
+  h2_gizclaw_speech_test_request_set_terminal(transcribe_storage);
+  assert(h2_gizclaw_speech_transcribe_request_write_audio(
+             transcribe, audio, sizeof(audio), 19u) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_speech_transcribe_request_commit(transcribe, 19u) ==
+         H2_PAL_ERR_CLOSED);
+  h2_gizclaw_speech_test_request_destroy(transcribe_storage);
+
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 int main(void) {
   test_fifo_capacity_and_dispatch();
   test_pending_operation_does_not_block_following_work();
@@ -896,6 +1023,7 @@ int main(void) {
   test_cancel_after_progress_claim_waits_for_callback();
   test_stop_racing_progress_drains_once();
   test_sync_rpc_waits_on_semaphore_and_external_dispatch();
+  test_speech_audio_backpressure_and_terminal_writes();
   h2_gizclaw_service_test_set_client_ops(NULL);
   puts("h2_gizclaw service tests passed");
   return 0;

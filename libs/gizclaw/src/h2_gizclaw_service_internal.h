@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_SERVICE_INTERNAL_H
 
 #include "h2_gizclaw_service.h"
+#include "h2_gizclaw_speech.h"
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -121,6 +122,17 @@ typedef struct h2_gizclaw_async_rpc_ops {
 } h2_gizclaw_async_rpc_ops_t;
 
 void h2_gizclaw_async_rpc_test_set_ops(const h2_gizclaw_async_rpc_ops_t *ops);
+
+int h2_gizclaw_speech_test_request_create(
+    h2_gizclaw_service_t *service,
+    h2_gizclaw_speech_extract_request_t **out_request);
+int h2_gizclaw_speech_test_request_receive(
+    h2_gizclaw_speech_extract_request_t *request, uint8_t *out_audio,
+    size_t audio_capacity, size_t *out_audio_len, uint32_t timeout_ms);
+void h2_gizclaw_speech_test_request_set_terminal(
+    h2_gizclaw_speech_extract_request_t *request);
+void h2_gizclaw_speech_test_request_destroy(
+    h2_gizclaw_speech_extract_request_t *request);
 #endif
 
 #endif
