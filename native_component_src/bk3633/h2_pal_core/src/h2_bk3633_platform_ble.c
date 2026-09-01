@@ -3085,14 +3085,15 @@ int h2_bk3633_platform_ble_dispatch(
                 set->create_pending = false;
                 if (set->destroy_requested) {
                     (void)ble_send_delete_adv_set(set, slot);
-                } else if (set->data_staged) {
+                } else if (set->start_requested && set->data_staged) {
                     h2_pal_result_t result = ble_send_adv_set_data(
                         set, slot, set->data, set->data_len,
                         set->latest_generation);
                     if (result != H2_PAL_OK)
                         ble_adv_set_report_start_submission_failure(
                             set, result);
-                } else if (set->scan_response_set) {
+                } else if (set->start_requested &&
+                           set->scan_response_set) {
                     h2_pal_result_t result =
                         ble_send_adv_set_scan_response_data(set, slot);
                     if (result != H2_PAL_OK)
@@ -3261,7 +3262,7 @@ int h2_bk3633_platform_ble_dispatch(
                             ble_adv_set_report_start_submission_failure(
                                 set, start_result);
                     }
-                } else {
+                } else if (slot == BK3633_BLE_ADV_CREATE_LEGACY) {
                     s_ble_state.adv_data_pending = false;
                     if (evt->status == GAP_ERR_NO_ERROR &&
                         s_ble_state.adv_start_after_data) {
@@ -3292,13 +3293,12 @@ int h2_bk3633_platform_ble_dispatch(
                             ble_adv_set_submit_deferred_stop(set, slot);
                         else if (!set->stop_pending)
                             (void)ble_send_delete_adv_set(set, slot);
-                    } else if (evt->status == GAP_ERR_NO_ERROR &&
-                               set->stop_requested) {
+                    } else if (evt->status != GAP_ERR_NO_ERROR) {
+                        ble_adv_set_handle_async_data_failure(
+                            set, slot, H2_PAL_ERR_IO);
+                    } else if (set->stop_requested) {
                         ble_adv_set_submit_deferred_stop(set, slot);
-                    } else if (evt->status != GAP_ERR_NO_ERROR &&
-                               set->stop_requested) {
-                        ble_adv_set_submit_deferred_stop(set, slot);
-                    } else if (evt->status == GAP_ERR_NO_ERROR &&
+                    } else if ((set->started || set->start_requested) &&
                                set->data_staged &&
                                set->latest_generation !=
                                    set->applied_generation) {
@@ -3309,19 +3309,12 @@ int h2_bk3633_platform_ble_dispatch(
                         if (data_result != H2_PAL_OK)
                             ble_adv_set_handle_async_data_failure(
                                 set, slot, data_result);
-                    } else if (evt->status == GAP_ERR_NO_ERROR &&
-                               set->start_requested && !set->started) {
+                    } else if (set->start_requested && !set->started) {
                         h2_pal_result_t start_result =
                             ble_send_start_adv_set(set, slot);
                         if (start_result != H2_PAL_OK)
                             ble_adv_set_report_start_submission_failure(
                                 set, start_result);
-                    } else if (evt->status != GAP_ERR_NO_ERROR &&
-                               set->start_requested && !set->started) {
-                        set->start_requested = false;
-                        ble_post_adv_set_event(
-                            H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-                            set, H2_PAL_ERR_IO);
                     }
                 }
             } else if (evt->operation == GAPM_CREATE_SCAN_ACTIVITY &&
