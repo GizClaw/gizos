@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/desktop_layout:desktop_layout.bzl", "h2_desktop_layout_config")
 
@@ -20,30 +20,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "pointer_touch_adapter",
-    srcs = ["pointer_touch_adapter.cpp"],
-    hdrs = ["pointer_touch_adapter.h"],
-    copts = H2_WARNING_COPTS,
-    cxxopts = H2_CXX17_OPTS,
-    includes = ["."],
-    deps = ["//libs/pal"],
-)
-
-cc_test(
-    name = "pointer_touch_adapter_test",
-    srcs = ["tests/test_pointer_touch_adapter.cpp"],
-    copts = H2_WARNING_COPTS,
-    cxxopts = H2_CXX17_OPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":pointer_touch_adapter"],
-)
-
 cc_binary(
     name = "example-lua-cosmic-drift",
     srcs = ["main.cpp"],
@@ -53,12 +29,12 @@ cc_binary(
     tags = ["h2-ci-native-package"],
     deps = [
         ":layout_config",
-        ":pointer_touch_adapter",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
         "//projects/example/apps/lua-cosmic-drift/app:lua_cosmic_drift",
+        "//projects/example/libs/desktop/cosmic-drift:pointer_touch_adapter",
     ],
 )

@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pointer_touch_adapter",
+    srcs = ["src/pointer_touch_adapter.cpp"],
+    hdrs = ["include/pointer_touch_adapter.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "pointer_touch_adapter_test",
+    srcs = ["tests/test_pointer_touch_adapter.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pointer_touch_adapter"],
+)

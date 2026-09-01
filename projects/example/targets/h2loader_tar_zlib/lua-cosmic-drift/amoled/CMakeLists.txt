@@ -15,6 +15,8 @@ if(NOT DEFINED IDF_TARGET)
   set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
+# h2loader_esp_idf_firmware materializes the board-owned layout support file
+# into the project root under this basename before invoking ESP-IDF.
 set(
   SDKCONFIG_DEFAULTS
   "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
