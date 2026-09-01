@@ -95,6 +95,43 @@ static h2_pal_result_t map_open_error(int error_number) {
     }
 }
 
+#if defined(__APPLE__)
+static int set_custom_speed_native(
+    int fd,
+    unsigned long request,
+    void *speed) {
+    return ioctl(fd, request, speed);
+}
+
+static const h2_posix_serial_host_darwin_ops_t darwin_ops = {
+    .set_attributes = tcsetattr,
+    .set_custom_speed = set_custom_speed_native,
+};
+
+h2_pal_result_t h2_posix_serial_host_apply_darwin_custom_speed(
+    int fd,
+    uint32_t baud_rate,
+    const struct termios *original_attributes,
+    const h2_posix_serial_host_darwin_ops_t *ops) {
+    speed_t arbitrary_speed;
+    int error_number;
+    if (original_attributes == NULL || ops == NULL ||
+        ops->set_attributes == NULL || ops->set_custom_speed == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    arbitrary_speed = (speed_t)baud_rate;
+    if (ops->set_custom_speed(fd, IOSSIOSPEED, &arbitrary_speed) == 0) {
+        return H2_PAL_OK;
+    }
+    error_number = errno;
+    (void)ops->set_attributes(fd, TCSANOW, original_attributes);
+    if (error_number == EINVAL || error_number == ENOTTY) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return map_io_error(error_number);
+}
+#endif
+
 static speed_t baud_constant(uint32_t baud_rate) {
     switch (baud_rate) {
         case 50u:
@@ -245,15 +282,11 @@ static h2_pal_result_t configure_locked(
     }
 #if defined(__APPLE__)
     if (use_arbitrary_speed) {
-        speed_t arbitrary_speed = (speed_t)config->baud_rate;
-        if (ioctl(session->fd, IOSSIOSPEED, &arbitrary_speed) != 0) {
-            const int error_number = errno;
-            (void)tcsetattr(session->fd, TCSANOW, &original_attributes);
-            if (error_number == EINVAL || error_number == ENOTTY) {
-                return H2_PAL_ERR_UNSUPPORTED;
-            }
-            return map_io_error(error_number);
-        }
+        return h2_posix_serial_host_apply_darwin_custom_speed(
+            session->fd,
+            config->baud_rate,
+            &original_attributes,
+            &darwin_ops);
     }
 #endif
     return H2_PAL_OK;
