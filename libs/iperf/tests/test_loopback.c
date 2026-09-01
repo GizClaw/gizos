@@ -133,6 +133,22 @@ static void run_scenario(const scenario_t *scenario) {
     h2_iperf_test_env_deinit(&server_env);
 }
 
+/* A UDP byte limit smaller than the datagram header cannot be represented
+ * exactly, so the client rejects it before touching the network. */
+static void test_udp_limit_below_header_rejected(void) {
+    h2_iperf_test_env_t env;
+    h2_iperf_test_env_init(&env, false);
+    h2_iperf_client_params_t params;
+    memset(&params, 0, sizeof(params));
+    params.server_addr = h2_iperf_test_loopback(0u);
+    params.port = 1u;
+    params.protocol = H2_IPERF_PROTOCOL_UDP;
+    params.bytes = 11u;
+    h2_iperf_result_t result;
+    assert(h2_iperf_client_run(&env.config, &params, &result) == H2_PAL_ERR_INVALID_ARG);
+    h2_iperf_test_env_deinit(&env);
+}
+
 int main(void) {
     static const scenario_t scenarios[] = {
         {"tcp", H2_IPERF_PROTOCOL_TCP, false, 1000u, 0u, 0u, 0u},
@@ -145,6 +161,8 @@ int main(void) {
         {"udp reverse large datagrams", H2_IPERF_PROTOCOL_UDP, true, 1000u, 0u, 16332u, 8u * 1024u * 1024u},
         {"udp large datagrams", H2_IPERF_PROTOCOL_UDP, false, 1000u, 0u, 16332u, 8u * 1024u * 1024u},
         {"udp bytes unaligned", H2_IPERF_PROTOCOL_UDP, false, 0u, 200u * 1000u + 500u, 1000u, 8u * 1024u * 1024u},
+        {"udp bytes remainder below header", H2_IPERF_PROTOCOL_UDP, false, 0u, 3u * 1000u + 5u, 1000u, 8u * 1024u * 1024u},
+        {"udp bytes exactly one header", H2_IPERF_PROTOCOL_UDP, false, 0u, 12u, 1000u, 8u * 1024u * 1024u},
         {"sctp", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 16u * 1024u, 0u},
         {"sctp bytes", H2_IPERF_PROTOCOL_SCTP, false, 0u, 512u * 1024u, 8u * 1024u, 0u},
         {"sctp bytes unaligned", H2_IPERF_PROTOCOL_SCTP, false, 0u, 512u * 1024u + 999u, 8u * 1024u, 0u},
@@ -154,5 +172,6 @@ int main(void) {
     for (size_t i = 0u; i < sizeof(scenarios) / sizeof(scenarios[0]); ++i) {
         run_scenario(&scenarios[i]);
     }
+    test_udp_limit_below_header_rejected();
     return 0;
 }

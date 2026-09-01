@@ -373,7 +373,11 @@ h2_pal_result_t h2_iperf_client_run(
         client.params.control_timeout_ms = H2_IPERF_CLIENT_DEFAULT_CONTROL_TIMEOUT_MS;
     }
     client.block_len = params->block_len != 0u ? params->block_len : default_block_len(params->protocol);
-    if (params->protocol == H2_IPERF_PROTOCOL_UDP && client.block_len < H2_IPERF_UDP_HEADER_32) {
+    if (params->protocol == H2_IPERF_PROTOCOL_UDP &&
+        (client.block_len < H2_IPERF_UDP_HEADER_32 ||
+         (params->bytes != 0u && params->bytes < H2_IPERF_UDP_HEADER_32))) {
+        /* Every UDP datagram carries a 12-byte header, so smaller budgets
+         * cannot be represented exactly. */
         return H2_PAL_ERR_INVALID_ARG;
     }
 

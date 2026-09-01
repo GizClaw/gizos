@@ -822,15 +822,24 @@ h2_pal_result_t h2_iperf_run_sender(h2_iperf_run_t *run) {
             }
         }
         /* Never overshoot a byte budget: the final block is truncated to the
-         * remaining bytes (a UDP datagram still carries its full header). */
+         * remaining bytes. A UDP datagram must carry its full header, so the
+         * datagram before the last one shrinks instead whenever the remainder
+         * would otherwise be smaller than a header. */
         size_t budget = run->block_len;
-        if (run->byte_limit != 0u && run->byte_limit - run->bytes < budget) {
-            budget = (size_t)(run->byte_limit - run->bytes);
+        if (run->byte_limit != 0u) {
+            uint64_t remaining = run->byte_limit - run->bytes;
+            if (remaining <= budget) {
+                budget = (size_t)remaining;
+            } else if (stream->protocol == H2_IPERF_PROTOCOL_UDP &&
+                       remaining - budget < header) {
+                budget = (size_t)(remaining - header);
+            }
         }
         int sent;
         if (stream->protocol == H2_IPERF_PROTOCOL_UDP) {
             if (budget < header) {
-                budget = header;
+                result = H2_PAL_ERR_INVALID_ARG;
+                break;
             }
             h2_iperf_udp_write_header(run->block, now, stream->udp_tx_seq + 1u, stream->counters_64bit);
             sent = h2_iperf_stream_send(stream, run->block, budget, H2_IPERF_SEND_SLICE_MS);
