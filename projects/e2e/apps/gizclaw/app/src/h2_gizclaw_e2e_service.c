@@ -73,7 +73,10 @@ static int dispatch_until_complete(service_case_state_t *state,
                                    size_t expected_completions) {
   while (atomic_load_explicit(&state->completion_count,
                               memory_order_acquire) < expected_completions) {
-    int rc = H2_PAL_OK;
+    size_t dispatched = 0u;
+    int rc = h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+    if (rc != H2_PAL_OK)
+      return rc;
     if (state->fixture->config->should_stop != NULL &&
         state->fixture->config->should_stop(
             state->fixture->config->should_stop_user)) {
@@ -97,6 +100,14 @@ static int cleanup_service_case(service_case_state_t *state,
     (void)h2_gizclaw_registration_request_cancel(
         state->registration_request);
   int rc = h2_gizclaw_service_stop(state->service);
+  for (;;) {
+    size_t dispatched = 0u;
+    const int dispatch_rc =
+        h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+    keep_first_failure(dispatch_rc, &rc);
+    if (dispatch_rc != H2_PAL_OK || dispatched == 0u)
+      break;
+  }
   if (atomic_load_explicit(&state->completion_count, memory_order_acquire) !=
       accepted_operations)
     keep_first_failure(H2_PAL_ERR_INVALID_STATE, &rc);
@@ -132,7 +143,6 @@ int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
       .queue = fixture->runtime->queue,
       .sync = fixture->runtime->sync,
       .net_task_options = {.min_stack_size = 32768u},
-      .resp_dispatch_task_options = {.min_stack_size = 32768u},
       .operation_capacity = H2_GIZCLAW_E2E_SERVICE_OPERATION_COUNT,
       .client_poll_timeout_ms = (int)H2_GIZCLAW_E2E_SERVICE_POLL_MS,
       .terminal = service_terminal,

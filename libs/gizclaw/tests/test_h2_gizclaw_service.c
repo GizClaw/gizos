@@ -154,7 +154,7 @@ static bool original_cancel_requested(void *user) {
 
 static void receive_event(void *user, const h2_gizclaw_client_event_t *event) {
   test_env_t *env = user;
-  assert(!pthread_equal(pthread_self(), env->app_thread));
+  assert(pthread_equal(pthread_self(), env->app_thread));
   assert(event != NULL);
   assert(event->kind == H2_GIZCLAW_CLIENT_EVENT_WORKSPACE_HISTORY_UPDATED);
   assert(event->workspace_name.len == 9u);
@@ -245,7 +245,7 @@ run_transport_closed(void *user, h2_gizclaw_client_t *client,
 
 static h2_pal_result_t record_progress(void *user) {
   test_env_t *env = user;
-  assert(!pthread_equal(pthread_self(), env->app_thread));
+  assert(pthread_equal(pthread_self(), env->app_thread));
   atomic_fetch_add_explicit(&env->progress_callback_count, 1u,
                             memory_order_relaxed);
   if (env->cancel_from_progress != NULL) {
@@ -274,7 +274,7 @@ run_progress_call(void *user, h2_gizclaw_client_t *client,
 static void record_completion(void *user, h2_gizclaw_operation_t *operation,
                               const h2_gizclaw_operation_result_t *result) {
   test_env_t *env = user;
-  assert(!pthread_equal(pthread_self(), env->app_thread));
+  assert(pthread_equal(pthread_self(), env->app_thread));
   const size_t index =
       atomic_load_explicit(&env->completion_count, memory_order_relaxed);
   assert(index < 8u);
@@ -308,7 +308,7 @@ submit_and_cancel_from_completion(void *user, h2_gizclaw_operation_t *operation,
 
 static void record_terminal(void *user, h2_pal_result_t result) {
   test_env_t *env = user;
-  assert(!pthread_equal(pthread_self(), env->app_thread));
+  assert(pthread_equal(pthread_self(), env->app_thread));
   atomic_fetch_add_explicit(&env->terminal_count, 1u, memory_order_release);
   env->terminal_result = result;
 }
@@ -326,6 +326,9 @@ static void wait_until(test_env_t *env, size_t completion_count,
                        unsigned terminal_count,
                        unsigned progress_callback_count) {
   for (unsigned spin = 0u; spin < 1000000u; ++spin) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_dispatch(env->service, 8u, &dispatched) ==
+           H2_PAL_OK);
     if (atomic_load_explicit(&env->completion_count, memory_order_acquire) >=
             completion_count &&
         atomic_load_explicit(&env->terminal_count, memory_order_acquire) >=
@@ -336,7 +339,7 @@ static void wait_until(test_env_t *env, size_t completion_count,
     }
     sched_yield();
   }
-  assert(false && "worker did not enqueue callback");
+  assert(false && "caller did not dispatch callback");
 }
 
 static int fail_task_start(void *user, const h2_pal_task_options_t *options,
@@ -344,7 +347,7 @@ static int fail_task_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_t **out_task) {
   (void)user;
   assert(options != NULL);
-  assert(strcmp(options->name, h2_gizclaw_resp_dispatch_task_name) == 0);
+  assert(strcmp(options->name, h2_gizclaw_net_task_name) == 0);
   (void)entry;
   (void)ctx;
   *out_task = NULL;
@@ -385,8 +388,6 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
       .queue = h2_desktop_platform_queue_api(),
       .sync = h2_desktop_platform_sync_api(),
       .net_task_options = {.name = "gizclaw-net-test", .min_stack_size = 0u},
-      .resp_dispatch_task_options = {
-          .name = "gizclaw-dispatch-test", .min_stack_size = 0u},
       .operation_capacity = capacity,
       .client_poll_timeout_ms = 1,
       .on_event = receive_event,
@@ -429,8 +430,9 @@ static void test_fifo_capacity_and_dispatch(void) {
          1u);
   assert(atomic_load_explicit(&env.event_dispatch_count, memory_order_acquire) >
          0u);
-  wait_for_count(&env.event_callback_count, 1u);
   wait_until(&env, 2u, 0u, 0u);
+  assert(atomic_load_explicit(&env.event_callback_count, memory_order_acquire) ==
+         1u);
   assert(env.completed[0] == 1u);
   assert(env.completed[1] == 2u);
 
@@ -499,6 +501,7 @@ static void test_stop_cancels_running_without_inline_callback(void) {
                                    &operation) == H2_PAL_OK);
   wait_for_count(&env.run_count, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  wait_until(&env, 1u, 0u, 0u);
   assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
          1u);
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
@@ -678,6 +681,7 @@ static void test_original_cancel_and_unstarted_lifecycle(void) {
   wait_for_count(&env.run_count, 1u);
   wait_for_count(&env.run_exit_count, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  wait_until(&env, 1u, 1u, 0u);
   assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
          1u);
   assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
@@ -694,7 +698,7 @@ static void test_task_start_failure_can_deinit(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
-static void test_progress_runs_on_resp_dispatch_task_and_returns_result(void) {
+static void test_progress_runs_on_caller_thread_and_returns_result(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 1u);
   env.progress_result = H2_PAL_ERR_IO;
@@ -745,6 +749,7 @@ static void test_stop_racing_progress_drains_once(void) {
   wait_for_count(&env.progress_call_count, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   wait_for_count(&env.progress_exit_count, 1u);
+  wait_until(&env, 1u, 0u, 0u);
   assert(atomic_load(&env.progress_callback_count) <= 1u);
   assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
          1u);
@@ -766,7 +771,7 @@ int main(void) {
   test_prepare_init_and_poll_failures_are_terminal();
   test_original_cancel_and_unstarted_lifecycle();
   test_task_start_failure_can_deinit();
-  test_progress_runs_on_resp_dispatch_task_and_returns_result();
+  test_progress_runs_on_caller_thread_and_returns_result();
   test_cancel_after_progress_claim_waits_for_callback();
   test_stop_racing_progress_drains_once();
   h2_gizclaw_service_test_set_client_ops(NULL);

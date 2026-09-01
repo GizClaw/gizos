@@ -43,7 +43,6 @@ struct h2_gizclaw_operation {
 typedef enum h2_gizclaw_dispatch_kind {
   H2_GIZCLAW_DISPATCH_OPERATION = 0,
   H2_GIZCLAW_DISPATCH_CLIENT_EVENT,
-  H2_GIZCLAW_DISPATCH_STOP,
 } h2_gizclaw_dispatch_kind_t;
 
 typedef struct h2_gizclaw_dispatch_item {
@@ -63,7 +62,6 @@ struct h2_gizclaw_service {
   h2_pal_mutex_t *mutex;
   h2_pal_cond_t *progress_cond;
   h2_pal_task_t *net_task;
-  h2_pal_task_t *resp_dispatch_task;
   h2_gizclaw_client_t *client;
   h2_gizclaw_operation_t *current;
   h2_gizclaw_operation_t *pending;
@@ -73,6 +71,7 @@ struct h2_gizclaw_service {
   bool started;
   bool stopping;
   bool stopped;
+  bool dispatching;
   bool terminal_pending;
   bool terminal_dispatched;
   h2_pal_result_t terminal_result;

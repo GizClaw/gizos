@@ -28,7 +28,7 @@ typedef enum h2_gizclaw_operation_terminal_kind {
   H2_GIZCLAW_OPERATION_SERVICE_CLOSED = 2,
 } h2_gizclaw_operation_terminal_kind_t;
 
-/** Immutable operation result visible during response dispatch. */
+/** Immutable operation result visible during caller-thread dispatch. */
 typedef struct h2_gizclaw_operation_result {
   uint64_t identity;
   h2_gizclaw_operation_terminal_kind_t terminal_kind;
@@ -47,11 +47,11 @@ typedef h2_pal_result_t (*h2_gizclaw_operation_run_fn)(
     void *user, h2_gizclaw_client_t *client,
     const h2_gizclaw_cancel_token_t *cancel_token);
 
-/** Execute one synchronous progress callback on the response-dispatch task. */
+/** Execute one synchronous progress callback on the dispatch caller thread. */
 typedef h2_pal_result_t (*h2_gizclaw_operation_dispatch_fn)(void *user);
 
 /**
- * Apply one terminal result on the service-owned response-dispatch task.
+ * Apply one terminal result on the thread calling service dispatch.
  *
  * The operation, result view, and caller-owned `user` remain valid through
  * callback return. This callback may release its operation handle.
@@ -66,7 +66,7 @@ typedef void (*h2_gizclaw_async_rpc_completion_fn)(
     const h2_gizclaw_operation_result_t *result,
     const h2_gizclaw_rpc_response_t *response);
 
-/** One mixed-frame event delivered on `$gizclaw/resp_dispatch`. */
+/** One mixed-frame event delivered on the service dispatch caller thread. */
 typedef h2_pal_result_t (*h2_gizclaw_async_stream_event_fn)(
     void *user, h2_gizclaw_async_stream_t *stream,
     const h2_gizclaw_rpc_stream_event_t *event);
@@ -78,7 +78,7 @@ typedef void (*h2_gizclaw_async_stream_completion_fn)(
     const h2_gizclaw_rpc_response_t *response);
 
 /**
- * Report one fatal connection failure on the response-dispatch task.
+ * Report one fatal connection failure on the dispatch caller thread.
  *
  * Dispatch invokes this callback exactly once after all affected operation
  * callbacks. Explicit service stop does not invoke it.
@@ -104,13 +104,11 @@ typedef struct h2_gizclaw_service_config {
   const h2_pal_sync_api_t *sync;
   /** Stack requirements for the system-owned `$gizclaw/net` task. */
   h2_pal_task_options_t net_task_options;
-  /** Stack requirements for the system-owned `$gizclaw/resp_dispatch` task. */
-  h2_pal_task_options_t resp_dispatch_task_options;
   /** Maximum admitted operations across all lifecycle states. */
   size_t operation_capacity;
   /** Worker poll/receive bound in milliseconds; must be positive. */
   int client_poll_timeout_ms;
-  /** Optional Peer Event handler, invoked on response dispatch. */
+  /** Optional Peer Event handler, invoked during caller-thread dispatch. */
   h2_gizclaw_client_event_fn on_event;
   void *event_user;
   /** Optional worker-side preparation performed before client creation. */
@@ -128,15 +126,15 @@ typedef struct h2_gizclaw_service_config {
 bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t *cancel_token);
 
 /**
- * Hand one bounded progress step from the network task to response dispatch.
+ * Hand one bounded progress step from the network task to caller dispatch.
  *
  * Only the accepted operation's worker callback may call this function, and it
  * must not call it recursively. `callback` runs synchronously on the caller of
- * the service-owned response-dispatch task without the service mutex held. The
+ * `h2_gizclaw_service_dispatch()` without the service mutex held. The
  * `user` context remains worker-owned and must remain valid until this function
  * returns; the progress callback must not retain it.
  *
- * One completion-queue slot is reserved while the network task blocks. Response
+ * One completion-queue slot is reserved while the network task blocks. Caller
  * dispatch atomically claims an unstarted callback under the service mutex.
  * Cancellation or stop before that claim skips the callback and reuses the
  * reserved capacity for exactly one terminal completion. Cancellation after
@@ -154,16 +152,16 @@ h2_pal_result_t h2_gizclaw_operation_dispatch_call(
     h2_gizclaw_operation_dispatch_fn callback, void *user);
 
 /**
- * Allocate queues and synchronization state without starting tasks.
+ * Allocate queues and synchronization state without starting a task.
  *
  * The returned service is caller-owned until successful deinit. Init, start,
- * stop and deinit belong to one lifecycle task.
+ * stop, dispatch and deinit belong to one lifecycle task.
  */
 h2_pal_result_t
 h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                         h2_gizclaw_service_t **out_service);
 
-/** Start the client-owning network and response-dispatch tasks exactly once. */
+/** Start the sole client-owning network task exactly once. */
 h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service);
 
 /**
@@ -219,17 +217,28 @@ h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation);
 void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation);
 
 /**
- * Stop and join both tasks after all accepted callbacks have been dispatched.
+ * Invoke at most `max_callbacks` callbacks on the calling task.
+ *
+ * This API has one consumer and must not be called recursively. A callback may
+ * submit work, cancel another operation or release an operation handle; it must
+ * not call dispatch, stop or deinit.
+ */
+h2_pal_result_t h2_gizclaw_service_dispatch(h2_gizclaw_service_t *service,
+                                            size_t max_callbacks,
+                                            size_t *out_dispatched);
+
+/**
+ * Stop and join the network task without invoking pending callbacks.
  *
  * This lifecycle-task API is idempotent and must not be called from a service
- * callback.
+ * callback. Accepted callbacks remain pending for caller-thread dispatch.
  */
 h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
 
 /**
  * Release a stopped, fully dispatched service with no caller-owned handles.
  *
- * This lifecycle-task API must not race submit, cancel, or release.
+ * This lifecycle-task API must not race submit, cancel, release or dispatch.
  */
 h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service);
 

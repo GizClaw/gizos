@@ -2,7 +2,6 @@
 #define H2_GIZCLAW_TASK_NAMES_H
 
 #define H2_GIZCLAW_NET_TASK_NAME_VALUE "$gizclaw/net"
-#define H2_GIZCLAW_RESP_DISPATCH_TASK_NAME_VALUE "$gizclaw/resp_dispatch"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,8 +9,6 @@ extern "C" {
 
 extern const char
     h2_gizclaw_net_task_name[sizeof(H2_GIZCLAW_NET_TASK_NAME_VALUE)];
-extern const char h2_gizclaw_resp_dispatch_task_name[
-    sizeof(H2_GIZCLAW_RESP_DISPATCH_TASK_NAME_VALUE)];
 
 #ifdef __cplusplus
 }
