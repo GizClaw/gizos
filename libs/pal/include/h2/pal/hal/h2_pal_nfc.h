@@ -128,7 +128,7 @@ typedef enum h2_pal_nfc_card_emulation_profile {
     H2_PAL_NFC_CARD_EMULATION_PROFILE_TYPE2_READ_ONLY = 1u << 0,
 } h2_pal_nfc_card_emulation_profile_t;
 
-/** Mutually exclusive exchange modes selected when a session is opened. */
+/** Mutually exclusive exchange modes selected for one synchronous emulate call. */
 typedef enum h2_pal_nfc_card_emulation_mode {
     H2_PAL_NFC_CARD_EMULATION_MODE_MANAGED_PROFILE = 1u << 0,
     H2_PAL_NFC_CARD_EMULATION_MODE_RAW_FRAME = 1u << 1,

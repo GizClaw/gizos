@@ -93,9 +93,18 @@ struct h2_pal_ble_adv_set {
     bool start_requested;
     bool started;
     bool stop_pending;
+    bool stop_requested;
     bool delete_pending;
     bool destroy_requested;
+    bool data_staged;
+    bool failure_stop_pending;
+    bool terminal_failed;
     uint8_t activity_index;
+    uint32_t epoch;
+    uint32_t latest_generation;
+    uint32_t in_flight_generation;
+    uint32_t applied_generation;
+    h2_pal_result_t failure_status;
     h2_pal_ble_adv_params_t params;
     uint8_t data[BK3633_BLE_ADV_DATA_MAX_LEN];
     uint16_t data_len;
@@ -183,6 +192,8 @@ typedef struct h2_bk3633_ble_state {
     uint8_t pending_adv_create_head;
     uint8_t pending_adv_create_count;
     uint8_t pending_adv_data[BK3633_BLE_ADV_OPERATION_CAPACITY];
+    uint32_t pending_adv_data_epoch[BK3633_BLE_ADV_OPERATION_CAPACITY];
+    uint32_t pending_adv_data_generation[BK3633_BLE_ADV_OPERATION_CAPACITY];
     uint8_t pending_adv_data_head;
     uint8_t pending_adv_data_count;
     uint8_t pending_adv_delete[BK3633_BLE_ADV_OPERATION_CAPACITY];
@@ -193,6 +204,7 @@ typedef struct h2_bk3633_ble_state {
     uint8_t pending_adv_event_head;
     uint8_t pending_adv_event_count;
     h2_pal_result_t pending_adv_event_error;
+    uint32_t next_adv_set_epoch;
 } h2_bk3633_ble_state_t;
 
 static h2_bk3633_ble_state_t s_ble_state;
@@ -200,6 +212,7 @@ static uint8_t s_ble_bootstrap_wait_key;
 static uint8_t s_ble_indication_wait_key;
 static const h2_pal_time_api_t *s_ble_time;
 static uint32_t s_ble_bootstrap_timeout_ms;
+static uint8_t s_ble_adv_encode_scratch[BK3633_BLE_ADV_DATA_MAX_LEN];
 
 #define BK3633_BLE_MAX_GATT_SERVICES 8u
 #define BK3633_BLE_MAX_GATT_ATTRS_PER_SERVICE 16u
@@ -949,26 +962,26 @@ static h2_pal_result_t ble_send_start_scan(const h2_pal_ble_scan_params_t *param
         if (params->mode == H2_PAL_BLE_SCAN_MODE_ACTIVE)
             cmd->u_param.scan_param.prop |= GAPM_SCAN_PROP_ACTIVE_1M_BIT;
         cmd->u_param.scan_param.scan_param_1m.scan_intv =
-            ble_ms_to_scan_units(params->interval_ms);
+            params->interval_units_625us != 0u
+                ? params->interval_units_625us
+                : ble_ms_to_scan_units(params->interval_ms);
         cmd->u_param.scan_param.scan_param_1m.scan_wd =
-            ble_ms_to_scan_units(params->window_ms);
-        if (cmd->u_param.scan_param.scan_param_1m.scan_wd >
-            cmd->u_param.scan_param.scan_param_1m.scan_intv)
-            cmd->u_param.scan_param.scan_param_1m.scan_wd =
-                cmd->u_param.scan_param.scan_param_1m.scan_intv;
+            params->window_units_625us != 0u
+                ? params->window_units_625us
+                : ble_ms_to_scan_units(params->window_ms);
     }
     if ((phy_mask & H2_PAL_BLE_SCAN_PHY_CODED) != 0u) {
         cmd->u_param.scan_param.prop |= GAPM_SCAN_PROP_PHY_CODED_BIT;
         if (params->mode == H2_PAL_BLE_SCAN_MODE_ACTIVE)
             cmd->u_param.scan_param.prop |= GAPM_SCAN_PROP_ACTIVE_CODED_BIT;
         cmd->u_param.scan_param.scan_param_coded.scan_intv =
-            ble_ms_to_scan_units(params->interval_ms);
+            params->interval_units_625us != 0u
+                ? params->interval_units_625us
+                : ble_ms_to_scan_units(params->interval_ms);
         cmd->u_param.scan_param.scan_param_coded.scan_wd =
-            ble_ms_to_scan_units(params->window_ms);
-        if (cmd->u_param.scan_param.scan_param_coded.scan_wd >
-            cmd->u_param.scan_param.scan_param_coded.scan_intv)
-            cmd->u_param.scan_param.scan_param_coded.scan_wd =
-                cmd->u_param.scan_param.scan_param_coded.scan_intv;
+            params->window_units_625us != 0u
+                ? params->window_units_625us
+                : ble_ms_to_scan_units(params->window_ms);
     }
     cmd->u_param.scan_param.duration = params->timeout_ms == 0u
         ? 0u
@@ -1317,25 +1330,36 @@ static h2_pal_result_t ble_send_create_adv_set(
 }
 
 static h2_pal_result_t ble_send_adv_set_data(
-    h2_pal_ble_adv_set_t *set, uint8_t slot)
+    h2_pal_ble_adv_set_t *set,
+    uint8_t slot,
+    const uint8_t *data,
+    uint16_t data_len,
+    uint32_t generation)
 {
     if (s_ble_state.pending_adv_data_count >=
         BK3633_BLE_ADV_OPERATION_CAPACITY)
         return H2_PAL_ERR_BUSY;
     struct gapm_set_adv_data_cmd *cmd = KE_MSG_ALLOC_DYN(
         GAPM_SET_ADV_DATA_CMD, TASK_GAPM, TASK_APP,
-        gapm_set_adv_data_cmd, set->data_len);
+        gapm_set_adv_data_cmd, data_len);
     if (cmd == NULL) return H2_PAL_ERR_NO_MEMORY;
     cmd->operation = GAPM_SET_ADV_DATA;
     cmd->actv_idx = set->activity_index;
-    cmd->length = set->data_len;
-    if (set->data_len != 0u) memcpy(cmd->data, set->data, set->data_len);
+    cmd->length = data_len;
+    if (data_len != 0u) memcpy(cmd->data, data, data_len);
+    uint8_t tail = (uint8_t)(
+        (s_ble_state.pending_adv_data_head +
+         s_ble_state.pending_adv_data_count) %
+        BK3633_BLE_ADV_OPERATION_CAPACITY);
+    s_ble_state.pending_adv_data_epoch[tail] = set->epoch;
+    s_ble_state.pending_adv_data_generation[tail] = generation;
     if (!ble_adv_queue_push(
             s_ble_state.pending_adv_data,
             s_ble_state.pending_adv_data_head,
             &s_ble_state.pending_adv_data_count, slot))
         return H2_PAL_ERR_BUSY;
     set->data_pending = true;
+    set->in_flight_generation = generation;
     ke_msg_send(cmd);
     return H2_PAL_OK;
 }
@@ -1356,6 +1380,12 @@ static h2_pal_result_t ble_send_adv_set_scan_response_data(
     if (set->scan_response_data_len != 0u)
         memcpy(cmd->data, ble_adv_set_scan_response_data(set),
                set->scan_response_data_len);
+    uint8_t tail = (uint8_t)(
+        (s_ble_state.pending_adv_data_head +
+         s_ble_state.pending_adv_data_count) %
+        BK3633_BLE_ADV_OPERATION_CAPACITY);
+    s_ble_state.pending_adv_data_epoch[tail] = set->epoch;
+    s_ble_state.pending_adv_data_generation[tail] = 0u;
     if (!ble_adv_queue_push(
             s_ble_state.pending_adv_data,
             s_ble_state.pending_adv_data_head,
@@ -1822,11 +1852,117 @@ static h2_pal_result_t ble_adv_set_create(
             memset(set, 0, sizeof(*set));
             set->used = true;
             set->params = *params;
+            ++s_ble_state.next_adv_set_epoch;
+            if (s_ble_state.next_adv_set_epoch == 0u)
+                ++s_ble_state.next_adv_set_epoch;
+            set->epoch = s_ble_state.next_adv_set_epoch;
             *out_set = set;
             return H2_PAL_OK;
         }
     }
     return H2_PAL_ERR_NO_SPACE;
+}
+
+static uint32_t ble_adv_set_next_generation(
+    const h2_pal_ble_adv_set_t *set)
+{
+    uint32_t generation = set->latest_generation + 1u;
+    return generation == 0u ? 1u : generation;
+}
+
+static h2_pal_result_t ble_adv_set_accept_primary_data(
+    h2_pal_ble_adv_set_t *set,
+    uint8_t slot,
+    const uint8_t *data,
+    uint16_t data_len,
+    uint16_t device_name_offset,
+    uint8_t device_name_len)
+{
+    if (set->failure_stop_pending || set->terminal_failed ||
+        set->stop_pending || set->stop_requested || set->delete_pending ||
+        set->destroy_requested)
+        return H2_PAL_ERR_INVALID_STATE;
+    if (set->start_pending)
+        return H2_PAL_ERR_BUSY;
+    size_t capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
+        ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN : sizeof(set->data);
+    if (data_len > capacity) return H2_PAL_ERR_NO_SPACE;
+
+    uint32_t generation = ble_adv_set_next_generation(set);
+    if (set->started && !set->data_pending &&
+        !set->scan_response_pending) {
+        h2_pal_result_t result = ble_send_adv_set_data(
+            set, slot, data, data_len, generation);
+        if (result != H2_PAL_OK) return result;
+    }
+    if (data_len != 0u) memcpy(set->data, data, data_len);
+    set->data_len = data_len;
+    set->device_name_offset = device_name_offset;
+    set->device_name_len = device_name_len;
+    set->data_staged = true;
+    set->latest_generation = generation;
+    return H2_PAL_OK;
+}
+
+static void ble_adv_set_handle_async_data_failure(
+    h2_pal_ble_adv_set_t *set,
+    uint8_t slot,
+    h2_pal_result_t status)
+{
+    if (!set->started) {
+        if (set->start_requested) {
+            set->start_requested = false;
+            ble_post_adv_set_event(
+                H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+                set, status);
+        }
+        return;
+    }
+    set->start_requested = false;
+    set->stop_requested = false;
+    set->failure_status = status;
+    set->failure_stop_pending = true;
+    h2_pal_result_t stop_result = ble_send_stop(
+        set->activity_index,
+        (uint8_t)(BK3633_BLE_ACTIVITY_KIND_ADV_SET_BASE + slot));
+    if (stop_result == H2_PAL_OK) {
+        set->stop_pending = true;
+        return;
+    }
+    set->failure_stop_pending = false;
+    set->terminal_failed = true;
+    ble_post_adv_set_event(
+        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+        set, stop_result);
+}
+
+static void ble_adv_set_submit_deferred_stop(
+    h2_pal_ble_adv_set_t *set,
+    uint8_t slot)
+{
+    set->stop_requested = false;
+    h2_pal_result_t result = ble_send_stop(
+        set->activity_index,
+        (uint8_t)(BK3633_BLE_ACTIVITY_KIND_ADV_SET_BASE + slot));
+    if (result == H2_PAL_OK) {
+        set->stop_pending = true;
+        return;
+    }
+    set->terminal_failed = true;
+    ble_post_adv_set_event(
+        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+        set, result);
+}
+
+static void ble_adv_set_report_start_submission_failure(
+    h2_pal_ble_adv_set_t *set,
+    h2_pal_result_t status)
+{
+    if (!set->start_requested) return;
+    set->start_requested = false;
+    ble_post_adv_set_event(
+        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+        set, status);
 }
 
 static h2_pal_result_t ble_adv_set_set_data(
@@ -1838,19 +1974,36 @@ static h2_pal_result_t ble_adv_set_set_data(
     int index = ble_adv_set_index(set);
     if (index < 0 || data == NULL)
         return H2_PAL_ERR_INVALID_ARG;
-    if (set->started || set->start_pending || set->data_pending ||
-        set->scan_response_pending ||
-        set->delete_pending || set->destroy_requested)
-        return H2_PAL_ERR_BUSY;
     size_t data_capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
         ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN
         : sizeof(set->data);
+    uint16_t data_len;
+    uint16_t device_name_offset;
+    uint8_t device_name_len;
     h2_pal_result_t result = ble_encode_adv_data(
-        data, set->data, data_capacity, true, &set->data_len,
-        &set->device_name_offset, &set->device_name_len);
+        data, s_ble_adv_encode_scratch, data_capacity, true, &data_len,
+        &device_name_offset, &device_name_len);
     if (result != H2_PAL_OK) return result;
-    return set->created
-        ? ble_send_adv_set_data(set, (uint8_t)index) : H2_PAL_OK;
+    return ble_adv_set_accept_primary_data(
+        set, (uint8_t)index, s_ble_adv_encode_scratch, data_len,
+        device_name_offset, device_name_len);
+}
+
+static h2_pal_result_t ble_adv_set_set_encoded_data(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len)
+{
+    (void)user;
+    int index = ble_adv_set_index(set);
+    if (index < 0 || (encoded_data == NULL && encoded_data_len != 0u))
+        return H2_PAL_ERR_INVALID_ARG;
+    if (encoded_data_len > UINT16_MAX)
+        return H2_PAL_ERR_NO_SPACE;
+    return ble_adv_set_accept_primary_data(
+        set, (uint8_t)index, encoded_data, (uint16_t)encoded_data_len,
+        0u, 0u);
 }
 
 static h2_pal_result_t ble_adv_set_set_scan_response_data(
@@ -1865,9 +2018,12 @@ static h2_pal_result_t ble_adv_set_set_scan_response_data(
     if (set->params.type != H2_PAL_BLE_ADV_TYPE_LEGACY ||
         set->params.mode != H2_PAL_BLE_ADV_MODE_CONNECTABLE)
         return H2_PAL_ERR_UNSUPPORTED;
+    if (set->failure_stop_pending || set->terminal_failed ||
+        set->stop_requested || set->destroy_requested)
+        return H2_PAL_ERR_INVALID_STATE;
     if (set->start_pending || set->data_pending ||
         set->scan_response_pending || set->stop_pending ||
-        set->delete_pending || set->destroy_requested)
+        set->delete_pending)
         return H2_PAL_ERR_BUSY;
     uint8_t encoded[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
     uint16_t encoded_len;
@@ -1895,6 +2051,9 @@ static h2_pal_result_t ble_adv_set_start(
     (void)user;
     int index = ble_adv_set_index(set);
     if (index < 0) return H2_PAL_ERR_INVALID_ARG;
+    if (set->terminal_failed || set->failure_stop_pending ||
+        set->stop_requested)
+        return H2_PAL_ERR_INVALID_STATE;
     set->start_requested = true;
     if (set->started) return H2_PAL_OK;
     if (set->create_pending || set->data_pending ||
@@ -1904,6 +2063,11 @@ static h2_pal_result_t ble_adv_set_start(
         return H2_PAL_ERR_BUSY;
     if (!set->created)
         return ble_send_create_adv_set(set, (uint8_t)index);
+    if (set->data_staged &&
+        set->applied_generation != set->latest_generation)
+        return ble_send_adv_set_data(
+            set, (uint8_t)index, set->data, set->data_len,
+            set->latest_generation);
     if (set->scan_response_set && !set->scan_response_configured)
         return ble_send_adv_set_scan_response_data(set, (uint8_t)index);
     return ble_send_start_adv_set(set, (uint8_t)index);
@@ -1915,9 +2079,15 @@ static h2_pal_result_t ble_adv_set_stop(
     (void)user;
     int index = ble_adv_set_index(set);
     if (index < 0) return H2_PAL_ERR_INVALID_ARG;
+    if (set->terminal_failed && !set->destroy_requested)
+        return H2_PAL_ERR_INVALID_STATE;
     set->start_requested = false;
     if (!set->started && !set->start_pending) return H2_PAL_OK;
     if (set->start_pending || set->stop_pending) return H2_PAL_ERR_BUSY;
+    if (set->data_pending || set->scan_response_pending) {
+        set->stop_requested = true;
+        return H2_PAL_OK;
+    }
     h2_pal_result_t result = ble_send_stop(
         set->activity_index,
         (uint8_t)(BK3633_BLE_ACTIVITY_KIND_ADV_SET_BASE + index));
@@ -1967,8 +2137,15 @@ static h2_pal_result_t ble_start_scan(
     if (on_result == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (params == NULL || params->interval_ms == 0u || params->window_ms == 0u ||
-        params->window_ms > params->interval_ms)
+    bool exact_timing = params != NULL &&
+        params->interval_units_625us != 0u;
+    if (params == NULL ||
+        (!exact_timing &&
+         (params->interval_ms == 0u || params->window_ms == 0u ||
+          params->window_ms > params->interval_ms)) ||
+        (exact_timing &&
+         (params->window_units_625us == 0u ||
+          params->window_units_625us > params->interval_units_625us)))
         return H2_PAL_ERR_INVALID_ARG;
     if (params->type != H2_PAL_BLE_SCAN_TYPE_LEGACY &&
         params->type != H2_PAL_BLE_SCAN_TYPE_EXTENDED)
@@ -2681,6 +2858,7 @@ const h2_pal_ble_host_api_t *h2_bk3633_platform_ble_api(void)
         .stop_advertising = ble_stop_advertising,
         .adv_set_create = ble_adv_set_create,
         .adv_set_set_data = ble_adv_set_set_data,
+        .adv_set_set_encoded_data = ble_adv_set_set_encoded_data,
         .adv_set_set_scan_response_data =
             ble_adv_set_set_scan_response_data,
         .adv_set_start = ble_adv_set_start,
@@ -2907,12 +3085,26 @@ int h2_bk3633_platform_ble_dispatch(
                 set->create_pending = false;
                 if (set->destroy_requested) {
                     (void)ble_send_delete_adv_set(set, slot);
-                } else if (set->data_len != 0u)
-                    (void)ble_send_adv_set_data(set, slot);
-                else if (set->scan_response_set)
-                    (void)ble_send_adv_set_scan_response_data(set, slot);
-                else if (set->start_requested)
-                    (void)ble_send_start_adv_set(set, slot);
+                } else if (set->data_staged) {
+                    h2_pal_result_t result = ble_send_adv_set_data(
+                        set, slot, set->data, set->data_len,
+                        set->latest_generation);
+                    if (result != H2_PAL_OK)
+                        ble_adv_set_report_start_submission_failure(
+                            set, result);
+                } else if (set->scan_response_set) {
+                    h2_pal_result_t result =
+                        ble_send_adv_set_scan_response_data(set, slot);
+                    if (result != H2_PAL_OK)
+                        ble_adv_set_report_start_submission_failure(
+                            set, result);
+                } else if (set->start_requested) {
+                    h2_pal_result_t result =
+                        ble_send_start_adv_set(set, slot);
+                    if (result != H2_PAL_OK)
+                        ble_adv_set_report_start_submission_failure(
+                            set, result);
+                }
             } else {
                 s_ble_state.adv_actv_idx = ind->actv_idx;
                 s_ble_state.adv_created = true;
@@ -2941,9 +3133,17 @@ int h2_bk3633_platform_ble_dispatch(
             if (set != NULL) {
                 set->started = false;
                 set->stop_pending = false;
-                ble_post_adv_set_event(
-                    H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
-                    set, H2_PAL_OK);
+                set->stop_requested = false;
+                h2_pal_result_t stop_status = H2_PAL_OK;
+                bool post_stopped_event = !set->terminal_failed;
+                if (set->failure_stop_pending) {
+                    stop_status = set->failure_status;
+                    set->failure_stop_pending = false;
+                }
+                if (post_stopped_event)
+                    ble_post_adv_set_event(
+                        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+                        set, stop_status);
                 if (set->destroy_requested)
                     (void)ble_send_delete_adv_set(
                         set, (uint8_t)ble_adv_set_index(set));
@@ -3009,30 +3209,57 @@ int h2_bk3633_platform_ble_dispatch(
                     }
                 }
             } else if (evt->operation == GAPM_SET_ADV_DATA) {
+                uint8_t record = s_ble_state.pending_adv_data_head;
+                uint32_t epoch =
+                    s_ble_state.pending_adv_data_epoch[record];
+                uint32_t generation =
+                    s_ble_state.pending_adv_data_generation[record];
                 uint8_t slot = ble_adv_queue_pop(
                     s_ble_state.pending_adv_data,
                     &s_ble_state.pending_adv_data_head,
                     &s_ble_state.pending_adv_data_count);
                 if (slot < BK3633_BLE_ADV_SET_MAX &&
-                    s_ble_state.adv_sets[slot].used) {
+                    s_ble_state.adv_sets[slot].used &&
+                    s_ble_state.adv_sets[slot].epoch == epoch) {
                     h2_pal_ble_adv_set_t *set =
                         &s_ble_state.adv_sets[slot];
                     set->data_pending = false;
+                    set->in_flight_generation = 0u;
+                    if (evt->status == GAP_ERR_NO_ERROR)
+                        set->applied_generation = generation;
                     if (set->destroy_requested) {
-                        (void)ble_send_delete_adv_set(set, slot);
-                    } else if (evt->status == GAP_ERR_NO_ERROR &&
+                        if (set->started && !set->stop_pending)
+                            ble_adv_set_submit_deferred_stop(set, slot);
+                        else if (!set->stop_pending)
+                            (void)ble_send_delete_adv_set(set, slot);
+                    } else if (evt->status != GAP_ERR_NO_ERROR) {
+                        ble_adv_set_handle_async_data_failure(
+                            set, slot, H2_PAL_ERR_IO);
+                    } else if (set->stop_requested) {
+                        ble_adv_set_submit_deferred_stop(set, slot);
+                    } else if (set->latest_generation !=
+                               set->applied_generation) {
+                        h2_pal_result_t next_result =
+                            ble_send_adv_set_data(
+                                set, slot, set->data, set->data_len,
+                                set->latest_generation);
+                        if (next_result != H2_PAL_OK)
+                            ble_adv_set_handle_async_data_failure(
+                                set, slot, next_result);
+                    } else if (
                                set->scan_response_set &&
                                !set->scan_response_configured) {
-                        (void)ble_send_adv_set_scan_response_data(set, slot);
-                    } else if (evt->status == GAP_ERR_NO_ERROR &&
-                               set->start_requested && !set->started) {
-                        (void)ble_send_start_adv_set(set, slot);
-                    } else if (evt->status != GAP_ERR_NO_ERROR &&
-                               set->start_requested && !set->started) {
-                        set->start_requested = false;
-                        ble_post_adv_set_event(
-                            H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-                            set, H2_PAL_ERR_IO);
+                        h2_pal_result_t scan_response_result =
+                            ble_send_adv_set_scan_response_data(set, slot);
+                        if (scan_response_result != H2_PAL_OK)
+                            ble_adv_set_report_start_submission_failure(
+                                set, scan_response_result);
+                    } else if (set->start_requested && !set->started) {
+                        h2_pal_result_t start_result =
+                            ble_send_start_adv_set(set, slot);
+                        if (start_result != H2_PAL_OK)
+                            ble_adv_set_report_start_submission_failure(
+                                set, start_result);
                     }
                 } else {
                     s_ble_state.adv_data_pending = false;
@@ -3045,22 +3272,50 @@ int h2_bk3633_platform_ble_dispatch(
                     }
                 }
             } else if (evt->operation == GAPM_SET_SCAN_RSP_DATA) {
+                uint8_t record = s_ble_state.pending_adv_data_head;
+                uint32_t epoch =
+                    s_ble_state.pending_adv_data_epoch[record];
                 uint8_t slot = ble_adv_queue_pop(
                     s_ble_state.pending_adv_data,
                     &s_ble_state.pending_adv_data_head,
                     &s_ble_state.pending_adv_data_count);
                 if (slot < BK3633_BLE_ADV_SET_MAX &&
-                    s_ble_state.adv_sets[slot].used) {
+                    s_ble_state.adv_sets[slot].used &&
+                    s_ble_state.adv_sets[slot].epoch == epoch) {
                     h2_pal_ble_adv_set_t *set =
                         &s_ble_state.adv_sets[slot];
                     set->scan_response_pending = false;
                     set->scan_response_configured =
                         evt->status == GAP_ERR_NO_ERROR;
                     if (set->destroy_requested) {
-                        (void)ble_send_delete_adv_set(set, slot);
+                        if (set->started && !set->stop_pending)
+                            ble_adv_set_submit_deferred_stop(set, slot);
+                        else if (!set->stop_pending)
+                            (void)ble_send_delete_adv_set(set, slot);
+                    } else if (evt->status == GAP_ERR_NO_ERROR &&
+                               set->stop_requested) {
+                        ble_adv_set_submit_deferred_stop(set, slot);
+                    } else if (evt->status != GAP_ERR_NO_ERROR &&
+                               set->stop_requested) {
+                        ble_adv_set_submit_deferred_stop(set, slot);
+                    } else if (evt->status == GAP_ERR_NO_ERROR &&
+                               set->data_staged &&
+                               set->latest_generation !=
+                                   set->applied_generation) {
+                        h2_pal_result_t data_result =
+                            ble_send_adv_set_data(
+                                set, slot, set->data, set->data_len,
+                                set->latest_generation);
+                        if (data_result != H2_PAL_OK)
+                            ble_adv_set_handle_async_data_failure(
+                                set, slot, data_result);
                     } else if (evt->status == GAP_ERR_NO_ERROR &&
                                set->start_requested && !set->started) {
-                        (void)ble_send_start_adv_set(set, slot);
+                        h2_pal_result_t start_result =
+                            ble_send_start_adv_set(set, slot);
+                        if (start_result != H2_PAL_OK)
+                            ble_adv_set_report_start_submission_failure(
+                                set, start_result);
                     } else if (evt->status != GAP_ERR_NO_ERROR &&
                                set->start_requested && !set->started) {
                         set->start_requested = false;
@@ -3100,6 +3355,11 @@ int h2_bk3633_platform_ble_dispatch(
                         ble_adv_set_from_kind(kind);
                     if (set != NULL) {
                         set->stop_pending = false;
+                        set->stop_requested = false;
+                        if (set->failure_stop_pending) {
+                            set->failure_stop_pending = false;
+                            set->terminal_failed = true;
+                        }
                         ble_post_adv_set_event(
                             H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
                             set, H2_PAL_ERR_IO);
