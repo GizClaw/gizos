@@ -89,4 +89,6 @@ projects/<owner>/targets/h2loader_tar_zlib/<app>/<board>/
 
 App 固件在业务逻辑之前启动 H2Loader App command service，并在达到 command-ready/healthy point 后确认当前 image。它报告 `active_role=app`。同一 Board 的 Loader 与 App 广播相同的 H2Loader Service UUID 和 Board identity；Host 合成相同的 `h2l.<board>` 显示名，并通过 `active_role` 区分当前运行的固件。
 
+ESP App command service 通过 Power PAL 读取当前启动分区并要求该分区具有 `APP` 标志，再把实际分区 ID 交给 H2Loader Core；产品 App 不配置或复制 App 分区 ID。
+
 APP 复用上面的完整设备命令实现，包括 Stage payload/url/abort 和三个 reboot 命令。APP 与 Loader 共享 Pref、DL 路径、package validator、digest、HTTP/Wi-Fi provider 和 operation mutex，不复制另一套协议或发布逻辑。

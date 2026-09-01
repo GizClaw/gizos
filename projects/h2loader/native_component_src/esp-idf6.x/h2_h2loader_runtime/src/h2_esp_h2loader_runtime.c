@@ -771,7 +771,10 @@ int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
   }
   int rc = h2_pal_power_get_running_boot_partition(runtime->power,
                                                    &running_partition);
-  if (rc == H2_PAL_OK && running_partition.id != 2u) {
+  if (rc == H2_PAL_OK &&
+      (running_partition.id == 0u ||
+       (running_partition.flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_APP) ==
+           0u)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
   if (rc == H2_PAL_OK) {
@@ -786,7 +789,8 @@ int h2_esp_h2loader_app_confirm(h2_runtime_t *runtime) {
   if (rc == H2_PAL_OK) {
     rc = h2_loader_finalize_active_app_with_confirmation(
         runtime->pref, runtime->mem, runtime->fs, H2_LOADER_STAGE_PATH,
-        &identity, running_partition.id, 2u, confirm_active_image, NULL);
+        &identity, running_partition.id, running_partition.id,
+        confirm_active_image, NULL);
   }
   if (rc == H2_PAL_OK) {
     rc = h2_esp_platform_pref_finalize_migration();
