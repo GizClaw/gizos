@@ -106,6 +106,11 @@ static void connectivity_speed_complete(
 
 static int connectivity_wait(connectivity_state_t *state) {
   while (!atomic_load_explicit(&state->complete, memory_order_acquire)) {
+    size_t dispatched = 0u;
+    const int dispatch_rc =
+        h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+    if (dispatch_rc != H2_PAL_OK)
+      return dispatch_rc;
     if (!h2_gizclaw_e2e_fixture_has_time(state->fixture, 10u))
       return H2_PAL_ERR_TIMEOUT;
     const int rc = h2_pal_time_sleep_ms(state->fixture->time, 10u);
@@ -144,7 +149,6 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
       .queue = fixture->runtime->queue,
       .sync = fixture->runtime->sync,
       .net_task_options = {.min_stack_size = 32768u},
-      .resp_dispatch_task_options = {.min_stack_size = 32768u},
       .operation_capacity = 1u,
       .client_poll_timeout_ms = 10,
   };
@@ -203,6 +207,17 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
   const int stop_rc = state.service == NULL
                           ? H2_PAL_OK
                           : h2_gizclaw_service_stop(state.service);
+  if (state.service != NULL) {
+    for (;;) {
+      size_t dispatched = 0u;
+      const int dispatch_rc =
+          h2_gizclaw_service_dispatch(state.service, 8u, &dispatched);
+      if (rc == H2_PAL_OK)
+        rc = dispatch_rc;
+      if (dispatch_rc != H2_PAL_OK || dispatched == 0u)
+        break;
+    }
+  }
   const int deinit_rc = state.service == NULL
                             ? H2_PAL_OK
                             : h2_gizclaw_service_deinit(state.service);

@@ -316,15 +316,6 @@ static void complete_pending_as_closed(h2_gizclaw_service_t *service) {
   }
 }
 
-static void signal_dispatch_stop(h2_gizclaw_service_t *service,
-                                 uint32_t timeout_ms) {
-  const h2_gizclaw_dispatch_item_t sentinel = {
-      .kind = H2_GIZCLAW_DISPATCH_STOP,
-  };
-  (void)h2_pal_queue_send(service->config.queue, service->completion_queue,
-                          &sentinel, timeout_ms);
-}
-
 static void queue_client_event(void *user,
                                const h2_gizclaw_client_event_t *event) {
   h2_gizclaw_service_t *service = user;
@@ -408,7 +399,6 @@ static void net_worker(void *ctx) {
     else
       complete_queued_as_closed(service);
     close_client(service);
-    signal_dispatch_stop(service, H2_PAL_QUEUE_WAIT_FOREVER);
     return;
   }
 
@@ -483,7 +473,6 @@ static void net_worker(void *ctx) {
   complete_pending_as_closed(service);
   complete_queued_as_closed(service);
   close_client(service);
-  signal_dispatch_stop(service, H2_PAL_QUEUE_WAIT_FOREVER);
 }
 
 static void dispatch_terminal_if_ready(h2_gizclaw_service_t *service) {
@@ -553,15 +542,31 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
   dispatch_terminal_if_ready(service);
 }
 
-static void resp_dispatch_worker(void *ctx) {
-  h2_gizclaw_service_t *service = ctx;
-  for (;;) {
+h2_pal_result_t h2_gizclaw_service_dispatch(h2_gizclaw_service_t *service,
+                                            size_t max_callbacks,
+                                            size_t *out_dispatched) {
+  if (out_dispatched != NULL)
+    *out_dispatched = 0u;
+  if (service == NULL || max_callbacks == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (service->dispatching) {
+    unlock_service(service);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  service->dispatching = true;
+  unlock_service(service);
+
+  size_t dispatched = 0u;
+  while (dispatched < max_callbacks) {
     h2_gizclaw_dispatch_item_t item;
     memset(&item, 0, sizeof(item));
-    const h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_recv(
+    rc = (h2_pal_result_t)h2_pal_queue_recv(
         service->config.queue, service->completion_queue, &item,
-        H2_PAL_QUEUE_WAIT_FOREVER);
-    if (rc != H2_PAL_OK || item.kind == H2_GIZCLAW_DISPATCH_STOP)
+        H2_PAL_QUEUE_NO_WAIT);
+    if (rc != H2_PAL_OK)
       break;
     if (item.kind == H2_GIZCLAW_DISPATCH_OPERATION) {
       dispatch_operation(service, item.operation);
@@ -578,8 +583,18 @@ static void resp_dispatch_worker(void *ctx) {
         unlock_service(service);
       }
     }
+    ++dispatched;
   }
   dispatch_terminal_if_ready(service);
+  if (lock_service(service) != H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_STATE;
+  service->dispatching = false;
+  unlock_service(service);
+  if (out_dispatched != NULL)
+    *out_dispatched = dispatched;
+  return rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK
+             ? H2_PAL_OK
+             : rc;
 }
 
 static bool valid_config(const h2_gizclaw_service_config_t *config) {
@@ -605,8 +620,6 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   memset(service, 0, sizeof(*service));
   service->config = *config;
   service->config.net_task_options.name = h2_gizclaw_net_task_name;
-  service->config.resp_dispatch_task_options.name =
-      h2_gizclaw_resp_dispatch_task_name;
   service->client_config = *config->client_config;
   service->original_cancel = service->client_config.cancel_requested;
   service->original_cancel_user = service->client_config.cancel_user;
@@ -676,33 +689,12 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
   service->started = true;
   unlock_service(service);
   rc = h2_pal_task_start(service->config.task,
-                         &service->config.resp_dispatch_task_options,
-                         resp_dispatch_worker, service,
-                         &service->resp_dispatch_task);
+                         &service->config.net_task_options, net_worker, service,
+                         &service->net_task);
   if (rc != H2_PAL_OK) {
     (void)lock_service(service);
     service->started = false;
     unlock_service(service);
-    return rc;
-  }
-  rc = h2_pal_task_start(service->config.task,
-                         &service->config.net_task_options, net_worker, service,
-                         &service->net_task);
-  if (rc != H2_PAL_OK) {
-    signal_dispatch_stop(service, H2_PAL_QUEUE_NO_WAIT);
-    const h2_pal_result_t join_rc = h2_pal_task_join(
-        service->config.task, service->resp_dispatch_task);
-    if (join_rc == H2_PAL_OK) {
-      service->resp_dispatch_task = NULL;
-      (void)lock_service(service);
-      service->started = false;
-      unlock_service(service);
-    } else {
-      (void)lock_service(service);
-      service->stopping = true;
-      unlock_service(service);
-      return join_rc;
-    }
   }
   return rc;
 }
@@ -838,12 +830,6 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
       return rc;
     service->net_task = NULL;
   }
-  if (service->resp_dispatch_task != NULL) {
-    rc = h2_pal_task_join(service->config.task, service->resp_dispatch_task);
-    if (rc != H2_PAL_OK)
-      return rc;
-    service->resp_dispatch_task = NULL;
-  }
   if (lock_service(service) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_STATE;
   service->stopped = true;
@@ -858,7 +844,9 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   if (rc != H2_PAL_OK)
     return rc;
   if (!service->stopped || service->active_count != 0u ||
-      service->caller_reference_count != 0u) {
+      service->caller_reference_count != 0u ||
+      service->queued_event_count != 0u ||
+      (service->terminal_pending && !service->terminal_dispatched)) {
     unlock_service(service);
     return H2_PAL_ERR_INVALID_STATE;
   }
