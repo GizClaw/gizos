@@ -1,0 +1,146 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+# Upstream iperf3 (https://github.com/esnet/iperf) built without autotools.
+# The generated iperf_config.h below mirrors the feature set `configure`
+# detects on a plain Linux or macOS host minus optional dependencies
+# (OpenSSL authentication, kernel SCTP). It exists only as a local test tool
+# for //libs/iperf: the PAL-based client and server are validated against this
+# official implementation on the loopback interface.
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST_ONLY = select({
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_COMMON_CONFIG = """
+#define HAVE_CLOCK_GETTIME 1
+#define HAVE_DAEMON 1
+#define HAVE_GETLINE 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_MSG_TRUNC 1
+#define HAVE_NANOSLEEP 1
+#define HAVE_POLL_H 1
+#define HAVE_PTHREAD 1
+#define HAVE_SENDFILE 1
+#define HAVE_SOCKET_SHUTDOWN_SHUT_WR 1
+#define HAVE_STDATOMIC_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_STDIO_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_STRING_H 1
+#define HAVE_SYS_SOCKET_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_UNISTD_H 1
+#define PACKAGE "iperf"
+#define PACKAGE_BUGREPORT "https://github.com/esnet/iperf"
+#define PACKAGE_NAME "iperf"
+#define PACKAGE_STRING "iperf 3.21"
+#define PACKAGE_TARNAME "iperf"
+#define PACKAGE_URL "https://software.es.net/iperf/"
+#define PACKAGE_VERSION "3.21"
+#define STDC_HEADERS 1
+#define VERSION "3.21"
+"""
+
+_LINUX_CONFIG = """
+#define HAVE_CLOCK_NANOSLEEP 1
+#define HAVE_CPU_AFFINITY 1
+#define HAVE_DONT_FRAGMENT 1
+#define HAVE_ENDIAN_H 1
+#define HAVE_IP_MTU_DISCOVER 1
+#define HAVE_LINUX_TCP_H 1
+#define HAVE_SCHED_SETAFFINITY 1
+#define HAVE_SO_BINDTODEVICE 1
+#define CAN_BIND_TO_DEVICE 1
+#define HAVE_TCP_CONGESTION 1
+#define HAVE_TCP_INFO_SND_WND 1
+#define HAVE_TCP_KEEPALIVE 1
+#define HAVE_TCP_USER_TIMEOUT 1
+"""
+
+genrule(
+    name = "iperf_config_h",
+    outs = ["src/src/iperf_config.h"],
+    cmd = select({
+        "@platforms//os:linux": "cat > $@ <<'EOF'\n#ifndef IPERF_CONFIG_H\n#define IPERF_CONFIG_H\n" + _COMMON_CONFIG + _LINUX_CONFIG + "#endif\nEOF",
+        "//conditions:default": "cat > $@ <<'EOF'\n#ifndef IPERF_CONFIG_H\n#define IPERF_CONFIG_H\n" + _COMMON_CONFIG + "#endif\nEOF",
+    }),
+)
+
+genrule(
+    name = "version_h",
+    outs = ["src/src/version.h"],
+    cmd = "printf '#define IPERF_VERSION \"3.21\"\\n' > $@",
+)
+
+cc_library(
+    name = "libiperf",
+    srcs = [
+        "src/src/cjson.c",
+        "src/src/cjson.h",
+        "src/src/dscp.c",
+        "src/src/flowlabel.h",
+        "src/src/iperf.h",
+        "src/src/iperf_api.c",
+        "src/src/iperf_auth.c",
+        "src/src/iperf_auth.h",
+        "src/src/iperf_client_api.c",
+        "src/src/iperf_error.c",
+        "src/src/iperf_locale.c",
+        "src/src/iperf_locale.h",
+        "src/src/iperf_pthread.c",
+        "src/src/iperf_pthread.h",
+        "src/src/iperf_sctp.c",
+        "src/src/iperf_sctp.h",
+        "src/src/iperf_server_api.c",
+        "src/src/iperf_tcp.c",
+        "src/src/iperf_tcp.h",
+        "src/src/iperf_time.c",
+        "src/src/iperf_time.h",
+        "src/src/iperf_udp.c",
+        "src/src/iperf_udp.h",
+        "src/src/iperf_util.c",
+        "src/src/iperf_util.h",
+        "src/src/net.c",
+        "src/src/net.h",
+        "src/src/portable_endian.h",
+        "src/src/queue.h",
+        "src/src/tcp_info.c",
+        "src/src/timer.c",
+        "src/src/timer.h",
+        "src/src/units.c",
+        "src/src/units.h",
+        ":iperf_config_h",
+        ":version_h",
+    ],
+    hdrs = ["src/src/iperf_api.h"],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ] + select({
+        "@platforms//os:linux": ["-D_GNU_SOURCE"],
+        "//conditions:default": [],
+    }),
+    includes = ["src/src"],
+    linkopts = [
+        "-lm",
+        "-lpthread",
+    ],
+    target_compatible_with = _HOST_ONLY,
+)
+
+cc_binary(
+    name = "iperf3",
+    srcs = ["src/src/main.c"],
+    copts = [
+        "-w",
+        "-std=gnu11",
+    ],
+    target_compatible_with = _HOST_ONLY,
+    deps = [":libiperf"],
+)
