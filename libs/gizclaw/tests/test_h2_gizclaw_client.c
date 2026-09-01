@@ -1418,7 +1418,13 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   };
   const uint8_t workflow_get_request[] = {0x0a, 0x04, 'c', 'h', 'a', 't'};
   const uint8_t workflow_get_response[] = {
-      0x0a, 0x08, 0x0a, 0x04, 'c', 'h', 'a', 't', 0x20, 0x01,
+      0x0a, 0x0f, 0x0a, 0x04, 'c', 'h', 'a', 't', 0x20, 0x03, 0x2a, 0x05,
+      'z',  'h',  '-',  'e',  'n',
+  };
+  const uint8_t inherited_workspace_put_request[] = {
+      0x0a, 0x0f, 0x22, 0x0d, 0x1a, 0x0b, 0x08, 0x01, 0x28, 0x02,
+      0x32, 0x05, 'z',  'h',  '-',  'e',  'n',  0x12, 0x0b, 'w',
+      'o',  'r',  'k',  's',  'p',  'a',  'c',  'e',  '-',  '1',
   };
   test_contact_rpc_t inherited_steps[] = {
       {
@@ -1437,8 +1443,8 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
       },
       {
           .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
-          .expected_request = workspace_put_request,
-          .expected_request_len = sizeof(workspace_put_request),
+          .expected_request = inherited_workspace_put_request,
+          .expected_request_len = sizeof(inherited_workspace_put_request),
           .response = workspace_put_response,
           .response_len = workspace_put_response_len,
       },

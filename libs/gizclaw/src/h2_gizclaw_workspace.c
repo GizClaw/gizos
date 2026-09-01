@@ -1166,20 +1166,53 @@ static int workspace_input_request_from_workflow(
   if (rc != H2_PAL_OK)
     return rc;
 
+  const uint8_t *workspace_lang_pair = NULL;
+  size_t workspace_lang_pair_len = 0u;
+  if (!protobuf_find_bytes(
+          workflow, workflow_len,
+          gizclaw_rpc_v1_Workflow_workspace_lang_pair_tag,
+          &workspace_lang_pair, &workspace_lang_pair_len, &found))
+    return H2_PAL_ERR_FORMAT;
+  if (found &&
+      driver !=
+          gizclaw_rpc_v1_WorkflowDriver_WORKFLOW_DRIVER_AST_TRANSLATE)
+    return H2_PAL_ERR_INVALID_STATE;
+
   const uint64_t wire_input =
       input_mode == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
           ? gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_REALTIME
           : gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_PUSH_TO_TALK;
-  uint8_t typed[16];
-  size_t typed_len = 0u;
-  if (!protobuf_write_varint(typed, sizeof(typed), &typed_len, 0x08u) ||
-      !protobuf_write_varint(typed, sizeof(typed), &typed_len, 1u) ||
-      !protobuf_write_varint(typed, sizeof(typed), &typed_len,
-                             (uint64_t)shape.input_field << 3u) ||
-      !protobuf_write_varint(typed, sizeof(typed), &typed_len, wire_input))
+  if (workspace_lang_pair_len > SIZE_MAX - 24u)
     return H2_PAL_ERR_NO_MEMORY;
-  return workspace_put_request_encode(allocator, name, &shape, typed, typed_len,
-                                      out_request, out_request_len);
+  const size_t typed_capacity = workspace_lang_pair_len + 24u;
+  uint8_t *typed = h2_pal_mem_alloc(allocator, typed_capacity);
+  if (typed == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  size_t typed_len = 0u;
+  const bool encoded =
+      protobuf_write_varint(typed, typed_capacity, &typed_len, 0x08u) &&
+      protobuf_write_varint(typed, typed_capacity, &typed_len, 1u) &&
+      protobuf_write_varint(typed, typed_capacity, &typed_len,
+                            (uint64_t)shape.input_field << 3u) &&
+      protobuf_write_varint(typed, typed_capacity, &typed_len, wire_input) &&
+      (!found ||
+       (protobuf_write_varint(
+            typed, typed_capacity, &typed_len,
+            (uint64_t)gizclaw_rpc_v1_ASTTranslateWorkspaceParameters_lang_pair_tag
+                << 3u | 2u) &&
+        protobuf_write_varint(typed, typed_capacity, &typed_len,
+                              workspace_lang_pair_len) &&
+        protobuf_write_bytes(typed, typed_capacity, &typed_len,
+                             workspace_lang_pair,
+                             workspace_lang_pair_len)));
+  if (!encoded) {
+    h2_pal_mem_free(allocator, typed);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  rc = workspace_put_request_encode(allocator, name, &shape, typed, typed_len,
+                                    out_request, out_request_len);
+  h2_pal_mem_free(allocator, typed);
+  return rc;
 }
 
 static int workspace_parameters_patch_input(
