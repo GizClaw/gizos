@@ -44,3 +44,7 @@ if(DEFINED H2_IPERF_BLE_ADV)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     H2_IPERF_BLE_ADV=${H2_IPERF_BLE_ADV})
 endif()
+if(DEFINED H2_IPERF_ROLE_SERVER)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_IPERF_ROLE_SERVER=${H2_IPERF_ROLE_SERVER})
+endif()

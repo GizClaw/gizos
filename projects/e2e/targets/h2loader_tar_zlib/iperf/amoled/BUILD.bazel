@@ -72,6 +72,7 @@ h2loader_esp_idf_firmware(
         "H2_IPERF_BLE_ADV",
         "H2_IPERF_SERVER",
         "H2_IPERF_POWER_SAVE",
+        "H2_IPERF_ROLE_SERVER",
     ],
     graph = [":iperf_launcher"],
     project = "CMakeLists.txt",

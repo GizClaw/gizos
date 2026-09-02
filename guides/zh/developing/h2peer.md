@@ -42,7 +42,7 @@ H2Peer 的本地 DataChannel SID pool 固定为 DTLS client parity 的 150 个 o
 
 DataChannel 或 RTP TX slot 被 protocol owner 释放时，owner 在同一 event queue 投递合并的 send-ready 通知。该通知没有 public callback payload；它会立即唤醒使用正 timeout 等待的 `peer_poll()`，由调用方重试此前未被消费的完整 message 或 frame。Production H2Peer 的 event queue 等待超时映射为 `H2_PAL_OK`，不会从正 timeout 的 `peer_poll()` 返回 `H2_PAL_ERR_WOULD_BLOCK`。
 
-Callback receive 的正常 high-water 是 12 项或 `16 KiB` queued payload；pull receive 的全局 high-water 是 12 项，并受每个 mailbox 的四项容量进一步限制。达到 high-water 后只暂停 transport receive，control 和待发送工作继续处理。Callback payload 复制为 event-owned storage，pull payload 复制到对应 mailbox 的可复用 storage。单个最大 `64 KiB` message 可以使瞬时 queued payload 高于 byte high-water，但不会预分配 receive window 大小。Allocation 或 queue capacity 耗尽会记录为 terminal transport error，不会让 owner task 阻塞等待调用者排空同一队列。
+Callback receive 的正常 high-water 是 12 项或 `16 KiB` queued payload；pull receive 的全局 high-water 是 12 项，并受每个 mailbox 的四项容量进一步限制。达到 high-water 后只暂停 transport receive，control 和待发送工作继续处理。 Opus pull mailbox 是例外：四个 slot 都被占用时新到的 Opus frame 直接丢弃，由消费端的 sequence gap 与 loss marker 处理，不暂停 transport receive，也不把 `H2_PAL_ERR_FULL` 记为 terminal transport error；实时音频的消费者落后超过四帧时丢帧比中断连接正确。Callback payload 复制为 event-owned storage，pull payload 复制到对应 mailbox 的可复用 storage。单个最大 `64 KiB` message 可以使瞬时 queued payload 高于 byte high-water，但不会预分配 receive window 大小。Allocation 或 queue capacity 耗尽会记录为 terminal transport error，不会让 owner task 阻塞等待调用者排空同一队列。
 
 固定 payload storage 包括一个约 `1275 B` 的 RTP TX slot；UDP receive 使用 owner task stack 上的 `1500 B` 临时 buffer，不跨 task 复制或预留 UDP mailbox。进入 protocol owner 的 DataChannel TX 和 RTP TX 各只允许一个待处理 payload；离开 protocol owner 的每个 DataChannel pull RX 和 Opus pull RX 各保留四个 slot，用额外 slot 吸收下游 task 的短暂调度抖动。DataChannel storage 按需扩容并复用；以性能测试使用的 `8 KiB` App chunk 为例，一个同时收发的 channel 峰值是 `8 KiB` TX 加 `32 KiB` RX。Task stack、queue item 和 mailbox buffer 都使用 H2Peer 注入的 Memory PAL；ESP production wiring 可以把这些大块 allocation 放到 PSRAM，FreeRTOS queue、task 和 mutex control block 仍由平台决定。该内存模型需要在真实 target 上用 heap telemetry 验证，不能只用 Desktop throughput 推断。
 
@@ -104,5 +104,7 @@ bazel run -c opt --config=macos_arm64 \
 ```
 
 Package test 使用 deterministic PAL fake 和 package-private provider fake，覆盖 C11/C++17 public header、PAL Log 路由与截断、完整 150-entry SID pool、双向 reset 顺序和 duplicate event、三条同时存在的 DataChannel、RTP backpressure、wire round-trip、malformed input、allocation failure、partial provider initialization、TURN fake-time refresh 和 exactly-once cleanup。Pion gate 只证明 Desktop PAL interoperability；target component build、firmware image、hardware 和 live GizClaw service validation 仍属于后续 backend migration。
+
+ESP target 上有两项测量时必须显式控制的平台状态。第一，lwIP 把 `SO_RCVTIMEO=0` 当作永久阻塞，ESP Net PAL 的 `tcp_recv`/`udp_recvfrom` 因此把 PAL timeout `0` 实现为 `MSG_DONTWAIT` 轮询、把有界 timeout 实现为 `SO_RCVTIMEO` 阻塞读；H2Peer owner 用 timeout `0` 轮询 TCP/TURN socket 时依赖这一语义。第二，H2Loader App command service 的 BLE 广播会让 Wi-Fi 共存调度把 station 每秒睡眠约十次，即使 `WIFI_PS_NONE` 也是如此，AMOLED 上实测 UDP 吞吐因此降到三分之一；AMOLED launcher 的 `H2_WEBRTC_PERF_BLE_ADV=0` 在 workload 前暂停广播，产品在语音会话期间应采用同样策略。
 
 ESP-IDF 和 BK 的 production firmware 必须通过各自 native build 入口验证。BK H106 还通过 image-owned memory contract 检查 H2Peer、其私有 libSRTP、H2SCTP 与 BLE required symbols，拒绝 Classic Bluetooth symbols，并保持 AP image 在物理 `2380 KiB` partition 内；不能通过扩大 partition 掩盖集成成本。

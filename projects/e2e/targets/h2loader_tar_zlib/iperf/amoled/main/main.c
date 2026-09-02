@@ -32,6 +32,12 @@
 #define H2_IPERF_BLE_ADV 1
 #endif
 
+/* 0 runs the client matrix against H2_IPERF_SERVER, 1 serves iperf3 clients
+ * (TCP, UDP and SCTP-over-UDP) so the host can drive each direction itself. */
+#ifndef H2_IPERF_ROLE_SERVER
+#define H2_IPERF_ROLE_SERVER 0
+#endif
+
 #define H2_IPERF_AMOLED_PORT 5201u
 #define H2_IPERF_AMOLED_SCTP_UDP_PORT 9899u
 #define H2_IPERF_AMOLED_CASE_MS 5000u
@@ -148,10 +154,59 @@ static int apply_power_save(h2_runtime_t *runtime) {
   return rc;
 }
 
+static void serve_forever(const h2_iperf_config_t *pal) {
+  h2_iperf_server_params_t params;
+  memset(&params, 0, sizeof(params));
+  params.port = H2_IPERF_AMOLED_PORT;
+  params.sctp_udp_port = H2_IPERF_AMOLED_SCTP_UDP_PORT;
+  h2_iperf_server_t *server = NULL;
+  int rc = h2_iperf_server_create(pal, &params, &server);
+  if (rc != H2_PAL_OK) {
+    fail("server_create", rc, 1);
+  }
+  printf("H2_IPERF_E2E_AMOLED stage=server status=LISTENING port=%u "
+         "sctp_udp_port=%u\n",
+         (unsigned)h2_iperf_server_port(server),
+         (unsigned)h2_iperf_server_sctp_udp_port(server));
+  fflush(stdout);
+  for (;;) {
+    h2_iperf_result_t result;
+    memset(&result, 0, sizeof(result));
+    memory_checkpoint("server_test_start");
+    rc = h2_iperf_server_run_once(server, 60000u, &result);
+    if (rc == H2_PAL_ERR_TIMEOUT) {
+      continue;
+    }
+    memory_checkpoint("server_test_end");
+    const h2_iperf_stream_stats_t *receiver =
+        result.reverse ? &result.remote : &result.local;
+    printf("H2_IPERF_E2E_AMOLED stage=server_test rc=%d protocol=%d "
+           "reverse=%d receiver_bps=%llu bytes=%llu packets=%llu lost=%lld "
+           "jitter_us=%u duration_ms=%u\n",
+           rc, (int)result.protocol, result.reverse ? 1 : 0,
+           (unsigned long long)h2_iperf_stats_bits_per_second(receiver),
+           (unsigned long long)receiver->bytes,
+           (unsigned long long)receiver->packets,
+           (long long)receiver->lost_packets,
+           (unsigned)(receiver->jitter_ms > 0.0
+                          ? receiver->jitter_ms * 1000.0
+                          : 0.0),
+           (unsigned)receiver->duration_ms);
+    fflush(stdout);
+  }
+}
+
+/* The board creates the entry task at priority 4 with no core affinity. The
+ * measurement task drains sockets from the application side, so it must not
+ * be starved by the priority-8 H2Loader command service; run it above that
+ * service (still below lwIP at 18 and Wi-Fi at 23). */
+#define H2_IPERF_ENTRY_TASK_PRIORITY (tskIDLE_PRIORITY + 9u)
+
 static void image_entry(void *user) {
   (void)user;
   h2_runtime_config_t runtime_config = {0};
   h2_runtime_t *runtime = NULL;
+  vTaskPrioritySet(NULL, H2_IPERF_ENTRY_TASK_PRIORITY);
   memory_checkpoint("entry");
   int rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc != H2_PAL_OK) {
@@ -173,7 +228,7 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("command_start", rc, 0);
   }
-  if (strcmp(H2_IPERF_SERVER, "192.0.2.1") == 0) {
+  if (!H2_IPERF_ROLE_SERVER && strcmp(H2_IPERF_SERVER, "192.0.2.1") == 0) {
     fail("endpoint_config", H2_PAL_ERR_INVALID_ARG, 1);
   }
   rc = h2_esp_h2loader_app_confirm(runtime);
@@ -227,6 +282,9 @@ static void image_entry(void *user) {
       .duration_ms = H2_IPERF_AMOLED_CASE_MS,
       .checkpoint = case_checkpoint,
   };
+  if (H2_IPERF_ROLE_SERVER) {
+    serve_forever(&config.pal);
+  }
   h2_iperf_e2e_report_t report = {0};
   memory_checkpoint("matrix_start");
   rc = h2_iperf_e2e_run(&config, &report);

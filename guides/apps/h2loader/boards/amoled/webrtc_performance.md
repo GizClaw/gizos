@@ -28,3 +28,5 @@ bazel build --config=esp32s3 \
 ```
 
 按标准 `status -> send -> reboot upgrade -> status` 流程安装。串口 marker 使用 `H2_WEBRTC_PERF_AMOLED` 前缀，summary 行末尾附带 `power_save=<n>`；有效结果必须包含 exact package checksum、`amoled/esp32s3` identity、LAN endpoint、selected UDP ICE pair、双向 exact 10 MiB、完整 performance summary 和三类 heap 的 KiB checkpoint。
+
+2026-09-02 实测（`H2_WEBRTC_PERF_POWER_SAVE=0`、`H2_WEBRTC_PERF_BLE_ADV=0`，host Pion 位于路由器另一子网）：`smoke` 通过一轮的 summary 为 upload 491 KB/s、download 359 KB/s、loaded 415 KB/s、request batch 56 ms、audio p99 gap 57 ms；三类 heap 在 `benchmark_end` 为 internal 88/62 KiB、DMA 80/54 KiB、PSRAM 6498/6059 KiB（free/min）。同一镜像的相邻轮次因射频波动可能在负载阶段失败并由 launcher 自动重试。
