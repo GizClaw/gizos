@@ -69,6 +69,7 @@ h2loader_esp_idf_firmware(
     ],
     board = "amoled",
     cmake_variables = [
+        "H2_IPERF_BLE_ADV",
         "H2_IPERF_SERVER",
         "H2_IPERF_POWER_SAVE",
     ],

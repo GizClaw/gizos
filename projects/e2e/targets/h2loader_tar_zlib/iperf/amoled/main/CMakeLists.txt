@@ -40,3 +40,7 @@ if(DEFINED H2_IPERF_POWER_SAVE)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     H2_IPERF_POWER_SAVE=${H2_IPERF_POWER_SAVE})
 endif()
+if(DEFINED H2_IPERF_BLE_ADV)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_IPERF_BLE_ADV=${H2_IPERF_BLE_ADV})
+endif()

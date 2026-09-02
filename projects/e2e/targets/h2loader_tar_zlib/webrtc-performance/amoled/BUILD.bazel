@@ -68,6 +68,7 @@ h2loader_esp_idf_firmware(
     ],
     board = "amoled",
     cmake_variables = [
+        "H2_WEBRTC_PERF_BLE_ADV",
         "H2_WEBRTC_PERF_ENDPOINT",
         "H2_WEBRTC_PERF_POWER_SAVE",
         "H2_WEBRTC_PERF_STUN_URL",

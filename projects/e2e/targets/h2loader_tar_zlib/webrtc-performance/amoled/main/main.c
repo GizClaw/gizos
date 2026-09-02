@@ -1,6 +1,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_h2loader_runtime.h"
+#include "h2_esp_platform_core.h"
 #include "h2_webrtc_performance.h"
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
@@ -27,6 +28,12 @@
 /* 0 keeps the radio awake, 1 sleeps per DTIM, 2 sleeps per listen interval. */
 #ifndef H2_WEBRTC_PERF_POWER_SAVE
 #define H2_WEBRTC_PERF_POWER_SAVE 0
+#endif
+
+/* 1 keeps the H2Loader App command service advertising over BLE, 0 pauses it
+ * before the workload so BLE/Wi-Fi coexistence does not time-slice the radio. */
+#ifndef H2_WEBRTC_PERF_BLE_ADV
+#define H2_WEBRTC_PERF_BLE_ADV 1
 #endif
 
 typedef struct h2_webrtc_performance_amoled_context {
@@ -193,6 +200,9 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("runtime_config", rc, 0);
   }
+  /* Data buffers (iperf blocks, h2sctp windows, H2Peer slots and mailboxes)
+   * live in PSRAM; internal RAM stays for Wi-Fi, lwIP and task stacks. */
+  runtime_config.mem = h2_esp_platform_psram_allocator();
   rc = h2_esp_h2loader_app_commands_prepare_serial(
       &runtime_config, "webrtc-performance", 1u, 3u);
   if (rc != H2_PAL_OK) {
@@ -226,6 +236,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("power_save", rc, 1);
   }
+  if (!H2_WEBRTC_PERF_BLE_ADV) {
+    rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
+    if (rc != H2_PAL_OK) {
+      fail("ble_adv", rc, 1);
+    }
+  }
+  printf("H2_WEBRTC_PERF_AMOLED stage=ble_adv keep=%d rc=%d\n", (int)H2_WEBRTC_PERF_BLE_ADV, rc);
+  fflush(stdout);
   memory_checkpoint("wifi_ready");
   h2_webrtc_performance_amoled_context_t context = {.runtime = runtime};
   const int url_len = snprintf(context.offer_url, sizeof(context.offer_url),
@@ -250,14 +268,15 @@ static void image_entry(void *user) {
     memory_checkpoint("benchmark_end");
     printf("H2_WEBRTC_PERF_AMOLED stage=summary status=%s rc=%d "
            "upload_Bps=%llu download_Bps=%llu loaded_Bps=%llu "
-           "request_batch_ns=%llu audio_p99_gap_ns=%llu power_save=%d\n",
+           "request_batch_ns=%llu audio_p99_gap_ns=%llu power_save=%d "
+           "ble_adv=%d\n",
            rc == 0 ? "PASS" : "FAIL", rc,
            (unsigned long long)result.median_upload_bytes_per_second,
            (unsigned long long)result.median_download_bytes_per_second,
            (unsigned long long)result.median_loaded_bytes_per_second,
            (unsigned long long)result.median_request_batch_ns,
            (unsigned long long)result.median_audio_p99_gap_ns,
-           (int)H2_WEBRTC_PERF_POWER_SAVE);
+           (int)H2_WEBRTC_PERF_POWER_SAVE, (int)H2_WEBRTC_PERF_BLE_ADV);
     fflush(stdout);
     if (rc == 0) {
       break;

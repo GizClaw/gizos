@@ -26,6 +26,12 @@
 #define H2_IPERF_POWER_SAVE 0
 #endif
 
+/* 1 keeps the H2Loader App command service advertising over BLE, 0 pauses it
+ * before the workload so BLE/Wi-Fi coexistence does not time-slice the radio. */
+#ifndef H2_IPERF_BLE_ADV
+#define H2_IPERF_BLE_ADV 1
+#endif
+
 #define H2_IPERF_AMOLED_PORT 5201u
 #define H2_IPERF_AMOLED_SCTP_UDP_PORT 9899u
 #define H2_IPERF_AMOLED_CASE_MS 5000u
@@ -151,6 +157,9 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("runtime_config", rc, 0);
   }
+  /* Data buffers (iperf blocks, h2sctp windows, H2Peer slots and mailboxes)
+   * live in PSRAM; internal RAM stays for Wi-Fi, lwIP and task stacks. */
+  runtime_config.mem = h2_esp_platform_psram_allocator();
   rc = h2_esp_h2loader_app_commands_prepare_serial(&runtime_config, "iperf",
                                                    1u, 3u);
   if (rc != H2_PAL_OK) {
@@ -182,6 +191,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail("power_save", rc, 1);
   }
+  if (!H2_IPERF_BLE_ADV) {
+    rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
+    if (rc != H2_PAL_OK) {
+      fail("ble_adv", rc, 1);
+    }
+  }
+  printf("H2_IPERF_E2E_AMOLED stage=ble_adv keep=%d rc=%d\n", (int)H2_IPERF_BLE_ADV, rc);
+  fflush(stdout);
   memory_checkpoint("wifi_ready");
 
   h2_sctp_t *sctp = NULL;
@@ -215,9 +232,9 @@ static void image_entry(void *user) {
   rc = h2_iperf_e2e_run(&config, &report);
   memory_checkpoint("matrix_end");
   printf("H2_IPERF_E2E_AMOLED stage=summary status=%s rc=%d passed=%u "
-         "total=%u power_save=%d\n",
+         "total=%u power_save=%d ble_adv=%d\n",
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc, report.passed, report.total,
-         (int)H2_IPERF_POWER_SAVE);
+         (int)H2_IPERF_POWER_SAVE, (int)H2_IPERF_BLE_ADV);
   fflush(stdout);
   hold();
 }
