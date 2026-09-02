@@ -393,17 +393,6 @@ static int sockaddr_to_addr(const struct sockaddr *sockaddr, h2_pal_net_addr_t *
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
-/* lwIP treats SO_RCVTIMEO 0 as "block forever", so a zero PAL timeout is a
- * MSG_DONTWAIT read and any other timeout is applied through SO_RCVTIMEO,
- * which lwIP honours inside the socket mailbox wait without the tcpip-thread
- * round trips that select() costs on every call. */
-static void esp_net_set_recv_timeout(int fd, uint32_t timeout_ms) {
-    struct timeval timeout;
-    timeout.tv_sec = (long)(timeout_ms / 1000u);
-    timeout.tv_usec = (long)((timeout_ms % 1000u) * 1000u);
-    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-}
-
 static int esp_net_socket_error(void) {
     return errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN
         ? H2_PAL_ERR_CLOSED
@@ -791,20 +780,10 @@ static int esp_net_udp_recvfrom(
     }
     struct sockaddr_storage storage;
     socklen_t sock_len = sizeof(storage);
-    int got;
-    if (timeout_ms == 0u) {
-        got = recvfrom(socket_fd, data, (int)len, MSG_DONTWAIT,
-                       (struct sockaddr *)&storage, &sock_len);
-    } else {
-        esp_net_set_recv_timeout(socket_fd, timeout_ms);
-        got = recvfrom(socket_fd, data, (int)len, 0,
-                       (struct sockaddr *)&storage, &sock_len);
-    }
+    int got = h2_esp_net_datagram_recv(
+        socket_fd, data, len, timeout_ms, (struct sockaddr *)&storage, &sock_len);
     if (got < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
-        }
-        return H2_PAL_ERR_IO;
+        return got;
     }
     if (out_addr != NULL) {
         (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_addr);
@@ -1170,21 +1149,7 @@ static int esp_net_tcp_recv(
             }
         }
     }
-    int received;
-    if (timeout_ms == 0u) {
-        received = recv(socket_fd, data, (int)len, MSG_DONTWAIT);
-    } else {
-        esp_net_set_recv_timeout(socket_fd, timeout_ms);
-        received = recv(socket_fd, data, (int)len, 0);
-    }
-    if (received < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
-                                    : H2_PAL_ERR_TIMEOUT;
-        }
-        return esp_net_socket_error();
-    }
-    return received == 0 ? H2_PAL_ERR_CLOSED : received;
+    return h2_esp_net_stream_recv(socket_fd, data, len, timeout_ms);
 }
 
 static void esp_net_close(void *user, h2_pal_net_socket_t socket_fd) {
