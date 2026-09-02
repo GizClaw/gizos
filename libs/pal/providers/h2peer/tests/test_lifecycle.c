@@ -1585,6 +1585,163 @@ static void test_media_track_lifecycle(void) {
     assert(mem.allocations == mem.frees);
 }
 
+/* Single-token gate standing in for the h2peer/opus/rx queue: send_latest
+ * arms it, recv consumes it or reports TIMEOUT when nothing is pending. */
+typedef struct test_opus_gate {
+    int armed;
+} test_opus_gate_t;
+
+static int test_opus_gate_send_latest(void *user, h2_pal_queue_t *queue,
+                                      const void *item) {
+    (void)user;
+    (void)item;
+    ((test_opus_gate_t *)queue)->armed = 1;
+    return H2_PAL_OK;
+}
+
+static int test_opus_gate_recv(void *user, h2_pal_queue_t *queue,
+                               void *out_item, uint32_t timeout_ms) {
+    (void)user;
+    (void)timeout_ms;
+    test_opus_gate_t *gate = (test_opus_gate_t *)queue;
+    if (!gate->armed) {
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    gate->armed = 0;
+    *(uint8_t *)out_item = 1u;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_queue_vtable_t test_opus_gate_vtable = {
+    .send_latest = test_opus_gate_send_latest,
+    .recv = test_opus_gate_recv,
+};
+
+typedef struct test_rtp_packet {
+    uint8_t data[64];
+    size_t len;
+} test_rtp_packet_t;
+
+/* Builds one Opus RTP packet through the direct send path so the pull test
+ * can replay it after the peer switches to production delivery. */
+static void test_build_opus_rtp(const h2_pal_webrtc_api_t *api,
+                                h2_pal_webrtc_peer_t *peer,
+                                test_provider_t *provider, uint8_t marker,
+                                test_rtp_packet_t *out_packet) {
+    const uint8_t opus[] = {0xf8u, marker};
+    assert(h2_pal_webrtc_peer_send_opus(api, peer, opus, sizeof(opus)) ==
+           H2_PAL_OK);
+    assert(provider->last_rtp_len == 14u &&
+           provider->last_rtp_len <= sizeof(out_packet->data));
+    memcpy(out_packet->data, provider->last_rtp, provider->last_rtp_len);
+    out_packet->len = provider->last_rtp_len;
+}
+
+/* Opus pull delivery drops a frame when the four-slot mailbox is full: the
+ * transport result stays H2_PAL_OK, queued frames remain readable, and the
+ * mailbox accepts new frames once the consumer drains it. */
+static void test_opus_pull_mailbox_full_drops_frame_without_terminal(void) {
+    test_mem_t mem = {0};
+    test_provider_t provider = {0};
+    h2_peer_config_t config = test_config(&mem);
+    test_opus_gate_t gate = {0};
+    const h2_pal_queue_api_t gate_api = {.user = NULL,
+                                         .vtable = &test_opus_gate_vtable};
+    config.queue = &gate_api;
+    h2_peer_provider_bundle_t providers = test_providers(&provider, &mem);
+    h2_peer_t *owner = NULL;
+    assert(h2_peer_create_with_providers(&config, &providers, &owner) ==
+           H2_PAL_OK);
+    const h2_pal_webrtc_api_t *api = h2_peer_webrtc_api(owner);
+    test_callbacks_t callback_state = {0};
+    h2_pal_webrtc_callbacks_t callbacks = {
+        .user = &callback_state,
+        .on_peer_state = test_peer_state,
+        .on_local_sdp = test_local_sdp,
+        .on_channel_state = test_channel_state,
+    };
+    h2_pal_webrtc_peer_t *peer = NULL;
+    assert(h2_pal_webrtc_peer_create(api, &callbacks, &peer) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_start_offer(api, peer) == H2_PAL_OK);
+    h2_pal_webrtc_str_t answer = {.data = answer_sdp,
+                                  .len = sizeof(answer_sdp) - 1u};
+    assert(h2_pal_webrtc_peer_set_remote_sdp(
+               api, peer, H2_PAL_WEBRTC_SDP_ANSWER, answer) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_poll(api, peer, 10) == H2_PAL_OK);
+    assert(callback_state.connected == 1u);
+
+    test_rtp_packet_t packets[H2_PEER_OUTPUT_SLOT_COUNT + 2u];
+    for (size_t i = 0u; i < H2_PEER_OUTPUT_SLOT_COUNT + 2u; ++i) {
+        test_build_opus_rtp(api, peer, &provider, (uint8_t)(0x10u + i),
+                            &packets[i]);
+    }
+
+    /* Switch the connected peer to production pull delivery. The network
+     * event queue only has to be non-NULL; the wakeup flag is pre-armed so
+     * the mailbox never posts a RECEIVE_READY event through it. */
+    int sentinel_events = 0;
+    owner->production_backend = 1;
+    peer->receive_flags = H2_PAL_WEBRTC_RECEIVE_OPUS_PULL;
+    peer->network_events = (h2_pal_queue_t *)&sentinel_events;
+    peer->opus_rx_gate = (h2_pal_queue_t *)&gate;
+    atomic_store(&peer->network_receive_wakeup_queued, 1);
+
+    for (size_t i = 0u; i < H2_PEER_OUTPUT_SLOT_COUNT; ++i) {
+        assert(h2_peer_receive_rtp_for_test(peer, packets[i].data,
+                                            packets[i].len) == H2_PAL_OK);
+    }
+    assert(atomic_load(&peer->opus_rx_count) == H2_PEER_OUTPUT_SLOT_COUNT);
+    assert(atomic_load(&peer->network_receive_full) == 1u);
+
+    /* Fifth frame: mailbox full, frame dropped, peer stays healthy. */
+    assert(h2_peer_receive_rtp_for_test(
+               peer, packets[H2_PEER_OUTPUT_SLOT_COUNT].data,
+               packets[H2_PEER_OUTPUT_SLOT_COUNT].len) == H2_PAL_OK);
+    assert(atomic_load(&peer->network_transport_result) == H2_PAL_OK);
+    assert(atomic_load(&peer->opus_rx_count) == H2_PEER_OUTPUT_SLOT_COUNT);
+    assert(!peer->closed);
+
+    uint8_t frame[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
+    size_t frame_len = 0u;
+    for (uint8_t i = 0u; i < H2_PEER_OUTPUT_SLOT_COUNT; ++i) {
+        assert(h2_pal_webrtc_peer_receive_opus(api, peer, frame, sizeof(frame),
+                                               &frame_len, 0) == H2_PAL_OK);
+        assert(frame_len == 2u && frame[0] == 0xf8u &&
+               frame[1] == (uint8_t)(0x10u + i));
+    }
+    assert(h2_pal_webrtc_peer_receive_opus(api, peer, frame, sizeof(frame),
+                                           &frame_len, 0) == H2_PAL_ERR_TIMEOUT);
+    assert(atomic_load(&peer->opus_rx_count) == 0u);
+    assert(atomic_load(&peer->network_receive_full) == 0u);
+
+    /* The mailbox keeps working after the overflow. */
+    assert(h2_peer_receive_rtp_for_test(
+               peer, packets[H2_PEER_OUTPUT_SLOT_COUNT + 1u].data,
+               packets[H2_PEER_OUTPUT_SLOT_COUNT + 1u].len) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_receive_opus(api, peer, frame, sizeof(frame),
+                                           &frame_len, 0) == H2_PAL_OK);
+    assert(frame_len == 2u &&
+           frame[1] == (uint8_t)(0x10u + H2_PEER_OUTPUT_SLOT_COUNT + 1u));
+    assert(atomic_load(&peer->network_transport_result) == H2_PAL_OK);
+
+    /* Hand the peer back to the direct backend for teardown. */
+    for (size_t i = 0u; i < H2_PEER_OUTPUT_SLOT_COUNT; ++i) {
+        h2_peer_tx_item_t *item = peer->opus_rx_storage[i];
+        if (item != NULL) {
+            h2_pal_mem_free(owner->config.mem, item->data);
+            h2_pal_mem_free(owner->config.mem, item);
+            peer->opus_rx_storage[i] = NULL;
+        }
+    }
+    peer->opus_rx_gate = NULL;
+    peer->network_events = NULL;
+    peer->receive_flags = 0u;
+    owner->production_backend = 0;
+    h2_pal_webrtc_peer_close(api, peer);
+    h2_peer_destroy(&owner);
+    assert(owner == NULL && mem.allocations == mem.frees);
+}
+
 int main(void) {
     test_stream_pool_is_bounded_and_recycles_unopened_sid();
     test_reentrant_terminal_during_channel_open_preserves_result();
@@ -1608,5 +1765,6 @@ int main(void) {
     test_ice_server_transport_validation();
     test_media_track_lifecycle();
     test_media_track_poll_retains_opus_across_backpressure();
+    test_opus_pull_mailbox_full_drops_frame_without_terminal();
     return 0;
 }

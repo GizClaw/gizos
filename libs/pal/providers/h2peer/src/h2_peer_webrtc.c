@@ -684,11 +684,17 @@ void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
             return;
         }
         if (h2_peer_opus_pull_enabled(peer)) {
-            h2_peer_record_network_event_error(
-                peer, h2_peer_receive_submit(
-                          peer, peer->opus_rx_storage, peer->opus_rx_state,
-                          &peer->opus_rx_count, &peer->opus_rx_write_cursor,
-                          peer->opus_rx_gate, opus, opus_len, 0));
+            h2_pal_result_t result = h2_peer_receive_submit(
+                peer, peer->opus_rx_storage, peer->opus_rx_state,
+                &peer->opus_rx_count, &peer->opus_rx_write_cursor,
+                peer->opus_rx_gate, opus, opus_len, 0);
+            /* A full Opus mailbox means the consumer is more than four frames
+             * late. Real-time audio drops the frame and lets the consumer's
+             * sequence gap handling cover it; it must neither pause the
+             * transport nor terminate the peer. */
+            if (result != H2_PAL_ERR_FULL) {
+                h2_peer_record_network_event_error(peer, result);
+            }
             return;
         }
         if (peer->callbacks.on_opus_frame == NULL) {

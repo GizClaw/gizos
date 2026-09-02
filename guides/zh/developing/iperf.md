@@ -49,3 +49,13 @@ bazel test //libs/iperf:all
 
 官方 iperf3 二进制只是本地测试工具，位于 `third_party/iperf.BUILD.bazel`，不参与任何
 firmware 或 library 的构建。
+
+## E2E App 与设备测量
+
+`projects/e2e/apps/iperf/app` 把 client 封装成固定矩阵的 portable E2E App，
+`//projects/e2e/targets/cc_binary/iperf:h2iperf` 提供 host 端 `server` 与 `client`，
+`projects/e2e/targets/h2loader_tar_zlib/iperf/amoled` 是 AMOLED 的 H2Loader image。
+server 在同一个封装 UDP socket 上顺序服务多条 SCTP association，只有 INIT chunk 才会
+建立新的 passive association，前一条 association 的迟到 SACK/HEARTBEAT/SHUTDOWN 不会
+把下一条带偏。见 [E2E 测试 App](/apps/e2e#iperf) 与
+[AMOLED iperf](/apps/h2loader/boards/amoled/iperf)。
