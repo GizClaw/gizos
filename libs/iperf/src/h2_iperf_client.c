@@ -215,6 +215,15 @@ static h2_pal_result_t client_run_data(client_t *client) {
         : h2_iperf_run_sender(&run);
     stats_from_run(&run, &client->stream, params->reverse, &client->result->local);
     client->data_done = true;
+    if (params->reverse && params->protocol == H2_IPERF_PROTOCOL_UDP) {
+        /* Nobody reads the data socket once the run ends, but the server may
+         * still be sending. On zero-copy stacks such as lwIP every datagram
+         * left in the socket mailbox pins a driver RX buffer, so an unread
+         * mailbox can starve the control connection of the receive buffers
+         * it needs for the results exchange. Release the socket now. */
+        h2_iperf_stream_close(&client->stream);
+        client->stream_ready = false;
+    }
     if (result != H2_PAL_OK) {
         return result;
     }

@@ -982,6 +982,24 @@ static int h2_bk_wifi_sta_get_mac(h2_pal_wifi_sta_t *sta, uint8_t out_mac[6]) {
     return h2_bk_wifi_map_error(bk_wifi_sta_get_mac(out_mac));
 }
 
+static int h2_bk_wifi_sta_set_power_save(
+    h2_pal_wifi_sta_t *sta,
+    h2_pal_wifi_power_save_t mode) {
+    (void)sta;
+    switch (mode) {
+    case H2_PAL_WIFI_POWER_SAVE_NONE:
+        return h2_bk_wifi_map_error(bk_wifi_sta_pm_disable());
+    case H2_PAL_WIFI_POWER_SAVE_MIN_MODEM:
+        return h2_bk_wifi_map_error(bk_wifi_sta_pm_enable());
+    case H2_PAL_WIFI_POWER_SAVE_MAX_MODEM:
+        /* Armino exposes one STA power-save policy without a listen-interval
+         * variant; the deeper request maps to the same DTIM sleep. */
+        return h2_bk_wifi_map_error(bk_wifi_sta_pm_enable());
+    default:
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+}
+
 static void h2_bk_wifi_copy_ap_config(
     wifi_ap_config_t *out_config,
     const h2_pal_wifi_ap_config_t *config) {
@@ -1167,6 +1185,8 @@ static const h2_pal_wifi_sta_vtable_t s_h2_bk_wifi_sta_vtable = {
     .connect = (h2_pal_wifi_sta_connect_fn)h2_bk_wifi_sta_connect,
     .disconnect = (h2_pal_wifi_sta_disconnect_fn)h2_bk_wifi_sta_disconnect,
     .get_mac = (h2_pal_wifi_sta_get_mac_fn)h2_bk_wifi_sta_get_mac,
+    .set_power_save =
+        (h2_pal_wifi_sta_set_power_save_fn)h2_bk_wifi_sta_set_power_save,
 };
 
 static h2_pal_wifi_sta_t s_h2_bk_wifi_sta = {

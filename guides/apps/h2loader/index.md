@@ -42,6 +42,8 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | Crash Before Confirm | ✓ | ✓ | — | ✓ | △ | △ | ✓ | ✓ | — | ✓ | ✓ |
 | Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — |
 | GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — |
+| iperf | ✓ | — | — | — | — | — | — | — | — | — | — |
+| WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — |
 | GizClaw E2E | — | — | — | ✓ | — | — | — | — | — | — | — |
 | H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — |
 | Libco Smoke | — | ✓ | — | ✓ | — | — | — | — | — | — | — |

@@ -44,6 +44,8 @@
 #define H2_SCTP_DELAYED_SACK_PACKETS 2u
 #define H2_SCTP_MAX_CONTROL_RETRIES 5u
 #define H2_SCTP_INITIAL_CWND_PACKETS 4u
+/* Largest SCTP packet an IP datagram can carry; bounds inbound parsing. */
+#define H2_SCTP_MAX_INBOUND_PACKET_SIZE 65535u
 
 typedef enum h2_sctp_control_kind {
     H2_SCTP_CONTROL_NONE = 0,
