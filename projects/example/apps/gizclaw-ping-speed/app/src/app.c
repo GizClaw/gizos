@@ -303,7 +303,7 @@ static int smoke_async_wait(
         return rc;
     }
     while (!atomic_load_explicit(&state->complete, memory_order_acquire)) {
-        rc = h2_gizclaw_service_dispatch(service, 8u, NULL);
+        rc = h2_gizclaw_service_poll(service, 8u, NULL);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -421,7 +421,7 @@ h2_smoke_gizclaw_result_t h2_smoke_gizclaw_ping_speed_run(
     if (close_rc == H2_PAL_OK && service != NULL) {
         for (;;) {
             size_t dispatched = 0u;
-            close_rc = h2_gizclaw_service_dispatch(service, 8u, &dispatched);
+            close_rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
             if (close_rc != H2_PAL_OK || dispatched == 0u) {
                 break;
             }

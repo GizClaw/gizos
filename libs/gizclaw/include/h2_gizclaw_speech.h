@@ -15,6 +15,7 @@ extern "C" {
 typedef struct h2_gizclaw_speech_upload h2_gizclaw_speech_upload_t;
 typedef struct h2_gizclaw_speech_request h2_gizclaw_speech_extract_request_t;
 typedef struct h2_gizclaw_speech_request h2_gizclaw_speech_transcribe_request_t;
+typedef h2_gizclaw_request_t h2_gizclaw_asr_request_t;
 
 #define H2_GIZCLAW_SPEECH_AUDIO_CHUNK_MAX_BYTES 1280u
 
@@ -107,12 +108,25 @@ void h2_gizclaw_speech_extract_cancel(h2_gizclaw_speech_upload_t *upload);
 #endif
 
 /** Create one task-safe, service-owned incremental transcription request. */
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_service_speech_transcribe_create(
     h2_gizclaw_service_t *service, uint64_t identity,
     const h2_gizclaw_speech_transcribe_options_t *options,
     h2_gizclaw_speech_transcribe_request_completion_fn completion, void *user,
     h2_gizclaw_speech_transcribe_request_t **out_request);
+#endif
 
+/** Create an ASR request without starting network I/O. */
+h2_pal_result_t h2_gizclaw_asr_request_create(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_speech_transcribe_options_t *options,
+    h2_gizclaw_asr_request_t **out_request);
+
+/** Borrow the terminal transcript, or return an empty view while pending. */
+h2_gizclaw_str_t
+h2_gizclaw_asr_request_response(const h2_gizclaw_asr_request_t *request);
+
+#if defined(H2_GIZCLAW_TESTING)
 int h2_gizclaw_speech_transcribe_request_write_audio(
     h2_gizclaw_speech_transcribe_request_t *request, const uint8_t *audio,
     size_t audio_len, uint32_t timeout_ms);
@@ -172,6 +186,7 @@ h2_gizclaw_str_t h2_gizclaw_speech_extract_request_result_json(
 /** Release a terminal request after its completion callback returns. */
 void h2_gizclaw_speech_extract_request_release(
     h2_gizclaw_speech_extract_request_t *request);
+#endif
 
 #ifdef __cplusplus
 }

@@ -44,8 +44,7 @@ typedef struct firmware_info_fixture {
     char version[H2_PAL_FIRMWARE_VERSION_MAX];
 } firmware_info_fixture_t;
 
-static h2_pal_result_t fixture_get_current(
-    void *user,
+static h2_pal_result_t fixture_get_current(void *user,
     h2_pal_firmware_info_t *out_info) {
     firmware_info_fixture_t *fixture = (firmware_info_fixture_t *)user;
 
@@ -69,8 +68,7 @@ static const h2_pal_firmware_info_vtable_t firmware_info_fixture_vtable = {
     .get_current = fixture_get_current,
 };
 
-static void discard_wifi_csi_frame(
-    void *user,
+static void discard_wifi_csi_frame(void *user,
     const h2_pal_wifi_csi_frame_t *frame) {
     (void)user;
     (void)frame;
@@ -121,24 +119,24 @@ int main(void) {
     };
     h2_pal_firmware_info_t firmware_info;
     memset(&firmware_info, 0x5a, sizeof(firmware_info));
-    assert(h2_pal_firmware_info_get_current(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_firmware_info_get_current(NULL, &firmware_info) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_firmware_info_get_current(NULL, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_firmware_info_get_current(NULL, &firmware_info) ==
+         H2_PAL_ERR_UNSUPPORTED);
     assert(firmware_info.version[0] == '\0');
     memset(&firmware_info, 0x5a, sizeof(firmware_info));
     assert(h2_pal_firmware_info_get_current(
-               &missing_vtable_api,
-               &firmware_info) == H2_PAL_ERR_INVALID_ARG);
+             &missing_vtable_api, &firmware_info) == H2_PAL_ERR_INVALID_ARG);
     assert(firmware_info.version[0] == '\0');
     memset(&firmware_info, 0x5a, sizeof(firmware_info));
-    assert(h2_pal_firmware_info_get_current(
-               &partial_api,
-               &firmware_info) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_firmware_info_get_current(&partial_api, &firmware_info) ==
+         H2_PAL_ERR_INVALID_ARG);
     assert(firmware_info.version[0] == '\0');
     test_firmware_info_contract();
     memset(&firmware_info, 0x5a, sizeof(firmware_info));
     assert(h2_pal_firmware_info_get_current(
-               h2_pal_unsupported_firmware_info_api(),
-               &firmware_info) == H2_PAL_ERR_UNSUPPORTED);
+             h2_pal_unsupported_firmware_info_api(), &firmware_info) ==
+         H2_PAL_ERR_UNSUPPORTED);
     assert(firmware_info.version[0] == '\0');
     CHECK_UNSUPPORTED_API(audio);
     CHECK_UNSUPPORTED_API(audio_decoder);
@@ -171,19 +169,19 @@ int main(void) {
                crypto, &p256_private, &p256_keypair) == H2_PAL_ERR_UNSUPPORTED);
     assert(p256_keypair.private_key.bytes[0] == 0u);
     memset(&p256_keypair, 0xa5, sizeof(p256_keypair));
-    assert(h2_pal_crypto_p256_keypair_generate(
-               crypto, &p256_keypair) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_crypto_p256_keypair_generate(crypto, &p256_keypair) ==
+         H2_PAL_ERR_UNSUPPORTED);
     assert(p256_keypair.private_key.bytes[0] == 0u);
-    assert(h2_pal_crypto_p256_public_key_validate(
-               crypto, &p256_public) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_crypto_p256_public_key_validate(crypto, &p256_public) ==
+         H2_PAL_ERR_UNSUPPORTED);
     memset(&p256_signature, 0xa5, sizeof(p256_signature));
-    assert(h2_pal_crypto_ecdsa_p256_sha256_sign(
-               crypto, &p256_private, NULL, 0u,
-               &p256_signature) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_crypto_ecdsa_p256_sha256_sign(crypto, &p256_private, NULL, 0u,
+                                              &p256_signature) ==
+         H2_PAL_ERR_UNSUPPORTED);
     assert(p256_signature.bytes[0] == 0u);
-    assert(h2_pal_crypto_ecdsa_p256_sha256_verify(
-               crypto, &p256_public, NULL, 0u,
-               &p256_signature) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_crypto_ecdsa_p256_sha256_verify(crypto, &p256_public, NULL, 0u,
+                                                &p256_signature) ==
+         H2_PAL_ERR_UNSUPPORTED);
     CHECK_UNSUPPORTED_API(disk);
     CHECK_UNSUPPORTED_API(dtls);
     CHECK_UNSUPPORTED_API(display);
@@ -225,20 +223,17 @@ int main(void) {
 
     h2_pal_json_document_t *json_document =
         (h2_pal_json_document_t *)(uintptr_t)1u;
-    assert(h2_pal_json_document_parse(
-               h2_pal_unsupported_json_api(),
+  assert(h2_pal_json_document_parse(h2_pal_unsupported_json_api(),
                (const uint8_t *)"null", 4u, NULL,
                &json_document) == H2_PAL_ERR_UNSUPPORTED);
     assert(json_document == NULL);
-    assert(h2_pal_json_document_create(
-               h2_pal_unsupported_json_api(), NULL,
+  assert(h2_pal_json_document_create(h2_pal_unsupported_json_api(), NULL,
                &json_document) == H2_PAL_ERR_UNSUPPORTED);
     assert(json_document == NULL);
 
     h2_pal_serial_host_snapshot_t *serial_snapshot =
         (h2_pal_serial_host_snapshot_t *)(uintptr_t)1u;
-    assert(h2_pal_serial_host_scan(
-               h2_pal_unsupported_serial_host_api(),
+  assert(h2_pal_serial_host_scan(h2_pal_unsupported_serial_host_api(),
                &serial_snapshot) == H2_PAL_ERR_UNSUPPORTED);
     assert(serial_snapshot == NULL);
     const h2_pal_uart_io_stream_config_t serial_config = {
@@ -250,82 +245,71 @@ int main(void) {
     };
     h2_pal_serial_host_session_t *serial_session =
         (h2_pal_serial_host_session_t *)(uintptr_t)1u;
-    assert(h2_pal_serial_host_open(
-               h2_pal_unsupported_serial_host_api(),
-               "",
+  assert(h2_pal_serial_host_open(h2_pal_unsupported_serial_host_api(), "",
                &serial_config,
                &serial_session) == H2_PAL_ERR_INVALID_ARG);
     assert(serial_session == NULL);
-    assert(h2_pal_serial_host_open(
-               h2_pal_unsupported_serial_host_api(),
-               "unsupported",
-               &serial_config,
+  assert(h2_pal_serial_host_open(h2_pal_unsupported_serial_host_api(),
+                                 "unsupported", &serial_config,
                &serial_session) == H2_PAL_ERR_UNSUPPORTED);
     assert(serial_session == NULL);
 
-    assert(h2_pal_ble_start(h2_pal_unsupported_ble_host_api()) == H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_wifi_sta_disconnect(h2_pal_unsupported_wifi_sta_api()) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_ble_start(h2_pal_unsupported_ble_host_api()) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_wifi_sta_disconnect(h2_pal_unsupported_wifi_sta_api()) ==
+         H2_PAL_ERR_UNSUPPORTED);
     h2_pal_wifi_csi_capabilities_t csi_capabilities = {0};
     h2_pal_wifi_csi_config_t csi_config = {0};
-    assert(h2_pal_wifi_csi_get_capabilities(
-               h2_pal_unsupported_wifi_csi_api(),
-               &csi_capabilities) == H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_wifi_csi_start(
-               h2_pal_unsupported_wifi_csi_api(),
-               &csi_config,
+  assert(h2_pal_wifi_csi_get_capabilities(h2_pal_unsupported_wifi_csi_api(),
+                                          &csi_capabilities) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_wifi_csi_start(h2_pal_unsupported_wifi_csi_api(), &csi_config,
                discard_wifi_csi_frame,
                NULL) == H2_PAL_ERR_UNSUPPORTED);
     assert(h2_pal_wifi_csi_stop(h2_pal_unsupported_wifi_csi_api()) == H2_PAL_OK);
-    assert(h2_pal_power_reboot(h2_pal_unsupported_power_api(), 0u) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_power_reboot(h2_pal_unsupported_power_api(), 0u) ==
+         H2_PAL_ERR_UNSUPPORTED);
     const h2_pal_net_api_t *unsupported_net = h2_pal_unsupported_net_api();
     assert(unsupported_net->vtable->tcp_send_timeout != NULL);
     const uint8_t tcp_byte = 0u;
-    assert(h2_pal_net_tcp_send_timeout(
-               unsupported_net, 1, &tcp_byte, sizeof(tcp_byte), 1u) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_net_tcp_send_timeout(unsupported_net, 1, &tcp_byte,
+                                     sizeof(tcp_byte),
+                                     1u) == H2_PAL_ERR_UNSUPPORTED);
     assert(unsupported_net->vtable->tcp_listen != NULL);
     assert(unsupported_net->vtable->tcp_accept != NULL);
     h2_pal_net_socket_t listen_socket = 7;
     h2_pal_net_addr_t listen_addr;
-    assert(h2_pal_net_tcp_listen(
-               unsupported_net, H2_PAL_NET_FAMILY_IPV4, 0u, NULL,
-               &listen_socket, &listen_addr) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_net_tcp_listen(unsupported_net, H2_PAL_NET_FAMILY_IPV4, 0u,
+                               NULL, &listen_socket,
+                               &listen_addr) == H2_PAL_ERR_UNSUPPORTED);
     assert(listen_socket == -1);
     h2_pal_net_socket_t accepted_socket = 7;
-    assert(h2_pal_net_tcp_accept(
-               unsupported_net, 1, &accepted_socket, NULL, 1u) ==
-           H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_net_tcp_accept(unsupported_net, 1, &accepted_socket, NULL,
+                               1u) == H2_PAL_ERR_UNSUPPORTED);
     assert(accepted_socket == -1);
     const h2_pal_webrtc_ice_server_t ice_server = {
         .url = {.data = "stun:example.invalid", .len = 20u},
     };
-    const h2_pal_webrtc_callbacks_t webrtc_callbacks = {0};
     h2_pal_webrtc_peer_t *webrtc_peer = NULL;
-    assert(h2_pal_webrtc_peer_create_pull(
-               h2_pal_unsupported_webrtc_api(), &webrtc_callbacks,
-               H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL,
+  assert(h2_pal_webrtc_peer_create(h2_pal_unsupported_webrtc_api(),
                &webrtc_peer) == H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_webrtc_peer_add_ice_server(
-               h2_pal_unsupported_webrtc_api(),
+  assert(
+      h2_pal_webrtc_peer_add_ice_server(h2_pal_unsupported_webrtc_api(),
                (h2_pal_webrtc_peer_t *)(uintptr_t)1u,
                &ice_server) == H2_PAL_ERR_UNSUPPORTED);
     const uint8_t opus[] = {0xf8u};
-    assert(h2_pal_webrtc_peer_send_opus(
-               h2_pal_unsupported_webrtc_api(),
+  assert(h2_pal_webrtc_peer_send_opus(h2_pal_unsupported_webrtc_api(),
                (h2_pal_webrtc_peer_t *)(uintptr_t)1u,
                opus,
                sizeof(opus)) == H2_PAL_ERR_UNSUPPORTED);
-    assert(h2_pal_webrtc_peer_send_opus(
-               h2_pal_unsupported_webrtc_api(),
+  assert(h2_pal_webrtc_peer_send_opus(h2_pal_unsupported_webrtc_api(),
                (h2_pal_webrtc_peer_t *)(uintptr_t)1u,
-               NULL,
-               0u) == H2_PAL_ERR_INVALID_ARG);
+                                      NULL, 0u) == H2_PAL_ERR_INVALID_ARG);
     const h2_video_decoder_config_t config = {
         .frame_allocator = &s_allocator,
     };
     h2_pal_video_decoder_session_t *session = (void *)(uintptr_t)1u;
-    assert(h2_pal_video_decoder_open(
-               h2_pal_unsupported_video_decoder_api(),
+  assert(h2_pal_video_decoder_open(h2_pal_unsupported_video_decoder_api(),
                &config,
                &session) == H2_PAL_ERR_UNSUPPORTED);
     assert(session == NULL);
@@ -335,8 +319,7 @@ int main(void) {
         .preferred_format = H2_AUDIO_SAMPLE_S16LE,
     };
     h2_pal_audio_decoder_session_t *audio_session = (void *)(uintptr_t)1u;
-    assert(h2_pal_audio_decoder_open(
-               h2_pal_unsupported_audio_decoder_api(),
+  assert(h2_pal_audio_decoder_open(h2_pal_unsupported_audio_decoder_api(),
                &audio_config,
                &audio_session) == H2_PAL_ERR_UNSUPPORTED);
     assert(audio_session == NULL);

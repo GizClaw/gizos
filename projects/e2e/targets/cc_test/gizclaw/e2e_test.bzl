@@ -23,13 +23,10 @@ def gizclaw_e2e_desktop_live_test(name, suite, backend = "h2peer"):
         args = [
             "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)",
             suite,
-            "ap",
         ],
         srcs = [
             "h2_gizclaw_e2e_desktop.cpp",
             "h2_gizclaw_e2e_desktop.h",
-            "h2_gizclaw_pal_e2e_access_point.c",
-            "h2_gizclaw_pal_e2e_access_point.h",
         ],
         copts = H2_WARNING_COPTS,
         cxxopts = H2_CXX17_OPTS,
@@ -37,7 +34,6 @@ def gizclaw_e2e_desktop_live_test(name, suite, backend = "h2peer"):
             "//projects/e2e/apps/gizclaw:voice_prompt",
         ],
         env_inherit = [
-            "H2_GIZCLAW_E2E_ENTRY",
             "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
             "H2_GIZCLAW_E2E_SUITE",
         ],

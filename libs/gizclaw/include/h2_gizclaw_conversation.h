@@ -62,7 +62,29 @@ typedef h2_pal_result_t (*h2_gizclaw_conversation_request_event_fn)(
 typedef void (*h2_gizclaw_conversation_request_completion_fn)(
     void *user, h2_gizclaw_conversation_request_t *request);
 
+typedef h2_pal_result_t (*h2_gizclaw_conversation_callback_fn)(
+    h2_gizclaw_conversation_t *conversation,
+    const h2_gizclaw_conversation_event_t *event);
+
+h2_pal_result_t
+h2_gizclaw_conversation_create(h2_gizclaw_service_t *service,
+                               h2_gizclaw_str_t workspace,
+                               h2_gizclaw_conversation_callback_fn callback,
+                               h2_gizclaw_conversation_t **out_conversation);
+
+/** Send one RTP audio BOS and begin pulling PCM from the service Track. */
+h2_pal_result_t h2_gizclaw_conversation_rtp_audio_begin(
+    h2_gizclaw_conversation_t *conversation);
+
+/** Send RTP audio EOS after all PCM already read from the Track. */
+h2_pal_result_t
+h2_gizclaw_conversation_rtp_audio_end(h2_gizclaw_conversation_t *conversation);
+
+/** Release an idle conversation. Active audio must first reach terminal. */
+void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t *conversation);
+
 /** Create one service-owned conversation generation. */
+#if defined(H2_GIZCLAW_TESTING)
 h2_pal_result_t h2_gizclaw_service_conversation_create(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t workspace_name, uint64_t generation, int timeout_ms,
@@ -97,6 +119,7 @@ h2_gizclaw_conversation_request_operation_result(
 
 void h2_gizclaw_conversation_request_release(
     h2_gizclaw_conversation_request_t *request);
+#endif
 
 /**
  * Opens one generation for an already active Workspace.

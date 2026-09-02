@@ -115,6 +115,34 @@ static void h2_web_test_webrtc_message(void *user, h2_pal_webrtc_peer_t *peer,
   }
 }
 
+static void h2_web_test_webrtc_drain(h2_web_webrtc_test_t *test,
+                                     h2_pal_webrtc_peer_t *peer) {
+  h2_pal_webrtc_event_t event = {0};
+  while (h2_pal_webrtc_peer_poll(test->api, peer, 0, &event) == H2_PAL_OK) {
+    switch (event.kind) {
+    case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+      h2_web_test_webrtc_peer_state(test, event.peer, event.peer_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+      h2_web_test_webrtc_local_sdp(test, event.peer, event.sdp_type, event.sdp);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+      h2_web_test_webrtc_channel_state(test, event.peer, event.channel,
+                                       &event.channel_info,
+                                       event.channel_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+      h2_web_test_webrtc_message(test, event.peer, event.channel,
+                                 &event.channel_info, event.data,
+                                 event.data_len, event.is_text);
+      break;
+    default:
+      break;
+    }
+    h2_pal_webrtc_event_release(&event);
+  }
+}
+
 static void h2_web_test_auto_pump_verify(void *user) {
   (void)user;
   const h2_pal_result_t join_result =
@@ -641,13 +669,6 @@ int main(void) {
     return 4;
   }
   h2_web_webrtc_test_t webrtc_test = {0};
-  const h2_pal_webrtc_callbacks_t webrtc_callbacks = {
-      .user = &webrtc_test,
-      .on_peer_state = h2_web_test_webrtc_peer_state,
-      .on_local_sdp = h2_web_test_webrtc_local_sdp,
-      .on_channel_state = h2_web_test_webrtc_channel_state,
-      .on_channel_message = h2_web_test_webrtc_message,
-  };
   const h2_pal_webrtc_api_t *webrtc = h2_web_platform_webrtc_api(platform);
   h2_pal_webrtc_track_t *webrtc_track =
       h2_web_platform_webrtc_audio_track(platform);
@@ -667,20 +688,21 @@ int main(void) {
       .len = 11u,
   };
   const uint8_t opus[] = {0xf8u, 0xffu, 0xfeu};
-  if (h2_pal_webrtc_peer_create(webrtc, &webrtc_callbacks, &webrtc_peer) !=
-          H2_PAL_OK ||
+  if (h2_pal_webrtc_peer_create(webrtc, &webrtc_peer) != H2_PAL_OK ||
       webrtc_track == NULL ||
-      h2_pal_webrtc_peer_set_media_track(webrtc, webrtc_peer, webrtc_track) !=
+      h2_pal_webrtc_peer_set_track(webrtc, webrtc_peer, webrtc_track) !=
           H2_PAL_OK ||
       h2_pal_webrtc_peer_add_ice_server(webrtc, webrtc_peer, &ice_server) !=
           H2_PAL_OK ||
       h2_pal_webrtc_peer_create_data_channel(
           webrtc, webrtc_peer, &channel_config, &webrtc_channel) != H2_PAL_OK ||
-      h2_pal_webrtc_peer_start_offer(webrtc, webrtc_peer) != H2_PAL_OK ||
-      webrtc_test.local_sdp != 1 ||
+      h2_pal_webrtc_peer_start_offer(webrtc, webrtc_peer) != H2_PAL_OK) {
+    return 101;
+  }
+  h2_web_test_webrtc_drain(&webrtc_test, webrtc_peer);
+  if (webrtc_test.local_sdp != 1 ||
       h2_pal_webrtc_peer_set_remote_sdp(
           webrtc, webrtc_peer, H2_PAL_WEBRTC_SDP_ANSWER, answer) != H2_PAL_OK ||
-      webrtc_test.connected != 1 || webrtc_test.channel_open != 1 ||
       EM_ASM_INT({ return globalThis.h2FakeGetUserMediaCount || 0; }) != 1 ||
       EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount || 0; }) != 1 ||
       h2_pal_webrtc_channel_send(webrtc, webrtc_channel,
@@ -689,7 +711,11 @@ int main(void) {
           H2_PAL_ERR_UNSUPPORTED) {
     return 101;
   }
+  h2_web_test_webrtc_drain(&webrtc_test, webrtc_peer);
+  if (webrtc_test.connected != 1 || webrtc_test.channel_open != 1)
+    return 101;
   emscripten_sleep(0u);
+  h2_web_test_webrtc_drain(&webrtc_test, webrtc_peer);
   if (webrtc_test.message != 1)
     return 102;
   h2_pal_webrtc_peer_close(webrtc, webrtc_peer);

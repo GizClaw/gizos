@@ -5,7 +5,23 @@
 #include "h2_gizclaw_speech.h"
 
 #include <stdatomic.h>
+
+typedef struct h2_gizclaw_conversation_request
+    h2_gizclaw_conversation_request_t;
 #include <stdbool.h>
+
+typedef struct h2_gizclaw_request_vtable {
+  h2_pal_result_t (*do_request)(h2_gizclaw_request_t *request,
+                                h2_gizclaw_request_callback_fn callback);
+  h2_pal_result_t (*finish_input)(h2_gizclaw_request_t *request);
+  h2_pal_result_t (*wait)(h2_gizclaw_request_t *request, uint32_t timeout_ms);
+  h2_pal_result_t (*cancel)(h2_gizclaw_request_t *request);
+  void (*release)(h2_gizclaw_request_t *request);
+} h2_gizclaw_request_vtable_t;
+
+struct h2_gizclaw_request {
+  const h2_gizclaw_request_vtable_t *vtable;
+};
 
 typedef enum h2_gizclaw_operation_state {
   H2_GIZCLAW_OPERATION_QUEUED = 0,
@@ -42,6 +58,14 @@ struct h2_gizclaw_operation {
   h2_pal_result_t progress_result;
   h2_gizclaw_cancel_token_t cancel_token;
   h2_gizclaw_operation_t *next_pending;
+  uint64_t trace_sequence;
+  uint64_t queued_at_ms;
+  uint64_t started_at_ms;
+  uint64_t completed_at_ms;
+  uint64_t progress_dispatch_total_ms;
+  uint32_t poll_count;
+  uint32_t progress_dispatch_count;
+  uint32_t progress_dispatch_max_ms;
 };
 
 typedef enum h2_gizclaw_dispatch_kind {
@@ -66,12 +90,19 @@ struct h2_gizclaw_service {
   h2_pal_mutex_t *mutex;
   h2_pal_cond_t *progress_cond;
   h2_pal_task_t *net_task;
+  _Atomic(h2_gizclaw_conversation_request_t *) media_request;
+  _Atomic(h2_gizclaw_speech_extract_request_t *) speech_request;
+  _Atomic(h2_gizclaw_track_t *) pcm_track;
+  h2_pal_webrtc_track_vtable_t webrtc_track_vtable;
+  h2_pal_webrtc_track_t webrtc_track;
+  atomic_uint media_callback_refs;
   h2_gizclaw_client_t *client;
   h2_gizclaw_operation_t *current;
   h2_gizclaw_operation_t *pending;
   size_t active_count;
   size_t caller_reference_count;
   size_t queued_event_count;
+  uint64_t next_trace_sequence;
   bool started;
   bool stopping;
   bool stopped;
@@ -80,6 +111,17 @@ struct h2_gizclaw_service {
   bool terminal_dispatched;
   h2_pal_result_t terminal_result;
 };
+
+h2_pal_result_t h2_gizclaw_conversation_media_attach(
+    h2_gizclaw_service_t *service, h2_gizclaw_conversation_request_t *request);
+void h2_gizclaw_conversation_media_detach(
+    h2_gizclaw_conversation_request_t *request);
+h2_pal_result_t
+h2_gizclaw_service_media_read_opus(h2_gizclaw_service_t *service, uint8_t *opus,
+                                   size_t capacity, size_t *out_len);
+h2_pal_result_t
+h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
+                                    const uint8_t *opus, size_t opus_len);
 
 h2_pal_result_t h2_gizclaw_service_submit_async_internal(
     h2_gizclaw_service_t *service, uint64_t identity,

@@ -74,8 +74,8 @@ typedef struct connectivity_state {
   h2_gizclaw_speedtest_result_t speed;
 } connectivity_state_t;
 
-static void connectivity_ping_complete(
-    void *user, h2_gizclaw_ping_request_t *request) {
+static void connectivity_ping_complete(void *user,
+                                       h2_gizclaw_ping_request_t *request) {
   connectivity_state_t *state = user;
   const h2_gizclaw_operation_result_t *result =
       h2_gizclaw_ping_request_operation_result(request);
@@ -91,8 +91,9 @@ static void connectivity_ping_complete(
   h2_gizclaw_ping_request_release(request);
 }
 
-static void connectivity_speed_complete(
-    void *user, h2_gizclaw_speedtest_request_t *request) {
+static void
+connectivity_speed_complete(void *user,
+                            h2_gizclaw_speedtest_request_t *request) {
   connectivity_state_t *state = user;
   const h2_gizclaw_operation_result_t *result =
       h2_gizclaw_speedtest_request_operation_result(request);
@@ -108,8 +109,9 @@ static void connectivity_speed_complete(
   h2_gizclaw_speedtest_request_release(request);
 }
 
-static void connectivity_telemetry_complete(
-    void *user, h2_gizclaw_telemetry_request_t *request) {
+static void
+connectivity_telemetry_complete(void *user,
+                                h2_gizclaw_telemetry_request_t *request) {
   connectivity_state_t *state = user;
   const h2_gizclaw_operation_result_t *result =
       h2_gizclaw_telemetry_request_operation_result(request);
@@ -123,7 +125,7 @@ static int connectivity_wait(connectivity_state_t *state) {
   while (!atomic_load_explicit(&state->complete, memory_order_acquire)) {
     size_t dispatched = 0u;
     const int dispatch_rc =
-        h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+        h2_gizclaw_service_poll(state->service, 8u, &dispatched);
     if (dispatch_rc != H2_PAL_OK)
       return dispatch_rc;
     if (!h2_gizclaw_e2e_fixture_has_time(state->fixture, 10u))
@@ -165,7 +167,7 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
       .sync = fixture->runtime->sync,
       .net_task_options = {.min_stack_size = 32768u},
       .operation_capacity = 1u,
-      .client_poll_timeout_ms = 10,
+      .client_poll_timeout_ms = 1,
   };
   rc = h2_gizclaw_service_init(&config, &state.service);
   if (rc == H2_PAL_OK)
@@ -211,7 +213,8 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = connectivity_wait(&state);
   if (rc == H2_PAL_OK &&
       (state.speed.download_bytes != H2_GIZCLAW_E2E_SPEED_BYTES ||
-       state.speed.download_bits_per_second < H2_GIZCLAW_E2E_DOWNLOAD_MIN_BPS)) {
+       state.speed.download_bits_per_second <
+           H2_GIZCLAW_E2E_DOWNLOAD_MIN_BPS)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
   rc = checked("h2_gizclaw_service_speedtest_async", "diagnostics", rc);
@@ -226,7 +229,7 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
     for (;;) {
       size_t dispatched = 0u;
       const int dispatch_rc =
-          h2_gizclaw_service_dispatch(state.service, 8u, &dispatched);
+          h2_gizclaw_service_poll(state.service, 8u, &dispatched);
       if (rc == H2_PAL_OK)
         rc = dispatch_rc;
       if (dispatch_rc != H2_PAL_OK || dispatched == 0u)
@@ -723,11 +726,11 @@ static int run_group(h2_gizclaw_e2e_fixture_t *fixture) {
   if (history_id[0] != '\0' && audio_available) {
     group_audio_counter_t audio = {0};
     h2_gizclaw_friend_group_message_audio_info_t info = {0};
-    rc = checked("h2_gizclaw_client_friend_group_message_audio_download", "group",
+    rc = checked(
+        "h2_gizclaw_client_friend_group_message_audio_download", "group",
                  h2_gizclaw_client_friend_group_message_audio_download(
                      owner, h2_gizclaw_e2e_str(fixture->friend_group_name),
-                     h2_gizclaw_e2e_str(history_id), count_group_audio, &audio,
-                     &info));
+            h2_gizclaw_e2e_str(history_id), count_group_audio, &audio, &info));
     if (rc == H2_PAL_OK &&
         (info.friend_group_name == NULL || info.history_id == NULL ||
          strcmp(info.friend_group_name, fixture->friend_group_name) != 0 ||
@@ -1227,7 +1230,7 @@ static int run_telemetry(h2_gizclaw_e2e_fixture_t *fixture) {
       .sync = fixture->runtime->sync,
       .net_task_options = {.min_stack_size = 32768u},
       .operation_capacity = 1u,
-      .client_poll_timeout_ms = 10,
+      .client_poll_timeout_ms = 1,
   };
   rc = h2_gizclaw_service_init(&config, &state.service);
   if (rc == H2_PAL_OK)
@@ -1249,7 +1252,7 @@ static int run_telemetry(h2_gizclaw_e2e_fixture_t *fixture) {
     for (;;) {
       size_t dispatched = 0u;
       const int dispatch_rc =
-          h2_gizclaw_service_dispatch(state.service, 8u, &dispatched);
+          h2_gizclaw_service_poll(state.service, 8u, &dispatched);
       if (rc == H2_PAL_OK)
         rc = dispatch_rc;
       if (dispatch_rc != H2_PAL_OK || dispatched == 0u)

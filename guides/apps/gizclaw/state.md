@@ -20,7 +20,7 @@ flowchart LR
     Subject --> UI["LVGL projection"]
 ```
 
-`h2_gizclaw_service_submit()` 把 typed operation context 交给 library-owned bounded queue。`$gizclaw/net` 唯一持有 client，执行网络 operation 并持续调用 `h2_gizclaw_client_poll()`；它复制 response、stream frame 和 Peer Event 后写入有界 response queue，不直接调用用户 callback。App main loop 调用 `h2_gizclaw_service_dispatch()`，按接收顺序执行 progress、stream、completion 和 connection event callback。队列达到容量时网络层实施背压，不会无限复制 frame。
+`h2_gizclaw_service_submit()` 把 typed operation context 交给 library-owned bounded queue。`$gizclaw/net` 唯一持有 client，执行网络 operation 并持续调用 `h2_gizclaw_client_poll()`；它复制 response、stream frame 和 Peer Event 后写入有界 response queue，不直接调用用户 callback。App main loop 调用 `h2_gizclaw_service_poll()`，按接收顺序执行 progress、stream、completion 和 connection event callback。队列达到容量时网络层实施背压，不会无限复制 frame。
 
 ## 当前公开状态边界
 

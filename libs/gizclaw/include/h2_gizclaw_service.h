@@ -20,6 +20,28 @@ typedef struct h2_gizclaw_operation h2_gizclaw_operation_t;
 typedef struct h2_gizclaw_cancel_token h2_gizclaw_cancel_token_t;
 typedef struct h2_gizclaw_async_rpc h2_gizclaw_async_rpc_t;
 typedef struct h2_gizclaw_async_stream h2_gizclaw_async_stream_t;
+typedef struct h2_gizclaw_request h2_gizclaw_request_t;
+typedef struct h2_gizclaw_track h2_gizclaw_track_t;
+
+typedef h2_pal_result_t (*h2_gizclaw_track_read_fn)(void *user, uint8_t *pcm,
+                                                    size_t capacity,
+                                                    size_t *out_len);
+typedef h2_pal_result_t (*h2_gizclaw_track_write_fn)(void *user,
+                                                     const uint8_t *pcm,
+                                                     size_t len);
+
+typedef struct h2_gizclaw_track_vtable {
+  h2_gizclaw_track_read_fn read;
+  h2_gizclaw_track_write_fn write;
+} h2_gizclaw_track_vtable_t;
+
+struct h2_gizclaw_track {
+  void *user;
+  const h2_gizclaw_track_vtable_t *vtable;
+};
+
+/** Optional completion hook, invoked only by h2_gizclaw_service_poll(). */
+typedef void (*h2_gizclaw_request_callback_fn)(h2_gizclaw_request_t *request);
 
 /** Terminal state delivered exactly once for every accepted operation. */
 typedef enum h2_gizclaw_operation_terminal_kind {
@@ -61,8 +83,8 @@ typedef void (*h2_gizclaw_operation_completion_fn)(
     const h2_gizclaw_operation_result_t *result);
 
 /** Completion for one service-owned asynchronous unary RPC. */
-typedef void (*h2_gizclaw_async_rpc_completion_fn)(
-    void *user, h2_gizclaw_async_rpc_t *rpc);
+typedef void (*h2_gizclaw_async_rpc_completion_fn)(void *user,
+                                                   h2_gizclaw_async_rpc_t *rpc);
 
 /** One mixed-frame event delivered on the service dispatch caller thread. */
 typedef h2_pal_result_t (*h2_gizclaw_async_stream_event_fn)(
@@ -126,7 +148,7 @@ bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t *cancel_token);
  *
  * Only the accepted operation's worker callback may call this function, and it
  * must not call it recursively. `callback` runs synchronously on the caller of
- * `h2_gizclaw_service_dispatch()` without the service mutex held. The
+ * `h2_gizclaw_service_poll()` without the service mutex held. The
  * `user` context remains worker-owned and must remain valid until this function
  * returns; the progress callback must not retain it.
  *
@@ -159,6 +181,24 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
 
 /** Start the sole client-owning network task exactly once. */
 h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service);
+
+/** Borrow one caller-owned PCM track until unset succeeds. */
+h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
+                                             h2_gizclaw_track_t *track);
+h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
+                                               h2_gizclaw_track_t *track);
+
+/** Start a typed request created in the CREATED state. */
+h2_pal_result_t h2_gizclaw_request_do(h2_gizclaw_request_t *request,
+                                      h2_gizclaw_request_callback_fn callback);
+
+/** Idempotently half-close a streaming request's input. */
+h2_pal_result_t h2_gizclaw_request_finish_input(h2_gizclaw_request_t *request);
+
+h2_pal_result_t h2_gizclaw_request_wait(h2_gizclaw_request_t *request,
+                                        uint32_t timeout_ms);
+h2_pal_result_t h2_gizclaw_request_cancel(h2_gizclaw_request_t *request);
+void h2_gizclaw_request_release(h2_gizclaw_request_t *request);
 
 /**
  * Admit one FIFO operation without blocking.
@@ -216,8 +256,7 @@ h2_pal_result_t
 h2_gizclaw_async_stream_cancel(h2_gizclaw_async_stream_t *stream);
 h2_pal_result_t h2_gizclaw_async_stream_wait(h2_gizclaw_async_stream_t *stream,
                                              uint32_t timeout_ms);
-const h2_gizclaw_operation_result_t *
-h2_gizclaw_async_stream_operation_result(
+const h2_gizclaw_operation_result_t *h2_gizclaw_async_stream_operation_result(
     const h2_gizclaw_async_stream_t *stream);
 const h2_gizclaw_rpc_response_t *
 h2_gizclaw_async_stream_response(const h2_gizclaw_async_stream_t *stream);
@@ -230,14 +269,15 @@ h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation);
 /**
  * Block the calling task until the operation callback has returned.
  *
- * Another task must continue calling `h2_gizclaw_service_dispatch()`. A
+ * Another task must continue calling `h2_gizclaw_service_poll()`. A
  * timeout does not cancel or release the operation. Exactly one caller may
  * wait on an operation, and the caller remains responsible for releasing it.
  */
 h2_pal_result_t h2_gizclaw_operation_wait(h2_gizclaw_operation_t *operation,
                                           uint32_t timeout_ms);
 
-/** Return the response-owning operation's terminal result, or NULL if pending. */
+/** Return the response-owning operation's terminal result, or NULL if pending.
+ */
 const h2_gizclaw_operation_result_t *
 h2_gizclaw_operation_result(const h2_gizclaw_operation_t *operation);
 
@@ -252,7 +292,7 @@ void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation);
  * submit work, cancel another operation or release an operation handle; it must
  * not call dispatch, stop or deinit.
  */
-h2_pal_result_t h2_gizclaw_service_dispatch(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
                                             size_t max_callbacks,
                                             size_t *out_dispatched);
 

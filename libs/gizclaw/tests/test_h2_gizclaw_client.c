@@ -1418,8 +1418,8 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   };
   const uint8_t workflow_get_request[] = {0x0a, 0x04, 'c', 'h', 'a', 't'};
   const uint8_t workflow_get_response[] = {
-      0x0a, 0x0f, 0x0a, 0x04, 'c', 'h', 'a', 't', 0x20, 0x03, 0x2a, 0x05,
-      'z',  'h',  '-',  'e',  'n',
+      0x0a, 0x0f, 0x0a, 0x04, 'c', 'h', 'a', 't', 0x20,
+      0x03, 0x2a, 0x05, 'z',  'h', '-', 'e', 'n',
   };
   const uint8_t inherited_workspace_put_request[] = {
       0x0a, 0x0f, 0x22, 0x0d, 0x1a, 0x0b, 0x08, 0x01, 0x28, 0x02,
@@ -1880,13 +1880,19 @@ static h2_pal_result_t test_channel_send(h2_pal_webrtc_channel_t *channel,
 }
 
 static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
-                                      int timeout_ms) {
+                                      int timeout_ms,
+                                      h2_pal_webrtc_event_t *out_event) {
   (void)peer;
   test_poll_calls++;
   test_last_poll_timeout_ms = timeout_ms;
   if (test_poll_result != H2_PAL_ERR_WOULD_BLOCK) {
     test_monotonic_ms += timeout_ms > 0 ? (uint64_t)timeout_ms : 1u;
   }
+  if (test_poll_result == H2_PAL_OK && out_event != NULL)
+    *out_event = (h2_pal_webrtc_event_t){
+        .kind = H2_PAL_WEBRTC_EVENT_WRITABLE,
+        .peer = peer,
+    };
   return test_poll_result;
 }
 
@@ -1908,22 +1914,36 @@ static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t *peer,
 }
 
 static size_t test_media_track_bind_calls;
+static h2_pal_webrtc_track_t *test_expected_track;
+
+static h2_pal_result_t test_track_read(void *user, uint8_t *data,
+                                       size_t capacity, size_t *out_len) {
+  (void)user;
+  (void)data;
+  (void)capacity;
+  *out_len = 0u;
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
 
 static h2_pal_result_t
-test_webrtc_peer_create(void *user, const h2_pal_webrtc_callbacks_t *callbacks,
-                        h2_pal_webrtc_peer_t **out_peer) {
+test_webrtc_peer_create(void *user, h2_pal_webrtc_peer_t **out_peer) {
   (void)user;
-  assert(callbacks != NULL);
-  assert(callbacks->on_opus_frame == NULL);
   *out_peer = (h2_pal_webrtc_peer_t *)0x2;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_peer_set_media_track(h2_pal_webrtc_peer_t *peer,
+static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t *peer,
                                                  h2_pal_webrtc_track_t *track) {
   assert(peer == (h2_pal_webrtc_peer_t *)0x2);
-  assert(track == (h2_pal_webrtc_track_t *)0x4);
+  assert(track == test_expected_track);
   ++test_media_track_bind_calls;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_peer_unset_track(h2_pal_webrtc_peer_t *peer,
+                                             h2_pal_webrtc_track_t *track) {
+  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+  assert(track == test_expected_track);
   return H2_PAL_OK;
 }
 
@@ -2007,7 +2027,8 @@ int main(void) {
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create = test_webrtc_peer_create,
       .peer_poll = test_peer_poll,
-      .peer_set_media_track = test_peer_set_media_track,
+      .peer_set_track = test_peer_set_track,
+      .peer_unset_track = test_peer_unset_track,
       .channel_send = test_channel_send,
       .peer_send_opus = test_peer_send_opus,
       .peer_close = test_peer_close,
@@ -2081,7 +2102,14 @@ int main(void) {
   fails += expect(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK,
                   "init accepts the current SDK platform contract");
   fails += expect(client != NULL, "successful init returns a client");
-  config.webrtc_media_track = (h2_pal_webrtc_track_t *)0x4;
+  const h2_pal_webrtc_track_vtable_t test_track_vtable = {
+      .read = test_track_read,
+  };
+  h2_pal_webrtc_track_t test_track = {
+      .vtable = &test_track_vtable,
+  };
+  test_expected_track = &test_track;
+  config.webrtc_media_track = &test_track;
   h2_gizclaw_client_t *track_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &track_client) == H2_PAL_OK,
                   "track-mode init accepts an opaque provider track");
@@ -2177,9 +2205,9 @@ int main(void) {
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_OK &&
-          offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
-          test_poll_calls == 1 && test_last_poll_timeout_ms > 0,
-      "adapter waits for peer progress before retrying a full PAL queue");
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0,
+      "adapter exposes PAL backpressure without polling or retrying");
   test_send_calls = 0;
   test_poll_calls = 0;
   test_sleep_calls = 0;
@@ -2191,11 +2219,9 @@ int main(void) {
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_OK &&
-          offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
-          test_poll_calls == 1 && test_sleep_calls == 1 &&
-          test_last_sleep_ms == 10u && test_warn_logs == 1 &&
-          strstr(test_last_log_message, "rc=-9 backoff_ms=10") != NULL,
-      "adapter warns and backs off when peer poll unexpectedly would block");
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0 && test_sleep_calls == 0 && test_warn_logs == 0,
+      "adapter does not hide peer poll backoff behind channel send");
   test_send_calls = 0;
   test_poll_calls = 0;
   test_sleep_calls = 0;
@@ -2206,10 +2232,10 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_ERR_WEBRTC &&
-          offset == 0u && test_send_calls == 1 && test_poll_calls == 1 &&
-          test_sleep_calls == 1 && test_warn_logs == 1,
-      "adapter stops when the optional peer poll backoff is unsupported");
+                                      &offset, &blocked) == GZC_OK &&
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0 && test_sleep_calls == 0 && test_warn_logs == 0,
+      "channel backpressure does not depend on optional sleep support");
   test_sleep_result = H2_PAL_OK;
   test_poll_result = H2_PAL_OK;
   test_send_calls = 0;
@@ -2217,13 +2243,12 @@ int main(void) {
   test_send_would_block_count = 3000;
   offset = 0u;
   blocked = false;
-  fails += expect(
-      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_ERR_TIMEOUT &&
-          offset == 0u && test_poll_calls == 40 &&
-          test_last_poll_timeout_ms == 50,
-      "adapter bounds persistent PAL backpressure by the independent write "
-      "timeout");
+  fails += expect(h2_gizclaw_test_try_write_bytes(client, channel, payload,
+                                                  sizeof(payload), &offset,
+                                                  &blocked) == GZC_OK &&
+                      offset == 0u && blocked && test_send_calls == 1 &&
+                      test_poll_calls == 0,
+                  "adapter returns persistent PAL backpressure immediately");
   config.write_timeout_ms = 7;
   h2_gizclaw_client_t *short_timeout_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &short_timeout_client) ==
@@ -2238,15 +2263,13 @@ int main(void) {
   test_poll_result = H2_PAL_ERR_WOULD_BLOCK;
   offset = 0u;
   blocked = false;
-  fails +=
-      expect(h2_gizclaw_test_try_write_bytes(short_timeout_client, channel,
-                                             payload, sizeof(payload), &offset,
-                                             &blocked) == GZC_ERR_TIMEOUT &&
-                 offset == 0u && test_send_calls == 2 && test_poll_calls == 1 &&
-                 test_sleep_calls == 1 && test_last_sleep_ms == 7u &&
-                 test_warn_logs == 1 &&
-                 strstr(test_last_log_message, "backoff_ms=7") != NULL,
-             "adapter caps peer poll backoff to the remaining write timeout");
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(short_timeout_client, channel, payload,
+                                      sizeof(payload), &offset,
+                                      &blocked) == GZC_OK &&
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0 && test_sleep_calls == 0 && test_warn_logs == 0,
+      "write timeout does not introduce a hidden send retry loop");
   h2_gizclaw_client_deinit(short_timeout_client);
   config.write_timeout_ms = 2000;
   test_poll_result = H2_PAL_OK;
@@ -2257,20 +2280,22 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_ERR_CLOSED &&
-          offset == 0u && test_send_calls == 1 && test_poll_calls == 0,
-      "adapter stops a blocked write promptly when cancellation is requested");
+                                      &offset, &blocked) == GZC_OK &&
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0,
+      "send path leaves cancellation handling to the owning operation");
   test_cancel_requested = false;
   test_send_calls = 0;
   test_poll_calls = 0;
   test_poll_result = H2_PAL_ERR_CLOSED;
   offset = 0u;
   blocked = false;
-  fails += expect(
-      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_ERR_CLOSED &&
-          offset == 0u && test_send_calls == 1 && test_poll_calls == 1,
-      "adapter preserves peer closure while draining backpressure");
+  fails += expect(h2_gizclaw_test_try_write_bytes(client, channel, payload,
+                                                  sizeof(payload), &offset,
+                                                  &blocked) == GZC_OK &&
+                      offset == 0u && blocked && test_send_calls == 1 &&
+                      test_poll_calls == 0,
+                  "send path does not consume unrelated terminal poll state");
   test_poll_result = H2_PAL_ERR_IO;
   test_send_calls = 0;
   test_poll_calls = 0;
@@ -2278,9 +2303,10 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_ERR_WEBRTC &&
-          offset == 0u && test_send_calls == 1 && test_poll_calls == 1,
-      "adapter stops on a terminal peer poll failure");
+                                      &offset, &blocked) == GZC_OK &&
+          offset == 0u && blocked && test_send_calls == 1 &&
+          test_poll_calls == 0,
+      "send path leaves terminal poll failures to the event consumer");
   test_poll_result = H2_PAL_OK;
   test_send_would_block_count = 0;
   test_send_result = H2_PAL_ERR_IO;

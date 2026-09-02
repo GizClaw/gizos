@@ -61,7 +61,7 @@ RPC stream 的 EOS 是 request-scoped RPC framing 终止标记，与 Agent Event
 - `$gizclaw/net` 独占 C SDK Client 的 create、connect、request start、poll、cancel、close
   和 deinit。所有 unary request handle、mixed-frame stream、speech upload 与 conversation
   都由这个 task 推进；其他 task 只能提交、写入有界输入队列或请求取消。
-- App main loop 调用 `h2_gizclaw_service_dispatch()` 消费有界 response record，并在不持有
+- App main loop 调用 `h2_gizclaw_service_poll()` 消费有界 response record，并在不持有
   service mutex 的情况下调用 application callback。Unary 请求恰好产生一个 terminal
   callback；download、speech 和 conversation 可以先按 wire 顺序多次调用 progress/event
   callback，再产生一个 terminal callback。

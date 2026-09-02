@@ -200,7 +200,7 @@ static void gizclaw_task_entry(void *context) {
   if (result == H2_PAL_OK) {
     while (!gizclaw_cancel_requested(state)) {
       size_t dispatched = 0u;
-      result = h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+      result = h2_gizclaw_service_poll(state->service, 8u, &dispatched);
       if (result != H2_PAL_OK)
         break;
       if (h2_pal_time_sleep_ms(app->runtime->time,
@@ -215,7 +215,7 @@ static void gizclaw_task_entry(void *context) {
     for (;;) {
       size_t dispatched = 0u;
       const h2_pal_result_t dispatch_result =
-          h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+          h2_gizclaw_service_poll(state->service, 8u, &dispatched);
       if (result == H2_PAL_OK)
         result = dispatch_result;
       if (dispatch_result != H2_PAL_OK || dispatched == 0u)

@@ -7,11 +7,6 @@
 
 #define H2_WEB_TOUCH_EVENT_CAPACITY 32u
 
-struct h2_pal_webrtc_track {
-  h2_web_platform_t *owner;
-  h2_pal_webrtc_peer_t *bound_peer;
-};
-
 struct h2_web_platform {
   int32_t width;
   int32_t height;
@@ -31,6 +26,7 @@ struct h2_web_platform {
   h2_pal_serial_host_api_t serial_api;
   h2_pal_webrtc_api_t webrtc_api;
   h2_pal_webrtc_track_t webrtc_audio_track;
+  h2_pal_webrtc_peer_t *webrtc_audio_bound_peer;
   void *serial_state;
   h2_pal_webrtc_peer_t *webrtc_peers;
   bool pointer_installed;

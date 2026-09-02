@@ -4,7 +4,6 @@
 #include "h2_desktop_app_support.h"
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_e2e.h"
-#include "h2_gizclaw_pal_e2e_access_point.h"
 #ifdef H2_GIZCLAW_E2E_USE_PION
 #include "h2_pion.h"
 #endif
@@ -21,6 +20,7 @@
 namespace {
 
 volatile std::sig_atomic_t g_stop_requested;
+constexpr size_t kEndpointCapacity = 128u;
 
 void request_stop(int) { g_stop_requested = 1; }
 
@@ -102,8 +102,7 @@ bool load_pcm(const char *path, std::vector<uint8_t> *out_pcm) {
 }
 
 int run_desktop(int argc, char **argv) {
-  if (argc != 4 || argv == nullptr || argv[1] == nullptr ||
-      argv[2] == nullptr || argv[3] == nullptr) {
+  if (argc < 4 || argv == nullptr || argv[1] == nullptr || argv[2] == nullptr) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=missing-input\n");
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
@@ -115,17 +114,20 @@ int run_desktop(int argc, char **argv) {
   if (suite_value == nullptr || suite_value[0] == '\0') {
     suite_value = argv[2];
   }
-  const char *entry_value = std::getenv("H2_GIZCLAW_E2E_ENTRY");
-  if (entry_value == nullptr || entry_value[0] == '\0') {
-    entry_value = argv[3];
+  static constexpr char kEndpointFlag[] = "--endpoint=";
+  const char *endpoint = nullptr;
+  for (int index = 3; index < argc; ++index) {
+    if (argv[index] != nullptr &&
+        std::strncmp(argv[index], kEndpointFlag, sizeof(kEndpointFlag) - 1u) ==
+            0) {
+      endpoint = argv[index] + sizeof(kEndpointFlag) - 1u;
+    }
   }
   const uint32_t suites = parse_suite(suite_value);
-  h2_gizclaw_pal_e2e_access_point_t access_point;
-  const int entry_rc =
-      h2_gizclaw_pal_e2e_access_point_parse(entry_value, &access_point);
+  const size_t endpoint_len = endpoint == nullptr ? 0u : std::strlen(endpoint);
 #ifdef H2_GIZCLAW_E2E_USE_PION
-  const uint32_t supported_suites =
-      H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_FIRMWARE |
+  const uint32_t supported_suites = H2_GIZCLAW_E2E_SUITE_RPC |
+                                    H2_GIZCLAW_E2E_SUITE_FIRMWARE |
       H2_GIZCLAW_E2E_SUITE_VOICE;
   const bool suite_supported =
       (suites & ~supported_suites) == 0u && suites != 0u;
@@ -133,7 +135,9 @@ int run_desktop(int argc, char **argv) {
   const bool suite_supported = true;
 #endif
   if (token_len == 0u || token_len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX ||
-      suites == 0u || !suite_supported || entry_rc != H2_PAL_OK) {
+      suites == 0u || !suite_supported || endpoint_len == 0u ||
+      endpoint_len >= kEndpointCapacity ||
+      std::strchr(endpoint, ':') == nullptr) {
     const char *reason =
         token_len == 0u ? "missing-token"
                         : (token_len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX
@@ -141,17 +145,12 @@ int run_desktop(int argc, char **argv) {
                                : (suites == 0u ? "invalid-suite"
                                                : (!suite_supported
                                                       ? "unsupported-pion-suite"
-                                                      : "invalid-entry")));
+                                                      : "invalid-endpoint")));
     std::fprintf(stderr,
                  "H2_GIZCLAW_E2E stage=preflight status=ERROR reason=%s\n",
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  const char *endpoint = h2_gizclaw_pal_e2e_access_point_endpoint(access_point);
-  if (endpoint == nullptr) {
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  }
-
   std::vector<uint8_t> pcm;
   if ((suites & (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) !=
           0u &&
@@ -255,11 +254,11 @@ int run_desktop(int argc, char **argv) {
   const h2_gizclaw_e2e_exit_t exit_code =
       h2_gizclaw_e2e_run(runtime, &app_config, &result);
   std::printf(
-      "H2_GIZCLAW_E2E stage=summary entry=%s backend=%s suite=%s profile=%s "
+      "H2_GIZCLAW_E2E stage=summary endpoint=%s backend=%s suite=%s profile=%s "
       "selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu blocked=%zu "
       "cancelled=%zu first_failure_case=%s first_failure_rc=%d "
       "cleanup_rc=%d retained_resources=%zu complete=%s exit_code=%d\n",
-      h2_gizclaw_pal_e2e_access_point_name(access_point),
+      endpoint,
 #ifdef H2_GIZCLAW_E2E_USE_PION
       "pion",
 #else

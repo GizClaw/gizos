@@ -48,7 +48,6 @@ h2_pal_result_t h2_gizclaw_pcm_ring_write(h2_gizclaw_pcm_ring_t *ring,
     return H2_PAL_ERR_INVALID_ARG;
   if (atomic_load_explicit(&ring->closed, memory_order_acquire))
     return H2_PAL_ERR_CLOSED;
-
   const size_t write =
       atomic_load_explicit(&ring->write_index, memory_order_relaxed);
   const size_t read =
@@ -67,6 +66,25 @@ h2_pal_result_t h2_gizclaw_pcm_ring_write(h2_gizclaw_pcm_ring_t *ring,
   atomic_store_explicit(&ring->write_index, write + pcm_len,
                         memory_order_release);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_pcm_ring_write_latest(h2_gizclaw_pcm_ring_t *ring,
+                                                 const uint8_t *pcm,
+                                                 size_t pcm_len,
+                                                 size_t *out_dropped_bytes) {
+  if (out_dropped_bytes != NULL)
+    *out_dropped_bytes = 0u;
+  if (ring == NULL || ring->bytes == NULL || pcm == NULL || pcm_len == 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (atomic_load_explicit(&ring->closed, memory_order_acquire))
+    return H2_PAL_ERR_CLOSED;
+  const h2_pal_result_t rc = h2_gizclaw_pcm_ring_write(ring, pcm, pcm_len);
+  if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+    if (out_dropped_bytes != NULL)
+      *out_dropped_bytes = pcm_len;
+    return H2_PAL_OK;
+  }
+  return rc;
 }
 
 h2_pal_result_t h2_gizclaw_pcm_ring_read(h2_gizclaw_pcm_ring_t *ring,

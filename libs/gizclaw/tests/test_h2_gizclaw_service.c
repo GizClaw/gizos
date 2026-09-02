@@ -445,8 +445,7 @@ static void wait_until(test_env_t *env, size_t completion_count,
                        unsigned progress_callback_count) {
   for (unsigned spin = 0u; spin < 1000000u; ++spin) {
     size_t dispatched = 0u;
-    assert(h2_gizclaw_service_dispatch(env->service, 8u, &dispatched) ==
-           H2_PAL_OK);
+    assert(h2_gizclaw_service_poll(env->service, 8u, &dispatched) == H2_PAL_OK);
     if (atomic_load_explicit(&env->completion_count, memory_order_acquire) >=
             completion_count &&
         atomic_load_explicit(&env->terminal_count, memory_order_acquire) >=
@@ -914,7 +913,7 @@ static void test_sync_rpc_waits_on_semaphore_and_external_dispatch(void) {
        !atomic_load_explicit(&env.sync_rpc_returned, memory_order_acquire);
        ++spin) {
     size_t dispatched = 0u;
-    assert(h2_gizclaw_service_dispatch(service, 1u, &dispatched) == H2_PAL_OK);
+    assert(h2_gizclaw_service_poll(service, 1u, &dispatched) == H2_PAL_OK);
     total_dispatched += dispatched;
     if (dispatched == 0u)
       sched_yield();
@@ -944,41 +943,29 @@ static void test_speech_audio_backpressure_and_terminal_writes(void) {
   h2_gizclaw_speech_extract_request_t *extract = NULL;
   assert(h2_gizclaw_speech_test_request_create(service, &extract) == H2_PAL_OK);
 
-  for (uint8_t value = 0u; value < 8u; ++value) {
+  uint8_t chunk[H2_GIZCLAW_SPEECH_AUDIO_CHUNK_MAX_BYTES];
+  for (uint8_t value = 0u; value < 20u; ++value) {
+    memset(chunk, value, sizeof(chunk));
     assert(h2_gizclaw_speech_extract_request_write_audio(
-               extract, &value, sizeof(value), (uint32_t)value + 1u) ==
+               extract, chunk, sizeof(chunk), (uint32_t)value + 1u) ==
            H2_PAL_OK);
-    assert(atomic_load_explicit(&s_queue_send_timeout_ms,
-                                memory_order_acquire) == (uint32_t)value + 1u);
   }
   const uint8_t overflow = 0xffu;
   assert(h2_gizclaw_speech_extract_request_write_audio(
-             extract, &overflow, sizeof(overflow), 5u) == H2_PAL_ERR_TIMEOUT);
-  assert(atomic_load_explicit(&s_queue_send_timeout_ms, memory_order_acquire) ==
-         5u);
-
-  uint8_t received = 0xffu;
+             extract, &overflow, sizeof(overflow), 5u) == H2_PAL_OK);
+  uint8_t received[16u * 1024u];
   size_t received_len = 0u;
   assert(h2_gizclaw_speech_test_request_receive(
-             extract, &received, sizeof(received), &received_len,
+             extract, received, sizeof(received), &received_len,
              H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK);
-  assert(received_len == 1u && received == 0u);
+  assert(received_len == 12u * sizeof(chunk) + sizeof(overflow));
+  assert(received[0] == 0u);
+  assert(received[received_len - 1u] == overflow);
   assert(h2_gizclaw_speech_extract_request_commit(extract, 11u) == H2_PAL_OK);
-  assert(atomic_load_explicit(&s_queue_send_timeout_ms, memory_order_acquire) ==
-         11u);
   assert(h2_gizclaw_speech_extract_request_write_audio(
              extract, &overflow, sizeof(overflow), 13u) == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_speech_extract_request_commit(extract, 13u) ==
          H2_PAL_ERR_CLOSED);
-
-  for (uint8_t expected = 1u; expected < 8u; ++expected) {
-    received = 0xffu;
-    received_len = 0u;
-    assert(h2_gizclaw_speech_test_request_receive(
-               extract, &received, sizeof(received), &received_len,
-               H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK);
-    assert(received_len == 1u && received == expected);
-  }
   received_len = 1u;
   assert(h2_gizclaw_speech_test_request_receive(
              extract, NULL, 0u, &received_len, H2_PAL_QUEUE_NO_WAIT) ==
@@ -993,8 +980,6 @@ static void test_speech_audio_backpressure_and_terminal_writes(void) {
   const uint8_t audio[] = {0x11u, 0x22u};
   assert(h2_gizclaw_speech_transcribe_request_write_audio(
              transcribe, audio, sizeof(audio), 17u) == H2_PAL_OK);
-  assert(atomic_load_explicit(&s_queue_send_timeout_ms, memory_order_acquire) ==
-         17u);
   h2_gizclaw_speech_test_request_set_terminal(transcribe_storage);
   assert(h2_gizclaw_speech_transcribe_request_write_audio(
              transcribe, audio, sizeof(audio), 19u) == H2_PAL_ERR_CLOSED);

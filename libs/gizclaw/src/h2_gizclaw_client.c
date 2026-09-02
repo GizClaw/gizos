@@ -88,8 +88,6 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD);
 #undef H2_GIZCLAW_ASSERT_RPC_METHOD
 
 #define H2_GIZCLAW_LOCAL_CHANNEL_LABEL_CAPACITY 64u
-#define H2_GIZCLAW_WRITE_POLL_BACKOFF_MS 10u
-#define H2_GIZCLAW_WRITE_POLL_SLICE_MS 50u
 
 typedef struct h2_gizclaw_local_channel_state {
   bool create_in_progress;
@@ -607,8 +605,7 @@ static bool h2_gizclaw_retain_local_channel_state(
 
 int h2_gizclaw_encode_pb_message(h2_gizclaw_client_t *client,
                                  const pb_msgdesc_t *fields,
-                                 const void *message,
-                                 gzc_buf_t *out_payload) {
+                                 const void *message, gzc_buf_t *out_payload) {
   if (client == NULL || fields == NULL || message == NULL ||
       out_payload == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -634,8 +631,8 @@ int h2_gizclaw_encode_pb_message(h2_gizclaw_client_t *client,
   return rc;
 }
 
-int h2_gizclaw_decode_pb_message(gzc_str_t payload,
-                                 const pb_msgdesc_t *fields, void *message) {
+int h2_gizclaw_decode_pb_message(gzc_str_t payload, const pb_msgdesc_t *fields,
+                                 void *message) {
   if (fields == NULL || message == NULL ||
       (payload.data == NULL && payload.len != 0u)) {
     return GZC_ERR_INVALID_ARGUMENT;
@@ -666,19 +663,6 @@ static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t *client,
   (void)h2_pal_log_write(client->config.log,
                          rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
                          "gizclaw", message);
-}
-
-static void h2_gizclaw_log_webrtc_poll_backoff(
-    h2_gizclaw_client_t *client, uint32_t backoff_ms) {
-  if (client == NULL || client->config.log == NULL) {
-    return;
-  }
-  char message[96];
-  (void)snprintf(message, sizeof(message),
-                 "webrtc_stage=peer_poll rc=%d backoff_ms=%u",
-                 H2_PAL_ERR_WOULD_BLOCK, (unsigned int)backoff_ms);
-  (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
-                         message);
 }
 
 static void h2_gizclaw_log_infof(h2_gizclaw_client_t *client, const char *fmt,
@@ -1188,26 +1172,16 @@ static int h2_gzc_peer_create(void *user,
     return GZC_ERR_INVALID_ARGUMENT;
   }
   client->gzc_callbacks = *callbacks;
-  h2_pal_webrtc_callbacks_t h2_callbacks = {
-      .user = client,
-      .on_peer_state = h2_gzc_peer_state,
-      .on_local_sdp = h2_gzc_local_sdp,
-      .on_channel_state = h2_gzc_channel_state,
-      .on_channel_message = h2_gzc_channel_message,
-      .on_opus_frame =
-          client->config.webrtc_media_track == NULL ? h2_gzc_opus_frame : NULL,
-  };
   h2_pal_webrtc_peer_t *peer = NULL;
-  int rc =
-      h2_pal_webrtc_peer_create(client->config.webrtc, &h2_callbacks, &peer);
+  int rc = h2_pal_webrtc_peer_create(client->config.webrtc, &peer);
   h2_gizclaw_log_webrtc_rc(client, "peer_create", rc);
   if (rc != H2_PAL_OK) {
     return GZC_ERR_WEBRTC;
   }
   if (client->config.webrtc_media_track != NULL) {
-    rc = h2_pal_webrtc_peer_set_media_track(client->config.webrtc, peer,
-                                            client->config.webrtc_media_track);
-    h2_gizclaw_log_webrtc_rc(client, "peer_set_media_track", rc);
+    rc = h2_pal_webrtc_peer_set_track(client->config.webrtc, peer,
+                                      client->config.webrtc_media_track);
+    h2_gizclaw_log_webrtc_rc(client, "peer_set_track", rc);
     if (rc != H2_PAL_OK) {
       h2_pal_webrtc_peer_close(client->config.webrtc, peer);
       return GZC_ERR_WEBRTC;
@@ -1440,12 +1414,45 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
   }
   h2_gizclaw_dispatch_retained_local_channel_state(
       client, (h2_pal_webrtc_peer_t *)peer);
-  int rc = h2_pal_webrtc_peer_poll(client->config.webrtc,
-                                   (h2_pal_webrtc_peer_t *)peer, timeout_ms);
-  if (rc != H2_PAL_OK) {
+  h2_pal_webrtc_event_t event = {0};
+  int rc = h2_pal_webrtc_peer_poll(
+      client->config.webrtc, (h2_pal_webrtc_peer_t *)peer, timeout_ms, &event);
+  if (rc == H2_PAL_OK) {
+    switch (event.kind) {
+    case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+      h2_gzc_peer_state(client, event.peer, event.peer_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+      h2_gzc_local_sdp(client, event.peer, event.sdp_type, event.sdp);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+      h2_gzc_channel_state(client, event.peer, event.channel,
+                           &event.channel_info, event.channel_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+      h2_gzc_channel_message(client, event.peer, event.channel,
+                             &event.channel_info, event.data, event.data_len,
+                             event.is_text);
+      break;
+    case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+      h2_gzc_opus_frame(client, event.peer, event.data, event.data_len);
+      break;
+    case H2_PAL_WEBRTC_EVENT_WRITABLE:
+      break;
+    case H2_PAL_WEBRTC_EVENT_ERROR:
+      rc = event.error;
+      break;
+    default:
+      rc = H2_PAL_ERR_FORMAT;
+      break;
+    }
+    h2_pal_webrtc_event_release(&event);
+  }
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
+      rc != H2_PAL_ERR_WOULD_BLOCK) {
     h2_gizclaw_log_webrtc_rc(client, "peer_poll", rc);
   }
-  return rc == H2_PAL_OK ? GZC_OK : GZC_ERR_WEBRTC;
+  return h2_gzc_media_result(rc);
 }
 
 static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
@@ -1454,65 +1461,12 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
-  uint64_t started_ms = 0u;
-  int rc = h2_pal_time_get_monotonic_ms(client->config.time, &started_ms);
-  if (rc != H2_PAL_OK) {
-    return GZC_ERR_WEBRTC;
-  }
-  const int write_timeout_ms = client->config.write_timeout_ms == 0
-                                   ? client->config.connect_timeout_ms
-                                   : client->config.write_timeout_ms;
-  for (;;) {
-    rc = h2_pal_webrtc_channel_send(client->config.webrtc,
-                                    (h2_pal_webrtc_channel_t *)channel, data,
-                                    len, is_text ? 1 : 0);
-    if (rc != H2_PAL_ERR_WOULD_BLOCK) {
-      if (rc != H2_PAL_OK) {
-        h2_gizclaw_log_webrtc_rc(client, "channel_send", rc);
-      }
-      return h2_gzc_media_result(rc);
-    }
-    if (h2_gizclaw_is_canceled(client)) {
-      return GZC_ERR_CLOSED;
-    }
-    uint64_t now_ms = 0u;
-    if (h2_pal_time_get_monotonic_ms(client->config.time, &now_ms) !=
-        H2_PAL_OK) {
-      return GZC_ERR_WEBRTC;
-    }
-    uint64_t elapsed_ms =
-        now_ms >= started_ms ? now_ms - started_ms : UINT64_MAX;
-    if (elapsed_ms >= (uint64_t)write_timeout_ms) {
-      return GZC_ERR_TIMEOUT;
-    }
-    if (client->webrtc_peer == NULL) {
-      return GZC_ERR_WEBRTC;
-    }
-    const uint64_t remaining_ms = (uint64_t)write_timeout_ms - elapsed_ms;
-    const int poll_timeout_ms =
-        (int)(remaining_ms < H2_GIZCLAW_WRITE_POLL_SLICE_MS
-                  ? remaining_ms
-                  : H2_GIZCLAW_WRITE_POLL_SLICE_MS);
-    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer,
-                                 poll_timeout_ms);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK) {
-      const uint32_t backoff_ms =
-          remaining_ms < H2_GIZCLAW_WRITE_POLL_BACKOFF_MS
-              ? (uint32_t)remaining_ms
-              : H2_GIZCLAW_WRITE_POLL_BACKOFF_MS;
-      h2_gizclaw_log_webrtc_poll_backoff(client, backoff_ms);
-      rc = h2_pal_time_sleep_ms(client->config.time, backoff_ms);
-      if (rc != H2_PAL_OK) {
-        h2_gizclaw_log_webrtc_rc(client, "peer_poll_backoff", rc);
-        return GZC_ERR_WEBRTC;
-      }
-    } else if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
-      return h2_gzc_media_result(rc);
-    }
-    if (!h2_gizclaw_channel_is_live(client, channel)) {
-      return GZC_ERR_CLOSED;
-    }
-  }
+  const int rc = h2_pal_webrtc_channel_send(client->config.webrtc,
+                                            (h2_pal_webrtc_channel_t *)channel,
+                                            data, len, is_text ? 1 : 0);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
+    h2_gizclaw_log_webrtc_rc(client, "channel_send", rc);
+  return h2_gzc_media_result(rc);
 }
 
 static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
@@ -1524,9 +1478,8 @@ static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
   }
   /*
    * PAL backends expose backpressure through channel_send(WOULD_BLOCK).
-   * h2_gzc_channel_send synchronously waits for peer progress until the
-   * bounded backend queue accepts the chunk, so the adapter itself never owns
-   * queued bytes.
+   * The adapter owns no queued bytes; callers retry after peer_poll reports a
+   * writable event.
    */
   *out_bytes = 0u;
   return GZC_OK;
@@ -1563,6 +1516,11 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
     client->opus_frame_callback = NULL;
     client->opus_frame_callback_user = NULL;
     client->opus_frame_peer = NULL;
+    if (client->config.webrtc_media_track != NULL) {
+      (void)h2_pal_webrtc_peer_unset_track(client->config.webrtc,
+                                           (h2_pal_webrtc_peer_t *)peer,
+                                           client->config.webrtc_media_track);
+    }
     h2_pal_webrtc_peer_close(client->config.webrtc,
                              (h2_pal_webrtc_peer_t *)peer);
     if (client->webrtc_peer == (h2_pal_webrtc_peer_t *)peer) {
@@ -1763,8 +1721,8 @@ int h2_gizclaw_client_rpc_call(h2_gizclaw_client_t *client,
   }
 #endif
   h2_gizclaw_rpc_request_t *request = NULL;
-  int rc = h2_gizclaw_client_rpc_request_start(
-      client, method, params_payload, 5000u, &request);
+  int rc = h2_gizclaw_client_rpc_request_start(client, method, params_payload,
+                                               5000u, &request);
   while (rc == H2_PAL_OK &&
          (rc = h2_gizclaw_rpc_request_result(request, out_response)) ==
              H2_PAL_ERR_WOULD_BLOCK) {
@@ -1960,12 +1918,10 @@ int h2_gizclaw_rpc_request_write(h2_gizclaw_rpc_request_t *request,
       gzc_rpc_request_write(request->gzc, data, len));
 }
 
-int h2_gizclaw_rpc_request_finish_write(
-    h2_gizclaw_rpc_request_t *request) {
+int h2_gizclaw_rpc_request_finish_write(h2_gizclaw_rpc_request_t *request) {
   if (request == NULL || request->gzc == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_result_from_gzc(
-      gzc_rpc_request_finish_write(request->gzc));
+  return h2_gizclaw_result_from_gzc(gzc_rpc_request_finish_write(request->gzc));
 }
 
 int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
@@ -1979,8 +1935,8 @@ int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (client->rpc_stream_interceptor != NULL) {
-    return client->rpc_stream_interceptor(
-        client->rpc_interceptor_user, client, method, params_payload, on_event,
+    return client->rpc_stream_interceptor(client->rpc_interceptor_user, client,
+                                          method, params_payload, on_event,
         user);
   }
 #if defined(H2_GIZCLAW_TESTING)
@@ -1992,9 +1948,8 @@ int h2_gizclaw_client_rpc_call_stream(h2_gizclaw_client_t *client,
   h2_gizclaw_rpc_request_t *request = NULL;
   int rc = h2_gizclaw_client_rpc_request_start_stream(
       client, method, params_payload, 5000u, on_event, user, &request);
-  while (rc == H2_PAL_OK &&
-         (rc = h2_gizclaw_rpc_request_finish_write(request)) ==
-             H2_PAL_ERR_WOULD_BLOCK) {
+  while (rc == H2_PAL_OK && (rc = h2_gizclaw_rpc_request_finish_write(
+                                 request)) == H2_PAL_ERR_WOULD_BLOCK) {
     rc = h2_gizclaw_client_poll(client, 10);
     if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
       rc = H2_PAL_OK;
@@ -2060,8 +2015,7 @@ int h2_gizclaw_client_ping_measure(h2_gizclaw_client_t *client,
       rc = h2_gizclaw_decode_pb_message(
           gzc_str_from_parts((const char *)response.result_payload,
                              response.result_payload_len),
-                                        gizclaw_rpc_v1_PingResponse_fields,
-                                        &decoded);
+          gizclaw_rpc_v1_PingResponse_fields, &decoded);
       out_result->server_time_ms = decoded.server_time;
     }
     h2_gizclaw_rpc_response_deinit(client, &response);
@@ -2099,8 +2053,9 @@ typedef struct h2_gizclaw_speedtest_state {
   bool saw_eos;
 } h2_gizclaw_speedtest_state_t;
 
-static int h2_gizclaw_speedtest_frame(
-    void *user, const h2_gizclaw_rpc_stream_event_t *event) {
+static int
+h2_gizclaw_speedtest_frame(void *user,
+                           const h2_gizclaw_rpc_stream_event_t *event) {
   h2_gizclaw_speedtest_state_t *state = user;
   if (state == NULL || event == NULL)
     return GZC_ERR_INVALID_ARGUMENT;
@@ -2185,11 +2140,10 @@ int h2_gizclaw_client_speedtest_measure(
     }
     out_result->upload_bytes = (uint64_t)test_result.up_bytes;
     out_result->download_bytes = (uint64_t)test_result.down_bytes;
-    out_result->upload_elapsed_ms =
-        test_result.up_duration_ms > 0 ? (uint64_t)test_result.up_duration_ms
+    out_result->upload_elapsed_ms = test_result.up_duration_ms > 0
+                                        ? (uint64_t)test_result.up_duration_ms
                                       : (upload_bytes > 0u ? 1u : 0u);
-    out_result->elapsed_ms =
-        test_result.down_duration_ms > 0
+    out_result->elapsed_ms = test_result.down_duration_ms > 0
             ? (uint64_t)test_result.down_duration_ms
             : (download_bytes > 0u ? 1u : 0u);
     out_result->upload_bits_per_second = h2_gizclaw_bits_per_second(
@@ -2221,8 +2175,7 @@ int h2_gizclaw_client_speedtest_measure(
   uint64_t upload_completed_ms = 0u;
   size_t uploaded = 0u;
   if (rc == H2_PAL_OK && upload_bytes > 0u)
-    rc = h2_pal_time_get_monotonic_ms(client->config.time,
-                                      &upload_started_ms);
+    rc = h2_pal_time_get_monotonic_ms(client->config.time, &upload_started_ms);
   while (rc == H2_PAL_OK && uploaded < upload_bytes) {
     size_t count = upload_bytes - uploaded;
     if (count > sizeof(upload_frame))
@@ -2236,16 +2189,15 @@ int h2_gizclaw_client_speedtest_measure(
         rc = H2_PAL_OK;
     }
   }
-  while (rc == H2_PAL_OK &&
-         (rc = h2_gizclaw_rpc_request_finish_write(request)) ==
-             H2_PAL_ERR_WOULD_BLOCK) {
+  while (rc == H2_PAL_OK && (rc = h2_gizclaw_rpc_request_finish_write(
+                                 request)) == H2_PAL_ERR_WOULD_BLOCK) {
     rc = h2_gizclaw_client_poll(client, 10);
     if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
       rc = H2_PAL_OK;
   }
   if (rc == H2_PAL_OK && upload_bytes > 0u)
-    rc = h2_pal_time_get_monotonic_ms(client->config.time,
-                                      &upload_completed_ms);
+    rc =
+        h2_pal_time_get_monotonic_ms(client->config.time, &upload_completed_ms);
   h2_gizclaw_rpc_response_t response = {0};
   while (rc == H2_PAL_OK &&
          (rc = h2_gizclaw_rpc_request_result(request, &response)) ==
@@ -2266,8 +2218,8 @@ int h2_gizclaw_client_speedtest_measure(
   out_result->upload_bytes = uploaded;
   out_result->download_bytes = state.download_bytes;
   if (uploaded > 0u) {
-    out_result->upload_elapsed_ms = h2_pal_time_elapsed_ms(
-        upload_started_ms, upload_completed_ms);
+    out_result->upload_elapsed_ms =
+        h2_pal_time_elapsed_ms(upload_started_ms, upload_completed_ms);
     if (out_result->upload_elapsed_ms == 0u)
       out_result->upload_elapsed_ms = 1u;
     out_result->upload_bits_per_second = h2_gizclaw_bits_per_second(

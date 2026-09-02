@@ -34,6 +34,58 @@ void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
                          message);
 }
 
+static uint64_t service_monotonic_ms(const h2_gizclaw_service_t *service) {
+  uint64_t now_ms = 0u;
+  if (service == NULL || service->config.client_config == NULL ||
+      service->config.client_config->time == NULL ||
+      h2_pal_time_get_monotonic_ms(service->config.client_config->time,
+                                   &now_ms) != H2_PAL_OK) {
+    return 0u;
+  }
+  return now_ms;
+}
+
+static uint64_t elapsed_ms(uint64_t started_ms, uint64_t completed_ms) {
+  return started_ms != 0u && completed_ms >= started_ms
+             ? completed_ms - started_ms
+             : 0u;
+}
+
+static void log_operation_trace(const h2_gizclaw_service_t *service,
+                                h2_pal_log_level_t level, const char *stage,
+                                const h2_gizclaw_operation_t *operation,
+                                h2_pal_result_t result, int detail_code,
+                                uint64_t dispatch_ms) {
+  if (service == NULL || service->config.client_config == NULL ||
+      service->config.client_config->log == NULL || stage == NULL ||
+      operation == NULL) {
+    return;
+  }
+  const uint64_t now_ms = service_monotonic_ms(service);
+  const uint64_t completed_ms =
+      operation->completed_at_ms != 0u ? operation->completed_at_ms : now_ms;
+  char message[256];
+  (void)snprintf(
+      message, sizeof(message),
+      "request=service stage=%s seq=%llu identity=%llu rc=%d detail=%d "
+      "queue_ms=%llu run_ms=%llu total_ms=%llu polls=%lu "
+      "dispatch_count=%lu dispatch_total_ms=%llu dispatch_max_ms=%lu "
+      "dispatch_ms=%llu",
+      stage, (unsigned long long)operation->trace_sequence,
+      (unsigned long long)operation->result.identity, (int)result, detail_code,
+      (unsigned long long)elapsed_ms(operation->queued_at_ms,
+                                     operation->started_at_ms),
+      (unsigned long long)elapsed_ms(operation->started_at_ms, completed_ms),
+      (unsigned long long)elapsed_ms(operation->queued_at_ms, now_ms),
+      (unsigned long)operation->poll_count,
+      (unsigned long)operation->progress_dispatch_count,
+      (unsigned long long)operation->progress_dispatch_total_ms,
+      (unsigned long)operation->progress_dispatch_max_ms,
+      (unsigned long long)dispatch_ms);
+  (void)h2_pal_log_write(service->config.client_config->log, level, "gizclaw",
+                         message);
+}
+
 static h2_pal_result_t client_init(const h2_gizclaw_config_t *config,
                                    h2_gizclaw_client_t **out_client) {
 #ifdef H2_GIZCLAW_TESTING
@@ -280,6 +332,7 @@ static bool complete_operation(h2_gizclaw_service_t *service,
                                h2_gizclaw_operation_t *operation,
                                h2_pal_result_t operation_rc,
                                bool original_canceled) {
+  operation->completed_at_ms = service_monotonic_ms(service);
   if (lock_service(service) != H2_PAL_OK)
     return true;
   if (service->current == operation)
@@ -308,14 +361,16 @@ static bool complete_operation(h2_gizclaw_service_t *service,
         service, operation, H2_GIZCLAW_OPERATION_FINISHED, operation_rc);
   }
   unlock_service(service);
-  if (operation_rc != H2_PAL_OK) {
-    h2_gizclaw_service_log_request(
-        service, terminal_failure ? H2_PAL_LOG_ERROR : H2_PAL_LOG_WARN,
-        "service",
-        terminal_failure ? "operation_closed_service"
-                         : "operation_completed_error",
-        operation->result.identity, operation_rc, close_detail, 0u, 0u);
-  }
+  log_operation_trace(
+      service,
+      terminal_failure
+          ? H2_PAL_LOG_ERROR
+          : (operation_rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN),
+      terminal_failure
+          ? "operation_closed_service"
+          : (operation_rc == H2_PAL_OK ? "operation_completed"
+                                       : "operation_completed_error"),
+      operation, operation_rc, close_detail, 0u);
   return terminal_failure;
 }
 
@@ -323,6 +378,7 @@ static bool poll_pending_operations(h2_gizclaw_service_t *service) {
   h2_gizclaw_operation_t **cursor = &service->pending;
   while (*cursor != NULL) {
     h2_gizclaw_operation_t *operation = *cursor;
+    ++operation->poll_count;
     const h2_pal_result_t rc = operation->poll(operation->user, service->client,
                                                &operation->cancel_token);
     if (rc == H2_PAL_ERR_WOULD_BLOCK) {
@@ -467,13 +523,12 @@ static void net_worker(void *ctx) {
         break;
       service->current = operation;
       operation->state = H2_GIZCLAW_OPERATION_RUNNING;
+      operation->started_at_ms = service_monotonic_ms(service);
       const bool canceled = operation->cancel_requested;
       unlock_service(service);
 
-      h2_gizclaw_service_log_request(service, H2_PAL_LOG_INFO, "service",
-                                     "request_started",
-                                     operation->result.identity, H2_PAL_OK,
-                                     operation->poll != NULL, 0u, 0u);
+      log_operation_trace(service, H2_PAL_LOG_INFO, "request_started",
+                          operation, H2_PAL_OK, operation->poll != NULL, 0u);
 
       h2_pal_result_t operation_rc = H2_PAL_ERR_CLOSED;
       if (!canceled)
@@ -560,9 +615,24 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
   if (progress) {
     if (skip_progress)
       return;
+    const uint64_t dispatch_started_ms = service_monotonic_ms(service);
     const h2_pal_result_t progress_result =
         progress_callback != NULL ? progress_callback(progress_user)
                                   : H2_PAL_ERR_INVALID_STATE;
+    const uint64_t dispatch_finished_ms = service_monotonic_ms(service);
+    const uint64_t dispatch_ms =
+        elapsed_ms(dispatch_started_ms, dispatch_finished_ms);
+    ++operation->progress_dispatch_count;
+    operation->progress_dispatch_total_ms += dispatch_ms;
+    if (dispatch_ms > operation->progress_dispatch_max_ms)
+      operation->progress_dispatch_max_ms = (uint32_t)dispatch_ms;
+    if (progress_result != H2_PAL_OK || dispatch_ms >= 5u) {
+      log_operation_trace(
+          service,
+          progress_result == H2_PAL_OK ? H2_PAL_LOG_WARN : H2_PAL_LOG_ERROR,
+          progress_result == H2_PAL_OK ? "dispatch_slow" : "dispatch_error",
+          operation, progress_result, 1, dispatch_ms);
+    }
     if (lock_service(service) != H2_PAL_OK)
       return;
     operation->progress_result = progress_result;
@@ -579,15 +649,16 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
   operation->state = H2_GIZCLAW_OPERATION_TERMINAL;
   unlock_service(service);
   atomic_store_explicit(&operation->terminal, true, memory_order_release);
-  h2_gizclaw_service_log_request(service, H2_PAL_LOG_INFO, "service",
-                                 "dispatch_begin", operation->result.identity,
-                                 operation->result.result,
-                                 (int)operation->result.terminal_kind, 0u, 0u);
+  log_operation_trace(service, H2_PAL_LOG_INFO, "dispatch_begin", operation,
+                      operation->result.result,
+                      (int)operation->result.terminal_kind, 0u);
+  const uint64_t dispatch_started_ms = service_monotonic_ms(service);
   operation->completion(operation->user, operation, &operation->result);
-  h2_gizclaw_service_log_request(service, H2_PAL_LOG_INFO, "service",
-                                 "dispatch_end", operation->result.identity,
-                                 operation->result.result,
-                                 (int)operation->result.terminal_kind, 0u, 0u);
+  const uint64_t dispatch_finished_ms = service_monotonic_ms(service);
+  log_operation_trace(service, H2_PAL_LOG_INFO, "dispatch_end", operation,
+                      operation->result.result,
+                      (int)operation->result.terminal_kind,
+                      elapsed_ms(dispatch_started_ms, dispatch_finished_ms));
   (void)h2_pal_semaphore_give(service->config.sync, operation->completed);
   if (lock_service(service) != H2_PAL_OK)
     return;
@@ -598,7 +669,7 @@ static void dispatch_operation(h2_gizclaw_service_t *service,
   dispatch_terminal_if_ready(service);
 }
 
-h2_pal_result_t h2_gizclaw_service_dispatch(h2_gizclaw_service_t *service,
+h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
                                             size_t max_callbacks,
                                             size_t *out_dispatched) {
   if (out_dispatched != NULL)
@@ -662,6 +733,19 @@ static bool valid_config(const h2_gizclaw_service_config_t *config) {
          config->client_poll_timeout_ms > 0;
 }
 
+static h2_pal_result_t service_track_read_opus(void *user, uint8_t *opus,
+                                               size_t capacity,
+                                               size_t *out_len) {
+  return h2_gizclaw_service_media_read_opus((h2_gizclaw_service_t *)user, opus,
+                                            capacity, out_len);
+}
+
+static h2_pal_result_t service_track_write_opus(void *user, const uint8_t *opus,
+                                                size_t opus_len) {
+  return h2_gizclaw_service_media_write_opus((h2_gizclaw_service_t *)user, opus,
+                                             opus_len);
+}
+
 h2_pal_result_t
 h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                         h2_gizclaw_service_t **out_service) {
@@ -680,7 +764,20 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   service->original_cancel_user = service->client_config.cancel_user;
   service->client_config.cancel_requested = service_cancel_requested;
   service->client_config.cancel_user = service;
+  service->webrtc_track_vtable = (h2_pal_webrtc_track_vtable_t){
+      .read = service_track_read_opus,
+      .write = service_track_write_opus,
+  };
+  service->webrtc_track = (h2_pal_webrtc_track_t){
+      .user = service,
+      .vtable = &service->webrtc_track_vtable,
+  };
+  service->client_config.webrtc_media_track = &service->webrtc_track;
   service->config.client_config = &service->client_config;
+  atomic_init(&service->media_request, NULL);
+  atomic_init(&service->speech_request, NULL);
+  atomic_init(&service->pcm_track, NULL);
+  atomic_init(&service->media_callback_refs, 0u);
 
   const h2_pal_mutex_config_t mutex_config = {
       .name = "gizclaw-service", .allocator = config->client_config->allocator};
@@ -754,6 +851,37 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
   return rc;
 }
 
+h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
+                                             h2_gizclaw_track_t *track) {
+  if (service == NULL || track == NULL || track->vtable == NULL ||
+      (track->vtable->read == NULL && track->vtable->write == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_track_t *expected = NULL;
+  return atomic_compare_exchange_strong_explicit(&service->pcm_track, &expected,
+                                                 track, memory_order_acq_rel,
+                                                 memory_order_acquire)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
+}
+
+h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
+                                               h2_gizclaw_track_t *track) {
+  if (service == NULL || track == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (atomic_load_explicit(&service->speech_request, memory_order_acquire) !=
+          NULL ||
+      atomic_load_explicit(&service->media_request, memory_order_acquire) !=
+          NULL) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  h2_gizclaw_track_t *expected = track;
+  return atomic_compare_exchange_strong_explicit(&service->pcm_track, &expected,
+                                                 NULL, memory_order_acq_rel,
+                                                 memory_order_acquire)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
+}
+
 static h2_pal_result_t
 submit_operation(h2_gizclaw_service_t *service, uint64_t identity,
                  h2_gizclaw_operation_run_fn run,
@@ -788,6 +916,8 @@ submit_operation(h2_gizclaw_service_t *service, uint64_t identity,
   operation->completion = completion;
   operation->user = user;
   operation->result.identity = identity;
+  operation->trace_sequence = ++service->next_trace_sequence;
+  operation->queued_at_ms = service_monotonic_ms(service);
   operation->state = H2_GIZCLAW_OPERATION_QUEUED;
   operation->caller_reference = true;
   operation->internal_reference = true;
@@ -821,9 +951,8 @@ submit_operation(h2_gizclaw_service_t *service, uint64_t identity,
   *out_operation = operation;
   const size_t active_count = service->active_count;
   unlock_service(service);
-  h2_gizclaw_service_log_request(service, H2_PAL_LOG_INFO, "service",
-                                 "request_queued", identity, H2_PAL_OK,
-                                 (int)active_count, 0u, 0u);
+  log_operation_trace(service, H2_PAL_LOG_INFO, "request_queued", operation,
+                      H2_PAL_OK, (int)active_count, 0u);
   return H2_PAL_OK;
 }
 

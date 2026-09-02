@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define H2_GIZCLAW_E2E_SERVICE_OPERATION_COUNT 1u
-#define H2_GIZCLAW_E2E_SERVICE_POLL_MS 10u
+#define H2_GIZCLAW_E2E_SERVICE_POLL_MS 1u
 
 typedef struct service_case_state {
   h2_gizclaw_e2e_fixture_t *fixture;
@@ -26,14 +26,15 @@ static void keep_first_failure(int candidate, int *result) {
 static void keep_first_atomic_failure(int candidate, atomic_int *result) {
   int expected = H2_PAL_OK;
   if (candidate != H2_PAL_OK) {
-    (void)atomic_compare_exchange_strong_explicit(
-        result, &expected, candidate, memory_order_acq_rel,
+    (void)atomic_compare_exchange_strong_explicit(result, &expected, candidate,
+                                                  memory_order_acq_rel,
         memory_order_acquire);
   }
 }
 
-static void registration_completion(
-    void *user, h2_gizclaw_registration_request_t *request) {
+static void
+registration_completion(void *user,
+                        h2_gizclaw_registration_request_t *request) {
   service_case_state_t *state = user;
   const h2_gizclaw_operation_result_t *result =
       h2_gizclaw_registration_request_operation_result(request);
@@ -67,16 +68,15 @@ static void service_terminal(void *user, h2_pal_result_t result) {
     return;
   atomic_fetch_add_explicit(&state->terminal_count, 1u, memory_order_release);
   keep_first_atomic_failure(
-      result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result,
-      &state->result);
+      result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result, &state->result);
 }
 
 static int dispatch_until_complete(service_case_state_t *state,
                                    size_t expected_completions) {
-  while (atomic_load_explicit(&state->completion_count,
-                              memory_order_acquire) < expected_completions) {
+  while (atomic_load_explicit(&state->completion_count, memory_order_acquire) <
+         expected_completions) {
     size_t dispatched = 0u;
-    int rc = h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+    int rc = h2_gizclaw_service_poll(state->service, 8u, &dispatched);
     if (rc != H2_PAL_OK)
       return rc;
     if (state->fixture->config->should_stop != NULL &&
@@ -99,13 +99,12 @@ static int dispatch_until_complete(service_case_state_t *state,
 static int cleanup_service_case(service_case_state_t *state,
                                 size_t accepted_operations) {
   if (state->registration_request != NULL)
-    (void)h2_gizclaw_registration_request_cancel(
-        state->registration_request);
+    (void)h2_gizclaw_registration_request_cancel(state->registration_request);
   int rc = h2_gizclaw_service_stop(state->service);
   for (;;) {
     size_t dispatched = 0u;
     const int dispatch_rc =
-        h2_gizclaw_service_dispatch(state->service, 8u, &dispatched);
+        h2_gizclaw_service_poll(state->service, 8u, &dispatched);
     keep_first_failure(dispatch_rc, &rc);
     if (dispatch_rc != H2_PAL_OK || dispatched == 0u)
       break;
@@ -167,8 +166,10 @@ int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
   if (rc == H2_PAL_OK &&
       (atomic_load_explicit(&state.completion_count, memory_order_acquire) !=
            H2_GIZCLAW_E2E_SERVICE_OPERATION_COUNT ||
-       atomic_load_explicit(&state.terminal_count, memory_order_acquire) != 0u ||
-       atomic_load_explicit(&state.result, memory_order_acquire) != H2_PAL_OK)) {
+       atomic_load_explicit(&state.terminal_count, memory_order_acquire) !=
+           0u ||
+       atomic_load_explicit(&state.result, memory_order_acquire) !=
+           H2_PAL_OK)) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
   const int cleanup_rc = cleanup_service_case(&state, accepted_operations);
