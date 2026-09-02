@@ -48,9 +48,11 @@ I (12345) iperf_e2e: H2_IPERF_E2E_CASE {"v":1,"target":"amoled","id":"udp_tx_20m
 
 2026-09-02 在信道 11、host 位于路由器另一子网、`H2_IPERF_POWER_SAVE=0` 下的实测（每 case 5 秒，射频波动大，单次结果不能当作门限）：
 
-| 条件 | UDP 上行（板→host） | UDP 下行（host→板，20 Mbit/s 目标） | TCP 上/下 |
-| --- | --- | --- | --- |
-| BLE 广播开启（默认） | 3–5 Mbit/s，零丢包 | 3–6 Mbit/s，丢包 50–80% | 1–2.5 Mbit/s |
-| `H2_IPERF_BLE_ADV=0` | 8–11 Mbit/s，零丢包 | 12–16 Mbit/s，丢包 12–33% | 5–6 Mbit/s |
+| 条件 | UDP 上行（板→host） | UDP 下行（host→板，20 Mbit/s 目标） | TCP 上/下 | SCTP 上/下（1200 B） |
+| --- | --- | --- | --- | --- |
+| BLE 广播开启（默认） | 2.3–2.4 Mbit/s，零丢包 | 2.0 Mbit/s，丢包 87% | 0.7 / 0.9 Mbit/s | 0.9 / 1.1 Mbit/s |
+| `H2_IPERF_BLE_ADV=0` | 7.6–8.4 Mbit/s，零丢包 | 12.4 Mbit/s，丢包 33% | 5.3 / 4.8 Mbit/s | 5.8 / 5.1 Mbit/s |
+
+广播开启时的差距来自 ESP-IDF 的 Wi-Fi/BLE 共存调度，而不是广播本身占用的空口：把广播间隔从 100 ms 放到 1000 ms、`esp_coex_preference_set(ESP_COEX_PREFER_WIFI)` 都没有改善，只有暂停广播实例或停止控制器才恢复；`CONFIG_BT_CTRL_MODEM_SLEEP` 让上行回到约 5.4 Mbit/s 但仍远低于暂停广播，且需要单独验证稳定性。
 
 TCP 受 lwIP `11520` 字节窗口限制；UDP 下行的丢包发生在设备接收侧。同一块 devkit 上纯 ESP-IDF iperf 示例（无 BLE、无 H2Loader）为 TCP 22/35 Mbit/s、UDP 下行 20 Mbit/s，是当前的上限参考。矩阵结束后输出 `H2_IPERF_E2E_SUMMARY ... udp_tx_bps=... udp_rx_bps=... sctp_tx_bps=... sctp_rx_bps=...` 与 `H2_IPERF_E2E_AMOLED stage=summary status=PASS|FAIL ...`，并在 `matrix_start`/`matrix_end` 和每个 case 前后给出三类 heap 的 KiB checkpoint。有效结果必须包含 exact package checksum、`amoled/esp32s3` identity、LAN server 地址、完整矩阵 JSON 与 heap checkpoint；只有 firmware build 或 package Stage 不能算真实设备通过。
