@@ -687,6 +687,95 @@ static h2_pal_result_t windows_net_tcp_connect(
     return result;
 }
 
+static int windows_net_tcp_listen(void *user, h2_pal_net_family_t family,
+                                  uint16_t port,
+                                  const h2_pal_net_bind_t *binding,
+                                  h2_pal_net_socket_t *out_socket,
+                                  h2_pal_net_addr_t *out_bind_addr) {
+    h2_windows_platform_t *platform = user;
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int result = windows_net_open(platform, family, SOCK_STREAM, out_socket);
+    if (result != H2_PAL_OK) {
+        return result;
+    }
+    h2_windows_socket_slot_t *slot =
+        h2_windows_net_lock_slot(platform, *out_socket);
+    int reuse = 1;
+    (void)setsockopt(slot->socket, SOL_SOCKET, SO_REUSEADDR,
+                     (const char *)&reuse, sizeof(reuse));
+    result = windows_net_bind_socket(platform, slot->socket, family, port,
+                                     binding);
+    if (result == H2_PAL_OK && listen(slot->socket, SOMAXCONN) != 0) {
+        result = h2_windows_error_from_wsa(WSAGetLastError());
+    }
+    if (result == H2_PAL_OK) {
+        SOCKADDR_STORAGE address;
+        int address_len = (int)sizeof(address);
+        if (getsockname(slot->socket, (SOCKADDR *)&address, &address_len) != 0) {
+            result = h2_windows_error_from_wsa(WSAGetLastError());
+        } else {
+            result = windows_sockaddr_to_addr((SOCKADDR *)&address,
+                                              out_bind_addr);
+        }
+    }
+    h2_windows_net_unlock_slot(slot);
+    if (result != H2_PAL_OK) {
+        h2_pal_net_socket_t token = *out_socket;
+        *out_socket = -1;
+        h2_windows_net_vtable.close(platform, token);
+    }
+    return result;
+}
+
+static h2_pal_result_t windows_net_tcp_accept(void *user,
+                                              h2_pal_net_socket_t token,
+                                              h2_pal_net_socket_t *out_socket,
+                                              h2_pal_net_addr_t *out_peer_addr,
+                                              uint32_t timeout_ms) {
+    h2_windows_platform_t *platform = user;
+    if (out_socket == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    h2_windows_socket_slot_t *slot = h2_windows_net_lock_slot(platform, token);
+    if (slot == NULL || slot->tls != NULL) {
+        if (slot != NULL) h2_windows_net_unlock_slot(slot);
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int result = windows_net_wait(slot->socket, 0, timeout_ms);
+    if (result != H2_PAL_OK) {
+        h2_windows_net_unlock_slot(slot);
+        return result;
+    }
+    SOCKADDR_STORAGE address;
+    int address_len = (int)sizeof(address);
+    SOCKET accepted = accept(slot->socket, (SOCKADDR *)&address, &address_len);
+    h2_windows_net_unlock_slot(slot);
+    if (accepted == INVALID_SOCKET) {
+        int error = WSAGetLastError();
+        return error == WSAEWOULDBLOCK || error == WSAECONNRESET
+                   ? H2_PAL_ERR_WOULD_BLOCK
+                   : h2_windows_error_from_wsa(error);
+    }
+    u_long nonblocking = 1u;
+    if (ioctlsocket(accepted, FIONBIO, &nonblocking) != 0) {
+        int error = WSAGetLastError();
+        (void)closesocket(accepted);
+        return h2_windows_error_from_wsa(error);
+    }
+    result = windows_net_store_socket(platform, accepted, out_socket);
+    if (result != H2_PAL_OK) {
+        (void)closesocket(accepted);
+        return result;
+    }
+    if (out_peer_addr != NULL) {
+        (void)windows_sockaddr_to_addr((SOCKADDR *)&address, out_peer_addr);
+    }
+    return H2_PAL_OK;
+}
+
 static int windows_net_tcp_send_timeout(void *user,
                                          h2_pal_net_socket_t token,
                                          const uint8_t *data, size_t len,
@@ -962,4 +1051,6 @@ const h2_pal_net_vtable_t h2_windows_net_vtable = {
     .tls_wrap = windows_net_tls_wrap_entry,
     .icmp_echo = windows_net_icmp_echo,
     .close = windows_net_close,
+    .tcp_listen = windows_net_tcp_listen,
+    .tcp_accept = windows_net_tcp_accept,
 };

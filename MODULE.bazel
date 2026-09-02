@@ -275,6 +275,13 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/skywind3000/kcp/tar.gz/b1a7a2101dcbb96017681a500d6b82bbe5a88766"],
 )
 vendor_repositories.repository(
+    name = "h2_vendor_iperf",
+    build_file = "//third_party:iperf.BUILD.bazel",
+    sha256 = "dd289b6700d3bc33eda7fa3ce6db217d6ca42239edbcb2e7f152bf7bf5c8a5aa",
+    strip_prefix = "iperf-3.21",
+    urls = ["https://codeload.github.com/esnet/iperf/tar.gz/3.21"],
+)
+vendor_repositories.repository(
     name = "h2_vendor_yyjson",
     build_file = "//third_party:yyjson.BUILD.bazel",
     sha256 = "94e9c90f8f12d8329f2c0756782d21e5c278729023cd2c5fe47e323a35947ed6",
@@ -450,6 +457,7 @@ use_repo(
     "h2_vendor_esp_serial_flasher",
     "h2_vendor_ffmpeg",
     "h2_vendor_ikcp",
+    "h2_vendor_iperf",
     "h2_vendor_libco",
     "h2_vendor_libsrtp",
     "h2_vendor_lua",

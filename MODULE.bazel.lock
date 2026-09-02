@@ -985,7 +985,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "CMDGYbE8LdlkxN5qej400MQLc4V0+UDGXL/CCEKf3kM=",
-        "usagesDigest": "RZEWwJgbhESKEueVmeRriwHCNHjT2AHOAC6VdNPVxHY=",
+        "usagesDigest": "lv6zBOy81d4neWkyIQGlVcGBPbgXKc4d4FiOqcPq5bI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1056,6 +1056,23 @@
               "strip_prefix": "kcp-b1a7a2101dcbb96017681a500d6b82bbe5a88766",
               "urls": [
                 "https://codeload.github.com/skywind3000/kcp/tar.gz/b1a7a2101dcbb96017681a500d6b82bbe5a88766"
+              ]
+            }
+          },
+          "h2_vendor_iperf": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:iperf.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {},
+              "patches": [],
+              "sha256": "dd289b6700d3bc33eda7fa3ce6db217d6ca42239edbcb2e7f152bf7bf5c8a5aa",
+              "strip_prefix": "iperf-3.21",
+              "urls": [
+                "https://codeload.github.com/esnet/iperf/tar.gz/3.21"
               ]
             }
           },
