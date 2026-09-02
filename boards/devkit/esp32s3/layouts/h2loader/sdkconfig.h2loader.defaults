@@ -4,13 +4,22 @@ CONFIG_PARTITION_TABLE_FILENAME="partition.csv"
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 CONFIG_BT_NIMBLE_EXT_ADV=n
 
-# Wi-Fi/lwIP throughput profile for H2Loader-managed images. DevKit keeps
-# Wi-Fi buffers in internal RAM (no CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP),
-# so the ESP-IDF default pool sizes stay: 32 dynamic RX buffers above the
-# 16-entry UDP mailbox from the board defaults. lwIP delivers frames
-# zero-copy, so the UDP mailbox must always stay below the dynamic RX
-# count or an unread socket starves the whole radio. A wider RX Block Ack
-# window and lwIP in IRAM are the only additions.
+# Wi-Fi/lwIP throughput profile for H2Loader-managed images, identical to
+# the AMOLED layout. Wi-Fi/lwIP memory prefers PSRAM so the dynamic RX
+# buffers and the TX cache do not consume internal RAM; that option forces
+# the static TX buffer type. lwIP delivers frames zero-copy, so every
+# datagram parked in a socket mailbox keeps one dynamic RX buffer: the
+# dynamic RX count must stay well above the UDP mailbox size or a socket
+# that stops reading starves the whole radio.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER=y
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=16
 CONFIG_ESP_WIFI_RX_BA_WIN=12
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=32
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
+CONFIG_LWIP_MAX_SOCKETS=8
+CONFIG_LWIP_MAX_UDP_PCBS=8
 CONFIG_LWIP_IRAM_OPTIMIZATION=y
