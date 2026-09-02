@@ -26,12 +26,14 @@
 #define LCD_DATA2_GPIO GPIO_NUM_6
 #define LCD_DATA3_GPIO GPIO_NUM_7
 #define LCD_RST_GPIO GPIO_NUM_NC
+#define LCD_PCLK_HZ (80 * 1000 * 1000)
 #define LCD_CONTROL_RESET_MASK (1u << 0)
 #define LCD_CONTROL_POWER_MASK (1u << 1)
 #define LCD_CONTROL_PANEL_MASK (LCD_CONTROL_RESET_MASK | LCD_CONTROL_POWER_MASK)
 #define LCD_BITS_PER_PIXEL 16
-#define LCD_DRAW_ROWS 64
-#define LCD_DMA_BUFFER_PIXELS (LCD_WIDTH * LCD_DRAW_ROWS)
+#define LCD_DRAW_ROWS 32
+#define LCD_DMA_BUFFER_COUNT 2
+#define LCD_DMA_BUFFER_PIXELS (LCD_WIDTH * LCD_DRAW_ROWS * LCD_DMA_BUFFER_COUNT)
 #define LCD_DMA_BUFFER_BYTES (LCD_DMA_BUFFER_PIXELS * sizeof(uint16_t))
 #define LCD_OPCODE_WRITE_CMD 0x02
 
@@ -44,6 +46,7 @@ typedef struct h2_esp_amoled_display_state {
     esp_lcd_panel_io_handle_t panel_io;
     esp_lcd_panel_handle_t panel;
     uint16_t *dma_buffer;
+    uint16_t *dma_buffer_secondary;
     size_t dma_buffer_pixels;
     bool initialized;
     bool opened;
@@ -168,10 +171,11 @@ static int init_panel_io(h2_esp_amoled_display_state_t *state) {
     if (state->panel_io != NULL) {
         return H2_DISPLAY_OK;
     }
-    const esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(
+    esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(
         LCD_CS_GPIO,
         NULL,
         NULL);
+    io_config.pclk_hz = LCD_PCLK_HZ;
     err = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &state->panel_io);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_lcd_new_panel_io_spi failed: %s", esp_err_to_name(err));
@@ -200,7 +204,8 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
             ESP_LOGE(TAG, "display dma buffer alloc failed bytes=%u", (unsigned)LCD_DMA_BUFFER_BYTES);
             return H2_DISPLAY_ERR_NO_MEMORY;
         }
-        state->dma_buffer_pixels = LCD_DMA_BUFFER_PIXELS;
+        state->dma_buffer_secondary = state->dma_buffer + LCD_WIDTH * LCD_DRAW_ROWS;
+        state->dma_buffer_pixels = LCD_WIDTH * LCD_DRAW_ROWS;
     }
 
     sh8601_vendor_config_t vendor_config = {
@@ -386,30 +391,41 @@ static int amoled_draw_bitmap(
 
     int y = clipped.y;
     const int y_end = clipped.y + clipped.height;
+    unsigned buffer_index = 0u;
+    unsigned queued = 0u;
     while (y < y_end) {
         h2_display_rect_t chunk = clipped;
+        uint16_t *dma_buffer = buffer_index == 0u
+            ? state->dma_buffer
+            : state->dma_buffer_secondary;
         chunk.y = y;
         chunk.height = y_end - y;
         if (chunk.height > max_chunk_rows) {
             chunk.height = max_chunk_rows;
         }
 
-        convert_chunk_to_rgb565(rect, &chunk, pixels, stride_bytes, format, src_pixel_size, state->dma_buffer);
+        convert_chunk_to_rgb565(rect, &chunk, pixels, stride_bytes, format, src_pixel_size, dma_buffer);
         esp_err_t err = esp_lcd_panel_draw_bitmap(
             state->panel,
             chunk.x,
             chunk.y,
             chunk.x + chunk.width,
             chunk.y + chunk.height,
-            state->dma_buffer);
+            dma_buffer);
         if (err != ESP_OK) {
+            (void)drain_panel_io(state);
             return esp_result(err);
         }
-        rc = drain_panel_io(state);
-        if (rc != H2_DISPLAY_OK) {
-            return rc;
-        }
+        queued++;
         y += chunk.height;
+        buffer_index ^= 1u;
+        if (queued == LCD_DMA_BUFFER_COUNT || y == y_end) {
+            rc = drain_panel_io(state);
+            if (rc != H2_DISPLAY_OK) {
+                return rc;
+            }
+            queued = 0u;
+        }
     }
     return H2_DISPLAY_OK;
 }

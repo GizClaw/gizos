@@ -1260,6 +1260,11 @@ static void set_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
       y < job->display_info.height) {
     job->framebuffer[(size_t)y * (size_t)job->display_info.width + (size_t)x] =
         color;
+    if (job->dirty_valid && job->dirty_min_x == 0 && job->dirty_min_y == 0 &&
+        job->dirty_max_x == job->display_info.width - 1 &&
+        job->dirty_max_y == job->display_info.height - 1) {
+      return;
+    }
     if (!job->dirty_valid) {
       job->dirty_valid = 1;
       job->dirty_min_x = x;
@@ -1279,6 +1284,125 @@ static void set_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
   }
 }
 
+static void mark_dirty_rect(h2_lua_job_t *job, int x, int y, int width,
+                            int height) {
+  int min_x = x < 0 ? 0 : x;
+  int min_y = y < 0 ? 0 : y;
+  int max_x = x + width - 1;
+  int max_y = y + height - 1;
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  if (max_x >= job->display_info.width) {
+    max_x = job->display_info.width - 1;
+  }
+  if (max_y >= job->display_info.height) {
+    max_y = job->display_info.height - 1;
+  }
+  if (min_x > max_x || min_y > max_y) {
+    return;
+  }
+  if (!job->dirty_valid) {
+    job->dirty_valid = 1;
+    job->dirty_min_x = min_x;
+    job->dirty_min_y = min_y;
+    job->dirty_max_x = max_x;
+    job->dirty_max_y = max_y;
+    return;
+  }
+  if (min_x < job->dirty_min_x)
+    job->dirty_min_x = min_x;
+  if (min_y < job->dirty_min_y)
+    job->dirty_min_y = min_y;
+  if (max_x > job->dirty_max_x)
+    job->dirty_max_x = max_x;
+  if (max_y > job->dirty_max_y)
+    job->dirty_max_y = max_y;
+}
+
+static void fill_span(h2_lua_job_t *job, int y, int min_x, int max_x,
+                      uint16_t color) {
+  uint16_t *pixels;
+  size_t count;
+  if (y < 0 || y >= job->display_info.height || max_x < 0 ||
+      min_x >= job->display_info.width || min_x > max_x) {
+    return;
+  }
+  if (min_x < 0)
+    min_x = 0;
+  if (max_x >= job->display_info.width)
+    max_x = job->display_info.width - 1;
+  pixels = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
+           (size_t)min_x;
+  count = (size_t)(max_x - min_x + 1);
+  while (count >= 4u) {
+    pixels[0] = color;
+    pixels[1] = color;
+    pixels[2] = color;
+    pixels[3] = color;
+    pixels += 4;
+    count -= 4u;
+  }
+  while (count != 0u) {
+    *pixels++ = color;
+    --count;
+  }
+}
+
+static void write_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
+  if (x >= 0 && y >= 0 && x < job->display_info.width &&
+      y < job->display_info.height) {
+    job->framebuffer[(size_t)y * (size_t)job->display_info.width + (size_t)x] =
+        color;
+  }
+}
+
+static void blend_pixel(h2_lua_job_t *job, int x, int y, uint16_t color,
+                        unsigned alpha) {
+  uint16_t *pixel;
+  uint16_t background;
+  unsigned inverse;
+  unsigned red;
+  unsigned green;
+  unsigned blue;
+  if (alpha == 0u || x < 0 || y < 0 || x >= job->display_info.width ||
+      y >= job->display_info.height) {
+    return;
+  }
+  if (alpha >= 255u) {
+    write_pixel(job, x, y, color);
+    return;
+  }
+  pixel = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
+          (size_t)x;
+  background = *pixel;
+  inverse = 255u - alpha;
+  red = (((color >> 11u) & 0x1fu) * alpha +
+         ((background >> 11u) & 0x1fu) * inverse + 127u) /
+        255u;
+  green = (((color >> 5u) & 0x3fu) * alpha +
+           ((background >> 5u) & 0x3fu) * inverse + 127u) /
+          255u;
+  blue =
+      ((color & 0x1fu) * alpha + (background & 0x1fu) * inverse + 127u) / 255u;
+  *pixel = (uint16_t)((red << 11u) | (green << 5u) | blue);
+}
+
+static int rounded_rect_inset(int height, int radius, int row) {
+  int dy;
+  int extent = 0;
+  int64_t radius_squared;
+  if (radius == 0 || (row >= radius && row < height - radius))
+    return 0;
+  dy = row < radius ? radius - row : row - (height - radius - 1);
+  radius_squared = (int64_t)radius * radius;
+  while (extent < radius &&
+         (int64_t)(extent + 1) * (extent + 1) + (int64_t)dy * dy <=
+             radius_squared)
+    ++extent;
+  return radius - extent;
+}
+
 static int point_is_bounded(const h2_lua_job_t *job, int x, int y) {
   return (int64_t)x >= -(int64_t)job->display_info.width &&
          (int64_t)x <= (int64_t)job->display_info.width * 2 &&
@@ -1294,10 +1418,19 @@ static int rect_is_bounded(const h2_lua_job_t *job, int x, int y, int width,
 
 static void display_clear_pixels(h2_lua_job_t *job, uint16_t color) {
   size_t count;
-  size_t i;
+  uint16_t *pixels = job->framebuffer;
   count = (size_t)job->display_info.width * (size_t)job->display_info.height;
-  for (i = 0u; i < count; ++i) {
-    job->framebuffer[i] = color;
+  while (count >= 4u) {
+    pixels[0] = color;
+    pixels[1] = color;
+    pixels[2] = color;
+    pixels[3] = color;
+    pixels += 4;
+    count -= 4u;
+  }
+  while (count != 0u) {
+    *pixels++ = color;
+    --count;
   }
   job->dirty_valid = 1;
   job->dirty_min_x = 0;
@@ -1323,16 +1456,13 @@ static int display_fill_rect(lua_State *state) {
   int width = check_pixel_number(state, 3);
   int height = check_pixel_number(state, 4);
   uint16_t color = check_color(state, 5);
-  int px;
   int py;
   if (!job->display_open || !rect_is_bounded(job, x, y, width, height)) {
     return luaL_error(state, "invalid fill_rect");
   }
-  for (py = y; py < y + height; ++py) {
-    for (px = x; px < x + width; ++px) {
-      set_pixel(job, px, py, color);
-    }
-  }
+  mark_dirty_rect(job, x, y, width, height);
+  for (py = y; py < y + height; ++py)
+    fill_span(job, py, x, x + width - 1, color);
   return 0;
 }
 
@@ -1356,10 +1486,12 @@ static int display_draw_line(lua_State *state) {
   sx = x0 < x1 ? 1 : -1;
   dy = -llabs((int64_t)y1 - y0);
   sy = y0 < y1 ? 1 : -1;
+  mark_dirty_rect(job, x0 < x1 ? x0 : x1, y0 < y1 ? y0 : y1, (int)dx + 1,
+                  (int)(-dy) + 1);
   error = dx + dy;
   for (;;) {
     int64_t twice;
-    set_pixel(job, x0, y0, color);
+    write_pixel(job, x0, y0, color);
     if (x0 == x1 && y0 == y1) {
       break;
     }
@@ -1382,18 +1514,240 @@ static int display_fill_circle(lua_State *state) {
   int cy = check_pixel_number(state, 2);
   int radius = check_pixel_number(state, 3);
   uint16_t color = check_color(state, 4);
-  int x;
+  int extent = 0;
   int y;
+  int64_t radius_squared;
   if (!job->display_open || radius < 0 || radius > job->display_info.width ||
       radius > job->display_info.height || !point_is_bounded(job, cx, cy)) {
     return luaL_error(state, "invalid fill_circle");
   }
+  mark_dirty_rect(job, cx - radius, cy - radius, radius * 2 + 1,
+                  radius * 2 + 1);
+  radius_squared = (int64_t)radius * radius;
   for (y = -radius; y <= radius; ++y) {
-    for (x = -radius; x <= radius; ++x) {
-      if ((int64_t)x * x + (int64_t)y * y <= (int64_t)radius * radius) {
-        set_pixel(job, cx + x, cy + y, color);
+    while (extent < radius &&
+           (int64_t)(extent + 1) * (extent + 1) + (int64_t)y * y <=
+               radius_squared)
+      ++extent;
+    while (extent > 0 &&
+           (int64_t)extent * extent + (int64_t)y * y > radius_squared)
+      --extent;
+    fill_span(job, cy + y, cx - extent, cx + extent, color);
+  }
+  return 0;
+}
+
+static void draw_circle_aa_pixels(h2_lua_job_t *job, int cx, int cy,
+                                  int radius, uint16_t color) {
+  int radius_q4 = radius * 4 + 2;
+  int radius_squared_q8 = radius_q4 * radius_q4;
+  int extent = radius + 1;
+  int y;
+  for (y = cy - extent; y <= cy + extent; ++y) {
+    int dy0_q4 = (y - cy) * 4 - 1;
+    int dy1_q4 = dy0_q4 + 2;
+    int dy0_squared_q8 = dy0_q4 * dy0_q4;
+    int dy1_squared_q8 = dy1_q4 * dy1_q4;
+    int x;
+    for (x = cx - extent; x <= cx + extent; ++x) {
+      int dx0_q4 = (x - cx) * 4 - 1;
+      int dx1_q4 = dx0_q4 + 2;
+      int dx0_squared_q8 = dx0_q4 * dx0_q4;
+      int dx1_squared_q8 = dx1_q4 * dx1_q4;
+      unsigned coverage =
+          (unsigned)(dx0_squared_q8 + dy0_squared_q8 <= radius_squared_q8) +
+          (unsigned)(dx1_squared_q8 + dy0_squared_q8 <= radius_squared_q8) +
+          (unsigned)(dx0_squared_q8 + dy1_squared_q8 <= radius_squared_q8) +
+          (unsigned)(dx1_squared_q8 + dy1_squared_q8 <= radius_squared_q8);
+      if (coverage != 0u) {
+        blend_pixel(job, x, y, color, coverage * 255u / 4u);
       }
     }
+  }
+}
+
+static int display_fill_circle_aa(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int cx = check_pixel_number(state, 1);
+  int cy = check_pixel_number(state, 2);
+  int radius = check_pixel_number(state, 3);
+  uint16_t color = check_color(state, 4);
+  if (!job->display_open || radius < 0 || radius > 64 ||
+      !point_is_bounded(job, cx, cy)) {
+    return luaL_error(state, "invalid fill_circle_aa");
+  }
+  mark_dirty_rect(job, cx - radius - 1, cy - radius - 1, radius * 2 + 3,
+                  radius * 2 + 3);
+  draw_circle_aa_pixels(job, cx, cy, radius, color);
+  return 0;
+}
+
+static uint16_t interpolate_rgb565(uint16_t from, uint16_t to,
+                                   unsigned amount) {
+  unsigned inverse = 255u - amount;
+  unsigned red = (((from >> 11u) & 0x1fu) * inverse +
+                  ((to >> 11u) & 0x1fu) * amount + 127u) /
+                 255u;
+  unsigned green = (((from >> 5u) & 0x3fu) * inverse +
+                    ((to >> 5u) & 0x3fu) * amount + 127u) /
+                   255u;
+  unsigned blue = ((from & 0x1fu) * inverse + (to & 0x1fu) * amount + 127u) /
+                  255u;
+  return (uint16_t)((red << 11u) | (green << 5u) | blue);
+}
+
+static uint16_t fade_rgb565_to_black(uint16_t color,
+                                     const uint16_t red_lut[32],
+                                     const uint16_t green_lut[64],
+                                     const uint16_t blue_lut[32]) {
+  return (uint16_t)(red_lut[(color >> 11u) & 0x1fu] |
+                    green_lut[(color >> 5u) & 0x3fu] |
+                    blue_lut[color & 0x1fu]);
+}
+
+/* Apply a translucent black overlay to the retained RGB565 framebuffer.
+ * This is the embedded equivalent of Canvas2D filling each animation frame
+ * with rgba(0, 0, 0, alpha), which produces smooth particle afterimages
+ * without allocating or redrawing explicit trail geometry in Lua. */
+static int display_fade_to_black(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  static const unsigned k_fade_quantum = 38u;
+  lua_Integer requested_amount = luaL_checkinteger(state, 1);
+  unsigned amount;
+  unsigned inverse;
+  uint16_t red_lut[32];
+  uint16_t green_lut[64];
+  uint16_t blue_lut[32];
+  uint16_t *pixels;
+  size_t count;
+  if (!job->display_open || requested_amount < 0 || requested_amount > 255) {
+    return luaL_error(state, "invalid fade_to_black");
+  }
+  amount = (unsigned)requested_amount;
+  if (amount == 0u) {
+    return 0;
+  }
+  if (amount == 255u) {
+    display_clear_pixels(job, 0u);
+    return 0;
+  }
+  /* At very high Desktop frame rates a time-correct alpha can be smaller than
+   * one RGB565 channel step. Applying that amount with integer rounding either
+   * erases trails too quickly or leaves dim pixels stuck forever. Spatially
+   * dither a 15% reference fade instead: every pixel receives the same average
+   * decay over time while each individual update remains representable. */
+  inverse = 255u - (amount < k_fade_quantum ? k_fade_quantum : amount);
+  for (unsigned value = 0u; value < 32u; ++value) {
+    unsigned faded = value * inverse / 255u;
+    red_lut[value] = (uint16_t)(faded << 11u);
+    blue_lut[value] = (uint16_t)faded;
+  }
+  for (unsigned value = 0u; value < 64u; ++value) {
+    green_lut[value] = (uint16_t)((value * inverse / 255u) << 5u);
+  }
+  pixels = job->framebuffer;
+  count = (size_t)job->display_info.width * (size_t)job->display_info.height;
+  if (amount < k_fade_quantum) {
+    unsigned selector = job->display_fade_phase;
+    while (count != 0u) {
+      if (selector < amount) {
+        *pixels = fade_rgb565_to_black(*pixels, red_lut, green_lut, blue_lut);
+      }
+      ++pixels;
+      --count;
+      selector += 17u;
+      if (selector >= k_fade_quantum) {
+        selector -= k_fade_quantum;
+      }
+    }
+    job->display_fade_phase =
+        (uint8_t)((job->display_fade_phase + amount) % k_fade_quantum);
+    mark_dirty_rect(job, 0, 0, job->display_info.width,
+                    job->display_info.height);
+    return 0;
+  }
+  while (count >= 4u) {
+    pixels[0] = fade_rgb565_to_black(pixels[0], red_lut, green_lut, blue_lut);
+    pixels[1] = fade_rgb565_to_black(pixels[1], red_lut, green_lut, blue_lut);
+    pixels[2] = fade_rgb565_to_black(pixels[2], red_lut, green_lut, blue_lut);
+    pixels[3] = fade_rgb565_to_black(pixels[3], red_lut, green_lut, blue_lut);
+    pixels += 4;
+    count -= 4u;
+  }
+  while (count != 0u) {
+    *pixels = fade_rgb565_to_black(*pixels, red_lut, green_lut, blue_lut);
+    ++pixels;
+    --count;
+  }
+  mark_dirty_rect(job, 0, 0, job->display_info.width,
+                  job->display_info.height);
+  return 0;
+}
+
+static int display_draw_particle_streak_aa(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int x0 = check_pixel_number(state, 1);
+  int y0 = check_pixel_number(state, 2);
+  int x1 = check_pixel_number(state, 3);
+  int y1 = check_pixel_number(state, 4);
+  int radius = check_pixel_number(state, 5);
+  uint16_t tail_color = check_color(state, 6);
+  uint16_t head_color = check_color(state, 7);
+  int dx;
+  int dy;
+  int sx;
+  int sy;
+  int error;
+  int steps;
+  int step = 0;
+  int sample_stride;
+  if (!job->display_open || radius < 1 || radius > 16 ||
+      !point_is_bounded(job, x0, y0) || !point_is_bounded(job, x1, y1)) {
+    return luaL_error(state, "invalid draw_particle_streak_aa");
+  }
+  mark_dirty_rect(job, (x0 < x1 ? x0 : x1) - radius - 1,
+                  (y0 < y1 ? y0 : y1) - radius - 1,
+                  (x0 > x1 ? x0 : x1) - (x0 < x1 ? x0 : x1) +
+                      radius * 2 + 3,
+                  (y0 > y1 ? y0 : y1) - (y0 < y1 ? y0 : y1) +
+                      radius * 2 + 3);
+  dx = x1 >= x0 ? x1 - x0 : x0 - x1;
+  dy = y1 >= y0 ? y1 - y0 : y0 - y1;
+  sx = x0 < x1 ? 1 : -1;
+  sy = y0 < y1 ? 1 : -1;
+  error = dx - dy;
+  steps = dx > dy ? dx : dy;
+  /* Large AA discs overlap heavily along a one-pixel Bresenham path.  Sampling
+   * thick streaks every other center preserves a continuous capsule while
+   * almost halving their fill cost on embedded framebuffers. */
+  sample_stride = radius >= 4 ? 2 : 1;
+  for (;;) {
+    if (step % sample_stride == 0 || step == steps) {
+      unsigned amount = steps == 0
+                            ? 255u
+                            : (unsigned)(step * 255 + steps / 2) /
+                                  (unsigned)steps;
+      int tapered_radius =
+          1 + (int)((unsigned)(radius - 1) * amount / 255u);
+      draw_circle_aa_pixels(
+          job, x0, y0, tapered_radius,
+          interpolate_rgb565(tail_color, head_color, amount));
+    }
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+    {
+      int twice = error * 2;
+      if (twice > -dy) {
+        error -= dy;
+        x0 += sx;
+      }
+      if (twice < dx) {
+        error += dx;
+        y0 += sy;
+      }
+    }
+    ++step;
   }
   return 0;
 }
@@ -1406,27 +1760,688 @@ static int display_fill_round_rect(lua_State *state) {
   int height = check_pixel_number(state, 4);
   int radius = check_pixel_number(state, 5);
   uint16_t color = check_color(state, 6);
-  int px;
   int py;
   if (!job->display_open || !rect_is_bounded(job, x, y, width, height) ||
       radius < 0 || radius > width / 2 || radius > height / 2) {
     return luaL_error(state, "invalid fill_round_rect");
   }
+  mark_dirty_rect(job, x, y, width, height);
   for (py = 0; py < height; ++py) {
-    for (px = 0; px < width; ++px) {
-      int dx = px < radius            ? radius - px
-               : px >= width - radius ? px - (width - radius - 1)
-                                      : 0;
-      int dy = py < radius             ? radius - py
-               : py >= height - radius ? py - (height - radius - 1)
-                                       : 0;
-      if (dx == 0 || dy == 0 ||
-          (int64_t)dx * dx + (int64_t)dy * dy <= (int64_t)radius * radius) {
-        set_pixel(job, x + px, y + py, color);
+    int inset = rounded_rect_inset(height, radius, py);
+    fill_span(job, y + py, x + inset, x + width - inset - 1, color);
       }
+  return 0;
+}
+
+#define H2_LUA_DISPLAY_POLYGON_MAX_POINTS 256u
+
+static int display_fill_polygon(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int points[H2_LUA_DISPLAY_POLYGON_MAX_POINTS * 2u];
+  int intersections[H2_LUA_DISPLAY_POLYGON_MAX_POINTS];
+  size_t value_count;
+  size_t point_count;
+  size_t i;
+  int min_x = INT_MAX;
+  int min_y = INT_MAX;
+  int max_x = INT_MIN;
+  int max_y = INT_MIN;
+  uint16_t color;
+  int y;
+  luaL_checktype(state, 1, LUA_TTABLE);
+  value_count = lua_rawlen(state, 1);
+  if (!job->display_open || value_count < 6u || (value_count & 1u) != 0u ||
+      value_count > H2_LUA_DISPLAY_POLYGON_MAX_POINTS * 2u) {
+    return luaL_error(state, "invalid fill_polygon");
+  }
+  point_count = value_count / 2u;
+  for (i = 0u; i < value_count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    points[i] = check_pixel_number(state, -1);
+    lua_pop(state, 1);
+  }
+  color = check_color(state, 2);
+  for (i = 0u; i < point_count; ++i) {
+    int px = points[i * 2u];
+    int py = points[i * 2u + 1u];
+    if (!point_is_bounded(job, px, py)) {
+      return luaL_error(state, "invalid fill_polygon");
+    }
+    if (px < min_x)
+      min_x = px;
+    if (px > max_x)
+      max_x = px;
+    if (py < min_y)
+      min_y = py;
+    if (py > max_y)
+      max_y = py;
+  }
+  mark_dirty_rect(job, min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+  for (y = min_y; y <= max_y; ++y) {
+    size_t count = 0u;
+    for (i = 0u; i < point_count; ++i) {
+      size_t next = (i + 1u) % point_count;
+      int x0 = points[i * 2u];
+      int y0 = points[i * 2u + 1u];
+      int x1 = points[next * 2u];
+      int y1 = points[next * 2u + 1u];
+      if ((y0 <= y && y1 > y) || (y1 <= y && y0 > y)) {
+        intersections[count++] =
+            x0 + (int)(((int64_t)(y - y0) * (x1 - x0)) / (y1 - y0));
+      }
+    }
+    for (i = 1u; i < count; ++i) {
+      int value = intersections[i];
+      size_t position = i;
+      while (position > 0u && intersections[position - 1u] > value) {
+        intersections[position] = intersections[position - 1u];
+        --position;
+      }
+      intersections[position] = value;
+    }
+    for (i = 0u; i + 1u < count; i += 2u) {
+      fill_span(job, y, intersections[i], intersections[i + 1u], color);
     }
   }
   return 0;
+}
+
+static int display_fill_polygon_aa(lua_State *state) {
+  typedef struct {
+    int start_y;
+    int end_y;
+    double x;
+    double step;
+  } polygon_edge_t;
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int points[H2_LUA_DISPLAY_POLYGON_MAX_POINTS * 2u];
+  polygon_edge_t edges[H2_LUA_DISPLAY_POLYGON_MAX_POINTS];
+  polygon_edge_t active[H2_LUA_DISPLAY_POLYGON_MAX_POINTS];
+  size_t value_count;
+  size_t point_count;
+  size_t edge_count = 0u;
+  size_t next_edge = 0u;
+  size_t active_count = 0u;
+  size_t i;
+  int min_x = INT_MAX;
+  int min_y = INT_MAX;
+  int max_x = INT_MIN;
+  int max_y = INT_MIN;
+  uint16_t color;
+  int y;
+  luaL_checktype(state, 1, LUA_TTABLE);
+  value_count = lua_rawlen(state, 1);
+  if (!job->display_open || value_count < 6u || (value_count & 1u) != 0u ||
+      value_count > H2_LUA_DISPLAY_POLYGON_MAX_POINTS * 2u) {
+    return luaL_error(state, "invalid fill_polygon_aa");
+  }
+  point_count = value_count / 2u;
+  for (i = 0u; i < value_count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    points[i] = check_pixel_number(state, -1);
+    lua_pop(state, 1);
+  }
+  color = check_color(state, 2);
+  for (i = 0u; i < point_count; ++i) {
+    int px = points[i * 2u];
+    int py = points[i * 2u + 1u];
+    if (!point_is_bounded(job, px, py)) {
+      return luaL_error(state, "invalid fill_polygon_aa");
+    }
+    if (px < min_x)
+      min_x = px;
+    if (px > max_x)
+      max_x = px;
+    if (py < min_y)
+      min_y = py;
+    if (py > max_y)
+      max_y = py;
+  }
+  mark_dirty_rect(job, min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+  for (i = 0u; i < point_count; ++i) {
+    size_t next = (i + 1u) % point_count;
+    int x0 = points[i * 2u];
+    int y0 = points[i * 2u + 1u];
+    int x1 = points[next * 2u];
+    int y1 = points[next * 2u + 1u];
+    polygon_edge_t edge;
+    if (y0 == y1) {
+      continue;
+    }
+    if (y0 > y1) {
+      int swap = x0;
+      x0 = x1;
+      x1 = swap;
+      swap = y0;
+      y0 = y1;
+      y1 = swap;
+    }
+    edge.start_y = y0;
+    edge.end_y = y1;
+    edge.step = (double)(x1 - x0) / (double)(y1 - y0);
+    edge.x = (double)x0 + edge.step * 0.5;
+    edges[edge_count++] = edge;
+  }
+  for (i = 1u; i < edge_count; ++i) {
+    polygon_edge_t edge = edges[i];
+    size_t position = i;
+    while (position > 0u && (edges[position - 1u].start_y > edge.start_y ||
+                             (edges[position - 1u].start_y == edge.start_y &&
+                              edges[position - 1u].x > edge.x))) {
+      edges[position] = edges[position - 1u];
+      --position;
+    }
+    edges[position] = edge;
+  }
+  for (y = min_y; y < max_y; ++y) {
+    size_t write = 0u;
+    for (i = 0u; i < active_count; ++i) {
+      if (active[i].end_y > y) {
+        active[write++] = active[i];
+      }
+    }
+    active_count = write;
+    while (next_edge < edge_count && edges[next_edge].start_y == y) {
+      active[active_count++] = edges[next_edge++];
+    }
+    for (i = 1u; i < active_count; ++i) {
+      polygon_edge_t edge = active[i];
+      size_t position = i;
+      while (position > 0u && active[position - 1u].x > edge.x) {
+        active[position] = active[position - 1u];
+        --position;
+      }
+      active[position] = edge;
+    }
+    for (i = 0u; i + 1u < active_count; i += 2u) {
+      double left = active[i].x;
+      double right = active[i + 1u].x;
+      int left_pixel = (int)floor(left);
+      int right_pixel = (int)floor(right);
+      if (right <= left) {
+        continue;
+      }
+      if (left_pixel == right_pixel) {
+        unsigned alpha = (unsigned)((right - left) * 255.0 + 0.5);
+        blend_pixel(job, left_pixel, y, color, alpha > 255u ? 255u : alpha);
+      } else {
+        double left_coverage = (double)(left_pixel + 1) - left;
+        double right_coverage = right - (double)right_pixel;
+        unsigned left_alpha = (unsigned)(left_coverage * 255.0 + 0.5);
+        unsigned right_alpha = (unsigned)(right_coverage * 255.0 + 0.5);
+        blend_pixel(job, left_pixel, y, color,
+                    left_alpha > 255u ? 255u : left_alpha);
+        fill_span(job, y, left_pixel + 1, right_pixel - 1, color);
+        if (right_alpha != 0u) {
+          blend_pixel(job, right_pixel, y, color,
+                      right_alpha > 255u ? 255u : right_alpha);
+        }
+      }
+    }
+    for (i = 0u; i < active_count; ++i) {
+      active[i].x += active[i].step;
+    }
+  }
+  return 0;
+}
+
+static double check_table_number(lua_State *state, int table_index,
+                                 const char *field) {
+  double value;
+  table_index = lua_absindex(state, table_index);
+  lua_getfield(state, table_index, field);
+  value = (double)luaL_checknumber(state, -1);
+  lua_pop(state, 1);
+  if (!isfinite(value)) {
+    (void)luaL_error(state, "radial blob field '%s' is not finite", field);
+  }
+  return value;
+}
+
+static int check_table_pixel(lua_State *state, int table_index,
+                             const char *field) {
+  double value = check_table_number(state, table_index, field);
+  if (value < (double)INT_MIN || value > (double)INT_MAX) {
+    (void)luaL_error(state, "radial blob field '%s' is out of range", field);
+  }
+  return (int)value;
+}
+
+/* Draw a Fresnel-like inner rim from the distance to each scanline edge.  The
+ * edge slope converts horizontal distance to perpendicular distance, so the
+ * glow keeps an even apparent width around spikes and rounded sections. */
+static void fill_radial_blob_rim_span(h2_lua_job_t *job, int y, int min_x,
+                                      int max_x, float left, float right,
+                                      float left_distance_scale,
+                                      float right_distance_scale,
+                                      float rim_width, uint16_t foreground,
+                                      const uint16_t palette[256]) {
+  uint16_t *pixel;
+  int left_end;
+  int right_start;
+  int left_fade;
+  int right_fade;
+  int left_fade_step;
+  int right_fade_step;
+  int x;
+  fill_span(job, y, min_x, max_x, foreground);
+  if (min_x > max_x) {
+    return;
+  }
+  left_end = (int)ceilf(left + rim_width / left_distance_scale);
+  if (left_end > max_x)
+    left_end = max_x;
+  left_fade =
+      4095 - (int)((((float)min_x + 0.5f - left) * left_distance_scale /
+                    rim_width) *
+                       4095.0f +
+                   0.5f);
+  if (left_fade > 4095)
+    left_fade = 4095;
+  left_fade_step =
+      (int)(left_distance_scale / rim_width * 4095.0f + 0.5f);
+  if (left_fade_step < 1)
+    left_fade_step = 1;
+  pixel = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
+          (size_t)min_x;
+  for (x = min_x; x <= left_end; ++x) {
+    if (left_fade > 0) {
+      unsigned linear = (unsigned)left_fade >> 4u;
+      unsigned squared = (unsigned)(left_fade * left_fade) >> 16u;
+      unsigned intensity = (linear + squared) >> 1u;
+      if (*pixel < palette[intensity])
+        *pixel = palette[intensity];
+    }
+    ++pixel;
+    left_fade -= left_fade_step;
+  }
+  right_start = (int)floorf(right - rim_width / right_distance_scale);
+  if (right_start < min_x)
+    right_start = min_x;
+  right_fade =
+      4095 - (int)(((right - ((float)max_x + 0.5f)) * right_distance_scale /
+                    rim_width) *
+                       4095.0f +
+                   0.5f);
+  if (right_fade > 4095)
+    right_fade = 4095;
+  right_fade_step =
+      (int)(right_distance_scale / rim_width * 4095.0f + 0.5f);
+  if (right_fade_step < 1)
+    right_fade_step = 1;
+  pixel = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
+          (size_t)max_x;
+  for (x = max_x; x >= right_start; --x) {
+    if (right_fade > 0) {
+      unsigned linear = (unsigned)right_fade >> 4u;
+      unsigned squared = (unsigned)(right_fade * right_fade) >> 16u;
+      unsigned intensity = (linear + squared) >> 1u;
+      if (*pixel < palette[intensity])
+        *pixel = palette[intensity];
+    }
+    if (x > right_start)
+      --pixel;
+    right_fade -= right_fade_step;
+  }
+}
+
+/* Builds the rotating radial contour and rasterizes it without crossing the
+ * Lua/C boundary once per point.  The oscillator recurrences also avoid the
+ * five transcendental calls per contour sample used by the Lua version. */
+static int display_render_radial_blob_aa(lua_State *state) {
+  typedef struct {
+    int start_y;
+    int end_y;
+    double x;
+    double step;
+    float distance_scale;
+  } radial_blob_edge_t;
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int points[H2_LUA_DISPLAY_POLYGON_MAX_POINTS * 2u];
+  radial_blob_edge_t edges[H2_LUA_DISPLAY_POLYGON_MAX_POINTS];
+  radial_blob_edge_t active[H2_LUA_DISPLAY_POLYGON_MAX_POINTS];
+  size_t point_count;
+  size_t edge_count = 0u;
+  size_t next_edge = 0u;
+  size_t active_count = 0u;
+  size_t i;
+  int min_x = INT_MAX;
+  int min_y = INT_MAX;
+  int max_x = INT_MIN;
+  int max_y = INT_MIN;
+  int clipped_min_x;
+  int clipped_min_y;
+  int clipped_max_x;
+  int clipped_max_y;
+  int previous_min_x;
+  int previous_min_y;
+  int previous_max_x;
+  int previous_max_y;
+  int redraw_min_x;
+  int redraw_min_y;
+  int redraw_max_x;
+  int redraw_max_y;
+  int center_x;
+  int center_y;
+  int y;
+  double rotation;
+  double base_radius;
+  double surface_noise;
+  double phase;
+  double deform_x;
+  double deform_y;
+  double deform_amount;
+  double deform_direction_x;
+  double deform_direction_y;
+  double rotation_cos;
+  double rotation_sin;
+  double theta_cos = 1.0;
+  double theta_sin = 0.0;
+  double theta_step;
+  double theta_step_cos;
+  double theta_step_sin;
+  double noise_11_cos;
+  double noise_11_sin;
+  double noise_11_step_cos;
+  double noise_11_step_sin;
+  double noise_17_cos;
+  double noise_17_sin;
+  double noise_17_step_cos;
+  double noise_17_step_sin;
+  double noise_23_cos;
+  double noise_23_sin;
+  double noise_23_step_cos;
+  double noise_23_step_sin;
+  double mass_shift_x;
+  double mass_shift_y;
+  double rim_strength;
+  double rim_width;
+  uint16_t background;
+  uint16_t foreground;
+  uint16_t rim_palette[256];
+
+  if (!job->display_open) {
+    return luaL_error(state, "display is not open");
+  }
+  luaL_checktype(state, 1, LUA_TTABLE);
+  luaL_checktype(state, 2, LUA_TTABLE);
+  point_count = lua_rawlen(state, 1);
+  if (point_count < 3u || point_count > H2_LUA_DISPLAY_POLYGON_MAX_POINTS) {
+    return luaL_error(state, "invalid radial blob radii");
+  }
+  center_x = check_table_pixel(state, 2, "center_x");
+  center_y = check_table_pixel(state, 2, "center_y");
+  rotation = check_table_number(state, 2, "rotation");
+  base_radius = check_table_number(state, 2, "base_radius");
+  surface_noise = check_table_number(state, 2, "surface_noise");
+  phase = check_table_number(state, 2, "phase");
+  deform_x = check_table_number(state, 2, "deform_x");
+  deform_y = check_table_number(state, 2, "deform_y");
+  lua_getfield(state, 2, "rim_strength");
+  rim_strength = lua_isnil(state, -1) ? 0.0 : luaL_checknumber(state, -1);
+  lua_pop(state, 1);
+  lua_getfield(state, 2, "rim_width");
+  rim_width = lua_isnil(state, -1) ? 0.0 : luaL_checknumber(state, -1);
+  lua_pop(state, 1);
+  previous_min_x = check_table_pixel(state, 2, "previous_min_x");
+  previous_min_y = check_table_pixel(state, 2, "previous_min_y");
+  previous_max_x = check_table_pixel(state, 2, "previous_max_x");
+  previous_max_y = check_table_pixel(state, 2, "previous_max_y");
+  background = check_color(state, 3);
+  foreground = check_color(state, 4);
+  if (base_radius <= 0.0 || surface_noise < 0.0 || rim_strength < 0.0 ||
+      rim_strength > 1.0 || rim_width < 0.0 || rim_width > base_radius ||
+      !isfinite(rim_strength) || !isfinite(rim_width) ||
+      !point_is_bounded(job, center_x, center_y)) {
+    return luaL_error(state, "invalid radial blob configuration");
+  }
+
+  if (rim_strength > 0.0 && rim_width > 0.0) {
+    unsigned foreground_red = (foreground >> 11u) & 0x1fu;
+    unsigned foreground_green = (foreground >> 5u) & 0x3fu;
+    unsigned foreground_blue = foreground & 0x1fu;
+    unsigned palette_index;
+    for (palette_index = 0u; palette_index < 256u; ++palette_index) {
+      unsigned alpha = (unsigned)(palette_index * rim_strength + 0.5);
+      unsigned red = foreground_red +
+                     ((31u - foreground_red) * alpha + 127u) / 255u;
+      unsigned green = foreground_green +
+                       ((63u - foreground_green) * alpha + 127u) / 255u;
+      unsigned blue = foreground_blue +
+                      ((31u - foreground_blue) * alpha + 127u) / 255u;
+      rim_palette[palette_index] =
+          (uint16_t)((red << 11u) | (green << 5u) | blue);
+    }
+  }
+
+  rotation_cos = cos(rotation);
+  rotation_sin = sin(rotation);
+  theta_step = 6.28318530717958647692 / (double)point_count;
+  theta_step_cos = cos(theta_step);
+  theta_step_sin = sin(theta_step);
+  noise_11_cos = cos(phase * 0.31);
+  noise_11_sin = sin(phase * 0.31);
+  noise_11_step_cos = cos(theta_step * 11.0);
+  noise_11_step_sin = sin(theta_step * 11.0);
+  noise_17_cos = cos(-phase * 0.19 + 1.7);
+  noise_17_sin = sin(-phase * 0.19 + 1.7);
+  noise_17_step_cos = cos(theta_step * 17.0);
+  noise_17_step_sin = sin(theta_step * 17.0);
+  noise_23_cos = cos(phase * 0.11 + 4.1);
+  noise_23_sin = sin(phase * 0.11 + 4.1);
+  noise_23_step_cos = cos(theta_step * 23.0);
+  noise_23_step_sin = sin(theta_step * 23.0);
+  deform_amount = hypot(deform_x, deform_y);
+  deform_direction_x = deform_amount > 0.05 ? deform_x / deform_amount : 1.0;
+  deform_direction_y = deform_amount > 0.05 ? deform_y / deform_amount : 0.0;
+  mass_shift_x = deform_x * 0.04;
+  mass_shift_y = deform_y * 0.04;
+
+  for (i = 0u; i < point_count; ++i) {
+    double radius;
+    double cos_theta;
+    double sin_theta;
+    double signed_noise;
+    double alignment;
+    double front;
+    double shoulder;
+    double back;
+    double soft_pull;
+    double next_cos;
+    int x;
+    int py;
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    radius = (double)luaL_checknumber(state, -1);
+    lua_pop(state, 1);
+    if (!isfinite(radius) || radius < 0.0) {
+      return luaL_error(state, "invalid radial blob radius");
+    }
+    cos_theta = theta_cos * rotation_cos - theta_sin * rotation_sin;
+    sin_theta = theta_sin * rotation_cos + theta_cos * rotation_sin;
+    signed_noise =
+        noise_11_sin * 0.50 + noise_17_sin * 0.31 + noise_23_sin * 0.19;
+    radius += signed_noise * base_radius * surface_noise;
+    alignment = cos_theta * deform_direction_x + sin_theta * deform_direction_y;
+    front = alignment > 0.0 ? alignment : 0.0;
+    front = front * front * (3.0 - 2.0 * front);
+    shoulder = 1.0 - fabs(alignment);
+    shoulder *= shoulder;
+    back = alignment < 0.0 ? -alignment : 0.0;
+    back *= back;
+    soft_pull = deform_amount * (front * 0.72 - shoulder * 0.10 - back * 0.035);
+    radius += soft_pull;
+    x = (int)floor((double)center_x + mass_shift_x + cos_theta * radius + 0.5);
+    py = (int)floor((double)center_y + mass_shift_y + sin_theta * radius + 0.5);
+    if (!point_is_bounded(job, x, py)) {
+      return luaL_error(state, "radial blob point is out of range");
+    }
+    points[i * 2u] = x;
+    points[i * 2u + 1u] = py;
+    if (x < min_x)
+      min_x = x;
+    if (x > max_x)
+      max_x = x;
+    if (py < min_y)
+      min_y = py;
+    if (py > max_y)
+      max_y = py;
+
+    next_cos = theta_cos * theta_step_cos - theta_sin * theta_step_sin;
+    theta_sin = theta_sin * theta_step_cos + theta_cos * theta_step_sin;
+    theta_cos = next_cos;
+    next_cos =
+        noise_11_cos * noise_11_step_cos - noise_11_sin * noise_11_step_sin;
+    noise_11_sin =
+        noise_11_sin * noise_11_step_cos + noise_11_cos * noise_11_step_sin;
+    noise_11_cos = next_cos;
+    next_cos =
+        noise_17_cos * noise_17_step_cos - noise_17_sin * noise_17_step_sin;
+    noise_17_sin =
+        noise_17_sin * noise_17_step_cos + noise_17_cos * noise_17_step_sin;
+    noise_17_cos = next_cos;
+    next_cos =
+        noise_23_cos * noise_23_step_cos - noise_23_sin * noise_23_step_sin;
+    noise_23_sin =
+        noise_23_sin * noise_23_step_cos + noise_23_cos * noise_23_step_sin;
+    noise_23_cos = next_cos;
+  }
+
+  clipped_min_x = min_x < 0 ? 0 : min_x;
+  clipped_min_y = min_y < 0 ? 0 : min_y;
+  clipped_max_x =
+      max_x >= job->display_info.width ? job->display_info.width - 1 : max_x;
+  clipped_max_y =
+      max_y >= job->display_info.height ? job->display_info.height - 1 : max_y;
+  redraw_min_x =
+      previous_min_x < clipped_min_x ? previous_min_x : clipped_min_x;
+  redraw_min_y =
+      previous_min_y < clipped_min_y ? previous_min_y : clipped_min_y;
+  redraw_max_x =
+      previous_max_x > clipped_max_x ? previous_max_x : clipped_max_x;
+  redraw_max_y =
+      previous_max_y > clipped_max_y ? previous_max_y : clipped_max_y;
+  if (redraw_min_x < 0)
+    redraw_min_x = 0;
+  if (redraw_min_y < 0)
+    redraw_min_y = 0;
+  if (redraw_max_x >= job->display_info.width)
+    redraw_max_x = job->display_info.width - 1;
+  if (redraw_max_y >= job->display_info.height)
+    redraw_max_y = job->display_info.height - 1;
+  mark_dirty_rect(job, redraw_min_x, redraw_min_y,
+                  redraw_max_x - redraw_min_x + 1,
+                  redraw_max_y - redraw_min_y + 1);
+  for (y = redraw_min_y; y <= redraw_max_y; ++y) {
+    fill_span(job, y, redraw_min_x, redraw_max_x, background);
+  }
+
+  for (i = 0u; i < point_count; ++i) {
+    size_t next = (i + 1u) % point_count;
+    int x0 = points[i * 2u];
+    int y0 = points[i * 2u + 1u];
+    int x1 = points[next * 2u];
+    int y1 = points[next * 2u + 1u];
+    radial_blob_edge_t edge;
+    if (y0 == y1) {
+      continue;
+    }
+    if (y0 > y1) {
+      int swap = x0;
+      x0 = x1;
+      x1 = swap;
+      swap = y0;
+      y0 = y1;
+      y1 = swap;
+    }
+    edge.start_y = y0;
+    edge.end_y = y1;
+    edge.step = (double)(x1 - x0) / (double)(y1 - y0);
+    edge.distance_scale =
+        1.0f / sqrtf(1.0f + (float)(edge.step * edge.step));
+    edge.x = (double)x0 + edge.step * 0.5;
+    edges[edge_count++] = edge;
+  }
+  for (i = 1u; i < edge_count; ++i) {
+    radial_blob_edge_t edge = edges[i];
+    size_t position = i;
+    while (position > 0u && (edges[position - 1u].start_y > edge.start_y ||
+                             (edges[position - 1u].start_y == edge.start_y &&
+                              edges[position - 1u].x > edge.x))) {
+      edges[position] = edges[position - 1u];
+      --position;
+    }
+    edges[position] = edge;
+  }
+  for (y = min_y; y < max_y; ++y) {
+    size_t write = 0u;
+    for (i = 0u; i < active_count; ++i) {
+      if (active[i].end_y > y) {
+        active[write++] = active[i];
+      }
+    }
+    active_count = write;
+    while (next_edge < edge_count && edges[next_edge].start_y == y) {
+      active[active_count++] = edges[next_edge++];
+    }
+    for (i = 1u; i < active_count; ++i) {
+      radial_blob_edge_t edge = active[i];
+      size_t position = i;
+      while (position > 0u && active[position - 1u].x > edge.x) {
+        active[position] = active[position - 1u];
+        --position;
+      }
+      active[position] = edge;
+    }
+    for (i = 0u; i + 1u < active_count; i += 2u) {
+      double left = active[i].x;
+      double right = active[i + 1u].x;
+      int left_pixel = (int)floor(left);
+      int right_pixel = (int)floor(right);
+      if (right <= left) {
+        continue;
+      }
+      if (left_pixel == right_pixel) {
+        unsigned alpha = (unsigned)((right - left) * 255.0 + 0.5);
+        uint16_t edge_color =
+            rim_strength > 0.0 && rim_width > 0.0 ? rim_palette[255]
+                                                   : foreground;
+        blend_pixel(job, left_pixel, y, edge_color,
+                    alpha > 255u ? 255u : alpha);
+      } else {
+        double left_coverage = (double)(left_pixel + 1) - left;
+        double right_coverage = right - (double)right_pixel;
+        unsigned left_alpha = (unsigned)(left_coverage * 255.0 + 0.5);
+        unsigned right_alpha = (unsigned)(right_coverage * 255.0 + 0.5);
+        uint16_t edge_color =
+            rim_strength > 0.0 && rim_width > 0.0 ? rim_palette[255]
+                                                   : foreground;
+        blend_pixel(job, left_pixel, y, edge_color,
+                    left_alpha > 255u ? 255u : left_alpha);
+        if (rim_strength > 0.0 && rim_width > 0.0) {
+          fill_radial_blob_rim_span(
+              job, y, left_pixel + 1, right_pixel - 1, (float)left,
+              (float)right, active[i].distance_scale,
+              active[i + 1u].distance_scale, (float)rim_width, foreground,
+              rim_palette);
+        } else {
+          fill_span(job, y, left_pixel + 1, right_pixel - 1, foreground);
+        }
+        if (right_alpha != 0u) {
+          blend_pixel(job, right_pixel, y, edge_color,
+                      right_alpha > 255u ? 255u : right_alpha);
+        }
+      }
+    }
+    for (i = 0u; i < active_count; ++i) {
+      active[i].x += active[i].step;
+    }
+  }
+
+  lua_pushinteger(state, clipped_min_x);
+  lua_pushinteger(state, clipped_min_y);
+  lua_pushinteger(state, clipped_max_x);
+  lua_pushinteger(state, clipped_max_y);
+  return 4;
 }
 
 static int display_draw_round_rect(lua_State *state) {
@@ -1780,11 +2795,19 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
     lua_pushfstring(state, "display open failed: %d", result);
     return 2;
   }
-  lua_createtable(state, 0, 18);
+  lua_createtable(state, 0, 20);
   set_function(state, "clear", display_clear, job);
   set_function(state, "fill_rect", display_fill_rect, job);
   set_function(state, "draw_line", display_draw_line, job);
   set_function(state, "fill_circle", display_fill_circle, job);
+  set_function(state, "fill_circle_aa", display_fill_circle_aa, job);
+  set_function(state, "fade_to_black", display_fade_to_black, job);
+  set_function(state, "draw_particle_streak_aa",
+               display_draw_particle_streak_aa, job);
+  set_function(state, "fill_polygon", display_fill_polygon, job);
+  set_function(state, "fill_polygon_aa", display_fill_polygon_aa, job);
+  set_function(state, "render_radial_blob_aa", display_render_radial_blob_aa,
+               job);
   set_function(state, "fill_round_rect", display_fill_round_rect, job);
   set_function(state, "draw_round_rect", display_draw_round_rect, job);
   set_function(state, "fill_triangle", display_fill_triangle, job);
@@ -2075,9 +3098,8 @@ static int audio_output_info(lua_State *state) {
   lua_createtable(state, 0, 7);
   lua_pushliteral(state, "output");
   lua_setfield(state, -2, "role");
-  lua_pushinteger(state,
-                  opened ? (lua_Integer)slot->format.frame_samples_per_channel
-                         : 0);
+  lua_pushinteger(
+      state, opened ? (lua_Integer)slot->format.frame_samples_per_channel : 0);
   lua_setfield(state, -2, "frame_samples");
   lua_pushboolean(state, opened);
   lua_setfield(state, -2, "opened");
@@ -2100,8 +3122,7 @@ static int audio_output_close(lua_State *state) {
     h2_lua_job_t *job = slot->job;
     int result;
     h2_lua_audio_track_slot_flush_carry(slot);
-    h2_lua_audio_track_slot_release_carry(slot,
-                                          job->host->config.runtime->mem);
+    h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
     result = h2_pal_audio_track_close(slot->track);
     slot->track = NULL;
     if (job->active_audio_track_count != 0u) {
@@ -2137,6 +3158,222 @@ static lua_Integer table_integer_field(lua_State *state, int table_index,
   value = lua_isnil(state, -1) ? default_value : luaL_checkinteger(state, -1);
   lua_pop(state, 1);
   return value;
+}
+
+static h2_lua_job_t *audio_input_job(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
+  if (job == NULL || !job->audio_mic_acquired ||
+      job->audio_mic_generation != generation ||
+      job->audio_mic_buffer == NULL) {
+    return NULL;
+  }
+  return job;
+}
+
+static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
+                                  uint32_t timeout_ms,
+                                  h2_audio_frame_t *out_frame) {
+  int result;
+  *out_frame = h2_audio_frame_for_buffer(job->audio_mic_buffer,
+                                         job->audio_mic_buffer_capacity,
+                                         job->audio_mic_format);
+  result = h2_pal_audio_mic_read(job->host->config.runtime->audio, out_frame,
+                                 timeout_ms);
+  if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: busy");
+    return 2;
+  }
+  if (result != H2_PAL_OK || out_frame->bytes == 0u ||
+      out_frame->bytes > job->audio_mic_buffer_capacity ||
+      out_frame->sample_format != H2_AUDIO_SAMPLE_S16LE ||
+      out_frame->channels == 0u || (out_frame->bytes & 1u) != 0u) {
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: read failed");
+    return 2;
+  }
+  return 0;
+}
+
+static uint32_t audio_input_timeout(lua_State *state) {
+  lua_Integer timeout = luaL_optinteger(state, 2, 0);
+  if (timeout < 0 || (lua_Unsigned)timeout > UINT32_MAX) {
+    luaL_argerror(state, 2, "timeout must be between 0 and UINT32_MAX");
+  }
+  return (uint32_t)timeout;
+}
+
+static int audio_input_read(lua_State *state) {
+  h2_lua_job_t *job = audio_input_job(state);
+  h2_audio_frame_t frame;
+  int pushed;
+  if (job == NULL) {
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: closed");
+    return 2;
+  }
+  pushed =
+      audio_input_read_frame(state, job, audio_input_timeout(state), &frame);
+  if (pushed != 0) {
+    return pushed;
+  }
+  lua_pushlstring(state, (const char *)frame.data, frame.bytes);
+  return 1;
+}
+
+static int audio_input_level(lua_State *state) {
+  h2_lua_job_t *job = audio_input_job(state);
+  h2_audio_frame_t frame;
+  const uint8_t *bytes;
+  size_t sample_count;
+  size_t i;
+  double square_sum = 0.0;
+  double difference_sum = 0.0;
+  uint32_t peak = 0u;
+  int pushed;
+  if (job == NULL) {
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: closed");
+    return 2;
+  }
+  pushed =
+      audio_input_read_frame(state, job, audio_input_timeout(state), &frame);
+  if (pushed != 0) {
+    return pushed;
+  }
+  bytes = frame.data;
+  sample_count = frame.bytes / sizeof(int16_t);
+  for (i = 0u; i < sample_count; ++i) {
+    int32_t sample = (int16_t)((uint16_t)bytes[i * 2u] |
+                               ((uint16_t)bytes[i * 2u + 1u] << 8u));
+    uint32_t magnitude =
+        sample < 0 ? (uint32_t)(-(int64_t)sample) : (uint32_t)sample;
+    double normalized = (double)sample / 32768.0;
+    square_sum += normalized * normalized;
+    if (i >= frame.channels) {
+      size_t previous_index = i - frame.channels;
+      int32_t previous =
+          (int16_t)((uint16_t)bytes[previous_index * 2u] |
+                    ((uint16_t)bytes[previous_index * 2u + 1u] << 8u));
+      double difference = normalized - (double)previous / 32768.0;
+      difference_sum += difference * difference;
+    }
+    if (magnitude > peak) {
+      peak = magnitude;
+    }
+  }
+  lua_pushnumber(state,
+                 sample_count == 0u ? 0.0 : sqrt(square_sum / sample_count));
+  lua_pushnumber(state, (lua_Number)peak / 32768.0);
+  lua_pushnumber(state, square_sum <= 0.0
+                            ? 0.0
+                            : sqrt(difference_sum / (4.0 * square_sum)));
+  return 3;
+}
+
+static int audio_input_info(lua_State *state) {
+  h2_lua_job_t *job = audio_input_job(state);
+  int opened = job != NULL;
+  lua_createtable(state, 0, 7);
+  lua_pushliteral(state, "input");
+  lua_setfield(state, -2, "role");
+  lua_pushboolean(state, opened);
+  lua_setfield(state, -2, "opened");
+  lua_pushinteger(state, opened ? job->audio_mic_format.sample_rate_hz : 0u);
+  lua_setfield(state, -2, "sample_rate");
+  lua_pushinteger(state, opened ? job->audio_mic_format.channels : 0u);
+  lua_setfield(state, -2, "channels");
+  lua_pushinteger(state, opened ? 16 : 0);
+  lua_setfield(state, -2, "bits_per_sample");
+  lua_pushinteger(
+      state, opened
+                 ? (lua_Integer)job->audio_mic_format.frame_samples_per_channel
+                 : 0);
+  lua_setfield(state, -2, "frame_samples");
+  lua_pushinteger(state, opened ? (lua_Integer)h2_audio_pcm_frame_bytes(
+                                      &job->audio_mic_format)
+                                : 0);
+  lua_setfield(state, -2, "bytes_per_frame");
+  return 1;
+}
+
+static int audio_input_close(lua_State *state) {
+  h2_lua_job_t *job = audio_input_job(state);
+  if (job != NULL) {
+    h2_lua_job_release_audio_mic(job);
+    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    job->audio_mic_buffer = NULL;
+    job->audio_mic_buffer_capacity = 0u;
+    memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
+  }
+  lua_pushboolean(state, 1);
+  return 1;
+}
+
+static void set_audio_input_function(lua_State *state, const char *name,
+                                     lua_CFunction function,
+                                     h2_lua_job_t *job) {
+  lua_pushlightuserdata(state, job);
+  lua_pushinteger(state, (lua_Integer)job->audio_mic_generation);
+  lua_pushcclosure(state, function, 2);
+  lua_setfield(state, -2, name);
+}
+
+static int audio_new_input(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_audio_info_t info = {0};
+  size_t frame_bytes;
+  int result;
+  if (!lua_isnoneornil(state, 1)) {
+    luaL_checktype(state, 1, LUA_TTABLE);
+  }
+  if (job->audio_mic_acquired || job->audio_mic_buffer != NULL) {
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: already open");
+    return 2;
+  }
+  result = h2_pal_audio_get_info(job->host->config.runtime->audio, &info);
+  frame_bytes = h2_audio_pcm_frame_bytes(&info.mic_format);
+  if (result != H2_PAL_OK || !info.available || !info.mic_supported ||
+      info.mic_format.sample_format != H2_AUDIO_SAMPLE_S16LE ||
+      info.mic_format.frame_samples_per_channel == 0u || frame_bytes == 0u ||
+      info.mic_format.frame_samples_per_channel > SIZE_MAX / frame_bytes) {
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: unavailable");
+    return 2;
+  }
+  job->audio_mic_buffer_capacity =
+      (size_t)info.mic_format.frame_samples_per_channel * frame_bytes;
+  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
+                                           job->audio_mic_buffer_capacity);
+  if (job->audio_mic_buffer == NULL) {
+    job->audio_mic_buffer_capacity = 0u;
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: no memory");
+    return 2;
+  }
+  job->audio_mic_format = info.mic_format;
+  result = h2_lua_job_acquire_audio_mic(job);
+  if (result != H2_PAL_OK) {
+    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    job->audio_mic_buffer = NULL;
+    job->audio_mic_buffer_capacity = 0u;
+    memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
+    lua_pushnil(state);
+    lua_pushliteral(state, "audio input: unavailable");
+    return 2;
+  }
+  job->audio_mic_generation++;
+  if (job->audio_mic_generation == 0u) {
+    job->audio_mic_generation = 1u;
+  }
+  lua_createtable(state, 0, 4);
+  set_audio_input_function(state, "read", audio_input_read, job);
+  set_audio_input_function(state, "level", audio_input_level, job);
+  set_audio_input_function(state, "info", audio_input_info, job);
+  set_audio_input_function(state, "close", audio_input_close, job);
+  return 1;
 }
 
 static int audio_new_output(lua_State *state) {
@@ -2224,7 +3461,8 @@ static int audio_new_output(lua_State *state) {
 }
 
 static int push_audio_proxy(lua_State *state, h2_lua_job_t *job) {
-  lua_createtable(state, 0, 1);
+  lua_createtable(state, 0, 2);
+  set_function(state, "new_input", audio_new_input, job);
   set_function(state, "new_output", audio_new_output, job);
   return 1;
 }
@@ -2248,9 +3486,9 @@ static int open_display(lua_State *state) {
 static int open_lcd_touch(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   const h2_pal_touch_api_t *touch = job->host->config.runtime->touch;
-  if (touch == NULL || touch->vtable == NULL ||
-      touch->vtable->open == NULL || touch->vtable->get_info == NULL ||
-      touch->vtable->poll_event == NULL || touch->vtable->close == NULL) {
+  if (touch == NULL || touch->vtable == NULL || touch->vtable->open == NULL ||
+      touch->vtable->get_info == NULL || touch->vtable->poll_event == NULL ||
+      touch->vtable->close == NULL) {
     return luaL_error(state, "Runtime Touch capability unavailable");
   }
   return require_proxy_result(state, push_touch_proxy(state, job));
