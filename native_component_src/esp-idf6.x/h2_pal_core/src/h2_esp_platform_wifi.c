@@ -1004,6 +1004,31 @@ static int h2_esp_wifi_sta_set_power_save(
     return h2_esp_wifi_map_error(esp_wifi_set_ps(type));
 }
 
+static int h2_esp_wifi_sta_set_power_save(
+    h2_pal_wifi_sta_t *sta,
+    h2_pal_wifi_power_save_t mode) {
+    (void)sta;
+    wifi_ps_type_t type;
+    switch (mode) {
+    case H2_PAL_WIFI_POWER_SAVE_NONE:
+        type = WIFI_PS_NONE;
+        break;
+    case H2_PAL_WIFI_POWER_SAVE_MIN_MODEM:
+        type = WIFI_PS_MIN_MODEM;
+        break;
+    case H2_PAL_WIFI_POWER_SAVE_MAX_MODEM:
+        type = WIFI_PS_MAX_MODEM;
+        break;
+    default:
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int rc = h2_esp_platform_wifi_ensure_started();
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    return h2_esp_wifi_map_error(esp_wifi_set_ps(type));
+}
+
 static int h2_esp_wifi_sta_get_mac(h2_pal_wifi_sta_t *sta, uint8_t out_mac[6]) {
   (void)sta;
   if (out_mac == NULL) {
