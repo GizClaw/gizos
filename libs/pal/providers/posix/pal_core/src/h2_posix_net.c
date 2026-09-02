@@ -706,7 +706,15 @@ static int desktop_net_udp_sendto(
         return rc;
     }
     ssize_t sent = sendto(socket_fd, data, len, 0, (struct sockaddr *)&storage, sock_len);
-    return sent < 0 ? H2_PAL_ERR_IO : (int)sent;
+    if (sent >= 0) {
+        return (int)sent;
+    }
+    /* A full socket or interface queue (macOS reports ENOBUFS towards a slow
+     * Wi-Fi peer) is transient backpressure, not an I/O failure. */
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS ||
+                   errno == ENOMEM
+               ? H2_PAL_ERR_WOULD_BLOCK
+               : H2_PAL_ERR_IO;
 }
 
 static int desktop_net_udp_recvfrom(
