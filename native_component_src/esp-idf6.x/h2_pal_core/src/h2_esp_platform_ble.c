@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
+#include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
 #include "host/ble_hs.h"
@@ -993,24 +994,43 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
             s_h2_esp_ble_pairing.io == H2_PAL_BLE_PAIRING_IO_DISPLAY_ONLY
                 ? BLE_SM_IOACT_DISP
                 : BLE_SM_IOACT_INPUT;
+        ESP_LOGI(
+            TAG,
+            "pairing passkey action handle=%u action=%u expected=%u enabled=%u",
+            (unsigned)event->passkey.conn_handle,
+            (unsigned)event->passkey.params.action,
+            (unsigned)expected_action,
+            (unsigned)s_h2_esp_ble_pairing.enabled);
         if (!s_h2_esp_ble_pairing.enabled ||
             event->passkey.params.action != expected_action) {
+            ESP_LOGE(TAG, "pairing passkey action rejected");
             return BLE_HS_EAUTHEN;
         }
         struct ble_sm_io io;
         memset(&io, 0, sizeof(io));
         io.action = event->passkey.params.action;
         io.passkey = s_h2_esp_ble_pairing.passkey;
-        return ble_sm_inject_io(event->passkey.conn_handle, &io);
+        int inject_rc = ble_sm_inject_io(event->passkey.conn_handle, &io);
+        ESP_LOGI(TAG, "pairing passkey injected rc=%d", inject_rc);
+        return inject_rc;
     }
     case BLE_GAP_EVENT_ENC_CHANGE: {
+        struct ble_gap_conn_desc desc;
+        int desc_rc =
+            ble_gap_conn_find(event->enc_change.conn_handle, &desc);
+        ESP_LOGI(
+            TAG,
+            "pairing encryption change handle=%u pending=%u status=%d desc_rc=%d encrypted=%u authenticated=%u",
+            (unsigned)event->enc_change.conn_handle,
+            (unsigned)s_h2_esp_ble_pair_conn_handle,
+            event->enc_change.status,
+            desc_rc,
+            desc_rc == 0 ? (unsigned)desc.sec_state.encrypted : 0u,
+            desc_rc == 0 ? (unsigned)desc.sec_state.authenticated : 0u);
         if (event->enc_change.conn_handle !=
             s_h2_esp_ble_pair_conn_handle) {
             return 0;
         }
-        struct ble_gap_conn_desc desc;
-        int desc_rc =
-            ble_gap_conn_find(event->enc_change.conn_handle, &desc);
         s_h2_esp_ble_pair_result =
             event->enc_change.status == 0 && desc_rc == 0 &&
                     desc.sec_state.encrypted &&
@@ -2522,6 +2542,12 @@ static h2_pal_result_t h2_esp_ble_pair(
     s_h2_esp_ble_pair_result = H2_PAL_ERR_IO;
     s_h2_esp_ble_pair_conn_handle = conn_handle;
     int rc = ble_gap_security_initiate(conn_handle);
+    ESP_LOGI(
+        TAG,
+        "pairing security initiate handle=%u rc=%d timeout_ms=%u",
+        (unsigned)conn_handle,
+        rc,
+        (unsigned)timeout_ms);
     if (rc != 0) {
         s_h2_esp_ble_pair_conn_handle =
             H2_PAL_BLE_INVALID_CONN_HANDLE;
@@ -2534,6 +2560,10 @@ static h2_pal_result_t h2_esp_ble_pair(
         pdTRUE,
         pdMS_TO_TICKS(timeout_ms));
     s_h2_esp_ble_pair_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
+    if ((bits & H2_ESP_BLE_PAIR_DONE_BIT) == 0u) {
+        ESP_LOGE(TAG, "pairing security timeout handle=%u",
+                 (unsigned)conn_handle);
+    }
     return (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u
                ? s_h2_esp_ble_pair_result
                : H2_PAL_ERR_TIMEOUT;
@@ -2566,6 +2596,21 @@ static h2_pal_result_t h2_esp_ble_exchange_mtu(
     (void)ble;
     if (!s_h2_esp_ble_started || out_mtu == NULL) {
         return out_mtu == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_ERR_INVALID_STATE;
+    }
+
+    /*
+     * MTU exchange is link-wide and either peer may initiate it.  The loader's
+     * peripheral link worker can therefore finish the exchange before an app
+     * acting as the central reaches this call.  NimBLE does not emit a second
+     * completion callback for an already-negotiated link, so waiting for one
+     * here would turn a successful connection into a timeout.
+     */
+    uint16_t current_mtu = ble_att_mtu(conn_handle);
+    if (current_mtu > BLE_ATT_MTU_DFLT) {
+        *out_mtu = current_mtu;
+        ESP_LOGI(TAG, "using negotiated ATT MTU handle=%u mtu=%u",
+                 (unsigned)conn_handle, (unsigned)current_mtu);
+        return H2_PAL_OK;
     }
 
     s_h2_esp_ble_exchange_mtu = 0u;

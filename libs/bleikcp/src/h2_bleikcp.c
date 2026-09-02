@@ -291,9 +291,20 @@ static void h2_bleikcp_worker(void *ctx) {
             (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
             break;
         }
-        (void)h2_pal_cond_wait(
-            stream->api.sync, stream->cond, stream->mutex,
-            wait_ms);
+        /*
+         * Readers and writers share this condition variable with the worker.
+         * Waiting here immediately after broadcasting lets semaphore-backed
+         * condition implementations consume the wakeup that was intended for
+         * a blocked reader or flusher.  The worker then broadcasts and consumes
+         * its own wakeup forever, starving the CPU and the real waiter.
+         *
+         * KCP already supplies the next polling deadline, so sleep outside the
+         * mutex instead.  Input is serviced within one KCP interval (10 ms by
+         * default), while client wakeups remain available to their recipients.
+         */
+        (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
+        (void)h2_pal_time_sleep_ms(stream->api.time, wait_ms);
+        (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
     }
     bool emit_disconnected = stream->disconnect_event_pending;
     int final_fatal_status = stream->fatal_status;
