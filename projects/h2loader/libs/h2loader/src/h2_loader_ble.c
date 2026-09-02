@@ -98,6 +98,8 @@ struct h2_loader_ble_service {
     bool link_pending;
     bool advertising_restart_pending;
     bool advertising_paused;
+    bool advertising_pause_update_pending;
+    bool advertising_pause_requested;
     bool closing;
     uint8_t service_data[H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN +
                          H2_LOADER_BLE_BOARD_MAX];
@@ -218,12 +220,30 @@ static void h2_loader_ble_link_task(void *ctx) {
         }
         bool restart_advertising = service->advertising_restart_pending;
         service->advertising_restart_pending = false;
+        bool update_advertising_pause =
+            service->advertising_pause_update_pending;
+        bool advertising_pause_requested =
+            service->advertising_pause_requested;
+        service->advertising_pause_update_pending = false;
         if (service->link_pending) {
             conn_handle = service->pending_conn_handle;
             service->link_pending = false;
         }
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
+        if (update_advertising_pause) {
+            int advertising_rc = advertising_pause_requested
+                ? h2_loader_ble_service_pause_advertising(service)
+                : h2_loader_ble_service_resume_advertising(service);
+            if (advertising_rc != H2_PAL_OK &&
+                advertising_rc != H2_PAL_ERR_INVALID_STATE) {
+                printf(
+                    "H2_LOADER_BLE_ERROR stage=adv_coexistence code=%d "
+                    "paused=%u\n",
+                    advertising_rc,
+                    advertising_pause_requested ? 1u : 0u);
+            }
+        }
         if (restart_advertising &&
             h2_loader_ble_service_can_restart_advertising(service)) {
             (void)h2_pal_time_sleep_ms(
@@ -883,6 +903,27 @@ int h2_loader_ble_service_resume_advertising(
     (void)h2_pal_mutex_unlock(
         service->config.api.sync, service->link_mutex);
     return rc;
+}
+
+int h2_loader_ble_service_request_advertising_paused(
+    h2_loader_ble_service_t *service,
+    bool paused) {
+    if (service == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    (void)h2_pal_mutex_lock(
+        service->config.api.sync, service->link_mutex);
+    if (service->closing) {
+        (void)h2_pal_mutex_unlock(
+            service->config.api.sync, service->link_mutex);
+        return H2_PAL_ERR_CLOSED;
+    }
+    service->advertising_pause_requested = paused;
+    service->advertising_pause_update_pending = true;
+    (void)h2_pal_mutex_unlock(
+        service->config.api.sync, service->link_mutex);
+    return h2_pal_semaphore_give(
+        service->config.api.sync, service->link_semaphore);
 }
 
 int h2_loader_ble_service_set_additional_advertised_services(

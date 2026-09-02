@@ -3,6 +3,7 @@
 
 #include "h2_esp_h2loader_iostreamikcp.h"
 #include "h2_esp_h2loader_app_commands_preflight.h"
+#include "h2_esp_platform_wifi_activity.h"
 #include "h2loader_bleikcp_internal.h"
 #include "h2_loader_app_client.h"
 #include "h2_loader_ble.h"
@@ -37,6 +38,14 @@ typedef struct h2_esp_h2loader_app_ble {
 static h2_loader_app_client_t s_serial_client;
 static h2_esp_h2loader_app_ble_t s_ble;
 static int s_serial_started;
+
+static void app_wifi_activity(void *user, bool active) {
+    (void)user;
+    if (s_ble.service != NULL) {
+        (void)h2_loader_ble_service_request_advertising_paused(
+            s_ble.service, active);
+    }
+}
 
 static uint64_t app_now_ms(void *user) {
     const h2_pal_time_api_t *time = user;
@@ -257,6 +266,8 @@ int h2_esp_h2loader_app_commands_start_with_config(
          ++attempt) {
         int rc = h2_loader_ble_service_open(&service, &s_ble.service);
         if (rc == H2_PAL_OK) {
+            h2_esp_platform_wifi_set_activity_observer(
+                app_wifi_activity, NULL);
             return H2_PAL_OK;
         }
         s_ble.service = NULL;

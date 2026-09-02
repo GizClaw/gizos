@@ -656,6 +656,10 @@ static int digest_update(void *user, const uint8_t *data, size_t len) {
     if (rc != H2_PAL_OK)
       break;
     completed += take;
+    /* A large staged package can keep the internal-RAM safe-call worker
+     * continuously runnable. Block for one tick between chunks so the idle
+     * task can service the task watchdog while validation is in progress. */
+    vTaskDelay(1u);
   }
   h2_esp_platform_safe_io_release();
   return rc;

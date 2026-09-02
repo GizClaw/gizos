@@ -1,5 +1,6 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
+#include "h2_esp_platform_wifi_activity.h"
 #include "h2_esp_platform_wifi_internal.h"
 #include "h2_esp_wifi_teardown.h"
 
@@ -29,6 +30,10 @@ static StaticSemaphore_t s_h2_esp_wifi_safe_mutex_storage;
 static SemaphoreHandle_t s_h2_esp_wifi_safe_mutex;
 static portMUX_TYPE s_h2_esp_wifi_safe_mutex_init_lock =
     portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_h2_esp_wifi_activity_lock = portMUX_INITIALIZER_UNLOCKED;
+static h2_esp_platform_wifi_activity_fn s_h2_esp_wifi_activity_callback;
+static void *s_h2_esp_wifi_activity_user;
+static int s_h2_esp_wifi_activity_active;
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
 static esp_netif_t *s_h2_esp_wifi_ap_netif;
 static portMUX_TYPE s_h2_esp_wifi_ap_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -62,6 +67,35 @@ typedef struct h2_esp_wifi_safe_call {
 
 static size_t h2_esp_wifi_strnlen(const uint8_t *value, size_t max_len);
 static int h2_esp_wifi_map_error(esp_err_t err);
+
+static void h2_esp_wifi_set_activity(int active) {
+  h2_esp_platform_wifi_activity_fn callback = NULL;
+  void *user = NULL;
+  portENTER_CRITICAL(&s_h2_esp_wifi_activity_lock);
+  active = active != 0;
+  if (s_h2_esp_wifi_activity_active != active) {
+    s_h2_esp_wifi_activity_active = active;
+    callback = s_h2_esp_wifi_activity_callback;
+    user = s_h2_esp_wifi_activity_user;
+  }
+  portEXIT_CRITICAL(&s_h2_esp_wifi_activity_lock);
+  if (callback != NULL) {
+    callback(user, active != 0);
+  }
+}
+
+void h2_esp_platform_wifi_set_activity_observer(
+    h2_esp_platform_wifi_activity_fn callback, void *user) {
+  int active;
+  portENTER_CRITICAL(&s_h2_esp_wifi_activity_lock);
+  s_h2_esp_wifi_activity_callback = callback;
+  s_h2_esp_wifi_activity_user = callback != NULL ? user : NULL;
+  active = s_h2_esp_wifi_activity_active;
+  portEXIT_CRITICAL(&s_h2_esp_wifi_activity_lock);
+  if (callback != NULL) {
+    callback(user, active != 0);
+  }
+}
 
 static void h2_esp_wifi_sta_reconnect_disable(void) {
   portENTER_CRITICAL(&s_h2_esp_wifi_sta_reconnect_lock);
@@ -822,7 +856,9 @@ static int h2_esp_wifi_sta_scan(h2_pal_wifi_sta_t *sta,
     scan_config.channel = request->channel;
   }
 
+  h2_esp_wifi_set_activity(1);
   esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+  h2_esp_wifi_set_activity(0);
   if (err != ESP_OK) {
     return h2_esp_wifi_map_error(err);
   }
@@ -860,6 +896,7 @@ static int h2_esp_wifi_sta_connect(h2_pal_wifi_sta_t *sta,
   }
 
   h2_esp_wifi_sta_reconnect_disable();
+  h2_esp_wifi_set_activity(1);
 
   wifi_ap_record_t current_ap;
   memset(&current_ap, 0, sizeof(current_ap));
@@ -870,10 +907,12 @@ static int h2_esp_wifi_sta_connect(h2_pal_wifi_sta_t *sta,
   esp_err_t err;
   rc = h2_esp_platform_wifi_set_config_safe(WIFI_IF_STA, &esp_config);
   if (rc != H2_PAL_OK) {
+    h2_esp_wifi_set_activity(0);
     return rc;
   }
 
   if (s_h2_esp_wifi_events == NULL) {
+    h2_esp_wifi_set_activity(0);
     return H2_PAL_ERR_UNAVAILABLE;
   }
 
@@ -887,12 +926,14 @@ static int h2_esp_wifi_sta_connect(h2_pal_wifi_sta_t *sta,
     err = esp_wifi_disconnect();
     if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT &&
         err != ESP_ERR_WIFI_NOT_ASSOC) {
+      h2_esp_wifi_set_activity(0);
       return h2_esp_wifi_map_error(err);
     }
     EventBits_t bits = xEventGroupWaitBits(
         s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED, pdTRUE, pdFALSE,
         timeout_ms == 0u ? portMAX_DELAY : timeout_ticks);
     if ((bits & H2_ESP_WIFI_EVENT_DISCONNECTED) == 0u) {
+      h2_esp_wifi_set_activity(0);
       return H2_PAL_ERR_TIMEOUT;
     }
   }
@@ -913,9 +954,11 @@ static int h2_esp_wifi_sta_connect(h2_pal_wifi_sta_t *sta,
   err = esp_wifi_connect();
   if (err != ESP_OK) {
     h2_esp_wifi_sta_reconnect_disable();
+    h2_esp_wifi_set_activity(0);
     return h2_esp_wifi_map_error(err);
   }
   if (timeout_ms == 0u) {
+    h2_esp_wifi_set_activity(0);
     return H2_PAL_OK;
   }
 
@@ -935,6 +978,7 @@ static int h2_esp_wifi_sta_connect(h2_pal_wifi_sta_t *sta,
             h2_esp_wifi_strnlen(ap_info.ssid, H2_PAL_WIFI_SSID_MAX);
         if (ssid_len == config->ssid_len &&
             memcmp(ap_info.ssid, config->ssid, ssid_len) == 0) {
+          h2_esp_wifi_set_activity(0);
           return H2_PAL_OK;
         }
       }
@@ -946,6 +990,7 @@ static int h2_esp_wifi_sta_connect(h2_pal_wifi_sta_t *sta,
     xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
   }
 
+  h2_esp_wifi_set_activity(0);
   return H2_PAL_ERR_TIMEOUT;
 }
 
@@ -960,7 +1005,9 @@ static int h2_esp_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     }
     return H2_PAL_OK;
   }
+  h2_esp_wifi_set_activity(1);
   esp_err_t err = esp_wifi_disconnect();
+  h2_esp_wifi_set_activity(0);
   if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT &&
       err != ESP_ERR_WIFI_NOT_ASSOC) {
     return h2_esp_wifi_map_error(err);

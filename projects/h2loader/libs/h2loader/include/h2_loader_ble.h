@@ -5,6 +5,8 @@
 #include "h2_command.h"
 #include "h2_loader_boot.h"
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,6 +55,11 @@ int h2_loader_ble_service_pause_advertising(
 /** Idempotently resume the current connectable advertising payload. */
 int h2_loader_ble_service_resume_advertising(
     h2_loader_ble_service_t *service);
+
+/** Queue a non-blocking advertising pause/resume update on the BLE link task. */
+int h2_loader_ble_service_request_advertising_paused(
+    h2_loader_ble_service_t *service,
+    bool paused);
 
 /**
  * Copy up to three service UUIDs into the advertising payload alongside the
