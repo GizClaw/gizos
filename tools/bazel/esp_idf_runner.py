@@ -359,6 +359,13 @@ def prepare_submodules(idf_path: Path, environment: dict[str, str]) -> None:
     initialization here under a cross-process lock and tell CMake to skip its
     own check, so the shared checkout is only ever written by one process.
     """
+    # Read the state before reaching for the lock. Only the first action of a
+    # build finds anything missing, so the rest would otherwise queue on the
+    # lock just to observe that there is nothing to do. Whoever does find work
+    # re-reads the state under the lock, which is what makes this safe.
+    if not missing_submodules(idf_path, environment):
+        environment["IDF_SKIP_CHECK_SUBMODULES"] = "1"
+        return
     digest = hashlib.sha256(str(idf_path).encode("utf-8")).hexdigest()[:16]
     lock_path = Path(tempfile.gettempdir()) / f"h2-esp-idf-submodules-{digest}.lock"
     try:
