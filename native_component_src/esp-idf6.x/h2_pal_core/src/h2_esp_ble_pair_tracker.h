@@ -18,6 +18,14 @@ typedef struct h2_esp_ble_pair_tracker {
     h2_pal_result_t result;
 } h2_esp_ble_pair_tracker_t;
 
+static inline bool h2_esp_ble_pair_tracker_needs_disconnect(
+    const h2_esp_ble_pair_tracker_t *tracker,
+    uint16_t conn_handle) {
+    return tracker->state == H2_ESP_BLE_PAIR_DRAINING &&
+           tracker->conn_handle == conn_handle &&
+           conn_handle != H2_PAL_BLE_INVALID_CONN_HANDLE;
+}
+
 static inline void h2_esp_ble_pair_tracker_clear(
     h2_esp_ble_pair_tracker_t *tracker) {
     tracker->state = H2_ESP_BLE_PAIR_IDLE;

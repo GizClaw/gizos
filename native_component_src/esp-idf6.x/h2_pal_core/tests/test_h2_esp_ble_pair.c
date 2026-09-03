@@ -27,15 +27,20 @@ int main(void) {
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_OK);
     assert(h2_esp_ble_pair_tracker_timeout(&tracker) == H2_PAL_ERR_TIMEOUT);
     assert(tracker.state == H2_ESP_BLE_PAIR_DRAINING);
+    assert(h2_esp_ble_pair_tracker_needs_disconnect(&tracker, 10u));
+    assert(!h2_esp_ble_pair_tracker_needs_disconnect(&tracker, 11u));
     /* A retry cannot begin while the original SMP callback is still live. */
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_ERR_BUSY);
     /* A late completion is ignored; only disconnect releases the handle. */
     assert(!h2_esp_ble_pair_tracker_complete(
         &tracker, 10u, H2_PAL_OK));
     assert(tracker.state == H2_ESP_BLE_PAIR_DRAINING);
+    /* A failed terminate leaves recovery pending for the next pair call. */
+    assert(h2_esp_ble_pair_tracker_needs_disconnect(&tracker, 10u));
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_ERR_BUSY);
     assert(!h2_esp_ble_pair_tracker_disconnect(&tracker, 10u));
     assert(tracker.state == H2_ESP_BLE_PAIR_IDLE);
+    assert(!h2_esp_ble_pair_tracker_needs_disconnect(&tracker, 10u));
 
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_OK);
     assert(h2_esp_ble_pair_tracker_complete(&tracker, 10u, H2_PAL_OK));

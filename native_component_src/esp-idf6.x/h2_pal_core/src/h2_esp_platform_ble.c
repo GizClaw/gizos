@@ -175,6 +175,7 @@ typedef struct h2_esp_ble_init_call {
 } h2_esp_ble_init_call_t;
 
 static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg);
+static h2_pal_result_t h2_esp_ble_map_rc(int rc);
 static int h2_esp_ble_gatt_access(
     uint16_t conn_handle,
     uint16_t attr_handle,
@@ -472,6 +473,36 @@ static void h2_esp_ble_finish_pair_disconnect(uint16_t conn_handle) {
     }
 }
 
+static bool h2_esp_ble_pair_needs_disconnect(uint16_t conn_handle) {
+    bool needs_disconnect;
+
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    needs_disconnect = h2_esp_ble_pair_tracker_needs_disconnect(
+        &s_h2_esp_ble_pair, conn_handle);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+    return needs_disconnect;
+}
+
+static h2_pal_result_t h2_esp_ble_request_pair_disconnect(
+    uint16_t conn_handle,
+    h2_pal_result_t pending_result) {
+    int terminate_rc = ble_gap_terminate(
+        conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    if (terminate_rc == BLE_HS_ENOTCONN) {
+        h2_esp_ble_finish_pair_disconnect(conn_handle);
+        return H2_PAL_ERR_CLOSED;
+    }
+    if (terminate_rc == 0 || terminate_rc == BLE_HS_EALREADY) {
+        return pending_result;
+    }
+    ESP_LOGW(
+        TAG,
+        "pair timeout disconnect failed handle=%u rc=%d",
+        (unsigned)conn_handle,
+        terminate_rc);
+    return h2_esp_ble_map_rc(terminate_rc);
+}
+
 static h2_pal_result_t h2_esp_ble_begin_pair(uint16_t conn_handle) {
     taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
     h2_pal_result_t result = h2_esp_ble_pair_tracker_begin(
@@ -510,17 +541,8 @@ static h2_pal_result_t h2_esp_ble_finish_pair_wait(
          * The tracker remains DRAINING until that event, so ENC_CHANGE cannot
          * reopen a same-handle retry window while disconnect is still pending.
          */
-        int terminate_rc = ble_gap_terminate(
-            conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-        if (terminate_rc == BLE_HS_ENOTCONN) {
-            h2_esp_ble_finish_pair_disconnect(conn_handle);
-        } else if (terminate_rc != 0) {
-            ESP_LOGW(
-                TAG,
-                "pair timeout disconnect failed handle=%u rc=%d",
-                (unsigned)conn_handle,
-                terminate_rc);
-        }
+        result = h2_esp_ble_request_pair_disconnect(
+            conn_handle, H2_PAL_ERR_TIMEOUT);
     }
     return result;
 }
@@ -2651,6 +2673,11 @@ static h2_pal_result_t h2_esp_ble_pair(
     (void)ble;
     if (!s_h2_esp_ble_started || !s_h2_esp_ble_pairing.enabled) {
         return H2_PAL_ERR_INVALID_STATE;
+    }
+    /* Retry a failed timeout disconnect instead of remaining BUSY forever. */
+    if (h2_esp_ble_pair_needs_disconnect(conn_handle)) {
+        return h2_esp_ble_request_pair_disconnect(
+            conn_handle, H2_PAL_ERR_BUSY);
     }
     struct ble_gap_conn_desc desc;
     if (ble_gap_conn_find(conn_handle, &desc) != 0) {
