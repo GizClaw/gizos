@@ -482,12 +482,28 @@ static h2_pal_result_t h2_esp_ble_take_completed_pair(void) {
     return result;
 }
 
-static h2_pal_result_t h2_esp_ble_finish_pair_wait(bool signaled) {
+static h2_pal_result_t h2_esp_ble_finish_pair_wait(
+    uint16_t conn_handle,
+    bool signaled) {
     taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
     h2_pal_result_t result = signaled
         ? h2_esp_ble_pair_tracker_take(&s_h2_esp_ble_pair)
         : h2_esp_ble_pair_tracker_timeout(&s_h2_esp_ble_pair);
     taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+
+    if (result == H2_PAL_ERR_TIMEOUT) {
+        int terminate_rc = ble_gap_terminate(
+            conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        if (terminate_rc == BLE_HS_ENOTCONN) {
+            h2_esp_ble_finish_pair(conn_handle, H2_PAL_ERR_CLOSED);
+        } else if (terminate_rc != 0) {
+            ESP_LOGW(
+                TAG,
+                "pair timeout disconnect failed handle=%u rc=%d",
+                (unsigned)conn_handle,
+                terminate_rc);
+        }
+    }
     return result;
 }
 
@@ -2647,6 +2663,7 @@ static h2_pal_result_t h2_esp_ble_pair(
         pdTRUE,
         pdMS_TO_TICKS(timeout_ms));
     return h2_esp_ble_finish_pair_wait(
+        conn_handle,
         (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u);
 }
 
