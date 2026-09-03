@@ -227,6 +227,7 @@ static atomic_int s_test_audio_start_count;
 static atomic_int s_test_audio_stop_count;
 static atomic_int s_test_audio_mic_start_count;
 static atomic_int s_test_audio_mic_stop_count;
+static atomic_int s_test_audio_mic_block;
 
 static int test_audio_track_close(h2_pal_audio_track_t *track) {
   (void)track;
@@ -267,10 +268,15 @@ static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
                                uint32_t timeout_ms) {
   static const uint8_t samples[] = {0u, 64u, 0u, 192u};
   (void)user;
-  (void)timeout_ms;
   if (frame == NULL || frame->capacity < sizeof(samples)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (atomic_load(&s_test_audio_mic_block) != 0) {
+    /* Simulates a microphone that never produces a frame, so callers polling
+     * with a long or unbounded timeout stay blocked here until cancelled. */
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  (void)timeout_ms;
   memcpy(frame->data, samples, sizeof(samples));
   frame->bytes = sizeof(samples);
   frame->samples_per_channel = 2u;
@@ -723,6 +729,9 @@ int main(void) {
       "b=assert(r.components.get(7));assert(type(b.get_key_level())=='number','"
       "button');"
       "local a=require('audio');local "
+      "input_arg_ok=pcall(a.new_input,{});"
+      "assert(not input_arg_ok,'input-rejects-args');"
+      "local "
       "input=assert(a.new_input());local ii=input:info();"
       "assert(ii.opened and ii.role=='input' and ii.sample_rate==16000 and "
       "ii.channels==1 and ii.frame_samples==2,'input-info');"
@@ -1053,6 +1062,62 @@ int main(void) {
   run_until_terminal(host, audio_input_job_2, 16u);
   assert(h2_lua_job_release(host, audio_input_job_2) == H2_PAL_OK);
   assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+
+  {
+    /* A microphone that never produces a frame must not let a script's long
+     * input:read() timeout wedge host shutdown: the worker holds the job
+     * mutex for the whole call, so h2_lua_host_stop/join have to complete
+     * quickly by cancelling the read, not by waiting out the timeout. */
+    static const uint8_t audio_input_block_script[] =
+        "local a=require('audio');local input=assert(a.new_input());"
+        "local ok,err=input:read(60000);return tostring(ok)..'|'..tostring(err)";
+    h2_lua_host_t *block_host = create_host(runtime);
+    h2_lua_job_id_t block_job_id;
+    const h2_pal_time_api_t *real_time = h2_desktop_platform_time_api();
+    uint64_t stop_started_ms;
+    uint64_t stop_elapsed_ms;
+    uint64_t join_elapsed_ms;
+    size_t step;
+
+    atomic_store(&s_test_audio_mic_start_count, 0);
+    atomic_store(&s_test_audio_mic_stop_count, 0);
+    atomic_store(&s_test_audio_mic_block, 1);
+    assert(h2_lua_job_submit_text(block_host, "@audio-input-block.lua",
+                                  audio_input_block_script,
+                                  sizeof(audio_input_block_script) - 1u, NULL,
+                                  0u, &block_job_id) == H2_PAL_OK);
+    /* The worker holds job->mutex for the whole blocking read, so polling
+     * status via h2_lua_job_get_status here would itself block on that same
+     * mutex. Watch the mic-acquired counter instead: it flips before the
+     * script's input:read() call, without needing the lock. */
+    for (step = 0u; step < 500u; ++step) {
+      if (atomic_load(&s_test_audio_mic_start_count) != 0) {
+        break;
+      }
+      assert(h2_lua_host_step(block_host) == H2_PAL_OK);
+      (void)h2_pal_time_sleep_ms(real_time, 1u);
+    }
+    assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+
+    (void)h2_pal_time_get_monotonic_ms(real_time, &stop_started_ms);
+    assert(h2_lua_host_stop(block_host) == H2_PAL_OK);
+    assert(h2_lua_host_join(block_host) == H2_PAL_OK);
+    {
+      uint64_t joined_ms;
+      (void)h2_pal_time_get_monotonic_ms(real_time, &joined_ms);
+      stop_elapsed_ms = h2_pal_time_elapsed_ms(stop_started_ms, joined_ms);
+    }
+    join_elapsed_ms = stop_elapsed_ms;
+    /* The mic never yields a frame, so with a stuck read this would only
+     * unblock after the script's own 60s timeout. Bound the assertion well
+     * under that to prove the wait was actually cancelled, not merely fast
+     * on this machine. */
+    assert(join_elapsed_ms < 5000u);
+
+    atomic_store(&s_test_audio_mic_block, 0);
+    h2_lua_host_destroy(block_host);
+    assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+  }
 
   static const uint8_t audio_failure_script[] =
       "local a=require('audio');"

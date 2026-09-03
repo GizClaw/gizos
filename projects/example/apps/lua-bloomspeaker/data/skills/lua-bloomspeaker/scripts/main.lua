@@ -243,7 +243,7 @@ local function init_audio()
         print("[intercom-ui] WARN: audio unavailable; using idle animation")
         return
     end
-    local opened, input, err = pcall(audio.new_input, {})
+    local opened, input, err = pcall(audio.new_input)
     if not opened or not input then
         print("[intercom-ui] WARN: microphone unavailable: "
             .. tostring(opened and err or input))

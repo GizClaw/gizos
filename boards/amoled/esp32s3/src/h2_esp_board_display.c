@@ -13,7 +13,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -57,11 +56,12 @@ static h2_esp_board_display_config_t s_display_config;
 
 h2_pal_result_t h2_esp_board_display_configure(
     const h2_esp_board_display_config_t *config) {
-    if (config == NULL || config->pclk_hz > (uint32_t)INT_MAX) {
+    if (!h2_esp_board_display_config_is_valid(config)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (s_display_state.panel_io != NULL || s_display_state.initialized ||
-        s_display_state.opened) {
+    if (!h2_esp_board_display_config_may_apply(
+            s_display_state.panel_io != NULL || s_display_state.initialized ||
+            s_display_state.opened)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     s_display_config = *config;

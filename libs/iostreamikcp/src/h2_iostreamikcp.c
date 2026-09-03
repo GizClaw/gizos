@@ -52,6 +52,12 @@ static uint32_t stream_now_ms(h2_iostreamikcp_t *stream) {
 static int stream_output(const char *buf, int len, ikcpcb *kcp, void *user) {
     (void)kcp;
     h2_iostreamikcp_t *stream = (h2_iostreamikcp_t *)user;
+    /* KCP keeps calling output for the remaining window even if output
+     * returns -1. Bound one update/flush to one failed transport write rather
+     * than paying the full I/O timeout again for every queued segment. */
+    if (stream->last_output_error != H2_PAL_OK) {
+        return -1;
+    }
     h2_iostreamikcp_frame_t frame = {
         .flags = H2_IOSTREAMIKCP_FRAME_FLAG_DATA,
         .conv = stream->config.conv,

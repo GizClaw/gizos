@@ -83,10 +83,6 @@ h2_pal_result_t h2_bloomspeaker_amoled_runtime_config(
           .i2s_dma_frame_num = 240u,
           .mic_gain_db = 12u,
           .mic_queue_frames = 16u,
-          .mic_task_priority = 9u,
-          .mic_task_core_id = 1,
-          .speaker_task_priority = 10u,
-          .speaker_task_core_id = 1,
           .aggressive_aec_nlp = 1,
       });
   if (result != H2_PAL_OK)

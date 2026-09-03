@@ -51,32 +51,16 @@ static h2_esp_board_audio_config_t s_audio_config = {
     .i2s_dma_frame_num = 0u,
     .mic_gain_db = H2_AMOLED_AUDIO_MIC_GAIN_DEFAULT_DB,
     .mic_queue_frames = H2_AMOLED_AUDIO_MIC_QUEUE_FRAMES,
-    .mic_task_priority = tskIDLE_PRIORITY + 5u,
-    .mic_task_core_id = H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED,
-    .speaker_task_priority = tskIDLE_PRIORITY + 4u,
-    .speaker_task_core_id = H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED,
     .aggressive_aec_nlp = 0,
 };
 
 h2_pal_result_t h2_esp_board_audio_configure(
     const h2_esp_board_audio_config_t *config) {
-    if (config == NULL || config->mic_queue_frames == 0u ||
-        config->mic_gain_db > 30u ||
-        config->mic_task_priority >= configMAX_PRIORITIES ||
-        config->speaker_task_priority >= configMAX_PRIORITIES ||
-        (config->mic_task_core_id !=
-             H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED &&
-         (config->mic_task_core_id < 0 ||
-          config->mic_task_core_id >= portNUM_PROCESSORS)) ||
-        (config->speaker_task_core_id !=
-             H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED &&
-         (config->speaker_task_core_id < 0 ||
-          config->speaker_task_core_id >= portNUM_PROCESSORS)) ||
-        (config->aggressive_aec_nlp != 0 &&
-         config->aggressive_aec_nlp != 1)) {
+    if (!h2_esp_board_audio_config_is_valid(config)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (s_lazy_audio_initialized || s_audio_system_initialized) {
+    if (!h2_esp_board_audio_config_may_apply(
+            s_lazy_audio_initialized || s_audio_system_initialized)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     s_audio_config = *config;
@@ -116,18 +100,11 @@ static h2_pal_audio_t *resolve_audio(void *user) {
             .track_queue_frames = H2_AMOLED_AUDIO_TRACK_QUEUE_FRAMES,
             .mic_queue_frames = s_audio_config.mic_queue_frames,
             .mic_task_stack_size = H2_AMOLED_AUDIO_MIC_TASK_STACK,
-            .mic_task_priority = (UBaseType_t)s_audio_config.mic_task_priority,
-            .mic_task_core_id = s_audio_config.mic_task_core_id ==
-                    H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED
-                ? tskNO_AFFINITY
-                : (BaseType_t)s_audio_config.mic_task_core_id,
+            .mic_task_priority = tskIDLE_PRIORITY + 5u,
+            .mic_task_core_id = tskNO_AFFINITY,
             .speaker_task_stack_size = H2_AMOLED_AUDIO_SPEAKER_TASK_STACK,
-            .speaker_task_priority =
-                (UBaseType_t)s_audio_config.speaker_task_priority,
-            .speaker_task_core_id = s_audio_config.speaker_task_core_id ==
-                    H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED
-                ? tskNO_AFFINITY
-                : (BaseType_t)s_audio_config.speaker_task_core_id,
+            .speaker_task_priority = tskIDLE_PRIORITY + 4u,
+            .speaker_task_core_id = tskNO_AFFINITY,
             .allocator = h2_esp_board_default_allocator(),
             .queue_api = h2_esp_board_queue_api(),
             .sync_api = h2_esp_board_sync_api(),
