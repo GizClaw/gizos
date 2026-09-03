@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
@@ -2701,15 +2702,37 @@ static h2_pal_result_t h2_esp_ble_pair(
         h2_esp_ble_cancel_pair_submission(conn_handle);
         return h2_esp_ble_map_rc(rc);
     }
-    EventBits_t bits = xEventGroupWaitBits(
-        s_h2_esp_ble_events,
-        H2_ESP_BLE_PAIR_DONE_BIT,
-        pdTRUE,
-        pdTRUE,
-        pdMS_TO_TICKS(timeout_ms));
-    return h2_esp_ble_finish_pair_wait(
-        conn_handle,
-        (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u);
+    /*
+     * H2_ESP_BLE_PAIR_DONE_BIT can be set by a completion that belonged to a
+     * prior, already-abandoned attempt on this same handle: h2_esp_ble_finish_pair()
+     * commits the tracker's COMPLETED state and sets the bit as two separate
+     * steps, so a timeout can slip in between them, be consumed by that prior
+     * wait, and let a new attempt begin and clear the bit before the stale
+     * xEventGroupSetBits() call finally runs. Treat a wake that does not
+     * correspond to our own attempt's completion as spurious and keep waiting
+     * out the remaining timeout instead of returning early.
+     */
+    TickType_t start_ticks = xTaskGetTickCount();
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    for (;;) {
+        TickType_t elapsed_ticks = xTaskGetTickCount() - start_ticks;
+        TickType_t remaining_ticks = elapsed_ticks >= timeout_ticks
+            ? 0
+            : timeout_ticks - elapsed_ticks;
+        EventBits_t bits = xEventGroupWaitBits(
+            s_h2_esp_ble_events,
+            H2_ESP_BLE_PAIR_DONE_BIT,
+            pdTRUE,
+            pdTRUE,
+            remaining_ticks);
+        bool signaled = (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u;
+        h2_pal_result_t result =
+            h2_esp_ble_finish_pair_wait(conn_handle, signaled);
+        if (!signaled || result != H2_PAL_ERR_WOULD_BLOCK) {
+            return result;
+        }
+        /* Spurious wake from a stale completion; keep waiting out the remaining timeout. */
+    }
 }
 
 static h2_pal_result_t h2_esp_ble_update_connection(

@@ -53,5 +53,26 @@ int main(void) {
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 13u) == H2_PAL_OK);
     assert(h2_esp_ble_pair_tracker_disconnect(&tracker, 13u));
     assert(h2_esp_ble_pair_tracker_take(&tracker) == H2_PAL_ERR_CLOSED);
+
+    /*
+     * Interleaving regression (PR #146 review): a completion that races the
+     * caller's own timeout can be consumed by take()/timeout() before a
+     * retry is admitted on the same handle. The retry's wait can then be
+     * spuriously woken by that already-consumed completion's deferred
+     * notification. take() must report WOULD_BLOCK for the retry's own
+     * still-WAITING state rather than fabricating a result for it, so the
+     * caller (h2_esp_ble_finish_pair_wait()) knows to keep waiting instead
+     * of returning early with a bogus result while the retry's SMP
+     * procedure is still live.
+     */
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 20u) == H2_PAL_OK);
+    assert(h2_esp_ble_pair_tracker_complete(&tracker, 20u, H2_PAL_OK));
+    assert(h2_esp_ble_pair_tracker_timeout(&tracker) == H2_PAL_OK);
+    assert(tracker.state == H2_ESP_BLE_PAIR_IDLE);
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 20u) == H2_PAL_OK);
+    assert(h2_esp_ble_pair_tracker_take(&tracker) == H2_PAL_ERR_WOULD_BLOCK);
+    assert(tracker.state == H2_ESP_BLE_PAIR_WAITING);
+    assert(h2_esp_ble_pair_tracker_complete(&tracker, 20u, H2_PAL_ERR_IO));
+    assert(h2_esp_ble_pair_tracker_take(&tracker) == H2_PAL_ERR_IO);
     return 0;
 }
