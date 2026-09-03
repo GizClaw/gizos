@@ -120,6 +120,7 @@ int h2_bleikcp_client_open(
 
     rc = h2_bleikcp_client_discover(stream);
     if (rc != H2_PAL_OK) goto fail;
+    /* Both client subscriptions are stream-owned until h2_bleikcp_close. */
     rc = h2_pal_system_event_subscribe(
         api->system_event, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
         h2_bleikcp_client_event, stream, &stream->subscriptions[0]);

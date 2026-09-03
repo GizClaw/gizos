@@ -49,7 +49,8 @@ struct h2_bleikcp {
     uint16_t tx_cccd_handle;
     uint16_t rx_value_handle;
     h2_pal_mutex_t *mutex;
-    h2_pal_cond_t *cond;
+    h2_pal_cond_t *read_cond;
+    h2_pal_cond_t *write_cond;
     h2_pal_task_t *worker;
     ikcpcb *kcp;
     h2_bleikcp_ring_t tx;

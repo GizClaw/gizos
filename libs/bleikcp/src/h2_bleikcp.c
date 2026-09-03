@@ -269,8 +269,11 @@ static void h2_bleikcp_worker(void *ctx) {
     }
     (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
     while (!stream->closing) {
+        size_t tx_len_before = stream->tx.len;
+        uint32_t waitsnd_before = (uint32_t)ikcp_waitsnd(stream->kcp);
         h2_bleikcp_drain_input(stream);
         h2_bleikcp_drain_tx(stream);
+        bool wake_writers = stream->tx.len < tx_len_before;
         (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
         uint32_t now = h2_bleikcp_now32(stream);
         ikcp_update(stream->kcp, now);
@@ -278,10 +281,19 @@ static void h2_bleikcp_worker(void *ctx) {
         int32_t until_update = (int32_t)(next_update - now);
         uint32_t wait_ms = until_update > 0 ? (uint32_t)until_update : 1u;
         (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
+        size_t rx_len_before = stream->rx.len;
         h2_bleikcp_drain_rx(stream);
-        stream->stats.waitsnd = (uint32_t)ikcp_waitsnd(stream->kcp);
+        uint32_t waitsnd = (uint32_t)ikcp_waitsnd(stream->kcp);
+        bool wake_readers = stream->rx.len > rx_len_before;
+        wake_writers = wake_writers || waitsnd < waitsnd_before;
+        stream->stats.waitsnd = waitsnd;
         stream->stats.retransmits = stream->kcp->xmit;
-        (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
+        if (wake_readers || stream->fatal_status != H2_PAL_OK) {
+            (void)h2_pal_cond_broadcast(stream->api.sync, stream->read_cond);
+        }
+        if (wake_writers || stream->fatal_status != H2_PAL_OK) {
+            (void)h2_pal_cond_broadcast(stream->api.sync, stream->write_cond);
+        }
         if (stream->fatal_status != H2_PAL_OK) {
             int fatal_status = stream->fatal_status;
             fatal_emitted = true;
@@ -291,14 +303,33 @@ static void h2_bleikcp_worker(void *ctx) {
             (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
             break;
         }
-        (void)h2_pal_cond_wait(
-            stream->api.sync, stream->cond, stream->mutex,
-            wait_ms);
+        /*
+         * Waiting here on the same conditions as API clients lets
+         * semaphore-backed implementations consume a wakeup that was intended
+         * for a blocked reader or flusher. The worker then wakes and runs again,
+         * starving the CPU and the real waiter.
+         *
+         * KCP already supplies the next polling deadline, so sleep outside the
+         * mutex instead. Input is serviced within one KCP interval (10 ms by
+         * default). Readers and writers use separate conditions so TX progress
+         * cannot repeatedly wake a reader when a weak link has no RX data. Only
+         * completed RX data, released TX capacity, ACK progress, or closure
+         * wakes the matching client waiters; raw input and idle polls must not
+         * create a high-priority wakeup loop.
+         */
+        (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
+        (void)h2_pal_time_sleep_ms(stream->api.time, wait_ms);
+        (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
     }
     bool emit_disconnected = stream->disconnect_event_pending;
     int final_fatal_status = stream->fatal_status;
     stream->disconnect_event_pending = false;
-    (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
+    if (stream->read_cond != NULL) {
+        (void)h2_pal_cond_broadcast(stream->api.sync, stream->read_cond);
+    }
+    if (stream->write_cond != NULL) {
+        (void)h2_pal_cond_broadcast(stream->api.sync, stream->write_cond);
+    }
     (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
     if (emit_disconnected) {
         h2_bleikcp_emit(stream, H2_BLEIKCP_EVENT_DISCONNECTED, H2_PAL_ERR_CLOSED);
@@ -372,11 +403,17 @@ int h2_bleikcp_stream_create(
     };
     int rc = h2_pal_mutex_create(api->sync, &mutex_config, &stream->mutex);
     if (rc != H2_PAL_OK) goto fail;
-    h2_pal_cond_config_t cond_config = {
-        .name = "bleikcp",
+    h2_pal_cond_config_t read_cond_config = {
+        .name = "bleikcp/read",
         .allocator = api->allocator,
     };
-    rc = h2_pal_cond_create(api->sync, &cond_config, &stream->cond);
+    rc = h2_pal_cond_create(api->sync, &read_cond_config, &stream->read_cond);
+    if (rc != H2_PAL_OK) goto fail;
+    h2_pal_cond_config_t write_cond_config = {
+        .name = "bleikcp/write",
+        .allocator = api->allocator,
+    };
+    rc = h2_pal_cond_create(api->sync, &write_cond_config, &stream->write_cond);
     if (rc != H2_PAL_OK) goto fail;
     rc = h2_bleikcp_alloc_storage(stream);
     if (rc != H2_PAL_OK) goto fail;
@@ -421,7 +458,12 @@ void h2_bleikcp_stream_mark_closed(h2_bleikcp_t *stream, int status, bool discon
             stream->disconnect_event_pending = true;
         }
     }
-    (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
+    if (stream->read_cond != NULL) {
+        (void)h2_pal_cond_broadcast(stream->api.sync, stream->read_cond);
+    }
+    if (stream->write_cond != NULL) {
+        (void)h2_pal_cond_broadcast(stream->api.sync, stream->write_cond);
+    }
     (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
 }
 
@@ -445,7 +487,12 @@ int h2_bleikcp_stream_destroy(h2_bleikcp_t *stream) {
     h2_pal_mem_free(stream->api.allocator, stream->input.data);
     h2_pal_mem_free(stream->api.allocator, stream->rx.data);
     h2_pal_mem_free(stream->api.allocator, stream->tx.data);
-    if (stream->cond != NULL) (void)h2_pal_cond_destroy(stream->api.sync, stream->cond);
+    if (stream->write_cond != NULL) {
+        (void)h2_pal_cond_destroy(stream->api.sync, stream->write_cond);
+    }
+    if (stream->read_cond != NULL) {
+        (void)h2_pal_cond_destroy(stream->api.sync, stream->read_cond);
+    }
     if (stream->mutex != NULL) (void)h2_pal_mutex_destroy(stream->api.sync, stream->mutex);
     h2_pal_mem_free(stream->api.allocator, stream);
     return H2_PAL_OK;
@@ -464,7 +511,8 @@ int h2_bleikcp_stream_input(h2_bleikcp_t *stream, const uint8_t *data, size_t le
         stream->stats.dropped_input++;
         stream->fatal_status = H2_PAL_ERR_FULL;
         stream->closing = true;
-        (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
+        (void)h2_pal_cond_broadcast(stream->api.sync, stream->read_cond);
+        (void)h2_pal_cond_broadcast(stream->api.sync, stream->write_cond);
         (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
         return H2_PAL_ERR_FULL;
     }
@@ -473,13 +521,13 @@ int h2_bleikcp_stream_input(h2_bleikcp_t *stream, const uint8_t *data, size_t le
     stream->input.lengths[index] = (uint16_t)len;
     stream->input.count++;
     if (stream->input.count > stream->stats.input_high_water) stream->stats.input_high_water = stream->input.count;
-    (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
     (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
     return H2_PAL_OK;
 }
 
 static int h2_bleikcp_wait_locked(
     h2_bleikcp_t *stream,
+    h2_pal_cond_t *cond,
     uint32_t timeout_ms,
     uint64_t *deadline_ms) {
     if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;
@@ -494,7 +542,7 @@ static int h2_bleikcp_wait_locked(
         wait_ms = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
         if (wait_ms == 0u) wait_ms = 1u;
     }
-    int rc = h2_pal_cond_wait(stream->api.sync, stream->cond, stream->mutex, wait_ms);
+    int rc = h2_pal_cond_wait(stream->api.sync, cond, stream->mutex, wait_ms);
     return rc == H2_PAL_OK ? H2_PAL_OK : (rc == H2_PAL_ERR_TIMEOUT ? rc : H2_PAL_ERR_IO);
 }
 
@@ -510,7 +558,8 @@ int h2_bleikcp_read(
     (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
     uint64_t deadline_ms = 0u;
     while (stream->rx.len == 0u && !stream->closing) {
-        int rc = h2_bleikcp_wait_locked(stream, timeout_ms, &deadline_ms);
+        int rc = h2_bleikcp_wait_locked(
+            stream, stream->read_cond, timeout_ms, &deadline_ms);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
             return rc;
@@ -525,7 +574,6 @@ int h2_bleikcp_read(
     h2_bleikcp_ring_read(&stream->rx, out, len);
     stream->stats.rx_bytes += len;
     *out_len = len;
-    (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
     (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
     return H2_PAL_OK;
 }
@@ -541,7 +589,8 @@ int h2_bleikcp_write(
     (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
     uint64_t deadline_ms = 0u;
     while (h2_bleikcp_ring_free(&stream->tx) < len && !stream->closing) {
-        int rc = h2_bleikcp_wait_locked(stream, timeout_ms, &deadline_ms);
+        int rc = h2_bleikcp_wait_locked(
+            stream, stream->write_cond, timeout_ms, &deadline_ms);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
             return rc;
@@ -555,7 +604,6 @@ int h2_bleikcp_write(
     h2_bleikcp_ring_write(&stream->tx, data, len);
     stream->stats.tx_bytes += len;
     if (stream->tx.len > stream->stats.tx_high_water) stream->stats.tx_high_water = stream->tx.len;
-    (void)h2_pal_cond_broadcast(stream->api.sync, stream->cond);
     (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
     return H2_PAL_OK;
 }
@@ -565,7 +613,8 @@ int h2_bleikcp_flush(h2_bleikcp_t *stream, uint32_t timeout_ms) {
     (void)h2_pal_mutex_lock(stream->api.sync, stream->mutex);
     uint64_t deadline_ms = 0u;
     while ((stream->tx.len > 0u || stream->stats.waitsnd > 0u) && !stream->closing) {
-        int rc = h2_bleikcp_wait_locked(stream, timeout_ms, &deadline_ms);
+        int rc = h2_bleikcp_wait_locked(
+            stream, stream->write_cond, timeout_ms, &deadline_ms);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
             return rc;
