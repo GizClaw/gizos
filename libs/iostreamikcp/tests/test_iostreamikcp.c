@@ -14,6 +14,7 @@ typedef struct memory_io {
     size_t len;
     size_t read_pos;
     h2_pal_result_t write_result;
+    size_t write_count;
     h2_pal_result_t flush_result;
     size_t flush_count;
 } memory_io_t;
@@ -67,6 +68,7 @@ static h2_pal_result_t memory_write(
     uint32_t timeout_ms) {
     (void)timeout_ms;
     memory_io_t *io = (memory_io_t *)user;
+    io->write_count++;
     if (io->write_result != H2_PAL_OK) {
         *out_written = 0u;
         return io->write_result;
@@ -669,6 +671,27 @@ static void test_write_reports_transport_failure(void) {
     h2_iostreamikcp_close(stream);
 }
 
+static void test_large_write_stops_io_after_first_timeout(void) {
+    memory_io_t io = {0};
+    memory_io_t ack = {0};
+    h2_iostreamikcp_t *stream = open_stream_ex(&io, 8181u, 128u, 2048u, 0u);
+    h2_iostreamikcp_t *peer = open_stream_ex(&ack, 8181u, 128u, 2048u, 0u);
+    /* Grow beyond KCP's initial one-packet congestion window. */
+    CHECK(h2_iostreamikcp_write(stream, (const uint8_t *)"warmup", 6u) == H2_PAL_OK);
+    CHECK(h2_iostreamikcp_input(peer, io.bytes, io.len) == H2_PAL_OK);
+    CHECK(h2_iostreamikcp_flush(peer) == H2_PAL_OK);
+    CHECK(h2_iostreamikcp_input(stream, ack.bytes, ack.len) == H2_PAL_OK);
+    io.write_result = H2_PAL_ERR_TIMEOUT;
+    io.write_count = 0u;
+    io.flush_count = 0u;
+    uint8_t payload[8192] = {0};
+    CHECK(h2_iostreamikcp_write(stream, payload, sizeof(payload)) == H2_PAL_ERR_TIMEOUT);
+    CHECK(io.write_count == 1u);
+    CHECK(io.flush_count == 0u);
+    h2_iostreamikcp_close(peer);
+    h2_iostreamikcp_close(stream);
+}
+
 static void test_flush_calls_transport_flush(void) {
     memory_io_t io = { 0 };
     h2_iostreamikcp_t *stream = open_stream(&io, 89u);
@@ -710,6 +733,7 @@ int main(void) {
     test_kcp_chunks_large_writes_and_drains_after_read();
     test_write_reports_transport_failure();
     test_flush_calls_transport_flush();
+    test_large_write_stops_io_after_first_timeout();
     test_timeout_and_empty_read();
     return 0;
 }

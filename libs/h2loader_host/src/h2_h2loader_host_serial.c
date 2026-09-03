@@ -25,6 +25,8 @@ struct h2_h2loader_host_serial_connection {
     uint32_t conversation_id;
     uint32_t command_timeout_ms;
     uint32_t post_command_delay_ms;
+    h2_h2loader_host_transport_log_fn on_log;
+    void *log_user;
 };
 
 static h2_pal_result_t serial_finish_command_response(void *transport);
@@ -151,8 +153,9 @@ static h2_pal_result_t serial_session_control(
             return rc;
         }
         if (read > 0u) {
-            rc = h2_iostreamikcp_filter_input(
-                &filter, input, read, session_frame, &ack);
+            rc = h2_iostreamikcp_filter_input_with_log(
+                &filter, input, read, session_frame, &ack,
+                connection->on_log, connection->log_user);
             if (rc != H2_PAL_OK) {
                 return rc;
             }
@@ -196,6 +199,11 @@ static h2_pal_result_t serial_wait_ready_marker(
             H2_H2LOADER_HOST_SERIAL_POLL_MS);
         if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
             rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
+        if (read > 0u && connection->on_log != NULL) {
+            rc = connection->on_log(
+                connection->log_user, input, read);
+            if (rc != H2_PAL_OK) return rc;
+        }
         for (size_t i = 0u; i < read; ++i) {
             if (input[i] == (uint8_t)marker[matched]) {
                 ++matched;
@@ -463,6 +471,8 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
         ? H2_H2LOADER_HOST_DEFAULT_COMMAND_TIMEOUT_MS
         : config->command_timeout_ms;
     connection->post_command_delay_ms = config->post_command_delay_ms;
+    connection->on_log = config->on_log;
+    connection->log_user = config->log_user;
     const h2_pal_uart_io_stream_config_t uart_config = {
         .baud_rate = config->baud_rate == 0u
             ? H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD
@@ -595,8 +605,17 @@ h2_pal_result_t h2_h2loader_host_serial_disconnect(
          * decoded, while the peer is still waiting for the KCP ACK to cross
          * the AP/CP UART tunnel. Pump a bounded grace period before closing so
          * the next short-lived CLI process does not inherit a peer stuck
-         * flushing the previous session. */
-        (void)serial_finish_command_response(connection);
+         * flushing the previous session.
+         *
+         * Pending outbound data instead means an interrupted request, not a
+         * final response needing ACK grace. Skip the grace period there rather
+         * than retransmitting that payload while tearing down a failed
+         * session; the CLOSE below retires it. */
+        h2_iostreamikcp_stats_t stats = {0};
+        if (h2_iostreamikcp_get_stats(connection->stream, &stats) == H2_PAL_OK &&
+            stats.waitsnd == 0u) {
+            (void)serial_finish_command_response(connection);
+        }
         /* Retire the peer's KCP session explicitly. Otherwise an immediate
          * next CLI process must interrupt an old command flush with its OPEN,
          * and that replacement frame can be lost in BK's CP/AP UART tunnel.
@@ -744,6 +763,44 @@ h2_pal_result_t h2_h2loader_host_serial_execute_command(
         out_result);
 }
 
+typedef struct serial_stage_output {
+    h2_h2loader_host_serial_connection_t *connection;
+    char line[192];
+    size_t length;
+    int overflow;
+} serial_stage_output_t;
+
+static h2_pal_result_t serial_stage_output(void *user,
+    const uint8_t *data, size_t len) {
+    serial_stage_output_t *output = user;
+    if (output->connection->on_log != NULL) {
+        h2_pal_result_t rc = output->connection->on_log(
+            output->connection->log_user, data, len);
+        if (rc != H2_PAL_OK) return rc;
+    }
+    /* A failed receive never emits the later STAGE result. Surface that
+     * terminal now instead of turning it into a timeout and reconnect loop.
+     * Responses can arrive in arbitrary KCP chunks, including split lines. */
+    for (size_t i = 0u; i < len; ++i) {
+        if (data[i] == '\n' || data[i] == '\r') {
+            output->line[output->length] = '\0';
+            int failed = !output->overflow &&
+                (strncmp(output->line, "H2_LOADER_STAGE_RECEIVE result=fail",
+                         strlen("H2_LOADER_STAGE_RECEIVE result=fail")) == 0 ||
+                 strncmp(output->line, "H2_LOADER_STAGE result=fail",
+                         strlen("H2_LOADER_STAGE result=fail")) == 0);
+            output->length = 0u;
+            output->overflow = 0;
+            if (failed) return H2_PAL_ERR_IO;
+        } else if (output->length + 1u < sizeof(output->line)) {
+            output->line[output->length++] = (char)data[i];
+        } else {
+            output->overflow = 1;
+        }
+    }
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_h2loader_host_serial_stage(
     h2_h2loader_host_serial_connection_t *connection,
     const h2_h2loader_host_catalog_entry_t *asset,
@@ -814,6 +871,7 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    serial_stage_output_t output = {.connection = connection};
     rc = serial_read_until(
         connection,
         "H2_LOADER_STAGE_RECEIVE result=",
@@ -822,8 +880,8 @@ h2_pal_result_t h2_h2loader_host_serial_stage(
         sizeof(response),
         &response_len,
         connection->command_timeout_ms + 30000u,
-        NULL,
-        NULL,
+        serial_stage_output,
+        &output,
         0u,
         NULL);
     /* Every payload byte has already been KCP-acknowledged here.  BK can
