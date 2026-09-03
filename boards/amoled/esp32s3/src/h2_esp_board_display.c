@@ -31,6 +31,13 @@
 #define LCD_CONTROL_PANEL_MASK (LCD_CONTROL_RESET_MASK | LCD_CONTROL_POWER_MASK)
 #define LCD_BITS_PER_PIXEL 16
 #define LCD_DRAW_ROWS 64
+/*
+ * Smallest chunk the panel still draws with. An H2Loader app image opens the
+ * panel after the BLE controller and the loader tasks have fragmented the
+ * internal DMA heap, so the preferred 64-row buffer is often unavailable even
+ * when the total free internal memory is far larger.
+ */
+#define LCD_DRAW_ROWS_MIN 8
 #define LCD_DMA_BUFFER_PIXELS (LCD_WIDTH * LCD_DRAW_ROWS)
 #define LCD_DMA_BUFFER_BYTES (LCD_DMA_BUFFER_PIXELS * sizeof(uint16_t))
 #define LCD_OPCODE_WRITE_CMD 0x02
@@ -195,12 +202,26 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
         return rc;
     }
     if (state->dma_buffer == NULL) {
-        state->dma_buffer = (uint16_t *)heap_caps_malloc(LCD_DMA_BUFFER_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        /* Halve the chunk until the fragmented internal DMA heap can serve it. */
+        for (int rows = LCD_DRAW_ROWS; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {
+            const size_t pixels = (size_t)LCD_WIDTH * (size_t)rows;
+            const size_t bytes = pixels * sizeof(uint16_t);
+            state->dma_buffer = (uint16_t *)heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+            if (state->dma_buffer != NULL) {
+                state->dma_buffer_pixels = pixels;
+                ESP_LOGI(TAG, "display dma buffer rows=%d bytes=%u", rows, (unsigned)bytes);
+                break;
+            }
+        }
         if (state->dma_buffer == NULL) {
-            ESP_LOGE(TAG, "display dma buffer alloc failed bytes=%u", (unsigned)LCD_DMA_BUFFER_BYTES);
+            ESP_LOGE(
+                TAG,
+                "display dma buffer alloc failed rows=%d bytes=%u largest=%u",
+                LCD_DRAW_ROWS_MIN,
+                (unsigned)((size_t)LCD_WIDTH * LCD_DRAW_ROWS_MIN * sizeof(uint16_t)),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
             return H2_DISPLAY_ERR_NO_MEMORY;
         }
-        state->dma_buffer_pixels = LCD_DMA_BUFFER_PIXELS;
     }
 
     sh8601_vendor_config_t vendor_config = {
