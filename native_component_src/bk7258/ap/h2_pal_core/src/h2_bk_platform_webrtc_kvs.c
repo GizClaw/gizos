@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define H2_BK_WEBRTC_EVENT_CAPACITY 32u
+
 struct h2_pal_webrtc_channel {
     struct h2_pal_webrtc_peer *owner;
     PRtcDataChannel rtc;
@@ -18,10 +20,20 @@ struct h2_pal_webrtc_channel {
     struct h2_pal_webrtc_channel *next;
 };
 
+typedef struct h2_bk_webrtc_event {
+    struct h2_bk_webrtc_event *next;
+    h2_pal_webrtc_event_t event;
+    uint8_t *payload;
+    char label[MAX_DATA_CHANNEL_NAME_LEN + 1u];
+} h2_bk_webrtc_event_t;
+
 struct h2_pal_webrtc_peer {
     PRtcPeerConnection rtc;
-    h2_pal_webrtc_callbacks_t callbacks;
     h2_pal_webrtc_channel_t *channels;
+    h2_bk_webrtc_event_t *event_head;
+    h2_bk_webrtc_event_t *event_tail;
+    size_t event_count;
+    beken_mutex_t event_mutex;
     volatile int candidate_gathering_done;
 };
 
@@ -50,6 +62,106 @@ static int h2_bk_webrtc_map_status(STATUS status) {
         default:
             return H2_PAL_ERR_IO;
     }
+}
+
+static void h2_bk_webrtc_event_release(h2_pal_webrtc_event_t *event) {
+    if (event == NULL || event->_private == NULL) {
+        return;
+    }
+    h2_bk_webrtc_event_t *node = event->_private;
+    os_free(node->payload);
+    os_free(node);
+    memset(event, 0, sizeof(*event));
+}
+
+static int h2_bk_webrtc_enqueue_event(
+    h2_pal_webrtc_peer_t *peer, h2_pal_webrtc_event_kind_t kind,
+    h2_pal_webrtc_channel_t *channel, h2_pal_webrtc_channel_state_t state,
+    h2_pal_webrtc_peer_state_t peer_state,
+    h2_pal_webrtc_sdp_type_t sdp_type, const void *payload,
+    size_t payload_len, int is_text) {
+    if (peer == NULL || peer->event_mutex == NULL ||
+        (payload == NULL && payload_len != 0u) || payload_len == SIZE_MAX) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_bk_webrtc_event_t *node = h2_bk_webrtc_alloc(sizeof(*node));
+    if (node == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (payload_len != 0u) {
+        node->payload = h2_bk_webrtc_alloc(payload_len + 1u);
+        if (node->payload == NULL) {
+            os_free(node);
+            return H2_PAL_ERR_NO_MEMORY;
+        }
+        memcpy(node->payload, payload, payload_len);
+    }
+    node->event.kind = kind;
+    node->event.peer = peer;
+    node->event.channel = channel;
+    node->event.channel_state = state;
+    node->event.peer_state = peer_state;
+    node->event.sdp_type = sdp_type;
+    node->event.data = node->payload;
+    node->event.data_len = payload_len;
+    node->event.is_text = is_text;
+    if (channel != NULL) {
+        node->event.channel_info = channel->info;
+        memcpy(node->label, channel->label, channel->info.label.len + 1u);
+        node->event.channel_info.label.data = node->label;
+    }
+    if (kind == H2_PAL_WEBRTC_EVENT_LOCAL_SDP) {
+        node->event.sdp.data = (const char *)node->payload;
+        node->event.sdp.len = payload_len;
+        node->event.data = NULL;
+        node->event.data_len = 0u;
+    }
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        os_free(node->payload);
+        os_free(node);
+        return H2_PAL_ERR_IO;
+    }
+    if (peer->event_count >= H2_BK_WEBRTC_EVENT_CAPACITY) {
+        (void)rtos_unlock_mutex(&peer->event_mutex);
+        os_free(node->payload);
+        os_free(node);
+        return H2_PAL_ERR_FULL;
+    }
+    if (peer->event_tail == NULL) {
+        peer->event_head = node;
+    } else {
+        peer->event_tail->next = node;
+    }
+    peer->event_tail = node;
+    ++peer->event_count;
+    (void)rtos_unlock_mutex(&peer->event_mutex);
+    return H2_PAL_OK;
+}
+
+static int h2_bk_webrtc_dequeue_event(h2_pal_webrtc_peer_t *peer,
+                                      h2_pal_webrtc_event_t *out_event) {
+    if (peer == NULL || out_event == NULL || peer->event_mutex == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        return H2_PAL_ERR_IO;
+    }
+    h2_bk_webrtc_event_t *node = peer->event_head;
+    if (node != NULL) {
+        peer->event_head = node->next;
+        if (peer->event_head == NULL) {
+            peer->event_tail = NULL;
+        }
+        --peer->event_count;
+    }
+    (void)rtos_unlock_mutex(&peer->event_mutex);
+    if (node == NULL) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    *out_event = node->event;
+    out_event->_private = node;
+    out_event->_release = h2_bk_webrtc_event_release;
+    return H2_PAL_OK;
 }
 
 static h2_pal_webrtc_peer_state_t h2_bk_webrtc_map_state(RTC_PEER_CONNECTION_STATE state) {
@@ -137,30 +249,20 @@ static void h2_bk_webrtc_on_open(UINT64 customData, PRtcDataChannel rtc) {
         channel->info.stream_id = (uint16_t)rtc->id;
         channel->info.has_stream_id = 1;
     }
-    if (channel->owner->callbacks.on_channel_state != NULL) {
-        channel->owner->callbacks.on_channel_state(
-            channel->owner->callbacks.user,
-            channel->owner,
-            channel,
-            &channel->info,
-            H2_PAL_WEBRTC_CHANNEL_OPEN);
-    }
+    (void)h2_bk_webrtc_enqueue_event(
+        channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, channel,
+        H2_PAL_WEBRTC_CHANNEL_OPEN, 0, 0, NULL, 0u, 0);
 }
 
 static void h2_bk_webrtc_on_message(UINT64 customData, PRtcDataChannel rtc, BOOL isBinary, PBYTE data, UINT32 len) {
     h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)(uintptr_t)customData;
-    if (channel == NULL || channel->owner == NULL || channel->owner->callbacks.on_channel_message == NULL) {
+    if (channel == NULL || channel->owner == NULL) {
         return;
     }
     channel->rtc = rtc;
-    channel->owner->callbacks.on_channel_message(
-        channel->owner->callbacks.user,
-        channel->owner,
-        channel,
-        &channel->info,
-        data,
-        len,
-        isBinary ? 0 : 1);
+    (void)h2_bk_webrtc_enqueue_event(
+        channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE, channel, 0, 0, 0,
+        data, len, isBinary ? 0 : 1);
 }
 
 static void h2_bk_webrtc_on_data_channel(UINT64 customData, PRtcDataChannel rtc) {
@@ -188,10 +290,12 @@ static void h2_bk_webrtc_on_data_channel(UINT64 customData, PRtcDataChannel rtc)
 
 static void h2_bk_webrtc_on_connection_state(UINT64 customData, RTC_PEER_CONNECTION_STATE state) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)(uintptr_t)customData;
-    if (peer == NULL || peer->callbacks.on_peer_state == NULL) {
+    if (peer == NULL) {
         return;
     }
-    peer->callbacks.on_peer_state(peer->callbacks.user, peer, h2_bk_webrtc_map_state(state));
+    (void)h2_bk_webrtc_enqueue_event(
+        peer, H2_PAL_WEBRTC_EVENT_PEER_STATE, NULL, 0,
+        h2_bk_webrtc_map_state(state), 0, NULL, 0u, 0);
 }
 
 static void h2_bk_webrtc_on_ice_candidate(UINT64 customData, PCHAR candidate_json) {
@@ -224,19 +328,22 @@ static BOOL h2_bk_webrtc_filter_network_interface(UINT64 custom_data, PCHAR netw
 }
 
 static h2_pal_result_t h2_bk_webrtc_peer_create(
-    void *user,
-    const h2_pal_webrtc_callbacks_t *callbacks,
-    h2_pal_webrtc_peer_t **out_peer) {
+    void *user, h2_pal_webrtc_peer_t **out_peer) {
     (void)user;
-    if (callbacks == NULL || out_peer == NULL) {
+    if (out_peer == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    *out_peer = NULL;
     int init_rc = h2_bk_webrtc_ensure_initialized();
     if (init_rc != H2_PAL_OK) {
         return init_rc;
     }
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)h2_bk_webrtc_alloc(sizeof(*peer));
     if (peer == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (rtos_init_mutex(&peer->event_mutex) != kNoErr) {
+        os_free(peer);
         return H2_PAL_ERR_NO_MEMORY;
     }
     RtcConfiguration config;
@@ -252,10 +359,10 @@ static h2_pal_result_t h2_bk_webrtc_peer_create(
     STATUS status = createPeerConnection(&config, &peer->rtc);
     if (STATUS_FAILED(status)) {
         printf("H2_BK_WEBRTC_ERROR stage=create_peer status=0x%08lx\n", (unsigned long)status);
+        (void)rtos_deinit_mutex(&peer->event_mutex);
         os_free(peer);
         return h2_bk_webrtc_map_status(status);
     }
-    peer->callbacks = *callbacks;
     status = peerConnectionOnConnectionStateChange(peer->rtc, (UINT64)(uintptr_t)peer, h2_bk_webrtc_on_connection_state);
     if (STATUS_SUCCEEDED(status)) {
         status = peerConnectionOnDataChannel(peer->rtc, (UINT64)(uintptr_t)peer, h2_bk_webrtc_on_data_channel);
@@ -266,6 +373,7 @@ static h2_pal_result_t h2_bk_webrtc_peer_create(
     if (STATUS_FAILED(status)) {
         printf("H2_BK_WEBRTC_ERROR stage=peer_callbacks status=0x%08lx\n", (unsigned long)status);
         freePeerConnection(&peer->rtc);
+        (void)rtos_deinit_mutex(&peer->event_mutex);
         os_free(peer);
         return h2_bk_webrtc_map_status(status);
     }
@@ -309,15 +417,12 @@ static h2_pal_result_t h2_bk_webrtc_peer_start_offer(h2_pal_webrtc_peer_t *peer)
         os_free(offer);
         return h2_bk_webrtc_map_status(status);
     }
-    if (peer->callbacks.on_local_sdp != NULL) {
-        h2_pal_webrtc_str_t sdp = {
-            .data = offer->sdp,
-            .len = strlen(offer->sdp),
-        };
-        peer->callbacks.on_local_sdp(peer->callbacks.user, peer, H2_PAL_WEBRTC_SDP_OFFER, sdp);
-    }
+    const size_t sdp_len = strlen(offer->sdp);
+    const int event_rc = h2_bk_webrtc_enqueue_event(
+        peer, H2_PAL_WEBRTC_EVENT_LOCAL_SDP, NULL, 0, 0,
+        H2_PAL_WEBRTC_SDP_OFFER, offer->sdp, sdp_len, 0);
     os_free(offer);
-    return H2_PAL_OK;
+    return event_rc;
 }
 
 static h2_pal_result_t h2_bk_webrtc_peer_set_remote_sdp(
@@ -401,12 +506,25 @@ static h2_pal_result_t h2_bk_webrtc_peer_create_data_channel(
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_bk_webrtc_peer_poll(h2_pal_webrtc_peer_t *peer, int timeout_ms) {
-    (void)peer;
-    if (timeout_ms > 0) {
-        (void)rtos_delay_milliseconds((uint32_t)timeout_ms);
+static h2_pal_result_t h2_bk_webrtc_peer_poll(
+    h2_pal_webrtc_peer_t *peer, int timeout_ms,
+    h2_pal_webrtc_event_t *out_event) {
+    if (peer == NULL || out_event == NULL || timeout_ms < 0) {
+        return H2_PAL_ERR_INVALID_ARG;
     }
-    return H2_PAL_OK;
+    uint32_t remaining_ms = (uint32_t)timeout_ms;
+    for (;;) {
+        const int rc = h2_bk_webrtc_dequeue_event(peer, out_event);
+        if (rc != H2_PAL_ERR_WOULD_BLOCK) {
+            return rc;
+        }
+        if (remaining_ms == 0u) {
+            return timeout_ms == 0 ? H2_PAL_ERR_WOULD_BLOCK
+                                   : H2_PAL_ERR_TIMEOUT;
+        }
+        (void)rtos_delay_milliseconds(1u);
+        --remaining_ms;
+    }
 }
 
 static h2_pal_result_t h2_bk_webrtc_peer_send_opus(
@@ -438,15 +556,12 @@ static h2_pal_result_t h2_bk_webrtc_channel_send(
 }
 
 static void h2_bk_webrtc_channel_close(h2_pal_webrtc_channel_t *channel) {
-    if (channel == NULL || channel->owner == NULL || channel->owner->callbacks.on_channel_state == NULL) {
+    if (channel == NULL || channel->owner == NULL) {
         return;
     }
-    channel->owner->callbacks.on_channel_state(
-        channel->owner->callbacks.user,
-        channel->owner,
-        channel,
-        &channel->info,
-        H2_PAL_WEBRTC_CHANNEL_CLOSED);
+    (void)h2_bk_webrtc_enqueue_event(
+        channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, channel,
+        H2_PAL_WEBRTC_CHANNEL_CLOSED, 0, 0, NULL, 0u, 0);
 }
 
 static void h2_bk_webrtc_peer_close(h2_pal_webrtc_peer_t *peer) {
@@ -463,6 +578,22 @@ static void h2_bk_webrtc_peer_close(h2_pal_webrtc_peer_t *peer) {
         os_free(channel);
         channel = next;
     }
+    if (rtos_lock_mutex(&peer->event_mutex) == kNoErr) {
+        h2_bk_webrtc_event_t *event = peer->event_head;
+        peer->event_head = NULL;
+        peer->event_tail = NULL;
+        peer->event_count = 0u;
+        (void)rtos_unlock_mutex(&peer->event_mutex);
+        while (event != NULL) {
+            h2_bk_webrtc_event_t *next = event->next;
+            h2_pal_webrtc_event_t public_event = event->event;
+            public_event._private = event;
+            public_event._release = h2_bk_webrtc_event_release;
+            h2_bk_webrtc_event_release(&public_event);
+            event = next;
+        }
+    }
+    (void)rtos_deinit_mutex(&peer->event_mutex);
     os_free(peer);
 }
 

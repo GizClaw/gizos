@@ -1,11 +1,8 @@
 #include "h2_esp_platform_core.h"
 
 static h2_pal_result_t h2_esp_platform_webrtc_peer_create(
-    void *user,
-    const h2_pal_webrtc_callbacks_t *callbacks,
-    h2_pal_webrtc_peer_t **out_peer) {
+    void *user, h2_pal_webrtc_peer_t **out_peer) {
     (void)user;
-    (void)callbacks;
     if (out_peer != NULL) {
         *out_peer = NULL;
     }
@@ -39,9 +36,12 @@ static h2_pal_result_t h2_esp_platform_webrtc_peer_create_data_channel(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static h2_pal_result_t h2_esp_platform_webrtc_peer_poll(h2_pal_webrtc_peer_t *peer, int timeout_ms) {
+static h2_pal_result_t h2_esp_platform_webrtc_peer_poll(
+    h2_pal_webrtc_peer_t *peer, int timeout_ms,
+    h2_pal_webrtc_event_t *out_event) {
     (void)peer;
     (void)timeout_ms;
+    (void)out_event;
     return H2_PAL_ERR_UNSUPPORTED;
 }
 

@@ -43,7 +43,6 @@ add_library(h2peer STATIC
   "${H2PEER_ROOT}/src/h2_peer_webrtc.c"
   "${H2PEER_ROOT}/src/ice/h2_peer_ice.c"
   "${H2PEER_ROOT}/src/providers/h2_peer_portable_backend.c"
-  "${H2PEER_ROOT}/src/providers/h2_peer_providers.c"
   "${H2PEER_ROOT}/src/turn/h2_peer_turn.c"
   ${H2PEER_PORTABLE_SOURCES})
 
@@ -56,8 +55,7 @@ target_include_directories(h2peer
     "${H2PEER_ROOT}/src/providers/portable")
 target_compile_features(h2peer PUBLIC c_std_11)
 target_compile_definitions(h2peer PRIVATE
-  CONFIG_SDP_BUFFER_SIZE=12000
-  H2_PEER_PRODUCTION_ONLY=1)
+  CONFIG_SDP_BUFFER_SIZE=12000)
 target_compile_options(h2peer PRIVATE
   -Wall
   -Wextra

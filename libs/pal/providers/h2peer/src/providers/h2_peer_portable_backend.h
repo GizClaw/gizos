@@ -1,7 +1,7 @@
 #ifndef H2_PEER_PORTABLE_BACKEND_H
 #define H2_PEER_PORTABLE_BACKEND_H
 
-#include "../h2_peer_internal.h"
+#include "h2_peer.h"
 
 h2_pal_result_t h2_peer_portable_start_offer(h2_pal_webrtc_peer_t *peer);
 h2_pal_result_t h2_peer_portable_set_remote_sdp(h2_pal_webrtc_peer_t *peer,

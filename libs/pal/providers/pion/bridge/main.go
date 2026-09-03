@@ -143,22 +143,28 @@ func h2PionGoPeerCreateDataChannel(
 	return resultFor(err)
 }
 
-//export h2PionGoPeerPoll
-func h2PionGoPeerPoll(handle C.uint64_t, peerKey C.uintptr_t, timeoutMS C.int) C.int {
+//export h2PionGoPeerDispatch
+func h2PionGoPeerDispatch(handle C.uint64_t, peerKey C.uintptr_t) C.int {
 	backend, ok := backendFor(handle)
 	if !ok {
 		return resultInvalidState
 	}
-	events, overflow := backend.Poll(int(timeoutMS))
-	for _, event := range events {
-		if result := dispatchEvent(peerKey, event); result != resultOK {
-			return result
+	// The PAL worker provides pacing. Its public poll does not enter Go.
+	var result C.int
+	overflow, err := backend.Dispatch(func(event pion.Event) error {
+		result = dispatchEvent(peerKey, event)
+		if result != resultOK {
+			return pion.ErrWouldBlock // retain the event, including on fatal error
 		}
-	}
+		return nil
+	})
 	if overflow {
 		return resultFull
 	}
-	return resultOK
+	if err != nil && result == resultOK {
+		return resultFor(err)
+	}
+	return result
 }
 
 //export h2PionGoChannelSend
@@ -257,7 +263,7 @@ func resultFor(err error) C.int {
 func dispatchEvent(peerKey C.uintptr_t, event pion.Event) C.int {
 	switch event.Kind {
 	case pion.EventPeerState:
-		C.h2_pion_bridge_emit_peer_state(peerKey, C.int(event.State))
+		return C.h2_pion_bridge_emit_peer_state(peerKey, C.int(event.State))
 	case pion.EventChannelOpen:
 		label := []byte(event.Label)
 		var labelData *C.char
@@ -276,13 +282,15 @@ func dispatchEvent(peerKey C.uintptr_t, event pion.Event) C.int {
 			boolInt(event.Remote),
 		)
 	case pion.EventChannelState:
-		C.h2_pion_bridge_emit_channel_state(peerKey, C.uint64_t(event.ChannelKey), C.int(event.State))
+		return C.h2_pion_bridge_emit_channel_state(peerKey, C.uint64_t(event.ChannelKey), C.int(event.State))
+	case pion.EventWritable:
+		return C.h2_pion_bridge_emit_writable(peerKey, C.uint64_t(event.ChannelKey))
 	case pion.EventChannelMessage:
 		var data *C.uint8_t
 		if len(event.Data) != 0 {
 			data = (*C.uint8_t)(unsafe.Pointer(&event.Data[0]))
 		}
-		C.h2_pion_bridge_emit_channel_message(
+		return C.h2_pion_bridge_emit_channel_message(
 			peerKey,
 			C.uint64_t(event.ChannelKey),
 			data,
@@ -291,7 +299,7 @@ func dispatchEvent(peerKey C.uintptr_t, event pion.Event) C.int {
 		)
 	case pion.EventOpusFrame:
 		if len(event.Data) != 0 {
-			C.h2_pion_bridge_emit_opus_frame(
+			return C.h2_pion_bridge_emit_opus_frame(
 				peerKey,
 				(*C.uint8_t)(unsafe.Pointer(&event.Data[0])),
 				C.size_t(len(event.Data)),
