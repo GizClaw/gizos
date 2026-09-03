@@ -2452,19 +2452,48 @@ static h2_lua_job_t *audio_input_job(lua_State *state) {
   return job;
 }
 
+/* Caps each h2_pal_audio_mic_read call so a long/indefinite caller timeout
+ * still lets the job mutex (held across this call by the Lua worker) be
+ * re-checked for host shutdown or job cancellation between slices, instead
+ * of blocking the worker thread until a frame arrives. */
+#define H2_LUA_AUDIO_INPUT_POLL_MS 50u
+
 static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
                                   uint32_t timeout_ms,
                                   h2_audio_frame_t *out_frame) {
   int result;
-  *out_frame = h2_audio_frame_for_buffer(job->audio_mic_buffer,
-                                         job->audio_mic_buffer_capacity,
-                                         job->audio_mic_format);
-  result = h2_pal_audio_mic_read(job->host->config.runtime->audio, out_frame,
-                                 timeout_ms);
-  if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
-    lua_pushnil(state);
-    lua_pushliteral(state, "audio input: busy");
-    return 2;
+  uint64_t deadline_ms = h2_lua_now_ms(job->host) + (uint64_t)timeout_ms;
+  uint32_t remaining_ms = timeout_ms;
+  for (;;) {
+    uint32_t slice_ms = remaining_ms < H2_LUA_AUDIO_INPUT_POLL_MS
+                             ? remaining_ms
+                             : H2_LUA_AUDIO_INPUT_POLL_MS;
+    *out_frame = h2_audio_frame_for_buffer(job->audio_mic_buffer,
+                                           job->audio_mic_buffer_capacity,
+                                           job->audio_mic_format);
+    result = h2_pal_audio_mic_read(job->host->config.runtime->audio, out_frame,
+                                   slice_ms);
+    if (result != H2_PAL_ERR_WOULD_BLOCK && result != H2_PAL_ERR_TIMEOUT) {
+      break;
+    }
+    if (job->cancel_requested || atomic_load(&job->host->stopping) != 0) {
+      lua_pushnil(state);
+      lua_pushliteral(state, "audio input: cancelled");
+      return 2;
+    }
+    if (slice_ms >= remaining_ms) {
+      lua_pushnil(state);
+      lua_pushliteral(state, "audio input: busy");
+      return 2;
+    }
+    uint64_t now_ms = h2_lua_now_ms(job->host);
+    if (now_ms >= deadline_ms) {
+      lua_pushnil(state);
+      lua_pushliteral(state, "audio input: busy");
+      return 2;
+    }
+    uint64_t remaining = deadline_ms - now_ms;
+    remaining_ms = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
   }
   if (result != H2_PAL_OK || out_frame->bytes == 0u ||
       out_frame->bytes > job->audio_mic_buffer_capacity ||
