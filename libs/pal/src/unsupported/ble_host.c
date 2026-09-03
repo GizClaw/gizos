@@ -51,6 +51,18 @@ static h2_pal_result_t unsupported_ble_host_adv_set_set_data(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_ble_host_adv_set_set_encoded_data(
+    void *p0,
+    h2_pal_ble_adv_set_t *p1,
+    const uint8_t *p2,
+    size_t p3) {
+    (void)p0;
+    (void)p1;
+    (void)p2;
+    (void)p3;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t unsupported_ble_host_adv_set_set_scan_response_data(
     void *p0,
     h2_pal_ble_adv_set_t *p1,
@@ -211,6 +223,8 @@ static const h2_pal_ble_vtable_t unsupported_ble_host_vtable = {
     .stop_advertising = unsupported_ble_host_stop_advertising,
     .adv_set_create = unsupported_ble_host_adv_set_create,
     .adv_set_set_data = unsupported_ble_host_adv_set_set_data,
+    .adv_set_set_encoded_data =
+        unsupported_ble_host_adv_set_set_encoded_data,
     .adv_set_set_scan_response_data =
         unsupported_ble_host_adv_set_set_scan_response_data,
     .adv_set_start = unsupported_ble_host_adv_set_operation,

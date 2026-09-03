@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FAKE_MESSAGE_MAX 32u
+#define FAKE_MESSAGE_MAX 48u
 #define FAKE_SERVICE_MAX 8u
 #define FAKE_SERVICE_ATTRIBUTE_MAX 16u
 

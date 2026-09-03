@@ -28,6 +28,7 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_pref_store.c"
   "src/h2_esp_platform_system_event.c"
   "src/h2_esp_platform_modem_unsupported.c"
+  "src/h2_esp_ble_exact_adapter.c"
   "src/h2_esp_platform_ble.c"
   "src/h2_esp_platform_littlefs.c"
   "src/h2_esp_platform_spiffs.c")

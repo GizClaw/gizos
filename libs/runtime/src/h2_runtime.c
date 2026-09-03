@@ -472,6 +472,8 @@ void h2_runtime_deinit(h2_runtime_t *runtime) {
     }
     h2_runtime_input_release(runtime);
     h2_runtime_stop_system_events(runtime);
+    /* Last producer to shut down: app tasks posting custom events. */
+    h2_runtime_custom_event_close(runtime);
 
     if (runtime->private_state->event_queue != NULL) {
         h2_pal_queue_destroy(runtime->queue, runtime->private_state->event_queue);

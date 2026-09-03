@@ -110,6 +110,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_wifi_csi.c"
   ${H2_BK_PLATFORM_WIFI_EVENT_DISPATCH_SOURCE}
   "src/h2_bk_platform_wifi_settings.c"
+  "src/h2_bk_ble_exact_adapter.c"
   "src/h2_bk_platform_ble.c"
   "src/h2_bk_platform_ble_heap.c")
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")

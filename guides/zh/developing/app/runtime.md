@@ -210,9 +210,36 @@ Runtime event queue 是有界队列。App event handler 不能在处理事件时
 
 ## 接入 Runtime Event Loop
 
-当前 public Runtime event producer 只覆盖 Runtime system/component event。App handler 把这些 Runtime event 转换成 app-owned action、更新 app state 并产生 effect。UI input、timer 和 library API completion 不是 Runtime event，不能通过 private `h2_runtime_emit_event()` 接入。
+Runtime system/component event 由 Runtime 自己的 producer 产生。App handler 把这些 Runtime event 转换成 app-owned action、更新 app state 并产生 effect。App 和 Library 自己的 completion 不能伪装成 Runtime system/component fact，也不能通过 private `h2_runtime_emit_event()` 接入；它们使用 public custom event 接口：
 
-Library 可以定义自己的有界 completion queue 和 caller-thread dispatch API。App main loop 先处理本轮已经取得的 Runtime input，再以固定上限 dispatch completion callback；callback 在 main-loop thread 执行 transition，随后完成同一轮 State、Subject 和 UI 投影。Library worker 只执行阻塞工作并入队 completion，不能直接修改 App state，也不能把 callback completion 伪装成 Runtime system/component fact。
+```c
+const h106_job_completion_event_t completion = { job_id, generation, result };
+const h2_runtime_custom_event_t event = {
+    .id = H106_EVENT_JOB_COMPLETED,
+    .payload = &completion,
+    .payload_size = sizeof(completion),
+};
+/* 任意后台 Task 都可以调用；立即唤醒 main loop 的 wait_event */
+h2_pal_result_t rc = h2_runtime_post_custom_event(runtime, &event);
+```
+
+`main_loop` 因此只等待 Runtime queue，不需要为了发现 completion 而定时轮询：
+
+```c
+if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
+    const h2_runtime_custom_event_payload_t *custom = event.payload;
+
+    switch (custom->id) {
+    case H106_EVENT_JOB_COMPLETED:
+        /* 按 job_id 找到 Job、校验 generation、join task、执行 completion */
+        break;
+    }
+}
+```
+
+Custom event 只携带值（例如 `job_id + generation + result`），不携带 Job 指针、callback 或 Task handle：即使页面已经退出、Job 已被取消或 completion 迟到，main loop 也只会查表失败，不会解引用已释放的对象。Payload 由 Runtime 复制，上限见 `h2_runtime_custom_event_payload_capacity()`；queue 满时投递返回 `H2_PAL_ERR_FULL`，由投递方决定重试还是丢弃。
+
+Library worker 只执行阻塞工作并投递 completion，不能直接修改 App state。Library 也可以继续使用自己的有界 completion queue 加 caller-thread dispatch API，此时用一个 custom event 通知 main loop 有 completion 可 dispatch；callback 仍在 main-loop thread 执行 transition，随后完成同一轮 State、Subject 和 UI 投影。
 
 ```mermaid
 flowchart TD
@@ -224,8 +251,9 @@ flowchart TD
     Transition --> Effect["Effect command"]
     Effect --> Worker["Runtime API 或后台 task"]
     Effect --> Library["Library operation submit"]
-    Library --> Completion["Library completion queue"]
-    Completion --> Dispatch["App main-loop dispatch"]
+    Library --> Completion["h2_runtime_post_custom_event()"]
+    Completion --> RuntimeLoop
+    RuntimeLoop --> Dispatch["App main-loop dispatch"]
     Dispatch --> Transition
 ```
 
