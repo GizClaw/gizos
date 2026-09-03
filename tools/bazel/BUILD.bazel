@@ -343,6 +343,12 @@ cc_library(
 )
 
 cc_library(
+    name = "vendor_third_party_qrcodegen",
+    tags = ["manual"],
+    deps = ["@h2_vendor_qrcodegen//:qrcodegen"],
+)
+
+cc_library(
     name = "vendor_third_party_yyjson",
     tags = ["manual"],
     deps = ["@h2_vendor_yyjson//:yyjson"],

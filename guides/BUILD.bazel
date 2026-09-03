@@ -69,6 +69,7 @@ api_reference(
         "//libs/pal/providers/tinyh264",
         "//libs/pal/providers/wolfssl",
         "//libs/pixa",
+        "//libs/qrcode",
         "//libs/runtime",
         "//libs/utils",
         "//projects/h2loader/libs/h2loader",

@@ -137,6 +137,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`ntp`](./ntp.md)：跨平台 NTP client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
 - [`pixa`](./pixa.md)：PIXA image、pack、decode、reader 和 blit。
+- [`qrcode`](./qrcode.md)：QR Code Model 2 编码与 RGB565 band 栅格化，全部缓冲区由调用方提供。
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
 - [`utils`](./utils.md)：APN 等小型 portable helper。
