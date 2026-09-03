@@ -34,7 +34,9 @@ Version 10 对应 468 字节，足以容纳典型的配网 URL；固件不需要
 
 `h2_qrcode_layout_center()` 在给定像素表面内选择能整除的最大 module 尺寸，并居中
 符号；表面装不下符号加 quiet zone 时返回 `H2_PAL_ERR_NO_SPACE`，不会输出被裁切的
-布局。Quiet zone 至少为规范要求的 `H2_QRCODE_QUIET_MODULES_MIN`。
+布局。Quiet zone 取值范围是 `H2_QRCODE_QUIET_MODULES_MIN` 到
+`H2_QRCODE_QUIET_MODULES_MAX`；上界保证由 quiet zone 推导出的 module span 与 pixel
+span 都可以用 `int` 表示，超出范围返回 `H2_PAL_ERR_INVALID_ARG` 而不是回绕。
 
 `h2_qrcode_render_rgb565_band()` 每次只栅格化表面的一条整宽横条，调用方据此按条
 推送到 Display PAL，避免整屏 framebuffer。符号内部使用 `dark_color` 与

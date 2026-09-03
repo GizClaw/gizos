@@ -43,6 +43,14 @@ extern "C" {
 
 /** Quiet zone width required by the QR Code specification, in modules. */
 #define H2_QRCODE_QUIET_MODULES_MIN 4
+/**
+ * @brief Widest accepted quiet zone, in modules.
+ *
+ * The bound keeps every module-space and pixel-space span computed from a
+ * quiet zone representable in `int`; wider padding is a surface layout
+ * decision, not a symbol property.
+ */
+#define H2_QRCODE_QUIET_MODULES_MAX 64
 
 /** Error correction level, ordered by ascending protection. */
 typedef enum h2_qrcode_ecc {
@@ -125,8 +133,8 @@ bool h2_qrcode_module_is_dark(const h2_qrcode_t *qrcode, int x, int y);
  * @param qrcode Encoded symbol.
  * @param surface_width Surface width in pixels.
  * @param surface_height Surface height in pixels.
- * @param quiet_modules Quiet zone width per side, at least
- *        H2_QRCODE_QUIET_MODULES_MIN.
+ * @param quiet_modules Quiet zone width per side, in
+ *        [H2_QRCODE_QUIET_MODULES_MIN, H2_QRCODE_QUIET_MODULES_MAX].
  * @param out_layout Centered layout, zeroed on failure.
  * @return H2_PAL_OK on success, H2_PAL_ERR_INVALID_ARG for a rejected
  *         argument, or H2_PAL_ERR_NO_SPACE when the surface cannot hold the
@@ -145,6 +153,10 @@ h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
  * `light_color`, and everything outside the quiet zone takes
  * `background_color`. The caller owns `out_pixels`, which must hold
  * `band_width * band_height` pixels laid out row-major without padding.
+ *
+ * `layout` must carry a quiet zone within the accepted range and a scale
+ * small enough to keep the drawn span representable in `int`; a layout from
+ * `h2_qrcode_layout_center()` always satisfies both.
  *
  * @return H2_PAL_OK on success, H2_PAL_ERR_INVALID_ARG for a rejected
  *         argument, or H2_PAL_ERR_NO_SPACE when `out_pixels_len` is too small.

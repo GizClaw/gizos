@@ -2,6 +2,7 @@
 
 #include "qrcodegen.h"
 
+#include <limits.h>
 #include <string.h>
 
 /*
@@ -94,7 +95,8 @@ h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (surface_width <= 0 || surface_height <= 0 ||
-      quiet_modules < H2_QRCODE_QUIET_MODULES_MIN) {
+      quiet_modules < H2_QRCODE_QUIET_MODULES_MIN ||
+      quiet_modules > H2_QRCODE_QUIET_MODULES_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
 
@@ -120,22 +122,32 @@ h2_pal_result_t h2_qrcode_render_rgb565_band(
     uint16_t dark_color, uint16_t light_color, uint16_t background_color,
     int band_y, int band_width, int band_height, uint16_t *out_pixels,
     size_t out_pixels_len) {
+  int span_modules = 0;
   int span_pixels = 0;
 
   if (qrcode == NULL || qrcode->modules == NULL || qrcode->size <= 0 ||
       layout == NULL || out_pixels == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (layout->scale < 1 || layout->quiet_modules < 0 || band_y < 0 ||
+  if (layout->scale < 1 ||
+      layout->quiet_modules < H2_QRCODE_QUIET_MODULES_MIN ||
+      layout->quiet_modules > H2_QRCODE_QUIET_MODULES_MAX || band_y < 0 ||
       band_width <= 0 || band_height <= 0) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  /* The bottom band row and the drawn span must stay representable. */
+  if (band_height > INT_MAX - band_y) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  span_modules = qrcode->size + 2 * layout->quiet_modules;
+  if (layout->scale > INT_MAX / span_modules) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (out_pixels_len < (size_t)band_width * (size_t)band_height) {
     return H2_PAL_ERR_NO_SPACE;
   }
 
-  span_pixels =
-      (qrcode->size + 2 * layout->quiet_modules) * layout->scale;
+  span_pixels = span_modules * layout->scale;
   for (int row = 0; row < band_height; ++row) {
     uint16_t *pixels = &out_pixels[(size_t)row * (size_t)band_width];
     const int surface_y = band_y + row;
