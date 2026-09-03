@@ -9,6 +9,7 @@
 #include "h2_pal.h"
 #include "h2/pal/os/h2_pal_disk.h"
 #include "h2_runtime_component.h"
+#include "h2_runtime_custom_event.h"
 #include "h2_runtime_event.h"
 #include "h2_runtime_input.h"
 #include "h2_runtime_input_button_defs.h"
