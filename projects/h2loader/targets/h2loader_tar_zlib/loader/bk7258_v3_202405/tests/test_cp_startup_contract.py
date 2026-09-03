@@ -4,6 +4,26 @@ import unittest
 
 
 class CpStartupContractTest(unittest.TestCase):
+    def test_managed_uart_uses_one_460800_contract(self):
+        runfiles = Path(os.environ["TEST_SRCDIR"])
+        definitions = {
+            "h2_bk_h2loader_cp_transport.c": "#define H2_BK_CP_UART_BAUD_RATE 460800u",
+            "h2_bk_platform_uart_io_stream.c": "#define H2_BK_UART_BAUD_RATE 460800u",
+            "h2_bk_h2loader_iostreamikcp.c": "#define H2_BK_SERIAL_BAUD_RATE 460800u",
+        }
+        for name, expected in definitions.items():
+            sources = list(runfiles.rglob(name))
+            self.assertEqual(1, len(sources), [str(path) for path in sources])
+            self.assertIn(expected, sources[0].read_text(encoding="utf-8"))
+
+        defaults = list(runfiles.rglob("cp.defaults"))
+        self.assertEqual(2, len(defaults), [str(path) for path in defaults])
+        for path in defaults:
+            self.assertIn(
+                "CONFIG_UART_PRINT_BAUD_RATE=460800",
+                path.read_text(encoding="utf-8"),
+            )
+
     def test_shared_launcher_registers_transport_after_bk_init(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         launchers = list(runfiles.rglob("h2loader_cp_launcher/src/cp_main.c"))

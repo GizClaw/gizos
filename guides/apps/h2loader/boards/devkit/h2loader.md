@@ -6,12 +6,13 @@
 bazel build --config=esp32s3 \
   --//tools/bazel:firmware_version=<version> \
   //projects/h2loader/targets/h2loader_tar_zlib/loader/devkit:package \
+  //projects/h2loader/targets/h2loader_tar_zlib/loader/devkit:package_uart_460800 \
   //projects/h2loader/targets/h2loader_tar_zlib/e2e-app/devkit:package
 ```
 
-USB Serial/JTAG 是 canonical console；provider 只接受 launcher 声明的 allowlisted build variables，不能用文档暴露第二套 native build tree。内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 managed package 和 release metadata；ESP-IDF app descriptor 和 package manifest 使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
+默认 `package` 使用 USB Serial/JTAG console；`package_uart_460800` 使用 UART0 460800 console。每个 DevKit firmware Bazel target 必须通过 `console = "usb"` 或 `console = "uart"` 显式选择 profile，CMake 只消费 Bazel 传入的 defaults 文件，不自行猜测 console。内部 `bazel-bin/.../firmware/` 保存 raw image 与 recovery bundle，最终 `bazel-bin/.../package/` 保存 managed package 和 release metadata；ESP-IDF app descriptor 和 package manifest 使用同一个 Bazel firmware version。Board defaults 固定启用 PSRAM XIP。
 
-managed UART 默认 115200。Host open 后先 deassert DTR/RTS；native USB Serial/JTAG provider 返回 canonical `UNSUPPORTED` 时继续，任何其它控制线错误终止连接。APP 与 Loader status 都从设备端 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`；BLE endpoint 只负责发现，任何重启后的连接都必须先匹配 UID。
+USB Serial/JTAG 不使用 UART baud；CLI 的 `--baud` 参数不会改变它的 USB 链路速率。UART profile 固定为 460800，调用 CLI 和 E2E runner 时必须显式传入 `--baud 460800`。Host open 后先 deassert DTR/RTS；native USB Serial/JTAG provider 返回 canonical `UNSUPPORTED` 时继续，任何其它控制线错误终止连接。APP 与 Loader status 都从设备端 BLE public/identity MAC 返回 12 位小写十六进制 `device_uid`；BLE endpoint 只负责发现，任何重启后的连接都必须先匹配 UID。
 
 ## Partition layout
 
@@ -19,7 +20,7 @@ managed UART 默认 115200。Host open 后先 deassert DTR/RTS；native USB Seri
 
 ## sdkconfig
 
-待补充 USB Serial/JTAG 与 UART console 对应的 `sdkconfig` defaults 和关键配置。
+`boards/devkit/esp32s3/layouts/h2loader/loader_usb.defaults` 启用 native USB Serial/JTAG console，不设置 monitor baud。`loader_uart.defaults` 启用 UART0 custom console，并把 console 与 ESPTool monitor baud 都设为 460800。Console profile 不放在 board-wide `sdkconfig.defaults`，避免 board defaults 隐式覆盖 Bazel target 的选择。
 
 ## 预期表现
 
@@ -36,7 +37,6 @@ H2LOADER_E2E_WIFI_PASSWORD='<password>' \
 bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --uart <serial-endpoint> \
   --ble-id <ble-endpoint> \
-  --baud 115200 \
   --expected-board devkit \
   --expected-target esp32s3 \
   --app-firmware <devkit-e2e-app-esp32s3.update.tar.zlib> \
@@ -50,7 +50,7 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --report <report.json>
 ```
 
-2026-08-31 的 PR #64 head `b6370c4` 在当时的 230400 contract 下完成实板验收；当前默认 contract 已改为 115200：UART
+2026-08-31 的 PR #64 head `b6370c4` 在当时的 230400 contract 下完成实板验收；当前 managed UART 默认 contract 已改为 460800：UART
 31/31 PASS、BLE 28/28 PASS，合计 59/59 PASS。Loader 与 APP 环境都分别覆盖
 `help/status/stats/memory`、旧命令从 help 与 availability 消失、Wi-Fi
 scan/connect/disconnect、payload/URL Stage 和两种 abort；每个 APP case 的 authoritative

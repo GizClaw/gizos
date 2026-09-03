@@ -2,6 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "loader_uart.defaults",
+    "loader_usb.defaults",
     "partition.csv",
     "sdkconfig.h2loader.defaults",
 ])

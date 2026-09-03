@@ -22,19 +22,12 @@ if(NOT EXISTS "${H2_ESP_COMPONENT_DIR}")
 endif()
 set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
 
-set(H2_DEVKIT_CONSOLE "usb_jtag" CACHE STRING "devkit h2loader console: usb_jtag or uart")
-set(H2_DEVKIT_SDKCONFIG_DEFAULTS
-  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults")
-if(H2_DEVKIT_CONSOLE STREQUAL "uart")
-  string(APPEND H2_DEVKIT_SDKCONFIG_DEFAULTS
-    ";${H2_ESP_BOARD_DIR}/layouts/h2loader/loader_uart.defaults")
-elseif(NOT H2_DEVKIT_CONSOLE STREQUAL "usb_jtag")
-  message(FATAL_ERROR "unsupported H2_DEVKIT_CONSOLE=${H2_DEVKIT_CONSOLE}")
+if(NOT DEFINED H2_ESP_CONSOLE_DEFAULTS)
+  message(FATAL_ERROR "Bazel target did not select H2_ESP_CONSOLE_DEFAULTS")
 endif()
-
 set(
   SDKCONFIG_DEFAULTS
-  "${H2_DEVKIT_SDKCONFIG_DEFAULTS}"
+  "${H2_ESP_BOARD_DIR}/layouts/h2loader/${H2_ESP_CONSOLE_DEFAULTS};${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
   CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
 
 set(H2_ESP_BOARD_ALIAS_DIR "${CMAKE_BINARY_DIR}/h2_esp_board")

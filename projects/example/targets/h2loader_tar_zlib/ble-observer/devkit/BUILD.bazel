@@ -72,6 +72,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [
         ":ble_observer_launcher",
     ],

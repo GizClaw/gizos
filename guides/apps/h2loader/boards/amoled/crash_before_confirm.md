@@ -38,7 +38,7 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
 `boards/amoled/esp32s3/sdkconfig.defaults` 启用 16 MiB Flash、USB Serial/JTAG
 console、panic print/reboot 与 flash coredump；最多记录 16 个 task，coredump stack
 为 2048 bytes。H2Loader layout 另启用自定义 partition table 和 ESP APP rollback。
-managed UART 启动默认值为 115200。
+该原生 USB command transport 不使用 UART baud。
 
 ## 验收
 

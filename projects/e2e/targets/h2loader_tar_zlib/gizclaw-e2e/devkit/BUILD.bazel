@@ -103,6 +103,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [":gizclaw_e2e_devkit_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_gizclaw_e2e_devkit",

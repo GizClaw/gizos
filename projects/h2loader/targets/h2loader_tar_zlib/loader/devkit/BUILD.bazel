@@ -69,6 +69,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [
         ":h2loader_launcher",
     ],
@@ -84,5 +85,34 @@ h2loader_tar_zlib(
     firmware = ":firmware",
     image = "loader",
     role = "h2loader",
+    target = "esp32s3",
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware_uart_460800",
+    srcs = [
+        "CMakeLists.txt",
+        "main/CMakeLists.txt",
+        "main/idf_component.yml",
+        "main/main.c",
+    ],
+    board = "devkit",
+    console = "uart",
+    graph = [
+        ":h2loader_launcher",
+    ],
+    project = "CMakeLists.txt",
+    project_name = "h2loader",
+    target = "esp32s3",
+    task_policy = ":task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package_uart_460800",
+    board = "devkit",
+    firmware = ":firmware_uart_460800",
+    image = "loader",
+    role = "h2loader",
+    tags = ["no-release"],
     target = "esp32s3",
 )

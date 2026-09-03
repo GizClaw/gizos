@@ -101,6 +101,10 @@ def _esp_idf_firmware_impl(ctx):
         value = ctx.var.get(name)
         if value != None:
             args.add("--cmake-variable", name + "=" + value)
+    for name in sorted(ctx.attr.cmake_definitions):
+        if name in ctx.attr.cmake_variables:
+            fail("CMake variable %s cannot be both allowlisted and target-owned" % name)
+        args.add("--cmake-variable", name + "=" + ctx.attr.cmake_definitions[name])
     args.add("--support-file", ctx.file._native_component_cmake.path)
     for component in prebuilt_components:
         args.add("--prebuilt-component", component.component_name + "=" + component.archive.path)
@@ -200,6 +204,9 @@ _esp_idf_firmware = rule(
         "board": attr.string(mandatory = True),
         "cmake_variables": attr.string_list(
             doc = "Allowlisted --define values forwarded as CMake cache variables.",
+        ),
+        "cmake_definitions": attr.string_dict(
+            doc = "Target-owned constant CMake cache variables.",
         ),
         "graph": attr.label_list(
             aspects = [firmware_components_aspect],
