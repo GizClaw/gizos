@@ -161,6 +161,9 @@ typedef struct h2_peer_network_event {
   h2_pal_webrtc_sdp_type_t sdp_type;
   uint8_t *data;
   size_t data_len;
+  /* Byte count charged to network_event_bytes at enqueue. data_len is a view
+   * that callers may reshape per kind, so release must refund this instead. */
+  size_t owned_data_len;
   int is_text;
   h2_pal_result_t error;
 } h2_peer_network_event_t;
@@ -414,6 +417,7 @@ h2_peer_queue_network_event(h2_pal_webrtc_peer_t *peer,
   }
   *queued_event = *event;
   queued_event->peer = peer;
+  queued_event->owned_data_len = data_len;
   if (data_len != 0u) {
     queued_event->data = (uint8_t *)(queued_event + 1);
     memcpy(queued_event->data, data, data_len);
@@ -1216,7 +1220,7 @@ static void h2_peer_network_release_event(h2_peer_network_event_t *event) {
   h2_pal_webrtc_peer_t *peer = event->peer;
   h2_peer_t *owner = peer->owner;
   h2_pal_webrtc_channel_t *channel = event->channel;
-  atomic_fetch_sub_explicit(&peer->network_event_bytes, event->data_len,
+  atomic_fetch_sub_explicit(&peer->network_event_bytes, event->owned_data_len,
                             memory_order_relaxed);
   atomic_fetch_sub_explicit(&peer->network_event_count, 1u,
                             memory_order_acq_rel);

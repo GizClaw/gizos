@@ -1,6 +1,10 @@
 #include "address.h"
 #include "socket.h"
 
+// These tests use assertions for both checks and the operations under test.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
