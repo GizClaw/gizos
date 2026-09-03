@@ -2029,6 +2029,51 @@ static void test_event_queue_timeout_drops_event(void) {
     h2_runtime_deinit(runtime);
 }
 
+/*
+ * Custom events share the queue with input events and keep their arrival
+ * order relative to them.
+ */
+static void test_custom_events_interleave_with_input_events(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+
+    const uint32_t job_id = 0x1234u;
+    const h2_runtime_custom_event_t before = {
+        .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
+        .payload = &job_id,
+        .payload_size = sizeof(job_id),
+    };
+    assert(h2_runtime_post_custom_event(runtime, &before) == H2_PAL_OK);
+
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms = 10u;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    h2_runtime_event_payload_buffer_t buffer;
+    h2_runtime_event_t event = {
+        .payload = buffer.bytes,
+        .payload_capacity = sizeof(buffer.bytes),
+    };
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_EVENT_CUSTOM);
+    assert(event.component == H2_RUNTIME_COMPONENT_APP);
+    const h2_runtime_custom_event_payload_t *custom =
+        (const h2_runtime_custom_event_payload_t *)event.payload;
+    assert(custom->id == H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u));
+    assert(custom->size == sizeof(job_id));
+    uint32_t received = 0u;
+    memcpy(&received, custom->data, sizeof(received));
+    assert(received == job_id);
+
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(event.component == H2_RUNTIME_COMPONENT_BUTTON);
+
+    h2_runtime_deinit(runtime);
+}
+
 static void test_button_action_emits_on_release(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -3408,6 +3453,7 @@ int main(void) {
     test_system_event_advertising_queue_failure();
     test_event_small_buffer_does_not_dequeue();
     test_event_queue_timeout_drops_event();
+    test_custom_events_interleave_with_input_events();
     test_button_action_emits_on_release();
     test_button_action_emits_on_every_pressed_poll();
     test_button_rapid_clicks_emit_separate_events();
