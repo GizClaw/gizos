@@ -92,13 +92,39 @@ static int h2_bk_webrtc_enqueue_event(
         (payload == NULL && payload_len != 0u) || payload_len == SIZE_MAX) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    /*
+     * Admission, allocation and the failure boundary share one critical
+     * section so the accepted prefix is exact: once a failure is recorded, no
+     * later event can be admitted ahead of the ERROR report that poll owes the
+     * caller. The allocation is small and only a concurrent poll contends for
+     * this per-peer lock.
+     */
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        /* Nothing was admitted, and no boundary can be published without the
+         * lock; the caller records this failure instead. */
+        return H2_PAL_ERR_IO;
+    }
+    if (peer->queue_result != H2_PAL_OK) {
+        const int sticky = peer->queue_result;
+        (void)rtos_unlock_mutex(&peer->event_mutex);
+        return sticky;
+    }
+    if (peer->event_count >= H2_BK_WEBRTC_EVENT_CAPACITY) {
+        peer->queue_result = H2_PAL_ERR_FULL;
+        (void)rtos_unlock_mutex(&peer->event_mutex);
+        return H2_PAL_ERR_FULL;
+    }
     h2_bk_webrtc_event_t *node = h2_bk_webrtc_alloc(sizeof(*node));
     if (node == NULL) {
+        peer->queue_result = H2_PAL_ERR_NO_MEMORY;
+        (void)rtos_unlock_mutex(&peer->event_mutex);
         return H2_PAL_ERR_NO_MEMORY;
     }
     if (payload_len != 0u) {
         node->payload = h2_bk_webrtc_alloc(payload_len + 1u);
         if (node->payload == NULL) {
+            peer->queue_result = H2_PAL_ERR_NO_MEMORY;
+            (void)rtos_unlock_mutex(&peer->event_mutex);
             os_free(node);
             return H2_PAL_ERR_NO_MEMORY;
         }
@@ -123,17 +149,6 @@ static int h2_bk_webrtc_enqueue_event(
         node->event.sdp.len = payload_len;
         node->event.data = NULL;
         node->event.data_len = 0u;
-    }
-    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
-        os_free(node->payload);
-        os_free(node);
-        return H2_PAL_ERR_IO;
-    }
-    if (peer->event_count >= H2_BK_WEBRTC_EVENT_CAPACITY) {
-        (void)rtos_unlock_mutex(&peer->event_mutex);
-        os_free(node->payload);
-        os_free(node);
-        return H2_PAL_ERR_FULL;
     }
     if (peer->event_tail == NULL) {
         peer->event_head = node;
@@ -248,9 +263,9 @@ static h2_pal_webrtc_channel_t *h2_bk_webrtc_alloc_channel(
 }
 
 /*
- * A dropped event breaks the caller's stream silently, so the first failure
- * becomes a sticky peer error that poll reports once the accepted prefix has
- * been consumed. Callers recover by closing and recreating the peer.
+ * Records a failure that h2_bk_webrtc_enqueue_event() could not publish itself,
+ * namely one detected before it acquired the queue lock. Failures found under
+ * the lock already set queue_result there, atomically with admission.
  */
 static void h2_bk_webrtc_note_event(h2_pal_webrtc_peer_t *peer, int rc) {
     if (peer == NULL || rc == H2_PAL_OK || peer->event_mutex == NULL) {
