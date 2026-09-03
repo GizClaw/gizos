@@ -25,6 +25,8 @@ typedef enum h2_runtime_component {
     H2_RUNTIME_COMPONENT_TEMPERATURE_SENSOR,
     H2_RUNTIME_COMPONENT_SYSTEM_NETIF,
     H2_RUNTIME_COMPONENT_BUZZER,
+    /* Owner of H2_RUNTIME_EVENT_CUSTOM events: the app or library itself. */
+    H2_RUNTIME_COMPONENT_APP,
 } h2_runtime_component_t;
 
 typedef h2_runtime_id_t h2_runtime_component_id_t;

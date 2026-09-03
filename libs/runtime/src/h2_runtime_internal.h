@@ -50,6 +50,7 @@ typedef enum h2_runtime_input_source_kind {
 
 typedef union h2_runtime_queued_payload {
     unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_custom_event_payload_t custom;
     H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS;
 } h2_runtime_queued_payload_t;
 
@@ -278,6 +279,17 @@ struct h2_runtime_private {
     h2_pal_system_event_api_t system_event_proxy;
     h2_pal_video_decoder_api_t video_decoder_proxy;
 
+    /*
+     * Custom event producer guard: h2_runtime_post_custom_event() may run on
+     * any task, so deinit closes the door and drains the in-flight posters
+     * before the event queue is destroyed. The counter uses the same
+     * test-and-set lock pattern as sequence_lock because ARMv5 targets have
+     * no native atomic add.
+     */
+    atomic_flag custom_event_lock;
+    uint32_t custom_event_in_flight;
+    int custom_event_closed;
+
     atomic_flag sequence_lock;
     h2_runtime_sequence_t next_sequence;
     uint32_t dropped_event_count;
@@ -349,6 +361,20 @@ h2_pal_result_t h2_runtime_emit_event(
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued);
+
+/*
+ * Enqueues without the drop-on-full policy the input and system event
+ * producers rely on: a full queue is reported to the caller instead of being
+ * counted as a dropped event.
+ */
+h2_pal_result_t h2_runtime_enqueue_event_strict(
+    h2_runtime_t *runtime,
+    const h2_runtime_queued_event_t *queued,
+    uint32_t timeout_ms);
+
+/* Custom events (h2_runtime_custom_event.c). */
+/* Refuses further posts and waits for in-flight posters to leave. */
+void h2_runtime_custom_event_close(h2_runtime_t *runtime);
 
 h2_runtime_input_source_t *h2_runtime_find_input_source(
     h2_runtime_t *runtime,
