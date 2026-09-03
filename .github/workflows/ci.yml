@@ -514,8 +514,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # native_build_jobs sets how many cores each firmware action reserves,
+          # so a 4-core runner builds one launcher at 4 and two at 2. It only
+          # tunes Bazel's local scheduling and stays out of the action key, so
+          # every job still shares the same cache entries. esp32s3 builds 38
+          # launchers and is throughput-bound, so it trades single-launcher
+          # latency for concurrency; esp32p4 and esp32c5 build few enough that
+          # concurrency cannot pay for itself, and keep the default reservation.
           - name: ESP32-S3 / Build
             config: esp32s3
+            native_build_jobs: "2"
             runner: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
           - name: ESP32-P4 / Build
             config: esp32p4
@@ -718,6 +726,8 @@ jobs:
 
       - name: Build ${{ matrix.config }} compatible graph
         shell: bash
+        env:
+          BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
           . firmware-devenv/export.sh
           make bazel-build BAZEL_CONFIG=${{ matrix.config }}

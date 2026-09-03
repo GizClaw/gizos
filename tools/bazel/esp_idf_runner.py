@@ -139,10 +139,12 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
                 f"required action environment is missing: {H2LOADER_WIFI_CREDENTIALS}"
             )
         environment.update(parse_h2loader_wifi_credentials(credentials))
-    # Kept in step with _native_firmware_resources in tools/bazel/esp_idf.bzl:
-    # Bazel reserves two cores per firmware action, so ninja must not fan out
-    # past them. Parallelism comes from Bazel running several launchers at once.
-    environment[NATIVE_BUILD_JOBS] = "2"
+    # Deliberately a fixed constant rather than a build flag. This value reaches
+    # ninja through the action's inputs, so making it configurable would put it
+    # in the action key and stop a job that tuned it from sharing remote cache
+    # entries with every other job. Concurrency is tuned instead through
+    # resource_set in tools/bazel/esp_idf.bzl, which the action key ignores.
+    environment[NATIVE_BUILD_JOBS] = "4"
     return environment
 
 

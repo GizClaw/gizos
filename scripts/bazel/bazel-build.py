@@ -40,6 +40,18 @@ if __name__ == "__main__":
             args.append("--noannounce_rc")
         if config:
             args.append(f"--config={config}")
+        # How many cores each native firmware action reserves from Bazel's
+        # local scheduler, which sets how many launchers build at once. Only
+        # tunes scheduling, never the action key, so a job that lowers it still
+        # shares cache entries with everything else. Left unset by default so
+        # local builds keep the latency-optimized reservation.
+        native_build_jobs = os.environ.get("BAZEL_NATIVE_BUILD_JOBS", "").strip()
+        if native_build_jobs:
+            if native_build_jobs not in {"1", "2", "4"}:
+                raise ValueError(
+                    "BAZEL_NATIVE_BUILD_JOBS must be 1, 2 or 4 when it is set"
+                )
+            args.append(f"--define=h2_native_build_jobs={native_build_jobs}")
         args.extend(cache_options())
         download_outputs = os.environ.get(
             "BAZEL_BUILD_REMOTE_DOWNLOAD_OUTPUTS", ""
