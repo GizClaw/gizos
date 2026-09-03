@@ -40,6 +40,12 @@ extern "C" {
 #define H2_PAL_BLE_LEGACY_SCAN_INTERVAL_MAX_MS 10240u
 /** Maximum Extended Scan interval in whole milliseconds. */
 #define H2_PAL_BLE_EXT_SCAN_INTERVAL_MAX_MS 40959u
+/** Minimum controller scan interval/window in 0.625 ms units. */
+#define H2_PAL_BLE_SCAN_UNITS_625US_MIN ((uint16_t)0x0004u)
+/** Maximum legacy scan interval/window in 0.625 ms units. */
+#define H2_PAL_BLE_LEGACY_SCAN_UNITS_625US_MAX ((uint16_t)0x4000u)
+/** Maximum Extended Scan interval/window in 0.625 ms units. */
+#define H2_PAL_BLE_EXT_SCAN_UNITS_625US_MAX ((uint16_t)0xffffu)
 /** Maximum scan duration representable in 10 ms units. */
 #define H2_PAL_BLE_SCAN_DURATION_MAX_MS 655350u
 
@@ -221,6 +227,7 @@ typedef struct h2_pal_ble_adv_set_event {
 
 typedef struct h2_pal_ble_scan_params {
     h2_pal_ble_scan_mode_t mode;
+    /** Whole-millisecond timing form. Both fields are zero for exact timing. */
     uint32_t interval_ms;
     uint32_t window_ms;
     uint32_t timeout_ms;
@@ -228,6 +235,14 @@ typedef struct h2_pal_ble_scan_params {
     h2_pal_ble_scan_type_t type;
     /** Primary PHY mask. Zero selects LE 1M. */
     h2_pal_ble_scan_phy_mask_t phy_mask;
+    /**
+     * Exact controller interval in 0.625 ms units. Both exact fields must be
+     * set, the millisecond fields must be zero, and values must be within the
+     * named legacy or Extended Scanning range for type.
+     */
+    uint16_t interval_units_625us;
+    /** Exact controller window in 0.625 ms units, not greater than interval. */
+    uint16_t window_units_625us;
 } h2_pal_ble_scan_params_t;
 
 typedef struct h2_pal_ble_scan_result {
@@ -404,6 +419,11 @@ typedef struct h2_pal_ble_vtable {
         void *user,
         h2_pal_ble_adv_set_t *set,
         const h2_pal_ble_adv_data_t *data);
+    h2_pal_result_t (*adv_set_set_encoded_data)(
+        void *user,
+        h2_pal_ble_adv_set_t *set,
+        const uint8_t *encoded_data,
+        size_t encoded_data_len);
     h2_pal_result_t (*adv_set_set_scan_response_data)(
         void *user,
         h2_pal_ble_adv_set_t *set,
@@ -611,6 +631,49 @@ static inline h2_pal_result_t h2_pal_ble_adv_set_set_data(
 }
 
 /**
+ * Replace one set's complete primary advertising-data sequence.
+ *
+ * The input consists of complete Bluetooth AD structures. The provider copies
+ * the bytes before returning H2_PAL_OK and preserves their order and values;
+ * it does not insert, merge, reinterpret, or move structures to scan response.
+ * A zero length clears primary data and may use a NULL pointer. H2_PAL_OK
+ * means the complete value was accepted and copied, not necessarily that an
+ * asynchronous controller update has completed. A running provider may
+ * coalesce values not yet submitted to the controller, but its final applied
+ * value must be the latest accepted value. An asynchronous update failure is
+ * reported by that set's advertising-stopped event. Any immediate error leaves
+ * the last accepted value unchanged.
+ */
+static inline h2_pal_result_t h2_pal_ble_adv_set_set_encoded_data(
+    const h2_pal_ble_host_api_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    if (ble == NULL || set == NULL ||
+        (encoded_data == NULL && encoded_data_len != 0u)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (encoded_data_len > H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN) {
+        return H2_PAL_ERR_NO_SPACE;
+    }
+    size_t offset = 0u;
+    while (offset < encoded_data_len) {
+        size_t field_len = encoded_data[offset];
+        if (field_len == 0u ||
+            field_len > encoded_data_len - offset - 1u) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        offset += field_len + 1u;
+    }
+    if (ble->vtable == NULL ||
+        ble->vtable->adv_set_set_encoded_data == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return ble->vtable->adv_set_set_encoded_data(
+        ble->user, set, encoded_data, encoded_data_len);
+}
+
+/**
  * Copy legacy scan-response data into one connectable advertising set.
  *
  * The backend copies @p data before returning. Providers that do not support
@@ -694,14 +757,29 @@ static inline h2_pal_result_t h2_pal_ble_start_scan(
     if (ble == NULL || params == NULL || on_result == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    bool exact_timing = params->interval_units_625us != 0u ||
+                        params->window_units_625us != 0u;
     if ((params->mode != H2_PAL_BLE_SCAN_MODE_PASSIVE &&
          params->mode != H2_PAL_BLE_SCAN_MODE_ACTIVE) ||
         (params->type != H2_PAL_BLE_SCAN_TYPE_LEGACY &&
          params->type != H2_PAL_BLE_SCAN_TYPE_EXTENDED) ||
-        params->interval_ms < H2_PAL_BLE_SCAN_INTERVAL_MIN_MS ||
-        params->window_ms < H2_PAL_BLE_SCAN_INTERVAL_MIN_MS ||
-        params->window_ms > params->interval_ms ||
         params->timeout_ms > H2_PAL_BLE_SCAN_DURATION_MAX_MS) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (exact_timing) {
+        uint16_t max_units = params->type == H2_PAL_BLE_SCAN_TYPE_LEGACY
+                                 ? H2_PAL_BLE_LEGACY_SCAN_UNITS_625US_MAX
+                                 : H2_PAL_BLE_EXT_SCAN_UNITS_625US_MAX;
+        if (params->interval_ms != 0u || params->window_ms != 0u ||
+            params->interval_units_625us < H2_PAL_BLE_SCAN_UNITS_625US_MIN ||
+            params->window_units_625us < H2_PAL_BLE_SCAN_UNITS_625US_MIN ||
+            params->interval_units_625us > max_units ||
+            params->window_units_625us > params->interval_units_625us) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+    } else if (params->interval_ms < H2_PAL_BLE_SCAN_INTERVAL_MIN_MS ||
+               params->window_ms < H2_PAL_BLE_SCAN_INTERVAL_MIN_MS ||
+               params->window_ms > params->interval_ms) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_pal_ble_scan_phy_mask_t phy_mask = params->phy_mask == 0u
@@ -710,8 +788,10 @@ static inline h2_pal_result_t h2_pal_ble_start_scan(
     if ((phy_mask & (h2_pal_ble_scan_phy_mask_t)~H2_PAL_BLE_SCAN_PHY_ALL) != 0u ||
         (params->type == H2_PAL_BLE_SCAN_TYPE_LEGACY &&
          (phy_mask != H2_PAL_BLE_SCAN_PHY_1M ||
-          params->interval_ms > H2_PAL_BLE_LEGACY_SCAN_INTERVAL_MAX_MS)) ||
+          (!exact_timing &&
+           params->interval_ms > H2_PAL_BLE_LEGACY_SCAN_INTERVAL_MAX_MS))) ||
         (params->type == H2_PAL_BLE_SCAN_TYPE_EXTENDED &&
+         !exact_timing &&
          params->interval_ms > H2_PAL_BLE_EXT_SCAN_INTERVAL_MAX_MS)) {
         return H2_PAL_ERR_INVALID_ARG;
     }

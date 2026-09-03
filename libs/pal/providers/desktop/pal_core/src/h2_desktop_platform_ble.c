@@ -423,6 +423,30 @@ static h2_pal_result_t h2_desktop_ble_adv_set_set_data(
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_desktop_ble_adv_set_set_encoded_data(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    (void)ble;
+    if (!h2_desktop_ble_adv_set_valid(set) ||
+        (encoded_data == NULL && encoded_data_len != 0u)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
+                          ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN
+                          : H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN;
+    if (encoded_data_len > capacity) {
+        return H2_PAL_ERR_NO_SPACE;
+    }
+    if (encoded_data_len > 0u) {
+        memcpy(set->data, encoded_data, encoded_data_len);
+    }
+    set->data_len = encoded_data_len;
+    set->data_staged = 1;
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t h2_desktop_ble_adv_set_start(
     h2_pal_ble_t *ble,
     h2_pal_ble_adv_set_t *set) {
@@ -545,6 +569,9 @@ static h2_pal_result_t h2_desktop_ble_start_scan(
     (void)ble;
     if (params == NULL || on_result == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (params->interval_units_625us != 0u) {
+        return H2_PAL_ERR_UNSUPPORTED;
     }
     if (!s_h2_desktop_ble_host_started) {
         return H2_PAL_ERR_INVALID_STATE;
@@ -911,6 +938,15 @@ static h2_pal_result_t h2_desktop_ble_adv_set_set_data_adapter(
         H2_DESKTOP_BLE_API(user), set, data);
 }
 
+static h2_pal_result_t h2_desktop_ble_adv_set_set_encoded_data_adapter(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    return h2_desktop_ble_adv_set_set_encoded_data(
+        H2_DESKTOP_BLE_API(user), set, encoded_data, encoded_data_len);
+}
+
 static h2_pal_result_t
 h2_desktop_ble_adv_set_set_scan_response_data_adapter(
     void *user,
@@ -1083,6 +1119,8 @@ static const h2_pal_ble_vtable_t s_h2_desktop_ble_vtable = {
     .stop_advertising = h2_desktop_ble_stop_advertising_adapter,
     .adv_set_create = h2_desktop_ble_adv_set_create_adapter,
     .adv_set_set_data = h2_desktop_ble_adv_set_set_data_adapter,
+    .adv_set_set_encoded_data =
+        h2_desktop_ble_adv_set_set_encoded_data_adapter,
     .adv_set_set_scan_response_data =
         h2_desktop_ble_adv_set_set_scan_response_data_adapter,
     .adv_set_start = h2_desktop_ble_adv_set_start_adapter,

@@ -96,6 +96,8 @@ NimBLE GATT server indication 在 component 内串行化 outstanding indication�
 
 ESP-IDF BLE Host vtable 显式接入可选的独立 legacy scan-response operation，但当前返回 `H2_PAL_ERR_UNSUPPORTED`。既有 `adv_set_set_data` 对 local name 的内部拆分不提升为独立 scan-response contract；在完成单独的 NimBLE lifecycle、clear、failure 和固件验证前，component 不能报告该 capability。
 
+NimBLE Extended Advertising backend 支持 handle-scoped exact primary data：`h2_pal_ble_adv_set_set_encoded_data()` 把完整 AD-structure byte sequence 原样复制到 mbuf，再交给对应 advertising instance，不插入 Flags、不合并重复 AD type，也不沿用 structured setter 把 legacy name/manufacturer data 放入 scan response 的兼容行为。没有启用 `CONFIG_BT_NIMBLE_EXT_ADV` 时该 operation 在改变 set state 前返回 `H2_PAL_ERR_UNSUPPORTED`。Scan params 选择 exact `interval_units_625us/window_units_625us` 时，legacy 与 Extended Scanning path 都把同一 pair 原样写入 NimBLE controller-unit fields；不能 round、clamp 或回退到 millisecond form。Host adapter test 只证明 production boundary 的 byte/unit mapping，target SDK build 与 RF/controller acceptance 仍需独立验证。
+
 Crypto provider 通过 public PSA API 实现 random、X25519、HKDF-SHA256、
 AES-GCM/ChaCha20-Poly1305、AES-CTR、MD5、HMAC-SHA1、P-256 和 ECDSA。
 实现不能 include `mbedtls/private/**`，也不能为缺失 operation 保留 private
