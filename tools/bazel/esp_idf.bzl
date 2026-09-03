@@ -22,18 +22,18 @@ FirmwareInfo = provider(
 )
 
 def _native_firmware_resources(_os, _inputs_size):
-    # Each native firmware action runs a single-threaded ninja (see
-    # H2_NATIVE_BUILD_JOBS in tools/bazel/esp_idf_runner.py), so it reserves one
-    # core and the peak footprint of one compiler/linker process rather than a
-    # whole 4-way build. A launcher's wall time is dominated by serial,
-    # uncacheable work -- CMake configure, ninja graph load, per-object ccache
-    # lookups, esptool packaging -- which a wider -j cannot shorten. Reserving
-    # the whole runner per launcher instead serialized the graph: 38 esp32s3
-    # launchers took 27 minutes of wall time against a 7 minute critical path.
+    # Each native firmware action runs a two-way ninja (see
+    # H2_NATIVE_BUILD_JOBS in tools/bazel/esp_idf_runner.py), so it reserves two
+    # cores and the peak footprint of two compiler processes rather than a whole
+    # 4-way build. Part of a launcher's wall time is serial, uncacheable work --
+    # CMake configure, ninja graph load, per-object ccache lookups, esptool
+    # packaging -- that a wider -j cannot shorten. Reserving the whole runner per
+    # launcher instead serialized the graph: the esp32s3 job's 38 launchers took
+    # 27 minutes of wall time against a 7 minute critical path.
     # Keep these numbers in step with H2_NATIVE_BUILD_JOBS.
     return {
-        "cpu": 1,
-        "memory": 2048,
+        "cpu": 2,
+        "memory": 3072,
     }
 
 _TARGET_CONFIGS = {
