@@ -126,6 +126,8 @@ IO Stream iKCP 不创建 worker 或 task，调用方必须在自己的 event loo
 
 `write()` 会按 MTU 分段送入 KCP 并触发本地 flush。写入成功表示数据已经进入本地发送路径，不表示 peer 已经确认。`flush()` 负责刷新 KCP output 和底层 byte stream，同样不等待远端 ACK；调用方可以通过 stats 中的 `waitsnd` 判断仍在等待发送或确认的 KCP segment 数量。
 
+单次 `update()` 或 `flush()` 最多对底层 transport 发起一次失败写入。KCP 会为发送窗口中剩余的每个 segment 继续调用 output，因此第一次写入失败被记录后，本次调用内的后续 output 直接失败返回，不再重复消耗 `write_timeout_ms`；错误在调用返回值中原样上报，下一次 `update()`、`flush()` 或 `write()` 重新开始记录。
+
 ## PAL Adapter
 
 Library 提供两个直接 adapter：
