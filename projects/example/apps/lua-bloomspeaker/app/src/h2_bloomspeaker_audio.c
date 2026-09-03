@@ -373,7 +373,10 @@ int h2_bloomspeaker_audio_run_session(
   uint32_t fec_frames = 0u;
   uint32_t plc_frames = 0u;
   uint64_t last_stats_ms = 0u;
-  result = h2_pal_time_get_monotonic_ms(audio->runtime->time, &last_stats_ms);
+  if (result == H2_PAL_OK) {
+    result = h2_pal_time_get_monotonic_ms(audio->runtime->time,
+                                          &last_stats_ms);
+  }
   uint64_t last_rx_ms = last_stats_ms;
   while (result == H2_PAL_OK && active(active_user)) {
     while (buffered < H2_BLOOMSPEAKER_AUDIO_JITTER_FRAMES &&

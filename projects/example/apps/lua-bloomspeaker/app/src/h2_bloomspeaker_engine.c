@@ -25,6 +25,9 @@
 #define H2_BLOOMSPEAKER_STREAM_BUFFER_SIZE 4096u
 #define H2_BLOOMSPEAKER_CODEC_TASK_STACK_SIZE (32u * 1024u)
 #define H2_BLOOMSPEAKER_SYSTEM_EVENT_SUBSCRIPTION_COUNT 2u
+#define H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY 0
+#define H2_BLOOMSPEAKER_PENDING_EVENT_WRITING 1
+#define H2_BLOOMSPEAKER_PENDING_EVENT_READY 2
 
 static const uint8_t s_service_uuid[] = {0xb7u, 0xb0u};
 static const uint8_t s_tx_uuid[] = {0xb8u, 0xb0u};
@@ -42,6 +45,7 @@ struct h2_bloomspeaker_engine {
   h2_bloomspeaker_controller_t *controller;
   h2_bloomspeaker_audio_t *audio;
   h2_pal_mutex_t *pairing_mutex;
+  h2_pal_semaphore_t *event_wake;
   h2_pal_task_t *task;
   h2_pal_system_event_subscription_t
       *system_event_subscriptions[H2_BLOOMSPEAKER_SYSTEM_EVENT_SUBSCRIPTION_COUNT];
@@ -57,6 +61,10 @@ struct h2_bloomspeaker_engine {
   uint32_t peer_epoch;
   uint32_t pairing_passkey;
   _Atomic uint16_t conn_handle;
+  _Atomic int pending_connected_state;
+  h2_pal_ble_connection_t pending_connected;
+  _Atomic uint16_t pending_disconnected_conn_handle;
+  _Atomic uint16_t pending_reject_conn_handle;
   h2_bloomspeaker_engine_advertising_control_fn pause_management_advertising;
   h2_bloomspeaker_engine_advertising_control_fn resume_management_advertising;
   void *management_advertising_user;
@@ -210,8 +218,8 @@ static bool address_equal(const h2_pal_ble_addr_t *left,
  * The central can observe our CLAIMED beacon and connect before our next scan
  * report contains its corresponding CLAIMED/LOCKED beacon.  Treat an inbound
  * connection from the peer we already claimed as the final mutual-lock event.
- * This installs the peripheral passkey before the central starts SMP and also
- * closes the short CLAIMING -> CONNECTING race.
+ * The system-event callback records the connection, then the engine task calls
+ * this function to install the peripheral passkey before accepting a session.
  */
 static int accept_claimed_inbound(h2_bloomspeaker_engine_t *engine,
                                   const h2_pal_ble_connection_t *connection) {
@@ -319,33 +327,78 @@ static int engine_system_event(void *user,
       event->payload_size == sizeof(h2_pal_ble_connection_t)) {
     const h2_pal_ble_connection_t *connection = event->payload;
     if (connection->role == H2_PAL_BLE_ROLE_PERIPHERAL) {
-      h2_bloomspeaker_state_t state = current_state(engine);
-      if (engine->role == H2_BLOOMSPEAKER_PAIRING_ROLE_PERIPHERAL &&
-          state == H2_BLOOMSPEAKER_STATE_CONNECTING) {
-        connection_store(engine, connection->conn_handle);
-      } else if (engine->role == H2_BLOOMSPEAKER_PAIRING_ROLE_NONE &&
-                 state == H2_BLOOMSPEAKER_STATE_CLAIMING &&
-                 accept_claimed_inbound(engine, connection) != H2_PAL_OK) {
-        (void)h2_pal_ble_disconnect(engine->runtime->ble_host,
-                                    connection->conn_handle);
+      int expected = H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY;
+      if (atomic_compare_exchange_strong_explicit(
+              &engine->pending_connected_state, &expected,
+              H2_BLOOMSPEAKER_PENDING_EVENT_WRITING,
+              memory_order_acq_rel, memory_order_acquire)) {
+        engine->pending_connected = *connection;
+        atomic_store_explicit(&engine->pending_connected_state,
+                              H2_BLOOMSPEAKER_PENDING_EVENT_READY,
+                              memory_order_release);
+      } else {
+        uint16_t empty = H2_PAL_BLE_INVALID_CONN_HANDLE;
+        (void)atomic_compare_exchange_strong_explicit(
+            &engine->pending_reject_conn_handle, &empty,
+            connection->conn_handle, memory_order_acq_rel,
+            memory_order_acquire);
       }
+      (void)h2_pal_semaphore_give(engine->runtime->sync,
+                                  engine->event_wake);
     }
   } else if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED &&
              event->payload_size == sizeof(h2_pal_ble_disconnected_info_t)) {
     const h2_pal_ble_disconnected_info_t *info = event->payload;
-    uint16_t expected = info->conn_handle;
-    if (atomic_compare_exchange_strong_explicit(
-            &engine->conn_handle, &expected,
-            H2_PAL_BLE_INVALID_CONN_HANDLE, memory_order_acq_rel,
-            memory_order_acquire)) {
-      h2_bloomspeaker_state_t state = current_state(engine);
-      if (state == H2_BLOOMSPEAKER_STATE_CONNECTING ||
-          state == H2_BLOOMSPEAKER_STATE_SECURING) {
-        transition_active_to_error(engine, H2_PAL_ERR_CLOSED);
-      }
-    }
+    atomic_store_explicit(&engine->pending_disconnected_conn_handle,
+                          info->conn_handle, memory_order_release);
+    (void)h2_pal_semaphore_give(engine->runtime->sync,
+                                engine->event_wake);
   }
   return H2_PAL_OK;
+}
+
+static void process_system_events(h2_bloomspeaker_engine_t *engine) {
+  if (atomic_load_explicit(&engine->pending_connected_state,
+                           memory_order_acquire) ==
+      H2_BLOOMSPEAKER_PENDING_EVENT_READY) {
+    const h2_pal_ble_connection_t connection = engine->pending_connected;
+    h2_bloomspeaker_state_t state = current_state(engine);
+    if (engine->role == H2_BLOOMSPEAKER_PAIRING_ROLE_PERIPHERAL &&
+        state == H2_BLOOMSPEAKER_STATE_CONNECTING) {
+      connection_store(engine, connection.conn_handle);
+    } else if (engine->role == H2_BLOOMSPEAKER_PAIRING_ROLE_NONE &&
+               state == H2_BLOOMSPEAKER_STATE_CLAIMING &&
+               accept_claimed_inbound(engine, &connection) != H2_PAL_OK) {
+      (void)h2_pal_ble_disconnect(engine->runtime->ble_host,
+                                  connection.conn_handle);
+    }
+    atomic_store_explicit(&engine->pending_connected_state,
+                          H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY,
+                          memory_order_release);
+  }
+
+  uint16_t reject = atomic_exchange_explicit(
+      &engine->pending_reject_conn_handle,
+      H2_PAL_BLE_INVALID_CONN_HANDLE, memory_order_acq_rel);
+  if (reject != H2_PAL_BLE_INVALID_CONN_HANDLE) {
+    (void)h2_pal_ble_disconnect(engine->runtime->ble_host, reject);
+  }
+
+  uint16_t disconnected = atomic_exchange_explicit(
+      &engine->pending_disconnected_conn_handle,
+      H2_PAL_BLE_INVALID_CONN_HANDLE, memory_order_acq_rel);
+  uint16_t expected = disconnected;
+  if (disconnected != H2_PAL_BLE_INVALID_CONN_HANDLE &&
+      atomic_compare_exchange_strong_explicit(
+          &engine->conn_handle, &expected,
+          H2_PAL_BLE_INVALID_CONN_HANDLE, memory_order_acq_rel,
+          memory_order_acquire)) {
+    h2_bloomspeaker_state_t state = current_state(engine);
+    if (state == H2_BLOOMSPEAKER_STATE_CONNECTING ||
+        state == H2_BLOOMSPEAKER_STATE_SECURING) {
+      transition_active_to_error(engine, H2_PAL_ERR_CLOSED);
+    }
+  }
 }
 
 static void unsubscribe_system_events(h2_bloomspeaker_engine_t *engine);
@@ -947,6 +1000,7 @@ static void engine_task(void *context) {
     return;
   }
   while (!atomic_load_explicit(&engine->stop, memory_order_acquire)) {
+    process_system_events(engine);
     h2_bloomspeaker_state_t state = current_state(engine);
     if (state == H2_BLOOMSPEAKER_STATE_PAIRING && !engine->pairing_active) {
       result = begin_pairing(engine);
@@ -974,8 +1028,8 @@ static void engine_task(void *context) {
                 state == H2_BLOOMSPEAKER_STATE_ERROR)) {
       cleanup_pairing(engine);
     }
-    (void)h2_pal_time_sleep_ms(engine->runtime->time,
-                               H2_BLOOMSPEAKER_BLE_POLL_MS);
+    (void)h2_pal_semaphore_take(engine->runtime->sync, engine->event_wake,
+                                H2_BLOOMSPEAKER_BLE_POLL_MS);
   }
   cleanup_pairing(engine);
 }
@@ -1014,6 +1068,12 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
   engine->management_advertising_user = config->management_advertising_user;
   atomic_init(&engine->stop, 0);
   atomic_init(&engine->conn_handle, H2_PAL_BLE_INVALID_CONN_HANDLE);
+  atomic_init(&engine->pending_connected_state,
+              H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY);
+  atomic_init(&engine->pending_disconnected_conn_handle,
+              H2_PAL_BLE_INVALID_CONN_HANDLE);
+  atomic_init(&engine->pending_reject_conn_handle,
+              H2_PAL_BLE_INVALID_CONN_HANDLE);
   const h2_pal_mutex_config_t mutex_config = {
       .name = "lua-bloomspeaker/pairing",
       .allocator = runtime->mem,
@@ -1021,6 +1081,16 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
   };
   int result = h2_pal_mutex_create(runtime->sync, &mutex_config,
                                    &engine->pairing_mutex);
+  const h2_pal_semaphore_config_t event_wake_config = {
+      .name = "lua-bloomspeaker/events",
+      .allocator = runtime->mem,
+      .initial_count = 0u,
+      .max_count = 1u,
+  };
+  if (result == H2_PAL_OK) {
+    result = h2_pal_semaphore_create(runtime->sync, &event_wake_config,
+                                     &engine->event_wake);
+  }
   const h2_pal_task_options_t task_options = {
       .name = h2_bloomspeaker_ble_task_name,
       .min_stack_size = H2_BLOOMSPEAKER_CODEC_TASK_STACK_SIZE,
@@ -1040,6 +1110,9 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
     if (engine->pairing_mutex != NULL) {
       (void)h2_pal_mutex_destroy(runtime->sync, engine->pairing_mutex);
     }
+    if (engine->event_wake != NULL) {
+      (void)h2_pal_semaphore_destroy(runtime->sync, engine->event_wake);
+    }
     (void)h2_bloomspeaker_audio_stop(engine->audio);
     h2_pal_mem_free(runtime->mem, engine);
     return result;
@@ -1053,12 +1126,16 @@ int h2_bloomspeaker_engine_stop(h2_bloomspeaker_engine_t *engine) {
     return H2_PAL_OK;
   }
   atomic_store_explicit(&engine->stop, 1, memory_order_release);
+  connection_disconnect_current(engine);
+  (void)h2_pal_semaphore_give(engine->runtime->sync, engine->event_wake);
   int result = h2_pal_task_join(engine->runtime->task, engine->task);
   if (result != H2_PAL_OK) {
     return result;
   }
   unsubscribe_system_events(engine);
   int audio_result = h2_bloomspeaker_audio_stop(engine->audio);
+  (void)h2_pal_semaphore_destroy(engine->runtime->sync,
+                                 engine->event_wake);
   (void)h2_pal_mutex_destroy(engine->runtime->sync, engine->pairing_mutex);
   h2_pal_mem_free(engine->runtime->mem, engine);
   return audio_result;

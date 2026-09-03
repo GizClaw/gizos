@@ -15,6 +15,11 @@ bazel run --config=macos \
   //projects/example/targets/cc_binary/lua-bloomspeaker:example-lua-bloomspeaker
 ```
 
+The Desktop artifact is a scene, microphone, playback, and lifecycle launcher.
+Its repository BLE provider is a deterministic simulator rather than a real
+radio composition, so Desktop does not claim intercom interoperability. The
+complete two-device BLE intercom artifact is the AMOLED package below.
+
 AMOLED package:
 
 ```sh
@@ -32,6 +37,8 @@ The Lua render loop intentionally remains one coroutine. Gizos exposes `runtime.
 Work that can overlap the UI is already native: BLE/iKCP and Opus capture run in separate bounded tasks, while decoded playback uses the Audio System's bounded track queue. Capture submits encoded frames non-blocking to iKCP's bounded 4 KiB transmit queue; backpressure drops one real-time frame instead of stalling microphone capture, and the sequence gap drives remote Opus PLC. The Lua/C state sample used every 33 ms returns scalar values instead of allocating a table. The remaining frame-time cost is the full-screen RGB565 history fade, anti-aliased particle heads, and display transfer; an async Lua queue cannot reduce those costs. Particle count and per-frame geometry remain strictly bounded at 96 slots.
 
 Pairing uses a 25-byte legacy-advertising beacon containing an ephemeral 40-bit device tag, random 64-bit ordering ticket, epoch, state, and claim target. Devices observed for at least 600 ms are sorted by `(ticket, tag)` and paired as adjacent entries. With three devices, the first two mutually claim one another and the unpaired third device keeps waiting. A two-phase mutual claim prevents crossed connections; an unmatched claim expires after 2.2 s. The lower-ranked device becomes the peripheral and the higher-ranked device becomes the central, so both ends never race to initiate the same link.
+
+The beacon is an exact little-endian wire record: magic `0xB7`, version `1`, state, 5-byte tag, 8-byte ticket, 4-byte epoch, and 5-byte claim target. Both peers derive the same six-digit SMP passkey from the sorted tags and tickets. After LE Secure Connections succeeds, the encrypted iKCP stream exchanges an 18-byte `BSP1` handshake containing source tag, target tag, and source epoch. Each endpoint validates the tags and the peer epoch observed during the current attempt; stale epochs, incompatible versions, and malformed frames fail closed. Tickets are not repeated in the handshake because they already participate in passkey derivation.
 
 The conversation stream uses LE Secure Connections, ATT MTU negotiation, LE 2M when available, and the repository iKCP transport. Audio is 16 kHz mono Opus VOIP at 18 kbit/s in 20 ms frames. Playback starts with a three-frame jitter reserve and a six-frame device queue; dropped capture frames are recovered from Opus in-band FEC when the following packet is available, with PLC used for longer gaps instead of allowing latency to grow without bound. Opus DTX reduces encoded background sound during silence. A five-second audio diagnostic reports sent/dropped/received frames, sequence gaps, FEC/PLC use, and the active speaker volume to the serial log.
 
