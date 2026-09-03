@@ -1,5 +1,6 @@
 #include "h2_esp_board_private.h"
 #include "h2_esp_board_internal.h"
+#include "h2_esp_board.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -12,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -51,6 +53,20 @@ typedef struct h2_esp_amoled_display_state {
 
 static const char *TAG = "h2_esp_amoled";
 static h2_esp_amoled_display_state_t s_display_state;
+static h2_esp_board_display_config_t s_display_config;
+
+h2_pal_result_t h2_esp_board_display_configure(
+    const h2_esp_board_display_config_t *config) {
+    if (config == NULL || config->pclk_hz > (uint32_t)INT_MAX) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (s_display_state.panel_io != NULL || s_display_state.initialized ||
+        s_display_state.opened) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    s_display_config = *config;
+    return H2_PAL_OK;
+}
 
 static const sh8601_lcd_init_cmd_t s_amoled_init_cmds[] = {
     { SH8601_CMD_SLEEP_OUT, NULL, 0, 120 },
@@ -168,10 +184,13 @@ static int init_panel_io(h2_esp_amoled_display_state_t *state) {
     if (state->panel_io != NULL) {
         return H2_DISPLAY_OK;
     }
-    const esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(
+    esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(
         LCD_CS_GPIO,
         NULL,
         NULL);
+    if (s_display_config.pclk_hz != 0u) {
+        io_config.pclk_hz = (int)s_display_config.pclk_hz;
+    }
     err = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &state->panel_io);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_lcd_new_panel_io_spi failed: %s", esp_err_to_name(err));

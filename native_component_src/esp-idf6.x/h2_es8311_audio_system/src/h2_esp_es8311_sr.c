@@ -86,7 +86,9 @@ int h2_esp_es8311_sr_init(
         .sample_rate = (int)config->sample_rate_hz,
         .caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
         .mode = AEC_MODE_FD_LOW_COST,
-        .nlp_level = AEC_NLP_LEVEL_NORMAL,
+        .nlp_level = config->aec_nlp_level == H2_ESP_ES8311_AEC_NLP_AGGRESSIVE
+            ? AEC_NLP_LEVEL_AGGR
+            : AEC_NLP_LEVEL_NORMAL,
     };
     aec_handle_t *aec_handle = aec_create_from_config(&aec_config);
     if (aec_handle == NULL) {
@@ -119,9 +121,12 @@ int h2_esp_es8311_sr_init(
     }
 
     state->available = 1;
-    ESP_LOGI(TAG, "direct aec ready frame_samples=%u mode=fd_low_cost filter=%d nlp=normal",
+    ESP_LOGI(TAG, "direct aec ready frame_samples=%u mode=fd_low_cost filter=%d nlp=%s",
         (unsigned)state->frame_samples,
-        H2_ESP_ES8311_AEC_FILTER_LENGTH);
+        H2_ESP_ES8311_AEC_FILTER_LENGTH,
+        config->aec_nlp_level == H2_ESP_ES8311_AEC_NLP_AGGRESSIVE
+            ? "aggressive"
+            : "normal");
     return H2_AUDIO_OK;
 #else
     ESP_LOGE(TAG, "esp_aec.h unavailable; direct AEC is required");

@@ -1,5 +1,6 @@
 #include "h2_esp_board_private.h"
 #include "h2_esp_board_internal.h"
+#include "h2_esp_board.h"
 
 #include "h2_esp_lazy_audio.h"
 
@@ -45,6 +46,42 @@ static h2_esp_es8311_audio_system_t s_audio_system;
 static int s_audio_system_initialized;
 static h2_esp_lazy_audio_t s_lazy_audio;
 static int s_lazy_audio_initialized;
+static h2_esp_board_audio_config_t s_audio_config = {
+    .i2s_dma_desc_num = 0u,
+    .i2s_dma_frame_num = 0u,
+    .mic_gain_db = H2_AMOLED_AUDIO_MIC_GAIN_DEFAULT_DB,
+    .mic_queue_frames = H2_AMOLED_AUDIO_MIC_QUEUE_FRAMES,
+    .mic_task_priority = tskIDLE_PRIORITY + 5u,
+    .mic_task_core_id = H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED,
+    .speaker_task_priority = tskIDLE_PRIORITY + 4u,
+    .speaker_task_core_id = H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED,
+    .aggressive_aec_nlp = 0,
+};
+
+h2_pal_result_t h2_esp_board_audio_configure(
+    const h2_esp_board_audio_config_t *config) {
+    if (config == NULL || config->mic_queue_frames == 0u ||
+        config->mic_gain_db > 30u ||
+        config->mic_task_priority >= configMAX_PRIORITIES ||
+        config->speaker_task_priority >= configMAX_PRIORITIES ||
+        (config->mic_task_core_id !=
+             H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED &&
+         (config->mic_task_core_id < 0 ||
+          config->mic_task_core_id >= portNUM_PROCESSORS)) ||
+        (config->speaker_task_core_id !=
+             H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED &&
+         (config->speaker_task_core_id < 0 ||
+          config->speaker_task_core_id >= portNUM_PROCESSORS)) ||
+        (config->aggressive_aec_nlp != 0 &&
+         config->aggressive_aec_nlp != 1)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (s_lazy_audio_initialized || s_audio_system_initialized) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    s_audio_config = *config;
+    return H2_PAL_OK;
+}
 
 static h2_pal_audio_t *resolve_audio(void *user) {
     (void)user;
@@ -63,6 +100,8 @@ static h2_pal_audio_t *resolve_audio(void *user) {
             .i2c_speed_hz = H2_AMOLED_AUDIO_I2C_SPEED_HZ,
             .codec_i2c_addr = H2_AMOLED_AUDIO_ES8311_ADDR,
             .i2s_port = H2_AMOLED_AUDIO_I2S_PORT,
+            .i2s_dma_desc_num = s_audio_config.i2s_dma_desc_num,
+            .i2s_dma_frame_num = s_audio_config.i2s_dma_frame_num,
             .mclk_multiple = H2_AMOLED_AUDIO_MCLK_MULTIPLE,
             .mclk_gpio = H2_AMOLED_AUDIO_MCLK_GPIO,
             .bclk_gpio = H2_AMOLED_AUDIO_BCLK_GPIO,
@@ -72,20 +111,30 @@ static h2_pal_audio_t *resolve_audio(void *user) {
             .pa_gpio = H2_AMOLED_AUDIO_PA_GPIO,
             .codec_volume_default = H2_AMOLED_AUDIO_CODEC_VOLUME_DEFAULT,
             .adc_digital_volume = H2_AMOLED_AUDIO_ADC_DIGITAL_VOLUME,
-            .mic_gain_db = H2_AMOLED_AUDIO_MIC_GAIN_DEFAULT_DB,
+            .mic_gain_db = s_audio_config.mic_gain_db,
             .max_tracks = H2_AMOLED_AUDIO_MAX_TRACKS,
             .track_queue_frames = H2_AMOLED_AUDIO_TRACK_QUEUE_FRAMES,
-            .mic_queue_frames = H2_AMOLED_AUDIO_MIC_QUEUE_FRAMES,
+            .mic_queue_frames = s_audio_config.mic_queue_frames,
             .mic_task_stack_size = H2_AMOLED_AUDIO_MIC_TASK_STACK,
-            .mic_task_priority = tskIDLE_PRIORITY + 5u,
-            .mic_task_core_id = tskNO_AFFINITY,
+            .mic_task_priority = (UBaseType_t)s_audio_config.mic_task_priority,
+            .mic_task_core_id = s_audio_config.mic_task_core_id ==
+                    H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED
+                ? tskNO_AFFINITY
+                : (BaseType_t)s_audio_config.mic_task_core_id,
             .speaker_task_stack_size = H2_AMOLED_AUDIO_SPEAKER_TASK_STACK,
-            .speaker_task_priority = tskIDLE_PRIORITY + 4u,
-            .speaker_task_core_id = tskNO_AFFINITY,
+            .speaker_task_priority =
+                (UBaseType_t)s_audio_config.speaker_task_priority,
+            .speaker_task_core_id = s_audio_config.speaker_task_core_id ==
+                    H2_ESP_BOARD_AUDIO_TASK_CORE_UNPINNED
+                ? tskNO_AFFINITY
+                : (BaseType_t)s_audio_config.speaker_task_core_id,
             .allocator = h2_esp_board_default_allocator(),
             .queue_api = h2_esp_board_queue_api(),
             .sync_api = h2_esp_board_sync_api(),
             .enable_aec = 1,
+            .aec_nlp_level = s_audio_config.aggressive_aec_nlp
+                ? H2_ESP_ES8311_AEC_NLP_AGGRESSIVE
+                : H2_ESP_ES8311_AEC_NLP_NORMAL,
         };
         if (config.i2c_bus == NULL) {
             ESP_LOGE(TAG, "shared i2c bus unavailable");
