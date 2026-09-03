@@ -2,6 +2,7 @@
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_ble_indication_tracker.h"
 #include "h2_esp_ble_exact_adapter.h"
+#include "h2_esp_ble_pair_tracker.h"
 
 #include "sdkconfig.h"
 
@@ -103,10 +104,12 @@ static uint16_t s_h2_esp_ble_connect_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
 static h2_pal_result_t s_h2_esp_ble_gatt_result;
 static uint16_t s_h2_esp_ble_exchange_mtu;
 static h2_pal_result_t s_h2_esp_ble_phy_result;
-static h2_pal_result_t s_h2_esp_ble_pair_result;
 static h2_pal_ble_pairing_config_t s_h2_esp_ble_pairing;
-static uint16_t s_h2_esp_ble_pair_conn_handle =
-    H2_PAL_BLE_INVALID_CONN_HANDLE;
+static h2_esp_ble_pair_tracker_t s_h2_esp_ble_pair = {
+    .conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE,
+    .result = H2_PAL_ERR_IO,
+    .completed = false,
+};
 static struct {
     uint8_t io_cap;
     uint8_t bonding;
@@ -1013,19 +1016,20 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         return ble_sm_inject_io(event->passkey.conn_handle, &io);
     }
     case BLE_GAP_EVENT_ENC_CHANGE: {
-        if (event->enc_change.conn_handle !=
-            s_h2_esp_ble_pair_conn_handle) {
-            return 0;
-        }
         struct ble_gap_conn_desc desc;
         int desc_rc =
             ble_gap_conn_find(event->enc_change.conn_handle, &desc);
-        s_h2_esp_ble_pair_result =
+        h2_pal_result_t pair_result =
             event->enc_change.status == 0 && desc_rc == 0 &&
                     desc.sec_state.encrypted &&
                     desc.sec_state.authenticated
                 ? H2_PAL_OK
                 : H2_PAL_ERR_IO;
+        if (!h2_esp_ble_pair_tracker_complete(
+                &s_h2_esp_ble_pair, event->enc_change.conn_handle,
+                pair_result)) {
+            return 0;
+        }
         if (s_h2_esp_ble_events != NULL) {
             xEventGroupSetBits(s_h2_esp_ble_events,
                                H2_ESP_BLE_PAIR_DONE_BIT);
@@ -1055,8 +1059,9 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         info.peer_addr.type = h2_esp_ble_addr_type(event->disconnect.conn.peer_ota_addr.type);
         memcpy(info.peer_addr.value, event->disconnect.conn.peer_ota_addr.val, sizeof(info.peer_addr.value));
         info.reason = event->disconnect.reason;
-        if (info.conn_handle == s_h2_esp_ble_pair_conn_handle) {
-            s_h2_esp_ble_pair_result = H2_PAL_ERR_CLOSED;
+        if (h2_esp_ble_pair_tracker_complete(
+                &s_h2_esp_ble_pair, info.conn_handle,
+                H2_PAL_ERR_CLOSED)) {
             if (s_h2_esp_ble_events != NULL) {
                 xEventGroupSetBits(s_h2_esp_ble_events,
                                    H2_ESP_BLE_PAIR_DONE_BIT);
@@ -2589,12 +2594,10 @@ static h2_pal_result_t h2_esp_ble_pair(
     }
     xEventGroupClearBits(s_h2_esp_ble_events,
                          H2_ESP_BLE_PAIR_DONE_BIT);
-    s_h2_esp_ble_pair_result = H2_PAL_ERR_IO;
-    s_h2_esp_ble_pair_conn_handle = conn_handle;
+    h2_esp_ble_pair_tracker_begin(&s_h2_esp_ble_pair, conn_handle);
     int rc = ble_gap_security_initiate(conn_handle);
     if (rc != 0) {
-        s_h2_esp_ble_pair_conn_handle =
-            H2_PAL_BLE_INVALID_CONN_HANDLE;
+        h2_esp_ble_pair_tracker_clear(&s_h2_esp_ble_pair);
         return h2_esp_ble_map_rc(rc);
     }
     EventBits_t bits = xEventGroupWaitBits(
@@ -2603,10 +2606,11 @@ static h2_pal_result_t h2_esp_ble_pair(
         pdTRUE,
         pdTRUE,
         pdMS_TO_TICKS(timeout_ms));
-    s_h2_esp_ble_pair_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
-    return (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u
-               ? s_h2_esp_ble_pair_result
-               : H2_PAL_ERR_TIMEOUT;
+    if ((bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u) {
+        return h2_esp_ble_pair_tracker_take(&s_h2_esp_ble_pair);
+    }
+    h2_esp_ble_pair_tracker_clear(&s_h2_esp_ble_pair);
+    return H2_PAL_ERR_TIMEOUT;
 }
 
 static h2_pal_result_t h2_esp_ble_update_connection(
