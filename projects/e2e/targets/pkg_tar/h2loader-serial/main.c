@@ -434,7 +434,6 @@ int main(void) {
   config.task = h2_web_platform_task_api(app.platform);
   config.sync = h2_web_platform_sync_api(app.platform);
   config.webrtc = h2_web_platform_webrtc_api(app.platform);
-  config.webrtc_media_track = h2_web_platform_webrtc_audio_track(app.platform);
   h2_pal_result_t result = h2_runtime_init(&config, &app.runtime);
   if (result != H2_PAL_OK) {
     h2_web_platform_destroy(app.platform);

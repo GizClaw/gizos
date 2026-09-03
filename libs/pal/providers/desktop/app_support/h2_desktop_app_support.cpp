@@ -21,6 +21,7 @@
 #endif
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -30,20 +31,27 @@
 namespace h2::desktop {
 namespace {
 
-void reset_network_services(OwnedNetworkServices *services) {
+int reset_network_services(OwnedNetworkServices *services) {
   auto *peer = static_cast<h2_peer_t *>(services->peer_handle);
   h2_peer_destroy(&peer);
-  services->peer_handle = nullptr;
+  services->peer_handle = peer;
+  if (peer != nullptr)
+    return H2_PAL_ERR_IO;
   auto *sctp = static_cast<h2_sctp_t *>(services->sctp_handle);
-  (void)h2_sctp_destroy(&sctp);
-  services->sctp_handle = nullptr;
+  const int sctp_rc = h2_sctp_destroy(&sctp);
+  services->sctp_handle = sctp;
+  if (sctp_rc != H2_PAL_OK)
+    return sctp_rc;
   h2_coremqtt_destroy(static_cast<h2_coremqtt_t *>(services->mqtt_handle));
   services->mqtt_handle = nullptr;
   services->mqtt_view = {};
   if (services->wolfssl_owner) {
-    (void)h2_wolfssl_deinit();
+    const int rc = h2_wolfssl_deinit();
+    if (rc != H2_PAL_OK)
+      return rc;
     services->wolfssl_owner = false;
   }
+  return H2_PAL_OK;
 }
 
 void reset_lvgl(OwnedLvgl *lvgl) {
@@ -120,7 +128,15 @@ const h2_pal_touch_api_t *OwnedDisplay::touch() const {
   return h2_sdl3_touch(handle);
 }
 
-OwnedNetworkServices::~OwnedNetworkServices() { reset_network_services(this); }
+OwnedNetworkServices::~OwnedNetworkServices() {
+  const int rc = reset();
+  if (rc != H2_PAL_OK)
+    std::fprintf(
+        stderr, "H2_DESKTOP network cleanup failed rc=%d; providers retained\n",
+        rc);
+}
+
+int OwnedNetworkServices::reset() { return reset_network_services(this); }
 
 const h2_pal_crypto_api_t *OwnedNetworkServices::crypto() const {
   return wolfssl_owner ? h2_wolfssl_crypto_api()

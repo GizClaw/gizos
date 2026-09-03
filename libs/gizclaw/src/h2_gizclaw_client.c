@@ -1185,26 +1185,16 @@ static int h2_gzc_peer_create(void *user,
     return GZC_ERR_INVALID_ARGUMENT;
   }
   client->gzc_callbacks = *callbacks;
-  h2_pal_webrtc_callbacks_t h2_callbacks = {
-      .user = client,
-      .on_peer_state = h2_gzc_peer_state,
-      .on_local_sdp = h2_gzc_local_sdp,
-      .on_channel_state = h2_gzc_channel_state,
-      .on_channel_message = h2_gzc_channel_message,
-      .on_opus_frame =
-          client->config.webrtc_media_track == NULL ? h2_gzc_opus_frame : NULL,
-  };
   h2_pal_webrtc_peer_t *peer = NULL;
-  int rc =
-      h2_pal_webrtc_peer_create(client->config.webrtc, &h2_callbacks, &peer);
+  int rc = h2_pal_webrtc_peer_create(client->config.webrtc, &peer);
   h2_gizclaw_log_webrtc_rc(client, "peer_create", rc);
   if (rc != H2_PAL_OK) {
     return GZC_ERR_WEBRTC;
   }
   if (client->config.webrtc_media_track != NULL) {
-    rc = h2_pal_webrtc_peer_set_media_track(client->config.webrtc, peer,
-                                            client->config.webrtc_media_track);
-    h2_gizclaw_log_webrtc_rc(client, "peer_set_media_track", rc);
+    rc = h2_pal_webrtc_peer_set_track(client->config.webrtc, peer,
+                                      client->config.webrtc_media_track);
+    h2_gizclaw_log_webrtc_rc(client, "peer_set_track", rc);
     if (rc != H2_PAL_OK) {
       h2_pal_webrtc_peer_close(client->config.webrtc, peer);
       return GZC_ERR_WEBRTC;
@@ -1426,6 +1416,50 @@ h2_gzc_peer_create_data_channel(gzc_rtc_peer_t *peer,
   return GZC_OK;
 }
 
+/* Dequeues at most one owned PAL event and projects it onto the GZC
+ * callbacks. Returns the PAL result so callers keep their own retry and
+ * deadline policy; the event is released before returning. */
+static int h2_gizclaw_webrtc_poll_once(h2_gizclaw_client_t *client,
+                                       h2_pal_webrtc_peer_t *peer,
+                                       int timeout_ms) {
+  h2_pal_webrtc_event_t event = {0};
+  int rc =
+      h2_pal_webrtc_peer_poll(client->config.webrtc, peer, timeout_ms, &event);
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+  switch (event.kind) {
+  case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+    h2_gzc_peer_state(client, event.peer, event.peer_state);
+    break;
+  case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+    h2_gzc_local_sdp(client, event.peer, event.sdp_type, event.sdp);
+    break;
+  case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+    h2_gzc_channel_state(client, event.peer, event.channel,
+                         &event.channel_info, event.channel_state);
+    break;
+  case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+    h2_gzc_channel_message(client, event.peer, event.channel,
+                           &event.channel_info, event.data, event.data_len,
+                           event.is_text);
+    break;
+  case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+    h2_gzc_opus_frame(client, event.peer, event.data, event.data_len);
+    break;
+  case H2_PAL_WEBRTC_EVENT_WRITABLE:
+    break;
+  case H2_PAL_WEBRTC_EVENT_ERROR:
+    rc = event.error;
+    break;
+  default:
+    rc = H2_PAL_ERR_FORMAT;
+    break;
+  }
+  h2_pal_webrtc_event_release(&event);
+  return rc;
+}
+
 static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
   h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
   if (client == NULL || client->config.webrtc == NULL) {
@@ -1437,12 +1471,17 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
   }
   h2_gizclaw_dispatch_retained_local_channel_state(
       client, (h2_pal_webrtc_peer_t *)peer);
-  int rc = h2_pal_webrtc_peer_poll(client->config.webrtc,
-                                   (h2_pal_webrtc_peer_t *)peer, timeout_ms);
+  int rc = h2_gizclaw_webrtc_poll_once(client, (h2_pal_webrtc_peer_t *)peer,
+                                       timeout_ms);
+  /* GZC owns the overall operation deadline. An idle PAL wait is not a
+   * transport failure. */
+  if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK) {
+    return GZC_OK;
+  }
   if (rc != H2_PAL_OK) {
     h2_gizclaw_log_webrtc_rc(client, "peer_poll", rc);
   }
-  return rc == H2_PAL_OK ? GZC_OK : GZC_ERR_WEBRTC;
+  return h2_gzc_media_result(rc);
 }
 
 static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
@@ -1490,8 +1529,8 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
         (int)(remaining_ms < H2_GIZCLAW_WRITE_POLL_SLICE_MS
                   ? remaining_ms
                   : H2_GIZCLAW_WRITE_POLL_SLICE_MS);
-    rc = h2_pal_webrtc_peer_poll(client->config.webrtc, client->webrtc_peer,
-                                 poll_timeout_ms);
+    rc = h2_gizclaw_webrtc_poll_once(client, client->webrtc_peer,
+                                     poll_timeout_ms);
     if (rc == H2_PAL_ERR_WOULD_BLOCK) {
       const uint32_t backoff_ms =
           remaining_ms < H2_GIZCLAW_WRITE_POLL_BACKOFF_MS
@@ -1560,6 +1599,11 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
     client->opus_frame_callback = NULL;
     client->opus_frame_callback_user = NULL;
     client->opus_frame_peer = NULL;
+    if (client->config.webrtc_media_track != NULL) {
+      (void)h2_pal_webrtc_peer_unset_track(client->config.webrtc,
+                                           (h2_pal_webrtc_peer_t *)peer,
+                                           client->config.webrtc_media_track);
+    }
     h2_pal_webrtc_peer_close(client->config.webrtc,
                              (h2_pal_webrtc_peer_t *)peer);
     if (client->webrtc_peer == (h2_pal_webrtc_peer_t *)peer) {

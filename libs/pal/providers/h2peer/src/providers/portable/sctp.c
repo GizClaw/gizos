@@ -184,6 +184,9 @@ static void sctp_on_state(void* user, h2_pal_sctp_association_t* association,
     if (state == H2_PAL_SCTP_STATE_FAILED) {
       H2_PEER_LOGE(sctp->log, "SCTP terminal state %d reason %d", (int)state,
                    (int)reason);
+    } else {
+      H2_PEER_LOGI(sctp->log, "SCTP terminal state %d reason %d", (int)state,
+                   (int)reason);
     }
     sctp->connected = 0;
     if (sctp->onclose != NULL) {

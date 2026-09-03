@@ -57,7 +57,6 @@ int main(void) {
   config.task = h2_web_platform_task_api(platform);
   config.sync = h2_web_platform_sync_api(platform);
   config.webrtc = h2_web_platform_webrtc_api(platform);
-  config.webrtc_media_track = h2_web_platform_webrtc_audio_track(platform);
   config.periph = h2_lua_runtime_e2e_periph_api();
   config.component_mapper = h2_lua_runtime_e2e_component_mapper();
   result = h2_runtime_init(&config, &runtime);

@@ -5,6 +5,58 @@
 #include <limits.h>
 #include <string.h>
 
+/* floor(((denominator - 1) * previous + sample) / denominator),
+ * without overflowing even for a very large caller-supplied timestamp. */
+static uint64_t h2_sctp_rtt_weighted_average(uint64_t previous, uint64_t sample,
+                                             uint64_t denominator) {
+  return (previous / denominator) * (denominator - 1u) + sample / denominator +
+         ((previous % denominator) * (denominator - 1u) +
+          sample % denominator) /
+             denominator;
+}
+
+static void
+h2_sctp_reliability_sample_rtt(h2_pal_sctp_association_t *association,
+                               const h2_sctp_tx_fragment_t *fragment,
+                               uint64_t now_ms) {
+  if (!association->rtt_sample_pending ||
+      fragment->tsn != association->rtt_sample_tsn) {
+    return;
+  }
+  association->rtt_sample_pending = false;
+  if (now_ms < association->rtt_sample_sent_ms) {
+    return;
+  }
+  const uint64_t sample = now_ms - association->rtt_sample_sent_ms;
+  /* RFC 9260 section 6.3.1: alpha=1/8, beta=1/4, clock granularity=1ms. */
+  if (!association->rtt_initialized) {
+    association->srtt_ms = sample;
+    association->rttvar_ms = sample / 2u;
+    association->rtt_initialized = true;
+  } else {
+    const uint64_t delta = association->srtt_ms > sample
+                               ? association->srtt_ms - sample
+                               : sample - association->srtt_ms;
+    association->rttvar_ms =
+        h2_sctp_rtt_weighted_average(association->rttvar_ms, delta, 4u);
+    association->srtt_ms =
+        h2_sctp_rtt_weighted_average(association->srtt_ms, sample, 8u);
+  }
+  if (association->rttvar_ms == 0u) {
+    association->rttvar_ms = 1u;
+  }
+  if (association->srtt_ms >= H2_SCTP_RTO_MAX_MS ||
+      association->rttvar_ms >= H2_SCTP_RTO_MAX_MS / 4u) {
+    association->rto_ms = H2_SCTP_RTO_MAX_MS;
+  } else {
+    const uint64_t rto = association->srtt_ms + 4u * association->rttvar_ms;
+    association->rto_ms =
+        rto < H2_SCTP_RTO_MIN_MS
+            ? H2_SCTP_RTO_MIN_MS
+            : (rto > H2_SCTP_RTO_MAX_MS ? H2_SCTP_RTO_MAX_MS : rto);
+  }
+}
+
 static uint32_t h2_sctp_reliability_limit(
     const h2_pal_sctp_association_t *association) {
     uint32_t limit = association->cwnd;
@@ -100,7 +152,21 @@ static h2_pal_result_t h2_sctp_reliability_emit_fragment(
         fragment->miss_reports = 0u;
         if (retransmission) {
             fragment->retransmits++;
+            /* Karn: retransmitting this TSN or an earlier TSN makes the
+             * pending observation ambiguous, including across TSN wrap. */
+            if (association->rtt_sample_pending &&
+                !h2_sctp_tsn_after(fragment->tsn,
+                                   association->rtt_sample_tsn)) {
+              association->rtt_sample_pending = false;
+            }
         } else {
+          /* A WOULD_BLOCK packet is locally buffered, not yet on the wire;
+           * do not include its unknown local queue delay in a sample. */
+          if (result == H2_PAL_OK && !association->rtt_sample_pending) {
+            association->rtt_sample_pending = true;
+            association->rtt_sample_tsn = fragment->tsn;
+            association->rtt_sample_sent_ms = now_ms;
+          }
             h2_sctp_stream_t *stream = h2_sctp_stream_find(
                 association, fragment->stream_id);
             if (stream != NULL && stream->tx_unsent == fragment) {
@@ -202,6 +268,10 @@ static void h2_sctp_reliability_mark_acknowledged(
         return;
     }
     fragment->acknowledged = true;
+    if (association->rtt_sample_pending &&
+        fragment->tsn == association->rtt_sample_tsn) {
+      association->rtt_sample_pending = false;
+    }
     if (fragment->sent && association->flight_size >= fragment->data_len) {
         association->flight_size -= fragment->data_len;
     }
@@ -290,15 +360,7 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
     }
     association->peer_receive_window = h2_sctp_wire_read_u32(
         chunk->data + 4u);
-    uint32_t highest_acknowledged = cumulative;
-    for (uint16_t index = 0u; index < gap_count; ++index) {
-        const uint16_t end = h2_sctp_wire_read_u16(
-            chunk->data + 14u + (size_t)index * 4u);
-        const uint32_t end_tsn = cumulative + end;
-        if (h2_sctp_tsn_after(end_tsn, highest_acknowledged)) {
-            highest_acknowledged = end_tsn;
-        }
-    }
+    uint32_t highest_newly_acknowledged = cumulative;
     size_t acked_bytes = 0u;
     for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
          fragment != NULL;
@@ -310,16 +372,27 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
         if (!h2_sctp_tsn_after(fragment->tsn, cumulative) ||
             h2_sctp_reliability_tsn_in_gap(
                 fragment->tsn, cumulative, chunk)) {
-            h2_sctp_reliability_mark_acknowledged(
-                association, fragment, &acked_bytes);
-        } else if (h2_sctp_tsn_before(fragment->tsn, highest_acknowledged)) {
-            fragment->miss_reports++;
-            if (fragment->miss_reports >= 3u) {
-                fragment->sent_ms = now_ms >= association->rto_ms
-                                        ? now_ms - association->rto_ms
-                                        : 0u;
-            }
+          if (h2_sctp_tsn_after(fragment->tsn, highest_newly_acknowledged)) {
+            highest_newly_acknowledged = fragment->tsn;
+          }
+          h2_sctp_reliability_sample_rtt(association, fragment, now_ms);
+          h2_sctp_reliability_mark_acknowledged(association, fragment,
+                                                &acked_bytes);
         }
+    }
+    /* RFC 9260 section 7.2.4 HTNA: a repeated gap ACK is not new loss
+     * evidence. Determine HTNA before counting holes, since fair stream
+     * scheduling need not store fragments in TSN order. */
+    for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
+         fragment != NULL; fragment = fragment->next) {
+      if (fragment->sent && !fragment->acknowledged && !fragment->abandoned &&
+          h2_sctp_tsn_before(fragment->tsn, highest_newly_acknowledged)) {
+        fragment->miss_reports++;
+        if (fragment->miss_reports >= 3u) {
+          fragment->sent_ms =
+              now_ms >= association->rto_ms ? now_ms - association->rto_ms : 0u;
+        }
+      }
     }
     if (h2_sctp_tsn_after(cumulative, association->peer_cumulative_tsn)) {
         association->peer_cumulative_tsn = cumulative;
@@ -373,6 +446,10 @@ static void h2_sctp_reliability_abandon_message(
             continue;
         }
         fragment->abandoned = true;
+        if (association->rtt_sample_pending && fragment->tsn_assigned &&
+            fragment->tsn == association->rtt_sample_tsn) {
+          association->rtt_sample_pending = false;
+        }
         if (fragment->sent && association->flight_size >= fragment->data_len) {
             association->flight_size -= fragment->data_len;
         }
