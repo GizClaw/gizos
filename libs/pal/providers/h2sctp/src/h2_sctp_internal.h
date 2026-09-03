@@ -156,9 +156,16 @@ struct h2_pal_sctp_association {
     size_t control_packet_len;
     h2_sctp_control_kind_t control_kind;
     unsigned control_retries;
+    bool control_reset_in_progress;
     uint64_t control_deadline_ms;
 
     uint64_t rto_ms;
+    uint64_t srtt_ms;
+    uint64_t rttvar_ms;
+    uint64_t rtt_sample_sent_ms;
+    uint32_t rtt_sample_tsn;
+    bool rtt_initialized;
+    bool rtt_sample_pending;
     uint64_t heartbeat_deadline_ms;
     uint32_t cwnd;
     uint32_t ssthresh;

@@ -43,9 +43,10 @@ static h2_pal_result_t h2_sctp_timer_service_control(
             association->control_deadline_ms, in_out_deadline);
         return H2_PAL_OK;
     }
-    if (association->control_retries >= H2_SCTP_MAX_CONTROL_RETRIES) {
-        h2_sctp_fail(association, H2_PAL_ERR_TIMEOUT);
-        return H2_PAL_ERR_TIMEOUT;
+    if (!association->control_reset_in_progress &&
+        association->control_retries >= H2_SCTP_MAX_CONTROL_RETRIES) {
+      h2_sctp_fail(association, H2_PAL_ERR_TIMEOUT);
+      return H2_PAL_ERR_TIMEOUT;
     }
     const h2_pal_result_t result = h2_sctp_timer_emit_saved_control(association);
     if (result == H2_PAL_ERR_WOULD_BLOCK) {
@@ -55,7 +56,11 @@ static h2_pal_result_t h2_sctp_timer_service_control(
     if (result != H2_PAL_OK) {
         return result;
     }
-    association->control_retries++;
+    if (!association->control_reset_in_progress) {
+      association->control_retries++;
+    }
+    // RFC 6525 5.1.1 requires backoff even when 5.2.7 H2 exempts
+    // the deferred reset from error counting.
     if (association->rto_ms < H2_SCTP_RTO_MAX_MS / 2u) {
         association->rto_ms *= 2u;
     } else {
