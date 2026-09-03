@@ -41,6 +41,11 @@ extern "C" {
 #define H2_QRCODE_BUFFER_LEN_MAX                                               \
   H2_QRCODE_BUFFER_LEN_FOR_VERSION(H2_QRCODE_VERSION_MAX)
 
+/** Modules per side of the smallest symbol, version 1. */
+#define H2_QRCODE_SIZE_MIN 21
+/** Modules per side of the largest symbol, version 40. */
+#define H2_QRCODE_SIZE_MAX 177
+
 /** Quiet zone width required by the QR Code specification, in modules. */
 #define H2_QRCODE_QUIET_MODULES_MIN 4
 /**
@@ -70,7 +75,11 @@ typedef enum h2_qrcode_ecc {
 typedef struct h2_qrcode {
   /** Borrowed encoded module storage owned by the caller. */
   const uint8_t *modules;
-  /** Symbol width and height in modules. */
+  /**
+   * Symbol width and height in modules, always `4 * version + 17` and so in
+   * [H2_QRCODE_SIZE_MIN, H2_QRCODE_SIZE_MAX]. Layout and rasterization reject
+   * a descriptor carrying any other value.
+   */
   int size;
 } h2_qrcode_t;
 

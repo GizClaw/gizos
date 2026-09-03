@@ -230,6 +230,37 @@ static void test_render_band_rejects_unrepresentable_layout(void) {
                                       16u) == H2_PAL_ERR_INVALID_ARG);
 }
 
+static void test_rejects_hostile_symbol_size(void) {
+  static uint16_t pixels[16];
+  h2_qrcode_t qrcode;
+  h2_qrcode_t hostile;
+  h2_qrcode_layout_t layout;
+  h2_qrcode_layout_t valid_layout;
+  static const int kHostileSizes[] = {
+      0, -1, INT_MAX, H2_QRCODE_SIZE_MIN - 1, H2_QRCODE_SIZE_MAX + 1,
+      /* In range, but not a 4 * version + 17 module count. */
+      H2_QRCODE_SIZE_MIN + 1,
+  };
+
+  encode_hello(&qrcode);
+  assert(h2_qrcode_layout_center(&qrcode, 96, 96, H2_QRCODE_QUIET_MODULES_MIN,
+                                 &valid_layout) == H2_PAL_OK);
+
+  for (size_t index = 0u;
+       index < sizeof(kHostileSizes) / sizeof(kHostileSizes[0]); ++index) {
+    hostile = qrcode;
+    hostile.size = kHostileSizes[index];
+    memset(&layout, 0xAA, sizeof(layout));
+    assert(h2_qrcode_layout_center(&hostile, 368, 448,
+                                   H2_QRCODE_QUIET_MODULES_MIN,
+                                   &layout) == H2_PAL_ERR_INVALID_ARG);
+    assert(layout.scale == 0 && layout.quiet_modules == 0);
+    assert(h2_qrcode_render_rgb565_band(&hostile, &valid_layout, 0u, 0u, 0u, 0,
+                                        4, 4, pixels,
+                                        16u) == H2_PAL_ERR_INVALID_ARG);
+  }
+}
+
 static void test_render_band_rejects_invalid_arguments(void) {
   static uint16_t pixels[16];
   h2_qrcode_t qrcode;
@@ -258,6 +289,7 @@ int main(void) {
   test_finder_patterns_are_dark();
   test_layout_centers_symbol();
   test_layout_rejects_unrepresentable_quiet_zone();
+  test_rejects_hostile_symbol_size();
   test_render_band_matches_modules();
   test_render_band_rejects_unrepresentable_layout();
   test_render_band_rejects_invalid_arguments();

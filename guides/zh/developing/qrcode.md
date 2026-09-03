@@ -32,6 +32,11 @@ Version 10 对应 468 字节，足以容纳典型的配网 URL；固件不需要
 
 ## 布局与栅格化
 
+`h2_qrcode_t` 是调用方持有的 public storage，`size` 字段可能被填成任何值，而两个
+span 都由它推导，所以 layout 和 rasterize 入口都先校验它是合法的
+`4 * version + 17`（`H2_QRCODE_SIZE_MIN` 到 `H2_QRCODE_SIZE_MAX`），否则返回
+`H2_PAL_ERR_INVALID_ARG`。
+
 `h2_qrcode_layout_center()` 在给定像素表面内选择能整除的最大 module 尺寸，并居中
 符号；表面装不下符号加 quiet zone 时返回 `H2_PAL_ERR_NO_SPACE`，不会输出被裁切的
 布局。Quiet zone 取值范围是 `H2_QRCODE_QUIET_MODULES_MIN` 到

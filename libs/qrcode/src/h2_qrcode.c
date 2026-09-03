@@ -79,6 +79,17 @@ bool h2_qrcode_module_is_dark(const h2_qrcode_t *qrcode, int x, int y) {
   return qrcodegen_getModule(qrcode->modules, x, y);
 }
 
+/*
+ * The descriptor is public storage, so a caller can hand back a size that no
+ * encoder would produce. Every span is derived from it, so validate the
+ * specified module counts before any arithmetic.
+ */
+static bool qrcode_size_is_valid(const h2_qrcode_t *qrcode) {
+  return qrcode != NULL && qrcode->modules != NULL &&
+         qrcode->size >= H2_QRCODE_SIZE_MIN &&
+         qrcode->size <= H2_QRCODE_SIZE_MAX && (qrcode->size - 17) % 4 == 0;
+}
+
 h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
                                         int surface_width, int surface_height,
                                         int quiet_modules,
@@ -91,7 +102,7 @@ h2_pal_result_t h2_qrcode_layout_center(const h2_qrcode_t *qrcode,
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(out_layout, 0, sizeof(*out_layout));
-  if (qrcode == NULL || qrcode->modules == NULL || qrcode->size <= 0) {
+  if (!qrcode_size_is_valid(qrcode)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (surface_width <= 0 || surface_height <= 0 ||
@@ -125,8 +136,8 @@ h2_pal_result_t h2_qrcode_render_rgb565_band(
   int span_modules = 0;
   int span_pixels = 0;
 
-  if (qrcode == NULL || qrcode->modules == NULL || qrcode->size <= 0 ||
-      layout == NULL || out_pixels == NULL) {
+  if (!qrcode_size_is_valid(qrcode) || layout == NULL ||
+      out_pixels == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (layout->scale < 1 ||
