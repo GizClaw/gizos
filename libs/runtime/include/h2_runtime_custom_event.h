@@ -98,11 +98,14 @@ typedef union h2_runtime_event_payload_buffer {
  * H2_PAL_ERR_INVALID_STATE once Runtime deinit has closed the queue to
  * producers, and H2_PAL_ERR_INVALID_ARG for a malformed request.
  *
- * Shutdown: h2_runtime_deinit() closes the queue and waits for posts that are
- * already in flight before it frees the Runtime, so a poster racing with
- * deinit is released with an error instead of touching a destroyed queue. The
- * caller still owns the other half of the contract: no post may *begin* after
- * deinit has started, because `runtime` itself is gone once it returns.
+ * Shutdown: h2_runtime_deinit() closes the queue and then waits, without a
+ * deadline, for every post already in flight to return before it frees the
+ * Runtime, so a poster racing with deinit is released with an error instead
+ * of touching destroyed state. The wait always ends because a post holds its
+ * slot only across one queue send with a finite timeout, and closing the
+ * queue releases a send that is already blocked. The caller still owns the
+ * other half of the contract: no post may *begin* after deinit has started,
+ * because `runtime` itself is gone once it returns.
  */
 h2_pal_result_t h2_runtime_post_custom_event(
     h2_runtime_t *runtime,

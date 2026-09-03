@@ -9,9 +9,6 @@ _Static_assert(offsetof(h2_runtime_custom_event_payload_t, data) ==
                    H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE,
                "custom event header size must match the delivered layout");
 
-/* Bounded so a stuck poster cannot hang h2_runtime_deinit() forever. */
-#define H2_RUNTIME_CUSTOM_EVENT_DRAIN_TIMEOUT_MS 2000u
-
 static void custom_event_lock(h2_runtime_private_t *private_state) {
     while (atomic_flag_test_and_set_explicit(
         &private_state->custom_event_lock, memory_order_acquire)) {
@@ -126,9 +123,16 @@ void h2_runtime_custom_event_close(h2_runtime_t *runtime) {
         (void)h2_pal_queue_close(runtime->queue, private_state->event_queue);
     }
 
-    for (uint32_t waited_ms = 0u;
-         waited_ms <= H2_RUNTIME_CUSTOM_EVENT_DRAIN_TIMEOUT_MS;
-         ++waited_ms) {
+    /*
+     * An admitted poster still reads private_state after its send returns, so
+     * this wait cannot be bounded: falling through would free the state under
+     * it. Termination is guaranteed instead by the poster side. A post holds
+     * its slot only across one queue send, the send takes a finite timeout
+     * (h2_runtime_post_custom_event_timeout() rejects
+     * H2_PAL_QUEUE_WAIT_FOREVER), and the close above releases a send that is
+     * already blocked.
+     */
+    for (;;) {
         custom_event_lock(private_state);
         private_state->custom_event_closed = 1;
         uint32_t in_flight = private_state->custom_event_in_flight;

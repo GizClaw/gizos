@@ -364,7 +364,7 @@ if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
 - Custom event 之间保持 FIFO，并与已入队的 system/component event 共享同一顺序。
 - Runtime 不解释 `id` 和 payload；建议用 `H2_RUNTIME_CUSTOM_EVENT_ID(owner, event)` 携带 owner namespace 以避免不同 Library/App 的 ID 冲突。
 - Payload 只携带值。不要投递裸 callback、Task handle 或生命周期不明确的临时指针；投递 `job_id + generation + result` 这类身份信息，由消费端在 main loop 中解析对象，这样页面退出、Job 被取消或迟到的 completion 都不会解引用已释放的对象。
-- `h2_runtime_deinit()` 先关闭 event queue 再等待仍在投递中的 poster 退出，然后才销毁 queue；调用方仍然负责保证 deinit 开始之后不再发起新的投递。
+- `h2_runtime_deinit()` 先关闭 event queue，再无期限等待所有已进入的投递返回，然后才销毁 queue。该等待一定结束：一次投递只在一次 queue send 期间占用名额，而 send 的超时是有限的。调用方仍然负责保证 deinit 开始之后不再发起新的投递。
 
 ## Component State
 
