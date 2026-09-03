@@ -199,6 +199,11 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(command.call_count, 4)
             discovery = command.call_args_list[0]
             self.assertEqual(discovery.args[1][1], "query")
+            self.assertEqual(
+                discovery.args[1][2],
+                'kind("h2loader_tar_zlib rule", //projects/...) '
+                'except attr("tags", "no-release", //projects/...)',
+            )
             for config, invocation in zip(
                 release.CATALOG_CONFIGS, command.call_args_list[1:]
             ):
