@@ -20,6 +20,11 @@ typedef struct h2_pal_sync_api {
   int unused;
 } h2_pal_sync_api_t;
 
+typedef enum h2_esp_es8311_aec_nlp_level {
+  H2_ESP_ES8311_AEC_NLP_NORMAL = 0,
+  H2_ESP_ES8311_AEC_NLP_AGGRESSIVE = 1,
+} h2_esp_es8311_aec_nlp_level_t;
+
 typedef struct h2_audio_frame {
   void *data;
   size_t capacity;
@@ -53,6 +58,7 @@ typedef struct h2_esp_es8311_audio_system_config {
   const h2_pal_queue_api_t *queue_api;
   const h2_pal_sync_api_t *sync_api;
   int enable_aec;
+  h2_esp_es8311_aec_nlp_level_t aec_nlp_level;
 } h2_esp_es8311_audio_system_config_t;
 
 typedef struct h2_esp_es8311_sr_state {

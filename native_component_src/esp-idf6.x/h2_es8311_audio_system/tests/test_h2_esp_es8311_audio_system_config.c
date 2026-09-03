@@ -21,7 +21,8 @@ int h2_esp_es8311_sr_process(h2_esp_es8311_sr_state_t *state,
 
 int main(void) {
   const h2_pal_queue_api_t queue_api = {0};
-  const h2_esp_es8311_audio_system_config_t config = {
+  const h2_pal_sync_api_t sync_api = {0};
+  h2_esp_es8311_audio_system_config_t config = {
       .sample_rate_hz = 16000u,
       .frame_samples_per_channel = 320u,
       .raw_channels = 2u,
@@ -36,9 +37,14 @@ int main(void) {
       .mic_task_stack_size = 1u,
       .speaker_task_stack_size = 1u,
       .queue_api = &queue_api,
-      .sync_api = NULL,
+      .sync_api = &sync_api,
   };
   h2_esp_es8311_audio_system_t system;
+  assert(h2_esp_es8311_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  config.aec_nlp_level = (h2_esp_es8311_aec_nlp_level_t)2;
+  assert(h2_esp_es8311_audio_system_init(&system, &config) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  config.aec_nlp_level = (h2_esp_es8311_aec_nlp_level_t)-1;
   assert(h2_esp_es8311_audio_system_init(&system, &config) ==
          H2_AUDIO_ERR_INVALID_ARG);
   return 0;
