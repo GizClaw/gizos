@@ -141,6 +141,7 @@ typedef struct h2_lua_job {
   int dirty_min_y;
   int dirty_max_x;
   int dirty_max_y;
+  uint8_t display_fade_phase;
   int touch_open;
   int touch_initialized;
   int touch_pressed;
@@ -152,6 +153,11 @@ typedef struct h2_lua_job {
   size_t active_audio_track_count;
   uint32_t next_audio_track_generation;
   int audio_speaker_acquired;
+  uint8_t *audio_mic_buffer;
+  size_t audio_mic_buffer_capacity;
+  h2_audio_pcm_format_t audio_mic_format;
+  uint32_t audio_mic_generation;
+  int audio_mic_acquired;
   char require_root[H2_LUA_PATH_MAX];
 } h2_lua_job_t;
 
@@ -181,6 +187,7 @@ struct h2_lua_host {
   h2_pal_mutex_t *capability_mutex;
   h2_pal_mutex_t *audio_mutex;
   size_t audio_speaker_users;
+  size_t audio_mic_users;
 };
 
 void *h2_lua_runtime_realloc(void *user, void *ptr, size_t old_size,
@@ -199,6 +206,8 @@ void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t *slot,
                                            const h2_pal_mem_api_t *mem);
 h2_pal_result_t h2_lua_job_acquire_audio_speaker(h2_lua_job_t *job);
 void h2_lua_job_release_audio_speaker(h2_lua_job_t *job);
+h2_pal_result_t h2_lua_job_acquire_audio_mic(h2_lua_job_t *job);
+void h2_lua_job_release_audio_mic(h2_lua_job_t *job);
 void h2_lua_deliver_events(h2_lua_job_t *job);
 h2_lua_task_t *h2_lua_current_task(lua_State *state);
 h2_lua_task_t *h2_lua_find_task(h2_lua_job_t *job, uint32_t task_id);

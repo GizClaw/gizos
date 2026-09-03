@@ -72,10 +72,10 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `capability` | `call(name, payload, options)` | 冻结的 C registry；支持 immediate/pending/cancel/late completion |
 | `delay` | `delay_ms`、`delay_us` | ESP-Claw profile；毫秒等待 yield，微秒等待使用 Runtime monotonic time |
 | `system` | `time`、`date`、`millis`、`uptime` | Runtime Time；固定 UTC offset |
-| `display` | upstream Flappy 使用的 drawing、frame、text 和 `deinit` 方法 | 直接使用 Runtime singleton Display API |
+| `display` | drawing、frame、text、AA circle、framebuffer fade 和 `deinit` | 直接使用 Runtime singleton Display API；dirty region 始终裁剪到 framebuffer |
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
-| `audio` | `new_output`，以及每条 Track 的 `write/info/close` | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format；PAL 混合多条 Track，不接收 codec handle |
+| `audio` | `new_input`、`new_output`，以及每个对象的 `info/close` 与 read/write 方法 | 直接使用 Runtime singleton Audio System；复制 PCM，不接收 codec handle |
 
 `runtime.components.getByName()`、`board_manager`、SDK handle 和动态 C module
 不属于首期合同。Display、Touch 和 Audio 保持 ESP-Claw 的 module acquisition，内部
@@ -85,6 +85,19 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 负责混音。每个持有 Track 的 job 获取一个 Host 级 speaker user；关闭该 job 的最后
 一条 Track 或回收 job 时释放它，只有同一 Host 的最后一个 speaker user 释放后才停止
 Speaker。一个 job 结束不能中断另一个仍在写 Track 的 job。
+
+### Display AA 与 framebuffer fade
+
+`display.fill_circle_aa(cx, cy, radius, color)` 使用有界 supersample coverage 混合 RGB565 framebuffer，`radius` 限制为 `0..64`。`display.fade_to_black(amount)` 对完整 framebuffer 衰减，`display.fade_rect_to_black(x, y, width, height, amount)` 只衰减完全位于 framebuffer 内的正尺寸矩形；`amount` 均为 `0..255`。三者只标记实际 clipping 后的 dirty region，不隐式 `present`。小于一个 RGB565 channel step 的 fade 使用固定、有界的 spatial phase，避免高 FPS 下暗色 trail 永远不消失。
+
+### Audio Input
+
+`audio.new_input({})` 查询 Runtime Audio 的真实 microphone format。provider 未提供 Audio、`available=false`、`mic_supported=false`、format 不是 S16LE 或 frame size 无效时，确定性返回 `nil, "audio input: unavailable"`，不会启动 microphone 或保留 buffer。一个 job 只能持有一个 input；同一 Host 的 jobs 以引用计数共享 microphone start/stop lifecycle，每个 input 仍拥有固定为一个 provider frame 的 copied buffer。
+
+- `input:info()` 返回 `role="input"`、`opened`、`sample_rate`、`channels`、`bits_per_sample=16`、`frame_samples` 和 `bytes_per_frame`。
+- `input:read(timeout_ms)` 复制一个 S16LE provider frame 为 Lua string；默认 timeout 为 `0`，无数据返回 `nil, "audio input: busy"`，关闭后返回 `nil, "audio input: closed"`。
+- `input:level(timeout_ms)` 消费一个 frame，返回 normalized RMS、peak 和相邻 sample difference 的 brightness；它不选择 App noise floor、gain、theme 或 frame cadence。
+- `input:close()` 可重复调用。显式 close、job cancel/failure/release 和 Host teardown 都释放 copied buffer，并只在 Host 最后一个 microphone user 离开时 stop provider。
 
 ### Audio Track 的帧契约
 

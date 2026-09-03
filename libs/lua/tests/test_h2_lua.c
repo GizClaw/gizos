@@ -225,6 +225,8 @@ static int test_audio_track_write(h2_pal_audio_track_t *track,
 static atomic_int s_test_audio_close_count;
 static atomic_int s_test_audio_start_count;
 static atomic_int s_test_audio_stop_count;
+static atomic_int s_test_audio_mic_start_count;
+static atomic_int s_test_audio_mic_stop_count;
 
 static int test_audio_track_close(h2_pal_audio_track_t *track) {
   (void)track;
@@ -249,6 +251,32 @@ static int test_audio_stop_speaker(void *user) {
   return H2_PAL_OK;
 }
 
+static int test_audio_start_mic(void *user) {
+  (void)user;
+  (void)atomic_fetch_add(&s_test_audio_mic_start_count, 1);
+  return H2_PAL_OK;
+}
+
+static int test_audio_stop_mic(void *user) {
+  (void)user;
+  (void)atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
+  return H2_PAL_OK;
+}
+
+static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
+                               uint32_t timeout_ms) {
+  static const uint8_t samples[] = {0u, 64u, 0u, 192u};
+  (void)user;
+  (void)timeout_ms;
+  if (frame == NULL || frame->capacity < sizeof(samples)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memcpy(frame->data, samples, sizeof(samples));
+  frame->bytes = sizeof(samples);
+  frame->samples_per_channel = 2u;
+  return H2_PAL_OK;
+}
+
 static int test_audio_create_track(void *user,
                                    const h2_audio_track_config_t *config,
                                    h2_pal_audio_track_t **out_track) {
@@ -268,7 +296,15 @@ static int test_audio_get_info(void *user, h2_audio_info_t *info) {
   (void)user;
   *info = (h2_audio_info_t){
       .available = 1,
+      .mic_supported = 1,
       .playback_supported = 1,
+      .mic_format =
+          {
+              .sample_rate_hz = 16000u,
+              .frame_samples_per_channel = 2u,
+              .channels = 1u,
+              .sample_format = H2_AUDIO_SAMPLE_S16LE,
+          },
       .playback_format =
           {
               .sample_rate_hz = 16000u,
@@ -284,8 +320,11 @@ static int test_audio_get_info(void *user, h2_audio_info_t *info) {
 
 static const h2_pal_audio_vtable_t s_test_audio_vtable = {
     .get_info = test_audio_get_info,
+    .start_mic = test_audio_start_mic,
+    .stop_mic = test_audio_stop_mic,
     .start_speaker = test_audio_start_speaker,
     .stop_speaker = test_audio_stop_speaker,
+    .mic_read = test_audio_mic_read,
     .create_track = test_audio_create_track,
 };
 
@@ -684,6 +723,15 @@ int main(void) {
       "b=assert(r.components.get(7));assert(type(b.get_key_level())=='number','"
       "button');"
       "local a=require('audio');local "
+      "input=assert(a.new_input());local ii=input:info();"
+      "assert(ii.opened and ii.role=='input' and ii.sample_rate==16000 and "
+      "ii.channels==1 and ii.frame_samples==2,'input-info');"
+      "local rms,peak,brightness=input:level();"
+      "assert(rms>0.49 and rms<0.51 and peak==0.5 and brightness>0.70 and "
+      "brightness<0.71,'input-level');"
+      "assert(#input:read()==4,'input-read');assert(input:close(),'input-close'"
+      ");"
+      "assert(input:close(),'input-close-idempotent');local "
       "bad=select(1,a.new_output({bits_per_sample=8}));"
       "assert(bad==nil,'invalid audio');local "
       "o1=assert(a.new_output({sample_rate=16000,channels=1,bits_per_sample=16}"
@@ -891,6 +939,8 @@ int main(void) {
   atomic_store(&s_test_audio_close_count, 0);
   atomic_store(&s_test_audio_start_count, 0);
   atomic_store(&s_test_audio_stop_count, 0);
+  atomic_store(&s_test_audio_mic_start_count, 0);
+  atomic_store(&s_test_audio_mic_stop_count, 0);
   s_test_audio_written_bytes = 0u;
   s_test_audio_frame_count = 0u;
   assert(h2_lua_job_submit_text(host, "@component-profile.lua",
@@ -904,6 +954,8 @@ int main(void) {
   assert(atomic_load(&s_test_audio_close_count) == 2);
   assert(atomic_load(&s_test_audio_start_count) == 1);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
+  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
   /* The script wrote 1..6 then 7..10 to o1 (device frame = 4 bytes), 100..103
    * to o2, then closed both. The sub-frame tail of the first write must be
    * carried into the second one, so o1's bytes reach the device in order with
@@ -972,6 +1024,36 @@ int main(void) {
   assert(atomic_load(&s_test_audio_close_count) == 2);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
 
+  static const uint8_t audio_input_wait_script[] =
+      "local a=require('audio');local d=require('delay');"
+      "assert(a.new_input());d.delay_ms(500);return 'done'";
+  h2_lua_job_id_t audio_input_job_1;
+  h2_lua_job_id_t audio_input_job_2;
+  atomic_store(&s_test_audio_mic_start_count, 0);
+  atomic_store(&s_test_audio_mic_stop_count, 0);
+  assert(h2_lua_job_submit_text(host, "@audio-input-wait-1.lua",
+                                audio_input_wait_script,
+                                sizeof(audio_input_wait_script) - 1u, NULL, 0u,
+                                &audio_input_job_1) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, "@audio-input-wait-2.lua",
+                                audio_input_wait_script,
+                                sizeof(audio_input_wait_script) - 1u, NULL, 0u,
+                                &audio_input_job_2) == H2_PAL_OK);
+  while (status(host, audio_input_job_1).state != H2_LUA_JOB_WAITING ||
+         status(host, audio_input_job_2).state != H2_LUA_JOB_WAITING) {
+    assert(h2_lua_host_step(host) == H2_PAL_OK);
+    assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
+  }
+  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(h2_lua_job_cancel(host, audio_input_job_1) == H2_PAL_OK);
+  run_until_terminal(host, audio_input_job_1, 16u);
+  assert(h2_lua_job_release(host, audio_input_job_1) == H2_PAL_OK);
+  assert(atomic_load(&s_test_audio_mic_stop_count) == 0);
+  assert(h2_lua_job_cancel(host, audio_input_job_2) == H2_PAL_OK);
+  run_until_terminal(host, audio_input_job_2, 16u);
+  assert(h2_lua_job_release(host, audio_input_job_2) == H2_PAL_OK);
+  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+
   static const uint8_t audio_failure_script[] =
       "local a=require('audio');"
       "assert(a.new_output({sample_rate=16000,channels=1,bits_per_sample=16}));"
@@ -1011,6 +1093,21 @@ int main(void) {
   }
   assert(strstr(status(host, job_id).message, "invalid draw_text_aligned") !=
          NULL);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
+  static const uint8_t display_aa_script[] =
+      "local d=require('display');"
+      "d.begin_frame({clear=true,color='white'});"
+      "d.fade_to_black(38);"
+      "d.fade_rect_to_black(2,2,4,4,38);"
+      "d.fill_circle_aa(4,4,2,'black');"
+      "d.deinit();return 'display-aa-ok'";
+  assert(h2_lua_job_submit_text(host, "@display-aa.lua", display_aa_script,
+                                sizeof(display_aa_script) - 1u, NULL, 0u,
+                                &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "display-aa-ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
   h2_lua_host_destroy(host);

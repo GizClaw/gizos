@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
+#include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
 #include "host/ble_hs.h"
@@ -917,6 +918,13 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
             conn.conn_handle = event->connect.conn_handle;
             conn.role = central ? H2_PAL_BLE_ROLE_CENTRAL : H2_PAL_BLE_ROLE_PERIPHERAL;
             conn.mtu = ble_att_mtu(event->connect.conn_handle);
+            struct ble_gap_conn_desc desc;
+            if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
+                conn.peer_addr.type =
+                    h2_esp_ble_addr_type(desc.peer_ota_addr.type);
+                memcpy(conn.peer_addr.value, desc.peer_ota_addr.val,
+                       sizeof(conn.peer_addr.value));
+            }
             s_h2_esp_ble_connect_result = H2_PAL_OK;
             s_h2_esp_ble_connect_handle = event->connect.conn_handle;
             h2_esp_ble_post(
@@ -2626,7 +2634,18 @@ static h2_pal_result_t h2_esp_ble_exchange_mtu(
     s_h2_esp_ble_exchange_mtu = 0u;
     s_h2_esp_ble_gatt_result = H2_PAL_ERR_TIMEOUT;
     xEventGroupClearBits(s_h2_esp_ble_events, H2_ESP_BLE_GATT_DONE_BIT);
-    h2_pal_result_t rc = h2_esp_ble_map_rc(ble_gattc_exchange_mtu(conn_handle, h2_esp_ble_mtu_cb, NULL));
+    int nimble_rc =
+        ble_gattc_exchange_mtu(conn_handle, h2_esp_ble_mtu_cb, NULL);
+    /*
+     * MTU exchange is link-wide and either peer may have completed it. NimBLE
+     * reports that case synchronously and does not produce a new completion
+     * callback, so return the link's negotiated value instead of waiting.
+     */
+    if (nimble_rc == BLE_HS_EALREADY) {
+        *out_mtu = ble_att_mtu(conn_handle);
+        return H2_PAL_OK;
+    }
+    h2_pal_result_t rc = h2_esp_ble_map_rc(nimble_rc);
     if (rc != H2_PAL_OK) {
         return rc;
     }

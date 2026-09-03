@@ -60,3 +60,16 @@ cc_test(
     includes = ["tests/system_include"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
+
+cc_test(
+    name = "gain_test",
+    srcs = [
+        "src/h2_esp_es8311_gain.c",
+        "src/h2_esp_es8311_gain.h",
+        "tests/test_h2_esp_es8311_gain.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
