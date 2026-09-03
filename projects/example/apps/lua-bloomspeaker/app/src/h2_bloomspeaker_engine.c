@@ -703,7 +703,7 @@ static int lock_pair(h2_bloomspeaker_engine_t *engine, uint64_t peer,
   uint32_t peer_epoch = 0u;
   uint64_t local_tag = 0u;
   uint64_t local_ticket = 0u;
-  h2_pal_ble_addr_t address;
+  h2_pal_ble_addr_t address = {0};
   h2_bloomspeaker_pairing_role_t role = H2_BLOOMSPEAKER_PAIRING_ROLE_NONE;
   if (h2_pal_mutex_lock(engine->runtime->sync, engine->pairing_mutex) !=
       H2_PAL_OK) {
