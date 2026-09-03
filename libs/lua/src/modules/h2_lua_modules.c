@@ -2635,9 +2635,9 @@ static int audio_new_input(lua_State *state) {
   h2_audio_info_t info = {0};
   size_t frame_bytes;
   int result;
-  if (!lua_isnoneornil(state, 1)) {
-    luaL_checktype(state, 1, LUA_TTABLE);
-  }
+  luaL_argcheck(state, lua_isnoneornil(state, 1), 1,
+               "new_input takes no arguments; input format is fixed by the "
+               "Runtime microphone");
   if (job->audio_mic_acquired || job->audio_mic_buffer != NULL) {
     lua_pushnil(state);
     lua_pushliteral(state, "audio input: already open");
