@@ -91,9 +91,10 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 是 DataChannel ownership 的终止
 disconnect、close 或 teardown；conversation 只借用该 handle 的逻辑 lease，deinit
 本轮时不得关闭物理 Event channel。Library 还负责 frame 解码、`stream_id`
 过滤、取消与完整 connection 重连边界。配置 `webrtc_media_track` 时，GizClaw 在
-offer 前只把 opaque track 绑定给 PAL，codec/RTP 和媒体推进留在 provider；不注册 PAL
-Opus callback，也不读取 track 内容。未配置 Track 的固件暂时继续把 PAL raw Opus
-callback/send 注册为 C SDK 的 versioned migration adapter。App 继续使用高层
+offer 前用 `h2_pal_webrtc_peer_set_track()` 绑定该 caller-owned Track，codec/RTP 和
+媒体推进由 Track 与 provider 协作完成，GizClaw 不读取 track 内容，并在 peer close 前
+调用 `h2_pal_webrtc_peer_unset_track()` 归还它。未配置 Track 的固件继续把 PAL
+`OPUS_FRAME` event 和 `peer_send_opus` 作为 C SDK 的 raw Opus adapter。App 继续使用高层
 `GZC_PROTOCOL_OPUS_PACKET`，由 C SDK 把 payload 映射到 WebRTC audio RTP；
 firmware 不添加私有 header、不直接组 RTP，也不使用 DataChannel fallback。它不
 拥有 H106 页面或产品状态。API completion 由 service 放入有界 completion queue；H106 main loop dispatch matching-generation callback，更新 state，再投影到 Audio System 和 LVGL subject。它不是 Runtime event，也不是 worker-thread callback。

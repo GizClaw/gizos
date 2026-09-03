@@ -3,6 +3,9 @@
 
 #include "h2/pal/application/h2_pal_webrtc.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2/pal/os/h2_pal_sync.h"
+#include "h2/pal/os/h2_pal_task.h"
+#include "h2/pal/os/h2_pal_time.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,16 +14,23 @@ extern "C" {
 /** Opaque owner of the Go/Pion WebRTC PAL provider. */
 typedef struct h2_pion h2_pion_t;
 
-/** Dependencies borrowed for the complete provider lifetime. */
+/** Dependencies borrowed for the complete provider lifetime. The allocator
+ * must additionally outlive every outstanding owned event. */
 typedef struct h2_pion_config {
   const h2_pal_mem_api_t *mem;
+  const h2_pal_sync_api_t *sync;
+  const h2_pal_task_api_t *task;
+  const h2_pal_time_api_t *time;
 } h2_pion_config_t;
 
 /**
  * Creates a reusable Go/Pion WebRTC PAL provider.
  *
- * One provider may own multiple peers. Pion worker goroutines enqueue copied
- * events; PAL callbacks run only from the caller of peer_poll().
+ * Each peer requires a PAL worker in addition to Pion's network goroutines.
+ * Track read/write run on that worker; peer_poll only retrieves owned events.
+ * Track methods must be nonblocking and must not call peer/provider lifecycle
+ * methods. unset_track waits for in-flight Track access before returning.
+ * Peer close/provider destroy must be serialized with other public API calls.
  */
 h2_pal_result_t h2_pion_create(const h2_pion_config_t *config,
                                h2_pion_t **out_provider);
@@ -35,9 +45,14 @@ void h2_pion_test_block_next_opus_send(h2_pal_webrtc_peer_t *peer);
 size_t h2_pion_test_opus_send_attempts(h2_pal_webrtc_peer_t *peer);
 /** Test-only: report whether all observed submissions matched the first. */
 int h2_pion_test_opus_send_payloads_match(h2_pal_webrtc_peer_t *peer);
+/** Test-only bridge injection serialized with the real worker. */
+h2_pal_result_t h2_pion_test_connected(h2_pal_webrtc_peer_t *peer);
+h2_pal_result_t h2_pion_test_remote_channel(h2_pal_webrtc_peer_t *peer);
 #endif
 
-/** Closes all peers and destroys the provider. NULL is accepted. */
+/** Closes all peers and destroys the provider. NULL is accepted. A failed task
+ * join retains *provider so destruction can be retried without freeing a live
+ * worker's dependencies. */
 void h2_pion_destroy(h2_pion_t **provider);
 
 #ifdef __cplusplus

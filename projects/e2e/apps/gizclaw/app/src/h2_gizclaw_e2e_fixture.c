@@ -1,6 +1,6 @@
+#include "h2_gizclaw_e2e_internal.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_sync.h"
-#include "h2_gizclaw_e2e_internal.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -114,7 +114,7 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
 }
 
 static h2_pal_result_t observer_peer_create(void *user,
-    h2_pal_webrtc_peer_t **out_peer) {
+                                            h2_pal_webrtc_peer_t **out_peer) {
   webrtc_observer_t *observer = user;
   if (observer == NULL || out_peer == NULL || observer->upstream == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -157,7 +157,7 @@ static h2_pal_result_t observer_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
 static h2_pal_result_t
 observer_peer_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
                              h2_pal_webrtc_sdp_type_t type,
-    h2_pal_webrtc_str_t sdp) {
+                             h2_pal_webrtc_str_t sdp) {
   return h2_pal_webrtc_peer_set_remote_sdp(s_webrtc_observer.upstream, peer,
                                            type, sdp);
 }
@@ -202,7 +202,7 @@ static h2_pal_result_t observer_peer_send_opus(h2_pal_webrtc_peer_t *peer,
 
 static h2_pal_result_t observer_channel_send(h2_pal_webrtc_channel_t *channel,
                                              const uint8_t *data, size_t len,
-    int is_text) {
+                                             int is_text) {
   return h2_pal_webrtc_channel_send(s_webrtc_observer.upstream, channel, data,
                                     len, is_text);
 }
@@ -231,7 +231,6 @@ static void observer_peer_close(h2_pal_webrtc_peer_t *peer) {
     (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   }
 }
-
 static int observer_init(const h2_pal_webrtc_api_t *upstream,
                          const h2_pal_sync_api_t *sync,
                          const h2_pal_mem_api_t *allocator) {
@@ -676,7 +675,8 @@ int h2_gizclaw_e2e_fixture_transfer_actor_to_service(
 
 int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t *fixture,
                                            h2_gizclaw_e2e_actor_role_t role) {
-  if (fixture == NULL || (unsigned int)role > H2_GIZCLAW_E2E_GROUP_MEMBER) {
+  if (fixture == NULL ||
+      (unsigned int)role > H2_GIZCLAW_E2E_GROUP_MEMBER) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   h2_gizclaw_e2e_actor_t *actor = &fixture->actors[role];
@@ -719,7 +719,8 @@ int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t *fixture,
 int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *fixture,
                                 h2_gizclaw_e2e_actor_role_t role,
                                 uint32_t duration_ms) {
-  if (fixture == NULL || (unsigned int)role > H2_GIZCLAW_E2E_GROUP_MEMBER ||
+  if (fixture == NULL ||
+      (unsigned int)role > H2_GIZCLAW_E2E_GROUP_MEMBER ||
       fixture->actors[role].client == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }

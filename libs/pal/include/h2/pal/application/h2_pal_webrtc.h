@@ -83,6 +83,13 @@ typedef struct h2_pal_webrtc_track_vtable {
  * Caller-owned bidirectional media track. The provider borrows this object
  * between peer_set_track() and peer_unset_track(). Native providers use the
  * vtable; browser providers may instead use native_handle as an opaque token.
+ * Keep the object and vtable unchanged, and the user context alive, until
+ * successful unset (or peer close). Native read/write run on the media/protocol
+ * task, not the application's poll context: they must be nonblocking and must
+ * not reenter peer control/lifecycle operations. A write accepts the whole Opus
+ * packet on OK; WOULD_BLOCK accepts nothing and permits retry of the same
+ * packet. A zero-length write is one packet-loss marker, as with an OPUS_FRAME
+ * event.
  */
 typedef struct h2_pal_webrtc_track {
     void *user;
@@ -141,6 +148,8 @@ typedef struct h2_pal_webrtc_vtable {
                                     h2_pal_webrtc_track_t *track);
   h2_pal_result_t (*peer_unset_track)(h2_pal_webrtc_peer_t *peer,
                                       h2_pal_webrtc_track_t *track);
+  /* timeout_ms == 0 performs a nonblocking read and returns WOULD_BLOCK when
+   * empty; a positive wait returns TIMEOUT on expiry; negative is invalid. */
   h2_pal_result_t (*peer_poll)(h2_pal_webrtc_peer_t *peer, int timeout_ms,
                                h2_pal_webrtc_event_t *out_event);
   h2_pal_result_t (*peer_send_opus)(h2_pal_webrtc_peer_t *peer,
@@ -260,7 +269,7 @@ h2_pal_webrtc_peer_poll(const h2_pal_webrtc_api_t *api,
                         h2_pal_webrtc_peer_t *peer, int timeout_ms,
                         h2_pal_webrtc_event_t *out_event) {
     if (api == NULL || api->vtable == NULL || api->vtable->peer_poll == NULL ||
-        peer == NULL || out_event == NULL) {
+        peer == NULL || out_event == NULL || timeout_ms < 0) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(out_event, 0, sizeof(*out_event));

@@ -194,6 +194,10 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   if (platform == NULL) {
     return;
   }
+  // An Asyncify frame still owns its peer and platform. The caller must retry
+  // destruction after the outstanding WebRTC call has returned.
+  if (h2_web_platform_webrtc_busy(platform))
+    return;
   platform->shutting_down = true;
   if (platform->pump_scheduled) {
     h2_web_pump_cancel_js((uintptr_t)platform);
@@ -304,9 +308,4 @@ h2_web_platform_serial_host_api(h2_web_platform_t *platform) {
 const h2_pal_webrtc_api_t *
 h2_web_platform_webrtc_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->webrtc_api;
-}
-
-h2_pal_webrtc_track_t *
-h2_web_platform_webrtc_audio_track(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : &platform->webrtc_audio_track;
 }

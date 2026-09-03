@@ -71,6 +71,7 @@ libco_arm_probe:
 	$(COMPILER_TOOLCHAIN_PATH)/arm-none-eabi-gcc \
 		-std=c11 -Wall -Wextra -Werror -Wno-unused-value -ffreestanding \
 		-mcpu=arm968e-s -march=armv5te -marm -mthumb-interwork \
+		-I$(REPO_ROOT)/libs/pal/include \
 		-I$(REPO_ROOT)/libs/pal/providers/libco/include \
 		-I$(LIBCO_ROOT) \
 		-c probes/src/libco_arm_probe.c \

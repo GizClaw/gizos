@@ -69,6 +69,8 @@ int h2_esp_es8311_audio_system_init(
         config->codec_volume_default == 0u ||
         config->mic_task_stack_size == 0u ||
         config->speaker_task_stack_size == 0u ||
+        (config->aec_nlp_level != H2_ESP_ES8311_AEC_NLP_NORMAL &&
+         config->aec_nlp_level != H2_ESP_ES8311_AEC_NLP_AGGRESSIVE) ||
         config->queue_api == NULL || config->sync_api == NULL) {
         return H2_AUDIO_ERR_INVALID_ARG;
     }

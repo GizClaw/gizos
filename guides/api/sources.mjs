@@ -30,6 +30,7 @@ export const apiSources = [
   { id: "pal", roots: ["libs/pal/include"] },
   { id: "pixa", roots: ["libs/pixa/include"] },
   { id: "portaudio", roots: ["libs/pal/providers/portaudio/include"] },
+  { id: "qrcode", roots: ["libs/qrcode/include"] },
   { id: "runtime", roots: ["libs/runtime/include"] },
   { id: "sdl3", roots: ["libs/pal/providers/sdl3/include"] },
   { id: "sqlite", roots: ["libs/pal/providers/sqlite/include"] },

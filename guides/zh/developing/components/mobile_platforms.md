@@ -18,6 +18,8 @@ Darwin host provider 与 iOS mobile provider 是独立 ownership root。macOS Ne
 
 iOS CoreBluetooth provider 不提供独立 legacy scan-response 配置；`h2_pal_ble_adv_set_set_scan_response_data()` 由完整 vtable entry 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不能依赖零初始化 slot，也不能把 scan-response 内容合并进 primary advertising data。
 
+iOS CoreBluetooth 同样不能表示逐字节 primary advertising sequence 或 controller-unit scan interval/window。`h2_pal_ble_adv_set_set_encoded_data()` 与 exact `interval_units_625us/window_units_625us` 必须在保存数据、callback 或改变 activity state 前返回 `H2_PAL_ERR_UNSUPPORTED`；不能把 dictionary-based advertising、系统选择的扫描调度、rounding 或 legacy fallback 描述成 exact capability。
+
 Android Audio 与 AAC Decoder provider 共用的参数校验、PCM layout/copy、allocator failure 和 platform error mapping 必须保持 platform-independent，并由 `//libs/pal/providers/android/pal_core:audio_contract_test` 在 host 覆盖；真实 MediaCodec、AAudio、AudioFlinger 和 Activity lifecycle 继续由 Android Emulator acceptance 覆盖。成功播放不能替代 invalid codec/bitstream、malformed PCM、allocation failure 或 platform error 的 PAL result 验证。AAudio 已接受部分 frame 后，track 必须持有并在下一次 write 或 drain 前继续提交剩余 PCM；不能返回会让调用方重放整个 frame 的 retryable result。
 
 Android H.264 Video Decoder 的 stream validation、planar YUV layout bounds 和 RGB565 conversion 必须保持 platform-independent，并由 `//libs/pal/providers/android/pal_core:video_contract_test` 在 host 覆盖。真实 codec selection、output format/stride、High Profile decode、loop reset 和画面显示继续由 Android Emulator acceptance 覆盖；provider 只能读取当前 output buffer 声明的有效字节，不能用底层 buffer capacity 替代 frame size。

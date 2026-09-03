@@ -24,7 +24,9 @@ typedef struct h2_peer h2_peer_t;
  * Platform capabilities borrowed by one H2Peer instance.
  *
  * Every API object and its backend state must remain valid until
- * h2_peer_destroy() returns. H2Peer never closes or frees these providers.
+ * h2_peer_destroy() clears the owner pointer. The Memory and control Memory
+ * APIs must additionally outlive every owned event, including events released
+ * after destruction. H2Peer never closes or frees these providers.
  */
 typedef struct h2_peer_config {
   /** Required borrowed allocator used for every package-owned allocation. */
@@ -100,6 +102,10 @@ h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
  * returned one at a time by h2_pal_webrtc_peer_poll(); H2Peer never invokes
  * user callbacks from its protocol task.
  *
+ * Serialize peer creation, peer close and owner destruction on the lifecycle
+ * caller. Stop other calls using a handle before closing it. Distinct owned
+ * events may be released concurrently, including during or after destruction.
+ *
  * @param peer Required live H2Peer instance.
  * @return Borrowed WebRTC API view, or NULL for an invalid instance.
  */
@@ -108,9 +114,13 @@ const h2_pal_webrtc_api_t *h2_peer_webrtc_api(h2_peer_t *peer);
 /**
  * Closes all live peers and channels and destroys an H2Peer instance.
  *
- * Passing NULL or a pointer containing NULL is a successful no-op. The caller
- * pointer is cleared before package-owned storage is released. Injected PAL
- * capabilities are borrowed and are never destroyed.
+ * Passing NULL or a pointer containing NULL is a successful no-op. After all
+ * peer tasks have joined, the caller pointer is cleared. Owned events remain
+ * valid until released. Injected PAL capabilities are never destroyed.
+ *
+ * If a PAL close command or task join fails, the pointer is retained for a
+ * later destroy retry; no new peers may be created on that owner. Keep its
+ * borrowed capabilities alive while the pointer remains non-NULL.
  *
  * @param peer Address of the owned instance pointer.
  */

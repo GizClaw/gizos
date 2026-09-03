@@ -49,6 +49,51 @@ void h2_lua_job_release_audio_speaker(h2_lua_job_t *job) {
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->audio_mutex);
 }
 
+h2_pal_result_t h2_lua_job_acquire_audio_mic(h2_lua_job_t *job) {
+  h2_lua_host_t *host;
+  h2_pal_result_t result;
+  if (job == NULL || job->host == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (job->audio_mic_acquired) {
+    return H2_PAL_OK;
+  }
+  host = job->host;
+  result = h2_pal_mutex_lock(host->config.runtime->sync, host->audio_mutex);
+  if (result != H2_PAL_OK) {
+    return result;
+  }
+  if (host->audio_mic_users == 0u) {
+    result = h2_pal_audio_start_mic(host->config.runtime->audio);
+  }
+  if (result == H2_PAL_OK) {
+    host->audio_mic_users++;
+    job->audio_mic_acquired = 1;
+  }
+  (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->audio_mutex);
+  return result;
+}
+
+void h2_lua_job_release_audio_mic(h2_lua_job_t *job) {
+  h2_lua_host_t *host;
+  if (job == NULL || job->host == NULL || !job->audio_mic_acquired) {
+    return;
+  }
+  host = job->host;
+  if (h2_pal_mutex_lock(host->config.runtime->sync, host->audio_mutex) !=
+      H2_PAL_OK) {
+    return;
+  }
+  job->audio_mic_acquired = 0;
+  if (host->audio_mic_users != 0u) {
+    host->audio_mic_users--;
+  }
+  if (host->audio_mic_users == 0u) {
+    (void)h2_pal_audio_stop_mic(host->config.runtime->audio);
+  }
+  (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->audio_mutex);
+}
+
 void h2_lua_job_close_audio_tracks(h2_lua_job_t *job) {
   size_t i;
   if (job == NULL || job->host == NULL) {
@@ -67,6 +112,11 @@ void h2_lua_job_close_audio_tracks(h2_lua_job_t *job) {
   }
   job->active_audio_track_count = 0u;
   h2_lua_job_release_audio_speaker(job);
+  h2_lua_job_release_audio_mic(job);
+  h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+  job->audio_mic_buffer = NULL;
+  job->audio_mic_buffer_capacity = 0u;
+  memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
 }
 
 static int is_terminal(h2_lua_job_state_t state) {
@@ -363,6 +413,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
          host->config.audio_track_capacity_per_job *
              sizeof(*job->audio_tracks));
   job->next_audio_track_generation = 1u;
+  job->audio_mic_generation = 1u;
   vm_config = (h2_lua_vm_config_t){
       .realloc_fn = h2_lua_runtime_realloc,
       .allocator_user = (void *)host->config.runtime->mem,

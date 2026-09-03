@@ -2,7 +2,6 @@
 #define H2_PEER_INTERNAL_H
 
 #include "h2_peer.h"
-#include "providers/h2_peer_providers.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -13,9 +12,11 @@
 #define H2_PEER_READY_CHANNEL_COUNT 32u
 #define H2_PEER_LOCAL_STREAM_COUNT 150u
 #define H2_PEER_STREAM_COUNT (H2_PEER_LOCAL_STREAM_COUNT * 2u)
-#define H2_PEER_SDP_MAX 4096u
 #define H2_PEER_WIRE_PACKET_MAX 1500u
 #define H2_PEER_CHANNEL_FREE_PENDING UINT32_C(0x80000000)
+#define H2_PEER_MEDIA_RECEIVE_LIMIT 64u
+
+typedef struct h2_peer_media_frame h2_peer_media_frame_t;
 
 typedef struct h2_peer_ice_server {
   char *url;
@@ -58,8 +59,8 @@ struct h2_pal_webrtc_channel {
   int wire_opened;
   int remote_created;
   atomic_int terminal;
-  atomic_uint callback_refs;
-  uint8_t ready_slot;
+  atomic_uint event_refs;
+  atomic_uchar ready_slot;
   h2_peer_tx_item_t *tx_storage[H2_PEER_INPUT_SLOT_COUNT];
   atomic_uchar tx_state[H2_PEER_INPUT_SLOT_COUNT];
   atomic_uint_fast64_t tx_ready_since_us;
@@ -71,6 +72,9 @@ struct h2_pal_webrtc_peer {
   h2_pal_webrtc_track_t *media_track;
   uint8_t media_pending_opus[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
   size_t media_pending_opus_len;
+  h2_peer_media_frame_t *media_receive_head;
+  h2_peer_media_frame_t *media_receive_tail;
+  size_t media_receive_count;
   h2_pal_webrtc_channel_t *channels;
   h2_peer_ice_server_t ice_servers[H2_PEER_ICE_SERVER_MAX];
   size_t ice_server_count;
@@ -79,29 +83,16 @@ struct h2_pal_webrtc_peer {
   uint16_t next_stream_id;
   uint16_t local_stream_first;
   h2_pal_result_t stream_reset_failure;
-  uint16_t rtp_sequence;
-  uint32_t rtp_timestamp;
-  uint32_t rtp_ssrc;
-  void *ice_session;
-  void *dtls_session;
-  void *srtp_session;
-  void *sctp_session;
   void *production_pc;
   int offer_started;
   int remote_answer_set;
-  int ice_open;
-  int dtls_open;
-  int srtp_open;
-  int sctp_open;
   int production_sctp_open;
   atomic_int closed;
-  atomic_uint operation_depth;
-  atomic_int close_pending;
+  /* One live handle/worker reference, plus one per owned event. */
+  atomic_uint refs;
   h2_pal_queue_t *network_commands;
   h2_pal_queue_t *network_responses;
   h2_pal_queue_t *network_events;
-  void *direct_event_head;
-  void *direct_event_tail;
   h2_pal_mutex_t *network_request_mutex;
   h2_pal_task_t *network_task;
   atomic_uint network_event_count;
@@ -109,7 +100,11 @@ struct h2_pal_webrtc_peer {
   atomic_int network_send_wakeup_queued;
   atomic_int network_stop;
   atomic_int network_stopped;
+  /* One caller at a time may sit in peer_poll; close waits for it to leave
+   * before destroying the queues that poll is receiving from. */
+  atomic_int network_poll_active;
   atomic_int network_transport_result;
+  atomic_int network_error_reported;
   _Atomic(h2_peer_tx_item_t *) rtp_pending;
   atomic_uint_fast64_t rtp_ready_since_us;
   h2_peer_tx_item_t *rtp_storage;
@@ -130,28 +125,17 @@ struct h2_pal_webrtc_peer {
   uint64_t perf_channel_max_ready_us;
   uint64_t perf_media_reads;
   uint64_t perf_media_empty;
-  int network_cleanup_pending;
+  uint64_t perf_media_receive_dropped;
 };
 
 struct h2_peer {
   h2_peer_config_t config;
-  h2_peer_provider_bundle_t providers;
   h2_pal_webrtc_api_t webrtc_api;
   h2_pal_webrtc_peer_t *peers;
-  atomic_uint operation_depth;
-  atomic_uint event_count;
+  /* One public owner reference, plus one per allocated peer. */
+  atomic_uint refs;
   int destroying;
-  int production_backend;
 };
-
-h2_pal_result_t
-h2_peer_create_with_providers(const h2_peer_config_t *config,
-                              const h2_peer_provider_bundle_t *providers,
-                              h2_peer_t **out_peer);
-
-h2_pal_result_t h2_peer_receive_rtp_for_test(h2_pal_webrtc_peer_t *peer,
-                                             const uint8_t *packet,
-                                             size_t packet_len);
 
 void h2_peer_webrtc_on_stream_reset(
     h2_pal_webrtc_peer_t *peer, const h2_pal_sctp_stream_reset_event_t *event);
@@ -178,5 +162,9 @@ h2_pal_result_t h2_peer_webrtc_emit_channel_message(
 
 void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
                                     const uint8_t *opus, size_t opus_len);
+
+/* Network-task-owned media pump/cleanup; not part of the public PAL API. */
+h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);
+void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer);
 
 #endif

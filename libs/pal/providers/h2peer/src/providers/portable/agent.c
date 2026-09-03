@@ -11,7 +11,7 @@
 #include "stun.h"
 #include "utils.h"
 
-#define AGENT_POLL_TIMEOUT 1
+#define AGENT_POLL_TIMEOUT 10
 #define AGENT_CONNCHECK_PERIOD 100
 #define AGENT_CONNCHECK_TIMEOUT_MS 2000u
 #define AGENT_STUN_RECV_MAXTIMES 1000

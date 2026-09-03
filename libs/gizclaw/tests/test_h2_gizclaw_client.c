@@ -5,8 +5,8 @@
 #include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_profile_internal.h"
-#include "h2_gizclaw_registration.h"
 #include "h2_gizclaw_registration_internal.h"
+#include "h2_gizclaw_registration.h"
 #include "h2_gizclaw_social.h"
 #include "h2_gizclaw_speech.h"
 #include "h2_gizclaw_telemetry.h"
@@ -835,7 +835,7 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   (void)snprintf(
       test.read_event.payload.workspace_history_updated.workspace_name,
       sizeof(test.read_event.payload.workspace_history_updated.workspace_name),
-      "%s", "social-group-1");
+                 "%s", "social-group-1");
   test.read_event.payload.workspace_history_updated.last_updated_at_unix_ms =
       1234;
   h2_gizclaw_test_set_event_ops(test_event_send, test_event_read,
@@ -857,13 +857,13 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   test_workspace_history_notification_t notification = {0};
   fails +=
       expect(h2_gizclaw_client_dispatch_event(
-                 client, 0, test_workspace_history_notification,
-                 &notification) == H2_PAL_OK &&
-                 notification.calls == 1u &&
-                 strcmp(notification.workspace_name, "social-group-1") == 0 &&
-                 notification.last_updated_at_unix_ms == 1234,
-             "client routes workspace history updates independently of "
-             "the active conversation");
+                      client, 0, test_workspace_history_notification,
+                      &notification) == H2_PAL_OK &&
+                      notification.calls == 1u &&
+                      strcmp(notification.workspace_name, "social-group-1") == 0 &&
+                      notification.last_updated_at_unix_ms == 1234,
+                  "client routes workspace history updates independently of "
+                  "the active conversation");
   test.read_result = GZC_ERR_WOULD_BLOCK;
   fails += expect(h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL) ==
                           H2_PAL_ERR_WOULD_BLOCK &&
@@ -875,12 +875,12 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   test.read_result = GZC_ERR_RPC;
   fails +=
       expect(h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL) ==
-                     H2_PAL_ERR_IO &&
-                 test.read_count == 3u && test.close_count == 1u &&
-                 !h2_gizclaw_conversation_input_ready(conversation) &&
-                 h2_gizclaw_test_client_terminal_closed(client),
-             "malformed client Event dispatch invalidates the conversation and "
-             "poisons the client");
+                          H2_PAL_ERR_IO &&
+                      test.read_count == 3u && test.close_count == 1u &&
+                      !h2_gizclaw_conversation_input_ready(conversation) &&
+                      h2_gizclaw_test_client_terminal_closed(client),
+                  "malformed client Event dispatch invalidates the conversation and "
+                  "poisons the client");
   fails += expect(
       h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED,
       "client poll remains closed after the mandatory Event transport closes");
@@ -1112,8 +1112,8 @@ static int test_stable_registration_token_reuse(h2_gizclaw_client_t *client) {
     size_t encoded_len = 0u;
     h2_gizclaw_registration_result_t registration = {0};
     fails += expect(
-        h2_gizclaw_registration_encode_request(token, encoded, sizeof(encoded),
-                                               &encoded_len) == H2_PAL_OK &&
+        h2_gizclaw_registration_encode_request(
+            token, encoded, sizeof(encoded), &encoded_len) == H2_PAL_OK &&
             encoded_len == sizeof(request) &&
             memcmp(encoded, request, sizeof(request)) == 0,
         "stable product token encodes for each connection snapshot");
@@ -1412,104 +1412,29 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
       "workspace input update discovers parameters before PUT");
   h2_gizclaw_workspace_deinit(client, &workspace);
 
-  const uint8_t inherited_workspace_get_response[] = {
-      0x0a, 0x15, 0x1a, 0x0b, 'w',  'o', 'r', 'k', 's', 'p',  'a',  'c',
-      'e',  '-',  '1',  0x32, 0x04, 'c', 'h', 'a', 't', 0x58, 0x01,
-  };
-  const uint8_t workflow_get_request[] = {0x0a, 0x04, 'c', 'h', 'a', 't'};
-  const uint8_t workflow_get_response[] = {
-      0x0a, 0x0f, 0x0a, 0x04, 'c', 'h', 'a', 't', 0x20,
-      0x03, 0x2a, 0x05, 'z',  'h', '-', 'e', 'n',
-  };
-  const uint8_t inherited_workspace_put_request[] = {
-      0x0a, 0x0f, 0x22, 0x0d, 0x1a, 0x0b, 0x08, 0x01, 0x28, 0x02,
-      0x32, 0x05, 'z',  'h',  '-',  'e',  'n',  0x12, 0x0b, 'w',
-      'o',  'r',  'k',  's',  'p',  'a',  'c',  'e',  '-',  '1',
-  };
-  test_contact_rpc_t inherited_steps[] = {
-      {
-          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
-          .expected_request = workspace_get_request,
-          .expected_request_len = sizeof(workspace_get_request),
-          .response = inherited_workspace_get_response,
-          .response_len = sizeof(inherited_workspace_get_response),
-      },
-      {
-          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET,
-          .expected_request = workflow_get_request,
-          .expected_request_len = sizeof(workflow_get_request),
-          .response = workflow_get_response,
-          .response_len = sizeof(workflow_get_response),
-      },
-      {
-          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
-          .expected_request = inherited_workspace_put_request,
-          .expected_request_len = sizeof(inherited_workspace_put_request),
-          .response = workspace_put_response,
-          .response_len = workspace_put_response_len,
-      },
-  };
-  test_rpc_sequence_t inherited_sequence = {
-      .steps = inherited_steps,
-      .step_count = sizeof(inherited_steps) / sizeof(inherited_steps[0]),
-  };
-  h2_gizclaw_test_set_rpc_call(test_rpc_sequence_call, &inherited_sequence);
-  fails +=
-      expect(h2_gizclaw_client_workspace_set_input(
-                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME, &workspace) == H2_PAL_OK,
-             "workspace input update resolves inherited Workflow parameters");
-  fails += expect(
-      inherited_sequence.next_step == inherited_sequence.step_count &&
-          inherited_steps[0].calls == 1 && inherited_steps[0].request_matches &&
-          inherited_steps[1].calls == 1 && inherited_steps[1].request_matches &&
-          inherited_steps[2].calls == 1 && inherited_steps[2].request_matches,
-      "inherited Workspace input follows get, Workflow get, and PUT");
-  h2_gizclaw_workspace_deinit(client, &workspace);
-
   uint8_t overridden_get_response[128];
   size_t overridden_get_response_len = 0u;
   fails += expect(test_encode_workspace_get_response(
                       overridden_get_response, sizeof(overridden_get_response),
                       true, &overridden_get_response_len),
                   "workspace override response fixture encodes");
-  const uint8_t overridden_put_request[] = {
-      0x0a, 0x0a, 0x22, 0x08, 0x0a, 0x06, 0x08, 0x01, 0x18,
-      0x01, 0x20, 0x02, 0x12, 0x0b, 'w',  'o',  'r',  'k',
-      's',  'p',  'a',  'c',  'e',  '-',  '1',
+  test_contact_rpc_t override_mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+      .expected_request = workspace_get_request,
+      .expected_request_len = sizeof(workspace_get_request),
+      .response = overridden_get_response,
+      .response_len = overridden_get_response_len,
   };
-  test_contact_rpc_t override_steps[] = {
-      {
-          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
-          .expected_request = workspace_get_request,
-          .expected_request_len = sizeof(workspace_get_request),
-          .response = overridden_get_response,
-          .response_len = overridden_get_response_len,
-      },
-      {
-          .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_PUT,
-          .expected_request = overridden_put_request,
-          .expected_request_len = sizeof(overridden_put_request),
-          .response = workspace_put_response,
-          .response_len = workspace_put_response_len,
-      },
-  };
-  test_rpc_sequence_t override_sequence = {
-      .steps = override_steps,
-      .step_count = sizeof(override_steps) / sizeof(override_steps[0]),
-  };
-  h2_gizclaw_test_set_rpc_call(test_rpc_sequence_call, &override_sequence);
+  h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &override_mock);
   fails +=
       expect(h2_gizclaw_client_workspace_set_input(
                  client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME, &workspace) == H2_PAL_OK,
-             "workspace input update preserves parameter overrides");
-  fails += expect(
-      override_sequence.next_step == override_sequence.step_count &&
-          override_steps[0].calls == 1 && override_steps[0].request_matches &&
-          override_steps[1].calls == 1 && override_steps[1].request_matches,
-      "workspace override survives the input-only update");
-  h2_gizclaw_workspace_deinit(client, &workspace);
+                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                 &workspace) == H2_PAL_ERR_INVALID_STATE,
+             "workspace input update refuses to discard parameter overrides");
+  fails += expect(override_mock.calls == 1 && override_mock.request_matches &&
+                      workspace.name == NULL,
+                  "workspace override rejection stops before PUT");
 
   uint8_t unsupported_get_response[128];
   memcpy(unsupported_get_response, workspace_get_response,
@@ -1536,16 +1461,16 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   };
   h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &unsupported_mock);
   workspace.name = (char *)0x1;
-  fails +=
-      expect(h2_gizclaw_client_workspace_set_input(
-                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-                 &workspace) == H2_PAL_ERR_UNSUPPORTED &&
-                 workspace.name == NULL,
-             "workspace input update rejects unsupported parameter types");
-  fails +=
-      expect(unsupported_mock.calls == 1 && unsupported_mock.request_matches,
-             "unsupported Workspace parameters stop before PUT");
+  fails += expect(h2_gizclaw_client_workspace_set_input(
+                      client,
+                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                      H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+                      &workspace) == H2_PAL_ERR_UNSUPPORTED &&
+                      workspace.name == NULL,
+                  "workspace input update rejects unsupported parameter types");
+  fails += expect(unsupported_mock.calls == 1 &&
+                      unsupported_mock.request_matches,
+                  "unsupported Workspace parameters stop before PUT");
 
   uint8_t incomplete_get_response[128];
   memcpy(incomplete_get_response, workspace_get_response,
@@ -1563,8 +1488,8 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
       break;
     }
   }
-  fails +=
-      expect(input_field_replaced, "workspace input fixture field is replaced");
+  fails += expect(input_field_replaced,
+                  "workspace input fixture field is replaced");
   test_contact_rpc_t incomplete_mock = {
       .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
       .expected_request = workspace_get_request,
@@ -1573,13 +1498,14 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
       .response_len = workspace_get_response_len,
   };
   h2_gizclaw_test_set_rpc_call(test_contact_rpc_call, &incomplete_mock);
-  fails +=
-      expect(h2_gizclaw_client_workspace_set_input(
-                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-                 &workspace) == H2_PAL_ERR_INVALID_STATE,
-             "workspace input update rejects an incomplete parameter shape");
-  fails += expect(incomplete_mock.calls == 1 && incomplete_mock.request_matches,
+  fails += expect(h2_gizclaw_client_workspace_set_input(
+                      client,
+                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                      H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                      &workspace) == H2_PAL_ERR_INVALID_STATE,
+                  "workspace input update rejects an incomplete parameter shape");
+  fails += expect(incomplete_mock.calls == 1 &&
+                      incomplete_mock.request_matches,
                   "incomplete Workspace parameters stop before PUT");
 
   const uint8_t duplicate_parameters_response[] = {
@@ -1595,12 +1521,12 @@ static int test_cleanup_mutation_rpcs(h2_gizclaw_client_t *client) {
   };
   h2_gizclaw_test_set_rpc_call(test_contact_rpc_call,
                                &duplicate_parameters_mock);
-  fails +=
-      expect(h2_gizclaw_client_workspace_set_input(
-                 client, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-                 H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-                 &workspace) == H2_PAL_ERR_INVALID_STATE,
-             "workspace input update rejects duplicate parameter oneofs");
+  fails += expect(h2_gizclaw_client_workspace_set_input(
+                      client,
+                      (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
+                      H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+                      &workspace) == H2_PAL_ERR_INVALID_STATE,
+                  "workspace input update rejects duplicate parameter oneofs");
   fails += expect(duplicate_parameters_mock.calls == 1 &&
                       duplicate_parameters_mock.request_matches,
                   "duplicate Workspace parameter oneofs stop before PUT");
@@ -1888,11 +1814,12 @@ static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
   if (test_poll_result != H2_PAL_ERR_WOULD_BLOCK) {
     test_monotonic_ms += timeout_ms > 0 ? (uint64_t)timeout_ms : 1u;
   }
-  if (test_poll_result == H2_PAL_OK && out_event != NULL)
+  if (test_poll_result == H2_PAL_OK && out_event != NULL) {
     *out_event = (h2_pal_webrtc_event_t){
         .kind = H2_PAL_WEBRTC_EVENT_WRITABLE,
         .peer = peer,
     };
+  }
   return test_poll_result;
 }
 
@@ -1914,16 +1841,34 @@ static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t *peer,
 }
 
 static size_t test_media_track_bind_calls;
-static h2_pal_webrtc_track_t *test_expected_track;
 
-static h2_pal_result_t test_track_read(void *user, uint8_t *data,
+static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
                                        size_t capacity, size_t *out_len) {
   (void)user;
-  (void)data;
+  (void)opus;
   (void)capacity;
-  *out_len = 0u;
+  (void)out_len;
   return H2_PAL_ERR_WOULD_BLOCK;
 }
+
+static h2_pal_result_t test_track_write(void *user, const uint8_t *opus,
+                                        size_t opus_len) {
+  (void)user;
+  (void)opus;
+  (void)opus_len;
+  return H2_PAL_OK;
+}
+
+static const h2_pal_webrtc_track_vtable_t test_track_vtable = {
+    .read = test_track_read,
+    .write = test_track_write,
+};
+
+static h2_pal_webrtc_track_t test_media_track = {
+    .user = NULL,
+    .vtable = &test_track_vtable,
+    .native_handle = NULL,
+};
 
 static h2_pal_result_t
 test_webrtc_peer_create(void *user, h2_pal_webrtc_peer_t **out_peer) {
@@ -1933,9 +1878,9 @@ test_webrtc_peer_create(void *user, h2_pal_webrtc_peer_t **out_peer) {
 }
 
 static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t *peer,
-                                                 h2_pal_webrtc_track_t *track) {
+                                           h2_pal_webrtc_track_t *track) {
   assert(peer == (h2_pal_webrtc_peer_t *)0x2);
-  assert(track == test_expected_track);
+  assert(track == &test_media_track);
   ++test_media_track_bind_calls;
   return H2_PAL_OK;
 }
@@ -1943,7 +1888,7 @@ static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t *peer,
 static h2_pal_result_t test_peer_unset_track(h2_pal_webrtc_peer_t *peer,
                                              h2_pal_webrtc_track_t *track) {
   assert(peer == (h2_pal_webrtc_peer_t *)0x2);
-  assert(track == test_expected_track);
+  assert(track == &test_media_track);
   return H2_PAL_OK;
 }
 
@@ -2001,9 +1946,8 @@ int main(void) {
                   "register wire method remains 90");
   fails += expect(H2_GIZCLAW_RPC_SERVER_PEER_DELETE == 93,
                   "peer delete wire method remains 93");
-  fails +=
-      expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD == 95,
-             "friend group message audio get wire method remains 95");
+  fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD == 95,
+                  "friend group message audio get wire method remains 95");
 
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
@@ -2102,14 +2046,7 @@ int main(void) {
   fails += expect(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK,
                   "init accepts the current SDK platform contract");
   fails += expect(client != NULL, "successful init returns a client");
-  const h2_pal_webrtc_track_vtable_t test_track_vtable = {
-      .read = test_track_read,
-  };
-  h2_pal_webrtc_track_t test_track = {
-      .vtable = &test_track_vtable,
-  };
-  test_expected_track = &test_track;
-  config.webrtc_media_track = &test_track;
+  config.webrtc_media_track = &test_media_track;
   h2_gizclaw_client_t *track_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &track_client) == H2_PAL_OK,
                   "track-mode init accepts an opaque provider track");
@@ -2205,9 +2142,9 @@ int main(void) {
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_OK &&
-          offset == 0u && blocked && test_send_calls == 1 &&
-          test_poll_calls == 0,
-      "adapter exposes PAL backpressure without polling or retrying");
+          offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
+          test_poll_calls == 1 && test_last_poll_timeout_ms > 0,
+      "adapter waits for peer progress before retrying a full PAL queue");
   test_send_calls = 0;
   test_poll_calls = 0;
   test_sleep_calls = 0;
@@ -2219,9 +2156,11 @@ int main(void) {
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
                                       &offset, &blocked) == GZC_OK &&
-          offset == 0u && blocked && test_send_calls == 1 &&
-          test_poll_calls == 0 && test_sleep_calls == 0 && test_warn_logs == 0,
-      "adapter does not hide peer poll backoff behind channel send");
+          offset == sizeof(payload) && !blocked && test_send_calls == 2 &&
+          test_poll_calls == 1 && test_sleep_calls == 1 &&
+          test_last_sleep_ms == 10u && test_warn_logs == 1 &&
+          strstr(test_last_log_message, "rc=-9 backoff_ms=10") != NULL,
+      "adapter warns and backs off when peer poll unexpectedly would block");
   test_send_calls = 0;
   test_poll_calls = 0;
   test_sleep_calls = 0;
@@ -2232,10 +2171,10 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_OK &&
-          offset == 0u && blocked && test_send_calls == 1 &&
-          test_poll_calls == 0 && test_sleep_calls == 0 && test_warn_logs == 0,
-      "channel backpressure does not depend on optional sleep support");
+                                      &offset, &blocked) == GZC_ERR_WEBRTC &&
+          offset == 0u && test_send_calls == 1 && test_poll_calls == 1 &&
+          test_sleep_calls == 1 && test_warn_logs == 1,
+      "adapter stops when the optional peer poll backoff is unsupported");
   test_sleep_result = H2_PAL_OK;
   test_poll_result = H2_PAL_OK;
   test_send_calls = 0;
@@ -2243,16 +2182,17 @@ int main(void) {
   test_send_would_block_count = 3000;
   offset = 0u;
   blocked = false;
-  fails += expect(h2_gizclaw_test_try_write_bytes(client, channel, payload,
-                                                  sizeof(payload), &offset,
-                                                  &blocked) == GZC_OK &&
-                      offset == 0u && blocked && test_send_calls == 1 &&
-                      test_poll_calls == 0,
-                  "adapter returns persistent PAL backpressure immediately");
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
+                                      &offset, &blocked) == GZC_ERR_TIMEOUT &&
+          offset == 0u && test_poll_calls == 40 &&
+          test_last_poll_timeout_ms == 50,
+      "adapter bounds persistent PAL backpressure by the independent write "
+      "timeout");
   config.write_timeout_ms = 7;
   h2_gizclaw_client_t *short_timeout_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &short_timeout_client) ==
-                          H2_PAL_OK &&
+                      H2_PAL_OK &&
                       short_timeout_client != NULL,
                   "client accepts a write timeout below the backoff cap");
   test_send_calls = 0;
@@ -2265,11 +2205,13 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(short_timeout_client, channel, payload,
-                                      sizeof(payload), &offset,
-                                      &blocked) == GZC_OK &&
-          offset == 0u && blocked && test_send_calls == 1 &&
-          test_poll_calls == 0 && test_sleep_calls == 0 && test_warn_logs == 0,
-      "write timeout does not introduce a hidden send retry loop");
+                                      sizeof(payload), &offset, &blocked) ==
+              GZC_ERR_TIMEOUT &&
+          offset == 0u && test_send_calls == 2 && test_poll_calls == 1 &&
+          test_sleep_calls == 1 && test_last_sleep_ms == 7u &&
+          test_warn_logs == 1 &&
+          strstr(test_last_log_message, "backoff_ms=7") != NULL,
+      "adapter caps peer poll backoff to the remaining write timeout");
   h2_gizclaw_client_deinit(short_timeout_client);
   config.write_timeout_ms = 2000;
   test_poll_result = H2_PAL_OK;
@@ -2280,22 +2222,20 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_OK &&
-          offset == 0u && blocked && test_send_calls == 1 &&
-          test_poll_calls == 0,
-      "send path leaves cancellation handling to the owning operation");
+                                      &offset, &blocked) == GZC_ERR_CLOSED &&
+          offset == 0u && test_send_calls == 1 && test_poll_calls == 0,
+      "adapter stops a blocked write promptly when cancellation is requested");
   test_cancel_requested = false;
   test_send_calls = 0;
   test_poll_calls = 0;
   test_poll_result = H2_PAL_ERR_CLOSED;
   offset = 0u;
   blocked = false;
-  fails += expect(h2_gizclaw_test_try_write_bytes(client, channel, payload,
-                                                  sizeof(payload), &offset,
-                                                  &blocked) == GZC_OK &&
-                      offset == 0u && blocked && test_send_calls == 1 &&
-                      test_poll_calls == 0,
-                  "send path does not consume unrelated terminal poll state");
+  fails += expect(
+      h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
+                                      &offset, &blocked) == GZC_ERR_CLOSED &&
+          offset == 0u && test_send_calls == 1 && test_poll_calls == 1,
+      "adapter preserves peer closure while draining backpressure");
   test_poll_result = H2_PAL_ERR_IO;
   test_send_calls = 0;
   test_poll_calls = 0;
@@ -2303,10 +2243,9 @@ int main(void) {
   blocked = false;
   fails += expect(
       h2_gizclaw_test_try_write_bytes(client, channel, payload, sizeof(payload),
-                                      &offset, &blocked) == GZC_OK &&
-          offset == 0u && blocked && test_send_calls == 1 &&
-          test_poll_calls == 0,
-      "send path leaves terminal poll failures to the event consumer");
+                                      &offset, &blocked) == GZC_ERR_WEBRTC &&
+          offset == 0u && test_send_calls == 1 && test_poll_calls == 1,
+      "adapter stops on a terminal peer poll failure");
   test_poll_result = H2_PAL_OK;
   test_send_would_block_count = 0;
   test_send_result = H2_PAL_ERR_IO;

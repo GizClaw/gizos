@@ -336,6 +336,25 @@ int main(void) {
                &h2loader_encoded_len) == H2_PAL_OK);
     assert(memchr(h2loader_encoded, 0x03, h2loader_encoded_len) == NULL);
     assert(counts.started == 7u && counts.stopped == 5u);
+    static const uint8_t exact_beacon[] = {
+        3u, 0xffu, 1u, 2u,
+        3u, 0xffu, 3u, 4u,
+        3u, 0xffu, 5u, 6u,
+    };
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               ble, beacon_set, exact_beacon, sizeof(exact_beacon)) ==
+           H2_PAL_OK);
+    assert(h2_desktop_platform_copy_ble_adv_set_data(
+               beacon_set, beacon_encoded, sizeof(beacon_encoded),
+               &beacon_encoded_len) == H2_PAL_OK);
+    assert(beacon_encoded_len == sizeof(exact_beacon));
+    assert(memcmp(beacon_encoded, exact_beacon, sizeof(exact_beacon)) == 0);
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               ble, beacon_set, NULL, 0u) == H2_PAL_OK);
+    assert(h2_desktop_platform_copy_ble_adv_set_data(
+               beacon_set, beacon_encoded, sizeof(beacon_encoded),
+               &beacon_encoded_len) == H2_PAL_OK);
+    assert(beacon_encoded_len == 0u);
     assert(h2_pal_ble_adv_set_stop(ble, beacon_set) == H2_PAL_OK);
     assert(counts.last_stopped_set == beacon_set);
     assert(counts.stopped == 6u);
@@ -434,6 +453,16 @@ int main(void) {
     assert(h2_desktop_platform_configure_ble_extended_scanning(0) == H2_PAL_OK);
     assert(h2_pal_ble_start(ble) == H2_PAL_OK);
     assert(h2_pal_ble_start_scan(ble, &scan, capture_scan, &capture) == H2_PAL_ERR_UNSUPPORTED);
+    h2_pal_ble_scan_params_t exact_scan = scan;
+    exact_scan.interval_ms = 0u;
+    exact_scan.window_ms = 0u;
+    exact_scan.interval_units_625us = 4u;
+    exact_scan.window_units_625us = 4u;
+    unsigned scan_count = capture.count;
+    assert(h2_pal_ble_start_scan(
+               ble, &exact_scan, capture_scan, &capture) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(capture.count == scan_count);
     assert(h2_pal_ble_stop(ble) == H2_PAL_OK);
     assert(h2_desktop_platform_configure_ble_extended_scanning(1) == H2_PAL_OK);
 
