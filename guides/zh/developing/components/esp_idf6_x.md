@@ -98,6 +98,8 @@ ESP-IDF BLE Host vtable 显式接入可选的独立 legacy scan-response operati
 
 NimBLE Extended Advertising backend 支持 handle-scoped exact primary data：`h2_pal_ble_adv_set_set_encoded_data()` 把完整 AD-structure byte sequence 原样复制到 mbuf，再交给对应 advertising instance，不插入 Flags、不合并重复 AD type，也不沿用 structured setter 把 legacy name/manufacturer data 放入 scan response 的兼容行为。没有启用 `CONFIG_BT_NIMBLE_EXT_ADV` 时该 operation 在改变 set state 前返回 `H2_PAL_ERR_UNSUPPORTED`。Scan params 选择 exact `interval_units_625us/window_units_625us` 时，legacy 与 Extended Scanning path 都把同一 pair 原样写入 NimBLE controller-unit fields；不能 round、clamp 或回退到 millisecond form。Host adapter test 只证明 production boundary 的 byte/unit mapping，target SDK build 与 RF/controller acceptance 仍需独立验证。
 
+Wi-Fi provider 额外导出 component 私有的 activity observer：`h2_esp_platform_wifi_set_activity_observer()` 注册进程内唯一一个 callback，Wi-Fi scan、connect 和 disconnect 这类会独占 radio 的 operation 在进入前置 active、返回任一终态前置 inactive，状态只在真正翻转时通知一次。该 hook 属于 ESP component 集成边界，不进入 `libs/pal/include`，也不暴露 FreeRTOS 或 SDK handle；callback 在 Wi-Fi 调用线程内联执行（已退出 critical section），因此不得阻塞，也不得回调 Wi-Fi API。传入 NULL callback 注销观察者；注册时立即以当前状态回调一次，使 observer 不会错过已经开始的 operation。H2Loader App command BLE component 是当前唯一 consumer：它据此暂停/恢复 loader 广播，实现 BLE 与 Wi-Fi 的 radio 共存。
+
 Crypto provider 通过 public PSA API 实现 random、X25519、HKDF-SHA256、
 AES-GCM/ChaCha20-Poly1305、AES-CTR、MD5、HMAC-SHA1、P-256 和 ECDSA。
 实现不能 include `mbedtls/private/**`，也不能为缺失 operation 保留 private
