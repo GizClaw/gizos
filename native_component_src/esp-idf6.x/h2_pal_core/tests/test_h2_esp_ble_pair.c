@@ -26,14 +26,12 @@ int main(void) {
 
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_OK);
     assert(h2_esp_ble_pair_tracker_timeout(&tracker) == H2_PAL_ERR_TIMEOUT);
-    assert(tracker.state == H2_ESP_BLE_PAIR_ABANDONED);
-    assert(h2_esp_ble_pair_tracker_begin(&tracker, 11u) == H2_PAL_ERR_BUSY);
+    assert(tracker.state == H2_ESP_BLE_PAIR_IDLE);
     assert(!h2_esp_ble_pair_tracker_complete(
         &tracker, 10u, H2_PAL_OK));
-    assert(tracker.state == H2_ESP_BLE_PAIR_IDLE);
 
-    assert(h2_esp_ble_pair_tracker_begin(&tracker, 11u) == H2_PAL_OK);
-    assert(h2_esp_ble_pair_tracker_complete(&tracker, 11u, H2_PAL_OK));
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_OK);
+    assert(h2_esp_ble_pair_tracker_complete(&tracker, 10u, H2_PAL_OK));
     assert(h2_esp_ble_pair_tracker_timeout(&tracker) == H2_PAL_OK);
 
     assert(h2_esp_ble_pair_tracker_begin(&tracker, 12u) == H2_PAL_OK);

@@ -8,7 +8,6 @@
 typedef enum h2_esp_ble_pair_state {
     H2_ESP_BLE_PAIR_IDLE = 0,
     H2_ESP_BLE_PAIR_WAITING,
-    H2_ESP_BLE_PAIR_ABANDONED,
     H2_ESP_BLE_PAIR_COMPLETED,
 } h2_esp_ble_pair_state_t;
 
@@ -47,10 +46,6 @@ static inline bool h2_esp_ble_pair_tracker_complete(
         conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE) {
         return false;
     }
-    if (tracker->state == H2_ESP_BLE_PAIR_ABANDONED) {
-        h2_esp_ble_pair_tracker_clear(tracker);
-        return false;
-    }
     tracker->result = result;
     tracker->state = H2_ESP_BLE_PAIR_COMPLETED;
     return true;
@@ -72,7 +67,7 @@ static inline h2_pal_result_t h2_esp_ble_pair_tracker_timeout(
         return h2_esp_ble_pair_tracker_take(tracker);
     }
     if (tracker->state == H2_ESP_BLE_PAIR_WAITING) {
-        tracker->state = H2_ESP_BLE_PAIR_ABANDONED;
+        h2_esp_ble_pair_tracker_clear(tracker);
         return H2_PAL_ERR_TIMEOUT;
     }
     return H2_PAL_ERR_INVALID_STATE;
