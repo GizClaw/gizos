@@ -3,10 +3,11 @@
 #include <assert.h>
 
 int main(void) {
-    h2_esp_ble_pair_tracker_t tracker;
+    h2_esp_ble_pair_tracker_t tracker = {0};
     h2_esp_ble_pair_tracker_clear(&tracker);
 
-    h2_esp_ble_pair_tracker_begin(&tracker, 7u);
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 7u) == H2_PAL_OK);
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 8u) == H2_PAL_ERR_BUSY);
     assert(!h2_esp_ble_pair_tracker_complete(
         &tracker, 8u, H2_PAL_ERR_CLOSED));
     assert(tracker.conn_handle == 7u);
@@ -17,10 +18,26 @@ int main(void) {
     assert(h2_esp_ble_pair_tracker_take(&tracker) == H2_PAL_ERR_CLOSED);
     assert(tracker.conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE);
 
-    h2_esp_ble_pair_tracker_begin(&tracker, 9u);
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 9u) == H2_PAL_OK);
     assert(h2_esp_ble_pair_tracker_complete(&tracker, 9u, H2_PAL_OK));
     assert(!h2_esp_ble_pair_tracker_complete(
         &tracker, 9u, H2_PAL_ERR_CLOSED));
     assert(h2_esp_ble_pair_tracker_take(&tracker) == H2_PAL_OK);
+
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 10u) == H2_PAL_OK);
+    assert(h2_esp_ble_pair_tracker_timeout(&tracker) == H2_PAL_ERR_TIMEOUT);
+    assert(tracker.state == H2_ESP_BLE_PAIR_ABANDONED);
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 11u) == H2_PAL_ERR_BUSY);
+    assert(!h2_esp_ble_pair_tracker_complete(
+        &tracker, 10u, H2_PAL_OK));
+    assert(tracker.state == H2_ESP_BLE_PAIR_IDLE);
+
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 11u) == H2_PAL_OK);
+    assert(h2_esp_ble_pair_tracker_complete(&tracker, 11u, H2_PAL_OK));
+    assert(h2_esp_ble_pair_tracker_timeout(&tracker) == H2_PAL_OK);
+
+    assert(h2_esp_ble_pair_tracker_begin(&tracker, 12u) == H2_PAL_OK);
+    h2_esp_ble_pair_tracker_cancel_submission(&tracker, 12u);
+    assert(tracker.state == H2_ESP_BLE_PAIR_IDLE);
     return 0;
 }
