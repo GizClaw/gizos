@@ -339,6 +339,45 @@ static void test_sack_counts_only_new_ack_evidence(bool wrap_tsn) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/*
+ * A high TSN acknowledged by an earlier SACK must not act as HTNA again when
+ * that SACK is repeated: replaying it supplies no new loss evidence, so holes
+ * below it must not accrue further miss reports and trigger a fast retransmit.
+ */
+static void test_repeated_gap_ack_does_not_reuse_acked_tsn_as_htna(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  const uint32_t cumulative = association->peer_cumulative_tsn;
+  for (unsigned index = 0u; index < 5u; ++index) {
+    (void)send_sample(&pair, 1000u + index);
+  }
+  h2_sctp_tx_fragment_t *first = association->tx_fragments;
+  h2_sctp_tx_fragment_t *second = first->next;
+  h2_sctp_tx_fragment_t *third = second->next;
+  h2_sctp_tx_fragment_t *fourth = third->next;
+
+  /* Acknowledge only TSN cumulative+4, leaving three holes beneath it. */
+  acknowledge_gap_at(association, cumulative, 4u, 4u, 1100u);
+  assert(fourth->acknowledged);
+  assert(first->miss_reports == 1u && second->miss_reports == 1u &&
+         third->miss_reports == 1u);
+
+  /* Replaying the same SACK is not new evidence: cumulative+4 is already
+   * acknowledged, so HTNA falls back to the cumulative point and nothing
+   * below it may be counted again or fast retransmitted. */
+  for (unsigned round = 0u; round < 4u; ++round) {
+    acknowledge_gap_at(association, cumulative, 4u, 4u, 1110u + round);
+    assert(first->miss_reports == 1u);
+    assert(second->miss_reports == 1u);
+    assert(third->miss_reports == 1u);
+    assert(first->retransmits == 0u && second->retransmits == 0u &&
+           third->retransmits == 0u);
+  }
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 static void test_sack_htna_with_interleaved_streams(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
@@ -396,6 +435,7 @@ static void test_sack_htna_with_interleaved_streams(void) {
 int main(void) {
   test_sack_counts_only_new_ack_evidence(false);
   test_sack_counts_only_new_ack_evidence(true);
+  test_repeated_gap_ack_does_not_reuse_acked_tsn_as_htna();
   test_sack_htna_with_interleaved_streams();
   test_rto_recovers_after_loss();
   test_rtt_sample_lifetime(false);
