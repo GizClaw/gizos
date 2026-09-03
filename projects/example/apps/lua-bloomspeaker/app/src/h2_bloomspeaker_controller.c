@@ -29,6 +29,10 @@ static h2_bloomspeaker_state_t state_from_word(uint64_t word) {
   return (h2_bloomspeaker_state_t)(word & H2_BLOOMSPEAKER_STATE_MASK);
 }
 
+static bool state_is_valid(h2_bloomspeaker_state_t state) {
+  return (unsigned int)state <= (unsigned int)H2_BLOOMSPEAKER_STATE_ERROR;
+}
+
 static uint64_t entered_ms_from_word(uint64_t word) {
   return word >> H2_BLOOMSPEAKER_STATE_BITS;
 }
@@ -138,8 +142,7 @@ void h2_bloomspeaker_controller_hold_release(
 void h2_bloomspeaker_controller_set_state(
     h2_bloomspeaker_controller_t *controller, h2_bloomspeaker_state_t state,
     uint64_t now_ms, uint64_t peer_tag, int error) {
-  if (controller == NULL || state < H2_BLOOMSPEAKER_STATE_IDLE ||
-      state > H2_BLOOMSPEAKER_STATE_ERROR) {
+  if (controller == NULL || !state_is_valid(state)) {
     return;
   }
   set_metadata(controller, peer_tag, error);
@@ -151,10 +154,8 @@ bool h2_bloomspeaker_controller_transition(
     h2_bloomspeaker_controller_t *controller,
     h2_bloomspeaker_state_t expected, h2_bloomspeaker_state_t next,
     uint64_t now_ms, uint64_t peer_tag, int error) {
-  if (controller == NULL || expected < H2_BLOOMSPEAKER_STATE_IDLE ||
-      expected > H2_BLOOMSPEAKER_STATE_ERROR ||
-      next < H2_BLOOMSPEAKER_STATE_IDLE ||
-      next > H2_BLOOMSPEAKER_STATE_ERROR) {
+  if (controller == NULL || !state_is_valid(expected) ||
+      !state_is_valid(next)) {
     return false;
   }
   uint64_t observed = atomic_load_explicit(&controller->state_word,

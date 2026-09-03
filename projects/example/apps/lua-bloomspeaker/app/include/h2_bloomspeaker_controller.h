@@ -1,9 +1,9 @@
 #ifndef H2_BLOOMSPEAKER_CONTROLLER_H
 #define H2_BLOOMSPEAKER_CONTROLLER_H
 
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #ifdef __cplusplus
 extern "C" {
