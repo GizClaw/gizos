@@ -894,19 +894,6 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                     stream->reset_request_sequence != sequence) {
                     continue;
                 }
-                if (association->control_kind != H2_SCTP_CONTROL_RESET ||
-                    association->control_packet == NULL) {
-                  break;
-                }
-                // RFC 6525 5.2.7 H2: a deferred reset is acknowledged but not
-                // complete. Keep its request for retransmission without
-                // charging the ordinary lost-control retry counter.
-                if (result_code == 6u) {
-                  association->control_reset_in_progress = true;
-                  association->control_deadline_ms =
-                      h2_sctp_deadline_add(now_ms, association->rto_ms);
-                  break;
-                }
                 stream->reset_pending = false;
                 h2_sctp_clear_control(association);
                 if (result_code == 0u || result_code == 1u) {

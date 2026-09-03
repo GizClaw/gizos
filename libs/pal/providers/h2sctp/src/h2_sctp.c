@@ -110,7 +110,6 @@ void h2_sctp_clear_control(h2_pal_sctp_association_t *association) {
     association->control_packet_len = 0u;
     association->control_kind = H2_SCTP_CONTROL_NONE;
     association->control_retries = 0u;
-    association->control_reset_in_progress = false;
     association->control_deadline_ms = H2_PAL_SCTP_NO_DEADLINE;
 }
 
