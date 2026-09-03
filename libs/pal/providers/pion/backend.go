@@ -246,11 +246,6 @@ func (b *Backend) Dispatch(deliver func(Event) error) (bool, error) {
 			b.mu.Unlock()
 			return false, ErrClosed
 		}
-		if b.overflow {
-			b.overflow = false
-			b.mu.Unlock()
-			return true, nil
-		}
 		if b.pending == nil && len(b.events) != 0 {
 			event := b.events[0]
 			b.events[0] = Event{}
@@ -258,10 +253,16 @@ func (b *Backend) Dispatch(deliver func(Event) error) (bool, error) {
 			b.queuedEventBytes -= len(event.Data)
 			b.pending = &event
 		}
-		b.mu.Unlock()
 		if b.pending == nil {
-			return false, nil
+			// The accepted prefix is fully delivered, so a recorded overflow
+			// can be surfaced now without overtaking queued events. The C
+			// worker treats it as terminal.
+			overflow := b.overflow
+			b.overflow = false
+			b.mu.Unlock()
+			return overflow, nil
 		}
+		b.mu.Unlock()
 		if err := deliver(*b.pending); err != nil {
 			return false, err
 		}
@@ -452,6 +453,12 @@ func (b *Backend) forwardOpus(track *webrtc.TrackRemote) {
 func (b *Backend) enqueue(event Event) {
 	b.mu.Lock()
 	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	if b.overflow {
+		// This peer is already failing. Admitting a later event would place it
+		// ahead of the terminal report the caller has not consumed yet.
 		b.mu.Unlock()
 		return
 	}

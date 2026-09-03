@@ -68,7 +68,7 @@ func TestDispatchRetainsBackpressuredEventAndOrder(t *testing.T) {
 	}
 }
 
-func TestDispatchIsBoundedAndReportsOverflow(t *testing.T) {
+func TestDispatchIsBounded(t *testing.T) {
 	backend := &Backend{ready: make(chan struct{}, 1)}
 	for n := 0; n < maxQueuedEvents; n++ {
 		backend.enqueue(Event{Kind: EventChannelMessage})
@@ -78,9 +78,39 @@ func TestDispatchIsBoundedAndReportsOverflow(t *testing.T) {
 	if overflow, err := backend.Dispatch(deliver); overflow || err != nil || calls != 64 {
 		t.Fatalf("worker slice unbounded: calls=%d overflow=%v err=%v", calls, overflow, err)
 	}
+}
+
+// The C worker treats an overflow report as terminal, so every event accepted
+// before the drop must be delivered before that report, and nothing may be
+// admitted after it.
+func TestDispatchDrainsAcceptedPrefixBeforeReportingOverflow(t *testing.T) {
+	backend := &Backend{ready: make(chan struct{}, 1)}
+	const accepted = 3
+	for n := 0; n < accepted; n++ {
+		backend.enqueue(Event{Kind: EventChannelMessage, Data: []byte{byte(n)}})
+	}
 	backend.enqueue(Event{Kind: EventChannelMessage, Data: make([]byte, maxQueuedBytes+1)})
-	if overflow, err := backend.Dispatch(deliver); !overflow || err != nil || calls != 64 {
-		t.Fatalf("overflow not surfaced before delivery: calls=%d overflow=%v err=%v", calls, overflow, err)
+	backend.enqueue(Event{Kind: EventChannelMessage, Data: []byte{0xff}})
+
+	var got []byte
+	deliver := func(event Event) error { got = append(got, event.Data[0]); return nil }
+	overflow, err := backend.Dispatch(deliver)
+	if err != nil {
+		t.Fatalf("dispatch: err=%v", err)
+	}
+	// The prefix reaches the C queue during this same call, and only then does
+	// the terminal overflow surface. 0xff arrived after the drop and must not
+	// appear at all.
+	if !bytes.Equal(got, []byte{0, 1, 2}) {
+		t.Fatalf("accepted prefix not delivered in order: got=%v", got)
+	}
+	if !overflow {
+		t.Fatalf("overflow not reported after draining the prefix: got=%v", got)
+	}
+	if overflow, err := backend.Dispatch(deliver); overflow || err != nil ||
+		len(got) != accepted {
+		t.Fatalf("overflow reported twice or event admitted after it: got=%v overflow=%v err=%v",
+			got, overflow, err)
 	}
 }
 
