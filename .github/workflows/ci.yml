@@ -341,10 +341,10 @@ jobs:
         shell: bash
         run: |
           curl --fail --location --silent --show-error \
-            https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.2_amd64.deb \
+            https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb \
             --output "$RUNNER_TEMP/libtinfo5.deb"
           printf '%s  %s\n' \
-            b9bb64e716a7d9de05b1b33992763142ca81bcae3a7f8ce7e29fa3c6fd32f1e8 \
+            4df4288404108f1a156d014e8764a064e977e34e6d44931ab60451694c03c90d \
             "$RUNNER_TEMP/libtinfo5.deb" | sha256sum --check --strict
           sudo apt-get install --yes "$RUNNER_TEMP/libtinfo5.deb"
 
