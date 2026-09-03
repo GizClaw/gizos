@@ -108,6 +108,9 @@ int main() {
       .should_stop_user = &context,
       .on_ready = nullptr,
       .on_ready_user = nullptr,
+      .pause_management_advertising = nullptr,
+      .resume_management_advertising = nullptr,
+      .management_advertising_user = nullptr,
   };
   result = h2_bloomspeaker_run(runtime, &config);
   (void)h2::desktop::poll_events(&display);
