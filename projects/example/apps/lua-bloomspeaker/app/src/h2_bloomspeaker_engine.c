@@ -40,6 +40,12 @@ typedef struct h2_bloomspeaker_observed_address {
   bool occupied;
 } h2_bloomspeaker_observed_address_t;
 
+typedef struct h2_bloomspeaker_pending_scan {
+  h2_pal_ble_addr_t address;
+  int rssi;
+  uint8_t manufacturer_data[H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE];
+} h2_bloomspeaker_pending_scan_t;
+
 struct h2_bloomspeaker_engine {
   h2_runtime_t *runtime;
   h2_bloomspeaker_controller_t *controller;
@@ -65,6 +71,8 @@ struct h2_bloomspeaker_engine {
   h2_pal_ble_connection_t pending_connected;
   _Atomic uint16_t pending_disconnected_conn_handle;
   _Atomic uint16_t pending_reject_conn_handle;
+  _Atomic int pending_scan_state;
+  h2_bloomspeaker_pending_scan_t pending_scan;
   h2_bloomspeaker_engine_advertising_control_fn pause_management_advertising;
   h2_bloomspeaker_engine_advertising_control_fn resume_management_advertising;
   void *management_advertising_user;
@@ -560,24 +568,59 @@ static bool scan_result(void *user, const h2_pal_ble_scan_result_t *result) {
   if (engine == NULL || result == NULL ||
       !result->connectable ||
       result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
-      result->manufacturer_data.len != H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE) {
+      result->manufacturer_data.len != H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE ||
+      result->manufacturer_data.data == NULL) {
     return false;
   }
-  h2_bloomspeaker_pairing_beacon_t beacon;
-  if (h2_bloomspeaker_pairing_decode(result->manufacturer_data.data,
-                                     result->manufacturer_data.len,
-                                     &beacon) != H2_PAL_OK) {
+
+  int expected = H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY;
+  if (!atomic_compare_exchange_strong_explicit(
+          &engine->pending_scan_state, &expected,
+          H2_BLOOMSPEAKER_PENDING_EVENT_WRITING, memory_order_acq_rel,
+          memory_order_acquire)) {
     return false;
+  }
+  engine->pending_scan.address = result->addr;
+  engine->pending_scan.rssi = result->rssi;
+  memcpy(engine->pending_scan.manufacturer_data,
+         result->manufacturer_data.data,
+         sizeof(engine->pending_scan.manufacturer_data));
+  atomic_store_explicit(&engine->pending_scan_state,
+                        H2_BLOOMSPEAKER_PENDING_EVENT_READY,
+                        memory_order_release);
+  (void)h2_pal_semaphore_give(engine->runtime->sync, engine->event_wake);
+  return false;
+}
+
+static void process_scan_event(h2_bloomspeaker_engine_t *engine) {
+  if (atomic_load_explicit(&engine->pending_scan_state,
+                           memory_order_acquire) !=
+      H2_BLOOMSPEAKER_PENDING_EVENT_READY) {
+    return;
+  }
+  const h2_bloomspeaker_pending_scan_t result = engine->pending_scan;
+  atomic_store_explicit(&engine->pending_scan_state,
+                        H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY,
+                        memory_order_release);
+  if (!engine->pairing_active) {
+    return;
+  }
+
+  h2_bloomspeaker_pairing_beacon_t beacon;
+  if (h2_bloomspeaker_pairing_decode(result.manufacturer_data,
+                                     sizeof(result.manufacturer_data),
+                                     &beacon) != H2_PAL_OK) {
+    return;
   }
   if (h2_pal_mutex_lock(engine->runtime->sync, engine->pairing_mutex) !=
       H2_PAL_OK) {
-    return false;
+    return;
   }
   uint64_t observed_ms = now_ms(engine);
-  if (h2_bloomspeaker_pairing_observe(&engine->pairing, &beacon, result->rssi,
+  if (h2_bloomspeaker_pairing_observe(&engine->pairing, &beacon, result.rssi,
                                        observed_ms) != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(engine->runtime->sync, engine->pairing_mutex);
-    return false;
+    return;
   }
   h2_bloomspeaker_observed_address_t *slot = NULL;
   h2_bloomspeaker_observed_address_t *oldest = NULL;
@@ -603,10 +646,9 @@ static bool scan_result(void *user, const h2_pal_ble_scan_result_t *result) {
     slot->occupied = true;
     slot->device_tag = beacon.device_tag;
     slot->last_seen_ms = observed_ms;
-    slot->address = result->addr;
+    slot->address = result.address;
   }
   (void)h2_pal_mutex_unlock(engine->runtime->sync, engine->pairing_mutex);
-  return false;
 }
 
 static int update_advertising(h2_bloomspeaker_engine_t *engine) {
@@ -1001,6 +1043,7 @@ static void engine_task(void *context) {
   }
   while (!atomic_load_explicit(&engine->stop, memory_order_acquire)) {
     process_system_events(engine);
+    process_scan_event(engine);
     h2_bloomspeaker_state_t state = current_state(engine);
     if (state == H2_BLOOMSPEAKER_STATE_PAIRING && !engine->pairing_active) {
       result = begin_pairing(engine);
@@ -1074,6 +1117,8 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
               H2_PAL_BLE_INVALID_CONN_HANDLE);
   atomic_init(&engine->pending_reject_conn_handle,
               H2_PAL_BLE_INVALID_CONN_HANDLE);
+  atomic_init(&engine->pending_scan_state,
+              H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY);
   const h2_pal_mutex_config_t mutex_config = {
       .name = "lua-bloomspeaker/pairing",
       .allocator = runtime->mem,

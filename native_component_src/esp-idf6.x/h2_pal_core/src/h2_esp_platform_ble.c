@@ -459,6 +459,19 @@ static void h2_esp_ble_finish_pair(
     }
 }
 
+static void h2_esp_ble_finish_pair_disconnect(uint16_t conn_handle) {
+    bool wake;
+
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    wake = h2_esp_ble_pair_tracker_disconnect(
+        &s_h2_esp_ble_pair, conn_handle);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+
+    if (wake && s_h2_esp_ble_events != NULL) {
+        xEventGroupSetBits(s_h2_esp_ble_events, H2_ESP_BLE_PAIR_DONE_BIT);
+    }
+}
+
 static h2_pal_result_t h2_esp_ble_begin_pair(uint16_t conn_handle) {
     taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
     h2_pal_result_t result = h2_esp_ble_pair_tracker_begin(
@@ -492,10 +505,15 @@ static h2_pal_result_t h2_esp_ble_finish_pair_wait(
     taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
 
     if (result == H2_PAL_ERR_TIMEOUT) {
+        /*
+         * A successful termination is completed by BLE_GAP_EVENT_DISCONNECT.
+         * The tracker remains DRAINING until that event, so ENC_CHANGE cannot
+         * reopen a same-handle retry window while disconnect is still pending.
+         */
         int terminate_rc = ble_gap_terminate(
             conn_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (terminate_rc == BLE_HS_ENOTCONN) {
-            h2_esp_ble_finish_pair(conn_handle, H2_PAL_ERR_CLOSED);
+            h2_esp_ble_finish_pair_disconnect(conn_handle);
         } else if (terminate_rc != 0) {
             ESP_LOGW(
                 TAG,
@@ -1115,7 +1133,7 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         info.peer_addr.type = h2_esp_ble_addr_type(event->disconnect.conn.peer_ota_addr.type);
         memcpy(info.peer_addr.value, event->disconnect.conn.peer_ota_addr.val, sizeof(info.peer_addr.value));
         info.reason = event->disconnect.reason;
-        h2_esp_ble_finish_pair(info.conn_handle, H2_PAL_ERR_CLOSED);
+        h2_esp_ble_finish_pair_disconnect(info.conn_handle);
         h2_esp_ble_finish_indication(
             event->disconnect.conn.conn_handle,
             H2_PAL_BLE_INVALID_ATTR_HANDLE,

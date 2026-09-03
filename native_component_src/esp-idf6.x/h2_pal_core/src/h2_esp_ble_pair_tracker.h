@@ -48,10 +48,27 @@ static inline bool h2_esp_ble_pair_tracker_complete(
         return false;
     }
     if (tracker->state == H2_ESP_BLE_PAIR_DRAINING) {
-        h2_esp_ble_pair_tracker_clear(tracker);
         return false;
     }
     tracker->result = result;
+    tracker->state = H2_ESP_BLE_PAIR_COMPLETED;
+    return true;
+}
+
+static inline bool h2_esp_ble_pair_tracker_disconnect(
+    h2_esp_ble_pair_tracker_t *tracker,
+    uint16_t conn_handle) {
+    if (tracker->state == H2_ESP_BLE_PAIR_IDLE ||
+        tracker->state == H2_ESP_BLE_PAIR_COMPLETED ||
+        tracker->conn_handle != conn_handle ||
+        conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE) {
+        return false;
+    }
+    if (tracker->state == H2_ESP_BLE_PAIR_DRAINING) {
+        h2_esp_ble_pair_tracker_clear(tracker);
+        return false;
+    }
+    tracker->result = H2_PAL_ERR_CLOSED;
     tracker->state = H2_ESP_BLE_PAIR_COMPLETED;
     return true;
 }
@@ -72,6 +89,11 @@ static inline h2_pal_result_t h2_esp_ble_pair_tracker_timeout(
         return h2_esp_ble_pair_tracker_take(tracker);
     }
     if (tracker->state == H2_ESP_BLE_PAIR_WAITING) {
+        /*
+         * Keep the handle reserved until DISCONNECT drains the outstanding SMP
+         * operation.  In particular, begin() must not admit a same-handle retry
+         * whose result could be confused with a late ENC_CHANGE callback.
+         */
         tracker->state = H2_ESP_BLE_PAIR_DRAINING;
         return H2_PAL_ERR_TIMEOUT;
     }
