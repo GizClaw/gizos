@@ -43,6 +43,10 @@
 #define H2_SCTP_DELAYED_SACK_MS 20u
 #define H2_SCTP_DELAYED_SACK_PACKETS 2u
 #define H2_SCTP_MAX_CONTROL_RETRIES 5u
+/* RFC 6525 5.2.7 H2 keeps a deferred reset out of the ordinary error counter,
+ * so it needs its own bound. With the RTO backoff below this spans minutes
+ * before the association gives up on a peer that never finishes the reset. */
+#define H2_SCTP_MAX_RESET_IN_PROGRESS_RETRIES 10u
 #define H2_SCTP_INITIAL_CWND_PACKETS 4u
 /* Largest SCTP packet an IP datagram can carry; bounds inbound parsing. */
 #define H2_SCTP_MAX_INBOUND_PACKET_SIZE 65535u
@@ -156,9 +160,17 @@ struct h2_pal_sctp_association {
     size_t control_packet_len;
     h2_sctp_control_kind_t control_kind;
     unsigned control_retries;
+    bool control_reset_in_progress;
+    unsigned control_reset_retries;
     uint64_t control_deadline_ms;
 
     uint64_t rto_ms;
+    uint64_t srtt_ms;
+    uint64_t rttvar_ms;
+    uint64_t rtt_sample_sent_ms;
+    uint32_t rtt_sample_tsn;
+    bool rtt_initialized;
+    bool rtt_sample_pending;
     uint64_t heartbeat_deadline_ms;
     uint32_t cwnd;
     uint32_t ssthresh;
