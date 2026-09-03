@@ -133,7 +133,10 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
                 f"required action environment is missing: {H2LOADER_WIFI_CREDENTIALS}"
             )
         environment.update(parse_h2loader_wifi_credentials(credentials))
-    environment[NATIVE_BUILD_JOBS] = "4"
+    # Kept in step with _native_firmware_resources in tools/bazel/esp_idf.bzl:
+    # Bazel schedules one core per firmware action, so ninja must not fan out
+    # past it. Parallelism comes from Bazel running several launchers at once.
+    environment[NATIVE_BUILD_JOBS] = "1"
     return environment
 
 
