@@ -1055,6 +1055,13 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         info.peer_addr.type = h2_esp_ble_addr_type(event->disconnect.conn.peer_ota_addr.type);
         memcpy(info.peer_addr.value, event->disconnect.conn.peer_ota_addr.val, sizeof(info.peer_addr.value));
         info.reason = event->disconnect.reason;
+        if (info.conn_handle == s_h2_esp_ble_pair_conn_handle) {
+            s_h2_esp_ble_pair_result = H2_PAL_ERR_CLOSED;
+            if (s_h2_esp_ble_events != NULL) {
+                xEventGroupSetBits(s_h2_esp_ble_events,
+                                   H2_ESP_BLE_PAIR_DONE_BIT);
+            }
+        }
         h2_esp_ble_finish_indication(
             event->disconnect.conn.conn_handle,
             H2_PAL_BLE_INVALID_ATTR_HANDLE,
