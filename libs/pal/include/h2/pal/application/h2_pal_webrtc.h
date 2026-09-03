@@ -269,7 +269,7 @@ h2_pal_webrtc_peer_poll(const h2_pal_webrtc_api_t *api,
                         h2_pal_webrtc_peer_t *peer, int timeout_ms,
                         h2_pal_webrtc_event_t *out_event) {
     if (api == NULL || api->vtable == NULL || api->vtable->peer_poll == NULL ||
-        peer == NULL || out_event == NULL) {
+        peer == NULL || out_event == NULL || timeout_ms < 0) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(out_event, 0, sizeof(*out_event));

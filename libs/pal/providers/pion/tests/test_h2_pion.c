@@ -98,6 +98,27 @@ static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
   return H2_PAL_OK;
 }
 
+typedef struct blocked_poll_state {
+  const h2_pal_webrtc_api_t *api;
+  h2_pal_webrtc_peer_t *peer;
+  volatile int entered;
+  volatile int result;
+} blocked_poll_state_t;
+
+static void blocked_poll_entry(void *ctx) {
+  blocked_poll_state_t *state = ctx;
+  h2_pal_webrtc_event_t event = {0};
+  int rc = H2_PAL_ERR_BUSY;
+  /* The prober holds the slot for the length of one non-blocking poll, so
+   * retry rather than mistaking that for the contended case. */
+  while (rc == H2_PAL_ERR_BUSY) {
+    state->entered = 1;
+    rc = h2_pal_webrtc_peer_poll(state->api, state->peer, 5000, &event);
+  }
+  state->result = rc;
+  h2_pal_webrtc_event_release(&event);
+}
+
 int main(void) {
   static const h2_pal_mem_vtable_t mem_vtable = {
       .alloc = test_alloc, .realloc = test_realloc, .free = test_free};
@@ -169,7 +190,30 @@ int main(void) {
   assert(h2_pal_webrtc_peer_poll(api, peer, 0, &event) == H2_PAL_OK);
   assert(event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
   assert(event.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED);
+  /* A second caller must not consume events concurrently, and closing while a
+   * poll is parked on the semaphore must wait for it instead of destroying the
+   * semaphore, mutex and peer under it. */
+  blocked_poll_state_t blocked = {.api = api, .peer = peer};
+  const h2_pal_task_options_t blocked_options = {.name = "pion/test/poll"};
+  h2_pal_task_t *blocked_task = NULL;
+  assert(h2_pal_task_start(&task_api, &blocked_options, blocked_poll_entry,
+                           &blocked, &blocked_task) == H2_PAL_OK);
+  while (!blocked.entered)
+    assert(h2_pal_time_sleep_ms(config.time, 1u) == H2_PAL_OK);
+  int busy_result = H2_PAL_OK;
+  for (unsigned n = 0; n < 5000u && busy_result != H2_PAL_ERR_BUSY; ++n) {
+    h2_pal_webrtc_event_t busy_event = {0};
+    busy_result = h2_pal_webrtc_peer_poll(api, peer, 0, &busy_event);
+    if (busy_result == H2_PAL_OK)
+      h2_pal_webrtc_event_release(&busy_event);
+    if (busy_result != H2_PAL_ERR_BUSY)
+      assert(h2_pal_time_sleep_ms(config.time, 1u) == H2_PAL_OK);
+  }
+  assert(busy_result == H2_PAL_ERR_BUSY);
   h2_pal_webrtc_peer_close(api, peer);
+  assert(h2_pal_task_join(&task_api, blocked_task) == H2_PAL_OK);
+  assert(blocked.result == H2_PAL_ERR_CLOSED ||
+         blocked.result == H2_PAL_ERR_TIMEOUT);
   assert(s_started == s_joined);
   h2_pion_destroy(&provider);
   assert(provider == NULL);

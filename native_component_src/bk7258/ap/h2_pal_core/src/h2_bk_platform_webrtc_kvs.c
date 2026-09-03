@@ -34,6 +34,14 @@ struct h2_pal_webrtc_peer {
     h2_bk_webrtc_event_t *event_tail;
     size_t event_count;
     beken_mutex_t event_mutex;
+    /* First enqueue failure. Reported once as an ERROR event after the
+     * accepted prefix drains, then returned by every later poll. */
+    int queue_result;
+    int queue_result_reported;
+    /* One caller at a time may sit in peer_poll; close publishes `closing`
+     * and waits for the poll to leave before freeing the peer. */
+    volatile int poll_active;
+    volatile int closing;
     volatile int candidate_gathering_done;
 };
 
@@ -239,6 +247,24 @@ static h2_pal_webrtc_channel_t *h2_bk_webrtc_alloc_channel(
     return channel;
 }
 
+/*
+ * A dropped event breaks the caller's stream silently, so the first failure
+ * becomes a sticky peer error that poll reports once the accepted prefix has
+ * been consumed. Callers recover by closing and recreating the peer.
+ */
+static void h2_bk_webrtc_note_event(h2_pal_webrtc_peer_t *peer, int rc) {
+    if (peer == NULL || rc == H2_PAL_OK || peer->event_mutex == NULL) {
+        return;
+    }
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        return;
+    }
+    if (peer->queue_result == H2_PAL_OK) {
+        peer->queue_result = rc;
+    }
+    (void)rtos_unlock_mutex(&peer->event_mutex);
+}
+
 static void h2_bk_webrtc_on_open(UINT64 customData, PRtcDataChannel rtc) {
     h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)(uintptr_t)customData;
     if (channel == NULL || channel->owner == NULL) {
@@ -249,9 +275,11 @@ static void h2_bk_webrtc_on_open(UINT64 customData, PRtcDataChannel rtc) {
         channel->info.stream_id = (uint16_t)rtc->id;
         channel->info.has_stream_id = 1;
     }
-    (void)h2_bk_webrtc_enqueue_event(
-        channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, channel,
-        H2_PAL_WEBRTC_CHANNEL_OPEN, 0, 0, NULL, 0u, 0);
+    h2_bk_webrtc_note_event(
+        channel->owner,
+        h2_bk_webrtc_enqueue_event(
+            channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, channel,
+            H2_PAL_WEBRTC_CHANNEL_OPEN, 0, 0, NULL, 0u, 0));
 }
 
 static void h2_bk_webrtc_on_message(UINT64 customData, PRtcDataChannel rtc, BOOL isBinary, PBYTE data, UINT32 len) {
@@ -260,9 +288,11 @@ static void h2_bk_webrtc_on_message(UINT64 customData, PRtcDataChannel rtc, BOOL
         return;
     }
     channel->rtc = rtc;
-    (void)h2_bk_webrtc_enqueue_event(
-        channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE, channel, 0, 0, 0,
-        data, len, isBinary ? 0 : 1);
+    h2_bk_webrtc_note_event(
+        channel->owner,
+        h2_bk_webrtc_enqueue_event(
+            channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE, channel, 0, 0,
+            0, data, len, isBinary ? 0 : 1));
 }
 
 static void h2_bk_webrtc_on_data_channel(UINT64 customData, PRtcDataChannel rtc) {
@@ -293,9 +323,10 @@ static void h2_bk_webrtc_on_connection_state(UINT64 customData, RTC_PEER_CONNECT
     if (peer == NULL) {
         return;
     }
-    (void)h2_bk_webrtc_enqueue_event(
-        peer, H2_PAL_WEBRTC_EVENT_PEER_STATE, NULL, 0,
-        h2_bk_webrtc_map_state(state), 0, NULL, 0u, 0);
+    h2_bk_webrtc_note_event(
+        peer, h2_bk_webrtc_enqueue_event(
+                  peer, H2_PAL_WEBRTC_EVENT_PEER_STATE, NULL, 0,
+                  h2_bk_webrtc_map_state(state), 0, NULL, 0u, 0));
 }
 
 static void h2_bk_webrtc_on_ice_candidate(UINT64 customData, PCHAR candidate_json) {
@@ -506,25 +537,97 @@ static h2_pal_result_t h2_bk_webrtc_peer_create_data_channel(
     return H2_PAL_OK;
 }
 
+/* Claims the single poll slot, or reports that another caller holds it. */
+static int h2_bk_webrtc_poll_enter(h2_pal_webrtc_peer_t *peer) {
+    if (peer->event_mutex == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        return H2_PAL_ERR_IO;
+    }
+    int rc = H2_PAL_OK;
+    if (peer->closing) {
+        rc = H2_PAL_ERR_CLOSED;
+    } else if (peer->poll_active) {
+        rc = H2_PAL_ERR_BUSY;
+    } else {
+        peer->poll_active = 1;
+    }
+    (void)rtos_unlock_mutex(&peer->event_mutex);
+    return rc;
+}
+
+static void h2_bk_webrtc_poll_leave(h2_pal_webrtc_peer_t *peer) {
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        /* Leaving the slot claimed would deadlock close; the peer is already
+         * failing, so clear it without the lock rather than strand it. */
+        peer->poll_active = 0;
+        return;
+    }
+    peer->poll_active = 0;
+    (void)rtos_unlock_mutex(&peer->event_mutex);
+}
+
+/* Reports the sticky queue failure once, after the accepted prefix drains. */
+static int h2_bk_webrtc_take_queue_failure(h2_pal_webrtc_peer_t *peer,
+                                           h2_pal_webrtc_event_t *out_event) {
+    if (rtos_lock_mutex(&peer->event_mutex) != kNoErr) {
+        return H2_PAL_ERR_IO;
+    }
+    const int failure = peer->queue_result;
+    const int reported = peer->queue_result_reported;
+    if (failure != H2_PAL_OK) {
+        peer->queue_result_reported = 1;
+    }
+    (void)rtos_unlock_mutex(&peer->event_mutex);
+    if (failure == H2_PAL_OK) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    if (reported) {
+        return failure;
+    }
+    *out_event = (h2_pal_webrtc_event_t){
+        .kind = H2_PAL_WEBRTC_EVENT_ERROR,
+        .peer = peer,
+        .error = (h2_pal_result_t)failure,
+    };
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t h2_bk_webrtc_peer_poll(
     h2_pal_webrtc_peer_t *peer, int timeout_ms,
     h2_pal_webrtc_event_t *out_event) {
     if (peer == NULL || out_event == NULL || timeout_ms < 0) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    const int entered = h2_bk_webrtc_poll_enter(peer);
+    if (entered != H2_PAL_OK) {
+        return (h2_pal_result_t)entered;
+    }
     uint32_t remaining_ms = (uint32_t)timeout_ms;
+    int rc;
     for (;;) {
-        const int rc = h2_bk_webrtc_dequeue_event(peer, out_event);
+        rc = h2_bk_webrtc_dequeue_event(peer, out_event);
         if (rc != H2_PAL_ERR_WOULD_BLOCK) {
-            return rc;
+            break;
+        }
+        rc = h2_bk_webrtc_take_queue_failure(peer, out_event);
+        if (rc != H2_PAL_ERR_WOULD_BLOCK) {
+            break;
+        }
+        if (peer->closing) {
+            rc = H2_PAL_ERR_CLOSED;
+            break;
         }
         if (remaining_ms == 0u) {
-            return timeout_ms == 0 ? H2_PAL_ERR_WOULD_BLOCK
-                                   : H2_PAL_ERR_TIMEOUT;
+            rc = timeout_ms == 0 ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
+            break;
         }
         (void)rtos_delay_milliseconds(1u);
         --remaining_ms;
     }
+    h2_bk_webrtc_poll_leave(peer);
+    return (h2_pal_result_t)rc;
 }
 
 static h2_pal_result_t h2_bk_webrtc_peer_send_opus(
@@ -559,14 +662,25 @@ static void h2_bk_webrtc_channel_close(h2_pal_webrtc_channel_t *channel) {
     if (channel == NULL || channel->owner == NULL) {
         return;
     }
-    (void)h2_bk_webrtc_enqueue_event(
-        channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, channel,
-        H2_PAL_WEBRTC_CHANNEL_CLOSED, 0, 0, NULL, 0u, 0);
+    h2_bk_webrtc_note_event(
+        channel->owner,
+        h2_bk_webrtc_enqueue_event(
+            channel->owner, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, channel,
+            H2_PAL_WEBRTC_CHANNEL_CLOSED, 0, 0, NULL, 0u, 0));
 }
 
 static void h2_bk_webrtc_peer_close(h2_pal_webrtc_peer_t *peer) {
     if (peer == NULL) {
         return;
+    }
+    /* A waiting poll re-checks `closing` at least once per millisecond, so
+     * publish it and wait for the poll to leave before freeing anything. */
+    if (peer->event_mutex != NULL && rtos_lock_mutex(&peer->event_mutex) == kNoErr) {
+        peer->closing = 1;
+        (void)rtos_unlock_mutex(&peer->event_mutex);
+        while (peer->poll_active) {
+            (void)rtos_delay_milliseconds(1u);
+        }
     }
     if (peer->rtc != NULL) {
         (void)closePeerConnection(peer->rtc);

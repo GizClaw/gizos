@@ -140,7 +140,48 @@ int main() {
   assert(h2_pal_webrtc_peer_poll(api, peer, 0, &event) ==
          H2_PAL_ERR_WOULD_BLOCK);
   assert(event._private == nullptr);
+
+  // A second caller must not consume events concurrently, and a close must
+  // wait for the in-flight poll instead of destroying the queue under it.
+  std::atomic<int> blocked_result{H2_PAL_OK};
+  std::atomic<bool> blocked_entered{false};
+  std::atomic<int> blocked_kind{0};
+  std::thread blocked_poll([&] {
+    h2_pal_webrtc_event_t blocked_event = {};
+    int rc = H2_PAL_ERR_BUSY;
+    // The prober below can hold the slot for the length of one non-blocking
+    // poll, so retry rather than mistaking that for the contended case.
+    while (rc == H2_PAL_ERR_BUSY) {
+      blocked_entered = true;
+      rc = h2_pal_webrtc_peer_poll(api, peer, 5000, &blocked_event);
+    }
+    blocked_kind = static_cast<int>(blocked_event.kind);
+    blocked_result = rc;
+    h2_pal_webrtc_event_release(&blocked_event);
+  });
+  while (!blocked_entered)
+    std::this_thread::yield();
+  h2_pal_webrtc_event_t busy_event = {};
+  int busy_result = H2_PAL_OK;
+  const auto busy_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  do {
+    busy_result = h2_pal_webrtc_peer_poll(api, peer, 0, &busy_event);
+    if (busy_result == H2_PAL_OK)
+      h2_pal_webrtc_event_release(&busy_event);
+    if (busy_result != H2_PAL_ERR_BUSY)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  } while (busy_result != H2_PAL_ERR_BUSY &&
+           std::chrono::steady_clock::now() < busy_deadline);
+  assert(busy_result == H2_PAL_ERR_BUSY);
+  // Closing here tears down the queue this poll is parked on. It must wait for
+  // the poll to leave, and the poll must end on a terminal result rather than
+  // a freed queue: either the terminal peer-state event or CLOSED.
   h2_pal_webrtc_peer_close(api, peer);
+  blocked_poll.join();
+  assert(blocked_result == H2_PAL_ERR_CLOSED ||
+         (blocked_result == H2_PAL_OK &&
+          blocked_kind == H2_PAL_WEBRTC_EVENT_PEER_STATE));
   h2_peer_destroy(&owner);
   assert(owner == nullptr && started == 1u && joined == 1u);
   return 0;

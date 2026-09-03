@@ -319,6 +319,12 @@ int main(void) {
                h2_pal_unsupported_webrtc_api(),
                (h2_pal_webrtc_peer_t *)(uintptr_t)1u, 0,
                &webrtc_event) == H2_PAL_ERR_UNSUPPORTED);
+    /* A negative timeout is invalid at the wrapper, before any provider can
+     * reinterpret it as an unbounded wait. */
+    assert(h2_pal_webrtc_peer_poll(
+               h2_pal_unsupported_webrtc_api(),
+               (h2_pal_webrtc_peer_t *)(uintptr_t)1u, -1,
+               &webrtc_event) == H2_PAL_ERR_INVALID_ARG);
     assert(h2_pal_webrtc_peer_add_ice_server(
                h2_pal_unsupported_webrtc_api(),
                (h2_pal_webrtc_peer_t *)(uintptr_t)1u,

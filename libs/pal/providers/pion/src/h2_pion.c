@@ -46,6 +46,9 @@ struct h2_pal_webrtc_peer {
   h2_pal_task_t *worker;
   atomic_int stop;
   atomic_int worker_error;
+  /* One caller at a time may sit in peer_poll; close waits for it to leave
+   * before destroying the semaphore, mutex and peer it is still using. */
+  atomic_int poll_active;
   struct h2_pal_webrtc_channel *channels;
   uint64_t go_handle;
   uint64_t next_channel_key;
@@ -322,6 +325,7 @@ static h2_pal_result_t h2_pion_peer_create(void *user,
   }
   peer->owner = provider;
   atomic_init(&peer->stop, 0);
+  atomic_init(&peer->poll_active, 0);
   atomic_init(&peer->worker_error, H2_PAL_OK);
   const h2_pal_mutex_config_t mutex_config = {.name = "pion/peer",
                                               .allocator = &provider->mem};
@@ -498,12 +502,15 @@ static void h2_pion_worker(void *context) {
   s_worker_peer = NULL;
 }
 
-static h2_pal_result_t h2_pion_peer_poll(h2_pal_webrtc_peer_t *peer,
-                                         int timeout_ms,
-                                         h2_pal_webrtc_event_t *out_event) {
-  if (peer == NULL || out_event == NULL || timeout_ms < 0)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_event, 0, sizeof(*out_event));
+/*
+ * A waiting poll holds no lock, so it must re-check the close request often
+ * enough that a concurrent close does not wait on it for the whole timeout.
+ */
+#define H2_PION_POLL_WAIT_SLICE_MS 20u
+
+static h2_pal_result_t h2_pion_peer_poll_locked(h2_pal_webrtc_peer_t *peer,
+                                                int timeout_ms,
+                                                h2_pal_webrtc_event_t *out_event) {
   uint64_t start = 0u, now = 0u;
   h2_pal_result_t rc = h2_pal_time_get_monotonic_ms(&peer->owner->time, &start);
   if (rc != H2_PAL_OK)
@@ -538,11 +545,29 @@ static h2_pal_result_t h2_pion_peer_poll(h2_pal_webrtc_peer_t *peer,
       return rc;
     if (now - start >= (uint64_t)timeout_ms)
       return H2_PAL_ERR_TIMEOUT;
-    rc = h2_pal_semaphore_take(&peer->owner->sync, peer->ready,
-                               (uint32_t)(timeout_ms - (now - start)));
+    const uint64_t remaining_ms = (uint64_t)timeout_ms - (now - start);
+    const uint32_t wait_ms = remaining_ms < H2_PION_POLL_WAIT_SLICE_MS
+                                 ? (uint32_t)remaining_ms
+                                 : H2_PION_POLL_WAIT_SLICE_MS;
+    rc = h2_pal_semaphore_take(&peer->owner->sync, peer->ready, wait_ms);
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT)
       return rc;
   }
+}
+
+static h2_pal_result_t h2_pion_peer_poll(h2_pal_webrtc_peer_t *peer,
+                                         int timeout_ms,
+                                         h2_pal_webrtc_event_t *out_event) {
+  if (peer == NULL || out_event == NULL || timeout_ms < 0)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_event, 0, sizeof(*out_event));
+  int idle = 0;
+  if (!atomic_compare_exchange_strong(&peer->poll_active, &idle, 1))
+    return H2_PAL_ERR_BUSY;
+  const h2_pal_result_t rc =
+      h2_pion_peer_poll_locked(peer, timeout_ms, out_event);
+  atomic_store(&peer->poll_active, 0);
+  return rc;
 }
 
 static h2_pal_result_t
@@ -633,6 +658,10 @@ static h2_pal_result_t h2_pion_peer_close_now(h2_pal_webrtc_peer_t *peer) {
       return rc;
     peer->worker = NULL;
   }
+  /* peer->closed is already published, so a waiting poll observes it within
+   * one slice. Wait for it to leave before freeing what it still touches. */
+  while (atomic_load(&peer->poll_active))
+    (void)h2_pal_time_sleep_ms(&provider->time, H2_PION_POLL_WAIT_SLICE_MS);
   h2PionGoPeerDestroy(peer->go_handle);
   peer->go_handle = 0u;
   h2_pal_webrtc_event_t event = {0};

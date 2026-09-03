@@ -1758,6 +1758,7 @@ static h2_pal_result_t h2_peer_network_init(h2_pal_webrtc_peer_t *peer) {
   atomic_init(&peer->network_send_wakeup_queued, 0);
   atomic_init(&peer->network_stop, 0);
   atomic_init(&peer->network_stopped, 0);
+  atomic_init(&peer->network_poll_active, 0);
   atomic_init(&peer->rtp_pending, NULL);
   atomic_init(&peer->rtp_ready_since_us, 0u);
   atomic_init(&peer->perf_rtp_enqueue_blocked, 0u);
@@ -1873,13 +1874,18 @@ h2_peer_network_unset_track(h2_pal_webrtc_peer_t *peer,
   return h2_peer_network_call(peer, &command, NULL);
 }
 
-static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
-                                            int timeout_ms,
-                     h2_pal_webrtc_event_t *out_event) {
-  if (timeout_ms < 0 || out_event == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  *out_event = (h2_pal_webrtc_event_t){0};
+/*
+ * A waiting poll owns no lifecycle reference to the queue it receives from, so
+ * it never blocks longer than one slice without re-observing the stop request
+ * that a concurrent close publishes before joining the worker.
+ */
+#define H2_PEER_POLL_WAIT_SLICE_MS 20u
+
+static h2_pal_result_t
+h2_peer_network_poll_locked(h2_pal_webrtc_peer_t *peer, int timeout_ms,
+                            h2_pal_webrtc_event_t *out_event) {
+  uint64_t deadline_us = 0u;
+  bool deadline_valid = false;
   uint32_t wait_ms = H2_PAL_QUEUE_NO_WAIT;
   for (;;) {
     h2_peer_network_event_t *event = NULL;
@@ -1899,12 +1905,33 @@ static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
         };
         return H2_PAL_OK;
       }
-      if (wait_ms == H2_PAL_QUEUE_NO_WAIT && timeout_ms != 0) {
+      if (timeout_ms == 0)
+        return H2_PAL_ERR_WOULD_BLOCK;
+      if (atomic_load_explicit(&peer->network_stop, memory_order_acquire))
+        return H2_PAL_ERR_CLOSED;
+      uint64_t now_us = 0u;
+      const bool clock_ok = h2_pal_time_get_monotonic_us(
+                                peer->owner->config.time, &now_us) == H2_PAL_OK;
+      if (!clock_ok) {
+        /* Without a usable clock the caller's deadline cannot be tracked
+         * across slices; spend it on one bounded wait instead of spinning. */
+        if (deadline_valid)
+          return H2_PAL_ERR_TIMEOUT;
+        deadline_valid = true;
         wait_ms = (uint32_t)timeout_ms;
         continue;
       }
-      if (timeout_ms == 0)
-        return H2_PAL_ERR_WOULD_BLOCK;
+      if (!deadline_valid) {
+        deadline_us = now_us + (uint64_t)timeout_ms * 1000u;
+        deadline_valid = true;
+      } else if (now_us >= deadline_us) {
+        return H2_PAL_ERR_TIMEOUT;
+      }
+      const uint64_t remaining_ms = (deadline_us - now_us) / 1000u;
+      wait_ms = remaining_ms < H2_PEER_POLL_WAIT_SLICE_MS
+                    ? (uint32_t)remaining_ms
+                    : H2_PEER_POLL_WAIT_SLICE_MS;
+      continue;
     }
     if (result != H2_PAL_OK)
       return result;
@@ -1913,6 +1940,25 @@ static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
       return result;
     wait_ms = H2_PAL_QUEUE_NO_WAIT;
   }
+}
+
+static h2_pal_result_t h2_peer_network_poll(h2_pal_webrtc_peer_t *peer,
+                                            int timeout_ms,
+                                            h2_pal_webrtc_event_t *out_event) {
+  if (timeout_ms < 0 || out_event == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *out_event = (h2_pal_webrtc_event_t){0};
+  int idle = 0;
+  if (!atomic_compare_exchange_strong_explicit(&peer->network_poll_active,
+                                               &idle, 1, memory_order_acq_rel,
+                                               memory_order_relaxed)) {
+    return H2_PAL_ERR_BUSY;
+  }
+  const h2_pal_result_t result =
+      h2_peer_network_poll_locked(peer, timeout_ms, out_event);
+  atomic_store_explicit(&peer->network_poll_active, 0, memory_order_release);
+  return result;
 }
 
 static h2_pal_result_t h2_peer_network_enqueue_opus(h2_pal_webrtc_peer_t *peer,
@@ -2074,6 +2120,11 @@ h2_peer_network_close_and_join(h2_pal_webrtc_peer_t *peer) {
   if (rc != H2_PAL_OK)
     return rc;
   peer->network_task = NULL;
+  /* network_stop is published before the joined worker exits, so a waiting
+   * poll leaves within one slice. Wait for it before destroying its queue. */
+  while (atomic_load_explicit(&peer->network_poll_active, memory_order_acquire))
+    (void)h2_pal_time_sleep_ms(owner->config.time,
+                               H2_PEER_POLL_WAIT_SLICE_MS);
   // Only the lifecycle caller edits the owner list, after the worker exits.
   h2_peer_network_unlink_created_peer(peer);
   h2_peer_network_discard_available(peer);

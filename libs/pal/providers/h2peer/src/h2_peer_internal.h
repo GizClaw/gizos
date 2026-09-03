@@ -100,6 +100,9 @@ struct h2_pal_webrtc_peer {
   atomic_int network_send_wakeup_queued;
   atomic_int network_stop;
   atomic_int network_stopped;
+  /* One caller at a time may sit in peer_poll; close waits for it to leave
+   * before destroying the queues that poll is receiving from. */
+  atomic_int network_poll_active;
   atomic_int network_transport_result;
   atomic_int network_error_reported;
   _Atomic(h2_peer_tx_item_t *) rtp_pending;
