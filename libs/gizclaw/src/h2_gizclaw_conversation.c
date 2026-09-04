@@ -156,6 +156,8 @@ struct h2_gizclaw_conversation_request {
   bool terminal_waiting_for_audio;
   unsigned int diag_idle_windows;
   bool reply_boundary_terminal;
+  /* The staged REPLY_DONE ends a reply the server cut short (barge-in). */
+  bool reply_interrupted;
 };
 
 enum { H2_GIZCLAW_MEDIA_REPORT_INTERVAL_US = 1000 * 1000 };
@@ -417,6 +419,7 @@ struct h2_gizclaw_conversation {
   bool terminal_pending;
   bool terminal_has_error;
   bool terminal_retryable;
+  bool reply_interrupted;
   bool pending_peer_event;
   gzc_peer_event_t peer_event;
   char text[H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u];
@@ -1166,6 +1169,27 @@ conversation_reply_route(h2_gizclaw_conversation_t *conversation,
   return &conversation->response;
 }
 
+/* Server-side barge-in: the user spoke over this reply and the server cut it
+ * short. While the input is still open the server already produces the next
+ * reply, so the interrupted one ends with REPLY_DONE like any VAD reply; the
+ * service discards its queued playback. Once the input is committed
+ * (push-to-talk) no further reply can follow in this generation, so an
+ * interrupted reply keeps the error semantics and ends the conversation. */
+static bool reply_interruptible(const h2_gizclaw_conversation_t *conversation,
+                                const conversation_reply_route_t *route) {
+  return !conversation->committed && route != &conversation->transcript;
+}
+
+static void finish_interrupted_reply(h2_gizclaw_conversation_t *conversation,
+                                     conversation_reply_route_t *route) {
+  route->text_open = false;
+  route->audio_ended = true;
+  route->ended = true;
+  conversation->terminal_pending = true;
+  conversation->terminal_has_error = false;
+  conversation->reply_interrupted = true;
+}
+
 static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
                                const gzc_peer_event_t *event) {
   if (conversation == NULL || event == NULL)
@@ -1182,6 +1206,16 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
     if (event->type != gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS ||
         id == NULL || strcmp(id, route->id) == 0)
       return false;
+    memset(route, 0, sizeof(*route));
+  } else if (event->type ==
+                 gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
+             id != NULL && route->id[0] != '\0' &&
+             !stream_id_matches(id, route->id) &&
+             reply_interruptible(conversation, route)) {
+    /* The next reply starts before this one ended: the server interrupted
+     * it. Finish it here so the new reply's first BOS pins the route instead
+     * of being dropped; the late EOS of the old reply no longer matches. */
+    finish_interrupted_reply(conversation, route);
     memset(route, 0, sizeof(*route));
   }
   /* Once a reply is pinned, match that route, not the parent input prefix:
@@ -1213,6 +1247,15 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event) {
   return accepts_peer_event(conversation, event);
+}
+
+bool h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+    h2_gizclaw_conversation_t *conversation) {
+  if (conversation == NULL)
+    return false;
+  const bool interrupted = conversation->reply_interrupted;
+  conversation->reply_interrupted = false;
+  return interrupted;
 }
 
 void h2_gizclaw_conversation_describe_peer_event_internal(
@@ -1464,8 +1507,10 @@ int h2_gizclaw_conversation_wire_poll_internal(
     out_event->text = conversation->text;
     out_event->text_len = text_len;
     if (conversation_reply_route(conversation, &event)->audio_ended &&
-        strcmp(event.payload.text_done.label, "transcript") != 0)
+        strcmp(event.payload.text_done.label, "transcript") != 0) {
       conversation->terminal_pending = true;
+      conversation->reply_interrupted = false;
+    }
     return H2_PAL_OK;
   case gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS:
     /* Recognition and assistant output are separate logical streams. A
@@ -1477,7 +1522,18 @@ int h2_gizclaw_conversation_wire_poll_internal(
     if (!event.payload.eos.has_error &&
         conversation_reply_route(conversation, &event)->text_open)
       return H2_PAL_OK;
+    if (event.payload.eos.has_error &&
+        strcmp(event.payload.eos.error.code,
+               H2_GIZCLAW_CONVERSATION_ERROR_STREAM_INTERRUPTED) == 0 &&
+        reply_interruptible(conversation,
+                            conversation_reply_route(conversation, &event))) {
+      finish_interrupted_reply(conversation,
+                               conversation_reply_route(conversation, &event));
+      out_event->kind = H2_GIZCLAW_CONVERSATION_EVENT_NONE;
+      return H2_PAL_OK;
+    }
     conversation->terminal_pending = true;
+    conversation->reply_interrupted = false;
     if (event.payload.eos.has_error) {
       (void)snprintf(conversation->error_code, sizeof(conversation->error_code),
                      "%s", event.payload.eos.error.code);
@@ -1742,6 +1798,10 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   if (request->terminal_waiting_for_audio && downlink_eos &&
       h2_gizclaw_pcm_ring_available(&request->pcm_downlink) == 0u) {
     request->terminal_waiting_for_audio = false;
+    if (request->reply_interrupted) {
+      request->reply_interrupted = false;
+      h2_gizclaw_service_pcm_discard_downlink_internal(request->service);
+    }
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_WARN, "conversation", "terminal_dispatch",
         request->identity, H2_PAL_OK,
@@ -1811,10 +1871,19 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     request->reply_boundary_terminal =
         event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR ||
         request->transport_committed;
+    request->reply_interrupted =
+        h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+            request->conversation);
+    /* The user spoke over this reply: whatever the Track still holds of it is
+     * stale. Frames the decoder has not consumed yet drain behind the EOS
+     * marker and are discarded again when the boundary is dispatched. */
+    if (request->reply_interrupted)
+      h2_gizclaw_service_pcm_discard_downlink_internal(request->service);
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_WARN, "conversation", "terminal_staged",
         request->identity, H2_PAL_OK,
-        (int)event.kind * 10 + (request->reply_boundary_terminal ? 1 : 0),
+        (int)event.kind * 10 + (request->reply_boundary_terminal ? 1 : 0) +
+            (request->reply_interrupted ? 100 : 0),
         request->on_event != NULL, event.generation);
     request->pending_terminal_event = event;
     request->pending_downlink_message =
