@@ -526,21 +526,26 @@ static void test_media_and_channel_busy(void) {
   atomic_store(&f.track_ready, 1);
   wait_count(&f, &f.track_reads, 1u);
   const uint8_t message[] = {0u, 0xffu, 0x42u};
-  assert(h2_pal_webrtc_channel_send(f.api, channel, message, sizeof(message),
-                                    0) == H2_PAL_OK);
+  // A busy transport still accepts one ring's worth of queued messages.
+  for (size_t i = 0u; i < H2_PEER_INPUT_SLOT_COUNT; ++i) {
+    assert(h2_pal_webrtc_channel_send(f.api, channel, message,
+                                      sizeof(message), 0) == H2_PAL_OK);
+  }
   assert(h2_pal_webrtc_channel_send(f.api, channel, message, sizeof(message),
                                     0) == H2_PAL_ERR_WOULD_BLOCK);
   assert(atomic_load(&f.track_reads) == 1u && atomic_load(&f.opus_sends) == 0u);
   atomic_store(&f.opus_busy, 0);
   atomic_store(&f.send_busy, 0);
   wait_count(&f, &f.track_writes, 1u);
-  wait_count(&f, &f.sends, 1u);
+  wait_count(&f, &f.sends, H2_PEER_INPUT_SLOT_COUNT);
   assert(atomic_load(&f.track_reads) == 1u);
-  h2_pal_webrtc_event_t event =
-      next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
-  assert(event.data_len == sizeof(message) &&
-         memcmp(event.data, message, sizeof(message)) == 0);
-  h2_pal_webrtc_event_release(&event);
+  for (size_t i = 0u; i < H2_PEER_INPUT_SLOT_COUNT; ++i) {
+    h2_pal_webrtc_event_t event =
+        next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
+    assert(event.data_len == sizeof(message) &&
+           memcmp(event.data, message, sizeof(message)) == 0);
+    h2_pal_webrtc_event_release(&event);
+  }
   assert(h2_pal_webrtc_peer_unset_track(f.api, f.peer, &track) == H2_PAL_OK);
   track.vtable = NULL;
   cleanup(&f);

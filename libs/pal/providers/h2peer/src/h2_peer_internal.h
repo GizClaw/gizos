@@ -40,7 +40,16 @@ typedef struct h2_peer_tx_item {
 } h2_peer_tx_item_t;
 
 enum {
-  H2_PEER_INPUT_SLOT_COUNT = 1,
+  /* Per-channel outbound ring depth. A producer may queue this many messages
+   * ahead of the network task, so a bulk sender no longer stalls for one
+   * WRITABLE round trip per message. */
+  H2_PEER_INPUT_SLOT_COUNT = 4,
+  /* Per-round channel send budget. One network round sends queued channel
+   * messages until either bound is reached, then returns so RTP audio, the
+   * receive pump and the next round's writable check run before more bulk
+   * data goes out. At least one message is always sent when one is ready. */
+  H2_PEER_NETWORK_CHANNEL_ROUND_BYTES = 8192,
+  H2_PEER_NETWORK_CHANNEL_ROUND_MESSAGES = 8,
 };
 
 typedef struct h2_peer_round_stats {
@@ -61,8 +70,12 @@ struct h2_pal_webrtc_channel {
   atomic_int terminal;
   atomic_uint event_refs;
   atomic_uchar ready_slot;
+  /* Ring of queued messages: producers fill at tx_tail, the network task
+   * drains from tx_head. tx_state per slot: 0 free, 1 filling, 2 ready. */
   h2_peer_tx_item_t *tx_storage[H2_PEER_INPUT_SLOT_COUNT];
   atomic_uchar tx_state[H2_PEER_INPUT_SLOT_COUNT];
+  atomic_uchar tx_head;
+  atomic_uchar tx_tail;
   atomic_uint_fast64_t tx_ready_since_us;
 };
 
@@ -196,8 +209,22 @@ void h2_peer_webrtc_note_audio_rtp(h2_pal_webrtc_peer_t *peer,
 h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);
 void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer);
 
+/* Channel TX ring and its network-round scheduler; exposed for unit tests. */
+h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
+                                        const uint8_t *data, size_t len,
+                                        int is_text);
+int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
+                                    uint32_t *snapshot);
+
 /* Network-task-owned media pump/cleanup; not part of the public PAL API. */
 h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);
 void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer);
+
+/* Channel TX ring and its network-round scheduler; exposed for unit tests. */
+h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
+                                        const uint8_t *data, size_t len,
+                                        int is_text);
+int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
+                                    uint32_t *snapshot);
 
 #endif

@@ -399,6 +399,54 @@ static void h2_peer_network_notify_send_ready(h2_pal_webrtc_peer_t *peer) {
   }
 }
 
+static void h2_peer_channel_ready_set(h2_pal_webrtc_channel_t *channel);
+
+static void h2_peer_channel_tx_init(h2_pal_webrtc_channel_t *channel) {
+  for (size_t i = 0u; i < H2_PEER_INPUT_SLOT_COUNT; ++i) {
+    atomic_init(&channel->tx_state[i], 0u);
+  }
+  atomic_init(&channel->tx_head, 0u);
+  atomic_init(&channel->tx_tail, 0u);
+  atomic_init(&channel->tx_ready_since_us, 0u);
+}
+
+h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
+                                        const uint8_t *data, size_t len,
+                                        int is_text) {
+  h2_pal_webrtc_peer_t *peer = channel->owner;
+  const uint8_t slot =
+      atomic_load_explicit(&channel->tx_tail, memory_order_acquire);
+  unsigned char expected = 0u;
+  // Only the claimant advances the tail, so a second producer racing for the
+  // same slot sees it busy and reports WOULD_BLOCK; the ring never has holes.
+  if (!atomic_compare_exchange_strong_explicit(
+          &channel->tx_state[slot], &expected, 1u, memory_order_acq_rel,
+          memory_order_relaxed)) {
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  h2_peer_tx_item_t *item = h2_peer_prepare_tx_item(
+      peer->owner, &channel->tx_storage[slot], data, len, is_text);
+  if (item == NULL) {
+    atomic_store_explicit(&channel->tx_state[slot], 0u, memory_order_release);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  atomic_store_explicit(&channel->tx_tail,
+                        (uint8_t)((slot + 1u) % H2_PEER_INPUT_SLOT_COUNT),
+                        memory_order_release);
+  uint64_t now_us = 0u;
+  if (h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
+      H2_PAL_OK) {
+    uint_fast64_t unset = 0u;
+    // Keep the oldest queued timestamp so max_ready_us measures head latency.
+    (void)atomic_compare_exchange_strong_explicit(
+        &channel->tx_ready_since_us, &unset, now_us, memory_order_acq_rel,
+        memory_order_relaxed);
+  }
+  atomic_store_explicit(&channel->tx_state[slot], 2u, memory_order_release);
+  h2_peer_channel_ready_set(channel);
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t
 h2_peer_channel_ready_slot_allocate(h2_pal_webrtc_channel_t *channel) {
   h2_pal_webrtc_peer_t *peer = channel->owner;
@@ -1159,8 +1207,7 @@ h2_pal_result_t h2_peer_webrtc_on_remote_channel_open(
   atomic_init(&channel->event_refs, 0u);
   atomic_init(&channel->open, 0);
   atomic_init(&channel->terminal, 0);
-  atomic_init(&channel->tx_state[0], 0u);
-  atomic_init(&channel->tx_ready_since_us, 0u);
+  h2_peer_channel_tx_init(channel);
   channel->label = h2_peer_copy_string(peer->owner, label);
   if (channel->label == NULL) {
     h2_peer_control_free(peer->owner, channel);
@@ -1265,8 +1312,7 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
   atomic_init(&channel->event_refs, 0u);
   atomic_init(&channel->open, 0);
   atomic_init(&channel->terminal, 0);
-  atomic_init(&channel->tx_state[0], 0u);
-  atomic_init(&channel->tx_ready_since_us, 0u);
+  h2_peer_channel_tx_init(channel);
   channel->label = h2_peer_copy_string(peer->owner, config->label);
   if (channel->label == NULL) {
     h2_peer_control_free(peer->owner, channel);
@@ -1414,6 +1460,8 @@ static void h2_peer_free_channel(h2_pal_webrtc_peer_t *peer,
     h2_peer_free_tx_item(peer->owner, channel->tx_storage[i]);
     channel->tx_storage[i] = NULL;
   }
+  atomic_store_explicit(&channel->tx_head, 0u, memory_order_release);
+  atomic_store_explicit(&channel->tx_tail, 0u, memory_order_release);
   h2_peer_free(peer->owner, channel->label);
   h2_peer_control_free(peer->owner, channel);
 }
@@ -1728,63 +1776,96 @@ h2_peer_find_channel_by_ready_slot(h2_pal_webrtc_peer_t *peer,
   return NULL;
 }
 
-static int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
-                                           uint32_t *snapshot) {
+/* Sends queued channel messages for one network round. Channels take turns
+ * in ready-slot order, one message per turn, until the round budget
+ * (H2_PEER_NETWORK_CHANNEL_ROUND_BYTES / _MESSAGES) is spent, SCTP pushes
+ * back, or nothing is left. Ready bits stay set in *snapshot for channels
+ * that still hold messages so the next round resumes with them. */
+int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
+                                    uint32_t *snapshot) {
   int made_progress = 0;
+  size_t round_bytes = 0u;
+  size_t round_messages = 0u;
   const uint8_t start_slot = peer->channel_round_robin;
-  for (size_t offset = 0u; offset < H2_PEER_READY_CHANNEL_COUNT; ++offset) {
-    if (atomic_load_explicit(&peer->network_transport_result,
-                             memory_order_acquire) != H2_PAL_OK)
+  for (;;) {
+    int sent_this_pass = 0;
+    for (size_t offset = 0u; offset < H2_PEER_READY_CHANNEL_COUNT; ++offset) {
+      if (atomic_load_explicit(&peer->network_transport_result,
+                               memory_order_acquire) != H2_PAL_OK)
+        return made_progress;
+      const uint8_t ready_slot =
+          (uint8_t)((start_slot + offset) % H2_PEER_READY_CHANNEL_COUNT);
+      const uint32_t bit = UINT32_C(1) << ready_slot;
+      if ((*snapshot & bit) == 0u) {
+        continue;
+      }
+      h2_pal_webrtc_channel_t *channel =
+          h2_peer_find_channel_by_ready_slot(peer, ready_slot);
+      if (channel == NULL) {
+        *snapshot &= ~bit;
+        continue;
+      }
+      const uint8_t head =
+          atomic_load_explicit(&channel->tx_head, memory_order_acquire);
+      if (atomic_load_explicit(&channel->tx_state[head],
+                               memory_order_acquire) != 2u) {
+        *snapshot &= ~bit;
+        continue;
+      }
+      h2_peer_tx_item_t *item = channel->tx_storage[head];
+      h2_pal_result_t result = h2_peer_webrtc_channel_send(
+          channel, item->data, item->len, item->is_text);
+      ++peer->perf_channel_service_count;
+      if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
+        ++peer->perf_channel_send_blocked;
+        peer->channel_round_robin = ready_slot;
+        return made_progress;
+      }
+      const size_t sent_len = item->len;
+      const uint8_t next_head =
+          (uint8_t)((head + 1u) % H2_PEER_INPUT_SLOT_COUNT);
+      atomic_store_explicit(&channel->tx_head, next_head, memory_order_release);
+      atomic_store_explicit(&channel->tx_state[head], 0u, memory_order_release);
+      uint64_t now_us = 0u;
+      const uint64_t ready_since_us = atomic_exchange_explicit(
+          &channel->tx_ready_since_us, 0u, memory_order_acq_rel);
+      if (ready_since_us != 0u &&
+          h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
+              H2_PAL_OK &&
+          now_us >= ready_since_us &&
+          now_us - ready_since_us > peer->perf_channel_max_ready_us) {
+        peer->perf_channel_max_ready_us = now_us - ready_since_us;
+      }
+      if (atomic_load_explicit(&channel->tx_state[next_head],
+                               memory_order_acquire) != 2u) {
+        *snapshot &= ~bit;
+      } else if (ready_since_us != 0u && now_us != 0u) {
+        // The next message has been waiting at least as long as this send.
+        uint_fast64_t unset = 0u;
+        (void)atomic_compare_exchange_strong_explicit(
+            &channel->tx_ready_since_us, &unset, now_us, memory_order_acq_rel,
+            memory_order_relaxed);
+      }
+      h2_peer_network_notify_send_ready(peer);
+      peer->channel_round_robin =
+          (uint8_t)((ready_slot + 1u) % H2_PEER_READY_CHANNEL_COUNT);
+      if (result != H2_PAL_OK && result != H2_PAL_ERR_CLOSED &&
+          result != H2_PAL_ERR_INVALID_STATE) {
+        h2_peer_record_network_event_error(peer, result);
+      }
+      made_progress = 1;
+      sent_this_pass = 1;
+      round_bytes += sent_len;
+      ++round_messages;
+      if (round_bytes >= H2_PEER_NETWORK_CHANNEL_ROUND_BYTES ||
+          round_messages >= H2_PEER_NETWORK_CHANNEL_ROUND_MESSAGES) {
+        return made_progress;
+      }
+    }
+    if (!sent_this_pass) {
       return made_progress;
-    const uint8_t ready_slot =
-        (uint8_t)((start_slot + offset) % H2_PEER_READY_CHANNEL_COUNT);
-    const uint32_t bit = UINT32_C(1) << ready_slot;
-    if ((*snapshot & bit) == 0u) {
-      continue;
     }
-    h2_pal_webrtc_channel_t *channel =
-        h2_peer_find_channel_by_ready_slot(peer, ready_slot);
-    if (channel == NULL) {
-      *snapshot &= ~bit;
-      continue;
-    }
-    const size_t slot = 0u;
-    if (atomic_load_explicit(&channel->tx_state[slot], memory_order_acquire) !=
-        2u) {
-      *snapshot &= ~bit;
-      continue;
-    }
-    h2_peer_tx_item_t *item = channel->tx_storage[slot];
-    h2_pal_result_t result = h2_peer_webrtc_channel_send(
-        channel, item->data, item->len, item->is_text);
-    ++peer->perf_channel_service_count;
-    if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
-      ++peer->perf_channel_send_blocked;
-      peer->channel_round_robin = ready_slot;
-      return made_progress;
-    }
-    *snapshot &= ~bit;
-    atomic_store_explicit(&channel->tx_state[slot], 0u, memory_order_release);
-    uint64_t now_us = 0u;
-    const uint64_t ready_since_us = atomic_exchange_explicit(
-        &channel->tx_ready_since_us, 0u, memory_order_acq_rel);
-    if (ready_since_us != 0u &&
-        h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
-            H2_PAL_OK &&
-        now_us >= ready_since_us &&
-        now_us - ready_since_us > peer->perf_channel_max_ready_us) {
-      peer->perf_channel_max_ready_us = now_us - ready_since_us;
-    }
-    h2_peer_network_notify_send_ready(peer);
-    peer->channel_round_robin =
-        (uint8_t)((ready_slot + 1u) % H2_PEER_READY_CHANNEL_COUNT);
-    if (result != H2_PAL_OK && result != H2_PAL_ERR_CLOSED &&
-        result != H2_PAL_ERR_INVALID_STATE) {
-      h2_peer_record_network_event_error(peer, result);
-    }
-    made_progress = 1;
   }
-  return made_progress;
 }
 
 static void h2_peer_network_task(void *context) {
@@ -1827,10 +1908,10 @@ static void h2_peer_network_task(void *context) {
       transport_progress = 1;
     }
 
-    if (channel_snapshot == 0u) {
-      channel_snapshot = atomic_exchange_explicit(&peer->channel_ready, 0u,
-                                                  memory_order_acq_rel);
-    }
+    // Merge newly readied channels every round so a channel still draining a
+    // deep queue cannot hide another channel's first message.
+    channel_snapshot |= atomic_exchange_explicit(&peer->channel_ready, 0u,
+                                                 memory_order_acq_rel);
     h2_peer_tx_item_t *rtp_pending =
         atomic_load_explicit(&peer->rtp_pending, memory_order_acquire);
     const int has_channel_work = channel_snapshot != 0u;
@@ -2305,28 +2386,7 @@ h2_peer_network_channel_send(h2_pal_webrtc_channel_t *channel,
       peer->state != H2_PAL_WEBRTC_PEER_CONNECTED) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  const size_t slot = 0u;
-  unsigned char expected = 0u;
-  if (!atomic_compare_exchange_strong_explicit(
-          &channel->tx_state[slot], &expected, 1u, memory_order_acq_rel,
-          memory_order_relaxed)) {
-    return H2_PAL_ERR_WOULD_BLOCK;
-  }
-  h2_peer_tx_item_t *item = h2_peer_prepare_tx_item(
-      peer->owner, &channel->tx_storage[slot], data, len, is_text);
-  if (item == NULL) {
-    atomic_store_explicit(&channel->tx_state[slot], 0u, memory_order_release);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  uint64_t now_us = 0u;
-  if (h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
-      H2_PAL_OK) {
-    atomic_store_explicit(&channel->tx_ready_since_us, now_us,
-                          memory_order_release);
-  }
-  atomic_store_explicit(&channel->tx_state[slot], 2u, memory_order_release);
-  h2_peer_channel_ready_set(channel);
-  return H2_PAL_OK;
+  return h2_peer_channel_tx_push(channel, data, len, is_text);
 }
 
 static void h2_peer_network_channel_close(h2_pal_webrtc_channel_t *channel) {
