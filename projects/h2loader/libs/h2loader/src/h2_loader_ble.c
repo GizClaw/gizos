@@ -3,6 +3,7 @@
 
 #include "h2_loader_app_client.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,6 +26,12 @@
 #define H2_LOADER_BLE_LINK_TASK_STACK_SIZE (6u * 1024u)
 #define H2_LOADER_BLE_EVENT_SUBSCRIPTION_COUNT 4u
 #define H2_LOADER_BLE_MAX_ADDITIONAL_ADVERTISED_SERVICES 3u
+
+/* Advertising pause requests arrive from callbacks that must not block, so the
+ * wanted state is published without taking the link mutex. */
+#define H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE 0
+#define H2_LOADER_BLE_ADV_PAUSE_REQUEST_PAUSE 1
+#define H2_LOADER_BLE_ADV_PAUSE_REQUEST_RESUME 2
 
 static int h2_loader_ble_open_error(const char *stage, int rc) {
     printf("H2_LOADER_BLE_ERROR stage=%s code=%d\n", stage, rc);
@@ -98,8 +105,8 @@ struct h2_loader_ble_service {
     bool link_pending;
     bool advertising_restart_pending;
     bool advertising_paused;
-    bool advertising_pause_update_pending;
-    bool advertising_pause_requested;
+    atomic_int advertising_pause_request;
+    atomic_bool closing_requested;
     bool closing;
     uint8_t service_data[H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN +
                          H2_LOADER_BLE_BOARD_MAX];
@@ -220,19 +227,20 @@ static void h2_loader_ble_link_task(void *ctx) {
         }
         bool restart_advertising = service->advertising_restart_pending;
         service->advertising_restart_pending = false;
-        bool update_advertising_pause =
-            service->advertising_pause_update_pending;
-        bool advertising_pause_requested =
-            service->advertising_pause_requested;
-        service->advertising_pause_update_pending = false;
         if (service->link_pending) {
             conn_handle = service->pending_conn_handle;
             service->link_pending = false;
         }
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
-        if (update_advertising_pause) {
-            int advertising_rc = advertising_pause_requested
+        int advertising_pause_request = atomic_exchange(
+            &service->advertising_pause_request,
+            H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
+        if (advertising_pause_request !=
+            H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE) {
+            bool pause = advertising_pause_request ==
+                H2_LOADER_BLE_ADV_PAUSE_REQUEST_PAUSE;
+            int advertising_rc = pause
                 ? h2_loader_ble_service_pause_advertising(service)
                 : h2_loader_ble_service_resume_advertising(service);
             if (advertising_rc != H2_PAL_OK &&
@@ -241,7 +249,7 @@ static void h2_loader_ble_link_task(void *ctx) {
                     "H2_LOADER_BLE_ERROR stage=adv_coexistence code=%d "
                     "paused=%u\n",
                     advertising_rc,
-                    advertising_pause_requested ? 1u : 0u);
+                    pause ? 1u : 0u);
             }
         }
         if (restart_advertising &&
@@ -478,6 +486,7 @@ static int h2_loader_ble_stop_link_task(h2_loader_ble_service_t *service) {
         (void)h2_pal_mutex_lock(
             service->config.api.sync, service->link_mutex);
         service->closing = true;
+        atomic_store(&service->closing_requested, true);
         service->link_pending = false;
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
@@ -673,6 +682,10 @@ int h2_loader_ble_service_open(
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(service, 0, sizeof(*service));
+    atomic_init(
+        &service->advertising_pause_request,
+        H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
+    atomic_init(&service->closing_requested, false);
     service->config = *config;
     service->active_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     service->pending_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
@@ -911,17 +924,13 @@ int h2_loader_ble_service_request_advertising_paused(
     if (service == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    (void)h2_pal_mutex_lock(
-        service->config.api.sync, service->link_mutex);
-    if (service->closing) {
-        (void)h2_pal_mutex_unlock(
-            service->config.api.sync, service->link_mutex);
+    if (atomic_load(&service->closing_requested)) {
         return H2_PAL_ERR_CLOSED;
     }
-    service->advertising_pause_requested = paused;
-    service->advertising_pause_update_pending = true;
-    (void)h2_pal_mutex_unlock(
-        service->config.api.sync, service->link_mutex);
+    atomic_store(
+        &service->advertising_pause_request,
+        paused ? H2_LOADER_BLE_ADV_PAUSE_REQUEST_PAUSE
+               : H2_LOADER_BLE_ADV_PAUSE_REQUEST_RESUME);
     return h2_pal_semaphore_give(
         service->config.api.sync, service->link_semaphore);
 }

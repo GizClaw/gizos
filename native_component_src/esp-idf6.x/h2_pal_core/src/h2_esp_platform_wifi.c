@@ -31,7 +31,7 @@ static portMUX_TYPE s_h2_esp_wifi_safe_mutex_init_lock = portMUX_INITIALIZER_UNL
 static portMUX_TYPE s_h2_esp_wifi_activity_lock = portMUX_INITIALIZER_UNLOCKED;
 static h2_esp_platform_wifi_activity_fn s_h2_esp_wifi_activity_callback;
 static void *s_h2_esp_wifi_activity_user;
-static int s_h2_esp_wifi_activity_active;
+static int s_h2_esp_wifi_activity_depth;
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
 static esp_netif_t *s_h2_esp_wifi_ap_netif;
 static portMUX_TYPE s_h2_esp_wifi_ap_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -65,13 +65,22 @@ typedef struct h2_esp_wifi_safe_call {
 static size_t h2_esp_wifi_strnlen(const uint8_t *value, size_t max_len);
 static int h2_esp_wifi_map_error(esp_err_t err);
 
+/* Disruptive Wi-Fi operations are not serialized against each other, so the
+ * observer tracks how many of them are in flight and only reports a transition
+ * when the first one starts and the last one finishes. */
 static void h2_esp_wifi_set_activity(int active) {
     h2_esp_platform_wifi_activity_fn callback = NULL;
     void *user = NULL;
+    int notify = 0;
     portENTER_CRITICAL(&s_h2_esp_wifi_activity_lock);
-    active = active != 0;
-    if (s_h2_esp_wifi_activity_active != active) {
-        s_h2_esp_wifi_activity_active = active;
+    if (active != 0) {
+        s_h2_esp_wifi_activity_depth += 1;
+        notify = s_h2_esp_wifi_activity_depth == 1;
+    } else if (s_h2_esp_wifi_activity_depth > 0) {
+        s_h2_esp_wifi_activity_depth -= 1;
+        notify = s_h2_esp_wifi_activity_depth == 0;
+    }
+    if (notify != 0) {
         callback = s_h2_esp_wifi_activity_callback;
         user = s_h2_esp_wifi_activity_user;
     }
@@ -88,7 +97,7 @@ void h2_esp_platform_wifi_set_activity_observer(
     portENTER_CRITICAL(&s_h2_esp_wifi_activity_lock);
     s_h2_esp_wifi_activity_callback = callback;
     s_h2_esp_wifi_activity_user = callback != NULL ? user : NULL;
-    active = s_h2_esp_wifi_activity_active;
+    active = s_h2_esp_wifi_activity_depth > 0;
     portEXIT_CRITICAL(&s_h2_esp_wifi_activity_lock);
     if (callback != NULL) {
         callback(user, active != 0);
