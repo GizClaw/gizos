@@ -39,6 +39,9 @@ typedef enum h2_gizclaw_conversation_event_kind {
  * service's downlink Track. Completion follows draining accepted playback.
  * REPLY_DONE marks one server reply, not necessarily the end of the begin/end
  * cycle: while input remains open, server-side VAD may produce further replies.
+ * A reply the server cuts short because the user spoke over it (barge-in)
+ * also ends with REPLY_DONE while input remains open; its queued playback is
+ * discarded. After the input is committed such an interruption is ERROR.
  * TEXT_DONE may have empty text when earlier TEXT_DELTA events carried it.
  */
 typedef struct h2_gizclaw_conversation_event {

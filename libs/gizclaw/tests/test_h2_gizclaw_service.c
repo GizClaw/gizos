@@ -6838,6 +6838,116 @@ static void test_conversation_reply_route_ids(void) {
   }
 }
 
+static gzc_peer_event_t barge_in_event(int type, const char *label,
+                                       const char *id, const char *code) {
+  gzc_peer_event_t event = {0};
+  event.type = type;
+  if (type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
+             label);
+    snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
+             "%s", id);
+    event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+  } else if (type ==
+             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
+    snprintf(event.payload.text_delta.label,
+             sizeof(event.payload.text_delta.label), "%s", label);
+    snprintf(event.payload.text_delta.stream_id,
+             sizeof(event.payload.text_delta.stream_id), "%s", id);
+  } else if (type ==
+             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE) {
+    snprintf(event.payload.text_done.label,
+             sizeof(event.payload.text_done.label), "%s", label);
+    snprintf(event.payload.text_done.stream_id,
+             sizeof(event.payload.text_done.stream_id), "%s", id);
+  } else {
+    snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
+             label);
+    snprintf(event.payload.eos.stream_id, sizeof(event.payload.eos.stream_id),
+             "%s", id);
+    if (code != NULL) {
+      event.payload.eos.has_error = true;
+      snprintf(event.payload.eos.error.code,
+               sizeof(event.payload.eos.error.code), "%s", code);
+    }
+  }
+  return event;
+}
+
+/* Server-side barge-in: the next reply's BOS arrives while the previous
+ * assistant route is still open. It must pin the new route instead of being
+ * dropped, and the old reply's late EOS must no longer reach the app. */
+static void test_conversation_barge_in_supersedes_open_reply(void) {
+  static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+  static const int DELTA =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
+  static const int DONE =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
+  static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+  const char *labels[] = {"assistant", ""};
+  for (size_t label = 0; label < 2u; ++label) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 2u);
+    h2_gizclaw_conversation_t *conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+               &conversation) == H2_PAL_OK);
+    const char *reply = labels[label];
+    gzc_peer_event_t event = barge_in_event(BOS, reply, "reply-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(DELTA, reply, "reply-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(DONE, reply, "reply-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    // The user speaks again; the transcript route is independent.
+    event = barge_in_event(BOS, "transcript", "heard-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    // An open transcript is not superseded by another transcript BOS.
+    event = barge_in_event(BOS, "transcript", "heard-2", NULL);
+    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                &event));
+    // A sub-stream of the same reply is not a new reply.
+    event = barge_in_event(BOS, reply, "reply-1:audio", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    // The next reply starts before reply-1 ended: reply-1 is interrupted.
+    event = barge_in_event(BOS, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    assert(h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    // The old reply's late EOS and text no longer match the pinned route.
+    event = barge_in_event(EOS, reply, "reply-1", "STREAM_INTERRUPTED");
+    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                &event));
+    event = barge_in_event(DONE, reply, "reply-1", NULL);
+    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                &event));
+    event = barge_in_event(DELTA, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(DONE, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(EOS, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
 static void
 assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
   void *route = atomic_load(&service->media_request);
@@ -8397,6 +8507,7 @@ int main(int argc, char **argv) {
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();
   test_conversation_reply_route_ids();
+  test_conversation_barge_in_supersedes_open_reply();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();
   test_stream_data_task_handoff();
