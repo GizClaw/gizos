@@ -105,6 +105,10 @@ struct h2_loader_ble_service {
     bool link_pending;
     bool advertising_restart_pending;
     bool advertising_paused;
+    /* Advertising stays stopped while any reason holds it: an explicit caller
+     * pause, or the automatic Wi-Fi coexistence pause. */
+    bool advertising_pause_manual;
+    bool advertising_pause_auto;
     atomic_int advertising_pause_request;
     atomic_bool closing_requested;
     bool closing;
@@ -210,6 +214,13 @@ static int h2_loader_ble_service_update_advertising(
     return rc;
 }
 
+static int h2_loader_ble_service_pause_advertising_reason(
+    h2_loader_ble_service_t *service,
+    bool manual);
+static int h2_loader_ble_service_resume_advertising_reason(
+    h2_loader_ble_service_t *service,
+    bool manual);
+
 static void h2_loader_ble_link_task(void *ctx) {
     h2_loader_ble_service_t *service = ctx;
     for (;;) {
@@ -241,8 +252,10 @@ static void h2_loader_ble_link_task(void *ctx) {
             bool pause = advertising_pause_request ==
                 H2_LOADER_BLE_ADV_PAUSE_REQUEST_PAUSE;
             int advertising_rc = pause
-                ? h2_loader_ble_service_pause_advertising(service)
-                : h2_loader_ble_service_resume_advertising(service);
+                ? h2_loader_ble_service_pause_advertising_reason(
+                      service, false)
+                : h2_loader_ble_service_resume_advertising_reason(
+                      service, false);
             if (advertising_rc != H2_PAL_OK &&
                 advertising_rc != H2_PAL_ERR_INVALID_STATE) {
                 printf(
@@ -847,8 +860,9 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t *service) {
     return adv_rc != H2_PAL_OK ? adv_rc : server_rc;
 }
 
-int h2_loader_ble_service_pause_advertising(
-    h2_loader_ble_service_t *service) {
+static int h2_loader_ble_service_pause_advertising_reason(
+    h2_loader_ble_service_t *service,
+    bool manual) {
     if (service == NULL ||
         (service->config.advertising_mode ==
              H2_LOADER_BLE_ADVERTISING_EXTENDED &&
@@ -857,6 +871,11 @@ int h2_loader_ble_service_pause_advertising(
     }
     (void)h2_pal_mutex_lock(
         service->config.api.sync, service->link_mutex);
+    if (manual) {
+        service->advertising_pause_manual = true;
+    } else {
+        service->advertising_pause_auto = true;
+    }
     service->advertising_paused = true;
     service->advertising_restart_pending = false;
     (void)h2_pal_mutex_unlock(
@@ -871,14 +890,26 @@ int h2_loader_ble_service_pause_advertising(
     }
     (void)h2_pal_mutex_lock(
         service->config.api.sync, service->link_mutex);
-    service->advertising_paused = false;
+    if (manual) {
+        service->advertising_pause_manual = false;
+    } else {
+        service->advertising_pause_auto = false;
+    }
+    service->advertising_paused = service->advertising_pause_manual ||
+        service->advertising_pause_auto;
     (void)h2_pal_mutex_unlock(
         service->config.api.sync, service->link_mutex);
     return rc;
 }
 
-int h2_loader_ble_service_resume_advertising(
+int h2_loader_ble_service_pause_advertising(
     h2_loader_ble_service_t *service) {
+    return h2_loader_ble_service_pause_advertising_reason(service, true);
+}
+
+static int h2_loader_ble_service_resume_advertising_reason(
+    h2_loader_ble_service_t *service,
+    bool manual) {
     if (service == NULL ||
         (service->config.advertising_mode ==
              H2_LOADER_BLE_ADVERTISING_EXTENDED &&
@@ -887,9 +918,21 @@ int h2_loader_ble_service_resume_advertising(
     }
     (void)h2_pal_mutex_lock(
         service->config.api.sync, service->link_mutex);
-    service->advertising_paused = false;
+    if (manual) {
+        service->advertising_pause_manual = false;
+    } else {
+        service->advertising_pause_auto = false;
+    }
+    /* The other reason still owns the pause: drop this one and leave
+     * advertising stopped instead of overriding it. */
+    bool still_paused = service->advertising_pause_manual ||
+        service->advertising_pause_auto;
+    service->advertising_paused = still_paused;
     (void)h2_pal_mutex_unlock(
         service->config.api.sync, service->link_mutex);
+    if (still_paused) {
+        return H2_PAL_OK;
+    }
     int rc = H2_PAL_ERR_WOULD_BLOCK;
     for (uint32_t attempt = 0u;
          attempt < H2_LOADER_BLE_ADV_RESUME_RETRY_COUNT;
@@ -916,6 +959,11 @@ int h2_loader_ble_service_resume_advertising(
     (void)h2_pal_mutex_unlock(
         service->config.api.sync, service->link_mutex);
     return rc;
+}
+
+int h2_loader_ble_service_resume_advertising(
+    h2_loader_ble_service_t *service) {
+    return h2_loader_ble_service_resume_advertising_reason(service, true);
 }
 
 int h2_loader_ble_service_request_advertising_paused(

@@ -1,6 +1,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_platform_wifi_activity.h"
+#include "h2_esp_wifi_activity_tracker.h"
 #include "h2_esp_platform_wifi_internal.h"
 #include "h2_esp_wifi_teardown.h"
 
@@ -31,7 +32,7 @@ static portMUX_TYPE s_h2_esp_wifi_safe_mutex_init_lock = portMUX_INITIALIZER_UNL
 static portMUX_TYPE s_h2_esp_wifi_activity_lock = portMUX_INITIALIZER_UNLOCKED;
 static h2_esp_platform_wifi_activity_fn s_h2_esp_wifi_activity_callback;
 static void *s_h2_esp_wifi_activity_user;
-static int s_h2_esp_wifi_activity_depth;
+static h2_esp_wifi_activity_tracker_t s_h2_esp_wifi_activity;
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
 static esp_netif_t *s_h2_esp_wifi_ap_netif;
 static portMUX_TYPE s_h2_esp_wifi_ap_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -71,16 +72,12 @@ static int h2_esp_wifi_map_error(esp_err_t err);
 static void h2_esp_wifi_set_activity(int active) {
     h2_esp_platform_wifi_activity_fn callback = NULL;
     void *user = NULL;
-    int notify = 0;
+    bool notify;
     portENTER_CRITICAL(&s_h2_esp_wifi_activity_lock);
-    if (active != 0) {
-        s_h2_esp_wifi_activity_depth += 1;
-        notify = s_h2_esp_wifi_activity_depth == 1;
-    } else if (s_h2_esp_wifi_activity_depth > 0) {
-        s_h2_esp_wifi_activity_depth -= 1;
-        notify = s_h2_esp_wifi_activity_depth == 0;
-    }
-    if (notify != 0) {
+    notify = active != 0
+        ? h2_esp_wifi_activity_tracker_enter(&s_h2_esp_wifi_activity)
+        : h2_esp_wifi_activity_tracker_exit(&s_h2_esp_wifi_activity);
+    if (notify) {
         callback = s_h2_esp_wifi_activity_callback;
         user = s_h2_esp_wifi_activity_user;
     }
@@ -97,7 +94,7 @@ void h2_esp_platform_wifi_set_activity_observer(
     portENTER_CRITICAL(&s_h2_esp_wifi_activity_lock);
     s_h2_esp_wifi_activity_callback = callback;
     s_h2_esp_wifi_activity_user = callback != NULL ? user : NULL;
-    active = s_h2_esp_wifi_activity_depth > 0;
+    active = h2_esp_wifi_activity_tracker_is_active(&s_h2_esp_wifi_activity);
     portEXIT_CRITICAL(&s_h2_esp_wifi_activity_lock);
     if (callback != NULL) {
         callback(user, active != 0);
