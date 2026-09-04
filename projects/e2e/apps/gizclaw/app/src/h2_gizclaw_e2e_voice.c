@@ -520,8 +520,17 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
       rc = step(state);
   }
   atomic_store(&state->capture_enabled, false);
+  /* PTT plays every announced chunk to the end. A realtime hangup discards
+   * whatever the Track still queued at cancel, so the speaker may finish a
+   * frame or two short of the hook total but never ahead of it. */
   if (rc == H2_PAL_OK)
-    rc = drain_speaker(state, state->hook_audio_total);
+    rc = realtime ? drain_completed_output(state)
+                  : drain_speaker(state, state->hook_audio_total);
+  const size_t written = atomic_load(&state->written);
+  const bool playback_matches =
+      realtime ? written <= state->hook_audio_total &&
+                     written + 2u * FRAME_BYTES >= state->hook_audio_total
+               : written == state->hook_audio_total;
   if (rc == H2_PAL_OK &&
       (!ended || atomic_load(&state->completions) != 1u ||
        atomic_load(&state->terminal_kind) !=
@@ -530,8 +539,7 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
        atomic_load(&state->rounds) != (realtime ? 2u : 1u) ||
        atomic_load(&state->captured) !=
            state->fixture->pcm_len * (realtime ? 2u : 1u) ||
-       atomic_load(&state->written) != state->hook_audio_total ||
-       !atomic_load(&state->non_silent) || atomic_load(&state->written) == 0u))
+       !playback_matches || !atomic_load(&state->non_silent) || written == 0u))
     rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK) {
     const int terminal = atomic_load(&state->terminal_result);
@@ -546,10 +554,10 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
            realtime ? "conversation_cancel-assert" : "service_audio_end-assert",
            rc);
   printf("H2_GIZCLAW_E2E stage=voice mode=%s result=%s rc=%d rounds=%u "
-         "capture_bytes=%zu playback_bytes=%zu\n",
+         "capture_bytes=%zu playback_bytes=%zu hook_bytes=%zu\n",
          realtime ? "realtime-vad" : "ptt", rc == H2_PAL_OK ? "PASS" : "FAIL",
          rc, atomic_load(&state->rounds), atomic_load(&state->captured),
-         atomic_load(&state->written));
+         atomic_load(&state->written), state->hook_audio_total);
   return rc;
 }
 
