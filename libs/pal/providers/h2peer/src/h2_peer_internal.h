@@ -126,6 +126,33 @@ struct h2_pal_webrtc_peer {
   uint64_t perf_media_reads;
   uint64_t perf_media_empty;
   uint64_t perf_media_receive_dropped;
+  uint64_t media_rx_window_started_us;
+  uint64_t media_rx_last_arrival_us;
+  uint64_t media_rx_interval_min_us;
+  uint64_t media_rx_interval_max_us;
+  uint64_t media_rx_interval_total_us;
+  uint64_t media_rx_interval_count;
+  uint64_t media_rx_received_frames;
+  uint64_t media_rx_dropped_frames;
+  uint64_t media_rx_sequence_discontinuities;
+  uint64_t media_rx_timestamp_discontinuities;
+  uint32_t media_rx_last_timestamp;
+  uint16_t media_rx_last_sequence;
+  uint16_t media_rx_burst_1ms_current;
+  uint16_t media_rx_burst_1ms_max;
+  uint16_t media_rx_burst_5ms_current;
+  uint16_t media_rx_burst_5ms_max;
+  size_t media_rx_queue_max;
+  uint8_t media_rx_metadata_initialized;
+  uint64_t media_track_window_started_us;
+  uint64_t media_track_write_ok;
+  uint64_t media_track_write_would_block;
+  uint64_t media_track_block_started_us;
+  uint64_t media_track_blocked_max_us;
+  uint64_t media_track_rounds;
+  uint64_t media_track_round_frames_total;
+  size_t media_track_round_frames_last;
+  size_t media_track_round_frames_max;
 };
 
 struct h2_peer {
@@ -162,6 +189,12 @@ h2_pal_result_t h2_peer_webrtc_emit_channel_message(
 
 void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
                                     const uint8_t *opus, size_t opus_len);
+void h2_peer_webrtc_note_audio_rtp(h2_pal_webrtc_peer_t *peer,
+                                   uint16_t sequence, uint32_t timestamp);
+
+/* Network-task-owned media pump/cleanup; not part of the public PAL API. */
+h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);
+void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer);
 
 /* Network-task-owned media pump/cleanup; not part of the public PAL API. */
 h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer);

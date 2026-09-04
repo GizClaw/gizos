@@ -34,18 +34,6 @@ size_t h2_gizclaw_pcm_ring_available(const h2_gizclaw_pcm_ring_t *ring);
 h2_pal_result_t h2_gizclaw_pcm_ring_write(h2_gizclaw_pcm_ring_t *ring,
                                           const uint8_t *pcm, size_t pcm_len);
 
-/**
- * Append PCM without waiting, dropping the new chunk when the ring is full.
- *
- * The call is safe for exactly one producer and one consumer.
- * out_dropped_bytes reports the discarded new chunk. The producer never
- * advances the consumer index, so the byte storage remains data-race free.
- */
-h2_pal_result_t h2_gizclaw_pcm_ring_write_latest(h2_gizclaw_pcm_ring_t *ring,
-                                                 const uint8_t *pcm,
-                                                 size_t pcm_len,
-                                                 size_t *out_dropped_bytes);
-
 /** Read exactly pcm_len bytes, or return WOULD_BLOCK without consuming. */
 h2_pal_result_t h2_gizclaw_pcm_ring_read(h2_gizclaw_pcm_ring_t *ring,
                                          uint8_t *pcm, size_t pcm_len);

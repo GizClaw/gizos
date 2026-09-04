@@ -6,47 +6,17 @@
 #include "pb_decode.h"
 #include "pb_encode.h"
 
-#include <stdatomic.h>
+#include <limits.h>
 #include <string.h>
 
-#define H2_GIZCLAW_SPEEDTEST_FRAME_BYTES 4096u
-
-struct h2_gizclaw_ping_request {
-  h2_gizclaw_async_rpc_t *rpc;
+typedef struct h2_gizclaw_speedtest_request {
   const h2_pal_mem_api_t *allocator;
-  const h2_pal_time_api_t *time;
-  h2_gizclaw_ping_completion_fn completion;
-  void *completion_user;
-  h2_gizclaw_operation_result_t operation_result;
-  h2_gizclaw_ping_result_t result;
-  uint64_t started_ms;
-  atomic_bool terminal;
-};
-
-struct h2_gizclaw_speedtest_request {
-  h2_gizclaw_operation_t *operation;
-  h2_gizclaw_client_t *client;
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_speedtest_completion_fn completion;
-  void *completion_user;
-  h2_gizclaw_operation_result_t operation_result;
-  h2_gizclaw_rpc_request_t *rpc;
-  h2_gizclaw_rpc_response_t response;
-  h2_gizclaw_speedtest_result_t result;
   size_t upload_expected;
   size_t download_expected;
-  size_t uploaded;
   size_t downloaded;
-  uint32_t timeout_ms;
-  uint64_t upload_started_ms;
-  uint64_t upload_completed_ms;
-  uint64_t download_started_ms;
-  uint64_t download_completed_ms;
   bool saw_response;
   bool saw_eos;
-  bool write_finished;
-  atomic_bool terminal;
-};
+} h2_gizclaw_speedtest_request_t;
 
 static h2_pal_result_t encode_message(const pb_msgdesc_t *fields,
                                       const void *message, uint8_t *data,
@@ -58,116 +28,72 @@ static h2_pal_result_t encode_message(const pb_msgdesc_t *fields,
   return H2_PAL_OK;
 }
 
-static void ping_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc) {
-  const h2_gizclaw_operation_result_t *operation_result =
-      h2_gizclaw_async_rpc_operation_result(rpc);
-  const h2_gizclaw_rpc_response_t *response =
-      h2_gizclaw_async_rpc_response(rpc);
-  h2_gizclaw_ping_request_t *request = user;
-  h2_gizclaw_operation_result_t result = *operation_result;
-  if (result.result == H2_PAL_OK &&
-      (response == NULL || response->has_error)) {
-    result.result = H2_PAL_ERR_IO;
-  }
-  if (result.result == H2_PAL_OK) {
-    gizclaw_rpc_v1_PingResponse decoded =
-        gizclaw_rpc_v1_PingResponse_init_zero;
-    pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
-                                                 response->result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_PingResponse_fields, &decoded)) {
-      result.result = H2_PAL_ERR_FORMAT;
-    } else {
-      request->result.server_time_ms = decoded.server_time;
-      uint64_t completed_ms = 0u;
-      result.result = (h2_pal_result_t)h2_pal_time_get_monotonic_ms(
-          request->time, &completed_ms);
-      if (result.result == H2_PAL_OK) {
-        request->result.round_trip_ms = h2_pal_time_elapsed_ms(
-            request->started_ms, completed_ms);
-      }
-    }
-  }
-  request->operation_result = result;
-  atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request);
-}
+static const char ping_tag;
 
-h2_pal_result_t h2_gizclaw_service_ping_async(
-    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
-    h2_gizclaw_ping_completion_fn completion, void *user,
-    h2_gizclaw_ping_request_t **out_request) {
+h2_pal_result_t h2_gizclaw_req_create_ping(h2_gizclaw_service_t *service,
+                                           uint64_t identity,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
-  if (service == NULL || timeout_ms == 0u || completion == NULL ||
-      out_request == NULL)
+  if (service == NULL || service->client_config.time == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
-  h2_gizclaw_ping_request_t *request =
-      h2_pal_mem_alloc(allocator, sizeof(*request));
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  memset(request, 0, sizeof(*request));
-  request->allocator = allocator;
-  request->time = service->config.client_config->time;
-  request->completion = completion;
-  request->completion_user = user;
-  h2_pal_result_t rc = (h2_pal_result_t)h2_pal_time_get_monotonic_ms(
-      request->time, &request->started_ms);
   gizclaw_rpc_v1_PingRequest message = gizclaw_rpc_v1_PingRequest_init_zero;
   uint8_t payload[gizclaw_rpc_v1_PingRequest_size];
   size_t payload_len = 0u;
-  if (rc == H2_PAL_OK) {
-    rc = encode_message(gizclaw_rpc_v1_PingRequest_fields, &message, payload,
-                        sizeof(payload), &payload_len);
-  }
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_service_rpc_call_async(
-        service, identity, H2_GIZCLAW_RPC_ALL_PING,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        timeout_ms, ping_rpc_complete, request, &request->rpc);
-  }
-  if (rc != H2_PAL_OK) {
-    h2_pal_mem_free(allocator, request);
-    return rc;
-  }
-  *out_request = request;
-  return H2_PAL_OK;
+  h2_pal_result_t rc =
+      encode_message(gizclaw_rpc_v1_PingRequest_fields, &message, payload,
+                     sizeof(payload), &payload_len);
+  return rc == H2_PAL_OK
+             ? h2_gizclaw_req_create_rpc_internal(
+                   service, identity, H2_GIZCLAW_RPC_ALL_PING, &ping_tag,
+                   (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms,
+                   out_request)
+             : rc;
 }
 
 h2_pal_result_t
-h2_gizclaw_ping_request_cancel(h2_gizclaw_ping_request_t *request) {
-  return request == NULL ? H2_PAL_ERR_INVALID_ARG
-                         : h2_gizclaw_async_rpc_cancel(request->rpc);
+h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t *request,
+                           h2_gizclaw_ping_result_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &ping_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_PingResponse decoded = gizclaw_rpc_v1_PingResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_PingResponse_fields, &decoded))
+    return H2_PAL_ERR_FORMAT;
+  uint64_t elapsed_ms = 0u;
+  rc = h2_gizclaw_req_elapsed_internal(request, &ping_tag, &elapsed_ms);
+  if (rc == H2_PAL_OK) {
+    out_result->round_trip_ms = elapsed_ms;
+    out_result->server_time_ms = decoded.server_time;
+  }
+  return rc;
 }
 
-h2_pal_result_t h2_gizclaw_ping_request_wait(
-    h2_gizclaw_ping_request_t *request, uint32_t timeout_ms) {
-  return request == NULL ? H2_PAL_ERR_INVALID_ARG
-                         : h2_gizclaw_async_rpc_wait(request->rpc, timeout_ms);
-}
-
-const h2_gizclaw_operation_result_t *h2_gizclaw_ping_request_operation_result(
-    const h2_gizclaw_ping_request_t *request) {
-  return request != NULL &&
-                 atomic_load_explicit(&request->terminal, memory_order_acquire)
-             ? &request->operation_result
-             : NULL;
-}
-
-const h2_gizclaw_ping_result_t *h2_gizclaw_ping_request_response(
-    const h2_gizclaw_ping_request_t *request) {
-  const h2_gizclaw_operation_result_t *result =
-      h2_gizclaw_ping_request_operation_result(request);
-  return result != NULL && result->result == H2_PAL_OK ? &request->result
-                                                       : NULL;
-}
-
-void h2_gizclaw_ping_request_release(h2_gizclaw_ping_request_t *request) {
-  if (request == NULL ||
-      !atomic_load_explicit(&request->terminal, memory_order_acquire))
-    return;
-  h2_gizclaw_async_rpc_release(request->rpc);
-  h2_pal_mem_free(request->allocator, request);
+h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t *service,
+                                    uint32_t timeout_ms,
+                                    h2_gizclaw_ping_result_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_create_ping(service, 0u, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_ping(request, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }
 
 static int speedtest_frame(void *user,
@@ -176,8 +102,10 @@ static int speedtest_frame(void *user,
   if (request == NULL || event == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (event->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE) {
-    if (request->saw_response || event->has_error)
-      return H2_PAL_ERR_IO;
+    if (event->has_error)
+      return h2_gizclaw_rpc_error_result_internal(event->error_code);
+    if (request->saw_response)
+      return H2_PAL_ERR_FORMAT;
     gizclaw_rpc_v1_SpeedTestResponse response =
         gizclaw_rpc_v1_SpeedTestResponse_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(event->result_payload.data,
@@ -190,104 +118,29 @@ static int speedtest_frame(void *user,
       return H2_PAL_ERR_FORMAT;
     }
     request->saw_response = true;
-    return request->download_expected == 0u
-               ? H2_PAL_OK
-               : h2_gizclaw_client_monotonic_ms_internal(
-                     request->client, &request->download_started_ms);
+    return H2_PAL_OK;
   }
   if (event->kind == H2_GIZCLAW_RPC_STREAM_DATA) {
     if (!request->saw_response || request->saw_eos ||
+        (event->data.len > 0u && event->data.data == NULL) ||
         request->downloaded > request->download_expected ||
         event->data.len > request->download_expected - request->downloaded)
       return H2_PAL_ERR_FORMAT;
+    // GizClaw v0.13.2 rpc_speed.go writes byte(i) in 32 KiB blocks. That
+    // repeats every 256 bytes, independent of transport fragmentation. This
+    // checks the benchmark payload, not an authenticated hash or upload data.
+    for (size_t i = 0u; i < event->data.len; ++i)
+      if (event->data.data[i] != (uint8_t)(request->downloaded + i))
+        return H2_PAL_ERR_FORMAT;
     request->downloaded += event->data.len;
     return H2_PAL_OK;
   }
   if (event->kind != H2_GIZCLAW_RPC_STREAM_EOS || !request->saw_response ||
-      request->saw_eos || request->downloaded != request->download_expected)
+      request->saw_eos || request->downloaded != request->download_expected ||
+      event->input_bytes != request->upload_expected || !event->input_finished)
     return H2_PAL_ERR_FORMAT;
   request->saw_eos = true;
-  return request->download_expected == 0u
-             ? H2_PAL_OK
-             : h2_gizclaw_client_monotonic_ms_internal(
-                   request->client, &request->download_completed_ms);
-}
-
-static h2_pal_result_t speedtest_poll(
-    void *user, h2_gizclaw_client_t *client,
-    const h2_gizclaw_cancel_token_t *cancel_token) {
-  h2_gizclaw_speedtest_request_t *request = user;
-  if (h2_gizclaw_cancel_requested(cancel_token)) {
-    h2_gizclaw_rpc_request_cancel(request->rpc);
-    h2_gizclaw_rpc_request_destroy(request->rpc);
-    request->rpc = NULL;
-    return H2_PAL_ERR_CLOSED;
-  }
-  static const uint8_t upload_frame[H2_GIZCLAW_SPEEDTEST_FRAME_BYTES];
-  if (request->uploaded < request->upload_expected) {
-    size_t count = request->upload_expected - request->uploaded;
-    if (count > sizeof(upload_frame))
-      count = sizeof(upload_frame);
-    const h2_pal_result_t rc = (h2_pal_result_t)h2_gizclaw_rpc_request_write(
-        request->rpc, upload_frame, count);
-    if (rc == H2_PAL_OK)
-      request->uploaded += count;
-    return rc == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : rc;
-  }
-  if (!request->write_finished) {
-    h2_pal_result_t rc =
-        (h2_pal_result_t)h2_gizclaw_rpc_request_finish_write(request->rpc);
-    if (rc != H2_PAL_OK)
-      return rc;
-    request->write_finished = true;
-    if (request->upload_expected > 0u) {
-      rc = (h2_pal_result_t)h2_gizclaw_client_monotonic_ms_internal(
-          client, &request->upload_completed_ms);
-      if (rc != H2_PAL_OK)
-        return rc;
-    }
-  }
-  h2_pal_result_t rc = (h2_pal_result_t)h2_gizclaw_rpc_request_result(
-      request->rpc, &request->response);
-  if (rc == H2_PAL_ERR_WOULD_BLOCK)
-    return rc;
-  h2_gizclaw_rpc_request_destroy(request->rpc);
-  request->rpc = NULL;
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (request->response.has_error || !request->saw_response ||
-      !request->saw_eos || request->uploaded != request->upload_expected ||
-      request->downloaded != request->download_expected)
-    return H2_PAL_ERR_IO;
   return H2_PAL_OK;
-}
-
-static h2_pal_result_t speedtest_start(
-    void *user, h2_gizclaw_client_t *client,
-    const h2_gizclaw_cancel_token_t *cancel_token) {
-  h2_gizclaw_speedtest_request_t *request = user;
-  if (h2_gizclaw_cancel_requested(cancel_token))
-    return H2_PAL_ERR_CLOSED;
-  request->client = client;
-  gizclaw_rpc_v1_SpeedTestRequest message =
-      gizclaw_rpc_v1_SpeedTestRequest_init_zero;
-  message.up_content_length = (int64_t)request->upload_expected;
-  message.down_content_length = (int64_t)request->download_expected;
-  uint8_t payload[gizclaw_rpc_v1_SpeedTestRequest_size];
-  size_t payload_len = 0u;
-  h2_pal_result_t rc = encode_message(gizclaw_rpc_v1_SpeedTestRequest_fields,
-                                      &message, payload, sizeof(payload),
-                                      &payload_len);
-  if (rc == H2_PAL_OK) {
-    rc = (h2_pal_result_t)h2_gizclaw_client_rpc_request_start_stream(
-        client, H2_GIZCLAW_RPC_ALL_SPEED_TEST_RUN,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        request->timeout_ms, speedtest_frame, request, &request->rpc);
-  }
-  if (rc == H2_PAL_OK && request->upload_expected > 0u)
-    rc = (h2_pal_result_t)h2_gizclaw_client_monotonic_ms_internal(
-        client, &request->upload_started_ms);
-  return rc == H2_PAL_OK ? speedtest_poll(user, client, cancel_token) : rc;
 }
 
 static uint64_t bits_per_second(uint64_t bytes, uint64_t elapsed_ms) {
@@ -298,109 +151,150 @@ static uint64_t bits_per_second(uint64_t bytes, uint64_t elapsed_ms) {
   return bytes * 8000u / elapsed_ms;
 }
 
-static void speedtest_complete(
-    void *user, h2_gizclaw_operation_t *operation,
-    const h2_gizclaw_operation_result_t *operation_result) {
-  (void)operation;
-  h2_gizclaw_speedtest_request_t *request = user;
-  h2_gizclaw_operation_result_t result = *operation_result;
-  if (result.result == H2_PAL_OK) {
-    request->result.upload_bytes = request->uploaded;
-    request->result.download_bytes = request->downloaded;
-    if (request->uploaded > 0u) {
-      request->result.upload_elapsed_ms = h2_pal_time_elapsed_ms(
-          request->upload_started_ms, request->upload_completed_ms);
-      if (request->result.upload_elapsed_ms == 0u)
-        request->result.upload_elapsed_ms = 1u;
-      request->result.upload_bits_per_second = bits_per_second(
-          request->result.upload_bytes, request->result.upload_elapsed_ms);
-    }
-    if (request->downloaded > 0u) {
-      request->result.elapsed_ms = h2_pal_time_elapsed_ms(
-          request->download_started_ms, request->download_completed_ms);
-      if (request->result.elapsed_ms == 0u)
-        request->result.elapsed_ms = 1u;
-      request->result.download_bits_per_second = bits_per_second(
-          request->result.download_bytes, request->result.elapsed_ms);
-    }
-  }
-  request->operation_result = result;
-  atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request);
+static const char speedtest_tag;
+
+static void speedtest_destroy(void *context) {
+  h2_gizclaw_speedtest_request_t *request = context;
+  h2_pal_mem_free(request->allocator, request);
 }
 
-h2_pal_result_t h2_gizclaw_service_speedtest_async(
-    h2_gizclaw_service_t *service, uint64_t identity, size_t upload_bytes,
-    size_t download_bytes, uint32_t timeout_ms,
-    h2_gizclaw_speedtest_completion_fn completion, void *user,
-    h2_gizclaw_speedtest_request_t **out_request) {
-  if (out_request != NULL)
-    *out_request = NULL;
-  if (service == NULL || (upload_bytes == 0u && download_bytes == 0u) ||
-      upload_bytes > H2_GIZCLAW_SPEEDTEST_MAX_BYTES ||
-      download_bytes > H2_GIZCLAW_SPEEDTEST_MAX_BYTES || timeout_ms == 0u ||
-      completion == NULL || out_request == NULL)
+typedef struct speedtest_sync_io {
+  size_t remaining;
+} speedtest_sync_io_t;
+
+static h2_pal_result_t speedtest_input_read(void *user, uint8_t *buffer,
+                                            size_t capacity,
+                                            size_t *out_read) {
+  speedtest_sync_io_t *io = user;
+  if (io == NULL || buffer == NULL || out_read == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
-  h2_gizclaw_speedtest_request_t *request =
-      h2_pal_mem_alloc(allocator, sizeof(*request));
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  memset(request, 0, sizeof(*request));
-  request->allocator = allocator;
-  request->completion = completion;
-  request->completion_user = user;
-  request->upload_expected = upload_bytes;
-  request->download_expected = download_bytes;
-  request->timeout_ms = timeout_ms;
-  const h2_pal_result_t rc = h2_gizclaw_service_submit_async_internal(
-      service, identity, speedtest_start, speedtest_poll, speedtest_complete,
-      request, &request->operation);
-  if (rc != H2_PAL_OK) {
-    h2_pal_mem_free(allocator, request);
-    return rc;
-  }
-  *out_request = request;
+  size_t count = io->remaining < capacity ? io->remaining : capacity;
+  /* The fixed request slot is zero-initialized once. Benchmark contents are
+   * irrelevant to the server, so advancing the logical length needs no copy. */
+  *out_read = count;
+  io->remaining -= count;
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_speedtest_request_cancel(
-    h2_gizclaw_speedtest_request_t *request) {
-  return request == NULL ? H2_PAL_ERR_INVALID_ARG
-                         : h2_gizclaw_operation_cancel(request->operation);
+h2_pal_result_t
+h2_gizclaw_req_create_speedtest(h2_gizclaw_service_t *service,
+                                uint64_t identity, size_t upload_bytes,
+                                size_t download_bytes, uint32_t timeout_ms,
+                                h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || ((upload_bytes == 0u) == (download_bytes == 0u)) ||
+      upload_bytes > H2_GIZCLAW_SPEEDTEST_MAX_BYTES ||
+      download_bytes > H2_GIZCLAW_SPEEDTEST_MAX_BYTES || out_request == NULL ||
+      timeout_ms == 0u || timeout_ms > INT32_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  h2_gizclaw_speedtest_request_t *context =
+      h2_pal_mem_alloc(allocator, sizeof(*context));
+  if (context == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(context, 0, sizeof(*context));
+  context->allocator = allocator;
+  context->upload_expected = upload_bytes;
+  context->download_expected = download_bytes;
+  gizclaw_rpc_v1_SpeedTestRequest message =
+      gizclaw_rpc_v1_SpeedTestRequest_init_zero;
+  message.up_content_length = (int64_t)upload_bytes;
+  message.down_content_length = (int64_t)download_bytes;
+  uint8_t payload[gizclaw_rpc_v1_SpeedTestRequest_size];
+  size_t payload_len = 0u;
+  h2_pal_result_t rc =
+      encode_message(gizclaw_rpc_v1_SpeedTestRequest_fields, &message, payload,
+                     sizeof(payload), &payload_len);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_create_stream_internal(
+        service, identity, H2_GIZCLAW_RPC_ALL_SPEED_TEST_RUN, &speedtest_tag,
+        (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms,
+        upload_bytes, speedtest_frame, speedtest_destroy, context, out_request);
+  if (rc == H2_PAL_OK && download_bytes != 0u)
+    h2_gizclaw_req_output_optional_internal(*out_request);
+  if (rc != H2_PAL_OK)
+    speedtest_destroy(context);
+  return rc;
 }
 
-h2_pal_result_t h2_gizclaw_speedtest_request_wait(
-    h2_gizclaw_speedtest_request_t *request, uint32_t timeout_ms) {
-  return request == NULL
-             ? H2_PAL_ERR_INVALID_ARG
-             : h2_gizclaw_operation_wait(request->operation, timeout_ms);
+h2_pal_result_t
+h2_gizclaw_resp_parse_speedtest(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_speedtest_result_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const void *context = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_context_internal(request, &speedtest_tag, &context);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_gizclaw_speedtest_request_t *state = context;
+  uint64_t elapsed_ms = 0u;
+  rc = h2_gizclaw_req_elapsed_internal(request, &speedtest_tag, &elapsed_ms);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (!state->saw_response || !state->saw_eos)
+    return H2_PAL_ERR_IO;
+  out_result->upload_bytes = state->upload_expected;
+  out_result->download_bytes = state->downloaded;
+  if (state->upload_expected > 0u) {
+    out_result->upload_elapsed_ms = elapsed_ms;
+    if (out_result->upload_elapsed_ms == 0u)
+      out_result->upload_elapsed_ms = 1u;
+    out_result->upload_bits_per_second =
+        bits_per_second(state->upload_expected, out_result->upload_elapsed_ms);
+  }
+  if (state->downloaded > 0u) {
+    out_result->elapsed_ms = elapsed_ms;
+    if (out_result->elapsed_ms == 0u)
+      out_result->elapsed_ms = 1u;
+    out_result->download_bits_per_second =
+        bits_per_second(state->downloaded, out_result->elapsed_ms);
+  }
+  return H2_PAL_OK;
 }
 
-const h2_gizclaw_operation_result_t *
-h2_gizclaw_speedtest_request_operation_result(
-    const h2_gizclaw_speedtest_request_t *request) {
-  return request != NULL &&
-                 atomic_load_explicit(&request->terminal, memory_order_acquire)
-             ? &request->operation_result
-             : NULL;
-}
-
-const h2_gizclaw_speedtest_result_t *h2_gizclaw_speedtest_request_response(
-    const h2_gizclaw_speedtest_request_t *request) {
-  const h2_gizclaw_operation_result_t *result =
-      h2_gizclaw_speedtest_request_operation_result(request);
-  return result != NULL && result->result == H2_PAL_OK ? &request->result
-                                                       : NULL;
-}
-
-void h2_gizclaw_speedtest_request_release(
-    h2_gizclaw_speedtest_request_t *request) {
-  if (request == NULL ||
-      !atomic_load_explicit(&request->terminal, memory_order_acquire))
-    return;
-  h2_gizclaw_operation_release(request->operation);
-  h2_pal_mem_free(request->allocator, request->response.result_payload);
-  h2_pal_mem_free(request->allocator, request->response.error_message);
-  h2_pal_mem_free(request->allocator, request);
+h2_pal_result_t
+h2_gizclaw_rpc_speedtest(h2_gizclaw_service_t *service, size_t upload_bytes,
+                         size_t download_bytes, uint32_t timeout_ms,
+                         h2_gizclaw_speedtest_result_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  h2_gizclaw_req_t *request = NULL;
+  speedtest_sync_io_t io = {.remaining = upload_bytes};
+  h2_pal_result_t rc = h2_gizclaw_req_create_speedtest(
+      service, 0u, upload_bytes, download_bytes, timeout_ms, &request);
+  uint64_t started = 0u, completed = 0u;
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_time_get_monotonic_ms(service->client_config.time, &started);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(
+        request, &io, upload_bytes != 0u ? speedtest_input_read : NULL,
+        NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait_dispatch_internal(request);
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_time_get_monotonic_ms(service->client_config.time, &completed);
+  if (rc == H2_PAL_OK && completed < started)
+    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_speedtest(request, out_result);
+  if (rc == H2_PAL_OK) {
+    /* Each request has one direction, so wait acknowledges precisely that
+     * transfer. Include queueing/control overhead; exclude result parsing. */
+    const uint64_t elapsed = completed == started ? 1u : completed - started;
+    if (upload_bytes != 0u) {
+      out_result->upload_elapsed_ms = elapsed;
+      out_result->upload_bits_per_second =
+          bits_per_second(out_result->upload_bytes, elapsed);
+    } else {
+      out_result->elapsed_ms = elapsed;
+      out_result->download_bits_per_second =
+          bits_per_second(out_result->download_bytes, elapsed);
+    }
+  }
+  h2_gizclaw_req_release(request);
+  return rc;
 }

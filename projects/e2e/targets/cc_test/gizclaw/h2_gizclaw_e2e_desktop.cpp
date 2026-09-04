@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_desktop.h"
+#include "h2_gizclaw_e2e_desktop_options.h"
 
 #include "h2_corehttp.h"
 #include "h2_desktop_app_support.h"
@@ -9,53 +10,92 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace {
 
-volatile std::sig_atomic_t g_stop_requested;
-constexpr size_t kEndpointCapacity = 128u;
+// Read by runner tasks and written by a signal handler. Volatile sig_atomic_t
+// alone does not make those cross-thread accesses race-free.
+static_assert(std::atomic<bool>::is_always_lock_free);
+std::atomic<bool> g_stop_requested{false};
+std::atomic_flag g_running = ATOMIC_FLAG_INIT;
 
-void request_stop(int) { g_stop_requested = 1; }
-
-bool should_stop(void *) { return g_stop_requested != 0; }
-
-uint32_t parse_suite(const char *value) {
-  if (value == nullptr) {
-    return 0u;
-  }
-  if (std::strcmp(value, "all") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_ALL;
-  }
-  if (std::strcmp(value, "connectivity") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_CONNECTIVITY;
-  }
-  if (std::strcmp(value, "rpc") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_RPC;
-  }
-  if (std::strcmp(value, "firmware") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_FIRMWARE;
-  }
-  if (std::strcmp(value, "voice") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_VOICE;
-  }
-  if (std::strcmp(value, "firmware-voice") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_FIRMWARE | H2_GIZCLAW_E2E_SUITE_VOICE;
-  }
-  if (std::strcmp(value, "concurrency") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_CONCURRENCY;
-  }
-  if (std::strcmp(value, "service") == 0) {
-    return H2_GIZCLAW_E2E_SUITE_SERVICE;
-  }
-  return 0u;
+void request_stop(int) {
+  g_stop_requested.store(true, std::memory_order_relaxed);
 }
+
+bool should_stop(void *) {
+  return g_stop_requested.load(std::memory_order_relaxed);
+}
+
+// Own every view the portable runner or a retained Service may borrow. A
+// failed stop is not permission to destruct the provider under its live task.
+struct DesktopSession {
+  std::string endpoint;
+  std::string token;
+  std::string suite_name;
+  std::vector<uint8_t> pcm;
+  h2::desktop::OwnedNetworkServices network;
+  h2_corehttp_t *http_provider = nullptr;
+  h2_pal_http_api_t http_api = {};
+#ifdef H2_GIZCLAW_E2E_USE_PION
+  h2_pion_t *pion = nullptr;
+#endif
+  h2_runtime_t *runtime = nullptr;
+  h2_gizclaw_e2e_config_t app_config = {};
+
+  int shutdown() {
+    if (runtime != nullptr) {
+      h2_runtime_deinit(runtime);
+      runtime = nullptr;
+    }
+#ifdef H2_GIZCLAW_E2E_USE_PION
+    h2_pion_destroy(&pion);
+    if (pion != nullptr)
+      return H2_PAL_ERR_IO;
+#endif
+    h2_corehttp_destroy(http_provider);
+    http_provider = nullptr;
+    return network.reset();
+  }
+
+  ~DesktopSession() {
+    (void)shutdown();
+    std::fill(token.begin(), token.end(), '\0');
+    std::fill(pcm.begin(), pcm.end(), 0u);
+  }
+};
+
+// Deliberately process-owned on failure: no static destructor, no later run.
+DesktopSession *g_retained_session = nullptr;
+
+struct RunGuard {
+  bool retain = false;
+  ~RunGuard() {
+    if (!retain)
+      g_running.clear(std::memory_order_release);
+  }
+};
+
+struct SignalGuard {
+  using Handler = void (*)(int);
+  Handler interrupt = std::signal(SIGINT, request_stop);
+  Handler terminate = std::signal(SIGTERM, request_stop);
+  ~SignalGuard() {
+    if (interrupt != SIG_ERR)
+      (void)std::signal(SIGINT, interrupt);
+    if (terminate != SIG_ERR)
+      (void)std::signal(SIGTERM, terminate);
+  }
+};
 
 void emit_progress(void *, const h2_gizclaw_e2e_progress_t *progress) {
   if (progress == nullptr) {
@@ -102,73 +142,50 @@ bool load_pcm(const char *path, std::vector<uint8_t> *out_pcm) {
 }
 
 int run_desktop(int argc, char **argv) {
-  if (argc < 4 || argv == nullptr || argv[1] == nullptr || argv[2] == nullptr) {
-    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
-                         "reason=missing-input\n");
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  }
-  const char *token_value = std::getenv("H2_GIZCLAW_E2E_REGISTRATION_TOKEN");
-  const size_t token_len =
-      token_value == nullptr ? 0u : std::strlen(token_value);
-  const char *suite_value = std::getenv("H2_GIZCLAW_E2E_SUITE");
-  if (suite_value == nullptr || suite_value[0] == '\0') {
-    suite_value = argv[2];
-  }
-  static constexpr char kEndpointFlag[] = "--endpoint=";
-  const char *endpoint = nullptr;
-  for (int index = 3; index < argc; ++index) {
-    if (argv[index] != nullptr &&
-        std::strncmp(argv[index], kEndpointFlag, sizeof(kEndpointFlag) - 1u) ==
-            0) {
-      endpoint = argv[index] + sizeof(kEndpointFlag) - 1u;
-    }
-  }
-  const uint32_t suites = parse_suite(suite_value);
-  const size_t endpoint_len = endpoint == nullptr ? 0u : std::strlen(endpoint);
+  H2GizclawDesktopOptions options;
+  const char *reason = h2_gizclaw_e2e_desktop_parse_options(
+      argc, argv, std::getenv("H2_GIZCLAW_E2E_REGISTRATION_TOKEN"),
+      std::getenv("H2_GIZCLAW_E2E_SUITE"),
 #ifdef H2_GIZCLAW_E2E_USE_PION
-  const uint32_t supported_suites = H2_GIZCLAW_E2E_SUITE_RPC |
-                                    H2_GIZCLAW_E2E_SUITE_FIRMWARE |
-      H2_GIZCLAW_E2E_SUITE_VOICE;
-  const bool suite_supported =
-      (suites & ~supported_suites) == 0u && suites != 0u;
+      true,
 #else
-  const bool suite_supported = true;
+      false,
 #endif
-  if (token_len == 0u || token_len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX ||
-      suites == 0u || !suite_supported || endpoint_len == 0u ||
-      endpoint_len >= kEndpointCapacity ||
-      std::strchr(endpoint, ':') == nullptr) {
-    const char *reason =
-        token_len == 0u ? "missing-token"
-                        : (token_len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX
-                               ? "oversized-token"
-                               : (suites == 0u ? "invalid-suite"
-                                               : (!suite_supported
-                                                      ? "unsupported-pion-suite"
-                                                      : "invalid-endpoint")));
+      &options);
+  if (reason != nullptr) {
     std::fprintf(stderr,
                  "H2_GIZCLAW_E2E stage=preflight status=ERROR reason=%s\n",
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  std::vector<uint8_t> pcm;
+  if (g_running.test_and_set(std::memory_order_acquire)) {
+    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
+                         "reason=active-or-retained-session\n");
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
+  RunGuard guard;
+  auto session = std::make_unique<DesktopSession>();
+  session->endpoint = options.endpoint;
+  session->token = options.token;
+  session->suite_name = options.suite_name;
+  const uint32_t suites = options.suites;
+  auto &pcm = session->pcm;
   if ((suites & (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) !=
           0u &&
-      !load_pcm(argv[1], &pcm)) {
+      !load_pcm(options.pcm_path, &pcm)) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=invalid-voice-input\n");
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
 
-  std::string token(token_value, token_len);
-  h2::desktop::OwnedNetworkServices network;
+  auto &network = session->network;
 #ifdef H2_GIZCLAW_E2E_USE_PION
   int rc = h2::desktop::open_network_services(false, false, &network);
 #else
   int rc = h2::desktop::open_network_services(false, true, &network);
 #endif
-  h2_corehttp_t *http_provider = nullptr;
-  h2_pal_http_api_t http_api = {};
+  auto &http_provider = session->http_provider;
+  auto &http_api = session->http_api;
   const h2_corehttp_config_t http_config = {
       .allocator = h2_desktop_platform_default_allocator(),
       .net = h2::desktop::host_net_api(),
@@ -188,9 +205,12 @@ int run_desktop(int argc, char **argv) {
 
   const h2_pal_webrtc_api_t *webrtc = nullptr;
 #ifdef H2_GIZCLAW_E2E_USE_PION
-  h2_pion_t *pion = nullptr;
+  auto &pion = session->pion;
   const h2_pion_config_t pion_config = {
       .mem = h2_desktop_platform_default_allocator(),
+      .sync = h2_desktop_platform_sync_api(),
+      .task = h2_desktop_platform_task_api(),
+      .time = h2_desktop_platform_time_api(),
   };
   if (rc == H2_PAL_OK) {
     rc = h2_pion_create(&pion_config, &pion);
@@ -210,7 +230,7 @@ int run_desktop(int argc, char **argv) {
   }
 #endif
 
-  h2_runtime_t *runtime = nullptr;
+  auto &runtime = session->runtime;
   if (rc == H2_PAL_OK) {
     h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
     runtime_config.crypto = network.crypto();
@@ -222,23 +242,14 @@ int run_desktop(int argc, char **argv) {
   if (rc != H2_PAL_OK || runtime == nullptr) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=provider status=ERROR rc=%d\n",
                  rc);
-    if (runtime != nullptr) {
-      h2_runtime_deinit(runtime);
-    }
-#ifdef H2_GIZCLAW_E2E_USE_PION
-    h2_pion_destroy(&pion);
-#endif
-    h2_corehttp_destroy(http_provider);
-    std::fill(token.begin(), token.end(), '\0');
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
 
-  g_stop_requested = 0;
-  (void)std::signal(SIGINT, request_stop);
-  (void)std::signal(SIGTERM, request_stop);
-  const h2_gizclaw_e2e_config_t app_config = {
-      .server_endpoint = {endpoint, std::strlen(endpoint)},
-      .registration_token = {token.data(), token.size()},
+  g_stop_requested.store(false, std::memory_order_relaxed);
+  SignalGuard signals;
+  session->app_config = {
+      .server_endpoint = {session->endpoint.data(), session->endpoint.size()},
+      .registration_token = {session->token.data(), session->token.size()},
       .voice_pcm_s16le_16khz_mono = pcm.empty() ? nullptr : pcm.data(),
       .voice_pcm_len = pcm.size(),
       .suites = suites,
@@ -252,36 +263,55 @@ int run_desktop(int argc, char **argv) {
   };
   h2_gizclaw_e2e_result_t result = {};
   const h2_gizclaw_e2e_exit_t exit_code =
-      h2_gizclaw_e2e_run(runtime, &app_config, &result);
+      h2_gizclaw_e2e_run(runtime, &session->app_config, &result);
+  if (result.retained_resources == 0u) {
+    const int cleanup_rc = session->shutdown();
+    if (cleanup_rc != H2_PAL_OK) {
+      result.cleanup_rc = cleanup_rc;
+      result.retained_resources = 1u;
+      result.complete = false;
+    }
+  }
+  // Transfer ownership before reporting. Returning from this function must not
+  // invalidate config/PCM/API views still held by a failed-to-stop Service.
+  DesktopSession *report_session = session.get();
+  if (result.retained_resources != 0u) {
+    guard.retain = true;
+    g_retained_session = session.release();
+  }
+  const int final_exit = result.retained_resources != 0u
+                             ? H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR
+                             : static_cast<int>(exit_code);
   std::printf(
-      "H2_GIZCLAW_E2E stage=summary endpoint=%s backend=%s suite=%s profile=%s "
+      "H2_GIZCLAW_E2E stage=summary platform=%s endpoint=%s backend=%s "
+      "suite=%s profile=%s "
       "selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu blocked=%zu "
       "cancelled=%zu first_failure_case=%s first_failure_rc=%d "
       "cleanup_rc=%d retained_resources=%zu complete=%s exit_code=%d\n",
-      endpoint,
+#if defined(__APPLE__)
+      "macos",
+#elif defined(_WIN32)
+      "windows",
+#else
+      "linux",
+#endif
+      report_session->endpoint.c_str(),
 #ifdef H2_GIZCLAW_E2E_USE_PION
       "pion",
 #else
       "h2peer",
 #endif
-      suite_value,
+      report_session->suite_name.c_str(),
       result.runtime_profile_name[0] == '\0' ? "-"
                                              : result.runtime_profile_name,
       result.selected, result.terminal, result.passed, result.failed,
       result.errors, result.blocked, result.cancelled,
       result.first_failure_case[0] == '\0' ? "-" : result.first_failure_case,
       result.first_failure_rc, result.cleanup_rc, result.retained_resources,
-      result.complete ? "true" : "false", static_cast<int>(exit_code));
+      result.complete ? "true" : "false", final_exit);
   std::fflush(stdout);
 
-  h2_runtime_deinit(runtime);
-#ifdef H2_GIZCLAW_E2E_USE_PION
-  h2_pion_destroy(&pion);
-#endif
-  h2_corehttp_destroy(http_provider);
-  std::fill(token.begin(), token.end(), '\0');
-  std::fill(pcm.begin(), pcm.end(), 0u);
-  return static_cast<int>(exit_code);
+  return final_exit;
 }
 
 } // namespace
@@ -298,6 +328,10 @@ int h2_gizclaw_e2e_desktop_main(int argc, char **argv) {
 
 #ifndef H2_GIZCLAW_E2E_DESKTOP_NO_MAIN
 int main(int argc, char **argv) {
+  // Flush each evidence line before concurrent stderr diagnostics are emitted.
+  // Configure stdout before any launcher/provider has performed I/O.
+  if (std::setvbuf(stdout, nullptr, _IOLBF, 0) != 0)
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   return h2_gizclaw_e2e_desktop_main(argc, argv);
 }
 #endif

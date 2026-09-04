@@ -5,8 +5,8 @@
 #include "gzc_common.h"
 #include "gzc_telemetry.h"
 
+#include <limits.h>
 #include <math.h>
-#include <stdatomic.h>
 #include <string.h>
 
 #if defined(H2_GIZCLAW_TESTING)
@@ -174,6 +174,8 @@ static int result_from_gzc(int result) {
     return H2_PAL_ERR_NO_MEMORY;
   case GZC_ERR_TIMEOUT:
     return H2_PAL_ERR_TIMEOUT;
+  case GZC_ERR_WOULD_BLOCK:
+    return H2_PAL_ERR_WOULD_BLOCK;
   case GZC_ERR_CLOSED:
     return H2_PAL_ERR_CLOSED;
   case GZC_ERR_UNSUPPORTED:
@@ -183,8 +185,8 @@ static int result_from_gzc(int result) {
   }
 }
 
-static int telemetry_send_on_net(
-    h2_gizclaw_client_t *client, const h2_gizclaw_telemetry_frame_t *frame) {
+static int telemetry_send_on_net(h2_gizclaw_client_t *client,
+                                 const h2_gizclaw_telemetry_frame_t *frame) {
   if (client == NULL || frame == NULL || frame->sequence == 0u ||
       frame->observations == NULL || frame->observation_count == 0u ||
       frame->observation_count > H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS) {
@@ -214,25 +216,20 @@ static int telemetry_send_on_net(
 }
 
 #if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_client_telemetry_send(
-    h2_gizclaw_client_t *client, const h2_gizclaw_telemetry_frame_t *frame) {
+int h2_gizclaw_test_telemetry_send(h2_gizclaw_client_t *client,
+                                   const h2_gizclaw_telemetry_frame_t *frame) {
   return telemetry_send_on_net(client, frame);
 }
 #endif
 
-struct h2_gizclaw_telemetry_request {
+typedef struct h2_gizclaw_telemetry_request {
   const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_operation_t *operation;
-  h2_gizclaw_telemetry_completion_fn completion;
-  void *completion_user;
-  h2_gizclaw_operation_result_t operation_result;
   h2_gizclaw_telemetry_frame_t frame;
   h2_gizclaw_telemetry_observation_t
       observations[H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS];
   char strings[H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS][3]
               [H2_GIZCLAW_TELEMETRY_VERSION_MAX + 1u];
-  atomic_bool terminal;
-};
+} h2_gizclaw_telemetry_request_t;
 
 static h2_pal_result_t telemetry_copy_span(char *target, size_t capacity,
                                            h2_gizclaw_str_t source,
@@ -311,75 +308,58 @@ telemetry_run(void *user, h2_gizclaw_client_t *client,
   return (h2_pal_result_t)telemetry_send_on_net(client, &request->frame);
 }
 
-static void telemetry_complete(void *user, h2_gizclaw_operation_t *operation,
-                               const h2_gizclaw_operation_result_t *result) {
-  (void)operation;
-  h2_gizclaw_telemetry_request_t *request = user;
-  request->operation_result = *result;
-  atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request);
+static const char telemetry_tag;
+
+static void telemetry_destroy(void *context) {
+  h2_gizclaw_telemetry_request_t *request = context;
+  h2_pal_mem_free(request->allocator, request);
 }
 
-h2_pal_result_t h2_gizclaw_service_telemetry_send_async(
+h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
     h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_telemetry_frame_t *frame,
-    h2_gizclaw_telemetry_completion_fn completion, void *user,
-    h2_gizclaw_telemetry_request_t **out_request) {
+    const h2_gizclaw_telemetry_frame_t *frame, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
-  if (service == NULL || completion == NULL || out_request == NULL)
+  if (service == NULL || out_request == NULL || timeout_ms == 0u ||
+      timeout_ms > INT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
-  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
+  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
   h2_gizclaw_telemetry_request_t *request =
       h2_pal_mem_alloc(allocator, sizeof(*request));
   if (request == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(request, 0, sizeof(*request));
   request->allocator = allocator;
-  request->completion = completion;
-  request->completion_user = user;
   h2_pal_result_t rc = telemetry_copy_frame(request, frame);
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_service_submit(service, identity, telemetry_run,
-                                   telemetry_complete, request,
-                                   &request->operation);
-  }
-  if (rc != H2_PAL_OK) {
-    h2_pal_mem_free(allocator, request);
-    return rc;
-  }
-  *out_request = request;
-  return H2_PAL_OK;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_create_send_internal(
+        service, identity, timeout_ms, &telemetry_tag, telemetry_run,
+        telemetry_destroy, request, out_request);
+  if (rc != H2_PAL_OK)
+    telemetry_destroy(request);
+  return rc;
 }
 
 h2_pal_result_t
-h2_gizclaw_telemetry_request_cancel(h2_gizclaw_telemetry_request_t *request) {
-  if (request == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_operation_cancel(request->operation);
+h2_gizclaw_resp_parse_telemetry_send(const h2_gizclaw_req_t *request) {
+  const void *context = NULL;
+  return h2_gizclaw_req_context_internal(request, &telemetry_tag, &context);
 }
 
-h2_pal_result_t h2_gizclaw_telemetry_request_wait(
-    h2_gizclaw_telemetry_request_t *request, uint32_t timeout_ms) {
-  return request == NULL
-             ? H2_PAL_ERR_INVALID_ARG
-             : h2_gizclaw_operation_wait(request->operation, timeout_ms);
-}
-
-const h2_gizclaw_operation_result_t *
-h2_gizclaw_telemetry_request_operation_result(
-    const h2_gizclaw_telemetry_request_t *request) {
-  return request != NULL &&
-                 atomic_load_explicit(&request->terminal, memory_order_acquire)
-             ? &request->operation_result
-             : NULL;
-}
-
-void h2_gizclaw_telemetry_request_release(
-    h2_gizclaw_telemetry_request_t *request) {
-  if (request == NULL ||
-      !atomic_load_explicit(&request->terminal, memory_order_acquire))
-    return;
-  h2_gizclaw_operation_release(request->operation);
-  h2_pal_mem_free(request->allocator, request);
+h2_pal_result_t
+h2_gizclaw_rpc_telemetry_send(h2_gizclaw_service_t *service,
+                              const h2_gizclaw_telemetry_frame_t *frame,
+                              uint32_t timeout_ms) {
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_telemetry_send(
+      service, 0u, frame, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_telemetry_send(request);
+  h2_gizclaw_req_release(request);
+  return rc;
 }

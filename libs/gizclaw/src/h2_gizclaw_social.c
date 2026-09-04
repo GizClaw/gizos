@@ -1,8 +1,8 @@
-#define H2_GIZCLAW_INTERNAL_SYNC_API
-#include "h2_gizclaw_social.h"
-#undef H2_GIZCLAW_INTERNAL_SYNC_API
 #include "h2_gizclaw_internal.h"
+#include "h2_gizclaw_response_internal.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_social_internal.h"
 
 #include "payload/social.pb.h"
 #include "pb_decode.h"
@@ -22,6 +22,7 @@ typedef struct h2_gizclaw_social_page_decode {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_friend_group_page_t *page;
   size_t max_count;
+  size_t capacity;
 } h2_gizclaw_social_page_decode_t;
 
 typedef struct h2_gizclaw_social_text_encode {
@@ -33,6 +34,7 @@ typedef struct h2_gizclaw_contact_page_decode {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_contact_page_t *page;
   size_t max_count;
+  size_t capacity;
 } h2_gizclaw_contact_page_decode_t;
 
 static bool valid_utf8_span(const char *text, size_t len) {
@@ -164,12 +166,18 @@ static bool decode_group(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_friend_group_t *items =
-      h2_pal_mem_realloc(context->allocator, context->page->items,
-                         (count + 1u) * sizeof(context->page->items[0]));
-  if (items == NULL)
-    return false;
-  context->page->items = items;
+  h2_gizclaw_friend_group_t *items = context->page->items;
+  if (count == context->capacity) {
+    size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
+    if (capacity > context->max_count)
+      capacity = context->max_count;
+    items = h2_pal_mem_realloc(context->allocator, items,
+                               capacity * sizeof(*items));
+    if (items == NULL)
+      return false;
+    context->page->items = items;
+    context->capacity = capacity;
+  }
   h2_gizclaw_friend_group_t *out = &items[count];
   memset(out, 0, sizeof(*out));
 
@@ -184,8 +192,9 @@ static bool decode_group(pb_istream_t *stream, const pb_field_t *field,
   set_bounded_text_decoder(&decoded.description, &text[2], context->allocator,
                            &out->description,
                            H2_GIZCLAW_FRIEND_GROUP_DESCRIPTION_MAX_BYTES);
-  set_text_decoder(&decoded.workspace_name, &text[3], context->allocator,
-                   &out->workspace_name);
+  set_bounded_text_decoder(&decoded.workspace_name, &text[3],
+                           context->allocator, &out->workspace_name,
+                           H2_GIZCLAW_FRIEND_GROUP_NAME_MAX_BYTES);
   if (!pb_decode(stream, gizclaw_rpc_v1_FriendGroupObject_fields, &decoded) ||
       out->name == NULL || out->name[0] == '\0' || !valid_utf8(out->name) ||
       !valid_utf8(out->display_name) || !valid_utf8(out->description) ||
@@ -240,12 +249,18 @@ static bool decode_contact(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_contact_t *items =
-      h2_pal_mem_realloc(context->allocator, context->page->items,
-                         (count + 1u) * sizeof(context->page->items[0]));
-  if (items == NULL)
-    return false;
-  context->page->items = items;
+  h2_gizclaw_contact_t *items = context->page->items;
+  if (count == context->capacity) {
+    size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
+    if (capacity > context->max_count)
+      capacity = context->max_count;
+    items = h2_pal_mem_realloc(context->allocator, items,
+                               capacity * sizeof(*items));
+    if (items == NULL)
+      return false;
+    context->page->items = items;
+    context->capacity = capacity;
+  }
   h2_gizclaw_contact_t *out = &items[count];
   memset(out, 0, sizeof(*out));
   if (!decode_contact_object(stream, out, context->allocator))
@@ -262,250 +277,13 @@ static bool encode_text(pb_ostream_t *stream, const pb_field_t *field,
          pb_encode_string(stream, (const pb_byte_t *)text->data, text->len);
 }
 
-static int encode_request(const h2_pal_mem_api_t *allocator,
-                          const gizclaw_rpc_v1_FriendGroupListRequest *request,
-                          uint8_t **out_data, size_t *out_len) {
-  *out_data = NULL;
-  *out_len = 0u;
-  pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, gizclaw_rpc_v1_FriendGroupListRequest_fields,
-                 request)) {
-    return H2_PAL_ERR_FORMAT;
-  }
-  uint8_t *data = h2_pal_mem_alloc(
-      allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (data == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  pb_ostream_t stream = pb_ostream_from_buffer(data, sizing.bytes_written);
-  if (!pb_encode(&stream, gizclaw_rpc_v1_FriendGroupListRequest_fields,
-                 request)) {
-    h2_pal_mem_free(allocator, data);
-    return H2_PAL_ERR_FORMAT;
-  }
-  *out_data = data;
-  *out_len = stream.bytes_written;
-  return H2_PAL_OK;
-}
-
-static int response_status(const h2_gizclaw_rpc_response_t *response) {
-  if (response == NULL || !response->has_error)
-    return response == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK;
-  if (response->error_code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND)
-    return H2_PAL_ERR_NOT_FOUND;
-  return response->error_code == H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND
-             ? H2_PAL_ERR_UNSUPPORTED
-             : H2_PAL_ERR_IO;
-}
-
-static int
-encode_contact_list_request(const h2_pal_mem_api_t *allocator,
-                            const gizclaw_rpc_v1_ContactListRequest *request,
-                            uint8_t **out_data, size_t *out_len) {
-  *out_data = NULL;
-  *out_len = 0u;
-  pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, gizclaw_rpc_v1_ContactListRequest_fields, request))
-    return H2_PAL_ERR_FORMAT;
-  uint8_t *data = h2_pal_mem_alloc(
-      allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (data == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  pb_ostream_t stream = pb_ostream_from_buffer(data, sizing.bytes_written);
-  if (!pb_encode(&stream, gizclaw_rpc_v1_ContactListRequest_fields, request)) {
-    h2_pal_mem_free(allocator, data);
-    return H2_PAL_ERR_FORMAT;
-  }
-  *out_data = data;
-  *out_len = stream.bytes_written;
-  return H2_PAL_OK;
-}
-
-int h2_gizclaw_client_contacts_list(h2_gizclaw_client_t *client,
-                                    h2_gizclaw_str_t cursor, size_t limit,
-                                    h2_gizclaw_contact_page_t *out_page) {
-  if (client == NULL || out_page == NULL || limit == 0u ||
-      limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
-#if SIZE_MAX > INT64_MAX
-      limit > (size_t)INT64_MAX ||
-#endif
-      (cursor.len != 0u && cursor.data == NULL) ||
-      cursor.len > H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES ||
-      !valid_utf8_span(cursor.data, cursor.len)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_page, 0, sizeof(*out_page));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-
-  gizclaw_rpc_v1_ContactListRequest request =
-      gizclaw_rpc_v1_ContactListRequest_init_zero;
-  h2_gizclaw_social_text_encode_t cursor_text = {
-      .data = cursor.data,
-      .len = cursor.len,
-  };
-  if (cursor.len != 0u) {
-    request.cursor.funcs.encode = encode_text;
-    request.cursor.arg = &cursor_text;
-  }
-  request.has_limit = true;
-  request.limit = (int64_t)limit;
-
-  uint8_t *payload = NULL;
-  size_t payload_len = 0u;
-  int rc =
-      encode_contact_list_request(allocator, &request, &payload, &payload_len);
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_CONTACT_LIST,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        &response);
-  }
-  h2_pal_mem_free(allocator, payload);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ContactListResponse decoded =
-        gizclaw_rpc_v1_ContactListResponse_init_zero;
-    h2_gizclaw_contact_page_decode_t items = {
-        .allocator = allocator,
-        .page = out_page,
-        .max_count = limit,
-    };
-    h2_gizclaw_social_text_decode_t next_cursor;
-    decoded.items.funcs.decode = decode_contact;
-    decoded.items.arg = &items;
-    set_bounded_text_decoder(&decoded.next_cursor, &next_cursor, allocator,
-                             &out_page->next_cursor,
-                             H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_ContactListResponse_fields,
-                   &decoded) ||
-        (decoded.has_next &&
-         (out_page->next_cursor == NULL || out_page->next_cursor[0] == '\0' ||
-          !valid_utf8(out_page->next_cursor)))) {
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      out_page->has_next = decoded.has_next;
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_contact_page_deinit(client, out_page);
-  return rc;
-}
-
-int h2_gizclaw_client_contact_create(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_str_t name,
-                                     h2_gizclaw_str_t display_name,
-                                     h2_gizclaw_str_t phone_number,
-                                     h2_gizclaw_contact_t *out_contact) {
-  if (client == NULL || out_contact == NULL || name.data == NULL ||
-      name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
-      display_name.len > H2_GIZCLAW_CONTACT_DISPLAY_NAME_MAX_BYTES ||
-      phone_number.len > H2_GIZCLAW_CONTACT_PHONE_NUMBER_MAX_BYTES ||
-      !valid_utf8_span(name.data, name.len) ||
-      !valid_utf8_span(display_name.data, display_name.len) ||
-      !valid_utf8_span(phone_number.data, phone_number.len)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_contact, 0, sizeof(*out_contact));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_ContactCreateRequest request =
-      gizclaw_rpc_v1_ContactCreateRequest_init_zero;
-  h2_gizclaw_social_text_encode_t text[3] = {
-      {.data = name.data, .len = name.len},
-      {.data = display_name.data, .len = display_name.len},
-      {.data = phone_number.data, .len = phone_number.len},
-  };
-  request.name.funcs.encode = encode_text;
-  request.name.arg = &text[0];
-  if (display_name.len != 0u) {
-    request.display_name.funcs.encode = encode_text;
-    request.display_name.arg = &text[1];
-  }
-  if (phone_number.len != 0u) {
-    request.phone_number.funcs.encode = encode_text;
-    request.phone_number.arg = &text[2];
-  }
-  pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, gizclaw_rpc_v1_ContactCreateRequest_fields,
-                 &request)) {
-    return H2_PAL_ERR_FORMAT;
-  }
-  uint8_t *payload = h2_pal_mem_alloc(
-      allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (payload == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  pb_ostream_t output = pb_ostream_from_buffer(payload, sizing.bytes_written);
-  int rc = H2_PAL_OK;
-  if (!pb_encode(&output, gizclaw_rpc_v1_ContactCreateRequest_fields,
-                 &request)) {
-    rc = H2_PAL_ERR_FORMAT;
-  }
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_CONTACT_CREATE,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = output.bytes_written},
-        &response);
-  }
-  h2_pal_mem_free(allocator, payload);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ContactCreateResponse decoded =
-        gizclaw_rpc_v1_ContactCreateResponse_init_zero;
-    h2_gizclaw_social_text_decode_t decoded_text[5];
-    set_bounded_text_decoder(&decoded.value.name, &decoded_text[0], allocator,
-                             &out_contact->name,
-                             H2_GIZCLAW_CONTACT_NAME_MAX_BYTES);
-    set_bounded_text_decoder(&decoded.value.display_name, &decoded_text[1],
-                             allocator, &out_contact->display_name,
-                             H2_GIZCLAW_CONTACT_DISPLAY_NAME_MAX_BYTES);
-    set_bounded_text_decoder(&decoded.value.phone_number, &decoded_text[2],
-                             allocator, &out_contact->phone_number,
-                             H2_GIZCLAW_CONTACT_PHONE_NUMBER_MAX_BYTES);
-    set_bounded_text_decoder(&decoded.value.created_at, &decoded_text[3],
-                             allocator, &out_contact->created_at,
-                             H2_GIZCLAW_CONTACT_TIMESTAMP_MAX_BYTES);
-    set_bounded_text_decoder(&decoded.value.updated_at, &decoded_text[4],
-                             allocator, &out_contact->updated_at,
-                             H2_GIZCLAW_CONTACT_TIMESTAMP_MAX_BYTES);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_ContactCreateResponse_fields,
-                   &decoded) ||
-        !decoded.has_value || out_contact->name == NULL ||
-        out_contact->name[0] == '\0' || !valid_utf8(out_contact->name) ||
-        !valid_utf8(out_contact->display_name) ||
-        !valid_utf8(out_contact->phone_number) ||
-        !valid_utf8(out_contact->created_at) ||
-        !valid_utf8(out_contact->updated_at)) {
-      rc = H2_PAL_ERR_FORMAT;
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    contact_deinit(allocator, out_contact);
-  return rc;
-}
-
-static int decode_contact_mutation_response(h2_gizclaw_client_t *client,
+static int decode_contact_mutation_response(const h2_pal_mem_api_t *allocator,
                                             const pb_msgdesc_t *fields,
                                             void *response, bool *has_value,
                                             gizclaw_rpc_v1_ContactObject *value,
                                             h2_gizclaw_contact_t *out_contact,
                                             const uint8_t *payload,
                                             size_t payload_len) {
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
   if (allocator == NULL || fields == NULL || response == NULL ||
       has_value == NULL || value == NULL || out_contact == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -540,296 +318,568 @@ static int decode_contact_mutation_response(h2_gizclaw_client_t *client,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_client_contact_get(h2_gizclaw_client_t *client,
-                                  h2_gizclaw_str_t name,
-                                  h2_gizclaw_contact_t *out_contact) {
-  if (client == NULL || out_contact == NULL || name.data == NULL ||
-      name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
-      !valid_utf8_span(name.data, name.len)) {
+h2_pal_result_t h2_gizclaw_social_create_message_internal(
+    h2_gizclaw_service_t *service, uint64_t identity, const void *tag,
+    h2_gizclaw_rpc_method_t method, const pb_msgdesc_t *fields,
+    const void *message, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || out_request == NULL || timeout_ms == 0u ||
+      timeout_ms > INT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_contact, 0, sizeof(*out_contact));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-
-  gizclaw_rpc_v1_ContactGetRequest request =
-      gizclaw_rpc_v1_ContactGetRequest_init_zero;
-  h2_gizclaw_social_text_encode_t name_text = {.data = name.data,
-                                               .len = name.len};
-  request.name.funcs.encode = encode_text;
-  request.name.arg = &name_text;
   pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, gizclaw_rpc_v1_ContactGetRequest_fields, &request))
+  if (!pb_encode(&sizing, fields, message))
     return H2_PAL_ERR_FORMAT;
-  uint8_t *encoded = h2_pal_mem_alloc(
+  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  uint8_t *data = h2_pal_mem_alloc(
       allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (encoded == NULL)
+  if (data == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  pb_ostream_t output = pb_ostream_from_buffer(encoded, sizing.bytes_written);
-  int rc = pb_encode(&output, gizclaw_rpc_v1_ContactGetRequest_fields, &request)
-               ? H2_PAL_OK
-               : H2_PAL_ERR_FORMAT;
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_CONTACT_GET,
-        (h2_gizclaw_rpc_bytes_t){.data = encoded, .len = output.bytes_written},
-        &response);
-  }
-  h2_pal_mem_free(allocator, encoded);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ContactGetResponse decoded =
-        gizclaw_rpc_v1_ContactGetResponse_init_zero;
-    rc = decode_contact_mutation_response(
-        client, gizclaw_rpc_v1_ContactGetResponse_fields, &decoded,
-        &decoded.has_value, &decoded.value, out_contact,
-        response.result_payload, response.result_payload_len);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    contact_deinit(allocator, out_contact);
+  pb_ostream_t output = pb_ostream_from_buffer(data, sizing.bytes_written);
+  h2_pal_result_t rc = H2_PAL_ERR_FORMAT;
+  if (pb_encode(&output, fields, message))
+    rc = h2_gizclaw_req_create_rpc_internal(
+        service, identity, method, tag,
+        (h2_gizclaw_rpc_bytes_t){data, output.bytes_written}, timeout_ms,
+        out_request);
+  h2_pal_mem_free(allocator, data);
   return rc;
 }
 
-int h2_gizclaw_client_contact_put(h2_gizclaw_client_t *client,
-                                  h2_gizclaw_str_t name,
-                                  h2_gizclaw_str_t display_name,
-                                  h2_gizclaw_str_t phone_number,
-                                  h2_gizclaw_contact_t *out_contact) {
-  if (client == NULL || out_contact == NULL || name.data == NULL ||
-      name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
+static const char contact_list_tag;
+h2_pal_result_t h2_gizclaw_req_create_contact_list(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (limit == 0u || limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
+      cursor.len > H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES ||
+      !valid_utf8_span(cursor.data, cursor.len))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ContactListRequest message =
+      gizclaw_rpc_v1_ContactListRequest_init_zero;
+  h2_gizclaw_social_text_encode_t text = {cursor.data, cursor.len};
+  if (cursor.len != 0u) {
+    message.cursor.funcs.encode = encode_text;
+    message.cursor.arg = &text;
+  }
+  message.has_limit = true;
+  message.limit = (int64_t)limit;
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &contact_list_tag, H2_GIZCLAW_RPC_SERVER_CONTACT_LIST,
+      gizclaw_rpc_v1_ContactListRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_contact_list(const h2_gizclaw_req_t *request,
+                                   h2_gizclaw_resp_storage_t *storage,
+                                   h2_gizclaw_contact_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &contact_list_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &contact_list_tag, &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_ContactListRequest params =
+      gizclaw_rpc_v1_ContactListRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream, gizclaw_rpc_v1_ContactListRequest_fields,
+                 &params) ||
+      !params.has_limit || params.limit <= 0 ||
+      params.limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS)
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_contact_page_t result = {0};
+  gizclaw_rpc_v1_ContactListResponse decoded =
+      gizclaw_rpc_v1_ContactListResponse_init_zero;
+  h2_gizclaw_contact_page_decode_t items = {.allocator = &arena.allocator,
+                                            .page = &result,
+                                            .max_count = (size_t)params.limit};
+  decoded.items.funcs.decode = decode_contact;
+  decoded.items.arg = &items;
+  h2_gizclaw_social_text_decode_t cursor;
+  set_bounded_text_decoder(&decoded.next_cursor, &cursor, &arena.allocator,
+                           &result.next_cursor,
+                           H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES);
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ContactListResponse_fields,
+                 &decoded) ||
+      (decoded.has_next &&
+       (result.next_cursor == NULL || result.next_cursor[0] == '\0')) ||
+      !valid_utf8(result.next_cursor))
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    result.has_next = decoded.has_next;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_contact_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_contact_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_contact_list(
+      service, 0u, cursor, limit, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_contact_list(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char contact_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_contact_get(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
+      !valid_utf8_span(name.data, name.len))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ContactGetRequest message =
+      gizclaw_rpc_v1_ContactGetRequest_init_zero;
+  h2_gizclaw_social_text_encode_t text = {name.data, name.len};
+  message.name.funcs.encode = encode_text;
+  message.name.arg = &text;
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &contact_get_tag, H2_GIZCLAW_RPC_SERVER_CONTACT_GET,
+      gizclaw_rpc_v1_ContactGetRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_contact_get(const h2_gizclaw_req_t *request,
+                                  h2_gizclaw_resp_storage_t *storage,
+                                  h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &contact_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_contact_t result = {0};
+  gizclaw_rpc_v1_ContactGetResponse decoded =
+      gizclaw_rpc_v1_ContactGetResponse_init_zero;
+  rc = (h2_pal_result_t)decode_contact_mutation_response(
+      &arena.allocator, gizclaw_rpc_v1_ContactGetResponse_fields, &decoded,
+      &decoded.has_value, &decoded.value, &result, response->result_payload,
+      response->result_payload_len);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_contact_get(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_str_t name,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_resp_storage_t *storage,
+                                           h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_contact_get(service, 0u, name,
+                                                         timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_contact_get(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char contact_create_tag;
+h2_pal_result_t h2_gizclaw_req_create_contact_create(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
+      !valid_utf8_span(name.data, name.len) ||
       display_name.len > H2_GIZCLAW_CONTACT_DISPLAY_NAME_MAX_BYTES ||
       phone_number.len > H2_GIZCLAW_CONTACT_PHONE_NUMBER_MAX_BYTES ||
-      !valid_utf8_span(name.data, name.len) ||
       !valid_utf8_span(display_name.data, display_name.len) ||
-      !valid_utf8_span(phone_number.data, phone_number.len)) {
+      !valid_utf8_span(phone_number.data, phone_number.len))
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_contact, 0, sizeof(*out_contact));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_ContactPutRequest request =
-      gizclaw_rpc_v1_ContactPutRequest_init_zero;
-  h2_gizclaw_social_text_encode_t name_text = {.data = name.data,
-                                               .len = name.len};
-  h2_gizclaw_social_text_encode_t display = {.data = display_name.data,
-                                             .len = display_name.len};
-  h2_gizclaw_social_text_encode_t phone = {.data = phone_number.data,
-                                           .len = phone_number.len};
-  request.name.funcs.encode = encode_text;
-  request.name.arg = &name_text;
+  gizclaw_rpc_v1_ContactCreateRequest message =
+      gizclaw_rpc_v1_ContactCreateRequest_init_zero;
+  h2_gizclaw_social_text_encode_t text = {name.data, name.len};
+  message.name.funcs.encode = encode_text;
+  message.name.arg = &text;
+  h2_gizclaw_social_text_encode_t display = {display_name.data,
+                                             display_name.len};
+  h2_gizclaw_social_text_encode_t phone = {phone_number.data, phone_number.len};
   if (display_name.len != 0u) {
-    request.display_name.funcs.encode = encode_text;
-    request.display_name.arg = &display;
+    message.display_name.funcs.encode = encode_text;
+    message.display_name.arg = &display;
   }
   if (phone_number.len != 0u) {
-    request.phone_number.funcs.encode = encode_text;
-    request.phone_number.arg = &phone;
+    message.phone_number.funcs.encode = encode_text;
+    message.phone_number.arg = &phone;
   }
-  pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, gizclaw_rpc_v1_ContactPutRequest_fields, &request))
-    return H2_PAL_ERR_FORMAT;
-  uint8_t *encoded = h2_pal_mem_alloc(
-      allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (encoded == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  pb_ostream_t output = pb_ostream_from_buffer(encoded, sizing.bytes_written);
-  int rc = pb_encode(&output, gizclaw_rpc_v1_ContactPutRequest_fields, &request)
-               ? H2_PAL_OK
-               : H2_PAL_ERR_FORMAT;
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_CONTACT_PUT,
-        (h2_gizclaw_rpc_bytes_t){.data = encoded, .len = output.bytes_written},
-        &response);
-  }
-  h2_pal_mem_free(allocator, encoded);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ContactPutResponse decoded =
-        gizclaw_rpc_v1_ContactPutResponse_init_zero;
-    rc = decode_contact_mutation_response(
-        client, gizclaw_rpc_v1_ContactPutResponse_fields, &decoded,
-        &decoded.has_value, &decoded.value, out_contact,
-        response.result_payload, response.result_payload_len);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &contact_create_tag,
+      H2_GIZCLAW_RPC_SERVER_CONTACT_CREATE,
+      gizclaw_rpc_v1_ContactCreateRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_contact_create(const h2_gizclaw_req_t *request,
+                                     h2_gizclaw_resp_storage_t *storage,
+                                     h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &contact_create_tag, &response);
   if (rc != H2_PAL_OK)
-    contact_deinit(allocator, out_contact);
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_contact_t result = {0};
+  gizclaw_rpc_v1_ContactCreateResponse decoded =
+      gizclaw_rpc_v1_ContactCreateResponse_init_zero;
+  rc = (h2_pal_result_t)decode_contact_mutation_response(
+      &arena.allocator, gizclaw_rpc_v1_ContactCreateResponse_fields, &decoded,
+      &decoded.has_value, &decoded.value, &result, response->result_payload,
+      response->result_payload_len);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
   return rc;
 }
 
-int h2_gizclaw_client_contact_delete(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_str_t name,
-                                     h2_gizclaw_contact_t *out_contact) {
-  if (client == NULL || out_contact == NULL || name.data == NULL ||
-      name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
-      !valid_utf8_span(name.data, name.len)) {
+h2_pal_result_t h2_gizclaw_rpc_contact_create(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_contact_create(
+      service, 0u, name, display_name, phone_number, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_contact_create(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char contact_put_tag;
+h2_pal_result_t h2_gizclaw_req_create_contact_put(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t phone_number,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
+      !valid_utf8_span(name.data, name.len) ||
+      display_name.len > H2_GIZCLAW_CONTACT_DISPLAY_NAME_MAX_BYTES ||
+      phone_number.len > H2_GIZCLAW_CONTACT_PHONE_NUMBER_MAX_BYTES ||
+      !valid_utf8_span(display_name.data, display_name.len) ||
+      !valid_utf8_span(phone_number.data, phone_number.len))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ContactPutRequest message =
+      gizclaw_rpc_v1_ContactPutRequest_init_zero;
+  h2_gizclaw_social_text_encode_t text = {name.data, name.len};
+  message.name.funcs.encode = encode_text;
+  message.name.arg = &text;
+  h2_gizclaw_social_text_encode_t display = {display_name.data,
+                                             display_name.len};
+  h2_gizclaw_social_text_encode_t phone = {phone_number.data, phone_number.len};
+  if (display_name.len != 0u) {
+    message.display_name.funcs.encode = encode_text;
+    message.display_name.arg = &display;
   }
-  memset(out_contact, 0, sizeof(*out_contact));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_ContactDeleteRequest request =
+  if (phone_number.len != 0u) {
+    message.phone_number.funcs.encode = encode_text;
+    message.phone_number.arg = &phone;
+  }
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &contact_put_tag, H2_GIZCLAW_RPC_SERVER_CONTACT_PUT,
+      gizclaw_rpc_v1_ContactPutRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_contact_put(const h2_gizclaw_req_t *request,
+                                  h2_gizclaw_resp_storage_t *storage,
+                                  h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &contact_put_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_contact_t result = {0};
+  gizclaw_rpc_v1_ContactPutResponse decoded =
+      gizclaw_rpc_v1_ContactPutResponse_init_zero;
+  rc = (h2_pal_result_t)decode_contact_mutation_response(
+      &arena.allocator, gizclaw_rpc_v1_ContactPutResponse_fields, &decoded,
+      &decoded.has_value, &decoded.value, &result, response->result_payload,
+      response->result_payload_len);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_contact_put(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_str_t name,
+                                           h2_gizclaw_str_t display_name,
+                                           h2_gizclaw_str_t phone_number,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_resp_storage_t *storage,
+                                           h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_contact_put(
+      service, 0u, name, display_name, phone_number, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_contact_put(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char contact_delete_tag;
+h2_pal_result_t h2_gizclaw_req_create_contact_delete(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (name.len == 0u || name.len > H2_GIZCLAW_CONTACT_NAME_MAX_BYTES ||
+      !valid_utf8_span(name.data, name.len))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ContactDeleteRequest message =
       gizclaw_rpc_v1_ContactDeleteRequest_init_zero;
-  h2_gizclaw_social_text_encode_t name_text = {.data = name.data,
-                                               .len = name.len};
-  request.name.funcs.encode = encode_text;
-  request.name.arg = &name_text;
-  pb_ostream_t sizing = PB_OSTREAM_SIZING;
-  if (!pb_encode(&sizing, gizclaw_rpc_v1_ContactDeleteRequest_fields,
-                 &request)) {
-    return H2_PAL_ERR_FORMAT;
-  }
-  uint8_t *encoded = h2_pal_mem_alloc(
-      allocator, sizing.bytes_written == 0u ? 1u : sizing.bytes_written);
-  if (encoded == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  pb_ostream_t output = pb_ostream_from_buffer(encoded, sizing.bytes_written);
-  int rc =
-      pb_encode(&output, gizclaw_rpc_v1_ContactDeleteRequest_fields, &request)
-          ? H2_PAL_OK
-          : H2_PAL_ERR_FORMAT;
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_CONTACT_DELETE,
-        (h2_gizclaw_rpc_bytes_t){.data = encoded, .len = output.bytes_written},
-        &response);
-  }
-  h2_pal_mem_free(allocator, encoded);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ContactDeleteResponse decoded =
-        gizclaw_rpc_v1_ContactDeleteResponse_init_zero;
-    rc = decode_contact_mutation_response(
-        client, gizclaw_rpc_v1_ContactDeleteResponse_fields, &decoded,
-        &decoded.has_value, &decoded.value, out_contact,
-        response.result_payload, response.result_payload_len);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    contact_deinit(allocator, out_contact);
-  return rc;
+  h2_gizclaw_social_text_encode_t text = {name.data, name.len};
+  message.name.funcs.encode = encode_text;
+  message.name.arg = &text;
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &contact_delete_tag,
+      H2_GIZCLAW_RPC_SERVER_CONTACT_DELETE,
+      gizclaw_rpc_v1_ContactDeleteRequest_fields, &message, timeout_ms,
+      out_request);
 }
 
-void h2_gizclaw_contact_deinit(h2_gizclaw_client_t *client,
-                               h2_gizclaw_contact_t *contact) {
-  if (client == NULL || contact == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL)
-    contact_deinit(allocator, contact);
-}
-
-void h2_gizclaw_contact_page_deinit(h2_gizclaw_client_t *client,
-                                    h2_gizclaw_contact_page_t *page) {
-  if (client == NULL || page == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL) {
-    for (size_t index = 0u; index < page->count; ++index)
-      contact_deinit(allocator, &page->items[index]);
-    h2_pal_mem_free(allocator, page->items);
-    h2_pal_mem_free(allocator, page->next_cursor);
-  }
-  memset(page, 0, sizeof(*page));
-}
-
-int h2_gizclaw_client_friend_groups_list(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t cursor, size_t limit,
-    h2_gizclaw_friend_group_page_t *out_page) {
-  if (client == NULL || out_page == NULL || limit == 0u ||
-#if SIZE_MAX > INT64_MAX
-      limit > (size_t)INT64_MAX ||
-#endif
-      (cursor.len != 0u && cursor.data == NULL)) {
+h2_pal_result_t
+h2_gizclaw_resp_parse_contact_delete(const h2_gizclaw_req_t *request,
+                                     h2_gizclaw_resp_storage_t *storage,
+                                     h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_page, 0, sizeof(*out_page));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-
-  gizclaw_rpc_v1_FriendGroupListRequest request =
-      gizclaw_rpc_v1_FriendGroupListRequest_init_zero;
-  h2_gizclaw_social_text_encode_t cursor_text = {
-      .data = cursor.data,
-      .len = cursor.len,
-  };
-  if (cursor.len != 0u) {
-    request.cursor.funcs.encode = encode_text;
-    request.cursor.arg = &cursor_text;
-  }
-  request.has_limit = true;
-  request.limit = (int64_t)limit;
-
-  uint8_t *payload = NULL;
-  size_t payload_len = 0u;
-  int rc = encode_request(allocator, &request, &payload, &payload_len);
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_LIST,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        &response);
-  }
-  h2_pal_mem_free(allocator, payload);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupListResponse decoded =
-        gizclaw_rpc_v1_FriendGroupListResponse_init_zero;
-    h2_gizclaw_social_page_decode_t items = {
-        .allocator = allocator,
-        .page = out_page,
-        .max_count = limit,
-    };
-    h2_gizclaw_social_text_decode_t next_cursor;
-    decoded.items.funcs.decode = decode_group;
-    decoded.items.arg = &items;
-    set_text_decoder(&decoded.next_cursor, &next_cursor, allocator,
-                     &out_page->next_cursor);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_FriendGroupListResponse_fields,
-                   &decoded)) {
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      out_page->has_next = decoded.has_next;
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &contact_delete_tag, &response);
   if (rc != H2_PAL_OK)
-    h2_gizclaw_friend_group_page_deinit(client, out_page);
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_contact_t result = {0};
+  gizclaw_rpc_v1_ContactDeleteResponse decoded =
+      gizclaw_rpc_v1_ContactDeleteResponse_init_zero;
+  rc = (h2_pal_result_t)decode_contact_mutation_response(
+      &arena.allocator, gizclaw_rpc_v1_ContactDeleteResponse_fields, &decoded,
+      &decoded.has_value, &decoded.value, &result, response->result_payload,
+      response->result_payload_len);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
   return rc;
 }
 
-void h2_gizclaw_friend_group_page_deinit(h2_gizclaw_client_t *client,
-                                         h2_gizclaw_friend_group_page_t *page) {
-  if (client == NULL || page == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL) {
-    for (size_t index = 0u; index < page->count; ++index)
-      friend_group_deinit(allocator, &page->items[index]);
-    h2_pal_mem_free(allocator, page->items);
-    h2_pal_mem_free(allocator, page->next_cursor);
+h2_pal_result_t h2_gizclaw_rpc_contact_delete(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_contact_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_contact_delete(
+      service, 0u, name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_contact_delete(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_list_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_list(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (limit == 0u || limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
+      cursor.len > H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES ||
+      !valid_utf8_span(cursor.data, cursor.len))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupListRequest message =
+      gizclaw_rpc_v1_FriendGroupListRequest_init_zero;
+  h2_gizclaw_social_text_encode_t text = {cursor.data, cursor.len};
+  if (cursor.len != 0u) {
+    message.cursor.funcs.encode = encode_text;
+    message.cursor.arg = &text;
   }
-  memset(page, 0, sizeof(*page));
+  message.has_limit = true;
+  message.limit = (int64_t)limit;
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_list_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_LIST,
+      gizclaw_rpc_v1_FriendGroupListRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_list(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_list_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &friend_group_list_tag, &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendGroupListRequest params =
+      gizclaw_rpc_v1_FriendGroupListRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream, gizclaw_rpc_v1_FriendGroupListRequest_fields,
+                 &params) ||
+      !params.has_limit || params.limit <= 0 ||
+      params.limit > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS)
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_page_t result = {0};
+  gizclaw_rpc_v1_FriendGroupListResponse decoded =
+      gizclaw_rpc_v1_FriendGroupListResponse_init_zero;
+  h2_gizclaw_social_page_decode_t items = {.allocator = &arena.allocator,
+                                           .page = &result,
+                                           .max_count = (size_t)params.limit};
+  decoded.items.funcs.decode = decode_group;
+  decoded.items.arg = &items;
+  h2_gizclaw_social_text_decode_t cursor;
+  set_bounded_text_decoder(&decoded.next_cursor, &cursor, &arena.allocator,
+                           &result.next_cursor,
+                           H2_GIZCLAW_CONTACT_CURSOR_MAX_BYTES);
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendGroupListResponse_fields,
+                 &decoded) ||
+      (decoded.has_next &&
+       (result.next_cursor == NULL || result.next_cursor[0] == '\0')) ||
+      !valid_utf8(result.next_cursor))
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    result.has_next = decoded.has_next;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_list(
+      service, 0u, cursor, limit, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_list(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }

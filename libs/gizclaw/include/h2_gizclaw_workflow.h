@@ -37,7 +37,7 @@ typedef struct h2_gizclaw_workflow {
   char *workspace_lang_pair;
 } h2_gizclaw_workflow_t;
 
-/** Owned page. Release it with h2_gizclaw_workflow_page_deinit(). */
+/** Page whose variable-sized fields live in caller-owned response storage. */
 typedef struct h2_gizclaw_workflow_page {
   h2_gizclaw_workflow_t *items;
   size_t count;
@@ -47,78 +47,38 @@ typedef struct h2_gizclaw_workflow_page {
   char *runtime_profile_revision;
 } h2_gizclaw_workflow_page_t;
 
-typedef struct h2_gizclaw_workflow_request h2_gizclaw_workflow_request_t;
+typedef struct h2_gizclaw_workflow_get_result {
+  h2_gizclaw_workflow_t workflow;
+  char *runtime_profile_name;
+  char *runtime_profile_revision;
+} h2_gizclaw_workflow_get_result_t;
 
-typedef void (*h2_gizclaw_workflows_list_completion_fn)(
-    void *user, h2_gizclaw_workflow_request_t *request);
-
-typedef void (*h2_gizclaw_workflow_get_completion_fn)(
-    void *user, h2_gizclaw_workflow_request_t *request);
-
-h2_pal_result_t h2_gizclaw_service_workflows_list_async(
+h2_pal_result_t h2_gizclaw_req_create_workflow_list(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_workflows_list_completion_fn completion,
-    void *user, h2_gizclaw_workflow_request_t **out_request);
-
-h2_pal_result_t h2_gizclaw_service_workflow_get_async(
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_req_create_workflow_get(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    uint32_t timeout_ms, h2_gizclaw_workflow_get_completion_fn completion,
-    void *user, h2_gizclaw_workflow_request_t **out_request);
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
+/** Parsed strings, items and i18n entries live in caller-owned storage. */
 h2_pal_result_t
-h2_gizclaw_workflow_request_cancel(h2_gizclaw_workflow_request_t *request);
-h2_pal_result_t h2_gizclaw_workflow_request_wait(
-    h2_gizclaw_workflow_request_t *request, uint32_t timeout_ms);
-const h2_gizclaw_operation_result_t *
-h2_gizclaw_workflow_request_operation_result(
-    const h2_gizclaw_workflow_request_t *request);
-const h2_gizclaw_workflow_page_t *h2_gizclaw_workflow_request_page(
-    const h2_gizclaw_workflow_request_t *request);
-const h2_gizclaw_workflow_t *h2_gizclaw_workflow_request_workflow(
-    const h2_gizclaw_workflow_request_t *request);
-const char *h2_gizclaw_workflow_request_runtime_profile_name(
-    const h2_gizclaw_workflow_request_t *request);
-const char *h2_gizclaw_workflow_request_runtime_profile_revision(
-    const h2_gizclaw_workflow_request_t *request);
+h2_gizclaw_resp_parse_workflow_list(const h2_gizclaw_req_t *request,
+                                    h2_gizclaw_resp_storage_t *storage,
+                                    h2_gizclaw_workflow_page_t *out_page);
+h2_pal_result_t h2_gizclaw_resp_parse_workflow_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_get_result_t *out_result);
 
-void h2_gizclaw_workflow_request_release(
-    h2_gizclaw_workflow_request_t *request);
-
-#if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_client_workflows_list(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_str_t collection,
-                                     h2_gizclaw_str_t cursor, size_t limit,
-                                     h2_gizclaw_workflow_page_t *out_page);
-
-int h2_gizclaw_client_workflow_get(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_str_t name,
-                                   h2_gizclaw_workflow_t *out_workflow,
-                                   char **out_runtime_profile_name,
-                                   char **out_runtime_profile_revision);
-#endif
-
-const char *
-h2_gizclaw_workflow_display_name(const h2_gizclaw_workflow_t *workflow,
-                                 const char *locale);
-const char *
-h2_gizclaw_workflow_description(const h2_gizclaw_workflow_t *workflow,
-                                const char *locale);
-
-void h2_gizclaw_workflow_deinit(h2_gizclaw_client_t *client,
-                                h2_gizclaw_workflow_t *workflow);
-void h2_gizclaw_workflow_get_deinit(h2_gizclaw_client_t *client,
-                                    h2_gizclaw_workflow_t *workflow,
-                                    char *runtime_profile_name,
-                                    char *runtime_profile_revision);
-void h2_gizclaw_workflow_page_deinit(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_workflow_page_t *page);
-
-#if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_workflow_decode_list_for_test(
-    h2_gizclaw_client_t *client, const uint8_t *data, size_t len,
-    size_t max_count, h2_gizclaw_workflow_page_t *out_page);
-#endif
+h2_pal_result_t h2_gizclaw_rpc_workflow_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out_page);
+h2_pal_result_t
+h2_gizclaw_rpc_workflow_get(h2_gizclaw_service_t *service,
+                            h2_gizclaw_str_t name, uint32_t timeout_ms,
+                            h2_gizclaw_resp_storage_t *storage,
+                            h2_gizclaw_workflow_get_result_t *out_result);
 
 #ifdef __cplusplus
 }

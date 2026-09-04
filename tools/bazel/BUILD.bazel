@@ -7,6 +7,19 @@ load(":release_bundle.bzl", "firmware_release_bundle")
 
 package(default_visibility = ["//visibility:public"])
 
+py_test(
+    name = "gizclaw_live_command_test",
+    srcs = ["tests/test_gizclaw_live_command.py"],
+    main = "tests/test_gizclaw_live_command.py",
+    data = ["//:live_e2e_command_files"],
+    legacy_create_init = False,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 py_library(
     name = "coverage_report",
     srcs = ["coverage_report.py"],

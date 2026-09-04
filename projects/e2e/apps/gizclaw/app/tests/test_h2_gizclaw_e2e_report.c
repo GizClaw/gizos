@@ -2,6 +2,9 @@
 
 #include "h2/pal/core/h2_pal_errors.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 

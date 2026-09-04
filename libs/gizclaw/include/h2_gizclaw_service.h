@@ -5,6 +5,7 @@
 #include "h2/pal/os/h2_pal_queue.h"
 #include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/os/h2_pal_task.h"
+#include "h2_runtime_custom_event.h"
 #include "h2_gizclaw_client.h"
 
 #include <stdbool.h>
@@ -16,32 +17,28 @@ extern "C" {
 #endif
 
 typedef struct h2_gizclaw_service h2_gizclaw_service_t;
-typedef struct h2_gizclaw_operation h2_gizclaw_operation_t;
-typedef struct h2_gizclaw_cancel_token h2_gizclaw_cancel_token_t;
-typedef struct h2_gizclaw_async_rpc h2_gizclaw_async_rpc_t;
-typedef struct h2_gizclaw_async_stream h2_gizclaw_async_stream_t;
-typedef struct h2_gizclaw_request h2_gizclaw_request_t;
+typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
 
-typedef h2_pal_result_t (*h2_gizclaw_track_read_fn)(void *user, uint8_t *pcm,
-                                                    size_t capacity,
-                                                    size_t *out_len);
-typedef h2_pal_result_t (*h2_gizclaw_track_write_fn)(void *user,
-                                                     const uint8_t *pcm,
-                                                     size_t len);
+/** Runtime wakeup posted when caller-thread dispatch becomes ready. */
+#define H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY                              \
+  H2_RUNTIME_CUSTOM_EVENT_ID(0x4743u, 1u)
 
-typedef struct h2_gizclaw_track_vtable {
-  h2_gizclaw_track_read_fn read;
-  h2_gizclaw_track_write_fn write;
-} h2_gizclaw_track_vtable_t;
+/** A valid RPC error response, distinct from PAL transport/format failures.
+ * Business NOT_FOUND (404) instead returns H2_PAL_ERR_NOT_FOUND from req_wait,
+ * response parsers and synchronous RPCs. METHOD_NOT_FOUND and all other remote
+ * error codes remain H2_GIZCLAW_ERR_REMOTE. */
+#define H2_GIZCLAW_ERR_REMOTE ((h2_pal_result_t) - 1000)
 
-struct h2_gizclaw_track {
-  void *user;
-  const h2_gizclaw_track_vtable_t *vtable;
-};
+/** Fill at most capacity bytes for one data-up request. `OK` with zero bytes
+ * closes the request input; `WOULD_BLOCK` keeps it active for a later retry. */
+typedef h2_pal_result_t (*h2_gizclaw_req_input_read_fn)(
+    void *user, uint8_t *buffer, size_t capacity, size_t *out_read);
 
-/** Optional completion hook, invoked only by h2_gizclaw_service_poll(). */
-typedef void (*h2_gizclaw_request_callback_fn)(h2_gizclaw_request_t *request);
+/** Consume data-down bytes on the task calling service_poll(). Partial writes
+ * and `WOULD_BLOCK` retain the remaining bytes for a later poll. */
+typedef h2_pal_result_t (*h2_gizclaw_req_output_write_fn)(
+    void *user, const uint8_t *data, size_t length, size_t *out_written);
 
 /** Terminal state delivered exactly once for every accepted operation. */
 typedef enum h2_gizclaw_operation_terminal_kind {
@@ -57,43 +54,13 @@ typedef struct h2_gizclaw_operation_result {
   h2_pal_result_t result;
 } h2_gizclaw_operation_result_t;
 
-/**
- * Execute one network operation on the sole client-owning network task.
- *
- * `user` remains caller-owned through completion callback return. The run
- * function is invoked exactly once for an accepted, non-queued-canceled
- * operation and returns that operation's result. It must cooperate with the
- * supplied cancellation token and must not retain the client or token.
- */
-typedef h2_pal_result_t (*h2_gizclaw_operation_run_fn)(
-    void *user, h2_gizclaw_client_t *client,
-    const h2_gizclaw_cancel_token_t *cancel_token);
-
-/** Execute one synchronous progress callback on the dispatch caller thread. */
-typedef h2_pal_result_t (*h2_gizclaw_operation_dispatch_fn)(void *user);
-
-/**
- * Apply one terminal result on the thread calling service dispatch.
- *
- * The operation, result view, and caller-owned `user` remain valid through
- * callback return. This callback may release its operation handle.
- */
-typedef void (*h2_gizclaw_operation_completion_fn)(
-    void *user, h2_gizclaw_operation_t *operation,
+/** Optional terminal hook dispatched at most once by service_poll(). The
+ * request and result are borrowed for the duration of the call. Waiting for
+ * request completion does not wait for this hook. If the bounded dispatch
+ * queue is full, the request ends with WOULD_BLOCK and the hook is dropped. */
+typedef void (*h2_gizclaw_req_complete_fn)(
+    void *user, h2_gizclaw_req_t *request,
     const h2_gizclaw_operation_result_t *result);
-
-/** Completion for one service-owned asynchronous unary RPC. */
-typedef void (*h2_gizclaw_async_rpc_completion_fn)(void *user,
-                                                   h2_gizclaw_async_rpc_t *rpc);
-
-/** One mixed-frame event delivered on the service dispatch caller thread. */
-typedef h2_pal_result_t (*h2_gizclaw_async_stream_event_fn)(
-    void *user, h2_gizclaw_async_stream_t *stream,
-    const h2_gizclaw_rpc_stream_event_t *event);
-
-/** Terminal completion for one service-owned mixed-frame RPC. */
-typedef void (*h2_gizclaw_async_stream_completion_fn)(
-    void *user, h2_gizclaw_async_stream_t *stream);
 
 /**
  * Report one fatal connection failure on the dispatch caller thread.
@@ -114,12 +81,17 @@ typedef void (*h2_gizclaw_service_cleanup_fn)(void *user,
                                               h2_gizclaw_client_t *client);
 
 typedef struct h2_gizclaw_service_config {
-  /** Borrowed until `h2_gizclaw_service_deinit()` returns. */
+  /** Borrowed until `h2_gizclaw_service_deinit()` returns. Requires a
+   * monotonic-ms time provider for the 20 ms audio schedule. */
   const h2_gizclaw_config_t *client_config;
   /** Borrowed PAL APIs; their providers outlive the service. */
   const h2_pal_task_api_t *task;
   const h2_pal_queue_api_t *queue;
   const h2_pal_sync_api_t *sync;
+  /** Optional Runtime event destination. When set, the Service posts one
+   * coalesced H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY event when caller-thread
+   * work becomes available. The Runtime must outlive the Service. */
+  h2_runtime_t *runtime;
   /** Stack requirements for the system-owned `$gizclaw/net` task. */
   h2_pal_task_options_t net_task_options;
   /** Maximum admitted operations across all lifecycle states. */
@@ -139,168 +111,103 @@ typedef struct h2_gizclaw_service_config {
   void *terminal_user;
 } h2_gizclaw_service_config_t;
 
-/** Return whether service stop, caller cancellation, or client cancellation is
- * requested. */
-bool h2_gizclaw_cancel_requested(const h2_gizclaw_cancel_token_t *cancel_token);
-
-/**
- * Hand one bounded progress step from the network task to caller dispatch.
- *
- * Only the accepted operation's worker callback may call this function, and it
- * must not call it recursively. `callback` runs synchronously on the caller of
- * `h2_gizclaw_service_poll()` without the service mutex held. The
- * `user` context remains worker-owned and must remain valid until this function
- * returns; the progress callback must not retain it.
- *
- * One completion-queue slot is reserved while the network task blocks. Caller
- * dispatch atomically claims an unstarted callback under the service mutex.
- * Cancellation or stop before that claim skips the callback and reuses the
- * reserved capacity for exactly one terminal completion. Cancellation after
- * the claim does not interrupt the callback; the worker remains blocked until
- * it returns and then completes as canceled or service-closed. The callback's
- * PAL result is returned unchanged only when no cancellation or stop wins
- * first.
- *
- * This is intended for an exclusive streaming operation that must ask the App
- * main loop to perform product-owned Audio or state work between client I/O
- * steps.
- */
-h2_pal_result_t h2_gizclaw_operation_dispatch_call(
-    const h2_gizclaw_cancel_token_t *cancel_token,
-    h2_gizclaw_operation_dispatch_fn callback, void *user);
-
 /**
  * Allocate queues and synchronization state without starting a task.
  *
  * The returned service is caller-owned until successful deinit. Init, start,
- * stop, dispatch and deinit belong to one lifecycle task.
+ * stop, poll and deinit belong to one lifecycle task.
  */
 h2_pal_result_t
 h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                         h2_gizclaw_service_t **out_service);
 
-/** Start the sole client-owning network task exactly once. */
+/** Start the network, PCM audio-up/audio-down and data-up/data-down tasks
+ * once. Each direction owns at most one active request; another request for the
+ * same direction returns BUSY instead of being queued. Opposite directions
+ * remain independent. Partial startup failure attempts to stop already-started
+ * tasks and returns the original start error. Call stop to finish cleanup
+ * before deinit. */
 h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service);
 
-/** Borrow one caller-owned PCM track until unset succeeds. */
+/** Bind one library-created PCM Track until unset succeeds. Applications use
+ * pcm_track_write/read for their mic/speaker pumps, not a callback vtable.
+ * Rebinding is rejected while the previous audio route is still active. */
 h2_pal_result_t h2_gizclaw_service_set_track(h2_gizclaw_service_t *service,
                                              h2_gizclaw_track_t *track);
+/** Stop admitting Track accesses and wait for in-flight reads/writes. Active
+ * audio requests observe CLOSED on their next Track access. */
 h2_pal_result_t h2_gizclaw_service_unset_track(h2_gizclaw_service_t *service,
                                                h2_gizclaw_track_t *track);
 
-/** Start a typed request created in the CREATED state. */
-h2_pal_result_t h2_gizclaw_request_do(h2_gizclaw_request_t *request,
-                                      h2_gizclaw_request_callback_fn callback);
+/** Start the currently registered ASR or Conversation audio route. Requests
+ * alone never consume mic PCM. Old buffered PCM is discarded by uplink. */
+h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t *service);
 
-/** Idempotently half-close a streaming request's input. */
-h2_pal_result_t h2_gizclaw_request_finish_input(h2_gizclaw_request_t *request);
+/** End the current recording, without a request handle or waiting for upload.
+ * Uplink copies the frozen PCM tail before releasing its read cursor, then
+ * sends the tail and protocol EOS. The mic producer continues independently.
+ * Repeated end is harmless; calling before audio_start returns INVALID_STATE.
+ */
+h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service);
 
-h2_pal_result_t h2_gizclaw_request_wait(h2_gizclaw_request_t *request,
-                                        uint32_t timeout_ms);
-h2_pal_result_t h2_gizclaw_request_cancel(h2_gizclaw_request_t *request);
-void h2_gizclaw_request_release(h2_gizclaw_request_t *request);
-
-/**
- * Admit one FIFO operation without blocking.
+/** Unified request lifecycle.
  *
- * This API is task-safe and non-blocking. A successful call returns one
- * caller-owned handle reference and borrows `user` through completion callback
- * return. A failed call returns no handle, never invokes either callback, and
- * does not consume `user`.
+ * Create functions only retain protocol parameters. `do` starts an accepted
+ * request once and binds its optional callbacks. The input callback runs on
+ * data-up; the output and completion callbacks run only from service_poll().
+ * A missing fixed-length input callback produces the requested benchmark
+ * bytes without copying payload; a missing output callback validates and
+ * consumes the response without dispatching its data to the App.
+ * `user` must remain valid until the completion hook returns, or until
+ * req_wait returns when no completion hook is supplied.
+ * A failed do does not consume the caller's request reference.
  */
-h2_pal_result_t
-h2_gizclaw_service_submit(h2_gizclaw_service_t *service, uint64_t identity,
-                          h2_gizclaw_operation_run_fn run,
-                          h2_gizclaw_operation_completion_fn completion,
-                          void *user, h2_gizclaw_operation_t **out_operation);
+h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
+                                  void *user,
+                                  h2_gizclaw_req_input_read_fn input_read,
+                                  h2_gizclaw_req_output_write_fn output_write,
+                                  h2_gizclaw_req_complete_fn on_complete);
 
-/**
- * Submit one task-safe unary RPC to the service's sole client owner.
- *
- * The encoded payload is copied before return. The response is owned by the
- * returned handle and borrowed by completion until the handle is released.
- */
-h2_pal_result_t h2_gizclaw_service_rpc_call_async(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, h2_gizclaw_rpc_bytes_t params_payload,
-    uint32_t timeout_ms, h2_gizclaw_async_rpc_completion_fn completion,
-    void *user, h2_gizclaw_async_rpc_t **out_rpc);
-
-/** Request task-safe, idempotent cancellation of an asynchronous RPC. */
-h2_pal_result_t h2_gizclaw_async_rpc_cancel(h2_gizclaw_async_rpc_t *rpc);
-
-/** Wait until this RPC's callback has returned; another task must dispatch. */
-h2_pal_result_t h2_gizclaw_async_rpc_wait(h2_gizclaw_async_rpc_t *rpc,
-                                          uint32_t timeout_ms);
-
-/** Return the terminal operation result embedded in this RPC, or NULL. */
-const h2_gizclaw_operation_result_t *
-h2_gizclaw_async_rpc_operation_result(const h2_gizclaw_async_rpc_t *rpc);
-
-/** Return the successful response embedded in this RPC, or NULL. */
-const h2_gizclaw_rpc_response_t *
-h2_gizclaw_async_rpc_response(const h2_gizclaw_async_rpc_t *rpc);
-
-/** Release one terminal RPC handle. Calls before completion are ignored. */
-void h2_gizclaw_async_rpc_release(h2_gizclaw_async_rpc_t *rpc);
-
-/** Submit one server-streaming RPC driven exclusively by `$gizclaw/net`. */
-h2_pal_result_t h2_gizclaw_service_rpc_stream_async(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_rpc_method_t method, h2_gizclaw_rpc_bytes_t params_payload,
-    uint32_t timeout_ms, h2_gizclaw_async_stream_event_fn on_event,
-    h2_gizclaw_async_stream_completion_fn completion, void *user,
-    h2_gizclaw_async_stream_t **out_stream);
-
-h2_pal_result_t
-h2_gizclaw_async_stream_cancel(h2_gizclaw_async_stream_t *stream);
-h2_pal_result_t h2_gizclaw_async_stream_wait(h2_gizclaw_async_stream_t *stream,
-                                             uint32_t timeout_ms);
-const h2_gizclaw_operation_result_t *h2_gizclaw_async_stream_operation_result(
-    const h2_gizclaw_async_stream_t *stream);
-const h2_gizclaw_rpc_response_t *
-h2_gizclaw_async_stream_response(const h2_gizclaw_async_stream_t *stream);
-
-void h2_gizclaw_async_stream_release(h2_gizclaw_async_stream_t *stream);
-
-/** Request task-safe, idempotent cooperative cancellation without blocking. */
-h2_pal_result_t h2_gizclaw_operation_cancel(h2_gizclaw_operation_t *operation);
-
-/**
- * Block the calling task until the operation callback has returned.
- *
- * Another task must continue calling `h2_gizclaw_service_poll()`. A
- * timeout does not cancel or release the operation. Exactly one caller may
- * wait on an operation, and the caller remains responsible for releasing it.
- */
-h2_pal_result_t h2_gizclaw_operation_wait(h2_gizclaw_operation_t *operation,
-                                          uint32_t timeout_ms);
-
-/** Return the response-owning operation's terminal result, or NULL if pending.
- */
-const h2_gizclaw_operation_result_t *
-h2_gizclaw_operation_result(const h2_gizclaw_operation_t *operation);
-
-/** Release the caller-owned operation handle exactly once; this is task-safe.
- */
-void h2_gizclaw_operation_release(h2_gizclaw_operation_t *operation);
+/** Wait for execution terminal state and return its result, without polling
+ * or dispatching callbacks. A timeout neither cancels nor finishes input.
+ * Repeated/concurrent waits observe the same terminal result. */
+h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
+                                    uint32_t timeout_ms);
+/** Idempotently cancel the request; this is not an input half-close. */
+h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *request);
+/** Drop the caller reference, without canceling. Execution and queued callbacks
+ * hold internal references. The handle must not be used after this call. */
+void h2_gizclaw_req_release(h2_gizclaw_req_t *request);
 
 /**
  * Invoke at most `max_callbacks` callbacks on the calling task.
+ * The connection-terminal hook shares this budget and is included in
+ * `out_dispatched`; when the budget is exhausted it waits for a later poll.
+ *
+ * When config.runtime is set, call this after receiving a Runtime custom event
+ * whose id is H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY. The notification is
+ * coalesced: one event means "dispatch work exists", not "one callback exists".
+ * This function rearms another event when its callback budget leaves work
+ * pending.
  *
  * This API has one consumer and must not be called recursively. A callback may
- * submit work, cancel another operation or release an operation handle; it must
- * not call dispatch, stop or deinit.
+ * create/submit requests, cancel or release handles, and stop the service. It
+ * must not recursively call poll or deinit. Pending callbacks remain valid
+ * after stop and are drained by poll.
  */
 h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
-                                            size_t max_callbacks,
-                                            size_t *out_dispatched);
+                                        size_t max_callbacks,
+                                        size_t *out_dispatched);
 
 /**
- * Stop and join the network task without invoking pending callbacks.
+ * Stop and join the network, uplink and downlink tasks without invoking pending
+ * callbacks.
  *
- * This lifecycle-task API is idempotent and must not be called from a service
- * callback. Accepted callbacks remain pending for caller-thread dispatch.
+ * This lifecycle-task API is idempotent, including from a service_poll hook.
+ * Do not call it from a worker-side prepare/cleanup hook.
+ * Accepted callbacks remain pending for caller-thread dispatch.
+ * If a task join fails, its handle is retained; retry stop before deinit.
+ * Tasks already joined successfully are not joined again.
  */
 h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service);
 

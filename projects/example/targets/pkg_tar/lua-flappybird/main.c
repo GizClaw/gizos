@@ -239,5 +239,9 @@ int main(void) {
   if (result == H2_PAL_OK)
     result = context.result;
   h2_web_platform_destroy(platform);
+  // main resumes through Asyncify: returning nonzero alone may still leave
+  // the Node harness successful. Headless runs must report their real result.
+  if (web_is_headless())
+    emscripten_force_exit(result == H2_PAL_OK ? 0 : 1);
   return result == H2_PAL_OK ? 0 : 1;
 }

@@ -95,7 +95,7 @@ static void emit_progress(void *user,
 static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=all "
+  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=connectivity "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
@@ -123,7 +123,7 @@ static void run_e2e(void *raw) {
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
-      .suites = H2_GIZCLAW_E2E_SUITE_ALL,
+      .suites = H2_GIZCLAW_E2E_SUITE_CONNECTIVITY,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,
@@ -204,6 +204,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_init", rc, false);
   }
+  rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
+                                      H2_PAL_WIFI_POWER_SAVE_NONE);
+  printf("H2_GIZCLAW_E2E_DEVKIT stage=power_save mode=%d rc=%d\n",
+         (int)H2_PAL_WIFI_POWER_SAVE_NONE, rc);
+  fflush(stdout);
+  if (rc != H2_PAL_OK) {
+    fail_launcher("power_save", rc, false);
+  }
   rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
   if (rc != H2_PAL_OK) {
     fail_launcher("command_start", rc, false);
@@ -232,6 +240,8 @@ static void image_entry(void *user) {
   h2_gizclaw_e2e_devkit_event_payload_t payload;
   bool wifi_has_ip = false;
   bool sntp_initialized = false;
+  bool ble_advertising_paused = false;
+  uint32_t ble_pause_retry_count = 0u;
   uint32_t time_retry_count = 0u;
   for (;;) {
     h2_runtime_event_t event = {
@@ -245,6 +255,27 @@ static void image_entry(void *user) {
     } else if (rc != H2_PAL_ERR_TIMEOUT) {
       printf("H2_GIZCLAW_E2E_DEVKIT stage=event status=ERROR rc=%d\n", rc);
       fflush(stdout);
+    }
+
+    if (!ble_advertising_paused) {
+      rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
+      if (rc == H2_PAL_OK) {
+        ble_advertising_paused = true;
+        printf("H2_GIZCLAW_E2E_DEVKIT stage=ble_adv status=PAUSED rc=%d\n",
+               rc);
+        fflush(stdout);
+      } else {
+        ++ble_pause_retry_count;
+        if (ble_pause_retry_count == 1u ||
+            ble_pause_retry_count %
+                    H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL ==
+                0u) {
+          printf("H2_GIZCLAW_E2E_DEVKIT stage=ble_adv status=RETRY rc=%d "
+                 "retry_ms=%u\n",
+                 rc, H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
+          fflush(stdout);
+        }
+      }
     }
 
     if (wifi_has_ip && !state.clock_ready) {
@@ -275,7 +306,8 @@ static void image_entry(void *user) {
         }
       }
     }
-    if (h2_gizclaw_e2e_devkit_state_set_prerequisites(
+    if (ble_advertising_paused &&
+        h2_gizclaw_e2e_devkit_state_set_prerequisites(
             &state, wifi_has_ip, state.clock_ready)) {
       s_runner.runtime = runtime;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};

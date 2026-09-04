@@ -9,18 +9,16 @@ on:
         default: all
         type: choice
         options: [all, pal, gizclaw]
-      entry:
-        description: GizClaw service entry
-        required: true
-        default: ap
-        type: choice
-        options: [ap, bj]
+      endpoint:
+        description: Required for GizClaw/all; hostname:port (BJ uses edge-bj-01.e2e.gizclaw.com:9821)
+        required: false
+        type: string
       suite:
         description: GizClaw suite
         required: true
         default: all
         type: choice
-        options: [all, connectivity, rpc, firmware, voice, concurrency]
+        options: [all, connectivity, rpc, firmware, voice, firmware-voice, concurrency, service]
       backend:
         description: WebRTC PAL backend
         required: true
@@ -160,26 +158,34 @@ jobs:
         env:
           E2E_SCOPE: ${{ inputs.scope }}
           H2_BAZEL_CONFIG: ${{ matrix.bazel_config }}
-          H2_GIZCLAW_E2E_ENTRY: ${{ inputs.entry }}
+          H2_GIZCLAW_E2E_ENDPOINT: ${{ inputs.endpoint }}
+          E2E_BACKEND: ${{ inputs.backend }}
           H2_GIZCLAW_E2E_REGISTRATION_TOKEN: ${{ secrets.H2_GIZCLAW_E2E_REGISTRATION_TOKEN }}
           H2_GIZCLAW_E2E_SUITE: ${{ inputs.suite }}
+        shell: bash
         run: |
+          set -euo pipefail
+          case "$E2E_SCOPE" in
+            all|gizclaw) : "${H2_GIZCLAW_E2E_ENDPOINT:?set an explicit GizClaw endpoint}" ;;
+            pal) ;;
+            *) echo 'unsupported live E2E scope' >&2; exit 2 ;;
+          esac
           run_gizclaw_target() {
             make "$1" \
               BAZEL_BIN="$RUNNER_TEMP/bazel" \
-              BAZEL_CONFIG="${{ matrix.bazel_config }}"
+              BAZEL_CONFIG="$H2_BAZEL_CONFIG"
           }
           run_gizclaw() {
-            case "${{ inputs.backend }}" in
+            case "$E2E_BACKEND" in
               h2peer)
                 run_gizclaw_target bazel-test-gizclaw_h2peer_live_test
                 ;;
               pion)
-                case "${{ inputs.suite }}" in rpc|firmware|voice) ;; *) return 2 ;; esac
+                case "$H2_GIZCLAW_E2E_SUITE" in rpc|firmware|voice|firmware-voice) ;; *) return 2 ;; esac
                 run_gizclaw_target bazel-test-gizclaw_pion_live_test
                 ;;
               both)
-                case "${{ inputs.suite }}" in firmware|voice) ;; *) return 2 ;; esac
+                case "$H2_GIZCLAW_E2E_SUITE" in rpc|firmware|voice|firmware-voice) ;; *) return 2 ;; esac
                 final_rc=0
                 run_gizclaw_target bazel-test-gizclaw_h2peer_live_test || final_rc=$?
                 run_gizclaw_target bazel-test-gizclaw_pion_live_test || final_rc=$?
@@ -189,8 +195,8 @@ jobs:
             esac
           }
           case "$E2E_SCOPE" in
-            all) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="${{ matrix.bazel_config }}"; run_gizclaw ;;
-            pal) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="${{ matrix.bazel_config }}" ;;
+            all) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="$H2_BAZEL_CONFIG"; run_gizclaw ;;
+            pal) make bazel-test-mqtt_public_broker_smoke BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_CONFIG="$H2_BAZEL_CONFIG" ;;
             gizclaw) run_gizclaw ;;
             *) printf 'unsupported live E2E scope: %s\n' "$E2E_SCOPE" >&2; exit 2 ;;
           esac

@@ -20,7 +20,42 @@ typedef struct fixture {
   size_t allocations;
   size_t frees;
   int fail_next;
+  uint64_t now_us;
+  h2_pal_time_api_t time;
+  h2_pal_log_api_t log;
+  size_t log_count;
+  char scopes[16][32];
+  char messages[16][H2_PAL_LOG_MESSAGE_MAX];
 } fixture_t;
+
+static h2_pal_result_t monotonic_us(void *user, uint64_t *out_us) {
+  *out_us = ((fixture_t *)user)->now_us;
+  return H2_PAL_OK;
+}
+
+static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
+                       const char *message) {
+  (void)level;
+  fixture_t *f = user;
+  if (f->log_count < 16u) {
+    strncpy(f->scopes[f->log_count], scope,
+            sizeof(f->scopes[f->log_count]) - 1u);
+    strncpy(f->messages[f->log_count], message,
+            sizeof(f->messages[f->log_count]) - 1u);
+  }
+  ++f->log_count;
+  return H2_PAL_OK;
+}
+
+static int has_log(const fixture_t *f, const char *scope, const char *needle) {
+  const size_t count = f->log_count < 16u ? f->log_count : 16u;
+  for (size_t i = 0u; i < count; ++i) {
+    if (strcmp(f->scopes[i], scope) == 0 &&
+        strstr(f->messages[i], needle) != NULL)
+      return 1;
+  }
+  return 0;
+}
 
 static void *allocate(void *user, size_t size) {
   fixture_t *f = user;
@@ -59,9 +94,15 @@ static void initialize(fixture_t *f) {
   static const h2_pal_mem_vtable_t memory = {.alloc = allocate,
                                              .free = deallocate};
   static const h2_pal_webrtc_track_vtable_t track = {.write = write_frame};
+  static const h2_pal_time_vtable_t time = {.get_monotonic_us = monotonic_us};
+  static const h2_pal_log_vtable_t log = {.write = capture_log};
   memset(f, 0, sizeof(*f));
   f->mem = (h2_pal_mem_api_t){.user = f, .vtable = &memory};
   f->owner.config.mem = &f->mem;
+  f->time = (h2_pal_time_api_t){.user = f, .vtable = &time};
+  f->log = (h2_pal_log_api_t){.user = f, .vtable = &log};
+  f->owner.config.time = &f->time;
+  f->owner.config.log = &f->log;
   f->track = (h2_pal_webrtc_track_t){.user = f, .vtable = &track};
   f->peer.owner = &f->owner;
   f->peer.media_track = &f->track;
@@ -74,6 +115,33 @@ static void initialize(fixture_t *f) {
   atomic_init(&f->peer.network_event_count, 0u);
   atomic_init(&f->peer.network_event_bytes, 0u);
   f->write_result = H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static void cleanup(fixture_t *f);
+
+static void diagnostics(void) {
+  fixture_t f;
+  initialize(&f);
+  f.now_us = 100u;
+  h2_peer_webrtc_note_audio_rtp(&f.peer, 10u, 1000u);
+  f.now_us = 20000u;
+  h2_peer_webrtc_note_audio_rtp(&f.peer, 11u, 1320u);
+  f.now_us = 1020000u;
+  h2_peer_webrtc_note_audio_rtp(&f.peer, 13u, 900u);
+  assert(has_log(&f, "h2peer/media-rx", "received=3"));
+  assert(has_log(&f, "h2peer/media-rx", "sequence_discontinuities=1"));
+  assert(has_log(&f, "h2peer/media-rx", "timestamp_discontinuities=1"));
+
+  const uint8_t packet = 0x42u;
+  f.now_us = 1100000u;
+  h2_peer_webrtc_emit_opus_frame(&f.peer, &packet, 1u);
+  assert(has_log(&f, "h2peer/media-track", "event=write_blocked"));
+  f.write_result = H2_PAL_OK;
+  f.now_us = 1200000u;
+  assert(h2_peer_webrtc_service_media(&f.peer) == H2_PAL_OK);
+  assert(has_log(&f, "h2peer/media-track", "event=write_resumed"));
+  assert(has_log(&f, "h2peer/media-track", "blocked_us=100000"));
+  cleanup(&f);
 }
 
 static void cleanup(fixture_t *f) {
@@ -182,5 +250,6 @@ int main(void) {
   fifo_and_packet_loss();
   limits_and_cleanup();
   failures();
+  diagnostics();
   return 0;
 }
