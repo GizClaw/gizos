@@ -4,6 +4,11 @@
 #include <string.h>
 
 #define H2_IPERF_SCTP_MIN_PACKET_BUF 2048u
+/* The association windows must follow the path bandwidth-delay product, not
+ * the block size. Derived from the block length alone they land at 16 KiB,
+ * which caps a 50 ms path near 2.5 Mbit/s and measures the advertised window
+ * instead of the sender's congestion control. */
+#define H2_IPERF_SCTP_MIN_WINDOW (256u * 1024u)
 /* RFC 9260 chunk type carried at the start of every SCTP packet payload. */
 #define H2_IPERF_SCTP_CHUNK_INIT 1u
 #define H2_IPERF_SCTP_EMIT_FAILURE_LIMIT 1000u
@@ -358,8 +363,12 @@ h2_pal_result_t h2_iperf_stream_sctp_create(
         }
     }
     size_t receive_buffer = max_message_size * 2u;
-    if (receive_buffer < 1500u) {
-        receive_buffer = 1500u;
+    if (receive_buffer < H2_IPERF_SCTP_MIN_WINDOW) {
+        receive_buffer = H2_IPERF_SCTP_MIN_WINDOW;
+    }
+    size_t send_buffer = max_message_size * 2u + (size_t)packet_size * 8u;
+    if (send_buffer < H2_IPERF_SCTP_MIN_WINDOW) {
+        send_buffer = H2_IPERF_SCTP_MIN_WINDOW;
     }
     const h2_pal_sctp_association_config_t assoc_config = {
         .role = role,
@@ -369,7 +378,7 @@ h2_pal_result_t h2_iperf_stream_sctp_create(
         .outbound_streams = H2_IPERF_SCTP_STREAMS,
         .max_packet_size = packet_size,
         .max_message_size = max_message_size,
-        .send_buffer_size = max_message_size * 2u + (size_t)packet_size * 8u,
+        .send_buffer_size = send_buffer,
         .receive_buffer_size = receive_buffer,
         .cookie_lifetime_ms = H2_IPERF_SCTP_COOKIE_LIFETIME_MS,
         .callbacks = {

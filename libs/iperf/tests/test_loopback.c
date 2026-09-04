@@ -164,8 +164,11 @@ int main(void) {
         {"udp bytes remainder below header", H2_IPERF_PROTOCOL_UDP, false, 0u, 3u * 1000u + 5u, 1000u, 8u * 1024u * 1024u},
         {"udp bytes exactly one header", H2_IPERF_PROTOCOL_UDP, false, 0u, 12u, 1000u, 8u * 1024u * 1024u},
         {"sctp", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 16u * 1024u, 0u},
-        {"sctp bytes", H2_IPERF_PROTOCOL_SCTP, false, 0u, 512u * 1024u, 8u * 1024u, 0u},
-        {"sctp bytes unaligned", H2_IPERF_PROTOCOL_SCTP, false, 0u, 512u * 1024u + 999u, 8u * 1024u, 0u},
+        /* The byte budget must be several association windows: the sender
+         * counts what it queued, so a transfer no larger than the window ends
+         * with most of it still in flight and the two counts disagree. */
+        {"sctp bytes", H2_IPERF_PROTOCOL_SCTP, false, 0u, 4u * 1024u * 1024u, 8u * 1024u, 0u},
+        {"sctp bytes unaligned", H2_IPERF_PROTOCOL_SCTP, false, 0u, 4u * 1024u * 1024u + 999u, 8u * 1024u, 0u},
         {"sctp reverse", H2_IPERF_PROTOCOL_SCTP, true, 1000u, 0u, 16u * 1024u, 0u},
         {"sctp paced", H2_IPERF_PROTOCOL_SCTP, false, 1000u, 0u, 1024u, 4u * 1024u * 1024u},
     };
