@@ -357,14 +357,26 @@ H2_APP_TEST_CASE(saved_wifi_connect_and_delete) {
 `H2_APP_TEST_BUTTON_DOWN` / `UP` 在 App Test scenario 中分别投影为释放时间为 0 / 非零的
 semantic action，使 scenario 与 App 当前消费的契约一致。
 需要直接验证 Runtime raw `BUTTON_DOWN` / `BUTTON_UP` event 的测试应使用 Test
-Control event injection。长按等 gesture 仍由 scenario 根据 action 时间表达：
+Control event injection。
+
+`H2_APP_TEST_BUTTON_HOLD(test, component_id, timestamp)` 表示按键在 `timestamp`
+时仍然按住：它复用 `H2_APP_TEST_BUTTON_DOWN` 记录的 `pressed_at_ms`，投影为
+`released_at_ms == 0`、observed at `timestamp` 的 semantic action，与 Runtime 每次
+poll 重复上报 held key 的行为一致。App 看到 `pressed == true`、原始 `pressed_at_ms`
+和 `updated_at_ms == timestamp`，可以据此计算已按住时长。`timestamp` 早于
+`pressed_at_ms` 时 step 返回 `H2_PAL_ERR_INVALID_ARG`。长按等 gesture 由 scenario
+按 down → hold → up 顺序表达：
 
 ```c
 H2_APP_TEST_BUTTON_DOWN(test, EXAMPLE_BUTTON_RECORD, 500u);
+H2_APP_TEST_EXPECT_BOOL(test, "app.recording", false);
+
+/* 按住 500 ms 后才开始 push-to-talk。 */
+H2_APP_TEST_BUTTON_HOLD(test, EXAMPLE_BUTTON_RECORD, 1000u);
 H2_APP_TEST_EXPECT_BOOL(test, "app.recording", true);
 H2_APP_TEST_EXPECT_BOOL(test, "ui.recording", true);
 
-H2_APP_TEST_BUTTON_UP(test, EXAMPLE_BUTTON_RECORD, 900u);
+H2_APP_TEST_BUTTON_UP(test, EXAMPLE_BUTTON_RECORD, 1400u);
 H2_APP_TEST_EXPECT_BOOL(test, "app.recording", false);
 H2_APP_TEST_EXPECT_BOOL(test, "ui.recording", false);
 ```
