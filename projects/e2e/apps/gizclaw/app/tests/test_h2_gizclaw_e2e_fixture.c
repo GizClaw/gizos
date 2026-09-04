@@ -24,6 +24,52 @@ static bool user_stop(void *user) {
   return s_user_stop;
 }
 
+/* Job-task double: the job body runs from the App-side poll (or from the
+ * Service stop that cancels it) instead of on a real task, so the sync-call
+ * lifecycle is deterministic. */
+static int s_task_storage;
+static h2_pal_task_entry_t s_job_entry;
+static void *s_job_ctx;
+static unsigned s_job_after_polls, s_job_polls, s_task_starts, s_task_joins,
+    s_join_failures;
+static int s_task_start_rc;
+
+static void run_pending_job(void) {
+  if (s_job_entry == NULL)
+    return;
+  const h2_pal_task_entry_t entry = s_job_entry;
+  s_job_entry = NULL;
+  entry(s_job_ctx);
+}
+
+static int test_task_start(void *user, const h2_pal_task_options_t *options,
+                           h2_pal_task_entry_t entry, void *ctx,
+                           h2_pal_task_t **out_task) {
+  (void)user;
+  assert(options != NULL && strcmp(options->name, "gizclaw/e2e/job") == 0 &&
+         options->min_stack_size == 32768u);
+  ++s_task_starts;
+  *out_task = NULL;
+  if (s_task_start_rc != H2_PAL_OK)
+    return s_task_start_rc;
+  s_job_entry = entry;
+  s_job_ctx = ctx;
+  s_job_polls = 0u;
+  *out_task = (h2_pal_task_t *)&s_task_storage;
+  return H2_PAL_OK;
+}
+
+static int test_task_join(void *user, h2_pal_task_t *task) {
+  (void)user;
+  assert(task == (h2_pal_task_t *)&s_task_storage);
+  ++s_task_joins;
+  if (s_join_failures != 0u) {
+    --s_join_failures;
+    return H2_PAL_ERR_BUSY;
+  }
+  return H2_PAL_OK;
+}
+
 /* Fixture boundary doubles: no network or registration side effect. The real
  * Service concurrency/lifetime paths are exercised by the library tests. */
 struct h2_gizclaw_service {
@@ -79,12 +125,18 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
   *out_count = s_poll_fault == 1u   ? maximum + 1u
                : s_poll_fault == 2u ? maximum
                                     : 0u;
+  /* The job's request completes only through App-side dispatch. */
+  if (s_job_entry != NULL && s_job_after_polls != 0u &&
+      ++s_job_polls >= s_job_after_polls)
+    run_pending_job();
   return s_poll_fault == 3u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
 h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
   ++s_stops;
   service->stopped = s_stop_rc == H2_PAL_OK;
+  /* Stop cancels the job's request, so its wait returns. */
+  run_pending_job();
   return s_stop_rc;
 }
 
@@ -645,6 +697,100 @@ static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
   return H2_PAL_OK;
 }
 
+static int s_job_rc;
+static int sync_job_body(void *ctx) {
+  ++*(unsigned *)ctx;
+  return s_job_rc;
+}
+
+static void test_call_sync(h2_runtime_t *runtime,
+                           const h2_gizclaw_e2e_config_t *config) {
+  static const h2_pal_task_vtable_t task_vtable = {
+      .start = test_task_start,
+      .join = test_task_join,
+  };
+  static const h2_pal_task_api_t task = {.vtable = &task_vtable};
+  const h2_pal_task_api_t *saved_task = runtime->task;
+  runtime->task = &task;
+  h2_gizclaw_e2e_fixture_t fixture;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, runtime, config, 600000u) ==
+         H2_PAL_OK);
+  struct h2_gizclaw_service service = {0};
+  unsigned runs = 0u;
+  assert(h2_gizclaw_e2e_fixture_call_sync(NULL, &service, sync_job_body,
+                                          &runs) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_e2e_fixture_call_sync(&fixture, NULL, sync_job_body,
+                                          &runs) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_e2e_fixture_call_sync(&fixture, &service, NULL, &runs) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(runs == 0u && s_task_starts == 0u);
+  for (unsigned mode = 0u; mode < 7u; ++mode) {
+    const unsigned polls_before = s_polls, stops_before = s_stops;
+    s_task_starts = s_task_joins = s_join_failures = 0u;
+    s_task_start_rc = s_job_rc = H2_PAL_OK;
+    s_poll_fault = 0u;
+    s_job_after_polls = 3u;
+    runs = 0u;
+    int expected = H2_PAL_OK;
+    switch (mode) {
+    case 0: /* task start failure: nothing runs, nothing polls */
+      s_task_start_rc = H2_PAL_ERR_IO;
+      expected = H2_PAL_ERR_IO;
+      break;
+    case 1: /* success: the job returns after the third App poll */
+      break;
+    case 2: /* job failure propagates */
+      s_job_rc = H2_PAL_ERR_FORMAT;
+      expected = H2_PAL_ERR_FORMAT;
+      break;
+    case 3: /* poll failure is reported once but dispatch continues */
+      s_poll_fault = 3u;
+      expected = H2_PAL_ERR_IO;
+      break;
+    case 4: /* deadline: the Service is stopped, cancelling the job */
+      s_job_after_polls = 0u;
+      assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 5u) == H2_PAL_OK);
+      expected = H2_PAL_ERR_TIMEOUT;
+      break;
+    case 5: /* transient join failures are retried */
+      s_join_failures = 2u;
+      break;
+    case 6: /* a join that never succeeds retains the task */
+      s_join_failures = 1000u;
+      expected = H2_PAL_ERR_BUSY;
+      break;
+    }
+    const int rc =
+        h2_gizclaw_e2e_fixture_call_sync(&fixture, &service, sync_job_body,
+                                         &runs);
+    assert(rc == expected);
+    assert(s_task_starts == 1u);
+    assert(s_job_entry == NULL);
+    if (mode == 0u) {
+      assert(runs == 0u && s_polls == polls_before && s_task_joins == 0u);
+      continue;
+    }
+    assert(runs == 1u);
+    if (mode == 4u) {
+      assert(s_stops == stops_before + 1u && service.stopped);
+      service.stopped = false;
+      assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 600000u) ==
+             H2_PAL_OK);
+    } else {
+      assert(s_polls == polls_before + 3u && s_stops == stops_before);
+    }
+    assert(s_task_joins == (mode == 5u ? 3u : mode == 6u ? 100u : 1u));
+    assert(fixture.retained_job_tasks == (mode == 6u ? 1u : 0u));
+  }
+  assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 1u);
+  fixture.retained_job_tasks = 0u;
+  assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
+  s_join_failures = 0u;
+  s_poll_fault = 0u;
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  runtime->task = saved_task;
+}
+
 int main(int argc, char **argv) {
   const h2_gizclaw_str_t empty = h2_gizclaw_e2e_str(NULL);
   assert(empty.data == NULL && empty.len == 0u);
@@ -1186,5 +1332,6 @@ int main(int argc, char **argv) {
     assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
     assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
   }
+  test_call_sync(&runtime, &config);
   return 0;
 }

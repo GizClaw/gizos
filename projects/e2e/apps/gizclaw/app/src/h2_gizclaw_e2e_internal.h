@@ -103,6 +103,8 @@ typedef struct h2_gizclaw_e2e_fixture {
   bool isolation_pet_delete_acknowledged;
   bool cancel_requested;
   bool cleanup_started;
+  /* Job tasks whose join never succeeded; their handles cannot be released. */
+  size_t retained_job_tasks;
 } h2_gizclaw_e2e_fixture_t;
 
 int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
@@ -120,7 +122,12 @@ bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
                                      uint32_t required_ms);
 /* Run `fn` on a job task while this (App) task polls `service` until it
  * returns; the synchronous data-down helpers need their output dispatched by
- * the App task. Returns the task or poll failure, otherwise `fn`'s result. */
+ * the App task. Polling continues after a poll error so the job's stream can
+ * still drain. When the fixture deadline passes before the job returns, the
+ * service is stopped, which cancels the job's request. The join is retried
+ * within a bounded window; a task that never joins is counted in
+ * retained_job_tasks. Returns the first failure among task start, poll,
+ * deadline (H2_PAL_ERR_TIMEOUT) and join, otherwise `fn`'s result. */
 int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
                                      h2_gizclaw_service_t *service,
                                      int (*fn)(void *ctx), void *ctx);

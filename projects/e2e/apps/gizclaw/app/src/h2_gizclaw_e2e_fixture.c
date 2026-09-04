@@ -727,11 +727,15 @@ static void sync_job_entry(void *user) {
   atomic_store_explicit(&job->returned, true, memory_order_release);
 }
 
+/* Bounded join window after the job has returned: the task only has to exit. */
+#define SYNC_JOB_JOIN_ATTEMPTS 100u
+#define SYNC_JOB_JOIN_INTERVAL_MS 10u
+
 int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
                                      h2_gizclaw_service_t *service,
                                      int (*fn)(void *ctx), void *ctx) {
-  if (fixture == NULL || fixture->runtime == NULL || service == NULL ||
-      fn == NULL)
+  if (fixture == NULL || fixture->runtime == NULL || fixture->time == NULL ||
+      service == NULL || fn == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   sync_job_t job = {.fn = fn, .ctx = ctx, .result = H2_PAL_ERR_INVALID_STATE};
   atomic_init(&job.returned, false);
@@ -746,24 +750,43 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
   if (rc != H2_PAL_OK)
     return rc;
   /* This task is the App: keep dispatching until the job task has returned.
-   * The helper's own request timeout bounds the loop. */
-  int poll_rc = H2_PAL_OK;
+   * A poll error is recorded once but never stops dispatch, because the job
+   * may still be waiting for its stream to drain through this task. The
+   * fixture deadline bounds the loop: past it, stopping the Service cancels
+   * the job's request, so the job returns with a terminal result. */
+  int first_error = H2_PAL_OK;
+  bool stopped = false;
   while (!atomic_load_explicit(&job.returned, memory_order_acquire)) {
     size_t dispatched = 0u;
-    if (poll_rc == H2_PAL_OK) {
-      poll_rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
-      if (poll_rc != H2_PAL_OK)
-        h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "sync-job",
-                                poll_rc);
+    const int poll_rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
+    if (poll_rc != H2_PAL_OK && first_error == H2_PAL_OK) {
+      first_error = poll_rc;
+      h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "sync-job", poll_rc);
+    }
+    if (!stopped && !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)) {
+      stopped = true;
+      const int stop_rc = h2_gizclaw_service_stop(service);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "sync-job-deadline",
+                              stop_rc);
+      if (first_error == H2_PAL_OK)
+        first_error = stop_rc == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : stop_rc;
     }
     if (dispatched == 0u)
       (void)h2_pal_time_sleep_ms(fixture->time, 1u);
   }
-  rc = h2_pal_task_join(fixture->runtime->task, task);
+  for (unsigned attempt = 0u;; ++attempt) {
+    rc = h2_pal_task_join(fixture->runtime->task, task);
+    if (rc == H2_PAL_OK || attempt + 1u >= SYNC_JOB_JOIN_ATTEMPTS)
+      break;
+    (void)h2_pal_time_sleep_ms(fixture->time, SYNC_JOB_JOIN_INTERVAL_MS);
+  }
   h2_gizclaw_e2e_evidence("h2_pal_task_join", "sync-job", rc);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    /* The handle stays owned by us but nothing can release it any more. */
+    ++fixture->retained_job_tasks;
     return rc;
-  return poll_rc != H2_PAL_OK ? poll_rc : job.result;
+  }
+  return first_error != H2_PAL_OK ? first_error : job.result;
 }
 
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
@@ -1339,6 +1362,8 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
     retained += emit_retained_resource(
         fixture, "peer", fixture->actors[index].peer_delete_required);
   }
+  retained += emit_retained_resource(fixture, "job-task",
+                                     fixture->retained_job_tasks != 0u);
   return retained;
 }
 
