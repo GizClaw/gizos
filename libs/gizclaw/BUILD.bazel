@@ -20,6 +20,20 @@ py_test(
 )
 
 cc_test(
+    name = "h2_gizclaw_sync_download_args_test",
+    srcs = ["tests/test_h2_gizclaw_sync_download_args.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":gizclaw"],
+)
+
+cc_test(
     name = "h2_gizclaw_public_api_test",
     srcs = ["tests/test_h2_gizclaw_public_api.c", "tests/public_api.inc"],
     conlyopts = H2_C11_OPTS,

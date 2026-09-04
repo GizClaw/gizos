@@ -40,6 +40,8 @@ typedef struct h2_showcase_gizclaw_state {
   struct h2_showcase_app *app;
   h2_pal_task_t *task;
   h2_gizclaw_service_t *service;
+  /* Borrowed by the service until deinit, so it must outlive gizclaw_init. */
+  h2_gizclaw_config_t client_config;
   atomic_bool stop;
   atomic_int status;
 } h2_showcase_gizclaw_state_t;
@@ -209,7 +211,7 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
       config->gizclaw_connect_timeout_ms == 0u
           ? H2_SHOWCASE_GIZCLAW_DEFAULT_CONNECT_TIMEOUT_MS
           : (int)config->gizclaw_connect_timeout_ms;
-  const h2_gizclaw_config_t client_config = {
+  app->gizclaw->client_config = (h2_gizclaw_config_t){
       .server_endpoint = {.data = config->gizclaw_server_endpoint,
                           .len = strlen(config->gizclaw_server_endpoint)},
       .private_key = {.data = config->gizclaw_private_key,
@@ -227,7 +229,7 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
       .cancel_user = app->gizclaw,
   };
   const h2_gizclaw_service_config_t service_config = {
-      .client_config = &client_config,
+      .client_config = &app->gizclaw->client_config,
       .task = app->runtime->task,
       .queue = app->runtime->queue,
       .sync = app->runtime->sync,

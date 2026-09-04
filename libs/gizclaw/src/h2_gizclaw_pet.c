@@ -1008,6 +1008,10 @@ h2_pal_result_t h2_gizclaw_rpc_pet_pixa_download(
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
+  /* The synchronous adapter calls the writer for every chunk; a missing
+   * writer must fail here instead of when the first frame arrives. */
+  if (write == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_pet_pixa_download(
       service, 0u, pet_name, timeout_ms, &request);

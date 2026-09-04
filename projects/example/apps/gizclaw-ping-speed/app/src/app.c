@@ -256,8 +256,10 @@ static int smoke_server_info_preflight(
 static h2_pal_result_t smoke_speed_input(void *user, uint8_t *buffer,
                                          size_t capacity, size_t *out_read) {
     smoke_speed_io_t *io = (smoke_speed_io_t *)user;
-    (void)buffer;
     *out_read = io->input_remaining < capacity ? io->input_remaining : capacity;
+    /* The request layer transmits exactly these bytes; never leak whatever
+     * the buffer held before. A fixed pattern keeps the payload deterministic. */
+    memset(buffer, 0xA5, *out_read);
     io->input_remaining -= *out_read;
     return H2_PAL_OK;
 }

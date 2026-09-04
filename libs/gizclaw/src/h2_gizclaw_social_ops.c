@@ -2310,6 +2310,10 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_message_audio_download(
   if (storage == NULL || storage->used > storage->capacity ||
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
+  /* The synchronous adapter calls the writer for every audio frame; a
+   * missing writer must fail here instead of when the first frame arrives. */
+  if (write == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_req_t *request = NULL;
   group_audio_sync_writer_t writer = {.write = write, .user = write_user};
   h2_pal_result_t rc =
