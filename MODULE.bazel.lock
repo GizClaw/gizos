@@ -985,7 +985,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "CMDGYbE8LdlkxN5qej400MQLc4V0+UDGXL/CCEKf3kM=",
-        "usagesDigest": "lv6zBOy81d4neWkyIQGlVcGBPbgXKc4d4FiOqcPq5bI=",
+        "usagesDigest": "OLI0fvu1GJenIQJpXCtTUlahlrlRYA1HyLmsov2X6+4=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1073,6 +1073,23 @@
               "strip_prefix": "iperf-3.21",
               "urls": [
                 "https://codeload.github.com/esnet/iperf/tar.gz/3.21"
+              ]
+            }
+          },
+          "h2_vendor_qrcodegen": {
+            "repoRuleId": "@@//tools/bazel/vendor:repositories.bzl%_archive_repository",
+            "attributes": {
+              "build_file": "@@//third_party:qrcodegen.BUILD.bazel",
+              "ffmpeg_configure_adapter": false,
+              "nested_archive_sha256": {},
+              "nested_archive_strip_prefix": {},
+              "nested_archive_urls": {},
+              "overlay_files": {},
+              "patches": [],
+              "sha256": "ea6326674b89e3af6d055dac722d5d03ffd3a1d3edb5acd8d691a8b89236907b",
+              "strip_prefix": "QR-Code-generator-3c6d0b3cefb4e049dc337e82237c9644399716a8",
+              "urls": [
+                "https://codeload.github.com/nayuki/QR-Code-generator/tar.gz/3c6d0b3cefb4e049dc337e82237c9644399716a8"
               ]
             }
           },

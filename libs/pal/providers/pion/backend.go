@@ -39,6 +39,7 @@ const (
 	EventChannelState
 	EventChannelMessage
 	EventOpusFrame
+	EventWritable
 )
 
 type Event struct {
@@ -56,6 +57,8 @@ type Event struct {
 }
 
 type Backend struct {
+	deliveryMu       sync.Mutex
+	pending          *Event
 	mu               sync.Mutex
 	pc               *webrtc.PeerConnection
 	opusTrack        *webrtc.TrackLocalStaticSample
@@ -230,38 +233,51 @@ func (b *Backend) CreateDataChannel(
 	return nil
 }
 
-func (b *Backend) Poll(timeoutMS int) ([]Event, bool) {
-	b.mu.Lock()
-	hasEvents := len(b.events) != 0 || b.overflow
-	closed := b.closed
-	b.mu.Unlock()
-	if !hasEvents && !closed && timeoutMS > 0 {
-		timer := time.NewTimer(time.Duration(timeoutMS) * time.Millisecond)
-		select {
-		case <-b.ready:
-			timer.Stop()
-		case <-timer.C:
+// Dispatch delivers at most 64 events per worker slice. A rejected event stays
+// owned by the backend and is retried before any later event. Neither the PAL
+// event queue nor Track backpressure may silently consume received data.
+func (b *Backend) Dispatch(deliver func(Event) error) (bool, error) {
+	b.deliveryMu.Lock()
+	defer b.deliveryMu.Unlock()
+	for n := 0; n < 64; n++ {
+		b.mu.Lock()
+		if b.closed {
+			b.pending = nil
+			b.mu.Unlock()
+			return false, ErrClosed
 		}
-	} else if hasEvents {
-		select {
-		case <-b.ready:
-		default:
+		if b.pending == nil && len(b.events) != 0 {
+			event := b.events[0]
+			b.events[0] = Event{}
+			b.events = b.events[1:]
+			b.queuedEventBytes -= len(event.Data)
+			b.pending = &event
 		}
+		if b.pending == nil {
+			// The accepted prefix is fully delivered, so a recorded overflow
+			// can be surfaced now without overtaking queued events. The C
+			// worker treats it as terminal.
+			overflow := b.overflow
+			b.overflow = false
+			b.mu.Unlock()
+			return overflow, nil
+		}
+		b.mu.Unlock()
+		if err := deliver(*b.pending); err != nil {
+			return false, err
+		}
+		b.pending = nil
 	}
-	b.mu.Lock()
-	events := b.events
-	b.events = nil
-	b.queuedEventBytes = 0
-	overflow := b.overflow
-	b.overflow = false
-	b.mu.Unlock()
-	return events, overflow
+	return false, nil
 }
 
 func (b *Backend) Send(key uint64, data []byte, isText bool) error {
 	state, err := b.channel(key)
 	if err != nil {
 		return err
+	}
+	if len(data) > maxBufferedAmount {
+		return ErrNoSpace
 	}
 	if exceedsBufferedAmount(state.dc.BufferedAmount(), len(data)) {
 		return ErrWouldBlock
@@ -377,6 +393,12 @@ func (b *Backend) attachChannel(
 	reliable bool,
 	remote bool,
 ) {
+	// At zero, even the largest accepted message can be retried. A nonzero
+	// threshold can notify too early and leave a maximum-sized send stranded.
+	state.dc.SetBufferedAmountLowThreshold(0)
+	state.dc.OnBufferedAmountLow(func() {
+		b.enqueue(Event{Kind: EventWritable, ChannelKey: key})
+	})
 	state.dc.OnOpen(func() {
 		b.enqueue(Event{
 			Kind:        EventChannelOpen,
@@ -434,20 +456,24 @@ func (b *Backend) enqueue(event Event) {
 		b.mu.Unlock()
 		return
 	}
+	if b.overflow {
+		// This peer is already failing. Admitting a later event would place it
+		// ahead of the terminal report the caller has not consumed yet.
+		b.mu.Unlock()
+		return
+	}
 	if event.Kind == EventOpusFrame {
 		opusCount := 0
-		oldestOpus := -1
 		for index := range b.events {
 			if b.events[index].Kind == EventOpusFrame {
 				opusCount++
-				if oldestOpus < 0 {
-					oldestOpus = index
-				}
 			}
 		}
 		if opusCount >= maxQueuedOpus {
-			b.queuedEventBytes -= len(b.events[oldestOpus].Data)
-			b.events = removeEvent(b.events, oldestOpus)
+			b.overflow = true
+			b.mu.Unlock()
+			b.notifyReady()
+			return
 		}
 	}
 	eventBytes := len(event.Data)
@@ -480,12 +506,6 @@ func (b *Backend) notifyReady() {
 func exceedsBufferedAmount(buffered uint64, payloadLen int) bool {
 	return payloadLen > maxBufferedAmount ||
 		buffered > uint64(maxBufferedAmount-payloadLen)
-}
-
-func removeEvent(events []Event, index int) []Event {
-	copy(events[index:], events[index+1:])
-	events[len(events)-1] = Event{}
-	return events[:len(events)-1]
 }
 
 func mapPeerState(state webrtc.PeerConnectionState) int {

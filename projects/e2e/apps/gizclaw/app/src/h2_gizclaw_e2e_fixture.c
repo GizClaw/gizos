@@ -15,10 +15,6 @@
 
 typedef struct observed_peer {
   h2_pal_webrtc_peer_t *peer;
-  h2_pal_webrtc_callbacks_t downstream;
-  unsigned callback_depth;
-  bool close_pending;
-  bool close_in_progress;
   bool in_use;
 } observed_peer_t;
 
@@ -117,130 +113,10 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
 }
 
-static void observer_peer_state(void *user, h2_pal_webrtc_peer_t *peer,
-                                h2_pal_webrtc_peer_state_t state) {
-  observed_peer_t *observed = user;
-  if (observed == NULL)
-    return;
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth++;
-  const h2_pal_webrtc_callbacks_t downstream = observed->downstream;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  if (downstream.on_peer_state != NULL)
-    downstream.on_peer_state(downstream.user, peer, state);
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth--;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-}
-
-static void observer_local_sdp(void *user, h2_pal_webrtc_peer_t *peer,
-                               h2_pal_webrtc_sdp_type_t type,
-                               h2_pal_webrtc_str_t sdp) {
-  observed_peer_t *observed = user;
-  if (observed == NULL)
-    return;
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth++;
-  const h2_pal_webrtc_callbacks_t downstream = observed->downstream;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  if (downstream.on_local_sdp != NULL)
-    downstream.on_local_sdp(downstream.user, peer, type, sdp);
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth--;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-}
-
-static void observer_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
-                                   h2_pal_webrtc_channel_t *channel,
-                                   const h2_pal_webrtc_channel_info_t *info,
-                                   h2_pal_webrtc_channel_state_t state) {
-  observed_peer_t *observed = user;
-  observe_rpc_channel(channel, info, state);
-  if (observed == NULL)
-    return;
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth++;
-  const h2_pal_webrtc_callbacks_t downstream = observed->downstream;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  if (downstream.on_channel_state != NULL)
-    downstream.on_channel_state(downstream.user, peer, channel, info, state);
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth--;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-}
-
-static void observer_channel_message(void *user, h2_pal_webrtc_peer_t *peer,
-                                     h2_pal_webrtc_channel_t *channel,
-                                     const h2_pal_webrtc_channel_info_t *info,
-                                     const uint8_t *data, size_t len,
-                                     int is_text) {
-  observed_peer_t *observed = user;
-  if (observed == NULL)
-    return;
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth++;
-  const h2_pal_webrtc_callbacks_t downstream = observed->downstream;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  if (downstream.on_channel_message != NULL)
-    downstream.on_channel_message(downstream.user, peer, channel, info, data,
-                                  len, is_text);
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth--;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-}
-
-static void observer_opus_frame(void *user, h2_pal_webrtc_peer_t *peer,
-                                const uint8_t *opus, size_t opus_len) {
-  observed_peer_t *observed = user;
-  if (observed == NULL)
-    return;
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth++;
-  const h2_pal_webrtc_callbacks_t downstream = observed->downstream;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  if (downstream.on_opus_frame != NULL)
-    downstream.on_opus_frame(downstream.user, peer, opus, opus_len);
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  observed->callback_depth--;
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-}
-
-static bool observer_flush_pending_closes(h2_pal_webrtc_peer_t *target_peer) {
-  bool target_closed = false;
-  for (;;) {
-    observed_peer_t *pending = NULL;
-    h2_pal_webrtc_peer_t *peer = NULL;
-    (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-    for (size_t index = 0u; index < H2_GIZCLAW_E2E_OBSERVER_PEER_CAPACITY;
-         ++index) {
-      observed_peer_t *observed = &s_webrtc_observer.peers[index];
-      if (observed->in_use && observed->close_pending &&
-          !observed->close_in_progress && observed->callback_depth == 0u) {
-        pending = observed;
-        peer = observed->peer;
-        observed->close_pending = false;
-        observed->close_in_progress = true;
-        break;
-      }
-    }
-    (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-    if (pending == NULL)
-      return target_closed;
-    h2_pal_webrtc_peer_close(s_webrtc_observer.upstream, peer);
-    target_closed = target_closed || peer == target_peer;
-    (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-    if (pending->peer == peer)
-      memset(pending, 0, sizeof(*pending));
-    (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  }
-}
-
-static h2_pal_result_t observer_peer_create(
-    void *user, const h2_pal_webrtc_callbacks_t *callbacks,
-    h2_pal_webrtc_peer_t **out_peer) {
+static h2_pal_result_t observer_peer_create(void *user,
+                                            h2_pal_webrtc_peer_t **out_peer) {
   webrtc_observer_t *observer = user;
-  if (observer == NULL || callbacks == NULL || out_peer == NULL ||
-      observer->upstream == NULL) {
+  if (observer == NULL || out_peer == NULL || observer->upstream == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   observed_peer_t *slot = NULL;
@@ -250,23 +126,13 @@ static h2_pal_result_t observer_peer_create(
     if (!observer->peers[index].in_use) {
       slot = &observer->peers[index];
       slot->in_use = true;
-      slot->downstream = *callbacks;
       break;
     }
   }
   (void)h2_pal_mutex_unlock(observer->sync, observer->mutex);
   if (slot == NULL)
     return H2_PAL_ERR_NO_SPACE;
-  h2_pal_webrtc_callbacks_t wrapped = {
-      .user = slot,
-      .on_peer_state = observer_peer_state,
-      .on_local_sdp = observer_local_sdp,
-      .on_channel_state = observer_channel_state,
-      .on_channel_message = observer_channel_message,
-      .on_opus_frame = observer_opus_frame,
-  };
-  const int result =
-      h2_pal_webrtc_peer_create(observer->upstream, &wrapped, out_peer);
+  const int result = h2_pal_webrtc_peer_create(observer->upstream, out_peer);
   (void)h2_pal_mutex_lock(observer->sync, observer->mutex);
   if (result == H2_PAL_OK) {
     slot->peer = *out_peer;
@@ -285,16 +151,13 @@ observer_peer_add_ice_server(h2_pal_webrtc_peer_t *peer,
 }
 
 static h2_pal_result_t observer_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
-  h2_pal_result_t result =
-      h2_pal_webrtc_peer_start_offer(s_webrtc_observer.upstream, peer);
-  if (observer_flush_pending_closes(peer) && result == H2_PAL_OK)
-    result = H2_PAL_ERR_CLOSED;
-  return result;
+  return h2_pal_webrtc_peer_start_offer(s_webrtc_observer.upstream, peer);
 }
 
-static h2_pal_result_t observer_peer_set_remote_sdp(
-    h2_pal_webrtc_peer_t *peer, h2_pal_webrtc_sdp_type_t type,
-    h2_pal_webrtc_str_t sdp) {
+static h2_pal_result_t
+observer_peer_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
+                             h2_pal_webrtc_sdp_type_t type,
+                             h2_pal_webrtc_str_t sdp) {
   return h2_pal_webrtc_peer_set_remote_sdp(s_webrtc_observer.upstream, peer,
                                            type, sdp);
 }
@@ -308,12 +171,26 @@ observer_peer_create_data_channel(h2_pal_webrtc_peer_t *peer,
 }
 
 static h2_pal_result_t observer_peer_poll(h2_pal_webrtc_peer_t *peer,
-                                          int timeout_ms) {
-  h2_pal_result_t result =
-      h2_pal_webrtc_peer_poll(s_webrtc_observer.upstream, peer, timeout_ms);
-  if (observer_flush_pending_closes(peer) && result == H2_PAL_OK)
-    result = H2_PAL_ERR_CLOSED;
+                                          int timeout_ms,
+                                          h2_pal_webrtc_event_t *out_event) {
+  h2_pal_result_t result = h2_pal_webrtc_peer_poll(s_webrtc_observer.upstream,
+                                                   peer, timeout_ms, out_event);
+  if (result == H2_PAL_OK && out_event != NULL &&
+      out_event->kind == H2_PAL_WEBRTC_EVENT_CHANNEL_STATE)
+    observe_rpc_channel(out_event->channel, &out_event->channel_info,
+                        out_event->channel_state);
   return result;
+}
+
+static h2_pal_result_t observer_peer_set_track(h2_pal_webrtc_peer_t *peer,
+                                               h2_pal_webrtc_track_t *track) {
+  return h2_pal_webrtc_peer_set_track(s_webrtc_observer.upstream, peer, track);
+}
+
+static h2_pal_result_t observer_peer_unset_track(h2_pal_webrtc_peer_t *peer,
+                                                 h2_pal_webrtc_track_t *track) {
+  return h2_pal_webrtc_peer_unset_track(s_webrtc_observer.upstream, peer,
+                                        track);
 }
 
 static h2_pal_result_t observer_peer_send_opus(h2_pal_webrtc_peer_t *peer,
@@ -323,38 +200,29 @@ static h2_pal_result_t observer_peer_send_opus(h2_pal_webrtc_peer_t *peer,
                                       opus_len);
 }
 
-static h2_pal_result_t observer_channel_send(
-    h2_pal_webrtc_channel_t *channel, const uint8_t *data, size_t len,
-    int is_text) {
+static h2_pal_result_t observer_channel_send(h2_pal_webrtc_channel_t *channel,
+                                             const uint8_t *data, size_t len,
+                                             int is_text) {
   return h2_pal_webrtc_channel_send(s_webrtc_observer.upstream, channel, data,
                                     len, is_text);
 }
 
 static void observer_channel_close(h2_pal_webrtc_channel_t *channel) {
   h2_pal_webrtc_channel_close(s_webrtc_observer.upstream, channel);
-  (void)observer_flush_pending_closes(NULL);
 }
 
 static void observer_peer_close(h2_pal_webrtc_peer_t *peer) {
   observed_peer_t *slot = NULL;
-  bool defer = false;
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_OBSERVER_PEER_CAPACITY;
        ++index) {
     observed_peer_t *observed = &s_webrtc_observer.peers[index];
     if (observed->peer == peer) {
       slot = observed;
-      defer = observed->callback_depth != 0u || observed->close_in_progress;
-      if (defer)
-        observed->close_pending = true;
-      else
-        observed->close_in_progress = true;
       break;
     }
   }
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  if (defer)
-    return;
   h2_pal_webrtc_peer_close(s_webrtc_observer.upstream, peer);
   if (slot != NULL) {
     (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
@@ -363,7 +231,6 @@ static void observer_peer_close(h2_pal_webrtc_peer_t *peer) {
     (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   }
 }
-
 static int observer_init(const h2_pal_webrtc_api_t *upstream,
                          const h2_pal_sync_api_t *sync,
                          const h2_pal_mem_api_t *allocator) {
@@ -389,6 +256,8 @@ static int observer_init(const h2_pal_webrtc_api_t *upstream,
       .peer_start_offer = observer_peer_start_offer,
       .peer_set_remote_sdp = observer_peer_set_remote_sdp,
       .peer_create_data_channel = observer_peer_create_data_channel,
+      .peer_set_track = observer_peer_set_track,
+      .peer_unset_track = observer_peer_unset_track,
       .peer_poll = observer_peer_poll,
       .peer_send_opus = observer_peer_send_opus,
       .channel_send = observer_channel_send,

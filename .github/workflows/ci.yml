@@ -514,8 +514,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # native_build_jobs sets how many cores each firmware action reserves,
+          # so a 4-core runner builds one launcher at 4 and four at 1. It only
+          # tunes Bazel's local scheduling and stays out of the action key, so
+          # every job still shares the same cache entries.
+          #
+          # esp32s3 builds 38 launchers and is throughput-bound. Its cores are
+          # not the scarce resource -- much of a launcher's time is spent
+          # blocked on remote ccache and Bazel cache reads -- so deliberately
+          # reserving fewer cores than the ninja -j each launcher runs lets
+          # concurrent launchers fill each other's stalls. Measured per
+          # launcher: 65s at 4, 33s at 2. esp32p4 and esp32c5 build few enough
+          # launchers that concurrency cannot pay for itself, and keep the
+          # default reservation.
           - name: ESP32-S3 / Build
             config: esp32s3
+            native_build_jobs: "1"
             runner: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
           - name: ESP32-P4 / Build
             config: esp32p4
@@ -552,7 +566,16 @@ jobs:
 
       - name: Check out ESP-IDF from Firmwares devenv
         shell: bash
-        run: git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+        # ESP-IDF's own submodules are provisioned here, before any build. Its
+        # CMake otherwise initializes whatever is missing during configure,
+        # which writes the SDK checkout that every firmware action shares; two
+        # launchers configuring at once then race and the build fails with
+        # "Git submodule init failed". Provisioning up front leaves that check
+        # read-only and costs nothing extra, since it walks and initializes the
+        # same set either way.
+        run: |
+          git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+          git -C firmware-devenv/third_party/esp_idf_6.0 submodule update --init --recursive
 
       - name: Restore ESP-IDF tool cache
         id: esp-idf-cache
@@ -718,6 +741,8 @@ jobs:
 
       - name: Build ${{ matrix.config }} compatible graph
         shell: bash
+        env:
+          BAZEL_NATIVE_BUILD_JOBS: ${{ matrix.native_build_jobs }}
         run: |
           . firmware-devenv/export.sh
           make bazel-build BAZEL_CONFIG=${{ matrix.config }}

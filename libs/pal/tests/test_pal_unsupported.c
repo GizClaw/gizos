@@ -299,12 +299,32 @@ int main(void) {
     const h2_pal_webrtc_ice_server_t ice_server = {
         .url = {.data = "stun:example.invalid", .len = 20u},
     };
-    const h2_pal_webrtc_callbacks_t webrtc_callbacks = {0};
     h2_pal_webrtc_peer_t *webrtc_peer = NULL;
-    assert(h2_pal_webrtc_peer_create_pull(
-               h2_pal_unsupported_webrtc_api(), &webrtc_callbacks,
-               H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL,
+    assert(h2_pal_webrtc_peer_create(
+               h2_pal_unsupported_webrtc_api(),
                &webrtc_peer) == H2_PAL_ERR_UNSUPPORTED);
+    h2_pal_webrtc_track_t webrtc_track = {
+        .native_handle = (void *)(uintptr_t)1u,
+    };
+    assert(h2_pal_webrtc_peer_set_track(
+               h2_pal_unsupported_webrtc_api(),
+               (h2_pal_webrtc_peer_t *)(uintptr_t)1u,
+               &webrtc_track) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_webrtc_peer_unset_track(
+               h2_pal_unsupported_webrtc_api(),
+               (h2_pal_webrtc_peer_t *)(uintptr_t)1u,
+               &webrtc_track) == H2_PAL_ERR_UNSUPPORTED);
+    h2_pal_webrtc_event_t webrtc_event = {0};
+    assert(h2_pal_webrtc_peer_poll(
+               h2_pal_unsupported_webrtc_api(),
+               (h2_pal_webrtc_peer_t *)(uintptr_t)1u, 0,
+               &webrtc_event) == H2_PAL_ERR_UNSUPPORTED);
+    /* A negative timeout is invalid at the wrapper, before any provider can
+     * reinterpret it as an unbounded wait. */
+    assert(h2_pal_webrtc_peer_poll(
+               h2_pal_unsupported_webrtc_api(),
+               (h2_pal_webrtc_peer_t *)(uintptr_t)1u, -1,
+               &webrtc_event) == H2_PAL_ERR_INVALID_ARG);
     assert(h2_pal_webrtc_peer_add_ice_server(
                h2_pal_unsupported_webrtc_api(),
                (h2_pal_webrtc_peer_t *)(uintptr_t)1u,

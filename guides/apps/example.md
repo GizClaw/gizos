@@ -21,6 +21,7 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `modem-smoke` | Modem、SIM、registration、PPP 与 ICMP stages |
 | `mp4-player` | MP4 decode、audio output 与 display presentation |
 | `partial-update` | package data generation 的 filesystem observation |
+| `qrcode` | 由 Display PAL band 绘制的居中 QR Code 符号 |
 | `safe-call` | ESP PSRAM caller 与 Internal safe-call worker validation |
 | `starboy` | 程序化双眼、球面注视、主题、眨眼、音频和运动响应 |
 | `tap-reset` | 同一个 LVGL counter 的 increment 与 Reset |

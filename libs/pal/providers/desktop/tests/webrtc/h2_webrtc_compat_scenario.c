@@ -3,10 +3,12 @@
 #include "h2_webrtc_compat_factory.h"
 #include "h2_webrtc_pion_fixture.h"
 
+#include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -24,6 +26,7 @@ enum {
 };
 
 static volatile sig_atomic_t h2_webrtc_compat_fixture_pid;
+static void h2_webrtc_compat_watchdog(int signal_number);
 
 static const char *const
     h2_webrtc_compat_labels[H2_WEBRTC_COMPAT_CHANNEL_COUNT] = {
@@ -53,8 +56,17 @@ typedef struct h2_webrtc_compat_state {
         *reverse_channels[H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT];
     const h2_pal_webrtc_api_t *api;
     int callback_error;
+    int remote_close_requested;
     atomic_int opus_echoed;
+    atomic_int track_write_attempts;
     atomic_int track_read_ready;
+    atomic_int track_block_mode;
+    atomic_int track_block_entered;
+    atomic_int track_block_release;
+    atomic_int track_active;
+    atomic_int track_detached;
+    atomic_int track_late_access;
+    size_t detached_opus_events;
     size_t recycle_opened;
     size_t recycle_closed;
     size_t recycle_wait_opened;
@@ -77,8 +89,8 @@ static void h2_webrtc_compat_record(h2_webrtc_compat_state_t *state,
                                     const char *format, ...) {
     va_list args;
     va_start(args, format);
-    (void)vsnprintf(state->events[state->event_next],
-                    H2_WEBRTC_COMPAT_EVENT_SIZE, format, args);
+  (void)vsnprintf(state->events[state->event_next], H2_WEBRTC_COMPAT_EVENT_SIZE,
+                  format, args);
     va_end(args);
     state->event_next = (state->event_next + 1u) % H2_WEBRTC_COMPAT_EVENT_COUNT;
     if (state->event_count < H2_WEBRTC_COMPAT_EVENT_COUNT) {
@@ -125,8 +137,8 @@ static int h2_webrtc_compat_channel_index(h2_pal_webrtc_str_t label) {
     for (int i = 0; i < H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT; ++i) {
         size_t expected_len = strlen(h2_webrtc_compat_reverse_labels[i]);
         if (label.len == expected_len &&
-            memcmp(label.data, h2_webrtc_compat_reverse_labels[i],
-                   expected_len) == 0) {
+        memcmp(label.data, h2_webrtc_compat_reverse_labels[i], expected_len) ==
+            0) {
             return H2_WEBRTC_COMPAT_CHANNEL_COUNT + i;
         }
     }
@@ -135,6 +147,7 @@ static int h2_webrtc_compat_channel_index(h2_pal_webrtc_str_t label) {
 
 static h2_pal_result_t h2_webrtc_compat_send(const h2_pal_webrtc_api_t *api,
                                              h2_pal_webrtc_peer_t *peer,
+                                             h2_webrtc_compat_state_t *state,
                                              h2_pal_webrtc_channel_t *channel,
                                              const uint8_t *data, size_t len,
                                              int is_text);
@@ -222,15 +235,21 @@ h2_webrtc_compat_on_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
             int reverse_index = index - H2_WEBRTC_COMPAT_CHANNEL_COUNT;
             state->reverse_channels[reverse_index] = channel;
         }
-    } else if (state_value == H2_PAL_WEBRTC_CHANNEL_CLOSED) {
-        if (index >= H2_WEBRTC_COMPAT_CHANNEL_COUNT) {
-            state->reverse_closed_mask |=
-                1u << (index - H2_WEBRTC_COMPAT_CHANNEL_COUNT);
-        } else {
-            state->local_closed_mask |= 1u << index;
-        }
+    } else if (state_value == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
+               (state_value == H2_PAL_WEBRTC_CHANNEL_ERROR &&
+                state->remote_close_requested)) {
+      // The fixture closes the entire remote PeerConnection, not each
+      // stream gracefully. Pion may report a reset/association error during
+      // that teardown. It is terminal here, but remains a failure during
+      // data transfer/reuse. Still require the peer terminal state below.
+      if (index >= H2_WEBRTC_COMPAT_CHANNEL_COUNT) {
+        state->reverse_closed_mask |=
+            1u << (index - H2_WEBRTC_COMPAT_CHANNEL_COUNT);
+      } else {
+        state->local_closed_mask |= 1u << index;
+      }
     } else if (state_value == H2_PAL_WEBRTC_CHANNEL_ERROR) {
-        state->callback_error = 1;
+      state->callback_error = 1;
     }
 }
 
@@ -296,8 +315,7 @@ static void h2_webrtc_compat_on_channel_message(
     if (len == text_prefix_len + 1u &&
         memcmp(data, text_prefix, text_prefix_len) == 0 &&
         data[text_prefix_len] == (uint8_t)('0' + index)) {
-        state->echoed_mask |= 1u
-                              << (index * H2_WEBRTC_COMPAT_MESSAGE_KIND_COUNT);
+    state->echoed_mask |= 1u << (index * H2_WEBRTC_COMPAT_MESSAGE_KIND_COUNT);
         return;
     }
     static const uint8_t binary_tail[] = {0x00u, 0x80u, 0x00u, 0xffu};
@@ -307,40 +325,113 @@ static void h2_webrtc_compat_on_channel_message(
         data[binary_prefix_len + 1u] == binary_tail[1] &&
         data[binary_prefix_len + 2u] == (uint8_t)index &&
         data[binary_prefix_len + 3u] == binary_tail[3]) {
-        state->echoed_mask |=
-            1u << (index * H2_WEBRTC_COMPAT_MESSAGE_KIND_COUNT + 1);
+    state->echoed_mask |= 1u
+                          << (index * H2_WEBRTC_COMPAT_MESSAGE_KIND_COUNT + 1);
         return;
     }
     state->callback_error = 1;
+}
+
+static h2_pal_result_t h2_webrtc_compat_poll(const h2_pal_webrtc_api_t *api,
+                                             h2_pal_webrtc_peer_t *peer,
+                                             h2_webrtc_compat_state_t *state,
+                                             int timeout_ms) {
+  h2_pal_webrtc_event_t event = {0};
+  h2_pal_result_t result =
+      h2_pal_webrtc_peer_poll(api, peer, timeout_ms, &event);
+  if (result != H2_PAL_OK)
+    return result;
+  switch (event.kind) {
+  case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+    h2_webrtc_compat_on_peer_state(state, event.peer, event.peer_state);
+    break;
+  case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+    h2_webrtc_compat_on_local_sdp(state, event.peer, event.sdp_type, event.sdp);
+    break;
+  case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+    h2_webrtc_compat_on_channel_state(state, event.peer, event.channel,
+                                      &event.channel_info, event.channel_state);
+    break;
+  case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+    h2_webrtc_compat_on_channel_message(state, event.peer, event.channel,
+                                        &event.channel_info, event.data,
+                                        event.data_len, event.is_text);
+    break;
+  case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+    if (atomic_load_explicit(&state->track_detached, memory_order_acquire) &&
+        event.data_len == 2u && event.data != NULL && event.data[0] == 0xf8u &&
+        event.data[1] == 0x55u) {
+      ++state->detached_opus_events;
+    } else {
+      state->callback_error = 1;
+    }
+    break;
+  case H2_PAL_WEBRTC_EVENT_ERROR:
+    h2_webrtc_compat_record(state, "peer_error=%d", event.error);
+    state->callback_error = 1;
+    break;
+  default:
+    break;
+  }
+  h2_pal_webrtc_event_release(&event);
+  return H2_PAL_OK;
+}
+
+static void h2_webrtc_compat_track_enter(h2_webrtc_compat_state_t *state,
+                                         int mode) {
+  atomic_fetch_add_explicit(&state->track_active, 1, memory_order_acq_rel);
+  if (atomic_load_explicit(&state->track_detached, memory_order_acquire))
+    atomic_fetch_add_explicit(&state->track_late_access, 1,
+                              memory_order_relaxed);
+  if (atomic_load_explicit(&state->track_block_mode, memory_order_acquire) ==
+      mode) {
+    atomic_store_explicit(&state->track_block_entered, 1, memory_order_release);
+    while (!atomic_load_explicit(&state->track_block_release,
+                                 memory_order_acquire)) {
+      const struct timespec delay = {.tv_nsec = 1000000L};
+      (void)nanosleep(&delay, NULL);
+    }
+  }
+}
+
+static h2_pal_result_t
+h2_webrtc_compat_track_leave(h2_webrtc_compat_state_t *state,
+                             h2_pal_result_t result) {
+  atomic_fetch_sub_explicit(&state->track_active, 1, memory_order_release);
+  return result;
 }
 
 static h2_pal_result_t h2_webrtc_compat_track_read(void *user, uint8_t *opus,
                                                    size_t capacity,
                                                    size_t *out_len) {
     h2_webrtc_compat_state_t *state = user;
+    h2_webrtc_compat_track_enter(state, 1);
     if (!atomic_exchange_explicit(&state->track_read_ready, 0,
                                   memory_order_acq_rel)) {
-        return H2_PAL_ERR_WOULD_BLOCK;
+      return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_WOULD_BLOCK);
     }
     static const uint8_t packet[] = {0xf8u, 0x55u};
     if (capacity < sizeof(packet))
-        return H2_PAL_ERR_NO_SPACE;
+      return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_NO_SPACE);
     memcpy(opus, packet, sizeof(packet));
     *out_len = sizeof(packet);
-    return H2_PAL_OK;
+    return h2_webrtc_compat_track_leave(state, H2_PAL_OK);
 }
 
-static h2_pal_result_t h2_webrtc_compat_track_write(void *user,
-                                                    const uint8_t *opus,
-                                                    size_t opus_len) {
+static h2_pal_result_t
+h2_webrtc_compat_track_write(void *user, const uint8_t *opus, size_t opus_len) {
     h2_webrtc_compat_state_t *state = user;
+    h2_webrtc_compat_track_enter(state, 2);
     static const uint8_t expected[] = {0xf8u, 0x55u};
     if (opus_len != sizeof(expected) || opus == NULL ||
         memcmp(opus, expected, sizeof(expected)) != 0) {
-        return H2_PAL_ERR_FORMAT;
+      return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_FORMAT);
     }
+    if (atomic_fetch_add_explicit(&state->track_write_attempts, 1,
+                                  memory_order_acq_rel) < 2)
+      return h2_webrtc_compat_track_leave(state, H2_PAL_ERR_WOULD_BLOCK);
     atomic_store_explicit(&state->opus_echoed, 1, memory_order_release);
-    return H2_PAL_OK;
+    return h2_webrtc_compat_track_leave(state, H2_PAL_OK);
 }
 
 static int h2_webrtc_compat_wait(const h2_pal_webrtc_api_t *api,
@@ -351,7 +442,7 @@ static int h2_webrtc_compat_wait(const h2_pal_webrtc_api_t *api,
     uint64_t deadline = h2_webrtc_compat_now_ms() + timeout_ms;
     while (!done(state) && !state->callback_error &&
            h2_webrtc_compat_now_ms() < deadline) {
-        h2_pal_result_t result = h2_pal_webrtc_peer_poll(api, peer, 10);
+    h2_pal_result_t result = h2_webrtc_compat_poll(api, peer, state, 10);
         if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
             result != H2_PAL_ERR_TIMEOUT && result != H2_PAL_ERR_CLOSED) {
             return -1;
@@ -364,6 +455,10 @@ static int h2_webrtc_compat_connected(const h2_webrtc_compat_state_t *state) {
     return state->peer_state == H2_PAL_WEBRTC_PEER_CONNECTED &&
            state->channel_open_mask ==
                (1u << H2_WEBRTC_COMPAT_TOTAL_CHANNEL_COUNT) - 1u;
+}
+
+static int h2_webrtc_compat_offer_ready(const h2_webrtc_compat_state_t *state) {
+  return state->offer_len != 0u;
 }
 
 static int
@@ -403,6 +498,7 @@ static int h2_webrtc_compat_terminal(const h2_webrtc_compat_state_t *state) {
 
 static h2_pal_result_t h2_webrtc_compat_send(const h2_pal_webrtc_api_t *api,
                                              h2_pal_webrtc_peer_t *peer,
+                                             h2_webrtc_compat_state_t *state,
                                              h2_pal_webrtc_channel_t *channel,
                                              const uint8_t *data, size_t len,
                                              int is_text) {
@@ -413,7 +509,7 @@ static h2_pal_result_t h2_webrtc_compat_send(const h2_pal_webrtc_api_t *api,
         if (result != H2_PAL_ERR_WOULD_BLOCK) {
             return result;
         }
-        (void)h2_pal_webrtc_peer_poll(api, peer, 10);
+    (void)h2_webrtc_compat_poll(api, peer, state, 10);
     } while (h2_webrtc_compat_now_ms() < deadline);
     return H2_PAL_ERR_TIMEOUT;
 }
@@ -421,7 +517,8 @@ static h2_pal_result_t h2_webrtc_compat_send(const h2_pal_webrtc_api_t *api,
 static int
 h2_webrtc_compat_wait_reverse_replies(const h2_webrtc_compat_backend_t *backend,
                                       h2_webrtc_pion_fixture_t *fixture,
-                                      h2_pal_webrtc_peer_t *peer) {
+                                      h2_pal_webrtc_peer_t *peer,
+                                      h2_webrtc_compat_state_t *state) {
     uint64_t deadline = h2_webrtc_compat_now_ms() + 10000u;
     do {
         h2_webrtc_channel_stats_t stats = {0};
@@ -431,7 +528,7 @@ h2_webrtc_compat_wait_reverse_replies(const h2_webrtc_compat_backend_t *backend,
             return 0;
         }
         h2_pal_result_t result =
-            h2_pal_webrtc_peer_poll(backend->api, peer, 10);
+        h2_webrtc_compat_poll(backend->api, peer, state, 10);
         if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
             result != H2_PAL_ERR_TIMEOUT) {
             return -1;
@@ -444,10 +541,12 @@ static int h2_webrtc_compat_run_reuse_cycles(
     const h2_webrtc_compat_backend_t *backend,
     h2_webrtc_pion_fixture_t *fixture, h2_pal_webrtc_peer_t *peer,
     h2_webrtc_compat_state_t *state, h2_pal_webrtc_channel_t **channels) {
-    h2_webrtc_channel_stats_t baseline = {0};
-    uint64_t deadline = h2_webrtc_compat_now_ms() + 10000u;
-    do {
-        (void)h2_pal_webrtc_peer_poll(backend->api, peer, 10);
+  fprintf(stderr, "%s: SID reuse begin cycles=%u\n", backend->name,
+          H2_WEBRTC_COMPAT_REUSE_CYCLES);
+  h2_webrtc_channel_stats_t baseline = {0};
+  uint64_t deadline = h2_webrtc_compat_now_ms() + 10000u;
+  do {
+    (void)h2_webrtc_compat_poll(backend->api, peer, state, 10);
         if (h2_webrtc_pion_fixture_channel_stats(fixture, &baseline) == 0 &&
             baseline.created == H2_WEBRTC_COMPAT_TOTAL_CHANNEL_COUNT &&
             baseline.opened == H2_WEBRTC_COMPAT_TOTAL_CHANNEL_COUNT &&
@@ -455,15 +554,15 @@ static int h2_webrtc_compat_run_reuse_cycles(
             (state->local_closed_mask & (1u << 2u)) != 0u) {
             break;
         }
-    } while (h2_webrtc_compat_now_ms() < deadline);
+  } while (h2_webrtc_compat_now_ms() < deadline);
     if (baseline.opened != H2_WEBRTC_COMPAT_TOTAL_CHANNEL_COUNT ||
         baseline.current != H2_WEBRTC_COMPAT_TOTAL_CHANNEL_COUNT - 1u ||
         (state->local_closed_mask & (1u << 2u)) == 0u) {
         fprintf(stderr,
                 "%s: rpc close baseline created=%llu opened=%llu closed=%llu "
                 "current=%llu local_closed=0x%x\n",
-                backend->name, baseline.created, baseline.opened,
-                baseline.closed, baseline.current, state->local_closed_mask);
+            backend->name, baseline.created, baseline.opened, baseline.closed,
+            baseline.current, state->local_closed_mask);
         return -1;
     }
 
@@ -473,16 +572,18 @@ static int h2_webrtc_compat_run_reuse_cycles(
     deadline = h2_webrtc_compat_now_ms() + 10000u;
     h2_webrtc_channel_stats_t stats = {0};
     do {
-        (void)h2_pal_webrtc_peer_poll(backend->api, peer, 10);
-        if (h2_webrtc_pion_fixture_channel_stats(fixture, &stats) == 0 &&
-            stats.closed >= baseline.closed + 1u &&
-            stats.current == H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u) {
-            break;
-        }
+    (void)h2_webrtc_compat_poll(backend->api, peer, state, 10);
+    if (h2_webrtc_pion_fixture_channel_stats(fixture, &stats) == 0 &&
+        stats.closed >= baseline.closed + 1u &&
+        stats.current == H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u &&
+        (state->local_closed_mask & (1u << 1u)) != 0u) {
+      break;
+    }
     } while (h2_webrtc_compat_now_ms() < deadline);
     if (stats.closed < baseline.closed + 1u ||
-        stats.current != H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u) {
-        return -1;
+        stats.current != H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u ||
+        (state->local_closed_mask & (1u << 1u)) == 0u) {
+      return -1;
     }
 
     state->recycling = 1;
@@ -500,14 +601,13 @@ static int h2_webrtc_compat_run_reuse_cycles(
         h2_pal_result_t result = h2_pal_webrtc_peer_create_data_channel(
             backend->api, peer, &config, &channel);
         if (result != H2_PAL_OK) {
-            fprintf(stderr, "%s: reuse cycle %zu create failed %d\n",
-                    backend->name, cycle, result);
+      fprintf(stderr, "%s: reuse cycle %zu create failed %d\n", backend->name,
+              cycle, result);
             return -1;
         }
         state->recycle_wait_opened = cycle + 1u;
         if (h2_webrtc_compat_wait(backend->api, peer, state,
-                                  h2_webrtc_compat_recycle_opened,
-                                  10000u) != 0) {
+                              h2_webrtc_compat_recycle_opened, 10000u) != 0) {
             fprintf(stderr, "%s: reuse cycle %zu did not open\n", backend->name,
                     cycle);
             return -1;
@@ -522,47 +622,63 @@ static int h2_webrtc_compat_run_reuse_cycles(
         state->recycle_echo_mask = 0u;
         if (payload_len <= 0 ||
             (size_t)payload_len >= sizeof(state->recycle_expected) ||
-            h2_webrtc_compat_send(backend->api, peer, channel,
+        h2_webrtc_compat_send(backend->api, peer, state, channel,
                                   (const uint8_t *)state->recycle_expected,
                                   (size_t)payload_len, 1) != H2_PAL_OK) {
             fprintf(stderr, "%s: reuse cycle %zu send failed\n", backend->name,
                     cycle);
             return -1;
         }
-        if (h2_webrtc_compat_send(
-                backend->api, peer, channel, state->recycle_binary,
+    if (h2_webrtc_compat_send(backend->api, peer, state, channel,
+                              state->recycle_binary,
                 sizeof(state->recycle_binary), 0) != H2_PAL_OK) {
-            fprintf(stderr, "%s: reuse cycle %zu binary send failed\n",
-                    backend->name, cycle);
+      fprintf(stderr, "%s: reuse cycle %zu binary send failed\n", backend->name,
+              cycle);
             return -1;
         }
         if (h2_webrtc_compat_wait(backend->api, peer, state,
-                                  h2_webrtc_compat_recycle_echoed,
-                                  10000u) != 0) {
+                              h2_webrtc_compat_recycle_echoed, 10000u) != 0) {
             fprintf(stderr, "%s: reuse cycle %zu echo failed\n", backend->name,
                     cycle);
             return -1;
         }
+        if (state->recycle_opened != cycle + 1u ||
+            state->recycle_closed != cycle) {
+          fprintf(stderr, "%s: reuse cycle %zu unexpected lifecycle count\n",
+                  backend->name, cycle);
+          return -1;
+        }
         h2_pal_webrtc_channel_close(backend->api, channel);
-        if (state->recycle_closed != cycle + 1u) {
-            fprintf(stderr, "%s: reuse cycle %zu close callback missing\n",
-                    backend->name, cycle);
-            return -1;
+        // Close submits work; terminal notification is an owned poll event,
+        // not a callback that must have run before channel_close returns.
+        if (state->recycle_closed != cycle) {
+          fprintf(stderr, "%s: reuse cycle %zu dispatched outside poll\n",
+                  backend->name, cycle);
+          return -1;
         }
         deadline = h2_webrtc_compat_now_ms() + 10000u;
         do {
-            (void)h2_pal_webrtc_peer_poll(backend->api, peer, 10);
-            if (h2_webrtc_pion_fixture_channel_stats(fixture, &stats) == 0 &&
-                stats.closed >= baseline.closed + 2u + cycle &&
-                stats.current == H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u) {
-                break;
-            }
+          h2_pal_result_t close_result =
+              h2_webrtc_compat_poll(backend->api, peer, state, 10);
+          if (state->callback_error ||
+              (close_result != H2_PAL_OK &&
+               close_result != H2_PAL_ERR_WOULD_BLOCK &&
+               close_result != H2_PAL_ERR_TIMEOUT)) {
+            return -1;
+          }
+          if (h2_webrtc_pion_fixture_channel_stats(fixture, &stats) == 0 &&
+              stats.closed >= baseline.closed + 2u + cycle &&
+              stats.current == H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u &&
+              state->recycle_closed == cycle + 1u) {
+            break;
+          }
         } while (h2_webrtc_compat_now_ms() < deadline);
         if (stats.closed < baseline.closed + 2u + cycle ||
-            stats.current != H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u) {
-            fprintf(stderr, "%s: reuse cycle %zu remote close timed out\n",
-                    backend->name, cycle);
-            return -1;
+            stats.current != H2_WEBRTC_COMPAT_REVERSE_CHANNEL_COUNT + 1u ||
+            state->recycle_closed != cycle + 1u) {
+          fprintf(stderr, "%s: reuse cycle %zu local/remote close incomplete\n",
+                  backend->name, cycle);
+          return -1;
         }
     }
     if (stats.created != baseline.created + H2_WEBRTC_COMPAT_REUSE_CYCLES ||
@@ -585,13 +701,14 @@ static int h2_webrtc_compat_run_reuse_cycles(
     state->echoed_mask &= ~3u;
     char text_payload[] = "text-0";
     static const uint8_t binary_payload[] = {0x00u, 0x80u, 0x00u, 0xffu};
-    if (h2_webrtc_compat_send(backend->api, peer, channels[0],
-                              (const uint8_t *)text_payload,
-                              strlen(text_payload), 1) != H2_PAL_OK ||
-        h2_webrtc_compat_send(backend->api, peer, channels[0], binary_payload,
-                              sizeof(binary_payload), 0) != H2_PAL_OK ||
-        h2_webrtc_compat_wait(backend->api, peer, state,
-                              h2_webrtc_compat_echoed, 10000u) != 0) {
+  if (h2_webrtc_compat_send(backend->api, peer, state, channels[0],
+                            (const uint8_t *)text_payload, strlen(text_payload),
+                            1) != H2_PAL_OK ||
+      h2_webrtc_compat_send(backend->api, peer, state, channels[0],
+                            binary_payload, sizeof(binary_payload),
+                            0) != H2_PAL_OK ||
+      h2_webrtc_compat_wait(backend->api, peer, state, h2_webrtc_compat_echoed,
+                            10000u) != 0) {
         return -1;
     }
     atomic_store_explicit(&state->opus_echoed, 0, memory_order_release);
@@ -606,7 +723,128 @@ static int h2_webrtc_compat_run_reuse_cycles(
         state, "reuse_complete cycles=%u unique=%zu reused=%zu",
         H2_WEBRTC_COMPAT_REUSE_CYCLES, state->recycle_unique_sids,
         state->recycle_reused_sids);
+    fprintf(stderr, "%s: SID reuse complete cycles=%u unique=%zu reused=%zu\n",
+            backend->name, H2_WEBRTC_COMPAT_REUSE_CYCLES,
+            state->recycle_unique_sids, state->recycle_reused_sids);
     return 0;
+}
+
+typedef struct h2_webrtc_unset_call {
+  const h2_pal_webrtc_api_t *api;
+  h2_pal_webrtc_peer_t *peer;
+  h2_pal_webrtc_track_t *track;
+  h2_webrtc_compat_state_t *state;
+  atomic_int started;
+  atomic_int done;
+  int result;
+  int returned_while_active;
+} h2_webrtc_unset_call_t;
+
+static void *h2_webrtc_compat_unset_task(void *user) {
+  h2_webrtc_unset_call_t *call = user;
+  atomic_store_explicit(&call->started, 1, memory_order_release);
+  call->result =
+      h2_pal_webrtc_peer_unset_track(call->api, call->peer, call->track);
+  call->returned_while_active = atomic_load_explicit(&call->state->track_active,
+                                                     memory_order_acquire) != 0;
+  atomic_store_explicit(&call->done, 1, memory_order_release);
+  return NULL;
+}
+
+static int h2_webrtc_compat_wait_atomic(atomic_int *value,
+                                        uint32_t timeout_ms) {
+  const uint64_t deadline = h2_webrtc_compat_now_ms() + timeout_ms;
+  while (!atomic_load_explicit(value, memory_order_acquire)) {
+    if (h2_webrtc_compat_now_ms() >= deadline)
+      return -1;
+    const struct timespec delay = {.tv_nsec = 1000000L};
+    (void)nanosleep(&delay, NULL);
+  }
+  return 0;
+}
+
+static int
+h2_webrtc_compat_detached_opus(const h2_webrtc_compat_state_t *state) {
+  return state->detached_opus_events != 0u;
+}
+
+static int h2_webrtc_compat_unset_in_flight(
+    const h2_webrtc_compat_backend_t *backend, h2_pal_webrtc_peer_t *peer,
+    h2_webrtc_compat_state_t *state, h2_pal_webrtc_track_t **track,
+    h2_pal_webrtc_channel_t *channel, int mode) {
+  // Block the production protocol task inside either read or write. Do not
+  // call app poll while waiting: media transport must advance independently.
+  atomic_store_explicit(&state->track_block_mode, mode, memory_order_release);
+  if (mode == 2)
+    atomic_store_explicit(&state->track_read_ready, 1, memory_order_release);
+  if (h2_webrtc_compat_wait_atomic(&state->track_block_entered, 5000u) != 0) {
+    atomic_store_explicit(&state->track_block_release, 1, memory_order_release);
+    fprintf(stderr, "%s: Track %s did not enter\n", backend->name,
+            mode == 1 ? "read" : "write");
+    return -1;
+  }
+
+  h2_webrtc_unset_call_t call = {
+      .api = backend->api,
+      .peer = peer,
+      .track = *track,
+      .state = state,
+  };
+  pthread_t thread;
+  if (pthread_create(&thread, NULL, h2_webrtc_compat_unset_task, &call) != 0) {
+    atomic_store_explicit(&state->track_block_release, 1, memory_order_release);
+    return -1;
+  }
+  const int start_rc = h2_webrtc_compat_wait_atomic(&call.started, 5000u);
+  // Give the caller a bounded opportunity to return incorrectly while the
+  // callback remains held. The worker also checks active count at return.
+  const int returned_early =
+      start_rc == 0 && h2_webrtc_compat_wait_atomic(&call.done, 100u) == 0;
+  atomic_store_explicit(&state->track_block_release, 1, memory_order_release);
+  if (h2_webrtc_compat_wait_atomic(&call.done, 5000u) != 0) {
+    fprintf(stderr, "%s: Track unset did not finish after callback release\n",
+            backend->name);
+    // A stuck worker still borrows this stack. Terminate this isolated test
+    // and its owned server rather than unwind borrowed state or hang in join.
+    h2_webrtc_compat_watchdog(0);
+  }
+  if (pthread_join(thread, NULL) != 0)
+    h2_webrtc_compat_watchdog(0);
+  if (start_rc != 0 || returned_early || call.returned_while_active ||
+      call.result != H2_PAL_OK) {
+    fprintf(stderr, "%s: invalid Track unset rc=%d early=%d active=%d\n",
+            backend->name, call.result, returned_early,
+            call.returned_while_active);
+    return -1;
+  }
+  atomic_store_explicit(&state->track_detached, 1, memory_order_release);
+  free(*track);
+  *track = NULL;
+
+  // Exercise the same live Peer after freeing the borrowed Track. ASan must
+  // catch any provider access to it. RTP now arrives as an owned poll event.
+  static const uint8_t opus[] = {0xf8u, 0x55u};
+  h2_pal_result_t rc =
+      h2_pal_webrtc_peer_send_opus(backend->api, peer, opus, sizeof(opus));
+  if (rc != H2_PAL_OK ||
+      h2_webrtc_compat_wait(backend->api, peer, state,
+                            h2_webrtc_compat_detached_opus, 5000u) != 0)
+    return -1;
+  state->echoed_mask &= ~1u;
+  static const char probe[] = "text-0";
+  rc = h2_webrtc_compat_send(backend->api, peer, state, channel,
+                             (const uint8_t *)probe, sizeof(probe) - 1u, 1);
+  if (rc != H2_PAL_OK ||
+      h2_webrtc_compat_wait(backend->api, peer, state, h2_webrtc_compat_echoed,
+                            5000u) != 0 ||
+      atomic_load_explicit(&state->track_late_access, memory_order_acquire) !=
+          0)
+    return -1;
+  fprintf(stderr,
+          "%s: Track unset in_flight=%s waited=pass "
+          "freed_track_rtp_event=pass data=pass\n",
+          backend->name, mode == 1 ? "read" : "write");
+  return 0;
 }
 
 static int h2_webrtc_compat_run_session(
@@ -615,7 +853,10 @@ static int h2_webrtc_compat_run_session(
     int run_reuse, const char *expected_protocol, int require_udp_drop) {
     int failed = 1;
     h2_pal_webrtc_peer_t *peer = NULL;
-    h2_pal_webrtc_track_t *track = NULL;
+  static const h2_pal_webrtc_track_vtable_t track_vtable = {
+      .read = h2_webrtc_compat_track_read,
+      .write = h2_webrtc_compat_track_write,
+  };
     h2_webrtc_compat_state_t state = {
         .backend_name = backend->name,
         .mode = relay_only ? "turn-relay-only" : fixture->mode,
@@ -623,31 +864,21 @@ static int h2_webrtc_compat_run_session(
         .api = backend->api,
     };
     h2_webrtc_compat_record(&state, "phase=peer-create");
-    h2_pal_webrtc_callbacks_t callbacks = {
-        .user = &state,
-        .on_peer_state = h2_webrtc_compat_on_peer_state,
-        .on_local_sdp = h2_webrtc_compat_on_local_sdp,
-        .on_channel_state = h2_webrtc_compat_on_channel_state,
-        .on_channel_message = h2_webrtc_compat_on_channel_message,
-        .on_opus_frame = NULL,
-    };
-    h2_pal_result_t result =
-        h2_pal_webrtc_peer_create(backend->api, &callbacks, &peer);
+    h2_pal_webrtc_track_t *track = malloc(sizeof(*track));
+    if (track == NULL)
+      return 1;
+    *track = (h2_pal_webrtc_track_t){.user = &state, .vtable = &track_vtable};
+    h2_pal_result_t result = h2_pal_webrtc_peer_create(backend->api, &peer);
     if (result != H2_PAL_OK) {
         fprintf(stderr, "%s: peer create failed %d\n", backend->name, result);
         h2_webrtc_compat_record(&state, "peer_create result=%d", result);
         h2_webrtc_compat_dump_failure(&state);
+        free(track);
         return 1;
     }
-    if (backend->track_create == NULL || backend->track_destroy == NULL ||
-        backend->track_create(backend->api, &state,
-                              h2_webrtc_compat_track_read,
-                              h2_webrtc_compat_track_write,
-                              &track) != H2_PAL_OK ||
-        h2_pal_webrtc_peer_set_media_track(backend->api, peer, track) !=
-            H2_PAL_OK) {
-        fprintf(stderr, "%s: media Track setup failed\n", backend->name);
-        goto cleanup;
+    if (h2_pal_webrtc_peer_set_track(backend->api, peer, track) != H2_PAL_OK) {
+      fprintf(stderr, "%s: media Track setup failed\n", backend->name);
+      goto cleanup;
     }
     h2_webrtc_compat_set_phase(&state, "channel-create");
     h2_pal_webrtc_channel_t *channels[H2_WEBRTC_COMPAT_CHANNEL_COUNT] = {0};
@@ -661,11 +892,10 @@ static int h2_webrtc_compat_run_session(
             .ordered = i != 0u,
             .reliable = i != 0u,
         };
-        result = h2_pal_webrtc_peer_create_data_channel(backend->api, peer,
-                                                        &config, &channels[i]);
+    result = h2_pal_webrtc_peer_create_data_channel(backend->api, peer, &config,
+                                                    &channels[i]);
         if (result != H2_PAL_OK) {
-            fprintf(stderr, "%s: channel %zu failed %d\n", backend->name, i,
-                    result);
+      fprintf(stderr, "%s: channel %zu failed %d\n", backend->name, i, result);
             goto cleanup;
         }
     }
@@ -698,7 +928,11 @@ static int h2_webrtc_compat_run_session(
     }
     h2_webrtc_compat_set_phase(&state, "offer");
     result = h2_pal_webrtc_peer_start_offer(backend->api, peer);
-    if (result != H2_PAL_OK || state.offer_len == 0u) {
+  if (result == H2_PAL_OK &&
+      h2_webrtc_compat_wait(backend->api, peer, &state,
+                            h2_webrtc_compat_offer_ready, 10000u) != 0)
+    result = H2_PAL_ERR_TIMEOUT;
+  if (result != H2_PAL_OK) {
         fprintf(stderr, "%s: offer failed %d len=%zu\n", backend->name, result,
                 state.offer_len);
         goto cleanup;
@@ -748,8 +982,8 @@ static int h2_webrtc_compat_run_session(
         fprintf(stderr,
                 "%s: connect failed result=%d state=%d channels=0x%x "
                 "callback_error=%d\n",
-                backend->name, result, state.peer_state,
-                state.channel_open_mask, state.callback_error);
+            backend->name, result, state.peer_state, state.channel_open_mask,
+            state.callback_error);
         goto cleanup;
     }
     h2_webrtc_compat_set_phase(&state, "reverse-channel-response");
@@ -761,7 +995,7 @@ static int h2_webrtc_compat_run_session(
             probe_len <= 0 || state.reverse_channels[i] == NULL
                 ? H2_PAL_ERR_INVALID_STATE
                 : h2_webrtc_compat_send(
-                      backend->api, peer, state.reverse_channels[i],
+                  backend->api, peer, &state, state.reverse_channels[i],
                       (const uint8_t *)probe, (size_t)probe_len, 1);
         if (send_result != H2_PAL_OK) {
             fprintf(stderr, "%s: reverse channel %d send failed result=%d\n",
@@ -775,7 +1009,8 @@ static int h2_webrtc_compat_run_session(
                 backend->name);
         goto cleanup;
     }
-    if (h2_webrtc_compat_wait_reverse_replies(backend, fixture, peer) != 0) {
+  if (h2_webrtc_compat_wait_reverse_replies(backend, fixture, peer, &state) !=
+      0) {
         fprintf(stderr, "%s: reverse channel replies not observed\n",
                 backend->name);
         goto cleanup;
@@ -794,9 +1029,9 @@ static int h2_webrtc_compat_run_session(
         fprintf(stderr,
                 "%s: selected pair mismatch mode=%s local=%s/%s remote=%s/%s "
                 "drops=%llu expected=%s\n",
-                backend->name, pair.mode, pair.local_protocol,
-                pair.local_tcp_type, pair.remote_protocol, pair.remote_tcp_type,
-                pair.udp_drops, expected_protocol);
+            backend->name, pair.mode, pair.local_protocol, pair.local_tcp_type,
+            pair.remote_protocol, pair.remote_tcp_type, pair.udp_drops,
+            expected_protocol);
         goto cleanup;
     }
     fprintf(stderr,
@@ -812,22 +1047,20 @@ static int h2_webrtc_compat_run_session(
         uint8_t binary_payload[sizeof(binary_template)];
         memcpy(binary_payload, binary_template, sizeof(binary_payload));
         binary_payload[2] = (uint8_t)i;
-        result = h2_webrtc_compat_send(backend->api, peer, channels[i],
+    result = h2_webrtc_compat_send(backend->api, peer, &state, channels[i],
                                        (const uint8_t *)text_payload,
                                        strlen(text_payload), 1);
         if (result == H2_PAL_OK) {
-            result = h2_webrtc_compat_send(backend->api, peer, channels[i],
-                                           binary_payload,
-                                           sizeof(binary_payload), 0);
+      result = h2_webrtc_compat_send(backend->api, peer, &state, channels[i],
+                                     binary_payload, sizeof(binary_payload), 0);
         }
         if (result != H2_PAL_OK) {
-            fprintf(stderr, "%s: send %zu failed %d\n", backend->name, i,
-                    result);
+      fprintf(stderr, "%s: send %zu failed %d\n", backend->name, i, result);
             goto cleanup;
         }
     }
-    if (h2_webrtc_compat_wait(backend->api, peer, &state,
-                              h2_webrtc_compat_echoed, 10000u) != 0) {
+  if (h2_webrtc_compat_wait(backend->api, peer, &state, h2_webrtc_compat_echoed,
+                            10000u) != 0) {
         fprintf(stderr, "%s: echo failed mask=0x%x callback_error=%d\n",
                 backend->name, state.echoed_mask, state.callback_error);
         goto cleanup;
@@ -841,11 +1074,17 @@ static int h2_webrtc_compat_run_session(
         const struct timespec delay = {.tv_nsec = 1000000L};
         (void)nanosleep(&delay, NULL);
     }
-    if (!h2_webrtc_compat_opus_echoed(&state)) {
-        fprintf(stderr, "%s: protocol task did not service media Track\n",
-                backend->name);
-        goto cleanup;
+    if (!h2_webrtc_compat_opus_echoed(&state) ||
+        atomic_load_explicit(&state.track_write_attempts,
+                             memory_order_acquire) != 3) {
+      fprintf(stderr, "%s: protocol task did not service media Track\n",
+              backend->name);
+      goto cleanup;
     }
+    fprintf(
+        stderr,
+        "%s: Track write WOULD_BLOCK retries=2 payload=exact app_poll=none\n",
+        backend->name);
     if (run_reuse) {
         h2_webrtc_compat_set_phase(&state, "sid-reuse");
         if (h2_webrtc_compat_run_reuse_cycles(backend, fixture, peer, &state,
@@ -853,13 +1092,19 @@ static int h2_webrtc_compat_run_session(
             goto cleanup;
         }
     }
+    h2_webrtc_compat_set_phase(&state, "track-unset");
+    if (h2_webrtc_compat_unset_in_flight(backend, peer, &state, &track,
+                                         channels[0],
+                                         require_remote_close ? 1 : 2) != 0)
+      goto cleanup;
     if (require_remote_close) {
         h2_webrtc_compat_set_phase(&state, "remote-close");
+        state.remote_close_requested = 1;
         if (h2_webrtc_pion_fixture_close_session(fixture) != 0 ||
             h2_webrtc_compat_wait(backend->api, peer, &state,
                                   h2_webrtc_compat_terminal, 10000u) != 0) {
-            fprintf(stderr, "%s: remote close not observed state=%d\n",
-                    backend->name, state.peer_state);
+      fprintf(stderr, "%s: remote close not observed state=%d\n", backend->name,
+              state.peer_state);
             goto cleanup;
         }
     }
@@ -875,12 +1120,16 @@ cleanup:
         h2_webrtc_compat_dump_failure(&state);
     }
     if (peer != NULL) {
-        h2_pal_webrtc_peer_close(backend->api, peer);
+      atomic_store_explicit(&state.track_block_release, 1,
+                            memory_order_release);
+      if (track != NULL)
+        (void)h2_pal_webrtc_peer_unset_track(backend->api, peer, track);
+      h2_pal_webrtc_peer_close(backend->api, peer);
     }
-    if (track != NULL && backend->track_destroy != NULL &&
-        backend->track_destroy(&track) != H2_PAL_OK) {
-        failed = 1;
-    }
+    free(track);
+    if (atomic_load_explicit(&state.track_late_access, memory_order_acquire) !=
+        0)
+      failed = 1;
     return failed;
 }
 
@@ -912,10 +1161,9 @@ int h2_webrtc_compat_run(const char *server_path) {
     for (size_t mode_index = 0u; mode_index < mode_count; ++mode_index) {
         const char *mode = modes[mode_index];
         const char *expected_protocol =
-            strcmp(mode, "tcp") == 0 || strcmp(mode, "mixed-drop-udp") == 0
-                ? "tcp"
+        strcmp(mode, "tcp") == 0 || strcmp(mode, "mixed-drop-udp") == 0 ? "tcp"
                 : "udp";
-        int run_reuse = 0;
+        int run_reuse = backend.supports_channel_reuse;
         h2_webrtc_pion_fixture_t fixture = {0};
         if (h2_webrtc_pion_fixture_start(&fixture, server_path, mode) != 0) {
             fprintf(stderr, "fixture: failed to start mode=%s\n", mode);
@@ -934,16 +1182,15 @@ int h2_webrtc_compat_run(const char *server_path) {
         }
         fprintf(stderr, "%s: mode=%s reconnect=pass\n", backend.name, mode);
         if (backend.supports_turn && strcmp(mode, "udp") == 0) {
-            if (h2_webrtc_compat_run_session(&backend, &fixture, 1, 1, 0, "udp",
-                                             0) != 0) {
-                h2_webrtc_pion_fixture_stop(&fixture);
-                h2_webrtc_compat_fixture_pid = 0;
-                goto cleanup;
-            }
+          if (h2_webrtc_compat_run_session(&backend, &fixture, 1, 1, run_reuse,
+                                           "udp", 0) != 0) {
+            h2_webrtc_pion_fixture_stop(&fixture);
+            h2_webrtc_compat_fixture_pid = 0;
+            goto cleanup;
+          }
             h2_webrtc_turn_stats_t stats = {0};
             if (h2_webrtc_pion_fixture_turn_stats(&fixture, &stats) != 0 ||
-                stats.allocations_created == 0u ||
-                stats.allocations_deleted == 0u ||
+          stats.allocations_created == 0u || stats.allocations_deleted == 0u ||
                 stats.permissions_created == 0u || stats.relay_ingress == 0u ||
                 stats.relay_egress == 0u) {
                 fprintf(stderr,

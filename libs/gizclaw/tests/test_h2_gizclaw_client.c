@@ -1806,12 +1806,19 @@ static h2_pal_result_t test_channel_send(h2_pal_webrtc_channel_t *channel,
 }
 
 static h2_pal_result_t test_peer_poll(h2_pal_webrtc_peer_t *peer,
-                                      int timeout_ms) {
+                                      int timeout_ms,
+                                      h2_pal_webrtc_event_t *out_event) {
   (void)peer;
   test_poll_calls++;
   test_last_poll_timeout_ms = timeout_ms;
   if (test_poll_result != H2_PAL_ERR_WOULD_BLOCK) {
     test_monotonic_ms += timeout_ms > 0 ? (uint64_t)timeout_ms : 1u;
+  }
+  if (test_poll_result == H2_PAL_OK && out_event != NULL) {
+    *out_event = (h2_pal_webrtc_event_t){
+        .kind = H2_PAL_WEBRTC_EVENT_WRITABLE,
+        .peer = peer,
+    };
   }
   return test_poll_result;
 }
@@ -1835,21 +1842,53 @@ static h2_pal_result_t test_peer_send_opus(h2_pal_webrtc_peer_t *peer,
 
 static size_t test_media_track_bind_calls;
 
-static h2_pal_result_t
-test_webrtc_peer_create(void *user, const h2_pal_webrtc_callbacks_t *callbacks,
-                        h2_pal_webrtc_peer_t **out_peer) {
+static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
+                                       size_t capacity, size_t *out_len) {
   (void)user;
-  assert(callbacks != NULL);
-  assert(callbacks->on_opus_frame == NULL);
+  (void)opus;
+  (void)capacity;
+  (void)out_len;
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static h2_pal_result_t test_track_write(void *user, const uint8_t *opus,
+                                        size_t opus_len) {
+  (void)user;
+  (void)opus;
+  (void)opus_len;
+  return H2_PAL_OK;
+}
+
+static const h2_pal_webrtc_track_vtable_t test_track_vtable = {
+    .read = test_track_read,
+    .write = test_track_write,
+};
+
+static h2_pal_webrtc_track_t test_media_track = {
+    .user = NULL,
+    .vtable = &test_track_vtable,
+    .native_handle = NULL,
+};
+
+static h2_pal_result_t
+test_webrtc_peer_create(void *user, h2_pal_webrtc_peer_t **out_peer) {
+  (void)user;
   *out_peer = (h2_pal_webrtc_peer_t *)0x2;
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t test_peer_set_media_track(h2_pal_webrtc_peer_t *peer,
-                                                 h2_pal_webrtc_track_t *track) {
+static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t *peer,
+                                           h2_pal_webrtc_track_t *track) {
   assert(peer == (h2_pal_webrtc_peer_t *)0x2);
-  assert(track == (h2_pal_webrtc_track_t *)0x4);
+  assert(track == &test_media_track);
   ++test_media_track_bind_calls;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_peer_unset_track(h2_pal_webrtc_peer_t *peer,
+                                             h2_pal_webrtc_track_t *track) {
+  assert(peer == (h2_pal_webrtc_peer_t *)0x2);
+  assert(track == &test_media_track);
   return H2_PAL_OK;
 }
 
@@ -1932,7 +1971,8 @@ int main(void) {
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create = test_webrtc_peer_create,
       .peer_poll = test_peer_poll,
-      .peer_set_media_track = test_peer_set_media_track,
+      .peer_set_track = test_peer_set_track,
+      .peer_unset_track = test_peer_unset_track,
       .channel_send = test_channel_send,
       .peer_send_opus = test_peer_send_opus,
       .peer_close = test_peer_close,
@@ -2006,7 +2046,7 @@ int main(void) {
   fails += expect(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK,
                   "init accepts the current SDK platform contract");
   fails += expect(client != NULL, "successful init returns a client");
-  config.webrtc_media_track = (h2_pal_webrtc_track_t *)0x4;
+  config.webrtc_media_track = &test_media_track;
   h2_gizclaw_client_t *track_client = NULL;
   fails += expect(h2_gizclaw_client_init(&config, &track_client) == H2_PAL_OK,
                   "track-mode init accepts an opaque provider track");

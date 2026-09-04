@@ -21,6 +21,7 @@
 - [NTP](./ntp.md)
 - [PAL](./pal.md)
 - [PIXA](./pixa.md)
+- [QR Code](./qrcode.md)
 - [Runtime](./runtime.md)
 - [Utils](./utils.md)
 - [WolfSSL](./wolfssl.md)

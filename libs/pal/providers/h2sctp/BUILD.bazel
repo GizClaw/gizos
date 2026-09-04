@@ -3,6 +3,14 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 
 package(default_visibility = ["//visibility:public"])
 
+# Tests inspect private state; declare their private header inputs explicitly.
+filegroup(
+    name = "test_internal_headers",
+    srcs = glob(["src/*.h"]),
+    testonly = True,
+    visibility = ["//visibility:private"],
+)
+
 cc_library(
     name = "h2sctp",
     srcs = [
@@ -39,6 +47,7 @@ cc_library(
 cc_test(
     name = "association_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_association.c",
@@ -58,6 +67,7 @@ cc_test(
 cc_test(
     name = "stream_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_stream.c",
@@ -77,6 +87,7 @@ cc_test(
 cc_test(
     name = "lifecycle_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_lifecycle.c",
@@ -96,6 +107,7 @@ cc_test(
 cc_test(
     name = "malformed_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_malformed.c",
@@ -115,6 +127,7 @@ cc_test(
 cc_test(
     name = "reliability_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_reliability.c",
@@ -134,6 +147,7 @@ cc_test(
 cc_test(
     name = "timer_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_test_peer.c",
         "tests/h2_sctp_test_peer.h",
         "tests/test_timer.c",
@@ -153,6 +167,7 @@ cc_test(
 cc_test(
     name = "wire_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_reference_vectors.c",
         "tests/h2_sctp_reference_vectors.h",
         "tests/test_wire.c",
@@ -172,6 +187,7 @@ cc_test(
 cc_test(
     name = "conformance_test",
     srcs = [
+        ":test_internal_headers",
         "tests/h2_sctp_reference_vectors.c",
         "tests/h2_sctp_reference_vectors.h",
         "tests/h2_sctp_test_peer.c",

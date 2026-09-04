@@ -100,7 +100,9 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 
 每个 CI execution class 直接请求 `//...`。Build task 构建完整 compatible graph，并在普通 CI 中使用 `--remote_download_outputs=minimal`，不为没有后续 artifact consumer 的 cache hit 物化全部 top-level output；需要读取产物的 validation 必须用 focused target 显式物化。Test task 统一使用 `--build_tests_only --remote_download_outputs=minimal`，只构建自动测试及其 Bazel 依赖闭包，并只物化本地执行实际需要的 remote output。Platform compatibility 跳过其他平台，Bazel repository/disk cache 根据完整 action key 复用未变化的下载、生成、编译、链接和测试输出。CI 不再计算 base-to-head affected target，也不传递 exact target list。
 
-Native firmware action 向 Bazel 声明每个 action 使用 4 CPU 和 4 GiB memory，并把底层 ESP-IDF/BK build 的并发限制为 4。Bazel 根据 runner 的可用资源自动决定同时运行多少个独立 firmware action；升级单台 runner 会自然提高 launcher 并行数，不需要为每个 launcher 创建 GitHub matrix job。
+Native firmware action 向 Bazel 声明每个 action 预留的 CPU 与 memory，并把底层 ESP-IDF/BK build 的并发限制为 4。BK7258、BK3633 与杰理固定预留 4 CPU、4 GiB。ESP 的预留由 `--define=h2_native_build_jobs` 选择，取值 1/2/4，默认 4（分别对应 2/3/4 GiB），其它取值直接 fail。Bazel 根据 runner 的可用资源自动决定同时运行多少个独立 firmware action；升级单台 runner 会自然提高 launcher 并行数，不需要为每个 launcher 创建 GitHub matrix job。
+
+该 define 只作用于 `resource_set`，不进入 action key：Bazel 的 action key 由 argv、environment、输入与输出决定，`resource_set` 不在其中，因此调低预留的 job 仍与其它 job 及本地构建共享全部 cache entry。传给底层 native build 的 4-way parallelism 相应地必须保持为 runner 源码中的固定常量，不可配置——它通过 action input 进入 key，一旦可配置就会让调过它的 job 拥有独立 key 空间。预留刻意允许小于该并发数：launcher 的大量时间阻塞在 remote ccache 与 remote action cache 读取上，CPU 并非稀缺资源，并发的 launcher 互相填补对方的停顿。只有 launcher 数量大、吞吐受限的 execution class 才应调低预留；全局调低会让 launcher 很少的 class 空转核心。
 
 CI 按 execution class 通过 repository variable 选择 runner。GizOS 保持与 Firmwares 相同的变量接口和 class assignment，但 runner label 必须属于 `GizClaw` 组织可用的 runner pool：
 
@@ -249,7 +251,7 @@ Bazel 必须分析当前 config 下的完整 `//...` graph。Platform compatibil
 
 Host tool compatibility 必须同时匹配 runner OS 与 CPU：当前 Linux host class 是 x86_64，macOS host class 是 arm64。Cross config（例如 KickPi ARMv7 或 Linux arm64）必须通过准确的 `target_compatible_with` 跳过顶层 host Python/tool targets，包括只在 host 上生成 filesystem image 的 `//tools/mklittlefs:mklittlefs`；这些 target 作为其他 rule 的 tool dependency 时由 exec transition 在 runner platform 构建，不能要求 cross target Python/C++ toolchain。Web artifact wrapper 与 validation 只兼容 Linux x86_64 或 macOS arm64 host，Web C/C++ target 只兼容 Emscripten transition 使用的 `wasm32` target platform，不能在普通 host、mobile 或 firmware platform 上直接编译。
 
-ESP32-S3、ESP32-P4、BK7258 与 BK3633 config 直接自动选择各自的全部 firmware endpoint。每个 native firmware action 声明 4 CPU、4 GiB memory，并向底层 native build 传递 4-way parallelism；Bazel 在单台 runner 上按真实可用资源并发调度不同 launcher。Runner 规格增大时并行 launcher 数自动增加，不需要维护 affected target list 或为每个 launcher 展开 GitHub matrix。
+ESP32-S3、ESP32-P4、BK7258 与 BK3633 config 直接自动选择各自的全部 firmware endpoint。每个 native firmware action 向底层 native build 传递 4-way parallelism；BK7258 与 BK3633 声明 4 CPU、4 GiB memory，ESP 的预留由 `--define=h2_native_build_jobs` 决定并默认相同。Bazel 在单台 runner 上按真实可用资源并发调度不同 launcher。Runner 规格增大时并行 launcher 数自动增加，不需要维护 affected target list 或为每个 launcher 展开 GitHub matrix。CI 通过 `BAZEL_NATIVE_BUILD_JOBS` 环境变量把该 define 传给 `make bazel-build`，未设置时使用默认值；ESP32-S3 的 execution class 因 launcher 数量最多而调低预留，ESP32-P4、ESP32-C5 与 BK 保持默认。
 
 CI 为 ESP32-S3、ESP32-P4、BK7258 与 BK3633 创建同一固定 layout 的 `H2_NATIVE_CCACHE_RUNTIME_ROOT`，其中每个 target namespace 使用最多 1 GiB 的一级 cache，并以同一 GCS bucket 的 `ccache/esp` 与 `ccache/bk` 作为二级remote storage。Bazel Remote Cache继续独占`firmwares` prefix；native ccache不使用Bazel layout，也不通过GitHub Actions cache restore/save object directory。`runtime.json`相对引用ccache/helper、cache root与短期token；repository locator绝对路径只在三个native firmware mnemonic中由Bazel 9.2 scrubbing排除，其他input与action不受影响。S3/P4和BK7258/BK3633分别使用target namespace；源码、compiler content、flags、included config与generated header仍由ccache compile key判定。PR、`main`、manual与Release使用相同Writer，并在firmware build前刷新短期token。含credential的ESP build通过单个`H2LOADER_WIFI_CREDENTIALS` JSON action environment接收`ssid`与`password`，并只读共享cache。
 

@@ -400,72 +400,45 @@ static void h2_webrtc_perf_on_opus(void *user, h2_pal_webrtc_peer_t *peer,
   state->audio_received++;
 }
 
-static int h2_webrtc_perf_drain_channel(h2_webrtc_performance_state_t *state,
-                                        h2_pal_webrtc_channel_t *channel) {
-  if (channel == NULL) {
-    return 0;
-  }
-  uint8_t data[H2_WEBRTC_PERF_HEADER_SIZE + H2_WEBRTC_PERF_CHUNK_SIZE];
-  for (size_t slot = 0u; slot < 4u; ++slot) {
-    size_t len = 0u;
-    int is_text = 0;
-    const h2_pal_result_t result = h2_pal_webrtc_channel_receive(
-        state->api, channel, data, sizeof(data), &len, &is_text, 0u);
-    if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
-      return 0;
-    }
-    if (result != H2_PAL_OK) {
-      return -1;
-    }
-    h2_webrtc_perf_on_channel_message(state, state->peer, channel, NULL, data,
-                                      len, is_text);
-    if (state->callback_error) {
-      return -1;
-    }
-  }
-  return 0;
-}
-
-static int h2_webrtc_perf_drain_received(h2_webrtc_performance_state_t *state) {
-  uint8_t opus[256];
-  for (size_t slot = 0u; slot < 4u; ++slot) {
-    size_t opus_len = 0u;
-    const h2_pal_result_t opus_result = h2_pal_webrtc_peer_receive_opus(
-        state->api, state->peer, opus, sizeof(opus), &opus_len, 0u);
-    if (opus_result == H2_PAL_OK) {
-      h2_webrtc_perf_on_opus(state, state->peer, opus, opus_len);
-    } else if (opus_result == H2_PAL_ERR_WOULD_BLOCK ||
-               opus_result == H2_PAL_ERR_TIMEOUT) {
-      break;
-    } else {
-      return -1;
-    }
-  }
-  if (h2_webrtc_perf_drain_channel(state, state->packet) != 0 ||
-      h2_webrtc_perf_drain_channel(state, state->event) != 0) {
-    return -1;
-  }
-  for (size_t index = 0u; index < state->request_count; ++index) {
-    if (h2_webrtc_perf_drain_channel(state, state->requests[index]) != 0) {
-      return -1;
-    }
-  }
-  return state->callback_error ? -1 : 0;
-}
-
 static int h2_webrtc_perf_poll(h2_webrtc_performance_state_t *state) {
   state->poll_calls++;
+  h2_pal_webrtc_event_t event = {0};
   const h2_pal_result_t result =
-      h2_pal_webrtc_peer_poll(state->api, state->peer, 2u);
+      h2_pal_webrtc_peer_poll(state->api, state->peer, 2u, &event);
   if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
       result != H2_PAL_ERR_TIMEOUT) {
     printf("H2_WEBRTC_PERF stage=peer_poll status=ERROR rc=%d\n", result);
     return -1;
   }
+  if (result == H2_PAL_OK) {
+    switch (event.kind) {
+    case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+      h2_webrtc_perf_on_peer_state(state, event.peer, event.peer_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+      h2_webrtc_perf_on_local_sdp(state, event.peer, event.sdp_type, event.sdp);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+      h2_webrtc_perf_on_channel_state(state, event.peer, event.channel,
+                                      &event.channel_info, event.channel_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+      h2_webrtc_perf_on_channel_message(state, event.peer, event.channel,
+                                        &event.channel_info, event.data,
+                                        event.data_len, event.is_text);
+      break;
+    case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+      h2_webrtc_perf_on_opus(state, event.peer, event.data, event.data_len);
+      break;
+    default:
+      break;
+    }
+    h2_pal_webrtc_event_release(&event);
+  }
   if (state->callback_error) {
     return -1;
   }
-  return h2_webrtc_perf_drain_received(state);
+  return 0;
 }
 
 static int
@@ -849,18 +822,7 @@ static int h2_webrtc_perf_run_audio_only(h2_webrtc_performance_state_t *state) {
 }
 
 static int h2_webrtc_perf_connect(h2_webrtc_performance_state_t *state) {
-  h2_pal_webrtc_callbacks_t callbacks = {
-      .user = state,
-      .on_peer_state = h2_webrtc_perf_on_peer_state,
-      .on_local_sdp = h2_webrtc_perf_on_local_sdp,
-      .on_channel_state = h2_webrtc_perf_on_channel_state,
-      .on_channel_message = NULL,
-      .on_opus_frame = NULL,
-  };
-  if (h2_pal_webrtc_peer_create_pull(state->api, &callbacks,
-                                     H2_PAL_WEBRTC_RECEIVE_CHANNEL_PULL |
-                                         H2_PAL_WEBRTC_RECEIVE_OPUS_PULL,
-                                     &state->peer) != H2_PAL_OK) {
+  if (h2_pal_webrtc_peer_create(state->api, &state->peer) != H2_PAL_OK) {
     printf("H2_WEBRTC_PERF stage=peer_create status=ERROR\n");
     return -1;
   }

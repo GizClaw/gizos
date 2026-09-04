@@ -6,6 +6,7 @@
 
 - [H2Loader](./h2loader)
 - [Display](./display)
+- [QR Code](./qrcode)
 - [Audio System](./audio_system)
 - [MP4 Player Small](./mp4_player_small)
 - [GizClaw Ping Speed](./gizclaw_ping_speed)

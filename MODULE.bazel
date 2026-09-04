@@ -282,6 +282,13 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/esnet/iperf/tar.gz/3.21"],
 )
 vendor_repositories.repository(
+    name = "h2_vendor_qrcodegen",
+    build_file = "//third_party:qrcodegen.BUILD.bazel",
+    sha256 = "ea6326674b89e3af6d055dac722d5d03ffd3a1d3edb5acd8d691a8b89236907b",
+    strip_prefix = "QR-Code-generator-3c6d0b3cefb4e049dc337e82237c9644399716a8",
+    urls = ["https://codeload.github.com/nayuki/QR-Code-generator/tar.gz/3c6d0b3cefb4e049dc337e82237c9644399716a8"],
+)
+vendor_repositories.repository(
     name = "h2_vendor_yyjson",
     build_file = "//third_party:yyjson.BUILD.bazel",
     sha256 = "94e9c90f8f12d8329f2c0756782d21e5c278729023cd2c5fe47e323a35947ed6",
@@ -467,6 +474,7 @@ use_repo(
     "h2_vendor_pixa",
     "h2_vendor_pixelroot32",
     "h2_vendor_portaudio",
+    "h2_vendor_qrcodegen",
     "h2_vendor_sdl3",
     "h2_vendor_speexdsp",
     "h2_vendor_sqlite",

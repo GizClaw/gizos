@@ -1,4 +1,5 @@
 #include "h2_peer_portable_backend.h"
+#include "h2_peer_internal.h"
 
 #include "peer.h"
 #include "peer_connection.h"
