@@ -41,6 +41,21 @@ static h2_pal_result_t speed_input(void *user, uint8_t *buffer,
   return H2_PAL_OK;
 }
 
+/* Download direction: the Service hands every received chunk to this writer
+ * on the app task; the byte count is what the result assertion checks. */
+static h2_pal_result_t speed_output(void *user, const uint8_t *data,
+                                    size_t length, size_t *out_written) {
+  h2_gizclaw_e2e_speed_hooks_t *hooks = user;
+  if (hooks == NULL || (data == NULL && length != 0u) || out_written == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (length > hooks->expected_bytes - hooks->bytes)
+    return H2_PAL_ERR_INVALID_STATE;
+  hooks->bytes += length;
+  ++hooks->chunks;
+  *out_written = length;
+  return H2_PAL_OK;
+}
+
 static int drain_speed_hooks(h2_gizclaw_e2e_fixture_t *fixture,
                              h2_gizclaw_service_t *service,
                              h2_gizclaw_e2e_speed_hooks_t *hooks) {
@@ -133,18 +148,20 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
       rc = evidence("h2_gizclaw_req_do", "connectivity-req",
                     h2_gizclaw_req_do(
                         request, hooks, upload != 0u ? speed_input : NULL,
-                        NULL, NULL));
+                        download != 0u ? speed_output : NULL, NULL));
     if (rc == H2_PAL_OK && hooks != NULL) {
       rc = drain_speed_hooks(fixture, service, hooks);
+      /* Both directions must have moved exactly the requested bytes through
+       * the data callbacks, not just reported them in the response. */
+      if (rc == H2_PAL_OK && hooks->bytes != hooks->expected_bytes)
+        rc = H2_PAL_ERR_INVALID_STATE;
       evidence("h2_gizclaw_service_poll", "connectivity-chunks", rc);
       evidence("h2_gizclaw_service_poll", "speedtest-chunks-assert", rc);
       printf("H2_GIZCLAW_E2E stage=speedtest-hooks request=%" PRIu64
              " direction=%s bytes=%zu chunks=%zu "
              "result=%s rc=%d\n",
-             identity, upload ? "upload" : "download",
-             upload != 0u ? hooks->bytes : download,
-             upload != 0u ? hooks->chunks : 0u,
-             rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+             identity, upload ? "upload" : "download", hooks->bytes,
+             hooks->chunks, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
     }
     if (rc == H2_PAL_OK)
       rc = evidence("h2_gizclaw_req_wait", "connectivity-req",
@@ -272,7 +289,7 @@ int h2_gizclaw_e2e_run_connectivity(h2_gizclaw_e2e_fixture_t *fixture) {
             (double)bps / 1000000.0,
             rc != H2_PAL_OK   ? "not-verified"
             : direction == 0u ? "length-ack-only"
-                              : "pattern-verified",
+                              : "callback-length-verified",
             rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
         if (result == H2_PAL_OK)
           result = rc;

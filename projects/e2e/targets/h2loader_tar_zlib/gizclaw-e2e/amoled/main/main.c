@@ -238,7 +238,18 @@ static void image_entry(void *user) {
   fflush(stdout);
 
   h2_gizclaw_e2e_amoled_event_payload_t payload;
+  /* A saved station may already hold an address before this loop sees its
+   * first event; seed from the current status instead of waiting for a
+   * GOT_IP that was delivered earlier. */
   bool wifi_has_ip = false;
+  {
+    h2_pal_wifi_sta_status_t wifi_status;
+    if (h2_pal_wifi_sta_get_status(runtime->wifi_sta, &wifi_status) ==
+            H2_PAL_OK &&
+        wifi_status.ip_valid != 0u) {
+      wifi_has_ip = true;
+    }
+  }
   bool sntp_initialized = false;
   bool ble_advertising_paused = false;
   uint32_t ble_pause_retry_count = 0u;

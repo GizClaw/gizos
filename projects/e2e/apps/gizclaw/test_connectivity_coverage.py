@@ -47,12 +47,9 @@ class ConnectivityCoverageTest(unittest.TestCase):
             self.assertEqual(row["result"], "PASS")
             self.assertEqual(row["rc"], "0")
             self.assertEqual(row["bytes"], str(SPEED_BYTES))
-            if row["direction"] == "upload":
-                self.assertGreater(int(row["chunks"]), 1)
-            else:
-                # Download output is intentionally discarded when no optional
-                # writer is installed, so it must not enter main-loop dispatch.
-                self.assertEqual(row["chunks"], "0")
+            # Both directions move every byte through a data callback: the
+            # upload reader and the download writer each see several chunks.
+            self.assertGreater(int(row["chunks"]), 1)
         rows = [dict(field.split("=", 1) for field in line.split()[1:])
                 for line in log.splitlines() if " stage=speedtest " in line]
         self.assertEqual(len(rows), 12)
@@ -65,7 +62,7 @@ class ConnectivityCoverageTest(unittest.TestCase):
             self.assertEqual(row["result"], "PASS")
             self.assertEqual(row["rc"], "0")
             self.assertEqual(row["integrity"], "length-ack-only" if row["direction"] == "upload"
-                             else "pattern-verified")
+                             else "callback-length-verified")
             self.assertEqual(int(row["bps"]), int(row["bytes"]) * 8000 // int(row["transfer_ms"]))
 
     def test_failures_cannot_certify_partial_success(self):

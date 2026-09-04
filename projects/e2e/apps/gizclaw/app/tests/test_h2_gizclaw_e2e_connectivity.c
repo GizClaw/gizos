@@ -98,7 +98,7 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *req,
   assert(req != NULL && !req->started);
   assert((user != NULL) == (req->method == SPEED));
   assert((input_read != NULL) == (req->upload != 0u));
-  assert(output_write == NULL);
+  assert((output_write != NULL) == (req->download != 0u));
   int rc = stage();
   req->started = rc == H2_PAL_OK;
   if (rc == H2_PAL_OK && req->method == SPEED) {
@@ -167,6 +167,10 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
       size_t count = req->download - req->hook_bytes;
       if (count > sizeof(payload))
         count = sizeof(payload);
+      size_t written = 0u;
+      const int rc =
+          req->output_write(req->user, payload, count, &written);
+      assert(rc == H2_PAL_OK && written == count);
       req->hook_bytes += count;
     }
     ++*dispatched;
