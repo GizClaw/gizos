@@ -46,6 +46,7 @@ typedef struct fake_runtime {
 
     const h2_pal_ble_gatt_service_t *service;
     int unregister_count;
+    int fail_next_unregister;
     int adv_start_count;
     int adv_stop_count;
     int adv_data_count;
@@ -363,8 +364,13 @@ static h2_pal_result_t fake_register(
 static h2_pal_result_t fake_unregister(void *user) {
     fake_runtime_t *runtime = user;
     pthread_mutex_lock(&runtime->mutex);
-    runtime->service = NULL;
     runtime->unregister_count++;
+    if (runtime->fail_next_unregister != 0) {
+        runtime->fail_next_unregister = 0;
+        pthread_mutex_unlock(&runtime->mutex);
+        return H2_PAL_ERR_BUSY;
+    }
+    runtime->service = NULL;
     pthread_mutex_unlock(&runtime->mutex);
     return H2_PAL_OK;
 }
@@ -601,9 +607,10 @@ static void fake_subscribe(fake_runtime_t *runtime, uint16_t value_handle, bool 
               sizeof(state));
 }
 
-static h2_pal_result_t fake_gatt_write(
+static h2_pal_result_t fake_gatt_write_from(
     fake_runtime_t *runtime,
     uint16_t attr_handle,
+    uint16_t conn_handle,
     const uint8_t *data,
     size_t len) {
     pthread_mutex_lock(&runtime->mutex);
@@ -617,7 +624,7 @@ static h2_pal_result_t fake_gatt_write(
         }
         CHECK(ch->write != NULL);
         h2_pal_ble_gatt_access_t access = {
-            .conn_handle = TEST_CONN_HANDLE,
+            .conn_handle = conn_handle,
             .attr_handle = attr_handle,
             .offset = 0u,
         };
@@ -625,6 +632,14 @@ static h2_pal_result_t fake_gatt_write(
     }
     CHECK(false);
     return H2_PAL_ERR_NOT_FOUND;
+}
+
+static h2_pal_result_t fake_gatt_write(
+    fake_runtime_t *runtime,
+    uint16_t attr_handle,
+    const uint8_t *data,
+    size_t len) {
+    return fake_gatt_write_from(runtime, attr_handle, TEST_CONN_HANDLE, data, len);
 }
 
 static void fake_wait_notifications(fake_runtime_t *runtime, size_t expected) {
@@ -689,15 +704,21 @@ static void test_on_event(
     pthread_mutex_unlock(&runtime->mutex);
 }
 
-static bool fake_saw_event(fake_runtime_t *runtime, h2_ble_wifi_config_event_t event) {
-    pthread_mutex_lock(&runtime->mutex);
-    bool found = false;
+/* The caller must hold the runtime mutex. */
+static bool fake_saw_event_locked(
+    fake_runtime_t *runtime,
+    h2_ble_wifi_config_event_t event) {
     for (size_t i = 0u; i < runtime->event_count; ++i) {
         if (runtime->events[i] == (int)event) {
-            found = true;
-            break;
+            return true;
         }
     }
+    return false;
+}
+
+static bool fake_saw_event(fake_runtime_t *runtime, h2_ble_wifi_config_event_t event) {
+    pthread_mutex_lock(&runtime->mutex);
+    bool found = fake_saw_event_locked(runtime, event);
     pthread_mutex_unlock(&runtime->mutex);
     return found;
 }
@@ -1170,6 +1191,90 @@ static void test_open_rejects_bad_arguments(void) {
     fake_runtime_deinit(&runtime);
 }
 
+static void test_failed_unregister_keeps_the_service(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+
+    /*
+     * The Host still borrows the schema, so a failed release must not free
+     * the instance; close() stays retryable.
+     */
+    runtime.fail_next_unregister = 1;
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_ERR_BUSY);
+    CHECK(runtime.unregister_count == 1);
+    CHECK(runtime.service != NULL);
+    CHECK(h2_ble_wifi_config_gatt_service(service) != NULL);
+
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    CHECK(runtime.unregister_count == 2);
+    CHECK(runtime.service == NULL);
+    CHECK(runtime.subscription_count == 0u);
+    fake_runtime_deinit(&runtime);
+}
+
+static void test_scan_frames_stay_with_their_connection(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
+    runtime.hold_scan = true;
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    connect_and_subscribe(&runtime);
+
+    const uint8_t start[] = { 0x01u };
+    CHECK(fake_gatt_write(&runtime, TEST_COMMAND_HANDLE, start, sizeof(start)) ==
+          H2_PAL_OK);
+    fake_wait_scan_in_progress(&runtime);
+
+    /* The peer that started the scan leaves and the same handle is reused. */
+    h2_pal_ble_disconnected_info_t info = {
+        .conn_handle = TEST_CONN_HANDLE,
+        .reason = 19,
+    };
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &info,
+              sizeof(info));
+    connect_and_subscribe(&runtime);
+    fake_release_scan(&runtime);
+
+    /* Wait for the scan to finish without requiring any notification. */
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!fake_saw_event_locked(&runtime, H2_BLE_WIFI_CONFIG_EVENT_SCAN_FINISHED)) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime.mutex);
+    /* The new peer must not inherit the previous peer's access points. */
+    CHECK(fake_notification_count(&runtime) == 0u);
+
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    fake_runtime_deinit(&runtime);
+}
+
+static void test_rejection_stays_with_its_connection(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    connect_and_subscribe(&runtime);
+
+    /* A malformed write from a stale connection handle reaches nobody. */
+    const uint8_t truncated[] = { 32u, 'a', 'b' };
+    CHECK(fake_gatt_write_from(&runtime, TEST_PROVISION_HANDLE,
+                               (uint16_t)(TEST_CONN_HANDLE + 1u), truncated,
+                               sizeof(truncated)) == H2_PAL_ERR_FORMAT);
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!fake_saw_event_locked(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR)) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime.mutex);
+    CHECK(fake_notification_count(&runtime) == 0u);
+
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    fake_runtime_deinit(&runtime);
+}
+
 int main(void) {
     test_open_registers_schema();
     test_caller_owned_registration();
@@ -1188,6 +1293,9 @@ int main(void) {
     test_small_mtu_reports_event();
     test_disconnect_clears_connection();
     test_open_rejects_bad_arguments();
+    test_failed_unregister_keeps_the_service();
+    test_scan_frames_stay_with_their_connection();
+    test_rejection_stays_with_its_connection();
     printf("ok\n");
     return 0;
 }

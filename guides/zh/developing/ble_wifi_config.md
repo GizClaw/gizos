@@ -77,7 +77,7 @@ packet-beta
 8-15: "reason"
 ```
 
-`status` 为 `0x00` 表示成功，非 0 表示失败。`reason` 取值 `0x00` 无、`0x01` 密码错、`0x02` 找不到该 AP、`0x03` DHCP 失败、`0x04` 连接超时、`0xff` 未知错误。畸形的凭据帧同样会收到一条 `{0x01, 0xff}` 结果，App 不会停在等待页。
+`status` 为 `0x00` 表示成功，非 0 表示失败。`reason` 取值 `0x00` 无、`0x01` 密码错、`0x02` 找不到该 AP、`0x03` DHCP 失败、`0x04` 连接超时、`0xff` 未知错误。畸形的凭据帧被同时以两种方式回应：ATT write 本身以解码结果失败（`H2_PAL_ERR_FORMAT`），worker task 随后仍推送一条 `{0x01, 0xff}` 结果帧，因此 App 不会停在等待页；该回执同样只投递给发起写入的那个连接。
 
 ## 失败原因判定
 
@@ -88,17 +88,23 @@ packet-beta
 
 `disconnect_reason` 是 backend 透传值，编号不同的平台通过 `map_reason` callback 提供自己的映射，不要修改默认表。
 
+`connect` callback 非 NULL 时完全接管上述流程。它在 worker task 上同步执行，一次只有一个调用，返回即代表本次尝试结束；library 不做取消也不施加超时，`connect_timeout_ms` 与 `skip_ap_verification_before_connect` 都不适用，callback 必须自己限定耗时（`close()` 会等待进行中的尝试返回）。凭据只在调用期间借出，保存由 callback 负责。`out_reason` 预置为 `H2_BLE_WIFI_CONFIG_REASON_NONE`，失败时由 callback 写入要上报的 reason，未写入则上报 `0xff`；返回值本身不发给对端，只有 `out_reason` 会。
+
 ## 任务模型与并发
 
 Scan 和 connect 都在 library 自己的 worker task 上执行，因此彼此串行。GATT write callback 只做校验和入队，不阻塞 BLE Host：重复写 `0x01` 在扫描排队或进行中是 no-op；PROV 在上一组凭据还没处理完时返回 `H2_PAL_ERR_BUSY`。`on_event` 只在 worker task 上调用，且不持有 library 的锁。
 
 Library 同时只跟随一个 peripheral connection：先到的连接被采纳，携带其它 connection handle 的写入返回 `H2_PAL_ERR_INVALID_STATE`，直到该连接结束。
 
+Wi-Fi 工作的生命周期长于发起它的那次 ATT write，因此每条 notification 都绑定发起它的连接：service 为每次采纳的连接递增 generation，扫描帧、配网结果和畸形帧回执都携带 `(conn_handle, generation)`。连接结束后即使 controller 复用同一个 handle，新 peer 也不会收到上一个 peer 的 AP 列表或配网结果。发起方在 Wi-Fi 工作期间断开时连接尝试仍然完成（设备照常联网），只是结果不再投递。
+
 Notification 只在对端已订阅对应 characteristic 时发送。SCAN 未订阅时写 `0x01` 直接返回 `H2_PAL_ERR_INVALID_STATE`，不会白跑一次扫描。
 
 ## 与其他 BLE 服务共存
 
 `h2_pal_ble_register_gatt_services()` 注册的是整份 schema，一个 Host 只能有一个 owner。需要和 H2Loader 等其他服务共存时，调用方设置 `gatt_service_registered_by_caller`，用 `h2_ble_wifi_config_gatt_service()` 取回 borrowed declaration，和自己的 service 一起注册；此时 `close()` 也不会调用 unregister。
+
+Host 借用 schema、callback context 和 handle 存储直到 unregister 成功，因此 `close()` 在 unregister 失败时返回该错误并保留整个 instance，不释放内存，调用方可以重试 `close()`。
 
 Wi-Fi 与 BLE 共用射频，扫描和连接期间广播会同时拖慢两边，这与 `h2loader/ble` 在 Wi-Fi 活动期间暂停 loader 广播的处理一致。本 library 默认在 scan/connect 前停掉**自己**通过 `h2_ble_wifi_config_start_advertising()` 开启的广播，结束后按原参数恢复；它不会动别人的广播。已建立的连接不受影响，所以配网会话本身不会被打断。需要保持广播时设置 `keep_advertising_during_wifi`。
 
@@ -110,4 +116,4 @@ ESP target 上另有一层 `h2_esp_platform_wifi_set_activity_observer()`，由 
 bazel test //libs/ble_wifi_config:all
 ```
 
-`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执和广播暂停。
+`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，以及扫描期间断连并复用同一 handle 重连时不串台。

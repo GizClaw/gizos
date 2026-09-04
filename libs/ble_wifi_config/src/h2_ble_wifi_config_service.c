@@ -140,23 +140,33 @@ static void h2_ble_wifi_config_emit(
 /**
  * Send one notification on a subscribed characteristic.
  *
- * Returns H2_PAL_ERR_INVALID_STATE when the connection went away or the peer
+ * @p conn_handle is the connection that asked for this work. Wi-Fi work
+ * outlives the ATT write that started it, so a frame is dropped rather than
+ * delivered to whichever peer happens to be connected now: otherwise a peer
+ * that connects and subscribes mid-scan would receive the previous peer's
+ * access points or provisioning result.
+ *
+ * Returns H2_PAL_ERR_INVALID_STATE when that connection went away or the peer
  * is not subscribed, so a scan in flight can stop instead of failing every
  * remaining frame.
  */
 static int h2_ble_wifi_config_notify(
     h2_ble_wifi_config_t *service,
     bool scan_channel,
+    h2_ble_wifi_config_peer_t peer,
     const uint8_t *data,
     size_t len) {
+    uint16_t conn_handle = peer.conn_handle;
     h2_ble_wifi_config_lock(service);
-    uint16_t conn_handle = service->conn_handle;
+    bool current = conn_handle != H2_PAL_BLE_INVALID_CONN_HANDLE &&
+                   conn_handle == service->conn_handle &&
+                   peer.generation == service->conn_generation;
     uint16_t attr_handle = scan_channel ? service->scan_value_handle
                                         : service->provision_value_handle;
     bool subscribed = scan_channel ? service->scan_subscribed
                                    : service->provision_subscribed;
     h2_ble_wifi_config_unlock(service);
-    if (conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE || !subscribed ||
+    if (!current || !subscribed ||
         attr_handle == H2_PAL_BLE_INVALID_ATTR_HANDLE) {
         return H2_PAL_ERR_INVALID_STATE;
     }
@@ -196,10 +206,17 @@ static void h2_ble_wifi_config_resume_advertising(h2_ble_wifi_config_t *service)
     }
 }
 
+typedef struct h2_ble_wifi_config_scan_context {
+    h2_ble_wifi_config_t *service;
+    /** Connection that wrote the start-scan command. */
+    h2_ble_wifi_config_peer_t peer;
+} h2_ble_wifi_config_scan_context_t;
+
 static bool h2_ble_wifi_config_on_scan_result(
     void *user,
     const h2_pal_wifi_scan_entry_t *entry) {
-    h2_ble_wifi_config_t *service = user;
+    h2_ble_wifi_config_scan_context_t *context = user;
+    h2_ble_wifi_config_t *service = context->service;
     h2_ble_wifi_config_ap_t ap;
     if (h2_ble_wifi_config_ap_from_scan_entry(entry, &ap) != H2_PAL_OK) {
         h2_ble_wifi_config_lock(service);
@@ -219,7 +236,8 @@ static bool h2_ble_wifi_config_on_scan_result(
         return stop;
     }
     /* One access point per notification: the application renders as it goes. */
-    int rc = h2_ble_wifi_config_notify(service, true, frame, frame_len);
+    int rc = h2_ble_wifi_config_notify(
+        service, true, context->peer, frame, frame_len);
     h2_ble_wifi_config_lock(service);
     if (rc == H2_PAL_OK) {
         service->stats.aps_reported++;
@@ -230,9 +248,11 @@ static bool h2_ble_wifi_config_on_scan_result(
     return stop;
 }
 
-static void h2_ble_wifi_config_run_scan(h2_ble_wifi_config_t *service) {
+static void h2_ble_wifi_config_run_scan(
+    h2_ble_wifi_config_t *service,
+    h2_ble_wifi_config_peer_t peer) {
+    uint16_t conn_handle = peer.conn_handle;
     h2_ble_wifi_config_lock(service);
-    uint16_t conn_handle = service->conn_handle;
     uint32_t timeout_ms = service->config.scan_timeout_ms;
     service->stats.scans_started++;
     h2_ble_wifi_config_unlock(service);
@@ -244,9 +264,13 @@ static void h2_ble_wifi_config_run_scan(h2_ble_wifi_config_t *service) {
     };
     h2_ble_wifi_config_emit(service, &started);
 
+    h2_ble_wifi_config_scan_context_t context = {
+        .service = service,
+        .peer = peer,
+    };
     h2_ble_wifi_config_pause_advertising(service);
     int rc = h2_pal_wifi_sta_scan(
-        service->api.wifi_sta, NULL, h2_ble_wifi_config_on_scan_result, service,
+        service->api.wifi_sta, NULL, h2_ble_wifi_config_on_scan_result, &context,
         timeout_ms);
     h2_ble_wifi_config_resume_advertising(service);
 
@@ -256,7 +280,7 @@ static void h2_ble_wifi_config_run_scan(h2_ble_wifi_config_t *service) {
             rc == H2_PAL_OK ? H2_BLE_WIFI_CONFIG_SCAN_FRAME_FINISHED
                             : H2_BLE_WIFI_CONFIG_SCAN_FRAME_ERROR,
             frame, sizeof(frame), &frame_len) == H2_PAL_OK) {
-        (void)h2_ble_wifi_config_notify(service, true, frame, frame_len);
+        (void)h2_ble_wifi_config_notify(service, true, peer, frame, frame_len);
     }
 
     h2_ble_wifi_config_pending_event_t finished = {
@@ -367,6 +391,7 @@ static int h2_ble_wifi_config_connect(
 
 static void h2_ble_wifi_config_send_result(
     h2_ble_wifi_config_t *service,
+    h2_ble_wifi_config_peer_t peer,
     h2_ble_wifi_config_status_t status,
     h2_ble_wifi_config_reason_t reason) {
     uint8_t frame[H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN];
@@ -375,13 +400,14 @@ static void h2_ble_wifi_config_send_result(
             status, reason, frame, sizeof(frame), &frame_len) != H2_PAL_OK) {
         return;
     }
-    (void)h2_ble_wifi_config_notify(service, false, frame, frame_len);
+    (void)h2_ble_wifi_config_notify(service, false, peer, frame, frame_len);
 }
 
 static void h2_ble_wifi_config_run_provision(
     h2_ble_wifi_config_t *service,
     const h2_ble_wifi_config_credentials_t *credentials,
-    uint16_t conn_handle) {
+    h2_ble_wifi_config_peer_t peer) {
+    uint16_t conn_handle = peer.conn_handle;
     h2_ble_wifi_config_pending_event_t received = {
         .event = H2_BLE_WIFI_CONFIG_EVENT_CREDENTIALS_RECEIVED,
         .conn_handle = conn_handle,
@@ -403,7 +429,7 @@ static void h2_ble_wifi_config_run_provision(
 
     /* The application waits for this frame before leaving its progress page. */
     h2_ble_wifi_config_send_result(
-        service,
+        service, peer,
         rc == H2_PAL_OK ? H2_BLE_WIFI_CONFIG_STATUS_SUCCESS
                         : H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
         rc == H2_PAL_OK ? H2_BLE_WIFI_CONFIG_REASON_NONE : reason);
@@ -444,30 +470,38 @@ static void h2_ble_wifi_config_worker(void *ctx) {
         }
         if (service->reject_pending) {
             h2_ble_wifi_config_reason_t reason = service->reject_reason;
+            h2_ble_wifi_config_peer_t peer = service->reject_peer;
             service->reject_pending = false;
             h2_ble_wifi_config_unlock(service);
             h2_ble_wifi_config_send_result(
-                service, H2_BLE_WIFI_CONFIG_STATUS_FAILURE, reason);
+                service, peer, H2_BLE_WIFI_CONFIG_STATUS_FAILURE, reason);
             continue;
         }
         if (service->credentials_pending) {
             h2_ble_wifi_config_credentials_t credentials = service->credentials;
-            uint16_t conn_handle = service->conn_handle;
+            h2_ble_wifi_config_peer_t peer = {
+                .conn_handle = service->conn_handle,
+                .generation = service->conn_generation,
+            };
             service->credentials_pending = false;
             service->credentials_running = true;
             h2_ble_wifi_config_unlock(service);
-            h2_ble_wifi_config_run_provision(service, &credentials, conn_handle);
+            h2_ble_wifi_config_run_provision(service, &credentials, peer);
             h2_ble_wifi_config_lock(service);
             service->credentials_running = false;
             memset(&service->credentials, 0, sizeof(service->credentials));
             h2_ble_wifi_config_unlock(service);
             continue;
         }
+        h2_ble_wifi_config_peer_t peer = {
+            .conn_handle = service->conn_handle,
+            .generation = service->conn_generation,
+        };
         service->scan_requested = false;
         service->scan_running = true;
         service->scan_stop_requested = false;
         h2_ble_wifi_config_unlock(service);
-        h2_ble_wifi_config_run_scan(service);
+        h2_ble_wifi_config_run_scan(service, peer);
         h2_ble_wifi_config_lock(service);
         service->scan_running = false;
         service->scan_stop_requested = false;
@@ -546,6 +580,10 @@ static h2_pal_result_t h2_ble_wifi_config_provision_write(
         service->stats.protocol_errors++;
         service->reject_pending = true;
         service->reject_reason = H2_BLE_WIFI_CONFIG_REASON_UNKNOWN;
+        service->reject_peer = (h2_ble_wifi_config_peer_t){
+            .conn_handle = access->conn_handle,
+            .generation = service->conn_generation,
+        };
         h2_ble_wifi_config_post_event_locked(
             service, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR,
             access->conn_handle, rc);
@@ -593,6 +631,7 @@ static int h2_ble_wifi_config_system_event(
             if (connection->role == H2_PAL_BLE_ROLE_PERIPHERAL &&
                 service->conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE) {
                 service->conn_handle = connection->conn_handle;
+                service->conn_generation++;
                 service->att_mtu = connection->mtu;
                 service->scan_subscribed = false;
                 service->provision_subscribed = false;
@@ -736,6 +775,7 @@ int h2_ble_wifi_config_open(
         service->config = *config;
     }
     service->conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
+    service->reject_peer.conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     service->service_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
     service->command_value_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
     service->scan_value_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
@@ -843,9 +883,16 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t *service) {
         }
     }
     if (service->gatt_registered) {
+        /*
+         * The Host borrows the schema, its callback contexts and its handle
+         * storage until unregister succeeds. Freeing the service after a
+         * failed unregister would leave the Host dispatching writes into
+         * released memory, so keep the instance alive and let the caller
+         * retry close().
+         */
         int rc = h2_pal_ble_unregister_gatt_services(service->api.ble);
-        if (rc != H2_PAL_OK && result == H2_PAL_OK) {
-            result = rc;
+        if (rc != H2_PAL_OK) {
+            return rc;
         }
         service->gatt_registered = false;
     }

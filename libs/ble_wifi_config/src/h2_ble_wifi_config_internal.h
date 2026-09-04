@@ -18,6 +18,19 @@
 /** Smallest worker stack, in bytes. */
 #define H2_BLE_WIFI_CONFIG_MIN_STACK_SIZE (4u * 1024u)
 
+/**
+ * Identity of one adopted connection.
+ *
+ * Controllers reuse connection handles, so a handle alone cannot tell the
+ * peer that started a scan from a later peer that reused its handle. The
+ * generation counter, bumped on every adoption, makes the pair unique for
+ * the life of the service.
+ */
+typedef struct h2_ble_wifi_config_peer {
+    uint16_t conn_handle;
+    uint32_t generation;
+} h2_ble_wifi_config_peer_t;
+
 typedef struct h2_ble_wifi_config_pending_event {
     h2_ble_wifi_config_event_t event;
     uint16_t conn_handle;
@@ -50,6 +63,7 @@ struct h2_ble_wifi_config {
 
     /* Connection state, owned by the mutex. */
     uint16_t conn_handle;
+    uint32_t conn_generation;
     uint16_t att_mtu;
     bool scan_subscribed;
     bool provision_subscribed;
@@ -68,7 +82,8 @@ struct h2_ble_wifi_config {
     h2_ble_wifi_config_credentials_t credentials;
     bool reject_pending;
     h2_ble_wifi_config_reason_t reject_reason;
-    int reject_status;
+    /** Connection whose write was rejected; the result goes only to it. */
+    h2_ble_wifi_config_peer_t reject_peer;
 
     h2_ble_wifi_config_pending_event_t
         events[H2_BLE_WIFI_CONFIG_EVENT_QUEUE_LEN];

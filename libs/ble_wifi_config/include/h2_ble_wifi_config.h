@@ -38,6 +38,9 @@ extern "C" {
  * The service follows one peripheral connection at a time: the first
  * peripheral connection is adopted, and writes carrying any other connection
  * handle are refused with H2_PAL_ERR_INVALID_STATE until that connection ends.
+ * Wi-Fi work outlives the ATT write that started it, so every notification is
+ * bound to the connection that requested it and is dropped once that
+ * connection ends, even when a later peer reuses its connection handle.
  */
 
 /** Borrowed default service UUID, 128-bit, little-endian ATT byte order. */
@@ -82,8 +85,9 @@ int h2_ble_wifi_config_open(
  *
  * @param service Service to close.
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, or the first PAL failure. The
- * service is freed unless joining the worker task failed, in which case the
- * caller may retry.
+ * service is freed unless joining the worker task or releasing the GATT
+ * schema failed; the Host borrows that schema until it is released, so the
+ * instance stays alive and the caller may retry.
  */
 int h2_ble_wifi_config_close(h2_ble_wifi_config_t *service);
 
