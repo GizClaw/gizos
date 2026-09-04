@@ -158,6 +158,10 @@ static void h2_ble_wifi_config_emit(
  * is not subscribed, so a scan in flight can stop instead of failing every
  * remaining frame.
  */
+/* The caller must hold the mutex. */
+static void h2_ble_wifi_config_drain_transitions_locked(
+    h2_ble_wifi_config_t *service);
+
 static int h2_ble_wifi_config_notify(
     h2_ble_wifi_config_t *service,
     bool scan_channel,
@@ -178,10 +182,22 @@ static int h2_ble_wifi_config_notify(
         h2_ble_wifi_config_unlock(service);
         return H2_PAL_ERR_INVALID_STATE;
     }
+    /*
+     * Publish the in-flight send and drop the mutex before calling the Host:
+     * holding it across an unconstrained provider call would deadlock a
+     * provider that dispatches a BLE system event from inside notify on this
+     * task. The flag keeps the peer identity that was just validated frozen
+     * for the duration of the call instead.
+     */
+    service->sending = true;
+    h2_ble_wifi_config_unlock(service);
     int rc = h2_pal_ble_notify(service->api.ble, conn_handle, attr_handle, data, len);
+    h2_ble_wifi_config_lock(service);
+    service->sending = false;
     if (rc != H2_PAL_OK) {
         service->stats.notify_failures++;
     }
+    h2_ble_wifi_config_drain_transitions_locked(service);
     h2_ble_wifi_config_unlock(service);
     return rc;
 }
@@ -623,18 +639,14 @@ static void h2_ble_wifi_config_check_mtu_locked(
     }
 }
 
-static int h2_ble_wifi_config_system_event(
-    void *user,
-    const h2_pal_system_event_t *event) {
-    h2_ble_wifi_config_t *service = user;
-    if (event == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    h2_ble_wifi_config_lock(service);
-    switch (event->type) {
-    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED:
-        if (event->payload_size == sizeof(h2_pal_ble_connection_t)) {
-            const h2_pal_ble_connection_t *connection = event->payload;
+/* The caller must hold the mutex. */
+static void h2_ble_wifi_config_apply_transition_locked(
+    h2_ble_wifi_config_t *service,
+    const h2_ble_wifi_config_transition_t *transition) {
+    switch (transition->type) {
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED: {
+        const h2_pal_ble_connection_t *connection = &transition->payload.connection;
+        {
             if (connection->role == H2_PAL_BLE_ROLE_PERIPHERAL &&
                 service->conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE) {
                 service->conn_handle = connection->conn_handle;
@@ -651,9 +663,10 @@ static int h2_ble_wifi_config_system_event(
             }
         }
         break;
-    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED:
-        if (event->payload_size == sizeof(h2_pal_ble_mtu_info_t)) {
-            const h2_pal_ble_mtu_info_t *info = event->payload;
+    }
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED: {
+        const h2_pal_ble_mtu_info_t *info = &transition->payload.mtu;
+        {
             if (info->conn_handle == service->conn_handle) {
                 service->att_mtu = info->mtu;
                 service->stats.att_mtu = info->mtu;
@@ -661,9 +674,11 @@ static int h2_ble_wifi_config_system_event(
             }
         }
         break;
-    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED:
-        if (event->payload_size == sizeof(h2_pal_ble_subscription_state_t)) {
-            const h2_pal_ble_subscription_state_t *state = event->payload;
+    }
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED: {
+        const h2_pal_ble_subscription_state_t *state =
+            &transition->payload.subscription;
+        {
             if (state->conn_handle == service->conn_handle &&
                 state->mode == H2_PAL_BLE_SUBSCRIBE_MODE_NOTIFY) {
                 if (state->value_handle == service->scan_value_handle) {
@@ -678,9 +693,10 @@ static int h2_ble_wifi_config_system_event(
             }
         }
         break;
-    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED:
-        if (event->payload_size == sizeof(h2_pal_ble_disconnected_info_t)) {
-            const h2_pal_ble_disconnected_info_t *info = event->payload;
+    }
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED: {
+        const h2_pal_ble_disconnected_info_t *info = &transition->payload.disconnected;
+        {
             if (info->conn_handle == service->conn_handle) {
                 service->conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
                 service->att_mtu = 0u;
@@ -696,8 +712,120 @@ static int h2_ble_wifi_config_system_event(
             }
         }
         break;
+    }
     default:
         break;
+    }
+}
+
+/**
+ * Apply the transitions a send deferred.
+ *
+ * An overflow means the recorded sequence is no longer trustworthy, so the
+ * connection is dropped instead of guessed: the peer reconnects and the
+ * application restarts provisioning.
+ *
+ * The caller must hold the mutex.
+ */
+static void h2_ble_wifi_config_drain_transitions_locked(
+    h2_ble_wifi_config_t *service) {
+    if (service->transition_overflow) {
+        service->transition_head = 0u;
+        service->transition_count = 0u;
+        service->transition_overflow = false;
+        if (service->conn_handle != H2_PAL_BLE_INVALID_CONN_HANDLE) {
+            h2_ble_wifi_config_transition_t lost = {
+                .type = H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
+                .payload.disconnected = {
+                    .conn_handle = service->conn_handle,
+                    .reason = 0,
+                },
+            };
+            h2_ble_wifi_config_apply_transition_locked(service, &lost);
+        }
+        return;
+    }
+    while (service->transition_count > 0u) {
+        h2_ble_wifi_config_transition_t transition =
+            service->transitions[service->transition_head];
+        service->transition_head = (service->transition_head + 1u) %
+                                   H2_BLE_WIFI_CONFIG_TRANSITION_QUEUE_LEN;
+        service->transition_count--;
+        h2_ble_wifi_config_apply_transition_locked(service, &transition);
+    }
+}
+
+/* The caller must hold the mutex. */
+static void h2_ble_wifi_config_defer_transition_locked(
+    h2_ble_wifi_config_t *service,
+    const h2_ble_wifi_config_transition_t *transition) {
+    if (service->transition_count == H2_BLE_WIFI_CONFIG_TRANSITION_QUEUE_LEN) {
+        service->transition_overflow = true;
+        return;
+    }
+    size_t tail = (service->transition_head + service->transition_count) %
+                  H2_BLE_WIFI_CONFIG_TRANSITION_QUEUE_LEN;
+    service->transitions[tail] = *transition;
+    service->transition_count++;
+}
+
+/**
+ * Record one BLE system event.
+ *
+ * This runs on the Host's callback task and never blocks on a Host call: it
+ * takes the mutex, which the notify path releases before calling the Host, so
+ * a provider that dispatches an event from inside notify cannot deadlock.
+ * While a send is in flight the transition is queued rather than applied, so
+ * the peer identity the send validated cannot change underneath it.
+ */
+static int h2_ble_wifi_config_system_event(
+    void *user,
+    const h2_pal_system_event_t *event) {
+    h2_ble_wifi_config_t *service = user;
+    if (event == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_ble_wifi_config_transition_t transition;
+    memset(&transition, 0, sizeof(transition));
+    transition.type = event->type;
+    switch (event->type) {
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED:
+        if (event->payload_size != sizeof(h2_pal_ble_connection_t)) {
+            return H2_PAL_OK;
+        }
+        memcpy(&transition.payload.connection, event->payload,
+               sizeof(transition.payload.connection));
+        break;
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED:
+        if (event->payload_size != sizeof(h2_pal_ble_mtu_info_t)) {
+            return H2_PAL_OK;
+        }
+        memcpy(&transition.payload.mtu, event->payload,
+               sizeof(transition.payload.mtu));
+        break;
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED:
+        if (event->payload_size != sizeof(h2_pal_ble_subscription_state_t)) {
+            return H2_PAL_OK;
+        }
+        memcpy(&transition.payload.subscription, event->payload,
+               sizeof(transition.payload.subscription));
+        break;
+    case H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED:
+        if (event->payload_size != sizeof(h2_pal_ble_disconnected_info_t)) {
+            return H2_PAL_OK;
+        }
+        memcpy(&transition.payload.disconnected, event->payload,
+               sizeof(transition.payload.disconnected));
+        break;
+    default:
+        return H2_PAL_OK;
+    }
+    h2_ble_wifi_config_lock(service);
+    if (service->sending) {
+        h2_ble_wifi_config_defer_transition_locked(service, &transition);
+    } else {
+        h2_ble_wifi_config_drain_transitions_locked(service);
+        h2_ble_wifi_config_apply_transition_locked(service, &transition);
     }
     h2_ble_wifi_config_unlock(service);
     return H2_PAL_OK;

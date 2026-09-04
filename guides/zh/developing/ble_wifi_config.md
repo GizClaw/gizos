@@ -98,7 +98,9 @@ Library 同时只跟随一个 peripheral connection：先到的连接被采纳�
 
 Wi-Fi 工作的生命周期长于发起它的那次 ATT write，因此每条 notification 都绑定发起它的连接：service 为每次采纳的连接递增 generation，扫描帧、配网结果和畸形帧回执都携带 `(conn_handle, generation)`。连接结束后即使 controller 复用同一个 handle，新 peer 也不会收到上一个 peer 的 AP 列表或配网结果。发起方在 Wi-Fi 工作期间断开时连接尝试仍然完成（设备照常联网），只是结果不再投递。
 
-身份校验与发送在同一个临界区内完成：如果先解锁再调用 `h2_pal_ble_notify()`，一次「断开 + 复用同一 handle 重连」可以插在两者之间，已经通过校验的帧就会落到新 peer 上。代价是 GATT write callback 和 BLE system event 可能被阻塞一次 notification 的时长，因此要求 BLE Host 不在 `h2_pal_ble_notify()` 内部于同一 task 上回调这些 handler；现有 provider 都不会这样做。
+身份校验与发送之间不能插入连接变化，否则一次「断开 + 复用同一 handle 重连」会让已经通过校验的帧落到新 peer 上。但 library 也不能把自己的 mutex 一直持有到 `h2_pal_ble_notify()` 返回：PAL 没有约定 provider 不会在 notify 内部于同一 task 上派发 BLE system event，那样的 provider 会因为等待同一把锁而死锁。
+
+因此 library 用「发送中延后应用」代替「持锁发送」：发送前在锁内完成身份校验并置位 `sending`，随后释放锁再调用 Host；发送期间到达的 BLE connected / disconnected / MTU / subscription 事件只被排入一个固定容量的 transition 队列，不改动连接状态；发送返回后由发送方在锁内按顺序应用。System event handler 因此从不阻塞在 Host 调用上，被校验过的身份在发送期间也不会改变。队列溢出时不猜测中间状态，直接按连接丢失处理，让 App 重连后重新配网。
 
 Notification 只在对端已订阅对应 characteristic 时发送。SCAN 未订阅时写 `0x01` 直接返回 `H2_PAL_ERR_INVALID_STATE`，不会白跑一次扫描。
 
@@ -118,4 +120,4 @@ ESP target 上另有一层 `h2_esp_platform_wifi_set_activity_observer()`，由 
 bazel test //libs/ble_wifi_config:all
 ```
 
-`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件无法插进一次发送的中间。
+`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件在发送期间被延后、不改变发送已校验的连接身份。

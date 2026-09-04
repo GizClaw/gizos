@@ -31,6 +31,19 @@ typedef struct h2_ble_wifi_config_peer {
     uint32_t generation;
 } h2_ble_wifi_config_peer_t;
 
+/** Connection transitions deferred while a notification is in flight. */
+#define H2_BLE_WIFI_CONFIG_TRANSITION_QUEUE_LEN 8u
+
+typedef struct h2_ble_wifi_config_transition {
+    h2_pal_system_event_type_t type;
+    union {
+        h2_pal_ble_connection_t connection;
+        h2_pal_ble_mtu_info_t mtu;
+        h2_pal_ble_subscription_state_t subscription;
+        h2_pal_ble_disconnected_info_t disconnected;
+    } payload;
+} h2_ble_wifi_config_transition_t;
+
 typedef struct h2_ble_wifi_config_pending_event {
     h2_ble_wifi_config_event_t event;
     uint16_t conn_handle;
@@ -89,6 +102,20 @@ struct h2_ble_wifi_config {
         events[H2_BLE_WIFI_CONFIG_EVENT_QUEUE_LEN];
     size_t event_head;
     size_t event_count;
+
+    /*
+     * A notification is in flight. The BLE Host call runs without the mutex,
+     * so connection transitions that arrive meanwhile are queued instead of
+     * applied: the send has already validated its peer, and applying a
+     * reconnect underneath it would let the frame reach the new peer.
+     */
+    bool sending;
+    h2_ble_wifi_config_transition_t
+        transitions[H2_BLE_WIFI_CONFIG_TRANSITION_QUEUE_LEN];
+    size_t transition_head;
+    size_t transition_count;
+    /** A transition was dropped; the connection is treated as lost. */
+    bool transition_overflow;
 
     bool gatt_registered;
     bool closing;

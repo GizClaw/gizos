@@ -40,7 +40,10 @@ extern "C" {
  * handle are refused with H2_PAL_ERR_INVALID_STATE until that connection ends.
  * Wi-Fi work outlives the ATT write that started it, so every notification is
  * bound to the connection that requested it and is dropped once that
- * connection ends, even when a later peer reuses its connection handle.
+ * connection ends, even when a later peer reuses its connection handle. No
+ * service lock is held across a BLE Host call, so a provider that dispatches
+ * a connection event from inside a notification cannot deadlock the service;
+ * such an event is applied once the notification returns.
  */
 
 /** Borrowed default service UUID, 128-bit, little-endian ATT byte order. */

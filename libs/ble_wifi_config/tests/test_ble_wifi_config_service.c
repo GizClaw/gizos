@@ -56,9 +56,12 @@ typedef struct fake_runtime {
     int notify_result;
     bool hold_notify;
     bool notify_active;
-    bool event_applied_during_notify;
+    bool posted_during_notify;
     bool reconnect_done;
     int notifies_after_reconnect;
+    h2_ble_wifi_config_t *config_service;
+    uint32_t generation_during_send;
+    bool send_observed;
 
     h2_pal_wifi_scan_entry_t scan_entries[TEST_MAX_SCAN_ENTRIES];
     size_t scan_entry_count;
@@ -390,6 +393,10 @@ static h2_pal_result_t fake_notify(
     CHECK(conn_handle == TEST_CONN_HANDLE);
     CHECK(len <= H2_BLE_WIFI_CONFIG_CREDENTIALS_FRAME_MAX_LEN);
     pthread_mutex_lock(&runtime->mutex);
+    /* Count on entry: a send already in flight is not a post-reconnect send. */
+    if (runtime->reconnect_done) {
+        runtime->notifies_after_reconnect++;
+    }
     bool hold = runtime->hold_notify;
     if (hold) {
         /*
@@ -403,11 +410,19 @@ static h2_pal_result_t fake_notify(
         pthread_mutex_unlock(&runtime->mutex);
         struct timespec delay = { .tv_sec = 0, .tv_nsec = 200000000L };
         (void)nanosleep(&delay, NULL);
+        /*
+         * Still inside the Host call: the connection identity this send was
+         * validated against must not have moved on.
+         */
+        h2_ble_wifi_config_t *config_service = runtime->config_service;
+        CHECK(h2_pal_mutex_lock(&runtime->sync, config_service->mutex) == H2_PAL_OK);
+        uint32_t generation = config_service->conn_generation;
+        (void)h2_pal_mutex_unlock(&runtime->sync, config_service->mutex);
         pthread_mutex_lock(&runtime->mutex);
+        runtime->generation_during_send = generation;
+        runtime->send_observed = true;
         runtime->notify_active = false;
-    }
-    if (runtime->reconnect_done) {
-        runtime->notifies_after_reconnect++;
+        pthread_cond_broadcast(&runtime->cond);
     }
     int result = runtime->notify_result;
     if (result == H2_PAL_OK && runtime->notification_count < TEST_MAX_NOTIFICATIONS) {
@@ -1326,11 +1341,11 @@ static void *reconnect_thread_main(void *ctx) {
 
     pthread_mutex_lock(&runtime->mutex);
     /*
-     * A send that already passed its identity check must finish before the
-     * connection state can change, otherwise the frame in flight lands on the
-     * new peer.
+     * The handler must return while the send is still in flight: blocking it
+     * for the length of a Host call is exactly the reentrant deadlock the
+     * deferral avoids.
      */
-    runtime->event_applied_during_notify = runtime->notify_active;
+    runtime->posted_during_notify = runtime->notify_active;
     runtime->reconnect_done = true;
     pthread_mutex_unlock(&runtime->mutex);
     return NULL;
@@ -1345,6 +1360,8 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
     connect_and_subscribe(&runtime);
 
+    runtime.config_service = service;
+    uint32_t generation_before = service->conn_generation;
     reconnect_thread_args_t args = { .runtime = &runtime };
     pthread_t thread;
     CHECK(pthread_create(&thread, NULL, reconnect_thread_main, &args) == 0);
@@ -1353,7 +1370,16 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     CHECK(fake_gatt_write(&runtime, TEST_COMMAND_HANDLE, start, sizeof(start)) ==
           H2_PAL_OK);
     CHECK(pthread_join(thread, NULL) == 0);
-    CHECK(!runtime.event_applied_during_notify);
+    CHECK(runtime.posted_during_notify);
+
+    struct timespec send_deadline;
+    fake_deadline(&send_deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!runtime.send_observed) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &send_deadline) == 0);
+    }
+    CHECK(runtime.generation_during_send == generation_before);
+    pthread_mutex_unlock(&runtime.mutex);
 
     /* Nothing from the first peer's scan reaches the peer that replaced it. */
     struct timespec deadline;
