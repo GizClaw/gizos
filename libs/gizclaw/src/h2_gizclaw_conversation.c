@@ -147,6 +147,7 @@ struct h2_gizclaw_conversation_request {
   bool media_attached;
   bool transport_committed;
   bool terminal_waiting_for_audio;
+  unsigned int diag_idle_windows;
   bool reply_boundary_terminal;
 };
 
@@ -353,8 +354,15 @@ static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
       request, pcm_would_block == 0u ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
       "gizclaw/audio-decode", message);
 
-  const bool stuck = conversation_diag_state(request, window_frames, opus_depth,
-                                             message, sizeof(message));
+  const bool idle = conversation_diag_state(request, window_frames, opus_depth,
+                                            message, sizeof(message));
+  request->diag_idle_windows = idle ? request->diag_idle_windows + 1u : 0u;
+  /* One quiet second is normal between turns; three in a row while the wire
+   * is still open and no reply boundary has arrived is worth surfacing. */
+  const bool stuck =
+      request->diag_idle_windows >= 3u &&
+      atomic_load_explicit(&request->wire_ready, memory_order_acquire) &&
+      !atomic_load_explicit(&request->downlink_eos, memory_order_acquire);
   conversation_diag_log(request, stuck ? H2_PAL_LOG_WARN : H2_PAL_LOG_INFO,
                         "gizclaw/audio-state", message);
 }
@@ -612,9 +620,10 @@ void h2_gizclaw_conversation_media_detach(
   request->media_attached = false;
   unsigned int waits = 0u;
   while (atomic_load(&service->media_callback_refs) != 0) {
-    (void)h2_pal_cond_wait(service->config.sync, service->progress_cond,
-                           service->mutex, 1000u);
-    if (atomic_load(&service->media_callback_refs) != 0) {
+    const h2_pal_result_t wait_rc = h2_pal_cond_wait(
+        service->config.sync, service->progress_cond, service->mutex, 1000u);
+    if (wait_rc == H2_PAL_ERR_TIMEOUT &&
+        atomic_load(&service->media_callback_refs) != 0) {
       /* A media callback is holding the request for far longer than one
        * audio period. Name the last acquirer so the stall can be traced. */
       h2_gizclaw_service_log_request(
@@ -1651,6 +1660,10 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
       return commit_rc;
     }
     request->transport_committed = true;
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_WARN, "conversation", "input_committed",
+        request->identity, H2_PAL_OK, 0, request->queued_frames,
+        request->queued_bytes);
   }
   if (request->notification_pending) {
     h2_pal_result_t rc = conversation_notification_step(request);
