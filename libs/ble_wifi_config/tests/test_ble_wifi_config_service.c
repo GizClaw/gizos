@@ -1381,7 +1381,15 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     CHECK(runtime.generation_during_send == generation_before);
     pthread_mutex_unlock(&runtime.mutex);
 
-    /* Nothing from the first peer's scan reaches the peer that replaced it. */
+    /*
+     * The service cannot unsend a frame the Host already accepted, so it
+     * reports the peer change and stops rather than sending more frames.
+     */
+    h2_ble_wifi_config_stats_t stats;
+    CHECK(h2_ble_wifi_config_get_stats(service, &stats) == H2_PAL_OK);
+    CHECK(stats.sends_during_peer_change == 1u);
+
+    /* Nothing further from the first peer's scan reaches its replacement. */
     struct timespec deadline;
     fake_deadline(&deadline, TEST_WAIT_MS);
     pthread_mutex_lock(&runtime.mutex);

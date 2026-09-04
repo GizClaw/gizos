@@ -177,6 +177,13 @@ typedef struct h2_ble_wifi_config_stats {
     uint32_t aps_reported;
     uint32_t aps_dropped;
     uint32_t notify_failures;
+    /**
+     * Sends whose peer was replaced while the BLE Host call was running.
+     * The Wi-Fi provisioning frames are addressed by connection handle only,
+     * so such a frame may have reached the replacement peer; the service
+     * cannot prevent it and stops the operation instead.
+     */
+    uint32_t sends_during_peer_change;
     uint32_t provision_attempts;
     uint32_t provision_failures;
     uint32_t protocol_errors;

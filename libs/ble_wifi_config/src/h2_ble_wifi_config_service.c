@@ -187,7 +187,16 @@ static int h2_ble_wifi_config_notify(
      * holding it across an unconstrained provider call would deadlock a
      * provider that dispatches a BLE system event from inside notify on this
      * task. The flag keeps the peer identity that was just validated frozen
-     * for the duration of the call instead.
+     * for the duration of the call instead, so the service never starts a
+     * send for a peer it has already replaced.
+     *
+     * What happens inside the Host call is not the service's to decide. The
+     * Wi-Fi PAL addresses a peer by numeric connection handle only, with no
+     * connection identity and no lifetime guarantee, so a disconnect and a
+     * handle-reusing reconnect during the call could still route this frame
+     * to the replacement peer. That window cannot be closed from a portable
+     * library; the service detects it after the fact, counts it, and stops
+     * the operation instead of sending more frames blind.
      */
     service->sending = true;
     h2_ble_wifi_config_unlock(service);
@@ -198,6 +207,12 @@ static int h2_ble_wifi_config_notify(
         service->stats.notify_failures++;
     }
     h2_ble_wifi_config_drain_transitions_locked(service);
+    bool still_current = conn_handle == service->conn_handle &&
+                         peer.generation == service->conn_generation;
+    if (!still_current) {
+        service->stats.sends_during_peer_change++;
+        rc = H2_PAL_ERR_INVALID_STATE;
+    }
     h2_ble_wifi_config_unlock(service);
     return rc;
 }

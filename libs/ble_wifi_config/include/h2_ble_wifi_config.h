@@ -44,6 +44,14 @@ extern "C" {
  * service lock is held across a BLE Host call, so a provider that dispatches
  * a connection event from inside a notification cannot deadlock the service;
  * such an event is applied once the notification returns.
+ *
+ * That binding covers what the service initiates, not what the Host delivers.
+ * h2_pal_ble_notify() addresses a peer by numeric connection handle alone,
+ * with no connection identity or lifetime guarantee, so a disconnect and a
+ * handle-reusing reconnect while a notification is in flight may still route
+ * that frame to the replacement peer. The service reports the condition in
+ * h2_ble_wifi_config_stats_t::sends_during_peer_change and ends the operation
+ * rather than sending more frames.
  */
 
 /** Borrowed default service UUID, 128-bit, little-endian ATT byte order. */

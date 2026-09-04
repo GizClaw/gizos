@@ -102,6 +102,8 @@ Wi-Fi 工作的生命周期长于发起它的那次 ATT write，因此每条 not
 
 因此 library 用「发送中延后应用」代替「持锁发送」：发送前在锁内完成身份校验并置位 `sending`，随后释放锁再调用 Host；发送期间到达的 BLE connected / disconnected / MTU / subscription 事件只被排入一个固定容量的 transition 队列，不改动连接状态；发送返回后由发送方在锁内按顺序应用。System event handler 因此从不阻塞在 Host 调用上，被校验过的身份在发送期间也不会改变。队列溢出时不猜测中间状态，直接按连接丢失处理，让 App 重连后重新配网。
 
+这只保证 library 不会为一个自己已经替换掉的 peer **发起**发送。`h2_pal_ble_notify()` 只接受 `conn_handle`，PAL 既不提供 connection identity，也不约定已接受的 notify 与物理连接的绑定或 lifetime，所以在 Host 调用执行期间发生「断开 + controller 复用同一 handle 重连」时，这一帧仍可能被投递给替换后的 peer——portable library 关不掉这个窗口。Library 的处理是：发送返回后复查身份，不一致时 `sends_during_peer_change` 递增、本次操作以 `H2_PAL_ERR_INVALID_STATE` 结束，不再发送后续帧，使该情况可观测。根治需要 PAL 层原语，见 issue #165。
+
 Notification 只在对端已订阅对应 characteristic 时发送。SCAN 未订阅时写 `0x01` 直接返回 `H2_PAL_ERR_INVALID_STATE`，不会白跑一次扫描。
 
 ## 与其他 BLE 服务共存
@@ -120,4 +122,4 @@ ESP target 上另有一层 `h2_esp_platform_wifi_set_activity_observer()`，由 
 bazel test //libs/ble_wifi_config:all
 ```
 
-`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件在发送期间被延后、不改变发送已校验的连接身份。
+`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件在发送期间被延后、不改变发送已校验的连接身份并在事后计入 `sends_during_peer_change`。
