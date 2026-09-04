@@ -1230,13 +1230,31 @@ h2_gizclaw_req_wait_dispatch_internal(h2_gizclaw_req_t *request) {
   if (request_valid(request) != H2_PAL_OK || request->vtable != &managed_vtable)
     return H2_PAL_ERR_INVALID_ARG;
   managed_request_t *managed = (managed_request_t *)request;
+  h2_gizclaw_service_t *service = managed->service;
+  /* A terminal request reports its own result, which may itself be TIMEOUT;
+   * only a non-terminal TIMEOUT means the bounded wait expired. */
+  if (service->config.runtime != NULL) {
+    /* The App owns dispatch: its Runtime loop calls service_poll() on the App
+     * task, so the waiting task must neither poll nor run App hooks itself.
+     * The net task enforces the request timeout, which makes it terminal. */
+    for (;;) {
+      const h2_pal_result_t rc = managed_wait(request, managed->timeout_ms);
+      if (rc != H2_PAL_ERR_TIMEOUT ||
+          atomic_load_explicit(&managed->terminal, memory_order_acquire))
+        return rc;
+    }
+  }
+  /* No Runtime dispatcher: drive dispatch from the waiting task. */
   for (;;) {
     h2_pal_result_t rc = managed_wait(request, 1u);
-    if (rc != H2_PAL_ERR_TIMEOUT)
+    if (rc != H2_PAL_ERR_TIMEOUT ||
+        atomic_load_explicit(&managed->terminal, memory_order_acquire))
       return rc;
     size_t dispatched = 0u;
-    rc = h2_gizclaw_service_poll(managed->service, 1u, &dispatched);
-    if (rc != H2_PAL_OK)
+    rc = h2_gizclaw_service_poll(service, 1u, &dispatched);
+    /* INVALID_STATE means another task is dispatching right now; its poll
+     * makes the same progress, so keep waiting instead of failing. */
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_INVALID_STATE)
       return rc;
   }
 }

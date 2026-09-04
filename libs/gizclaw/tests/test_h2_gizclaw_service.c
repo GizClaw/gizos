@@ -740,6 +740,111 @@ static void test_runtime_dispatch_wakeup_is_coalesced(void) {
   h2_gizclaw_service_test_set_runtime_post(NULL);
 }
 
+/* A job task issues one wait-dispatch rpc while the App task keeps polling. */
+static void *run_wait_dispatch_rpc(void *user) {
+  test_env_t *env = user;
+  env->sync_rpc_result = h2_gizclaw_req_create_rpc_internal(
+      env->service, 71u, H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET, &s_wait_rpc_tag,
+      (h2_gizclaw_rpc_bytes_t){.data = (const uint8_t *)"req", .len = 3u},
+      1234u, &env->sync_rpc);
+  if (env->sync_rpc_result == H2_PAL_OK)
+    env->sync_rpc_result = h2_gizclaw_req_do(
+        env->sync_rpc, env, NULL, NULL,
+        env->service->config.runtime != NULL ? record_req_completion : NULL);
+  if (env->sync_rpc_result == H2_PAL_OK)
+    env->sync_rpc_result = h2_gizclaw_req_wait_dispatch_internal(env->sync_rpc);
+  atomic_store_explicit(&env->sync_rpc_returned, true, memory_order_release);
+  return NULL;
+}
+
+static void test_wait_dispatch_from_job_task_while_app_polls(void) {
+  /* Mode 0: the App owns dispatch through a Runtime loop, so the waiting task
+   * must never poll and the completion hook must run on the App task.
+   * Mode 1: no Runtime, both tasks self-poll; a poll that finds the other
+   * task dispatching must keep waiting instead of failing the request. */
+  for (unsigned mode = 0u; mode < 2u; ++mode) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 1u);
+    env.release_in_completion = false;
+    atomic_store_explicit(&s_runtime_post_count, 0u, memory_order_relaxed);
+    if (mode == 0u) {
+      service->config.runtime = (h2_runtime_t *)&env;
+      h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
+    }
+    h2_gizclaw_async_rpc_test_set_ops(&s_rpc_ops);
+    /* Hold the connection so the request stays pending while the App task is
+     * busy inside a callback (dispatching set) and the job task is waiting. */
+    atomic_store(&env.connect_gate, false);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    assert(h2_pal_mutex_lock(service->config.sync, service->mutex) ==
+           H2_PAL_OK);
+    service->dispatching = true;
+    assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+           H2_PAL_OK);
+    pthread_t job;
+    assert(pthread_create(&job, NULL, run_wait_dispatch_rpc, &env) == 0);
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 50u);
+    /* The job task's wait has seen the busy dispatcher many times over by now
+     * (it waits in 1 ms slices without a Runtime); it must still be waiting. */
+    assert(!atomic_load_explicit(&env.sync_rpc_returned, memory_order_acquire));
+    assert(env.sync_rpc != NULL);
+    assert(h2_pal_mutex_lock(service->config.sync, service->mutex) ==
+           H2_PAL_OK);
+    service->dispatching = false;
+    assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+           H2_PAL_OK);
+    atomic_store(&env.connect_gate, true);
+    for (unsigned spin = 0u; spin < 1000000u; ++spin) {
+      const bool returned =
+          atomic_load_explicit(&env.sync_rpc_returned, memory_order_acquire);
+      if (returned && (mode == 1u || atomic_load(&env.completion_count) != 0u))
+        break;
+      size_t dispatched = 0u;
+      const h2_pal_result_t rc =
+          h2_gizclaw_service_poll(service, 1u, &dispatched);
+      /* Without a Runtime the job task self-polls too, so the App task may
+       * find it dispatching; with one, only the App task ever polls. */
+      assert(rc == H2_PAL_OK ||
+             (mode == 1u && rc == H2_PAL_ERR_INVALID_STATE));
+      if (dispatched == 0u)
+        sched_yield();
+    }
+    assert(pthread_join(job, NULL) == 0);
+    assert(atomic_load(&env.sync_rpc_returned));
+    assert(env.sync_rpc_result == H2_PAL_OK);
+    /* Wait returns on the terminal result; the retire item may still be
+     * queued for the App task. Only the App task polls from here on. */
+    for (;;) {
+      size_t dispatched = 0u;
+      assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+      assert(h2_pal_mutex_lock(service->config.sync, service->mutex) ==
+             H2_PAL_OK);
+      const size_t pending = service->dispatch_item_count;
+      assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+             H2_PAL_OK);
+      if (dispatched == 0u && pending == 0u)
+        break;
+      sched_yield();
+    }
+    const h2_gizclaw_rpc_response_t *response = NULL;
+    assert(h2_gizclaw_req_response_internal(env.sync_rpc, &s_wait_rpc_tag,
+                                            &response) == H2_PAL_OK);
+    assert(response != NULL && response->result_payload_len == 3u);
+    if (mode == 0u) {
+      assert(atomic_load(&env.completion_count) == 1u &&
+             env.completed[0] == 71u &&
+             env.completion_results[0] == H2_PAL_OK);
+      assert(atomic_load_explicit(&s_runtime_post_count,
+                                  memory_order_acquire) >= 1u);
+    }
+    h2_gizclaw_req_release(env.sync_rpc);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    h2_gizclaw_async_rpc_test_set_ops(NULL);
+    h2_gizclaw_service_test_set_runtime_post(NULL);
+  }
+}
+
 static void test_pending_operation_does_not_block_following_work(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 2u);
@@ -8441,6 +8546,7 @@ int main(int argc, char **argv) {
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();
   test_runtime_dispatch_wakeup_is_coalesced();
+  test_wait_dispatch_from_job_task_while_app_polls();
   test_pending_operation_does_not_block_following_work();
   test_queued_cancel_and_stop_drain();
   test_stop_cancels_running_without_inline_callback();
