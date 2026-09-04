@@ -62,6 +62,18 @@ int h2_loader_ble_service_request_advertising_paused(
     bool paused);
 
 /**
+ * Queue an advertising pause/resume update on the BLE link task.
+ *
+ * The wanted state is published without taking any lock and the link task
+ * applies it, so this is safe to call from a context that must not block. Only
+ * the most recent request is applied; the call returns H2_PAL_ERR_CLOSED once
+ * the service has started closing.
+ */
+int h2_loader_ble_service_request_advertising_paused(
+    h2_loader_ble_service_t *service,
+    bool paused);
+
+/**
  * Copy up to three service UUIDs into the advertising payload alongside the
  * H2Loader management UUID. An active connection defers the payload update
  * until disconnect; the caller retains ownership of the input array.

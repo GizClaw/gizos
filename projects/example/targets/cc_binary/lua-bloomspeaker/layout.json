@@ -1,0 +1,20 @@
+{
+  "display": {
+    "title": "Particle Intercom",
+    "width": 368,
+    "height": 448
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": [
+    {
+      "periph_id": 2,
+      "kind": {
+        "button": {
+          "key": "escape"
+        }
+      }
+    }
+  ]
+}
