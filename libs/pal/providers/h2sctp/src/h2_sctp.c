@@ -314,8 +314,14 @@ static h2_pal_result_t h2_sctp_vtable_association_create(
     }
     association->owner = provider;
     association->config = *config;
+    association->rx_assembly = h2_sctp_alloc(
+        provider, config->max_message_size);
+    association->rx_assembly_len = 0u;
+    association->rx_assembly_count = 0u;
+    association->rx_assembly_begin = NULL;
     const h2_pal_result_t pool_result = h2_sctp_packet_pool_create(association);
     if (pool_result != H2_PAL_OK) {
+        h2_sctp_free(provider, association->rx_assembly);
         h2_sctp_free(provider, association);
         return pool_result;
     }
@@ -493,6 +499,8 @@ static h2_pal_result_t h2_sctp_vtable_association_close(
     h2_sctp_packet_release(association, association->pending_emit);
     association->pending_emit = NULL;
     h2_sctp_packet_pool_destroy(association);
+    h2_sctp_free(provider, association->rx_assembly);
+    association->rx_assembly = NULL;
     h2_sctp_free(provider, association->peer_cookie);
     h2_sctp_reliability_release_all(association);
     h2_sctp_stream_release_all(association);

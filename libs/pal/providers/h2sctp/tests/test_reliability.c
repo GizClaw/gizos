@@ -736,7 +736,9 @@ int main(void) {
   assert(receive_fragment_count(pair.passive.association) == 1u);
   const size_t receive_used = pair.passive.association->receive_used;
   const uint32_t cumulative = pair.passive.association->cumulative_received_tsn;
-  pair.passive.fail_allocation_at = pair.passive.allocation_count + 3u;
+  /* The end fragment assembles in place (one node allocation); the stream
+   * record for delivery is the second allocation and the one that fails. */
+  pair.passive.fail_allocation_at = pair.passive.allocation_count + 2u;
   assert(transfer_one(&pair.active, &pair.passive, pair.now_ms) ==
          H2_PAL_ERR_WOULD_BLOCK);
   assert(pair.passive.allocation_failure_count == 1u);

@@ -108,6 +108,8 @@ typedef struct h2_sctp_rx_fragment {
     uint8_t flags;
     bool interleaved;
     bool delivered;
+    /* Payload lives in the association's assembly buffer, not in the node. */
+    bool assembled;
     size_t data_len;
     uint8_t *data;
     struct h2_sctp_rx_fragment *next;
@@ -194,6 +196,14 @@ struct h2_pal_sctp_association {
     uint8_t sack_pending_packets;
 
     h2_sctp_stream_t *streams;
+    /* In-order fragments of the message expected next are copied straight
+     * into this max_message_size buffer and the complete message is handed
+     * to the callback from it, so the common path costs one copy and no
+     * per-message allocation. Out-of-order fragments keep their own copy. */
+    uint8_t *rx_assembly;
+    size_t rx_assembly_len;
+    uint32_t rx_assembly_count;
+    h2_sctp_rx_fragment_t *rx_assembly_begin;
     h2_sctp_tx_fragment_t *tx_fragments;
     h2_sctp_tx_fragment_t *tx_fragments_tail;
     h2_sctp_rx_fragment_t *rx_fragments;
