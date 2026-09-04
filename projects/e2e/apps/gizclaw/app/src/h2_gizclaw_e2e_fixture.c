@@ -1,8 +1,11 @@
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_sync.h"
+#include "h2/pal/os/h2_pal_task.h"
 #include "h2_gizclaw_e2e_internal.h"
+#include "h2_gizclaw_e2e_task_names.h"
 
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -709,6 +712,58 @@ int h2_gizclaw_e2e_fixture_reconnect_actor(h2_gizclaw_e2e_fixture_t *fixture,
     return H2_PAL_ERR_INVALID_STATE;
   const int rc = actor_stop(actor);
   return rc == H2_PAL_OK ? actor_connect(fixture, actor, "reconnect") : rc;
+}
+
+typedef struct sync_job {
+  int (*fn)(void *ctx);
+  void *ctx;
+  int result;
+  atomic_bool returned;
+} sync_job_t;
+
+static void sync_job_entry(void *user) {
+  sync_job_t *job = user;
+  job->result = job->fn(job->ctx);
+  atomic_store_explicit(&job->returned, true, memory_order_release);
+}
+
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
+                                     h2_gizclaw_service_t *service,
+                                     int (*fn)(void *ctx), void *ctx) {
+  if (fixture == NULL || fixture->runtime == NULL || service == NULL ||
+      fn == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  sync_job_t job = {.fn = fn, .ctx = ctx, .result = H2_PAL_ERR_INVALID_STATE};
+  atomic_init(&job.returned, false);
+  const h2_pal_task_options_t options = {
+      .name = h2_gizclaw_e2e_job_task_name,
+      .min_stack_size = 32768u,
+  };
+  h2_pal_task_t *task = NULL;
+  int rc = h2_pal_task_start(fixture->runtime->task, &options, sync_job_entry,
+                             &job, &task);
+  h2_gizclaw_e2e_evidence("h2_pal_task_start", "sync-job", rc);
+  if (rc != H2_PAL_OK)
+    return rc;
+  /* This task is the App: keep dispatching until the job task has returned.
+   * The helper's own request timeout bounds the loop. */
+  int poll_rc = H2_PAL_OK;
+  while (!atomic_load_explicit(&job.returned, memory_order_acquire)) {
+    size_t dispatched = 0u;
+    if (poll_rc == H2_PAL_OK) {
+      poll_rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
+      if (poll_rc != H2_PAL_OK)
+        h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "sync-job",
+                                poll_rc);
+    }
+    if (dispatched == 0u)
+      (void)h2_pal_time_sleep_ms(fixture->time, 1u);
+  }
+  rc = h2_pal_task_join(fixture->runtime->task, task);
+  h2_gizclaw_e2e_evidence("h2_pal_task_join", "sync-job", rc);
+  if (rc != H2_PAL_OK)
+    return rc;
+  return poll_rc != H2_PAL_OK ? poll_rc : job.result;
 }
 
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,

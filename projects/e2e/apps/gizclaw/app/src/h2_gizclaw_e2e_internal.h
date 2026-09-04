@@ -118,6 +118,12 @@ int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *fixture,
                                 uint32_t duration_ms);
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
                                      uint32_t required_ms);
+/* Run `fn` on a job task while this (App) task polls `service` until it
+ * returns; the synchronous data-down helpers need their output dispatched by
+ * the App task. Returns the task or poll failure, otherwise `fn`'s result. */
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
+                                     h2_gizclaw_service_t *service,
+                                     int (*fn)(void *ctx), void *ctx);
 int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t *fixture,
                                         uint32_t timeout_ms);
 void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void);

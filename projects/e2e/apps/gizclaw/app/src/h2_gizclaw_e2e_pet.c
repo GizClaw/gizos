@@ -100,6 +100,22 @@ static int wait_pixa(h2_gizclaw_e2e_fixture_t *fixture,
   }
   return rc == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : rc;
 }
+typedef struct pixa_sync_job {
+  h2_gizclaw_service_t *service;
+  h2_gizclaw_str_t name;
+  h2_gizclaw_e2e_fixture_t *fixture;
+  h2_gizclaw_resp_storage_t *storage;
+  h2_gizclaw_pet_pixa_info_t *out;
+} pixa_sync_job_t;
+
+/* Runs on the fixture job task; the case task keeps polling meanwhile. */
+static int pixa_sync_run(void *ctx) {
+  pixa_sync_job_t *job = ctx;
+  return h2_gizclaw_rpc_pet_pixa_download(job->service, job->name, count_bytes,
+                                          job->fixture, PET_TIMEOUT,
+                                          job->storage, job->out);
+}
+
 static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                 bool req, enum method method, uint64_t *identity,
                 const char *cursor, const char *key, union response *out) {
@@ -144,10 +160,15 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       rc = h2_gizclaw_rpc_pet_action_get(service, name, PET_TIMEOUT, s,
                                          &out->actions);
       break;
-    case PIXA:
-      rc = h2_gizclaw_rpc_pet_pixa_download(service, name, count_bytes, f,
-                                            PET_TIMEOUT, s, &out->pixa);
+    case PIXA: {
+      pixa_sync_job_t job = {.service = service,
+                             .name = name,
+                             .fixture = f,
+                             .storage = s,
+                             .out = &out->pixa};
+      rc = h2_gizclaw_e2e_fixture_call_sync(f, service, pixa_sync_run, &job);
       break;
+    }
     }
     record("rpc", method, "pet-rpc", rc);
   } else {

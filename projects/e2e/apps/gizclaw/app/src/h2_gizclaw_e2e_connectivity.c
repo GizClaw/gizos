@@ -97,6 +97,19 @@ static const char *platform_name(void) {
 #endif
 }
 
+typedef struct speed_sync_job {
+  h2_gizclaw_service_t *service;
+  size_t upload, download;
+  h2_gizclaw_speedtest_result_t *speed;
+} speed_sync_job_t;
+
+/* Runs on the fixture job task; the case task keeps polling meanwhile. */
+static int speed_sync_run(void *ctx) {
+  speed_sync_job_t *job = ctx;
+  return h2_gizclaw_rpc_speedtest(job->service, job->upload, job->download,
+                                  REQUEST_TIMEOUT_MS, job->speed);
+}
+
 static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
                 enum method method, uint64_t identity, size_t upload,
                 size_t download, h2_gizclaw_speedtest_result_t *speed) {
@@ -191,10 +204,14 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
     case PING:
       rc = h2_gizclaw_rpc_ping(service, REQUEST_TIMEOUT_MS, &ping);
       break;
-    case SPEED:
-      rc = h2_gizclaw_rpc_speedtest(service, upload, download,
-                                    REQUEST_TIMEOUT_MS, speed);
+    case SPEED: {
+      speed_sync_job_t job = {
+          .service = service, .upload = upload, .download = download,
+          .speed = speed};
+      rc = h2_gizclaw_e2e_fixture_call_sync(fixture, service, speed_sync_run,
+                                            &job);
       break;
+    }
     case REGISTER:
       rc = h2_gizclaw_rpc_register(service, fixture->registration_token,
                                    REQUEST_TIMEOUT_MS, &registration);

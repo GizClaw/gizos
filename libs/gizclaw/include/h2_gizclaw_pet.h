@@ -208,6 +208,9 @@ h2_pal_result_t
 h2_gizclaw_resp_parse_pet_pixa_download(const h2_gizclaw_req_t *request,
                                         h2_gizclaw_resp_storage_t *storage,
                                         h2_gizclaw_pet_pixa_info_t *out_result);
+/** Synchronous Pixa download. `write` runs from h2_gizclaw_service_poll() on
+ * the App task, so call this from another task while the App keeps polling;
+ * it never polls on its own. */
 h2_pal_result_t h2_gizclaw_rpc_pet_pixa_download(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t pet_name,
     h2_gizclaw_pet_pixa_write_fn write, void *write_user, uint32_t timeout_ms,

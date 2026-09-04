@@ -25,6 +25,12 @@ static struct {
 h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *s) {
   return (h2_gizclaw_str_t){s, strlen(s)};
 }
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
+                                     h2_gizclaw_service_t *service,
+                                     int (*fn)(void *ctx), void *ctx) {
+  assert(fixture != NULL && service != NULL && fn != NULL);
+  return fn(ctx);
+}
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f == state.fixture && ms == 30000u);

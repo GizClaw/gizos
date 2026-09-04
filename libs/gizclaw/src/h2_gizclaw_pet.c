@@ -1019,7 +1019,7 @@ h2_pal_result_t h2_gizclaw_rpc_pet_pixa_download(
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, &writer, NULL, pixa_sync_output, NULL);
   if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_wait_dispatch_internal(request);
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_pet_pixa_download(request, storage, out_result);
   h2_gizclaw_req_release(request);
