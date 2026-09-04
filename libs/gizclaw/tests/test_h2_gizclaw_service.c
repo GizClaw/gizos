@@ -7874,6 +7874,9 @@ static void test_stream_sink_one_shot(void) {
       assert(pthread_join(stopper, NULL) == 0 && test.stop_result == H2_PAL_OK);
     }
     wait_for_count(&test.wire_destroyed, 1u);
+    /* The wire is destroyed by the operation's finish hook; the sink context
+     * is destroyed only when the execution reference is retired afterwards. */
+    wait_for_count(&test.destroyed, 1u);
     assert(atomic_load(&test.sink_calls) == 1u);
     assert(atomic_load(&test.sink_stops) == 1u);
     assert(atomic_load(&test.destroyed) == 1u);
