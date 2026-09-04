@@ -54,6 +54,11 @@ typedef struct fake_runtime {
     fake_notification_t notifications[TEST_MAX_NOTIFICATIONS];
     size_t notification_count;
     int notify_result;
+    bool hold_notify;
+    bool notify_active;
+    bool event_applied_during_notify;
+    bool reconnect_done;
+    int notifies_after_reconnect;
 
     h2_pal_wifi_scan_entry_t scan_entries[TEST_MAX_SCAN_ENTRIES];
     size_t scan_entry_count;
@@ -385,6 +390,25 @@ static h2_pal_result_t fake_notify(
     CHECK(conn_handle == TEST_CONN_HANDLE);
     CHECK(len <= H2_BLE_WIFI_CONFIG_CREDENTIALS_FRAME_MAX_LEN);
     pthread_mutex_lock(&runtime->mutex);
+    bool hold = runtime->hold_notify;
+    if (hold) {
+        /*
+         * Stay inside the send while another task tries to change the
+         * connection state, so the test can observe whether the service
+         * serializes the two.
+         */
+        runtime->hold_notify = false;
+        runtime->notify_active = true;
+        pthread_cond_broadcast(&runtime->cond);
+        pthread_mutex_unlock(&runtime->mutex);
+        struct timespec delay = { .tv_sec = 0, .tv_nsec = 200000000L };
+        (void)nanosleep(&delay, NULL);
+        pthread_mutex_lock(&runtime->mutex);
+        runtime->notify_active = false;
+    }
+    if (runtime->reconnect_done) {
+        runtime->notifies_after_reconnect++;
+    }
     int result = runtime->notify_result;
     if (result == H2_PAL_OK && runtime->notification_count < TEST_MAX_NOTIFICATIONS) {
         fake_notification_t *entry = &runtime->notifications[runtime->notification_count++];
@@ -1275,6 +1299,76 @@ static void test_rejection_stays_with_its_connection(void) {
     fake_runtime_deinit(&runtime);
 }
 
+typedef struct reconnect_thread_args {
+    fake_runtime_t *runtime;
+} reconnect_thread_args_t;
+
+static void *reconnect_thread_main(void *ctx) {
+    reconnect_thread_args_t *args = ctx;
+    fake_runtime_t *runtime = args->runtime;
+
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime->mutex);
+    while (!runtime->notify_active) {
+        CHECK(pthread_cond_timedwait(&runtime->cond, &runtime->mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime->mutex);
+
+    /* Reuse the same numeric handle for the peer that replaces the first. */
+    h2_pal_ble_disconnected_info_t info = {
+        .conn_handle = TEST_CONN_HANDLE,
+        .reason = 19,
+    };
+    fake_post(runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &info,
+              sizeof(info));
+    fake_connect_peer(runtime, TEST_ATT_MTU);
+
+    pthread_mutex_lock(&runtime->mutex);
+    /*
+     * A send that already passed its identity check must finish before the
+     * connection state can change, otherwise the frame in flight lands on the
+     * new peer.
+     */
+    runtime->event_applied_during_notify = runtime->notify_active;
+    runtime->reconnect_done = true;
+    pthread_mutex_unlock(&runtime->mutex);
+    return NULL;
+}
+
+static void test_reconnect_cannot_interleave_with_a_send(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
+    fake_add_scan_entry(&runtime, "cafe", -80, H2_PAL_WIFI_SECURITY_OPEN);
+    runtime.hold_notify = true;
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    connect_and_subscribe(&runtime);
+
+    reconnect_thread_args_t args = { .runtime = &runtime };
+    pthread_t thread;
+    CHECK(pthread_create(&thread, NULL, reconnect_thread_main, &args) == 0);
+
+    const uint8_t start[] = { 0x01u };
+    CHECK(fake_gatt_write(&runtime, TEST_COMMAND_HANDLE, start, sizeof(start)) ==
+          H2_PAL_OK);
+    CHECK(pthread_join(thread, NULL) == 0);
+    CHECK(!runtime.event_applied_during_notify);
+
+    /* Nothing from the first peer's scan reaches the peer that replaced it. */
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!fake_saw_event_locked(&runtime, H2_BLE_WIFI_CONFIG_EVENT_SCAN_FINISHED)) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
+    }
+    CHECK(runtime.notifies_after_reconnect == 0);
+    pthread_mutex_unlock(&runtime.mutex);
+
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    fake_runtime_deinit(&runtime);
+}
+
 int main(void) {
     test_open_registers_schema();
     test_caller_owned_registration();
@@ -1296,6 +1390,7 @@ int main(void) {
     test_failed_unregister_keeps_the_service();
     test_scan_frames_stay_with_their_connection();
     test_rejection_stays_with_its_connection();
+    test_reconnect_cannot_interleave_with_a_send();
     printf("ok\n");
     return 0;
 }

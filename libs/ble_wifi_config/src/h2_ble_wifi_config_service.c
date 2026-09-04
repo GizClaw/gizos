@@ -140,11 +140,19 @@ static void h2_ble_wifi_config_emit(
 /**
  * Send one notification on a subscribed characteristic.
  *
- * @p conn_handle is the connection that asked for this work. Wi-Fi work
- * outlives the ATT write that started it, so a frame is dropped rather than
- * delivered to whichever peer happens to be connected now: otherwise a peer
- * that connects and subscribes mid-scan would receive the previous peer's
- * access points or provisioning result.
+ * @p peer is the connection that asked for this work. Wi-Fi work outlives the
+ * ATT write that started it, so a frame is dropped rather than delivered to
+ * whichever peer happens to be connected now: otherwise a peer that connects
+ * and subscribes mid-scan would receive the previous peer's access points or
+ * provisioning result.
+ *
+ * The identity check and the send happen in one critical section. Releasing
+ * the mutex in between would let a disconnect and a reconnect that reuses the
+ * numeric connection handle land between them, and the send would then reach
+ * the new peer. The cost is that a GATT write callback or a BLE system event
+ * can block for the length of one notification; the BLE Host must therefore
+ * not invoke those callbacks from inside h2_pal_ble_notify() on the calling
+ * task, which no supported provider does.
  *
  * Returns H2_PAL_ERR_INVALID_STATE when that connection went away or the peer
  * is not subscribed, so a scan in flight can stop instead of failing every
@@ -165,17 +173,16 @@ static int h2_ble_wifi_config_notify(
                                         : service->provision_value_handle;
     bool subscribed = scan_channel ? service->scan_subscribed
                                    : service->provision_subscribed;
-    h2_ble_wifi_config_unlock(service);
     if (!current || !subscribed ||
         attr_handle == H2_PAL_BLE_INVALID_ATTR_HANDLE) {
+        h2_ble_wifi_config_unlock(service);
         return H2_PAL_ERR_INVALID_STATE;
     }
     int rc = h2_pal_ble_notify(service->api.ble, conn_handle, attr_handle, data, len);
     if (rc != H2_PAL_OK) {
-        h2_ble_wifi_config_lock(service);
         service->stats.notify_failures++;
-        h2_ble_wifi_config_unlock(service);
     }
+    h2_ble_wifi_config_unlock(service);
     return rc;
 }
 
