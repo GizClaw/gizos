@@ -1,0 +1,159 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_lua_resource(
+    name = "lua_bloomspeaker_script",
+    src = "//projects/example/apps/lua-bloomspeaker:data/skills/lua-bloomspeaker/scripts/main.lua",
+    symbol = "lua_bloomspeaker_script",
+)
+
+cc_library(
+    name = "controller",
+    srcs = ["src/h2_bloomspeaker_controller.c"],
+    hdrs = ["include/h2_bloomspeaker_controller.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
+    name = "pairing",
+    srcs = ["src/h2_bloomspeaker_pairing.c"],
+    hdrs = ["include/h2_bloomspeaker_pairing.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "protocol",
+    srcs = ["src/h2_bloomspeaker_protocol.c"],
+    hdrs = ["src/h2_bloomspeaker_protocol.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+)
+
+cc_library(
+    name = "engine",
+    srcs = [
+        "src/h2_bloomspeaker_audio.c",
+        "src/h2_bloomspeaker_audio.h",
+        "src/h2_bloomspeaker_engine.c",
+        "src/h2_bloomspeaker_engine.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "src"],
+    deps = [
+        ":controller",
+        ":pairing",
+        ":protocol",
+        ":task_names",
+        "//libs/bleikcp",
+        "//libs/bleikcp:task_names",
+        "//libs/pal",
+        "//libs/runtime",
+        "//tools/bazel:vendor_third_party_opus",
+    ],
+)
+
+cc_library(
+    name = "task_names",
+    srcs = ["src/h2_bloomspeaker_task_names.c"],
+    hdrs = ["include/h2_bloomspeaker_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
+    name = "lua_bloomspeaker",
+    srcs = [
+        "src/h2_bloomspeaker.c",
+        "src/h2_bloomspeaker_lua.c",
+        "src/h2_bloomspeaker_lua.h",
+    ],
+    hdrs = ["include/h2_bloomspeaker.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    tags = ["h2-ci-native-package"],
+    deps = [
+        ":lua_bloomspeaker_script",
+        ":controller",
+        ":engine",
+        ":task_names",
+        "//libs/lua",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "lua_bloomspeaker_controller_test",
+    srcs = ["tests/test_h2_bloomspeaker_controller.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":controller"],
+)
+
+cc_test(
+    name = "lua_bloomspeaker_pairing_test",
+    srcs = ["tests/test_h2_bloomspeaker_pairing.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":pairing",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "lua_bloomspeaker_protocol_test",
+    srcs = ["tests/test_h2_bloomspeaker_protocol.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":protocol"],
+)
+
+cc_test(
+    name = "lua_bloomspeaker_test",
+    srcs = ["tests/test_h2_bloomspeaker.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":lua_bloomspeaker",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/example/libs/host_runtime",
+    ],
+)

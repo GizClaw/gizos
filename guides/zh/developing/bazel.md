@@ -156,7 +156,7 @@ Linux Host coverage 使用独立的 `test_coverage` config。它只在 Linux x86
 上选择固定的 `toolchains_llvm` 1.8.0 与 LLVM 16.0.0，通过 Bazel coverage
 map、`llvm-profdata` 和 `llvm-cov` 生成 combined LCOV；普通
 `linux_x86_64` build/test 仍选择 `@zig_sdk`，coverage toolchain 不注册为默认
-toolchain。Ubuntu 24.04 runner 从 Ubuntu 22.04 security archive 安装经过
+toolchain。Ubuntu 24.04 runner 从 Ubuntu 22.04 Launchpad primary archive 安装经过
 SHA-256 固定的 `libtinfo5` compatibility package，满足 LLVM distribution 的
 legacy runtime dependency；`lcov`/`genhtml` 仍由 runner package manager
 提供，不从 `PATH` 发现 compiler、`llvm-profdata` 或 `llvm-cov`。Coverage

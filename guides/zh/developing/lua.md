@@ -72,7 +72,7 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `capability` | `call(name, payload, options)` | 冻结的 C registry；支持 immediate/pending/cancel/late completion |
 | `delay` | `delay_ms`、`delay_us` | ESP-Claw profile；毫秒等待 yield，微秒等待使用 Runtime monotonic time |
 | `system` | `time`、`date`、`millis`、`uptime` | Runtime Time；固定 UTC offset |
-| `display` | upstream Flappy 使用的 drawing、frame、text 和 `deinit` 方法 | 直接使用 Runtime singleton Display API |
+| `display` | drawing、frame、text、AA circle、framebuffer fade 和 `deinit` | 直接使用 Runtime singleton Display API；dirty region 始终裁剪到 framebuffer |
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
 | `audio` | `new_output`（每条 Track 的 `write/info/close`）、`new_input`（`read/level/info/close`） | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format，Input frame 大小取自设备 mic format；PAL 混合多条 Track，不接收 codec handle |
@@ -89,6 +89,10 @@ Speaker。一个 job 结束不能中断另一个仍在写 Track 的 job。`audio
 `close()`、job cancel/timeout/stop 或 job release 释放它，只有最后一个 mic
 user 释放后才停止 Runtime microphone；一个 job 结束不能中断另一个仍在读取的
 job。
+
+### Display AA 与 framebuffer fade
+
+`display.fill_circle_aa(cx, cy, radius, color)` 使用有界 supersample coverage 混合 RGB565 framebuffer，`radius` 限制为 `0..64`。`display.fade_to_black(amount)` 对完整 framebuffer 衰减，`display.fade_rect_to_black(x, y, width, height, amount)` 只衰减完全位于 framebuffer 内的正尺寸矩形；`amount` 均为 `0..255`。三者只标记实际 clipping 后的 dirty region，不隐式 `present`。小于一个 RGB565 channel step 的 fade 使用固定、有界的 spatial phase，避免高 FPS 下暗色 trail 永远不消失。
 
 ### Audio Track 的帧契约
 
