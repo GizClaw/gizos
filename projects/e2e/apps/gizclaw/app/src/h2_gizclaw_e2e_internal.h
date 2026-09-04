@@ -84,10 +84,6 @@ typedef struct h2_gizclaw_e2e_fixture {
   bool pet_delete_acknowledged;
   /* Download sinks may outlive a failed wait; keep their state with Service. */
   atomic_size_t pet_download_bytes;
-  atomic_size_t group_audio_bytes[2];
-  /* Do not reuse sink state after a failed wait while Service may still own it.
-   */
-  bool group_audio_started;
   h2_gizclaw_e2e_speed_hooks_t speed_hooks[6];
   bool contact_created;
   bool friendship_created;

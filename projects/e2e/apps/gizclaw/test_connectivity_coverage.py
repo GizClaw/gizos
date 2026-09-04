@@ -37,7 +37,7 @@ class ConnectivityCoverageTest(unittest.TestCase):
         expected = {rule.symbol for rule in api_coverage.requirements() if rule.case == "connectivity"}
         self.assertEqual(len(expected), 12)
         self.assertEqual(observed, expected)
-        self.assertEqual(result["missing"], 178)
+        self.assertEqual(result["missing"], 169)
         hooks = [dict(field.split("=", 1) for field in line.split()[1:])
                  for line in log.splitlines() if " stage=speedtest-hooks " in line]
         self.assertEqual(len(hooks), 6)
@@ -75,7 +75,7 @@ class ConnectivityCoverageTest(unittest.TestCase):
                 log, observed, result = self.run_case(failure, mode, budget, clock)
                 self.assertIn("status=FAIL", log)
                 self.assertEqual(observed, set())
-                self.assertEqual(result["missing"], 190)
+                self.assertEqual(result["missing"], 181)
 
     def test_missing_dispatch_cannot_certify_request_speed(self):
         log, _, _ = self.run_case()

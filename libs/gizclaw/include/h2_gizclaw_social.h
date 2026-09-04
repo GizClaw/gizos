@@ -109,43 +109,6 @@ typedef struct h2_gizclaw_friend_group_member_page {
   char *next_cursor;
 } h2_gizclaw_friend_group_member_page_t;
 
-typedef enum h2_gizclaw_friend_group_message_type {
-  H2_GIZCLAW_FRIEND_GROUP_MESSAGE_TYPE_UNSPECIFIED = 0,
-  H2_GIZCLAW_FRIEND_GROUP_MESSAGE_TYPE_GEAR,
-  H2_GIZCLAW_FRIEND_GROUP_MESSAGE_TYPE_AGENT,
-} h2_gizclaw_friend_group_message_type_t;
-
-typedef struct h2_gizclaw_friend_group_message {
-  /** History ID copied verbatim from the wire message name. */
-  char *history_id;
-  char *friend_group_name;
-  char *sender_peer_public_key;
-  char *created_at;
-  char *expires_at;
-  char *name;
-  char *text;
-  h2_gizclaw_friend_group_message_type_t type;
-  bool audio_available;
-} h2_gizclaw_friend_group_message_t;
-
-typedef struct h2_gizclaw_friend_group_message_audio_info {
-  char *friend_group_name;
-  char *history_id;
-  char *mime_type;
-  uint64_t size_bytes;
-  uint64_t received_bytes;
-} h2_gizclaw_friend_group_message_audio_info_t;
-
-typedef int (*h2_gizclaw_friend_group_message_audio_write_fn)(
-    void *user, const uint8_t *data, size_t len);
-
-typedef struct h2_gizclaw_friend_group_message_page {
-  h2_gizclaw_friend_group_message_t *items;
-  size_t count;
-  bool has_next;
-  char *next_cursor;
-} h2_gizclaw_friend_group_message_page_t;
-
 h2_pal_result_t h2_gizclaw_req_create_friend_group_member_list(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t group_name, h2_gizclaw_str_t cursor, size_t limit,
@@ -185,32 +148,6 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_delete(
     h2_gizclaw_str_t member_id, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_friend_group_member_t *out_result);
-
-h2_pal_result_t h2_gizclaw_req_create_friend_group_message_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t group_name, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
-h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_list(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_message_page_t *out_result);
-h2_pal_result_t h2_gizclaw_rpc_friend_group_message_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_message_page_t *out_result);
-
-h2_pal_result_t h2_gizclaw_req_create_friend_group_message_get(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t group_name, h2_gizclaw_str_t history_id,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
-h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_get(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_message_t *out_result);
-h2_pal_result_t h2_gizclaw_rpc_friend_group_message_get(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t history_id, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_message_t *out_result);
 
 /* create */
 h2_pal_result_t h2_gizclaw_req_create_contact_list(
@@ -522,21 +459,6 @@ h2_pal_result_t
 h2_gizclaw_rpc_friend_group_invite_token_clear(h2_gizclaw_service_t *service,
                                                h2_gizclaw_str_t group_name,
                                                uint32_t timeout_ms);
-
-/** Create a group-audio data-down request. Supply its writer to req_do. */
-h2_pal_result_t h2_gizclaw_req_create_friend_group_message_audio_download(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t group_name, h2_gizclaw_str_t history_id,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
-h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_audio_download(
-    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_message_audio_info_t *out_result);
-h2_pal_result_t h2_gizclaw_rpc_friend_group_message_audio_download(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t history_id,
-    h2_gizclaw_friend_group_message_audio_write_fn write, void *write_user,
-    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_friend_group_message_audio_info_t *out_result);
 #ifdef __cplusplus
 }
 #endif

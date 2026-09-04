@@ -100,32 +100,6 @@ py_test(
 )
 
 py_test(
-    name = "group_message_coverage_test",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    srcs = ["api_coverage.py", "test_group_message_coverage.py"],
-    main = "test_group_message_coverage.py",
-    imports = ["."],
-    data = [
-        "//libs/gizclaw:public_api_inventory",
-        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_group_message_test",
-    ],
-    legacy_create_init = False,
-)
-
-py_test(
-    name = "group_audio_coverage_test",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-    srcs = ["api_coverage.py", "test_group_audio_coverage.py"],
-    main = "test_group_audio_coverage.py",
-    imports = ["."],
-    data = [
-        "//libs/gizclaw:public_api_inventory",
-        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_group_audio_test",
-    ],
-    legacy_create_init = False,
-)
-
-py_test(
     name = "group_coverage_test",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     srcs = ["api_coverage.py", "test_group_coverage.py"],

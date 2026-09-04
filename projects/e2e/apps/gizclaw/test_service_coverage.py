@@ -34,7 +34,7 @@ class ServiceCoverageTest(unittest.TestCase):
                     expected = set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])
-                self.assertEqual(result["missing"], 190 - len(expected))
+                self.assertEqual(result["missing"], 181 - len(expected))
 
     def test_fixture_lifecycle_and_failure_gates(self):
         root = api_coverage.repository_root()
@@ -57,7 +57,7 @@ class ServiceCoverageTest(unittest.TestCase):
                             ("init", "start", "stop", "deinit")} if mode == 0 else set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])
-                self.assertEqual(result["missing"], 190 - len(expected))
+                self.assertEqual(result["missing"], 181 - len(expected))
 
     def test_request_lifecycle_and_poll_records(self):
         root = api_coverage.repository_root()
@@ -78,7 +78,7 @@ class ServiceCoverageTest(unittest.TestCase):
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 185)
+        self.assertEqual(result["missing"], 176)
 
 
 if __name__ == "__main__":

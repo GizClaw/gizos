@@ -56,8 +56,7 @@ def requirements():
             "friend_group_list friend_group_get friend_group_create friend_group_put "
             "friend_group_delete friend_group_join friend_group_invite_token_get "
             "friend_group_invite_token_create friend_group_invite_token_clear "
-            "friend_group_member_list friend_group_member_put friend_group_member_delete "
-            "friend_group_message_list friend_group_message_get friend_group_message_audio_download"),
+            "friend_group_member_list friend_group_member_put friend_group_member_delete"),
         "rpc/gameplay": (
             "pet_list pet_get pet_adopt pet_delete pet_drive pet_pixa_download "
             "pet_action_get point_get point_transaction_list"),
@@ -103,9 +102,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 190 or len(set(inventory)) != 190 or
-            len(names) != 190 or len(set(names)) != 190 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 190-function inventory")
+    if (len(inventory) != 181 or len(set(inventory)) != 181 or
+            len(names) != 181 or len(set(names)) != 181 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 181-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

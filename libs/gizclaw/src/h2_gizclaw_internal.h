@@ -12,9 +12,8 @@
 #include "gzc_event.h"
 #include "pb.h"
 
-/* Normalize only a valid business not-found response. A missing RPC method
- * (-32601), unknown remote code, or transport failure is not resource absence.
- */
+/* Normalize only a canonical NOT_FOUND status. UNIMPLEMENTED, any other
+ * status code, or a transport failure is not resource absence. */
 static inline h2_pal_result_t
 h2_gizclaw_rpc_error_result_internal(int error_code) {
   return error_code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND ? H2_PAL_ERR_NOT_FOUND

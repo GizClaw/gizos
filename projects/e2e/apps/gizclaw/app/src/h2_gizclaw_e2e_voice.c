@@ -8,6 +8,7 @@
 #define VOICE_TIMEOUT_MS 90000u
 #define HISTORY_TIMEOUT_MS 30000u
 #define DISPOSE_TIMEOUT_MS 5000u
+#define GROUP_TALK_GRACE_MS 1500u
 #define RESPONSE_BYTES 65536u
 #define FRAME_BYTES 640u
 
@@ -21,7 +22,7 @@ typedef struct voice_state {
   h2_gizclaw_e2e_fixture_t *fixture;
   h2_gizclaw_service_t *service;
   const char *workspace_name;
-  bool group_message;
+  bool group_talk;
   h2_gizclaw_conversation_t *conversation;
   h2_gizclaw_req_t *play;
   h2_gizclaw_track_t *track;
@@ -363,9 +364,8 @@ static h2_pal_result_t on_event(void *user,
       state->round_non_silent |= event->audio[i] != 0u;
     break;
   case H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE:
-    if (!state->group_message &&
-        (!state->round_text_seen || !state->round_text_done ||
-         !state->round_non_silent || state->round_audio == 0u))
+    if (!state->round_text_seen || !state->round_text_done ||
+        !state->round_non_silent || state->round_audio == 0u)
       rc = H2_PAL_ERR_INVALID_STATE;
     if (rc == H2_PAL_OK)
       atomic_fetch_add(&state->rounds, 1u);
@@ -678,16 +678,6 @@ static int new_history(voice_state_t *state, char *id) {
   int rc = clock_now(state, &started);
   while (rc == H2_PAL_OK) {
     rc = within(state, started, HISTORY_TIMEOUT_MS);
-    if (rc == H2_PAL_OK && state->group_message)
-      rc = step(state);
-    if (rc == H2_PAL_OK && state->group_message &&
-        !atomic_load(&state->active)) {
-      rc = atomic_load(&state->terminal_result);
-      if (rc == H2_PAL_OK &&
-          (atomic_load(&state->completions) != 1u ||
-           atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED))
-        rc = H2_PAL_ERR_INVALID_STATE;
-    }
     h2_gizclaw_workspace_history_page_t page = {0};
     if (rc == H2_PAL_OK)
       rc = history_page(state, &page);
@@ -697,12 +687,9 @@ static int new_history(voice_state_t *state, char *id) {
     for (size_t i = 0u; i < page.count; ++i) {
       const h2_gizclaw_workspace_history_entry_t *entry = &page.items[i];
       if (snapshot_contains(&state->before, entry->id) ||
-          entry->type != (state->group_message
-                              ? H2_GIZCLAW_WORKSPACE_HISTORY_GEAR
-                              : H2_GIZCLAW_WORKSPACE_HISTORY_AGENT) ||
-          !entry->replay_available ||
-          (!state->group_message &&
-           (entry->text == NULL || entry->text[0] == '\0')))
+          entry->type != H2_GIZCLAW_WORKSPACE_HISTORY_AGENT ||
+          !entry->replay_available || entry->text == NULL ||
+          entry->text[0] == '\0')
         continue;
       const size_t len = strlen(entry->id);
       memcpy(id, entry->id, len + 1u);
@@ -964,10 +951,15 @@ static int verify_track_replacement(voice_state_t *state, const char *id) {
                   "service_unset_track-assert", rc);
 }
 
-/* Chatroom persists the sender's audio; it need not synthesize an assistant
- * reply or send a generation-completion event. History is the acceptance
- * oracle; dispose_voice subsequently cancels the local subscription. */
-static int upload_group_clip(voice_state_t *state) {
+/* An SFU Workspace is a walkie-talkie: the runtime forwards the sender's
+ * utterance to the other members and keeps no History, and the sender's own
+ * route receives neither a reply nor a terminal, so the turn never finishes by
+ * itself. A rejected turn (SFU_RUNTIME_NOT_ATTACHED, SFU_ACCESS_REVOKED,
+ * SFU_ACCESS_CHECK_FAILED) arrives as a typed EOS error on the same stream and
+ * surfaces here as CONVERSATION_EVENT_ERROR. Acceptance is therefore a turn
+ * that stays open and silent through the grace window after EOS; dispose_voice
+ * then hangs up and requires the CANCELED terminal. */
+static int talk_group_clip(voice_state_t *state) {
   int rc = configure_mode(state, false);
   if (rc != H2_PAL_OK)
     return rc;
@@ -986,20 +978,41 @@ static int upload_group_clip(voice_state_t *state) {
   }
   if (rc == H2_PAL_OK)
     rc = end_input(state);
+  uint64_t ended = 0u;
+  if (rc == H2_PAL_OK)
+    rc = clock_now(state, &ended);
+  while (rc == H2_PAL_OK) {
+    uint64_t now = 0u;
+    rc = clock_now(state, &now);
+    if (rc != H2_PAL_OK || now - ended >= GROUP_TALK_GRACE_MS)
+      break;
+    rc = within(state, started, VOICE_TIMEOUT_MS);
+    if (rc == H2_PAL_OK)
+      rc = step(state);
+    if (rc == H2_PAL_OK && !atomic_load(&state->active)) {
+      /* The Server ended the turn: report its own result, or the unexpected
+       * finish of a route that must stay open until the local hangup. */
+      const int terminal = atomic_load(&state->terminal_result);
+      rc = terminal != H2_PAL_OK ? terminal : H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  /* Half-duplex: the speaker never hears its own utterance back. */
+  if (rc == H2_PAL_OK &&
+      (atomic_load(&state->completions) != 0u ||
+       atomic_load(&state->rounds) != 0u || atomic_load(&state->written) != 0u))
+    rc = H2_PAL_ERR_INVALID_STATE;
   return rc;
 }
 
-static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_message,
-                     char *out_history_id) {
+static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
   if (fixture == NULL || fixture->pcm == NULL || fixture->pcm_len == 0u ||
       (fixture->pcm_len & 1u) != 0u || fixture->pcm_len > SIZE_MAX / 2u ||
-      !(group_message ? fixture->friend_group_created
-                      : fixture->workspace_created) ||
+      !(group_talk ? fixture->friend_group_created
+                   : fixture->workspace_created) ||
       fixture->actors[0].service == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  const char *workspace_name = group_message
-                                   ? fixture->friend_group_workspace_name
-                                   : fixture->workspace_name;
+  const char *workspace_name = group_talk ? fixture->friend_group_workspace_name
+                                          : fixture->workspace_name;
   if (workspace_name[0] == '\0' ||
       memchr(workspace_name, '\0', H2_GIZCLAW_E2E_NAME_CAPACITY) == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -1012,7 +1025,7 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_message,
   state->fixture = fixture;
   state->service = fixture->actors[0].service;
   state->workspace_name = workspace_name;
-  state->group_message = group_message;
+  state->group_talk = group_talk;
   atomic_init(&state->clips_allowed, 0u);
   atomic_init(&state->capture_enabled, false);
   atomic_init(&state->block_playback, false);
@@ -1037,7 +1050,10 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_message,
   const h2_gizclaw_pcm_track_config_t config = {.allocator = fixture->allocator,
                                                 .uplink_capacity = 4096u,
                                                 .downlink_capacity = 1024u};
+  /* An SFU Workspace owns no History; only the Workflow Workspace keeps a
+   * baseline for the new-reply search. */
   int rc = state->response == NULL ? H2_PAL_ERR_NO_MEMORY
+           : group_talk            ? H2_PAL_OK
                                    : capture_history(state, &state->before);
   if (rc == H2_PAL_OK)
     rc = evidence("h2_gizclaw_pcm_track_create", "voice",
@@ -1053,25 +1069,25 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_message,
                       state->service, h2_gizclaw_e2e_str(state->workspace_name),
                       on_event, on_complete, state, &state->conversation));
   if (rc == H2_PAL_OK) {
-    rc = group_message ? upload_group_clip(state)
-                       : conversation_rounds(state, false);
+    rc = group_talk ? talk_group_clip(state)
+                    : conversation_rounds(state, false);
     evidence("h2_gizclaw_service_set_track", "service_set_track-assert", rc);
     evidence("h2_gizclaw_conversation_create", "conversation_create-assert",
              rc);
   }
-  char history_id[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u] = {0};
-  if (rc == H2_PAL_OK)
-    rc = new_history(state, history_id);
-  if (group_message) {
+  if (group_talk) {
+    const size_t captured = atomic_load(&state->captured);
     const int cleanup_rc = dispose_voice(fixture);
     if (rc == H2_PAL_OK)
       rc = cleanup_rc;
-    if (rc == H2_PAL_OK)
-      memcpy(out_history_id, history_id, strlen(history_id) + 1u);
-    printf("H2_GIZCLAW_E2E stage=group-message-generate result=%s rc=%d\n",
-           rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+    printf("H2_GIZCLAW_E2E stage=group-talk result=%s rc=%d "
+           "capture_bytes=%zu\n",
+           rc == H2_PAL_OK ? "PASS" : "FAIL", rc, captured);
     return rc;
   }
+  char history_id[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u] = {0};
+  if (rc == H2_PAL_OK)
+    rc = new_history(state, history_id);
   if (rc == H2_PAL_OK)
     rc = play_history(state, history_id, false);
   if (rc == H2_PAL_OK)
@@ -1133,14 +1149,9 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_message,
 }
 
 int h2_gizclaw_e2e_run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
-  return run_voice(fixture, false, NULL);
+  return run_voice(fixture, false);
 }
 
-int h2_gizclaw_e2e_generate_group_message(h2_gizclaw_e2e_fixture_t *fixture,
-                                          char *history_id, size_t capacity) {
-  if (history_id == NULL ||
-      capacity < H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u)
-    return H2_PAL_ERR_INVALID_ARG;
-  history_id[0] = '\0';
-  return run_voice(fixture, true, history_id);
+int h2_gizclaw_e2e_run_group_talk(h2_gizclaw_e2e_fixture_t *fixture) {
+  return run_voice(fixture, true);
 }
