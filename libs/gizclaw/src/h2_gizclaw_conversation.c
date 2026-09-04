@@ -49,6 +49,10 @@ typedef struct h2_gizclaw_conversation_pcm_message {
 
 typedef struct h2_gizclaw_audio_ring {
   h2_gizclaw_service_t *service;
+  /* Serialises producers only (the downlink ring has two: the network task
+   * and the poll that stages the terminal marker). Consumers never lock, and
+   * the service mutex is never taken on either side. */
+  h2_pal_mutex_t *lock;
   uint8_t *items;
   size_t item_size;
   size_t capacity;
@@ -215,8 +219,10 @@ static bool conversation_diag_state(h2_gizclaw_conversation_request_t *request,
                                     uint_fast64_t window_frames,
                                     size_t opus_depth, char *out, size_t cap);
 
+/* app_task: the caller runs on the app task, which owns the poll-side fields
+ * the audio-state line reads; other tasks report only the atomic counters. */
 static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
-                                     uint64_t now_us) {
+                                     uint64_t now_us, bool app_task) {
   if (now_us == 0u)
     return;
   uint_fast64_t started = atomic_load_explicit(&request->diag_window_started_us,
@@ -354,6 +360,8 @@ static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
       request, pcm_would_block == 0u ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
       "gizclaw/audio-decode", message);
 
+  if (!app_task)
+    return;
   const bool idle = conversation_diag_state(request, window_frames, opus_depth,
                                             message, sizeof(message));
   request->diag_idle_windows = idle ? request->diag_idle_windows + 1u : 0u;
@@ -420,7 +428,7 @@ static bool conversation_diag_state(h2_gizclaw_conversation_request_t *request,
       atomic_load_explicit(&request->wire_ready, memory_order_acquire);
   const bool downlink_eos =
       atomic_load_explicit(&request->downlink_eos, memory_order_acquire);
-  /* The poll-owned flags below are read racily for diagnostics only. */
+  /* Poll-owned flags: only called from the app task (see app_task). */
   (void)snprintf(
       out, cap,
       "generation=%llu wire_ready=%d downlink_eos=%d terminal_waiting=%d "
@@ -477,6 +485,16 @@ static h2_pal_result_t audio_ring_init(h2_gizclaw_audio_ring_t *ring,
                                  item_size * capacity);
   if (ring->items == NULL)
     return H2_PAL_ERR_NO_MEMORY;
+  const h2_pal_mutex_config_t lock_config = {
+      .name = "$gizclaw/audio-ring",
+      .allocator = service->config.client_config->allocator};
+  const h2_pal_result_t lock_rc =
+      h2_pal_mutex_create(service->config.sync, &lock_config, &ring->lock);
+  if (lock_rc != H2_PAL_OK) {
+    h2_pal_mem_free(service->config.client_config->allocator, ring->items);
+    ring->items = NULL;
+    return lock_rc;
+  }
   atomic_init(&ring->write_index, 0u);
   atomic_init(&ring->read_index, 0u);
   atomic_init(&ring->closed, false);
@@ -488,9 +506,9 @@ static h2_pal_result_t audio_ring_send(h2_gizclaw_audio_ring_t *ring,
   if (ring == NULL || ring->items == NULL || item == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_service_t *service = ring->service;
-  h2_pal_result_t rc =
-      service != NULL ? h2_pal_mutex_lock(service->config.sync, service->mutex)
-                      : H2_PAL_OK;
+  h2_pal_result_t rc = ring->lock != NULL
+                           ? h2_pal_mutex_lock(service->config.sync, ring->lock)
+                           : H2_PAL_OK;
   if (rc != H2_PAL_OK)
     return rc;
   size_t write = atomic_load(&ring->write_index);
@@ -504,8 +522,8 @@ static h2_pal_result_t audio_ring_send(h2_gizclaw_audio_ring_t *ring,
            ring->item_size);
     atomic_store(&ring->write_index, write + 1);
   }
-  if (service != NULL)
-    (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
+  if (ring->lock != NULL)
+    (void)h2_pal_mutex_unlock(service->config.sync, ring->lock);
   return rc;
 }
 
@@ -514,12 +532,9 @@ static h2_pal_result_t audio_ring_recv_checked(h2_gizclaw_audio_ring_t *ring,
                                                size_t max_opus_bytes) {
   if (ring == NULL || ring->items == NULL || out_item == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_service_t *service = ring->service;
-  h2_pal_result_t rc =
-      service != NULL ? h2_pal_mutex_lock(service->config.sync, service->mutex)
-                      : H2_PAL_OK;
-  if (rc != H2_PAL_OK)
-    return rc;
+  /* Single consumer: the indices are published with acquire/release, so the
+   * realtime reader never waits on a lock. */
+  h2_pal_result_t rc = H2_PAL_OK;
   size_t read = atomic_load(&ring->read_index);
   size_t write = atomic_load(&ring->write_index);
   if (read == write)
@@ -537,8 +552,6 @@ static h2_pal_result_t audio_ring_recv_checked(h2_gizclaw_audio_ring_t *ring,
     if (rc == H2_PAL_OK)
       atomic_store(&ring->read_index, read + 1);
   }
-  if (service != NULL)
-    (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   return rc;
 }
 
@@ -556,6 +569,8 @@ static void audio_ring_close(h2_gizclaw_audio_ring_t *ring) {
 static void audio_ring_deinit(h2_gizclaw_audio_ring_t *ring) {
   if (ring == NULL || ring->items == NULL)
     return;
+  if (ring->lock != NULL)
+    (void)h2_pal_mutex_destroy(ring->service->config.sync, ring->lock);
   h2_pal_mem_free(ring->service->config.client_config->allocator, ring->items);
   memset(ring, 0, sizeof(*ring));
 }
@@ -666,7 +681,7 @@ h2_gizclaw_service_media_read_opus(h2_gizclaw_service_t *service, uint8_t *opus,
     atomic_fetch_add_explicit(&request->diag_uplink_track_out_bytes,
                               message.len, memory_order_relaxed);
   }
-  conversation_diag_report(request, conversation_monotonic_us(request));
+  conversation_diag_report(request, conversation_monotonic_us(request), false);
   media_request_release(service);
   return rc == H2_PAL_ERR_CLOSED ? H2_PAL_ERR_WOULD_BLOCK : rc;
 }
@@ -728,7 +743,7 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
   } else if (rc == H2_PAL_ERR_CLOSED) {
     rc = H2_PAL_OK;
   }
-  conversation_diag_report(request, now_us);
+  conversation_diag_report(request, now_us, false);
   media_request_release(service);
   return rc;
 }
@@ -897,7 +912,7 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
       worker_now_us >= worker_last_us)
     atomic_u64_max(&request->diag_worker_gap_max_us,
                    worker_now_us - worker_last_us);
-  conversation_diag_report(request, worker_now_us);
+  conversation_diag_report(request, worker_now_us, false);
   if (!atomic_load_explicit(&request->wire_ready, memory_order_acquire) ||
       atomic_load_explicit(&request->downlink_eos, memory_order_acquire))
     return H2_PAL_OK;
@@ -1051,7 +1066,7 @@ void h2_gizclaw_conversation_uplink_step_internal(
     (void)h2_pal_mutex_unlock(service->config.sync, request->input_mutex);
   }
   record_audio_result(request, rc);
-  conversation_diag_report(request, conversation_monotonic_us(request));
+  conversation_diag_report(request, conversation_monotonic_us(request), false);
   media_request_release(service);
 }
 
@@ -1598,13 +1613,16 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   h2_gizclaw_conversation_request_t *request = user;
   /* Keep the per-second audio state visible even when the downlink worker
    * has nothing to decode. */
-  conversation_diag_report(request, conversation_monotonic_us(request));
+  conversation_diag_report(request, conversation_monotonic_us(request), true);
   if (h2_gizclaw_cancel_requested(cancel_token)) {
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_WARN, "conversation", "poll_cancelled",
         request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
         request->queued_bytes);
     conversation_request_close(request);
+    /* The decoder is detached now, so nothing can append to the Track after
+     * this watermark; the discard at cancel only muted the earlier tail. */
+    h2_gizclaw_service_pcm_discard_downlink_internal(request->service);
     return H2_PAL_ERR_CLOSED;
   }
   const h2_pal_result_t audio_rc = (h2_pal_result_t)atomic_load_explicit(
