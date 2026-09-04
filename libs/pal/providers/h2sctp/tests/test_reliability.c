@@ -467,6 +467,53 @@ static void test_fast_retransmit_reduces_once_per_round_trip(void) {
  * RFC 9260 section 7.2.3: a timer expiry covering several fragments is one
  * loss event, so the window collapses and the RTO doubles exactly once.
  */
+/*
+ * A fast retransmit the allocator could not emit stays marked. It must be
+ * retried on the next service pass and must never fall through to the timer
+ * response, which would collapse the window for a loss event fast recovery
+ * already answered.
+ */
+static void test_deferred_fast_retransmit_skips_timer_response(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  const uint32_t cumulative = association->peer_cumulative_tsn;
+  /* Four fragments, so the three gap ACKs below leave the hole as the only
+   * outstanding TSN and no other fragment can time out during the retry. */
+  for (unsigned index = 0u; index < 4u; ++index) {
+    (void)send_sample(&pair, 1000u + index);
+  }
+  h2_sctp_tx_fragment_t *hole = association->tx_fragments;
+  assert(hole->tsn == cumulative + 1u);
+
+  acknowledge_gap_at(association, cumulative, 2u, 2u, 1100u);
+  acknowledge_gap_at(association, cumulative, 2u, 3u, 1110u);
+  association->cwnd = 8192u;
+  pair.active.fail_allocation_at = pair.active.allocation_count + 1u;
+  acknowledge_gap_at(association, cumulative, 2u, 4u, 1120u);
+  pair.active.fail_allocation_at = 0u;
+  /* The window reduction happened, the retransmission did not. */
+  assert(hole->fast_retransmit);
+  assert(hole->retransmits == 0u);
+  assert(association->ssthresh == 4096u);
+  assert(association->cwnd == 4096u);
+  assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+
+  /* Well past the fragment's own retransmission deadline: still a fast
+   * retransmit, so the window and the RTO stay where fast recovery put them. */
+  const uint64_t late = 1120u + 4u * H2_SCTP_RTO_INITIAL_MS;
+  uint64_t deadline = H2_PAL_SCTP_NO_DEADLINE;
+  assert(h2_sctp_reliability_service(association, late, &deadline) ==
+         H2_PAL_OK);
+  assert(hole->retransmits == 1u);
+  assert(!hole->fast_retransmit);
+  assert(association->cwnd == 4096u);
+  assert(association->ssthresh == 4096u);
+  assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 static void test_retransmission_timeout_applies_once_per_burst(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
@@ -555,6 +602,7 @@ int main(void) {
   test_fast_retransmit_halves_window_without_rto_backoff();
   test_fast_retransmit_reduces_once_per_round_trip();
   test_retransmission_timeout_applies_once_per_burst();
+  test_deferred_fast_retransmit_skips_timer_response();
   test_rto_recovers_after_loss();
   test_rtt_sample_lifetime(false);
   test_rtt_sample_lifetime(true);

@@ -528,13 +528,8 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
                                                                     : increase);
         }
     }
-    h2_pal_result_t result = h2_sctp_reliability_fast_retransmit(
-        association, now_ms);
-    if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
-        result != H2_PAL_ERR_NO_MEMORY) {
-        return result;
-    }
-    result = h2_sctp_reliability_service(association, now_ms, NULL);
+    h2_pal_result_t result = h2_sctp_reliability_service(
+        association, now_ms, NULL);
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
         result != H2_PAL_ERR_NO_MEMORY) {
         return result;
@@ -673,10 +668,26 @@ h2_pal_result_t h2_sctp_reliability_service(
     /* Every fragment is timed against the RTO in force when the pass began,
      * so the backoff applied to the first expiry cannot hide the others. */
     const uint64_t rto_at_entry = association->rto_ms;
+    /* A fast retransmit that could not be emitted yet is retried here. Its
+     * loss event has already been answered, so it must never fall through to
+     * the timer response. */
+    const h2_pal_result_t fast = h2_sctp_reliability_fast_retransmit(
+        association, now_ms);
+    if (fast != H2_PAL_OK && fast != H2_PAL_ERR_WOULD_BLOCK &&
+        fast != H2_PAL_ERR_NO_MEMORY) {
+        return fast;
+    }
+    if (fast != H2_PAL_OK) {
+        deadline = now_ms;
+    }
     for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
          fragment != NULL;
          fragment = fragment->next) {
         if (!fragment->sent || fragment->acknowledged || fragment->abandoned) {
+            continue;
+        }
+        if (fragment->fast_retransmit) {
+            deadline = now_ms;
             continue;
         }
         const uint64_t retransmit_deadline = h2_sctp_deadline_add(
