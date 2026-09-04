@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pion/datachannel"
+	"github.com/pion/dtls/v3"
 	"github.com/pion/rtp"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v4"
@@ -266,6 +267,7 @@ func main() {
 	candidateIP := flag.String("candidate-ip", "", "ICE host candidate IP to advertise; defaults to non-loopback IPv4 addresses")
 	iceModeValue := flag.String("ice-mode", string(iceModeUDP), "ICE transport mode: udp, tcp, mixed, or mixed-drop-udp")
 	dtlsKeyLog := flag.String("dtls-key-log", "", "optional DTLS key log path for local packet diagnostics")
+	dtlsCipherSuites := flag.String("dtls-cipher-suites", "", "optional comma-separated DTLS cipher suite preference (server order wins): gcm, ccm, ccm8, chacha")
 	flag.Parse()
 	mode, err := parseICEMode(*iceModeValue)
 	if err != nil {
@@ -306,6 +308,13 @@ func main() {
 		}
 		defer dtlsKeyLogFile.Close()
 		setting.SetDTLSKeyLogWriter(dtlsKeyLogFile)
+	}
+	if *dtlsCipherSuites != "" {
+		suites, err := parseCipherSuites(*dtlsCipherSuites)
+		if err != nil {
+			log.Fatalf("dtls-cipher-suites: %v", err)
+		}
+		setting.SetDTLSCipherSuites(suites...)
 	}
 	setting.SetNetworkTypes(mode.networkTypes())
 	setting.SetIncludeLoopbackCandidate(true)
@@ -1182,4 +1191,23 @@ func (s *server) closeAll() {
 	for _, item := range sessions {
 		_ = item.pc.Close()
 	}
+}
+
+// parseCipherSuites maps short names to Pion DTLS cipher suite identifiers.
+func parseCipherSuites(list string) ([]dtls.CipherSuiteID, error) {
+	names := map[string]dtls.CipherSuiteID{
+		"gcm":    dtls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		"ccm":    dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+		"ccm8":   dtls.TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+		"chacha": dtls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+	}
+	var suites []dtls.CipherSuiteID
+	for _, name := range strings.Split(list, ",") {
+		id, ok := names[strings.TrimSpace(strings.ToLower(name))]
+		if !ok {
+			return nil, fmt.Errorf("unknown cipher suite %q", name)
+		}
+		suites = append(suites, id)
+	}
+	return suites, nil
 }

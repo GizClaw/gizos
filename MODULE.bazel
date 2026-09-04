@@ -204,6 +204,8 @@ use_repo(
     go_deps,
     "com_github_getkin_kin_openapi",
     "com_github_pion_datachannel",
+
+    "com_github_pion_dtls_v3",
     "com_github_pion_rtp",
     "com_github_pion_stun_v3",
     "com_github_pion_turn_v4",
