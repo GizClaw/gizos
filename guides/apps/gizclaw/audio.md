@@ -40,12 +40,14 @@ sequenceDiagram
 | 对话集成所需信号 | Audio System 行为 | GizClaw Public API |
 | --- | --- | --- |
 | Workspace ready | 尚不读取麦克风 | Workspace activate result |
-| 输入开始 | 启动 microphone | `h2_gizclaw_service_conversation_create()` |
-| 输入 PCM | Audio Task 交付 16 kHz mono S16LE chunk | `h2_gizclaw_conversation_request_write_pcm()` |
-| 输入提交 | 停止 microphone，并提交本轮输入结束 | `h2_gizclaw_conversation_commit()` |
-| 回复 PCM | 写入有界播放 track | Conversation request 的 reply audio event |
-| 回复 terminal | 等待本地 playback drain 后结束本轮 | `h2_gizclaw_conversation_poll()` 的 terminal event |
-| Cancel | 停止 mic、关闭输入、释放或 drain 输出 | `h2_gizclaw_conversation_cancel()` |
+| 绑定音频 | 创建/绑定 PCM Track | `h2_gizclaw_pcm_track_create()` + `h2_gizclaw_service_set_track()`（或 App 自己实现的 `h2_gizclaw_track_t`） |
+| 配置对话 | 不读取麦克风 | `h2_gizclaw_conversation_create(service, workspace, callback, completion, user)` |
+| 输入开始 | 启动 microphone | `h2_gizclaw_service_audio_start()` |
+| 输入 PCM | Audio Task 交付 16 kHz mono S16LE chunk | `h2_gizclaw_pcm_track_write()`（Track 的 uplink） |
+| 输入提交（PTT） | 停止 microphone，并提交本轮输入结束 | `h2_gizclaw_service_audio_end()` |
+| 回复 PCM | 写入有界播放 track | Track 的 downlink：`h2_gizclaw_pcm_track_read()`；callback 同时收到 `H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO` |
+| 回复 terminal | 等待本地 playback drain 后结束本轮 | `h2_gizclaw_service_poll()` 分发的 `REPLY_DONE` event 与 completion callback |
+| Cancel / 挂断 | 停止 mic、关闭输入、丢弃未播放输出 | `h2_gizclaw_conversation_cancel()`，之后 `h2_gizclaw_conversation_release()` |
 
 Conversation 完成同时满足服务端 response terminal 和本地 playback drained。
 
@@ -60,24 +62,28 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - `GZC_PROTOCOL_OPUS_PACKET` 的 payload 是原始 Opus packet，不带 firmware-private timestamp header。C SDK 和 PAL provider 负责 media/RTP 映射；App 不调用底层 `peer_send_opus`，也不使用 DataChannel fallback。
 - 上行 input stream ID 与服务端产生的下行 response stream ID 不要求相同。`libs/gizclaw` 按 `transcript`、`assistant` label 分别绑定本轮第一个 response-local stream ID，并接受其 `:<suffix>` 子流；后续不匹配的 response ID 作为旧轮事件丢弃。RTP audio 仍由同一个 conversation generation 接收，不以 input stream ID 过滤。
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
-- PCM uplink/downlink 使用单生产者、单消费者的无锁 byte ring；encoded uplink/downlink 使用无锁 fixed-slot ring。ring 只通过 acquire/release atomic index 发布数据，不持有 service mutex，也不使用 semaphore 唤醒。Audio Task 每 20 ms 尝试消费一帧；`write_pcm()` 和内部 slot 写入都不等待。`write_pcm()` 成功后调用方可以释放 chunk；`WOULD_BLOCK` 表示本次 chunk 未被接受，实时调用方应丢弃并记录 overrun，不能阻塞 microphone 或积累延迟。`commit()` 由同一个 PCM producer 发布 EOS，encoder drain 已接受的 PCM 后补齐最后一个非空残片。
+- PCM uplink/downlink 使用单生产者、单消费者的无锁 byte ring；encoded uplink/downlink 使用无锁 fixed-slot ring。ring 只通过 acquire/release atomic index 发布数据，不持有 service mutex，也不使用 semaphore 唤醒。Audio Task 每 20 ms 尝试消费一帧；`h2_gizclaw_pcm_track_write()` 和内部 slot 写入都不等待。`h2_gizclaw_pcm_track_write()` 成功后调用方可以释放 chunk；`WOULD_BLOCK` 表示本次 chunk 未被接受，实时调用方应丢弃并记录 overrun，不能阻塞 microphone 或积累延迟。`h2_gizclaw_service_audio_end()` 冻结当前已接受的 PCM 前缀并发布 EOS，encoder drain 已接受的 PCM 后补齐最后一个非空残片。
 - Opus encode/decode 属于 `libs/gizclaw`，不进入 board driver。接收 provider 的有界重排与 loss marker 合同保持不变；downlink decoder 对 loss marker 执行 PLC，不能直接删除缺失时间。
 - GizClaw service network task 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
 ### Speech RPC 音频流
 
-Service-owned Speech Transcribe 与 Speech Extract 使用
-`h2_gizclaw_speech_*_request_write_audio()` 接受由 `options.content_type`
-描述的音频 bytes；SDK 不从函数名推断 Opus，也不执行编码或转码。单个 chunk 最大
-为 `H2_GIZCLAW_SPEECH_AUDIO_CHUNK_MAX_BYTES`（1280 bytes），成功返回后调用方可以
-释放源 buffer。
+Service-owned Speech Transcribe 与 Speech Extract 走与 Conversation 相同的
+Track 路径，没有按 chunk 写音频的函数：`h2_gizclaw_req_create_speech_transcribe()`
+/ `h2_gizclaw_req_create_speech_extract()` 只复制 options（其中
+`options.content_type` 必须描述绑定 Track 的实际 PCM 格式），
+`h2_gizclaw_req_do(request, user, NULL, NULL, on_complete)` 预留 Track 的 uplink
+路由，`h2_gizclaw_service_audio_start()` 开始采集，App 通过
+`h2_gizclaw_pcm_track_write()` 交付 16 kHz mono S16LE PCM，
+`h2_gizclaw_service_audio_end()` 冻结已接受的 PCM、drain 后发送 EOS。SDK 不从函数名
+推断 Opus，也不执行编码或转码；同一时刻只有一个 uplink 持有者，冲突的 `req_do`
+返回 `BUSY` 而不替换现有持有者。
 
-每个 Speech request 拥有八项 FIFO queue。`timeout_ms` 原样传递给 PAL queue：`0`
-表示不等待，有限值表示 bounded backpressure，返回 timeout 时本次 chunk 或 EOS 未被
-接受。`commit(timeout_ms)` 只在所有先前接受的 audio chunk 之后排入唯一 EOS；成功
-commit 后以及 terminal completion 后的新 write/commit 都返回 `H2_PAL_ERR_CLOSED`。
-Completion 仍只由 App main loop 调用 service dispatch 后执行，terminal transcript、
-result JSON 与 operation result 继续由 request handle 持有到 release。
+`req_wait` 本身不会结束录音。Completion 仍只由 App main loop 调用
+`h2_gizclaw_service_poll()` 后执行；terminal transcript、result JSON 与 operation
+result 由 request handle 持有，通过 `h2_gizclaw_resp_parse_speech_transcribe()` /
+`h2_gizclaw_resp_parse_speech_extract()` 解析到调用方 storage，直到
+`h2_gizclaw_req_release()`。
 
 ## 打断与错误
 
