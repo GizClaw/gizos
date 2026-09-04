@@ -85,7 +85,7 @@ typedef struct h2_gizclaw_telemetry_observation {
  * Borrowed, bounded telemetry frame submitted on the GizClaw owner task.
  *
  * Every string and observation is borrowed only for the duration of
- * h2_gizclaw_client_telemetry_send(). Missing facts stay unset.
+ * h2_gizclaw_req_create_telemetry_send(). Missing facts stay unset.
  */
 typedef struct h2_gizclaw_telemetry_frame {
   uint32_t sequence;
@@ -94,32 +94,21 @@ typedef struct h2_gizclaw_telemetry_frame {
   size_t observation_count;
 } h2_gizclaw_telemetry_frame_t;
 
-typedef struct h2_gizclaw_telemetry_request h2_gizclaw_telemetry_request_t;
-typedef void (*h2_gizclaw_telemetry_completion_fn)(
-    void *user, h2_gizclaw_telemetry_request_t *request,
-    const h2_gizclaw_operation_result_t *result);
-
-h2_pal_result_t h2_gizclaw_service_telemetry_send_async(
+/** Copy the frame and its strings into a CREATED request. */
+h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
     h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_telemetry_frame_t *frame,
-    h2_gizclaw_telemetry_completion_fn completion, void *user,
-    h2_gizclaw_telemetry_request_t **out_request);
+    const h2_gizclaw_telemetry_frame_t *frame, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
+/** Telemetry is a one-way packet: success confirms transport acceptance,
+ * not a server acknowledgement or persisted observation. Submission runs once
+ * on the Service owner task. WOULD_BLOCK is a terminal result returned by wait,
+ * this parser and the synchronous RPC; the library never retries the packet. */
 h2_pal_result_t
-h2_gizclaw_telemetry_request_cancel(h2_gizclaw_telemetry_request_t *request);
-void h2_gizclaw_telemetry_request_release(
-    h2_gizclaw_telemetry_request_t *request);
-
-/**
- * Encode and submit one latest-state frame as GizClaw direct packet 0x40.
- *
- * This blocking operation must run on the GizClaw client owner task. It never
- * queues or retries a frame; the product scheduler owns coalescing and retry
- * policy.
- */
-#if defined(H2_GIZCLAW_TESTING)
-int h2_gizclaw_client_telemetry_send(h2_gizclaw_client_t *client,
-                                     const h2_gizclaw_telemetry_frame_t *frame);
-#endif
+h2_gizclaw_resp_parse_telemetry_send(const h2_gizclaw_req_t *request);
+h2_pal_result_t
+h2_gizclaw_rpc_telemetry_send(h2_gizclaw_service_t *service,
+                              const h2_gizclaw_telemetry_frame_t *frame,
+                              uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

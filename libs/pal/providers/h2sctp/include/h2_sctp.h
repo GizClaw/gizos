@@ -18,7 +18,28 @@ typedef struct h2_sctp_config {
     const h2_pal_mem_api_t *mem;
     /** Cryptographic random source that remains valid until destroy. */
     const h2_pal_crypto_api_t *crypto;
+    /**
+     * Optional allocator for each association's outbound packet pool; NULL
+     * uses mem. Every outbound packet is built directly in a pooled buffer
+     * and handed to emit_packet from there, so an integration whose
+     * transport wants DMA-capable memory can place the pool accordingly.
+     * Must remain valid until h2_sctp_destroy() succeeds.
+     */
+    const h2_pal_mem_api_t *packet_mem;
+    /**
+     * Pooled packet buffers per association, each max_packet_size bytes.
+     * 0 selects the default (H2_SCTP_DEFAULT_PACKET_POOL_SIZE): one buffer
+     * being built plus one retained while emit_packet reports WOULD_BLOCK.
+     * Larger values are clamped to H2_SCTP_MAX_PACKET_POOL_SIZE. With the
+     * pool exhausted a DATA send stays queued and reports WOULD_BLOCK until
+     * a later service pass, and a control chunk is retried like an
+     * allocation failure.
+     */
+    size_t packet_pool_size;
 } h2_sctp_config_t;
+
+#define H2_SCTP_DEFAULT_PACKET_POOL_SIZE 2u
+#define H2_SCTP_MAX_PACKET_POOL_SIZE 32u
 
 /**
  * Creates an independent provider with no process-global mutable state.

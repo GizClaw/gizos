@@ -14,6 +14,7 @@ extern "C" {
 #endif
 
 #define H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX 4096u
+#define H2_GIZCLAW_E2E_ENDPOINT_CAPACITY 128u
 #define H2_GIZCLAW_E2E_CASE_ID_CAPACITY 64u
 #define H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS 420000u
 #define H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS 45000u
@@ -65,7 +66,8 @@ typedef void (*h2_gizclaw_e2e_progress_fn)(
     void *user, const h2_gizclaw_e2e_progress_t *progress);
 
 /**
- * All views are borrowed until h2_gizclaw_e2e_run() returns. The App copies
+ * All views are borrowed until h2_gizclaw_e2e_run() returns with zero retained
+ * resources; otherwise they must survive until process teardown. The App copies
  * the RegistrationToken into App-owned bounded storage before registration and
  * erases that copy during cleanup. The token and user content are never passed
  * to the progress observer.
@@ -104,13 +106,15 @@ typedef struct h2_gizclaw_e2e_result {
 /**
  * Runs every selected independent case, performs bounded cleanup, and emits
  * one final summary. A normal return owns no live App resource. If a PAL
- * refuses to release the exited runner task before the cleanup deadline, the
+ * refuses to release a Service or the exited runner task before cleanup, the
  * result reports retained resources and the process-wide run guard remains held
- * so the retained PAL-owned context cannot race a later call. The calling task
- * emits progress while the App-owned runner executes cases; return occurs only
- * after that runner has exited, so retained handles cannot access borrowed
- * config or Runtime views. Concurrent calls are rejected with
- * H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR.
+ * so the retained PAL-owned context cannot race a later call. On nonzero
+ * retained resources, the caller must keep the runtime, providers and
+ * config/user views alive until process teardown; it must not run another suite
+ * in that process. The calling task emits progress while the App-owned runner
+ * executes cases; return occurs only after that runner has exited, but a
+ * failed-to-stop Service may still borrow config and Runtime views. Concurrent
+ * calls are rejected with H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR.
  */
 h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
                                          const h2_gizclaw_e2e_config_t *config,

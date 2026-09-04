@@ -108,6 +108,8 @@ typedef struct h2_sctp_rx_fragment {
     uint8_t flags;
     bool interleaved;
     bool delivered;
+    /* Payload lives in the association's assembly buffer, not in the node. */
+    bool assembled;
     size_t data_len;
     uint8_t *data;
     struct h2_sctp_rx_fragment *next;
@@ -115,6 +117,8 @@ typedef struct h2_sctp_rx_fragment {
 
 struct h2_sctp {
     const h2_pal_mem_api_t *mem;
+    const h2_pal_mem_api_t *packet_mem;
+    size_t packet_pool_size;
     const h2_pal_crypto_api_t *crypto;
     h2_pal_sctp_api_t api;
     struct h2_pal_sctp_association *associations;
@@ -155,6 +159,12 @@ struct h2_pal_sctp_association {
     bool shutdown_pending;
     bool peer_shutdown_pending;
 
+    /* Outbound packets are built in place in this bounded pool (pool_size
+     * buffers of max_packet_size bytes, allocated from the provider's
+     * packet_mem). pending_emit, when set, is one of these buffers. */
+    uint8_t *packet_pool;
+    size_t packet_pool_size;
+    uint32_t packet_pool_used;
     uint8_t *pending_emit;
     size_t pending_emit_len;
     uint8_t *control_packet;
@@ -186,6 +196,14 @@ struct h2_pal_sctp_association {
     uint8_t sack_pending_packets;
 
     h2_sctp_stream_t *streams;
+    /* In-order fragments of the message expected next are copied straight
+     * into this max_message_size buffer and the complete message is handed
+     * to the callback from it, so the common path costs one copy and no
+     * per-message allocation. Out-of-order fragments keep their own copy. */
+    uint8_t *rx_assembly;
+    size_t rx_assembly_len;
+    uint32_t rx_assembly_count;
+    h2_sctp_rx_fragment_t *rx_assembly_begin;
     h2_sctp_tx_fragment_t *tx_fragments;
     h2_sctp_tx_fragment_t *tx_fragments_tail;
     h2_sctp_rx_fragment_t *rx_fragments;
@@ -219,6 +237,21 @@ void h2_sctp_fail(
     h2_pal_sctp_association_t *association,
     h2_pal_result_t reason);
 
+/* Takes a free buffer of max_packet_size bytes from the association's pool,
+ * or returns NULL when every buffer is in use. Contents are unspecified. */
+uint8_t *h2_sctp_packet_acquire(h2_pal_sctp_association_t *association);
+void h2_sctp_packet_release(
+    h2_pal_sctp_association_t *association,
+    uint8_t *packet);
+/* Emits a complete packet (common header, chunks, checksum) that lives in a
+ * pooled buffer. Ownership passes to the association: the buffer is retained
+ * as pending_emit on WOULD_BLOCK and released otherwise. */
+h2_pal_result_t h2_sctp_emit_packet(
+    h2_pal_sctp_association_t *association,
+    uint8_t *packet,
+    size_t packet_len,
+    h2_sctp_control_kind_t control_kind,
+    uint64_t now_ms);
 h2_pal_result_t h2_sctp_emit_chunks(
     h2_pal_sctp_association_t *association,
     uint32_t verification_tag,

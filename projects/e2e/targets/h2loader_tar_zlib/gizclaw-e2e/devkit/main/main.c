@@ -204,6 +204,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_init", rc, false);
   }
+  rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
+                                      H2_PAL_WIFI_POWER_SAVE_NONE);
+  printf("H2_GIZCLAW_E2E_DEVKIT stage=power_save mode=%d rc=%d\n",
+         (int)H2_PAL_WIFI_POWER_SAVE_NONE, rc);
+  fflush(stdout);
+  if (rc != H2_PAL_OK) {
+    fail_launcher("power_save", rc, false);
+  }
   rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
   if (rc != H2_PAL_OK) {
     fail_launcher("command_start", rc, false);
@@ -230,8 +238,21 @@ static void image_entry(void *user) {
   fflush(stdout);
 
   h2_gizclaw_e2e_devkit_event_payload_t payload;
+  /* A saved station may already hold an address before this loop sees its
+   * first event; seed from the current status instead of waiting for a
+   * GOT_IP that was delivered earlier. */
   bool wifi_has_ip = false;
+  {
+    h2_pal_wifi_sta_status_t wifi_status;
+    if (h2_pal_wifi_sta_get_status(runtime->wifi_sta, &wifi_status) ==
+            H2_PAL_OK &&
+        wifi_status.ip_valid != 0u) {
+      wifi_has_ip = true;
+    }
+  }
   bool sntp_initialized = false;
+  bool ble_advertising_paused = false;
+  uint32_t ble_pause_retry_count = 0u;
   uint32_t time_retry_count = 0u;
   for (;;) {
     h2_runtime_event_t event = {
@@ -245,6 +266,27 @@ static void image_entry(void *user) {
     } else if (rc != H2_PAL_ERR_TIMEOUT) {
       printf("H2_GIZCLAW_E2E_DEVKIT stage=event status=ERROR rc=%d\n", rc);
       fflush(stdout);
+    }
+
+    if (!ble_advertising_paused) {
+      rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
+      if (rc == H2_PAL_OK) {
+        ble_advertising_paused = true;
+        printf("H2_GIZCLAW_E2E_DEVKIT stage=ble_adv status=PAUSED rc=%d\n",
+               rc);
+        fflush(stdout);
+      } else {
+        ++ble_pause_retry_count;
+        if (ble_pause_retry_count == 1u ||
+            ble_pause_retry_count %
+                    H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL ==
+                0u) {
+          printf("H2_GIZCLAW_E2E_DEVKIT stage=ble_adv status=RETRY rc=%d "
+                 "retry_ms=%u\n",
+                 rc, H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
+          fflush(stdout);
+        }
+      }
     }
 
     if (wifi_has_ip && !state.clock_ready) {
@@ -275,7 +317,8 @@ static void image_entry(void *user) {
         }
       }
     }
-    if (h2_gizclaw_e2e_devkit_state_set_prerequisites(
+    if (ble_advertising_paused &&
+        h2_gizclaw_e2e_devkit_state_set_prerequisites(
             &state, wifi_has_ip, state.clock_ready)) {
       s_runner.runtime = runtime;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};

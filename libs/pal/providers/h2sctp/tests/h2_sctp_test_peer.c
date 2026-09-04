@@ -150,6 +150,26 @@ static void h2_sctp_test_reset(
     }
 }
 
+static void *h2_sctp_test_packet_alloc(void *user, size_t size) {
+    h2_sctp_test_endpoint_t *endpoint = (h2_sctp_test_endpoint_t *)user;
+    endpoint->packet_allocation_count++;
+    endpoint->packet_allocation_bytes += size;
+    return malloc(size);
+}
+
+static void h2_sctp_test_packet_free(void *user, void *pointer) {
+    h2_sctp_test_endpoint_t *endpoint = (h2_sctp_test_endpoint_t *)user;
+    if (pointer != NULL) {
+        endpoint->packet_free_count++;
+        free(pointer);
+    }
+}
+
+static const h2_pal_mem_vtable_t h2_sctp_test_packet_mem_vtable = {
+    .alloc = h2_sctp_test_packet_alloc,
+    .free = h2_sctp_test_packet_free,
+};
+
 static const h2_pal_mem_vtable_t h2_sctp_test_mem_vtable = {
     .alloc = h2_sctp_test_alloc,
     .realloc = h2_sctp_test_realloc,
@@ -169,6 +189,28 @@ h2_pal_result_t h2_sctp_test_endpoint_init(
     size_t max_message_size,
     size_t send_buffer_size,
     size_t receive_buffer_size) {
+    return h2_sctp_test_endpoint_init_with_pool(
+        endpoint,
+        role,
+        local_port,
+        remote_port,
+        max_packet_size,
+        max_message_size,
+        send_buffer_size,
+        receive_buffer_size,
+        0u);
+}
+
+h2_pal_result_t h2_sctp_test_endpoint_init_with_pool(
+    h2_sctp_test_endpoint_t *endpoint,
+    h2_pal_sctp_role_t role,
+    uint16_t local_port,
+    uint16_t remote_port,
+    size_t max_packet_size,
+    size_t max_message_size,
+    size_t send_buffer_size,
+    size_t receive_buffer_size,
+    size_t packet_pool_size) {
     memset(endpoint, 0, sizeof(*endpoint));
     endpoint->random_state = role == H2_PAL_SCTP_ROLE_ACTIVE
                                  ? 0x12345678u
@@ -176,11 +218,15 @@ h2_pal_result_t h2_sctp_test_endpoint_init(
     endpoint->state = H2_PAL_SCTP_STATE_NEW;
     endpoint->mem_api.user = endpoint;
     endpoint->mem_api.vtable = &h2_sctp_test_mem_vtable;
+    endpoint->packet_mem_api.user = endpoint;
+    endpoint->packet_mem_api.vtable = &h2_sctp_test_packet_mem_vtable;
     endpoint->crypto_api.user = endpoint;
     endpoint->crypto_api.vtable = &h2_sctp_test_crypto_vtable;
     const h2_sctp_config_t provider_config = {
         .mem = &endpoint->mem_api,
         .crypto = &endpoint->crypto_api,
+        .packet_mem = &endpoint->packet_mem_api,
+        .packet_pool_size = packet_pool_size,
     };
     h2_pal_result_t result = h2_sctp_create(
         &provider_config, &endpoint->provider);
@@ -245,13 +291,22 @@ h2_pal_result_t h2_sctp_test_pair_init(
     h2_sctp_test_pair_t *pair,
     size_t max_packet_size,
     size_t max_message_size) {
+    return h2_sctp_test_pair_init_with_pool(
+        pair, max_packet_size, max_message_size, 0u);
+}
+
+h2_pal_result_t h2_sctp_test_pair_init_with_pool(
+    h2_sctp_test_pair_t *pair,
+    size_t max_packet_size,
+    size_t max_message_size,
+    size_t packet_pool_size) {
     memset(pair, 0, sizeof(*pair));
     pair->now_ms = 1u;
     if (max_message_size > (SIZE_MAX - max_packet_size) / 4u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     const size_t buffer_size = max_message_size * 4u + max_packet_size;
-    h2_pal_result_t result = h2_sctp_test_endpoint_init(
+    h2_pal_result_t result = h2_sctp_test_endpoint_init_with_pool(
         &pair->active,
         H2_PAL_SCTP_ROLE_ACTIVE,
         5000u,
@@ -259,11 +314,12 @@ h2_pal_result_t h2_sctp_test_pair_init(
         max_packet_size,
         max_message_size,
         buffer_size,
-        buffer_size);
+        buffer_size,
+        packet_pool_size);
     if (result != H2_PAL_OK) {
         return result;
     }
-    result = h2_sctp_test_endpoint_init(
+    result = h2_sctp_test_endpoint_init_with_pool(
         &pair->passive,
         H2_PAL_SCTP_ROLE_PASSIVE,
         5001u,
@@ -271,7 +327,8 @@ h2_pal_result_t h2_sctp_test_pair_init(
         max_packet_size,
         max_message_size,
         buffer_size,
-        buffer_size);
+        buffer_size,
+        packet_pool_size);
     if (result != H2_PAL_OK) {
         h2_sctp_test_endpoint_deinit(&pair->active);
     }

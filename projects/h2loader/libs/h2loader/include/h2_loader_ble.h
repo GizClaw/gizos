@@ -56,6 +56,11 @@ int h2_loader_ble_service_pause_advertising(
 int h2_loader_ble_service_resume_advertising(
     h2_loader_ble_service_t *service);
 
+/** Queue a non-blocking advertising pause/resume update on the BLE link task. */
+int h2_loader_ble_service_request_advertising_paused(
+    h2_loader_ble_service_t *service,
+    bool paused);
+
 /**
  * Queue an advertising pause/resume update on the BLE link task.
  *

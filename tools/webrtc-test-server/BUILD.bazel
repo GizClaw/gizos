@@ -28,6 +28,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "@com_github_pion_datachannel//:datachannel",
+        "@com_github_pion_dtls_v3//:dtls",
         "@com_github_pion_rtp//:rtp",
         "@com_github_pion_stun_v3//:stun",
         "@com_github_pion_turn_v4//:turn",

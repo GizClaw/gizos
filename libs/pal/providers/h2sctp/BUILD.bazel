@@ -145,6 +145,26 @@ cc_test(
 )
 
 cc_test(
+    name = "packet_pool_test",
+    srcs = [
+        ":test_internal_headers",
+        "tests/h2_sctp_test_peer.c",
+        "tests/h2_sctp_test_peer.h",
+        "tests/test_packet_pool.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2sctp"],
+)
+
+cc_test(
     name = "timer_test",
     srcs = [
         ":test_internal_headers",

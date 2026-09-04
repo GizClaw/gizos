@@ -143,40 +143,80 @@ static h2_pal_result_t h2_sctp_invoke_emit(
     return result;
 }
 
-h2_pal_result_t h2_sctp_emit_chunks(
+uint8_t *h2_sctp_packet_acquire(h2_pal_sctp_association_t *association) {
+    if (association == NULL || association->packet_pool == NULL) {
+        return NULL;
+    }
+    for (size_t index = 0u; index < association->packet_pool_size; ++index) {
+        const uint32_t bit = UINT32_C(1) << index;
+        if ((association->packet_pool_used & bit) == 0u) {
+            association->packet_pool_used |= bit;
+            return association->packet_pool +
+                   index * association->config.max_packet_size;
+        }
+    }
+    return NULL;
+}
+
+void h2_sctp_packet_release(
     h2_pal_sctp_association_t *association,
-    uint32_t verification_tag,
-    const uint8_t *chunks,
-    size_t chunks_len,
+    uint8_t *packet) {
+    if (association == NULL || packet == NULL ||
+        association->packet_pool == NULL ||
+        packet < association->packet_pool) {
+        return;
+    }
+    const size_t offset = (size_t)(packet - association->packet_pool);
+    const size_t index = offset / association->config.max_packet_size;
+    if (index >= association->packet_pool_size ||
+        offset != index * association->config.max_packet_size) {
+        return;
+    }
+    association->packet_pool_used &= ~(UINT32_C(1) << index);
+}
+
+static h2_pal_result_t h2_sctp_packet_pool_create(
+    h2_pal_sctp_association_t *association) {
+    h2_sctp_t *provider = association->owner;
+    const size_t packet_size = association->config.max_packet_size;
+    if (packet_size == 0u ||
+        packet_size > SIZE_MAX / provider->packet_pool_size) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    association->packet_pool_size = provider->packet_pool_size;
+    association->packet_pool_used = 0u;
+    association->packet_pool = h2_pal_mem_alloc(
+        provider->packet_mem, packet_size * provider->packet_pool_size);
+    return association->packet_pool == NULL
+        ? H2_PAL_ERR_NO_MEMORY
+        : H2_PAL_OK;
+}
+
+static void h2_sctp_packet_pool_destroy(
+    h2_pal_sctp_association_t *association) {
+    if (association->packet_pool != NULL) {
+        h2_pal_mem_free(
+            association->owner->packet_mem, association->packet_pool);
+    }
+    association->packet_pool = NULL;
+    association->packet_pool_size = 0u;
+    association->packet_pool_used = 0u;
+}
+
+h2_pal_result_t h2_sctp_emit_packet(
+    h2_pal_sctp_association_t *association,
+    uint8_t *packet,
+    size_t packet_len,
     h2_sctp_control_kind_t control_kind,
     uint64_t now_ms) {
     if (association->pending_emit != NULL) {
+        h2_sctp_packet_release(association, packet);
         return H2_PAL_ERR_WOULD_BLOCK;
     }
-    uint8_t *packet = h2_sctp_alloc(
-        association->owner, association->config.max_packet_size);
-    if (packet == NULL) {
-        return H2_PAL_ERR_NO_MEMORY;
-    }
-    size_t packet_len = 0u;
-    h2_pal_result_t result = h2_sctp_wire_build_packet(
-        association->config.local_port,
-        association->config.remote_port,
-        verification_tag,
-        chunks,
-        chunks_len,
-        packet,
-        association->config.max_packet_size,
-        &packet_len);
-    if (result != H2_PAL_OK) {
-        h2_sctp_free(association->owner, packet);
-        return result;
-    }
-
     if (control_kind != H2_SCTP_CONTROL_NONE) {
         uint8_t *control = h2_sctp_alloc(association->owner, packet_len);
         if (control == NULL) {
-            h2_sctp_free(association->owner, packet);
+            h2_sctp_packet_release(association, packet);
             return H2_PAL_ERR_NO_MEMORY;
         }
         memcpy(control, packet, packet_len);
@@ -188,17 +228,52 @@ h2_pal_result_t h2_sctp_emit_chunks(
             now_ms, association->rto_ms);
     }
 
-    result = h2_sctp_invoke_emit(association, packet, packet_len);
+    const h2_pal_result_t result = h2_sctp_invoke_emit(
+        association, packet, packet_len);
     if (result == H2_PAL_ERR_WOULD_BLOCK) {
         association->pending_emit = packet;
         association->pending_emit_len = packet_len;
         return result;
     }
-    h2_sctp_free(association->owner, packet);
+    h2_sctp_packet_release(association, packet);
     if (result != H2_PAL_OK) {
         h2_sctp_fail(association, result);
     }
     return result;
+}
+
+h2_pal_result_t h2_sctp_emit_chunks(
+    h2_pal_sctp_association_t *association,
+    uint32_t verification_tag,
+    const uint8_t *chunks,
+    size_t chunks_len,
+    h2_sctp_control_kind_t control_kind,
+    uint64_t now_ms) {
+    if (association->pending_emit != NULL) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    /* An exhausted pool is reported like an allocation failure: nothing was
+     * built or buffered, and every caller already retries on NO_MEMORY. */
+    uint8_t *packet = h2_sctp_packet_acquire(association);
+    if (packet == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    size_t packet_len = 0u;
+    const h2_pal_result_t result = h2_sctp_wire_build_packet(
+        association->config.local_port,
+        association->config.remote_port,
+        verification_tag,
+        chunks,
+        chunks_len,
+        packet,
+        association->config.max_packet_size,
+        &packet_len);
+    if (result != H2_PAL_OK) {
+        h2_sctp_packet_release(association, packet);
+        return result;
+    }
+    return h2_sctp_emit_packet(
+        association, packet, packet_len, control_kind, now_ms);
 }
 
 h2_pal_result_t h2_sctp_retry_pending_emit(
@@ -211,7 +286,7 @@ h2_pal_result_t h2_sctp_retry_pending_emit(
     if (result == H2_PAL_ERR_WOULD_BLOCK) {
         return result;
     }
-    h2_sctp_free(association->owner, association->pending_emit);
+    h2_sctp_packet_release(association, association->pending_emit);
     association->pending_emit = NULL;
     association->pending_emit_len = 0u;
     if (result != H2_PAL_OK) {
@@ -239,6 +314,17 @@ static h2_pal_result_t h2_sctp_vtable_association_create(
     }
     association->owner = provider;
     association->config = *config;
+    association->rx_assembly = h2_sctp_alloc(
+        provider, config->max_message_size);
+    association->rx_assembly_len = 0u;
+    association->rx_assembly_count = 0u;
+    association->rx_assembly_begin = NULL;
+    const h2_pal_result_t pool_result = h2_sctp_packet_pool_create(association);
+    if (pool_result != H2_PAL_OK) {
+        h2_sctp_free(provider, association->rx_assembly);
+        h2_sctp_free(provider, association);
+        return pool_result;
+    }
     association->state = H2_PAL_SCTP_STATE_NEW;
     association->terminal_reason = H2_PAL_OK;
     association->local_verification_tag = h2_sctp_wire_read_u32(random);
@@ -410,7 +496,11 @@ static h2_pal_result_t h2_sctp_vtable_association_close(
     *cursor = association->next;
     provider->association_count--;
     h2_sctp_clear_control(association);
-    h2_sctp_free(provider, association->pending_emit);
+    h2_sctp_packet_release(association, association->pending_emit);
+    association->pending_emit = NULL;
+    h2_sctp_packet_pool_destroy(association);
+    h2_sctp_free(provider, association->rx_assembly);
+    association->rx_assembly = NULL;
     h2_sctp_free(provider, association->peer_cookie);
     h2_sctp_reliability_release_all(association);
     h2_sctp_stream_release_all(association);
@@ -443,7 +533,11 @@ h2_pal_result_t h2_sctp_create(
         config->mem->vtable == NULL || config->mem->vtable->alloc == NULL ||
         config->mem->vtable->free == NULL || config->crypto == NULL ||
         config->crypto->vtable == NULL ||
-        config->crypto->vtable->random == NULL) {
+        config->crypto->vtable->random == NULL ||
+        (config->packet_mem != NULL &&
+         (config->packet_mem->vtable == NULL ||
+          config->packet_mem->vtable->alloc == NULL ||
+          config->packet_mem->vtable->free == NULL))) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     h2_sctp_t temporary = {
@@ -455,6 +549,14 @@ h2_pal_result_t h2_sctp_create(
         return H2_PAL_ERR_NO_MEMORY;
     }
     provider->mem = config->mem;
+    provider->packet_mem =
+        config->packet_mem != NULL ? config->packet_mem : config->mem;
+    provider->packet_pool_size =
+        config->packet_pool_size == 0u
+            ? H2_SCTP_DEFAULT_PACKET_POOL_SIZE
+            : (config->packet_pool_size > H2_SCTP_MAX_PACKET_POOL_SIZE
+                   ? H2_SCTP_MAX_PACKET_POOL_SIZE
+                   : config->packet_pool_size);
     provider->crypto = config->crypto;
     provider->api.user = provider;
     provider->api.vtable = &h2_sctp_vtable;

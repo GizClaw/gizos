@@ -18,37 +18,23 @@ typedef struct h2_gizclaw_registration_result {
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
 } h2_gizclaw_registration_result_t;
 
-typedef struct h2_gizclaw_registration_request
-    h2_gizclaw_registration_request_t;
+/** Copy the token into a CREATED request; no registration is sent yet. */
+h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t *service,
+                                               uint64_t identity,
+                                               const char *token,
+                                               uint32_t timeout_ms,
+                                               h2_gizclaw_req_t **out_request);
 
-typedef void (*h2_gizclaw_registration_completion_fn)(
-    void *user, h2_gizclaw_registration_request_t *request,
-    const h2_gizclaw_operation_result_t *result,
-    const h2_gizclaw_registration_result_t *registration);
-
-/** Register from a caller that exclusively owns and polls this client. */
-#if defined(H2_GIZCLAW_TESTING)
+/** Copy the server-confirmed Runtime Profile name into caller-owned storage. */
 h2_pal_result_t
-h2_gizclaw_client_register(h2_gizclaw_client_t *client, const char *token,
-                           h2_gizclaw_registration_result_t *out_result);
-#endif
+h2_gizclaw_resp_parse_register(const h2_gizclaw_req_t *request,
+                               h2_gizclaw_registration_result_t *out_result);
 
-/**
- * @brief Apply a stable pre-distributed RegistrationToken to a connected Peer.
- *
- * The token is encoded and copied before return. Firmware selection is a
- * separate channel-only request and is not part of registration.
- */
-h2_pal_result_t h2_gizclaw_service_register_async(
-    h2_gizclaw_service_t *service, uint64_t identity, const char *token,
-    uint32_t timeout_ms, h2_gizclaw_registration_completion_fn completion,
-    void *user, h2_gizclaw_registration_request_t **out_request);
-
-h2_pal_result_t h2_gizclaw_registration_request_cancel(
-    h2_gizclaw_registration_request_t *request);
-
-void h2_gizclaw_registration_request_release(
-    h2_gizclaw_registration_request_t *request);
+/** Same request path, without a callback; no app poll loop is required. */
+h2_pal_result_t
+h2_gizclaw_rpc_register(h2_gizclaw_service_t *service, const char *token,
+                        uint32_t timeout_ms,
+                        h2_gizclaw_registration_result_t *out_result);
 
 #ifdef __cplusplus
 }

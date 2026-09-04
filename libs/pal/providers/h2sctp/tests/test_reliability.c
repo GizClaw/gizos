@@ -468,7 +468,7 @@ static void test_fast_retransmit_reduces_once_per_round_trip(void) {
  * loss event, so the window collapses and the RTO doubles exactly once.
  */
 /*
- * A fast retransmit the allocator could not emit stays marked. It must be
+ * A fast retransmit that found no free packet buffer stays marked. It must be
  * retried on the next service pass and must never fall through to the timer
  * response, which would collapse the window for a loss event fast recovery
  * already answered.
@@ -490,9 +490,15 @@ static void test_deferred_fast_retransmit_skips_timer_response(void) {
   acknowledge_gap_at(association, cumulative, 2u, 2u, 1100u);
   acknowledge_gap_at(association, cumulative, 2u, 3u, 1110u);
   association->cwnd = 8192u;
-  pair.active.fail_allocation_at = pair.active.allocation_count + 1u;
+  uint8_t *held[H2_SCTP_DEFAULT_PACKET_POOL_SIZE];
+  for (size_t index = 0u; index < H2_SCTP_DEFAULT_PACKET_POOL_SIZE; ++index) {
+    held[index] = h2_sctp_packet_acquire(association);
+    assert(held[index] != NULL);
+  }
   acknowledge_gap_at(association, cumulative, 2u, 4u, 1120u);
-  pair.active.fail_allocation_at = 0u;
+  for (size_t index = 0u; index < H2_SCTP_DEFAULT_PACKET_POOL_SIZE; ++index) {
+    h2_sctp_packet_release(association, held[index]);
+  }
   /* The window reduction happened, the retransmission did not. */
   assert(hole->fast_retransmit);
   assert(hole->retransmits == 0u);
@@ -730,7 +736,9 @@ int main(void) {
   assert(receive_fragment_count(pair.passive.association) == 1u);
   const size_t receive_used = pair.passive.association->receive_used;
   const uint32_t cumulative = pair.passive.association->cumulative_received_tsn;
-  pair.passive.fail_allocation_at = pair.passive.allocation_count + 3u;
+  /* The end fragment assembles in place (one node allocation); the stream
+   * record for delivery is the second allocation and the one that fails. */
+  pair.passive.fail_allocation_at = pair.passive.allocation_count + 2u;
   assert(transfer_one(&pair.active, &pair.passive, pair.now_ms) ==
          H2_PAL_ERR_WOULD_BLOCK);
   assert(pair.passive.allocation_failure_count == 1u);

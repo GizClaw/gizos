@@ -120,123 +120,99 @@ typedef struct h2_gizclaw_pet_actions {
   size_t clip_name_count;
 } h2_gizclaw_pet_actions_t;
 
-typedef struct h2_gizclaw_pet_request h2_gizclaw_pet_request_t;
-
-typedef enum h2_gizclaw_pet_request_kind {
-  H2_GIZCLAW_PET_LIST = 0,
-  H2_GIZCLAW_PET_GET,
-  H2_GIZCLAW_PET_ADOPT,
-  H2_GIZCLAW_PET_DELETE,
-  H2_GIZCLAW_PET_DRIVE,
-  H2_GIZCLAW_PET_PIXA_DOWNLOAD,
-  H2_GIZCLAW_PET_ACTIONS_GET,
-} h2_gizclaw_pet_request_kind_t;
-
-typedef struct h2_gizclaw_pet_result {
-  h2_gizclaw_pet_request_kind_t kind;
-  union {
-    h2_gizclaw_pet_page_t page;
-    h2_gizclaw_pet_t pet;
-    h2_gizclaw_pet_pixa_info_t pixa;
-    h2_gizclaw_pet_actions_t actions;
-  } value;
-} h2_gizclaw_pet_result_t;
-
-typedef void (*h2_gizclaw_pet_completion_fn)(
-    void *user, h2_gizclaw_pet_request_t *request,
-    const h2_gizclaw_operation_result_t *operation_result,
-    const h2_gizclaw_pet_result_t *result);
-
-h2_pal_result_t h2_gizclaw_service_pet_list_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
-    size_t limit, h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
-h2_pal_result_t h2_gizclaw_service_pet_get_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
-h2_pal_result_t h2_gizclaw_service_pet_adopt_async(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_pet_adopt_options_t *options,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
-h2_pal_result_t h2_gizclaw_service_pet_delete_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
-h2_pal_result_t h2_gizclaw_service_pet_drive_async(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_pet_drive_options_t *options,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
-h2_pal_result_t h2_gizclaw_service_pet_pixa_download_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_pixa_write_fn write, void *write_user,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
-h2_pal_result_t h2_gizclaw_service_pet_actions_get_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request);
+h2_pal_result_t h2_gizclaw_req_create_pet_get(h2_gizclaw_service_t *service,
+                                              uint64_t identity,
+                                              h2_gizclaw_str_t pet_name,
+                                              uint32_t timeout_ms,
+                                              h2_gizclaw_req_t **out_request);
 h2_pal_result_t
-h2_gizclaw_pet_request_cancel(h2_gizclaw_pet_request_t *request);
-void h2_gizclaw_pet_request_release(h2_gizclaw_pet_request_t *request);
+h2_gizclaw_resp_parse_pet_get(const h2_gizclaw_req_t *request,
+                              h2_gizclaw_resp_storage_t *storage,
+                              h2_gizclaw_pet_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_pet_get(h2_gizclaw_service_t *service,
+                                       h2_gizclaw_str_t pet_name,
+                                       uint32_t timeout_ms,
+                                       h2_gizclaw_resp_storage_t *storage,
+                                       h2_gizclaw_pet_t *out_result);
 
-#if defined(H2_GIZCLAW_TESTING)
+h2_pal_result_t h2_gizclaw_req_create_pet_delete(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_delete(const h2_gizclaw_req_t *request,
+                                 h2_gizclaw_resp_storage_t *storage,
+                                 h2_gizclaw_pet_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_pet_delete(h2_gizclaw_service_t *service,
+                                          h2_gizclaw_str_t pet_name,
+                                          uint32_t timeout_ms,
+                                          h2_gizclaw_resp_storage_t *storage,
+                                          h2_gizclaw_pet_t *out_result);
 
-int h2_gizclaw_client_pet_list(h2_gizclaw_client_t *client,
-                               h2_gizclaw_str_t cursor, size_t limit,
-                               h2_gizclaw_pet_page_t *out_page);
-int h2_gizclaw_client_pet_get(h2_gizclaw_client_t *client,
-                              h2_gizclaw_str_t pet_name,
-                              h2_gizclaw_pet_t *out_pet);
-int h2_gizclaw_client_pet_adopt(h2_gizclaw_client_t *client,
-                                const h2_gizclaw_pet_adopt_options_t *options,
-                                h2_gizclaw_pet_t *out_pet);
-/**
- * @brief Delete one Pet and return the deleted Server snapshot.
- *
- * The call blocks until its request-scoped RPC completes. @p pet_name is a
- * borrowed, non-empty UTF-8 span. On success, @p out_pet owns its string fields
- * and must be released with h2_gizclaw_pet_deinit(). On every failure,
- * @p out_pet is empty.
- *
- * @param client Connected GizClaw client.
- * @param pet_name Pet resource name borrowed for the duration of the call.
- * @param out_pet Receives the owned deleted Pet snapshot.
- * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_INVALID_STATE,
- * H2_PAL_ERR_NOT_FOUND, H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_NO_MEMORY,
- * H2_PAL_ERR_FORMAT, or a transport error.
- */
-int h2_gizclaw_client_pet_delete(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_str_t pet_name,
-                                 h2_gizclaw_pet_t *out_pet);
-int h2_gizclaw_client_pet_drive(h2_gizclaw_client_t *client,
-                                const h2_gizclaw_pet_drive_options_t *options,
-                                h2_gizclaw_pet_t *out_pet);
-int h2_gizclaw_client_pet_pixa_download(h2_gizclaw_client_t *client,
-                                        h2_gizclaw_str_t pet_name,
-                                        h2_gizclaw_pet_pixa_write_fn write,
-                                        void *write_user,
-                                        h2_gizclaw_pet_pixa_info_t *out_info);
-int h2_gizclaw_client_pet_actions_get(h2_gizclaw_client_t *client,
-                                      h2_gizclaw_str_t pet_name,
-                                      h2_gizclaw_pet_actions_t *out_actions);
-#endif
-const char *
-h2_gizclaw_pet_actions_find_clip(const h2_gizclaw_pet_actions_t *actions,
-                                 const char *id);
+h2_pal_result_t h2_gizclaw_req_create_pet_adopt(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_pet_adopt_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_adopt(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_resp_storage_t *storage,
+                                h2_gizclaw_pet_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_pet_adopt(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_pet_adopt_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_pet_t *out_result);
 
-void h2_gizclaw_pet_deinit(h2_gizclaw_client_t *client, h2_gizclaw_pet_t *pet);
-void h2_gizclaw_pet_page_deinit(h2_gizclaw_client_t *client,
-                                h2_gizclaw_pet_page_t *page);
-void h2_gizclaw_pet_pixa_info_deinit(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_pet_pixa_info_t *info);
-void h2_gizclaw_pet_actions_deinit(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_pet_actions_t *actions);
+h2_pal_result_t h2_gizclaw_req_create_pet_drive(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_pet_drive_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_drive(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_resp_storage_t *storage,
+                                h2_gizclaw_pet_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_pet_drive(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_pet_drive_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_pet_t *out_result);
 
+h2_pal_result_t h2_gizclaw_req_create_pet_list(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_list(const h2_gizclaw_req_t *request,
+                               h2_gizclaw_resp_storage_t *storage,
+                               h2_gizclaw_pet_page_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_pet_list(h2_gizclaw_service_t *service,
+                                        h2_gizclaw_str_t cursor, size_t limit,
+                                        uint32_t timeout_ms,
+                                        h2_gizclaw_resp_storage_t *storage,
+                                        h2_gizclaw_pet_page_t *out_result);
+
+h2_pal_result_t h2_gizclaw_req_create_pet_action_get(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_action_get(const h2_gizclaw_req_t *request,
+                                     h2_gizclaw_resp_storage_t *storage,
+                                     h2_gizclaw_pet_actions_t *out_result);
+h2_pal_result_t
+h2_gizclaw_rpc_pet_action_get(h2_gizclaw_service_t *service,
+                              h2_gizclaw_str_t pet_name, uint32_t timeout_ms,
+                              h2_gizclaw_resp_storage_t *storage,
+                              h2_gizclaw_pet_actions_t *out_result);
+
+/** Create a Pixa data-down request. Supply its writer to h2_gizclaw_req_do. */
+h2_pal_result_t h2_gizclaw_req_create_pet_pixa_download(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_pixa_download(const h2_gizclaw_req_t *request,
+                                        h2_gizclaw_resp_storage_t *storage,
+                                        h2_gizclaw_pet_pixa_info_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_pet_pixa_download(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_pixa_write_fn write, void *write_user, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_pet_pixa_info_t *out_result);
 #ifdef __cplusplus
 }
 #endif
-
 #endif

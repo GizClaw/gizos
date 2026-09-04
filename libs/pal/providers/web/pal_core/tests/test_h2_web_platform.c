@@ -675,6 +675,32 @@ static int run_tests(void) {
       h2_web_platform_webrtc_api(platform) == NULL) {
     return 4;
   }
+  const h2_pal_time_api_t *clock = h2_web_platform_time_api(platform);
+  uint64_t wall_ms = 0u, monotonic_us = 0u;
+  h2_pal_time_wall_status_t wall_status = {0};
+  // clang-format off
+  EM_ASM({
+    globalThis.h2SavedDateNow = Date.now;
+    Date.now = () => 1700000000123;
+  });
+  // clang-format on
+  if (h2_pal_time_get_wall_ms(clock, &wall_ms) != H2_PAL_OK ||
+      wall_ms != UINT64_C(1700000000123) ||
+      h2_pal_time_get_wall_status(clock, &wall_status) != H2_PAL_OK ||
+      !wall_status.valid ||
+      wall_status.source != H2_PAL_TIME_WALL_SOURCE_UNKNOWN ||
+      h2_pal_time_get_monotonic_us(clock, &monotonic_us) != H2_PAL_OK ||
+      h2_pal_time_set_wall_ms(clock, 0u) != H2_PAL_ERR_UNSUPPORTED)
+    return 51;
+  // clang-format off
+  EM_ASM({ Date.now = () => NaN; });
+  // clang-format on
+  if (h2_pal_time_get_wall_ms(clock, &wall_ms) != H2_PAL_ERR_UNAVAILABLE ||
+      wall_ms != 0u ||
+      h2_pal_time_get_wall_status(clock, &wall_status) != H2_PAL_OK ||
+      wall_status.valid)
+    return 52;
+  EM_ASM({ Date.now = globalThis.h2SavedDateNow; });
   h2_web_webrtc_test_t webrtc_test = {0};
   const h2_pal_webrtc_api_t *webrtc = h2_web_platform_webrtc_api(platform);
   EM_ASM({ globalThis.h2FakeCreateMedia(1); });

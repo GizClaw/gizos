@@ -1,6 +1,7 @@
-#define H2_GIZCLAW_INTERNAL_SYNC_API
-#include "h2_gizclaw_social.h"
-#undef H2_GIZCLAW_INTERNAL_SYNC_API
+#include "h2_gizclaw_download_internal.h"
+#include "h2_gizclaw_response_internal.h"
+#include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_social_internal.h"
 
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_rpc.h"
@@ -28,18 +29,21 @@ typedef struct friend_page_decode {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_friend_page_t *page;
   size_t limit;
+  size_t capacity;
 } friend_page_decode_t;
 
 typedef struct member_page_decode {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_friend_group_member_page_t *page;
   size_t limit;
+  size_t capacity;
 } member_page_decode_t;
 
 typedef struct message_page_decode {
   const h2_pal_mem_api_t *allocator;
   h2_gizclaw_friend_group_message_page_t *page;
   size_t limit;
+  size_t capacity;
 } message_page_decode_t;
 
 static bool valid_utf8_span(const char *text, size_t len) {
@@ -155,28 +159,6 @@ static void set_encoder(pb_callback_t *callback, social_text_encode_t *context,
   callback->arg = context;
 }
 
-static int response_status(const h2_gizclaw_rpc_response_t *response) {
-  if (response == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (!response->has_error)
-    return H2_PAL_OK;
-  switch (response->error_code) {
-  case H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND:
-    return H2_PAL_ERR_UNSUPPORTED;
-  case H2_GIZCLAW_RPC_ERROR_NOT_FOUND:
-    return H2_PAL_ERR_NOT_FOUND;
-  case H2_GIZCLAW_RPC_ERROR_CONFLICT:
-    return H2_PAL_ERR_WOULD_BLOCK;
-  case H2_GIZCLAW_RPC_ERROR_BAD_REQUEST:
-  case H2_GIZCLAW_RPC_ERROR_INVALID_PARAMS:
-    return H2_PAL_ERR_INVALID_ARG;
-  case H2_GIZCLAW_RPC_ERROR_FORBIDDEN:
-    return H2_PAL_ERR_IO;
-  default:
-    return H2_PAL_ERR_IO;
-  }
-}
-
 static int encode_message(const h2_pal_mem_api_t *allocator,
                           const pb_msgdesc_t *fields, const void *request,
                           uint8_t **out_payload, size_t *out_payload_len) {
@@ -201,29 +183,6 @@ static int encode_message(const h2_pal_mem_api_t *allocator,
   *out_payload = payload;
   *out_payload_len = stream.bytes_written;
   return H2_PAL_OK;
-}
-
-static int call_encoded(h2_gizclaw_client_t *client,
-                        h2_gizclaw_rpc_method_t method,
-                        const pb_msgdesc_t *fields, const void *request,
-                        h2_gizclaw_rpc_response_t *out_response) {
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  uint8_t *payload = NULL;
-  size_t payload_len = 0u;
-  int rc = encode_message(allocator, fields, request, &payload, &payload_len);
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, method,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        out_response);
-  }
-  h2_pal_mem_free(allocator, payload);
-  if (rc == H2_PAL_OK)
-    rc = response_status(out_response);
-  return rc;
 }
 
 static char *duplicate_text(const h2_pal_mem_api_t *allocator,
@@ -296,12 +255,22 @@ static bool decode_friend(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_friend_t *items =
-      h2_pal_mem_realloc(context->allocator, context->page->items,
-                         (count + 1u) * sizeof(context->page->items[0]));
-  if (items == NULL)
-    return false;
-  context->page->items = items;
+  if (count >= context->capacity) {
+    size_t capacity = context->capacity == 0u ? 4u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
+    if (capacity < context->capacity || capacity > context->limit)
+      capacity = context->limit;
+    if (capacity > SIZE_MAX / sizeof(context->page->items[0]))
+      return false;
+    h2_gizclaw_friend_t *grown = h2_pal_mem_realloc(
+        context->allocator, context->page->items, capacity * sizeof(*grown));
+    if (grown == NULL)
+      return false;
+    context->page->items = grown;
+    context->capacity = capacity;
+  }
+  h2_gizclaw_friend_t *items = context->page->items;
   memset(&items[count], 0, sizeof(items[count]));
   if (!decode_friend_object(stream, &items[count], context->allocator))
     return false;
@@ -375,12 +344,22 @@ static bool decode_member(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_friend_group_member_t *items =
-      h2_pal_mem_realloc(context->allocator, context->page->items,
-                         (count + 1u) * sizeof(context->page->items[0]));
-  if (items == NULL)
-    return false;
-  context->page->items = items;
+  if (count >= context->capacity) {
+    size_t capacity = context->capacity == 0u ? 4u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
+    if (capacity < context->capacity || capacity > context->limit)
+      capacity = context->limit;
+    if (capacity > SIZE_MAX / sizeof(context->page->items[0]))
+      return false;
+    h2_gizclaw_friend_group_member_t *grown = h2_pal_mem_realloc(
+        context->allocator, context->page->items, capacity * sizeof(*grown));
+    if (grown == NULL)
+      return false;
+    context->page->items = grown;
+    context->capacity = capacity;
+  }
+  h2_gizclaw_friend_group_member_t *items = context->page->items;
   memset(&items[count], 0, sizeof(items[count]));
   if (!decode_member_object(stream, &items[count], context->allocator))
     return false;
@@ -473,12 +452,22 @@ static bool decode_message(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  h2_gizclaw_friend_group_message_t *items =
-      h2_pal_mem_realloc(context->allocator, context->page->items,
-                         (count + 1u) * sizeof(context->page->items[0]));
-  if (items == NULL)
-    return false;
-  context->page->items = items;
+  if (count >= context->capacity) {
+    size_t capacity = context->capacity == 0u ? 4u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
+    if (capacity < context->capacity || capacity > context->limit)
+      capacity = context->limit;
+    if (capacity > SIZE_MAX / sizeof(context->page->items[0]))
+      return false;
+    h2_gizclaw_friend_group_message_t *grown = h2_pal_mem_realloc(
+        context->allocator, context->page->items, capacity * sizeof(*grown));
+    if (grown == NULL)
+      return false;
+    context->page->items = grown;
+    context->capacity = capacity;
+  }
+  h2_gizclaw_friend_group_message_t *items = context->page->items;
   memset(&items[count], 0, sizeof(items[count]));
   if (!decode_message_object(stream, &items[count], context->allocator))
     return false;
@@ -486,210 +475,9 @@ static bool decode_message(pb_istream_t *stream, const pb_field_t *field,
   return true;
 }
 
-static bool page_args_valid(h2_gizclaw_client_t *client,
-                            h2_gizclaw_str_t cursor, size_t limit,
-                            const void *out_page) {
-  return client != NULL && out_page != NULL && limit > 0u &&
-#if SIZE_MAX > INT64_MAX
-         limit <= (size_t)INT64_MAX &&
-#endif
-         valid_text(cursor, true);
-}
-
 static bool decode_cursor(bool has_next, char *cursor) {
   return !has_next ||
          (cursor != NULL && cursor[0] != '\0' && valid_owned_text(cursor));
-}
-
-int h2_gizclaw_client_friends_list(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_str_t cursor, size_t limit,
-                                   h2_gizclaw_friend_page_t *out_page) {
-  if (!page_args_valid(client, cursor, limit, out_page))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_page, 0, sizeof(*out_page));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_FriendListRequest request =
-      gizclaw_rpc_v1_FriendListRequest_init_zero;
-  social_text_encode_t cursor_encoder;
-  if (cursor.len > 0u)
-    set_encoder(&request.cursor, &cursor_encoder, cursor);
-  request.has_limit = true;
-  request.limit = (int64_t)limit;
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_LIST,
-                        gizclaw_rpc_v1_FriendListRequest_fields, &request,
-                        &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendListResponse decoded =
-        gizclaw_rpc_v1_FriendListResponse_init_zero;
-    friend_page_decode_t items = {
-        .allocator = allocator, .page = out_page, .limit = limit};
-    social_text_decode_t cursor_decoder;
-    decoded.items.funcs.decode = decode_friend;
-    decoded.items.arg = &items;
-    set_decoder(&decoded.next_cursor, &cursor_decoder, allocator,
-                &out_page->next_cursor);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_FriendListResponse_fields,
-                   &decoded) ||
-        !decode_cursor(decoded.has_next, out_page->next_cursor)) {
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      out_page->has_next = decoded.has_next;
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_friend_page_deinit(client, out_page);
-  return rc;
-}
-
-static int friend_mutation(h2_gizclaw_client_t *client,
-                           h2_gizclaw_rpc_method_t method,
-                           h2_gizclaw_str_t value,
-                           h2_gizclaw_friend_t *out_friend) {
-  if (client == NULL || out_friend == NULL || !valid_text(value, false))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_friend, 0, sizeof(*out_friend));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  h2_gizclaw_rpc_response_t response = {0};
-  social_text_encode_t encoder;
-  int rc = H2_PAL_ERR_INVALID_ARG;
-  if (method == H2_GIZCLAW_RPC_SERVER_FRIEND_ADD) {
-    gizclaw_rpc_v1_FriendAddRequest request =
-        gizclaw_rpc_v1_FriendAddRequest_init_zero;
-    set_encoder(&request.invite_token, &encoder, value);
-    rc = call_encoded(client, method, gizclaw_rpc_v1_FriendAddRequest_fields,
-                      &request, &response);
-    if (rc == H2_PAL_OK) {
-      gizclaw_rpc_v1_FriendAddResponse decoded =
-          gizclaw_rpc_v1_FriendAddResponse_init_zero;
-      social_text_decode_t text[5];
-      set_decoder(&decoded.value.name, &text[0], allocator, &out_friend->id);
-      set_decoder(&decoded.value.peer_public_key, &text[1], allocator,
-                  &out_friend->peer_public_key);
-      set_decoder(&decoded.value.workspace_name, &text[2], allocator,
-                  &out_friend->workspace_name);
-      set_decoder(&decoded.value.created_at, &text[3], allocator,
-                  &out_friend->created_at);
-      set_decoder(&decoded.value.updated_at, &text[4], allocator,
-                  &out_friend->updated_at);
-      pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                   response.result_payload_len);
-      if (!pb_decode(&stream, gizclaw_rpc_v1_FriendAddResponse_fields,
-                     &decoded) ||
-          !decoded.has_value || out_friend->id == NULL ||
-          out_friend->id[0] == '\0') {
-        rc = H2_PAL_ERR_FORMAT;
-      }
-    }
-  } else {
-    gizclaw_rpc_v1_FriendDeleteRequest request =
-        gizclaw_rpc_v1_FriendDeleteRequest_init_zero;
-    set_encoder(&request.name, &encoder, value);
-    rc = call_encoded(client, method, gizclaw_rpc_v1_FriendDeleteRequest_fields,
-                      &request, &response);
-    if (rc == H2_PAL_OK) {
-      gizclaw_rpc_v1_FriendDeleteResponse decoded =
-          gizclaw_rpc_v1_FriendDeleteResponse_init_zero;
-      social_text_decode_t text[5];
-      set_decoder(&decoded.value.name, &text[0], allocator, &out_friend->id);
-      set_decoder(&decoded.value.peer_public_key, &text[1], allocator,
-                  &out_friend->peer_public_key);
-      set_decoder(&decoded.value.workspace_name, &text[2], allocator,
-                  &out_friend->workspace_name);
-      set_decoder(&decoded.value.created_at, &text[3], allocator,
-                  &out_friend->created_at);
-      set_decoder(&decoded.value.updated_at, &text[4], allocator,
-                  &out_friend->updated_at);
-      pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                   response.result_payload_len);
-      if (!pb_decode(&stream, gizclaw_rpc_v1_FriendDeleteResponse_fields,
-                     &decoded) ||
-          !decoded.has_value || out_friend->id == NULL ||
-          out_friend->id[0] == '\0') {
-        rc = H2_PAL_ERR_FORMAT;
-      }
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    friend_deinit(allocator, out_friend);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_add(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_str_t invite_token,
-                                 h2_gizclaw_friend_t *out_friend) {
-  return friend_mutation(client, H2_GIZCLAW_RPC_SERVER_FRIEND_ADD, invite_token,
-                         out_friend);
-}
-
-int h2_gizclaw_client_friend_delete(h2_gizclaw_client_t *client,
-                                    h2_gizclaw_str_t friend_id,
-                                    h2_gizclaw_friend_t *out_friend) {
-  return friend_mutation(client, H2_GIZCLAW_RPC_SERVER_FRIEND_DELETE, friend_id,
-                         out_friend);
-}
-
-int h2_gizclaw_client_friend_info_get(h2_gizclaw_client_t *client,
-                                      h2_gizclaw_str_t friend_id,
-                                      h2_gizclaw_friend_t *out_friend) {
-  if (client == NULL || out_friend == NULL || !valid_text(friend_id, false) ||
-      friend_id.len >=
-          sizeof(((gizclaw_rpc_v1_FriendInfoGetRequest *)0)->name)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_friend, 0, sizeof(*out_friend));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_FriendInfoGetRequest request =
-      gizclaw_rpc_v1_FriendInfoGetRequest_init_zero;
-  memcpy(request.name, friend_id.data, friend_id.len);
-  request.name[friend_id.len] = '\0';
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_INFO_GET,
-                        gizclaw_rpc_v1_FriendInfoGetRequest_fields, &request,
-                        &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendInfoGetResponse decoded =
-        gizclaw_rpc_v1_FriendInfoGetResponse_init_zero;
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_FriendInfoGetResponse_fields,
-                   &decoded) ||
-        !decoded.has_value || decoded.name[0] == '\0' ||
-        !valid_owned_text(decoded.value.display_name) ||
-        !valid_owned_text(decoded.value.emoji)) {
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      out_friend->id = duplicate_text(allocator, request.name);
-      out_friend->peer_public_key = duplicate_text(allocator, decoded.name);
-      if (decoded.value.has_display_name)
-        out_friend->name =
-            duplicate_text(allocator, decoded.value.display_name);
-      if (decoded.value.has_emoji)
-        out_friend->emoji = duplicate_text(allocator, decoded.value.emoji);
-      if (out_friend->id == NULL || out_friend->peer_public_key == NULL ||
-          (decoded.value.has_display_name && out_friend->name == NULL) ||
-          (decoded.value.has_emoji && out_friend->emoji == NULL)) {
-        rc = H2_PAL_ERR_NO_MEMORY;
-      }
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    friend_deinit(allocator, out_friend);
-  return rc;
 }
 
 static void token_deinit(const h2_pal_mem_api_t *allocator,
@@ -701,98 +489,36 @@ static void token_deinit(const h2_pal_mem_api_t *allocator,
   memset(token, 0, sizeof(*token));
 }
 
-static int decode_token_response(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_rpc_response_t *response,
+static int decode_token_response(const h2_pal_mem_api_t *allocator,
+                                 const h2_gizclaw_rpc_response_t *response,
                                  const pb_msgdesc_t *fields, void *decoded,
                                  pb_callback_t *invite_token,
                                  pb_callback_t *expires_at,
-                                 h2_gizclaw_invite_token_t *out_token) {
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
+                                 h2_gizclaw_invite_token_t *out_token,
+                                 bool allow_empty) {
   social_text_decode_t text[2];
   set_decoder(invite_token, &text[0], allocator, &out_token->value);
   set_decoder(expires_at, &text[1], allocator, &out_token->expires_at);
   pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
                                                response->result_payload_len);
-  if (!pb_decode(&stream, fields, decoded) || out_token->value == NULL ||
-      out_token->value[0] == '\0' || out_token->expires_at == NULL ||
-      out_token->expires_at[0] == '\0') {
+  const bool decoded_ok = pb_decode(&stream, fields, decoded);
+  if (decoded_ok && allow_empty && out_token->value == NULL &&
+      out_token->expires_at == NULL)
+    return H2_PAL_OK;
+  if (!decoded_ok || out_token->value == NULL || out_token->value[0] == '\0' ||
+      out_token->expires_at == NULL || out_token->expires_at[0] == '\0') {
     token_deinit(allocator, out_token);
     return H2_PAL_ERR_FORMAT;
   }
   return H2_PAL_OK;
 }
 
-static int friend_token(h2_gizclaw_client_t *client, bool create,
-                        h2_gizclaw_invite_token_t *out_token) {
-  if (client == NULL || out_token == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_token, 0, sizeof(*out_token));
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc;
-  if (create) {
-    gizclaw_rpc_v1_FriendInviteTokenCreateRequest request =
-        gizclaw_rpc_v1_FriendInviteTokenCreateRequest_init_zero;
-    rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_INVITE_TOKEN_CREATE,
-                      gizclaw_rpc_v1_FriendInviteTokenCreateRequest_fields,
-                      &request, &response);
-    if (rc == H2_PAL_OK) {
-      gizclaw_rpc_v1_FriendInviteTokenCreateResponse decoded =
-          gizclaw_rpc_v1_FriendInviteTokenCreateResponse_init_zero;
-      rc = decode_token_response(
-          client, &response,
-          gizclaw_rpc_v1_FriendInviteTokenCreateResponse_fields, &decoded,
-          &decoded.invite_token, &decoded.expires_at, out_token);
-    }
-  } else {
-    gizclaw_rpc_v1_FriendInviteTokenGetRequest request =
-        gizclaw_rpc_v1_FriendInviteTokenGetRequest_init_zero;
-    rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_INVITE_TOKEN_GET,
-                      gizclaw_rpc_v1_FriendInviteTokenGetRequest_fields,
-                      &request, &response);
-    if (rc == H2_PAL_OK) {
-      gizclaw_rpc_v1_FriendInviteTokenGetResponse decoded =
-          gizclaw_rpc_v1_FriendInviteTokenGetResponse_init_zero;
-      rc = decode_token_response(
-          client, &response, gizclaw_rpc_v1_FriendInviteTokenGetResponse_fields,
-          &decoded, &decoded.invite_token, &decoded.expires_at, out_token);
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_invite_token_get(
-    h2_gizclaw_client_t *client, h2_gizclaw_invite_token_t *out_token) {
-  return friend_token(client, false, out_token);
-}
-
-int h2_gizclaw_client_friend_invite_token_create(
-    h2_gizclaw_client_t *client, h2_gizclaw_invite_token_t *out_token) {
-  return friend_token(client, true, out_token);
-}
-
-int h2_gizclaw_client_friend_invite_token_clear(h2_gizclaw_client_t *client) {
-  if (client == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  gizclaw_rpc_v1_FriendInviteTokenClearRequest request =
-      gizclaw_rpc_v1_FriendInviteTokenClearRequest_init_zero;
-  h2_gizclaw_rpc_response_t response = {0};
-  const int rc = call_encoded(
-      client, H2_GIZCLAW_RPC_SERVER_FRIEND_INVITE_TOKEN_CLEAR,
-      gizclaw_rpc_v1_FriendInviteTokenClearRequest_fields, &request, &response);
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-static int decode_group_response(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_rpc_response_t *response,
+static int decode_group_response(const h2_pal_mem_api_t *allocator,
+                                 const h2_gizclaw_rpc_response_t *response,
                                  const pb_msgdesc_t *fields, void *decoded,
                                  gizclaw_rpc_v1_FriendGroupObject *value,
                                  bool *has_value,
                                  h2_gizclaw_friend_group_t *out_group) {
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
   social_text_decode_t text[4];
   set_bounded_decoder(&value->name, &text[0], allocator, &out_group->name,
                       H2_GIZCLAW_FRIEND_GROUP_NAME_MAX_BYTES);
@@ -820,285 +546,11 @@ static int decode_group_response(h2_gizclaw_client_t *client,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_client_friend_group_get(h2_gizclaw_client_t *client,
-                                       h2_gizclaw_str_t group_name,
-                                       h2_gizclaw_friend_group_t *out_group) {
-  if (client == NULL || out_group == NULL || !valid_group_name(group_name))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_group, 0, sizeof(*out_group));
-  gizclaw_rpc_v1_FriendGroupGetRequest request =
-      gizclaw_rpc_v1_FriendGroupGetRequest_init_zero;
-  social_text_encode_t name;
-  set_encoder(&request.name, &name, group_name);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_GET,
-                        gizclaw_rpc_v1_FriendGroupGetRequest_fields, &request,
-                        &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupGetResponse decoded =
-        gizclaw_rpc_v1_FriendGroupGetResponse_init_zero;
-    rc = decode_group_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupGetResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_group);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_create(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t name,
-    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
-    h2_gizclaw_friend_group_t *out_group) {
-  if (client == NULL || out_group == NULL || !valid_group_name(name) ||
-      display_name.len > H2_GIZCLAW_FRIEND_GROUP_DISPLAY_NAME_MAX_BYTES ||
-      description.len > H2_GIZCLAW_FRIEND_GROUP_DESCRIPTION_MAX_BYTES ||
-      !valid_text(display_name, true) || !valid_text(description, true))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_group, 0, sizeof(*out_group));
-  gizclaw_rpc_v1_FriendGroupCreateRequest request =
-      gizclaw_rpc_v1_FriendGroupCreateRequest_init_zero;
-  social_text_encode_t text[3];
-  set_encoder(&request.name, &text[0], name);
-  if (display_name.len > 0u)
-    set_encoder(&request.display_name, &text[1], display_name);
-  if (description.len > 0u)
-    set_encoder(&request.description, &text[2], description);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_CREATE,
-                        gizclaw_rpc_v1_FriendGroupCreateRequest_fields,
-                        &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupCreateResponse decoded =
-        gizclaw_rpc_v1_FriendGroupCreateResponse_init_zero;
-    rc = decode_group_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupCreateResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_group);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_put(h2_gizclaw_client_t *client,
-                                       h2_gizclaw_str_t name,
-                                       h2_gizclaw_str_t display_name,
-                                       h2_gizclaw_str_t description,
-                                       h2_gizclaw_friend_group_t *out_group) {
-  if (client == NULL || out_group == NULL || !valid_group_name(name) ||
-      display_name.len > H2_GIZCLAW_FRIEND_GROUP_DISPLAY_NAME_MAX_BYTES ||
-      description.len > H2_GIZCLAW_FRIEND_GROUP_DESCRIPTION_MAX_BYTES ||
-      !valid_text(display_name, true) || !valid_text(description, true)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_group, 0, sizeof(*out_group));
-  gizclaw_rpc_v1_FriendGroupPutRequest request =
-      gizclaw_rpc_v1_FriendGroupPutRequest_init_zero;
-  social_text_encode_t text[3];
-  set_encoder(&request.name, &text[0], name);
-  if (display_name.len > 0u)
-    set_encoder(&request.display_name, &text[1], display_name);
-  if (description.len > 0u)
-    set_encoder(&request.description, &text[2], description);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PUT,
-                        gizclaw_rpc_v1_FriendGroupPutRequest_fields, &request,
-                        &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupPutResponse decoded =
-        gizclaw_rpc_v1_FriendGroupPutResponse_init_zero;
-    rc = decode_group_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupPutResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_group);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_delete(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_friend_group_t *out_group) {
-  if (client == NULL || out_group == NULL || !valid_group_name(group_name))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_group, 0, sizeof(*out_group));
-  gizclaw_rpc_v1_FriendGroupDeleteRequest request =
-      gizclaw_rpc_v1_FriendGroupDeleteRequest_init_zero;
-  social_text_encode_t name;
-  set_encoder(&request.name, &name, group_name);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_DELETE,
-                        gizclaw_rpc_v1_FriendGroupDeleteRequest_fields,
-                        &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupDeleteResponse decoded =
-        gizclaw_rpc_v1_FriendGroupDeleteResponse_init_zero;
-    rc = decode_group_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupDeleteResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_group);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_join(h2_gizclaw_client_t *client,
-                                        h2_gizclaw_str_t invite_token,
-                                        h2_gizclaw_str_t name,
-                                        h2_gizclaw_friend_group_t *out_group) {
-  if (client == NULL || out_group == NULL || !valid_text(invite_token, false) ||
-      !valid_group_name(name)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_group, 0, sizeof(*out_group));
-  gizclaw_rpc_v1_FriendGroupJoinRequest request =
-      gizclaw_rpc_v1_FriendGroupJoinRequest_init_zero;
-  social_text_encode_t text[2];
-  set_encoder(&request.invite_token, &text[0], invite_token);
-  set_encoder(&request.name, &text[1], name);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_JOIN,
-                        gizclaw_rpc_v1_FriendGroupJoinRequest_fields, &request,
-                        &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupJoinResponse decoded =
-        gizclaw_rpc_v1_FriendGroupJoinResponse_init_zero;
-    rc = decode_group_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupJoinResponse_fields,
-        &decoded, &decoded.group, &decoded.has_group, out_group);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-static int group_token(h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-                       bool create, h2_gizclaw_invite_token_t *out_token) {
-  if (client == NULL || out_token == NULL || !valid_group_name(group_name))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_token, 0, sizeof(*out_token));
-  h2_gizclaw_rpc_response_t response = {0};
-  social_text_encode_t id;
-  int rc;
-  if (create) {
-    gizclaw_rpc_v1_FriendGroupInviteTokenCreateRequest request =
-        gizclaw_rpc_v1_FriendGroupInviteTokenCreateRequest_init_zero;
-    set_encoder(&request.friend_group_name, &id, group_name);
-    rc = call_encoded(client,
-                      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_INVITE_TOKEN_CREATE,
-                      gizclaw_rpc_v1_FriendGroupInviteTokenCreateRequest_fields,
-                      &request, &response);
-    if (rc == H2_PAL_OK) {
-      gizclaw_rpc_v1_FriendGroupInviteTokenCreateResponse decoded =
-          gizclaw_rpc_v1_FriendGroupInviteTokenCreateResponse_init_zero;
-      rc = decode_token_response(
-          client, &response,
-          gizclaw_rpc_v1_FriendGroupInviteTokenCreateResponse_fields, &decoded,
-          &decoded.invite_token, &decoded.expires_at, out_token);
-    }
-  } else {
-    gizclaw_rpc_v1_FriendGroupInviteTokenGetRequest request =
-        gizclaw_rpc_v1_FriendGroupInviteTokenGetRequest_init_zero;
-    set_encoder(&request.friend_group_name, &id, group_name);
-    rc = call_encoded(client,
-                      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_INVITE_TOKEN_GET,
-                      gizclaw_rpc_v1_FriendGroupInviteTokenGetRequest_fields,
-                      &request, &response);
-    if (rc == H2_PAL_OK) {
-      gizclaw_rpc_v1_FriendGroupInviteTokenGetResponse decoded =
-          gizclaw_rpc_v1_FriendGroupInviteTokenGetResponse_init_zero;
-      rc = decode_token_response(
-          client, &response,
-          gizclaw_rpc_v1_FriendGroupInviteTokenGetResponse_fields, &decoded,
-          &decoded.invite_token, &decoded.expires_at, out_token);
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_invite_token_get(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_invite_token_t *out_token) {
-  return group_token(client, group_name, false, out_token);
-}
-
-int h2_gizclaw_client_friend_group_invite_token_create(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_invite_token_t *out_token) {
-  return group_token(client, group_name, true, out_token);
-}
-
-int h2_gizclaw_client_friend_group_invite_token_clear(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name) {
-  if (client == NULL || !valid_group_name(group_name))
-    return H2_PAL_ERR_INVALID_ARG;
-  gizclaw_rpc_v1_FriendGroupInviteTokenClearRequest request =
-      gizclaw_rpc_v1_FriendGroupInviteTokenClearRequest_init_zero;
-  social_text_encode_t id;
-  set_encoder(&request.friend_group_name, &id, group_name);
-  h2_gizclaw_rpc_response_t response = {0};
-  const int rc = call_encoded(
-      client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_INVITE_TOKEN_CLEAR,
-      gizclaw_rpc_v1_FriendGroupInviteTokenClearRequest_fields, &request,
-      &response);
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_members_list(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t cursor, size_t limit,
-    h2_gizclaw_friend_group_member_page_t *out_page) {
-  if (!page_args_valid(client, cursor, limit, out_page) ||
-      !valid_group_name(group_name)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_page, 0, sizeof(*out_page));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_FriendGroupMemberListRequest request =
-      gizclaw_rpc_v1_FriendGroupMemberListRequest_init_zero;
-  social_text_encode_t text[2];
-  set_encoder(&request.friend_group_name, &text[0], group_name);
-  if (cursor.len > 0u)
-    set_encoder(&request.cursor, &text[1], cursor);
-  request.has_limit = true;
-  request.limit = (int64_t)limit;
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_LIST,
-                        gizclaw_rpc_v1_FriendGroupMemberListRequest_fields,
-                        &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupMemberListResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMemberListResponse_init_zero;
-    member_page_decode_t items = {
-        .allocator = allocator, .page = out_page, .limit = limit};
-    social_text_decode_t cursor_decoder;
-    decoded.items.funcs.decode = decode_member;
-    decoded.items.arg = &items;
-    set_decoder(&decoded.next_cursor, &cursor_decoder, allocator,
-                &out_page->next_cursor);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_FriendGroupMemberListResponse_fields,
-                   &decoded) ||
-        !decode_cursor(decoded.has_next, out_page->next_cursor)) {
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      out_page->has_next = decoded.has_next;
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_friend_group_member_page_deinit(client, out_page);
-  return rc;
-}
-
 static int decode_member_response(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_response_t *response,
-    const pb_msgdesc_t *fields, void *decoded,
-    gizclaw_rpc_v1_FriendGroupMemberObject *value, bool *has_value,
-    h2_gizclaw_friend_group_member_t *out_member) {
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
+    const h2_pal_mem_api_t *allocator,
+    const h2_gizclaw_rpc_response_t *response, const pb_msgdesc_t *fields,
+    void *decoded, gizclaw_rpc_v1_FriendGroupMemberObject *value,
+    bool *has_value, h2_gizclaw_friend_group_member_t *out_member) {
   social_text_decode_t text[5];
   set_decoder(&value->name, &text[0], allocator, &out_member->id);
   set_bounded_decoder(&value->friend_group_name, &text[1], allocator,
@@ -1126,426 +578,1760 @@ static int decode_member_response(
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_client_friend_group_member_put(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t member_id, h2_gizclaw_friend_group_role_t role,
-    h2_gizclaw_friend_group_member_t *out_member) {
-  if (client == NULL || out_member == NULL || !valid_group_name(group_name) ||
-      !valid_text(member_id, false) ||
-      (role != H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN &&
-       role != H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_member, 0, sizeof(*out_member));
-  gizclaw_rpc_v1_FriendGroupMemberPutRequest request =
-      gizclaw_rpc_v1_FriendGroupMemberPutRequest_init_zero;
-  social_text_encode_t text[2];
-  set_encoder(&request.friend_group_name, &text[0], group_name);
-  set_encoder(&request.name, &text[1], member_id);
-  request.role =
-      role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN
-          ? gizclaw_rpc_v1_FriendGroupMemberMutableRole_FRIEND_GROUP_MEMBER_MUTABLE_ROLE_ADMIN
-          : gizclaw_rpc_v1_FriendGroupMemberMutableRole_FRIEND_GROUP_MEMBER_MUTABLE_ROLE_MEMBER;
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_PUT,
-                        gizclaw_rpc_v1_FriendGroupMemberPutRequest_fields,
-                        &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupMemberPutResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMemberPutResponse_init_zero;
-    rc = decode_member_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupMemberPutResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_member);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_member_delete(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t member_id, h2_gizclaw_friend_group_member_t *out_member) {
-  if (client == NULL || out_member == NULL || !valid_group_name(group_name) ||
-      !valid_text(member_id, false)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_member, 0, sizeof(*out_member));
-  gizclaw_rpc_v1_FriendGroupMemberDeleteRequest request =
-      gizclaw_rpc_v1_FriendGroupMemberDeleteRequest_init_zero;
-  social_text_encode_t text[2];
-  set_encoder(&request.friend_group_name, &text[0], group_name);
-  set_encoder(&request.name, &text[1], member_id);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc =
-      call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_DELETE,
-                   gizclaw_rpc_v1_FriendGroupMemberDeleteRequest_fields,
-                   &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupMemberDeleteResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMemberDeleteResponse_init_zero;
-    rc = decode_member_response(
-        client, &response,
-        gizclaw_rpc_v1_FriendGroupMemberDeleteResponse_fields, &decoded,
-        &decoded.value, &decoded.has_value, out_member);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_friend_group_messages_list(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t cursor, size_t limit,
-    h2_gizclaw_friend_group_message_page_t *out_page) {
-  if (!page_args_valid(client, cursor, limit, out_page) ||
-      !valid_group_name(group_name)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_page, 0, sizeof(*out_page));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_FriendGroupMessageListRequest request =
-      gizclaw_rpc_v1_FriendGroupMessageListRequest_init_zero;
-  if (!copy_fixed_text(request.friend_group_name,
-                       sizeof(request.friend_group_name), group_name) ||
-      (cursor.len > 0u &&
-       !copy_fixed_text(request.cursor, sizeof(request.cursor), cursor))) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  request.has_cursor = cursor.len > 0u;
-  request.has_limit = true;
-  request.limit = (int64_t)limit;
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(
-      client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST,
-      gizclaw_rpc_v1_FriendGroupMessageListRequest_fields, &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupMessageListResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMessageListResponse_init_zero;
-    message_page_decode_t items = {
-        .allocator = allocator, .page = out_page, .limit = limit};
-    decoded.items.funcs.decode = decode_message;
-    decoded.items.arg = &items;
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream,
-                   gizclaw_rpc_v1_FriendGroupMessageListResponse_fields,
-                   &decoded) ||
-        (decoded.has_next &&
-         (!decoded.has_next_cursor || decoded.next_cursor[0] == '\0' ||
-          !valid_owned_text(decoded.next_cursor)))) {
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      out_page->has_next = decoded.has_next;
-      if (decoded.has_next_cursor) {
-        out_page->next_cursor = duplicate_text(allocator, decoded.next_cursor);
-        if (out_page->next_cursor == NULL)
-          rc = H2_PAL_ERR_NO_MEMORY;
-      }
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_friend_group_message_page_deinit(client, out_page);
-  return rc;
-}
-
 static int decode_message_response(
-    h2_gizclaw_client_t *client, h2_gizclaw_rpc_response_t *response,
-    const pb_msgdesc_t *fields, void *decoded,
-    gizclaw_rpc_v1_FriendGroupMessageObject *value, bool *has_value,
-    h2_gizclaw_friend_group_message_t *out_message) {
+    const h2_pal_mem_api_t *allocator,
+    const h2_gizclaw_rpc_response_t *response, const pb_msgdesc_t *fields,
+    void *decoded, gizclaw_rpc_v1_FriendGroupMessageObject *value,
+    bool *has_value, h2_gizclaw_friend_group_message_t *out_message) {
   pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
                                                response->result_payload_len);
   if (!pb_decode(&stream, fields, decoded) || !*has_value ||
-      !copy_message_object(value, out_message,
-                           h2_gizclaw_client_allocator_internal(client))) {
+      !copy_message_object(value, out_message, allocator)) {
     return H2_PAL_ERR_FORMAT;
   }
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_client_friend_group_message_get(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t group_name,
-    h2_gizclaw_str_t history_id,
-    h2_gizclaw_friend_group_message_t *out_message) {
-  if (client == NULL || out_message == NULL || !valid_group_name(group_name) ||
-      !valid_text(history_id, false)) {
+static const char friend_list_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_list(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_text(cursor, true) && cursor.len <= 255u && limit > 0u &&
+        limit <= 64u))
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_message, 0, sizeof(*out_message));
-  gizclaw_rpc_v1_FriendGroupMessageGetRequest request =
-      gizclaw_rpc_v1_FriendGroupMessageGetRequest_init_zero;
-  if (!copy_fixed_text(request.friend_group_name,
-                       sizeof(request.friend_group_name), group_name) ||
-      !copy_fixed_text(request.history_name, sizeof(request.history_name),
-                       history_id)) {
+  gizclaw_rpc_v1_FriendListRequest message =
+      gizclaw_rpc_v1_FriendListRequest_init_zero;
+  social_text_encode_t text;
+  if (cursor.len > 0u)
+    set_encoder(&message.cursor, &text, cursor);
+  message.has_limit = true;
+  message.limit = (int64_t)limit;
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_list_tag, H2_GIZCLAW_RPC_SERVER_FRIEND_LIST,
+      gizclaw_rpc_v1_FriendListRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_list(const h2_gizclaw_req_t *request,
+                                  h2_gizclaw_resp_storage_t *storage,
+                                  h2_gizclaw_friend_page_t *out_result) {
+  if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = call_encoded(client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_GET,
-                        gizclaw_rpc_v1_FriendGroupMessageGetRequest_fields,
-                        &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_FriendGroupMessageGetResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMessageGetResponse_init_zero;
-    rc = decode_message_response(
-        client, &response, gizclaw_rpc_v1_FriendGroupMessageGetResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_message);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &friend_list_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &friend_list_tag, &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendListRequest params =
+      gizclaw_rpc_v1_FriendListRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream, gizclaw_rpc_v1_FriendListRequest_fields,
+                 &params) ||
+      !params.has_limit || params.limit <= 0 || params.limit > 64)
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_page_t result = {0};
+  gizclaw_rpc_v1_FriendListResponse decoded =
+      gizclaw_rpc_v1_FriendListResponse_init_zero;
+  friend_page_decode_t items = {
+      .allocator = allocator, .page = &result, .limit = (size_t)params.limit};
+  social_text_decode_t cursor_decoder;
+  decoded.items.funcs.decode = decode_friend;
+  decoded.items.arg = &items;
+  set_bounded_decoder(&decoded.next_cursor, &cursor_decoder, allocator,
+                      &result.next_cursor, 255u);
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendListResponse_fields, &decoded) ||
+      !decode_cursor(decoded.has_next, result.next_cursor) ||
+      !valid_owned_text(result.next_cursor))
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    result.has_next = decoded.has_next;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
   return rc;
 }
 
-typedef struct message_audio_context {
-  h2_gizclaw_client_t *client;
+h2_pal_result_t h2_gizclaw_rpc_friend_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_list(
+      service, 0u, cursor, limit, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_list(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_info_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_info_get(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_id, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_text(friend_id, false) &&
+        friend_id.len <
+            sizeof(((gizclaw_rpc_v1_FriendInfoGetRequest *)0)->name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendInfoGetRequest message =
+      gizclaw_rpc_v1_FriendInfoGetRequest_init_zero;
+  memcpy(message.name, friend_id.data, friend_id.len);
+  message.name[friend_id.len] = '\0';
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_info_get_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_INFO_GET,
+      gizclaw_rpc_v1_FriendInfoGetRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_info_get(const h2_gizclaw_req_t *request,
+                                      h2_gizclaw_resp_storage_t *storage,
+                                      h2_gizclaw_friend_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_info_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &friend_info_get_tag, &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendInfoGetRequest params =
+      gizclaw_rpc_v1_FriendInfoGetRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream, gizclaw_rpc_v1_FriendInfoGetRequest_fields,
+                 &params))
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_t result = {0};
+  gizclaw_rpc_v1_FriendInfoGetResponse decoded =
+      gizclaw_rpc_v1_FriendInfoGetResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendInfoGetResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || decoded.name[0] == '\0' ||
+      !valid_owned_text(decoded.name) ||
+      (decoded.value.has_display_name &&
+       !valid_owned_text(decoded.value.display_name)) ||
+      (decoded.value.has_emoji && !valid_owned_text(decoded.value.emoji)))
+    rc = H2_PAL_ERR_FORMAT;
+  else {
+    result.id = duplicate_text(allocator, params.name);
+    result.peer_public_key = duplicate_text(allocator, decoded.name);
+    if (decoded.value.has_display_name)
+      result.name = duplicate_text(allocator, decoded.value.display_name);
+    if (decoded.value.has_emoji)
+      result.emoji = duplicate_text(allocator, decoded.value.emoji);
+    if (result.id == NULL || result.peer_public_key == NULL ||
+        (decoded.value.has_display_name && result.name == NULL) ||
+        (decoded.value.has_emoji && result.emoji == NULL))
+      rc = H2_PAL_ERR_NO_MEMORY;
+  }
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_rpc_friend_info_get(h2_gizclaw_service_t *service,
+                               h2_gizclaw_str_t friend_id, uint32_t timeout_ms,
+                               h2_gizclaw_resp_storage_t *storage,
+                               h2_gizclaw_friend_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_info_get(
+      service, 0u, friend_id, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_info_get(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_add_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_add(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t invite_token, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_text(invite_token, false) && invite_token.len <= 4096u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendAddRequest message =
+      gizclaw_rpc_v1_FriendAddRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.invite_token, &text, invite_token);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_add_tag, H2_GIZCLAW_RPC_SERVER_FRIEND_ADD,
+      gizclaw_rpc_v1_FriendAddRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_add(const h2_gizclaw_req_t *request,
+                                 h2_gizclaw_resp_storage_t *storage,
+                                 h2_gizclaw_friend_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &friend_add_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_t result = {0};
+  gizclaw_rpc_v1_FriendAddResponse decoded =
+      gizclaw_rpc_v1_FriendAddResponse_init_zero;
+  social_text_decode_t text[5];
+  set_decoder(&decoded.value.name, &text[0], allocator, &result.id);
+  set_decoder(&decoded.value.peer_public_key, &text[1], allocator,
+              &result.peer_public_key);
+  set_decoder(&decoded.value.workspace_name, &text[2], allocator,
+              &result.workspace_name);
+  set_decoder(&decoded.value.created_at, &text[3], allocator,
+              &result.created_at);
+  set_decoder(&decoded.value.updated_at, &text[4], allocator,
+              &result.updated_at);
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendAddResponse_fields, &decoded) ||
+      !decoded.has_value || result.id == NULL || result.id[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_add(h2_gizclaw_service_t *service,
+                                          h2_gizclaw_str_t invite_token,
+                                          uint32_t timeout_ms,
+                                          h2_gizclaw_resp_storage_t *storage,
+                                          h2_gizclaw_friend_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_add(
+      service, 0u, invite_token, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_add(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_delete_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_delete(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_id, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_text(friend_id, false) && friend_id.len <= 4096u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendDeleteRequest message =
+      gizclaw_rpc_v1_FriendDeleteRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.name, &text, friend_id);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_delete_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_DELETE,
+      gizclaw_rpc_v1_FriendDeleteRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_delete(const h2_gizclaw_req_t *request,
+                                    h2_gizclaw_resp_storage_t *storage,
+                                    h2_gizclaw_friend_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &friend_delete_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_t result = {0};
+  gizclaw_rpc_v1_FriendDeleteResponse decoded =
+      gizclaw_rpc_v1_FriendDeleteResponse_init_zero;
+  social_text_decode_t text[5];
+  set_decoder(&decoded.value.name, &text[0], allocator, &result.id);
+  set_decoder(&decoded.value.peer_public_key, &text[1], allocator,
+              &result.peer_public_key);
+  set_decoder(&decoded.value.workspace_name, &text[2], allocator,
+              &result.workspace_name);
+  set_decoder(&decoded.value.created_at, &text[3], allocator,
+              &result.created_at);
+  set_decoder(&decoded.value.updated_at, &text[4], allocator,
+              &result.updated_at);
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendDeleteResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || result.id == NULL || result.id[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_delete(h2_gizclaw_service_t *service,
+                                             h2_gizclaw_str_t friend_id,
+                                             uint32_t timeout_ms,
+                                             h2_gizclaw_resp_storage_t *storage,
+                                             h2_gizclaw_friend_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_delete(
+      service, 0u, friend_id, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_delete(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_invite_token_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_invite_token_get(
+    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(true))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendInviteTokenGetRequest message =
+      gizclaw_rpc_v1_FriendInviteTokenGetRequest_init_zero;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_invite_token_get_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_INVITE_TOKEN_GET,
+      gizclaw_rpc_v1_FriendInviteTokenGetRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_invite_token_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_invite_token_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_invite_token_t result = {0};
+  gizclaw_rpc_v1_FriendInviteTokenGetResponse decoded =
+      gizclaw_rpc_v1_FriendInviteTokenGetResponse_init_zero;
+  rc = (h2_pal_result_t)decode_token_response(
+      allocator, response, gizclaw_rpc_v1_FriendInviteTokenGetResponse_fields,
+      &decoded, &decoded.invite_token, &decoded.expires_at, &result, true);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_invite_token_get(
+    h2_gizclaw_service_t *service, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_invite_token_get(
+      service, 0u, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_invite_token_get(request, storage,
+                                                       out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_invite_token_create_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_invite_token_create(
+    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(true))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendInviteTokenCreateRequest message =
+      gizclaw_rpc_v1_FriendInviteTokenCreateRequest_init_zero;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_invite_token_create_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_INVITE_TOKEN_CREATE,
+      gizclaw_rpc_v1_FriendInviteTokenCreateRequest_fields, &message,
+      timeout_ms, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_invite_token_create(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_invite_token_create_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_invite_token_t result = {0};
+  gizclaw_rpc_v1_FriendInviteTokenCreateResponse decoded =
+      gizclaw_rpc_v1_FriendInviteTokenCreateResponse_init_zero;
+  rc = (h2_pal_result_t)decode_token_response(
+      allocator, response,
+      gizclaw_rpc_v1_FriendInviteTokenCreateResponse_fields, &decoded,
+      &decoded.invite_token, &decoded.expires_at, &result, false);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_invite_token_create(
+    h2_gizclaw_service_t *service, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_invite_token_create(
+      service, 0u, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_invite_token_create(request, storage,
+                                                          out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_invite_token_clear_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_invite_token_clear(
+    h2_gizclaw_service_t *service, uint64_t identity, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(true))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendInviteTokenClearRequest message =
+      gizclaw_rpc_v1_FriendInviteTokenClearRequest_init_zero;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_invite_token_clear_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_INVITE_TOKEN_CLEAR,
+      gizclaw_rpc_v1_FriendInviteTokenClearRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_invite_token_clear(
+    const h2_gizclaw_req_t *request) {
+
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_invite_token_clear_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  gizclaw_rpc_v1_FriendInviteTokenClearResponse decoded =
+      gizclaw_rpc_v1_FriendInviteTokenClearResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  return pb_decode(&stream,
+                   gizclaw_rpc_v1_FriendInviteTokenClearResponse_fields,
+                   &decoded)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_FORMAT;
+}
+
+h2_pal_result_t
+h2_gizclaw_rpc_friend_invite_token_clear(h2_gizclaw_service_t *service,
+                                         uint32_t timeout_ms) {
+
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_invite_token_clear(
+      service, 0u, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_invite_token_clear(request);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_get(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupGetRequest message =
+      gizclaw_rpc_v1_FriendGroupGetRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.name, &text, group_name);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_get_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_GET,
+      gizclaw_rpc_v1_FriendGroupGetRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_group_get(const h2_gizclaw_req_t *request,
+                                       h2_gizclaw_resp_storage_t *storage,
+                                       h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_t result = {0};
+  gizclaw_rpc_v1_FriendGroupGetResponse decoded =
+      gizclaw_rpc_v1_FriendGroupGetResponse_init_zero;
+  rc = (h2_pal_result_t)decode_group_response(
+      &arena.allocator, response, gizclaw_rpc_v1_FriendGroupGetResponse_fields,
+      &decoded, &decoded.value, &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_get(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_get(
+      service, 0u, group_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_get(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_create_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_create(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(name) &&
+        display_name.len <= H2_GIZCLAW_FRIEND_GROUP_DISPLAY_NAME_MAX_BYTES &&
+        description.len <= H2_GIZCLAW_FRIEND_GROUP_DESCRIPTION_MAX_BYTES &&
+        valid_text(display_name, true) && valid_text(description, true)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupCreateRequest message =
+      gizclaw_rpc_v1_FriendGroupCreateRequest_init_zero;
+  social_text_encode_t text[3];
+  set_encoder(&message.name, &text[0], name);
+  if (display_name.len > 0u)
+    set_encoder(&message.display_name, &text[1], display_name);
+  if (description.len > 0u)
+    set_encoder(&message.description, &text[2], description);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_create_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_CREATE,
+      gizclaw_rpc_v1_FriendGroupCreateRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_create(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_create_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_t result = {0};
+  gizclaw_rpc_v1_FriendGroupCreateResponse decoded =
+      gizclaw_rpc_v1_FriendGroupCreateResponse_init_zero;
+  rc = (h2_pal_result_t)decode_group_response(
+      &arena.allocator, response,
+      gizclaw_rpc_v1_FriendGroupCreateResponse_fields, &decoded, &decoded.value,
+      &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_create(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_create(
+      service, 0u, name, display_name, description, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc =
+        h2_gizclaw_resp_parse_friend_group_create(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_put_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_put(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(name) &&
+        display_name.len <= H2_GIZCLAW_FRIEND_GROUP_DISPLAY_NAME_MAX_BYTES &&
+        description.len <= H2_GIZCLAW_FRIEND_GROUP_DESCRIPTION_MAX_BYTES &&
+        valid_text(display_name, true) && valid_text(description, true)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupPutRequest message =
+      gizclaw_rpc_v1_FriendGroupPutRequest_init_zero;
+  social_text_encode_t text[3];
+  set_encoder(&message.name, &text[0], name);
+  if (display_name.len > 0u)
+    set_encoder(&message.display_name, &text[1], display_name);
+  if (description.len > 0u)
+    set_encoder(&message.description, &text[2], description);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_put_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PUT,
+      gizclaw_rpc_v1_FriendGroupPutRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_group_put(const h2_gizclaw_req_t *request,
+                                       h2_gizclaw_resp_storage_t *storage,
+                                       h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_put_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_t result = {0};
+  gizclaw_rpc_v1_FriendGroupPutResponse decoded =
+      gizclaw_rpc_v1_FriendGroupPutResponse_init_zero;
+  rc = (h2_pal_result_t)decode_group_response(
+      &arena.allocator, response, gizclaw_rpc_v1_FriendGroupPutResponse_fields,
+      &decoded, &decoded.value, &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_put(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t display_name, h2_gizclaw_str_t description,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_put(
+      service, 0u, name, display_name, description, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_put(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_delete_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_delete(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupDeleteRequest message =
+      gizclaw_rpc_v1_FriendGroupDeleteRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.name, &text, group_name);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_delete_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_DELETE,
+      gizclaw_rpc_v1_FriendGroupDeleteRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_delete(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_delete_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_t result = {0};
+  gizclaw_rpc_v1_FriendGroupDeleteResponse decoded =
+      gizclaw_rpc_v1_FriendGroupDeleteResponse_init_zero;
+  rc = (h2_pal_result_t)decode_group_response(
+      &arena.allocator, response,
+      gizclaw_rpc_v1_FriendGroupDeleteResponse_fields, &decoded, &decoded.value,
+      &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_delete(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_delete(
+      service, 0u, group_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc =
+        h2_gizclaw_resp_parse_friend_group_delete(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_join_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_join(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t invite_token, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(name) && valid_text(invite_token, false) &&
+        invite_token.len <= 4096u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupJoinRequest message =
+      gizclaw_rpc_v1_FriendGroupJoinRequest_init_zero;
+  social_text_encode_t text[2];
+  set_encoder(&message.invite_token, &text[0], invite_token);
+  set_encoder(&message.name, &text[1], name);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_join_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_JOIN,
+      gizclaw_rpc_v1_FriendGroupJoinRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_group_join(const h2_gizclaw_req_t *request,
+                                        h2_gizclaw_resp_storage_t *storage,
+                                        h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_join_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_t result = {0};
+  gizclaw_rpc_v1_FriendGroupJoinResponse decoded =
+      gizclaw_rpc_v1_FriendGroupJoinResponse_init_zero;
+  rc = (h2_pal_result_t)decode_group_response(
+      &arena.allocator, response, gizclaw_rpc_v1_FriendGroupJoinResponse_fields,
+      &decoded, &decoded.group, &decoded.has_group, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_join(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t invite_token,
+    h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_friend_group_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_join(
+      service, 0u, invite_token, name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_join(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_invite_token_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_invite_token_get(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupInviteTokenGetRequest message =
+      gizclaw_rpc_v1_FriendGroupInviteTokenGetRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.friend_group_name, &text, group_name);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_invite_token_get_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_INVITE_TOKEN_GET,
+      gizclaw_rpc_v1_FriendGroupInviteTokenGetRequest_fields, &message,
+      timeout_ms, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_invite_token_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_invite_token_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_invite_token_t result = {0};
+  gizclaw_rpc_v1_FriendGroupInviteTokenGetResponse decoded =
+      gizclaw_rpc_v1_FriendGroupInviteTokenGetResponse_init_zero;
+  rc = (h2_pal_result_t)decode_token_response(
+      &arena.allocator, response,
+      gizclaw_rpc_v1_FriendGroupInviteTokenGetResponse_fields, &decoded,
+      &decoded.invite_token, &decoded.expires_at, &result, true);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_invite_token_get(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_invite_token_get(
+      service, 0u, group_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_invite_token_get(request, storage,
+                                                             out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_invite_token_create_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_invite_token_create(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupInviteTokenCreateRequest message =
+      gizclaw_rpc_v1_FriendGroupInviteTokenCreateRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.friend_group_name, &text, group_name);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_invite_token_create_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_INVITE_TOKEN_CREATE,
+      gizclaw_rpc_v1_FriendGroupInviteTokenCreateRequest_fields, &message,
+      timeout_ms, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_invite_token_create(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_invite_token_create_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_invite_token_t result = {0};
+  gizclaw_rpc_v1_FriendGroupInviteTokenCreateResponse decoded =
+      gizclaw_rpc_v1_FriendGroupInviteTokenCreateResponse_init_zero;
+  rc = (h2_pal_result_t)decode_token_response(
+      &arena.allocator, response,
+      gizclaw_rpc_v1_FriendGroupInviteTokenCreateResponse_fields, &decoded,
+      &decoded.invite_token, &decoded.expires_at, &result, false);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_invite_token_create(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_invite_token_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_invite_token_create(
+      service, 0u, group_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_invite_token_create(
+        request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_invite_token_clear_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_invite_token_clear(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupInviteTokenClearRequest message =
+      gizclaw_rpc_v1_FriendGroupInviteTokenClearRequest_init_zero;
+  social_text_encode_t text;
+  set_encoder(&message.friend_group_name, &text, group_name);
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_invite_token_clear_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_INVITE_TOKEN_CLEAR,
+      gizclaw_rpc_v1_FriendGroupInviteTokenClearRequest_fields, &message,
+      timeout_ms, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_invite_token_clear(
+    const h2_gizclaw_req_t *request) {
+
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_invite_token_clear_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  gizclaw_rpc_v1_FriendGroupInviteTokenClearResponse decoded =
+      gizclaw_rpc_v1_FriendGroupInviteTokenClearResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  return pb_decode(&stream,
+                   gizclaw_rpc_v1_FriendGroupInviteTokenClearResponse_fields,
+                   &decoded)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_FORMAT;
+}
+
+h2_pal_result_t
+h2_gizclaw_rpc_friend_group_invite_token_clear(h2_gizclaw_service_t *service,
+                                               h2_gizclaw_str_t group_name,
+                                               uint32_t timeout_ms) {
+
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_invite_token_clear(
+      service, 0u, group_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_invite_token_clear(request);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_member_list_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_list(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name) && valid_text(cursor, true) &&
+        cursor.len <= 255u && limit > 0u && limit <= 64u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupMemberListRequest message =
+      gizclaw_rpc_v1_FriendGroupMemberListRequest_init_zero;
+  social_text_encode_t text[2];
+  set_encoder(&message.friend_group_name, &text[0], group_name);
+  if (cursor.len > 0u)
+    set_encoder(&message.cursor, &text[1], cursor);
+  message.has_limit = true;
+  message.limit = (int64_t)limit;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_member_list_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_LIST,
+      gizclaw_rpc_v1_FriendGroupMemberListRequest_fields, &message, timeout_ms,
+      out_request);
+}
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_list(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_member_list_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &friend_group_member_list_tag,
+                                     &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendGroupMemberListRequest params =
+      gizclaw_rpc_v1_FriendGroupMemberListRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream,
+                 gizclaw_rpc_v1_FriendGroupMemberListRequest_fields, &params) ||
+      !params.has_limit || params.limit <= 0 || params.limit > 64)
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_group_member_page_t result = {0};
+  gizclaw_rpc_v1_FriendGroupMemberListResponse decoded =
+      gizclaw_rpc_v1_FriendGroupMemberListResponse_init_zero;
+  member_page_decode_t items = {
+      .allocator = allocator, .page = &result, .limit = (size_t)params.limit};
+  decoded.items.funcs.decode = decode_member;
+  decoded.items.arg = &items;
+  social_text_decode_t cursor_decoder;
+  set_bounded_decoder(&decoded.next_cursor, &cursor_decoder, allocator,
+                      &result.next_cursor, 255u);
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendGroupMemberListResponse_fields,
+                 &decoded) ||
+      !decode_cursor(decoded.has_next, result.next_cursor))
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    result.has_next = decoded.has_next;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_member_list(
+      service, 0u, group_name, cursor, limit, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_member_list(request, storage,
+                                                        out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_member_put_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_put(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t member_id,
+    h2_gizclaw_friend_group_role_t role, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name) && valid_text(member_id, false) &&
+        member_id.len <= 4096u &&
+        (role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN ||
+         role == H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupMemberPutRequest message =
+      gizclaw_rpc_v1_FriendGroupMemberPutRequest_init_zero;
+  social_text_encode_t text[2];
+  set_encoder(&message.friend_group_name, &text[0], group_name);
+  set_encoder(&message.name, &text[1], member_id);
+  message.role =
+      role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN
+          ? gizclaw_rpc_v1_FriendGroupMemberMutableRole_FRIEND_GROUP_MEMBER_MUTABLE_ROLE_ADMIN
+          : gizclaw_rpc_v1_FriendGroupMemberMutableRole_FRIEND_GROUP_MEMBER_MUTABLE_ROLE_MEMBER;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_member_put_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_PUT,
+      gizclaw_rpc_v1_FriendGroupMemberPutRequest_fields, &message, timeout_ms,
+      out_request);
+}
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_put(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_member_put_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_group_member_t result = {0};
+  gizclaw_rpc_v1_FriendGroupMemberPutResponse decoded =
+      gizclaw_rpc_v1_FriendGroupMemberPutResponse_init_zero;
+  rc = (h2_pal_result_t)decode_member_response(
+      allocator, response, gizclaw_rpc_v1_FriendGroupMemberPutResponse_fields,
+      &decoded, &decoded.value, &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_put(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t member_id, h2_gizclaw_friend_group_role_t role,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_member_put(
+      service, 0u, group_name, member_id, role, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_member_put(request, storage,
+                                                       out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_member_delete_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_delete(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t member_id,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name) && valid_text(member_id, false) &&
+        member_id.len <= 4096u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupMemberDeleteRequest message =
+      gizclaw_rpc_v1_FriendGroupMemberDeleteRequest_init_zero;
+  social_text_encode_t text[2];
+  set_encoder(&message.friend_group_name, &text[0], group_name);
+  set_encoder(&message.name, &text[1], member_id);
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_member_delete_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_DELETE,
+      gizclaw_rpc_v1_FriendGroupMemberDeleteRequest_fields, &message,
+      timeout_ms, out_request);
+}
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_delete(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_member_delete_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_group_member_t result = {0};
+  gizclaw_rpc_v1_FriendGroupMemberDeleteResponse decoded =
+      gizclaw_rpc_v1_FriendGroupMemberDeleteResponse_init_zero;
+  rc = (h2_pal_result_t)decode_member_response(
+      allocator, response,
+      gizclaw_rpc_v1_FriendGroupMemberDeleteResponse_fields, &decoded,
+      &decoded.value, &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_delete(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t member_id, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_member_delete(
+      service, 0u, group_name, member_id, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_member_delete(request, storage,
+                                                          out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_message_list_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_message_list(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name) && valid_text(cursor, true) &&
+        cursor.len <= 255u && limit > 0u && limit <= 64u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupMessageListRequest message =
+      gizclaw_rpc_v1_FriendGroupMessageListRequest_init_zero;
+  if (!copy_fixed_text(message.friend_group_name,
+                       sizeof(message.friend_group_name), group_name) ||
+      (cursor.len > 0u &&
+       !copy_fixed_text(message.cursor, sizeof(message.cursor), cursor)))
+    return H2_PAL_ERR_INVALID_ARG;
+  message.has_cursor = cursor.len > 0u;
+  message.has_limit = true;
+  message.limit = (int64_t)limit;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_message_list_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST,
+      gizclaw_rpc_v1_FriendGroupMessageListRequest_fields, &message, timeout_ms,
+      out_request);
+}
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_list(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_message_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_message_list_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &friend_group_message_list_tag,
+                                     &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendGroupMessageListRequest params =
+      gizclaw_rpc_v1_FriendGroupMessageListRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream,
+                 gizclaw_rpc_v1_FriendGroupMessageListRequest_fields,
+                 &params) ||
+      !params.has_limit || params.limit <= 0 || params.limit > 64)
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_group_message_page_t result = {0};
+  gizclaw_rpc_v1_FriendGroupMessageListResponse decoded =
+      gizclaw_rpc_v1_FriendGroupMessageListResponse_init_zero;
+  message_page_decode_t items = {
+      .allocator = allocator, .page = &result, .limit = (size_t)params.limit};
+  decoded.items.funcs.decode = decode_message;
+  decoded.items.arg = &items;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendGroupMessageListResponse_fields,
+                 &decoded) ||
+      (decoded.has_next &&
+       (!decoded.has_next_cursor || decoded.next_cursor[0] == '\0')) ||
+      (decoded.has_next_cursor && !valid_owned_text(decoded.next_cursor)))
+    rc = H2_PAL_ERR_FORMAT;
+  else {
+    result.has_next = decoded.has_next;
+    if (decoded.has_next_cursor) {
+      result.next_cursor = duplicate_text(allocator, decoded.next_cursor);
+      if (result.next_cursor == NULL)
+        rc = H2_PAL_ERR_NO_MEMORY;
+    }
+  }
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_friend_group_message_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_message_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_message_list(
+      service, 0u, group_name, cursor, limit, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_message_list(request, storage,
+                                                         out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_message_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_message_get(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t history_id,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name) && valid_text(history_id, false)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupMessageGetRequest message =
+      gizclaw_rpc_v1_FriendGroupMessageGetRequest_init_zero;
+  if (!copy_fixed_text(message.friend_group_name,
+                       sizeof(message.friend_group_name), group_name) ||
+      !copy_fixed_text(message.history_name, sizeof(message.history_name),
+                       history_id))
+    return H2_PAL_ERR_INVALID_ARG;
+
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_message_get_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_GET,
+      gizclaw_rpc_v1_FriendGroupMessageGetRequest_fields, &message, timeout_ms,
+      out_request);
+}
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_message_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_message_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *allocator = &arena.allocator;
+  h2_gizclaw_friend_group_message_t result = {0};
+  gizclaw_rpc_v1_FriendGroupMessageGetResponse decoded =
+      gizclaw_rpc_v1_FriendGroupMessageGetResponse_init_zero;
+  rc = (h2_pal_result_t)decode_message_response(
+      allocator, response, gizclaw_rpc_v1_FriendGroupMessageGetResponse_fields,
+      &decoded, &decoded.value, &decoded.has_value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_friend_group_message_get(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t history_id, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_message_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_message_get(
+      service, 0u, group_name, history_id, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_message_get(request, storage,
+                                                        out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+typedef struct group_audio_download {
+  const h2_pal_mem_api_t *allocator;
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest input;
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse metadata;
+} group_audio_download_t;
+typedef struct group_audio_sync_writer {
   h2_gizclaw_friend_group_message_audio_write_fn write;
   void *user;
-  h2_gizclaw_friend_group_message_audio_info_t *info;
-  int result;
-  bool metadata_received;
-  bool eos_received;
-} message_audio_context_t;
-
-static void
-message_audio_info_clear(const h2_pal_mem_api_t *allocator,
-                         h2_gizclaw_friend_group_message_audio_info_t *info) {
-  if (info == NULL)
-    return;
-  h2_pal_mem_free(allocator, info->friend_group_name);
-  h2_pal_mem_free(allocator, info->history_id);
-  h2_pal_mem_free(allocator, info->mime_type);
-  memset(info, 0, sizeof(*info));
-}
-
-static int message_audio_event(void *user,
-                               const h2_gizclaw_rpc_stream_event_t *event) {
-  message_audio_context_t *context = user;
-  if (context == NULL || event == NULL || context->eos_received) {
-    return H2_PAL_ERR_FORMAT;
-  }
-  if (event->has_error) {
-    switch (event->error_code) {
-    case H2_GIZCLAW_RPC_ERROR_NOT_FOUND:
-      return context->result = H2_PAL_ERR_NOT_FOUND;
-    case H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND:
-      return context->result = H2_PAL_ERR_UNSUPPORTED;
-    default:
-      return context->result = H2_PAL_ERR_IO;
-    }
-  }
-  if (event->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE) {
-    if (context->metadata_received)
-      return context->result = H2_PAL_ERR_FORMAT;
-    gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse decoded =
-        gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
-    pb_istream_t stream = pb_istream_from_buffer(event->result_payload.data,
-                                                 event->result_payload.len);
-    if (!pb_decode(
-            &stream,
-            gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
-            &decoded) ||
-        decoded.size_bytes <= 0 || decoded.friend_group_name[0] == '\0' ||
-        decoded.history_name[0] == '\0' ||
-        strncmp(decoded.mime_type, "audio/", 6u) != 0 ||
-        !valid_owned_text(decoded.friend_group_name) ||
-        !valid_owned_text(decoded.history_name) ||
-        !valid_owned_text(decoded.mime_type)) {
-      return context->result = H2_PAL_ERR_FORMAT;
-    }
-    const h2_pal_mem_api_t *allocator =
-        h2_gizclaw_client_allocator_internal(context->client);
-    context->info->friend_group_name =
-        duplicate_text(allocator, decoded.friend_group_name);
-    context->info->history_id = duplicate_text(allocator, decoded.history_name);
-    context->info->mime_type = duplicate_text(allocator, decoded.mime_type);
-    if (context->info->friend_group_name == NULL ||
-        context->info->history_id == NULL || context->info->mime_type == NULL) {
-      return context->result = H2_PAL_ERR_NO_MEMORY;
-    }
-    context->info->size_bytes = (uint64_t)decoded.size_bytes;
-    context->metadata_received = true;
-  } else if (event->kind == H2_GIZCLAW_RPC_STREAM_DATA) {
-    if (!context->metadata_received ||
-        context->info->received_bytes > context->info->size_bytes ||
-        event->data.len >
-            context->info->size_bytes - context->info->received_bytes) {
-      return context->result = H2_PAL_ERR_FORMAT;
-    }
-    const int write_rc =
-        context->write(context->user, event->data.data, event->data.len);
-    if (write_rc != 0)
-      return context->result = write_rc;
-    context->info->received_bytes += event->data.len;
-  } else if (event->kind == H2_GIZCLAW_RPC_STREAM_EOS) {
-    if (!context->metadata_received ||
-        context->info->received_bytes != context->info->size_bytes) {
-      return context->result = H2_PAL_ERR_FORMAT;
-    }
-    context->eos_received = true;
-  } else {
-    return context->result = H2_PAL_ERR_FORMAT;
-  }
-  return 0;
-}
-
-int h2_gizclaw_client_friend_group_message_audio_download(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t friend_group_name,
-    h2_gizclaw_str_t history_id,
-    h2_gizclaw_friend_group_message_audio_write_fn write, void *user,
-    h2_gizclaw_friend_group_message_audio_info_t *out_info) {
-  if (client == NULL || write == NULL || out_info == NULL ||
-      !valid_group_name(friend_group_name) || !valid_text(history_id, false)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_info, 0, sizeof(*out_info));
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator == NULL)
-    return H2_PAL_ERR_INVALID_STATE;
-  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest request =
-      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_init_zero;
-  if (!copy_fixed_text(request.friend_group_name,
-                       sizeof(request.friend_group_name), friend_group_name) ||
-      !copy_fixed_text(request.history_name, sizeof(request.history_name),
-                       history_id)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  uint8_t *payload = NULL;
-  size_t payload_len = 0u;
-  int rc = encode_message(
-      allocator, gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_fields,
-      &request, &payload, &payload_len);
-  message_audio_context_t context = {
-      .client = client,
-      .write = write,
-      .user = user,
-      .info = out_info,
-      .result = H2_PAL_OK,
-  };
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call_stream(
-        client, H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        message_audio_event, &context);
-  }
-  h2_pal_mem_free(allocator, payload);
-  if (context.result != H2_PAL_OK)
-    rc = context.result;
-  if (rc == H2_PAL_OK &&
-      (!context.metadata_received || !context.eos_received ||
-       out_info->received_bytes != out_info->size_bytes ||
-       strlen(out_info->friend_group_name) != friend_group_name.len ||
-       memcmp(out_info->friend_group_name, friend_group_name.data,
-              friend_group_name.len) != 0 ||
-       strlen(out_info->history_id) != history_id.len ||
-       memcmp(out_info->history_id, history_id.data, history_id.len) != 0)) {
-    rc = H2_PAL_ERR_FORMAT;
-  }
-  if (rc != H2_PAL_OK)
-    message_audio_info_clear(allocator, out_info);
+} group_audio_sync_writer_t;
+static h2_pal_result_t group_audio_sync_output(void *opaque,
+                                               const uint8_t *data, size_t len,
+                                               size_t *out_written) {
+  group_audio_sync_writer_t *sink = opaque;
+  h2_pal_result_t rc =
+      (h2_pal_result_t)sink->write(sink->user, data, len);
+  *out_written = rc == H2_PAL_OK ? len : 0u;
   return rc;
 }
-
-void h2_gizclaw_friend_deinit(h2_gizclaw_client_t *client,
-                              h2_gizclaw_friend_t *friend_value) {
-  if (client == NULL || friend_value == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL)
-    friend_deinit(allocator, friend_value);
+static void group_audio_destroy(void *user) {
+  group_audio_download_t *context = user;
+  h2_pal_mem_free(context->allocator, context);
 }
-
-void h2_gizclaw_friend_page_deinit(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_friend_page_t *page) {
-  if (client == NULL || page == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL) {
-    for (size_t index = 0u; index < page->count; ++index)
-      friend_deinit(allocator, &page->items[index]);
-    h2_pal_mem_free(allocator, page->items);
-    h2_pal_mem_free(allocator, page->next_cursor);
-  }
-  memset(page, 0, sizeof(*page));
+static h2_pal_result_t group_audio_metadata(void *user,
+                                            h2_gizclaw_rpc_bytes_t payload,
+                                            uint64_t *out_size) {
+  group_audio_download_t *context = user;
+  pb_istream_t stream = pb_istream_from_buffer(payload.data, payload.len);
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse *metadata =
+      &context->metadata;
+  if (!pb_decode(&stream,
+                 gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
+                 metadata) ||
+      metadata->size_bytes <= 0 ||
+      strcmp(metadata->friend_group_name, context->input.friend_group_name) !=
+          0 ||
+      strcmp(metadata->history_name, context->input.history_name) != 0 ||
+      strncmp(metadata->mime_type, "audio/", 6u) != 0 ||
+      !valid_owned_text(metadata->mime_type))
+    return H2_PAL_ERR_FORMAT;
+  *out_size = (uint64_t)metadata->size_bytes;
+  return H2_PAL_OK;
 }
+static const h2_gizclaw_download_codec_t group_audio_codec = {
+    .metadata = group_audio_metadata,
+    .destroy = group_audio_destroy};
+static const char friend_group_message_audio_download_tag;
 
-void h2_gizclaw_invite_token_deinit(h2_gizclaw_client_t *client,
-                                    h2_gizclaw_invite_token_t *token) {
-  if (client == NULL || token == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL)
-    token_deinit(allocator, token);
+h2_pal_result_t h2_gizclaw_req_create_friend_group_message_audio_download(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t history_id,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || out_request == NULL || !valid_group_name(group_name) ||
+      !valid_text(history_id, false) ||
+      timeout_ms == 0u || timeout_ms > INT32_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest input =
+      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_init_zero;
+  if (!copy_fixed_text(input.friend_group_name, sizeof(input.friend_group_name),
+                       group_name) ||
+      !copy_fixed_text(input.history_name, sizeof(input.history_name),
+                       history_id))
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  group_audio_download_t *context =
+      h2_pal_mem_alloc(allocator, sizeof(*context));
+  if (context == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(context, 0, sizeof(*context));
+  context->allocator = allocator;
+  context->input = input;
+  uint8_t *payload = NULL;
+  size_t payload_len = 0u;
+  h2_pal_result_t rc = (h2_pal_result_t)encode_message(
+      allocator, gizclaw_rpc_v1_FriendGroupMessageAudioDownloadRequest_fields,
+      &input, &payload, &payload_len);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_create_download_internal(
+        service, identity, &friend_group_message_audio_download_tag,
+        H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD,
+        (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms,
+        &group_audio_codec, context, out_request);
+  h2_pal_mem_free(allocator, payload);
+  if (rc != H2_PAL_OK)
+    group_audio_destroy(context);
+  return rc;
 }
-
-void h2_gizclaw_friend_group_deinit(h2_gizclaw_client_t *client,
-                                    h2_gizclaw_friend_group_t *group) {
-  if (client == NULL || group == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL)
-    group_deinit(allocator, group);
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_audio_download(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_message_audio_info_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const void *user;
+  uint64_t received;
+  h2_pal_result_t rc = h2_gizclaw_download_result_internal(
+      request, &friend_group_message_audio_download_tag, &user, &received);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const group_audio_download_t *context = user;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_friend_group_message_audio_info_t result = {
+      .size_bytes = (uint64_t)context->metadata.size_bytes,
+      .received_bytes = received};
+  result.friend_group_name =
+      duplicate_text(&arena.allocator, context->metadata.friend_group_name);
+  result.history_id =
+      duplicate_text(&arena.allocator, context->metadata.history_name);
+  result.mime_type =
+      duplicate_text(&arena.allocator, context->metadata.mime_type);
+  if (result.friend_group_name == NULL || result.history_id == NULL ||
+      result.mime_type == NULL)
+    rc = H2_PAL_ERR_NO_MEMORY;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
 }
-
-void h2_gizclaw_friend_group_member_deinit(
-    h2_gizclaw_client_t *client, h2_gizclaw_friend_group_member_t *member) {
-  if (client == NULL || member == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL)
-    member_deinit(allocator, member);
-}
-
-void h2_gizclaw_friend_group_member_page_deinit(
-    h2_gizclaw_client_t *client, h2_gizclaw_friend_group_member_page_t *page) {
-  if (client == NULL || page == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL) {
-    for (size_t index = 0u; index < page->count; ++index)
-      member_deinit(allocator, &page->items[index]);
-    h2_pal_mem_free(allocator, page->items);
-    h2_pal_mem_free(allocator, page->next_cursor);
-  }
-  memset(page, 0, sizeof(*page));
-}
-
-void h2_gizclaw_friend_group_message_deinit(
-    h2_gizclaw_client_t *client, h2_gizclaw_friend_group_message_t *message) {
-  if (client == NULL || message == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL)
-    message_deinit(allocator, message);
-}
-
-void h2_gizclaw_friend_group_message_page_deinit(
-    h2_gizclaw_client_t *client, h2_gizclaw_friend_group_message_page_t *page) {
-  if (client == NULL || page == NULL)
-    return;
-  const h2_pal_mem_api_t *allocator =
-      h2_gizclaw_client_allocator_internal(client);
-  if (allocator != NULL) {
-    for (size_t index = 0u; index < page->count; ++index)
-      message_deinit(allocator, &page->items[index]);
-    h2_pal_mem_free(allocator, page->items);
-    h2_pal_mem_free(allocator, page->next_cursor);
-  }
-  memset(page, 0, sizeof(*page));
-}
-
-void h2_gizclaw_friend_group_message_audio_info_deinit(
-    h2_gizclaw_client_t *client,
-    h2_gizclaw_friend_group_message_audio_info_t *info) {
-  if (client == NULL || info == NULL)
-    return;
-  message_audio_info_clear(h2_gizclaw_client_allocator_internal(client), info);
+h2_pal_result_t h2_gizclaw_rpc_friend_group_message_audio_download(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t history_id,
+    h2_gizclaw_friend_group_message_audio_write_fn write, void *write_user,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_message_audio_info_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  /* The synchronous adapter calls the writer for every audio frame; a
+   * missing writer must fail here instead of when the first frame arrives. */
+  if (write == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  group_audio_sync_writer_t writer = {.write = write, .user = write_user};
+  h2_pal_result_t rc =
+      h2_gizclaw_req_create_friend_group_message_audio_download(
+          service, 0u, group_name, history_id, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, &writer, NULL, group_audio_sync_output, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait_dispatch_internal(request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_message_audio_download(
+        request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }

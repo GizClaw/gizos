@@ -2,6 +2,7 @@
 #include "h2loader_app_task_names.h"
 
 #include "h2_esp_h2loader_iostreamikcp.h"
+#include "h2_esp_h2loader_app_commands_preflight.h"
 #include "h2_esp_platform_wifi_activity.h"
 #include "h2loader_bleikcp_internal.h"
 #include "h2_loader_app_client.h"
@@ -120,22 +121,15 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         return H2_PAL_ERR_INVALID_STATE;
     }
     memset(&s_ble, 0, sizeof(s_ble));
-    const h2_pal_mutex_config_t mutex_config = {
-        .name = "h2loader-app-operation",
-        .allocator = runtime_config->mem,
-        .flags = H2_PAL_MUTEX_FLAG_RECURSIVE,
-    };
     int cleanup_rc;
     uint8_t ble_mac[6];
-    h2_pal_firmware_info_t firmware_info;
-    int rc = h2_pal_mutex_create(
-        runtime_config->sync, &mutex_config, &s_ble.operation_mutex);
+    h2_esp_h2loader_app_commands_preflight_t preflight;
+    int rc = h2_esp_h2loader_app_commands_preflight(
+        runtime_config, &preflight);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    rc = h2_pal_firmware_info_get_current(
-        runtime_config->firmware_info, &firmware_info);
-    if (rc != H2_PAL_OK) goto cleanup_mutex;
+    s_ble.operation_mutex = preflight.operation_mutex;
     rc = esp_read_mac(ble_mac, ESP_MAC_BT);
     if (rc != ESP_OK) {
         rc = H2_PAL_ERR_IO;
@@ -167,7 +161,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
             .read = h2_esp_h2loader_memory_stats_read,
         },
         .h2loader_partition_id = config->h2loader_partition_id,
-        .app_partition_id = config->app_partition_id,
+        .app_partition_id = preflight.app_partition_id,
         .coredump_partition_id = config->coredump_partition_id,
         .clock_user = (void *)runtime_config->time,
         .now_ms = app_now_ms,
@@ -178,7 +172,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         runtime_config->board,
         runtime_config->target,
         config->active_version != NULL && config->active_version[0] != '\0'
-            ? config->active_version : firmware_info.version,
+            ? config->active_version : preflight.firmware_info.version,
         &s_ble.client_config.active_identity);
     if (rc != H2_PAL_OK) goto cleanup_mutex;
     rc = h2_loader_app_client_init(&s_serial_client, &s_ble.client_config);
@@ -218,7 +212,6 @@ int h2_esp_h2loader_app_commands_prepare_serial(
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI |
             H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
-        .app_partition_id = 2u,
         .coredump_partition_id = coredump_partition_id,
     };
     return h2_esp_h2loader_app_commands_prepare_serial_with_config(
@@ -316,7 +309,6 @@ int h2_esp_h2loader_app_commands_start(
             H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI |
             H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
-        .app_partition_id = 2u,
         .coredump_partition_id = coredump_partition_id,
     };
     return h2_esp_h2loader_app_commands_start_with_config(runtime, &config);

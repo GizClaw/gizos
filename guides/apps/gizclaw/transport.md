@@ -56,20 +56,21 @@ RPC stream 的 EOS 是 request-scoped RPC framing 终止标记，与 Agent Event
 ## GizClaw service task ownership
 
 应用只通过 `h2_gizclaw_service` 提交 RPC、speech 和 conversation 请求，不直接调用会自行
-轮询的阻塞 Client helper。Service 固定创建两个系统 task：
+轮询的阻塞 Client helper。Service 固定创建一个系统 task：
 
 - `$gizclaw/net` 独占 C SDK Client 的 create、connect、request start、poll、cancel、close
   和 deinit。所有 unary request handle、mixed-frame stream、speech upload 与 conversation
   都由这个 task 推进；其他 task 只能提交、写入有界输入队列或请求取消。
-- `$gizclaw/resp_dispatch` 消费有界 response record，在不持有 service mutex 的情况下调用
-  application callback。Unary 请求恰好产生一个 terminal callback；download、speech 和
-  conversation 可以先按 wire 顺序多次调用 progress/event callback，再产生一个 terminal
-  callback。
+- App main loop 调用 `h2_gizclaw_service_poll()` 消费有界 response record，并在不持有
+  service mutex 的情况下调用 application callback。Unary 请求恰好产生一个 terminal
+  callback；download、speech 和 conversation 可以先按 wire 顺序多次调用 progress/event
+  callback，再产生一个 terminal callback。
 
 提交函数在返回前验证并复制 borrowed input。Response 结构由 request handle 持有，只在
 callback 期间借给调用方；terminal callback 返回后，调用方释放 handle。Service stop 会先
-让所有已接收请求得到 finished、canceled 或 service-closed 终态并完成 callback dispatch，
-再 join 两个 task。这样同一 Client 不会同时被后台 poll 与应用 task 的同步 RPC 轮询。
+让所有已接收请求得到 finished、canceled 或 service-closed 终态并 join 网络 task；App 随后
+继续 dispatch，直到完成队列为空。这样同一 Client 不会同时被后台 poll 与应用 task 的同步
+RPC 轮询。
 
 ## DataChannel 终态 ownership
 

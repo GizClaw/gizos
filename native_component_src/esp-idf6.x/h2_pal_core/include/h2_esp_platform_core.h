@@ -97,6 +97,7 @@ h2_pal_result_t h2_esp_platform_data_partition_subtype(const char *label,
 const h2_pal_sync_api_t *h2_esp_platform_sync_api(void);
 const h2_pal_net_api_t *h2_esp_platform_net_api(void);
 const h2_pal_netif_api_t *h2_esp_platform_netif_api(void);
+h2_pal_result_t h2_esp_platform_netif_init_once(void);
 void h2_esp_platform_netif_register(void *netif_handle,
                                     h2_pal_netif_kind_t kind);
 void h2_esp_platform_netif_unregister(void *netif_handle);

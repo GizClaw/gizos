@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,12 +18,24 @@ struct h2_pal_semaphore {
     const h2_pal_mem_api_t *allocator;
 };
 
+/* A condition variable must hand each wakeup to one specific waiter. A
+ * shared counting semaphore does not: a short-timeout waiter that loops back
+ * into the wait can consume the token a broadcast produced for a waiter that
+ * is still asleep, which then never wakes. Every waiter therefore parks on its
+ * own binary semaphore, linked into the condition's list. */
+typedef struct h2_esp_cond_waiter {
+    struct h2_esp_cond_waiter *next;
+    SemaphoreHandle_t handle;
+    StaticSemaphore_t storage;
+    bool signaled;
+} h2_esp_cond_waiter_t;
+
 struct h2_pal_cond {
-    SemaphoreHandle_t signal;
     SemaphoreHandle_t lock;
     const h2_pal_mem_api_t *allocator;
+    h2_esp_cond_waiter_t *head;
+    h2_esp_cond_waiter_t *tail;
     uint32_t waiters;
-    uint32_t pending_signals;
 };
 
 static void *sync_alloc(const h2_pal_mem_api_t *allocator, size_t len) {
@@ -195,10 +208,7 @@ static h2_pal_result_t esp_cond_create(
     memset(cond, 0, sizeof(*cond));
     cond->allocator = config->allocator;
     cond->lock = xSemaphoreCreateMutex();
-    cond->signal = xSemaphoreCreateCounting(UINT16_MAX, 0u);
-    if (cond->lock == NULL || cond->signal == NULL) {
-        if (cond->lock != NULL) vSemaphoreDelete(cond->lock);
-        if (cond->signal != NULL) vSemaphoreDelete(cond->signal);
+    if (cond->lock == NULL) {
         sync_free(config->allocator, cond);
         return H2_PAL_ERR_NO_MEMORY;
     }
@@ -208,7 +218,7 @@ static h2_pal_result_t esp_cond_create(
 
 static h2_pal_result_t esp_cond_destroy(void *user, h2_pal_cond_t *cond) {
     (void)user;
-    if (cond == NULL || cond->lock == NULL || cond->signal == NULL) {
+    if (cond == NULL || cond->lock == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (xSemaphoreTake(cond->lock, portMAX_DELAY) != pdTRUE) {
@@ -219,11 +229,30 @@ static h2_pal_result_t esp_cond_destroy(void *user, h2_pal_cond_t *cond) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     (void)xSemaphoreGive(cond->lock);
-    vSemaphoreDelete(cond->signal);
     vSemaphoreDelete(cond->lock);
     const h2_pal_mem_api_t *allocator = cond->allocator;
     sync_free(allocator, cond);
     return H2_PAL_OK;
+}
+
+/* Caller holds cond->lock. */
+static void cond_unlink_waiter(h2_pal_cond_t *cond, h2_esp_cond_waiter_t *waiter) {
+    h2_esp_cond_waiter_t *prev = NULL;
+    for (h2_esp_cond_waiter_t *node = cond->head; node != NULL; node = node->next) {
+        if (node == waiter) {
+            if (prev == NULL) {
+                cond->head = node->next;
+            } else {
+                prev->next = node->next;
+            }
+            if (cond->tail == node) {
+                cond->tail = prev;
+            }
+            node->next = NULL;
+            return;
+        }
+        prev = node;
+    }
 }
 
 static h2_pal_result_t esp_cond_wait(
@@ -232,62 +261,79 @@ static h2_pal_result_t esp_cond_wait(
     h2_pal_mutex_t *mutex,
     uint32_t timeout_ms) {
     (void)user;
-    if (cond == NULL || cond->lock == NULL || cond->signal == NULL ||
-        mutex == NULL || mutex->handle == NULL || mutex->recursive) {
+    if (cond == NULL || cond->lock == NULL || mutex == NULL ||
+        mutex->handle == NULL || mutex->recursive) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_esp_cond_waiter_t waiter;
+    memset(&waiter, 0, sizeof(waiter));
+    waiter.handle = xSemaphoreCreateBinaryStatic(&waiter.storage);
+    if (waiter.handle == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
     }
     if (xSemaphoreTake(cond->lock, portMAX_DELAY) != pdTRUE) {
         return H2_PAL_ERR_IO;
     }
+    if (cond->tail == NULL) {
+        cond->head = &waiter;
+    } else {
+        cond->tail->next = &waiter;
+    }
+    cond->tail = &waiter;
     cond->waiters++;
     (void)xSemaphoreGive(cond->lock);
     if (xSemaphoreGive(mutex->handle) != pdTRUE) {
         (void)xSemaphoreTake(cond->lock, portMAX_DELAY);
+        if (!waiter.signaled) {
+            cond_unlink_waiter(cond, &waiter);
+        }
         cond->waiters--;
         (void)xSemaphoreGive(cond->lock);
         return H2_PAL_ERR_IO;
     }
-    BaseType_t signaled = xSemaphoreTake(cond->signal, timeout_ticks(timeout_ms));
+    (void)xSemaphoreTake(waiter.handle, timeout_ticks(timeout_ms));
     if (xSemaphoreTake(cond->lock, portMAX_DELAY) != pdTRUE) {
         (void)xSemaphoreTake(mutex->handle, portMAX_DELAY);
         return H2_PAL_ERR_IO;
     }
-    if (signaled != pdTRUE && cond->pending_signals > 0u &&
-        xSemaphoreTake(cond->signal, 0u) == pdTRUE) {
-        signaled = pdTRUE;
+    /* A wake that landed after the timeout but before this unlink still
+     * counts: the waker already removed the node and marked it. */
+    const bool signaled = waiter.signaled;
+    if (!signaled) {
+        cond_unlink_waiter(cond, &waiter);
     }
     cond->waiters--;
-    if (signaled == pdTRUE && cond->pending_signals > 0u) {
-        cond->pending_signals--;
-    }
     (void)xSemaphoreGive(cond->lock);
     if (xSemaphoreTake(mutex->handle, portMAX_DELAY) != pdTRUE) {
         return H2_PAL_ERR_IO;
     }
-    return signaled == pdTRUE ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
+    return signaled ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
 }
 
 static h2_pal_result_t esp_cond_wake(h2_pal_cond_t *cond, bool all) {
-    if (cond == NULL || cond->lock == NULL || cond->signal == NULL) {
+    if (cond == NULL || cond->lock == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (xSemaphoreTake(cond->lock, portMAX_DELAY) != pdTRUE) {
         return H2_PAL_ERR_IO;
     }
-    uint32_t available = cond->waiters > cond->pending_signals
-                             ? cond->waiters - cond->pending_signals
-                             : 0u;
-    uint32_t count = all ? available : (available > 0u ? 1u : 0u);
-    h2_pal_result_t rc = H2_PAL_OK;
-    for (uint32_t i = 0u; i < count; ++i) {
-        if (xSemaphoreGive(cond->signal) != pdTRUE) {
-            rc = H2_PAL_ERR_FULL;
+    while (cond->head != NULL) {
+        h2_esp_cond_waiter_t *waiter = cond->head;
+        cond->head = waiter->next;
+        if (cond->head == NULL) {
+            cond->tail = NULL;
+        }
+        waiter->next = NULL;
+        waiter->signaled = true;
+        /* The waiter owns its node; after this give it may return and reuse
+         * the stack, so nothing touches the node beyond this point. */
+        (void)xSemaphoreGive(waiter->handle);
+        if (!all) {
             break;
         }
-        cond->pending_signals++;
     }
     (void)xSemaphoreGive(cond->lock);
-    return rc;
+    return H2_PAL_OK;
 }
 
 static h2_pal_result_t esp_cond_signal(void *user, h2_pal_cond_t *cond) {

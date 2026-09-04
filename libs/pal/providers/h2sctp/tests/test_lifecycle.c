@@ -56,12 +56,20 @@ int main(void) {
     assert(h2_pal_sctp_association_start(
                pair.active.api, pair.active.association, pair.now_ms) ==
            H2_PAL_OK);
-    pair.passive.fail_allocation_at = pair.passive.allocation_count + 1u;
+    /* An INIT that cannot be answered because every pooled packet buffer is
+     * taken leaves the association untouched and the INIT undelivered. */
+    uint8_t *held[H2_SCTP_DEFAULT_PACKET_POOL_SIZE];
+    for (size_t index = 0u; index < H2_SCTP_DEFAULT_PACKET_POOL_SIZE; ++index) {
+        held[index] = h2_sctp_packet_acquire(pair.passive.association);
+        assert(held[index] != NULL);
+    }
     assert(h2_sctp_test_transfer(
                &pair.active, &pair.passive, pair.now_ms) == 0u);
     assert(pair.active.packet_head != NULL);
     assert(pair.passive.association->peer_verification_tag == 0u);
-    pair.passive.fail_allocation_at = 0u;
+    for (size_t index = 0u; index < H2_SCTP_DEFAULT_PACKET_POOL_SIZE; ++index) {
+        h2_sctp_packet_release(pair.passive.association, held[index]);
+    }
     assert(h2_sctp_test_transfer(
                &pair.active, &pair.passive, pair.now_ms) == 1u);
     pair.active.fail_allocation_at = pair.active.allocation_count + 1u;
