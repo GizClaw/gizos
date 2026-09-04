@@ -66,6 +66,38 @@ static uint32_t h2_sctp_reliability_limit(
     return limit;
 }
 
+/* RFC 9260 section 7.2.3: ssthresh = max(cwnd / 2, 4 * MTU). */
+static uint32_t h2_sctp_reliability_reduced_ssthresh(
+    const h2_pal_sctp_association_t *association) {
+    const size_t minimum = association->config.max_packet_size > SIZE_MAX / 4u
+                               ? SIZE_MAX
+                               : association->config.max_packet_size * 4u;
+    const uint32_t bounded_minimum =
+        minimum > UINT32_MAX ? UINT32_MAX : (uint32_t)minimum;
+    const uint32_t halved = association->cwnd / 2u;
+    return halved < bounded_minimum ? bounded_minimum : halved;
+}
+
+static uint32_t h2_sctp_reliability_one_packet(
+    const h2_pal_sctp_association_t *association) {
+    return association->config.max_packet_size > UINT32_MAX
+               ? UINT32_MAX
+               : (uint32_t)association->config.max_packet_size;
+}
+
+/* A partially reliable fragment whose lifetime or retransmission budget is
+ * spent must be abandoned instead of retransmitted. */
+static bool h2_sctp_reliability_outlived(
+    const h2_sctp_tx_fragment_t *fragment,
+    uint64_t now_ms) {
+    if (fragment->reliability == H2_PAL_SCTP_RELIABILITY_MAX_LIFETIME_MS) {
+        return now_ms >= fragment->submitted_ms &&
+               now_ms - fragment->submitted_ms >= fragment->reliability_value;
+    }
+    return fragment->reliability == H2_PAL_SCTP_RELIABILITY_MAX_RETRANSMITS &&
+           fragment->retransmits >= fragment->reliability_value;
+}
+
 static h2_sctp_tx_fragment_t *h2_sctp_reliability_pick_unsent(
     h2_pal_sctp_association_t *association) {
     h2_sctp_stream_t *after = NULL;
@@ -150,6 +182,7 @@ static h2_pal_result_t h2_sctp_reliability_emit_fragment(
         fragment->sent = true;
         fragment->sent_ms = now_ms;
         fragment->miss_reports = 0u;
+        fragment->fast_retransmit = false;
         if (retransmission) {
             fragment->retransmits++;
             /* Karn: retransmitting this TSN or an earlier TSN makes the
@@ -335,6 +368,74 @@ void h2_sctp_reliability_acknowledge_through(
     h2_sctp_reliability_prune(association, cumulative_tsn);
 }
 
+static void h2_sctp_reliability_abandon_message(
+    h2_pal_sctp_association_t *association,
+    uint64_t message_id);
+
+/*
+ * RFC 9260 section 7.2.4: on the first fast retransmit of a loss event set
+ * ssthresh = max(cwnd / 2, 4 * MTU) and cwnd = ssthresh, retransmit the marked
+ * TSNs, and leave the RTO alone - only a timer expiry backs it off. Further
+ * gap reports for the same hole arrive while fast recovery is active and must
+ * not reduce the window again within that round trip.
+ */
+static h2_pal_result_t h2_sctp_reliability_fast_retransmit(
+    h2_pal_sctp_association_t *association,
+    uint64_t now_ms) {
+    bool marked = false;
+    uint32_t exit_tsn = association->peer_cumulative_tsn;
+    for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
+         fragment != NULL;
+         fragment = fragment->next) {
+        if (!fragment->sent || fragment->acknowledged || fragment->abandoned) {
+            continue;
+        }
+        marked = marked || fragment->fast_retransmit;
+        if (h2_sctp_tsn_after(fragment->tsn, exit_tsn)) {
+            exit_tsn = fragment->tsn;
+        }
+    }
+    if (!marked) {
+        return H2_PAL_OK;
+    }
+    if (!association->fast_recovery_active) {
+        association->ssthresh =
+            h2_sctp_reliability_reduced_ssthresh(association);
+        association->cwnd = association->ssthresh;
+        association->fast_recovery_active = true;
+        association->fast_recovery_exit_tsn = exit_tsn;
+    }
+    h2_pal_result_t outcome = H2_PAL_OK;
+    for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
+         fragment != NULL;
+         fragment = fragment->next) {
+        if (!fragment->fast_retransmit || !fragment->sent ||
+            fragment->acknowledged || fragment->abandoned) {
+            continue;
+        }
+        if (h2_sctp_reliability_outlived(fragment, now_ms)) {
+            fragment->fast_retransmit = false;
+            h2_sctp_reliability_abandon_message(
+                association, fragment->message_id);
+            continue;
+        }
+        if (association->pending_emit != NULL) {
+            outcome = H2_PAL_ERR_WOULD_BLOCK;
+            break;
+        }
+        const h2_pal_result_t result = h2_sctp_reliability_emit_fragment(
+            association, fragment, now_ms, true);
+        if (result == H2_PAL_ERR_WOULD_BLOCK) {
+            outcome = result;
+            break;
+        }
+        if (result != H2_PAL_OK) {
+            return result;
+        }
+    }
+    return outcome;
+}
+
 h2_pal_result_t h2_sctp_reliability_handle_sack(
     h2_pal_sctp_association_t *association,
     const h2_sctp_chunk_view_t *chunk,
@@ -380,6 +481,12 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
                                                 &acked_bytes);
         }
     }
+    /* RFC 9260 section 7.2.4: fast recovery ends once the cumulative point
+     * passes every TSN that was outstanding when it began. */
+    if (association->fast_recovery_active &&
+        !h2_sctp_tsn_before(cumulative, association->fast_recovery_exit_tsn)) {
+      association->fast_recovery_active = false;
+    }
     /* RFC 9260 section 7.2.4 HTNA: a repeated gap ACK is not new loss
      * evidence. Determine HTNA before counting holes, since fair stream
      * scheduling need not store fragments in TSN order. */
@@ -389,8 +496,7 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
           h2_sctp_tsn_before(fragment->tsn, highest_newly_acknowledged)) {
         fragment->miss_reports++;
         if (fragment->miss_reports >= 3u) {
-          fragment->sent_ms =
-              now_ms >= association->rto_ms ? now_ms - association->rto_ms : 0u;
+          fragment->fast_retransmit = true;
         }
       }
     }
@@ -422,8 +528,13 @@ h2_pal_result_t h2_sctp_reliability_handle_sack(
                                                                     : increase);
         }
     }
-    h2_pal_result_t result = h2_sctp_reliability_service(
-        association, now_ms, NULL);
+    h2_pal_result_t result = h2_sctp_reliability_fast_retransmit(
+        association, now_ms);
+    if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
+        result != H2_PAL_ERR_NO_MEMORY) {
+        return result;
+    }
+    result = h2_sctp_reliability_service(association, now_ms, NULL);
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK &&
         result != H2_PAL_ERR_NO_MEMORY) {
         return result;
@@ -554,6 +665,14 @@ h2_pal_result_t h2_sctp_reliability_service(
     uint64_t deadline = in_out_deadline_ms == NULL
                             ? H2_PAL_SCTP_NO_DEADLINE
                             : *in_out_deadline_ms;
+    /* RFC 9260 section 7.2.3: the timer expiry is one loss event, however
+     * many fragments it covers, so the window collapse and the RTO backoff
+     * are applied once per pass and not once per fragment. */
+    bool window_collapsed = false;
+    bool rto_backed_off = false;
+    /* Every fragment is timed against the RTO in force when the pass began,
+     * so the backoff applied to the first expiry cannot hide the others. */
+    const uint64_t rto_at_entry = association->rto_ms;
     for (h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
          fragment != NULL;
          fragment = fragment->next) {
@@ -561,7 +680,7 @@ h2_pal_result_t h2_sctp_reliability_service(
             continue;
         }
         const uint64_t retransmit_deadline = h2_sctp_deadline_add(
-            fragment->sent_ms, association->rto_ms);
+            fragment->sent_ms, rto_at_entry);
         if (now_ms < retransmit_deadline) {
             if (deadline == H2_PAL_SCTP_NO_DEADLINE ||
                 retransmit_deadline < deadline) {
@@ -569,15 +688,7 @@ h2_pal_result_t h2_sctp_reliability_service(
             }
             continue;
         }
-        const bool lifetime_expired =
-            fragment->reliability ==
-                H2_PAL_SCTP_RELIABILITY_MAX_LIFETIME_MS &&
-            now_ms - fragment->submitted_ms >= fragment->reliability_value;
-        const bool retransmits_exhausted =
-            fragment->reliability ==
-                H2_PAL_SCTP_RELIABILITY_MAX_RETRANSMITS &&
-            fragment->retransmits >= fragment->reliability_value;
-        if (lifetime_expired || retransmits_exhausted) {
+        if (h2_sctp_reliability_outlived(fragment, now_ms)) {
             const uint64_t message_id = fragment->message_id;
             h2_sctp_reliability_abandon_message(association, message_id);
             continue;
@@ -586,29 +697,26 @@ h2_pal_result_t h2_sctp_reliability_service(
             deadline = now_ms;
             break;
         }
-        association->ssthresh = association->cwnd / 2u;
-        const size_t minimum_ssthresh =
-            association->config.max_packet_size > SIZE_MAX / 4u
-                ? SIZE_MAX
-                : association->config.max_packet_size * 4u;
-        const uint32_t bounded_minimum_ssthresh =
-            minimum_ssthresh > UINT32_MAX ? UINT32_MAX
-                                          : (uint32_t)minimum_ssthresh;
-        if (association->ssthresh < bounded_minimum_ssthresh) {
-            association->ssthresh = bounded_minimum_ssthresh;
+        if (!window_collapsed) {
+            association->ssthresh =
+                h2_sctp_reliability_reduced_ssthresh(association);
+            association->cwnd = h2_sctp_reliability_one_packet(association);
+            /* A timer expiry supersedes any fast recovery in progress. */
+            association->fast_recovery_active = false;
+            window_collapsed = true;
         }
-        association->cwnd = association->config.max_packet_size > UINT32_MAX
-                                ? UINT32_MAX
-                                : (uint32_t)association->config.max_packet_size;
         h2_pal_result_t result = h2_sctp_reliability_emit_fragment(
             association, fragment, now_ms, true);
         if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
             return result;
         }
-        if (association->rto_ms < H2_SCTP_RTO_MAX_MS / 2u) {
-            association->rto_ms *= 2u;
-        } else {
-            association->rto_ms = H2_SCTP_RTO_MAX_MS;
+        if (!rto_backed_off) {
+            if (association->rto_ms < H2_SCTP_RTO_MAX_MS / 2u) {
+                association->rto_ms *= 2u;
+            } else {
+                association->rto_ms = H2_SCTP_RTO_MAX_MS;
+            }
+            rto_backed_off = true;
         }
         if (result == H2_PAL_ERR_WOULD_BLOCK) {
             deadline = now_ms;

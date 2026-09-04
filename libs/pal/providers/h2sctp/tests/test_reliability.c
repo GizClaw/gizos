@@ -378,6 +378,121 @@ static void test_repeated_gap_ack_does_not_reuse_acked_tsn_as_htna(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/*
+ * RFC 9260 section 7.2.4: the third miss report for a hole is a fast
+ * retransmit, not a timer expiry. The window drops to the reduced ssthresh
+ * rather than to a single MTU, and the RTO is not backed off.
+ */
+static void test_fast_retransmit_halves_window_without_rto_backoff(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  const uint32_t cumulative = association->peer_cumulative_tsn;
+  for (unsigned index = 0u; index < 5u; ++index) {
+    (void)send_sample(&pair, 1000u + index);
+  }
+  h2_sctp_tx_fragment_t *hole = association->tx_fragments;
+  assert(hole->tsn == cumulative + 1u);
+
+  /* Two miss reports are not yet loss evidence. */
+  acknowledge_gap_at(association, cumulative, 2u, 2u, 1100u);
+  acknowledge_gap_at(association, cumulative, 2u, 3u, 1110u);
+  assert(hole->miss_reports == 2u);
+  assert(hole->retransmits == 0u);
+  assert(!association->fast_recovery_active);
+  assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+
+  /* 8192 + one byte of slow-start growth halves to 4096, above 4 * MTU. */
+  association->cwnd = 8192u;
+  acknowledge_gap_at(association, cumulative, 2u, 4u, 1120u);
+  assert(hole->retransmits == 1u);
+  assert(!hole->fast_retransmit);
+  assert(association->ssthresh == 4096u);
+  assert(association->cwnd == association->ssthresh);
+  assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+  assert(association->fast_recovery_active);
+  assert(association->fast_recovery_exit_tsn == cumulative + 5u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+/*
+ * RFC 9260 section 7.2.4: while fast recovery is in progress, further gap
+ * reports for the same hole retransmit but must not reduce the window a
+ * second time within that round trip.
+ */
+static void test_fast_retransmit_reduces_once_per_round_trip(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  const uint32_t cumulative = association->peer_cumulative_tsn;
+  for (unsigned index = 0u; index < 9u; ++index) {
+    (void)send_sample(&pair, 1000u + index);
+  }
+  h2_sctp_tx_fragment_t *hole = association->tx_fragments;
+  assert(hole->tsn == cumulative + 1u);
+
+  acknowledge_gap_at(association, cumulative, 2u, 2u, 1100u);
+  acknowledge_gap_at(association, cumulative, 2u, 3u, 1110u);
+  association->cwnd = 8192u;
+  acknowledge_gap_at(association, cumulative, 2u, 4u, 1120u);
+  assert(hole->retransmits == 1u);
+  assert(association->ssthresh == 4096u);
+  assert(association->cwnd == 4096u);
+  assert(association->fast_recovery_active);
+
+  /* The retransmission is lost too: three more miss reports mark the same
+   * hole again inside the same recovery episode. */
+  acknowledge_gap_at(association, cumulative, 2u, 5u, 1130u);
+  acknowledge_gap_at(association, cumulative, 2u, 6u, 1140u);
+  assert(hole->miss_reports == 2u);
+  assert(hole->retransmits == 1u);
+  acknowledge_gap_at(association, cumulative, 2u, 7u, 1150u);
+  assert(hole->retransmits == 2u);
+  /* Retransmitted, but neither the window nor the RTO reduced again. */
+  assert(association->ssthresh == 4096u);
+  assert(association->cwnd >= 4096u);
+  assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+  assert(association->fast_recovery_active);
+
+  /* Recovery ends once the cumulative point passes the outstanding TSNs. */
+  acknowledge_at(association, cumulative + 9u, 1200u);
+  assert(!association->fast_recovery_active);
+  assert(association->tx_fragments == NULL);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+/*
+ * RFC 9260 section 7.2.3: a timer expiry covering several fragments is one
+ * loss event, so the window collapses and the RTO doubles exactly once.
+ */
+static void test_retransmission_timeout_applies_once_per_burst(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  for (unsigned index = 0u; index < 4u; ++index) {
+    (void)send_sample(&pair, 1000u);
+  }
+  association->cwnd = 8192u;
+  assert(association->rto_ms == H2_SCTP_RTO_INITIAL_MS);
+  assert(h2_sctp_reliability_service(
+             association, 1000u + H2_SCTP_RTO_INITIAL_MS, NULL) == H2_PAL_OK);
+  unsigned retransmitted = 0u;
+  for (const h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
+       fragment != NULL; fragment = fragment->next) {
+    assert(fragment->retransmits == 1u);
+    retransmitted++;
+  }
+  assert(retransmitted == 4u);
+  /* One halving of 8192, one doubling of the RTO, and one MTU of window. */
+  assert(association->ssthresh == 4096u);
+  assert(association->cwnd == 256u);
+  assert(association->rto_ms == 2u * H2_SCTP_RTO_INITIAL_MS);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 static void test_sack_htna_with_interleaved_streams(void) {
   h2_sctp_test_pair_t pair;
   assert(h2_sctp_test_pair_init(&pair, 256u, 1024u) == H2_PAL_OK);
@@ -437,6 +552,9 @@ int main(void) {
   test_sack_counts_only_new_ack_evidence(true);
   test_repeated_gap_ack_does_not_reuse_acked_tsn_as_htna();
   test_sack_htna_with_interleaved_streams();
+  test_fast_retransmit_halves_window_without_rto_backoff();
+  test_fast_retransmit_reduces_once_per_round_trip();
+  test_retransmission_timeout_applies_once_per_burst();
   test_rto_recovers_after_loss();
   test_rtt_sample_lifetime(false);
   test_rtt_sample_lifetime(true);

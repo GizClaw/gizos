@@ -88,6 +88,7 @@ typedef struct h2_sctp_tx_fragment {
     uint64_t sent_ms;
     unsigned retransmits;
     unsigned miss_reports;
+    bool fast_retransmit;
     bool tsn_assigned;
     bool sent;
     bool acknowledged;
@@ -174,6 +175,8 @@ struct h2_pal_sctp_association {
     uint64_t heartbeat_deadline_ms;
     uint32_t cwnd;
     uint32_t ssthresh;
+    uint32_t fast_recovery_exit_tsn;
+    bool fast_recovery_active;
     uint32_t peer_receive_window;
     size_t flight_size;
     size_t send_used;
