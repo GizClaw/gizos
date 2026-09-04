@@ -595,6 +595,14 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
                       "the next user turn's transcript is delivered");
     }
     const char *code = mode == 3 ? "MODEL_FAILED" : "STREAM_INTERRUPTED";
+    if (mode == 2) {
+      /* Push-to-talk: no next reply can follow committed input, so a new-id
+       * BOS while the reply is still open is rejected as before. */
+      event = test_reply_event(BOS, "assistant", "reply-2", "", NULL);
+      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                          H2_PAL_ERR_WOULD_BLOCK,
+                      "a new-id BOS on an open committed reply is rejected");
+    }
     if (mode == 0) {
       event = test_reply_event(BOS, "assistant", "reply-2", "", NULL);
       fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
