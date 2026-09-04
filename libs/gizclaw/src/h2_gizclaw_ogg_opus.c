@@ -82,6 +82,9 @@ static h2_pal_result_t load_page(h2_gizclaw_ogg_opus_t *d) {
     d->headers = 0;
     d->previous_granule = 0;
     d->have_audio_page = false;
+    /* The new stream's OpusHead sets its own pre-skip; drop the remainder of
+     * the previous stream's so it can never apply here. */
+    d->skip = 0;
   } else if ((p[5] & 2u) != 0 || serial != d->serial)
     return H2_PAL_ERR_FORMAT; /* Multiplexed streams are not a playback track.
                                */

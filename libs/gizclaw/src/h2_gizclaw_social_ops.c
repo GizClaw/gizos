@@ -255,8 +255,10 @@ static bool decode_friend(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  if (count == context->capacity) {
+  if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 4u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
     if (capacity < context->capacity || capacity > context->limit)
       capacity = context->limit;
     if (capacity > SIZE_MAX / sizeof(context->page->items[0]))
@@ -342,8 +344,10 @@ static bool decode_member(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  if (count == context->capacity) {
+  if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 4u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
     if (capacity < context->capacity || capacity > context->limit)
       capacity = context->limit;
     if (capacity > SIZE_MAX / sizeof(context->page->items[0]))
@@ -448,8 +452,10 @@ static bool decode_message(pb_istream_t *stream, const pb_field_t *field,
     return false;
   }
   const size_t count = context->page->count;
-  if (count == context->capacity) {
+  if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 4u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
     if (capacity < context->capacity || capacity > context->limit)
       capacity = context->limit;
     if (capacity > SIZE_MAX / sizeof(context->page->items[0]))

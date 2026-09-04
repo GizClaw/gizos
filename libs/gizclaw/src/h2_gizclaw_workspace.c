@@ -261,8 +261,10 @@ static bool decode_history_entry(pb_istream_t *stream, const pb_field_t *field,
   }
   const size_t count = context->page->count;
   h2_gizclaw_workspace_history_entry_t *items = context->page->items;
-  if (count == context->capacity) {
+  if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
     if (capacity > context->max_count)
       capacity = context->max_count;
     items = h2_pal_mem_realloc(context->allocator, items,
@@ -310,8 +312,10 @@ static bool decode_workspace(pb_istream_t *stream, const pb_field_t *field,
   }
   const size_t count = context->page->count;
   h2_gizclaw_workspace_t *items = context->page->items;
-  if (count == context->capacity) {
+  if (count >= context->capacity) {
     size_t capacity = context->capacity == 0u ? 1u : context->capacity * 2u;
+    if (capacity <= count)
+      capacity = count + 1u;
     if (capacity > context->max_count)
       capacity = context->max_count;
     items = h2_pal_mem_realloc(context->allocator, items,
