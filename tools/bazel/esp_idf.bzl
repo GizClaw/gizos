@@ -27,6 +27,60 @@ def _native_firmware_resources(_os, _inputs_size):
         "memory": 4096,
     }
 
+def _native_firmware_resources_2(_os, _inputs_size):
+    return {
+        "cpu": 2,
+        "memory": 3072,
+    }
+
+def _native_firmware_resources_1(_os, _inputs_size):
+    return {
+        "cpu": 1,
+        "memory": 2048,
+    }
+
+# How many cores each native firmware action reserves from Bazel's local
+# scheduler, which sets how many launchers build concurrently: a 4-core runner
+# runs one action at cpu:4 and two at cpu:2.
+#
+# This only tunes `resource_set`, never the action's argv, env, inputs or
+# outputs, so it stays out of the action key and a job that lowers it still
+# shares remote cache entries with every other job and with local builds. The
+# ninja -j the runner hands each build is deliberately fixed for the same
+# reason -- it lives in the runner source, not in the configuration.
+#
+# A launcher's wall time is part serial, uncacheable work -- CMake configure,
+# ninja graph load, per-object ccache lookups, esptool packaging -- that more
+# cores cannot shorten, so a wide reservation buys latency for one launcher
+# while leaving cores idle, and a narrow one buys throughput across many:
+#
+#   4  fastest single launcher, ~4 core-seconds each
+#   2  ~1.4x slower each, ~2.75 core-seconds
+#   1  ~2.1x slower each, ~2.13 core-seconds
+#
+# Default to 4, which suits a developer building one target and the CI jobs
+# whose graph holds only a handful of launchers. A job that builds dozens at
+# once is throughput-bound and should set a lower value: see
+# h2_native_build_jobs in .github/workflows/ci.yml.
+_NATIVE_BUILD_JOBS_DEFAULT = "4"
+
+_NATIVE_FIRMWARE_RESOURCES = {
+    "1": _native_firmware_resources_1,
+    "2": _native_firmware_resources_2,
+    "4": _native_firmware_resources,
+}
+
+def _native_build_jobs(ctx):
+    jobs = ctx.var.get("h2_native_build_jobs", _NATIVE_BUILD_JOBS_DEFAULT)
+    if jobs not in _NATIVE_FIRMWARE_RESOURCES:
+        fail(
+            "h2_native_build_jobs must be one of {}, got '{}'".format(
+                ", ".join(sorted(_NATIVE_FIRMWARE_RESOURCES)),
+                jobs,
+            ),
+        )
+    return jobs
+
 _TARGET_CONFIGS = {
     "esp32c5": Label("//tools/bazel/platforms:is_esp32c5"),
     "esp32p4": Label("//tools/bazel/platforms:is_esp32p4"),
@@ -141,7 +195,7 @@ def _esp_idf_firmware_impl(ctx):
         mnemonic = "EspIdfFirmware",
         outputs = outputs,
         progress_message = "Building ESP-IDF firmware %{label}",
-        resource_set = _native_firmware_resources,
+        resource_set = _NATIVE_FIRMWARE_RESOURCES[_native_build_jobs(ctx)],
         tools = [ctx.executable._runner],
         env = action_environment,
         use_default_shell_env = False,
