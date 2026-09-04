@@ -6392,6 +6392,7 @@ typedef struct conversation_test {
   unsigned reply_text_ends, transcript_text_ends;
   atomic_bool small_buffer_rejected;
   unsigned filler_callbacks;
+  unsigned loss_markers;
   h2_pal_result_t result;
   char stream[64];
 } conversation_test_t;
@@ -6607,6 +6608,17 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
         test->service, test->pending, sizeof(test->pending),
         &test->pending_len);
     assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_WOULD_BLOCK);
+  }
+  /* Mode 19: after the first echoed packet the transport reports an RTP
+   * loss (opus == NULL, len == 0). It must reach the decoder as a PLC frame
+   * and the following valid packets must still play. */
+  if (test->mode == 19 && test->packets == 1u && test->loss_markers == 0u) {
+    h2_pal_result_t rc =
+        h2_gizclaw_service_media_write_opus(test->service, NULL, 0u);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK)
+      return rc;
+    assert(rc == H2_PAL_OK);
+    test->loss_markers = 1u;
   }
   if (test->pending_len != 0) {
     assert(atomic_load(&test->bos));
@@ -6864,7 +6876,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 19; ++mode) {
+  for (unsigned mode = 0; mode < 20; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -7008,7 +7020,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
-                  (mode >= 6 && mode <= 10)) &&
+                  (mode >= 6 && mode <= 10) || mode == 19) &&
                  atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
@@ -7103,6 +7115,15 @@ static void test_conversation_public_audio_tasks(void) {
        * network tick had already staged for dispatch. The rest coalesced. */
       assert(test.packets == 20u && atomic_load(&test.written) == 20u * 640u);
       assert(test.hook_offset == 17u * 640u);
+      assert(test.result == H2_PAL_OK);
+    }
+    if (mode == 19) {
+      /* One loss marker between the first and second packet: the decoder
+       * concealed it as one 20 ms frame, every later packet still played,
+       * and the conversation completed normally instead of failing. */
+      assert(test.loss_markers == 1u && test.packets == 13u);
+      assert(atomic_load(&test.written) == 14u * 640u);
+      assert(test.hook_offset == 14u * 640u);
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 11 || mode == 12)

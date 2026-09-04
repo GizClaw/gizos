@@ -85,6 +85,9 @@ struct h2_gizclaw_conversation_request {
   bool encoder_eos;
   int16_t decoded[H2_GIZCLAW_CONVERSATION_DECODE_MAX_SAMPLES];
   size_t decoded_len, decoded_offset;
+  /* Samples the last real packet decoded to; a loss marker is concealed for
+   * exactly that duration instead of the decoder's maximum frame. */
+  int plc_frame_samples;
   bool pcm_delivered;
   atomic_bool wire_ready;
   conversation_generation_event_fn on_event;
@@ -941,11 +944,18 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
     atomic_fetch_add_explicit(&request->diag_opus_out, 1u,
                               memory_order_relaxed);
     const uint64_t decode_started_us = conversation_monotonic_us(request);
+    /* A zero-length item is the transport's RTP loss marker: ask Opus for
+     * packet loss concealment over one packet's worth of samples. */
     int samples = opus_decode(request->decoder, input.len ? input.data : NULL,
                               (opus_int32)input.len, request->decoded,
-                              H2_GIZCLAW_CONVERSATION_DECODE_MAX_SAMPLES, 0);
+                              input.len != 0u
+                                  ? (int)H2_GIZCLAW_CONVERSATION_DECODE_MAX_SAMPLES
+                                  : request->plc_frame_samples,
+                              0);
     if (samples <= 0)
       return H2_PAL_ERR_FORMAT;
+    if (input.len != 0u)
+      request->plc_frame_samples = samples;
     const uint64_t decode_completed_us = conversation_monotonic_us(request);
     if (decode_started_us != 0u && decode_completed_us >= decode_started_us)
       atomic_u64_max(&request->diag_decode_max_us,
@@ -1888,6 +1898,8 @@ static h2_pal_result_t conversation_generation_start(
   if (request == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(request, 0, sizeof(*request));
+  /* 20 ms at 16 kHz until the first real packet says otherwise. */
+  request->plc_frame_samples = 320;
   request->service = service;
   request->identity = identity;
   request->on_event = on_event;
