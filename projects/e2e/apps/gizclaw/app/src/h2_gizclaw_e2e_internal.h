@@ -1,6 +1,7 @@
 #ifndef H2_GIZCLAW_E2E_INTERNAL_H
 #define H2_GIZCLAW_E2E_INTERNAL_H
 
+#include "h2/pal/os/h2_pal_task.h"
 #include "h2_gizclaw.h"
 #include "h2_gizclaw_e2e.h"
 
@@ -103,8 +104,9 @@ typedef struct h2_gizclaw_e2e_fixture {
   bool isolation_pet_delete_acknowledged;
   bool cancel_requested;
   bool cleanup_started;
-  /* Job tasks whose join never succeeded; their handles cannot be released. */
-  size_t retained_job_tasks;
+  /* A job task whose join never succeeded. The handle stays owned here and
+   * blocks fixture release until a later join reclaims it. */
+  h2_pal_task_t *retained_job_task;
 } h2_gizclaw_e2e_fixture_t;
 
 int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,

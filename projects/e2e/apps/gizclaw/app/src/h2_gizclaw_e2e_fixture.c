@@ -731,12 +731,43 @@ static void sync_job_entry(void *user) {
 #define SYNC_JOB_JOIN_ATTEMPTS 100u
 #define SYNC_JOB_JOIN_INTERVAL_MS 10u
 
+/* Retry-join a returned job task within the bounded window. */
+static int join_job_task(h2_gizclaw_e2e_fixture_t *fixture,
+                         h2_pal_task_t *task) {
+  int rc = H2_PAL_ERR_INVALID_STATE;
+  for (unsigned attempt = 0u; attempt < SYNC_JOB_JOIN_ATTEMPTS; ++attempt) {
+    rc = h2_pal_task_join(fixture->runtime->task, task);
+    if (rc == H2_PAL_OK || attempt + 1u >= SYNC_JOB_JOIN_ATTEMPTS)
+      break;
+    (void)h2_pal_time_sleep_ms(fixture->time, SYNC_JOB_JOIN_INTERVAL_MS);
+  }
+  return rc;
+}
+
+/* Reclaim a previously retained job task, if any, before reuse or release. */
+static int reclaim_retained_job_task(h2_gizclaw_e2e_fixture_t *fixture) {
+  if (fixture->retained_job_task == NULL)
+    return H2_PAL_OK;
+  const int rc = join_job_task(fixture, fixture->retained_job_task);
+  h2_gizclaw_e2e_evidence("h2_pal_task_join", "sync-job-retained", rc);
+  if (rc == H2_PAL_OK)
+    fixture->retained_job_task = NULL;
+  return rc;
+}
+
 int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
                                      h2_gizclaw_service_t *service,
                                      int (*fn)(void *ctx), void *ctx) {
   if (fixture == NULL || fixture->runtime == NULL || fixture->time == NULL ||
       service == NULL || fn == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  /* A still-retained job task owns the single handle slot; do not start a
+   * second job that could overwrite and leak it. Reclaim it first. */
+  if (fixture->retained_job_task != NULL) {
+    const int rc = reclaim_retained_job_task(fixture);
+    if (rc != H2_PAL_OK)
+      return rc;
+  }
   sync_job_t job = {.fn = fn, .ctx = ctx, .result = H2_PAL_ERR_INVALID_STATE};
   atomic_init(&job.returned, false);
   const h2_pal_task_options_t options = {
@@ -774,16 +805,13 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
     if (dispatched == 0u)
       (void)h2_pal_time_sleep_ms(fixture->time, 1u);
   }
-  for (unsigned attempt = 0u;; ++attempt) {
-    rc = h2_pal_task_join(fixture->runtime->task, task);
-    if (rc == H2_PAL_OK || attempt + 1u >= SYNC_JOB_JOIN_ATTEMPTS)
-      break;
-    (void)h2_pal_time_sleep_ms(fixture->time, SYNC_JOB_JOIN_INTERVAL_MS);
-  }
+  rc = join_job_task(fixture, task);
   h2_gizclaw_e2e_evidence("h2_pal_task_join", "sync-job", rc);
   if (rc != H2_PAL_OK) {
-    /* The handle stays owned by us but nothing can release it any more. */
-    ++fixture->retained_job_tasks;
+    /* Retain the handle in fixture-owned state so a later join (in the next
+     * call or in deinit) can reclaim it; releasing the fixture is blocked
+     * until then. */
+    fixture->retained_job_task = task;
     return rc;
   }
   return first_error != H2_PAL_OK ? first_error : job.result;
@@ -1363,7 +1391,7 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
         fixture, "peer", fixture->actors[index].peer_delete_required);
   }
   retained += emit_retained_resource(fixture, "job-task",
-                                     fixture->retained_job_tasks != 0u);
+                                     fixture->retained_job_task != NULL);
   return retained;
 }
 
@@ -1382,6 +1410,9 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
       return rc;
   }
   int result = H2_PAL_OK;
+  /* A retained job task cannot be freed with the fixture; reclaim it first,
+   * and keep the fixture alive if its join still cannot complete. */
+  keep_first_failure(reclaim_retained_job_task(fixture), &result);
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_ACTOR_COUNT; ++index) {
     h2_gizclaw_e2e_actor_t *actor = &fixture->actors[index];
     const int rc = actor_stop(actor);

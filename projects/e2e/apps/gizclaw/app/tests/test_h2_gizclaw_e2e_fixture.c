@@ -780,14 +780,28 @@ static void test_call_sync(h2_runtime_t *runtime,
       assert(s_polls == polls_before + 3u && s_stops == stops_before);
     }
     assert(s_task_joins == (mode == 5u ? 3u : mode == 6u ? 100u : 1u));
-    assert(fixture.retained_job_tasks == (mode == 6u ? 1u : 0u));
   }
+  /* Mode 6 left a retained handle that the ledger reports and that blocks
+   * release. A new call reclaims it first; while the join keeps failing the
+   * call is refused without starting a second task. */
   assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 1u);
-  fixture.retained_job_tasks = 0u;
-  assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
+  runs = 0u;
+  s_task_starts = 0u;
+  const int busy =
+      h2_gizclaw_e2e_fixture_call_sync(&fixture, &service, sync_job_body,
+                                       &runs);
+  assert(busy == H2_PAL_ERR_BUSY && runs == 0u && s_task_starts == 0u);
+  assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 1u);
+  /* Deinit must not free the fixture while the handle cannot be joined. */
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_ERR_BUSY);
+  assert(fixture.retained_job_task != NULL);
+  /* Once the join can complete, the retained task is reclaimed and release
+   * succeeds. */
   s_join_failures = 0u;
   s_poll_fault = 0u;
+  assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 1u);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(fixture.retained_job_task == NULL);
   runtime->task = saved_task;
 }
 
