@@ -230,6 +230,13 @@ static h2_pal_result_t memory_inject(
         operation->data.button.pressed_at_ms,
         0u,
         operation->data.button.pressed_at_ms);
+  case H2_APP_TEST_OPERATION_BUTTON_HOLD:
+    return h2_runtime_test_button_action(
+        memory->control,
+        operation->data.button.component_id,
+        operation->data.button.pressed_at_ms,
+        0u,
+        operation->data.button.released_at_ms);
   case H2_APP_TEST_OPERATION_BUTTON_UP:
     return h2_runtime_test_button_action(
         memory->control,

@@ -240,6 +240,22 @@ h2_pal_result_t h2_app_test_session_button_down(
       pressed_at_ms, 0u, timeout_ms, snapshot);
 }
 
+h2_pal_result_t h2_app_test_session_button_hold(
+    h2_app_test_session_t *session,
+    h2_runtime_component_id_t component_id,
+    h2_runtime_timestamp_ms_t pressed_at_ms,
+    h2_runtime_timestamp_ms_t observed_at_ms, uint32_t timeout_ms,
+    h2_app_test_snapshot_t *snapshot) {
+  if (observed_at_ms < pressed_at_ms) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  /* The button operation carries two timestamps; for a hold the second one
+   * is the observation time, not a release. */
+  return session_button(
+      session, H2_APP_TEST_OPERATION_BUTTON_HOLD, component_id,
+      pressed_at_ms, observed_at_ms, timeout_ms, snapshot);
+}
+
 h2_pal_result_t h2_app_test_session_button_up(
     h2_app_test_session_t *session,
     h2_runtime_component_id_t component_id,
