@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,11 +13,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
-try:
-    import fcntl
-except ImportError:  # Windows has no fcntl; ESP targets do not build there.
-    fcntl = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.bazel.native_ccache import (
@@ -318,95 +312,6 @@ def validate_commit(
             "ESP-IDF commit mismatch: "
             f"expected {expected_commit}, found {actual_commit}"
         )
-
-
-def missing_submodules(idf_path: Path, environment: dict[str, str]) -> list[str]:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(idf_path), "submodule", "status"],
-            check=False,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except OSError as error:
-        raise RunnerError(
-            f"cannot inspect ESP-IDF submodules: {error}"
-        ) from error
-    if result.returncode != 0:
-        raise RunnerError(
-            f"cannot inspect ESP-IDF submodules: {result.stderr.strip()}"
-        )
-    paths = []
-    for line in result.stdout.splitlines():
-        # Missing submodules are reported as "-<sha> <path>".
-        if not line.startswith("-"):
-            continue
-        fields = line[1:].split()
-        if len(fields) >= 2:
-            paths.append(fields[1])
-    return paths
-
-
-def prepare_submodules(idf_path: Path, environment: dict[str, str]) -> None:
-    """Initialize ESP-IDF's own submodules once, serialized across actions.
-
-    ESP-IDF's git_submodule_check initializes missing submodules from inside
-    CMake configure, which mutates the SDK checkout shared by every firmware
-    action. Bazel now schedules several of those actions at once, and
-    concurrent `git submodule update` calls against one repository fail. Do the
-    initialization here under a cross-process lock and tell CMake to skip its
-    own check, so the shared checkout is only ever written by one process.
-    """
-    # Read the state before reaching for the lock. Only the first action of a
-    # build finds anything missing, so the rest would otherwise queue on the
-    # lock just to observe that there is nothing to do. Whoever does find work
-    # re-reads the state under the lock, which is what makes this safe.
-    if not missing_submodules(idf_path, environment):
-        environment["IDF_SKIP_CHECK_SUBMODULES"] = "1"
-        return
-    digest = hashlib.sha256(str(idf_path).encode("utf-8")).hexdigest()[:16]
-    lock_path = Path(tempfile.gettempdir()) / f"h2-esp-idf-submodules-{digest}.lock"
-    try:
-        lock_file = open(lock_path, "w", encoding="utf-8")
-    except OSError as error:
-        raise RunnerError(
-            f"cannot open ESP-IDF submodule lock {lock_path}: {error}"
-        ) from error
-    with lock_file:
-        if fcntl is not None:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        paths = missing_submodules(idf_path, environment)
-        if paths:
-            try:
-                result = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(idf_path),
-                        "submodule",
-                        "update",
-                        "--init",
-                        "--recursive",
-                        *paths,
-                    ],
-                    check=False,
-                    env=environment,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except OSError as error:
-                raise RunnerError(
-                    f"cannot initialize ESP-IDF submodules: {error}"
-                ) from error
-            if result.returncode != 0:
-                raise RunnerError(
-                    "ESP-IDF submodule initialization failed for "
-                    f"{', '.join(paths)}: {result.stderr.strip()}"
-                )
-    environment["IDF_SKIP_CHECK_SUBMODULES"] = "1"
 
 
 def resolve_project(source_root: Path, project_file: Path, target: str) -> Path:
@@ -824,7 +729,6 @@ def run(arguments: argparse.Namespace) -> None:
         "ESP-IDF",
     )
     validate_commit(idf_path, expected_idf_commit, environment)
-    prepare_submodules(idf_path, environment)
     expected_tool_versions = read_expected_tool_versions(
         arguments.idf_tool_versions_file,
     )

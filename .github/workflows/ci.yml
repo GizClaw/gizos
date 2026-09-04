@@ -566,7 +566,16 @@ jobs:
 
       - name: Check out ESP-IDF from Firmwares devenv
         shell: bash
-        run: git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+        # ESP-IDF's own submodules are provisioned here, before any build. Its
+        # CMake otherwise initializes whatever is missing during configure,
+        # which writes the SDK checkout that every firmware action shares; two
+        # launchers configuring at once then race and the build fails with
+        # "Git submodule init failed". Provisioning up front leaves that check
+        # read-only and costs nothing extra, since it walks and initializes the
+        # same set either way.
+        run: |
+          git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+          git -C firmware-devenv/third_party/esp_idf_6.0 submodule update --init --recursive
 
       - name: Restore ESP-IDF tool cache
         id: esp-idf-cache
