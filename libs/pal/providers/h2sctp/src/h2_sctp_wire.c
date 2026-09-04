@@ -101,6 +101,22 @@ h2_pal_result_t h2_sctp_wire_parse_chunk(
     return H2_PAL_OK;
 }
 
+void h2_sctp_wire_write_common_header(
+    uint8_t *out_packet,
+    uint16_t source_port,
+    uint16_t destination_port,
+    uint32_t verification_tag) {
+    h2_sctp_wire_write_u16(out_packet, source_port);
+    h2_sctp_wire_write_u16(out_packet + 2u, destination_port);
+    h2_sctp_wire_write_u32(out_packet + 4u, verification_tag);
+    memset(out_packet + 8u, 0, 4u);
+}
+
+void h2_sctp_wire_finish_packet(uint8_t *packet, size_t packet_len) {
+    h2_sctp_wire_write_crc(
+        packet + 8u, h2_sctp_crc32c_packet(packet, packet_len));
+}
+
 h2_pal_result_t h2_sctp_wire_build_packet(
     uint16_t source_port,
     uint16_t destination_port,
@@ -120,14 +136,11 @@ h2_pal_result_t h2_sctp_wire_build_packet(
         packet_capacity < H2_SCTP_COMMON_HEADER_SIZE + chunks_len) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    h2_sctp_wire_write_u16(out_packet, source_port);
-    h2_sctp_wire_write_u16(out_packet + 2u, destination_port);
-    h2_sctp_wire_write_u32(out_packet + 4u, verification_tag);
-    memset(out_packet + 8u, 0, 4u);
+    h2_sctp_wire_write_common_header(
+        out_packet, source_port, destination_port, verification_tag);
     memcpy(out_packet + H2_SCTP_COMMON_HEADER_SIZE, chunks, chunks_len);
     const size_t packet_len = H2_SCTP_COMMON_HEADER_SIZE + chunks_len;
-    h2_sctp_wire_write_crc(
-        out_packet + 8u, h2_sctp_crc32c_packet(out_packet, packet_len));
+    h2_sctp_wire_finish_packet(out_packet, packet_len);
     *out_packet_len = packet_len;
     return H2_PAL_OK;
 }

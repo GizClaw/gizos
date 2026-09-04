@@ -40,7 +40,6 @@ static void h2_sctp_stream_free_tx_list(
     h2_sctp_tx_fragment_t *fragments) {
     while (fragments != NULL) {
         h2_sctp_tx_fragment_t *next = fragments->next;
-        h2_sctp_free(association->owner, fragments->data);
         h2_sctp_free(association->owner, fragments);
         fragments = next;
     }
@@ -87,18 +86,14 @@ h2_pal_result_t h2_sctp_stream_queue_message(
         const size_t remaining = message->len - offset;
         const size_t fragment_len =
             remaining < payload_size ? remaining : payload_size;
+        /* One allocation carries the fragment and its payload. */
         h2_sctp_tx_fragment_t *fragment = h2_sctp_alloc(
-            association->owner, sizeof(*fragment));
+            association->owner, sizeof(*fragment) + fragment_len);
         if (fragment == NULL) {
             h2_sctp_stream_free_tx_list(association, head);
             return H2_PAL_ERR_NO_MEMORY;
         }
-        fragment->data = h2_sctp_alloc(association->owner, fragment_len);
-        if (fragment->data == NULL) {
-            h2_sctp_free(association->owner, fragment);
-            h2_sctp_stream_free_tx_list(association, head);
-            return H2_PAL_ERR_NO_MEMORY;
-        }
+        fragment->data = (uint8_t *)(fragment + 1);
         memcpy(fragment->data, message->data + offset, fragment_len);
         fragment->message_id = association->next_message_id;
         fragment->message_identifier = identifier;
@@ -378,7 +373,7 @@ static h2_pal_result_t h2_sctp_stream_deliver_one(
             begin->tsn + sequence);
         cursor = fragment->next;
         association->receive_used -= fragment->data_len;
-        h2_sctp_free(association->owner, fragment->data);
+        /* The payload shares the fragment allocation; prune releases it. */
         fragment->data = NULL;
         fragment->data_len = 0u;
         fragment->delivered = true;
@@ -483,16 +478,13 @@ h2_pal_result_t h2_sctp_stream_handle_data(
                                         payload_len) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
+    /* One allocation carries the fragment and its payload. */
     h2_sctp_rx_fragment_t *fragment = h2_sctp_alloc(
-        association->owner, sizeof(*fragment));
+        association->owner, sizeof(*fragment) + payload_len);
     if (fragment == NULL) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
-    fragment->data = h2_sctp_alloc(association->owner, payload_len);
-    if (fragment->data == NULL) {
-        h2_sctp_free(association->owner, fragment);
-        return H2_PAL_ERR_WOULD_BLOCK;
-    }
+    fragment->data = (uint8_t *)(fragment + 1);
     memcpy(fragment->data, chunk->data + header_size, payload_len);
     fragment->tsn = tsn;
     fragment->stream_id = stream_id;
@@ -501,7 +493,6 @@ h2_pal_result_t h2_sctp_stream_handle_data(
     fragment->data_len = payload_len;
     if (interleaved) {
         if (h2_sctp_wire_read_u16(chunk->data + 6u) != 0u) {
-            h2_sctp_free(association->owner, fragment->data);
             h2_sctp_free(association->owner, fragment);
             return H2_PAL_ERR_FORMAT;
         }
@@ -564,7 +555,6 @@ h2_pal_result_t h2_sctp_stream_handle_data(
                 association->owner, delivery_size);
             if (delivery_data == NULL) {
                 h2_sctp_stream_remove_rx(association, fragment);
-                h2_sctp_free(association->owner, fragment->data);
                 h2_sctp_free(association->owner, fragment);
                 return H2_PAL_ERR_WOULD_BLOCK;
             }
@@ -574,7 +564,6 @@ h2_pal_result_t h2_sctp_stream_handle_data(
                 if (delivery_stream == NULL) {
                     h2_sctp_free(association->owner, delivery_data);
                     h2_sctp_stream_remove_rx(association, fragment);
-                    h2_sctp_free(association->owner, fragment->data);
                     h2_sctp_free(association->owner, fragment);
                     return H2_PAL_ERR_WOULD_BLOCK;
                 }
@@ -635,7 +624,6 @@ static void h2_sctp_stream_discard_through(
         if (!h2_sctp_tsn_after(fragment->tsn, cumulative_tsn)) {
             *cursor = fragment->next;
             association->receive_used -= fragment->data_len;
-            h2_sctp_free(association->owner, fragment->data);
             h2_sctp_free(association->owner, fragment);
             continue;
         }
@@ -783,7 +771,6 @@ static void h2_sctp_stream_reset_incoming(
         if (fragment->stream_id == stream_id) {
             *cursor = fragment->next;
             association->receive_used -= fragment->data_len;
-            h2_sctp_free(association->owner, fragment->data);
             h2_sctp_free(association->owner, fragment);
             continue;
         }
@@ -947,7 +934,6 @@ void h2_sctp_stream_release_all(h2_pal_sctp_association_t *association) {
     h2_sctp_rx_fragment_t *fragment = association->rx_fragments;
     while (fragment != NULL) {
         h2_sctp_rx_fragment_t *next = fragment->next;
-        h2_sctp_free(association->owner, fragment->data);
         h2_sctp_free(association->owner, fragment);
         fragment = next;
     }

@@ -41,6 +41,15 @@ h2_pal_result_t h2_sctp_wire_parse_chunk(
     size_t offset,
     h2_sctp_chunk_view_t *out_chunk);
 
+/* Writes the 12-byte common header with a zero checksum field. */
+void h2_sctp_wire_write_common_header(
+    uint8_t *out_packet,
+    uint16_t source_port,
+    uint16_t destination_port,
+    uint32_t verification_tag);
+/* Computes and stores the CRC32C of a packet whose chunks are in place. */
+void h2_sctp_wire_finish_packet(uint8_t *packet, size_t packet_len);
+
 h2_pal_result_t h2_sctp_wire_build_packet(
     uint16_t source_port,
     uint16_t destination_port,

@@ -139,10 +139,26 @@ static h2_pal_result_t h2_sctp_reliability_emit_fragment(
     }
     const size_t chunk_len = header_size + fragment->data_len;
     const size_t padded_len = (chunk_len + 3u) & ~(size_t)3u;
-    uint8_t *chunk = h2_sctp_alloc(association->owner, padded_len);
-    if (chunk == NULL) {
-        return H2_PAL_ERR_NO_MEMORY;
+    if (padded_len > association->config.max_packet_size -
+                         H2_SCTP_COMMON_HEADER_SIZE) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
+    if (association->pending_emit != NULL) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    /* The DATA chunk is written straight into the pooled packet buffer: one
+     * payload copy, no per-chunk or per-packet allocation. */
+    uint8_t *packet = h2_sctp_packet_acquire(association);
+    if (packet == NULL) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    h2_sctp_wire_write_common_header(
+        packet,
+        association->config.local_port,
+        association->config.remote_port,
+        association->peer_verification_tag);
+    uint8_t *chunk = packet + H2_SCTP_COMMON_HEADER_SIZE;
+    memset(chunk + chunk_len, 0, padded_len - chunk_len);
     if (!fragment->tsn_assigned) {
         fragment->tsn = association->next_tsn++;
         fragment->tsn_assigned = true;
@@ -167,14 +183,10 @@ static h2_pal_result_t h2_sctp_reliability_emit_fragment(
         h2_sctp_wire_write_u32(chunk + 12u, fragment->ppid);
         memcpy(chunk + 16u, fragment->data, fragment->data_len);
     }
-    h2_pal_result_t result = h2_sctp_emit_chunks(
-        association,
-        association->peer_verification_tag,
-        chunk,
-        padded_len,
-        H2_SCTP_CONTROL_NONE,
-        now_ms);
-    h2_sctp_free(association->owner, chunk);
+    const size_t packet_len = H2_SCTP_COMMON_HEADER_SIZE + padded_len;
+    h2_sctp_wire_finish_packet(packet, packet_len);
+    h2_pal_result_t result = h2_sctp_emit_packet(
+        association, packet, packet_len, H2_SCTP_CONTROL_NONE, now_ms);
     if (result == H2_PAL_OK || result == H2_PAL_ERR_WOULD_BLOCK) {
         if (!fragment->sent) {
             association->flight_size += fragment->data_len;
@@ -312,7 +324,7 @@ static void h2_sctp_reliability_mark_acknowledged(
         association->send_used -= fragment->data_len;
     }
     *in_out_acked_bytes += fragment->data_len;
-    h2_sctp_free(association->owner, fragment->data);
+    /* The payload shares the fragment allocation; it is released by prune. */
     fragment->data = NULL;
 }
 
@@ -340,7 +352,6 @@ static void h2_sctp_reliability_prune(
             if (association->tx_fragments_tail == fragment) {
                 association->tx_fragments_tail = previous;
             }
-            h2_sctp_free(association->owner, fragment->data);
             h2_sctp_free(association->owner, fragment);
             continue;
         }
@@ -562,7 +573,6 @@ static void h2_sctp_reliability_abandon_message(
         if (association->send_used >= fragment->data_len) {
             association->send_used -= fragment->data_len;
         }
-        h2_sctp_free(association->owner, fragment->data);
         fragment->data = NULL;
     }
 }
@@ -864,7 +874,6 @@ void h2_sctp_reliability_release_all(
     h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
     while (fragment != NULL) {
         h2_sctp_tx_fragment_t *next = fragment->next;
-        h2_sctp_free(association->owner, fragment->data);
         h2_sctp_free(association->owner, fragment);
         fragment = next;
     }

@@ -24,9 +24,13 @@ static void h2_esp_h2peer_lock_release(void) {
 const h2_pal_webrtc_api_t *h2_esp_platform_webrtc_api(void) {
     h2_esp_h2peer_lock_acquire();
     if (!h2_esp_h2peer_initialized) {
+        /* SCTP state and payload copies live in PSRAM; the small per-
+         * association packet pool goes to internal (DMA-capable) RAM so
+         * every outbound packet handed to DTLS is built there. */
         const h2_sctp_config_t sctp_config = {
             .mem = h2_esp_platform_psram_allocator(),
             .crypto = h2_esp_platform_crypto_api(),
+            .packet_mem = h2_esp_platform_internal_allocator(),
         };
         const h2_peer_config_t config = {
             .mem = h2_esp_platform_psram_allocator(),
