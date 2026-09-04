@@ -328,6 +328,16 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
     }
     (void)h2_pal_mutex_unlock(sync, service->mutex);
   }
+  if (frame != NULL && frame->event.has_error) {
+    /* Frame handlers collapse every remote code except NOT_FOUND into
+     * H2_GIZCLAW_ERR_REMOTE. Record the server's code here, on the shared
+     * dispatch path, so a streaming failure is as diagnosable as a unary one.
+     */
+    h2_gizclaw_service_log_request(
+        service, H2_PAL_LOG_ERROR, "stream", "remote_error", request->identity,
+        H2_GIZCLAW_ERR_REMOTE, frame->event.error_code, 0u,
+        frame->event.error_message.len);
+  }
   if (frame != NULL)
     rc = (h2_pal_result_t)stream->on_frame(request->context, &frame->event);
   if (notify_sink)

@@ -133,6 +133,10 @@ struct h2_gizclaw_conversation_request {
   atomic_uint_fast64_t diag_pcm_block_started_us;
   atomic_uint_fast64_t diag_pcm_blocked_max_us;
   atomic_size_t diag_pcm_depth_max_bytes;
+  /* REPLY_AUDIO chunks the hook ring could not hold since the last report;
+   * the total drives a one-time warning per request. */
+  atomic_uint_fast64_t diag_hook_drops;
+  atomic_uint_fast64_t diag_hook_drops_total;
   h2_gizclaw_operation_result_t operation_result;
   bool has_pending_downlink_message;
   atomic_bool committed;
@@ -202,6 +206,13 @@ static size_t audio_ring_depth(const h2_gizclaw_audio_ring_t *ring) {
    * write. Never turn that benign race into a bogus near-SIZE_MAX depth. */
   return depth <= ring->capacity ? depth : 0u;
 }
+
+/* Defined after the conversation struct; formats the reply/route state and
+ * returns true when the request looks stuck: wire ready, no downlink EOS, and
+ * nothing decoded or queued in the last window. */
+static bool conversation_diag_state(h2_gizclaw_conversation_request_t *request,
+                                    uint_fast64_t window_frames,
+                                    size_t opus_depth, char *out, size_t cap);
 
 static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
                                      uint64_t now_us) {
@@ -310,10 +321,12 @@ static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
   atomic_u64_max(&request->diag_pcm_blocked_max_us, pcm_blocked_us);
   const uint64_t pcm_would_block = atomic_exchange_explicit(
       &request->diag_pcm_write_would_block, 0u, memory_order_acq_rel);
+  const uint_fast64_t window_frames = atomic_load_explicit(
+      &request->diag_decode_frames, memory_order_acquire);
   (void)snprintf(message, sizeof(message),
                  "frames=%" PRIuFAST64 " worker_gap_max_us=%" PRIuFAST64
                  " decode_max_us=%" PRIuFAST64 " pcm_write_ok=%" PRIuFAST64
-                 " pcm_write_would_block=%" PRIu64
+                 " pcm_write_would_block=%" PRIu64 " hook_drops=%" PRIuFAST64
                  " pcm_depth_ms=%zu pcm_depth_max_ms=%zu pcm_capacity_ms=%zu"
                  " pcm_full_us=%" PRIu64 " pcm_full_max_us=%" PRIuFAST64,
                  atomic_exchange_explicit(&request->diag_decode_frames, 0u,
@@ -324,7 +337,10 @@ static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
                                           memory_order_acq_rel),
                  atomic_exchange_explicit(&request->diag_pcm_write_ok, 0u,
                                           memory_order_acq_rel),
-                 pcm_would_block, have_pcm ? pcm_depth / 32u : 0u,
+                 pcm_would_block,
+                 atomic_exchange_explicit(&request->diag_hook_drops, 0u,
+                                          memory_order_acq_rel),
+                 have_pcm ? pcm_depth / 32u : 0u,
                  atomic_exchange_explicit(&request->diag_pcm_depth_max_bytes,
                                           have_pcm ? pcm_depth : 0u,
                                           memory_order_acq_rel) /
@@ -336,6 +352,11 @@ static void conversation_diag_report(h2_gizclaw_conversation_request_t *request,
   conversation_diag_log(
       request, pcm_would_block == 0u ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
       "gizclaw/audio-decode", message);
+
+  const bool stuck = conversation_diag_state(request, window_frames, opus_depth,
+                                             message, sizeof(message));
+  conversation_diag_log(request, stuck ? H2_PAL_LOG_WARN : H2_PAL_LOG_INFO,
+                        "gizclaw/audio-state", message);
 }
 
 typedef struct conversation_reply_route {
@@ -382,6 +403,37 @@ struct h2_gizclaw_conversation {
   char text[H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u];
   char error_code[65];
 };
+
+static bool conversation_diag_state(h2_gizclaw_conversation_request_t *request,
+                                    uint_fast64_t window_frames,
+                                    size_t opus_depth, char *out, size_t cap) {
+  const h2_gizclaw_conversation_t *conversation = request->conversation;
+  const bool wire_ready =
+      atomic_load_explicit(&request->wire_ready, memory_order_acquire);
+  const bool downlink_eos =
+      atomic_load_explicit(&request->downlink_eos, memory_order_acquire);
+  /* The poll-owned flags below are read racily for diagnostics only. */
+  (void)snprintf(
+      out, cap,
+      "generation=%llu wire_ready=%d downlink_eos=%d terminal_waiting=%d "
+      "pending_msg=%d notification_pending=%d hook_avail=%zu opus_depth=%zu "
+      "terminal_pending=%d response=%d%d%d assistant=%d%d%d transcript=%d%d%d",
+      (unsigned long long)request->generation, wire_ready, downlink_eos,
+      request->terminal_waiting_for_audio, request->has_pending_downlink_message,
+      request->notification_pending,
+      h2_gizclaw_pcm_ring_available(&request->pcm_downlink), opus_depth,
+      conversation != NULL && conversation->terminal_pending,
+      conversation != NULL && conversation->response.text_open,
+      conversation != NULL && conversation->response.audio_ended,
+      conversation != NULL && conversation->response.ended,
+      conversation != NULL && conversation->assistant.text_open,
+      conversation != NULL && conversation->assistant.audio_ended,
+      conversation != NULL && conversation->assistant.ended,
+      conversation != NULL && conversation->transcript.text_open,
+      conversation != NULL && conversation->transcript.audio_ended,
+      conversation != NULL && conversation->transcript.ended);
+  return window_frames == 0u && opus_depth == 0u;
+}
 
 static int gzc_to_pal(int rc) {
   switch (rc) {
@@ -501,17 +553,23 @@ static void audio_ring_deinit(h2_gizclaw_audio_ring_t *ring) {
 }
 
 static h2_gizclaw_conversation_request_t *
-media_request_acquire(h2_gizclaw_service_t *service) {
+media_request_acquire_tagged(h2_gizclaw_service_t *service, int tag) {
   if (service == NULL ||
       h2_pal_mutex_lock(service->config.sync, service->mutex) != H2_PAL_OK)
     return NULL;
   h2_gizclaw_conversation_request_t *request =
       atomic_load(&service->media_request);
-  if (request != NULL)
+  if (request != NULL) {
     atomic_fetch_add(&service->media_callback_refs, 1);
+    atomic_store_explicit(&service->media_holder_tag, tag,
+                          memory_order_relaxed);
+  }
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   return request;
 }
+
+#define media_request_acquire(service)                                         \
+  media_request_acquire_tagged((service), __LINE__)
 
 static void media_request_release(h2_gizclaw_service_t *service) {
   (void)h2_pal_mutex_lock(service->config.sync, service->mutex);
@@ -552,9 +610,21 @@ void h2_gizclaw_conversation_media_detach(
   (void)atomic_compare_exchange_strong(&service->media_request, &expected,
                                        NULL);
   request->media_attached = false;
-  while (atomic_load(&service->media_callback_refs) != 0)
+  unsigned int waits = 0u;
+  while (atomic_load(&service->media_callback_refs) != 0) {
     (void)h2_pal_cond_wait(service->config.sync, service->progress_cond,
-                           service->mutex, H2_PAL_SYNC_WAIT_FOREVER);
+                           service->mutex, 1000u);
+    if (atomic_load(&service->media_callback_refs) != 0) {
+      /* A media callback is holding the request for far longer than one
+       * audio period. Name the last acquirer so the stall can be traced. */
+      h2_gizclaw_service_log_request(
+          service, H2_PAL_LOG_WARN, "conversation", "media_detach_wait",
+          request->identity, H2_PAL_ERR_TIMEOUT,
+          atomic_load_explicit(&service->media_holder_tag,
+                               memory_order_relaxed),
+          atomic_load(&service->media_callback_refs), ++waits);
+    }
+  }
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
 }
 
@@ -643,7 +713,7 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
                      "event=write_blocked blocked_us=0 ring_depth=%zu"
                      " ring_capacity=%zu",
                      ring_depth, request->opus_downlink.capacity);
-      conversation_diag_log(request, H2_PAL_LOG_WARN, "gizclaw/audio-downlink",
+      conversation_diag_log(request, H2_PAL_LOG_INFO, "gizclaw/audio-downlink",
                             log_message);
     }
   } else if (rc == H2_PAL_ERR_CLOSED) {
@@ -908,7 +978,7 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
                        "event=pcm_write_blocked blocked_us=0"
                        " pcm_depth_ms=%zu pcm_capacity_ms=%zu",
                        pcm_depth / 32u, pcm_capacity / 32u);
-        conversation_diag_log(request, H2_PAL_LOG_WARN, "gizclaw/audio-decode",
+        conversation_diag_log(request, H2_PAL_LOG_INFO, "gizclaw/audio-decode",
                               log_message);
       }
     }
@@ -921,8 +991,29 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
   if (request->on_event != NULL) {
     h2_pal_result_t rc =
         h2_gizclaw_pcm_ring_write(&request->pcm_downlink, pcm, len);
-    if (rc != H2_PAL_OK)
+    /* The hook drains one chunk per service_poll() pass on the app task, so
+     * a busy app fills these eight chunks long before playback needs them.
+     * Playback already owns this PCM through the Track; do not let a late
+     * notification consumer stall decoding for the speaker. A full ring
+     * coalesces the notification and the next drained chunk still reports
+     * REPLY_AUDIO for this reply. */
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+      atomic_fetch_add_explicit(&request->diag_hook_drops, 1u,
+                                memory_order_relaxed);
+      if (atomic_fetch_add_explicit(&request->diag_hook_drops_total, 1u,
+                                    memory_order_relaxed) == 0u) {
+        char log_message[160];
+        (void)snprintf(log_message, sizeof(log_message),
+                       "event=hook_ring_full chunk_bytes=%zu ring_chunks=%u;"
+                       " REPLY_AUDIO notifications coalesce until the app"
+                       " polls; playback is unaffected",
+                       len, (unsigned)H2_GIZCLAW_CONVERSATION_PCM_RING_CHUNKS);
+        conversation_diag_log(request, H2_PAL_LOG_WARN, "gizclaw/audio-decode",
+                              log_message);
+      }
+    } else if (rc != H2_PAL_OK) {
       return rc;
+    }
   }
   request->pcm_delivered = false;
   request->decoded_offset += len;
@@ -960,8 +1051,20 @@ void h2_gizclaw_conversation_downlink_step_internal(
   h2_gizclaw_conversation_request_t *request = media_request_acquire(service);
   if (request == NULL)
     return;
-  if (atomic_load(&request->audio_result) == H2_PAL_OK)
-    record_audio_result(request, conversation_decode_step(request));
+  /* One decoded chunk per wake caps this stage at roughly real time, so any
+   * wake lost to scheduling leaves the Opus ring fuller for good and the PCM
+   * Track intermittently dry. While the ring has a backlog and the Track has
+   * room, keep decoding; the Track's own depth bounds the burst and its
+   * WOULD_BLOCK ends it, so the speaker still paces playback. */
+  for (unsigned int chunk = 0u;
+       chunk < H2_GIZCLAW_CONVERSATION_PCM_RING_CHUNKS &&
+       atomic_load(&request->audio_result) == H2_PAL_OK;
+       ++chunk) {
+    const h2_pal_result_t rc = conversation_decode_step(request);
+    record_audio_result(request, rc);
+    if (rc != H2_PAL_OK)
+      break;
+  }
   media_request_release(service);
 }
 
@@ -1029,8 +1132,8 @@ conversation_reply_route(h2_gizclaw_conversation_t *conversation,
   return &conversation->response;
 }
 
-bool h2_gizclaw_conversation_accepts_peer_event_internal(
-    h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event) {
+static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
+                               const gzc_peer_event_t *event) {
   if (conversation == NULL || event == NULL)
     return false;
   conversation_reply_route_t *route =
@@ -1073,6 +1176,37 @@ bool h2_gizclaw_conversation_accepts_peer_event_internal(
   return true;
 }
 
+bool h2_gizclaw_conversation_accepts_peer_event_internal(
+    h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event) {
+  return accepts_peer_event(conversation, event);
+}
+
+void h2_gizclaw_conversation_describe_peer_event_internal(
+    const h2_gizclaw_conversation_t *conversation,
+    const gzc_peer_event_t *event, char *out, size_t cap) {
+  if (out == NULL || cap == 0u)
+    return;
+  if (conversation == NULL || event == NULL) {
+    out[0] = '\0';
+    return;
+  }
+  const conversation_reply_route_t *route =
+      conversation_reply_route((h2_gizclaw_conversation_t *)conversation,
+                               event);
+  const char *label = peer_event_label(event);
+  const char *id = peer_event_stream_id(event);
+  (void)snprintf(
+      out, cap,
+      "label=%s id=%.40s error=%d route_id=%.40s text_open=%d audio_ended=%d "
+      "ended=%d terminal_pending=%d",
+      label != NULL ? label : "-", id != NULL ? id : "-",
+      event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS
+          ? (int)event->payload.eos.has_error
+          : 0,
+      route->id, route->text_open, route->audio_ended, route->ended,
+      conversation->terminal_pending);
+}
+
 bool h2_gizclaw_conversation_has_pending_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation) {
   return conversation != NULL && conversation->pending_peer_event;
@@ -1080,8 +1214,22 @@ bool h2_gizclaw_conversation_has_pending_peer_event_internal(
 
 void h2_gizclaw_conversation_enqueue_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event) {
-  if (conversation == NULL || event == NULL || conversation->pending_peer_event)
+  if (conversation == NULL || event == NULL)
     return;
+  if (conversation->pending_peer_event) {
+    /* The poll has not consumed the previous event yet. Losing a boundary
+     * here leaves the reply waiting forever, so make the loss visible. */
+    if (conversation->service != NULL &&
+        conversation->service->client_config.log != NULL) {
+      char message[96];
+      (void)snprintf(message, sizeof(message),
+                     "event=peer_dropped type=%d pending_type=%d",
+                     (int)event->type, (int)conversation->peer_event.type);
+      (void)h2_pal_log_write(conversation->service->client_config.log,
+                             H2_PAL_LOG_ERROR, "gizclaw/conversation", message);
+    }
+    return;
+  }
   conversation->peer_event = *event;
   conversation->pending_peer_event = true;
 }
@@ -1347,9 +1495,17 @@ void h2_gizclaw_conversation_invalidate_internal(
 static void conversation_request_dispatch_event(void *user) {
   h2_gizclaw_conversation_request_t *request = user;
   h2_pal_result_t rc = H2_PAL_OK;
-  if (!atomic_load_explicit(&request->notification_suppressed,
-                            memory_order_acquire))
+  const bool suppressed = atomic_load_explicit(
+      &request->notification_suppressed, memory_order_acquire);
+  if (!suppressed)
     rc = request->on_event(request->user, request, &request->dispatch_event);
+  if (request->dispatch_event.kind != H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO &&
+      request->dispatch_event.kind != H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA)
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_WARN, "conversation", "hook_dispatched",
+        request->identity, rc, (int)request->dispatch_event.kind * 10 +
+                                  (suppressed ? 1 : 0),
+        request->notification_terminal, request->dispatch_event.generation);
   /* Hooks observe an already accepted event, not a retryable transport write.
    */
   request->notification_result =
@@ -1406,7 +1562,12 @@ conversation_queue_notification(h2_gizclaw_conversation_request_t *request,
 }
 
 static void
-conversation_request_close(h2_gizclaw_conversation_request_t *request) {
+conversation_request_close_at(h2_gizclaw_conversation_request_t *request,
+                              int line) {
+  h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_WARN,
+                                 "conversation", "close", request->identity,
+                                 H2_PAL_OK, line, request->queued_frames,
+                                 request->queued_bytes);
   atomic_store_explicit(&request->notification_suppressed, true,
                         memory_order_release);
   h2_gizclaw_conversation_media_detach(request);
@@ -1419,10 +1580,16 @@ conversation_request_close(h2_gizclaw_conversation_request_t *request) {
   request->conversation = NULL;
 }
 
+#define conversation_request_close(request)                                    \
+  conversation_request_close_at((request), __LINE__)
+
 static h2_pal_result_t
 conversation_request_poll(void *user, h2_gizclaw_client_t *client,
                           const h2_gizclaw_cancel_token_t *cancel_token) {
   h2_gizclaw_conversation_request_t *request = user;
+  /* Keep the per-second audio state visible even when the downlink worker
+   * has nothing to decode. */
+  conversation_diag_report(request, conversation_monotonic_us(request));
   if (h2_gizclaw_cancel_requested(cancel_token)) {
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_WARN, "conversation", "poll_cancelled",
@@ -1534,6 +1701,11 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   if (request->terminal_waiting_for_audio && downlink_eos &&
       h2_gizclaw_pcm_ring_available(&request->pcm_downlink) == 0u) {
     request->terminal_waiting_for_audio = false;
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_WARN, "conversation", "terminal_dispatch",
+        request->identity, H2_PAL_OK,
+        (int)request->pending_terminal_event.kind,
+        request->reply_boundary_terminal, request->generation);
     request->dispatch_event = request->pending_terminal_event;
     request->notification_terminal_result =
         request->dispatch_event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR
@@ -1598,6 +1770,11 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     request->reply_boundary_terminal =
         event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR ||
         request->transport_committed;
+    h2_gizclaw_service_log_request(
+        request->service, H2_PAL_LOG_WARN, "conversation", "terminal_staged",
+        request->identity, H2_PAL_OK,
+        (int)event.kind * 10 + (request->reply_boundary_terminal ? 1 : 0),
+        request->on_event != NULL, event.generation);
     request->pending_terminal_event = event;
     request->pending_downlink_message =
         (h2_gizclaw_conversation_request_message_t){
@@ -1653,7 +1830,7 @@ conversation_request_complete(void *user, h2_gizclaw_operation_t *operation,
   atomic_store_explicit(&request->terminal, true, memory_order_release);
   h2_gizclaw_service_log_request(
       request->service,
-      result->result == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+      result->result == H2_PAL_OK ? H2_PAL_LOG_WARN : H2_PAL_LOG_ERROR,
       "conversation", "completed", request->identity, result->result, 0,
       request->queued_frames, request->queued_bytes);
   h2_gizclaw_service_log_request(
@@ -1730,6 +1907,8 @@ static h2_pal_result_t conversation_generation_start(
   atomic_init(&request->diag_pcm_block_started_us, 0u);
   atomic_init(&request->diag_pcm_blocked_max_us, 0u);
   atomic_init(&request->diag_pcm_depth_max_bytes, 0u);
+  atomic_init(&request->diag_hook_drops, 0u);
+  atomic_init(&request->diag_hook_drops_total, 0u);
   h2_pal_mutex_config_t input_config = {.name = "$gizclaw/conversation-input",
                                         .allocator = allocator};
   h2_pal_result_t rc = h2_pal_mutex_create(service->config.sync, &input_config,
@@ -1991,6 +2170,9 @@ static h2_pal_result_t service_audio_control(h2_gizclaw_service_t *service,
 }
 
 h2_pal_result_t h2_gizclaw_service_audio_start(h2_gizclaw_service_t *service) {
+  /* Whatever the previous request left in the downlink Track is stale once
+   * a new one claims the audio path. */
+  h2_gizclaw_service_pcm_discard_downlink_internal(service);
   return service_audio_control(service, true);
 }
 
@@ -2007,8 +2189,10 @@ h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation) {
       h2_pal_mutex_lock(service->config.sync, service->audio_mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  if (conversation->service_request != NULL)
+  if (conversation->service_request != NULL) {
     rc = h2_gizclaw_operation_cancel(conversation->service_request->operation);
+    h2_gizclaw_service_pcm_discard_downlink_internal(service);
+  }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
   return rc;
 }

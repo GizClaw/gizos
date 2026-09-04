@@ -10,6 +10,11 @@ typedef struct pcm_track {
   h2_gizclaw_pcm_ring_t uplink;
   h2_gizclaw_pcm_ring_t downlink;
   atomic_bool bound;
+  /* A new audio request records the downlink write index here; the consumer
+   * skips everything before it on its next read. Only the consumer moves
+   * the ring's read index, so the SPSC contract holds. */
+  atomic_size_t downlink_discard_until;
+  atomic_bool downlink_discard_pending;
 } pcm_track_t;
 
 static h2_pal_result_t read_uplink(void *user, uint8_t *pcm, size_t len,
@@ -67,6 +72,8 @@ h2_gizclaw_pcm_track_create(const h2_gizclaw_pcm_track_config_t *config,
   track->allocator = config->allocator;
   track->base = (h2_gizclaw_track_t){.user = track, .vtable = &pcm_vtable};
   atomic_init(&track->bound, false);
+  atomic_init(&track->downlink_discard_until, 0u);
+  atomic_init(&track->downlink_discard_pending, false);
   h2_pal_result_t rc = h2_gizclaw_pcm_ring_init(
       &track->uplink, config->allocator, config->uplink_capacity != 0u
           ? config->uplink_capacity : H2_GIZCLAW_PCM_TRACK_DEFAULT_CAPACITY);
@@ -120,7 +127,31 @@ h2_pal_result_t h2_gizclaw_pcm_track_read(h2_gizclaw_track_t *base,
   pcm_track_t *track = owned_track(base);
   if (track == NULL || (len & 1u) != 0u)
     return H2_PAL_ERR_INVALID_ARG;
+  if (atomic_exchange_explicit(&track->downlink_discard_pending, false,
+                               memory_order_acq_rel)) {
+    /* Stale playback from the previous request ends here; the writer may
+     * already have appended the new request's audio past the watermark. */
+    h2_gizclaw_pcm_ring_t *ring = &track->downlink;
+    const size_t until = atomic_load_explicit(&track->downlink_discard_until,
+                                              memory_order_acquire);
+    const size_t read =
+        atomic_load_explicit(&ring->read_index, memory_order_relaxed);
+    if (until - read <= ring->capacity)
+      atomic_store_explicit(&ring->read_index, until, memory_order_release);
+  }
   return h2_gizclaw_pcm_ring_read(&track->downlink, pcm, len);
+}
+
+void h2_gizclaw_pcm_track_discard_downlink_internal(h2_gizclaw_track_t *base) {
+  pcm_track_t *track = owned_track(base);
+  if (track == NULL)
+    return;
+  atomic_store_explicit(&track->downlink_discard_until,
+                        atomic_load_explicit(&track->downlink.write_index,
+                                             memory_order_acquire),
+                        memory_order_release);
+  atomic_store_explicit(&track->downlink_discard_pending, true,
+                        memory_order_release);
 }
 
 h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(h2_gizclaw_track_t *base) {

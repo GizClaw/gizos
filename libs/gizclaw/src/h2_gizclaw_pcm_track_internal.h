@@ -19,6 +19,10 @@ struct h2_gizclaw_track {
 /* Service binding pins library-owned Tracks until all accesses have ended. */
 h2_pal_result_t h2_gizclaw_pcm_track_attach_internal(h2_gizclaw_track_t *track);
 void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t *track);
+/* Drop downlink PCM queued before now. Called by the writer side when a new
+ * audio request starts or the current one is cancelled; applied by the
+ * consumer on its next read. */
+void h2_gizclaw_pcm_track_discard_downlink_internal(h2_gizclaw_track_t *track);
 /* Snapshot only while the single uplink consumer is paused. */
 size_t h2_gizclaw_pcm_track_pending_internal(h2_gizclaw_track_t *track);
 bool h2_gizclaw_pcm_track_downlink_stats_internal(h2_gizclaw_track_t *track,

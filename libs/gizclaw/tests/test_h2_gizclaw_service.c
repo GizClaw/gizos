@@ -6384,7 +6384,7 @@ typedef struct conversation_test {
   atomic_uint turns_done;
   uint8_t pending[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
   size_t pending_len, read_offset, write_offset, hook_offset;
-  uint8_t output[10000];
+  uint8_t output[16000];
   size_t packets;
   unsigned event_close_count, mode;
   unsigned bos_attempts, eos_attempts;
@@ -6635,7 +6635,11 @@ static h2_pal_result_t conversation_test_track_read(void *user, uint8_t *pcm,
   if (test->mode == 2 && test->read_offset != 0)
     return H2_PAL_ERR_CLOSED;
   const bool multi_turn = test->mode == 15 || test->mode == 16;
-  const size_t total = multi_turn ? 4u * 640u : 12u * 640u + 100u;
+  /* Mode 18 echoes more reply chunks than the hook ring holds (8 x 1280 B =
+   * 16 chunks) so a stalled hook consumer is actually exercised. */
+  const size_t total = multi_turn        ? 4u * 640u
+                       : test->mode == 18 ? 20u * 640u
+                                          : 12u * 640u + 100u;
   if (multi_turn && test->read_offset == 2u * 640u &&
       atomic_load(&test->turns_done) == 0u)
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -6860,7 +6864,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 18; ++mode) {
+  for (unsigned mode = 0; mode < 19; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -6984,6 +6988,7 @@ static void test_conversation_public_audio_tasks(void) {
       }
     }
     bool input_ended = false;
+    unsigned hook_settle = 0u;
     for (unsigned spins = 0; spins < 4000 && !atomic_load(&test.done);
          ++spins) {
       if (mode == 15 && atomic_load(&test.turns_done) == 1u &&
@@ -7009,6 +7014,10 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
+      } else if (mode == 18 && atomic_load(&test.captured) == 20u * 640u &&
+                 !input_ended) {
+        assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+        input_ended = true;
       }
       /* Release the fake speaker after either encoded-ring backpressure or
        * input completion. Production downlink capacity may absorb this small
@@ -7016,6 +7025,18 @@ static void test_conversation_public_audio_tasks(void) {
       if (mode == 0 &&
           (atomic_load(&test.echo_blocked) || input_ended))
         atomic_store(&test.playback_blocked, false);
+      /* Mode 18: the app stops polling, so the hook ring fills after 16
+       * chunks. Decoding must still deliver every chunk to the speaker Track;
+       * a decoder gated on the hook would leave `written` short forever. */
+      if (mode == 18 &&
+          (atomic_load(&test.written) < 20u * 640u || hook_settle++ < 50u)) {
+        /* `written` is stored by the Track write that precedes the hook ring
+         * write for the same chunk. Let the decoder finish that last hook
+         * write, and the network tick stage its one chunk, before the first
+         * poll drains the ring, so the count below is exactly what fit. */
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+        continue;
+      }
       size_t dispatched;
       assert(h2_gizclaw_service_poll(service, 32, &dispatched) == H2_PAL_OK);
       h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
@@ -7075,6 +7096,15 @@ static void test_conversation_public_audio_tasks(void) {
              !atomic_load(&test.bos) && !atomic_load(&test.eos));
     if (mode == 10)
       assert(test.filler_callbacks == 8);
+    if (mode == 18) {
+      /* Every chunk reached the speaker Track with no app poll in between;
+       * decoding never waited on the hook. The hook kept only the contiguous
+       * prefix that fit: sixteen chunks in its ring plus the one chunk the
+       * network tick had already staged for dispatch. The rest coalesced. */
+      assert(test.packets == 20u && atomic_load(&test.written) == 20u * 640u);
+      assert(test.hook_offset == 17u * 640u);
+      assert(test.result == H2_PAL_OK);
+    }
     if (mode == 11 || mode == 12)
       assert(test.hook_offset == 0);
     assert(conversation_test_notification_count(&test) == 0);

@@ -388,11 +388,27 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
     client->pending_client_event = true;
     return dispatch_pending_client_event(client, on_event, event_user);
   }
-  if (client->active_conversation != NULL &&
+  const bool accepted =
+      client->active_conversation != NULL &&
       h2_gizclaw_conversation_accepts_peer_event_internal(
-          client->active_conversation, &peer_event)) {
+          client->active_conversation, &peer_event);
+  if (accepted) {
     h2_gizclaw_conversation_enqueue_peer_event_internal(
         client->active_conversation, &peer_event);
+  }
+  if (peer_event.type !=
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
+    char detail[160] = "";
+    if (client->active_conversation != NULL)
+      h2_gizclaw_conversation_describe_peer_event_internal(
+          client->active_conversation, &peer_event, detail, sizeof(detail));
+    char message[H2_PAL_LOG_MESSAGE_MAX];
+    (void)snprintf(message, sizeof(message),
+                   "event=peer_read type=%d active=%d accepted=%d %s",
+                   (int)peer_event.type, client->active_conversation != NULL,
+                   accepted, detail);
+    (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                           message);
   }
   return H2_PAL_OK;
 }

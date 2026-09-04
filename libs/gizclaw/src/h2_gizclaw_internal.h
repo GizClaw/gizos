@@ -195,6 +195,10 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
+/* Formats the reply-route state a peer event lands on, for diagnostics. */
+void h2_gizclaw_conversation_describe_peer_event_internal(
+    const h2_gizclaw_conversation_t *conversation,
+    const gzc_peer_event_t *event, char *out, size_t cap);
 bool h2_gizclaw_conversation_has_pending_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation);
 void h2_gizclaw_conversation_enqueue_peer_event_internal(

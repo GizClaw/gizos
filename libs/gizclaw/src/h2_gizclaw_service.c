@@ -645,9 +645,13 @@ static void downlink_worker(void *ctx) {
                                             H2_GIZCLAW_STREAM_AUDIO_DOWNLINK);
     if (lock_service(service) != H2_PAL_OK)
       return;
+    /* Wake on progress, or after one audio period. The PCM Track drains one
+     * chunk per period, so a 1 ms retry mostly re-locked the service to be
+     * refused by a full Track, at the same priority and on the same core as
+     * the speaker that had to free it. */
     if (!service->stopping)
       (void)h2_pal_cond_wait(service->config.sync, service->progress_cond,
-                             service->mutex, 1u);
+                             service->mutex, H2_GIZCLAW_AUDIO_PERIOD_MS);
     unlock_service(service);
   }
 }
@@ -957,6 +961,7 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   atomic_init(&service->speech_request, NULL);
   atomic_init(&service->pcm_track, NULL);
   atomic_init(&service->media_callback_refs, 0u);
+  atomic_init(&service->media_holder_tag, 0);
   atomic_init(&service->runtime_event_armed, false);
 
   const h2_pal_mutex_config_t mutex_config = {
@@ -1204,6 +1209,15 @@ h2_gizclaw_service_pcm_write_internal(h2_gizclaw_service_t *service,
                            : track->vtable->write(track->user, pcm, len);
   pcm_track_release(service);
   return rc;
+}
+
+void h2_gizclaw_service_pcm_discard_downlink_internal(
+    h2_gizclaw_service_t *service) {
+  h2_gizclaw_track_t *track = pcm_track_acquire(service);
+  if (track == NULL)
+    return;
+  h2_gizclaw_pcm_track_discard_downlink_internal(track);
+  pcm_track_release(service);
 }
 
 bool h2_gizclaw_service_pcm_downlink_stats_internal(

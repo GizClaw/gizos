@@ -267,6 +267,42 @@ static void tail_outlives_track(const h2_pal_mem_api_t *service_allocator) {
   h2_gizclaw_pcm_input_deinit(&input);
 }
 
+static void discard_downlink(const h2_pal_mem_api_t *allocator) {
+  h2_gizclaw_pcm_track_config_t config = {
+      .allocator = allocator, .uplink_capacity = 8u, .downlink_capacity = 16u};
+  h2_gizclaw_track_t *track = NULL;
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  const uint8_t stale[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+  const uint8_t fresh[4] = {7, 8, 9, 10};
+  uint8_t output[16];
+  /* Nothing queued: a discard is harmless. */
+  h2_gizclaw_pcm_track_discard_downlink_internal(track);
+  assert(h2_gizclaw_pcm_track_read(track, output, 2u) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  /* Stale audio queued before the request boundary never reaches the reader,
+   * even when the new request already appended past the watermark. */
+  assert(track->vtable->write(track->user, stale, sizeof(stale)) == H2_PAL_OK);
+  h2_gizclaw_pcm_track_discard_downlink_internal(track);
+  assert(track->vtable->write(track->user, fresh, sizeof(fresh)) == H2_PAL_OK);
+  memset(output, 0xa5, sizeof(output));
+  assert(h2_gizclaw_pcm_track_read(track, output, sizeof(fresh)) == H2_PAL_OK);
+  assert(memcmp(output, fresh, sizeof(fresh)) == 0);
+  assert(h2_gizclaw_pcm_track_read(track, output, 2u) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  /* A discard with nothing new behind it leaves the ring empty and reusable
+   * across the wrap point. */
+  assert(track->vtable->write(track->user, stale, sizeof(stale)) == H2_PAL_OK);
+  h2_gizclaw_pcm_track_discard_downlink_internal(track);
+  assert(h2_gizclaw_pcm_track_read(track, output, 2u) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(track->vtable->write(track->user, stale, sizeof(stale)) == H2_PAL_OK);
+  assert(track->vtable->write(track->user, fresh, sizeof(fresh)) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_read(track, output, 12u) == H2_PAL_OK);
+  assert(memcmp(output, stale, sizeof(stale)) == 0 &&
+         memcmp(output + 8u, fresh, sizeof(fresh)) == 0);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+}
+
 int main(void) {
   uint64_t deadline = 100u;
   assert(h2_gizclaw_audio_next_deadline(deadline, 103u, &deadline) ==
@@ -295,6 +331,7 @@ int main(void) {
   recording_window(&allocator);
   default_capacity(&allocator);
   tail_outlives_track(&allocator);
+  discard_downlink(&allocator);
   assert(memory.live == 0u);
   for (size_t fail = 1u; fail <= 3u; ++fail) {
     memory = (memory_t){.fail_at = fail};

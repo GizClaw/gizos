@@ -254,6 +254,7 @@ struct h2_gizclaw_service {
   h2_pal_webrtc_track_vtable_t webrtc_track_vtable;
   h2_pal_webrtc_track_t webrtc_track;
   atomic_uint media_callback_refs;
+  atomic_int media_holder_tag; /* source line of the last acquirer */
   h2_gizclaw_client_t *client;
   h2_gizclaw_operation_t *current;
   h2_gizclaw_operation_t *pending;
@@ -294,6 +295,10 @@ h2_gizclaw_service_pcm_read_internal(h2_gizclaw_service_t *service,
 h2_pal_result_t
 h2_gizclaw_service_pcm_write_internal(h2_gizclaw_service_t *service,
                                       const uint8_t *pcm, size_t len);
+/* A new audio request, or a cancel, discards downlink PCM still queued from
+ * the previous request so its tail cannot play over the next turn. */
+void h2_gizclaw_service_pcm_discard_downlink_internal(
+    h2_gizclaw_service_t *service);
 bool h2_gizclaw_service_pcm_downlink_stats_internal(
     h2_gizclaw_service_t *service, size_t *out_used, size_t *out_capacity);
 bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t *service);
