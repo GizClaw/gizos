@@ -138,6 +138,23 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
   } while (0)
 
+/* Report a key that is still held, observed at `timestamp_`. */              \
+#define H2_APP_TEST_BUTTON_HOLD(test_, component_id_, timestamp_)              \
+  do {                                                                         \
+    const size_t h2_app_test_button_index_ = (size_t)(component_id_);          \
+    h2_runtime_timestamp_ms_t h2_app_test_pressed_at_ = (timestamp_);          \
+    if (h2_app_test_button_index_ < 32u &&                                     \
+        (test_)->button_pressed[h2_app_test_button_index_]) {                  \
+      h2_app_test_pressed_at_ =                                                \
+          (test_)->button_pressed_at[h2_app_test_button_index_];               \
+    }                                                                          \
+    H2_APP_TEST_REQUIRE((test_), h2_app_test_session_button_hold(              \
+                                     (test_)->session, (component_id_),        \
+                                     h2_app_test_pressed_at_, (timestamp_),    \
+                                     0u, &(test_)->snapshot));                 \
+    H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
+  } while (0)
+
 /* Inject one released Button Action. */                                      \
 #define H2_APP_TEST_BUTTON_UP(test_, component_id_, timestamp_)                \
   do {                                                                         \
