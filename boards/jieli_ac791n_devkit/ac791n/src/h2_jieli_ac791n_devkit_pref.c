@@ -44,6 +44,7 @@ struct h2_pal_pref_cursor {
 
 static lfs_t pref_lfs;
 static OS_MUTEX pref_mutex;
+/* Atomic publication states: 0 uninitialized, 1 creating, 2 ready. */
 static int pref_mutex_ready;
 static int pref_ready;
 static void (*pref_diagnostic)(const char *line);
@@ -135,11 +136,19 @@ static int map_lfs_error(int result) {
 }
 
 static int pref_lock(void) {
-  if (!pref_mutex_ready) {
-    pref_trace("H2_JIELI_PREF_ENTER step=mutex_create\r\n");
-    if (os_mutex_create(&pref_mutex) != OS_NO_ERR) return H2_PAL_ERR_IO;
-    pref_mutex_ready = 1;
-    pref_trace("H2_JIELI_PREF_OK step=mutex_create\r\n");
+  while (__atomic_load_n(&pref_mutex_ready, __ATOMIC_ACQUIRE) != 2) {
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&pref_mutex_ready, &expected, 1, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+      pref_trace("H2_JIELI_PREF_ENTER step=mutex_create\r\n");
+      int result = os_mutex_create(&pref_mutex);
+      __atomic_store_n(&pref_mutex_ready, result == OS_NO_ERR ? 2 : 0,
+                       __ATOMIC_RELEASE);
+      if (result != OS_NO_ERR) return H2_PAL_ERR_IO;
+      pref_trace("H2_JIELI_PREF_OK step=mutex_create\r\n");
+    } else {
+      os_time_dly(1u);
+    }
   }
   pref_trace("H2_JIELI_PREF_ENTER step=mutex_pend\r\n");
   return os_mutex_pend(&pref_mutex, 0u) == OS_NO_ERR ? H2_PAL_OK

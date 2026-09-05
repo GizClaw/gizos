@@ -9,6 +9,75 @@ SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_pr
 
 
 class PreferenceCommitTest(unittest.TestCase):
+    def test_concurrent_first_use_and_failed_create_retry(self):
+        source = SOURCE.read_text()
+        functions = source[source.index("static int pref_lock(void)"):
+                           source.index("static int pref_region_erased(void)")]
+        stub = r'''
+#define _POSIX_C_SOURCE 200809L
+#include <assert.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <time.h>
+#include <errno.h>
+enum { OS_NO_ERR=0, H2_PAL_OK=0, H2_PAL_ERR_IO=-1 };
+static pthread_mutex_t pref_mutex;
+static int pref_mutex_ready;
+static atomic_int started, go, creates, inside;
+static int protected_count;
+static void pref_trace(const char *text) { (void)text; }
+static void os_time_dly(unsigned ticks) {
+  struct timespec delay={0,(long)ticks*1000000L};
+  while (nanosleep(&delay,&delay)!=0) assert(errno==EINTR);
+}
+static int os_mutex_create(pthread_mutex_t *mutex) {
+  int attempt=atomic_fetch_add(&creates,1);
+  os_time_dly(5);
+  if (attempt==0) return -1;
+  /* Any attempt beyond this is a duplicate initialization of a live mutex. */
+  assert(attempt==1);
+  return pthread_mutex_init(mutex,NULL);
+}
+static int os_mutex_pend(pthread_mutex_t *mutex, unsigned timeout) {
+  (void)timeout; return pthread_mutex_lock(mutex);
+}
+static int os_mutex_post(pthread_mutex_t *mutex) { return pthread_mutex_unlock(mutex); }
+'''
+        main = r'''
+static void *worker(void *unused) {
+  (void)unused;
+  atomic_fetch_add(&started,1);
+  while (!atomic_load(&go)) os_time_dly(1);
+  for (int i=0;i<100;++i) {
+    int rc;
+    do { rc=pref_lock(); } while (rc==H2_PAL_ERR_IO);
+    assert(rc==0 && atomic_fetch_add(&inside,1)==0);
+    ++protected_count;
+    assert(atomic_fetch_sub(&inside,1)==1);
+    pref_unlock();
+  }
+  return NULL;
+}
+int main(void) {
+  pthread_t threads[8];
+  for (int i=0;i<8;++i) assert(pthread_create(&threads[i],NULL,worker,NULL)==0);
+  while (atomic_load(&started)!=8) os_time_dly(1);
+  atomic_store(&go,1);
+  for (int i=0;i<8;++i) assert(pthread_join(threads[i],NULL)==0);
+  assert(atomic_load(&creates)==2 && protected_count==800);
+  assert(pthread_mutex_destroy(&pref_mutex)==0);
+  return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-pref-init-") as directory:
+            test = Path(directory) / "test.c"
+            binary = Path(directory) / "test"
+            test.write_text(stub + functions + main)
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-pthread", str(test), "-o", str(binary)],
+                           check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=60)
+
     def test_iteration_and_clear_failures(self):
         source = SOURCE.read_text()
         types = source[source.index("enum {"):source.index("static lfs_t pref_lfs;")]
