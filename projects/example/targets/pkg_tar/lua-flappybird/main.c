@@ -172,8 +172,6 @@ static void run_app(void *user) {
   config.sync = h2_web_platform_sync_api(context->platform);
   config.touch = h2_web_platform_touch_api(context->platform);
   config.webrtc = h2_web_platform_webrtc_api(context->platform);
-  config.webrtc_media_track =
-      h2_web_platform_webrtc_audio_track(context->platform);
   config.periph = &s_periph;
   config.component_mapper = &s_mapper;
   context->result = h2_runtime_init(&config, &runtime);
@@ -241,5 +239,9 @@ int main(void) {
   if (result == H2_PAL_OK)
     result = context.result;
   h2_web_platform_destroy(platform);
+  // main resumes through Asyncify: returning nonzero alone may still leave
+  // the Node harness successful. Headless runs must report their real result.
+  if (web_is_headless())
+    emscripten_force_exit(result == H2_PAL_OK ? 0 : 1);
   return result == H2_PAL_OK ? 0 : 1;
 }

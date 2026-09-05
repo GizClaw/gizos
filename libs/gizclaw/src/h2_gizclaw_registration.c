@@ -7,17 +7,7 @@
 #include "pb_decode.h"
 #include "pb_encode.h"
 
-#include <stdatomic.h>
 #include <string.h>
-
-struct h2_gizclaw_registration_request {
-  h2_gizclaw_async_rpc_t *rpc;
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_registration_completion_fn completion;
-  void *completion_user;
-  h2_gizclaw_registration_result_t registration;
-  atomic_bool terminal;
-};
 
 int h2_gizclaw_registration_encode_request(const char *token, uint8_t *out,
                                            size_t capacity, size_t *out_len) {
@@ -57,111 +47,61 @@ int h2_gizclaw_registration_decode_response(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t
-h2_gizclaw_client_register(h2_gizclaw_client_t *client, const char *token,
-                           h2_gizclaw_registration_result_t *out_result) {
-  if (out_result != NULL)
-    memset(out_result, 0, sizeof(*out_result));
-  if (client == NULL || token == NULL || token[0] == '\0' ||
-      out_result == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  uint8_t request_bytes[gizclaw_rpc_v1_ServerRegisterRequest_size];
-  size_t request_len = 0u;
-  h2_pal_result_t result =
-      (h2_pal_result_t)h2_gizclaw_registration_encode_request(
-          token, request_bytes, sizeof(request_bytes), &request_len);
-  h2_gizclaw_rpc_response_t response = {0};
-  if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_REGISTER,
-        (h2_gizclaw_rpc_bytes_t){.data = request_bytes, .len = request_len},
-        &response);
-  }
-  if (result == H2_PAL_OK && response.has_error)
-    result = H2_PAL_ERR_IO;
-  if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_gizclaw_registration_decode_response(
-        response.result_payload, response.result_payload_len, out_result);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return result;
-}
+static const char register_tag;
 
-static void
-registration_rpc_complete(void *user, h2_gizclaw_async_rpc_t *rpc,
-                          const h2_gizclaw_operation_result_t *operation_result,
-                          const h2_gizclaw_rpc_response_t *response) {
-  (void)rpc;
-  h2_gizclaw_registration_request_t *request = user;
-  h2_gizclaw_operation_result_t result = *operation_result;
-  if (result.result == H2_PAL_OK && (response == NULL || response->has_error)) {
-    result.result = H2_PAL_ERR_IO;
-  }
-  if (result.result == H2_PAL_OK) {
-    result.result = (h2_pal_result_t)h2_gizclaw_registration_decode_response(
-        response->result_payload, response->result_payload_len,
-        &request->registration);
-  }
-  atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request, &result,
-                      result.result == H2_PAL_OK ? &request->registration
-                                                 : NULL);
-}
-
-h2_pal_result_t h2_gizclaw_service_register_async(
-    h2_gizclaw_service_t *service, uint64_t identity, const char *token,
-    uint32_t timeout_ms, h2_gizclaw_registration_completion_fn completion,
-    void *user, h2_gizclaw_registration_request_t **out_request) {
+h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t *service,
+                                               uint64_t identity,
+                                               const char *token,
+                                               uint32_t timeout_ms,
+                                               h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
-  if (service == NULL || token == NULL || token[0] == '\0' ||
-      timeout_ms == 0u || completion == NULL || out_request == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  uint8_t request_bytes[gizclaw_rpc_v1_ServerRegisterRequest_size];
-  size_t request_len = 0u;
-  const h2_pal_result_t encode_result =
-      (h2_pal_result_t)h2_gizclaw_registration_encode_request(
-          token, request_bytes, sizeof(request_bytes), &request_len);
-  if (encode_result != H2_PAL_OK)
-    return encode_result;
-
-  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
-  h2_gizclaw_registration_request_t *registration_request =
-      h2_pal_mem_alloc(allocator, sizeof(*registration_request));
-  if (registration_request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  memset(registration_request, 0, sizeof(*registration_request));
-  registration_request->allocator = allocator;
-  registration_request->completion = completion;
-  registration_request->completion_user = user;
-  const h2_pal_result_t result = h2_gizclaw_service_rpc_call_async(
-      service, identity, H2_GIZCLAW_RPC_SERVER_REGISTER,
-      (h2_gizclaw_rpc_bytes_t){.data = request_bytes, .len = request_len},
-      timeout_ms, registration_rpc_complete, registration_request,
-      &registration_request->rpc);
-  if (result != H2_PAL_OK) {
-    h2_pal_mem_free(allocator, registration_request);
-    return result;
-  }
-  *out_request = registration_request;
-  return H2_PAL_OK;
+  uint8_t payload[gizclaw_rpc_v1_ServerRegisterRequest_size];
+  size_t payload_len = 0u;
+  h2_pal_result_t rc = (h2_pal_result_t)h2_gizclaw_registration_encode_request(
+      token, payload, sizeof(payload), &payload_len);
+  if (rc != H2_PAL_OK)
+    return rc;
+  return h2_gizclaw_req_create_rpc_internal(
+      service, identity, H2_GIZCLAW_RPC_SERVER_REGISTER, &register_tag,
+      (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms, out_request);
 }
 
-h2_pal_result_t h2_gizclaw_registration_request_cancel(
-    h2_gizclaw_registration_request_t *request) {
-  if (request == NULL)
+h2_pal_result_t
+h2_gizclaw_resp_parse_register(const h2_gizclaw_req_t *request,
+                               h2_gizclaw_registration_result_t *out_result) {
+  if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_async_rpc_cancel(request->rpc);
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &register_tag, &response);
+  if (rc == H2_PAL_OK) {
+    rc = response->result_payload_len == 0u
+             ? H2_PAL_ERR_FORMAT
+             : (h2_pal_result_t)h2_gizclaw_registration_decode_response(
+                   response->result_payload, response->result_payload_len,
+                   out_result);
+  }
+  return rc;
 }
 
-void h2_gizclaw_registration_request_release(
-    h2_gizclaw_registration_request_t *request) {
-  if (request == NULL ||
-      !atomic_load_explicit(&request->terminal, memory_order_acquire)) {
-    return;
-  }
-  h2_gizclaw_async_rpc_release(request->rpc);
-  h2_pal_mem_free(request->allocator, request);
+h2_pal_result_t
+h2_gizclaw_rpc_register(h2_gizclaw_service_t *service, const char *token,
+                        uint32_t timeout_ms,
+                        h2_gizclaw_registration_result_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_create_register(service, 0u, token, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_register(request, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }

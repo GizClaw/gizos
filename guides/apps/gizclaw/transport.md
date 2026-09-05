@@ -56,20 +56,21 @@ RPC stream 的 EOS 是 request-scoped RPC framing 终止标记，与 Agent Event
 ## GizClaw service task ownership
 
 应用只通过 `h2_gizclaw_service` 提交 RPC、speech 和 conversation 请求，不直接调用会自行
-轮询的阻塞 Client helper。Service 固定创建两个系统 task：
+轮询的阻塞 Client helper。Service 固定创建一个系统 task：
 
 - `$gizclaw/net` 独占 C SDK Client 的 create、connect、request start、poll、cancel、close
   和 deinit。所有 unary request handle、mixed-frame stream、speech upload 与 conversation
   都由这个 task 推进；其他 task 只能提交、写入有界输入队列或请求取消。
-- `$gizclaw/resp_dispatch` 消费有界 response record，在不持有 service mutex 的情况下调用
-  application callback。Unary 请求恰好产生一个 terminal callback；download、speech 和
-  conversation 可以先按 wire 顺序多次调用 progress/event callback，再产生一个 terminal
-  callback。
+- App main loop 调用 `h2_gizclaw_service_poll()` 消费有界 response record，并在不持有
+  service mutex 的情况下调用 application callback。Unary 请求恰好产生一个 terminal
+  callback；download、speech 和 conversation 可以先按 wire 顺序多次调用 progress/event
+  callback，再产生一个 terminal callback。
 
 提交函数在返回前验证并复制 borrowed input。Response 结构由 request handle 持有，只在
 callback 期间借给调用方；terminal callback 返回后，调用方释放 handle。Service stop 会先
-让所有已接收请求得到 finished、canceled 或 service-closed 终态并完成 callback dispatch，
-再 join 两个 task。这样同一 Client 不会同时被后台 poll 与应用 task 的同步 RPC 轮询。
+让所有已接收请求得到 finished、canceled 或 service-closed 终态并 join 网络 task；App 随后
+继续 dispatch，直到完成队列为空。这样同一 Client 不会同时被后台 poll 与应用 task 的同步
+RPC 轮询。
 
 ## DataChannel 终态 ownership
 
@@ -90,9 +91,10 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 是 DataChannel ownership 的终止
 disconnect、close 或 teardown；conversation 只借用该 handle 的逻辑 lease，deinit
 本轮时不得关闭物理 Event channel。Library 还负责 frame 解码、`stream_id`
 过滤、取消与完整 connection 重连边界。配置 `webrtc_media_track` 时，GizClaw 在
-offer 前只把 opaque track 绑定给 PAL，codec/RTP 和媒体推进留在 provider；不注册 PAL
-Opus callback，也不读取 track 内容。未配置 Track 的固件暂时继续把 PAL raw Opus
-callback/send 注册为 C SDK 的 versioned migration adapter。App 继续使用高层
+offer 前用 `h2_pal_webrtc_peer_set_track()` 绑定该 caller-owned Track，codec/RTP 和
+媒体推进由 Track 与 provider 协作完成，GizClaw 不读取 track 内容，并在 peer close 前
+调用 `h2_pal_webrtc_peer_unset_track()` 归还它。未配置 Track 的固件继续把 PAL
+`OPUS_FRAME` event 和 `peer_send_opus` 作为 C SDK 的 raw Opus adapter。App 继续使用高层
 `GZC_PROTOCOL_OPUS_PACKET`，由 C SDK 把 payload 映射到 WebRTC audio RTP；
 firmware 不添加私有 header、不直接组 RTP，也不使用 DataChannel fallback。它不
 拥有 H106 页面或产品状态。API completion 由 service 放入有界 completion queue；H106 main loop dispatch matching-generation callback，更新 state，再投影到 Audio System 和 LVGL subject。它不是 Runtime event，也不是 worker-thread callback。

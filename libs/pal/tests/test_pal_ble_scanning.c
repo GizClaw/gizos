@@ -52,6 +52,43 @@ int main(void) {
     assert(fake.calls == 2u);
     assert(fake.params.phy_mask == H2_PAL_BLE_SCAN_PHY_ALL);
 
+    params.interval_ms = 0u;
+    params.window_ms = 0u;
+    params.interval_units_625us = H2_PAL_BLE_SCAN_UNITS_625US_MIN;
+    params.window_units_625us = H2_PAL_BLE_SCAN_UNITS_625US_MIN;
+    assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) == H2_PAL_OK);
+    assert(fake.calls == 3u);
+    assert(fake.params.interval_units_625us == 4u);
+    assert(fake.params.window_units_625us == 4u);
+
+    params.interval_ms = 1u;
+    assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) ==
+           H2_PAL_ERR_INVALID_ARG);
+    params.interval_ms = 0u;
+    params.window_units_625us = 0u;
+    assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) ==
+           H2_PAL_ERR_INVALID_ARG);
+    params.window_units_625us = 5u;
+    assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) ==
+           H2_PAL_ERR_INVALID_ARG);
+    params.interval_units_625us = H2_PAL_BLE_SCAN_UNITS_625US_MIN;
+    params.window_units_625us = H2_PAL_BLE_SCAN_UNITS_625US_MIN;
+    params.type = H2_PAL_BLE_SCAN_TYPE_LEGACY;
+    params.interval_units_625us =
+        (uint16_t)(H2_PAL_BLE_LEGACY_SCAN_UNITS_625US_MAX + 1u);
+    assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) ==
+           H2_PAL_ERR_INVALID_ARG);
+    params.type = H2_PAL_BLE_SCAN_TYPE_EXTENDED;
+    params.interval_units_625us = H2_PAL_BLE_EXT_SCAN_UNITS_625US_MAX;
+    params.window_units_625us = H2_PAL_BLE_EXT_SCAN_UNITS_625US_MAX;
+    assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) == H2_PAL_OK);
+    assert(fake.calls == 4u);
+
+    params.interval_units_625us = 0u;
+    params.window_units_625us = 0u;
+    params.interval_ms = 100u;
+    params.window_ms = 50u;
+
     params.mode = (h2_pal_ble_scan_mode_t)9;
     assert(h2_pal_ble_start_scan(&api, &params, on_result, &fake) == H2_PAL_ERR_INVALID_ARG);
     params.mode = H2_PAL_BLE_SCAN_MODE_ACTIVE;
@@ -83,6 +120,6 @@ int main(void) {
     const h2_pal_ble_host_api_t unsupported = {0};
     params.timeout_ms = 0u;
     assert(h2_pal_ble_start_scan(&unsupported, &params, on_result, &fake) == H2_PAL_ERR_UNSUPPORTED);
-    assert(fake.calls == 2u);
+    assert(fake.calls == 4u);
     return 0;
 }

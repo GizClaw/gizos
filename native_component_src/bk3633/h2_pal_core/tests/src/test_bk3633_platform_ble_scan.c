@@ -62,10 +62,10 @@ int main(void) {
 
     const h2_pal_ble_scan_params_t scan = {
         .mode = H2_PAL_BLE_SCAN_MODE_PASSIVE,
-        .interval_ms = 160u,
-        .window_ms = 40u,
         .type = H2_PAL_BLE_SCAN_TYPE_EXTENDED,
         .phy_mask = H2_PAL_BLE_SCAN_PHY_ALL,
+        .interval_units_625us = 4u,
+        .window_units_625us = 4u,
     };
     assert(h2_pal_ble_start_scan(api, &scan, capture_report, NULL) ==
            H2_PAL_OK);
@@ -89,6 +89,10 @@ int main(void) {
     assert((start_command->u_param.scan_param.prop &
             (GAPM_SCAN_PROP_ACTIVE_1M_BIT |
              GAPM_SCAN_PROP_ACTIVE_CODED_BIT)) == 0u);
+    assert(start_command->u_param.scan_param.scan_param_1m.scan_intv == 4u);
+    assert(start_command->u_param.scan_param.scan_param_1m.scan_wd == 4u);
+    assert(start_command->u_param.scan_param.scan_param_coded.scan_intv == 4u);
+    assert(start_command->u_param.scan_param.scan_param_coded.scan_wd == 4u);
 
     const struct gapm_cmp_evt start_complete = {
         .operation = GAPM_START_ACTIVITY,

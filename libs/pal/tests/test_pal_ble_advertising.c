@@ -8,6 +8,9 @@ typedef struct advertising_fake {
     unsigned calls;
     h2_pal_ble_adv_params_t params;
     unsigned set_data_calls;
+    unsigned set_encoded_data_calls;
+    const uint8_t *encoded_data;
+    size_t encoded_data_len;
     unsigned set_scan_response_data_calls;
     unsigned set_start_calls;
     unsigned set_stop_calls;
@@ -58,6 +61,19 @@ static h2_pal_result_t adv_set_set_scan_response_data(
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t adv_set_set_encoded_data(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    advertising_fake_t *fake = user;
+    assert(set == (h2_pal_ble_adv_set_t *)fake);
+    ++fake->set_encoded_data_calls;
+    fake->encoded_data = encoded_data;
+    fake->encoded_data_len = encoded_data_len;
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t adv_set_start(void *user, h2_pal_ble_adv_set_t *set) {
     advertising_fake_t *fake = user;
     assert(set == (h2_pal_ble_adv_set_t *)fake);
@@ -86,6 +102,7 @@ int main(void) {
         .start_advertising = start_advertising,
         .adv_set_create = adv_set_create,
         .adv_set_set_data = adv_set_set_data,
+        .adv_set_set_encoded_data = adv_set_set_encoded_data,
         .adv_set_set_scan_response_data = adv_set_set_scan_response_data,
         .adv_set_start = adv_set_start,
         .adv_set_stop = adv_set_stop,
@@ -122,6 +139,38 @@ int main(void) {
     assert(set == (h2_pal_ble_adv_set_t *)&fake);
     h2_pal_ble_adv_data_t data = { .local_name = "multiple-set" };
     assert(h2_pal_ble_adv_set_set_data(&api, set, &data) == H2_PAL_OK);
+    const uint8_t repeated_manufacturer_data[] = {
+        3u, 0xffu, 0x01u, 0x02u,
+        2u, 0x09u, 0x61u,
+        3u, 0xffu, 0x03u, 0x04u,
+        2u, 0xffu, 0x05u,
+    };
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               &api,
+               set,
+               repeated_manufacturer_data,
+               sizeof(repeated_manufacturer_data)) == H2_PAL_OK);
+    assert(fake.set_encoded_data_calls == 1u);
+    assert(fake.encoded_data == repeated_manufacturer_data);
+    assert(fake.encoded_data_len == sizeof(repeated_manufacturer_data));
+    assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, NULL, 0u) ==
+           H2_PAL_OK);
+    assert(fake.set_encoded_data_calls == 2u);
+    const uint8_t zero_length[] = { 0u };
+    const uint8_t truncated[] = { 3u, 0xffu, 0x01u };
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               &api, set, zero_length, sizeof(zero_length)) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               &api, set, truncated, sizeof(truncated)) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_ble_adv_set_set_encoded_data(&api, set, NULL, 1u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    uint8_t oversized[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN + 1u] = { 0 };
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               &api, set, oversized, sizeof(oversized)) ==
+           H2_PAL_ERR_NO_SPACE);
+    assert(fake.set_encoded_data_calls == 2u);
     assert(h2_pal_ble_adv_set_set_scan_response_data(&api, set, &data) ==
            H2_PAL_OK);
     assert(h2_pal_ble_adv_set_start(&api, set) == H2_PAL_OK);
@@ -150,6 +199,9 @@ int main(void) {
            H2_PAL_ERR_UNSUPPORTED);
     assert(h2_pal_ble_adv_set_set_scan_response_data(
                h2_pal_unsupported_ble_host_api(), set, &data) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               h2_pal_unsupported_ble_host_api(), set, NULL, 0u) ==
            H2_PAL_ERR_UNSUPPORTED);
 
     params.type = (h2_pal_ble_adv_type_t)9;

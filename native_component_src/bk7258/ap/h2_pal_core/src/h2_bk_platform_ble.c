@@ -1,5 +1,6 @@
 #include "h2_bk_platform_core.h"
 #include "h2_bk_ble_gatts_tx_tracker.h"
+#include "h2_bk_ble_exact_adapter.h"
 
 #include <common/bk_err.h>
 #include <common/sys_config.h>
@@ -869,23 +870,17 @@ static h2_pal_result_t h2_bk_ble_encode_adv_data(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (data->manufacturer_data.len > 0u) {
-        if (!h2_bk_ble_adv_put(
+        if (h2_bk_ble_legacy_place_structured_field(
                 out,
                 &len,
                 capacity,
+                scan_rsp,
+                &response_len,
+                scan_rsp_capacity,
                 BK_BLE_AD_TYPE_MANU,
                 data->manufacturer_data.data,
-                data->manufacturer_data.len)) {
-            if (scan_rsp == NULL || scan_rsp_len == NULL ||
-                !h2_bk_ble_adv_put(
-                    scan_rsp,
-                    &response_len,
-                    scan_rsp_capacity,
-                    BK_BLE_AD_TYPE_MANU,
-                    data->manufacturer_data.data,
-                    data->manufacturer_data.len)) {
-                return H2_PAL_ERR_INVALID_ARG;
-            }
+                data->manufacturer_data.len) != H2_PAL_OK) {
+            return H2_PAL_ERR_INVALID_ARG;
         }
     }
     if (data->service_data.len > 0u) {
@@ -910,23 +905,17 @@ static h2_pal_result_t h2_bk_ble_encode_adv_data(
     }
     if (data->local_name != NULL) {
         size_t name_len = strlen(data->local_name);
-        if (!h2_bk_ble_adv_put(
+        if (h2_bk_ble_legacy_place_structured_field(
                 out,
                 &len,
                 capacity,
+                scan_rsp,
+                &response_len,
+                scan_rsp_capacity,
                 BK_BLE_AD_TYPE_NAME_CMPL,
                 (const uint8_t *)data->local_name,
-                name_len)) {
-            if (scan_rsp == NULL || scan_rsp_len == NULL ||
-                !h2_bk_ble_adv_put(
-                    scan_rsp,
-                    &response_len,
-                    scan_rsp_capacity,
-                    BK_BLE_AD_TYPE_NAME_CMPL,
-                    (const uint8_t *)data->local_name,
-                    name_len)) {
-                return H2_PAL_ERR_INVALID_ARG;
-            }
+                name_len) != H2_PAL_OK) {
+            return H2_PAL_ERR_INVALID_ARG;
         }
     }
     *out_len = len;
@@ -1538,6 +1527,26 @@ static h2_pal_result_t h2_bk_ble_set_extended_adv_data(
     uint8_t instance,
     const uint8_t *data,
     size_t len) {
+    if (len == 0u) {
+        ble_gap_adv_data_t request = {
+            .adv_handle = instance,
+            .operation = H2_BK_BLE_EXT_ADV_DATA_COMPLETE,
+            .frag_pref = 1u,
+            .adv_data_len = 0u,
+            .cmd_type = CMD_TYPE_ADV_RAW,
+        };
+        h2_bk_ble_drain_signals();
+        h2_pal_result_t rc = h2_bk_ble_map_error(ble_ethermind_post_msg(
+            BLE_ETHERMIND_MSG_GAP_API_REQ,
+            BLE_ETHERMIND_GAP_API_REQ_SUBMSG_SET_ADV_DATA,
+            &request,
+            sizeof(request),
+            NULL));
+        if (rc == H2_PAL_OK) {
+            rc = h2_bk_ble_wait(H2_BK_BLE_TIMEOUT_MS);
+        }
+        return rc;
+    }
     size_t offset = 0u;
     while (offset < len) {
         size_t remaining = len - offset;
@@ -3056,6 +3065,63 @@ static h2_pal_result_t h2_bk_ble_adv_set_set_data(
     return rc;
 }
 
+typedef struct h2_bk_ble_exact_submit_context {
+    int extended;
+} h2_bk_ble_exact_submit_context_t;
+
+static h2_pal_result_t h2_bk_ble_submit_exact_data(
+    void *user,
+    uint8_t instance,
+    const uint8_t *data,
+    size_t len) {
+    const h2_bk_ble_exact_submit_context_t *context = user;
+    if (context->extended) {
+        return h2_bk_ble_set_extended_adv_data(instance, data, len);
+    }
+    h2_bk_ble_drain_signals();
+    h2_pal_result_t rc = h2_bk_ble_map_error(
+        bk_ble_gap_set_adv_data_raw(instance, (uint16_t)len, data));
+    if (rc == H2_PAL_OK) {
+        rc = h2_bk_ble_wait(H2_BK_BLE_TIMEOUT_MS);
+    }
+    return rc;
+}
+
+static h2_pal_result_t h2_bk_ble_adv_set_set_encoded_data(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    (void)ble;
+    h2_pal_result_t lock_rc = h2_bk_ble_lock_adv();
+    if (lock_rc != H2_PAL_OK) {
+        return lock_rc;
+    }
+    if (!h2_bk_ble_adv_set_valid(set)) {
+        h2_bk_ble_unlock_adv();
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
+                          ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN
+                          : H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN;
+    h2_bk_ble_exact_submit_context_t context = {
+        .extended = set->params.type == H2_PAL_BLE_ADV_TYPE_EXTENDED,
+    };
+    h2_pal_result_t rc = h2_bk_ble_exact_submit(
+        H2_BK_BLE_EXACT_STACK_ETHERMIND,
+        set->instance,
+        encoded_data,
+        encoded_data_len,
+        capacity,
+        h2_bk_ble_submit_exact_data,
+        &context);
+    if (rc == H2_PAL_OK) {
+        set->data_staged = 1;
+    }
+    h2_bk_ble_unlock_adv();
+    return rc;
+}
+
 static h2_pal_result_t h2_bk_ble_adv_set_start(
     h2_pal_ble_t *ble,
     h2_pal_ble_adv_set_t *set) {
@@ -3180,8 +3246,14 @@ static h2_pal_result_t h2_bk_ble_start_scan(
                                           : params->phy_mask == 0u
                                               ? H2_PAL_BLE_SCAN_PHY_1M
                                               : params->phy_mask;
-        uint16_t scan_interval = (uint16_t)((params->interval_ms * 1600u) / 1000u);
-        uint16_t scan_window = (uint16_t)((params->window_ms * 1600u) / 1000u);
+        uint16_t scan_interval;
+        uint16_t scan_window;
+        h2_bk_ble_resolve_scan_units(
+            params,
+            (uint16_t)((params->interval_ms * 1600u) / 1000u),
+            (uint16_t)((params->window_ms * 1600u) / 1000u),
+            &scan_interval,
+            &scan_window);
         bk_ble_ext_scan_cfg_t cfg = {
             .scan_type = params->mode == H2_PAL_BLE_SCAN_MODE_ACTIVE
                              ? BLE_SCAN_TYPE_ACTIVE
@@ -3228,8 +3300,14 @@ static h2_pal_result_t h2_bk_ble_start_scan(
     if (params->type == H2_PAL_BLE_SCAN_TYPE_EXTENDED) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    uint16_t scan_interval = h2_bk_ble_ms_to_units625(params->interval_ms);
-    uint16_t scan_window = h2_bk_ble_ms_to_units625(params->window_ms);
+    uint16_t scan_interval;
+    uint16_t scan_window;
+    h2_bk_ble_resolve_scan_units(
+        params,
+        h2_bk_ble_ms_to_units625(params->interval_ms),
+        h2_bk_ble_ms_to_units625(params->window_ms),
+        &scan_interval,
+        &scan_window);
     if (scan_window > scan_interval) {
         scan_window = scan_interval;
     }
@@ -4193,6 +4271,20 @@ h2_bk_ble_adv_set_set_scan_response_data_unsupported(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+#if !CONFIG_BLE
+static h2_pal_result_t h2_bk_ble_adv_set_set_encoded_data_unsupported(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *data,
+    size_t len) {
+    (void)ble;
+    (void)set;
+    (void)data;
+    (void)len;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+#endif
+
 #if CONFIG_BLE
 static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .start = (h2_pal_result_t (*)(void *))h2_bk_ble_start,
@@ -4202,6 +4294,7 @@ static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .stop_advertising = (h2_pal_result_t (*)(void *))h2_bk_ble_stop_advertising,
     .adv_set_create = (h2_pal_result_t (*)(void *, const h2_pal_ble_adv_params_t *, h2_pal_ble_adv_set_t **))h2_bk_ble_adv_set_create,
     .adv_set_set_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_bk_ble_adv_set_set_data,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_bk_ble_adv_set_set_encoded_data,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_bk_ble_adv_set_set_scan_response_data_unsupported,
     .adv_set_start = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_bk_ble_adv_set_start,
     .adv_set_stop = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_bk_ble_adv_set_stop,
@@ -4255,6 +4348,7 @@ static h2_pal_result_t h2_bk_ble_unsupported_indicate(
 static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .start = (h2_pal_result_t (*)(void *))h2_bk_ble_unsupported_start,
     .stop = (h2_pal_result_t (*)(void *))h2_bk_ble_unsupported_stop,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_bk_ble_adv_set_set_encoded_data_unsupported,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_bk_ble_adv_set_set_scan_response_data_unsupported,
     .indicate = (h2_pal_result_t (*)(void *, uint16_t, uint16_t, const uint8_t *, size_t, uint32_t))h2_bk_ble_unsupported_indicate,
 };

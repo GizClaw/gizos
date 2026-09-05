@@ -169,6 +169,35 @@ typedef struct h2_pal_net_vtable {
         uint32_t timeout_ms,
         h2_pal_net_icmp_echo_result_t *out_result);
     void (*close)(void *user, h2_pal_net_socket_t socket);
+    /**
+     * @brief Bind and listen for TCP connections.
+     *
+     * `port == 0` selects an ephemeral port; `out_bind_addr` reports the
+     * address actually bound. A NULL or `H2_PAL_NET_BIND_DEFAULT` bind
+     * listens on the wildcard address of `family`.
+     */
+    int (*tcp_listen)(
+        void *user,
+        h2_pal_net_family_t family,
+        uint16_t port,
+        const h2_pal_net_bind_t *bind,
+        h2_pal_net_socket_t *out_socket,
+        h2_pal_net_addr_t *out_bind_addr);
+    /**
+     * @brief Accept one pending TCP connection within `timeout_ms`.
+     *
+     * `H2_PAL_OK` stores a connected socket in `out_socket` and, when
+     * `out_peer_addr` is not NULL, the peer address. `H2_PAL_ERR_TIMEOUT`
+     * means no connection arrived in time and `H2_PAL_ERR_WOULD_BLOCK`
+     * means the wait was interrupted; both leave the listener usable.
+     * Other errors report a listener failure.
+     */
+    h2_pal_result_t (*tcp_accept)(
+        void *user,
+        h2_pal_net_socket_t listen_socket,
+        h2_pal_net_socket_t *out_socket,
+        h2_pal_net_addr_t *out_peer_addr,
+        uint32_t timeout_ms);
 } h2_pal_net_vtable_t;
 
 typedef struct h2_pal_net_api {
@@ -407,6 +436,41 @@ static inline void h2_pal_net_close(const h2_pal_net_api_t *api, h2_pal_net_sock
     if (api != NULL && api->vtable != NULL && api->vtable->close != NULL && socket >= 0) {
         api->vtable->close(api->user, socket);
     }
+}
+
+static inline int h2_pal_net_tcp_listen(
+    const h2_pal_net_api_t *api,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    if (api == NULL || out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    if (api->vtable == NULL || api->vtable->tcp_listen == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return api->vtable->tcp_listen(
+        api->user, family, port, bind, out_socket, out_bind_addr);
+}
+
+static inline h2_pal_result_t h2_pal_net_tcp_accept(
+    const h2_pal_net_api_t *api,
+    h2_pal_net_socket_t listen_socket,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_peer_addr,
+    uint32_t timeout_ms) {
+    if (api == NULL || listen_socket < 0 || out_socket == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    if (api->vtable == NULL || api->vtable->tcp_accept == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return api->vtable->tcp_accept(
+        api->user, listen_socket, out_socket, out_peer_addr, timeout_ms);
 }
 
 #ifdef __cplusplus

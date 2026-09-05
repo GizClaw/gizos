@@ -1,29 +1,17 @@
 #include "h2_gizclaw_e2e.h"
 
-#include "h2_gizclaw_e2e_concurrency.h"
-#include "h2_gizclaw_e2e_firmware.h"
-#include "h2_gizclaw_e2e_internal.h"
-#include "h2_gizclaw_e2e_task_names.h"
-#include "h2_gizclaw_e2e_report.h"
-#include "h2_gizclaw_e2e_rpc.h"
-#include "h2_gizclaw_e2e_service.h"
-#include "h2_gizclaw_e2e_voice.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2/pal/os/h2_pal_time.h"
+#include "h2_gizclaw_e2e_catalog.h"
+#include "h2_gizclaw_e2e_internal.h"
+#include "h2_gizclaw_e2e_report.h"
+#include "h2_gizclaw_e2e_task_names.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
-
-typedef struct e2e_case {
-  const char *id;
-  uint32_t suite;
-  size_t actor_count;
-  bool needs_voice;
-  int (*run)(h2_gizclaw_e2e_fixture_t *fixture);
-} e2e_case_t;
 
 typedef struct progress_state {
   h2_runtime_t *runtime;
@@ -51,29 +39,11 @@ typedef struct run_control {
   int aggregate_cleanup_rc;
   size_t retained_resources;
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
+  h2_gizclaw_e2e_fixture_t *retained_fixture;
   atomic_bool exited;
 } run_control_t;
 
 static atomic_flag s_run_active = ATOMIC_FLAG_INIT;
-
-static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
-  int rc = h2_gizclaw_e2e_prepare_voice(fixture);
-  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_voice(fixture) : rc;
-}
-
-static const e2e_case_t s_cases[] = {
-    {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY, 1u, false,
-     h2_gizclaw_e2e_run_connectivity},
-    {"rpc", H2_GIZCLAW_E2E_SUITE_RPC, H2_GIZCLAW_E2E_ACTOR_COUNT, true,
-     h2_gizclaw_e2e_run_rpc},
-    {"firmware", H2_GIZCLAW_E2E_SUITE_FIRMWARE, 1u, false,
-     h2_gizclaw_e2e_run_firmware},
-    {"voice", H2_GIZCLAW_E2E_SUITE_VOICE, 1u, true, run_voice},
-    {"concurrency", H2_GIZCLAW_E2E_SUITE_CONCURRENCY, 1u, false,
-     h2_gizclaw_e2e_run_concurrency},
-    {"service", H2_GIZCLAW_E2E_SUITE_SERVICE, 1u, false,
-     h2_gizclaw_e2e_run_service},
-};
 
 static uint32_t value_or_default(uint32_t value, uint32_t fallback) {
   return value == 0u ? fallback : value;
@@ -90,11 +60,15 @@ static uint32_t progress_interval(uint32_t configured_ms) {
 static bool config_valid(h2_runtime_t *runtime,
                          const h2_gizclaw_e2e_config_t *config,
                          h2_gizclaw_e2e_result_t *out_result) {
+  uint32_t supported_suites = 0u;
+  for (size_t i = 0u; i < h2_gizclaw_e2e_case_count; ++i)
+    supported_suites |= h2_gizclaw_e2e_cases[i].suite;
   if (runtime == NULL || config == NULL || out_result == NULL ||
       runtime->mem == NULL || runtime->crypto == NULL ||
       runtime->http == NULL || runtime->log == NULL || runtime->time == NULL ||
       runtime->task == NULL || runtime->sync == NULL ||
-      runtime->webrtc == NULL || config->server_endpoint.data == NULL ||
+      runtime->queue == NULL || runtime->webrtc == NULL ||
+      config->server_endpoint.data == NULL ||
       config->server_endpoint.len == 0u ||
       config->server_endpoint.len >= H2_GIZCLAW_E2E_ENDPOINT_CAPACITY ||
       config->registration_token.data == NULL ||
@@ -102,14 +76,11 @@ static bool config_valid(h2_runtime_t *runtime,
       config->registration_token.len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX ||
       config->suites == 0u ||
       (config->suites & ~H2_GIZCLAW_E2E_SUITE_ALL) != 0u ||
+      (config->suites & ~supported_suites) != 0u ||
       memchr(config->server_endpoint.data, '\0', config->server_endpoint.len) !=
           NULL ||
       memchr(config->registration_token.data, '\0',
              config->registration_token.len) != NULL) {
-    return false;
-  }
-  if ((config->suites & H2_GIZCLAW_E2E_SUITE_SERVICE) != 0u &&
-      runtime->queue == NULL) {
     return false;
   }
   const bool needs_voice =
@@ -235,11 +206,12 @@ static h2_gizclaw_e2e_exit_t report_start_failure(
     h2_gizclaw_e2e_result_t *out_result, int rc, size_t retained_resources) {
   h2_gizclaw_e2e_report_t report;
   h2_gizclaw_e2e_report_init(&report);
-  for (size_t index = 0u; index < sizeof(s_cases) / sizeof(s_cases[0]);
-       ++index) {
-    if ((config->suites & s_cases[index].suite) != 0u) {
-      (void)h2_gizclaw_e2e_report_select(&report, s_cases[index].id);
-      (void)h2_gizclaw_e2e_report_terminal(&report, s_cases[index].id,
+  for (size_t index = 0u; index < h2_gizclaw_e2e_case_count; ++index) {
+    if ((config->suites & h2_gizclaw_e2e_cases[index].suite) != 0u) {
+      (void)h2_gizclaw_e2e_report_select(&report,
+                                         h2_gizclaw_e2e_cases[index].id);
+      (void)h2_gizclaw_e2e_report_terminal(&report,
+                                           h2_gizclaw_e2e_cases[index].id,
                                            H2_GIZCLAW_E2E_CASE_ERROR, rc, NULL);
     }
   }
@@ -279,9 +251,8 @@ static void run_cases_task(void *user) {
   int aggregate_cleanup_rc = H2_PAL_OK;
   size_t retained_resources = 0u;
 
-  for (size_t index = 0u; index < sizeof(s_cases) / sizeof(s_cases[0]);
-       ++index) {
-    const e2e_case_t *test_case = &s_cases[index];
+  for (size_t index = 0u; index < h2_gizclaw_e2e_case_count; ++index) {
+    const e2e_case_t *test_case = &h2_gizclaw_e2e_cases[index];
     if ((config->suites & test_case->suite) == 0u) {
       continue;
     }
@@ -294,36 +265,46 @@ static void run_cases_task(void *user) {
     (void)h2_pal_mutex_lock(runtime->sync, progress->mutex);
     progress->active_case = test_case->id;
     (void)h2_pal_mutex_unlock(runtime->sync, progress->mutex);
+    printf("H2_GIZCLAW_E2E stage=coverage-begin case=%s\n", test_case->id);
 
-    h2_gizclaw_e2e_fixture_t fixture;
-    memset(&fixture, 0, sizeof(fixture));
+    h2_gizclaw_e2e_fixture_t *fixture = NULL;
     bool fixture_initialized = false;
     if (!stopped) {
-      case_rc = h2_gizclaw_e2e_fixture_init(
-          &fixture, runtime, config,
-          value_or_default(config->case_timeout_ms,
-                           H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS));
+      if (control->retained_fixture != NULL) {
+        case_rc = H2_PAL_ERR_INVALID_STATE;
+      } else {
+        fixture = h2_pal_mem_alloc(runtime->mem, sizeof(*fixture));
+        if (fixture != NULL)
+          memset(fixture, 0, sizeof(*fixture));
+        else
+          case_rc = H2_PAL_ERR_NO_MEMORY;
+      }
+      if (case_rc == H2_PAL_OK)
+        case_rc = h2_gizclaw_e2e_fixture_init(
+            fixture, runtime, config,
+            value_or_default(config->case_timeout_ms,
+                             H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS));
       fixture_initialized = case_rc == H2_PAL_OK;
       if (case_rc == H2_PAL_OK && test_case->needs_voice &&
-          (fixture.pcm == NULL || fixture.pcm_len == 0u)) {
+          (fixture->pcm == NULL || fixture->pcm_len == 0u)) {
         case_rc = H2_PAL_ERR_INVALID_ARG;
       }
       if (case_rc == H2_PAL_OK) {
-        case_rc = h2_gizclaw_e2e_fixture_connect_actors(&fixture,
+        case_rc = h2_gizclaw_e2e_fixture_connect_actors(fixture,
                                                         test_case->actor_count);
       }
       if (case_rc == H2_PAL_OK) {
-        case_rc = test_case->run(&fixture);
+        case_rc = test_case->run(fixture);
       }
       status = case_rc == H2_PAL_OK ? H2_GIZCLAW_E2E_CASE_PASS
                                     : H2_GIZCLAW_E2E_CASE_FAIL;
-      if (fixture.runtime_profile_name[0] != '\0') {
+      if (fixture != NULL && fixture->runtime_profile_name[0] != '\0') {
         if (control->runtime_profile_name[0] == '\0') {
           (void)snprintf(control->runtime_profile_name,
                          sizeof(control->runtime_profile_name), "%s",
-                         fixture.runtime_profile_name);
+                         fixture->runtime_profile_name);
         } else if (strcmp(control->runtime_profile_name,
-                          fixture.runtime_profile_name) != 0) {
+                          fixture->runtime_profile_name) != 0) {
           case_rc = H2_PAL_ERR_INVALID_STATE;
           status = H2_GIZCLAW_E2E_CASE_ERROR;
         }
@@ -333,24 +314,37 @@ static void run_cases_task(void *user) {
     int cleanup_rc = H2_PAL_OK;
     if (fixture_initialized) {
       cleanup_rc = h2_gizclaw_e2e_fixture_set_deadline(
-          &fixture,
-          value_or_default(config->cleanup_timeout_ms,
-                           H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS));
+          fixture, value_or_default(config->cleanup_timeout_ms,
+                                    H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS));
       if (cleanup_rc == H2_PAL_OK) {
-        cleanup_rc = h2_gizclaw_e2e_fixture_cleanup(&fixture);
+        cleanup_rc = h2_gizclaw_e2e_fixture_cleanup(fixture);
       }
       const size_t retained =
-          h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture);
+          h2_gizclaw_e2e_fixture_emit_recovery_ledger(fixture);
       retained_resources += retained;
       if (cleanup_rc == H2_PAL_OK && retained != 0u)
         cleanup_rc = H2_PAL_ERR_INVALID_STATE;
-      h2_gizclaw_e2e_fixture_deinit(&fixture);
+      const int deinit_rc = h2_gizclaw_e2e_fixture_deinit(fixture);
+      if (deinit_rc != H2_PAL_OK) {
+        if (cleanup_rc == H2_PAL_OK)
+          cleanup_rc = deinit_rc;
+        /* A PAL join failure must never turn borrowed state into stack garbage.
+         * Fail closed: retain the owner and do not start another case. */
+        control->retained_fixture = fixture;
+        ++retained_resources;
+        fixture = NULL;
+      }
     }
+    h2_pal_mem_free(runtime->mem, fixture);
     if (aggregate_cleanup_rc == H2_PAL_OK && cleanup_rc != H2_PAL_OK) {
       aggregate_cleanup_rc = cleanup_rc;
     }
     (void)h2_gizclaw_e2e_report_terminal(report, test_case->id, status, case_rc,
                                          NULL);
+    printf("H2_GIZCLAW_E2E stage=coverage-end case=%s status=%s rc=%d "
+           "cleanup_rc=%d\n",
+           test_case->id, h2_gizclaw_e2e_case_status_name(status), case_rc,
+           cleanup_rc);
 
     (void)h2_pal_mutex_lock(runtime->sync, progress->mutex);
     progress->active_case = NULL;
@@ -424,10 +418,10 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   control->config = config;
   atomic_init(&control->exited, false);
   h2_gizclaw_e2e_report_init(&control->report);
-  for (size_t index = 0u; index < sizeof(s_cases) / sizeof(s_cases[0]);
-       ++index) {
-    if ((config->suites & s_cases[index].suite) != 0u) {
-      (void)h2_gizclaw_e2e_report_select(&control->report, s_cases[index].id);
+  for (size_t index = 0u; index < h2_gizclaw_e2e_case_count; ++index) {
+    if ((config->suites & h2_gizclaw_e2e_cases[index].suite) != 0u) {
+      (void)h2_gizclaw_e2e_report_select(&control->report,
+                                         h2_gizclaw_e2e_cases[index].id);
     }
   }
 
@@ -536,7 +530,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
 
   progress->on_progress = NULL;
   progress->progress_user = NULL;
-  if (runner_retained == 0u) {
+  if (runner_retained == 0u && control->retained_fixture == NULL) {
     h2_pal_mem_free(runtime->mem, control);
     atomic_flag_clear_explicit(&s_run_active, memory_order_release);
   } else {

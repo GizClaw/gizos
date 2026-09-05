@@ -12,7 +12,11 @@ py_test(
     name = "cp_startup_contract_test",
     srcs = ["tests/test_cp_startup_contract.py"],
     data = [
+        "//boards/bk7258_chip/layouts/compile_only:cp.defaults",
+        "//boards/bk7258_v3_202405/bk7258:cp.defaults",
         "//native_component_src/bk7258/cp/h2_cp_transport:src/h2_bk_h2loader_cp_transport.c",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_uart_io_stream.c",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:src/h2_bk_h2loader_iostreamikcp.c",
         "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher:src/cp_main.c",
         "ap/ap_main.c",
     ],

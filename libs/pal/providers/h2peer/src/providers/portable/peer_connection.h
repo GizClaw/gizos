@@ -93,6 +93,7 @@ typedef struct PeerConfiguration {
   DataChannelType datachannel;
 
   void (*onaudiotrack)(uint8_t* data, size_t size, void* userdata);
+  void (*onaudiortp)(uint16_t sequence, uint32_t timestamp, void* userdata);
   void (*onvideotrack)(uint8_t* data, size_t size, void* userdata);
   void (*on_request_keyframe)(void* userdata);
   void* user_data;

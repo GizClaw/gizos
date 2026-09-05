@@ -35,12 +35,19 @@ static int unsupported_wifi_sta_get_mac(void *p0, uint8_t *p1) {
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static int unsupported_wifi_sta_set_power_save(void *p0, h2_pal_wifi_power_save_t p1) {
+    (void)p0;
+    (void)p1;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_wifi_sta_vtable_t unsupported_wifi_sta_vtable = {
     .get_status = unsupported_wifi_sta_get_status,
     .scan = unsupported_wifi_sta_scan,
     .connect = unsupported_wifi_sta_connect,
     .disconnect = unsupported_wifi_sta_disconnect,
     .get_mac = unsupported_wifi_sta_get_mac,
+    .set_power_save = unsupported_wifi_sta_set_power_save,
 };
 static const h2_pal_wifi_sta_api_t unsupported_wifi_sta_api = { .user = NULL, .vtable = &unsupported_wifi_sta_vtable };
 const h2_pal_wifi_sta_api_t *h2_pal_unsupported_wifi_sta_api(void) { return &unsupported_wifi_sta_api; }

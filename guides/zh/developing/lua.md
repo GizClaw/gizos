@@ -72,10 +72,10 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `capability` | `call(name, payload, options)` | 冻结的 C registry；支持 immediate/pending/cancel/late completion |
 | `delay` | `delay_ms`、`delay_us` | ESP-Claw profile；毫秒等待 yield，微秒等待使用 Runtime monotonic time |
 | `system` | `time`、`date`、`millis`、`uptime` | Runtime Time；固定 UTC offset |
-| `display` | `clear`、`fill_rect`、`draw_line`、`fill_circle`、`draw_circle`、圆角矩形、三角形、frame、text、`present` 和 `deinit` | 直接使用 Runtime singleton Display API；图元裁剪到 framebuffer |
+| `display` | `clear`、`fill_rect`、`draw_line`、`fill_circle`、`draw_circle`、AA circle、圆角矩形、三角形、framebuffer fade、frame、text、`present` 和 `deinit` | 直接使用 Runtime singleton Display API；dirty region 始终裁剪到 framebuffer |
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
-| `audio` | `new_output`，以及每条 Track 的 `write/info/close` | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format；PAL 混合多条 Track，不接收 codec handle |
+| `audio` | `new_output`（每条 Track 的 `write/info/close`）、`new_input`（`read/level/info/close`） | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format，Input frame 大小取自设备 mic format；PAL 混合多条 Track，不接收 codec handle |
 
 `runtime.components.getByName()`、`board_manager`、SDK handle 和动态 C module
 不属于首期合同。Display、Touch 和 Audio 保持 ESP-Claw 的 module acquisition，内部
@@ -84,7 +84,15 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 可以在 `audio_track_capacity_per_job` 上限内同时写入多条 Track，由 Audio System
 负责混音。每个持有 Track 的 job 获取一个 Host 级 speaker user；关闭该 job 的最后
 一条 Track 或回收 job 时释放它，只有同一 Host 的最后一个 speaker user 释放后才停止
-Speaker。一个 job 结束不能中断另一个仍在写 Track 的 job。
+Speaker。一个 job 结束不能中断另一个仍在写 Track 的 job。`audio.new_input()`
+镜像同一套 ref-counted 生命周期：job 获取一个 Host 级 mic user，
+`close()`、job cancel/timeout/stop 或 job release 释放它，只有最后一个 mic
+user 释放后才停止 Runtime microphone；一个 job 结束不能中断另一个仍在读取的
+job。
+
+### Display AA 与 framebuffer fade
+
+`display.fill_circle_aa(cx, cy, radius, color)` 使用有界 supersample coverage 混合 RGB565 framebuffer，`radius` 限制为 `0..64`。`display.fade_to_black(amount)` 对完整 framebuffer 衰减，`display.fade_rect_to_black(x, y, width, height, amount)` 只衰减完全位于 framebuffer 内的正尺寸矩形；`amount` 均为 `0..255`。三者只标记实际 clipping 后的 dirty region，不隐式 `present`。小于一个 RGB565 channel step 的 fade 使用固定、有界的 spatial phase，避免高 FPS 下暗色 trail 永远不消失。
 
 `display.draw_circle(cx, cy, radius, color)` 绘制裁剪到 framebuffer 的一像素圆周。圆心允许处于 Display 宽高的一倍负边界到两倍正边界内，半径必须位于 `0..min(display.width, display.height)`；超出范围、Display 未打开或颜色无效时保持现有 Lua argument/error 合同并确定性失败。`clear`、矩形、圆和圆角矩形可以批量写 framebuffer，但 `present` 仍只提交所有待绘制图元的 dirty bounding union，不改变像素结果或 Lua 调用合同。
 
@@ -116,6 +124,37 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
   `"audio output: busy"` 或 `"audio output: write failed"`，`written` 是本次调用
   中已被 Track 接收的字节数。script 应从 `written` 偏移处续写剩余数据，不要重放
   已被接收的前缀；失败时已有的残留保持不变，重传同一 buffer 是安全的。
+
+### Audio Input 的帧契约
+
+`audio.new_input()` 不接收参数，一个 job 同一时间只能持有一个 Input；已打开时
+再次调用返回 `nil, "audio input: already open"`。打开成功时按设备 mic format
+（`sample_rate`、`channels`、固定 16 `bits_per_sample`、每通道 `frame_samples`）
+分配一次性的 job 私有缓冲区；Runtime 不支持 mic、mic format 不是 16-bit PCM
+时返回 `nil, "audio input: unavailable"`，缓冲区分配失败返回 `nil,
+"audio input: no memory"`。返回的闭包表带有一个内部 generation 标记：`close()`
+或 job 结束后旧闭包的方法一律返回 `nil, "audio input: closed"`，不能再操作已
+释放、或已被下一次 `new_input()` 复用的缓冲区。
+
+- `input:info()` 返回 `role`（固定 `"input"`）、`opened`、`sample_rate`、
+  `channels`、`bits_per_sample`、`frame_samples` 和 `bytes_per_frame`；未打开
+  时除 `role` 外全部为 `0`/`false`。
+- `input:read(timeout_ms)` 读取一个完整设备 frame，成功返回该 frame 的 PCM
+  string。`timeout_ms` 省略时为 `0`（非阻塞，立即返回是否已有 frame）。
+  设备侧超时（含 `timeout_ms=0` 且当前无数据）返回 `nil,
+  "audio input: busy"`；读到的数据格式或大小不合法返回 `nil,
+  "audio input: read failed"`。
+- `input:level(timeout_ms)` 读取一个 frame 后返回三个值：RMS 响度、峰值
+  （归一化到 `[0, 1]`）和相邻样本差分估算的高频占比；错误路径与
+  `input:read` 相同。
+- `input:close()` 释放缓冲区、递减 Host 级 mic user 并使当前闭包的
+  generation 失效；已关闭时再次调用仍返回 `true`（幂等）。
+- Runtime microphone 一旦没有 frame 会持续阻塞底层 PAL 调用，因此 `read`/
+  `level` 按有界时间片轮询 PAL、在每个时间片之间检查 job 取消和 Host
+  stopping 状态，而不是把整个 `timeout_ms` 一次性透传给阻塞的 PAL 调用；
+  job 被取消或 Host 正在停止时立即返回 `nil, "audio input: cancelled"`，
+  不会让调用方的大超时（包括逼近 `UINT32_MAX` 的取值）拖住 Lua worker 或
+  阻塞 Host shutdown。
 
 ## ESP-Claw profile
 

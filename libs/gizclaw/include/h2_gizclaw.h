@@ -4,6 +4,8 @@
 #include "h2_gizclaw_client.h"
 #include "h2_gizclaw_config.h"
 #include "h2_gizclaw_conversation.h"
+#include "h2_gizclaw_firmware.h"
+#include "h2_gizclaw_pcm_track.h"
 #include "h2_gizclaw_pet.h"
 #include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"

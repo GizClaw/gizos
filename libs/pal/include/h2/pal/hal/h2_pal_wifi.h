@@ -43,6 +43,19 @@ typedef enum h2_pal_wifi_sta_state {
     H2_PAL_WIFI_STA_STATE_FAILED = 7,
 } h2_pal_wifi_sta_state_t;
 
+/**
+ * Station power-save policy.
+ *
+ * NONE keeps the radio awake for the lowest latency, MIN_MODEM sleeps until
+ * the next DTIM beacon, MAX_MODEM sleeps across the listen interval.
+ * Providers report H2_PAL_ERR_UNSUPPORTED when a mode cannot be selected.
+ */
+typedef enum h2_pal_wifi_power_save {
+    H2_PAL_WIFI_POWER_SAVE_NONE = 0,
+    H2_PAL_WIFI_POWER_SAVE_MIN_MODEM = 1,
+    H2_PAL_WIFI_POWER_SAVE_MAX_MODEM = 2,
+} h2_pal_wifi_power_save_t;
+
 typedef enum h2_pal_wifi_ap_state {
     H2_PAL_WIFI_AP_STATE_UNKNOWN = 0,
     H2_PAL_WIFI_AP_STATE_STOPPED = 1,
@@ -162,6 +175,9 @@ typedef int (*h2_pal_wifi_sta_connect_fn)(
     uint32_t timeout_ms);
 typedef int (*h2_pal_wifi_sta_disconnect_fn)(void *user);
 typedef int (*h2_pal_wifi_sta_get_mac_fn)(void *user, uint8_t out_mac[6]);
+typedef int (*h2_pal_wifi_sta_set_power_save_fn)(
+    void *user,
+    h2_pal_wifi_power_save_t mode);
 
 typedef struct h2_pal_wifi_sta_vtable {
     h2_pal_wifi_sta_get_status_fn get_status;
@@ -169,6 +185,8 @@ typedef struct h2_pal_wifi_sta_vtable {
     h2_pal_wifi_sta_connect_fn connect;
     h2_pal_wifi_sta_disconnect_fn disconnect;
     h2_pal_wifi_sta_get_mac_fn get_mac;
+    /** Optional; NULL reports H2_PAL_ERR_UNSUPPORTED. */
+    h2_pal_wifi_sta_set_power_save_fn set_power_save;
 } h2_pal_wifi_sta_vtable_t;
 
 struct h2_pal_wifi_sta_api {
@@ -296,6 +314,27 @@ static inline int h2_pal_wifi_sta_get_mac(const h2_pal_wifi_sta_api_t *sta, uint
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return sta->vtable->get_mac(sta->user, out_mac);
+}
+
+static inline int h2_pal_wifi_power_save_is_valid(h2_pal_wifi_power_save_t mode) {
+    return mode == H2_PAL_WIFI_POWER_SAVE_NONE ||
+           mode == H2_PAL_WIFI_POWER_SAVE_MIN_MODEM ||
+           mode == H2_PAL_WIFI_POWER_SAVE_MAX_MODEM;
+}
+
+/**
+ * Select the station power-save policy for the current and future links.
+ */
+static inline int h2_pal_wifi_sta_set_power_save(
+    const h2_pal_wifi_sta_api_t *sta,
+    h2_pal_wifi_power_save_t mode) {
+    if (sta == NULL || !h2_pal_wifi_power_save_is_valid(mode)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (sta->vtable == NULL || sta->vtable->set_power_save == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return sta->vtable->set_power_save(sta->user, mode);
 }
 
 static inline int h2_pal_wifi_ap_start(

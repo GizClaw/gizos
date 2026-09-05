@@ -18,6 +18,13 @@ static void test_free(void *user, void *ptr) {
     free(ptr);
 }
 
+static bool ignore_scan(
+    void *user, const h2_pal_ble_scan_result_t *result) {
+    (void)user;
+    (void)result;
+    return false;
+}
+
 int main(void) {
     static const h2_pal_mem_vtable_t complete_vtable = {
         .alloc = test_alloc,
@@ -52,6 +59,19 @@ int main(void) {
     const h2_pal_ble_adv_data_t scan_response = {0};
     assert(h2_pal_ble_adv_set_set_scan_response_data(
                ble, (h2_pal_ble_adv_set_t *)ble, &scan_response) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    const uint8_t encoded[] = { 2u, 0xffu, 1u };
+    assert(h2_pal_ble_adv_set_set_encoded_data(
+               ble, (h2_pal_ble_adv_set_t *)ble, encoded,
+               sizeof(encoded)) == H2_PAL_ERR_UNSUPPORTED);
+    const h2_pal_ble_scan_params_t exact_scan = {
+        .mode = H2_PAL_BLE_SCAN_MODE_PASSIVE,
+        .type = H2_PAL_BLE_SCAN_TYPE_LEGACY,
+        .interval_units_625us = 4u,
+        .window_units_625us = 4u,
+    };
+    assert(h2_pal_ble_start_scan(
+               ble, &exact_scan, ignore_scan, NULL) ==
            H2_PAL_ERR_UNSUPPORTED);
     return 0;
 }

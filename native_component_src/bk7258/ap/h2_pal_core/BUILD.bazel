@@ -80,12 +80,68 @@ cc_test(
 )
 
 cc_test(
+    name = "atomic_shim_test",
+    srcs = ["tests/test_h2_bk_platform_atomic.c"] + glob(["tests/sdk/**/*.h"]),
+    additional_compiler_inputs = ["src/h2_bk_platform_atomic.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
     name = "ble_indication_test",
     srcs = [
         "src/h2_bk_ble_gatts_tx_tracker.h",
         "tests/test_h2_bk_ble_indication.c",
     ],
     conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "ble_exact_ethermind_test",
+    srcs = [
+        "src/h2_bk_ble_exact_adapter.c",
+        "src/h2_bk_ble_exact_adapter.h",
+        "tests/test_h2_bk_ble_exact_adapter.c",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DH2_BK_TEST_ETHERMIND=1"],
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "ble_exact_legacy_test",
+    srcs = [
+        "src/h2_bk_ble_exact_adapter.c",
+        "src/h2_bk_ble_exact_adapter.h",
+        "tests/test_h2_bk_ble_exact_adapter.c",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DH2_BK_TEST_ETHERMIND=0"],
     copts = H2_WARNING_COPTS,
     includes = ["src"],
     target_compatible_with = select({

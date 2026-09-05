@@ -597,6 +597,16 @@ static int desktop_net_get_host_addr(void *user, const char *iface_prefix, h2_pa
     return H2_PAL_OK;
 }
 
+/* Datagram sockets default to a small send buffer on some hosts (macOS caps
+ * a datagram at SO_SNDBUF, 9216 bytes by default), which rejects otherwise
+ * valid UDP payloads with EMSGSIZE. Raise both buffers best-effort so any
+ * datagram up to the IP maximum can be sent and bursts are not dropped. */
+static void desktop_net_udp_grow_buffers(int fd) {
+    int size = 256 * 1024;
+    (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+}
+
 static int desktop_net_udp_open(
     void *user,
     h2_pal_net_family_t family,
@@ -614,6 +624,7 @@ static int desktop_net_udp_open(
     }
     int reuse = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    desktop_net_udp_grow_buffers(fd);
 
     struct sockaddr_storage storage;
     socklen_t len = 0;
@@ -658,6 +669,7 @@ static int desktop_net_udp_open_bound(
     }
     int reuse = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    desktop_net_udp_grow_buffers(fd);
 
     h2_pal_net_addr_t bind_addr = bind_config->source_addr;
     bind_addr.port = port;
@@ -694,7 +706,15 @@ static int desktop_net_udp_sendto(
         return rc;
     }
     ssize_t sent = sendto(socket_fd, data, len, 0, (struct sockaddr *)&storage, sock_len);
-    return sent < 0 ? H2_PAL_ERR_IO : (int)sent;
+    if (sent >= 0) {
+        return (int)sent;
+    }
+    /* A full socket or interface queue (macOS reports ENOBUFS towards a slow
+     * Wi-Fi peer) is transient backpressure, not an I/O failure. */
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS ||
+                   errno == ENOMEM
+               ? H2_PAL_ERR_WOULD_BLOCK
+               : H2_PAL_ERR_IO;
 }
 
 static int desktop_net_udp_recvfrom(
@@ -1277,6 +1297,89 @@ static void desktop_net_close(void *user, h2_pal_net_socket_t socket_fd) {
     }
 }
 
+static int desktop_net_tcp_listen(
+    void *user,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind_config,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    (void)user;
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    h2_pal_net_addr_t bind_addr;
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.family = family;
+    if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
+        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+            return H2_PAL_ERR_UNSUPPORTED;
+        }
+        if (bind_config->source_addr.family != family) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        bind_addr = bind_config->source_addr;
+    }
+    bind_addr.port = port;
+    int fd = socket(family_to_posix(family), SOCK_STREAM, 0);
+    if (fd < 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_storage storage;
+    socklen_t len = 0;
+    int rc = addr_to_sockaddr(&bind_addr, &storage, &len);
+    if (rc != H2_PAL_OK) {
+        close(fd);
+        return rc;
+    }
+    if (bind(fd, (struct sockaddr *)&storage, len) < 0 || listen(fd, 16) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    if (getsockname(fd, (struct sockaddr *)&storage, &len) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t desktop_net_tcp_accept(
+    void *user,
+    h2_pal_net_socket_t listen_fd,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_peer_addr,
+    uint32_t timeout_ms) {
+    (void)user;
+    if (listen_fd < 0 || out_socket == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    int ready = wait_fd(listen_fd, 0, timeout_ms);
+    if (ready != H2_PAL_OK) {
+        return (h2_pal_result_t)ready;
+    }
+    struct sockaddr_storage storage;
+    socklen_t len = sizeof(storage);
+    int fd = accept(listen_fd, (struct sockaddr *)&storage, &len);
+    if (fd < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR ||
+            errno == ECONNABORTED) {
+            return H2_PAL_ERR_WOULD_BLOCK;
+        }
+        return H2_PAL_ERR_IO;
+    }
+    if (out_peer_addr != NULL) {
+        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_peer_addr);
+    }
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
 const h2_pal_net_api_t *h2_posix_net_api(void) {
     static const h2_pal_net_vtable_t vtable = {
         .resolve_addr = desktop_net_resolve_addr,
@@ -1297,6 +1400,8 @@ const h2_pal_net_api_t *h2_posix_net_api(void) {
         .tcp_recv = desktop_net_tcp_recv,
         .tls_wrap = desktop_net_tls_wrap,
         .close = desktop_net_close,
+        .tcp_listen = desktop_net_tcp_listen,
+        .tcp_accept = desktop_net_tcp_accept,
     };
     static const h2_pal_net_api_t api = {
         .user = NULL,

@@ -1,5 +1,7 @@
 #include "h2_gizclaw_pet.h"
+#include "h2_gizclaw_download_internal.h"
 #include "h2_gizclaw_internal.h"
+#include "h2_gizclaw_response_internal.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_service_internal.h"
 
@@ -33,17 +35,19 @@ static bool encode_text(pb_ostream_t *s, const pb_field_t *f,
          pb_encode_string(s, (const pb_byte_t *)v->data, v->len);
 }
 
+static bool valid_utf8_span(const char *text, size_t len);
+
 static bool decode_text(pb_istream_t *s, const pb_field_t *f, void **arg) {
   (void)f;
   text_out_t *v = *arg;
   if (v == NULL || v->mem == NULL || v->out == NULL || *v->out != NULL ||
-      s->bytes_left == SIZE_MAX)
+      s->bytes_left > 4096u)
     return false;
   char *p = h2_pal_mem_alloc(v->mem, s->bytes_left + 1u);
   if (p == NULL)
     return false;
   const size_t n = s->bytes_left;
-  if (!pb_read(s, (pb_byte_t *)p, n)) {
+  if (!pb_read(s, (pb_byte_t *)p, n) || !valid_utf8_span(p, n)) {
     h2_pal_mem_free(v->mem, p);
     return false;
   }
@@ -113,46 +117,9 @@ static int encode_message(const h2_pal_mem_api_t *mem, const pb_msgdesc_t *desc,
   return H2_PAL_OK;
 }
 
-static int finish_unary_response(int rc,
-                                 const h2_gizclaw_rpc_response_t *response) {
-  if (rc != H2_PAL_OK || !response->has_error) {
-    return rc;
-  }
-  switch (response->error_code) {
-  case H2_GIZCLAW_RPC_ERROR_NOT_FOUND:
-    return H2_PAL_ERR_NOT_FOUND;
-  case H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND:
-    return H2_PAL_ERR_UNSUPPORTED;
-  case H2_GIZCLAW_RPC_ERROR_BAD_REQUEST:
-  case H2_GIZCLAW_RPC_ERROR_INVALID_PARAMS:
-    return H2_PAL_ERR_INVALID_ARG;
-  case H2_GIZCLAW_RPC_ERROR_FORBIDDEN:
-    return H2_PAL_ERR_IO;
-  case H2_GIZCLAW_RPC_ERROR_CONFLICT:
-    return H2_PAL_ERR_INVALID_STATE;
-  default:
-    return H2_PAL_ERR_IO;
-  }
-}
-
-static int unary(h2_gizclaw_client_t *client, int method,
-                 const pb_msgdesc_t *req_desc, const void *req,
-                 h2_gizclaw_rpc_response_t *response) {
-  const h2_pal_mem_api_t *mem = h2_gizclaw_client_allocator_internal(client);
-  uint8_t *payload = NULL;
-  size_t len = 0u;
-  int rc = encode_message(mem, req_desc, req, &payload, &len);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_client_rpc_call(
-        client, method, (h2_gizclaw_rpc_bytes_t){payload, len}, response);
-  h2_pal_mem_free(mem, payload);
-  return finish_unary_response(rc, response);
-}
-
-void h2_gizclaw_pet_deinit(h2_gizclaw_client_t *client, h2_gizclaw_pet_t *pet) {
-  if (client == NULL || pet == NULL)
+static void pet_value_clear(const h2_pal_mem_api_t *m, h2_gizclaw_pet_t *pet) {
+  if (m == NULL || pet == NULL)
     return;
-  const h2_pal_mem_api_t *m = h2_gizclaw_client_allocator_internal(client);
   h2_pal_mem_free(m, pet->name);
   h2_pal_mem_free(m, pet->pet_def_name);
   h2_pal_mem_free(m, pet->display_name);
@@ -163,26 +130,8 @@ void h2_gizclaw_pet_deinit(h2_gizclaw_client_t *client, h2_gizclaw_pet_t *pet) {
   memset(pet, 0, sizeof(*pet));
 }
 
-static int decode_pet_response(h2_gizclaw_client_t *client,
-                               h2_gizclaw_rpc_response_t *response,
-                               const pb_msgdesc_t *desc, void *wire_response,
-                               gizclaw_rpc_v1_Pet *wire_pet, bool *has_pet,
-                               h2_gizclaw_pet_t *out) {
-  pet_decode_t ctx;
-  prepare_pet(wire_pet, &ctx, h2_gizclaw_client_allocator_internal(client),
-              out);
-  pb_istream_t s = pb_istream_from_buffer(response->result_payload,
-                                          response->result_payload_len);
-  if (!pb_decode(&s, desc, wire_response) || !*has_pet) {
-    h2_gizclaw_pet_deinit(client, out);
-    return H2_PAL_ERR_FORMAT;
-  }
-  finish_pet(wire_pet, out);
-  return H2_PAL_OK;
-}
-
 static bool valid_optional_text(h2_gizclaw_str_t value) {
-  return value.len == 0u || value.data != NULL;
+  return value.len <= 4096u && valid_utf8_span(value.data, value.len);
 }
 
 static bool valid_utf8_span(const char *text, size_t len) {
@@ -229,109 +178,10 @@ static bool valid_utf8_span(const char *text, size_t len) {
   return true;
 }
 
-int h2_gizclaw_client_pet_get(h2_gizclaw_client_t *client,
-                              h2_gizclaw_str_t pet_name,
-                              h2_gizclaw_pet_t *out) {
-  if (client == NULL || out == NULL || pet_name.data == NULL ||
-      pet_name.len == 0u)
-    return H2_PAL_ERR_INVALID_ARG;
-  gizclaw_rpc_v1_ServerPetGetRequest req =
-      gizclaw_rpc_v1_ServerPetGetRequest_init_zero;
-  req.has_value = true;
-  text_arg_t name_arg;
-  set_encoder(&req.value.name, &name_arg, pet_name);
-  h2_gizclaw_rpc_response_t rsp = {0};
-  int rc = unary(client, H2_GIZCLAW_RPC_SERVER_PET_GET,
-                 gizclaw_rpc_v1_ServerPetGetRequest_fields, &req, &rsp);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ServerPetGetResponse decoded =
-        gizclaw_rpc_v1_ServerPetGetResponse_init_zero;
-    rc = decode_pet_response(client, &rsp,
-                             gizclaw_rpc_v1_ServerPetGetResponse_fields,
-                             &decoded, &decoded.value, &decoded.has_value, out);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &rsp);
-  return rc;
-}
-
-int h2_gizclaw_client_pet_adopt(h2_gizclaw_client_t *client,
-                                const h2_gizclaw_pet_adopt_options_t *options,
-                                h2_gizclaw_pet_t *out) {
-  if (client == NULL || options == NULL || out == NULL ||
-      options->name.data == NULL || options->name.len == 0u ||
-      !valid_utf8_span(options->name.data, options->name.len) ||
-      !valid_optional_text(options->display_name))
-    return H2_PAL_ERR_INVALID_ARG;
-  gizclaw_rpc_v1_RuntimeAdoptRequest request =
-      gizclaw_rpc_v1_RuntimeAdoptRequest_init_zero;
-  request.has_value = true;
-  text_arg_t text[2];
-  set_encoder(&request.value.name, &text[0], options->name);
-  if (options->display_name.len != 0u) {
-    set_encoder(&request.value.display_name, &text[1], options->display_name);
-  }
-  h2_gizclaw_rpc_response_t rsp = {0};
-  int rc = unary(client, H2_GIZCLAW_RPC_RUNTIME_ADOPT,
-                 gizclaw_rpc_v1_RuntimeAdoptRequest_fields, &request, &rsp);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_RuntimeAdoptResponse decoded =
-        gizclaw_rpc_v1_RuntimeAdoptResponse_init_zero;
-    bool has_pet = false;
-    pet_decode_t ctx;
-    prepare_pet(&decoded.value.pet, &ctx,
-                h2_gizclaw_client_allocator_internal(client), out);
-    pb_istream_t s =
-        pb_istream_from_buffer(rsp.result_payload, rsp.result_payload_len);
-    if (!pb_decode(&s, gizclaw_rpc_v1_RuntimeAdoptResponse_fields, &decoded) ||
-        !decoded.has_value || !decoded.value.has_pet)
-      rc = H2_PAL_ERR_FORMAT;
-    else {
-      has_pet = true;
-      finish_pet(&decoded.value.pet, out);
-    }
-    if (!has_pet)
-      h2_gizclaw_pet_deinit(client, out);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &rsp);
-  return rc;
-}
-
-int h2_gizclaw_client_pet_delete(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_str_t pet_name,
-                                 h2_gizclaw_pet_t *out_pet) {
-  if (out_pet == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_pet, 0, sizeof(*out_pet));
-  if (client == NULL || pet_name.data == NULL || pet_name.len == 0u ||
-      memchr(pet_name.data, '\0', pet_name.len) != NULL ||
-      !valid_utf8_span(pet_name.data, pet_name.len)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  gizclaw_rpc_v1_ServerPetDeleteRequest request =
-      gizclaw_rpc_v1_ServerPetDeleteRequest_init_zero;
-  request.has_value = true;
-  text_arg_t pet_name_arg;
-  set_encoder(&request.value.name, &pet_name_arg, pet_name);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc =
-      unary(client, H2_GIZCLAW_RPC_SERVER_PET_DELETE,
-            gizclaw_rpc_v1_ServerPetDeleteRequest_fields, &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ServerPetDeleteResponse decoded =
-        gizclaw_rpc_v1_ServerPetDeleteResponse_init_zero;
-    rc = decode_pet_response(
-        client, &response, gizclaw_rpc_v1_ServerPetDeleteResponse_fields,
-        &decoded, &decoded.value, &decoded.has_value, out_pet);
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_pet_deinit(client, out_pet);
-  return rc;
-}
-
 static bool valid_game_result(const h2_gizclaw_pet_game_result_t *game_result) {
   return game_result != NULL && game_result->game_name.data != NULL &&
          game_result->game_name.len != 0u &&
+         valid_optional_text(game_result->game_name) &&
          valid_optional_text(game_result->difficulty) &&
          valid_optional_text(game_result->outcome) &&
          valid_optional_text(game_result->occurred_at) &&
@@ -363,70 +213,11 @@ static void prepare_game_result(gizclaw_rpc_v1_PetDriveGameResultInput *wire,
   wire->duration_ms = game_result->duration_ms;
 }
 
-int h2_gizclaw_client_pet_drive(h2_gizclaw_client_t *client,
-                                const h2_gizclaw_pet_drive_options_t *options,
-                                h2_gizclaw_pet_t *out_pet) {
-  if (client == NULL || options == NULL || out_pet == NULL ||
-      options->pet_name.data == NULL || options->pet_name.len == 0u ||
-      !valid_optional_text(options->idempotency_key) ||
-      options->behavior < H2_GIZCLAW_PET_BEHAVIOR_NONE ||
-      options->behavior > H2_GIZCLAW_PET_BEHAVIOR_HEAL ||
-      (options->behavior != H2_GIZCLAW_PET_BEHAVIOR_NONE &&
-       options->game_result != NULL) ||
-      (options->game_result != NULL &&
-       !valid_game_result(options->game_result))) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-
-  gizclaw_rpc_v1_ServerPetDriveRequest request =
-      gizclaw_rpc_v1_ServerPetDriveRequest_init_zero;
-  request.has_value = true;
-  text_arg_t pet_name_arg;
-  text_arg_t drive_key_arg;
-  text_arg_t game_text[5];
-  set_encoder(&request.value.pet_name, &pet_name_arg, options->pet_name);
-  if (options->behavior != H2_GIZCLAW_PET_BEHAVIOR_NONE) {
-    request.value.has_behavior = true;
-    request.value.behavior = (gizclaw_rpc_v1_PetBehavior)options->behavior;
-  }
-  if (options->game_result != NULL) {
-    request.value.has_game_result = true;
-    prepare_game_result(&request.value.game_result, options->game_result,
-                        options->idempotency_key, game_text);
-  } else if (options->idempotency_key.len != 0u) {
-    set_encoder(&request.value.idempotency_key, &drive_key_arg,
-                options->idempotency_key);
-  }
-
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc =
-      unary(client, H2_GIZCLAW_RPC_SERVER_PET_DRIVE,
-            gizclaw_rpc_v1_ServerPetDriveRequest_fields, &request, &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ServerPetDriveResponse decoded =
-        gizclaw_rpc_v1_ServerPetDriveResponse_init_zero;
-    pet_decode_t context;
-    prepare_pet(&decoded.value.pet, &context,
-                h2_gizclaw_client_allocator_internal(client), out_pet);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetDriveResponse_fields,
-                   &decoded) ||
-        !decoded.has_value || !decoded.value.has_pet) {
-      h2_gizclaw_pet_deinit(client, out_pet);
-      rc = H2_PAL_ERR_FORMAT;
-    } else {
-      finish_pet(&decoded.value.pet, out_pet);
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
 typedef struct list_ctx {
-  h2_gizclaw_client_t *client;
+  const h2_pal_mem_api_t *mem;
   h2_gizclaw_pet_page_t *page;
   size_t max;
+  size_t capacity;
 } list_ctx_t;
 static bool decode_list_pet(pb_istream_t *s, const pb_field_t *f, void **arg) {
   (void)f;
@@ -434,84 +225,35 @@ static bool decode_list_pet(pb_istream_t *s, const pb_field_t *f, void **arg) {
   if (c->page->count >= c->max || c->page->count == SIZE_MAX ||
       c->page->count + 1u > SIZE_MAX / sizeof(c->page->items[0]))
     return false;
-  size_t n = c->page->count + 1u;
-  h2_gizclaw_pet_t *items =
-      h2_pal_mem_realloc(h2_gizclaw_client_allocator_internal(c->client),
-                         c->page->items, n * sizeof(*items));
-  if (!items)
-    return false;
-  c->page->items = items;
+  if (c->page->count == c->capacity) {
+    size_t capacity = c->capacity == 0u ? 4u : c->capacity * 2u;
+    if (capacity < c->capacity || capacity > c->max)
+      capacity = c->max;
+    if (capacity > SIZE_MAX / sizeof(c->page->items[0]))
+      return false;
+    h2_gizclaw_pet_t *grown =
+        h2_pal_mem_realloc(c->mem, c->page->items, capacity * sizeof(*grown));
+    if (grown == NULL)
+      return false;
+    c->page->items = grown;
+    c->capacity = capacity;
+  }
+  h2_gizclaw_pet_t *items = c->page->items;
   gizclaw_rpc_v1_Pet p = gizclaw_rpc_v1_Pet_init_zero;
   pet_decode_t pc;
-  prepare_pet(&p, &pc, h2_gizclaw_client_allocator_internal(c->client),
-              &items[c->page->count]);
-  if (!pb_decode(s, gizclaw_rpc_v1_Pet_fields, &p)) {
-    h2_gizclaw_pet_deinit(c->client, &items[c->page->count]);
+  prepare_pet(&p, &pc, c->mem, &items[c->page->count]);
+  if (!pb_decode(s, gizclaw_rpc_v1_Pet_fields, &p) ||
+      items[c->page->count].name == NULL ||
+      items[c->page->count].name[0] == '\0') {
+    pet_value_clear(c->mem, &items[c->page->count]);
     return false;
   }
   finish_pet(&p, &items[c->page->count++]);
   return true;
 }
 
-int h2_gizclaw_client_pet_list(h2_gizclaw_client_t *client,
-                               h2_gizclaw_str_t cursor, size_t limit,
-                               h2_gizclaw_pet_page_t *out) {
-  if (client == NULL || out == NULL || limit == 0u ||
-#if SIZE_MAX > INT64_MAX
-      limit > (size_t)INT64_MAX ||
-#endif
-      (cursor.len > 0u && cursor.data == NULL))
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out, 0, sizeof(*out));
-  gizclaw_rpc_v1_ServerPetListRequest req =
-      gizclaw_rpc_v1_ServerPetListRequest_init_zero;
-  req.has_value = true;
-  req.value.has_limit = true;
-  req.value.limit = (int64_t)limit;
-  text_arg_t cur_arg;
-  if (cursor.len)
-    set_encoder(&req.value.cursor, &cur_arg, cursor);
-  h2_gizclaw_rpc_response_t rsp = {0};
-  int rc = unary(client, H2_GIZCLAW_RPC_SERVER_PET_LIST,
-                 gizclaw_rpc_v1_ServerPetListRequest_fields, &req, &rsp);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ServerPetListResponse d =
-        gizclaw_rpc_v1_ServerPetListResponse_init_zero;
-    list_ctx_t lc = {client, out, limit};
-    text_out_t next;
-    d.value.items.funcs.decode = decode_list_pet;
-    d.value.items.arg = &lc;
-    set_decoder(&d.value.next_cursor, &next,
-                h2_gizclaw_client_allocator_internal(client),
-                &out->next_cursor);
-    pb_istream_t s =
-        pb_istream_from_buffer(rsp.result_payload, rsp.result_payload_len);
-    if (!pb_decode(&s, gizclaw_rpc_v1_ServerPetListResponse_fields, &d) ||
-        !d.has_value)
-      rc = H2_PAL_ERR_FORMAT;
-    else
-      out->has_next = d.value.has_next;
-  }
-  h2_gizclaw_rpc_response_deinit(client, &rsp);
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_pet_page_deinit(client, out);
-  return rc;
-}
-
-void h2_gizclaw_pet_page_deinit(h2_gizclaw_client_t *client,
-                                h2_gizclaw_pet_page_t *p) {
-  if (!client || !p)
-    return;
-  const h2_pal_mem_api_t *m = h2_gizclaw_client_allocator_internal(client);
-  for (size_t i = 0; i < p->count; ++i)
-    h2_gizclaw_pet_deinit(client, &p->items[i]);
-  h2_pal_mem_free(m, p->items);
-  h2_pal_mem_free(m, p->next_cursor);
-  memset(p, 0, sizeof(*p));
-}
-
 typedef struct actions_clip_decode {
-  h2_gizclaw_client_t *client;
+  const h2_pal_mem_api_t *mem;
   h2_gizclaw_pet_actions_t *actions;
 } actions_clip_decode_t;
 
@@ -524,13 +266,14 @@ static bool decode_action_clip(pb_istream_t *stream, const pb_field_t *field,
                                void **arg) {
   (void)field;
   actions_clip_decode_t *context = *arg;
-  if (context == NULL || context->client == NULL || context->actions == NULL) {
+  if (context == NULL || context->mem == NULL || context->actions == NULL) {
     return false;
   }
   h2_gizclaw_pet_actions_t *actions = context->actions;
+  if (actions->clip_name_count >= 256u)
+    return false;
   const size_t count = actions->clip_name_count + 1u;
-  const h2_pal_mem_api_t *mem =
-      h2_gizclaw_client_allocator_internal(context->client);
+  const h2_pal_mem_api_t *mem = context->mem;
   h2_gizclaw_pet_clip_name_t *items =
       h2_pal_mem_realloc(mem, actions->clip_names, count * sizeof(*items));
   if (items == NULL) {
@@ -558,9 +301,8 @@ static bool decode_action_clip(pb_istream_t *stream, const pb_field_t *field,
 
 static void prepare_actions(gizclaw_rpc_v1_PetActions *wire,
                             actions_decode_t *context,
-                            h2_gizclaw_client_t *client,
+                            const h2_pal_mem_api_t *mem,
                             h2_gizclaw_pet_actions_t *actions) {
-  const h2_pal_mem_api_t *mem = h2_gizclaw_client_allocator_internal(client);
   memset(actions, 0, sizeof(*actions));
   memset(context, 0, sizeof(*context));
   set_decoder(&wire->pet_name, &context->text[0], mem, &actions->pet_name);
@@ -574,550 +316,712 @@ static void prepare_actions(gizclaw_rpc_v1_PetActions *wire,
   set_decoder(&wire->bindings.sick, &context->text[7], mem, &actions->sick);
   set_decoder(&wire->bindings.dead, &context->text[8], mem, &actions->dead);
   set_decoder(&wire->bindings.sleep, &context->text[9], mem, &actions->sleep);
-  context->clips.client = client;
+  context->clips.mem = mem;
   context->clips.actions = actions;
   wire->clip_names.funcs.decode = decode_action_clip;
   wire->clip_names.arg = &context->clips;
 }
 
-int h2_gizclaw_client_pet_actions_get(h2_gizclaw_client_t *client,
-                                      h2_gizclaw_str_t pet_name,
-                                      h2_gizclaw_pet_actions_t *out_actions) {
-  if (client == NULL || pet_name.data == NULL || pet_name.len == 0u ||
-      out_actions == NULL) {
+static h2_pal_result_t
+pet_create_message(h2_gizclaw_service_t *service, uint64_t identity,
+                   const void *tag, h2_gizclaw_rpc_method_t method,
+                   const pb_msgdesc_t *fields, const void *message,
+                   uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || out_request == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  gizclaw_rpc_v1_ServerPetActionsGetRequest request =
-      gizclaw_rpc_v1_ServerPetActionsGetRequest_init_zero;
-  request.has_value = true;
-  text_arg_t pet_name_arg;
-  set_encoder(&request.value.name, &pet_name_arg, pet_name);
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = unary(client, H2_GIZCLAW_RPC_SERVER_PET_ACTIONS_GET,
-                 gizclaw_rpc_v1_ServerPetActionsGetRequest_fields, &request,
-                 &response);
-  if (rc == H2_PAL_OK) {
-    gizclaw_rpc_v1_ServerPetActionsGetResponse decoded =
-        gizclaw_rpc_v1_ServerPetActionsGetResponse_init_zero;
-    actions_decode_t context;
-    prepare_actions(&decoded.value, &context, client, out_actions);
-    pb_istream_t stream = pb_istream_from_buffer(response.result_payload,
-                                                 response.result_payload_len);
-    if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetActionsGetResponse_fields,
-                   &decoded) ||
-        !decoded.has_value) {
-      h2_gizclaw_pet_actions_deinit(client, out_actions);
-      rc = H2_PAL_ERR_FORMAT;
-    }
-  }
-  h2_gizclaw_rpc_response_deinit(client, &response);
+  const h2_pal_mem_api_t *mem = service->config.client_config->allocator;
+  uint8_t *payload = NULL;
+  size_t len = 0u;
+  h2_pal_result_t rc =
+      (h2_pal_result_t)encode_message(mem, fields, message, &payload, &len);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_create_rpc_internal(
+        service, identity, method, tag, (h2_gizclaw_rpc_bytes_t){payload, len},
+        timeout_ms, out_request);
+  h2_pal_mem_free(mem, payload);
   return rc;
 }
 
-const char *
-h2_gizclaw_pet_actions_find_clip(const h2_gizclaw_pet_actions_t *actions,
-                                 const char *id) {
-  if (actions == NULL || id == NULL) {
-    return NULL;
-  }
-  for (size_t index = 0u; index < actions->clip_name_count; ++index) {
-    if (actions->clip_names[index].id != NULL &&
-        strcmp(actions->clip_names[index].id, id) == 0) {
-      return actions->clip_names[index].pixa_clip_name;
-    }
-  }
-  return NULL;
+static const char pet_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_pet_get(h2_gizclaw_service_t *service,
+                                              uint64_t identity,
+                                              h2_gizclaw_str_t pet_name,
+                                              uint32_t timeout_ms,
+                                              h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_optional_text(pet_name) && pet_name.len > 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ServerPetGetRequest message =
+      gizclaw_rpc_v1_ServerPetGetRequest_init_zero;
+  message.has_value = true;
+  text_arg_t name_arg;
+  set_encoder(&message.value.name, &name_arg, pet_name);
+  return pet_create_message(service, identity, &pet_get_tag,
+                            H2_GIZCLAW_RPC_SERVER_PET_GET,
+                            gizclaw_rpc_v1_ServerPetGetRequest_fields, &message,
+                            timeout_ms, out_request);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_get(const h2_gizclaw_req_t *request,
+                              h2_gizclaw_resp_storage_t *storage,
+                              h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &pet_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = &arena.allocator;
+  h2_gizclaw_pet_t result = {0};
+  gizclaw_rpc_v1_ServerPetGetResponse decoded =
+      gizclaw_rpc_v1_ServerPetGetResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  pet_decode_t context;
+  prepare_pet(&decoded.value, &context, mem, &result);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetGetResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || result.name == NULL || result.name[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    finish_pet(&decoded.value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_pet_get(h2_gizclaw_service_t *service,
+                                       h2_gizclaw_str_t pet_name,
+                                       uint32_t timeout_ms,
+                                       h2_gizclaw_resp_storage_t *storage,
+                                       h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_get(service, 0u, pet_name,
+                                                     timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_get(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }
 
-void h2_gizclaw_pet_actions_deinit(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_pet_actions_t *actions) {
-  if (client == NULL || actions == NULL) {
-    return;
-  }
-  const h2_pal_mem_api_t *mem = h2_gizclaw_client_allocator_internal(client);
-  h2_pal_mem_free(mem, actions->pet_name);
-  h2_pal_mem_free(mem, actions->pet_def_name);
-  h2_pal_mem_free(mem, actions->feed);
-  h2_pal_mem_free(mem, actions->bathe);
-  h2_pal_mem_free(mem, actions->play);
-  h2_pal_mem_free(mem, actions->heal);
-  h2_pal_mem_free(mem, actions->idle);
-  h2_pal_mem_free(mem, actions->sick);
-  h2_pal_mem_free(mem, actions->dead);
-  h2_pal_mem_free(mem, actions->sleep);
-  for (size_t index = 0u; index < actions->clip_name_count; ++index) {
-    h2_pal_mem_free(mem, actions->clip_names[index].id);
-    h2_pal_mem_free(mem, actions->clip_names[index].pixa_clip_name);
-  }
-  h2_pal_mem_free(mem, actions->clip_names);
-  memset(actions, 0, sizeof(*actions));
+static const char pet_delete_tag;
+h2_pal_result_t h2_gizclaw_req_create_pet_delete(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_optional_text(pet_name) && pet_name.len > 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ServerPetDeleteRequest message =
+      gizclaw_rpc_v1_ServerPetDeleteRequest_init_zero;
+  message.has_value = true;
+  text_arg_t name_arg;
+  set_encoder(&message.value.name, &name_arg, pet_name);
+  return pet_create_message(service, identity, &pet_delete_tag,
+                            H2_GIZCLAW_RPC_SERVER_PET_DELETE,
+                            gizclaw_rpc_v1_ServerPetDeleteRequest_fields,
+                            &message, timeout_ms, out_request);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_delete(const h2_gizclaw_req_t *request,
+                                 h2_gizclaw_resp_storage_t *storage,
+                                 h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &pet_delete_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = &arena.allocator;
+  h2_gizclaw_pet_t result = {0};
+  gizclaw_rpc_v1_ServerPetDeleteResponse decoded =
+      gizclaw_rpc_v1_ServerPetDeleteResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  pet_decode_t context;
+  prepare_pet(&decoded.value, &context, mem, &result);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetDeleteResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || result.name == NULL || result.name[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    finish_pet(&decoded.value, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_pet_delete(h2_gizclaw_service_t *service,
+                                          h2_gizclaw_str_t pet_name,
+                                          uint32_t timeout_ms,
+                                          h2_gizclaw_resp_storage_t *storage,
+                                          h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_delete(service, 0u, pet_name,
+                                                        timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_delete(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }
 
-typedef struct download_ctx {
-  h2_gizclaw_client_t *client;
+static const char pet_adopt_tag;
+h2_pal_result_t h2_gizclaw_req_create_pet_adopt(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_pet_adopt_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(options != NULL && options->name.len > 0u &&
+        valid_optional_text(options->name) &&
+        valid_optional_text(options->display_name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_RuntimeAdoptRequest message =
+      gizclaw_rpc_v1_RuntimeAdoptRequest_init_zero;
+  message.has_value = true;
+  text_arg_t text[2];
+  set_encoder(&message.value.name, &text[0], options->name);
+  if (options->display_name.len > 0u)
+    set_encoder(&message.value.display_name, &text[1], options->display_name);
+  return pet_create_message(service, identity, &pet_adopt_tag,
+                            H2_GIZCLAW_RPC_RUNTIME_ADOPT,
+                            gizclaw_rpc_v1_RuntimeAdoptRequest_fields, &message,
+                            timeout_ms, out_request);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_adopt(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_resp_storage_t *storage,
+                                h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &pet_adopt_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = &arena.allocator;
+  h2_gizclaw_pet_t result = {0};
+  gizclaw_rpc_v1_RuntimeAdoptResponse decoded =
+      gizclaw_rpc_v1_RuntimeAdoptResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  pet_decode_t context;
+  prepare_pet(&decoded.value.pet, &context, mem, &result);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_RuntimeAdoptResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || !decoded.value.has_pet || result.name == NULL ||
+      result.name[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    finish_pet(&decoded.value.pet, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_pet_adopt(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_pet_adopt_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_adopt(service, 0u, options,
+                                                       timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_adopt(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char pet_drive_tag;
+h2_pal_result_t h2_gizclaw_req_create_pet_drive(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_pet_drive_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(options != NULL && options->pet_name.len > 0u &&
+        valid_optional_text(options->pet_name) &&
+        valid_optional_text(options->idempotency_key) &&
+        options->behavior >= H2_GIZCLAW_PET_BEHAVIOR_NONE &&
+        options->behavior <= H2_GIZCLAW_PET_BEHAVIOR_HEAL &&
+        !(options->behavior != H2_GIZCLAW_PET_BEHAVIOR_NONE &&
+          options->game_result != NULL) &&
+        (options->game_result == NULL ||
+         valid_game_result(options->game_result))))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ServerPetDriveRequest message =
+      gizclaw_rpc_v1_ServerPetDriveRequest_init_zero;
+  message.has_value = true;
+  text_arg_t name_arg, key_arg, game_text[5];
+  set_encoder(&message.value.pet_name, &name_arg, options->pet_name);
+  if (options->behavior != H2_GIZCLAW_PET_BEHAVIOR_NONE) {
+    message.value.has_behavior = true;
+    message.value.behavior = (gizclaw_rpc_v1_PetBehavior)options->behavior;
+  }
+  if (options->game_result != NULL) {
+    message.value.has_game_result = true;
+    prepare_game_result(&message.value.game_result, options->game_result,
+                        options->idempotency_key, game_text);
+  } else if (options->idempotency_key.len > 0u)
+    set_encoder(&message.value.idempotency_key, &key_arg,
+                options->idempotency_key);
+  return pet_create_message(service, identity, &pet_drive_tag,
+                            H2_GIZCLAW_RPC_SERVER_PET_DRIVE,
+                            gizclaw_rpc_v1_ServerPetDriveRequest_fields,
+                            &message, timeout_ms, out_request);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_drive(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_resp_storage_t *storage,
+                                h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &pet_drive_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = &arena.allocator;
+  h2_gizclaw_pet_t result = {0};
+  gizclaw_rpc_v1_ServerPetDriveResponse decoded =
+      gizclaw_rpc_v1_ServerPetDriveResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  pet_decode_t context;
+  prepare_pet(&decoded.value.pet, &context, mem, &result);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetDriveResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || !decoded.value.has_pet || result.name == NULL ||
+      result.name[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    finish_pet(&decoded.value.pet, &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_pet_drive(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_pet_drive_options_t *options, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_pet_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_drive(service, 0u, options,
+                                                       timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_drive(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char pet_list_tag;
+h2_pal_result_t h2_gizclaw_req_create_pet_list(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_optional_text(cursor) && cursor.len <= 255u && limit > 0u &&
+        limit <= 64u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ServerPetListRequest message =
+      gizclaw_rpc_v1_ServerPetListRequest_init_zero;
+  message.has_value = true;
+  message.value.has_limit = true;
+  message.value.limit = (int64_t)limit;
+  text_arg_t cursor_arg;
+  if (cursor.len > 0u)
+    set_encoder(&message.value.cursor, &cursor_arg, cursor);
+  return pet_create_message(service, identity, &pet_list_tag,
+                            H2_GIZCLAW_RPC_SERVER_PET_LIST,
+                            gizclaw_rpc_v1_ServerPetListRequest_fields,
+                            &message, timeout_ms, out_request);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_list(const h2_gizclaw_req_t *request,
+                               h2_gizclaw_resp_storage_t *storage,
+                               h2_gizclaw_pet_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &pet_list_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &pet_list_tag, &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_ServerPetListRequest params =
+      gizclaw_rpc_v1_ServerPetListRequest_init_zero;
+  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
+  if (!pb_decode(&input_stream, gizclaw_rpc_v1_ServerPetListRequest_fields,
+                 &params) ||
+      !params.has_value || !params.value.has_limit || params.value.limit <= 0 ||
+      params.value.limit > 64)
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = &arena.allocator;
+  h2_gizclaw_pet_page_t result = {0};
+  gizclaw_rpc_v1_ServerPetListResponse decoded =
+      gizclaw_rpc_v1_ServerPetListResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  list_ctx_t context = {
+      .mem = mem, .page = &result, .max = (size_t)params.value.limit};
+  text_out_t next;
+  decoded.value.items.funcs.decode = decode_list_pet;
+  decoded.value.items.arg = &context;
+  set_decoder(&decoded.value.next_cursor, &next, mem, &result.next_cursor);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetListResponse_fields,
+                 &decoded) ||
+      !decoded.has_value ||
+      (decoded.value.has_next &&
+       (result.next_cursor == NULL || result.next_cursor[0] == '\0')))
+    rc = H2_PAL_ERR_FORMAT;
+  else
+    result.has_next = decoded.value.has_next;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t h2_gizclaw_rpc_pet_list(h2_gizclaw_service_t *service,
+                                        h2_gizclaw_str_t cursor, size_t limit,
+                                        uint32_t timeout_ms,
+                                        h2_gizclaw_resp_storage_t *storage,
+                                        h2_gizclaw_pet_page_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_list(
+      service, 0u, cursor, limit, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_list(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char pet_action_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_pet_action_get(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_optional_text(pet_name) && pet_name.len > 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ServerPetActionsGetRequest message =
+      gizclaw_rpc_v1_ServerPetActionsGetRequest_init_zero;
+  message.has_value = true;
+  text_arg_t name_arg;
+  set_encoder(&message.value.name, &name_arg, pet_name);
+  return pet_create_message(service, identity, &pet_action_get_tag,
+                            H2_GIZCLAW_RPC_SERVER_PET_ACTIONS_GET,
+                            gizclaw_rpc_v1_ServerPetActionsGetRequest_fields,
+                            &message, timeout_ms, out_request);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_pet_action_get(const h2_gizclaw_req_t *request,
+                                     h2_gizclaw_resp_storage_t *storage,
+                                     h2_gizclaw_pet_actions_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &pet_action_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const h2_pal_mem_api_t *mem = &arena.allocator;
+  h2_gizclaw_pet_actions_t result = {0};
+  gizclaw_rpc_v1_ServerPetActionsGetResponse decoded =
+      gizclaw_rpc_v1_ServerPetActionsGetResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  actions_decode_t context;
+  prepare_actions(&decoded.value, &context, mem, &result);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetActionsGetResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || result.pet_name == NULL ||
+      result.pet_name[0] == '\0')
+    rc = H2_PAL_ERR_FORMAT;
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+h2_pal_result_t
+h2_gizclaw_rpc_pet_action_get(h2_gizclaw_service_t *service,
+                              h2_gizclaw_str_t pet_name, uint32_t timeout_ms,
+                              h2_gizclaw_resp_storage_t *storage,
+                              h2_gizclaw_pet_actions_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_action_get(
+      service, 0u, pet_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_action_get(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+typedef struct pixa_download {
+  const h2_pal_mem_api_t *allocator;
+  char *name;
+  h2_gizclaw_pet_pixa_info_t info;
+} pixa_download_t;
+
+typedef struct pixa_sync_writer {
   h2_gizclaw_pet_pixa_write_fn write;
   void *user;
-  h2_gizclaw_pet_pixa_info_t *info;
-  int result;
-} download_ctx_t;
-static int download_event(void *user, const h2_gizclaw_rpc_stream_event_t *e) {
-  download_ctx_t *c = user;
-  if (e->has_error)
-    return c->result = H2_PAL_ERR_IO;
-  if (e->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE) {
-    gizclaw_rpc_v1_ServerPetPixaDownloadResponse d =
-        gizclaw_rpc_v1_ServerPetPixaDownloadResponse_init_zero;
-    text_out_t text[3];
-    const h2_pal_mem_api_t *m = h2_gizclaw_client_allocator_internal(c->client);
-    set_decoder(&d.value.pet_name, &text[0], m, &c->info->pet_name);
-    set_decoder(&d.value.pet_def_name, &text[1], m, &c->info->pet_def_name);
-    set_decoder(&d.value.pixa_path, &text[2], m, &c->info->source_path);
-    pb_istream_t s =
-        pb_istream_from_buffer(e->result_payload.data, e->result_payload.len);
-    if (!pb_decode(&s, gizclaw_rpc_v1_ServerPetPixaDownloadResponse_fields,
-                   &d) ||
-        !d.has_value || d.value.size_bytes < 0)
-      return c->result = H2_PAL_ERR_FORMAT;
-    c->info->size_bytes = (uint64_t)d.value.size_bytes;
-  } else if (e->kind == H2_GIZCLAW_RPC_STREAM_DATA) {
-    if (c->info->received_bytes > c->info->size_bytes ||
-        e->data.len > c->info->size_bytes - c->info->received_bytes)
-      return c->result = H2_PAL_ERR_FORMAT;
-    if (c->write(c->user, e->data.data, e->data.len) != 0)
-      return c->result = H2_PAL_ERR_IO;
-    c->info->received_bytes += e->data.len;
-  }
-  return 0;
-}
+} pixa_sync_writer_t;
 
-int h2_gizclaw_client_pet_pixa_download(h2_gizclaw_client_t *client,
-                                        h2_gizclaw_str_t id,
-                                        h2_gizclaw_pet_pixa_write_fn write,
-                                        void *user,
-                                        h2_gizclaw_pet_pixa_info_t *out) {
-  if (!client || !id.data || !id.len || !write || !out)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out, 0, sizeof(*out));
-  gizclaw_rpc_v1_ServerPetPixaDownloadRequest req =
-      gizclaw_rpc_v1_ServerPetPixaDownloadRequest_init_zero;
-  req.has_value = true;
-  text_arg_t id_arg;
-  set_encoder(&req.value.pet_name, &id_arg, id);
-  const h2_pal_mem_api_t *m = h2_gizclaw_client_allocator_internal(client);
-  uint8_t *payload = NULL;
-  size_t len = 0;
-  int rc = encode_message(m, gizclaw_rpc_v1_ServerPetPixaDownloadRequest_fields,
-                          &req, &payload, &len);
-  download_ctx_t ctx = {client, write, user, out, H2_PAL_OK};
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_client_rpc_call_stream(
-        client, H2_GIZCLAW_RPC_SERVER_PET_PIXA_DOWNLOAD,
-        (h2_gizclaw_rpc_bytes_t){payload, len}, download_event, &ctx);
-  h2_pal_mem_free(m, payload);
-  if (rc == H2_PAL_OK)
-    rc = ctx.result;
-  if (rc == H2_PAL_OK && out->received_bytes != out->size_bytes)
-    rc = H2_PAL_ERR_FORMAT;
-  if (rc != H2_PAL_OK)
-    h2_gizclaw_pet_pixa_info_deinit(client, out);
+static h2_pal_result_t pixa_sync_output(void *opaque, const uint8_t *data,
+                                        size_t len, size_t *out_written) {
+  pixa_sync_writer_t *sink = opaque;
+  h2_pal_result_t rc =
+      (h2_pal_result_t)sink->write(sink->user, data, len);
+  *out_written = rc == H2_PAL_OK ? len : 0u;
   return rc;
 }
 
-void h2_gizclaw_pet_pixa_info_deinit(h2_gizclaw_client_t *client,
-                                     h2_gizclaw_pet_pixa_info_t *i) {
-  if (!client || !i)
-    return;
-  const h2_pal_mem_api_t *m = h2_gizclaw_client_allocator_internal(client);
-  h2_pal_mem_free(m, i->pet_name);
-  h2_pal_mem_free(m, i->pet_def_name);
-  h2_pal_mem_free(m, i->source_path);
-  memset(i, 0, sizeof(*i));
+static void pixa_destroy(void *user) {
+  pixa_download_t *context = user;
+  h2_pal_mem_free(context->allocator, context->info.pet_name);
+  h2_pal_mem_free(context->allocator, context->info.pet_def_name);
+  h2_pal_mem_free(context->allocator, context->info.source_path);
+  h2_pal_mem_free(context->allocator, context->name);
+  h2_pal_mem_free(context->allocator, context);
 }
-
-struct h2_gizclaw_pet_request {
-  const h2_pal_mem_api_t *allocator;
-  h2_gizclaw_operation_t *operation;
-  const h2_gizclaw_cancel_token_t *cancel_token;
-  h2_gizclaw_pet_request_kind_t kind;
-  h2_gizclaw_pet_completion_fn completion;
-  void *completion_user;
-  h2_gizclaw_pet_result_t result;
-  char *text[6];
-  size_t limit;
-  h2_gizclaw_pet_adopt_options_t adopt;
-  h2_gizclaw_pet_drive_options_t drive;
-  h2_gizclaw_pet_game_result_t game;
-  h2_gizclaw_pet_pixa_write_fn write;
-  void *write_user;
-  atomic_bool terminal;
-};
-
-static h2_gizclaw_str_t pet_request_span(const char *text) {
-  return (h2_gizclaw_str_t){.data = text,
-                            .len = text == NULL ? 0u : strlen(text)};
-}
-
-static char *pet_request_copy(const h2_pal_mem_api_t *allocator,
-                              h2_gizclaw_str_t value) {
-  if (value.len > 0u && value.data == NULL)
-    return NULL;
-  char *copy = h2_pal_mem_alloc(allocator, value.len + 1u);
-  if (copy == NULL)
-    return NULL;
-  if (value.len > 0u)
-    memcpy(copy, value.data, value.len);
-  copy[value.len] = '\0';
-  return copy;
-}
-
-static void pet_request_pet_clear(const h2_pal_mem_api_t *allocator,
-                                  h2_gizclaw_pet_t *pet) {
-  h2_pal_mem_free(allocator, pet->name);
-  h2_pal_mem_free(allocator, pet->pet_def_name);
-  h2_pal_mem_free(allocator, pet->display_name);
-  h2_pal_mem_free(allocator, pet->workspace_name);
-  h2_pal_mem_free(allocator, pet->died_at);
-  h2_pal_mem_free(allocator, pet->state_settled_at);
-  h2_pal_mem_free(allocator, pet->updated_at);
-  memset(pet, 0, sizeof(*pet));
-}
-
-static void pet_request_result_clear(h2_gizclaw_pet_request_t *request) {
-  if (request->kind == H2_GIZCLAW_PET_LIST) {
-    h2_gizclaw_pet_page_t *page = &request->result.value.page;
-    for (size_t index = 0u; index < page->count; ++index)
-      pet_request_pet_clear(request->allocator, &page->items[index]);
-    h2_pal_mem_free(request->allocator, page->items);
-    h2_pal_mem_free(request->allocator, page->next_cursor);
-    memset(page, 0, sizeof(*page));
-  } else if (request->kind == H2_GIZCLAW_PET_PIXA_DOWNLOAD) {
-    h2_gizclaw_pet_pixa_info_t *info = &request->result.value.pixa;
-    h2_pal_mem_free(request->allocator, info->pet_name);
-    h2_pal_mem_free(request->allocator, info->pet_def_name);
-    h2_pal_mem_free(request->allocator, info->source_path);
-    memset(info, 0, sizeof(*info));
-  } else if (request->kind == H2_GIZCLAW_PET_ACTIONS_GET) {
-    h2_gizclaw_pet_actions_t *actions = &request->result.value.actions;
-    h2_pal_mem_free(request->allocator, actions->pet_name);
-    h2_pal_mem_free(request->allocator, actions->pet_def_name);
-    h2_pal_mem_free(request->allocator, actions->feed);
-    h2_pal_mem_free(request->allocator, actions->bathe);
-    h2_pal_mem_free(request->allocator, actions->play);
-    h2_pal_mem_free(request->allocator, actions->heal);
-    h2_pal_mem_free(request->allocator, actions->idle);
-    h2_pal_mem_free(request->allocator, actions->sick);
-    h2_pal_mem_free(request->allocator, actions->dead);
-    h2_pal_mem_free(request->allocator, actions->sleep);
-    for (size_t index = 0u; index < actions->clip_name_count; ++index) {
-      h2_pal_mem_free(request->allocator, actions->clip_names[index].id);
-      h2_pal_mem_free(request->allocator,
-                      actions->clip_names[index].pixa_clip_name);
-    }
-    h2_pal_mem_free(request->allocator, actions->clip_names);
-    memset(actions, 0, sizeof(*actions));
-  } else {
-    pet_request_pet_clear(request->allocator, &request->result.value.pet);
-  }
-}
-
-typedef struct pet_write_dispatch {
-  h2_gizclaw_pet_request_t *request;
-  const uint8_t *data;
-  size_t len;
-} pet_write_dispatch_t;
-
-static h2_pal_result_t pet_dispatch_write(void *user) {
-  pet_write_dispatch_t *dispatch = user;
-  return (h2_pal_result_t)dispatch->request->write(
-      dispatch->request->write_user, dispatch->data, dispatch->len);
-}
-
-static int pet_request_write(void *user, const uint8_t *data, size_t len) {
-  h2_gizclaw_pet_request_t *request = user;
-  pet_write_dispatch_t dispatch = {
-      .request = request, .data = data, .len = len};
-  return (int)h2_gizclaw_operation_dispatch_call(request->cancel_token,
-                                                 pet_dispatch_write, &dispatch);
-}
-
-static h2_pal_result_t
-pet_request_run(void *user, h2_gizclaw_client_t *client,
-                const h2_gizclaw_cancel_token_t *cancel_token) {
-  h2_gizclaw_pet_request_t *request = user;
-  request->cancel_token = cancel_token;
-  h2_pal_result_t rc = H2_PAL_ERR_INVALID_STATE;
-  switch (request->kind) {
-  case H2_GIZCLAW_PET_LIST:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_list(
-        client, pet_request_span(request->text[0]), request->limit,
-        &request->result.value.page);
-    break;
-  case H2_GIZCLAW_PET_GET:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_get(
-        client, pet_request_span(request->text[0]), &request->result.value.pet);
-    break;
-  case H2_GIZCLAW_PET_ADOPT:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_adopt(
-        client, &request->adopt, &request->result.value.pet);
-    break;
-  case H2_GIZCLAW_PET_DELETE:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_delete(
-        client, pet_request_span(request->text[0]), &request->result.value.pet);
-    break;
-  case H2_GIZCLAW_PET_DRIVE:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_drive(
-        client, &request->drive, &request->result.value.pet);
-    break;
-  case H2_GIZCLAW_PET_PIXA_DOWNLOAD:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_pixa_download(
-        client, pet_request_span(request->text[0]), pet_request_write, request,
-        &request->result.value.pixa);
-    break;
-  case H2_GIZCLAW_PET_ACTIONS_GET:
-    rc = (h2_pal_result_t)h2_gizclaw_client_pet_actions_get(
-        client, pet_request_span(request->text[0]),
-        &request->result.value.actions);
-    break;
-  }
-  request->cancel_token = NULL;
-  return rc;
-}
-
-static void
-pet_request_complete(void *user, h2_gizclaw_operation_t *operation,
-                     const h2_gizclaw_operation_result_t *operation_result) {
-  (void)operation;
-  h2_gizclaw_pet_request_t *request = user;
-  h2_gizclaw_operation_result_t result = *operation_result;
-  if (result.result != H2_PAL_OK)
-    pet_request_result_clear(request);
-  atomic_store_explicit(&request->terminal, true, memory_order_release);
-  request->completion(request->completion_user, request, &result,
-                      result.result == H2_PAL_OK ? &request->result : NULL);
-}
-
-static h2_gizclaw_pet_request_t *
-pet_request_allocate(h2_gizclaw_service_t *service,
-                     h2_gizclaw_pet_request_kind_t kind,
-                     h2_gizclaw_pet_completion_fn completion, void *user) {
-  if (service == NULL || completion == NULL)
-    return NULL;
-  const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
-  h2_gizclaw_pet_request_t *request =
-      h2_pal_mem_alloc(allocator, sizeof(*request));
-  if (request == NULL)
-    return NULL;
-  memset(request, 0, sizeof(*request));
-  request->allocator = allocator;
-  request->kind = kind;
-  request->result.kind = kind;
-  request->completion = completion;
-  request->completion_user = user;
-  return request;
-}
-
-static void pet_request_free_unsubmitted(h2_gizclaw_pet_request_t *request) {
-  if (request == NULL)
-    return;
-  for (size_t index = 0u; index < 6u; ++index)
-    h2_pal_mem_free(request->allocator, request->text[index]);
-  h2_pal_mem_free(request->allocator, request);
-}
-
-static h2_pal_result_t
-pet_request_submit(h2_gizclaw_service_t *service, uint64_t identity,
-                   h2_gizclaw_pet_request_t *request,
-                   h2_gizclaw_pet_request_t **out_request) {
-  const h2_pal_result_t rc = h2_gizclaw_service_submit(
-      service, identity, pet_request_run, pet_request_complete, request,
-      &request->operation);
-  if (rc != H2_PAL_OK) {
-    pet_request_free_unsubmitted(request);
-    return rc;
-  }
-  *out_request = request;
+static h2_pal_result_t pixa_metadata(void *user, h2_gizclaw_rpc_bytes_t payload,
+                                     uint64_t *out_size) {
+  pixa_download_t *context = user;
+  gizclaw_rpc_v1_ServerPetPixaDownloadResponse decoded =
+      gizclaw_rpc_v1_ServerPetPixaDownloadResponse_init_zero;
+  text_out_t text[3];
+  set_decoder(&decoded.value.pet_name, &text[0], context->allocator,
+              &context->info.pet_name);
+  set_decoder(&decoded.value.pet_def_name, &text[1], context->allocator,
+              &context->info.pet_def_name);
+  set_decoder(&decoded.value.pixa_path, &text[2], context->allocator,
+              &context->info.source_path);
+  pb_istream_t stream = pb_istream_from_buffer(payload.data, payload.len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_ServerPetPixaDownloadResponse_fields,
+                 &decoded) ||
+      !decoded.has_value || decoded.value.size_bytes < 0 ||
+      context->info.pet_name == NULL ||
+      strcmp(context->info.pet_name, context->name) != 0 ||
+      context->info.pet_def_name == NULL ||
+      context->info.pet_def_name[0] == '\0' ||
+      context->info.source_path == NULL || context->info.source_path[0] == '\0')
+    return H2_PAL_ERR_FORMAT;
+  context->info.size_bytes = (uint64_t)decoded.value.size_bytes;
+  *out_size = context->info.size_bytes;
   return H2_PAL_OK;
 }
+static const h2_gizclaw_download_codec_t pixa_codec = {
+    .metadata = pixa_metadata, .destroy = pixa_destroy};
+static const char pet_pixa_download_tag;
 
-static h2_pal_result_t pet_request_copy_at(h2_gizclaw_pet_request_t *request,
-                                           size_t index,
-                                           h2_gizclaw_str_t value) {
-  request->text[index] = pet_request_copy(request->allocator, value);
-  return request->text[index] == NULL ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK;
-}
-
-#define PET_ASYNC_VALIDATE(service, completion, out_request)                   \
-  do {                                                                         \
-    if ((out_request) != NULL)                                                 \
-      *(out_request) = NULL;                                                   \
-    if ((service) == NULL || (completion) == NULL || (out_request) == NULL)    \
-      return H2_PAL_ERR_INVALID_ARG;                                           \
-  } while (0)
-
-h2_pal_result_t h2_gizclaw_service_pet_list_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
-    size_t limit, h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  PET_ASYNC_VALIDATE(service, completion, out_request);
-  if (limit == 0u || (cursor.len > 0u && cursor.data == NULL))
+h2_pal_result_t h2_gizclaw_req_create_pet_pixa_download(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (service == NULL || out_request == NULL || pet_name.len == 0u ||
+      !valid_optional_text(pet_name) ||
+      timeout_ms == 0u || timeout_ms > INT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_pet_request_t *request =
-      pet_request_allocate(service, H2_GIZCLAW_PET_LIST, completion, user);
-  if (request == NULL)
+  const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  pixa_download_t *context = h2_pal_mem_alloc(allocator, sizeof(*context));
+  if (context == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  request->limit = limit;
-  if (pet_request_copy_at(request, 0u, cursor) != H2_PAL_OK) {
-    pet_request_free_unsubmitted(request);
+  memset(context, 0, sizeof(*context));
+  context->allocator = allocator;
+  context->name = h2_pal_mem_alloc(allocator, pet_name.len + 1u);
+  if (context->name == NULL) {
+    pixa_destroy(context);
     return H2_PAL_ERR_NO_MEMORY;
   }
-  return pet_request_submit(service, identity, request, out_request);
+  memcpy(context->name, pet_name.data, pet_name.len);
+  context->name[pet_name.len] = '\0';
+  gizclaw_rpc_v1_ServerPetPixaDownloadRequest message =
+      gizclaw_rpc_v1_ServerPetPixaDownloadRequest_init_zero;
+  message.has_value = true;
+  text_arg_t text;
+  set_encoder(&message.value.pet_name, &text, pet_name);
+  uint8_t *payload = NULL;
+  size_t payload_len = 0u;
+  h2_pal_result_t rc = (h2_pal_result_t)encode_message(
+      allocator, gizclaw_rpc_v1_ServerPetPixaDownloadRequest_fields, &message,
+      &payload, &payload_len);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_create_download_internal(
+        service, identity, &pet_pixa_download_tag,
+        H2_GIZCLAW_RPC_SERVER_PET_PIXA_DOWNLOAD,
+        (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms, &pixa_codec,
+        context, out_request);
+  h2_pal_mem_free(allocator, payload);
+  if (rc != H2_PAL_OK)
+    pixa_destroy(context);
+  return rc;
 }
-
-static h2_pal_result_t pet_single_name_submit(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_request_kind_t kind, h2_gizclaw_pet_completion_fn completion,
-    void *user, h2_gizclaw_pet_request_t **out_request) {
-  PET_ASYNC_VALIDATE(service, completion, out_request);
-  if (pet_name.data == NULL || pet_name.len == 0u)
+h2_pal_result_t h2_gizclaw_resp_parse_pet_pixa_download(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_pet_pixa_info_t *out_result) {
+  if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_pet_request_t *request =
-      pet_request_allocate(service, kind, completion, user);
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  if (pet_request_copy_at(request, 0u, pet_name) != H2_PAL_OK) {
-    pet_request_free_unsubmitted(request);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  return pet_request_submit(service, identity, request, out_request);
-}
-
-h2_pal_result_t h2_gizclaw_service_pet_get_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  return pet_single_name_submit(service, identity, pet_name, H2_GIZCLAW_PET_GET,
-                                completion, user, out_request);
-}
-
-h2_pal_result_t h2_gizclaw_service_pet_delete_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  return pet_single_name_submit(service, identity, pet_name,
-                                H2_GIZCLAW_PET_DELETE, completion, user,
-                                out_request);
-}
-
-h2_pal_result_t h2_gizclaw_service_pet_actions_get_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  return pet_single_name_submit(service, identity, pet_name,
-                                H2_GIZCLAW_PET_ACTIONS_GET, completion, user,
-                                out_request);
-}
-
-h2_pal_result_t h2_gizclaw_service_pet_adopt_async(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_pet_adopt_options_t *options,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  PET_ASYNC_VALIDATE(service, completion, out_request);
-  if (options == NULL || options->name.data == NULL || options->name.len == 0u)
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_pet_request_t *request =
-      pet_request_allocate(service, H2_GIZCLAW_PET_ADOPT, completion, user);
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  if (pet_request_copy_at(request, 0u, options->name) != H2_PAL_OK ||
-      pet_request_copy_at(request, 1u, options->display_name) != H2_PAL_OK) {
-    pet_request_free_unsubmitted(request);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  request->adopt.name = pet_request_span(request->text[0]);
-  request->adopt.display_name = pet_request_span(request->text[1]);
-  return pet_request_submit(service, identity, request, out_request);
-}
-
-h2_pal_result_t h2_gizclaw_service_pet_drive_async(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    const h2_gizclaw_pet_drive_options_t *options,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  PET_ASYNC_VALIDATE(service, completion, out_request);
-  if (options == NULL || options->pet_name.data == NULL ||
-      options->pet_name.len == 0u ||
-      (options->game_result != NULL &&
-       !valid_game_result(options->game_result)))
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_pet_request_t *request =
-      pet_request_allocate(service, H2_GIZCLAW_PET_DRIVE, completion, user);
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  const h2_gizclaw_pet_game_result_t *game = options->game_result;
-  const h2_gizclaw_str_t values[6] = {
-      options->pet_name,
-      options->idempotency_key,
-      game != NULL ? game->game_name : (h2_gizclaw_str_t){0},
-      game != NULL ? game->difficulty : (h2_gizclaw_str_t){0},
-      game != NULL ? game->outcome : (h2_gizclaw_str_t){0},
-      game != NULL ? game->occurred_at : (h2_gizclaw_str_t){0},
-  };
-  for (size_t index = 0u; index < 6u; ++index) {
-    if (pet_request_copy_at(request, index, values[index]) != H2_PAL_OK) {
-      pet_request_free_unsubmitted(request);
-      return H2_PAL_ERR_NO_MEMORY;
+  memset(out_result, 0, sizeof(*out_result));
+  const void *user = NULL;
+  uint64_t received;
+  h2_pal_result_t rc = h2_gizclaw_download_result_internal(
+      request, &pet_pixa_download_tag, &user, &received);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const pixa_download_t *context = user;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_pet_pixa_info_t result = {.size_bytes = context->info.size_bytes,
+                                       .received_bytes = received};
+  const char *source[] = {context->info.pet_name, context->info.pet_def_name,
+                          context->info.source_path};
+  char **destination[] = {&result.pet_name, &result.pet_def_name,
+                          &result.source_path};
+  for (size_t i = 0u; i < 3u; ++i) {
+    size_t size = strlen(source[i]) + 1u;
+    *destination[i] = h2_pal_mem_alloc(&arena.allocator, size);
+    if (*destination[i] == NULL) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      break;
     }
+    memcpy(*destination[i], source[i], size);
   }
-  request->drive = *options;
-  request->drive.pet_name = pet_request_span(request->text[0]);
-  request->drive.idempotency_key = pet_request_span(request->text[1]);
-  if (game != NULL) {
-    request->game = *game;
-    request->game.game_name = pet_request_span(request->text[2]);
-    request->game.difficulty = pet_request_span(request->text[3]);
-    request->game.outcome = pet_request_span(request->text[4]);
-    request->game.occurred_at = pet_request_span(request->text[5]);
-    request->drive.game_result = &request->game;
-  }
-  return pet_request_submit(service, identity, request, out_request);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
 }
-
-h2_pal_result_t h2_gizclaw_service_pet_pixa_download_async(
-    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t pet_name,
-    h2_gizclaw_pet_pixa_write_fn write, void *write_user,
-    h2_gizclaw_pet_completion_fn completion, void *user,
-    h2_gizclaw_pet_request_t **out_request) {
-  PET_ASYNC_VALIDATE(service, completion, out_request);
-  if (write == NULL || pet_name.data == NULL || pet_name.len == 0u)
+h2_pal_result_t h2_gizclaw_rpc_pet_pixa_download(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t pet_name,
+    h2_gizclaw_pet_pixa_write_fn write, void *write_user, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_pet_pixa_info_t *out_result) {
+  if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_gizclaw_pet_request_t *request = pet_request_allocate(
-      service, H2_GIZCLAW_PET_PIXA_DOWNLOAD, completion, user);
-  if (request == NULL)
-    return H2_PAL_ERR_NO_MEMORY;
-  request->write = write;
-  request->write_user = write_user;
-  if (pet_request_copy_at(request, 0u, pet_name) != H2_PAL_OK) {
-    pet_request_free_unsubmitted(request);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  return pet_request_submit(service, identity, request, out_request);
-}
-
-h2_pal_result_t
-h2_gizclaw_pet_request_cancel(h2_gizclaw_pet_request_t *request) {
-  if (request == NULL)
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_operation_cancel(request->operation);
+  /* The synchronous adapter calls the writer for every chunk; a missing
+   * writer must fail here instead of when the first frame arrives. */
+  if (write == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_pet_pixa_download(
+      service, 0u, pet_name, timeout_ms, &request);
+  pixa_sync_writer_t writer = {.write = write, .user = write_user};
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, &writer, NULL, pixa_sync_output, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_pet_pixa_download(request, storage, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
 }
-
-void h2_gizclaw_pet_request_release(h2_gizclaw_pet_request_t *request) {
-  if (request == NULL ||
-      !atomic_load_explicit(&request->terminal, memory_order_acquire))
-    return;
-  h2_gizclaw_operation_release(request->operation);
-  pet_request_result_clear(request);
-  pet_request_free_unsubmitted(request);
-}
-
-#undef PET_ASYNC_VALIDATE

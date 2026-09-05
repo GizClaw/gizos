@@ -17,10 +17,12 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `log` | 单次 Runtime Log `Hello World` 输出 |
 | `lua-cosmic-drift` | 一个 compiled Lua cosmic evolution game 的分组运动、互食、引力捕获、升级、Desktop hover 与 Touch 控制 |
 | `lua-flappybird` | 一个 compiled Lua Skill 的绘制、触摸、碰撞、计分、重开与 Back 取消 |
+| `lua-bloomspeaker` | 同一 Lua 粒子场景、两端确定性 BLE 配对、加密 iKCP Opus 对讲与有界断线恢复 |
 | `lvgl-smoke` | Full-frame LVGL rendering 与持续刷新 |
 | `modem-smoke` | Modem、SIM、registration、PPP 与 ICMP stages |
 | `mp4-player` | MP4 decode、audio output 与 display presentation |
 | `partial-update` | package data generation 的 filesystem observation |
+| `qrcode` | 由 Display PAL band 绘制的居中 QR Code 符号 |
 | `safe-call` | ESP PSRAM caller 与 Internal safe-call worker validation |
 | `starboy` | 程序化双眼、球面注视、主题、眨眼、音频和运动响应 |
 | `tap-reset` | 同一个 LVGL counter 的 increment 与 Reset |
@@ -78,6 +80,8 @@ Lua bytes；来源 commit、原始脚本/SKILL hash、MIT license 和 API adapta
 不重复提交 upstream 原始脚本或 patch fixture。Display、Touch 与 Audio module 直接消费
 Runtime 单例 PAL API；只有 Button 等物理外设使用 Runtime component ID。迁移不缩写
 gameplay、rendering、collision、scoring、audio、input 或 state machine。
+
+`lua-bloomspeaker` 的 App、controller、配对协议、Opus packet/jitter policy、两秒无有效音频字节 timeout、场景 theme 与所有 mode crossfade 都属于 `projects/example/apps/lua-bloomspeaker/`。Desktop executable 与 AMOLED H2Loader target 只组装 Runtime/provider、component mapping、image/package 和 target task policy。BLE peer address 只作为当前 connection 的 transport metadata；兼容性只由 versioned beacon 和 encrypted handshake 决定。当前 artifact matrix 为 macOS Desktop 与 ESP32-S3 AMOLED；Linux host tests 验证 portable App/library，但尚未声明 Linux Desktop artifact。BK7258、BK3633、iOS、Android、Web 和 JieLi 没有满足 Audio、BLE 与 Runtime composition 的 BloomSpeaker artifact，因此不以 capability `SKIP` 假装支持。
 
 `log` 的阻塞入口是 `h2_log_example_run(h2_runtime_t *)`。它只要求 Runtime Log，写入一次 INFO record，scope 为 `log`，message 为 `Hello World`，然后返回 provider result。Portable App 不初始化 UART、不 drain target buffer、不循环、不 sleep、不分配内存，也不创建 task。当前只有 `tapdoki_v2_0/log` BK3633 full-image launcher；该入口先直接输出 `H2_BK3633_LOG_UART_READY` 证明 `main()` 已到达 UART 初始化点，再循环调用 portable App、drain target buffer，通过现有 TapDoki UART PAL Log provider 在 115200 baud 持续输出 `[I][log] Hello World`。只有重复出现的第二行验证 Runtime Log 链路；两者都不能替代 Libco Smoke 验收。
 

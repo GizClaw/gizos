@@ -1,0 +1,11 @@
+{
+  "display": {
+    "title": "Example QR Code",
+    "width": 368,
+    "height": 448
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": []
+}

@@ -246,20 +246,34 @@ cc_test(
 )
 
 cc_library(
-    name = "h2peer",
+    name = "webrtc_core",
     srcs = [
-        "src/data_channel/h2_peer_dcep.c",
-        "src/data_channel/h2_peer_dcep.h",
         "src/h2_peer_internal.h",
         "src/h2_peer_webrtc.c",
         "src/ice/h2_peer_ice.c",
         "src/ice/h2_peer_ice.h",
+        "src/providers/h2_peer_portable_backend.h",
+    ],
+    hdrs = ["include/h2_peer.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "src"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":task_names",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
+    name = "h2peer",
+    srcs = [
+        "src/data_channel/h2_peer_dcep.c",
+        "src/data_channel/h2_peer_dcep.h",
         "src/media/h2_peer_rtp.c",
         "src/media/h2_peer_rtp.h",
         "src/providers/h2_peer_portable_backend.c",
         "src/providers/h2_peer_portable_backend.h",
-        "src/providers/h2_peer_providers.c",
-        "src/providers/h2_peer_providers.h",
         "src/sdp/h2_peer_sdp.c",
         "src/sdp/h2_peer_sdp.h",
         "src/stun/h2_peer_stun.c",
@@ -280,6 +294,7 @@ cc_library(
     deps = [
         ":portable_protocol_providers",
         ":task_names",
+        ":webrtc_core",
         "//libs/pal",
     ],
 )
@@ -287,9 +302,83 @@ cc_library(
 cc_test(
     name = "lifecycle_test",
     srcs = [
-        "src/h2_peer_internal.h",
-        "src/providers/h2_peer_providers.h",
         "tests/test_lifecycle.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":webrtc_core",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "network_control_test",
+    srcs = ["tests/test_network_control.cc"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2peer",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "media_backpressure_test",
+    srcs = [
+        "src/h2_peer_internal.h",
+        "tests/test_media_backpressure.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2peer"],
+)
+
+cc_test(
+    name = "channel_tx_budget_test",
+    srcs = [
+        "src/h2_peer_internal.h",
+        "tests/test_channel_tx_budget.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2peer"],
+)
+
+cc_test(
+    name = "network_events_test",
+    srcs = [
+        "src/h2_peer_internal.h",
+        "tests/test_network_events.c",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -303,6 +392,7 @@ cc_test(
     deps = [
         ":h2peer",
         "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
     ],
 )
 

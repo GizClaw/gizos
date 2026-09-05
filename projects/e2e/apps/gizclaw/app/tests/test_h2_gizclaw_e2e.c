@@ -2,6 +2,9 @@
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_rpc.h"
 
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>

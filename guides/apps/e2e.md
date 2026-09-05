@@ -32,7 +32,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
-| WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit ESP32-S3 H2Peer + operator LAN Pion |
+| WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
+| iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
 
 未来独立的 `corehttp` 与 `coremqtt` 只有在 case 和 platform matrix 已经定义时才创建。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
 
@@ -106,6 +107,12 @@ Desktop catalog identity 是 `e2e/libco`，Bazel binary 是 `//projects/e2e/targ
 `h2_webrtc_performance_run()` 只消费调用方提供的 Runtime、profile、STUN URL 和 offer exchange callback。portable App 固定执行可比较的 app-shaped workload：三个 request DataChannel、Packet/Event 长连接、先下载 10 MiB 再上传 10 MiB，以及 20 ms Opus RTP 共载。它校验 exact byte count、payload、channel lifecycle 和音频 sequence，并输出逐轮 JSON 与 median；loaded/data-only throughput median 必须不低于 0.80。Desktop `benchmark` 要求每组 100 个 RTP frame 零丢包、零 duplicate、零 reorder、零 deadline miss、零发送侧 `WOULD_BLOCK`，到达间隔 p99 不超过 42 ms；设备 `smoke` 允许最多 5 个网络丢包和 200 ms p99，发送侧 deadline miss 与 `WOULD_BLOCK` 只记录诊断数据，duplicate 和 reorder 仍必须为零。partial transfer、timeout、错误 route 或不完整指标都失败关闭。
 
 Desktop launcher 位于 `projects/e2e/targets/cc_binary/webrtc-performance`，自动启动并回收只绑定 loopback 的 Pion fixture。DevKit H2Loader App 位于 `projects/e2e/targets/h2loader_tar_zlib/webrtc-performance/devkit`；operator 必须在构建时显式注入可从测试 Wi-Fi 访问的 HTTP signaling 和 STUN LAN endpoint，launcher 同时输出 internal、DMA-capable 与 PSRAM heap 的 KiB checkpoint。Desktop loopback 结果不能替代真实 DevKit、Wi-Fi 或远程服务证据。
+
+## iperf
+
+`h2_iperf_e2e_run()` 只消费 launcher 借用的 Memory、Net、Time、Crypto、可选 SCTP 与 Log PAL，以及 operator 提供的 server 地址。portable App 拥有固定顺序的 case 矩阵（TCP 参考、UDP 上下行 10/20/40 Mbit/s 与 1200 B datagram、SCTP 上下行 1200 B 与 1400 B packet budget）、每个 case 的 deadline、non-fail-fast aggregation、每 case 一行 `H2_IPERF_E2E_CASE` JSON 和 `H2_IPERF_E2E_SUMMARY`。它不读取 environment 或文件，不连接 Wi-Fi，也不选择 provider；SCTP case 在没有 SCTP PAL 时记为 `UNSUPPORTED` 并继续。
+
+App-local `iperf_e2e_test` 用 `//libs/iperf:test_support` 在 loopback 上对同一个 PAL server 顺序执行 TCP、UDP reverse 与两条 SCTP association，验证共享封装 socket 上的后续 association 不会被前一条的尾包污染。host launcher `//projects/e2e/targets/cc_binary/iperf:h2iperf` 同时提供 `server`（TCP/UDP/SCTP-over-UDP 的 PAL server）和 `client <host>`（同一矩阵）。AMOLED launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/iperf/amoled`，从 Runtime `wifi_settings` 取回 Loader 保存的 STA 配置，用 `--define=H2_IPERF_SERVER` 指定 LAN server，并用 `--define=H2_IPERF_POWER_SAVE` 选择 Wi-Fi 省电策略。
 
 ## Validation Boundary
 

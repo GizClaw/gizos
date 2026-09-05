@@ -64,6 +64,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [":e2e_app_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2loader_e2e_app",

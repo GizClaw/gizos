@@ -1,6 +1,8 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_ble_indication_tracker.h"
+#include "h2_esp_ble_exact_adapter.h"
+#include "h2_esp_ble_pair_tracker.h"
 
 #include "sdkconfig.h"
 
@@ -11,6 +13,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
 #include "host/ble_hs.h"
@@ -101,10 +105,12 @@ static uint16_t s_h2_esp_ble_connect_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
 static h2_pal_result_t s_h2_esp_ble_gatt_result;
 static uint16_t s_h2_esp_ble_exchange_mtu;
 static h2_pal_result_t s_h2_esp_ble_phy_result;
-static h2_pal_result_t s_h2_esp_ble_pair_result;
 static h2_pal_ble_pairing_config_t s_h2_esp_ble_pairing;
-static uint16_t s_h2_esp_ble_pair_conn_handle =
-    H2_PAL_BLE_INVALID_CONN_HANDLE;
+static portMUX_TYPE s_h2_esp_ble_pair_lock = portMUX_INITIALIZER_UNLOCKED;
+static h2_esp_ble_pair_tracker_t s_h2_esp_ble_pair = {
+    .conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE,
+    .result = H2_PAL_ERR_IO,
+};
 static struct {
     uint8_t io_cap;
     uint8_t bonding;
@@ -170,6 +176,7 @@ typedef struct h2_esp_ble_init_call {
 } h2_esp_ble_init_call_t;
 
 static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg);
+static h2_pal_result_t h2_esp_ble_map_rc(int rc);
 static int h2_esp_ble_gatt_access(
     uint16_t conn_handle,
     uint16_t attr_handle,
@@ -437,6 +444,108 @@ static void h2_esp_ble_cancel_indication_submission(
     h2_esp_ble_indication_tracker_cancel_submission(
         &s_h2_esp_ble_indication, conn_handle, attr_handle);
     taskEXIT_CRITICAL(&s_h2_esp_ble_indication_lock);
+}
+
+static void h2_esp_ble_finish_pair(
+    uint16_t conn_handle,
+    h2_pal_result_t result) {
+    bool wake;
+
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    wake = h2_esp_ble_pair_tracker_complete(
+        &s_h2_esp_ble_pair, conn_handle, result);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+
+    if (wake && s_h2_esp_ble_events != NULL) {
+        xEventGroupSetBits(s_h2_esp_ble_events, H2_ESP_BLE_PAIR_DONE_BIT);
+    }
+}
+
+static void h2_esp_ble_finish_pair_disconnect(uint16_t conn_handle) {
+    bool wake;
+
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    wake = h2_esp_ble_pair_tracker_disconnect(
+        &s_h2_esp_ble_pair, conn_handle);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+
+    if (wake && s_h2_esp_ble_events != NULL) {
+        xEventGroupSetBits(s_h2_esp_ble_events, H2_ESP_BLE_PAIR_DONE_BIT);
+    }
+}
+
+static bool h2_esp_ble_pair_needs_disconnect(uint16_t conn_handle) {
+    bool needs_disconnect;
+
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    needs_disconnect = h2_esp_ble_pair_tracker_needs_disconnect(
+        &s_h2_esp_ble_pair, conn_handle);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+    return needs_disconnect;
+}
+
+static h2_pal_result_t h2_esp_ble_request_pair_disconnect(
+    uint16_t conn_handle,
+    h2_pal_result_t pending_result) {
+    int terminate_rc = ble_gap_terminate(
+        conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+    if (terminate_rc == BLE_HS_ENOTCONN) {
+        h2_esp_ble_finish_pair_disconnect(conn_handle);
+        return H2_PAL_ERR_CLOSED;
+    }
+    if (terminate_rc == 0 || terminate_rc == BLE_HS_EALREADY) {
+        return pending_result;
+    }
+    ESP_LOGW(
+        TAG,
+        "pair timeout disconnect failed handle=%u rc=%d",
+        (unsigned)conn_handle,
+        terminate_rc);
+    return h2_esp_ble_map_rc(terminate_rc);
+}
+
+static h2_pal_result_t h2_esp_ble_begin_pair(uint16_t conn_handle) {
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    h2_pal_result_t result = h2_esp_ble_pair_tracker_begin(
+        &s_h2_esp_ble_pair, conn_handle);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+    return result;
+}
+
+static void h2_esp_ble_cancel_pair_submission(uint16_t conn_handle) {
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    h2_esp_ble_pair_tracker_cancel_submission(
+        &s_h2_esp_ble_pair, conn_handle);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+}
+
+static h2_pal_result_t h2_esp_ble_take_completed_pair(void) {
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    h2_pal_result_t result =
+        h2_esp_ble_pair_tracker_take(&s_h2_esp_ble_pair);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+    return result;
+}
+
+static h2_pal_result_t h2_esp_ble_finish_pair_wait(
+    uint16_t conn_handle,
+    bool signaled) {
+    taskENTER_CRITICAL(&s_h2_esp_ble_pair_lock);
+    h2_pal_result_t result = signaled
+        ? h2_esp_ble_pair_tracker_take(&s_h2_esp_ble_pair)
+        : h2_esp_ble_pair_tracker_timeout(&s_h2_esp_ble_pair);
+    taskEXIT_CRITICAL(&s_h2_esp_ble_pair_lock);
+
+    if (result == H2_PAL_ERR_TIMEOUT) {
+        /*
+         * A successful termination is completed by BLE_GAP_EVENT_DISCONNECT.
+         * The tracker remains DRAINING until that event, so ENC_CHANGE cannot
+         * reopen a same-handle retry window while disconnect is still pending.
+         */
+        result = h2_esp_ble_request_pair_disconnect(
+            conn_handle, H2_PAL_ERR_TIMEOUT);
+    }
+    return result;
 }
 
 static void h2_esp_ble_complete_advertising(void) {
@@ -916,6 +1025,13 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
             conn.conn_handle = event->connect.conn_handle;
             conn.role = central ? H2_PAL_BLE_ROLE_CENTRAL : H2_PAL_BLE_ROLE_PERIPHERAL;
             conn.mtu = ble_att_mtu(event->connect.conn_handle);
+            struct ble_gap_conn_desc desc;
+            if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
+                conn.peer_addr.type =
+                    h2_esp_ble_addr_type(desc.peer_ota_addr.type);
+                memcpy(conn.peer_addr.value, desc.peer_ota_addr.val,
+                       sizeof(conn.peer_addr.value));
+            }
             s_h2_esp_ble_connect_result = H2_PAL_OK;
             s_h2_esp_ble_connect_handle = event->connect.conn_handle;
             h2_esp_ble_post(
@@ -1004,23 +1120,17 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         return ble_sm_inject_io(event->passkey.conn_handle, &io);
     }
     case BLE_GAP_EVENT_ENC_CHANGE: {
-        if (event->enc_change.conn_handle !=
-            s_h2_esp_ble_pair_conn_handle) {
-            return 0;
-        }
         struct ble_gap_conn_desc desc;
         int desc_rc =
             ble_gap_conn_find(event->enc_change.conn_handle, &desc);
-        s_h2_esp_ble_pair_result =
+        h2_pal_result_t pair_result =
             event->enc_change.status == 0 && desc_rc == 0 &&
                     desc.sec_state.encrypted &&
                     desc.sec_state.authenticated
                 ? H2_PAL_OK
                 : H2_PAL_ERR_IO;
-        if (s_h2_esp_ble_events != NULL) {
-            xEventGroupSetBits(s_h2_esp_ble_events,
-                               H2_ESP_BLE_PAIR_DONE_BIT);
-        }
+        h2_esp_ble_finish_pair(
+            event->enc_change.conn_handle, pair_result);
         return 0;
     }
     case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
@@ -1046,6 +1156,7 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         info.peer_addr.type = h2_esp_ble_addr_type(event->disconnect.conn.peer_ota_addr.type);
         memcpy(info.peer_addr.value, event->disconnect.conn.peer_ota_addr.val, sizeof(info.peer_addr.value));
         info.reason = event->disconnect.reason;
+        h2_esp_ble_finish_pair_disconnect(info.conn_handle);
         h2_esp_ble_finish_indication(
             event->disconnect.conn.conn_handle,
             H2_PAL_BLE_INVALID_ATTR_HANDLE,
@@ -1857,10 +1968,23 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
         return H2_PAL_ERR_INVALID_ARG;
     }
     const bool legacy = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY;
-    h2_pal_ble_adv_data_t primary_data = *data;
+    h2_pal_ble_adv_data_t primary_data;
+    uint8_t scan_response[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
+    size_t scan_response_len = 0u;
     if (legacy) {
-        primary_data.local_name = NULL;
-        primary_data.manufacturer_data = (h2_pal_ble_bytes_t){ 0 };
+        h2_pal_result_t placement_rc =
+            h2_esp_ble_prepare_legacy_structured_data(
+                data,
+                &primary_data,
+                scan_response,
+                sizeof(scan_response),
+                &scan_response_len);
+        if (placement_rc != H2_PAL_OK) {
+            h2_esp_ble_unlock_adv();
+            return placement_rc;
+        }
+    } else {
+        primary_data = *data;
     }
     uint8_t encoded[H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN];
     size_t encoded_len = 0u;
@@ -1874,31 +1998,6 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
         encoded_len > H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN) {
         h2_esp_ble_unlock_adv();
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    uint8_t scan_response[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
-    size_t scan_response_len = 0u;
-    if (legacy && data->manufacturer_data.len > 0u &&
-        !h2_esp_ble_adv_put(
-            scan_response,
-            &scan_response_len,
-            H2_ESP_BLE_AD_TYPE_MANUFACTURER,
-            data->manufacturer_data.data,
-            data->manufacturer_data.len)) {
-        h2_esp_ble_unlock_adv();
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (legacy && data->local_name != NULL) {
-        size_t name_len = strlen(data->local_name);
-        if (name_len + 2u > sizeof(scan_response) ||
-            !h2_esp_ble_adv_put(
-                scan_response,
-                &scan_response_len,
-                H2_ESP_BLE_AD_TYPE_NAME_COMPLETE,
-                (const uint8_t *)data->local_name,
-                name_len)) {
-            h2_esp_ble_unlock_adv();
-            return H2_PAL_ERR_INVALID_ARG;
-        }
     }
     struct os_mbuf *mbuf = os_msys_get_pkthdr(0u, 0u);
     if (mbuf == NULL) {
@@ -1938,6 +2037,64 @@ static h2_pal_result_t h2_esp_ble_adv_set_set_data(
     set->data_staged = true;
     h2_esp_ble_unlock_adv();
     return H2_PAL_OK;
+#endif
+}
+
+#if CONFIG_BT_NIMBLE_EXT_ADV
+static h2_pal_result_t h2_esp_ble_submit_exact_data(
+    void *user,
+    uint8_t instance,
+    const uint8_t *data,
+    size_t len) {
+    (void)user;
+    struct os_mbuf *mbuf = os_msys_get_pkthdr(0u, 0u);
+    if (mbuf == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    int rc = len == 0u ? 0 : os_mbuf_append(mbuf, data, len);
+    if (rc != 0) {
+        os_mbuf_free_chain(mbuf);
+        return h2_esp_ble_map_rc(rc);
+    }
+    return h2_esp_ble_map_rc(ble_gap_ext_adv_set_data(instance, mbuf));
+}
+#endif
+
+static h2_pal_result_t h2_esp_ble_adv_set_set_encoded_data(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    (void)ble;
+#if !CONFIG_BT_NIMBLE_EXT_ADV
+    (void)set;
+    (void)encoded_data;
+    (void)encoded_data_len;
+    return H2_PAL_ERR_UNSUPPORTED;
+#else
+    h2_pal_result_t lock_rc = h2_esp_ble_lock_adv();
+    if (lock_rc != H2_PAL_OK) {
+        return lock_rc;
+    }
+    if (!h2_esp_ble_adv_set_valid_unlocked(set)) {
+        h2_esp_ble_unlock_adv();
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
+                          ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN
+                          : H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN;
+    h2_pal_result_t rc = h2_esp_ble_exact_submit(
+        set->instance,
+        encoded_data,
+        encoded_data_len,
+        capacity,
+        h2_esp_ble_submit_exact_data,
+        NULL);
+    if (rc == H2_PAL_OK) {
+        set->data_staged = true;
+    }
+    h2_esp_ble_unlock_adv();
+    return rc;
 #endif
 }
 
@@ -2095,8 +2252,12 @@ static h2_pal_result_t h2_esp_ble_start_scan(
         struct ble_gap_ext_disc_params ext_params;
         memset(&ext_params, 0, sizeof(ext_params));
         ext_params.passive = params->mode == H2_PAL_BLE_SCAN_MODE_PASSIVE ? 1 : 0;
-        ext_params.itvl = h2_esp_ble_ext_scan_ms_to_units625(params->interval_ms);
-        ext_params.window = h2_esp_ble_ext_scan_ms_to_units625(params->window_ms);
+        h2_esp_ble_resolve_scan_units(
+            params,
+            h2_esp_ble_ext_scan_ms_to_units625(params->interval_ms),
+            h2_esp_ble_ext_scan_ms_to_units625(params->window_ms),
+            &ext_params.itvl,
+            &ext_params.window);
         h2_pal_ble_scan_phy_mask_t mask = params->phy_mask == 0u
                                              ? H2_PAL_BLE_SCAN_PHY_1M
                                              : params->phy_mask;
@@ -2126,8 +2287,12 @@ static h2_pal_result_t h2_esp_ble_start_scan(
         memset(&disc_params, 0, sizeof(disc_params));
         disc_params.filter_duplicates = 1;
         disc_params.passive = params->mode == H2_PAL_BLE_SCAN_MODE_PASSIVE ? 1 : 0;
-        disc_params.itvl = h2_esp_ble_ms_to_units625(params->interval_ms);
-        disc_params.window = h2_esp_ble_ms_to_units625(params->window_ms);
+        h2_esp_ble_resolve_scan_units(
+            params,
+            h2_esp_ble_ms_to_units625(params->interval_ms),
+            h2_esp_ble_ms_to_units625(params->window_ms),
+            &disc_params.itvl,
+            &disc_params.window);
         int32_t duration_ms = params->timeout_ms == 0u ? BLE_HS_FOREVER : (int32_t)params->timeout_ms;
         rc = h2_esp_ble_map_rc(ble_gap_disc(
             s_h2_esp_ble_own_addr_type,
@@ -2510,6 +2675,11 @@ static h2_pal_result_t h2_esp_ble_pair(
     if (!s_h2_esp_ble_started || !s_h2_esp_ble_pairing.enabled) {
         return H2_PAL_ERR_INVALID_STATE;
     }
+    /* Retry a failed timeout disconnect instead of remaining BUSY forever. */
+    if (h2_esp_ble_pair_needs_disconnect(conn_handle)) {
+        return h2_esp_ble_request_pair_disconnect(
+            conn_handle, H2_PAL_ERR_BUSY);
+    }
     struct ble_gap_conn_desc desc;
     if (ble_gap_conn_find(conn_handle, &desc) != 0) {
         return H2_PAL_ERR_NOT_FOUND;
@@ -2517,26 +2687,52 @@ static h2_pal_result_t h2_esp_ble_pair(
     if (desc.sec_state.encrypted && desc.sec_state.authenticated) {
         return H2_PAL_OK;
     }
+    h2_pal_result_t pair_rc = h2_esp_ble_begin_pair(conn_handle);
+    if (pair_rc != H2_PAL_OK) {
+        return pair_rc;
+    }
     xEventGroupClearBits(s_h2_esp_ble_events,
                          H2_ESP_BLE_PAIR_DONE_BIT);
-    s_h2_esp_ble_pair_result = H2_PAL_ERR_IO;
-    s_h2_esp_ble_pair_conn_handle = conn_handle;
+    pair_rc = h2_esp_ble_take_completed_pair();
+    if (pair_rc != H2_PAL_ERR_WOULD_BLOCK) {
+        return pair_rc;
+    }
     int rc = ble_gap_security_initiate(conn_handle);
     if (rc != 0) {
-        s_h2_esp_ble_pair_conn_handle =
-            H2_PAL_BLE_INVALID_CONN_HANDLE;
+        h2_esp_ble_cancel_pair_submission(conn_handle);
         return h2_esp_ble_map_rc(rc);
     }
-    EventBits_t bits = xEventGroupWaitBits(
-        s_h2_esp_ble_events,
-        H2_ESP_BLE_PAIR_DONE_BIT,
-        pdTRUE,
-        pdTRUE,
-        pdMS_TO_TICKS(timeout_ms));
-    s_h2_esp_ble_pair_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
-    return (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u
-               ? s_h2_esp_ble_pair_result
-               : H2_PAL_ERR_TIMEOUT;
+    /*
+     * H2_ESP_BLE_PAIR_DONE_BIT can be set by a completion that belonged to a
+     * prior, already-abandoned attempt on this same handle: h2_esp_ble_finish_pair()
+     * commits the tracker's COMPLETED state and sets the bit as two separate
+     * steps, so a timeout can slip in between them, be consumed by that prior
+     * wait, and let a new attempt begin and clear the bit before the stale
+     * xEventGroupSetBits() call finally runs. Treat a wake that does not
+     * correspond to our own attempt's completion as spurious and keep waiting
+     * out the remaining timeout instead of returning early.
+     */
+    TickType_t start_ticks = xTaskGetTickCount();
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    for (;;) {
+        TickType_t elapsed_ticks = xTaskGetTickCount() - start_ticks;
+        TickType_t remaining_ticks = elapsed_ticks >= timeout_ticks
+            ? 0
+            : timeout_ticks - elapsed_ticks;
+        EventBits_t bits = xEventGroupWaitBits(
+            s_h2_esp_ble_events,
+            H2_ESP_BLE_PAIR_DONE_BIT,
+            pdTRUE,
+            pdTRUE,
+            remaining_ticks);
+        bool signaled = (bits & H2_ESP_BLE_PAIR_DONE_BIT) != 0u;
+        h2_pal_result_t result =
+            h2_esp_ble_finish_pair_wait(conn_handle, signaled);
+        if (!signaled || result != H2_PAL_ERR_WOULD_BLOCK) {
+            return result;
+        }
+        /* Spurious wake from a stale completion; keep waiting out the remaining timeout. */
+    }
 }
 
 static h2_pal_result_t h2_esp_ble_update_connection(
@@ -2571,7 +2767,18 @@ static h2_pal_result_t h2_esp_ble_exchange_mtu(
     s_h2_esp_ble_exchange_mtu = 0u;
     s_h2_esp_ble_gatt_result = H2_PAL_ERR_TIMEOUT;
     xEventGroupClearBits(s_h2_esp_ble_events, H2_ESP_BLE_GATT_DONE_BIT);
-    h2_pal_result_t rc = h2_esp_ble_map_rc(ble_gattc_exchange_mtu(conn_handle, h2_esp_ble_mtu_cb, NULL));
+    int nimble_rc =
+        ble_gattc_exchange_mtu(conn_handle, h2_esp_ble_mtu_cb, NULL);
+    /*
+     * MTU exchange is link-wide and either peer may have completed it. NimBLE
+     * reports that case synchronously and does not produce a new completion
+     * callback, so return the link's negotiated value instead of waiting.
+     */
+    if (nimble_rc == BLE_HS_EALREADY) {
+        *out_mtu = ble_att_mtu(conn_handle);
+        return H2_PAL_OK;
+    }
+    h2_pal_result_t rc = h2_esp_ble_map_rc(nimble_rc);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -3049,6 +3256,20 @@ h2_esp_ble_adv_set_set_scan_response_data_unsupported(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+#if !CONFIG_BT_NIMBLE_ENABLED
+static h2_pal_result_t h2_esp_ble_adv_set_set_encoded_data_unsupported(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *data,
+    size_t len) {
+    (void)ble;
+    (void)set;
+    (void)data;
+    (void)len;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+#endif
+
 static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
 #if CONFIG_BT_NIMBLE_ENABLED
     .start = (h2_pal_result_t (*)(void *))h2_esp_ble_start,
@@ -3058,6 +3279,7 @@ static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
     .stop_advertising = (h2_pal_result_t (*)(void *))h2_esp_ble_stop_advertising,
     .adv_set_create = (h2_pal_result_t (*)(void *, const h2_pal_ble_adv_params_t *, h2_pal_ble_adv_set_t **))h2_esp_ble_adv_set_create,
     .adv_set_set_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_esp_ble_adv_set_set_data,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_esp_ble_adv_set_set_encoded_data,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_esp_ble_adv_set_set_scan_response_data_unsupported,
     .adv_set_start = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_esp_ble_adv_set_start,
     .adv_set_stop = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_esp_ble_adv_set_stop,
@@ -3083,6 +3305,7 @@ static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
 #else
     .start = (h2_pal_result_t (*)(void *))h2_esp_ble_unsupported_start,
     .stop = (h2_pal_result_t (*)(void *))h2_esp_ble_unsupported_stop,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_esp_ble_adv_set_set_encoded_data_unsupported,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_esp_ble_adv_set_set_scan_response_data_unsupported,
     .connect = (h2_pal_result_t (*)(void *, const h2_pal_ble_addr_t *, const h2_pal_ble_connect_params_t *, uint16_t *))h2_esp_ble_unsupported_connect,
     .update_connection = (h2_pal_result_t (*)(void *, uint16_t, const h2_pal_ble_connection_params_t *))h2_esp_ble_unsupported_update_connection,

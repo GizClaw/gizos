@@ -61,6 +61,7 @@ typedef enum h2_app_test_operation_kind {
   H2_APP_TEST_OPERATION_EVENT,
   H2_APP_TEST_OPERATION_COMPONENT_STATE,
   H2_APP_TEST_OPERATION_BUTTON_DOWN,
+  H2_APP_TEST_OPERATION_BUTTON_HOLD,
   H2_APP_TEST_OPERATION_BUTTON_UP,
   H2_APP_TEST_OPERATION_BUTTON_ACTION,
 } h2_app_test_operation_kind_t;
@@ -254,6 +255,16 @@ h2_pal_result_t h2_app_test_session_button_down(
     h2_app_test_session_t *session,
     h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms, uint32_t timeout_ms,
+    h2_app_test_snapshot_t *snapshot);
+
+/** Inject one still-held Button Action observed at `observed_at_ms`, the
+ * way Runtime keeps reporting a key that stays pressed: `pressed_at_ms` is
+ * the original press and the App sees how long it has been held. */
+h2_pal_result_t h2_app_test_session_button_hold(
+    h2_app_test_session_t *session,
+    h2_runtime_component_id_t component_id,
+    h2_runtime_timestamp_ms_t pressed_at_ms,
+    h2_runtime_timestamp_ms_t observed_at_ms, uint32_t timeout_ms,
     h2_app_test_snapshot_t *snapshot);
 
 /** Inject one released Button Action observed at `released_at_ms`. */

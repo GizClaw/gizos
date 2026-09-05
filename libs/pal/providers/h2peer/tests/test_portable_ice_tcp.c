@@ -1,5 +1,9 @@
 #include "ice_transport.h"
 
+// These tests use assertions for both checks and the operations under test.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 

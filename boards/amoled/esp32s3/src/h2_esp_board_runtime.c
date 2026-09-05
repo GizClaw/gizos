@@ -39,7 +39,11 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config) {
         s_runtime_fs.vtable = &s_runtime_fs_vtable;
     }
     const h2_corehttp_config_t http_config = {
-        .allocator = h2_esp_board_default_allocator(),
+        /* HTTP request buffers (16 KiB headers per request) live in PSRAM:
+         * internal RAM on this board is reserved for Wi-Fi/lwIP, BLE and the
+         * display DMA buffer, and a second concurrent HTTPS session must not
+         * compete with them. */
+        .allocator = h2_esp_board_psram_allocator(),
         .net = h2_esp_platform_net_api(),
         .time = h2_esp_board_time_api(),
         .log = h2_esp_board_log_api(),
@@ -55,7 +59,10 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config) {
         .target = "esp32s3",
         .chip = "esp32s3",
         .firmware_info = h2_esp_platform_firmware_info_api(),
-        .mem = h2_esp_board_default_allocator(),
+        /* Protocol buffers (H2Peer, h2sctp, GizClaw) from PSRAM like the
+         * DevKit; with them in internal RAM a live Peer leaves under 10 KiB
+         * for the next TLS session and mbedtls_ssl_setup fails. */
+        .mem = h2_esp_board_psram_allocator(),
         .log = h2_esp_board_log_api(),
         .time = h2_esp_board_time_api(),
         .timer = h2_pal_unsupported_timer_api(),

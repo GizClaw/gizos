@@ -60,6 +60,13 @@ typedef enum h2_runtime_event_kind {
     H2_RUNTIME_COMPONENT_EVENT_ERROR,
     H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
     H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP,
+
+    /*
+     * App or library owned event posted with h2_runtime_post_custom_event().
+     * The payload is a h2_runtime_custom_event_payload_t; see
+     * h2_runtime_custom_event.h.
+     */
+    H2_RUNTIME_EVENT_CUSTOM,
 } h2_runtime_event_kind_t;
 
 typedef struct h2_runtime_event {
