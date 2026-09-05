@@ -1204,23 +1204,20 @@ static void process_runtime_events(h2_showcase_app_t *app) {
       .payload = payload.bytes,
       .payload_capacity = sizeof(payload),
   };
+  /* The GizClaw service wakes the Runtime without an event; drain it on
+   * every pass. */
+  if (app->gizclaw != NULL && app->gizclaw->service != NULL) {
+    const h2_pal_result_t rc =
+        h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
+    if (rc != H2_PAL_OK) {
+      atomic_store_explicit(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                            memory_order_release);
+      gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW dispatch failed");
+    }
+  }
   while (h2_runtime_poll_event(app->runtime, &event) == H2_PAL_OK) {
     processed_event = true;
-    if (event.kind == H2_RUNTIME_EVENT_CUSTOM &&
-        event.payload_size >= H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE) {
-      const h2_runtime_custom_event_payload_t *custom = event.payload;
-      if (custom->id == H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY &&
-          app->gizclaw != NULL && app->gizclaw->service != NULL) {
-        const h2_pal_result_t rc =
-            h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
-        if (rc != H2_PAL_OK) {
-          atomic_store_explicit(&app->gizclaw->status,
-                                H2_SHOWCASE_GIZCLAW_FAILED,
-                                memory_order_release);
-          gizclaw_log(app, H2_PAL_LOG_ERROR,
-                      "H2_SHOWCASE_GIZCLAW dispatch failed");
-        }
-      }
+    if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
       continue;
     }
     if (event.component_id != H2_SHOWCASE_COMPONENT_ACTION_BUTTON) {

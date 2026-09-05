@@ -193,16 +193,19 @@ h2_runtime_event_t event = {
 };
 
 while (!app.should_exit) {
-    h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 1000);
-    if (rc == H2_PAL_OK) {
-        h2_example_handle_runtime_event(&app, &event);
+    h2_pal_result_t rc = h2_runtime_wait_notify(runtime, 1000);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
+        h2_example_handle_runtime_error(&app, rc);
         continue;
     }
-    if (rc != H2_PAL_ERR_TIMEOUT) {
-        h2_example_handle_runtime_error(&app, rc);
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+        h2_example_handle_runtime_event(&app, &event);
     }
+    h2_example_drain_library_dispatch(&app);
 }
 ```
+
+`h2_runtime_wait_notify()` 是 loop 里唯一的阻塞点。Runtime producer 和 Library 的 `h2_runtime_notify()` 给出的 wake 合并成一次返回；返回后先把 event queue 拉空，再 drain Library 的 dispatch queue。`h2_runtime_wait_event()` 保留为"wait 加一次 poll"的便捷包装，被没有 event 的 wake 叫醒时提前以 `TIMEOUT` 返回。
 
 Event 的具体类型由 `component + component_id + kind` 共同确定。App 只解释 Runtime-owned event schema，不重新消费 PAL system event，也不依赖 PAL callback payload。
 
@@ -239,7 +242,7 @@ if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
 
 Custom event 只携带值（例如 `job_id + generation + result`），不携带 Job 指针、callback 或 Task handle：即使页面已经退出、Job 已被取消或 completion 迟到，main loop 也只会查表失败，不会解引用已释放的对象。Payload 由 Runtime 复制，上限见 `h2_runtime_custom_event_payload_capacity()`；queue 满时投递返回 `H2_PAL_ERR_FULL`，由投递方决定重试还是丢弃。
 
-Library worker 只执行阻塞工作并投递 completion，不能直接修改 App state。Library 也可以继续使用自己的有界 completion queue 加 caller-thread dispatch API，此时用一个 custom event 通知 main loop 有 completion 可 dispatch；callback 仍在 main-loop thread 执行 transition，随后完成同一轮 State、Subject 和 UI 投影。
+Library worker 只执行阻塞工作并投递 completion，不能直接修改 App state。Library 也可以继续使用自己的有界 completion queue 加 caller-thread dispatch API，此时用 `h2_runtime_notify()` 叫醒 main loop（不投递 custom event，不占 event queue，重复调用合并）；main loop 在每次 wake 之后 drain 该 dispatch API，callback 在 main-loop thread 执行 transition，随后完成同一轮 State、Subject 和 UI 投影。
 
 ```mermaid
 flowchart TD
@@ -251,7 +254,7 @@ flowchart TD
     Transition --> Effect["Effect command"]
     Effect --> Worker["Runtime API 或后台 task"]
     Effect --> Library["Library operation submit"]
-    Library --> Completion["h2_runtime_post_custom_event()"]
+    Library --> Completion["h2_runtime_notify()"]
     Completion --> RuntimeLoop
     RuntimeLoop --> Dispatch["App main-loop dispatch"]
     Dispatch --> Transition
@@ -266,7 +269,7 @@ App 按以下顺序管理自己的资源：
 1. 验证 Runtime 和 app config。
 2. 初始化 app-private state 和必要的 library。
 3. 读取 Runtime 初始化时已经发布的 input state，建立 app state 快照。
-4. 阻塞式 entry 使用 `h2_runtime_wait_event()` 等待 Runtime event 或 app-owned deadline。
+4. 阻塞式 entry 使用 `h2_runtime_wait_notify()` 等待 Runtime wake 或 app-owned deadline，然后 poll event queue。
 5. 由 App handler 按序消费 Runtime system/component event；不要调用 private Runtime producer API。
 6. 停止接收新 command，取消或等待进行中的工作。
 7. 停止并 join App 自己创建的业务 worker task；对 library-owned service 先 stop/join，再由 main loop drain completion callback，最后 deinit。

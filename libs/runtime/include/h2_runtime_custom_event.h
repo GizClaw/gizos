@@ -85,7 +85,8 @@ typedef union h2_runtime_event_payload_buffer {
 
 /**
  * Posts a custom event into the Runtime event queue and wakes a consumer
- * blocked in h2_runtime_wait_event(). Callable from any task, including
+ * blocked in h2_runtime_wait_notify() / h2_runtime_wait_event(), the same
+ * way every Runtime producer does. Callable from any task, including
  * concurrently with other posters and with Runtime's own producers. Never
  * blocks.
  *
@@ -110,6 +111,16 @@ typedef union h2_runtime_event_payload_buffer {
 h2_pal_result_t h2_runtime_post_custom_event(
     h2_runtime_t *runtime,
     const h2_runtime_custom_event_t *event);
+
+/**
+ * Wakes a consumer blocked in h2_runtime_wait_notify() / h2_runtime_wait_event()
+ * without enqueuing anything. For libraries that keep their own bounded
+ * dispatch queue: the main loop drains that queue after every wake, so the
+ * wake carries no payload. Callable from any task; never blocks; coalesces
+ * with every other pending wake, so it cannot fail because the event queue
+ * is full. Returns H2_PAL_ERR_INVALID_STATE once deinit has started.
+ */
+h2_pal_result_t h2_runtime_notify(h2_runtime_t *runtime);
 
 /**
  * h2_runtime_post_custom_event() with a bounded wait for queue space.

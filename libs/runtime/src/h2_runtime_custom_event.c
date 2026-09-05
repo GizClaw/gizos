@@ -88,6 +88,19 @@ h2_pal_result_t h2_runtime_post_custom_event(
     return post_custom_event(runtime, event, H2_PAL_QUEUE_NO_WAIT);
 }
 
+h2_pal_result_t h2_runtime_notify(h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    /* Same door as a post: deinit drains notifiers before the queue goes. */
+    if (!custom_event_enter(runtime->private_state)) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    h2_runtime_notify_internal(runtime);
+    custom_event_leave(runtime->private_state);
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_runtime_post_custom_event_timeout(
     h2_runtime_t *runtime,
     const h2_runtime_custom_event_t *event,

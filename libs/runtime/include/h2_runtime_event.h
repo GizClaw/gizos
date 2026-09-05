@@ -91,6 +91,32 @@ h2_pal_result_t h2_runtime_poll_event(
     h2_runtime_t *runtime,
     h2_runtime_event_t *out_event);
 
+/*
+ * Blocks until something needs the main loop's attention, without dequeuing
+ * anything. Every Runtime producer signals it after enqueuing an event, and
+ * libraries with their own dispatch queues signal it with
+ * h2_runtime_notify(). Signals are coalesced: any number of them between two
+ * waits produce exactly one H2_PAL_OK, and a signal that arrives while the
+ * loop is running is kept for the next wait. Returns H2_PAL_ERR_TIMEOUT when
+ * nothing was signalled within timeout_ms (H2_PAL_QUEUE_WAIT_FOREVER waits
+ * indefinitely), H2_PAL_ERR_CLOSED once deinit has closed the Runtime.
+ *
+ * The intended loop: wait_notify, then drain the event queue with
+ * h2_runtime_poll_event() until it is empty, then drain the library dispatch
+ * queues, then wait again.
+ */
+h2_pal_result_t h2_runtime_wait_notify(
+    h2_runtime_t *runtime,
+    uint32_t timeout_ms);
+
+/*
+ * Convenience for loops that consume one event per iteration:
+ * h2_runtime_wait_notify() followed by one h2_runtime_poll_event(). A wake
+ * that finds no queued event (an h2_runtime_notify() from a library, or an
+ * earlier poll already drained the queue) returns H2_PAL_ERR_TIMEOUT before
+ * timeout_ms elapsed, so treat TIMEOUT as "nothing dequeued", never as a
+ * measure of elapsed time.
+ */
 h2_pal_result_t h2_runtime_wait_event(
     h2_runtime_t *runtime,
     h2_runtime_event_t *out_event,

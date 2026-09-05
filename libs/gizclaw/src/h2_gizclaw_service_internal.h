@@ -262,7 +262,6 @@ struct h2_gizclaw_service {
   size_t queued_event_count;
   size_t dispatch_item_count;
   uint64_t next_trace_sequence;
-  atomic_bool runtime_event_armed;
   bool started;
   bool stopping;
   bool stopped;
@@ -272,15 +271,14 @@ struct h2_gizclaw_service {
   h2_pal_result_t terminal_result;
 };
 
-/* Coalesced level-to-edge bridge for the optional Runtime event queue. */
+/* Wake the optional Runtime; the Runtime coalesces repeated wakes. */
 void h2_gizclaw_service_wake_dispatch_internal(
     h2_gizclaw_service_t *service);
 
 #ifdef H2_GIZCLAW_TESTING
-typedef h2_pal_result_t (*h2_gizclaw_runtime_post_test_fn)(
-    h2_runtime_t *runtime, const h2_runtime_custom_event_t *event);
-void h2_gizclaw_service_test_set_runtime_post(
-    h2_gizclaw_runtime_post_test_fn post);
+typedef void (*h2_gizclaw_runtime_notify_test_fn)(h2_runtime_t *runtime);
+void h2_gizclaw_service_test_set_runtime_notify(
+    h2_gizclaw_runtime_notify_test_fn notify);
 #endif
 
 /* Dispatch one pending data-down write on the app poll task. */

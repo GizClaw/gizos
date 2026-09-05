@@ -195,10 +195,11 @@ flowchart LR
     Projection --> Queue["Runtime event queue"]
     Recognition --> Queue
     ProxyEvent --> Queue
-    Queue --> Poll["h2_runtime_poll_event()"]
-    Queue --> Wait["h2_runtime_wait_event()"]
+    Queue -. "入队后 notify" .-> Wake["Runtime wake"]
+    Library["h2_runtime_notify()"] --> Wake
+    Wake --> Wait["h2_runtime_wait_notify()"]
+    Wait --> Poll["h2_runtime_poll_event()"]
     Poll --> App["app"]
-    Wait --> App
 ```
 
 Runtime event loop 的 producer 包括：
@@ -229,7 +230,17 @@ h2_runtime_event_t event = {
 h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 1000);
 ```
 
-`h2_runtime_poll_event()` 不等待；`h2_runtime_wait_event()` 最多等待调用方指定的 timeout。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer；该 counter 是 Runtime private state，不属于 Public API。
+Main loop 只阻塞在一个地方：`h2_runtime_wait_notify()`。它等待的是一个二值的 wake，不是 event queue。每个 Runtime producer 在成功入队后给出这个 wake，Library 自己的 dispatch queue 用 `h2_runtime_notify()` 给出同一个 wake；两次 wait 之间不论来了多少个 wake 都只返回一次 `H2_PAL_OK`，loop 正在运行时到达的 wake 保留到下一次 wait。返回后 App 用 `h2_runtime_poll_event()` 把 queue 拉空，再 drain Library 的 dispatch queue，然后再次 wait：
+
+```c
+h2_pal_result_t rc = h2_runtime_wait_notify(runtime, 1000);
+while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    handle(&event);
+}
+drain_library_dispatch_queues();
+```
+
+`h2_runtime_poll_event()` 不等待。`h2_runtime_wait_event()` 是 `wait_notify` 加一次 `poll_event` 的便捷包装：queue 里有 event 就返回它；被一个没有对应 event 的 wake 叫醒时（Library 的 `notify`，或者更早的 poll 已经拉空 queue）在 timeout 之前就以 `H2_PAL_ERR_TIMEOUT` 返回，调用方不能把 `TIMEOUT` 当作时间流逝的依据。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer，也不给出 wake；该 counter 是 Runtime private state，不属于 Public API。
 
 ## Event Type
 
@@ -340,7 +351,9 @@ const h2_runtime_custom_event_t event = {
 h2_pal_result_t rc = h2_runtime_post_custom_event(runtime, &event);
 ```
 
-消费端仍然只使用 `h2_runtime_poll_event()` 和 `h2_runtime_wait_event()`：
+只需要叫醒 main loop、不需要携带 payload 的 Library（例如持有自己有界 dispatch queue 的 `h2_gizclaw_service_t`）不投递 custom event，而是调用 `h2_runtime_notify()`：它不占 event queue 的位置，不会因为 queue 满而失败，重复调用合并成一次 wake；main loop 在每次 wake 之后 drain 该 Library 的 dispatch queue。
+
+消费端仍然只使用 `h2_runtime_poll_event()` 和 `h2_runtime_wait_notify()` / `h2_runtime_wait_event()`：
 
 ```c
 if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
