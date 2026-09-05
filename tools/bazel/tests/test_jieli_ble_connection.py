@@ -18,6 +18,7 @@ class BleConnectionTest(unittest.TestCase):
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#define h2_ble_log printf
 #include <string.h>
 enum { H2_PAL_OK=0, H2_PAL_ERR_IO=-1 };
 const uint64_t config_btctler_le_features=0;
@@ -132,6 +133,7 @@ int main(void) {
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#define h2_ble_log printf
 #include <string.h>
 enum { H2_PAL_OK=0, H2_PAL_BLE_ROLE_PERIPHERAL=1,
  H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED=2, H2_JIELI_ATT_MTU=200,

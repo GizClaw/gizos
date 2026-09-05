@@ -174,7 +174,7 @@ void app_main(void) {
       .secondary_phy = H2_PAL_BLE_PHY_1M,
   };
 
-  ble = h2_jieli_ac791n_devkit_ble_host_api();
+  ble = h2_jieli_ac791n_devkit_ble_host_api(h2_jieli_wl82_platform_log_api());
   characteristics[0] = (h2_pal_ble_gatt_characteristic_t){
       .uuid = {.data = tx_uuid_bytes, .len = sizeof(tx_uuid_bytes)},
       .properties = H2_PAL_BLE_GATT_PROPERTY_NOTIFY,

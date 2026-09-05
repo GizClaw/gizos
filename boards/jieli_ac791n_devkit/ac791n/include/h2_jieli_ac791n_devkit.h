@@ -11,6 +11,7 @@
 #include "h2/pal/os/h2_pal_disk.h"
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/os/h2_pal_pref.h"
+#include "h2/pal/os/h2_pal_log.h"
 
 typedef struct h2_runtime_config h2_runtime_config_t;
 typedef struct h2_pal_wifi_sta_api h2_pal_wifi_sta_api_t;
@@ -79,7 +80,10 @@ const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void);
 
 /* BLE 5 peripheral Host with the H2Loader GATT schema, Extended Advertising,
  * DLE, MTU exchange and 2M/Coded PHY requests. */
-const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(void);
+/* Borrows a valid firmware-lifetime Log capability. Repeated calls must use
+ * the same object; invalid or replacement sinks return NULL. SDK diagnostic
+ * records use DEBUG level; enablement/delivery belongs to the supplied sink. */
+const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(const h2_pal_log_api_t *log);
 
 /* On-chip 2.4 GHz Wi-Fi. Network-enabled layouts provide STA and AP modes;
  * compact layouts return explicit unsupported providers through Runtime. */

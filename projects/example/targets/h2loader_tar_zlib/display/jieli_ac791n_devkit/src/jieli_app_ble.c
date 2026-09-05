@@ -42,7 +42,7 @@ int h2_jieli_app_loader_ble_start(
   ble_client_config = *config;
   const h2_loader_ble_service_config_t service = {
       .api = {
-          .ble = h2_jieli_ac791n_devkit_ble_host_api(),
+          .ble = h2_jieli_ac791n_devkit_ble_host_api(h2_jieli_wl82_platform_log_api()),
           .task = h2_jieli_wl82_platform_task_api(),
           .time = h2_jieli_wl82_platform_time_api(),
           .sync = h2_jieli_wl82_platform_sync_api(),

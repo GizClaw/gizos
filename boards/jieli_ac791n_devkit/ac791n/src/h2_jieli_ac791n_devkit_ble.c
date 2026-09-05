@@ -19,6 +19,34 @@
 #include "h2_jieli_wl82_platform_core.h"
 
 #include <string.h>
+#include <stdarg.h>
+
+/* The composition root lends a firmware-lifetime sink. Publish it once so
+ * SDK callbacks never race replacement or outlive the borrowed object. */
+static const h2_pal_log_api_t *h2_ble_log_api;
+
+static int h2_ble_log_bind(const h2_pal_log_api_t *log) {
+  if (log == NULL || log->vtable == NULL || log->vtable->write == NULL) return 0;
+  const h2_pal_log_api_t *expected = NULL;
+  return __atomic_compare_exchange_n(&h2_ble_log_api, &expected, log, 0,
+                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED) || expected == log;
+}
+
+static void h2_ble_log(const char *format, ...) {
+  const h2_pal_log_api_t *log = __atomic_load_n(&h2_ble_log_api, __ATOMIC_ACQUIRE);
+  if (log == NULL) return;
+  char message[H2_PAL_LOG_MESSAGE_MAX + 1u];
+  va_list args;
+  va_start(args, format);
+  int length = vsnprintf(message, sizeof(message), format, args);
+  va_end(args);
+  if (length < 0) return;
+  size_t used = (size_t)length < sizeof(message) ? (size_t)length : sizeof(message) - 1u;
+  while (used != 0u && (message[used - 1u] == '\r' || message[used - 1u] == '\n')) --used;
+  message[used] = '\0';
+  (void)h2_pal_log_write(log, H2_PAL_LOG_DEBUG, "jieli/ble", message);
+}
+
 
 /* Required by JieLi's BLE-only and Wi-Fi+BLE reference entrypoints.  The
  * controller library owns the channel-update hook, while a peripheral-only
@@ -162,11 +190,11 @@ static void h2_att_trace_dump(void) {
   const uint8_t start = h2_att_trace_count <= 16u
                             ? 0u
                             : (uint8_t)(h2_att_trace_count % 16u);
-  printf("H2_JIELI_ATT_TRACE count=%u\r\n", (unsigned)h2_att_trace_count);
+  h2_ble_log("H2_JIELI_ATT_TRACE count=%u\r\n", (unsigned)h2_att_trace_count);
   for (uint8_t i = 0u; i < count; ++i) {
     const h2_jieli_att_trace_t *entry =
         &h2_att_trace[(uint8_t)((start + i) % 16u)];
-    printf("H2_JIELI_ATT_ACCESS kind=%c handle=%u offset=%u size=%u buffer=%u\r\n",
+    h2_ble_log("H2_JIELI_ATT_ACCESS kind=%c handle=%u offset=%u size=%u buffer=%u\r\n",
            entry->kind == 0u ? 'R' : 'W', (unsigned)entry->handle,
            (unsigned)entry->offset, (unsigned)entry->size,
            (unsigned)entry->has_buffer);
@@ -184,7 +212,7 @@ static void h2_restart_legacy_advertising(void) {
   }
   const int rc = h2_adv_apply(&h2_ble.adv);
   h2_ble.adv.started = rc == H2_PAL_OK;
-  printf("H2_JIELI_BLE_ADV_RESTART code=%d\r\n", rc);
+  h2_ble_log("H2_JIELI_BLE_ADV_RESTART code=%d\r\n", rc);
 }
 
 struct h2_ext_adv_param {
@@ -236,7 +264,7 @@ static void h2_ble_post(
   const int rc = h2_pal_system_event_post(
       h2_jieli_wl82_platform_system_event_api(), &event, 1u);
   if (rc != H2_PAL_OK) {
-    printf("H2_JIELI_BLE_EVENT_POST type=%u code=%d\r\n",
+    h2_ble_log("H2_JIELI_BLE_EVENT_POST type=%u code=%d\r\n",
            (unsigned)type, rc);
   }
 }
@@ -251,7 +279,7 @@ static int h2_ble_cmd_result(int result) {
 
 static int h2_ble_cmd_trace(const char *operation, int vendor_result) {
   const int pal_result = h2_ble_cmd_result(vendor_result);
-  printf("H2_JIELI_BLE_VENDOR op=%s vendor=%d pal=%d\r\n",
+  h2_ble_log("H2_JIELI_BLE_VENDOR op=%s vendor=%d pal=%d\r\n",
          operation, vendor_result, pal_result);
   return pal_result;
 }
@@ -376,34 +404,34 @@ static int h2_adv_apply(struct h2_pal_ble_adv_set *set) {
   if (set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY) {
     if (set->data_len > H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN)
       return H2_PAL_ERR_NO_SPACE;
-    printf("H2_JIELI_BLE_ADV_ENTER step=params\r\n");
+    h2_ble_log("H2_JIELI_BLE_ADV_ENTER step=params\r\n");
     uint16_t interval_units =
         (uint16_t)((set->params.interval_min_ms * 8u) / 5u);
-    printf("H2_JIELI_BLE_ADV_INTERVAL units=%u\r\n",
+    h2_ble_log("H2_JIELI_BLE_ADV_INTERVAL units=%u\r\n",
            (unsigned)interval_units);
     int rc = h2_ble_cmd_trace("set_adv_param", ble_op_set_adv_param(
         interval_units,
         set->params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE ? ADV_IND
                                                             : ADV_NONCONN_IND,
         ADV_CHANNEL_ALL));
-    printf("H2_JIELI_BLE_ADV_RETURN step=params code=%d\r\n", rc);
+    h2_ble_log("H2_JIELI_BLE_ADV_RETURN step=params code=%d\r\n", rc);
     if (rc == H2_PAL_OK) {
-      printf("H2_JIELI_BLE_ADV_ENTER step=data\r\n");
+      h2_ble_log("H2_JIELI_BLE_ADV_ENTER step=data\r\n");
       rc = h2_ble_cmd_trace(
           "set_adv_data", ble_op_set_adv_data(set->data_len, set->data));
-      printf("H2_JIELI_BLE_ADV_RETURN step=data code=%d\r\n", rc);
+      h2_ble_log("H2_JIELI_BLE_ADV_RETURN step=data code=%d\r\n", rc);
     }
     if (rc == H2_PAL_OK) {
-      printf("H2_JIELI_BLE_ADV_ENTER step=response\r\n");
+      h2_ble_log("H2_JIELI_BLE_ADV_ENTER step=response\r\n");
       rc = h2_ble_cmd_trace(
           "set_rsp_data", ble_op_set_rsp_data(
               set->scan_response_data_len, set->scan_response_data));
-      printf("H2_JIELI_BLE_ADV_RETURN step=response code=%d\r\n", rc);
+      h2_ble_log("H2_JIELI_BLE_ADV_RETURN step=response code=%d\r\n", rc);
     }
     if (rc == H2_PAL_OK) {
-      printf("H2_JIELI_BLE_ADV_ENTER step=enable\r\n");
+      h2_ble_log("H2_JIELI_BLE_ADV_ENTER step=enable\r\n");
       rc = h2_ble_cmd_trace("adv_enable", ble_op_adv_enable(1));
-      printf("H2_JIELI_BLE_ADV_RETURN step=enable code=%d\r\n", rc);
+      h2_ble_log("H2_JIELI_BLE_ADV_RETURN step=enable code=%d\r\n", rc);
     }
     return rc;
   }
@@ -481,7 +509,7 @@ static int h2_legacy_set_adv_data(
   }
   h2_ble.adv.data_len = primary_len;
   h2_ble.adv.scan_response_data_len = (uint8_t)scan_response_len;
-  printf("H2_JIELI_BLE_ADV_LAYOUT primary=%u response=%u identity=%s\r\n",
+  h2_ble_log("H2_JIELI_BLE_ADV_LAYOUT primary=%u response=%u identity=%s\r\n",
          (unsigned)primary_len, (unsigned)scan_response_len,
          data->manufacturer_data.len != 0u ? "primary" : "none");
   h2_ble.adv.used = 1;
@@ -512,48 +540,48 @@ static int h2_legacy_stop_advertising(void *user) {
 static int h2_ble_start(void *user) {
   (void)user;
   extern const uint64_t config_btctler_le_features;
-  printf("H2_JIELI_BLE_FEATURES high=%08x low=%08x\r\n",
+  h2_ble_log("H2_JIELI_BLE_FEATURES high=%08x low=%08x\r\n",
          (unsigned)(config_btctler_le_features >> 32u),
          (unsigned)config_btctler_le_features);
   if (h2_ble.started || h2_ble.starting) return H2_PAL_OK;
   h2_ble.starting = 1;
-  printf("H2_JIELI_BLE_ENTER step=controller_prepare\r\n");
+  h2_ble_log("H2_JIELI_BLE_ENTER step=controller_prepare\r\n");
   /* JieLi's BLE-only reference applications disable Classic-BT sniff before
    * configuring the controller address and starting btstack.  Keep that SDK
    * ordering even though this PAL exposes BLE only. */
   extern void lmp_set_sniff_disable(void);
   lmp_set_sniff_disable();
-  printf("H2_JIELI_BLE_OK step=controller_prepare\r\n");
+  h2_ble_log("H2_JIELI_BLE_OK step=controller_prepare\r\n");
   uint8_t ble_addr[6];
   const uint8_t *base_addr;
   extern void lib_make_ble_address(uint8_t *ble_address, uint8_t *edr_address);
   extern int le_controller_set_mac(void *addr);
-  printf("H2_JIELI_BLE_ENTER step=base_mac\r\n");
+  h2_ble_log("H2_JIELI_BLE_ENTER step=base_mac\r\n");
   base_addr = h2_ble_base_mac();
   lib_make_ble_address(ble_addr, (uint8_t *)base_addr);
-  printf(
+  h2_ble_log(
       "H2_JIELI_BLE_OK step=base_mac "
       "base=%02x:%02x:%02x:%02x:%02x:%02x "
       "ble=%02x:%02x:%02x:%02x:%02x:%02x\r\n",
       base_addr[5], base_addr[4], base_addr[3], base_addr[2], base_addr[1],
       base_addr[0], ble_addr[5], ble_addr[4], ble_addr[3], ble_addr[2],
       ble_addr[1], ble_addr[0]);
-  printf("H2_JIELI_BLE_ENTER step=controller_mac\r\n");
+  h2_ble_log("H2_JIELI_BLE_ENTER step=controller_mac\r\n");
   const int mac_result = le_controller_set_mac(ble_addr);
   if (mac_result != 0) {
     h2_ble.starting = 0;
-    printf("H2_JIELI_BLE_ERROR step=controller_mac vendor=%d\r\n", mac_result);
+    h2_ble_log("H2_JIELI_BLE_ERROR step=controller_mac vendor=%d\r\n", mac_result);
     return H2_PAL_ERR_IO;
   }
-  printf("H2_JIELI_BLE_OK step=controller_mac vendor=%d\r\n", mac_result);
-  printf("H2_JIELI_BLE_ENTER step=btstack_init\r\n");
+  h2_ble_log("H2_JIELI_BLE_OK step=controller_mac vendor=%d\r\n", mac_result);
+  h2_ble_log("H2_JIELI_BLE_ENTER step=btstack_init\r\n");
   const int btstack_result = btstack_init();
   if (btstack_result == 0) {
-    printf("H2_JIELI_BLE_OK step=btstack_init vendor=%d\r\n",
+    h2_ble_log("H2_JIELI_BLE_OK step=btstack_init vendor=%d\r\n",
            btstack_result);
     return H2_PAL_OK;
   }
-  printf("H2_JIELI_BLE_ERROR step=btstack_init vendor=%d\r\n",
+  h2_ble_log("H2_JIELI_BLE_ERROR step=btstack_init vendor=%d\r\n",
          btstack_result);
   h2_ble.starting = 0;
   return H2_PAL_ERR_IO;
@@ -695,7 +723,7 @@ static int h2_update_connection(
   /* Keep the central-selected parameters.  JieLi's peripheral examples use
    * a 20-30 ms request range; forcing the Loader's exact 15 ms request here
    * makes CoreBluetooth lose link synchronisation before ATT discovery. */
-  printf(
+  h2_ble_log(
       "H2_JIELI_BLE_CONN_PARAMS keep-central requested=%u-%u latency=%u "
       "timeout=%u\r\n",
       (unsigned)params->interval_min_ms,
@@ -796,7 +824,7 @@ static void h2_packet_handler(
   const uint8_t event_type = hci_event_packet_get_type(packet);
   switch (event_type) {
     case HCI_EVENT_COMMAND_COMPLETE:
-      printf(
+      h2_ble_log(
           "H2_JIELI_BLE_HCI event=command-complete opcode=0x%02x%02x "
           "status=%u size=%u\r\n",
           size > 4u ? (unsigned)packet[4] : 0u,
@@ -804,7 +832,7 @@ static void h2_packet_handler(
           size > 5u ? (unsigned)packet[5] : 0xffu, (unsigned)size);
       break;
     case HCI_EVENT_COMMAND_STATUS:
-      printf(
+      h2_ble_log(
           "H2_JIELI_BLE_HCI event=command-status opcode=0x%02x%02x "
           "status=%u size=%u\r\n",
           size > 5u ? (unsigned)packet[5] : 0u,
@@ -812,7 +840,7 @@ static void h2_packet_handler(
           size > 2u ? (unsigned)packet[2] : 0xffu, (unsigned)size);
       break;
     case HCI_EVENT_HARDWARE_ERROR:
-      printf("H2_JIELI_BLE_HCI event=hardware-error code=%u size=%u\r\n",
+      h2_ble_log("H2_JIELI_BLE_HCI event=hardware-error code=%u size=%u\r\n",
              size > 2u ? (unsigned)packet[2] : 0xffu, (unsigned)size);
       break;
     case SM_EVENT_JUST_WORKS_REQUEST: {
@@ -823,13 +851,13 @@ static void h2_packet_handler(
        * Just-Works request; leaving it unanswered prevents CoreBluetooth
        * from completing the connection and reaching GATT discovery. */
       sm_just_works_confirm(handle);
-      printf("H2_JIELI_BLE_SECURITY just-works-confirm handle=%u\r\n",
+      h2_ble_log("H2_JIELI_BLE_SECURITY just-works-confirm handle=%u\r\n",
              (unsigned)handle);
       break;
     }
     case HCI_EVENT_LE_META: {
       if (size >= 8u && packet[2] == HCI_SUBEVENT_LE_PHY_UPDATE_COMPLETE) {
-        printf("H2_JIELI_BLE_PHY_UPDATE status=%u handle=%u tx=%u rx=%u\r\n",
+        h2_ble_log("H2_JIELI_BLE_PHY_UPDATE status=%u handle=%u tx=%u rx=%u\r\n",
                packet[3], (unsigned)(packet[4] | (packet[5] << 8u)),
                packet[6], packet[7]);
       }
@@ -851,9 +879,9 @@ static void h2_packet_handler(
             subevent == HCI_SUBEVENT_LE_CONNECTION_COMPLETE
                 ? hci_subevent_le_connection_complete_get_supervision_timeout(packet)
                 : hci_subevent_le_enhanced_connection_complete_get_supervision_timeout(packet);
-        /* Keep this in one printf so the UART Loader framing cannot split the
+        /* Keep this in one log record so the UART Loader framing cannot split the
          * line while diagnosing the controller connection result. */
-        printf(
+        h2_ble_log(
             "H2_JIELI_BLE_CONNECT subevent=%u status=%u interval=%u "
             "latency=%u timeout=%u\r\n",
             (unsigned)subevent, (unsigned)status, (unsigned)interval,
@@ -870,11 +898,11 @@ static void h2_packet_handler(
         h2_ble.adv.started = 0;
         h2_ble.conn_handle = handle;
         h2_ble.mtu = 23u;
-        printf(
+        h2_ble_log(
             "H2_JIELI_BLE_LINK_PARAMS interval=%u latency=%u timeout=%u\r\n",
             (unsigned)interval, (unsigned)latency,
             (unsigned)supervision_timeout);
-        printf("H2_JIELI_BLE_CONNECT_ENTER step=att_send_init handle=%u\r\n",
+        h2_ble_log("H2_JIELI_BLE_CONNECT_ENTER step=att_send_init handle=%u\r\n",
                (unsigned)handle);
         const int att_init_result = ble_op_att_send_init(
             handle, h2_att_buffer, sizeof(h2_att_buffer), H2_JIELI_ATT_MTU);
@@ -883,14 +911,14 @@ static void h2_packet_handler(
            * not expose an unusable ATT transport as a connected PAL link. */
           h2_ble.mtu = 0u;
           const int disconnect_result = ble_op_disconnect(handle);
-          printf(
+          h2_ble_log(
               "H2_JIELI_BLE_CONNECT_ERROR step=att_send_init handle=%u "
               "vendor=%d pal=%d disconnect=%d\r\n",
               (unsigned)handle, att_init_result,
               h2_ble_cmd_result(att_init_result), disconnect_result);
           break;
         }
-        printf(
+        h2_ble_log(
             "H2_JIELI_BLE_CONNECT_OK step=att_send_init handle=%u "
             "vendor=%d pal=%d\r\n",
             (unsigned)handle, att_init_result,
@@ -900,11 +928,11 @@ static void h2_packet_handler(
             .role = H2_PAL_BLE_ROLE_PERIPHERAL,
             .mtu = 23u,
         };
-        printf("H2_JIELI_BLE_CONNECT_ENTER step=post handle=%u\r\n",
+        h2_ble_log("H2_JIELI_BLE_CONNECT_ENTER step=post handle=%u\r\n",
                (unsigned)handle);
         h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
                     &connection, sizeof(connection));
-        printf("H2_JIELI_BLE_CONNECT_OK step=post handle=%u\r\n",
+        h2_ble_log("H2_JIELI_BLE_CONNECT_OK step=post handle=%u\r\n",
                (unsigned)handle);
       } else if (subevent == HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE) {
         const h2_pal_ble_connection_params_t params = {
@@ -922,7 +950,7 @@ static void h2_packet_handler(
       break;
     }
     case HCI_EVENT_DISCONNECTION_COMPLETE: {
-      printf(
+      h2_ble_log(
           "H2_JIELI_BLE_DISCONNECT handle=%u reason=%u\r\n",
           (unsigned)h2_ble.conn_handle, (unsigned)packet[5]);
       h2_att_trace_dump();
@@ -949,39 +977,39 @@ static void h2_packet_handler(
       break;
     }
     default:
-      printf("H2_JIELI_BLE_HCI event=0x%02x size=%u\r\n",
+      h2_ble_log("H2_JIELI_BLE_HCI event=0x%02x size=%u\r\n",
              (unsigned)event_type, (unsigned)size);
       break;
   }
 }
 
 void ble_profile_init(void) {
-  printf("H2_JIELI_BLE_PROFILE_ENTER step=device_db\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=device_db\r\n");
   le_device_db_init();
-  printf("H2_JIELI_BLE_PROFILE_OK step=device_db\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=device_db\r\n");
   /* Match JieLi's GATT-server initialization contract: initialize SM even
    * when the application does not proactively request link security. */
-  printf("H2_JIELI_BLE_PROFILE_ENTER step=security_manager\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=security_manager\r\n");
   sm_init();
   sm_set_io_capabilities(IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
   sm_set_authentication_requirements(
       TCFG_BLE_SECURITY_EN ? SM_AUTHREQ_BONDING : 0);
   sm_set_encryption_key_size_range(7u, 16u);
   sm_set_request_security(TCFG_BLE_SECURITY_EN);
-  printf("H2_JIELI_BLE_SECURITY request=%u bonding=%u\r\n",
+  h2_ble_log("H2_JIELI_BLE_SECURITY request=%u bonding=%u\r\n",
          (unsigned)TCFG_BLE_SECURITY_EN, (unsigned)!!TCFG_BLE_SECURITY_EN);
   sm_event_callback_set(h2_packet_handler);
-  printf("H2_JIELI_BLE_PROFILE_OK step=security_manager\r\n");
-  printf("H2_JIELI_BLE_PROFILE_ENTER step=att_server\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=security_manager\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=att_server\r\n");
   att_server_init(h2_profile_data, h2_att_read, h2_att_write);
-  printf("H2_JIELI_BLE_PROFILE_OK step=att_server\r\n");
-  printf("H2_JIELI_BLE_PROFILE_ENTER step=handlers\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=att_server\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=handlers\r\n");
   att_server_register_packet_handler(h2_packet_handler);
   hci_event_callback_set(h2_packet_handler);
   le_l2cap_register_packet_handler(h2_packet_handler);
-  printf("H2_JIELI_BLE_PROFILE_OK step=handlers\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=handlers\r\n");
   ble_vendor_set_default_att_mtu(H2_JIELI_ATT_MTU);
-  printf("H2_JIELI_BLE_PROFILE_OK step=mtu\r\n");
+  h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=mtu\r\n");
 }
 
 void bt_ble_init(void) {
@@ -990,8 +1018,8 @@ void bt_ble_init(void) {
   if (previous_role == 1u) {
     ble_stack_gatt_role(0u);
   }
-  printf("H2_JIELI_BLE_EVENT event=BT_STATUS_INIT_OK\r\n");
-  printf("H2_JIELI_BLE_ROLE previous=%u active=%u\r\n",
+  h2_ble_log("H2_JIELI_BLE_EVENT event=BT_STATUS_INIT_OK\r\n");
+  h2_ble_log("H2_JIELI_BLE_ROLE previous=%u active=%u\r\n",
          (unsigned)previous_role, (unsigned)get_ble_gatt_role());
   h2_ble.starting = 0;
   h2_ble.started = 1;
@@ -1010,13 +1038,14 @@ void bt_ble_init(void) {
 int h2_jieli_ac791n_devkit_ble_bt_event_handler(struct sys_event *event) {
   if (event == NULL || event->from != BT_EVENT_FROM_CON) return 0;
   const struct bt_event *bt = (const struct bt_event *)event->payload;
-  printf("H2_JIELI_BLE_BT_EVENT event=%u value=%u\r\n",
+  h2_ble_log("H2_JIELI_BLE_BT_EVENT event=%u value=%u\r\n",
          (unsigned)bt->event, (unsigned)bt->value);
   if (bt->event == BT_STATUS_INIT_OK) bt_ble_init();
   return 0;
 }
 
-const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(void) {
+const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(const h2_pal_log_api_t *log) {
+  if (!h2_ble_log_bind(log)) return NULL;
   static const h2_pal_ble_vtable_t vtable = {
       .start = h2_ble_start,
       .stop = h2_ble_stop,
@@ -1049,7 +1078,8 @@ const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(void) {
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2/pal/h2_pal_unsupported.h"
 
-const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(void) {
+const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(const h2_pal_log_api_t *log) {
+  (void)log;
   return h2_pal_unsupported_ble_host_api();
 }
 
