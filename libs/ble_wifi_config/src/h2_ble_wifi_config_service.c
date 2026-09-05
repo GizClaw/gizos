@@ -460,7 +460,13 @@ static void h2_ble_wifi_config_queue_progress(
     }
     size_t tail = (service->progress_head + service->progress_count) %
                   H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
-    service->progress_queue[tail] = (uint8_t)state;
+    service->progress_queue[tail] = (h2_ble_wifi_config_progress_entry_t){
+        .state = (uint8_t)state,
+        .peer = {
+            .conn_handle = service->conn_handle,
+            .generation = service->conn_generation,
+        },
+    };
     service->progress_count++;
     (void)h2_pal_cond_broadcast(service->api.sync, service->cond);
     h2_ble_wifi_config_unlock(service);
@@ -560,18 +566,16 @@ static void h2_ble_wifi_config_worker(void *ctx) {
             continue;
         }
         if (service->progress_count > 0u) {
-            h2_ble_wifi_config_progress_t state =
-                (h2_ble_wifi_config_progress_t)
-                    service->progress_queue[service->progress_head];
+            h2_ble_wifi_config_progress_entry_t entry =
+                service->progress_queue[service->progress_head];
             service->progress_head = (service->progress_head + 1u) %
                                      H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
             service->progress_count--;
-            h2_ble_wifi_config_peer_t peer = {
-                .conn_handle = service->conn_handle,
-                .generation = service->conn_generation,
-            };
             h2_ble_wifi_config_unlock(service);
-            h2_ble_wifi_config_send_progress(service, peer, state);
+            /* The peer the transition was queued for, not whoever is current. */
+            h2_ble_wifi_config_send_progress(
+                service, entry.peer,
+                (h2_ble_wifi_config_progress_t)entry.state);
             continue;
         }
         if (service->reject_pending) {

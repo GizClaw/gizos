@@ -53,6 +53,18 @@ typedef struct h2_ble_wifi_config_transition {
     } payload;
 } h2_ble_wifi_config_transition_t;
 
+/**
+ * One queued station transition.
+ *
+ * The peer is captured when the transition is queued, not when the worker
+ * drains it: a connect attempt outlives the write that started it, so a frame
+ * drained after a reconnect would otherwise reach the replacement peer.
+ */
+typedef struct h2_ble_wifi_config_progress_entry {
+    uint8_t state;
+    h2_ble_wifi_config_peer_t peer;
+} h2_ble_wifi_config_progress_entry_t;
+
 typedef struct h2_ble_wifi_config_pending_event {
     h2_ble_wifi_config_event_t event;
     uint16_t conn_handle;
@@ -104,7 +116,8 @@ struct h2_ble_wifi_config {
     h2_ble_wifi_config_credentials_t credentials;
     bool reject_pending;
     /* Station transitions to forward as progress frames; see the worker. */
-    uint8_t progress_queue[H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN];
+    h2_ble_wifi_config_progress_entry_t
+        progress_queue[H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN];
     size_t progress_head;
     size_t progress_count;
     h2_ble_wifi_config_reason_t reject_reason;

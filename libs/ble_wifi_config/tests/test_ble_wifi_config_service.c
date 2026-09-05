@@ -73,6 +73,8 @@ typedef struct fake_runtime {
 
     int connect_result;
     int connect_calls;
+    bool hold_connect;
+    bool connect_active;
     h2_pal_wifi_sta_status_t status;
     char connected_ssid[H2_PAL_WIFI_SSID_MAX + 1];
     char connected_password[H2_PAL_WIFI_PASSWORD_MAX + 1];
@@ -528,6 +530,16 @@ static int fake_wifi_connect(
     (void)timeout_ms;
     pthread_mutex_lock(&runtime->mutex);
     runtime->connect_calls++;
+    if (runtime->hold_connect) {
+        /* Stay inside the attempt so the test can queue progress and
+         * replace the peer while the worker is busy. */
+        runtime->connect_active = true;
+        pthread_cond_broadcast(&runtime->cond);
+        while (runtime->hold_connect) {
+            pthread_cond_wait(&runtime->cond, &runtime->mutex);
+        }
+        runtime->connect_active = false;
+    }
     memcpy(runtime->connected_ssid, config->ssid, config->ssid_len);
     runtime->connected_ssid[config->ssid_len] = '\0';
     memcpy(runtime->connected_password, config->password, config->password_len);
@@ -1444,6 +1456,64 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     fake_runtime_deinit(&runtime);
 }
 
+/*
+ * A station transition queued for one peer must not reach the peer that
+ * replaced it, even when the controller reuses the connection handle.
+ */
+static void test_progress_stays_with_its_connection(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
+    runtime.hold_connect = true;
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    connect_and_subscribe(&runtime);
+
+    write_credentials(&runtime, "office", "hunter2!");
+
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!runtime.connect_active) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime.mutex);
+
+    /* Queue a transition for this peer, then replace the peer on the same
+     * handle before the worker can drain it. */
+    h2_pal_wifi_sta_status_t sta_event;
+    memset(&sta_event, 0, sizeof(sta_event));
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
+              &sta_event, sizeof(sta_event));
+    h2_pal_ble_disconnected_info_t info = {
+        .conn_handle = TEST_CONN_HANDLE,
+        .reason = 19,
+    };
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &info,
+              sizeof(info));
+    connect_and_subscribe(&runtime);
+
+    pthread_mutex_lock(&runtime.mutex);
+    runtime.hold_connect = false;
+    pthread_cond_broadcast(&runtime.cond);
+    pthread_mutex_unlock(&runtime.mutex);
+
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!fake_saw_event_locked(
+        &runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_SUCCEEDED) &&
+           !fake_saw_event_locked(
+               &runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_FAILED)) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime.mutex);
+
+    /* Neither the progress frame nor the result reaches the replacement. */
+    CHECK(fake_notification_count(&runtime) == 0u);
+
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    fake_runtime_deinit(&runtime);
+}
+
 int main(void) {
     test_open_registers_schema();
     test_caller_owned_registration();
@@ -1466,6 +1536,7 @@ int main(void) {
     test_scan_frames_stay_with_their_connection();
     test_rejection_stays_with_its_connection();
     test_reconnect_cannot_interleave_with_a_send();
+    test_progress_stays_with_its_connection();
     printf("ok\n");
     return 0;
 }
