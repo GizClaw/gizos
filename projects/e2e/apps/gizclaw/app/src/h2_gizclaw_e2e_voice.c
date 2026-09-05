@@ -508,8 +508,11 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
     rc = drain_completed_output(state);
   const size_t written = atomic_load(&state->written);
   uint8_t leftover[2];
+  /* Playback evidence comes from the speaker pump: write_pcm() counts every
+   * frame it read from the Track and flags any non-zero sample, so an
+   * all-zero reply (SILENT_REPLY) fails here even though it drained. */
   const bool playback_matches =
-      rc == H2_PAL_OK && written != 0u &&
+      rc == H2_PAL_OK && written != 0u && atomic_load(&state->non_silent) &&
       h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover)) ==
           H2_PAL_ERR_WOULD_BLOCK;
   if (rc == H2_PAL_OK &&
