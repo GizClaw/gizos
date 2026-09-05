@@ -25,6 +25,15 @@ static bool ignore_scan(
     return false;
 }
 
+static int test_log(void *user, h2_pal_log_level_t level,
+                    const char *scope, const char *message) {
+    (void)user;
+    (void)level;
+    (void)scope;
+    (void)message;
+    return H2_PAL_OK;
+}
+
 int main(void) {
     static const h2_pal_mem_vtable_t complete_vtable = {
         .alloc = test_alloc,
@@ -48,13 +57,22 @@ int main(void) {
         .vtable = &incomplete_vtable,
     };
 
-    assert(h2_darwin_corebluetooth_ble(NULL) == NULL);
-    assert(h2_darwin_corebluetooth_ble(&incomplete_allocator) == NULL);
-    h2_pal_ble_t *ble = h2_darwin_corebluetooth_ble(&allocator);
+    static const h2_pal_log_vtable_t log_vtable = {.write = test_log};
+    static const h2_pal_log_vtable_t empty_log_vtable = {0};
+    static const h2_pal_log_api_t log = {.vtable = &log_vtable};
+    static const h2_pal_log_api_t other_log = {.vtable = &log_vtable};
+    static const h2_pal_log_api_t incomplete_log = {.vtable = &empty_log_vtable};
+    assert(h2_darwin_corebluetooth_ble(NULL, &log) == NULL);
+    assert(h2_darwin_corebluetooth_ble(&incomplete_allocator, &log) == NULL);
+    assert(h2_darwin_corebluetooth_ble(&allocator, NULL) == NULL);
+    assert(h2_darwin_corebluetooth_ble(&allocator, &incomplete_log) == NULL);
+    h2_pal_ble_t *ble = h2_darwin_corebluetooth_ble(&allocator, &log);
     assert(ble != NULL);
     assert(ble->allocator == &allocator);
-    assert(h2_darwin_corebluetooth_ble(&allocator) == ble);
-    assert(h2_darwin_corebluetooth_ble(&other_allocator) == NULL);
+    assert(h2_darwin_corebluetooth_ble(&allocator, &log) == ble);
+    assert(h2_darwin_corebluetooth_ble(&other_allocator, &log) == NULL);
+    assert(h2_darwin_corebluetooth_ble(&allocator, &other_log) == NULL);
+    assert(h2_darwin_corebluetooth_ble(&allocator, &log) == ble);
     assert(ble->allocator == &allocator);
     const h2_pal_ble_adv_data_t scan_response = {0};
     assert(h2_pal_ble_adv_set_set_scan_response_data(

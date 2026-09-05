@@ -71,6 +71,8 @@ BK7258 driver 在 Host Core 内用 C 实现 Beken HCI ROM download protocol，�
 
 ## Threading 与 shutdown
 
+Darwin CoreBluetooth 的 provider 构造入口显式借用 Memory 和 Log；首次成功绑定后只接受同一对 API 指针，NULL、不完整或不同的服务会返回 NULL。CLI 和 Desktop 由组装入口传入日志服务，保持 API object 及其 `user` 在 provider 生命周期内有效。连接失败和异常断开在 backend queue 上通过 PAL Log 输出有长度上限的错误详情，不直接写标准流；日志失败不改变 BLE 错误返回值或事件。
+
 BLE connect 的失败阶段诊断通过可选 `on_log`/`log_user` 回调交给 caller，不由 Host Core 直接写 stderr。回调在 connect 调用线程同步收到完整、长度限定的文本行，字节只在回调期间有效；需要异步使用时由 caller 复制。此 sink 仅用于已经失败的 connect、MTU、BLE-iKCP open 和 status 阶段，sink 自身的错误不覆盖原始连接错误；它不是设备日志流，也不改变 reliable serial 日志错误的传播合同。Native CLI 将同一 transport output sink 注入 serial 和 BLE，未提供 sink 的 consumer 不会收到这些诊断输出。
 
 所有 scan、catalog hash、connect、transfer、flash 和 reconnect 在 worker 执行。Worker 只写 caller-owned plain snapshots 与 atomic progress；UI controller 只接收复制后的 structured result。Cancellation 在 bounded I/O 边界协作完成。Shutdown 先拒绝新工作、请求取消、join worker，再关闭 BLE、serial、catalog 和 UI resource。
