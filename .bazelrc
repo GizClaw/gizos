@@ -19,9 +19,6 @@ build:macos --define=h2_host_os=macos
 build:windows --define=h2_host_os=windows
 
 build --strip=never
-build --disk_cache=~/.cache/bazel/disk
-build --experimental_disk_cache_gc_max_age=14d
-build --experimental_disk_cache_gc_max_size=4G
 build --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config.textproto
 
 build:linux_x86_64 --platforms=//tools/bazel/platforms:linux_x86_64
