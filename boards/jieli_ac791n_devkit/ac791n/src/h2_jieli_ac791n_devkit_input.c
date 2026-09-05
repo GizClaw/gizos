@@ -200,9 +200,10 @@ static int display_draw_bitmap(
   if (!state->open) return H2_DISPLAY_ERR_INVALID_STATE;
   if (rect == NULL || pixels == NULL || format != H2_DISPLAY_PIXEL_RGB565 ||
       rect->x < 0 || rect->y < 0 || rect->width <= 0 || rect->height <= 0 ||
-      rect->x + rect->width > H2_LCD_WIDTH ||
-      rect->y + rect->height > H2_LCD_HEIGHT ||
-      rect->width > H2_LCD_WIDTH || stride_bytes < (size_t)rect->width * 2u) {
+      rect->x >= H2_LCD_WIDTH || rect->y >= H2_LCD_HEIGHT ||
+      rect->width > H2_LCD_WIDTH - rect->x ||
+      rect->height > H2_LCD_HEIGHT - rect->y ||
+      stride_bytes < (size_t)rect->width * 2u) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   /* Official JieLi LCD fills wait for the preceding non-blocking packet at
