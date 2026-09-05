@@ -336,16 +336,15 @@ static void test_signal_wakes_one_broadcast_wakes_all(void) {
   fixture_open(&fx);
   waiter_t a, b;
   start(&a, &fx, H2_PAL_SYNC_WAIT_FOREVER, single_waiter);
+  /* Establish FIFO registration independently of thread scheduling. */
+  wait_registered(&fx, 1u);
   start(&b, &fx, H2_PAL_SYNC_WAIT_FOREVER, single_waiter);
   wait_registered(&fx, 2u);
 
   assert(h2_pal_mutex_lock(fx.api, fx.mutex) == H2_PAL_OK);
   assert(h2_pal_cond_signal(fx.api, fx.cond) == H2_PAL_OK);
   assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
-  for (unsigned i = 0; i < 5000u && registered_waiters(&fx) != 1u; ++i) {
-    sleep_ms(1u);
-  }
-  sleep_ms(5u);
+  wait_returned(&a);
   assert(registered_waiters(&fx) == 1u);
   assert(a.returned != b.returned);
   /* The first waiter in line is the one signalled. */
@@ -354,7 +353,6 @@ static void test_signal_wakes_one_broadcast_wakes_all(void) {
   assert(h2_pal_mutex_lock(fx.api, fx.mutex) == H2_PAL_OK);
   assert(h2_pal_cond_broadcast(fx.api, fx.cond) == H2_PAL_OK);
   assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
-  wait_returned(&a);
   wait_returned(&b);
   assert(b.result == H2_PAL_OK);
   fixture_close(&fx);

@@ -77,7 +77,18 @@ enum {
   H2_GIZCLAW_RPC_SERVER_SPEECH_SYNTHESIZE = 92,
   H2_GIZCLAW_RPC_SERVER_PEER_DELETE = 93,
   H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT = 94,
+  /** Device-owned reverse RPCs; registering a number does not install a handler. */
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET = 100,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET = 101,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY = 102,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT = 103,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET = 104,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST = 105,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET = 106,
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_INPUT_PUT = 107,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN = 108,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT = 109,
+  H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE = 111,
 };
 
 /** Canonical gRPC status codes (google.rpc.Code) carried by RpcStatus.code.
@@ -107,18 +118,33 @@ typedef struct h2_gizclaw_rpc_bytes {
   size_t len;
 } h2_gizclaw_rpc_bytes_t;
 
+/** Optional local response completion on the client poll owner.
+ * OK means the response was accepted by the local transport and its RPC
+ * channel closed normally, not that the remote application acknowledged it.
+ * Failure/stop cancels the continuation. Called once; user must outlive it.
+ * Shutdown calls it from the close/deinit owner; registration rejection may
+ * call it inline on the provider owner.
+ * Only enqueue owner-thread work here; do not block or reenter client APIs.
+ */
+typedef void (*h2_gizclaw_rpc_response_complete_fn)(void *user, int result);
+
 typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_bytes_t payload;
   bool has_error;
   int error_code;
   h2_gizclaw_rpc_bytes_t error_message;
+  h2_gizclaw_rpc_response_complete_fn on_complete;
+  void *complete_user;
 } h2_gizclaw_rpc_provider_response_t;
 
 /**
  * Handle a server-initiated client.* method.
  *
  * Request and response payloads are protobuf message bytes. Returned views are
- * borrowed and need to remain valid only until the callback returns.
+ * borrowed and must remain valid until the adapter consumes the returned
+ * response (for example, use provider-owned storage). Do not return stack
+ * storage. An optional on_complete schedules work after the local response
+ * closes, without a second message or acknowledgment from the caller.
  */
 typedef int (*h2_gizclaw_rpc_provider_fn)(
     void *user, h2_gizclaw_rpc_method_t method,
