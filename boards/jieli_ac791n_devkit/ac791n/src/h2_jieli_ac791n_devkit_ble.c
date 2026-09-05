@@ -379,9 +379,6 @@ static int h2_adv_apply(struct h2_pal_ble_adv_set *set) {
     printf("H2_JIELI_BLE_ADV_ENTER step=params\r\n");
     uint16_t interval_units =
         (uint16_t)((set->params.interval_min_ms * 8u) / 5u);
-#ifdef H2_JIELI_BLE_DIAG_ADV_INTERVAL_UNITS
-    interval_units = (uint16_t)H2_JIELI_BLE_DIAG_ADV_INTERVAL_UNITS;
-#endif
     printf("H2_JIELI_BLE_ADV_INTERVAL units=%u\r\n",
            (unsigned)interval_units);
     int rc = h2_ble_cmd_trace("set_adv_param", ble_op_set_adv_param(
@@ -854,34 +851,6 @@ static void h2_packet_handler(
             "latency=%u timeout=%u\r\n",
             (unsigned)subevent, (unsigned)status, (unsigned)interval,
             (unsigned)latency, (unsigned)supervision_timeout);
-#ifdef H2_JIELI_BLE_DIAG_QUIET_LINK
-        if (status == 0u) {
-          const uint16_t handle = subevent == HCI_SUBEVENT_LE_CONNECTION_COMPLETE
-              ? hci_subevent_le_connection_complete_get_connection_handle(packet)
-              : hci_subevent_le_enhanced_connection_complete_get_connection_handle(packet);
-          /* Keep the complete ATT/GATT stack initialized, but do no blocking
-           * work from the vendor BT callback. This distinguishes stack setup
-           * from connection-callback reentrancy and timing. */
-          h2_ble.adv.started = 0;
-          h2_ble.conn_handle = handle;
-          h2_ble.mtu = 23u;
-          break;
-        }
-#endif
-#ifdef H2_JIELI_BLE_DIAG_RAW_LINK
-        if (status == 0u) {
-          const uint16_t handle = subevent == HCI_SUBEVENT_LE_CONNECTION_COMPLETE
-              ? hci_subevent_le_connection_complete_get_connection_handle(packet)
-              : hci_subevent_le_enhanced_connection_complete_get_connection_handle(packet);
-          /* Diagnostic build: leave the controller link completely untouched.
-           * In particular, do not initialize ATT, post into Loader, or print
-           * from the BT stack task. */
-          h2_ble.adv.started = 0;
-          h2_ble.conn_handle = handle;
-          h2_ble.mtu = 23u;
-          break;
-        }
-#endif
         if (status != 0u) {
           h2_ble.adv.started = 0;
           h2_restart_legacy_advertising();
@@ -900,10 +869,6 @@ static void h2_packet_handler(
             (unsigned)supervision_timeout);
         printf("H2_JIELI_BLE_CONNECT_ENTER step=att_send_init handle=%u\r\n",
                (unsigned)handle);
-#ifdef H2_JIELI_BLE_DIAG_SKIP_ATT_SEND_INIT
-        printf("H2_JIELI_BLE_CONNECT_SKIP step=att_send_init handle=%u\r\n",
-               (unsigned)handle);
-#else
         const int att_init_result = ble_op_att_send_init(
             handle, h2_att_buffer, sizeof(h2_att_buffer), H2_JIELI_ATT_MTU);
         printf(
@@ -911,26 +876,17 @@ static void h2_packet_handler(
             "vendor=%d pal=%d\r\n",
             (unsigned)handle, att_init_result,
             h2_ble_cmd_result(att_init_result));
-#endif
         const h2_pal_ble_connection_t connection = {
             .conn_handle = handle,
             .role = H2_PAL_BLE_ROLE_PERIPHERAL,
             .mtu = 23u,
         };
-#ifdef H2_JIELI_BLE_DIAG_HOLD_BEFORE_LOADER
-        /* Diagnostic build: keep the SDK ATT/GATT link alive without waking
-         * the shared Loader link worker.  This separates controller/GATT
-         * failures from event-dispatch and Loader-link failures. */
-        printf("H2_JIELI_BLE_DIAG hold_before_loader handle=%u\r\n",
-               (unsigned)handle);
-#else
         printf("H2_JIELI_BLE_CONNECT_ENTER step=post handle=%u\r\n",
                (unsigned)handle);
         h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
                     &connection, sizeof(connection));
         printf("H2_JIELI_BLE_CONNECT_OK step=post handle=%u\r\n",
                (unsigned)handle);
-#endif
       } else if (subevent == HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE) {
         const h2_pal_ble_connection_params_t params = {
             .interval_min_ms = (uint16_t)(
@@ -958,9 +914,7 @@ static void h2_packet_handler(
       };
       h2_ble.conn_handle = 0u;
       h2_ble.mtu = 0u;
-#ifndef H2_JIELI_BLE_DIAG_SKIP_ATT_SEND_INIT
       (void)ble_op_att_send_init(0u, NULL, 0u, 0u);
-#endif
       h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
                   &info, sizeof(info));
       h2_restart_legacy_advertising();
@@ -983,14 +937,6 @@ static void h2_packet_handler(
 }
 
 void ble_profile_init(void) {
-#ifdef H2_JIELI_BLE_DIAG_RAW_LINK
-  /* Diagnostic bisection: initialize only the persistent peer database.
-   * SM and ATT/GATT are deliberately omitted so a successful physical link
-   * isolates the failure to Security Manager initialization. */
-  le_device_db_init();
-  hci_event_callback_set(h2_packet_handler);
-  return;
-#endif
   printf("H2_JIELI_BLE_PROFILE_ENTER step=device_db\r\n");
   le_device_db_init();
   printf("H2_JIELI_BLE_PROFILE_OK step=device_db\r\n");
