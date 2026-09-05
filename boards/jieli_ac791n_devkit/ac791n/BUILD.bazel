@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 firmware_native_component(
     name = "ac791n",
     srcs = glob(["src/*.c"]),
-    hdrs = glob(["include/*.h", "src/*.h"]),
+    hdrs = glob(["include/*.h"]),
     include_roots = [
         "boards/jieli_ac791n_devkit/ac791n/include",
         "libs/pal/include",

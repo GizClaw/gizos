@@ -302,6 +302,19 @@ int main(void) {
         source = (target / "src/pal_ble_smoke.c").read_text()
         self.assertIn("h2_jieli_app_iostreamikcp_start(", source)
 
+    def test_board_does_not_interpose_private_controller_operations(self):
+        board = ROOT / "boards/jieli_ac791n_devkit/ac791n"
+        for path in (board / "src").iterdir():
+            if path.suffix not in (".c", ".h"):
+                continue
+            with self.subTest(source=path.name):
+                source = path.read_text()
+                self.assertNotIn("__ble_ops", source)
+                self.assertNotIn("h2_ll_diag_", source)
+        source = (board / "src/h2_jieli_ac791n_devkit_ble.c").read_text()
+        self.assertIn("H2_JIELI_BLE_CONNECT subevent=%u status=%u", source)
+        self.assertIn("H2_JIELI_BLE_DISCONNECT handle=%u reason=%u", source)
+
     def test_shared_board_does_not_request_ble_bonding(self):
         board = ROOT / "boards/jieli_ac791n_devkit/ac791n"
         config = (board / "include/h2_jieli_ac791n_devkit_sdk_config.h").read_text()

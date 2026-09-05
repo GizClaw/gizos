@@ -19,7 +19,6 @@
 #include "h2_jieli_wl82_platform_core.h"
 
 #include <string.h>
-#include "h2_jieli_ble_ll_diag.h"
 
 /* Required by JieLi's BLE-only and Wi-Fi+BLE reference entrypoints.  The
  * controller library owns the channel-update hook, while a peripheral-only
@@ -948,7 +947,6 @@ static void h2_packet_handler(
       break;
     }
     case HCI_EVENT_DISCONNECTION_COMPLETE: {
-      h2_ll_diag_dump();
       printf(
           "H2_JIELI_BLE_DISCONNECT handle=%u reason=%u\r\n",
           (unsigned)h2_ble.conn_handle, (unsigned)packet[5]);
@@ -1022,7 +1020,6 @@ void ble_profile_init(void) {
 }
 
 void bt_ble_init(void) {
-  h2_ll_diag_install();
   extern u8 get_ble_gatt_role(void);
   const u8 previous_role = get_ble_gatt_role();
   if (previous_role == 1u) {
