@@ -80,3 +80,5 @@ H2_JIELI_BOARD_C_SRC_FILES := \
 	apps/common/usb/usb_epbuf_manager.c \
 
 include $(abspath $(H2_JIELI_LAYOUT_ROOT)/../../../../ac791n_chip/ac791n/layouts/compile_only/project.mk)
+
+LFLAGS += -T $(H2_JIELI_LAYOUT_ROOT)/sdk_abi.ld
