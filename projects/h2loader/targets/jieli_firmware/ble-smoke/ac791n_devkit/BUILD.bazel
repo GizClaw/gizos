@@ -30,14 +30,14 @@ firmware_native_component(
 firmware_native_component(
     name = "pal_smoke",
     srcs = ["src/pal_ble_smoke.c"],
-    include_roots = ["projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit/src"],
+    include_roots = ["projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"],
     component_name = "jieli_ac791n_devkit_pal_ble_smoke",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         "//boards/jieli_ac791n_devkit/ac791n",
         "//libs/pal:pal_header_files",
-        "//projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit:app_transport",
+        "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:app_transport",
     ],
 )
 

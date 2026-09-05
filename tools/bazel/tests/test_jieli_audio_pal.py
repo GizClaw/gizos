@@ -11,7 +11,7 @@ AUDIO_SOURCE = (
 )
 LOADER_TASK_POLICY = (
     ROOT
-    / "projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit/src/loader_task_policy.c"
+    / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_task_policy.c"
 )
 
 
@@ -46,7 +46,7 @@ class JieliAudioPalTest(unittest.TestCase):
         )
 
     def test_mp4_ready_does_not_reinitialize_live_watchdog(self):
-        source = (ROOT / "projects/example/targets/jieli_firmware/display/"
+        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                   "jieli_ac791n_devkit/src/mp4_player_small_pal.c").read_text()
         ready = source[source.index("static h2_pal_result_t confirm_ready"):
                        source.index("static int mp4_watchdog_poll")]

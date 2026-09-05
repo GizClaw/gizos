@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-TARGET = ROOT / "projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit/src"
+TARGET = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
 STUB = r'''
 #include <assert.h>
 #include <stdint.h>

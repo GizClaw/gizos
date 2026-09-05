@@ -49,7 +49,8 @@ AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_con
 ## 板与 entry
 
 - `boards/ac695n_chip/ac695n/layouts/compile_only/` 与 `boards/ac791n_chip/ac791n/layouts/compile_only/` 拥有裸芯片验证 project。
-- Firmware entry 只为仓库自己的 portable App 建立，位于 `projects/<project>/targets/jieli_firmware/<image>/<board>/`；不为 SDK 自带 demo 建 entry。公开 reference-smoke targets 分别验证 AC695N 与 AC791N 的完整 native link。
+- 不经 H2Loader 管理的 native firmware entry 位于 `projects/<project>/targets/jieli_firmware/<image>/<board>/`；只为仓库自己的 portable App 建立，不为 SDK 自带 demo 建 entry。公开 reference-smoke targets 分别验证 AC695N 与 AC791N 的完整 native link。
+- H2Loader-managed package entry 位于 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/`，与 ESP/BK 保持相同的 artifact ownership；其内部 firmware 仍使用 `h2loader_jieli_firmware`。迁移目录不改变 package image、board identity 或 layout。
 
 ## 烧录与升级边界
 
@@ -79,7 +80,7 @@ H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `ap
 
 Host 验证：`bazel test //native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_platform_core //projects/h2loader/libs/h2loader:all //projects/h2loader/apps/cli/app:all //projects/example/apps/mp4-player/app:mp4_player_test`。
 
-Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:package //projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。
+Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。
 
 ## Reference validation
 

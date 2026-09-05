@@ -104,7 +104,7 @@ class UartConsoleTest(unittest.TestCase):
         self.assertIn('sm_set_request_security(TCFG_BLE_SECURITY_EN)', source)
 
     def test_color_bars_follow_pal_dimensions(self):
-        app = (ROOT / "projects/example/targets/jieli_firmware/display/"
+        app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                "jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
         function = app[app.index("static int draw_color_bars("):
                        app.index("static int probe_sd_filesystem(")]
@@ -151,12 +151,15 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=60)
 
     def test_ble_sdk_policy_matches_existing_board_apps(self):
-        target = ROOT / "projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit/src"
+        target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
         policies = [target / (name + "_task_policy.c")
                     for name in ("color_bar", "touch", "button", "audio_system")]
-        policies += [ROOT / "projects/h2loader/targets/jieli_firmware" / path
-                     for path in ("loader/ac791n_devkit/src/loader_task_policy.c",
-                                  "ble-smoke/ac791n_devkit/src/pal_ble_smoke_task_policy.c")]
+        policies += [
+            ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/"
+                   "jieli_ac791n_devkit/src/loader_task_policy.c",
+            ROOT / "projects/h2loader/targets/jieli_firmware/ble-smoke/"
+                   "ac791n_devkit/src/pal_ble_smoke_task_policy.c",
+        ]
         for task in ("#C0btctrler", "#C0btstack", "btctrler", "btstack"):
             pattern = r'\{"' + re.escape(task) + r'",\s*(\d+),\s*(\d+),\s*(\d+)\}'
             expected = re.search(pattern, policies[0].read_text()).groups()
@@ -167,7 +170,7 @@ int main(void) {
     def test_mp4_task_policy_registers_shared_app_task_names(self):
         policy = (
             ROOT
-            / "projects/example/targets/jieli_firmware/display/"
+            / "projects/example/targets/h2loader_tar_zlib/display/"
               "jieli_ac791n_devkit/src/mp4_player_small_task_policy.c"
         ).read_text()
         names = (
@@ -184,8 +187,8 @@ int main(void) {
         self.assertNotIn('{"mp4-decoder",', policy)
 
     def test_app_command_stack_matches_loader_policy(self):
-        target = ROOT / "projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit/src"
-        loader = ROOT / "projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit/src/loader_task_policy.c"
+        target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
+        loader = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_task_policy.c"
         pattern = r'\{(?:"h2loader/appcmd"|H2LOADER_APP_COMMAND_TASK_NAME_VALUE),\s*\d+,\s*(\d+),'
         loader_words = int(re.search(pattern, loader.read_text()).group(1))
         for name in ("color_bar_task_policy.c", "mp4_player_small_task_policy.c"):
@@ -203,7 +206,7 @@ int main(void) {
                       (common / "h2loader_bleikcp.c").read_text())
         self.assertIn('.name = h2loader_app_command_task_name,',
                       (common / "app.c").read_text())
-        target = ROOT / "projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit/src"
+        target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
         self.assertIn('.task_name = H2LOADER_BLE_COMMAND_TASK_NAME_VALUE,',
                       (target / "jieli_app_ble.c").read_text())
         for name in ("color_bar", "touch", "button", "audio_system"):
@@ -215,7 +218,7 @@ int main(void) {
                 self.assertIn("{" + task + ",", policy)
 
     def test_app_boot_logs_before_command_transport(self):
-        app = (ROOT / "projects/example/targets/jieli_firmware/display/"
+        app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                "jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
         start = app.index("static void usb_write_status(const char *format, ...) {")
         end = app.index("static void report_previous_exception(void)", start)
@@ -253,7 +256,7 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=60)
 
     def test_mp4_early_logs_use_board_console(self):
-        app = (ROOT / "projects/example/targets/jieli_firmware/display/"
+        app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                "jieli_ac791n_devkit/src/mp4_player_small_pal.c").read_text()
         probe_start = app.index("void h2_jieli_wl82_boot_probe(uint32_t stage)")
         probe_end = app.index("extern const char *os_current_task_rom", probe_start)

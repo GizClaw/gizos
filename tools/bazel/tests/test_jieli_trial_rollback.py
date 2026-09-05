@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit/src/jieli_loader_platform.c"
+SOURCE = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c"
 
 STUB = r'''
 #include <assert.h>

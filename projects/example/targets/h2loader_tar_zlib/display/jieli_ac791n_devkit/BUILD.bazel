@@ -200,11 +200,11 @@ firmware_native_component(
     name = "h2loader_app_client",
     hdrs = [
         "//projects/h2loader/libs/h2loader:h2loader_headers",
-        "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:src/h2loader_sha256.h",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/h2loader_sha256.h",
     ],
     include_roots = [
         "projects/h2loader/libs/h2loader/include",
-        "projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit/src",
+        "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src",
     ],
     native_srcs = [
         "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
@@ -216,7 +216,7 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
-        "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:src/h2loader_sha256.c",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/h2loader_sha256.c",
     ],
     component_name = "jieli_ac791n_devkit_h2loader_app_client",
     deps = [
@@ -389,11 +389,11 @@ h2loader_jieli_firmware(
     graph = [
         ":coredump_smoke",
         "//boards/jieli_ac791n_devkit/ac791n",
-        "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:usb_log_smoke_launcher",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:usb_log_smoke_launcher",
     ],
     image = "coredump-minimal",
     target = "wl82",
-    task_policy = "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:usb_log_smoke_task_policy",
+    task_policy = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:usb_log_smoke_task_policy",
 )
 
 h2loader_jieli_firmware(
