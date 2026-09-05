@@ -77,7 +77,6 @@ static void initialize(fixture_t *f, size_t channel_count) {
       atomic_init(&channel->tx_state[slot], 0u);
     atomic_init(&channel->tx_head, 0u);
     atomic_init(&channel->tx_tail, 0u);
-    atomic_init(&channel->tx_ready_since_us, 0u);
     channel->next = i + 1u < channel_count ? &f->channels[i + 1u] : NULL;
   }
   f->peer.channels = channel_count != 0u ? &f->channels[0] : NULL;
@@ -131,8 +130,6 @@ static void ring_depth_fifo_and_reuse(void) {
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
   assert(snapshot == 0u);
   assert(queued(&f, 0u) == 0u);
-  assert(f.peer.perf_channel_service_count == H2_PEER_INPUT_SLOT_COUNT);
-  assert(f.peer.perf_channel_send_blocked == 0u);
   assert(atomic_load(&f.channels[0].tx_head) == 0u);
   assert(atomic_load(&f.channels[0].tx_tail) == 0u);
 
@@ -144,7 +141,6 @@ static void ring_depth_fifo_and_reuse(void) {
   assert(snapshot == 1u);
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
   assert(queued(&f, 0u) == 0u);
-  assert(f.peer.perf_channel_service_count == 2u * H2_PEER_INPUT_SLOT_COUNT);
 
   // Nothing queued: no progress, and the stale bit is dropped.
   snapshot = 1u;
@@ -165,13 +161,11 @@ static void byte_budget_bounds_a_round(void) {
   uint32_t snapshot = take_snapshot(&f);
 
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
-  assert(f.peer.perf_channel_service_count == 2u);
   assert(snapshot == 1u);
   assert(queued(&f, 0u) == 2u);
   assert(atomic_load(&f.channels[0].tx_head) == 2u);
 
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
-  assert(f.peer.perf_channel_service_count == 4u);
   assert(snapshot == 0u);
   assert(queued(&f, 0u) == 0u);
   cleanup(&f);
@@ -192,7 +186,6 @@ static void channels_alternate_within_the_budget(void) {
 
   // Round 1: A0 B0 A1 B1 A2 -> bytes >= budget after A2.
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
-  assert(f.peer.perf_channel_service_count == 5u);
   assert(queued(&f, 0u) == 1u);
   assert(queued(&f, 1u) == 2u);
   assert(snapshot == 3u);
@@ -200,7 +193,6 @@ static void channels_alternate_within_the_budget(void) {
 
   // Round 2 starts with B (round robin), then A3 empties A: B2 A3 B3.
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
-  assert(f.peer.perf_channel_service_count == 8u);
   assert(queued(&f, 0u) == 0u);
   assert(queued(&f, 1u) == 0u);
   assert(snapshot == 0u);
@@ -220,8 +212,6 @@ static void message_budget_bounds_a_round(void) {
   assert(snapshot == 7u);
 
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
-  assert(f.peer.perf_channel_service_count ==
-         H2_PEER_NETWORK_CHANNEL_ROUND_MESSAGES);
   size_t remaining = 0u;
   for (size_t channel = 0u; channel < CHANNEL_MAX; ++channel)
     remaining += queued(&f, channel);
@@ -233,24 +223,6 @@ static void message_budget_bounds_a_round(void) {
     ++rounds;
     assert(rounds <= 4u);
   }
-  assert(f.peer.perf_channel_service_count == total);
-  cleanup(&f);
-}
-
-/* A message queued behind others reports the head-of-line wait. */
-static void ready_latency_tracks_the_oldest_message(void) {
-  fixture_t f;
-  initialize(&f, 1u);
-  f.now_us = 1000u;
-  assert(push(&f, 0u, 10u) == H2_PAL_OK);
-  f.now_us = 5000u;
-  assert(push(&f, 0u, 10u) == H2_PAL_OK);
-  assert(atomic_load(&f.channels[0].tx_ready_since_us) == 1000u);
-  uint32_t snapshot = take_snapshot(&f);
-  f.now_us = 6000u;
-  assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
-  assert(f.peer.perf_channel_max_ready_us == 5000u);
-  assert(atomic_load(&f.channels[0].tx_ready_since_us) == 0u);
   cleanup(&f);
 }
 
@@ -259,6 +231,5 @@ int main(void) {
   byte_budget_bounds_a_round();
   channels_alternate_within_the_budget();
   message_budget_bounds_a_round();
-  ready_latency_tracks_the_oldest_message();
   return 0;
 }

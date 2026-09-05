@@ -1205,19 +1205,6 @@ void h2_gizclaw_service_pcm_discard_downlink_internal(
   pcm_track_release(service);
 }
 
-bool h2_gizclaw_service_pcm_downlink_stats_internal(
-    h2_gizclaw_service_t *service, size_t *out_used, size_t *out_capacity) {
-  if (service == NULL || out_used == NULL || out_capacity == NULL)
-    return false;
-  h2_gizclaw_track_t *track = pcm_track_acquire(service);
-  if (track == NULL)
-    return false;
-  const bool available = h2_gizclaw_pcm_track_downlink_stats_internal(
-      track, out_used, out_capacity);
-  pcm_track_release(service);
-  return available;
-}
-
 static h2_pal_result_t submit_operation(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_operation_run_fn run, h2_gizclaw_operation_run_fn poll,

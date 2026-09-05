@@ -130,12 +130,6 @@ struct h2_gizclaw_client {
       ((gzc_peer_event_t *)0)
           ->payload.workspace_history_updated.workspace_name)];
   uint64_t next_conversation_stream_sequence;
-  uint64_t tx_diag_window_started_ms;
-  uint64_t tx_diag_poll_calls;
-  uint64_t tx_diag_send_calls;
-  uint64_t tx_diag_send_ok;
-  uint64_t tx_diag_send_would_block;
-  uint64_t tx_diag_buffered_calls;
   bool terminal_closed;
 };
 
@@ -706,38 +700,6 @@ static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t *client,
   (void)h2_pal_log_write(client->config.log,
                          rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
                          "gizclaw", message);
-}
-
-static void h2_gizclaw_report_tx_diagnostics(h2_gizclaw_client_t *client) {
-  if (client == NULL || client->config.log == NULL ||
-      client->config.time == NULL)
-    return;
-  uint64_t now_ms = 0u;
-  if (h2_pal_time_get_monotonic_ms(client->config.time, &now_ms) != H2_PAL_OK)
-    return;
-  if (client->tx_diag_window_started_ms == 0u) {
-    client->tx_diag_window_started_ms = now_ms;
-    return;
-  }
-  if (now_ms - client->tx_diag_window_started_ms < 1000u)
-    return;
-  char message[192];
-  (void)snprintf(
-      message, sizeof(message),
-      "poll=%llu send=%llu send_ok=%llu send_would_block=%llu buffered=%llu",
-      (unsigned long long)client->tx_diag_poll_calls,
-      (unsigned long long)client->tx_diag_send_calls,
-      (unsigned long long)client->tx_diag_send_ok,
-      (unsigned long long)client->tx_diag_send_would_block,
-      (unsigned long long)client->tx_diag_buffered_calls);
-  (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_INFO,
-                         "gizclaw/webrtc-tx", message);
-  client->tx_diag_window_started_ms = now_ms;
-  client->tx_diag_poll_calls = 0u;
-  client->tx_diag_send_calls = 0u;
-  client->tx_diag_send_ok = 0u;
-  client->tx_diag_send_would_block = 0u;
-  client->tx_diag_buffered_calls = 0u;
 }
 
 static void h2_gizclaw_log_infof(h2_gizclaw_client_t *client, const char *fmt,
@@ -1464,8 +1426,6 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
   }
   h2_gizclaw_dispatch_retained_local_channel_state(
       client, (h2_pal_webrtc_peer_t *)peer);
-  ++client->tx_diag_poll_calls;
-  h2_gizclaw_report_tx_diagnostics(client);
   h2_pal_webrtc_event_t event = {0};
   int rc = h2_pal_webrtc_peer_poll(
       client->config.webrtc, (h2_pal_webrtc_peer_t *)peer, timeout_ms, &event);
@@ -1520,17 +1480,12 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
   if (client == NULL || client->config.webrtc == NULL) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
-  ++client->tx_diag_send_calls;
   const int rc = h2_pal_webrtc_channel_send(client->config.webrtc,
                                             (h2_pal_webrtc_channel_t *)channel,
                                             data, len, is_text ? 1 : 0);
   bool *blocked = h2_gizclaw_channel_write_blocked(client, channel);
   if (blocked != NULL)
     *blocked = rc == H2_PAL_ERR_WOULD_BLOCK;
-  if (rc == H2_PAL_OK)
-    ++client->tx_diag_send_ok;
-  else if (rc == H2_PAL_ERR_WOULD_BLOCK)
-    ++client->tx_diag_send_would_block;
   if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
     h2_gizclaw_log_webrtc_rc(client, "channel_send", rc);
   return h2_gzc_media_result(rc);
@@ -1543,7 +1498,6 @@ static int h2_gzc_channel_buffered_amount(gzc_rtc_channel_t *channel,
       !h2_gizclaw_channel_is_live(client, channel)) {
     return GZC_ERR_INVALID_ARGUMENT;
   }
-  ++client->tx_diag_buffered_calls;
   /*
    * PAL backends expose backpressure through channel_send(WOULD_BLOCK).
    * The adapter owns no queued bytes; callers retry after peer_poll reports a

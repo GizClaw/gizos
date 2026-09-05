@@ -177,19 +177,6 @@ size_t h2_gizclaw_pcm_track_pending_internal(h2_gizclaw_track_t *base) {
   return track == NULL ? 0u : h2_gizclaw_pcm_ring_available(&track->uplink);
 }
 
-bool h2_gizclaw_pcm_track_downlink_stats_internal(h2_gizclaw_track_t *base,
-                                                  size_t *out_used,
-                                                  size_t *out_capacity) {
-  pcm_track_t *track = owned_track(base);
-  if (track == NULL || out_used == NULL || out_capacity == NULL)
-    return false;
-  *out_used = h2_gizclaw_pcm_ring_available(&track->downlink);
-  *out_capacity = track->downlink.capacity;
-  if (*out_used > *out_capacity)
-    *out_used = 0u;
-  return true;
-}
-
 h2_pal_result_t h2_gizclaw_pcm_input_start(h2_gizclaw_pcm_input_t *input,
                                           h2_gizclaw_track_t *base,
                                           const h2_pal_mem_api_t *allocator) {

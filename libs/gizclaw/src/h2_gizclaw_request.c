@@ -25,11 +25,6 @@ typedef struct managed_stream {
   h2_pal_result_t error; /* Service mutex. */
   h2_gizclaw_stream_lane_t lane;
   bool bound, data_ready; /* Service mutex. */
-  size_t perf_ingress_frames, perf_ingress_bytes;
-  size_t perf_ring_full_waits, perf_data_steps;
-  size_t perf_output_calls, perf_output_bytes;
-  size_t perf_input_reads, perf_write_attempts;
-  size_t perf_write_ok, perf_write_would_block;
 } managed_stream_t;
 
 typedef struct h2_gizclaw_managed_request {
@@ -193,8 +188,6 @@ static int stream_ingress(void *user,
       (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
       return H2_PAL_ERR_CLOSED;
     }
-    if (ring->queued_frames == H2_GIZCLAW_STREAM_RING_SLOTS)
-      ++stream->perf_ring_full_waits;
     while (ring->queued_frames == H2_GIZCLAW_STREAM_RING_SLOTS &&
            stream->error == H2_PAL_OK && !service->stopping)
       if (request->operation != NULL && request->operation->cancel_requested)
@@ -248,8 +241,6 @@ static int stream_ingress(void *user,
     }
     ring->write_pos = (ring->write_pos + 1u) % H2_GIZCLAW_STREAM_RING_SLOTS;
     ++ring->queued_frames;
-    ++stream->perf_ingress_frames;
-    stream->perf_ingress_bytes += slot->bytes;
     if (event->kind == H2_GIZCLAW_RPC_STREAM_EOS)
       stream->eos_received = true;
     stream_mark_ready(request);
@@ -285,7 +276,6 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
   }
   stream_clear_ready(request);
   managed_stream_t *stream = request->stream;
-  ++stream->perf_data_steps;
   if (stream->error != H2_PAL_OK || service->stopping) {
     (void)h2_pal_mutex_unlock(sync, service->mutex);
     return true;
@@ -316,7 +306,6 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
                                &count);
     else
       count = capacity;
-    ++stream->perf_input_reads;
     if (rc == H2_PAL_OK && count > capacity)
       rc = H2_PAL_ERR_FORMAT;
     (void)h2_pal_mutex_lock(sync, service->mutex);
@@ -396,8 +385,6 @@ bool h2_gizclaw_req_dispatch_output_internal(h2_gizclaw_service_t *service) {
 
   (void)h2_pal_mutex_lock(sync, service->mutex);
   if (rc == H2_PAL_OK) {
-    ++stream->perf_output_calls;
-    stream->perf_output_bytes += written;
     slot->output_offset += written;
     if (slot->output_offset == slot->event.data.len)
       stream_consume_locked(request);
@@ -465,31 +452,6 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
   if (request->clock_result == H2_PAL_OK)
     request->clock_result = h2_pal_time_get_monotonic_ms(
         request->service->client_config.time, &request->completed_ms);
-  if (request->stream != NULL && request->stream->perf_ingress_frames != 0u) {
-    h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO, "stream",
-                                   "ingress_perf", request->identity,
-                                   request->result,
-                                   (int)request->stream->perf_ring_full_waits,
-                                   request->stream->perf_ingress_frames,
-                                   request->stream->perf_ingress_bytes);
-    h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_INFO, "stream", "output_perf",
-        request->identity, request->result,
-        (int)request->stream->perf_data_steps,
-        request->stream->perf_output_calls, request->stream->perf_output_bytes);
-  }
-  if (request->stream != NULL && request->stream->requires_input) {
-    h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_INFO, "stream", "input_perf",
-        request->identity, request->result,
-        (int)request->stream->perf_write_would_block,
-        request->stream->perf_write_attempts, request->stream->input_sent);
-    h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_INFO, "stream", "input_state",
-        request->identity, request->result,
-        request->stream->input_closed ? 1 : 0, request->stream->input_ready,
-        request->stream->input_expected);
-  }
   operation->result.result = request->result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
   (void)h2_pal_semaphore_give(request->service->config.sync,
@@ -566,13 +528,8 @@ managed_stream_network_step(managed_request_t *request,
     const size_t count = stream->input_ready;
     (void)h2_pal_mutex_unlock(sync, service->mutex);
     if (count != 0u) {
-      ++stream->perf_write_attempts;
       rc = (h2_pal_result_t)h2_gizclaw_rpc_write_internal(request->wire_request,
                                                           stream->input, count);
-      if (rc == H2_PAL_OK)
-        ++stream->perf_write_ok;
-      else if (rc == H2_PAL_ERR_WOULD_BLOCK)
-        ++stream->perf_write_would_block;
       if (rc != H2_PAL_OK &&
           !(stream->pcm_source && rc == H2_PAL_ERR_WOULD_BLOCK))
         return rc;

@@ -241,24 +241,9 @@ static int peer_connection_process_completed_packet(
     if (h2_pal_time_get_monotonic_ms(pc->config.time, &now_ms) != H2_PAL_OK) {
       return H2_PAL_ERR_IO;
     }
-    const bool report_audio_rtp =
-        packet_len >= 12 &&
-        (packet[1] & 0x7fu) == (uint8_t)pc->artp_decoder.type &&
-        pc->config.onaudiortp != NULL;
-    const uint16_t sequence =
-        report_audio_rtp
-            ? (uint16_t)(((uint16_t)packet[2] << 8u) | packet[3])
-            : 0u;
-    const uint32_t timestamp =
-        report_audio_rtp ? ((uint32_t)packet[4] << 24u) |
-                               ((uint32_t)packet[5] << 16u) |
-                               ((uint32_t)packet[6] << 8u) | packet[7]
-                         : 0u;
     (void)rtp_decoders_decode_at(
         &pc->artp_decoder, &pc->vrtp_decoder, packet, (size_t)packet_len,
         now_ms);
-    if (report_audio_rtp)
-      pc->config.onaudiortp(sequence, timestamp, pc->config.user_data);
     peer_connection_log_audio_rtp_event(pc);
     return packet_len;
   }

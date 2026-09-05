@@ -64,7 +64,7 @@ ICE candidate、STUN/TURN attribute、nominated pair、UDP bind/receive/send 和
 
 连接完成后的 direct UDP receive 与协议处理都在 owner task：每轮先用 timeout 0 逐包处理，遇到 `WOULD_BLOCK` 或达到 16 包上限后检查 control、RTP 和 DataChannel readiness。用户侧 ready snapshot 处理完后，owner 用最多 `1 ms` 的 UDP receive 代替纯 sleep；若 transport 当前不能等待，才退回 `1 ms` sleep。SCTP 整体拥塞时只保留 DataChannel ready snapshot并优先处理 UDP ACK、timer 和 RTP；恢复可写后继续处理 snapshot，再取得下一批 ready bits。TCP、TURN 和 ICE selection 阶段同样保留单 owner 的 bounded receive 路径。DataChannel 最大 message 仍为 64 KiB；256 KiB 只是 association receive credit，由 target 注入的 Memory PAL 按实际接收量动态分配，不在 association 创建时预留整块内存。
 
-Protocol owner 使用必填的微秒 monotonic clock 统计每轮耗时，并每五秒通过 `h2peer/perf` 汇总一次。日志中的 `command`、`send`、`transport` 和 `idle` 都按 `count/average_us/max_us` 输出；`idle` 包含等待合并 wakeup gate 的时间，其余类别只统计 active round。不能逐轮写串口日志，否则日志 I/O 会改变被测吞吐与调度。
+Protocol owner 不收集仅用于诊断的逐轮耗时、发送等待时间或媒体统计，不输出周期性性能汇总、队列阻塞／恢复和正常队列淘汰日志，也不通过宏或运行时开关保留这些诊断。协议与内存分配错误仍通过 instance-owned PAL log 报告；功能所需的时钟、队列、背压、调度和错误语义保持不变。性能验收使用下文的 `webrtc-performance` workload 及其端到端交付、吞吐和 RTP 到达间隔证据，不依赖协议热路径的日志或计数器；真实设备的性能改善需要单独测量。
 
 Provider 不能把 mbedTLS、wolfSSL、libSRTP、H2SCTP-private、ESP-IDF、Armino 或 POSIX type 暴露给 H2Peer public header。HTTP、MQTT、WebSocket、JSON 和 cloud signaling 位于 WebRTC PAL 之上，也不能进入 H2Peer core。
 

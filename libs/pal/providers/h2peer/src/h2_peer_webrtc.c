@@ -4,7 +4,6 @@
 #include "ice/h2_peer_ice.h"
 #include "providers/h2_peer_portable_backend.h"
 
-#include <inttypes.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -21,15 +20,7 @@ enum {
   H2_PEER_NETWORK_IDLE_WAIT_MS = 1,
   H2_PEER_NETWORK_UDP_BURST_MAX = 16,
   H2_PEER_NETWORK_STACK_SIZE = 32 * 1024,
-  H2_PEER_PERF_REPORT_INTERVAL_US = 5 * 1000 * 1000,
-  H2_PEER_MEDIA_REPORT_INTERVAL_US = 1000 * 1000,
 };
-
-static bool h2_peer_media_now_us(h2_pal_webrtc_peer_t *peer, uint64_t *out_us) {
-  return peer != NULL && out_us != NULL && peer->owner != NULL &&
-         h2_pal_time_get_monotonic_us(peer->owner->config.time, out_us) ==
-             H2_PAL_OK;
-}
 
 static void h2_peer_media_log(h2_pal_webrtc_peer_t *peer,
                               h2_pal_log_level_t level, const char *scope,
@@ -38,222 +29,6 @@ static void h2_peer_media_log(h2_pal_webrtc_peer_t *peer,
       peer->owner->config.log->vtable != NULL &&
       peer->owner->config.log->vtable->write != NULL)
     (void)h2_pal_log_write(peer->owner->config.log, level, scope, message);
-}
-
-static void h2_peer_media_report_rx(h2_pal_webrtc_peer_t *peer,
-                                    uint64_t now_us) {
-  if (peer->media_rx_window_started_us == 0u) {
-    peer->media_rx_window_started_us = now_us;
-    return;
-  }
-  if (now_us - peer->media_rx_window_started_us <
-      H2_PEER_MEDIA_REPORT_INTERVAL_US)
-    return;
-  char message[H2_PAL_LOG_MESSAGE_MAX];
-  const uint64_t interval_avg =
-      peer->media_rx_interval_count == 0u
-          ? 0u
-          : peer->media_rx_interval_total_us / peer->media_rx_interval_count;
-  (void)snprintf(
-      message, sizeof(message),
-      "received=%" PRIu64 " interval_min_us=%" PRIu64
-      " interval_max_us=%" PRIu64 " interval_avg_us=%" PRIu64
-      " burst_1ms_max=%u burst_5ms_max=%u queue_depth=%zu queue_max=%zu"
-      " dropped=%" PRIu64 " sequence_discontinuities=%" PRIu64
-      " timestamp_discontinuities=%" PRIu64 " last_sequence=%u"
-      " last_timestamp=%" PRIu32,
-      peer->media_rx_received_frames,
-      peer->media_rx_interval_count == 0u ? 0u : peer->media_rx_interval_min_us,
-      peer->media_rx_interval_max_us, interval_avg,
-      (unsigned int)peer->media_rx_burst_1ms_max,
-      (unsigned int)peer->media_rx_burst_5ms_max, peer->media_receive_count,
-      peer->media_rx_queue_max, peer->media_rx_dropped_frames,
-      peer->media_rx_sequence_discontinuities,
-      peer->media_rx_timestamp_discontinuities,
-      (unsigned int)peer->media_rx_last_sequence,
-      peer->media_rx_last_timestamp);
-  h2_peer_media_log(peer,
-                    peer->media_rx_dropped_frames == 0u ? H2_PAL_LOG_INFO
-                                                        : H2_PAL_LOG_WARN,
-                    "h2peer/media-rx", message);
-  peer->media_rx_window_started_us = now_us;
-  peer->media_rx_interval_min_us = UINT64_MAX;
-  peer->media_rx_interval_max_us = 0u;
-  peer->media_rx_interval_total_us = 0u;
-  peer->media_rx_interval_count = 0u;
-  peer->media_rx_received_frames = 0u;
-  peer->media_rx_dropped_frames = 0u;
-  peer->media_rx_sequence_discontinuities = 0u;
-  peer->media_rx_timestamp_discontinuities = 0u;
-  peer->media_rx_burst_1ms_current = 0u;
-  peer->media_rx_burst_1ms_max = 0u;
-  peer->media_rx_burst_5ms_current = 0u;
-  peer->media_rx_burst_5ms_max = 0u;
-  peer->media_rx_queue_max = peer->media_receive_count;
-}
-
-static void h2_peer_media_report_track(h2_pal_webrtc_peer_t *peer,
-                                       uint64_t now_us) {
-  if (peer->media_track_window_started_us == 0u) {
-    peer->media_track_window_started_us = now_us;
-    return;
-  }
-  if (now_us - peer->media_track_window_started_us <
-      H2_PEER_MEDIA_REPORT_INTERVAL_US)
-    return;
-  uint64_t blocked_us = 0u;
-  if (peer->media_track_block_started_us != 0u &&
-      now_us >= peer->media_track_block_started_us)
-    blocked_us = now_us - peer->media_track_block_started_us;
-  if (blocked_us > peer->media_track_blocked_max_us)
-    peer->media_track_blocked_max_us = blocked_us;
-  char message[H2_PAL_LOG_MESSAGE_MAX];
-  (void)snprintf(
-      message, sizeof(message),
-      "write_ok=%" PRIu64 " write_would_block=%" PRIu64 " blocked_us=%" PRIu64
-      " blocked_max_us=%" PRIu64 " queue_depth=%zu rounds=%" PRIu64
-      " round_frames_last=%zu"
-      " round_frames_avg=%" PRIu64 " round_frames_max=%zu",
-      peer->media_track_write_ok, peer->media_track_write_would_block,
-      blocked_us, peer->media_track_blocked_max_us, peer->media_receive_count,
-      peer->media_track_rounds, peer->media_track_round_frames_last,
-      peer->media_track_rounds == 0u
-          ? 0u
-          : peer->media_track_round_frames_total / peer->media_track_rounds,
-      peer->media_track_round_frames_max);
-  h2_peer_media_log(peer,
-                    peer->media_track_write_would_block == 0u ? H2_PAL_LOG_INFO
-                                                              : H2_PAL_LOG_WARN,
-                    "h2peer/media-track", message);
-  peer->media_track_window_started_us = now_us;
-  peer->media_track_write_ok = 0u;
-  peer->media_track_write_would_block = 0u;
-  peer->media_track_blocked_max_us = blocked_us;
-  peer->media_track_rounds = 0u;
-  peer->media_track_round_frames_total = 0u;
-  peer->media_track_round_frames_last = 0u;
-  peer->media_track_round_frames_max = 0u;
-}
-
-static void h2_peer_media_record_track_write(h2_pal_webrtc_peer_t *peer,
-                                             h2_pal_result_t result) {
-  uint64_t now_us = 0u;
-  const bool have_time = h2_peer_media_now_us(peer, &now_us);
-  if (result == H2_PAL_OK) {
-    ++peer->media_track_write_ok;
-    if (peer->media_track_block_started_us != 0u && have_time) {
-      char message[160];
-      const uint64_t blocked_us = now_us - peer->media_track_block_started_us;
-      (void)snprintf(message, sizeof(message),
-                     "event=write_resumed blocked_us=%" PRIu64
-                     " queue_depth=%zu",
-                     blocked_us, peer->media_receive_count);
-      h2_peer_media_log(peer, H2_PAL_LOG_INFO, "h2peer/media-track", message);
-      peer->media_track_block_started_us = 0u;
-      if (blocked_us > peer->media_track_blocked_max_us)
-        peer->media_track_blocked_max_us = blocked_us;
-    }
-  } else if (result == H2_PAL_ERR_WOULD_BLOCK) {
-    ++peer->media_track_write_would_block;
-    if (peer->media_track_block_started_us == 0u && have_time) {
-      char message[160];
-      peer->media_track_block_started_us = now_us;
-      (void)snprintf(message, sizeof(message),
-                     "event=write_blocked blocked_us=0 queue_depth=%zu",
-                     peer->media_receive_count);
-      h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer/media-track", message);
-    }
-  }
-  if (have_time)
-    h2_peer_media_report_track(peer, now_us);
-}
-
-static uint64_t h2_peer_round_average_us(const h2_peer_round_stats_t *stats) {
-  return stats->count == 0u ? 0u : stats->total_us / stats->count;
-}
-
-static void h2_peer_network_record_round(h2_pal_webrtc_peer_t *peer,
-                                         h2_peer_round_stats_t *stats,
-                                         uint64_t started_us) {
-  uint64_t now_us = 0u;
-  if (h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) !=
-          H2_PAL_OK ||
-      now_us < started_us) {
-    return;
-  }
-  const uint64_t elapsed_us = now_us - started_us;
-  ++stats->count;
-  stats->total_us += elapsed_us;
-  if (elapsed_us > stats->max_us) {
-    stats->max_us = elapsed_us;
-  }
-  if (peer->perf_window_started_us == 0u) {
-    peer->perf_window_started_us = now_us;
-    return;
-  }
-  if (now_us - peer->perf_window_started_us < H2_PEER_PERF_REPORT_INTERVAL_US) {
-    return;
-  }
-  if (peer->owner->config.log->vtable->write != NULL) {
-    char message[H2_PAL_LOG_MESSAGE_MAX];
-    (void)snprintf(
-        message, sizeof(message),
-        "round_us command=%" PRIu64 "/%" PRIu64 "/%" PRIu64 " send=%" PRIu64
-        "/%" PRIu64 "/%" PRIu64 " transport=%" PRIu64 "/%" PRIu64 "/%" PRIu64
-        " idle=%" PRIu64 "/%" PRIu64 "/%" PRIu64,
-        peer->perf_command.count, h2_peer_round_average_us(&peer->perf_command),
-        peer->perf_command.max_us, peer->perf_send.count,
-        h2_peer_round_average_us(&peer->perf_send), peer->perf_send.max_us,
-        peer->perf_transport.count,
-        h2_peer_round_average_us(&peer->perf_transport),
-        peer->perf_transport.max_us, peer->perf_idle.count,
-        h2_peer_round_average_us(&peer->perf_idle), peer->perf_idle.max_us);
-    (void)h2_pal_log_write(peer->owner->config.log, H2_PAL_LOG_INFO,
-                           "h2peer/perf", message);
-    const unsigned int enqueue_blocked = atomic_exchange_explicit(
-        &peer->perf_rtp_enqueue_blocked, 0u, memory_order_acq_rel);
-    const unsigned int pending =
-        atomic_load_explicit(&peer->rtp_pending, memory_order_acquire) != NULL
-            ? 1u
-            : 0u;
-    (void)snprintf(
-        message, sizeof(message),
-        "rtp enqueue_blocked=%u service=%" PRIu64 " send_blocked=%" PRIu64
-        " cleared=%" PRIu64 " max_ready_us=%" PRIu64
-        " pending=%u channel service=%" PRIu64 " send_blocked=%" PRIu64
-        " max_ready_us=%" PRIu64 " media reads=%" PRIu64 " empty=%" PRIu64
-        " receive_dropped=%" PRIu64 " transport_rc=%d",
-        enqueue_blocked, peer->perf_rtp_service_count,
-        peer->perf_rtp_send_blocked, peer->perf_rtp_cleared,
-        peer->perf_rtp_max_ready_us, pending, peer->perf_channel_service_count,
-        peer->perf_channel_send_blocked, peer->perf_channel_max_ready_us,
-        peer->perf_media_reads, peer->perf_media_empty,
-        peer->perf_media_receive_dropped,
-        atomic_load_explicit(&peer->network_transport_result,
-                             memory_order_acquire));
-    const h2_pal_log_level_t level =
-        enqueue_blocked != 0u || peer->perf_rtp_send_blocked != 0u ||
-                pending != 0u
-            ? H2_PAL_LOG_WARN
-            : H2_PAL_LOG_INFO;
-    (void)h2_pal_log_write(peer->owner->config.log, level, "h2peer/rtp",
-                           message);
-  }
-  peer->perf_command = (h2_peer_round_stats_t){0};
-  peer->perf_send = (h2_peer_round_stats_t){0};
-  peer->perf_transport = (h2_peer_round_stats_t){0};
-  peer->perf_idle = (h2_peer_round_stats_t){0};
-  peer->perf_rtp_service_count = 0u;
-  peer->perf_rtp_send_blocked = 0u;
-  peer->perf_rtp_cleared = 0u;
-  peer->perf_rtp_max_ready_us = 0u;
-  peer->perf_channel_service_count = 0u;
-  peer->perf_channel_send_blocked = 0u;
-  peer->perf_channel_max_ready_us = 0u;
-  peer->perf_media_reads = 0u;
-  peer->perf_media_empty = 0u;
-  peer->perf_media_receive_dropped = 0u;
-  peer->perf_window_started_us = now_us;
 }
 
 typedef enum h2_peer_network_command_type {
@@ -407,7 +182,6 @@ static void h2_peer_channel_tx_init(h2_pal_webrtc_channel_t *channel) {
   }
   atomic_init(&channel->tx_head, 0u);
   atomic_init(&channel->tx_tail, 0u);
-  atomic_init(&channel->tx_ready_since_us, 0u);
 }
 
 h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
@@ -433,15 +207,6 @@ h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
   atomic_store_explicit(&channel->tx_tail,
                         (uint8_t)((slot + 1u) % H2_PEER_INPUT_SLOT_COUNT),
                         memory_order_release);
-  uint64_t now_us = 0u;
-  if (h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
-      H2_PAL_OK) {
-    uint_fast64_t unset = 0u;
-    // Keep the oldest queued timestamp so max_ready_us measures head latency.
-    (void)atomic_compare_exchange_strong_explicit(
-        &channel->tx_ready_since_us, &unset, now_us, memory_order_acq_rel,
-        memory_order_relaxed);
-  }
   atomic_store_explicit(&channel->tx_state[slot], 2u, memory_order_release);
   h2_peer_channel_ready_set(channel);
   return H2_PAL_OK;
@@ -732,55 +497,6 @@ struct h2_peer_media_frame {
   uint8_t data[];
 };
 
-void h2_peer_webrtc_note_audio_rtp(h2_pal_webrtc_peer_t *peer,
-                                   uint16_t sequence, uint32_t timestamp) {
-  if (peer == NULL)
-    return;
-  uint64_t now_us = 0u;
-  if (!h2_peer_media_now_us(peer, &now_us))
-    return;
-  if (peer->media_rx_interval_min_us == 0u)
-    peer->media_rx_interval_min_us = UINT64_MAX;
-  if (peer->media_rx_last_arrival_us != 0u &&
-      now_us >= peer->media_rx_last_arrival_us) {
-    const uint64_t interval_us = now_us - peer->media_rx_last_arrival_us;
-    if (interval_us < peer->media_rx_interval_min_us)
-      peer->media_rx_interval_min_us = interval_us;
-    if (interval_us > peer->media_rx_interval_max_us)
-      peer->media_rx_interval_max_us = interval_us;
-    peer->media_rx_interval_total_us += interval_us;
-    ++peer->media_rx_interval_count;
-    peer->media_rx_burst_1ms_current =
-        interval_us <= 1000u ? (uint16_t)(peer->media_rx_burst_1ms_current + 1u)
-                             : 1u;
-    peer->media_rx_burst_5ms_current =
-        interval_us <= 5000u ? (uint16_t)(peer->media_rx_burst_5ms_current + 1u)
-                             : 1u;
-  } else {
-    peer->media_rx_burst_1ms_current = 1u;
-    peer->media_rx_burst_5ms_current = 1u;
-  }
-  if (peer->media_rx_burst_1ms_current > peer->media_rx_burst_1ms_max)
-    peer->media_rx_burst_1ms_max = peer->media_rx_burst_1ms_current;
-  if (peer->media_rx_burst_5ms_current > peer->media_rx_burst_5ms_max)
-    peer->media_rx_burst_5ms_max = peer->media_rx_burst_5ms_current;
-  if (peer->media_rx_metadata_initialized) {
-    if (sequence != (uint16_t)(peer->media_rx_last_sequence + 1u))
-      ++peer->media_rx_sequence_discontinuities;
-    const uint32_t timestamp_delta = timestamp - peer->media_rx_last_timestamp;
-    if (timestamp_delta == 0u || timestamp_delta >= UINT32_C(0x80000000))
-      ++peer->media_rx_timestamp_discontinuities;
-  }
-  peer->media_rx_metadata_initialized = 1u;
-  peer->media_rx_last_arrival_us = now_us;
-  peer->media_rx_last_sequence = sequence;
-  peer->media_rx_last_timestamp = timestamp;
-  ++peer->media_rx_received_frames;
-  if (peer->media_receive_count > peer->media_rx_queue_max)
-    peer->media_rx_queue_max = peer->media_receive_count;
-  h2_peer_media_report_rx(peer, now_us);
-}
-
 void h2_peer_webrtc_discard_media(h2_pal_webrtc_peer_t *peer) {
   while (peer->media_receive_head != NULL) {
     h2_peer_media_frame_t *frame = peer->media_receive_head;
@@ -799,37 +515,22 @@ static h2_pal_result_t h2_peer_media_receive_enqueue(h2_pal_webrtc_peer_t *peer,
    * replacing the oldest buffered frame when playback falls behind; reliable
    * DataChannel delivery uses a separate queue and still retries. */
   if (peer->media_receive_count >= H2_PEER_MEDIA_RECEIVE_LIMIT) {
-    const size_t drop_queue_depth = peer->media_receive_count;
     h2_peer_media_frame_t *dropped = peer->media_receive_head;
     peer->media_receive_head = dropped->next;
     if (peer->media_receive_head == NULL)
       peer->media_receive_tail = NULL;
     --peer->media_receive_count;
-    ++peer->perf_media_receive_dropped;
-    ++peer->media_rx_dropped_frames;
-    uint64_t now_us = 0u;
-    char message[160];
-    (void)snprintf(
-        message, sizeof(message),
-        "event=drop queue_depth=%zu queue_capacity=%u dropped=%" PRIu64,
-        drop_queue_depth, (unsigned int)H2_PEER_MEDIA_RECEIVE_LIMIT,
-        peer->media_rx_dropped_frames);
-    h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer/media-rx", message);
-    if (h2_peer_media_now_us(peer, &now_us))
-      h2_peer_media_report_rx(peer, now_us);
     h2_peer_free(peer->owner, dropped);
   }
   h2_peer_media_frame_t *frame =
       h2_peer_alloc(peer->owner, sizeof(*frame) + len);
   if (frame == NULL) {
-    ++peer->media_rx_dropped_frames;
     char message[160];
     (void)snprintf(message, sizeof(message),
                    "event=drop reason=no_memory queue_depth=%zu"
-                   " queue_capacity=%u dropped=%" PRIu64,
+                   " queue_capacity=%u",
                    peer->media_receive_count,
-                   (unsigned int)H2_PEER_MEDIA_RECEIVE_LIMIT,
-                   peer->media_rx_dropped_frames);
+                   (unsigned int)H2_PEER_MEDIA_RECEIVE_LIMIT);
     h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer/media-rx", message);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -843,8 +544,6 @@ static h2_pal_result_t h2_peer_media_receive_enqueue(h2_pal_webrtc_peer_t *peer,
     peer->media_receive_head = frame;
   peer->media_receive_tail = frame;
   ++peer->media_receive_count;
-  if (peer->media_receive_count > peer->media_rx_queue_max)
-    peer->media_rx_queue_max = peer->media_receive_count;
   return H2_PAL_OK;
 }
 
@@ -867,11 +566,8 @@ void h2_peer_webrtc_emit_opus_frame(h2_pal_webrtc_peer_t *peer,
                                                 opus_len);
     // RTP has no consumer backpressure. Own a bounded FIFO while the Track is
     // busy; never replace the head or let a later packet bypass it.
-    const h2_pal_result_t write_result = result;
     if (result == H2_PAL_ERR_WOULD_BLOCK)
       result = h2_peer_media_receive_enqueue(peer, opus, opus_len);
-    if (attempted_write)
-      h2_peer_media_record_track_write(peer, write_result);
     h2_peer_record_network_event_error(peer, result);
     return;
   }
@@ -1737,27 +1433,16 @@ static int h2_peer_network_service_rtp(h2_pal_webrtc_peer_t *peer) {
   if (item == NULL || item == H2_PEER_TX_RESERVED) {
     return 0;
   }
-  ++peer->perf_rtp_service_count;
+
   h2_pal_result_t result =
       h2_peer_webrtc_send_opus(peer, item->data, item->len);
   if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
-    ++peer->perf_rtp_send_blocked;
     return 0;
   }
   (void)atomic_exchange_explicit(&peer->rtp_pending, NULL,
                                  memory_order_acq_rel);
-  uint64_t now_us = 0u;
-  const uint64_t ready_since_us = atomic_exchange_explicit(
-      &peer->rtp_ready_since_us, 0u, memory_order_acq_rel);
-  if (ready_since_us != 0u &&
-      h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
-          H2_PAL_OK &&
-      now_us >= ready_since_us &&
-      now_us - ready_since_us > peer->perf_rtp_max_ready_us) {
-    peer->perf_rtp_max_ready_us = now_us - ready_since_us;
-  }
   h2_peer_network_notify_send_ready(peer);
-  ++peer->perf_rtp_cleared;
+
   if (result != H2_PAL_OK) {
     h2_peer_record_network_event_error(peer, result);
   }
@@ -1815,9 +1500,8 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
       h2_peer_tx_item_t *item = channel->tx_storage[head];
       h2_pal_result_t result = h2_peer_webrtc_channel_send(
           channel, item->data, item->len, item->is_text);
-      ++peer->perf_channel_service_count;
+
       if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
-        ++peer->perf_channel_send_blocked;
         peer->channel_round_robin = ready_slot;
         return made_progress;
       }
@@ -1826,25 +1510,9 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
           (uint8_t)((head + 1u) % H2_PEER_INPUT_SLOT_COUNT);
       atomic_store_explicit(&channel->tx_head, next_head, memory_order_release);
       atomic_store_explicit(&channel->tx_state[head], 0u, memory_order_release);
-      uint64_t now_us = 0u;
-      const uint64_t ready_since_us = atomic_exchange_explicit(
-          &channel->tx_ready_since_us, 0u, memory_order_acq_rel);
-      if (ready_since_us != 0u &&
-          h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
-              H2_PAL_OK &&
-          now_us >= ready_since_us &&
-          now_us - ready_since_us > peer->perf_channel_max_ready_us) {
-        peer->perf_channel_max_ready_us = now_us - ready_since_us;
-      }
       if (atomic_load_explicit(&channel->tx_state[next_head],
                                memory_order_acquire) != 2u) {
         *snapshot &= ~bit;
-      } else if (ready_since_us != 0u && now_us != 0u) {
-        // The next message has been waiting at least as long as this send.
-        uint_fast64_t unset = 0u;
-        (void)atomic_compare_exchange_strong_explicit(
-            &channel->tx_ready_since_us, &unset, now_us, memory_order_acq_rel,
-            memory_order_relaxed);
       }
       h2_peer_network_notify_send_ready(peer);
       peer->channel_round_robin =
@@ -1873,9 +1541,6 @@ static void h2_peer_network_task(void *context) {
   int transport_terminal = 0;
   uint32_t channel_snapshot = 0u;
   while (!atomic_load_explicit(&peer->network_stop, memory_order_acquire)) {
-    uint64_t round_started_us = 0u;
-    (void)h2_pal_time_get_monotonic_us(peer->owner->config.time,
-                                       &round_started_us);
     h2_peer_network_command_t command;
     h2_pal_result_t command_result = (h2_pal_result_t)h2_pal_queue_recv(
         peer->owner->config.queue, peer->network_commands, &command,
@@ -1884,7 +1549,7 @@ static void h2_peer_network_task(void *context) {
       h2_peer_network_response_t response;
       (void)h2_peer_network_process_command(peer, &command, &response);
       h2_peer_network_send_response(peer, &response);
-      h2_peer_network_record_round(peer, &peer->perf_command, round_started_us);
+
       continue;
     }
 
@@ -1935,13 +1600,10 @@ static void h2_peer_network_task(void *context) {
     const int channel_progress =
         writable ? h2_peer_network_service_channel(peer, &channel_snapshot) : 0;
     if (rtp_progress || channel_progress) {
-      h2_peer_network_record_round(peer, &peer->perf_send, round_started_us);
       continue;
     }
 
     if (transport_progress) {
-      h2_peer_network_record_round(peer, &peer->perf_transport,
-                                   round_started_us);
       continue;
     }
 
@@ -1952,15 +1614,12 @@ static void h2_peer_network_task(void *context) {
     if (h2_peer_network_pump_transport(peer, H2_PEER_NETWORK_IDLE_WAIT_MS,
                                        &transport_terminal,
                                        &transport_waited)) {
-      h2_peer_network_record_round(peer, &peer->perf_transport,
-                                   round_started_us);
       continue;
     }
     if (!transport_waited) {
       (void)h2_pal_time_sleep_ms(peer->owner->config.time,
                                  H2_PEER_NETWORK_IDLE_WAIT_MS);
     }
-    h2_peer_network_record_round(peer, &peer->perf_idle, round_started_us);
   }
   atomic_store_explicit(&peer->network_stopped, 1, memory_order_release);
 }
@@ -2068,8 +1727,6 @@ static h2_pal_result_t h2_peer_network_init(h2_pal_webrtc_peer_t *peer) {
   atomic_init(&peer->network_stopped, 0);
   atomic_init(&peer->network_poll_active, 0);
   atomic_init(&peer->rtp_pending, NULL);
-  atomic_init(&peer->rtp_ready_since_us, 0u);
-  atomic_init(&peer->perf_rtp_enqueue_blocked, 0u);
   atomic_init(&peer->channel_ready, 0u);
   const h2_pal_task_options_t task_options = {
       .name = h2_peer_network_task_name,
@@ -2276,8 +1933,6 @@ static h2_pal_result_t h2_peer_network_enqueue_opus(h2_pal_webrtc_peer_t *peer,
   if (!atomic_compare_exchange_strong_explicit(
           &peer->rtp_pending, &expected, H2_PEER_TX_RESERVED,
           memory_order_acq_rel, memory_order_relaxed)) {
-    (void)atomic_fetch_add_explicit(&peer->perf_rtp_enqueue_blocked, 1u,
-                                    memory_order_relaxed);
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   h2_peer_tx_item_t *item = h2_peer_prepare_tx_item(
@@ -2285,12 +1940,6 @@ static h2_pal_result_t h2_peer_network_enqueue_opus(h2_pal_webrtc_peer_t *peer,
   if (item == NULL) {
     atomic_store_explicit(&peer->rtp_pending, NULL, memory_order_release);
     return H2_PAL_ERR_NO_MEMORY;
-  }
-  uint64_t now_us = 0u;
-  if (h2_pal_time_get_monotonic_us(peer->owner->config.time, &now_us) ==
-      H2_PAL_OK) {
-    atomic_store_explicit(&peer->rtp_ready_since_us, now_us,
-                          memory_order_release);
   }
   atomic_store_explicit(&peer->rtp_pending, item, memory_order_release);
   return H2_PAL_OK;
@@ -2321,12 +1970,11 @@ h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer) {
     return failure;
   // Bound each round so draining the Track cannot starve network commands,
   // DataChannels or uplink. WOULD_BLOCK retains exactly the same head packet.
-  size_t moved_frames = 0u;
   for (size_t i = 0u; i < 8u && peer->media_receive_head != NULL; ++i) {
     h2_peer_media_frame_t *frame = peer->media_receive_head;
     h2_pal_result_t result = track->vtable->write(
         track->user, frame->len == 0u ? NULL : frame->data, frame->len);
-    h2_peer_media_record_track_write(peer, result);
+
     if (result == H2_PAL_ERR_WOULD_BLOCK)
       break;
     if (result != H2_PAL_OK) {
@@ -2338,14 +1986,8 @@ h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer) {
     if (peer->media_receive_head == NULL)
       peer->media_receive_tail = NULL;
     --peer->media_receive_count;
-    ++moved_frames;
     h2_peer_free(peer->owner, frame);
   }
-  ++peer->media_track_rounds;
-  peer->media_track_round_frames_last = moved_frames;
-  peer->media_track_round_frames_total += moved_frames;
-  if (moved_frames > peer->media_track_round_frames_max)
-    peer->media_track_round_frames_max = moved_frames;
   if (track->vtable->read == NULL)
     return H2_PAL_OK;
   if (peer->media_pending_opus_len == 0u) {
@@ -2354,7 +1996,6 @@ h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer) {
         track->vtable->read(track->user, peer->media_pending_opus,
                             sizeof(peer->media_pending_opus), &opus_len);
     if (result == H2_PAL_ERR_WOULD_BLOCK || result == H2_PAL_ERR_TIMEOUT) {
-      ++peer->perf_media_empty;
       return H2_PAL_OK;
     }
     if (result != H2_PAL_OK)
@@ -2362,7 +2003,6 @@ h2_pal_result_t h2_peer_webrtc_service_media(h2_pal_webrtc_peer_t *peer) {
     if (opus_len == 0u || opus_len > sizeof(peer->media_pending_opus))
       return H2_PAL_ERR_FORMAT;
     peer->media_pending_opus_len = opus_len;
-    ++peer->perf_media_reads;
   }
   h2_pal_result_t result = h2_peer_network_enqueue_opus(
       peer, peer->media_pending_opus, peer->media_pending_opus_len);
