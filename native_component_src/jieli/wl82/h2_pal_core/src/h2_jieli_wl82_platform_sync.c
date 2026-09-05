@@ -18,12 +18,35 @@ struct h2_pal_semaphore {
     volatile uint32_t count;
 };
 
-struct h2_pal_cond {
-    h2_jieli_sdk_mutex_t *lock;
+typedef struct h2_jieli_cond_waiter {
+    struct h2_jieli_cond_waiter *next;
     h2_jieli_sdk_sem_t *wake;
-    uint32_t waiters;
-    uint32_t pending_wakes;
+    int notified;
+} h2_jieli_cond_waiter_t;
+
+struct h2_pal_cond {
+    volatile uint32_t locked;
+    h2_jieli_cond_waiter_t *head;
+    h2_jieli_cond_waiter_t *tail;
 };
+
+/* Task-context gate for the short waiter-list operations. Yield on contention
+ * so a higher-priority waiter cannot starve the task retiring its node.
+ * Unlike an SDK mutex, this private gate cannot fail during mandatory unlink;
+ * no stack-owned waiter may escape after wait returns. */
+static void cond_lock(h2_pal_cond_t *cond)
+{
+    uint32_t expected = 0u;
+    while (!h2_jieli_atomic_cas_u32(&cond->locked, &expected, 1u)) {
+        h2_jieli_sdk_sleep_ms(1u);
+        expected = 0u;
+    }
+}
+
+static void cond_unlock(h2_pal_cond_t *cond)
+{
+    h2_jieli_atomic_store_u32(&cond->locked, 0u);
+}
 
 static h2_pal_result_t map_wait(int rc)
 {
@@ -215,26 +238,16 @@ static h2_pal_result_t sync_give_semaphore(void *user, h2_pal_semaphore_t *semap
 }
 
 static h2_pal_result_t sync_create_cond(
-    void *user,
-    const h2_pal_cond_config_t *config,
-    h2_pal_cond_t **out_cond)
+    void *user, const h2_pal_cond_config_t *config, h2_pal_cond_t **out_cond)
 {
-    h2_pal_cond_t *cond;
     (void)user;
     if (config == NULL || out_cond == NULL) return H2_PAL_ERR_INVALID_ARG;
     *out_cond = NULL;
-    cond = (h2_pal_cond_t *)h2_jieli_sdk_malloc(sizeof(*cond));
+    h2_pal_cond_t *cond = h2_jieli_sdk_malloc(sizeof(*cond));
     if (cond == NULL) return H2_PAL_ERR_NO_MEMORY;
-    cond->lock = h2_jieli_sdk_mutex_create();
-    cond->wake = h2_jieli_sdk_sem_create(0u);
-    cond->waiters = 0u;
-    cond->pending_wakes = 0u;
-    if (cond->lock == NULL || cond->wake == NULL) {
-        h2_jieli_sdk_mutex_destroy(cond->lock);
-        h2_jieli_sdk_sem_destroy(cond->wake);
-        h2_jieli_sdk_free(cond);
-        return H2_PAL_ERR_NO_MEMORY;
-    }
+    cond->locked = 0u;
+    cond->head = NULL;
+    cond->tail = NULL;
     *out_cond = cond;
     return H2_PAL_OK;
 }
@@ -243,80 +256,91 @@ static h2_pal_result_t sync_destroy_cond(void *user, h2_pal_cond_t *cond)
 {
     (void)user;
     if (cond == NULL) return H2_PAL_ERR_INVALID_ARG;
-    h2_jieli_sdk_mutex_destroy(cond->lock);
-    h2_jieli_sdk_sem_destroy(cond->wake);
+    cond_lock(cond);
+    if (cond->head != NULL) {
+        cond_unlock(cond);
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    cond_unlock(cond);
     h2_jieli_sdk_free(cond);
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t sync_wait_cond(
-    void *user,
-    h2_pal_cond_t *cond,
-    h2_pal_mutex_t *mutex,
-    uint32_t timeout_ms)
+/* Caller holds the private gate. A notified node stays registered until its
+ * owner returns from the SDK wait, keeping destroy from freeing a live cond. */
+static void cond_unlink(h2_pal_cond_t *cond, h2_jieli_cond_waiter_t *waiter)
 {
-    h2_pal_result_t result;
+    h2_jieli_cond_waiter_t *previous = NULL;
+    for (h2_jieli_cond_waiter_t *node = cond->head; node != NULL; node = node->next) {
+        if (node == waiter) {
+            if (previous == NULL) cond->head = node->next;
+            else previous->next = node->next;
+            if (cond->tail == node) cond->tail = previous;
+            return;
+        }
+        previous = node;
+    }
+}
+
+static h2_pal_result_t sync_wait_cond(
+    void *user, h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms)
+{
     (void)user;
-    if (cond == NULL || mutex == NULL) return H2_PAL_ERR_INVALID_ARG;
-    if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
+    if (cond == NULL || mutex == NULL || mutex->recursive) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_jieli_cond_waiter_t waiter = {0};
+    waiter.wake = h2_jieli_sdk_sem_create(0u);
+    if (waiter.wake == NULL) return H2_PAL_ERR_NO_MEMORY;
+    cond_lock(cond);
+    if (cond->tail == NULL) cond->head = &waiter;
+    else cond->tail->next = &waiter;
+    cond->tail = &waiter;
+    cond_unlock(cond);
+
+    const int unlock_result = h2_jieli_sdk_mutex_unlock(mutex->native);
+    h2_pal_result_t result = unlock_result == 0
+        ? map_wait(h2_jieli_sdk_sem_take(waiter.wake, timeout_ms))
+        : H2_PAL_ERR_IO;
+    cond_lock(cond);
+    cond_unlink(cond, &waiter);
+    cond_unlock(cond);
+    h2_jieli_sdk_sem_destroy(waiter.wake);
+    if (unlock_result == 0 &&
+        h2_jieli_sdk_mutex_lock(mutex->native, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
         return H2_PAL_ERR_IO;
     }
-    cond->waiters++;
-    (void)h2_jieli_sdk_mutex_unlock(cond->lock);
-    if (h2_jieli_sdk_mutex_unlock(mutex->native) != 0) return H2_PAL_ERR_IO;
-    result = map_wait(h2_jieli_sdk_sem_take(cond->wake, timeout_ms));
-    if (h2_jieli_sdk_mutex_lock(mutex->native, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-        return H2_PAL_ERR_IO;
+    return result;
+}
+
+static h2_pal_result_t cond_wake(h2_pal_cond_t *cond, int all)
+{
+    if (cond == NULL) return H2_PAL_ERR_INVALID_ARG;
+    h2_pal_result_t result = H2_PAL_OK;
+    cond_lock(cond);
+    for (h2_jieli_cond_waiter_t *node = cond->head; node != NULL; node = node->next) {
+        if (node->notified) continue;
+        if (h2_jieli_sdk_sem_give(node->wake) != 0) {
+            result = H2_PAL_ERR_IO;
+            break;
+        }
+        node->notified = 1;
+        if (!all) break;
     }
-    if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-        return H2_PAL_ERR_IO;
-    }
-    if (cond->waiters > 0u) cond->waiters--;
-    if (result == H2_PAL_OK && cond->pending_wakes > 0u) {
-        cond->pending_wakes--;
-    }
-    /* A signal can race a timeout before this waiter reacquires the lock.
-     * Retire excess semaphore tokens so pending_wakes never exceeds waiters;
-     * otherwise broadcast's unsigned subtraction can wrap to UINT32_MAX. */
-    while (cond->pending_wakes > cond->waiters) {
-        (void)h2_jieli_sdk_sem_take(cond->wake, 0u);
-        cond->pending_wakes--;
-    }
-    (void)h2_jieli_sdk_mutex_unlock(cond->lock);
+    cond_unlock(cond);
     return result;
 }
 
 static h2_pal_result_t sync_signal_cond(void *user, h2_pal_cond_t *cond)
 {
-    h2_pal_result_t result = H2_PAL_OK;
     (void)user;
-    if (cond == NULL) return H2_PAL_ERR_INVALID_ARG;
-    if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-        return H2_PAL_ERR_IO;
-    }
-    if (cond->waiters > cond->pending_wakes) {
-        cond->pending_wakes++;
-        if (h2_jieli_sdk_sem_give(cond->wake) != 0) result = H2_PAL_ERR_IO;
-    }
-    (void)h2_jieli_sdk_mutex_unlock(cond->lock);
-    return result;
+    return cond_wake(cond, 0);
 }
 
 static h2_pal_result_t sync_broadcast_cond(void *user, h2_pal_cond_t *cond)
 {
-    h2_pal_result_t result = H2_PAL_OK;
     (void)user;
-    if (cond == NULL) return H2_PAL_ERR_INVALID_ARG;
-    if (h2_jieli_sdk_mutex_lock(cond->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-        return H2_PAL_ERR_IO;
-    }
-    uint32_t wakes = cond->waiters - cond->pending_wakes;
-    cond->pending_wakes += wakes;
-    while (wakes-- > 0u) {
-        if (h2_jieli_sdk_sem_give(cond->wake) != 0) result = H2_PAL_ERR_IO;
-    }
-    (void)h2_jieli_sdk_mutex_unlock(cond->lock);
-    return result;
+    return cond_wake(cond, 1);
 }
 
 static const h2_pal_sync_vtable_t s_sync_vtable = {

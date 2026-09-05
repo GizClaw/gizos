@@ -99,10 +99,37 @@ static void test_time_extends_32bit_wrap_and_sleeps(void)
 }
 
 static h2_pal_cond_t *timeout_race_cond;
+static int broadcast_race;
 static void signal_after_sem_timeout(void)
 {
-    CHECK(h2_pal_cond_signal(h2_jieli_wl82_platform_sync_api(),
-                            timeout_race_cond) == H2_PAL_OK);
+    const h2_pal_sync_api_t *sync = h2_jieli_wl82_platform_sync_api();
+    CHECK(h2_pal_cond_destroy(sync, timeout_race_cond) == H2_PAL_ERR_INVALID_STATE);
+    CHECK((broadcast_race ? h2_pal_cond_broadcast(sync, timeout_race_cond)
+                          : h2_pal_cond_signal(sync, timeout_race_cond)) == H2_PAL_OK);
+    /* A notified task has not returned yet: destroy must still reject it. */
+    CHECK(h2_pal_cond_destroy(sync, timeout_race_cond) == H2_PAL_ERR_INVALID_STATE);
+    h2_pal_mutex_t *late_mutex = NULL;
+    const h2_pal_mutex_config_t config = {.name = "late"};
+    CHECK(h2_pal_mutex_create(sync, &config, &late_mutex) == H2_PAL_OK);
+    CHECK(h2_pal_mutex_lock(sync, late_mutex) == H2_PAL_OK);
+    /* Re-enter before the older wait retires. A shared semaphore would let
+     * this unrelated waiter steal the outstanding signal/broadcast token. */
+    CHECK(h2_pal_cond_wait(sync, timeout_race_cond, late_mutex, 0u) == H2_PAL_ERR_TIMEOUT);
+    CHECK(h2_pal_mutex_unlock(sync, late_mutex) == H2_PAL_OK);
+    CHECK(h2_pal_mutex_destroy(sync, late_mutex) == H2_PAL_OK);
+}
+
+static void register_second_waiter(void)
+{
+    const h2_pal_sync_api_t *sync = h2_jieli_wl82_platform_sync_api();
+    h2_pal_mutex_t *mutex = NULL;
+    const h2_pal_mutex_config_t config = {.name = "second"};
+    CHECK(h2_pal_mutex_create(sync, &config, &mutex) == H2_PAL_OK);
+    CHECK(h2_pal_mutex_lock(sync, mutex) == H2_PAL_OK);
+    h2_jieli_fake_set_sem_timeout_hook(signal_after_sem_timeout);
+    CHECK(h2_pal_cond_wait(sync, timeout_race_cond, mutex, 10u) == H2_PAL_ERR_TIMEOUT);
+    CHECK(h2_pal_mutex_unlock(sync, mutex) == H2_PAL_OK);
+    CHECK(h2_pal_mutex_destroy(sync, mutex) == H2_PAL_OK);
 }
 
 static void test_sync_mutex_and_semaphore(void)
@@ -151,12 +178,24 @@ static void test_sync_mutex_and_semaphore(void)
     CHECK(h2_pal_mutex_lock(sync, mutex) == H2_PAL_OK);
     CHECK(h2_pal_cond_wait(sync, cond, mutex, 10u) == H2_PAL_ERR_TIMEOUT);
     timeout_race_cond = cond;
+    broadcast_race = 0;
     h2_jieli_fake_set_sem_timeout_hook(signal_after_sem_timeout);
+    CHECK(h2_pal_cond_wait(sync, cond, mutex, 10u) == H2_PAL_ERR_TIMEOUT);
+    broadcast_race = 1;
+    h2_jieli_fake_set_sem_timeout_hook(register_second_waiter);
     CHECK(h2_pal_cond_wait(sync, cond, mutex, 10u) == H2_PAL_ERR_TIMEOUT);
     /* A timed-out wait must not leave a token for a later waiter. */
     CHECK(h2_pal_cond_wait(sync, cond, mutex, 10u) == H2_PAL_ERR_TIMEOUT);
     /* wait must reacquire the caller's mutex before returning. */
     CHECK(h2_pal_mutex_unlock(sync, mutex) == H2_PAL_OK);
+    /* A failed caller-mutex release must remove its registered waiter. */
+    CHECK(h2_pal_cond_wait(sync, cond, mutex, 0u) == H2_PAL_ERR_IO);
+    h2_pal_mutex_t *recursive_mutex = NULL;
+    CHECK(h2_pal_mutex_create(sync, &recursive_config, &recursive_mutex) == H2_PAL_OK);
+    CHECK(h2_pal_mutex_lock(sync, recursive_mutex) == H2_PAL_OK);
+    CHECK(h2_pal_cond_wait(sync, cond, recursive_mutex, 0u) == H2_PAL_ERR_INVALID_ARG);
+    CHECK(h2_pal_mutex_unlock(sync, recursive_mutex) == H2_PAL_OK);
+    CHECK(h2_pal_mutex_destroy(sync, recursive_mutex) == H2_PAL_OK);
     CHECK(h2_pal_cond_signal(sync, cond) == H2_PAL_OK);
     CHECK(h2_pal_cond_broadcast(sync, cond) == H2_PAL_OK);
     CHECK(h2_pal_cond_destroy(sync, cond) == H2_PAL_OK);

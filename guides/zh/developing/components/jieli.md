@@ -65,6 +65,8 @@ AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_con
 
 FDK AAC 编译由 `libs/fdk_aac` 拥有，PAL decoder 依赖该 first-party library；`@h2_fdk_aac` 仅暴露 upstream source group 和 header-only target，不引用 GizOS platform labels。pi32v2 的无 stdio 编译选项在 first-party library 内选择，Linux 保留原始 stdio 行为。
 
+wl82 condition 为每个 wait 创建独立的 SDK semaphore，signal/broadcast 只通知当时已经注册且尚未收到通知的等待者；超时退出会注销自己的节点，不把 token 留给后来的等待者。等待者队列用短时间持有的原子 gate 保护，竞争时让出任务；节点在 SDK wait 返回之前始终保持注册，因此 destroy 会拒绝仍有等待者的 condition。与 PAL contract 一致，wait 只接受非递归 mutex，返回前重新取得调用者 mutex。
+
 H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image；`h2loader_tar_zlib` 从 `JieliFirmwareInfo` 取得它。原生 `jl_isd.bin` 用于独立的 USB DL 恢复流程，不等同于 managed package。Native rule 本身不取得 release identity；外层 package rule 拥有 package metadata。JieLi package 不生成 ESP/BK 格式的 recovery bundle。
 
 物理 NOR 为 8 MiB：`[0, 0x700000)` 由 SDK double-bank packer 管理，Loader/App 是逻辑角色，不是两个固定地址的裸 flash 分区；`[0x700000, 0x740000)` 为 Preference，`[0x740000, 0x780000)` 为 coredump，`[0x780000, 0x7ff000)` 为 vendor reserved，最后 4 KiB 为 boot reserved。`h2_jieli_ac791n_devkit_partitions.h` 是容量与边界的 source of truth；下载文件位于 SD filesystem，不能把 SD 容量当成可执行 NOR 容量。
