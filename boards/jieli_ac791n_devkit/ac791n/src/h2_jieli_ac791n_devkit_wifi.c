@@ -13,13 +13,29 @@
 
 typedef struct h2_jieli_wifi_state {
   int on;
-  enum WIFI_EVENT event;
   h2_pal_wifi_sta_status_t sta;
   h2_pal_wifi_ap_status_t ap;
 } h2_jieli_wifi_state_t;
 
 static h2_jieli_wifi_state_t wifi_state;
 static void update_sta_snapshot(void);
+
+enum { SCAN_IDLE, SCAN_PENDING, SCAN_READY, SCAN_ABANDONED, SCAN_CLEANING };
+static unsigned scan_phase;
+
+static void scan_completed(void) {
+  unsigned expected = SCAN_PENDING;
+  if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_READY, 0,
+                                   __ATOMIC_RELEASE, __ATOMIC_RELAXED)) return;
+  expected = SCAN_ABANDONED;
+  if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_CLEANING, 0,
+                                   __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+    /* The SDK has no public cancel operation. Never clear its result while
+     * the scan is still writing it; late completion owns timeout cleanup. */
+    wifi_clear_scan_result();
+    __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
+  }
+}
 
 static void post_system_event(
     h2_pal_system_event_type_t type, const void *payload,
@@ -71,13 +87,12 @@ static h2_pal_wifi_security_t map_security(WIFI_802_11_AUTH_MODE mode) {
 static int wifi_event(void *context, enum WIFI_EVENT event) {
   (void)context;
   const h2_pal_wifi_sta_state_t previous_sta_state = wifi_state.sta.state;
-  wifi_state.event = event;
   switch (event) {
     case WIFI_EVENT_STA_START:
       wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_IDLE;
       break;
     case WIFI_EVENT_STA_SCAN_COMPLETED:
-      wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_IDLE;
+      scan_completed();
       break;
     case WIFI_EVENT_STA_CONNECT_SUCC:
       wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
@@ -188,14 +203,28 @@ static int sta_scan(
   if (on_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = ensure_wifi_on();
   if (result != H2_PAL_OK) return result;
-  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_SCANNING;
-  wifi_state.event = WIFI_EVENT_MODULE_INIT;
-  if (wifi_scan_req() != 0) return H2_PAL_ERR_BUSY;
-  uint32_t elapsed = 0u;
-  while (wifi_state.event != WIFI_EVENT_STA_SCAN_COMPLETED) {
-    if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
+  unsigned expected = SCAN_IDLE;
+  if (!__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_PENDING, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+    return H2_PAL_ERR_BUSY;
+  }
+  if (wifi_scan_req() != 0) {
+    __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
+    return H2_PAL_ERR_BUSY;
+  }
+  const uint32_t start = timer_get_ms();
+  while (__atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE) != SCAN_READY) {
+    const uint32_t elapsed = (uint32_t)(timer_get_ms() - start);
+    if (elapsed >= timeout_ms || timeout_ms - elapsed < 10u) {
+      expected = SCAN_PENDING;
+      if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_ABANDONED,
+                                       0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        return H2_PAL_ERR_TIMEOUT;
+      }
+      /* Completion won the race; this caller still owns the ready result. */
+      continue;
+    }
     os_time_dly(1u);
-    elapsed += 10u;
   }
   uint32_t count = 0u;
   struct wifi_scan_ssid_info *entries = wifi_get_scan_result(&count);
@@ -223,6 +252,7 @@ static int sta_scan(
     if (!on_result(callback_user, &entry)) break;
   }
   wifi_clear_scan_result();
+  __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
