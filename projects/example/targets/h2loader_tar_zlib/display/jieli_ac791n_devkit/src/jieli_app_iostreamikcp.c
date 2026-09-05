@@ -63,20 +63,15 @@ typedef struct h2_jieli_app_console {
 } h2_jieli_app_console_t;
 
 static h2_jieli_app_console_t state;
-static int usb_debug_lock_held;
 
 int h2_jieli_usb_debug_try_lock(void) {
-  usb_debug_lock_held = 0;
   if (!state.started || os_mutex_accept(&state.tx_mutex) != OS_NO_ERR) return 0;
-  usb_debug_lock_held = 1;
   return 1;
 }
 
 void h2_jieli_usb_debug_unlock(void) {
-  if (usb_debug_lock_held) {
-    usb_debug_lock_held = 0;
-    (void)os_mutex_post(&state.tx_mutex);
-  }
+  /* The SDK drain loop pairs unlock only with its own successful try-lock. */
+  (void)os_mutex_post(&state.tx_mutex);
 }
 
 static uint32_t now_ms(void *user) {

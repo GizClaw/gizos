@@ -58,7 +58,7 @@ typedef struct h2_jieli_digest {
 
 static OS_MUTEX usb_tx_mutex;
 static volatile int usb_tx_ready;
-static volatile int usb_debug_locked;
+static int usb_debug_locked;
 static volatile int crash_recovery_active;
 static h2_jieli_transport_t transport;
 static h2_jieli_digest_t digest;
@@ -91,21 +91,20 @@ static uint32_t ms_to_ticks(uint32_t ms) {
 /* The SDK USB printf task uses these hooks (through the target-local SDK
  * patch) so an entire drained printf batch cannot split an iKCP frame. */
 int h2_jieli_usb_debug_try_lock(void) {
-  usb_debug_locked = 0;
   if (!usb_tx_ready || os_mutex_accept(&usb_tx_mutex) != OS_NO_ERR) return 0;
-  usb_debug_locked = 1;
+  __atomic_store_n(&usb_debug_locked, 1, __ATOMIC_RELEASE);
   return 1;
 }
 
 void h2_jieli_usb_debug_unlock(void) {
-  if (usb_debug_locked) {
-    usb_debug_locked = 0;
-    (void)os_mutex_post(&usb_tx_mutex);
-  }
+  /* Only the successful caller enters unlock; contenders never change the
+   * drain marker. Clear it before releasing the serialized CDC writer. */
+  __atomic_store_n(&usb_debug_locked, 0, __ATOMIC_RELEASE);
+  (void)os_mutex_post(&usb_tx_mutex);
 }
 
 int h2_jieli_usb_debug_is_draining(void) {
-  return usb_debug_locked;
+  return __atomic_load_n(&usb_debug_locked, __ATOMIC_ACQUIRE);
 }
 
 static void usb_diag_write(const char *text) {
@@ -925,7 +924,7 @@ static void loader_task(void *private_data) {
 
 void app_main(void) {
   usb_tx_ready = 0;
-  usb_debug_locked = 0;
+  __atomic_store_n(&usb_debug_locked, 0, __ATOMIC_RELEASE);
   const uint32_t reset_reason = (uint32_t)system_reset_reason_get();
   crash_recovery_active =
       (reset_reason & SYS_RST_WDT) != 0u ||
