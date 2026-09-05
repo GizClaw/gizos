@@ -13,6 +13,7 @@
 - [Crash Before Confirm](./crash_before_confirm)
 - [Starboy](./starboy)
 - [Lua Flappy Bird](./lua_flappybird)
+- [Lua Cosmic Drift](./cosmic_drift)
 - [Lua BloomSpeaker](./bloomspeaker)
 - [Lua Runtime E2E](./lua_runtime_e2e)
 - [iperf](./iperf)

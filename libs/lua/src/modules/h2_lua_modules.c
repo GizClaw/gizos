@@ -1537,6 +1537,44 @@ static int display_fill_circle(lua_State *state) {
   return 0;
 }
 
+static int display_draw_circle(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int cx = check_pixel_number(state, 1);
+  int cy = check_pixel_number(state, 2);
+  int radius = check_pixel_number(state, 3);
+  uint16_t color = check_color(state, 4);
+  int x;
+  int y;
+  int error;
+  if (!job->display_open || radius < 0 || radius > job->display_info.width ||
+      radius > job->display_info.height || !point_is_bounded(job, cx, cy)) {
+    return luaL_error(state, "invalid draw_circle");
+  }
+  mark_dirty_rect(job, cx - radius, cy - radius, radius * 2 + 1,
+                  radius * 2 + 1);
+  x = radius;
+  y = 0;
+  error = 1 - radius;
+  while (x >= y) {
+    write_pixel(job, cx + x, cy + y, color);
+    write_pixel(job, cx + y, cy + x, color);
+    write_pixel(job, cx - y, cy + x, color);
+    write_pixel(job, cx - x, cy + y, color);
+    write_pixel(job, cx - x, cy - y, color);
+    write_pixel(job, cx - y, cy - x, color);
+    write_pixel(job, cx + y, cy - x, color);
+    write_pixel(job, cx + x, cy - y, color);
+    ++y;
+    if (error < 0) {
+      error += 2 * y + 1;
+    } else {
+      --x;
+      error += 2 * (y - x) + 1;
+    }
+  }
+  return 0;
+}
+
 static void draw_circle_aa_pixels(h2_lua_job_t *job, int cx, int cy,
                                   int radius, uint16_t color) {
   int radius_q4 = radius * 4 + 2;
@@ -1726,7 +1764,7 @@ static int display_fill_round_rect(lua_State *state) {
   for (py = 0; py < height; ++py) {
     int inset = rounded_rect_inset(height, radius, py);
     fill_span(job, y + py, x + inset, x + width - inset - 1, color);
-      }
+  }
   return 0;
 }
 
@@ -1738,44 +1776,31 @@ static int display_draw_round_rect(lua_State *state) {
   int height = check_pixel_number(state, 4);
   int radius = check_pixel_number(state, 5);
   uint16_t color = check_color(state, 6);
-  int px;
   int py;
   if (!job->display_open || width <= 0 || height <= 0 ||
       !rect_is_bounded(job, x, y, width, height) || radius < 0 ||
       radius > width / 2 || radius > height / 2) {
     return luaL_error(state, "invalid draw_round_rect");
   }
+  mark_dirty_rect(job, x, y, width, height);
   for (py = 0; py < height; ++py) {
-    for (px = 0; px < width; ++px) {
-      int dx = px < radius            ? radius - px
-               : px >= width - radius ? px - (width - radius - 1)
-                                      : 0;
-      int dy = py < radius             ? radius - py
-               : py >= height - radius ? py - (height - radius - 1)
-                                       : 0;
-      int outer =
-          dx == 0 || dy == 0 ||
-          (int64_t)dx * dx + (int64_t)dy * dy <= (int64_t)radius * radius;
-      int ix = px - 1;
-      int iy = py - 1;
-      int inner_width = width - 2;
-      int inner_height = height - 2;
-      int inner_radius = radius > 0 ? radius - 1 : 0;
-      int idx = ix < inner_radius ? inner_radius - ix
-                : ix >= inner_width - inner_radius
-                    ? ix - (inner_width - inner_radius - 1)
-                    : 0;
-      int idy = iy < inner_radius ? inner_radius - iy
-                : iy >= inner_height - inner_radius
-                    ? iy - (inner_height - inner_radius - 1)
-                    : 0;
-      int inner = ix >= 0 && iy >= 0 && ix < inner_width && iy < inner_height &&
-                  (idx == 0 || idy == 0 ||
-                   (int64_t)idx * idx + (int64_t)idy * idy <=
-                       (int64_t)inner_radius * inner_radius);
-      if (outer && !inner) {
-        set_pixel(job, x + px, y + py, color);
-      }
+    int outer_inset = rounded_rect_inset(height, radius, py);
+    int inner_width = width - 2;
+    int inner_height = height - 2;
+    int inner_radius = radius > 0 ? radius - 1 : 0;
+    int inner_row = py - 1;
+    if (inner_width <= 0 || inner_height <= 0 || inner_row < 0 ||
+        inner_row >= inner_height) {
+      fill_span(job, y + py, x + outer_inset, x + width - outer_inset - 1,
+                color);
+    } else {
+      int inner_inset =
+          rounded_rect_inset(inner_height, inner_radius, inner_row);
+      int inner_min_x = x + 1 + inner_inset;
+      int inner_max_x = x + width - inner_inset - 2;
+      fill_span(job, y + py, x + outer_inset, inner_min_x - 1, color);
+      fill_span(job, y + py, inner_max_x + 1, x + width - outer_inset - 1,
+                color);
     }
   }
   return 0;
@@ -2081,11 +2106,12 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
     lua_pushfstring(state, "display open failed: %d", result);
     return 2;
   }
-  lua_createtable(state, 0, 18);
+  lua_createtable(state, 0, 19);
   set_function(state, "clear", display_clear, job);
   set_function(state, "fill_rect", display_fill_rect, job);
   set_function(state, "draw_line", display_draw_line, job);
   set_function(state, "fill_circle", display_fill_circle, job);
+  set_function(state, "draw_circle", display_draw_circle, job);
   set_function(state, "fill_circle_aa", display_fill_circle_aa, job);
   set_function(state, "fade_to_black", display_fade_to_black, job);
   set_function(state, "fade_rect_to_black", display_fade_rect_to_black, job);
