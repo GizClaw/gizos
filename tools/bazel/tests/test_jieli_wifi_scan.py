@@ -15,12 +15,17 @@ class WifiScanTest(unittest.TestCase):
                        source.index("static void post_system_event")]
         scan = source[source.index("static int sta_scan("):
                       source.index("static int sta_connect(")]
+        status = source[source.index("static int sta_get_status("):
+                        source.index("static int sta_scan(")]
         stub = r'''
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include <assert.h>
 #include <string.h>
 static void scan_completed(void);
 static unsigned now, clears, requests, delivered;
+static struct { int on; h2_pal_wifi_sta_status_t sta; } wifi_state;
+static void update_sta_snapshot(void) {}
+static int wifi_is_on(void) { return 1; }
 static int request_error, complete_on_delay, complete_immediately;
 struct wifi_scan_ssid_info {
  unsigned ssid_len; char ssid[33]; unsigned char mac_addr[6];
@@ -48,10 +53,22 @@ static bool receive(void *user,const h2_pal_wifi_scan_entry_t *entry) {
 '''
         main = r'''
 int main(void) {
+ h2_pal_wifi_sta_status_t status;
+ wifi_state.on=1;
+ wifi_state.sta.state=H2_PAL_WIFI_STA_STATE_GOT_IP;
+ wifi_state.sta.ip_valid=1;
  assert(sta_scan(NULL,NULL,receive,NULL,0)==H2_PAL_ERR_TIMEOUT);
+ assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_SCANNING);
+ assert(status.ip_valid && wifi_state.sta.state==H2_PAL_WIFI_STA_STATE_GOT_IP);
  assert(clears==0 && requests==1 && scan_phase==SCAN_ABANDONED);
  assert(sta_scan(NULL,NULL,receive,NULL,10)==H2_PAL_ERR_BUSY && requests==1);
  scan_completed(); assert(clears==1 && scan_phase==SCAN_IDLE && delivered==0);
+ assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_GOT_IP);
+ scan_phase=SCAN_PENDING;
+ assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_SCANNING);
+ wifi_state.sta.state=H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+ scan_completed(); scan_phase=SCAN_IDLE;
+ assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_DISCONNECTED);
  scan_completed(); assert(clears==1); /* duplicate/unowned completion */
  complete_on_delay=1;
  assert(sta_scan(NULL,NULL,receive,NULL,20)==H2_PAL_OK);
@@ -70,7 +87,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory(prefix="h2-wifi-scan-") as directory:
             test = Path(directory) / "test.c"
-            test.write_text(stub + state + scan + main)
+            test.write_text(stub + state + status + scan + main)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             "-I" + str(ROOT / "libs/pal/include"), str(test),

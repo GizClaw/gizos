@@ -192,6 +192,12 @@ static int sta_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
   }
   update_sta_snapshot();
   *out_status = wifi_state.sta;
+  const unsigned phase = __atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE);
+  if (phase == SCAN_PENDING || phase == SCAN_ABANDONED) {
+    /* Report the live scan without overwriting association/IP state, which
+     * can continue to change through SDK events while scanning. */
+    out_status->state = H2_PAL_WIFI_STA_STATE_SCANNING;
+  }
   return H2_PAL_OK;
 }
 
