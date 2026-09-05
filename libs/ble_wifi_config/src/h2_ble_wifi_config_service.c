@@ -449,7 +449,8 @@ static void h2_ble_wifi_config_queue_progress(
     h2_ble_wifi_config_t *service,
     h2_ble_wifi_config_progress_t state) {
     h2_ble_wifi_config_lock(service);
-    if (!service->credentials_running || service->closing) {
+    if (!service->credentials_running || !service->progress_open ||
+        service->closing) {
         h2_ble_wifi_config_unlock(service);
         return;
     }
@@ -495,6 +496,14 @@ static void h2_ble_wifi_config_send_progress(
  * saw no progress at all.
  */
 static void h2_ble_wifi_config_drain_progress(h2_ble_wifi_config_t *service) {
+    /*
+     * Close intake first. Otherwise a transition arriving between the last
+     * pop and the final frame is accepted, then stranded: the attempt is over
+     * and it would either be discarded or arrive behind the verdict.
+     */
+    h2_ble_wifi_config_lock(service);
+    service->progress_open = false;
+    h2_ble_wifi_config_unlock(service);
     for (;;) {
         h2_ble_wifi_config_lock(service);
         if (service->progress_count == 0u) {
@@ -631,6 +640,7 @@ static void h2_ble_wifi_config_worker(void *ctx) {
             };
             service->credentials_pending = false;
             service->credentials_running = true;
+            service->progress_open = true;
             h2_ble_wifi_config_unlock(service);
             h2_ble_wifi_config_run_provision(service, &credentials, peer);
             h2_ble_wifi_config_lock(service);

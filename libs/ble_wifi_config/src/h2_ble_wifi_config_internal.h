@@ -115,6 +115,12 @@ struct h2_ble_wifi_config {
     bool credentials_running;
     h2_ble_wifi_config_credentials_t credentials;
     bool reject_pending;
+    /*
+     * Whether the running attempt still accepts station transitions. It is
+     * closed before the queue is drained, so nothing can be queued after the
+     * drain and then be stranded behind the final frame.
+     */
+    bool progress_open;
     /* Station transitions to forward as progress frames; see the worker. */
     h2_ble_wifi_config_progress_entry_t
         progress_queue[H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN];
