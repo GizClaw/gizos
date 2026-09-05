@@ -513,7 +513,7 @@ static void dispatch_provider_completions(h2_gizclaw_client_t *client, int resul
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
     h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
     if (entry->callback == NULL ||
-        (result == H2_PAL_OK && !entry->local_closed && !entry->failed))
+        (result != H2_PAL_ERR_CLOSED && !entry->local_closed && !entry->failed))
       continue;
     const h2_gizclaw_provider_completion_t done = *entry;
     memset(entry, 0, sizeof(*entry));
@@ -1834,6 +1834,8 @@ int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms) {
       h2_gizclaw_release_event_handle(client);
     }
   }
+  /* Pending channels survive non-terminal poll errors. A local channel close
+   * in an error poll is not success: the SDK also closes timed-out responses. */
   dispatch_provider_completions(client, h2_gizclaw_result_from_gzc(rc));
   return h2_gizclaw_result_from_gzc(rc);
 }
