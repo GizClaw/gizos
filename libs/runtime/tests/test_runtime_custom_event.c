@@ -592,8 +592,11 @@ static void *waiter_thread(void *user) {
         .payload = state->buffer.bytes,
         .payload_capacity = sizeof(state->buffer.bytes),
     };
-    state->result = h2_runtime_wait_event(
-        state->runtime, &state->event, H2_PAL_QUEUE_WAIT_FOREVER);
+    state->result =
+        h2_runtime_wait_notify(state->runtime, H2_PAL_QUEUE_WAIT_FOREVER);
+    if (state->result == H2_PAL_OK) {
+        state->result = h2_runtime_poll_event(state->runtime, &state->event);
+    }
     state->woke_at_ms = now_ms();
     return NULL;
 }
@@ -900,14 +903,24 @@ static void test_concurrent_producers_preserve_every_event(void) {
 
     uint32_t next_index[PRODUCER_COUNT] = { 0u };
     size_t received = 0u;
+    const uint64_t consume_started_ms = now_ms();
     h2_runtime_event_payload_buffer_t buffer;
     while (received < PRODUCER_COUNT * EVENTS_PER_PRODUCER) {
         h2_runtime_event_t event = {
             .payload = buffer.bytes,
             .payload_capacity = sizeof(buffer.bytes),
         };
-        h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 5000u);
-        assert(rc == H2_PAL_OK);
+        h2_pal_result_t rc = h2_runtime_poll_event(runtime, &event);
+        if (rc != H2_PAL_OK) {
+            /* Drained: block for the next wake. A wake whose event this
+             * loop already dequeued returns OK with nothing to poll; under
+             * contention that can repeat any number of times, so only the
+             * overall deadline bounds the loop. */
+            rc = h2_runtime_wait_notify(runtime, 5000u);
+            assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_TIMEOUT);
+            assert(now_ms() - consume_started_ms < 60000u);
+            continue;
+        }
         const h2_runtime_custom_event_payload_t *payload =
             custom_payload(&event);
         assert(payload->id == CUSTOM_EVENT_JOB_PROGRESS);
@@ -984,7 +997,150 @@ static void test_deinit_drains_in_flight_poster(void) {
     assert(state.result == H2_PAL_ERR_CLOSED);
 }
 
+typedef struct notify_waiter_state {
+    h2_runtime_t *runtime;
+    h2_pal_result_t result;
+    uint64_t woke_at_ms;
+} notify_waiter_state_t;
+
+static void *notify_waiter_thread(void *user) {
+    notify_waiter_state_t *state = (notify_waiter_state_t *)user;
+    state->result =
+        h2_runtime_wait_notify(state->runtime, H2_PAL_QUEUE_WAIT_FOREVER);
+    state->woke_at_ms = now_ms();
+    return NULL;
+}
+
+static void drain_wakes(h2_runtime_t *runtime) {
+    while (h2_runtime_wait_notify(runtime, H2_PAL_QUEUE_NO_WAIT) == H2_PAL_OK) {
+    }
+}
+
+/* Any number of notifies between two waits is one wake. */
+static void test_notify_coalesces_into_one_wake(void) {
+    custom_event_env_t env;
+    env_init(&env);
+    h2_runtime_t *runtime = env_runtime_create(&env, 8u);
+
+    assert(h2_runtime_wait_notify(runtime, H2_PAL_QUEUE_NO_WAIT) ==
+           H2_PAL_ERR_TIMEOUT);
+    for (unsigned i = 0u; i < 10u; ++i) {
+        assert(h2_runtime_notify(runtime) == H2_PAL_OK);
+    }
+    /* Kept while the loop was busy: returns without blocking. */
+    uint64_t started = now_ms();
+    assert(h2_runtime_wait_notify(runtime, H2_PAL_QUEUE_WAIT_FOREVER) ==
+           H2_PAL_OK);
+    assert(now_ms() - started < 1000u);
+    assert(h2_runtime_wait_notify(runtime, H2_PAL_QUEUE_NO_WAIT) ==
+           H2_PAL_ERR_TIMEOUT);
+    started = now_ms();
+    assert(h2_runtime_wait_notify(runtime, 30u) == H2_PAL_ERR_TIMEOUT);
+    assert(now_ms() - started >= 20u);
+
+    h2_runtime_deinit(runtime);
+}
+
+/* A wake never depends on event queue space. */
+static void test_notify_wakes_blocked_waiter_with_full_queue(void) {
+    custom_event_env_t env;
+    env_init(&env);
+    h2_runtime_t *runtime = env_runtime_create(&env, 2u);
+
+    const uint32_t value = 1u;
+    assert(post_value(runtime, CUSTOM_EVENT_JOB_PROGRESS, &value, sizeof(value)) ==
+           H2_PAL_OK);
+    assert(post_value(runtime, CUSTOM_EVENT_JOB_PROGRESS, &value, sizeof(value)) ==
+           H2_PAL_OK);
+    assert(post_value(runtime, CUSTOM_EVENT_JOB_PROGRESS, &value, sizeof(value)) ==
+           H2_PAL_ERR_FULL);
+    drain_wakes(runtime);
+
+    notify_waiter_state_t state = { .runtime = runtime, .result = H2_PAL_ERR_IO };
+    pthread_t waiter;
+    assert(pthread_create(&waiter, NULL, notify_waiter_thread, &state) == 0);
+    assert(env_sleep(NULL, 50u) == H2_PAL_OK);
+    const uint64_t notified_at_ms = now_ms();
+    assert(h2_runtime_notify(runtime) == H2_PAL_OK);
+    assert(pthread_join(waiter, NULL) == 0);
+    assert(state.result == H2_PAL_OK);
+    assert(state.woke_at_ms - notified_at_ms < 1000u);
+
+    /* The two queued events are still there, in order, for poll_event. */
+    h2_runtime_event_payload_buffer_t buffer;
+    h2_runtime_event_t event = {
+        .payload = buffer.bytes,
+        .payload_capacity = sizeof(buffer.bytes),
+    };
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(custom_payload(&event)->id == CUSTOM_EVENT_JOB_PROGRESS);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) != H2_PAL_OK);
+
+    h2_runtime_deinit(runtime);
+}
+
+/* Every producer path wakes a blocked wait_notify. */
+static void test_post_wakes_blocked_wait_notify(void) {
+    custom_event_env_t env;
+    env_init(&env);
+    h2_runtime_t *runtime = env_runtime_create(&env, 8u);
+
+    notify_waiter_state_t state = { .runtime = runtime, .result = H2_PAL_ERR_IO };
+    pthread_t waiter;
+    assert(pthread_create(&waiter, NULL, notify_waiter_thread, &state) == 0);
+    assert(env_sleep(NULL, 50u) == H2_PAL_OK);
+    const job_completion_event_t completion = { 1u, 2u, H2_PAL_OK };
+    const uint64_t posted_at_ms = now_ms();
+    assert(post_value(
+               runtime,
+               CUSTOM_EVENT_JOB_COMPLETED,
+               &completion,
+               sizeof(completion)) == H2_PAL_OK);
+    assert(pthread_join(waiter, NULL) == 0);
+    assert(state.result == H2_PAL_OK);
+    assert(state.woke_at_ms - posted_at_ms < 1000u);
+
+    h2_runtime_event_payload_buffer_t buffer;
+    h2_runtime_event_t event = {
+        .payload = buffer.bytes,
+        .payload_capacity = sizeof(buffer.bytes),
+    };
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(custom_payload(&event)->id == CUSTOM_EVENT_JOB_COMPLETED);
+
+    h2_runtime_deinit(runtime);
+}
+
+/* Once deinit closed the door, notify is refused instead of touching state,
+ * and a consumer still blocked in wait_notify is released with CLOSED. */
+static void test_close_releases_waiter_and_refuses_notify(void) {
+    custom_event_env_t env;
+    env_init(&env);
+    h2_runtime_t *runtime = env_runtime_create(&env, 8u);
+
+    assert(h2_runtime_notify(NULL) == H2_PAL_ERR_INVALID_ARG);
+    notify_waiter_state_t state = { .runtime = runtime, .result = H2_PAL_ERR_IO };
+    pthread_t waiter;
+    assert(pthread_create(&waiter, NULL, notify_waiter_thread, &state) == 0);
+    assert(env_sleep(NULL, 50u) == H2_PAL_OK);
+    const uint64_t closed_at_ms = now_ms();
+    h2_runtime_custom_event_close(runtime);
+    assert(pthread_join(waiter, NULL) == 0);
+    assert(state.result == H2_PAL_ERR_CLOSED);
+    assert(state.woke_at_ms - closed_at_ms < 1000u);
+    assert(h2_runtime_wait_notify(runtime, H2_PAL_QUEUE_WAIT_FOREVER) ==
+           H2_PAL_ERR_CLOSED);
+    assert(h2_runtime_notify(runtime) == H2_PAL_ERR_INVALID_STATE);
+
+    h2_runtime_deinit(runtime);
+}
+
 int main(void) {
+    test_notify_coalesces_into_one_wake();
+    test_notify_wakes_blocked_waiter_with_full_queue();
+    test_post_wakes_blocked_wait_notify();
+    test_close_releases_waiter_and_refuses_notify();
     test_custom_event_wakes_indefinite_wait();
     test_custom_event_payload_is_copied();
     test_custom_events_keep_fifo_order();

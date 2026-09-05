@@ -38,14 +38,19 @@ static void push_event(h2_runtime_event_kind_t kind) {
     s_test.events[s_test.event_write++] = kind;
 }
 
-h2_pal_result_t h2_runtime_wait_event(
-    h2_runtime_t *runtime,
-    h2_runtime_event_t *out_event,
-    uint32_t timeout_ms) {
+h2_pal_result_t h2_runtime_wait_notify(h2_runtime_t *runtime, uint32_t timeout_ms) {
     (void)runtime;
     (void)timeout_ms;
+    return s_test.event_read == s_test.event_write ? H2_PAL_ERR_TIMEOUT
+                                                   : H2_PAL_OK;
+}
+
+h2_pal_result_t h2_runtime_poll_event(
+    h2_runtime_t *runtime,
+    h2_runtime_event_t *out_event) {
+    (void)runtime;
     if (out_event == NULL || s_test.event_read == s_test.event_write) {
-        return H2_PAL_ERR_TIMEOUT;
+        return H2_PAL_ERR_WOULD_BLOCK;
     }
     out_event->kind = s_test.events[s_test.event_read++];
     out_event->payload_size = 0u;

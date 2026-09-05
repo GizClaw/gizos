@@ -151,8 +151,10 @@ int main(void) {
         .payload = payload,
         .payload_capacity = sizeof(payload),
     };
-    h2_pal_result_t event_result = h2_runtime_wait_event(runtime, &event, 100u);
-    if (event_result == H2_PAL_OK) {
+    /* Drain before waiting: a half-drained queue has no pending wake. */
+    h2_pal_result_t event_result = H2_PAL_OK;
+    while (!saw_action &&
+           h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
       if (event.kind == H2_RUNTIME_COMPONENT_EVENT_ERROR) {
         h2_pal_result_t input_error = H2_PAL_ERR_INVALID_STATE;
         if (event.payload_size == sizeof(input_error)) {
@@ -180,10 +182,11 @@ int main(void) {
         saw_action |= h2_runtime_button_action_is_released(&button_action);
       }
     }
-    if (result != H2_PAL_OK) {
+    if (result != H2_PAL_OK || saw_action) {
       break;
     }
-    if (event_result != H2_PAL_ERR_WOULD_BLOCK &&
+    event_result = h2_runtime_wait_notify(runtime, 100u);
+    if (event_result != H2_PAL_OK && event_result != H2_PAL_ERR_WOULD_BLOCK &&
         event_result != H2_PAL_ERR_TIMEOUT) {
       result = event_result;
       break;

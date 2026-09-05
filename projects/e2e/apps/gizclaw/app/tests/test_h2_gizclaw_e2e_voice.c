@@ -299,9 +299,7 @@ static int emit_reply(h2_gizclaw_conversation_t *value) {
   if (s_mode != SILENT_REPLY)
     pcm[0] = 1u;
   assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) == H2_PAL_OK);
-  event.kind = H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO;
-  event.audio = pcm;
-  event.audio_len = sizeof(pcm);
+  event.kind = H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED;
   int rc = value->callback(value->user, value, &event);
   if (rc != H2_PAL_OK)
     return rc;

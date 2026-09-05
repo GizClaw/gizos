@@ -101,17 +101,11 @@ typedef struct test_env {
 
 static test_env_t *s_env;
 static atomic_uint s_queue_send_timeout_ms;
-static atomic_uint s_runtime_post_count;
-static h2_runtime_custom_event_id_t s_runtime_event_id;
+static atomic_uint s_runtime_notify_count;
 
-static h2_pal_result_t
-fake_runtime_post(h2_runtime_t *runtime,
-                  const h2_runtime_custom_event_t *event) {
+static void fake_runtime_notify(h2_runtime_t *runtime) {
   assert(runtime == (h2_runtime_t *)s_env);
-  assert(event != NULL && event->payload == NULL && event->payload_size == 0u);
-  s_runtime_event_id = event->id;
-  atomic_fetch_add_explicit(&s_runtime_post_count, 1u, memory_order_release);
-  return H2_PAL_OK;
+  atomic_fetch_add_explicit(&s_runtime_notify_count, 1u, memory_order_release);
 }
 
 static int test_queue_create(void *user, const h2_pal_queue_config_t *config,
@@ -676,7 +670,7 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   h2_gizclaw_service_test_set_client_ops(&s_client_ops);
   /* The test thread is the App: it owns dispatch through service_poll(), and
    * the Service signals dispatch work through the (fake) Runtime. */
-  h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
+  h2_gizclaw_service_test_set_runtime_notify(fake_runtime_notify);
 
   static h2_gizclaw_config_t client_config;
   memset(&client_config, 0, sizeof(client_config));
@@ -744,14 +738,16 @@ static void test_fifo_capacity_and_dispatch(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
-static void test_runtime_dispatch_wakeup_is_coalesced(void) {
+/* Every piece of dispatch work wakes the Runtime; the Runtime, not the
+ * service, coalesces those wakes, and a poll whose budget leaves work pending
+ * wakes it once more. */
+static void test_runtime_dispatch_notifies_runtime(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 2u);
   service->config.runtime = (h2_runtime_t *)&env;
   service->config.on_event = NULL;
-  atomic_store_explicit(&s_runtime_post_count, 0u, memory_order_relaxed);
-  s_runtime_event_id = 0u;
-  h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
+  atomic_store_explicit(&s_runtime_notify_count, 0u, memory_order_relaxed);
+  h2_gizclaw_service_test_set_runtime_notify(fake_runtime_notify);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
 
   h2_gizclaw_operation_t *first = NULL;
@@ -774,23 +770,24 @@ static void test_runtime_dispatch_wakeup_is_coalesced(void) {
     sched_yield();
   }
   assert(both_ready);
-  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) ==
-         1u);
-  assert(s_runtime_event_id == H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY);
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) ==
+         2u);
 
   size_t dispatched = 0u;
   assert(h2_gizclaw_service_poll(service, 1u, &dispatched) == H2_PAL_OK);
   assert(dispatched == 1u);
-  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) ==
-         2u);
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) ==
+         3u);
   assert(h2_gizclaw_service_poll(service, 2u, &dispatched) == H2_PAL_OK);
   assert(dispatched == 1u);
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) ==
+         3u);
   assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
          2u);
 
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-  h2_gizclaw_service_test_set_runtime_post(NULL);
+  h2_gizclaw_service_test_set_runtime_notify(NULL);
 }
 
 static void test_pending_operation_does_not_block_following_work(void) {
@@ -5034,7 +5031,7 @@ static void test_sync_helper_from_job_task_while_app_polls(void) {
    * task never dispatched either, so the bytes came through the App poll. */
   assert(wire.bytes_written == 3u && memcmp(wire.bytes, data, 3u) == 0);
   assert(wire.destroy_count == 1);
-  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) >=
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) >=
          1u);
   /* Drain the retire item left for the App task before deinit. */
   for (;;) {
@@ -6115,7 +6112,9 @@ typedef struct conversation_test {
   atomic_uint starts, joins;
   atomic_uint turns_done;
   uint8_t pending[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
-  size_t pending_len, read_offset, write_offset, hook_offset;
+  size_t pending_len, read_offset, write_offset;
+  /* REPLY_AUDIO_STARTED events the hook observed. */
+  unsigned audio_started;
   uint8_t output[16000];
   size_t packets;
   unsigned event_close_count, mode;
@@ -6482,19 +6481,20 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
   assert(pthread_equal(pthread_self(), test->app_thread));
   if (test->mode == 20) {
     assert(event->kind != H2_GIZCLAW_CONVERSATION_EVENT_ERROR);
-    if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO) {
-      test->hook_offset += event->audio_len;
+    if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED) {
+      ++test->audio_started;
     } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE) {
       ++test->reply_text_ends;
     } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
       unsigned turn = atomic_load(&test->turns_done) + 1u;
       assert(turn <= 2u);
+      /* Each reply announced its audio once, before its own boundary. */
+      assert(test->audio_started == turn);
       if (turn == 1u) {
-        /* The interrupted reply: every first-burst chunk was decoded and
-         * observed by the hook, but the speaker Track holds none of it. Both
-         * discards ran (the Track tail at staging, and the frames that
-         * drained behind the EOS marker at dispatch). */
-        assert(test->hook_offset == 12u * 640u);
+        /* The interrupted reply: every first-burst chunk was decoded into
+         * the speaker Track, which now holds none of it. Both discards ran
+         * (the Track tail at staging, and the frames that drained behind the
+         * EOS marker at dispatch). */
         uint8_t probe[2];
         assert(h2_gizclaw_pcm_track_read(test->owned_track, probe,
                                          sizeof(probe)) ==
@@ -6517,8 +6517,10 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
     }
     if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
       unsigned turn = atomic_load(&test->turns_done) + 1u;
-      assert(turn <= 2u && test->hook_offset == turn * 1280u);
-      assert(atomic_load(&test->written) == test->hook_offset);
+      /* Every chunk of the reply is in the Track before its boundary, and
+       * the reply announced its audio exactly once. */
+      assert(turn <= 2u && test->audio_started == turn);
+      assert(atomic_load(&test->written) == turn * 1280u);
       atomic_store(&test->turns_done, turn);
     }
   }
@@ -6538,13 +6540,15 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
     /* The network has freed its wire state while this hook is still running. */
     assert(memcmp(event->text, "borrowed-wire-text", event->text_len) == 0);
   }
-  if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO) {
-    assert(event->audio_len <= atomic_load(&test->written) - test->hook_offset);
-    assert(memcmp(event->audio, test->output + test->hook_offset,
-                  event->audio_len) == 0);
-    test->hook_offset += event->audio_len;
+  if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED) {
+    /* Announced once per reply, only after the first chunk hit the Track. */
+    assert(atomic_load(&test->written) >= 640u);
+    assert(++test->audio_started == atomic_load(&test->turns_done) + 1u);
     if (test->mode == 8)
       return H2_PAL_ERR_IO;
+  } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
+    /* Audio, when any was decoded, was announced before the boundary. */
+    assert((test->audio_started != 0u) == (atomic_load(&test->written) != 0u));
   }
   return H2_PAL_OK;
 }
@@ -6909,7 +6913,7 @@ static void test_conversation_public_audio_tasks(void) {
              spins++ < 2000)
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
       assert(spins < 2000);
-      assert(test.hook_offset == 0 && test.filler_callbacks == 0);
+      assert(test.audio_started == 0 && test.filler_callbacks == 0);
       conversation_test_probe(&test); /* No application poll has run yet. */
       assert(conversation_test_notification_count(&test) ==
              (mode == 10 ? 8 : 1));
@@ -6922,7 +6926,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         for (spins = 0; spins < 2000 && !atomic_load(&test.eos); ++spins)
           h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
-        assert(atomic_load(&test.eos) && test.hook_offset == 0);
+        assert(atomic_load(&test.eos) && test.audio_started == 0);
       }
       if (mode == 11) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
@@ -6986,18 +6990,17 @@ static void test_conversation_public_audio_tasks(void) {
       if (mode == 0 &&
           (atomic_load(&test.echo_blocked) || input_ended))
         atomic_store(&test.playback_blocked, false);
-      /* Mode 18: the app stops polling, so the hook ring fills after 16
-       * chunks. Decoding must still deliver every chunk to the speaker Track;
-       * a decoder gated on the hook would leave `written` short forever. */
+      /* Mode 18: the app does not poll while twenty chunks decode. Every
+       * chunk still reaches the speaker Track, and the whole reply leaves
+       * exactly one notification (REPLY_AUDIO_STARTED) waiting for the app,
+       * not one per chunk. */
       if (mode == 18 &&
           (atomic_load(&test.written) < 20u * 640u || hook_settle++ < 50u)) {
-        /* `written` is stored by the Track write that precedes the hook ring
-         * write for the same chunk. Let the decoder finish that last hook
-         * write, and the network tick stage its one chunk, before the first
-         * poll drains the ring, so the count below is exactly what fit. */
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
         continue;
       }
+      if (mode == 18 && hook_settle == 51u)
+        assert(conversation_test_notification_count(&test) == 1u);
       size_t dispatched;
       assert(h2_gizclaw_service_poll(service, 32, &dispatched) == H2_PAL_OK);
       h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
@@ -7036,12 +7039,12 @@ static void test_conversation_public_audio_tasks(void) {
       assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 15u);
       assert(test.reply_text_ends == 2u && test.transcript_text_ends == 2u);
       assert(test.packets == 4u && atomic_load(&test.written) == 2560u);
-      assert(test.hook_offset == 2560u && test.bos_attempts == 1u);
+      assert(test.audio_started == 2u && test.bos_attempts == 1u);
     }
     if (mode == 0 || mode == 3 || mode == 4 || mode == 6 || mode == 7 ||
         mode == 9 || mode == 10 || mode == 17) {
       assert(test.packets == 13 && atomic_load(&test.written) == 13 * 640);
-      assert(test.hook_offset == (mode == 3 || mode == 17 ? 0 : 13 * 640));
+      assert(test.audio_started == (mode == 3 || mode == 17 ? 0u : 1u));
       size_t nonzero = 0;
       for (size_t i = 0; i < test.write_offset; ++i)
         nonzero += test.output[i] != 0;
@@ -7059,11 +7062,10 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.filler_callbacks == 8);
     if (mode == 18) {
       /* Every chunk reached the speaker Track with no app poll in between;
-       * decoding never waited on the hook. The hook kept only the contiguous
-       * prefix that fit: sixteen chunks in its ring plus the one chunk the
-       * network tick had already staged for dispatch. The rest coalesced. */
+       * decoding never waited on the app, and the app saw the reply start
+       * once. */
       assert(test.packets == 20u && atomic_load(&test.written) == 20u * 640u);
-      assert(test.hook_offset == 17u * 640u);
+      assert(test.audio_started == 1u);
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 19) {
@@ -7072,17 +7074,17 @@ static void test_conversation_public_audio_tasks(void) {
        * and the conversation completed normally instead of failing. */
       assert(test.loss_markers == 1u && test.packets == 13u);
       assert(atomic_load(&test.written) == 14u * 640u);
-      assert(test.hook_offset == 14u * 640u);
+      assert(test.audio_started == 1u);
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 11 || mode == 12)
-      assert(test.hook_offset == 0);
+      assert(test.audio_started == 0u);
     if (mode == 20) {
-      /* Both replies reached the hook; the speaker Track holds exactly the
-       * second reply, the interrupted first reply was discarded. */
+      /* Both replies announced their audio; the speaker Track holds exactly
+       * the second reply, the interrupted first reply was discarded. */
       assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 6u);
       assert(test.reply_text_ends == 1u && test.packets == 16u);
-      assert(test.hook_offset == 16u * 640u && test.result == H2_PAL_OK);
+      assert(test.audio_started == 2u && test.result == H2_PAL_OK);
       assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 4u * 640u) ==
              H2_PAL_OK);
       assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 2u) ==
@@ -8413,7 +8415,7 @@ int main(int argc, char **argv) {
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();
-  test_runtime_dispatch_wakeup_is_coalesced();
+  test_runtime_dispatch_notifies_runtime();
   test_pending_operation_does_not_block_following_work();
   test_queued_cancel_and_stop_drain();
   test_stop_cancels_running_without_inline_callback();

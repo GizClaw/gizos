@@ -45,9 +45,7 @@ typedef struct voice_state {
   atomic_int hook_error, terminal_result, terminal_kind;
   atomic_uint completions, rounds;
   uint64_t generation;
-  bool round_text_seen, round_text_done, round_non_silent;
-  size_t round_audio;
-  size_t hook_audio_total;
+  bool round_text_seen, round_text_done, round_audio_started;
   uint8_t *response;
   h2_gizclaw_resp_storage_t storage;
   history_snapshot_t before;
@@ -305,17 +303,6 @@ static int check_idle_track(h2_gizclaw_track_t *track) {
              : H2_PAL_ERR_INVALID_STATE;
 }
 
-static int drain_speaker(voice_state_t *state, size_t expected) {
-  uint64_t started = 0u;
-  int rc = clock_now(state, &started);
-  while (rc == H2_PAL_OK && atomic_load(&state->written) < expected) {
-    rc = within(state, started, HISTORY_TIMEOUT_MS);
-    if (rc == H2_PAL_OK)
-      rc = step(state);
-  }
-  return rc;
-}
-
 static int drain_completed_output(voice_state_t *state) {
   /* The producer has completed. At most 1024 bytes remain in this test's
    * Track, so two paced speaker frames drain the accepted tail. */
@@ -352,26 +339,21 @@ static h2_pal_result_t on_event(void *user,
         event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE)
       state->round_text_done = true;
     break;
-  case H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO:
-    if (event->audio == NULL || event->audio_len == 0u ||
-        (event->audio_len & 1u) != 0u) {
-      rc = H2_PAL_ERR_FORMAT;
-      break;
-    }
-    state->round_audio += event->audio_len;
-    state->hook_audio_total += event->audio_len;
-    for (size_t i = 0u; i < event->audio_len; ++i)
-      state->round_non_silent |= event->audio[i] != 0u;
+  case H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED:
+    /* Once per reply; the PCM itself only travels through the Track, where
+     * the speaker pump checks it for silence. */
+    if (state->round_audio_started)
+      rc = H2_PAL_ERR_INVALID_STATE;
+    state->round_audio_started = true;
     break;
   case H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE:
     if (!state->round_text_seen || !state->round_text_done ||
-        !state->round_non_silent || state->round_audio == 0u)
+        !state->round_audio_started)
       rc = H2_PAL_ERR_INVALID_STATE;
     if (rc == H2_PAL_OK)
       atomic_fetch_add(&state->rounds, 1u);
-    state->round_text_seen = state->round_text_done = state->round_non_silent =
-        false;
-    state->round_audio = 0u;
+    state->round_text_seen = state->round_text_done =
+        state->round_audio_started = false;
     break;
   case H2_GIZCLAW_CONVERSATION_EVENT_ERROR:
     rc = H2_GIZCLAW_ERR_REMOTE;
@@ -406,10 +388,8 @@ static void reset_capture(voice_state_t *state, bool realtime) {
   state->capture_clock_started = false;
   state->emitted_bytes = state->read_offset = state->read_round = 0u;
   state->mic_pending_len = state->mic_voice_len = 0u;
-  state->round_text_seen = state->round_text_done = state->round_non_silent =
+  state->round_text_seen = state->round_text_done = state->round_audio_started =
       false;
-  state->round_audio = 0u;
-  state->hook_audio_total = 0u;
   atomic_store(&state->clips_allowed, 1u);
   atomic_store(&state->captured, 0u);
   atomic_store(&state->written, 0u);
@@ -520,17 +500,21 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
       rc = step(state);
   }
   atomic_store(&state->capture_enabled, false);
-  /* PTT plays every announced chunk to the end. A realtime hangup discards
-   * whatever the Track still queued at cancel, so the speaker may finish a
-   * frame or two short of the hook total but never ahead of it. */
+  /* The reply PCM never leaves the Track through events, so the speaker
+   * pump is the only playback record: PTT keeps pumping until completion
+   * and drains the accepted tail; a realtime hangup discards whatever the
+   * Track still queued at cancel. Either way the Track ends empty. */
   if (rc == H2_PAL_OK)
-    rc = realtime ? drain_completed_output(state)
-                  : drain_speaker(state, state->hook_audio_total);
+    rc = drain_completed_output(state);
   const size_t written = atomic_load(&state->written);
+  uint8_t leftover[2];
+  /* Playback evidence comes from the speaker pump: write_pcm() counts every
+   * frame it read from the Track and flags any non-zero sample, so an
+   * all-zero reply (SILENT_REPLY) fails here even though it drained. */
   const bool playback_matches =
-      realtime ? written <= state->hook_audio_total &&
-                     written + 2u * FRAME_BYTES >= state->hook_audio_total
-               : written == state->hook_audio_total;
+      rc == H2_PAL_OK && written != 0u && atomic_load(&state->non_silent) &&
+      h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover)) ==
+          H2_PAL_ERR_WOULD_BLOCK;
   if (rc == H2_PAL_OK &&
       (!ended || atomic_load(&state->completions) != 1u ||
        atomic_load(&state->terminal_kind) !=
@@ -554,10 +538,10 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
            realtime ? "conversation_cancel-assert" : "service_audio_end-assert",
            rc);
   printf("H2_GIZCLAW_E2E stage=voice mode=%s result=%s rc=%d rounds=%u "
-         "capture_bytes=%zu playback_bytes=%zu hook_bytes=%zu\n",
+         "capture_bytes=%zu playback_bytes=%zu\n",
          realtime ? "realtime-vad" : "ptt", rc == H2_PAL_OK ? "PASS" : "FAIL",
          rc, atomic_load(&state->rounds), atomic_load(&state->captured),
-         atomic_load(&state->written), state->hook_audio_total);
+         atomic_load(&state->written));
   return rc;
 }
 

@@ -20,10 +20,6 @@ typedef struct h2_gizclaw_service h2_gizclaw_service_t;
 typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
 
-/** Runtime wakeup posted when caller-thread dispatch becomes ready. */
-#define H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY                              \
-  H2_RUNTIME_CUSTOM_EVENT_ID(0x4743u, 1u)
-
 /** A valid RPC error response, distinct from PAL transport/format failures.
  * A canonical NOT_FOUND status instead returns H2_PAL_ERR_NOT_FOUND from
  * req_wait, response parsers and synchronous RPCs. UNIMPLEMENTED and all other
@@ -88,9 +84,9 @@ typedef struct h2_gizclaw_service_config {
   const h2_pal_task_api_t *task;
   const h2_pal_queue_api_t *queue;
   const h2_pal_sync_api_t *sync;
-  /** Optional Runtime event destination. When set, the Service posts one
-   * coalesced H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY event when caller-thread
-   * work becomes available. The Runtime must outlive the Service. */
+  /** Optional Runtime to wake. When set, the Service calls
+   * h2_runtime_notify() whenever caller-thread work becomes available; the
+   * Runtime coalesces those wakes. The Runtime must outlive the Service. */
   h2_runtime_t *runtime;
   /** Stack requirements for the system-owned `$gizclaw/net` task. */
   h2_pal_task_options_t net_task_options;
@@ -184,11 +180,10 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t *request);
  * The connection-terminal hook shares this budget and is included in
  * `out_dispatched`; when the budget is exhausted it waits for a later poll.
  *
- * When config.runtime is set, call this after receiving a Runtime custom event
- * whose id is H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY. The notification is
- * coalesced: one event means "dispatch work exists", not "one callback exists".
- * This function rearms another event when its callback budget leaves work
- * pending.
+ * When config.runtime is set, call this after every h2_runtime_wait_notify()
+ * return (the Service wakes the Runtime without posting an event). A wake
+ * means "dispatch work may exist", not "one callback exists". This function
+ * wakes the Runtime again when its callback budget leaves work pending.
  *
  * This API has one consumer and must not be called recursively. A callback may
  * create/submit requests, cancel or release handles, and stop the service. It

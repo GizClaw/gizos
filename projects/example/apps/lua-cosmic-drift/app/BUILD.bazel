@@ -1,0 +1,46 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_lua_resource(
+    name = "cosmic_drift_script",
+    src = "//projects/example/apps/lua-cosmic-drift:data/skills/cosmic-drift/scripts/main.lua",
+    symbol = "cosmic_drift_script",
+)
+
+cc_library(
+    name = "lua_cosmic_drift",
+    srcs = ["src/h2_lua_cosmic_drift.c"],
+    hdrs = ["include/h2_lua_cosmic_drift.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    tags = ["h2-ci-native-package"],
+    deps = [
+        ":cosmic_drift_script",
+        "//libs/lua",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "lua_cosmic_drift_test",
+    srcs = ["tests/test_h2_lua_cosmic_drift.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":lua_cosmic_drift",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/example/libs/host_runtime",
+    ],
+)
