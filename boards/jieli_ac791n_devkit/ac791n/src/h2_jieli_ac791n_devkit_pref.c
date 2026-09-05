@@ -348,7 +348,8 @@ static int write_record(
     if (result == H2_PAL_OK) result = close_result;
   }
   if (result == H2_PAL_OK) {
-    (void)lfs_remove(&pref_lfs, path);
+    /* littlefs replaces an existing destination in the rename transaction.
+     * Removing it first loses the old record if rename fails or power is lost. */
     result = map_lfs_error(lfs_rename(&pref_lfs, temporary, path));
   } else {
     (void)lfs_remove(&pref_lfs, temporary);
