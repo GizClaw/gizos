@@ -295,8 +295,6 @@ h2_gizclaw_service_pcm_write_internal(h2_gizclaw_service_t *service,
  * the previous request so its tail cannot play over the next turn. */
 void h2_gizclaw_service_pcm_discard_downlink_internal(
     h2_gizclaw_service_t *service);
-bool h2_gizclaw_service_pcm_downlink_stats_internal(
-    h2_gizclaw_service_t *service, size_t *out_used, size_t *out_capacity);
 bool h2_gizclaw_service_pcm_readable_internal(h2_gizclaw_service_t *service);
 typedef enum h2_gizclaw_pcm_input_action {
   H2_GIZCLAW_PCM_INPUT_START,
