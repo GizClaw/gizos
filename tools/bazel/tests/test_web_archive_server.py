@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from http.client import HTTPConnection
 from io import BytesIO
 from pathlib import Path
 import tarfile
@@ -183,12 +184,25 @@ class WebArchiveServerTest(unittest.TestCase):
                     {"Transfer-Encoding": "chunked", "Content-Length": "5"},
                 ):
                     with self.subTest(headers=headers):
-                        invalid = Request(request.full_url, data=b"0\r\n\r\n",
-                                          headers=headers, method="POST")
-                        with self.assertRaises(HTTPError) as raised:
-                            urlopen(invalid, timeout=5)
-                        self.assertEqual(raised.exception.code, 400)
-                        self.assertEqual(received, {})
+                        # The server rejects Transfer-Encoding from the headers
+                        # without consuming a body. Sending a body concurrently
+                        # can race its close and fail in the client with EPIPE.
+                        connection = HTTPConnection(
+                            "127.0.0.1", server.server_address[1], timeout=5
+                        )
+                        try:
+                            connection.putrequest(
+                                "POST", f"/_h2/http-proxy?url={target}"
+                            )
+                            for name, value in headers.items():
+                                connection.putheader(name, value)
+                            connection.endheaders()
+                            with connection.getresponse() as response:
+                                self.assertEqual(response.status, 400)
+                                response.read()
+                            self.assertEqual(received, {})
+                        finally:
+                            connection.close()
             finally:
                 server.shutdown()
                 server.server_close()
