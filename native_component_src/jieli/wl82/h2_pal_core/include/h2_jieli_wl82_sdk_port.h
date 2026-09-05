@@ -30,9 +30,12 @@ void *h2_jieli_sdk_malloc(size_t size);
 void *h2_jieli_sdk_realloc(void *ptr, size_t size);
 void h2_jieli_sdk_free(void *ptr);
 
-/* ---- Debug UART ---------------------------------------------------------- */
+/* ---- Layout-selected debug output ---------------------------------------- */
 
-/** Writes raw bytes to the SDK debug UART (blocking, ISR-unsafe). */
+/** Writes length-delimited log text through the SDK buffered debug producer.
+ * The text excludes embedded NUL bytes; no trailing NUL is required. The board
+ * layout selects UART/USB delivery. This is not a binary transport and is
+ * ISR-unsafe; delivery remains subject to the SDK debug configuration. */
 void h2_jieli_sdk_debug_write(const char *data, size_t length);
 
 /* ---- Time ---------------------------------------------------------------- */

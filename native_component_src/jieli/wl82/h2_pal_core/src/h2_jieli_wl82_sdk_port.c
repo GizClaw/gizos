@@ -8,6 +8,7 @@
  */
 
 #include "h2_jieli_wl82_sdk_port.h"
+#include "h2_jieli_wl82_platform_core.h"
 
 #include "system/includes.h"
 #include "system/timer.h"
@@ -83,14 +84,26 @@ void h2_jieli_sdk_free(void *ptr)
     }
 }
 
-/* ---- Debug UART ---------------------------------------------------------- */
+/* ---- Layout-selected debug output ---------------------------------------- */
 
 void h2_jieli_sdk_debug_write(const char *data, size_t length)
 {
     if (data == NULL || length == 0u) {
         return;
     }
-    put_buf((const u8 *)data, (int)length);
+    /* This is text, not an SDK buffer dump. Copy the length-delimited input
+     * before using %s: callers need not provide a trailing NUL. A PAL log
+     * line fits in one call, retaining the SDK's normal buffered producer
+     * and the layout-selected UART/USB drain and protocol write lock. */
+    char text[H2_JIELI_WL82_LOG_LINE_MAX + 1u];
+    while (length != 0u) {
+        size_t take = length < sizeof(text) - 1u ? length : sizeof(text) - 1u;
+        memcpy(text, data, take);
+        text[take] = '\0';
+        (void)printf("%s", text);
+        data += take;
+        length -= take;
+    }
 }
 
 /* ---- Time ---------------------------------------------------------------- */
