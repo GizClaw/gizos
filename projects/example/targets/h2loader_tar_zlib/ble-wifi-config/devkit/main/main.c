@@ -64,6 +64,14 @@ static void image_entry(void *user) {
         printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_LOADER_ADV stage=resumed rc=%d\n",
                resume_rc);
         fflush(stdout);
+        /*
+         * A failed resume leaves the loader's BLE command transport down, so
+         * the image must not report success. The provisioning result wins when
+         * it already failed: that is the more specific outcome.
+         */
+        if (rc == H2_PAL_OK && resume_rc != H2_PAL_OK) {
+            rc = resume_rc;
+        }
     }
     printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_DONE rc=%d\n", rc);
     fflush(stdout);

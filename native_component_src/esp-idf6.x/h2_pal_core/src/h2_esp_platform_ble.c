@@ -1,7 +1,9 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
-#include "h2_esp_ble_indication_tracker.h"
+#include "h2_esp_ble_adv_stop.h"
 #include "h2_esp_ble_exact_adapter.h"
+#include "h2_esp_ble_gatt_schema.h"
+#include "h2_esp_ble_indication_tracker.h"
 #include "h2_esp_ble_pair_tracker.h"
 
 #include "sdkconfig.h"
@@ -47,17 +49,7 @@
     (BIT6 << ((instance) - 1u))
 #define H2_ESP_BLE_MAX_VALUE_LEN H2_PAL_BLE_ATT_MAX_VALUE_LEN
 #define H2_ESP_BLE_MAX_DISCOVERY_ENTRIES 8u
-#define H2_ESP_BLE_MAX_GATT_SERVICES 2u
-/*
- * Three, because libs/ble_wifi_config publishes a command, a scan and a
- * provisioning characteristic in one service; two rejected that service with
- * H2_PAL_ERR_UNSUPPORTED. Every table below is sized off this macro, so the
- * only cost of a slot is static storage.
- */
-#define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 3u
-#define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS \
-    (H2_ESP_BLE_MAX_GATT_SERVICES * \
-     H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
+/* Schema capacity and slot mapping live in h2_esp_ble_gatt_schema.h. */
 #define H2_ESP_BLE_SCAN_SOURCE_ID 1u
 #define H2_ESP_BLE_GAP_STOP_TIMEOUT_MS 6000u
 #define H2_ESP_BLE_LL_DATA_LEN 251u
@@ -699,8 +691,7 @@ static void h2_esp_ble_update_out_handles(void) {
         if (s_h2_esp_ble_out_service_handle[service] == NULL) {
             continue;
         }
-        size_t first =
-            service * H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
+        size_t first = h2_esp_ble_gatt_schema_slot(service, 0u);
         uint16_t value_handle = s_h2_esp_ble_value_handle[first];
         *s_h2_esp_ble_out_service_handle[service] =
             value_handle >= 2u ? (uint16_t)(value_handle - 2u) : 0u;
@@ -1863,7 +1854,8 @@ static h2_pal_result_t h2_esp_ble_stop_advertising(h2_pal_ble_t *ble) {
 #if CONFIG_BT_NIMBLE_EXT_ADV
     if (s_h2_esp_ble_ext_adv_configured) {
         rc = ble_gap_ext_adv_stop(H2_ESP_BLE_EXT_ADV_INSTANCE);
-        if (rc == 0 || rc == BLE_HS_EALREADY) {
+        if (h2_esp_ble_adv_stop_classify(rc, BLE_HS_EALREADY) ==
+            H2_ESP_BLE_ADV_STOP_COMPLETED) {
             h2_esp_ble_complete_advertising();
             return H2_PAL_OK;
         }
@@ -1871,15 +1863,8 @@ static h2_pal_result_t h2_esp_ble_stop_advertising(h2_pal_ble_t *ble) {
 #endif
     {
         rc = ble_gap_adv_stop();
-        /*
-         * NimBLE reports BLE_GAP_EVENT_ADV_COMPLETE only when advertising ends
-         * on its own or on a connection. A successful ble_gap_adv_stop() ends
-         * it synchronously and emits nothing, so waiting for that event made
-         * every explicit stop burn the full GAP timeout and then fail with
-         * H2_PAL_ERR_TIMEOUT. The extended path above already completes
-         * inline for the same reason.
-         */
-        if (rc == 0 || rc == BLE_HS_EALREADY) {
+        if (h2_esp_ble_adv_stop_classify(rc, BLE_HS_EALREADY) ==
+            H2_ESP_BLE_ADV_STOP_COMPLETED) {
             h2_esp_ble_complete_advertising();
             return H2_PAL_OK;
         }
@@ -2383,8 +2368,7 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
     }
     if (services == NULL || count != 1u || services[0].characteristics == NULL ||
         services[0].characteristic_count == 0u ||
-        services[0].characteristic_count >
-            H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE) {
+        !h2_esp_ble_gatt_schema_accepts(count, services[0].characteristic_count)) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     ble_uuid_any_t service_uuid;
@@ -2432,8 +2416,7 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
         (void)xSemaphoreGive(s_h2_esp_ble_gatt_mutex);
         return H2_PAL_ERR_INVALID_STATE;
     }
-    size_t first =
-        service_index * H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
+    size_t first = h2_esp_ble_gatt_schema_slot(service_index, 0u);
     for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
         if (!add_service &&
             ble_uuid_cmp(
