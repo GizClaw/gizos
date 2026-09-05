@@ -112,7 +112,8 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     }
     if (runtime->ble_host == NULL || runtime->wifi_sta == NULL ||
         runtime->task == NULL || runtime->sync == NULL ||
-        runtime->system_event == NULL || runtime->mem == NULL) {
+        runtime->system_event == NULL || runtime->mem == NULL ||
+        runtime->time == NULL) {
         printf("H2_SMOKE_BLE_WIFI_CONFIG stage=capabilities rc=%d\n",
                H2_PAL_ERR_UNSUPPORTED);
         fflush(stdout);
@@ -207,11 +208,30 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     }
 
     if (rc == H2_PAL_OK) {
+        /*
+         * Wait against a deadline, not a fresh timeout per iteration: a
+         * condition wait may wake without the outcome being set, and
+         * re-arming the full window each time would leave the GATT service
+         * writable past the advertised maximum.
+         */
+        uint64_t started_ms = 0u;
+        rc = h2_pal_time_get_monotonic_ms(runtime->time, &started_ms);
         (void)h2_pal_mutex_lock(runtime->sync, context.mutex);
-        while (context.provisioned == 0 && rc == H2_PAL_OK) {
+        while (rc == H2_PAL_OK && context.provisioned == 0) {
+            uint64_t now_ms = 0u;
+            rc = h2_pal_time_get_monotonic_ms(runtime->time, &now_ms);
+            if (rc != H2_PAL_OK) {
+                break;
+            }
+            uint64_t elapsed_ms = now_ms - started_ms;
+            if (elapsed_ms >= (uint64_t)H2_SMOKE_BLE_WIFI_CONFIG_WINDOW_MS) {
+                rc = H2_PAL_ERR_TIMEOUT;
+                break;
+            }
             rc = h2_pal_cond_wait(
                 runtime->sync, context.cond, context.mutex,
-                H2_SMOKE_BLE_WIFI_CONFIG_WINDOW_MS);
+                (uint32_t)((uint64_t)H2_SMOKE_BLE_WIFI_CONFIG_WINDOW_MS -
+                           elapsed_ms));
         }
         (void)h2_pal_mutex_unlock(runtime->sync, context.mutex);
     }

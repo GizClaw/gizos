@@ -43,6 +43,8 @@ typedef struct fake_host {
     const h2_pal_ble_gatt_service_t *service;
     int advertising;
     int wifi_connected;
+    /* Virtual clock: a timed wait advances it instead of really sleeping. */
+    uint64_t now_ms;
     int register_calls;
     int unregister_calls;
     int adv_start_calls;
@@ -142,13 +144,16 @@ static h2_pal_result_t fake_cond_wait(
     h2_pal_cond_t *cond,
     h2_pal_mutex_t *mutex,
     uint32_t timeout_ms) {
-    (void)user;
+    fake_host_t *host = user;
     /*
-     * Nobody provisions the device in this test, so the app's window wait
-     * must time out. Shorten it instead of waiting out the real window.
+     * Nobody provisions the device in the timeout test, so run the window on
+     * a virtual clock: wait briefly for a real wake, and on expiry charge the
+     * whole requested duration to the clock. A wait that re-armed the full
+     * window every iteration would never reach the deadline.
      */
-    if (timeout_ms >= H2_SMOKE_BLE_WIFI_CONFIG_WINDOW_MS) {
-        timeout_ms = 50u;
+    uint32_t requested_ms = timeout_ms;
+    if (timeout_ms != H2_PAL_SYNC_WAIT_FOREVER && timeout_ms > 20u) {
+        timeout_ms = 20u;
     }
     if (timeout_ms == H2_PAL_SYNC_WAIT_FOREVER) {
         return pthread_cond_wait(&cond->value, &mutex->value) == 0
@@ -164,8 +169,13 @@ static h2_pal_result_t fake_cond_wait(
         deadline.tv_nsec -= 1000000000L;
     }
     int rc = pthread_cond_timedwait(&cond->value, &mutex->value, &deadline);
-    return rc == 0 ? H2_PAL_OK
-                   : (rc == ETIMEDOUT ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO);
+    if (rc == ETIMEDOUT) {
+        pthread_mutex_lock(&host->mutex);
+        host->now_ms += requested_ms;
+        pthread_mutex_unlock(&host->mutex);
+        return H2_PAL_OK;
+    }
+    return rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static h2_pal_result_t fake_cond_signal(void *user, h2_pal_cond_t *cond) {
@@ -234,12 +244,10 @@ static const h2_pal_task_vtable_t s_task_vtable = {
 };
 
 static h2_pal_result_t fake_monotonic(void *user, uint64_t *out_ms) {
-    (void)user;
-    struct timespec now;
-    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
-        return H2_PAL_ERR_IO;
-    }
-    *out_ms = (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
+    fake_host_t *host = user;
+    pthread_mutex_lock(&host->mutex);
+    *out_ms = host->now_ms;
+    pthread_mutex_unlock(&host->mutex);
     return H2_PAL_OK;
 }
 
