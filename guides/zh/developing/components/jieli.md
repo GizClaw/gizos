@@ -76,6 +76,10 @@ H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `ap
 
 物理 NOR 为 8 MiB：`[0, 0x700000)` 由 SDK double-bank packer 管理，Loader/App 是逻辑角色，不是两个固定地址的裸 flash 分区；`[0x700000, 0x740000)` 为 Preference，`[0x740000, 0x780000)` 为 coredump，`[0x780000, 0x7ff000)` 为 vendor reserved，最后 4 KiB 为 boot reserved。`h2_jieli_ac791n_devkit_partitions.h` 是容量与边界的 source of truth；下载文件位于 SD filesystem，不能把 SD 容量当成可执行 NOR 容量。
 
+当前实现尚未满足非破坏性的 `App → Loader → 已安装 App` 启动合同：App 返回 Loader 时调用 `flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK)`，会清除自己的原生启动信息；Loader 的 `power_set_next` 则只允许存在新镜像更新事务时提交跨 bank 启动。公共 Loader 在没有新 stage 时仍可请求启动已有 App，因此一次安装成功不能证明后续分区选择正确。此限制是接入验收阻塞，不是公共 Loader 的预期行为，也不能通过重装缓存包来替代 `reboot app`。
+
+SDK 的 `dual_bank_updata_api.h` 公开了新镜像校验后写入 boot info、清除指定 bank boot info 和读取当前 boot info 的接口；目前尚未确认可安全选择已有 bank 的接口。[官方 AC79 升级说明](https://doc.zh-jieli.com/AC79/zh-cn/master/module_example/system/update.html)描述的是写入另一 bank、校验、更新启动标志的升级流程，不是任意选择已有 bank 的保证。修复必须保留可恢复的 Loader，不得取消更新状态 guard 或直接猜测 boot reserved 格式；在取得支持的选择机制并完成真机验收之前，不宣称完整 A/B 生命周期可用。
+
 声明的 `sdk_patches` 只应用于 invocation-local SDK 副本，原始 SDK checkout 不被修改。Firmware、ELF、symbols、manifest 由 Bazel action 发布；手工硬件诊断的日志不属于发布产物。
 
 ## AC791N validation commands
@@ -84,7 +88,7 @@ PAL BLE 诊断包位于 `//projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/
 
 Host 验证：`bazel test //native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_platform_core //projects/h2loader/libs/h2loader:all //projects/h2loader/apps/cli/app:all //projects/example/apps/mp4-player/app:mp4_player_test`。
 
-Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。
+Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、没有新 stage 时再次启动同一已安装 App、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。再次启动已有 App 时必须确认没有重新上传或重写镜像，同时保留 Loader 的恢复能力。
 
 ## Reference validation
 
