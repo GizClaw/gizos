@@ -36,7 +36,9 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 ## RPC provider
 
-GizClaw C SDK 的 WebRTC/RPC transport 允许 Server 为 `client.*` method 反向创建 request-scoped Peer RPC channel。SDK 负责接收 request、按 method dispatch、发送 response/error，以及关闭 channel；`libs/gizclaw` 把该入口适配为 GizOS 的 `h2_gizclaw_rpc_provider_fn`，产品 integration 负责提供设备信息、稳定 identifiers 和本地 Tool 实现。
+GizClaw C SDK 的 WebRTC/RPC transport 允许 Server 为 `client.*` method 反向创建 request-scoped Peer RPC channel。SDK 负责接收 request、按 method dispatch、发送 response/error，以及关闭 channel；`libs/gizclaw` 把该入口适配为 GizOS 的 `h2_gizclaw_rpc_provider_fn`，产品 integration 负责提供设备信息、稳定 identifiers、本地 Tool 以及设备控制实现。
+
+SDK 0.15.3 的设备控制 registry 包含 `client.device.status.get`、`client.device.volume.set`、`client.device.sound.play`、`client.device.reboot`、`client.wifi.status.get`、`client.wifi.saved.list`、`client.wifi.saved.forget`、`client.wifi.scan`、`client.wifi.connect` 和 `client.firmware.update`。公共 method 常量只公开 wire identity，不提供默认产品 handler；产品必须按 pinned generated payload 解码、校验并连接实际设备能力。`client.firmware.update` 的可选 channel 缺省为设备当前配置，可选 SHA-256 用于检查设备解析到的 package 是否符合调用者预期。注册 handler 或返回空 ACK 不等于固件已经安装。
 
 Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出只需保持到 callback 返回，SDK 与 adapter 都不能在返回后继续持有这些 borrowed buffer。
 
