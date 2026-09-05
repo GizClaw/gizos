@@ -25,7 +25,8 @@ typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
 /** One ordered result emitted by a conversation generation. */
 typedef enum h2_gizclaw_conversation_event_kind {
   H2_GIZCLAW_CONVERSATION_EVENT_NONE = 0,
-  H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO,
+  /** The first decoded chunk of a reply reached the bound PCM Track. */
+  H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED,
   H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA,
   H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
   H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE,
@@ -35,10 +36,20 @@ typedef enum h2_gizclaw_conversation_event_kind {
 /**
  * One event delivered in service_poll() context. Views are borrowed only for
  * the duration of the callback. `generation` identifies the current begin/end
- * cycle. `audio` contains signed PCM16LE, 16 kHz mono, already accepted by the
- * service's downlink Track. Completion follows draining accepted playback.
+ * cycle. Reply PCM (signed PCM16LE, 16 kHz mono) never travels through
+ * events: the decoder writes every chunk to the service's downlink Track and
+ * the application's speaker pump reads it there. Per reply the hook observes
+ * at most one REPLY_AUDIO_STARTED (after the reply's first decoded chunk
+ * reached the Track and before that reply's REPLY_DONE or ERROR), the text
+ * events, and exactly one REPLY_DONE or ERROR, so the number of
+ * notifications does not grow with the reply length. Text and audio are
+ * independent server streams, so REPLY_AUDIO_STARTED is not ordered against
+ * TEXT_DELTA/TEXT_DONE: text may arrive before the first audio chunk. A
+ * reply that ends before any audio was decoded produces no
+ * REPLY_AUDIO_STARTED. Completion follows draining accepted playback.
  * REPLY_DONE marks one server reply, not necessarily the end of the begin/end
- * cycle: while input remains open, server-side VAD may produce further replies.
+ * cycle: while input remains open, server-side VAD may produce further replies,
+ * each with its own REPLY_AUDIO_STARTED.
  * A reply the server cuts short because the user spoke over it (barge-in)
  * also ends with REPLY_DONE while input remains open; its queued playback is
  * discarded. After the input is committed such an interruption is ERROR.
@@ -47,8 +58,6 @@ typedef enum h2_gizclaw_conversation_event_kind {
 typedef struct h2_gizclaw_conversation_event {
   h2_gizclaw_conversation_event_kind_t kind;
   uint64_t generation;
-  const uint8_t *audio;
-  size_t audio_len;
   const char *text;
   size_t text_len;
   const char *error_code;
