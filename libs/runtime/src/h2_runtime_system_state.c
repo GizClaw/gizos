@@ -26,10 +26,10 @@ h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t *runtime) {
         runtime->sync, &config, &runtime->private_state->system_state.mutex);
     if (rc == H2_PAL_ERR_UNSUPPORTED) {
         /*
-         * A Runtime without a Sync provider has no tasks to publish from
-         * either, so the snapshot has a single accessor and needs no lock.
-         * Requiring one here would stop such a Runtime from initializing at
-         * all, which it did before this snapshot existed.
+         * Requiring the lock would stop a Runtime whose Sync provider is
+         * unsupported from initializing at all, which it did before this
+         * snapshot existed. Such a Runtime keeps initializing; its snapshot
+         * is simply unavailable, and readers see UNSUPPORTED.
          */
         runtime->private_state->system_state.mutex = NULL;
         return H2_PAL_OK;
@@ -56,7 +56,7 @@ void h2_runtime_system_state_publish_wifi_sta(
     h2_runtime_system_state_publication_t *pub =
         &runtime->private_state->system_state;
     if (pub->mutex == NULL) {
-        pub->wifi_sta = *state;
+        /* No synchronisation available: publish nothing rather than race. */
         return;
     }
     if (h2_pal_mutex_lock(runtime->sync, pub->mutex) != H2_PAL_OK) {
@@ -75,8 +75,12 @@ h2_pal_result_t h2_runtime_system_state_wifi_sta(
     h2_runtime_system_state_publication_t *pub =
         &runtime->private_state->system_state;
     if (pub->mutex == NULL) {
-        *out_state = pub->wifi_sta;
-        return H2_PAL_OK;
+        /*
+         * A failed mutex creation only says this Sync provider cannot make
+         * one, not that nobody else can call this. Without a lock the copy
+         * would race the writer, so the snapshot is unavailable instead.
+         */
+        return H2_PAL_ERR_UNSUPPORTED;
     }
     h2_pal_result_t rc = h2_pal_mutex_lock(runtime->sync, pub->mutex);
     if (rc != H2_PAL_OK) {

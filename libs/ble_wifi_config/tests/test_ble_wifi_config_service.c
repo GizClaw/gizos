@@ -786,6 +786,17 @@ static bool fake_saw_event_locked(
     return false;
 }
 
+/* Events are emitted on the worker after the notification that precedes them. */
+static void fake_wait_event(fake_runtime_t *runtime, h2_ble_wifi_config_event_t event) {
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime->mutex);
+    while (!fake_saw_event_locked(runtime, event)) {
+        CHECK(pthread_cond_timedwait(&runtime->cond, &runtime->mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime->mutex);
+}
+
 static bool fake_saw_event(fake_runtime_t *runtime, h2_ble_wifi_config_event_t event) {
     pthread_mutex_lock(&runtime->mutex);
     bool found = fake_saw_event_locked(runtime, event);
@@ -899,7 +910,7 @@ static void test_scan_reports_one_ap_per_notification(void) {
     CHECK(stats.aps_reported == 2u);
     CHECK(stats.aps_dropped == 1u);
     CHECK(stats.att_mtu == TEST_ATT_MTU);
-    CHECK(fake_saw_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_SCAN_FINISHED));
+    fake_wait_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_SCAN_FINISHED);
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
     fake_runtime_deinit(&runtime);
@@ -1037,7 +1048,7 @@ static void test_provision_wrong_password(void) {
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x01u);
     CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD);
-    CHECK(fake_saw_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_FAILED));
+    fake_wait_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_FAILED);
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
     fake_runtime_deinit(&runtime);
@@ -1130,7 +1141,7 @@ static void test_malformed_credentials_report_failure(void) {
     CHECK(result.data[1] == 0x01u);
     CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
     CHECK(runtime.connect_calls == 0);
-    CHECK(fake_saw_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR));
+    fake_wait_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR);
 
     /* An empty write must not crash or start a connect attempt either. */
     const uint8_t empty[] = { 0u };

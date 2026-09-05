@@ -128,6 +128,7 @@ typedef struct test_sync {
     size_t locks;
     size_t unlocks;
     h2_pal_result_t cond_create_rc;
+    h2_pal_result_t mutex_create_rc;
     h2_pal_result_t cond_wait_rc;
     h2_pal_result_t cond_broadcast_rc;
 } test_sync_t;
@@ -306,6 +307,9 @@ static h2_pal_result_t test_sync_create_mutex(
     const h2_pal_mutex_config_t *config,
     h2_pal_mutex_t **out_mutex) {
     test_sync_t *sync = (test_sync_t *)user;
+    if (sync->mutex_create_rc != H2_PAL_OK) {
+        return sync->mutex_create_rc;
+    }
     h2_pal_mutex_t *mutex =
         (h2_pal_mutex_t *)h2_pal_mem_alloc(config->allocator, sizeof(*mutex));
     if (mutex == NULL) return H2_PAL_ERR_NO_MEMORY;
@@ -3057,6 +3061,40 @@ static void test_input_lifecycle_is_closed_during_test_session(void) {
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
+/*
+ * A Sync provider that cannot make a mutex must not stop the Runtime from
+ * initializing, and must not leave the station snapshot racing unlocked: the
+ * snapshot is simply unavailable, and a publication into it is dropped.
+ */
+static void test_station_snapshot_unavailable_without_mutex(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    env.sync_state.mutex_create_rc = H2_PAL_ERR_UNSUPPORTED;
+    h2_runtime_config_t config = test_runtime_config(&env);
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(runtime != NULL);
+    assert(env.sync_state.creates == 0u);
+
+    h2_runtime_system_wifi_sta_state_t state;
+    memset(&state, 0, sizeof(state));
+    assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
+           H2_PAL_ERR_UNSUPPORTED);
+
+    h2_runtime_system_wifi_sta_state_t published;
+    memset(&published, 0, sizeof(published));
+    published.valid = 1u;
+    published.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP;
+    assert(h2_runtime_test_set_system_wifi_sta_state(runtime, &published) ==
+           H2_PAL_OK);
+    assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
+           H2_PAL_ERR_UNSUPPORTED);
+
+    h2_runtime_deinit(runtime);
+    assert(env.sync_state.destroys == 0u);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
 static void test_input_snapshot_does_not_create_condition(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -3486,6 +3524,7 @@ int main(void) {
     test_input_double_start_is_rejected();
     test_input_start_after_worker_fault_is_rejected();
     test_input_lifecycle_is_closed_during_test_session();
+    test_station_snapshot_unavailable_without_mutex();
     test_input_snapshot_does_not_create_condition();
     test_sequence_continues_past_uint32_max();
     test_sensor_component_mapping();

@@ -420,10 +420,18 @@ static bool h2_ble_wifi_config_await_address(
     for (;;) {
         h2_runtime_system_wifi_sta_state_t state;
         memset(&state, 0, sizeof(state));
-        bool have_state =
-            h2_runtime_system_state_wifi_sta(service->api.runtime, &state) ==
-                H2_PAL_OK &&
-            state.valid != 0u;
+        int read_rc = h2_runtime_system_state_wifi_sta(service->api.runtime, &state);
+        if (read_rc == H2_PAL_ERR_UNSUPPORTED) {
+            /*
+             * This Runtime cannot publish a station snapshot (no Sync
+             * provider), so the address can never be observed. Say so at
+             * once rather than burning the DHCP budget on a wait that
+             * cannot succeed.
+             */
+            *out_reason = H2_BLE_WIFI_CONFIG_REASON_UNKNOWN;
+            return false;
+        }
+        bool have_state = read_rc == H2_PAL_OK && state.valid != 0u;
 
         if (have_state && state.status != reported) {
             reported = state.status;
