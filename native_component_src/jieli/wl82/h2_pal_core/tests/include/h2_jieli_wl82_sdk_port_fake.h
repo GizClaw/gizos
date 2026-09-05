@@ -28,6 +28,7 @@ size_t h2_jieli_fake_log_length(void);
 /** Advances the fake millisecond clock; sleeps also advance it. */
 void h2_jieli_fake_advance_ms(uint32_t ms);
 void h2_jieli_fake_set_time_ms(uint32_t ms);
+void h2_jieli_fake_set_time_us(uint64_t us);
 uint32_t h2_jieli_fake_sleep_total_ms(void);
 
 /** Outstanding allocations (alloc minus free) for leak checks. */

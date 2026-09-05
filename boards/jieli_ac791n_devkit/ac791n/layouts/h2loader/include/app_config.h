@@ -3,6 +3,8 @@
 
 #define __SDRAM_SIZE__ (8 * 1024 * 1024)
 #define CONFIG_JLFAT_ENABLE 1
+/* TIMER5 is exclusively owned by the shared PAL monotonic clock. */
+#define H2_JIELI_CLOCK_TIMER5 1
 
 /* One console for all roles: adapter RX <- PB3, adapter TX -> PA6, 8N1. */
 #define CONFIG_H2_UART1_DEBUG_ENABLE

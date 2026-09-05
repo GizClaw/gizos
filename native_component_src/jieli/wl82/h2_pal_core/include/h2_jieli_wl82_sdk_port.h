@@ -42,6 +42,9 @@ void h2_jieli_sdk_debug_write(const char *data, size_t length);
 
 /** Milliseconds since boot from the SDK tick timer; wraps at 32 bits. */
 uint32_t h2_jieli_sdk_time_ms(void);
+
+/** Reads the board-owned monotonic clock; returns a PAL result code. */
+int h2_jieli_sdk_time_us(uint64_t *out_us);
 /** Yields the calling task for at least `ms` milliseconds (SDK tick granularity). */
 void h2_jieli_sdk_sleep_ms(uint32_t ms);
 /** Returns the SDK OS tick period in milliseconds. */

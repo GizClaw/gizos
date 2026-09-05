@@ -91,6 +91,11 @@ static void test_time_extends_32bit_wrap_and_sleeps(void)
     CHECK(ms == 0x100000010ull);
     CHECK(h2_pal_time_get_monotonic_us(time, &us) == H2_PAL_OK);
     CHECK(us == 0x100000010ull * 1000u);
+    h2_jieli_fake_set_time_us(us + 341u);
+    CHECK(h2_pal_time_get_monotonic_us(time, &us) == H2_PAL_OK);
+    CHECK(us == 0x100000010ull * 1000u + 341u);
+    CHECK(h2_pal_time_get_monotonic_ms(time, &ms) == H2_PAL_OK);
+    CHECK(ms == us / 1000u);
     CHECK(h2_pal_time_get_wall_ms(time, &ms) == H2_PAL_ERR_UNSUPPORTED);
     CHECK(h2_pal_time_get_wall_status(time, &status) == H2_PAL_OK);
     CHECK(status.valid == 0u);

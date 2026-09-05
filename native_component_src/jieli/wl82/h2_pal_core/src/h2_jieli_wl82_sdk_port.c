@@ -113,6 +113,15 @@ uint32_t h2_jieli_sdk_time_ms(void)
     return (uint32_t)timer_get_ms();
 }
 
+extern int h2_jieli_ac791n_devkit_clock_read_us(uint64_t *out_us) __attribute__((weak));
+
+int h2_jieli_sdk_time_us(uint64_t *out_us)
+{
+    if (out_us == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (h2_jieli_ac791n_devkit_clock_read_us == NULL) return H2_PAL_ERR_UNSUPPORTED;
+    return h2_jieli_ac791n_devkit_clock_read_us(out_us);
+}
+
 uint32_t h2_jieli_sdk_tick_ms(void)
 {
     return H2_JIELI_WL82_TICK_MS;

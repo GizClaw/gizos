@@ -1,29 +1,16 @@
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_sdk_port.h"
 
-/* The SDK tick timer exposes a 32-bit millisecond counter (~49.7 days). The
- * provider extends it to 64 bits by tracking wraps; callers must sample at
- * least once per wrap, which every Runtime poll loop does. */
-static uint32_t s_last_ms;
-static uint32_t s_wraps;
-
-static uint64_t monotonic_ms(void)
-{
-    const uint32_t now = h2_jieli_sdk_time_ms();
-    if (now < s_last_ms) {
-        s_wraps++;
-    }
-    s_last_ms = now;
-    return ((uint64_t)s_wraps << 32) | now;
-}
-
 static h2_pal_result_t time_get_monotonic_ms(void *user, uint64_t *out_ms)
 {
     (void)user;
     if (out_ms == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    *out_ms = monotonic_ms();
+    uint64_t us;
+    const int result = h2_jieli_sdk_time_us(&us);
+    if (result != H2_PAL_OK) return result;
+    *out_ms = us / 1000u;
     return H2_PAL_OK;
 }
 
@@ -33,8 +20,7 @@ static h2_pal_result_t time_get_monotonic_us(void *user, uint64_t *out_us)
     if (out_us == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    *out_us = monotonic_ms() * 1000u;
-    return H2_PAL_OK;
+    return h2_jieli_sdk_time_us(out_us);
 }
 
 static h2_pal_result_t time_get_wall_ms(void *user, uint64_t *out_ms)

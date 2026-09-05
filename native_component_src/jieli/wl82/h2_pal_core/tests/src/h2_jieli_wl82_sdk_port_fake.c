@@ -1,4 +1,5 @@
 #include "h2_jieli_wl82_sdk_port_fake.h"
+#include "h2/pal/core/h2_pal_errors.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,7 @@ typedef struct fake_timer {
 static char s_log[H2_JIELI_FAKE_LOG_CAPACITY];
 static size_t s_log_length;
 static uint32_t s_now_ms;
+static uint64_t s_clock_us;
 static uint32_t s_sleep_total_ms;
 static int s_live_allocations;
 static fake_timer_t s_timers[H2_JIELI_FAKE_TIMER_CAPACITY];
@@ -50,6 +52,7 @@ void h2_jieli_fake_reset(void)
     memset(s_log, 0, sizeof(s_log));
     s_log_length = 0u;
     s_now_ms = 0u;
+    s_clock_us = 0u;
     s_sleep_total_ms = 0u;
     s_live_allocations = 0;
     memset(s_timers, 0, sizeof(s_timers));
@@ -79,11 +82,21 @@ size_t h2_jieli_fake_log_length(void)
 void h2_jieli_fake_advance_ms(uint32_t ms)
 {
     s_now_ms += ms;
+    s_clock_us += (uint64_t)ms * 1000u;
 }
 
 void h2_jieli_fake_set_time_ms(uint32_t ms)
 {
+    uint64_t epoch = (s_clock_us / 1000u) & ~UINT64_C(0xffffffff);
+    if (ms < s_now_ms) epoch += UINT64_C(0x100000000);
+    s_clock_us = (epoch + ms) * 1000u;
     s_now_ms = ms;
+}
+
+void h2_jieli_fake_set_time_us(uint64_t us)
+{
+    s_clock_us = us;
+    s_now_ms = (uint32_t)(us / 1000u);
 }
 
 uint32_t h2_jieli_fake_sleep_total_ms(void)
@@ -136,10 +149,17 @@ uint32_t h2_jieli_sdk_time_ms(void)
     return s_now_ms;
 }
 
+int h2_jieli_sdk_time_us(uint64_t *out_us)
+{
+    if (out_us == NULL) return H2_PAL_ERR_INVALID_ARG;
+    *out_us = s_clock_us;
+    return H2_PAL_OK;
+}
+
 void h2_jieli_sdk_sleep_ms(uint32_t ms)
 {
     s_sleep_total_ms += ms;
-    s_now_ms += ms;
+    h2_jieli_fake_advance_ms(ms);
 }
 
 uint32_t h2_jieli_sdk_tick_ms(void)
