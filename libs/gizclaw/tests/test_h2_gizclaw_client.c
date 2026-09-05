@@ -1036,6 +1036,64 @@ static int expect(int condition, const char *message) {
   return 1;
 }
 
+typedef struct provider_completion_fixture {
+  int calls;
+  int result;
+} provider_completion_fixture_t;
+
+static void provider_complete(void *user, int result) {
+  provider_completion_fixture_t *fixture = user;
+  ++fixture->calls;
+  fixture->result = result;
+}
+
+static int completion_provider(void *user, h2_gizclaw_rpc_method_t method,
+    h2_gizclaw_rpc_bytes_t request, h2_gizclaw_rpc_provider_response_t *out) {
+  (void)request;
+  assert(method == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT);
+  out->on_complete = provider_complete;
+  out->complete_user = user;
+  return H2_PAL_OK;
+}
+
+static void test_provider_completions(h2_gizclaw_config_t config) {
+  provider_completion_fixture_t fixture = {0};
+  config.rpc_provider = completion_provider;
+  config.rpc_provider_user = &fixture;
+  for (int scenario = 0; scenario < 5; ++scenario) {
+    h2_gizclaw_client_t *client = NULL;
+    assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
+    h2_pal_webrtc_channel_t *channel = (h2_pal_webrtc_channel_t *)0x121;
+    fixture = (provider_completion_fixture_t){0};
+    const int respond_result = scenario == 3 ? GZC_ERR_NO_MEMORY : GZC_OK;
+    assert(h2_gizclaw_test_provider_response(client, channel, respond_result) == respond_result);
+    assert(fixture.calls == 0);
+    test_client_poll_t poll = {.result = GZC_OK};
+    h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
+    if (scenario == 3) {
+      assert(h2_gizclaw_client_poll(client, 0) == H2_PAL_OK);
+      assert(fixture.calls == 1 && fixture.result != H2_PAL_OK);
+    } else if (scenario == 4) {
+      assert(h2_gizclaw_client_close(client) == H2_PAL_OK);
+      assert(fixture.calls == 1 && fixture.result == H2_PAL_ERR_CLOSED);
+    } else {
+      /* Poll success alone is not completion while the response is pending. */
+      assert(h2_gizclaw_client_poll(client, 0) == H2_PAL_OK);
+      assert(h2_gizclaw_client_poll(client, 0) == H2_PAL_OK);
+      assert(fixture.calls == 0);
+      h2_gizclaw_test_provider_channel_close(client, channel, scenario == 1);
+      assert(fixture.calls == 0);
+      poll.result = scenario == 2 ? GZC_ERR_TIMEOUT : GZC_OK;
+      (void)h2_gizclaw_client_poll(client, 0);
+      assert(fixture.calls == 1);
+      assert((fixture.result == H2_PAL_OK) == (scenario == 0));
+    }
+    h2_gizclaw_test_set_client_poll(NULL, NULL);
+    h2_gizclaw_client_deinit(client);
+    assert(fixture.calls == 1);
+  }
+}
+
 int main(void) {
   int fails = 0;
   fails += expect(H2_GIZCLAW_RPC_SERVER_PET_LIST == 65,
@@ -1123,6 +1181,7 @@ int main(void) {
   };
   config.log = &log;
   config.cancel_requested = test_cancel;
+  test_provider_completions(config);
 
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)0x1;
   fails +=

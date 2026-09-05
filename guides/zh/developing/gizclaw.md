@@ -115,3 +115,10 @@ merge 前的外部服务合同证据。
 `h2_gizclaw_client_workspace_delete()` 与 `h2_gizclaw_client_pet_delete()` 删除；成功
 返回的 snapshot 按普通 owned-output 规则用对应 deinit API 释放。所有业务资源清理
 完成后才请求 Peer 删除。
+
+
+### 设备控制回复后的本地动作
+
+产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在 SDK 接受响应写入并正常关闭该通道后，从 poll owner 调用一次。普通 poll 返回成功不表示该通道已经完成；发送阻塞时继续保留动作，编码错误、发送失败、远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。
+
+这是本地发送生命周期，不是对端收到或处理回复的确认，不新增网络消息，也不更改 GizClaw 0.15.3 SDK。回调只能向产品 owner 发布待执行动作，不能阻塞或重入 client API。产品参数必须复制到自身状态，生命周期覆盖完成或取消；不能保留借用请求、栈上的响应或已释放的 user。H106 的重启和临时切网消费此路径，OTA 是否支持仍由产品决定。

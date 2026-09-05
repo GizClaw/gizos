@@ -131,6 +131,14 @@ typedef struct h2_gizclaw_local_channel_state {
   bool has_info;
 } h2_gizclaw_local_channel_state_t;
 
+typedef struct h2_gizclaw_provider_completion {
+  gzc_rtc_channel_t *channel;
+  h2_gizclaw_rpc_response_complete_fn callback;
+  void *user;
+  bool local_closed;
+  bool failed;
+} h2_gizclaw_provider_completion_t;
+
 struct h2_gizclaw_client {
   struct h2_gizclaw_client *next_client;
   h2_gizclaw_config_t config;
@@ -149,6 +157,8 @@ struct h2_gizclaw_client {
   bool remote_channel_write_blocked[GZC_RPC_MAX_INBOUND_CHANNELS];
   h2_pal_webrtc_peer_t *webrtc_peer;
   h2_gizclaw_local_channel_state_t local_channel_state;
+  gzc_rtc_channel_t *provider_channel;
+  h2_gizclaw_provider_completion_t provider_completions[GZC_RPC_MAX_INBOUND_CHANNELS];
   gzc_client_t *gzc;
   gzc_event_stream_t *events;
   h2_gizclaw_conversation_t *active_conversation;
@@ -489,6 +499,29 @@ int h2_gizclaw_provider_result_to_gzc(int result) {
              : GZC_ERR_RPC;
 }
 
+static h2_gizclaw_provider_completion_t *provider_completion_for_channel(
+    h2_gizclaw_client_t *client, gzc_rtc_channel_t *channel) {
+  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
+    h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
+    if (entry->callback != NULL && entry->channel == channel)
+      return entry;
+  }
+  return NULL;
+}
+
+static void dispatch_provider_completions(h2_gizclaw_client_t *client, int result) {
+  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
+    h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
+    if (entry->callback == NULL ||
+        (result == H2_PAL_OK && !entry->local_closed && !entry->failed))
+      continue;
+    const h2_gizclaw_provider_completion_t done = *entry;
+    memset(entry, 0, sizeof(*entry));
+    done.callback(done.user, result != H2_PAL_OK ? result :
+        done.failed ? H2_PAL_ERR_CLOSED : H2_PAL_OK);
+  }
+}
+
 static int h2_gizclaw_rpc_provider_bridge(void *userdata, int method,
                                           gzc_str_t request_payload,
                                           gzc_rpc_provider_respond_fn respond,
@@ -519,7 +552,26 @@ static int h2_gizclaw_rpc_provider_bridge(void *userdata, int method,
           gzc_str_from_parts((const char *)response.error_message.data,
                              response.error_message.len),
   };
-  return respond(respond_userdata, &gzc_response);
+  h2_gizclaw_provider_completion_t *completion = NULL;
+  if (response.on_complete != NULL) {
+    for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
+      if (client->provider_completions[i].callback == NULL) {
+        completion = &client->provider_completions[i];
+        break;
+      }
+    }
+    if (completion == NULL || client->provider_channel == NULL || response.has_error) {
+      response.on_complete(response.complete_user, H2_PAL_ERR_INVALID_STATE);
+      return GZC_ERR_RPC;
+    }
+    *completion = (h2_gizclaw_provider_completion_t){
+        .channel = client->provider_channel,
+        .callback = response.on_complete, .user = response.complete_user};
+  }
+  rc = respond(respond_userdata, &gzc_response);
+  if (completion != NULL && rc != GZC_OK)
+    completion->failed = true;
+  return rc;
 }
 
 static bool h2_gizclaw_gzc_str_has_prefix_cstr(gzc_str_t value,
@@ -1129,6 +1181,13 @@ static void h2_gizclaw_dispatch_channel_state(
     h2_gizclaw_client_t *client, h2_pal_webrtc_peer_t *peer,
     h2_pal_webrtc_channel_t *channel, const h2_pal_webrtc_channel_info_t *info,
     h2_pal_webrtc_channel_state_t state) {
+  if (client != NULL && (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
+                         state == H2_PAL_WEBRTC_CHANNEL_ERROR)) {
+    h2_gizclaw_provider_completion_t *completion =
+        provider_completion_for_channel(client, (gzc_rtc_channel_t *)channel);
+    if (completion != NULL && !completion->local_closed)
+      completion->failed = true;
+  }
   if (client != NULL && client->gzc_callbacks.on_channel_state != NULL) {
     gzc_rtc_channel_info_t gzc_info;
     memset(&gzc_info, 0, sizeof(gzc_info));
@@ -1213,9 +1272,12 @@ static void h2_gzc_channel_message(void *user, h2_pal_webrtc_peer_t *peer,
   (void)info;
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
   if (client != NULL && client->gzc_callbacks.on_channel_message != NULL) {
+    gzc_rtc_channel_t *previous = client->provider_channel;
+    client->provider_channel = (gzc_rtc_channel_t *)channel;
     client->gzc_callbacks.on_channel_message(
         client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer,
         (gzc_rtc_channel_t *)channel, NULL, data, len, is_text != 0);
+    client->provider_channel = previous;
   }
 }
 
@@ -1552,6 +1614,10 @@ h2_gzc_channel_set_buffered_amount_low_threshold(gzc_rtc_channel_t *channel,
 static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
   h2_gizclaw_client_t *client = h2_gizclaw_client_for_channel(channel);
   if (client != NULL && client->config.webrtc != NULL) {
+    h2_gizclaw_provider_completion_t *completion =
+        provider_completion_for_channel(client, channel);
+    if (completion != NULL)
+      completion->local_closed = true;
     if (client->local_channel_state.channel ==
         (h2_pal_webrtc_channel_t *)channel) {
       h2_gizclaw_reset_local_channel_state(client);
@@ -1561,6 +1627,34 @@ static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
                                 (h2_pal_webrtc_channel_t *)channel);
   }
 }
+
+#if defined(H2_GIZCLAW_TESTING)
+static int test_provider_respond(void *user,
+                                  const gzc_rpc_provider_response_t *response) {
+  (void)response;
+  return *(const int *)user;
+}
+
+int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
+    h2_pal_webrtc_channel_t *channel, int respond_result) {
+  h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t *)channel);
+  client->provider_channel = (gzc_rtc_channel_t *)channel;
+  int rc = h2_gizclaw_rpc_provider_bridge(client,
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT, (gzc_str_t){0},
+      test_provider_respond, &respond_result);
+  client->provider_channel = NULL;
+  return rc;
+}
+
+void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,
+    h2_pal_webrtc_channel_t *channel, bool remote) {
+  if (remote)
+    h2_gizclaw_dispatch_channel_state(client, NULL, channel, NULL,
+                                     H2_PAL_WEBRTC_CHANNEL_CLOSED);
+  else
+    h2_gzc_channel_close((gzc_rtc_channel_t *)channel);
+}
+#endif
 
 static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
   h2_gizclaw_client_t *client = h2_gizclaw_client_for_peer(peer);
@@ -1740,6 +1834,7 @@ int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms) {
       h2_gizclaw_release_event_handle(client);
     }
   }
+  dispatch_provider_completions(client, h2_gizclaw_result_from_gzc(rc));
   return h2_gizclaw_result_from_gzc(rc);
 }
 
@@ -1994,6 +2089,7 @@ int h2_gizclaw_client_close(h2_gizclaw_client_t *client) {
   if (client == NULL || client->gzc == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
   client->terminal_closed = true;
   h2_gizclaw_reset_local_channel_state(client);
   h2_gizclaw_release_event_handle(client);
@@ -2005,6 +2101,7 @@ void h2_gizclaw_client_deinit(h2_gizclaw_client_t *client) {
   if (client == NULL) {
     return;
   }
+  dispatch_provider_completions(client, H2_PAL_ERR_CLOSED);
   const h2_pal_mem_api_t *allocator = client->config.allocator;
   if (client->gzc != NULL) {
     h2_gizclaw_reset_local_channel_state(client);

@@ -118,18 +118,33 @@ typedef struct h2_gizclaw_rpc_bytes {
   size_t len;
 } h2_gizclaw_rpc_bytes_t;
 
+/** Optional local response completion on the client poll owner.
+ * OK means the response was accepted by the local transport and its RPC
+ * channel closed normally, not that the remote application acknowledged it.
+ * Failure/stop cancels the continuation. Called once; user must outlive it.
+ * Shutdown calls it from the close/deinit owner; registration rejection may
+ * call it inline on the provider owner.
+ * Only enqueue owner-thread work here; do not block or reenter client APIs.
+ */
+typedef void (*h2_gizclaw_rpc_response_complete_fn)(void *user, int result);
+
 typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_bytes_t payload;
   bool has_error;
   int error_code;
   h2_gizclaw_rpc_bytes_t error_message;
+  h2_gizclaw_rpc_response_complete_fn on_complete;
+  void *complete_user;
 } h2_gizclaw_rpc_provider_response_t;
 
 /**
  * Handle a server-initiated client.* method.
  *
  * Request and response payloads are protobuf message bytes. Returned views are
- * borrowed and need to remain valid only until the callback returns.
+ * borrowed and must remain valid until the adapter consumes the returned
+ * response (for example, use provider-owned storage). Do not return stack
+ * storage. An optional on_complete schedules work after the local response
+ * closes, without a second message or acknowledgment from the caller.
  */
 typedef int (*h2_gizclaw_rpc_provider_fn)(
     void *user, h2_gizclaw_rpc_method_t method,
