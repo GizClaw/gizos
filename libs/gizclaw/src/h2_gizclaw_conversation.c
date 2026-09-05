@@ -1732,9 +1732,11 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   }
   const bool downlink_eos =
       atomic_load_explicit(&request->downlink_eos, memory_order_acquire);
-  /* Before any text or boundary of this reply: the decoder can only set the
-   * flag while the reply's frames precede its EOS marker, and the wire poll
-   * below is held while a boundary is staged. */
+  /* Before this reply's boundary: the decoder can only set the flag while
+   * the reply's frames precede its EOS marker, and the wire poll below is
+   * held while a boundary is staged. Text is not ordered against it: the
+   * server streams text and audio independently, and holding text back
+   * until audio arrives would only delay the display. */
   if (request->on_event != NULL && !request->reply_audio_notified &&
       atomic_load_explicit(&request->reply_audio_started,
                            memory_order_acquire)) {

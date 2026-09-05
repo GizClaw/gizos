@@ -39,9 +39,13 @@ typedef enum h2_gizclaw_conversation_event_kind {
  * cycle. Reply PCM (signed PCM16LE, 16 kHz mono) never travels through
  * events: the decoder writes every chunk to the service's downlink Track and
  * the application's speaker pump reads it there. Per reply the hook observes
- * at most one REPLY_AUDIO_STARTED, then the text events, then exactly one
- * REPLY_DONE or ERROR, so the number of notifications does not grow with the
- * reply length. A reply that ends before any audio was decoded produces no
+ * at most one REPLY_AUDIO_STARTED (after the reply's first decoded chunk
+ * reached the Track and before that reply's REPLY_DONE or ERROR), the text
+ * events, and exactly one REPLY_DONE or ERROR, so the number of
+ * notifications does not grow with the reply length. Text and audio are
+ * independent server streams, so REPLY_AUDIO_STARTED is not ordered against
+ * TEXT_DELTA/TEXT_DONE: text may arrive before the first audio chunk. A
+ * reply that ends before any audio was decoded produces no
  * REPLY_AUDIO_STARTED. Completion follows draining accepted playback.
  * REPLY_DONE marks one server reply, not necessarily the end of the begin/end
  * cycle: while input remains open, server-side VAD may produce further replies,
