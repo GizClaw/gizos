@@ -295,6 +295,22 @@ static int translate_path(
     const char *path, char out[H2_JIELI_SD_PATH_MAX]) {
   const char *suffix;
   if (path == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  /* Validate public components before native FAT can interpret separators or
+   * parent traversal. A leading dot in a normal filename remains valid. */
+  if (path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
+  const char *component = path + 1;
+  for (const char *cursor = component;; ++cursor) {
+    if (*cursor == '\\') return H2_PAL_ERR_INVALID_ARG;
+    if (*cursor != '/' && *cursor != '\0') continue;
+    const size_t length = (size_t)(cursor - component);
+    if (length == 0u ||
+        (length == 1u && component[0] == '.') ||
+        (length == 2u && component[0] == '.' && component[1] == '.')) {
+      return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (*cursor == '\0') break;
+    component = cursor + 1;
+  }
   /* JLFAT's frename API accepts only a native filename for the destination.
    * Keep Loader's public paths unchanged while mapping its transactional
    * files to 8.3 names that are safe for native rename. */
