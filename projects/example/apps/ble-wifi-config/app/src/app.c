@@ -7,14 +7,17 @@
 
 #define H2_SMOKE_BLE_WIFI_CONFIG_ADV_INTERVAL_MIN_MS 100u
 #define H2_SMOKE_BLE_WIFI_CONFIG_ADV_INTERVAL_MAX_MS 150u
-#define H2_SMOKE_BLE_WIFI_CONFIG_POLL_MS 500u
 #define H2_SMOKE_BLE_WIFI_CONFIG_LOCAL_NAME "H2-Provision"
 
 typedef struct h2_smoke_ble_wifi_config_context {
     h2_runtime_t *runtime;
-    /* Written from the service worker task, read by the app task. */
-    volatile int provisioned;
-    volatile int failed_reason;
+    /*
+     * The service worker task publishes the outcome and the app task waits
+     * for it, so both go through the mutex and the condition variable.
+     */
+    h2_pal_mutex_t *mutex;
+    h2_pal_cond_t *cond;
+    int provisioned;
 } h2_smoke_ble_wifi_config_context_t;
 
 static const char *h2_smoke_ble_wifi_config_event_name(
@@ -60,11 +63,13 @@ static void h2_smoke_ble_wifi_config_on_event(
         h2_smoke_ble_wifi_config_event_name(event), (unsigned)conn_handle,
         status);
     fflush(stdout);
-    if (event == H2_BLE_WIFI_CONFIG_EVENT_PROVISION_SUCCEEDED) {
-        context->provisioned = 1;
-    } else if (event == H2_BLE_WIFI_CONFIG_EVENT_PROVISION_FAILED) {
-        context->failed_reason = status;
+    if (event != H2_BLE_WIFI_CONFIG_EVENT_PROVISION_SUCCEEDED) {
+        return;
     }
+    (void)h2_pal_mutex_lock(context->runtime->sync, context->mutex);
+    context->provisioned = 1;
+    (void)h2_pal_cond_broadcast(context->runtime->sync, context->cond);
+    (void)h2_pal_mutex_unlock(context->runtime->sync, context->mutex);
 }
 
 static void h2_smoke_ble_wifi_config_print_uuid(
@@ -107,8 +112,7 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     }
     if (runtime->ble_host == NULL || runtime->wifi_sta == NULL ||
         runtime->task == NULL || runtime->sync == NULL ||
-        runtime->system_event == NULL || runtime->mem == NULL ||
-        runtime->time == NULL) {
+        runtime->system_event == NULL || runtime->mem == NULL) {
         printf("H2_SMOKE_BLE_WIFI_CONFIG stage=capabilities rc=%d\n",
                H2_PAL_ERR_UNSUPPORTED);
         fflush(stdout);
@@ -118,6 +122,28 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     h2_smoke_ble_wifi_config_context_t context;
     memset(&context, 0, sizeof(context));
     context.runtime = runtime;
+
+    const h2_pal_mutex_config_t mutex_config = {
+        .name = "ble-wifi-config-app",
+        .allocator = runtime->mem,
+        .flags = H2_PAL_MUTEX_FLAG_NONE,
+    };
+    int rc = h2_pal_mutex_create(runtime->sync, &mutex_config, &context.mutex);
+    if (rc == H2_PAL_OK) {
+        const h2_pal_cond_config_t cond_config = {
+            .name = "ble-wifi-config-app",
+            .allocator = runtime->mem,
+        };
+        rc = h2_pal_cond_create(runtime->sync, &cond_config, &context.cond);
+        if (rc != H2_PAL_OK) {
+            (void)h2_pal_mutex_destroy(runtime->sync, context.mutex);
+        }
+    }
+    if (rc != H2_PAL_OK) {
+        printf("H2_SMOKE_BLE_WIFI_CONFIG stage=sync rc=%d\n", rc);
+        fflush(stdout);
+        return rc;
+    }
 
     const h2_ble_wifi_config_api_t api = {
         .ble = runtime->ble_host,
@@ -133,10 +159,12 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     config.user = &context;
 
     h2_ble_wifi_config_t *service = NULL;
-    int rc = h2_ble_wifi_config_open(&api, &config, &service);
+    rc = h2_ble_wifi_config_open(&api, &config, &service);
     printf("H2_SMOKE_BLE_WIFI_CONFIG stage=open rc=%d\n", rc);
     fflush(stdout);
     if (rc != H2_PAL_OK) {
+        (void)h2_pal_cond_destroy(runtime->sync, context.cond);
+        (void)h2_pal_mutex_destroy(runtime->sync, context.mutex);
         return rc;
     }
 
@@ -178,15 +206,14 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
         fflush(stdout);
     }
 
-    uint32_t waited_ms = 0u;
-    while (rc == H2_PAL_OK && context.provisioned == 0 &&
-           waited_ms < H2_SMOKE_BLE_WIFI_CONFIG_WINDOW_MS) {
-        (void)h2_pal_time_sleep_ms(
-            runtime->time, H2_SMOKE_BLE_WIFI_CONFIG_POLL_MS);
-        waited_ms += H2_SMOKE_BLE_WIFI_CONFIG_POLL_MS;
-    }
-    if (rc == H2_PAL_OK && context.provisioned == 0) {
-        rc = H2_PAL_ERR_TIMEOUT;
+    if (rc == H2_PAL_OK) {
+        (void)h2_pal_mutex_lock(runtime->sync, context.mutex);
+        while (context.provisioned == 0 && rc == H2_PAL_OK) {
+            rc = h2_pal_cond_wait(
+                runtime->sync, context.cond, context.mutex,
+                H2_SMOKE_BLE_WIFI_CONFIG_WINDOW_MS);
+        }
+        (void)h2_pal_mutex_unlock(runtime->sync, context.mutex);
     }
 
     h2_ble_wifi_config_stats_t stats;
@@ -202,7 +229,10 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
             (unsigned)stats.sends_during_peer_change);
         fflush(stdout);
     }
-    if (context.provisioned != 0) {
+    (void)h2_pal_mutex_lock(runtime->sync, context.mutex);
+    int provisioned = context.provisioned;
+    (void)h2_pal_mutex_unlock(runtime->sync, context.mutex);
+    if (provisioned != 0) {
         h2_smoke_ble_wifi_config_print_station(runtime);
     }
 
@@ -216,6 +246,8 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     if (rc == H2_PAL_OK && close_rc != H2_PAL_OK) {
         rc = close_rc;
     }
+    (void)h2_pal_cond_destroy(runtime->sync, context.cond);
+    (void)h2_pal_mutex_destroy(runtime->sync, context.mutex);
     printf("H2_SMOKE_BLE_WIFI_CONFIG stage=done rc=%d\n", rc);
     fflush(stdout);
     return rc;
