@@ -1,0 +1,8 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "ble_wifi_config",
+    srcs = [
+        "//projects/example/apps/ble-wifi-config/app:ble_wifi_config",
+    ],
+)

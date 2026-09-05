@@ -1,0 +1,62 @@
+#include "h2_esp_board.h"
+#include "h2_esp_h2loader_ble.h"
+#include "h2_esp_h2loader_runtime.h"
+#include "h2_esp_target_task_policy.h"
+#include "h2_loader_boot.h"
+#include "h2_smoke_ble_wifi_config.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include <stdio.h>
+
+static void image_entry(void *user) {
+    (void)user;
+    h2_runtime_config_t runtime_config = { 0 };
+    h2_runtime_t *runtime = NULL;
+    int rc = h2_esp_board_runtime_config(&runtime_config);
+    if (rc == H2_PAL_OK) {
+        rc = h2_esp_h2loader_app_commands_prepare_serial(
+            &runtime_config, "ble-wifi-config", 1u, 3u);
+    }
+    if (rc == H2_PAL_OK) {
+        rc = h2_runtime_init(&runtime_config, &runtime);
+    }
+    if (rc == H2_PAL_OK) {
+        rc = h2_esp_h2loader_app_commands_start(
+            runtime, "ble-wifi-config", 1u, 3u);
+    }
+    /*
+     * Confirm before opening the window, not after: provisioning waits for a
+     * phone that may never arrive, and an unconfirmed image would roll back
+     * while the operator is still looking for the device.
+     */
+    if (rc == H2_PAL_OK) {
+        printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_CONFIRM stage=begin\n");
+        fflush(stdout);
+        rc = h2_esp_h2loader_app_confirm(runtime);
+        printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_CONFIRM stage=done rc=%d\n", rc);
+        fflush(stdout);
+    }
+    if (rc == H2_PAL_OK) {
+        rc = h2_smoke_ble_wifi_config_run(runtime);
+    }
+    printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_DONE rc=%d\n", rc);
+    fflush(stdout);
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000u));
+    }
+}
+
+void app_main(void) {
+    if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
+        return;
+    }
+    h2_pal_result_t rc = h2_esp_board_start_entry_task(
+        "devkit/ble-wificfg", image_entry, NULL);
+    if (rc != H2_PAL_OK) {
+        printf(
+            "H2_BOARD_ENTRY_FAIL board=devkit image=ble-wifi-config code=%d\n",
+            rc);
+    }
+}

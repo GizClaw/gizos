@@ -118,6 +118,15 @@ Wi-Fi 与 BLE 共用射频，扫描和连接期间广播会同时拖慢两边，
 
 ESP target 上另有一层 `h2_esp_platform_wifi_set_activity_observer()`，由 ESP app-command 组件安装并暂停 H2Loader 的广播。那是 ESP-private 机制，portable library 不能使用；两层互不冲突，各自只暂停自己拥有的广播集合。
 
+## 可运行示例
+
+`projects/example/apps/ble-wifi-config/` 是使用本 library 的 portable Smoke App，`projects/example/targets/h2loader_tar_zlib/ble-wifi-config/devkit/` 是它的 DevKit（ESP32-S3）H2Loader app image。App 打开配网窗口、以 `H2-Provision` 广播并携带 service UUID，把每个服务事件、计数器和最终 station status 打印成 `H2_SMOKE_BLE_WIFI_CONFIG` 行，成功或窗口到期后立刻关闭窗口。设备无法给自己配网，因此没有手机参与的一次运行按设计以 timeout 结束。
+
+```sh
+source ~/h2vivi/firmwares-devenv/export.sh
+bazel build --config=esp32s3 //projects/example/targets/h2loader_tar_zlib/ble-wifi-config/devkit:firmware
+```
+
 ## 构建与测试
 
 ```sh
