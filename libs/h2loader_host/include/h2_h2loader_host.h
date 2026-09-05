@@ -422,6 +422,13 @@ typedef struct h2_h2loader_host_ble_connection_config {
     const char *advertised_board;
     uint32_t connect_timeout_ms;
     uint32_t command_timeout_ms;
+    /** Optional connection-failure diagnostic sink. Called synchronously on
+     * the connect caller's thread with a borrowed complete text line (no NUL
+     * included); copy bytes before returning if needed. Not retained after
+     * connect returns. A sink error never replaces the original connect error.
+     * NULL disables these diagnostics; the library does not write stderr. */
+    h2_h2loader_host_transport_log_fn on_log;
+    void *log_user;
 } h2_h2loader_host_ble_connection_config_t;
 
 /**

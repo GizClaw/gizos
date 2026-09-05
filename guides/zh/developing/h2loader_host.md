@@ -71,6 +71,8 @@ BK7258 driver 在 Host Core 内用 C 实现 Beken HCI ROM download protocol，�
 
 ## Threading 与 shutdown
 
+BLE connect 的失败阶段诊断通过可选 `on_log`/`log_user` 回调交给 caller，不由 Host Core 直接写 stderr。回调在 connect 调用线程同步收到完整、长度限定的文本行，字节只在回调期间有效；需要异步使用时由 caller 复制。此 sink 仅用于已经失败的 connect、MTU、BLE-iKCP open 和 status 阶段，sink 自身的错误不覆盖原始连接错误；它不是设备日志流，也不改变 reliable serial 日志错误的传播合同。Native CLI 将同一 transport output sink 注入 serial 和 BLE，未提供 sink 的 consumer 不会收到这些诊断输出。
+
 所有 scan、catalog hash、connect、transfer、flash 和 reconnect 在 worker 执行。Worker 只写 caller-owned plain snapshots 与 atomic progress；UI controller 只接收复制后的 structured result。Cancellation 在 bounded I/O 边界协作完成。Shutdown 先拒绝新工作、请求取消、join worker，再关闭 BLE、serial、catalog 和 UI resource。
 
 Scheduler 在 controller thread 上冻结 fixture slot、candidate snapshot 和 asset。`claim()` 最多放出配置的 active 数量；每个 worker 使用独立 transport/operation state，completion 通过 bounded queue 返回 controller 后再写 scheduler。`set_paused()` 只暂停新的 claim，已经运行的 worker 继续到安全终止边界。取消 queued job 不关闭其它 active session；失败或 retry 只改变对应 slot，并继续使用原来冻结的 candidate、asset 和 recovery authorization。

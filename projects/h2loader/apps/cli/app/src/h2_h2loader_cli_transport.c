@@ -91,6 +91,8 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
             .advertised_board = advertised_board,
             .connect_timeout_ms = transport->options->wait_timeout_ms,
             .command_timeout_ms = transport->command_timeout_ms,
+            .on_log = transport->on_log,
+            .log_user = transport->log_user,
         };
         rc = h2_h2loader_host_ble_connect(
             &connect, &transport->ble_connection, out_status);
