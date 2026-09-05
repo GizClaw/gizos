@@ -92,6 +92,10 @@ ESP Preference provider 挂载独立 label `pref` 到私有 `/h2pref`，要求 p
 
 PAL backend 只处理 platform/SDK 能力。具体 display、audio codec、sensor、modem 和 GPIO wiring 由硬件 capability component 与 BSP 继续组装。
 
+NimBLE GATT server schema 的静态上限是 2 个 service、每个 service 3 个 characteristic；超出的注册在改变 state 前返回 `H2_PAL_ERR_UNSUPPORTED`。上限只决定静态存储大小，characteristic 与 NimBLE access callback 之间的 index 在注册时写入，不来自手写的常量列表——否则扩大表格会让靠后的槽位读成 index 0，把一个 characteristic 的读写派发到另一个上。
+
+显式停止 advertising 是同步完成的：NimBLE 只在 advertising 自行结束或因连接结束时上报 `BLE_GAP_EVENT_ADV_COMPLETE`，成功的 `ble_gap_adv_stop()` 不产生任何事件。因此 legacy 与 Extended 两条路径在 stop 返回 `0` 或 `BLE_HS_EALREADY` 时都直接就地完成并发出 stopped 通知，不等待该事件；等待只会让每次显式停止耗尽 GAP timeout 再报 `H2_PAL_ERR_TIMEOUT`。
+
 NimBLE GATT server indication 在 component 内串行化 outstanding indication，并使用 `BLE_GAP_EVENT_NOTIFY_TX` 完成同步调用。Status `0` 只表示 command 已发出；只有 `BLE_HS_EDONE` 表示 peer confirmation。其他终态错误、disconnect、Host stop 和 timeout 作为 `h2_pal_ble_indicate()` 的直接结果返回；private generation 防止迟到 completion 错配。提交使用 caller 提供的 payload 创建 mbuf，不能回退到 characteristic 的旧缓存值。
 
 `h2_pal_ble_pair()` 在 component 内用单个每-connection-handle 状态机（`IDLE`/`WAITING`/`DRAINING`/`COMPLETED`）串行化每个 handle 至多一次 outstanding pairing attempt。超时不会立即释放 handle：tracker 转入 `DRAINING`。此后迟到的 `BLE_GAP_EVENT_ENC_CHANGE` 是 no-op，不会释放 handle；只有该 handle 匹配的 `BLE_GAP_EVENT_DISCONNECT` 才是 `DRAINING` 回到 `IDLE` 的唯一转移。在回到 `IDLE` 之前，同一 handle 上的新 `pair()` 调用返回 `H2_PAL_ERR_BUSY`。`ble_gap_terminate()` 用于主动放弃一次超时的 attempt；若该调用本身失败，handle 保持 `DRAINING`，下一次对同一 handle 的 `pair()` 调用会先重试这次 disconnect，而不是无限期停留 `BUSY`。一次已提交为 `COMPLETED` 的结果只能被同一 handle 的下一次 `take()` 消费一次并回到 `IDLE`；若调用方自身的等待与迟到完成竞争，`take()`/`timeout()` 只在 tracker 处于真正 `COMPLETED` 状态时返回该结果，否则报告 `H2_PAL_ERR_WOULD_BLOCK`，调用方据此继续等待剩余 timeout，而不是把一次陈旧通知误当作当前 attempt 的结果。

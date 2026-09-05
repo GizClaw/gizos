@@ -38,6 +38,7 @@ api_reference(
     deps = [
         "//libs/app_test",
         "//libs/audio_mixer",
+        "//libs/ble_wifi_config",
         "//libs/bleikcp",
         "//libs/bundle",
         "//libs/command",

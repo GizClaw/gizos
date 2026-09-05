@@ -1,7 +1,9 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
-#include "h2_esp_ble_indication_tracker.h"
+#include "h2_esp_ble_adv_stop.h"
 #include "h2_esp_ble_exact_adapter.h"
+#include "h2_esp_ble_gatt_schema.h"
+#include "h2_esp_ble_indication_tracker.h"
 #include "h2_esp_ble_pair_tracker.h"
 
 #include "sdkconfig.h"
@@ -47,11 +49,7 @@
     (BIT6 << ((instance) - 1u))
 #define H2_ESP_BLE_MAX_VALUE_LEN H2_PAL_BLE_ATT_MAX_VALUE_LEN
 #define H2_ESP_BLE_MAX_DISCOVERY_ENTRIES 8u
-#define H2_ESP_BLE_MAX_GATT_SERVICES 2u
-#define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 2u
-#define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS \
-    (H2_ESP_BLE_MAX_GATT_SERVICES * \
-     H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
+/* Schema capacity and slot mapping live in h2_esp_ble_gatt_schema.h. */
 #define H2_ESP_BLE_SCAN_SOURCE_ID 1u
 #define H2_ESP_BLE_GAP_STOP_TIMEOUT_MS 6000u
 #define H2_ESP_BLE_LL_DATA_LEN 251u
@@ -156,9 +154,13 @@ static h2_pal_ble_gatt_read_fn s_h2_esp_ble_read[H2_ESP_BLE_MAX_GATT_CHARACTERIS
 static h2_pal_ble_gatt_write_fn s_h2_esp_ble_write[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static void *s_h2_esp_ble_gatt_user[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static uint16_t s_h2_esp_ble_value_handle[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
-static uint8_t s_h2_esp_ble_char_index[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS] = {
-    0u, 1u, 2u, 3u,
-};
+/*
+ * Each entry is its own index and is the arg NimBLE hands back to the access
+ * callback. It is filled in at registration rather than from a literal list,
+ * so growing the table cannot leave later slots reading as index 0 and
+ * dispatching another characteristic's reads and writes.
+ */
+static uint8_t s_h2_esp_ble_char_index[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static size_t s_h2_esp_ble_service_count;
 static size_t
     s_h2_esp_ble_service_characteristic_count[H2_ESP_BLE_MAX_GATT_SERVICES];
@@ -689,8 +691,7 @@ static void h2_esp_ble_update_out_handles(void) {
         if (s_h2_esp_ble_out_service_handle[service] == NULL) {
             continue;
         }
-        size_t first =
-            service * H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
+        size_t first = h2_esp_ble_gatt_schema_slot(service, 0u);
         uint16_t value_handle = s_h2_esp_ble_value_handle[first];
         *s_h2_esp_ble_out_service_handle[service] =
             value_handle >= 2u ? (uint16_t)(value_handle - 2u) : 0u;
@@ -1599,7 +1600,9 @@ static h2_pal_result_t h2_esp_ble_stop(h2_pal_ble_t *ble) {
         } else
 #endif
         {
+            /* Same as the stop path: no ADV_COMPLETE follows an explicit stop. */
             (void)ble_gap_adv_stop();
+            h2_esp_ble_complete_advertising();
         }
     }
 #if CONFIG_BT_NIMBLE_EXT_ADV
@@ -1851,7 +1854,8 @@ static h2_pal_result_t h2_esp_ble_stop_advertising(h2_pal_ble_t *ble) {
 #if CONFIG_BT_NIMBLE_EXT_ADV
     if (s_h2_esp_ble_ext_adv_configured) {
         rc = ble_gap_ext_adv_stop(H2_ESP_BLE_EXT_ADV_INSTANCE);
-        if (rc == 0 || rc == BLE_HS_EALREADY) {
+        if (h2_esp_ble_adv_stop_classify(rc, BLE_HS_EALREADY) ==
+            H2_ESP_BLE_ADV_STOP_COMPLETED) {
             h2_esp_ble_complete_advertising();
             return H2_PAL_OK;
         }
@@ -1859,24 +1863,11 @@ static h2_pal_result_t h2_esp_ble_stop_advertising(h2_pal_ble_t *ble) {
 #endif
     {
         rc = ble_gap_adv_stop();
-        if (rc == BLE_HS_EALREADY) {
+        if (h2_esp_ble_adv_stop_classify(rc, BLE_HS_EALREADY) ==
+            H2_ESP_BLE_ADV_STOP_COMPLETED) {
             h2_esp_ble_complete_advertising();
             return H2_PAL_OK;
         }
-    }
-    if (rc == 0 && s_h2_esp_ble_events != NULL) {
-        EventBits_t bits = xEventGroupWaitBits(
-            s_h2_esp_ble_events,
-            H2_ESP_BLE_ADV_STOPPED_BIT,
-            pdTRUE,
-            pdTRUE,
-            pdMS_TO_TICKS(H2_ESP_BLE_GAP_STOP_TIMEOUT_MS));
-        if ((bits & H2_ESP_BLE_ADV_STOPPED_BIT) == 0u && s_h2_esp_ble_adv_active) {
-            return H2_PAL_ERR_TIMEOUT;
-        }
-    }
-    if (rc == 0) {
-        return H2_PAL_OK;
     }
     return h2_esp_ble_map_rc(rc);
 }
@@ -2377,8 +2368,7 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
     }
     if (services == NULL || count != 1u || services[0].characteristics == NULL ||
         services[0].characteristic_count == 0u ||
-        services[0].characteristic_count >
-            H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE) {
+        !h2_esp_ble_gatt_schema_accepts(count, services[0].characteristic_count)) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     ble_uuid_any_t service_uuid;
@@ -2426,8 +2416,7 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
         (void)xSemaphoreGive(s_h2_esp_ble_gatt_mutex);
         return H2_PAL_ERR_INVALID_STATE;
     }
-    size_t first =
-        service_index * H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
+    size_t first = h2_esp_ble_gatt_schema_slot(service_index, 0u);
     for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
         if (!add_service &&
             ble_uuid_cmp(
@@ -2451,6 +2440,10 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
             .characteristics = s_h2_esp_ble_chr_defs[service_index],
         };
     }
+    /* Every slot of this service points at its own callback index. */
+    h2_esp_ble_gatt_schema_bind_indices(
+        s_h2_esp_ble_char_index, service_index,
+        services[0].characteristic_count);
     for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
         size_t index = first + i;
         const h2_pal_ble_gatt_characteristic_t *ch = &services[0].characteristics[i];

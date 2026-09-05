@@ -156,6 +156,12 @@ typedef struct h2_pal_wifi_ap_api h2_pal_wifi_ap_api_t;
 typedef h2_pal_wifi_sta_api_t h2_pal_wifi_sta_t;
 typedef h2_pal_wifi_ap_api_t h2_pal_wifi_ap_t;
 
+/*
+ * Return true to keep scanning; return false to stop early. Note this is the
+ * opposite of h2_pal_ble_scan_result_fn, which returns true to stop: both
+ * Wi-Fi providers break on a false return, and leaving it undocumented already
+ * cost one caller every access point but the first.
+ */
 typedef bool (*h2_pal_wifi_scan_result_fn)(
     void *user,
     const h2_pal_wifi_scan_entry_t *entry);

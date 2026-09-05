@@ -1,6 +1,7 @@
 export const apiSources = [
   { id: "app_test", roots: ["libs/app_test/include"] },
   { id: "audio_mixer", roots: ["libs/audio_mixer/include"] },
+  { id: "ble_wifi_config", roots: ["libs/ble_wifi_config/include"] },
   { id: "bleikcp", roots: ["libs/bleikcp/include"] },
   { id: "bundle", roots: ["libs/bundle/include"] },
   { id: "command", roots: ["libs/command/include"] },

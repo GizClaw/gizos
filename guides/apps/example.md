@@ -10,6 +10,7 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `ble-broadcaster` | Legacy 与 Extended Advertising lifecycle |
 | `ble-observer` | Extended Scanning payload、PHY 与 SID |
 | `ble-smoke` | Mixed-width GATT、Advertising、Scan、subscription、indication、reconnect 与 Runtime queue round trip |
+| `ble-wifi-config` | 手机通过 BLE 扫描周边 AP 并下发 Wi-Fi 凭据的配网窗口 |
 | `bleikcp-speed` | Server/Client BLE iKCP throughput baseline |
 | `crash-before-confirm` | 由 launcher 注入的 deterministic crash |
 | `display` | Raw Display PAL RGB565 color bars |
@@ -28,6 +29,8 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `tap-reset` | 同一个 LVGL counter 的 increment 与 Reset |
 | `touch` | Touch PAL 到 LVGL pointer，以及 LVGL widget 到 mapped Runtime Button 的完整链路 |
 | `wifi-csi` | CSI metadata、error state 与 bounded I/Q curve |
+
+`ble-wifi-config` 用 `libs/ble_wifi_config` 打开一个配网窗口并等待手机使用它，因此没有 aggregate verdict：设备不能给自己配网，没有手机参与的一次运行按设计以 timeout 结束。它把服务事件、计数器和最终 station status 打印成 `H2_SMOKE_BLE_WIFI_CONFIG` 行，配网成功或窗口到期后立即关闭窗口——那个窗口就是全部授权。当前 artifact 是 DevKit 的 H2Loader app image；对端是 LiteLink 的 Flutter App 与微信小程序。
 
 `ble-smoke` 的 server indication 使用同步 PAL contract：调用提供 timeout，返回值直接表达 peer confirmation、失败、断连或超时；Example 不维护 indication ID，也不等待 completion System Event。
 

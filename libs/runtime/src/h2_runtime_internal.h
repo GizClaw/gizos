@@ -5,6 +5,8 @@
 
 #include <stdatomic.h>
 
+#include "h2_runtime_system_state.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -225,6 +227,38 @@ typedef struct h2_runtime_state_publication {
     uint64_t deferred_count;
 } h2_runtime_state_publication_t;
 
+/*
+ * System state publication. A system snapshot has no component identity and
+ * exactly one writer, the system-event ingest, so a sequence counter is
+ * enough and needs no second slot: the writer marks the snapshot in flight,
+ * writes it, and marks it settled, while a reader copies and retries if the
+ * counter moved under it.
+ *
+ * Two slots and an index would not be safe here. A reader holding the slot an
+ * index just retired is overwritten by the very next publication, which is
+ * two events away, and station events arrive in bursts.
+ */
+typedef struct h2_runtime_system_state_publication {
+    /*
+     * One short critical section per publication and per read. A snapshot is
+     * a plain struct, so a sequence counter alone would only detect a torn
+     * copy after racing on it; the copy itself would still be a data race.
+     * Both sides are bounded memcpys off any hot path: the writer runs on the
+     * system-event ingest, the reader polls.
+     */
+    h2_pal_mutex_t *mutex;
+    h2_runtime_system_wifi_sta_state_t wifi_sta;
+} h2_runtime_system_state_publication_t;
+
+/* Creates and releases the system state lock; see h2_runtime_system_state.c. */
+h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t *runtime);
+void h2_runtime_system_state_release(h2_runtime_t *runtime);
+
+/* Publishes one station snapshot; see h2_runtime_system_state.c. */
+void h2_runtime_system_state_publish_wifi_sta(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_wifi_sta_state_t *state);
+
 typedef struct h2_runtime_component_mapping {
     h2_runtime_component_t component;
     h2_runtime_component_id_t component_id;
@@ -233,6 +267,7 @@ typedef struct h2_runtime_component_mapping {
 
 struct h2_runtime_private {
     int initialized;
+    h2_runtime_system_state_publication_t system_state;
     size_t allocation_size;
     h2_pal_queue_t *event_queue;
     /*

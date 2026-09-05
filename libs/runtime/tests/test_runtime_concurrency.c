@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "h2_runtime_internal.h"
+#include "h2_runtime_test.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -1095,7 +1096,94 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
     concurrency_env_deinit(&env);
 }
 
+/*
+ * The station snapshot is published by one writer and polled by readers that
+ * never lock. A reader must always come away with one coherent moment, even
+ * while publications keep arriving: station events land in bursts, so a
+ * scheme that only retires the previous copy would hand a reader a snapshot
+ * that is being rewritten underneath it.
+ */
+typedef struct station_reader_args {
+    h2_runtime_t *runtime;
+    atomic_int stop;
+    atomic_ulong reads;
+    int torn;
+} station_reader_args_t;
+
+static void *station_reader_main(void *ctx) {
+    station_reader_args_t *args = ctx;
+    while (atomic_load(&args->stop) == 0) {
+        h2_runtime_system_wifi_sta_state_t state;
+        memset(&state, 0, sizeof(state));
+        if (h2_runtime_system_state_wifi_sta(args->runtime, &state) != H2_PAL_OK) {
+            continue;
+        }
+        atomic_fetch_add(&args->reads, 1ul);
+        if (state.valid == 0u) {
+            continue;
+        }
+        /*
+         * Every published snapshot pairs a channel with the matching RSSI and
+         * SSID length, so any other combination is a torn read.
+         */
+        if ((size_t)state.channel != state.ssid_len ||
+            state.rssi != -(int32_t)state.channel) {
+            args->torn = 1;
+        }
+    }
+    return NULL;
+}
+
+static void test_station_snapshot_survives_a_publication_burst(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    add_single_button(&env);
+    h2_runtime_t *runtime = concurrency_runtime_create(&env);
+
+    station_reader_args_t args = { .runtime = runtime };
+    atomic_init(&args.stop, 0);
+    atomic_init(&args.reads, 0ul);
+    pthread_t reader;
+    assert(pthread_create(&reader, NULL, station_reader_main, &args) == 0);
+    /*
+     * Let the reader get going first. Starting the burst immediately can
+     * finish it before the thread runs at all, which proves nothing.
+     */
+    while (atomic_load(&args.reads) == 0ul) {
+        sched_yield();
+    }
+
+    for (unsigned int i = 0u; i < 20000u; ++i) {
+        uint8_t channel = (uint8_t)(1u + (i % 13u));
+        h2_runtime_system_wifi_sta_state_t state;
+        memset(&state, 0, sizeof(state));
+        state.valid = 1u;
+        state.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED;
+        state.channel = channel;
+        state.ssid_len = channel;
+        state.rssi = -(int32_t)channel;
+        memset(state.ssid, 'a', channel);
+        assert(h2_runtime_test_set_system_wifi_sta_state(runtime, &state) ==
+               H2_PAL_OK);
+    }
+
+    atomic_store(&args.stop, 1);
+    assert(pthread_join(reader, NULL) == 0);
+    assert(atomic_load(&args.reads) > 0ul);
+    assert(args.torn == 0);
+
+    /* The last publication is what a later reader sees. */
+    h2_runtime_system_wifi_sta_state_t final_state;
+    assert(h2_runtime_system_state_wifi_sta(runtime, &final_state) == H2_PAL_OK);
+    assert(final_state.valid == 1u);
+    assert((size_t)final_state.channel == final_state.ssid_len);
+
+    h2_runtime_deinit(runtime);
+    concurrency_env_deinit(&env);
+}
+
 int main(void) {
+    test_station_snapshot_survives_a_publication_burst();
     test_slow_pal_does_not_block_snapshot_read();
     test_push_edge_does_not_write_while_poller_is_blocked();
     test_pinned_reader_does_not_block_publication();

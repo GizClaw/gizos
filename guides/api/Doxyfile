@@ -3,6 +3,7 @@ OUTPUT_DIRECTORY       = $(H2_GUIDES_GENERATED_ROOT)/doxygen
 
 INPUT                  = libs/app_test/include \
                          libs/audio_mixer/include \
+                         libs/ble_wifi_config/include \
                          libs/bleikcp/include \
                          libs/bundle/include \
                          libs/command/include \
