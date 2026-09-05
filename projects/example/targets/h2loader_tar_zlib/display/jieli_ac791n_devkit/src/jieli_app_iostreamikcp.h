@@ -5,6 +5,10 @@
 
 #include <stddef.h>
 
+/* Start the boot-lifetime App console from the serialized App startup path.
+ * The client and allocator must remain valid for the rest of this boot. If the
+ * command task cannot start, a retry with the same client and allocator reuses
+ * the physical console; it does not recreate or stop its RX worker. */
 int h2_jieli_app_iostreamikcp_start(
     h2_loader_app_client_t *client,
     const h2_pal_task_api_t *task,

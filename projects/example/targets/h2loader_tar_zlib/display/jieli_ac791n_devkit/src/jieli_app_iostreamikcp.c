@@ -58,6 +58,7 @@ typedef struct h2_jieli_app_console {
   size_t rx_tail;
   size_t rx_count;
   uint32_t rx_overflow;
+  int initialized;
   int started;
 } h2_jieli_app_console_t;
 
@@ -554,6 +555,14 @@ int h2_jieli_app_iostreamikcp_start(
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (state.started) return H2_PAL_ERR_INVALID_STATE;
+  /* A failed command-task start does not stop the physical console. Reuse its
+   * live objects on retry; never overwrite storage reachable by the RX task. */
+  if (state.initialized) {
+    if (state.client != client || state.transport.allocator != allocator) {
+      return H2_PAL_ERR_INVALID_STATE;
+    }
+    goto start_command;
+  }
   memset(&state, 0, sizeof(state));
   state.client = client;
   state.transport.allocator = allocator;
@@ -581,15 +590,18 @@ int h2_jieli_app_iostreamikcp_start(
     console_sync_destroy(&state);
     return H2_PAL_ERR_IO;
   }
-  for (usb_dev id = 0; id < USB_MAX_HW_NUM; ++id) {
-    cdc_set_wakeup_handler(id, usb_cdc_wakeup);
-  }
   if (os_task_create(
           usb_rx_task, &state, 12, H2_USB_RX_TASK_STACK_SIZE, 0,
           "h2app_rx") != OS_NO_ERR) {
+    console_sync_destroy(&state);
     return H2_PAL_ERR_NO_MEMORY;
   }
+  for (usb_dev id = 0; id < USB_MAX_HW_NUM; ++id) {
+    cdc_set_wakeup_handler(id, usb_cdc_wakeup);
+  }
 #endif
+  state.initialized = 1;
+start_command:
   state.started = 1;
   const h2_loader_app_client_return_console_config_t console = {
       .client = client,

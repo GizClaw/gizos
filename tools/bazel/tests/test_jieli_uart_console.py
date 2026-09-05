@@ -95,6 +95,139 @@ int main(void) {
 
 
 class UartConsoleTest(unittest.TestCase):
+    def test_app_console_start_retry_keeps_live_transport(self):
+        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
+                  "jieli_ac791n_devkit/src/jieli_app_iostreamikcp.c").read_text()
+        begin = source.index("static int console_sync_init(")
+        stub = r'''
+#include <assert.h>
+#include <stddef.h>
+#include <string.h>
+enum { OS_NO_ERR=0, H2_PAL_OK=0, H2_PAL_ERR_NO_MEMORY=-1,
+       H2_PAL_ERR_INVALID_ARG=-2, H2_PAL_ERR_INVALID_STATE=-3,
+       H2_PAL_ERR_IO=-4, H2_USB_RX_TASK_STACK_SIZE=4096,
+       H2_APP_COMMAND_STACK_SIZE=49152, USB_MAX_HW_NUM=2 };
+typedef int h2_loader_app_client_t;
+typedef int h2_pal_task_api_t;
+typedef int h2_pal_mem_api_t;
+typedef int usb_dev;
+typedef struct { void *user; int read, write, flush; } h2_iostreamikcp_io_t;
+typedef struct { void *user; int *vtable; } h2_command_io_api_t;
+typedef struct {
+  const h2_pal_mem_api_t *allocator;
+  h2_iostreamikcp_io_t physical_io;
+  int filter;
+} transport_t;
+typedef struct {
+  transport_t transport;
+  h2_command_io_api_t io;
+  h2_loader_app_client_t *client;
+  int rx_mutex, tx_mutex, rx_wakeup_sem, rx_data_sem;
+  usb_dev usb_id;
+  int initialized, started;
+} h2_jieli_app_console_t;
+typedef struct {
+  h2_loader_app_client_t *client;
+  const h2_pal_task_api_t *task;
+  void *read_user, *write_user;
+  int read_byte, write;
+  const char *task_name;
+  size_t stack_size;
+} h2_loader_app_client_return_console_config_t;
+static h2_jieli_app_console_t state;
+static int physical_read, physical_write, physical_flush, command_io_vtable;
+static int app_read_byte, app_write;
+static int live, creates, board_calls, command_calls;
+static int board_fail, worker_fail, command_fail, worker_count, handlers;
+static int os_mutex_create(int *o) {
+  assert(*o==0); *o=++creates; ++live; return OS_NO_ERR;
+}
+static int os_sem_create(int *o, int n) {
+  assert(n==0); return os_mutex_create(o);
+}
+static int os_mutex_del(int *o, int force) {
+  assert(*o!=0 && force==0 && worker_count==0 && handlers==0);
+  *o=0; --live; return OS_NO_ERR;
+}
+static int os_sem_del(int *o, int force) { return os_mutex_del(o,force); }
+static void h2_iostreamikcp_filter_init(int *filter) { *filter=17; }
+static int board_start(void) {
+  ++board_calls; assert(live==4); return board_fail ? H2_PAL_ERR_IO : 0;
+}
+#define h2_jieli_ac791n_devkit_console_start board_start
+#define h2_jieli_ac791n_devkit_usb_debug_start board_start
+#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
+static int usb_rx_task, usb_cdc_wakeup;
+static int os_task_create(int entry, void *ctx, int priority, int stack,
+                          int queue, const char *name) {
+  (void)entry; (void)priority; (void)stack; (void)queue; (void)name;
+  assert(ctx==&state && live==4 && handlers==0 && worker_count==0);
+  if (worker_fail) return -1;
+  ++worker_count; return 0;
+}
+static void cdc_set_wakeup_handler(usb_dev id, int handler) {
+  (void)id; (void)handler;
+  assert(worker_count==1 && live==4); ++handlers;
+}
+#endif
+static int h2_loader_app_client_start_return_console(
+    const h2_loader_app_client_return_console_config_t *config) {
+  assert(config->read_user==&state && config->write_user==&state);
+  assert(state.initialized && state.started && live==4);
+  ++command_calls;
+  return command_fail ? H2_PAL_ERR_NO_MEMORY : 0;
+}
+'''
+        main = r'''
+int main(void) {
+  h2_loader_app_client_t client=0, other_client=0;
+  h2_pal_task_api_t task=0;
+  h2_pal_mem_api_t allocator=0, other_allocator=0;
+  board_fail=1;
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_IO);
+  assert(live==0 && !state.initialized);
+  board_fail=0;
+#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
+  worker_fail=1;
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
+  assert(live==0 && handlers==0 && !state.initialized);
+#endif
+  worker_fail=0; command_fail=1;
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
+  assert(live==4 && state.initialized && !state.started);
+  int saved_creates=creates, saved_board_calls=board_calls;
+  int saved_mutex=state.rx_mutex;
+  /* Preserve data written by a live worker between command-start attempts. */
+  state.usb_id=1;
+  assert(h2_jieli_app_iostreamikcp_start(&other_client,&task,&allocator)==H2_PAL_ERR_INVALID_STATE);
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&other_allocator)==H2_PAL_ERR_INVALID_STATE);
+  assert(command_calls==1);
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
+  command_fail=0;
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==0);
+  assert(state.started && state.usb_id==1 && state.rx_mutex==saved_mutex);
+  assert(creates==saved_creates && board_calls==saved_board_calls && live==4);
+#ifndef CONFIG_H2_UART1_DEBUG_ENABLE
+  assert(worker_count==1 && handlers==USB_MAX_HW_NUM);
+#endif
+  assert(command_calls==3);
+  assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_INVALID_STATE);
+  assert(command_calls==3);
+  return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-app-start-test-") as directory:
+            test = Path(directory) / "test.c"
+            test.write_text(stub + source[begin:] + main)
+            for uart in (False, True):
+                with self.subTest(uart=uart):
+                    binary = Path(directory) / ("uart" if uart else "usb")
+                    flags = ["-DCONFIG_H2_UART1_DEBUG_ENABLE=1"] if uart else []
+                    subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra",
+                                    "-Werror", *flags, str(test), "-o", str(binary)],
+                                   check=True, timeout=60)
+                    subprocess.run([str(binary)], check=True, timeout=60)
+
     def test_app_console_sync_create_failure_unwinds(self):
         source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                   "jieli_ac791n_devkit/src/jieli_app_iostreamikcp.c").read_text()
