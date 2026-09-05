@@ -79,7 +79,7 @@ packet-beta
 8-15: "reason"
 ```
 
-`status` 为 `0x00` 表示成功，非 0 表示失败。`reason` 取值 `0x00` 无、`0x01` 密码错、`0x02` 找不到该 AP、`0x03` DHCP 失败、`0x04` 连接超时、`0xff` 未知错误。畸形的凭据帧被同时以两种方式回应：ATT write 本身以解码结果失败（`H2_PAL_ERR_FORMAT`），worker task 随后仍推送一条 `{0x01, 0xff}` 结果帧，因此 App 不会停在等待页；该回执同样只投递给发起写入的那个连接。
+`status` 为 `0x00` 表示成功，非 0 表示失败。`reason` 取值 `0x00` 无、`0x01` 密码错、`0x02` 找不到该 AP、`0x03` DHCP 失败、`0x04` 连接超时、`0xff` 未知错误。畸形的凭据帧被同时以两种方式回应：ATT write 本身以解码结果失败（`H2_PAL_ERR_FORMAT`，`offset` 非零的 long write 则是 `H2_PAL_ERR_UNSUPPORTED`），worker task 随后仍推送一条 `{0x01, 0xff}` 结果帧，因此 App 不会停在等待页；该回执同样只投递给发起写入的那个连接。
 
 ## 失败原因判定
 

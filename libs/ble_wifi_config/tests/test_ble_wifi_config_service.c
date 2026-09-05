@@ -646,10 +646,11 @@ static void fake_subscribe(fake_runtime_t *runtime, uint16_t value_handle, bool 
               sizeof(state));
 }
 
-static h2_pal_result_t fake_gatt_write_from(
+static h2_pal_result_t fake_gatt_write_at(
     fake_runtime_t *runtime,
     uint16_t attr_handle,
     uint16_t conn_handle,
+    uint16_t offset,
     const uint8_t *data,
     size_t len) {
     pthread_mutex_lock(&runtime->mutex);
@@ -665,12 +666,21 @@ static h2_pal_result_t fake_gatt_write_from(
         h2_pal_ble_gatt_access_t access = {
             .conn_handle = conn_handle,
             .attr_handle = attr_handle,
-            .offset = 0u,
+            .offset = offset,
         };
         return ch->write(ch->user, &access, data, len);
     }
     CHECK(false);
     return H2_PAL_ERR_NOT_FOUND;
+}
+
+static h2_pal_result_t fake_gatt_write_from(
+    fake_runtime_t *runtime,
+    uint16_t attr_handle,
+    uint16_t conn_handle,
+    const uint8_t *data,
+    size_t len) {
+    return fake_gatt_write_at(runtime, attr_handle, conn_handle, 0u, data, len);
 }
 
 static h2_pal_result_t fake_gatt_write(
@@ -1094,6 +1104,26 @@ static void test_malformed_credentials_report_failure(void) {
     CHECK(fake_gatt_write(&runtime, TEST_PROVISION_HANDLE, empty, 0u) ==
           H2_PAL_ERR_FORMAT);
     CHECK(runtime.connect_calls == 0);
+
+    /*
+     * A long write cannot carry credentials either, and it owes the
+     * application the same result frame: otherwise the app waits forever.
+     */
+    const uint8_t valid[] = { 1u, 'a', 0u };
+    CHECK(fake_gatt_write_at(&runtime, TEST_PROVISION_HANDLE, TEST_CONN_HANDLE,
+                             1u, valid, sizeof(valid)) ==
+          H2_PAL_ERR_UNSUPPORTED);
+    fake_wait_notifications(&runtime, 2u);
+    fake_notification_t long_write_result = fake_notification(&runtime, 1u);
+    CHECK(long_write_result.attr_handle == TEST_PROVISION_HANDLE);
+    CHECK(long_write_result.len == 2u);
+    CHECK(long_write_result.data[0] == 0x01u);
+    CHECK(long_write_result.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
+    CHECK(runtime.connect_calls == 0);
+
+    h2_ble_wifi_config_stats_t stats;
+    CHECK(h2_ble_wifi_config_get_stats(service, &stats) == H2_PAL_OK);
+    CHECK(stats.protocol_errors == 3u);
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
     fake_runtime_deinit(&runtime);

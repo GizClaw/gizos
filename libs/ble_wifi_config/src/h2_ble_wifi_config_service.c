@@ -604,6 +604,33 @@ static h2_pal_result_t h2_ble_wifi_config_command_write(
     return H2_PAL_OK;
 }
 
+/**
+ * Fail one provisioning write and queue its result frame.
+ *
+ * The application waits for a result on every credential write, so a rejected
+ * frame is answered twice: this returns the ATT failure, and the worker sends
+ * a failure result. Sending it here would put a Host call inside a write
+ * callback.
+ */
+static h2_pal_result_t h2_ble_wifi_config_reject_provision_write(
+    h2_ble_wifi_config_t *service,
+    const h2_pal_ble_gatt_access_t *access,
+    int rc) {
+    h2_ble_wifi_config_lock(service);
+    service->stats.protocol_errors++;
+    service->reject_pending = true;
+    service->reject_reason = H2_BLE_WIFI_CONFIG_REASON_UNKNOWN;
+    service->reject_peer = (h2_ble_wifi_config_peer_t){
+        .conn_handle = access->conn_handle,
+        .generation = service->conn_generation,
+    };
+    h2_ble_wifi_config_post_event_locked(
+        service, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR,
+        access->conn_handle, rc);
+    h2_ble_wifi_config_unlock(service);
+    return (h2_pal_result_t)rc;
+}
+
 static h2_pal_result_t h2_ble_wifi_config_provision_write(
     void *user,
     const h2_pal_ble_gatt_access_t *access,
@@ -613,26 +640,20 @@ static h2_pal_result_t h2_ble_wifi_config_provision_write(
     if (access == NULL || (len > 0u && data == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    /*
+     * Credentials always fit one ATT value, so a long write is a malformed
+     * frame like any other and owes the application a result frame.
+     */
     if (access->offset != 0u) {
-        return H2_PAL_ERR_UNSUPPORTED;
+        return h2_ble_wifi_config_reject_provision_write(
+            service, access, H2_PAL_ERR_UNSUPPORTED);
     }
     h2_ble_wifi_config_credentials_t credentials;
     int rc = h2_ble_wifi_config_decode_credentials(data, len, &credentials);
-    h2_ble_wifi_config_lock(service);
     if (rc != H2_PAL_OK) {
-        service->stats.protocol_errors++;
-        service->reject_pending = true;
-        service->reject_reason = H2_BLE_WIFI_CONFIG_REASON_UNKNOWN;
-        service->reject_peer = (h2_ble_wifi_config_peer_t){
-            .conn_handle = access->conn_handle,
-            .generation = service->conn_generation,
-        };
-        h2_ble_wifi_config_post_event_locked(
-            service, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR,
-            access->conn_handle, rc);
-        h2_ble_wifi_config_unlock(service);
-        return (h2_pal_result_t)rc;
+        return h2_ble_wifi_config_reject_provision_write(service, access, rc);
     }
+    h2_ble_wifi_config_lock(service);
     if (service->closing || access->conn_handle != service->conn_handle) {
         h2_ble_wifi_config_unlock(service);
         return H2_PAL_ERR_INVALID_STATE;
