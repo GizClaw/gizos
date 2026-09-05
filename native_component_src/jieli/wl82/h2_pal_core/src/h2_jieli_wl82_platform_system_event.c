@@ -1,5 +1,6 @@
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_sdk_port.h"
+#include "h2_jieli_wl82_atomic.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -34,17 +35,16 @@ static uint32_t s_generation;
 #define EVENT_CLOSING (1u << 30)
 #define EVENT_INITIALIZING (1u << 29)
 #define EVENT_REFS (EVENT_INITIALIZING - 1u)
-static unsigned s_lifecycle;
+static uint32_t s_lifecycle;
 
 static h2_jieli_sdk_mutex_t *event_retain(void)
 {
-    unsigned state = __atomic_load_n(&s_lifecycle, __ATOMIC_ACQUIRE);
+    uint32_t state = h2_jieli_atomic_load_u32(&s_lifecycle);
     do {
         if (!(state & EVENT_ACTIVE) || (state & EVENT_REFS) == EVENT_REFS) {
             return NULL;
         }
-    } while (!__atomic_compare_exchange_n(&s_lifecycle, &state, state + 1u,
-                                          0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
+    } while (!h2_jieli_atomic_cas_u32(&s_lifecycle, &state, state + 1u));
     return s_lock;
 }
 
@@ -53,12 +53,12 @@ static void event_destroy(void)
     h2_jieli_sdk_mutex_destroy(s_lock);
     s_lock = NULL;
     memset(s_subscriptions, 0, sizeof(s_subscriptions));
-    __atomic_store_n(&s_lifecycle, 0u, __ATOMIC_RELEASE);
+    h2_jieli_atomic_store_u32(&s_lifecycle, 0u);
 }
 
 static void event_release(void)
 {
-    if (__atomic_sub_fetch(&s_lifecycle, 1u, __ATOMIC_ACQ_REL) == EVENT_CLOSING) {
+    if (h2_jieli_atomic_fetch_sub_u32(&s_lifecycle, 1u) == EVENT_CLOSING + 1u) {
         event_destroy();
     }
 }
@@ -66,31 +66,29 @@ static void event_release(void)
 static int system_event_init(void *user)
 {
     (void)user;
-    unsigned expected = 0u;
-    if (!__atomic_compare_exchange_n(&s_lifecycle, &expected, EVENT_INITIALIZING,
-                                     0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+    uint32_t expected = 0u;
+    if (!h2_jieli_atomic_cas_u32(&s_lifecycle, &expected, EVENT_INITIALIZING)) {
         return (expected & EVENT_ACTIVE) ? H2_PAL_OK : H2_PAL_ERR_BUSY;
     }
     s_lock = h2_jieli_sdk_mutex_create();
     if (s_lock == NULL) {
-        __atomic_store_n(&s_lifecycle, 0u, __ATOMIC_RELEASE);
+        h2_jieli_atomic_store_u32(&s_lifecycle, 0u);
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(s_subscriptions, 0, sizeof(s_subscriptions));
     s_generation = 0u;
-    __atomic_store_n(&s_lifecycle, EVENT_ACTIVE, __ATOMIC_RELEASE);
+    h2_jieli_atomic_store_u32(&s_lifecycle, EVENT_ACTIVE);
     return H2_PAL_OK;
 }
 
 static void system_event_deinit(void *user)
 {
     (void)user;
-    unsigned state = __atomic_load_n(&s_lifecycle, __ATOMIC_ACQUIRE);
+    uint32_t state = h2_jieli_atomic_load_u32(&s_lifecycle);
     do {
         if (!(state & EVENT_ACTIVE)) return;
-    } while (!__atomic_compare_exchange_n(
-        &s_lifecycle, &state, EVENT_CLOSING | (state & EVENT_REFS),
-        0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
+    } while (!h2_jieli_atomic_cas_u32(
+        &s_lifecycle, &state, EVENT_CLOSING | (state & EVENT_REFS)));
     if ((state & EVENT_REFS) == 0u) event_destroy();
 }
 
@@ -123,7 +121,7 @@ static int system_event_post(
 
     result = H2_PAL_OK;
     for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-        if (!(__atomic_load_n(&s_lifecycle, __ATOMIC_ACQUIRE) & EVENT_ACTIVE)) break;
+        if (!(h2_jieli_atomic_load_u32(&s_lifecycle) & EVENT_ACTIVE)) break;
         h2_jieli_system_event_snapshot_t snapshot = {0};
         if (h2_jieli_sdk_mutex_lock(lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
             event_release();

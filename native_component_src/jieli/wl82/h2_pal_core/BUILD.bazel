@@ -105,6 +105,7 @@ cc_test(
     srcs = [
         "src/h2_jieli_wl82_platform_system_event.c",
         "tests/src/test_jieli_wl82_event_threads.c",
+        "include/h2_jieli_wl82_atomic.h",
         "include/h2_jieli_wl82_platform_core.h",
         "include/h2_jieli_wl82_sdk_port.h",
     ],
