@@ -38,8 +38,32 @@ static void image_entry(void *user) {
         printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_CONFIRM stage=done rc=%d\n", rc);
         fflush(stdout);
     }
+    /*
+     * The BLE Host advertises one legacy payload at a time and the H2Loader
+     * App command service owns it, so the provisioning window borrows it.
+     *
+     * Joining that advertisement instead does not fit: legacy advertising data
+     * caps at 31 bytes and two 128-bit service UUIDs alone are 34. Pausing is
+     * also the honest reading of the window — while it is open, provisioning
+     * is what the device is for, and the phone filters on the provisioning
+     * service UUID. Serial keeps reaching the loader throughout; only its BLE
+     * command transport is unavailable, and it comes back afterwards.
+     */
+    if (rc == H2_PAL_OK) {
+        int pause_rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
+        printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_LOADER_ADV stage=paused rc=%d\n",
+               pause_rc);
+        fflush(stdout);
+        if (pause_rc != H2_PAL_OK) {
+            rc = pause_rc;
+        }
+    }
     if (rc == H2_PAL_OK) {
         rc = h2_smoke_ble_wifi_config_run(runtime);
+        int resume_rc = h2_esp_h2loader_app_commands_resume_ble_advertising();
+        printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_LOADER_ADV stage=resumed rc=%d\n",
+               resume_rc);
+        fflush(stdout);
     }
     printf("H2_ESP_SMOKE_BLE_WIFI_CONFIG_DONE rc=%d\n", rc);
     fflush(stdout);
