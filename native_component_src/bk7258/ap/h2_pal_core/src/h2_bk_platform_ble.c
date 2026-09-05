@@ -1,6 +1,7 @@
 #include "h2_bk_platform_core.h"
-#include "h2_bk_ble_gatts_tx_tracker.h"
 #include "h2_bk_ble_exact_adapter.h"
+#include "h2_bk_ble_gatt_schema.h"
+#include "h2_bk_ble_gatts_tx_tracker.h"
 
 #include <common/bk_err.h>
 #include <common/sys_config.h>
@@ -39,12 +40,7 @@
 #define H2_BK_BLE_LOCAL_MAX_MTU H2_PAL_BLE_ATT_MAX_MTU
 #define H2_BK_BLE_MAX_VALUE_LEN H2_PAL_BLE_ATT_MAX_VALUE_LEN
 #define H2_BK_BLE_MAX_DISCOVERY_ENTRIES 8u
-#define H2_BK_BLE_MAX_GATT_SERVICES 4u
-#define H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 2u
-#define H2_BK_BLE_MAX_GATT_CHARACTERISTICS \
-    (H2_BK_BLE_MAX_GATT_SERVICES * H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
-#define H2_BK_BLE_ATTR_COUNT \
-    (1u + 2u * H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
+/* Schema capacity and slot mapping live in h2_bk_ble_gatt_schema.h. */
 #define H2_BK_BLE_NOTIFY_TIMEOUT_MS 1000u
 #define H2_BK_BLE_LEGACY_NOTIFY_WINDOW 4u
 #define H2_BK_BLE_GATTS_APP_ID 0x4832u
@@ -357,7 +353,7 @@ static void h2_bk_ble_post_subscription_changed(
 }
 
 static size_t h2_bk_ble_service_characteristic_first(size_t service_index) {
-    return service_index * H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE;
+    return h2_bk_ble_gatt_schema_first_slot(service_index);
 }
 
 static void h2_bk_ble_update_out_handles(void) {
@@ -3370,8 +3366,7 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
     }
     if (services == NULL || count != 1u || services[0].characteristics == NULL ||
         services[0].characteristic_count == 0u ||
-        services[0].characteristic_count >
-            H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE) {
+        !h2_bk_ble_gatt_schema_accepts(count, services[0].characteristic_count)) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     bk_bt_uuid_t service_uuid;
