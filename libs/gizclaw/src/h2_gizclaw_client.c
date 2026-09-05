@@ -2,6 +2,7 @@
 #include "h2_gizclaw_internal.h"
 
 #include "gzc.h"
+#include "gzc_rpc_frame.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -137,6 +138,10 @@ typedef struct h2_gizclaw_provider_completion {
   void *user;
   bool local_closed;
   bool failed;
+  bool response_sent;
+  uint8_t frame_header[4];
+  size_t header_used;
+  size_t payload_remaining;
 } h2_gizclaw_provider_completion_t;
 
 struct h2_gizclaw_client {
@@ -509,6 +514,32 @@ static h2_gizclaw_provider_completion_t *provider_completion_for_channel(
   return NULL;
 }
 
+/* Observe only bytes accepted by PAL. SDK writes may split frame headers or
+ * payloads anywhere; an accepted EOS proves this channel's response finished. */
+static void provider_completion_sent(h2_gizclaw_provider_completion_t *entry,
+                                     const uint8_t *data, size_t len) {
+  while (len != 0u) {
+    if (entry->payload_remaining != 0u) {
+      size_t count = len < entry->payload_remaining ? len : entry->payload_remaining;
+      entry->payload_remaining -= count;
+      data += count;
+      len -= count;
+      continue;
+    }
+    entry->frame_header[entry->header_used++] = *data++;
+    --len;
+    if (entry->header_used == sizeof(entry->frame_header)) {
+      entry->payload_remaining = (size_t)entry->frame_header[0] |
+                                 ((size_t)entry->frame_header[1] << 8);
+      gzc_rpc_frame_t frame;
+      if (gzc_rpc_frame_decode(entry->frame_header, sizeof(entry->frame_header),
+                               &frame) == GZC_OK && frame.type == GZC_RPC_FRAME_EOS)
+        entry->response_sent = true;
+      entry->header_used = 0u;
+    }
+  }
+}
+
 static void dispatch_provider_completions(h2_gizclaw_client_t *client, int result) {
   for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS; ++i) {
     h2_gizclaw_provider_completion_t *entry = &client->provider_completions[i];
@@ -517,8 +548,11 @@ static void dispatch_provider_completions(h2_gizclaw_client_t *client, int resul
       continue;
     const h2_gizclaw_provider_completion_t done = *entry;
     memset(entry, 0, sizeof(*entry));
-    done.callback(done.user, result != H2_PAL_OK ? result :
-        done.failed ? H2_PAL_ERR_CLOSED : H2_PAL_OK);
+    const int completion_result = result != H2_PAL_ERR_CLOSED &&
+        !done.failed && done.local_closed && done.response_sent
+        ? H2_PAL_OK
+        : result != H2_PAL_OK ? result : H2_PAL_ERR_CLOSED;
+    done.callback(done.user, completion_result);
   }
 }
 
@@ -1575,6 +1609,14 @@ static int h2_gzc_channel_send(gzc_rtc_channel_t *channel, const uint8_t *data,
   const int rc = h2_pal_webrtc_channel_send(client->config.webrtc,
                                             (h2_pal_webrtc_channel_t *)channel,
                                             data, len, is_text ? 1 : 0);
+  h2_gizclaw_provider_completion_t *completion =
+      provider_completion_for_channel(client, channel);
+  if (completion != NULL) {
+    if (rc == H2_PAL_OK && !is_text)
+      provider_completion_sent(completion, data, len);
+    else if (rc != H2_PAL_ERR_WOULD_BLOCK)
+      completion->failed = true;
+  }
   bool *blocked = h2_gizclaw_channel_write_blocked(client, channel);
   if (blocked != NULL)
     *blocked = rc == H2_PAL_ERR_WOULD_BLOCK;
@@ -1629,6 +1671,11 @@ static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
 }
 
 #if defined(H2_GIZCLAW_TESTING)
+int h2_gizclaw_test_provider_send(h2_pal_webrtc_channel_t *channel,
+    const uint8_t *data, size_t len) {
+  return h2_gzc_channel_send((gzc_rtc_channel_t *)channel, data, len, false);
+}
+
 static int test_provider_respond(void *user,
                                   const gzc_rpc_provider_response_t *response) {
   (void)response;
@@ -1834,8 +1881,7 @@ int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms) {
       h2_gizclaw_release_event_handle(client);
     }
   }
-  /* Pending channels survive non-terminal poll errors. A local channel close
-   * in an error poll is not success: the SDK also closes timed-out responses. */
+  /* Each channel needs its own accepted EOS and local close evidence. */
   dispatch_provider_completions(client, h2_gizclaw_result_from_gzc(rc));
   return h2_gizclaw_result_from_gzc(rc);
 }

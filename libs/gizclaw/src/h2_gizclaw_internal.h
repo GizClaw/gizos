@@ -275,6 +275,8 @@ int h2_gizclaw_test_telemetry_send(
 void h2_gizclaw_test_set_telemetry_send(h2_gizclaw_test_telemetry_send_fn send,
                                         void *user);
 
+int h2_gizclaw_test_provider_send(h2_pal_webrtc_channel_t *channel,
+    const uint8_t *data, size_t len);
 int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
     h2_pal_webrtc_channel_t *channel, int respond_result);
 void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,

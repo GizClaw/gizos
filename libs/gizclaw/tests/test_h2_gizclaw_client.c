@@ -1039,11 +1039,12 @@ static int expect(int condition, const char *message) {
 typedef struct provider_completion_fixture {
   int calls;
   int result;
+  int results[8];
 } provider_completion_fixture_t;
 
 static void provider_complete(void *user, int result) {
   provider_completion_fixture_t *fixture = user;
-  ++fixture->calls;
+  fixture->results[fixture->calls++] = result;
   fixture->result = result;
 }
 
@@ -1057,6 +1058,9 @@ static int completion_provider(void *user, h2_gizclaw_rpc_method_t method,
 }
 
 static void test_provider_completions(h2_gizclaw_config_t config) {
+  const int saved_send_calls = test_send_calls;
+  const int saved_block_count = test_send_would_block_count;
+  test_send_would_block_count = 0;
   provider_completion_fixture_t fixture = {0};
   config.rpc_provider = completion_provider;
   config.rpc_provider_user = &fixture;
@@ -1091,6 +1095,10 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
         (void)h2_gizclaw_client_poll(client, 0);
         assert(fixture.calls == 0);
       }
+      if (scenario == 0) {
+        const uint8_t eos[] = {0, 0, 0, 0};
+        assert(h2_gizclaw_test_provider_send(channel, eos, sizeof(eos)) == GZC_OK);
+      }
       h2_gizclaw_test_provider_channel_close(client, channel, scenario == 1);
       assert(fixture.calls == 0);
       poll.result = scenario == 2 ? GZC_ERR_TIMEOUT : GZC_OK;
@@ -1102,6 +1110,45 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     h2_gizclaw_client_deinit(client);
     assert(fixture.calls == 1);
   }
+  /* Successful A must survive B's timeout in the same SDK poll. Exercise
+   * split headers/payloads and an EOS-shaped payload, plus blocked retries. */
+  for (int failure = 0; failure < 3; ++failure) {
+    h2_gizclaw_client_t *pair = NULL;
+    provider_completion_fixture_t a = {0};
+    config.rpc_provider_user = &a;
+    assert(h2_gizclaw_client_init(&config, &pair) == H2_PAL_OK);
+    h2_pal_webrtc_channel_t *ca = (h2_pal_webrtc_channel_t *)0x401;
+    h2_pal_webrtc_channel_t *cb = (h2_pal_webrtc_channel_t *)0x402;
+    assert(h2_gizclaw_test_provider_response(pair, ca, GZC_OK) == GZC_OK);
+    const uint8_t response[] = {4, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    test_send_result = H2_PAL_ERR_WOULD_BLOCK;
+    assert(h2_gizclaw_test_provider_send(ca, response, sizeof(response)) == GZC_ERR_WOULD_BLOCK);
+    test_send_result = H2_PAL_OK;
+    for (size_t i = 0; i < sizeof(response); ++i)
+      assert(h2_gizclaw_test_provider_send(ca, response + i, 1) == GZC_OK);
+    h2_gizclaw_test_provider_channel_close(pair, ca, false);
+    assert(h2_gizclaw_test_provider_response(pair, cb, GZC_OK) == GZC_OK);
+    if (failure == 1) {
+      test_send_result = H2_PAL_ERR_IO;
+      assert(h2_gizclaw_test_provider_send(cb, response, sizeof(response)) != GZC_OK);
+      test_send_result = H2_PAL_OK;
+    } else {
+      /* No EOS: merely sending an all-zero payload cannot mean completion. */
+      assert(h2_gizclaw_test_provider_send(cb, response, 8) == GZC_OK);
+    }
+    h2_gizclaw_test_provider_channel_close(pair, cb, false);
+    test_client_poll_t poll = {.result = failure == 0 ? GZC_ERR_TIMEOUT : GZC_OK};
+    h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
+    (void)h2_gizclaw_client_poll(pair, 0);
+    assert(a.calls == 2);
+    assert(a.result != H2_PAL_OK);
+    assert(a.results[0] == H2_PAL_OK);
+    assert(a.results[1] != H2_PAL_OK);
+    h2_gizclaw_test_set_client_poll(NULL, NULL);
+    h2_gizclaw_client_deinit(pair);
+    assert(a.calls == 2);
+  }
+  config.rpc_provider_user = &fixture;
   h2_gizclaw_client_t *client = NULL;
   fixture = (provider_completion_fixture_t){0};
   assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
@@ -1117,6 +1164,8 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
   assert(fixture.calls == 1 + GZC_RPC_MAX_INBOUND_CHANNELS);
   h2_gizclaw_client_deinit(client);
   assert(fixture.calls == 1 + GZC_RPC_MAX_INBOUND_CHANNELS);
+  test_send_calls = saved_send_calls;
+  test_send_would_block_count = saved_block_count;
 }
 
 int main(void) {
