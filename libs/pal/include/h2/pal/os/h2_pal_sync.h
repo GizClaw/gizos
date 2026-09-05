@@ -45,7 +45,18 @@ typedef struct h2_pal_cond_config {
  *
  * - mutex must be a locked, non-recursive mutex owned by the caller;
  * - wait atomically releases mutex while blocking;
- * - normal success and timeout/error returns reacquire mutex before returning.
+ * - normal success and timeout/error returns reacquire mutex before returning;
+ * - signal wakes at least one waiter registered at that moment, and broadcast
+ *   wakes every waiter registered at that moment, regardless of other waiters
+ *   timing out or re-entering the wait concurrently: a wakeup is bound to a
+ *   specific waiter and cannot be consumed by a later wait call;
+ * - a wakeup that lands after the waiter's timeout expired but before the
+ *   waiter deregistered is still reported as H2_PAL_OK;
+ * - signal or broadcast with no registered waiter is a no-op and leaves no
+ *   pending wakeup for a later wait;
+ * - destroying a condition that still has a registered waiter is a caller
+ *   error; backends that track waiters reject it with H2_PAL_ERR_INVALID_STATE
+ *   (or H2_PAL_ERR_BUSY on cooperative backends) instead of freeing it.
  *
  * A backend that cannot preserve this ownership contract must return
  * H2_PAL_ERR_UNSUPPORTED from condition creation rather than expose a partial
