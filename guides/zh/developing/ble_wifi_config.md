@@ -124,4 +124,4 @@ ESP target 上另有一层 `h2_esp_platform_wifi_set_activity_observer()`，由 
 bazel test //libs/ble_wifi_config:all
 ```
 
-`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件在发送期间被延后、不改变发送已校验的连接身份并在事后计入 `sends_during_peer_change`。
+`ble_wifi_config_protocol_test` 覆盖编解码边界（`ssid_len` 1/32、`pass_len` 0/63、截断、尾随字节、越界长度）并对凭据解码做全长度、全填充模式的遍历；`ble_wifi_config_contract_test` 用写在测试源码里的十六进制用例逐字节校验线格式与默认 UUID 的 ATT byte order，用例来源是 LiteLink 的 `_Meta/contracts/wifi/{scan,provision}_cases.json`（App 侧由 `test/contracts/wifi_contract_test.dart` 与 `wxmp/tests/contract-wifi.test.js` 校验同一组值）；LiteLink 不在本仓库的 build graph 内，因此两处副本在线格式变更时必须同步更新。`ble_wifi_config_service_test` 用 fake PAL 覆盖扫描逐条上报、扫描幂等、四种失败 reason、畸形帧回执、广播暂停、unregister 失败后的可重试 `close()`，扫描期间断连并复用同一 handle 重连时不串台，以及重连事件在发送期间被延后、不改变发送已校验的连接身份并在事后计入 `sends_during_peer_change`。
