@@ -83,6 +83,8 @@ packet-beta
 
 `state` 取值 `0x01` 正在关联、`0x02` 已关联、`0x03` 已取得地址。progress 是 advisory：忽略它的 App 仍然能从 final 帧知道结果，因此丢帧不重传——丢一帧只损失一次 UI 变化。
 
+连接这一步是阻塞的，station 状态变化会在 worker 还在里面时排队，因此 library 在发送 final 帧之前先把队列排空：progress 一定排在 final 之前。让 App 先看到结论、再看到「正在关联」，比完全没有 progress 更糟。Final 帧发出之后到达的 station 变化属于已经结束的尝试，直接丢弃。
+
 final 帧固定三字节，代表本次尝试结束：
 
 ```mermaid

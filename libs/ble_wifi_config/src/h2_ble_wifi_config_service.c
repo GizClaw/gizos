@@ -486,6 +486,39 @@ static void h2_ble_wifi_config_send_progress(
     (void)h2_ble_wifi_config_notify(service, false, peer, frame, frame_len);
 }
 
+/**
+ * Send every station transition queued so far.
+ *
+ * The connect step blocks, so transitions pile up while the worker is inside
+ * it. Draining here keeps them ahead of the final frame: an application that
+ * saw the verdict first, then "associating", would be worse off than one that
+ * saw no progress at all.
+ */
+static void h2_ble_wifi_config_drain_progress(h2_ble_wifi_config_t *service) {
+    for (;;) {
+        h2_ble_wifi_config_lock(service);
+        if (service->progress_count == 0u) {
+            h2_ble_wifi_config_unlock(service);
+            return;
+        }
+        h2_ble_wifi_config_progress_entry_t entry =
+            service->progress_queue[service->progress_head];
+        service->progress_head = (service->progress_head + 1u) %
+                                 H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
+        service->progress_count--;
+        h2_ble_wifi_config_unlock(service);
+        h2_ble_wifi_config_send_progress(
+            service, entry.peer, (h2_ble_wifi_config_progress_t)entry.state);
+    }
+}
+
+/* The caller must hold the mutex. */
+static void h2_ble_wifi_config_discard_progress_locked(
+    h2_ble_wifi_config_t *service) {
+    service->progress_head = 0u;
+    service->progress_count = 0u;
+}
+
 static void h2_ble_wifi_config_send_result(
     h2_ble_wifi_config_t *service,
     h2_ble_wifi_config_peer_t peer,
@@ -523,6 +556,9 @@ static void h2_ble_wifi_config_run_provision(
         service->stats.provision_failures++;
     }
     h2_ble_wifi_config_unlock(service);
+
+    /* Progress belongs ahead of the verdict, so flush it first. */
+    h2_ble_wifi_config_drain_progress(service);
 
     /* The application waits for this frame before leaving its progress page. */
     h2_ble_wifi_config_send_result(
@@ -599,6 +635,11 @@ static void h2_ble_wifi_config_worker(void *ctx) {
             h2_ble_wifi_config_run_provision(service, &credentials, peer);
             h2_ble_wifi_config_lock(service);
             service->credentials_running = false;
+            /*
+             * A transition that arrived after the verdict belongs to an
+             * attempt the application has already been told about.
+             */
+            h2_ble_wifi_config_discard_progress_locked(service);
             memset(&service->credentials, 0, sizeof(service->credentials));
             h2_ble_wifi_config_unlock(service);
             continue;

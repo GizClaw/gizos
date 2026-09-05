@@ -1514,6 +1514,73 @@ static void test_progress_stays_with_its_connection(void) {
     fake_runtime_deinit(&runtime);
 }
 
+/* Every station transition reaches the peer as a progress frame. */
+static void test_progress_reaches_the_peer(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
+    runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    runtime.status.ip_valid = 1u;
+    runtime.hold_connect = true;
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    connect_and_subscribe(&runtime);
+
+    write_credentials(&runtime, "office", "hunter2!");
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime.mutex);
+    while (!runtime.connect_active) {
+        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
+    }
+    pthread_mutex_unlock(&runtime.mutex);
+
+    h2_pal_wifi_sta_status_t sta_event;
+    memset(&sta_event, 0, sizeof(sta_event));
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
+              &sta_event, sizeof(sta_event));
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
+              &sta_event, sizeof(sta_event));
+    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+              &sta_event, sizeof(sta_event));
+
+    pthread_mutex_lock(&runtime.mutex);
+    runtime.hold_connect = false;
+    pthread_cond_broadcast(&runtime.cond);
+    pthread_mutex_unlock(&runtime.mutex);
+
+    /*
+     * Every transition arrives, in order, ahead of the verdict. The connect
+     * step blocks, so they queue up while the worker is inside it; delivering
+     * them after the final frame would tell the application "connected", then
+     * "associating".
+     */
+    fake_wait_notifications(&runtime, 4u);
+    const uint8_t expected_states[] = {
+        (uint8_t)H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING,
+        (uint8_t)H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED,
+        (uint8_t)H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED,
+    };
+    for (size_t i = 0u; i < 3u; ++i) {
+        fake_notification_t frame = fake_notification(&runtime, i);
+        CHECK(frame.attr_handle == TEST_PROVISION_HANDLE);
+        CHECK(frame.len == H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN);
+        CHECK(frame.data[0] ==
+              (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS);
+        CHECK(frame.data[1] == expected_states[i]);
+    }
+    fake_notification_t final_frame = fake_notification(&runtime, 3u);
+    CHECK(final_frame.attr_handle == TEST_PROVISION_HANDLE);
+    CHECK(final_frame.len == H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN);
+    CHECK(final_frame.data[0] ==
+          (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(final_frame.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_STATUS_SUCCESS);
+    CHECK(final_frame.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_NONE);
+    CHECK(fake_notification_count(&runtime) == 4u);
+
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    fake_runtime_deinit(&runtime);
+}
+
 int main(void) {
     test_open_registers_schema();
     test_caller_owned_registration();
@@ -1537,6 +1604,7 @@ int main(void) {
     test_rejection_stays_with_its_connection();
     test_reconnect_cannot_interleave_with_a_send();
     test_progress_stays_with_its_connection();
+    test_progress_reaches_the_peer();
     printf("ok\n");
     return 0;
 }
