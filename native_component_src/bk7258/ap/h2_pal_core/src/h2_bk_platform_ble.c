@@ -166,14 +166,8 @@ static uint8_t s_h2_bk_ble_attr_db_count[H2_BK_BLE_MAX_GATT_SERVICES];
 static size_t s_h2_bk_ble_pending_service_index = H2_BK_BLE_MAX_GATT_SERVICES;
 
 typedef enum h2_bk_ble_legacy_attr_index {
-    H2_BK_BLE_LEGACY_IDX_SVC = 0,
-    H2_BK_BLE_LEGACY_IDX_CHAR0_DECL = 1,
-    H2_BK_BLE_LEGACY_IDX_CHAR0_VALUE = 2,
-    H2_BK_BLE_LEGACY_IDX_CHAR0_CCCD = 3,
-    H2_BK_BLE_LEGACY_IDX_CHAR1_DECL = 4,
-    H2_BK_BLE_LEGACY_IDX_CHAR1_VALUE = 5,
-    H2_BK_BLE_LEGACY_IDX_CHAR1_CCCD = 6,
-    H2_BK_BLE_LEGACY_IDX_COUNT = 7,
+    H2_BK_BLE_LEGACY_IDX_SVC = H2_BK_BLE_LEGACY_SERVICE_INDEX,
+    H2_BK_BLE_LEGACY_IDX_COUNT = H2_BK_BLE_LEGACY_ATTR_COUNT,
 } h2_bk_ble_legacy_attr_index_t;
 
 static ble_attm_desc_t s_h2_bk_ble_legacy_attr_db[H2_BK_BLE_LEGACY_IDX_COUNT];
@@ -493,17 +487,13 @@ static int h2_bk_ble_cccd_index(uint16_t handle) {
 }
 
 static int h2_bk_ble_legacy_value_index(uint16_t att_index) {
-    if (att_index == H2_BK_BLE_LEGACY_IDX_CHAR0_VALUE) return 0;
-    if (att_index == H2_BK_BLE_LEGACY_IDX_CHAR1_VALUE &&
-        s_h2_bk_ble_service_characteristic_count[0] > 1u) return 1;
-    return -1;
+    return h2_bk_ble_legacy_characteristic_from_value(
+        att_index, s_h2_bk_ble_service_characteristic_count[0]);
 }
 
 static int h2_bk_ble_legacy_cccd_index(uint16_t att_index) {
-    if (att_index == H2_BK_BLE_LEGACY_IDX_CHAR0_CCCD) return 0;
-    if (att_index == H2_BK_BLE_LEGACY_IDX_CHAR1_CCCD &&
-        s_h2_bk_ble_service_characteristic_count[0] > 1u) return 1;
-    return -1;
+    return h2_bk_ble_legacy_characteristic_from_cccd(
+        att_index, s_h2_bk_ble_service_characteristic_count[0]);
 }
 
 static h2_pal_result_t h2_bk_ble_ensure_sem(void) {
@@ -1768,11 +1758,13 @@ static void h2_bk_ble_notice_cb_unlocked(ble_notice_t notice, void *param) {
         if (created != NULL && created->prf_id == H2_BK_BLE_LEGACY_PRF_ID && created->status == BK_ERR_BLE_SUCCESS) {
             s_h2_bk_ble_service_handle[0] =
                 created->start_hdl + H2_BK_BLE_LEGACY_IDX_SVC;
-            s_h2_bk_ble_value_handle[0] = created->start_hdl + H2_BK_BLE_LEGACY_IDX_CHAR0_VALUE;
-            s_h2_bk_ble_cccd_handle[0] = created->start_hdl + H2_BK_BLE_LEGACY_IDX_CHAR0_CCCD;
-            if (s_h2_bk_ble_service_characteristic_count[0] > 1u) {
-                s_h2_bk_ble_value_handle[1] = created->start_hdl + H2_BK_BLE_LEGACY_IDX_CHAR1_VALUE;
-                s_h2_bk_ble_cccd_handle[1] = created->start_hdl + H2_BK_BLE_LEGACY_IDX_CHAR1_CCCD;
+            for (size_t i = 0u;
+                 i < s_h2_bk_ble_service_characteristic_count[0];
+                 ++i) {
+                s_h2_bk_ble_value_handle[i] = (uint16_t)(
+                    created->start_hdl + h2_bk_ble_legacy_value_slot(i));
+                s_h2_bk_ble_cccd_handle[i] = (uint16_t)(
+                    created->start_hdl + h2_bk_ble_legacy_cccd_slot(i));
             }
             h2_bk_ble_update_out_handles();
             s_h2_bk_ble_legacy_service_created = 1;
@@ -2034,9 +2026,9 @@ static void h2_bk_ble_build_legacy_attr_db(void) {
     for (size_t i = 0u;
          i < s_h2_bk_ble_service_characteristic_count[0];
          ++i) {
-        size_t decl_index = 1u + 3u * i;
-        size_t value_index = decl_index + 1u;
-        size_t cccd_index = value_index + 1u;
+        size_t decl_index = h2_bk_ble_legacy_declaration_index(i);
+        size_t value_index = h2_bk_ble_legacy_value_slot(i);
+        size_t cccd_index = h2_bk_ble_legacy_cccd_slot(i);
         s_h2_bk_ble_legacy_attr_db[decl_index].uuid[0] = 0x03u;
         s_h2_bk_ble_legacy_attr_db[decl_index].uuid[1] = 0x28u;
         s_h2_bk_ble_legacy_attr_db[decl_index].perm = BK_BLE_PERM_SET(RD, ENABLE);
@@ -3527,9 +3519,8 @@ static h2_pal_result_t h2_bk_ble_notify(
     if (bk_ble_get_host_stack_type() != BK_BLE_HOST_STACK_TYPE_ETHERMIND) {
         int index = h2_bk_ble_value_index(attr_handle);
         if (index < 0) return H2_PAL_ERR_INVALID_ARG;
-        uint16_t legacy_index = index == 0
-                                    ? H2_BK_BLE_LEGACY_IDX_CHAR0_VALUE
-                                    : H2_BK_BLE_LEGACY_IDX_CHAR1_VALUE;
+        uint16_t legacy_index =
+            (uint16_t)h2_bk_ble_legacy_value_slot((size_t)index);
         h2_pal_result_t rc = h2_bk_ble_wait_legacy_notify_slot();
         if (rc != H2_PAL_OK) {
             return rc;
