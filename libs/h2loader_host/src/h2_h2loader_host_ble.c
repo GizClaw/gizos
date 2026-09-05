@@ -297,13 +297,18 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         &connect_params,
         &connection->conn_handle);
     if (rc != H2_PAL_OK) {
+        fprintf(stderr, "H2_BLE_HOST_DIAG stage=connect rc=%d\n", rc);
         goto fail;
     }
+    fprintf(stderr, "H2_BLE_HOST_DIAG stage=connect rc=0 handle=%u\n",
+            (unsigned)connection->conn_handle);
     rc = h2_pal_ble_exchange_mtu(
         config->ble, connection->conn_handle, &mtu, timeout_ms);
     if (rc != H2_PAL_OK) {
+        fprintf(stderr, "H2_BLE_HOST_DIAG stage=mtu rc=%d\n", rc);
         goto fail;
     }
+    fprintf(stderr, "H2_BLE_HOST_DIAG stage=mtu rc=0 mtu=%u\n", (unsigned)mtu);
     const h2_bleikcp_api_t api = {
         .ble = config->ble,
         .task = config->task,
@@ -337,10 +342,13 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         mtu,
         &connection->stream);
     if (rc != H2_PAL_OK) {
+        fprintf(stderr, "H2_BLE_HOST_DIAG stage=bleikcp-open rc=%d\n", rc);
         goto fail;
     }
+    fprintf(stderr, "H2_BLE_HOST_DIAG stage=bleikcp-open rc=0\n");
     rc = h2_h2loader_host_ble_read_status(connection, out_status);
     if (rc != H2_PAL_OK) {
+        fprintf(stderr, "H2_BLE_HOST_DIAG stage=status rc=%d\n", rc);
         goto fail;
     }
     if (config->advertised_board != NULL &&

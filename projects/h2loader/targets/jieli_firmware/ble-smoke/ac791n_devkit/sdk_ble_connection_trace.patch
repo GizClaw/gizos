@@ -1,0 +1,53 @@
+diff --git a/apps/common/ble/le_trans_data.c b/apps/common/ble/le_trans_data.c
+--- a/apps/common/ble/le_trans_data.c
++++ b/apps/common/ble/le_trans_data.c
+@@ -473,6 +473,9 @@ static void cbk_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
+                 if (status) {
+                     log_info("LE_SLAVE CONNECTION FAIL!!! %0x\n", status);
+                     set_ble_work_state(BLE_ST_DISCONN);
++                    os_mutex_pend(&mutex, 0);
++                    bt_ble_adv_enable(1);
++                    os_mutex_post(&mutex);
+                     break;
+                 }
+                 con_handle = hci_subevent_le_enhanced_connection_complete_get_connection_handle(packet);
+@@ -484,7 +487,15 @@ static void cbk_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
+                 break;
+ 
+             case HCI_SUBEVENT_LE_CONNECTION_COMPLETE:
++                status = hci_subevent_le_connection_complete_get_status(packet);
+                 con_handle = hci_subevent_le_connection_complete_get_connection_handle(packet);
++                if (status) {
++                    set_ble_work_state(BLE_ST_DISCONN);
++                    os_mutex_pend(&mutex, 0);
++                    bt_ble_adv_enable(1);
++                    os_mutex_post(&mutex);
++                    break;
++                }
+                 log_info("HCI_SUBEVENT_LE_CONNECTION_COMPLETE: %0x\n", con_handle);
+                 connection_update_complete_success(packet + 8);
+                 server_profile_start(con_handle);
+@@ -515,6 +526,13 @@ static void cbk_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
+             break;
+ 
+         case HCI_EVENT_DISCONNECTION_COMPLETE:
++            printf("H2_JIELI_BLE_TRACE ms=%u event=disconnect_complete "
++                   "status=%u handle=%u reason=0x%02x state=%u packet_size=%u\r\n",
++                   timer_get_ms(),
++                   hci_event_disconnection_complete_get_status(packet),
++                   hci_event_disconnection_complete_get_connection_handle(packet),
++                   hci_event_disconnection_complete_get_reason(packet),
++                   get_ble_work_state(), size);
+             log_info("HCI_EVENT_DISCONNECTION_COMPLETE: %0x\n", packet[5]);
+ #if RCSP_BTMATE_EN
+             rcsp_exit();
+@@ -1068,6 +1086,9 @@ static int ble_disconnect(void *priv)
+     if (con_handle) {
+         if (BLE_ST_SEND_DISCONN != get_ble_work_state()) {
+             log_info(">>>ble send disconnect\n");
++            printf("H2_JIELI_BLE_TRACE ms=%u event=local_disconnect "
++                   "handle=%u state=%u\r\n",
++                   timer_get_ms(), con_handle, get_ble_work_state());
+             set_ble_work_state(BLE_ST_SEND_DISCONN);
+             ble_op_disconnect(con_handle);
+         } else {

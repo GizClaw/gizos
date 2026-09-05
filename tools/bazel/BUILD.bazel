@@ -349,6 +349,19 @@ py_test(
     deps = [":native_runtime"],
 )
 
+py_test(
+    name = "jieli_post_wl82_test",
+    srcs = ["tests/test_jieli_post_wl82.py"],
+    data = ["jieli/local_post_wl82.sh"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_post_wl82.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_library(
     name = "vendor_third_party_ikcp",
     tags = ["manual"],

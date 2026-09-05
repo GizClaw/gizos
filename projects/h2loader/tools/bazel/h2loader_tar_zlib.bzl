@@ -2,6 +2,7 @@
 
 load("//tools/bazel:bk7258.bzl", "Bk7258FirmwareInfo")
 load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+load("//tools/bazel:jieli.bzl", "JieliFirmwareInfo")
 
 FirmwareReleaseInfo = provider(
     doc = "Canonical H2Loader release outputs for one firmware entry.",
@@ -81,6 +82,34 @@ def _native_firmware(ctx):
             target = firmware.target,
             version = firmware.version,
         )
+    if JieliFirmwareInfo in target:
+        firmware = target[JieliFirmwareInfo]
+        return struct(
+            app_image = firmware.update_image,
+            app_path = "app/jieli/update.ufw",
+            factory_image = None,
+            inputs = [
+                firmware.elf,
+                firmware.symbols,
+                firmware.flash_image,
+                firmware.fw,
+                firmware.update_image,
+                firmware.manifest,
+            ],
+            native_artifacts = [
+                struct(name = "firmware.elf", file = firmware.elf),
+                struct(name = "symbols.txt", file = firmware.symbols),
+                struct(name = "jl_isd.bin", file = firmware.flash_image),
+                struct(name = "jl_isd.fw", file = firmware.fw),
+                struct(name = "update.ufw", file = firmware.update_image),
+                struct(name = "manifest.json", file = firmware.manifest),
+            ],
+            platform = "jieli",
+            recovery_image = None,
+            recovery_inputs = [],
+            target = firmware.target,
+            version = firmware.version,
+        )
     fail("firmware must provide FirmwareInfo or Bk7258FirmwareInfo")
 
 def _h2loader_tar_zlib_impl(ctx):
@@ -95,7 +124,7 @@ def _h2loader_tar_zlib_impl(ctx):
     metadata = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".firmware.json")
     factory = None
     recovery = None
-    if ctx.attr.role == "h2loader":
+    if ctx.attr.role == "h2loader" and firmware.platform in ("esp", "bk7258"):
         recovery = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".recovery.h2fb")
         if firmware.factory_image:
             factory = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".combined_factory.bin")

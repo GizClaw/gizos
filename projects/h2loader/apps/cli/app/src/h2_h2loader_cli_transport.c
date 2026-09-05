@@ -53,6 +53,10 @@ void h2_h2loader_cli_transport_init(
     transport->options = options;
     transport->ready_marker = options->ready_marker;
     transport->command_timeout_ms = command_timeout_ms;
+    if (options->transport != H2_H2LOADER_HOST_TRANSPORT_BLE) {
+        transport->on_log = h2_h2loader_cli_transport_log;
+        transport->log_user = context;
+    }
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_connect(

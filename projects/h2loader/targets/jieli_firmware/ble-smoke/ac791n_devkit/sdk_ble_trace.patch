@@ -1,0 +1,106 @@
+diff --git a/apps/common/ble/le_trans_data.c b/apps/common/ble/le_trans_data.c
+--- a/apps/common/ble/le_trans_data.c
++++ b/apps/common/ble/le_trans_data.c
+@@ -813,9 +813,12 @@ static int make_set_adv_data(void)
+     }
+     log_info("adv_data(%d):", offset);
+     log_info_hexdump(buf, offset);
+     adv_data_len = offset;
+-    ble_op_set_adv_data(offset, buf);
++    {
++        int vendor = ble_op_set_adv_data(offset, buf);
++        printf("H2_JIELI_VENDOR_BLE step=set_adv_data bytes=%u vendor=%d\r\n", offset, vendor);
++    }
+     return 0;
+ }
+ 
+ static int make_set_rsp_data(void)
+@@ -842,9 +845,12 @@ static int make_set_rsp_data(void)
+ 
+     log_info("rsp_data(%d):", offset);
+     log_info_hexdump(buf, offset);
+     scan_rsp_data_len = offset;
+-    ble_op_set_rsp_data(offset, buf);
++    {
++        int vendor = ble_op_set_rsp_data(offset, buf);
++        printf("H2_JIELI_VENDOR_BLE step=set_rsp_data bytes=%u vendor=%d\r\n", offset, vendor);
++    }
+     return 0;
+ }
+ 
+ //广播参数设置
+@@ -852,9 +858,12 @@ static void advertisements_setup_init()
+ {
+     uint8_t adv_type = ADV_IND;
+     uint8_t adv_channel = ADV_CHANNEL_ALL;
+     int   ret = 0;
+ 
+-    ble_op_set_adv_param(ADV_INTERVAL_MIN, adv_type, adv_channel);
++    {
++        int vendor = ble_op_set_adv_param(ADV_INTERVAL_MIN, adv_type, adv_channel);
++        printf("H2_JIELI_VENDOR_BLE step=set_adv_param interval=%u type=%u channel=%u vendor=%d\r\n", ADV_INTERVAL_MIN, adv_type, adv_channel, vendor);
++    }
+ 
+     ret |= make_set_adv_data();
+     ret |= make_set_rsp_data();
+@@ -1006,7 +1015,8 @@ static const struct ext_advertising_enable ext_adv_disable = {
+ 
+ static int set_adv_enable(void *priv, u32 en)
+ {
+     ble_state_e next_state, cur_state;
++    printf("H2_JIELI_VENDOR_BLE step=set_adv_enable_enter en=%u ctrl=%u handle=%u state=%u\r\n", en, adv_ctrl_en, con_handle, get_ble_work_state());
+ 
+     if (!adv_ctrl_en && en) {
+         return APP_BLE_OPERATION_ERROR;
+@@ -1056,8 +1066,11 @@ static int set_adv_enable(void *priv, u32 en)
+ #else
+     if (en) {
+         advertisements_setup_init();
+     }
+-    ble_op_adv_enable(en);
++    {
++        int vendor = ble_op_adv_enable(en);
++        printf("H2_JIELI_VENDOR_BLE step=adv_enable en=%u vendor=%d state=%u\r\n", en, vendor, get_ble_work_state());
++    }
+ #endif /* EXT_ADV_MODE_EN */
+ 
+     return APP_BLE_NO_ERROR;
+@@ -1168,8 +1181,9 @@ u16 bt_ble_is_connected(void)
+ }
+ 
+ static void ble_module_enable(u8 en)
+ {
+     os_mutex_pend(&mutex, 0);
++    printf("H2_JIELI_VENDOR_BLE step=module_enable_enter en=%u\r\n", en);
+     log_info("mode_en:%d\n", en);
+     if (en) {
+         extern u8 get_ble_gatt_role(void);
+@@ -1190,7 +1204,8 @@ static void ble_module_enable(u8 en)
+             adv_ctrl_en = 0;
+         }
+     }
+     os_mutex_post(&mutex);
++    printf("H2_JIELI_VENDOR_BLE step=module_enable_return en=%u state=%u\r\n", en, get_ble_work_state());
+ }
+ 
+ 
+@@ -1247,7 +1262,8 @@ static const char ble_ext_name[] = "(BLE)";
+ 
+ void bt_ble_init(void)
+ {
+     log_info("***** ble_init******\n");
++    printf("H2_JIELI_VENDOR_BLE step=bt_ble_init_enter\r\n");
+     const char *name_p = bt_get_local_name();
+     u8 ext_name_len = sizeof(ble_ext_name) - 1;
+ 
+@@ -1275,8 +1291,10 @@ void bt_ble_init(void)
+     /* sys_timer_add(0, timer_trans_flow_test, 3000); */
+ #endif
+ 
+     set_ble_work_state(BLE_ST_INIT_OK);
++    printf("H2_JIELI_VENDOR_BLE step=state_init_ok state=%u\r\n", get_ble_work_state());
+     ble_module_enable(1);
++    printf("H2_JIELI_VENDOR_BLE step=bt_ble_init_return state=%u\r\n", get_ble_work_state());
+ 
+ #if TEST_SEND_DATA_RATE
+     server_timer_start();

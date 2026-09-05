@@ -133,6 +133,48 @@ static int run_cli(fake_output_t *output, int argc, const char *const *argv) {
     return run_cli_with_ble(output, argc, argv, NULL);
 }
 
+static void test_transport_log_is_atomic_and_rejects_binary(void) {
+    fake_output_t output = {0};
+    h2_command_io_api_t io = {.user = &output, .vtable = &output_vtable};
+    h2_runtime_t runtime = {0};
+    h2_h2loader_cli_config_t config = {
+        .stdout_io = &io,
+        .stderr_io = &io,
+    };
+    h2_h2loader_cli_context_t context = {
+        .runtime = &runtime,
+        .config = &config,
+    };
+    const uint8_t binary[] = {'b', 'a', 'd', 0x00u, 0xffu, '\n'};
+
+    assert(h2_h2loader_cli_transport_log(
+        &context, (const uint8_t *)"loader ready", 12u) == H2_PAL_OK);
+    assert(output.len == 0u);
+    assert(h2_h2loader_cli_transport_log(
+        &context, (const uint8_t *)"\n", 1u) == H2_PAL_OK);
+    assert(strcmp(output.bytes, "loader ready\n") == 0);
+
+    assert(h2_h2loader_cli_transport_log(
+        &context, binary, sizeof(binary)) == H2_PAL_OK);
+    assert(strcmp(output.bytes, "loader ready\n") == 0);
+    assert(h2_h2loader_cli_transport_log(
+        &context, (const uint8_t *)"recovered\r\n", 11u) == H2_PAL_OK);
+    assert(strcmp(output.bytes, "loader ready\nrecovered\r\n") == 0);
+
+    h2_h2loader_cli_options_t options = {
+        .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
+    };
+    h2_h2loader_cli_transport_t transport;
+    h2_h2loader_cli_transport_init(&transport, &context, &options, 1000u);
+    assert(transport.on_log == h2_h2loader_cli_transport_log);
+    assert(transport.log_user == &context);
+
+    options.transport = H2_H2LOADER_HOST_TRANSPORT_BLE;
+    h2_h2loader_cli_transport_init(&transport, &context, &options, 1000u);
+    assert(transport.on_log == NULL);
+    assert(transport.log_user == NULL);
+}
+
 static void test_help_and_usage(void) {
     const char *help[] = {"h2loader", "-h"};
     const char *raw[] = {"h2loader", "--transport", "raw", "status"};
@@ -640,6 +682,7 @@ static void test_reboot_final_status_is_authoritative(void) {
 }
 
 int main(void) {
+    test_transport_log_is_atomic_and_rejects_binary();
     test_help_and_usage();
     test_ble_transport_routes_the_shared_device_command();
     test_ble_uid_mismatch_stops_reconnect();

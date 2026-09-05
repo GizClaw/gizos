@@ -1,5 +1,6 @@
 #include "h2_loader_boot.h"
 #include "h2_loader_status.h"
+#include "h2_loader_app_client.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -1269,7 +1270,41 @@ test_stage_begin_invalidates_metadata_and_removes_old_package(void) {
   assert(fixture.loader.status.stage.valid == 0);
 }
 
+static uint64_t app_test_now(void *user) { (void)user; return 0u; }
+static void app_test_sleep(void *user, uint32_t ms) { (void)user; (void)ms; }
+
+static void test_app_client_package_entry_matches_loader(void) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 2u);
+  const h2_pal_disk_api_t disk = {0};
+  const h2_pal_http_api_t http = {0};
+  const h2_pal_wifi_sta_api_t wifi = {0};
+  h2_loader_app_client_t client;
+  h2_loader_app_client_config_t config = {
+      .pref = &fixture.pref, .power = &fixture.power,
+      .allocator = &fixture.mem, .fs = &fixture.fs,
+      .disk = &disk, .http = &http, .wifi = &wifi,
+      .digest = fixture.config.package.digest,
+      .board = fixture.config.board, .target = fixture.config.target,
+      .chip = fixture.config.chip,
+      .active_identity = identity(H2_LOADER_IMAGE_ROLE_APP, SHA_B),
+      .hardware_capabilities = fixture.config.hardware_capabilities,
+      .h2loader_partition_id = 1u, .app_partition_id = 2u,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+  };
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  assert(strcmp(client.loader.package.config.app_entry_path,
+                H2_LOADER_DEFAULT_APP_ENTRY_PATH) == 0);
+  config.app_entry_path = "app/jieli/update.ufw";
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  assert(strcmp(client.loader.config.package.app_entry_path,
+                config.app_entry_path) == 0);
+  assert(strcmp(client.loader.package.config.app_entry_path,
+                config.app_entry_path) == 0);
+}
+
 int main(void) {
+  test_app_client_package_entry_matches_loader();
   test_max_status_fits_public_capacity();
   test_loader_intent_stays_and_seeds_partition_1();
   test_seed_running_metadata_preserves_package_origin();

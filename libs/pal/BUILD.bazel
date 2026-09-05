@@ -3,6 +3,13 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 
 package(default_visibility = ["//visibility:public"])
 
+# Source-only native SDK components consume the PAL contract headers without
+# asking Bazel to resolve a C++ toolchain for the vendor-owned final link.
+filegroup(
+    name = "pal_header_files",
+    srcs = glob(["include/**/*.h"]),
+)
+
 cc_library(
     name = "pal",
     hdrs = [

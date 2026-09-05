@@ -1,0 +1,100 @@
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel:jieli.bzl", "jieli_firmware")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# A bounded, Loader-installable copy of JieLi's demo_ble.  This target is a
+# diagnostic oracle rather than a second production board layout: it keeps the
+# canonical 8 MiB dual-bank packing contract, but otherwise uses the vendor
+# BLE-only source/lib/configuration set.
+firmware_native_component(
+    name = "smoke",
+    srcs = ["src/ble_smoke.c"],
+    hdrs = ["include/app_config.h"],
+    include_roots = [
+        "projects/h2loader/targets/jieli_firmware/ble-smoke/ac791n_devkit/include",
+    ],
+    component_name = "jieli_ac791n_devkit_vendor_ble_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "pal_smoke",
+    srcs = ["src/pal_ble_smoke.c"],
+    include_roots = ["projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit/src"],
+    component_name = "jieli_ac791n_devkit_pal_ble_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+        "//projects/example/targets/jieli_firmware/display/jieli_ac791n_devkit:app_transport",
+    ],
+)
+
+firmware_native_component(
+    name = "pal_smoke_task_policy",
+    srcs = ["src/pal_ble_smoke_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_pal_ble_smoke_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "pal_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":pal_smoke",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "pal-ble-smoke",
+    target = "wl82",
+    task_policy = ":pal_smoke_task_policy",
+)
+
+jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [":smoke"],
+    image = "vendor-ble-smoke",
+    project_makefile = "project.mk",
+    sdk_patches = [
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/h2_retained_ram.patch",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/preserve_exception_log.patch",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/crash_recovery.patch",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/early_app_boot.patch",
+        ":sdk_uart1_console.patch",
+        ":sdk_disable_pb1_wakeup.patch",
+        ":sdk_apple_adv_interval.patch",
+        ":sdk_quiet_ble_connection.patch",
+        ":sdk_ble_connection_trace.patch",
+    ],
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "vendor-ble-smoke",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "pal_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":pal_firmware",
+    image = "pal-ble-smoke",
+    role = "app",
+    target = "wl82",
+)

@@ -358,6 +358,16 @@ void progress_event(void *user, const h2_h2loader_e2e_case_result_t *result) {
   std::fflush(stdout);
 }
 
+h2_pal_result_t log_output(void *user, const std::uint8_t *data,
+                           std::size_t len) {
+  (void)user;
+  if (data == nullptr && len != 0u)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (len != 0u && std::fwrite(data, 1u, len, stdout) != len)
+    return H2_PAL_ERR_IO;
+  return std::fflush(stdout) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
 const char *status_role_name(h2_h2loader_host_active_role_t role) {
   if (role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP)
     return "app";
@@ -612,6 +622,8 @@ int main(int argc, char **argv) {
         .case_user = nullptr,
         .on_progress = progress_event,
         .progress_user = nullptr,
+        .on_log = log_output,
+        .log_user = nullptr,
         .execute_case = nullptr,
         .execute_user = nullptr,
     };

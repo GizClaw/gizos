@@ -681,6 +681,18 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     h2_pal_result_t result = [self waitForOperation:timeoutMs];
     if (result == H2_PAL_OK) {
         *outHandle = H2_COREBLUETOOTH_CONN_HANDLE;
+    } else {
+        /* CoreBluetooth keeps a timed-out connect request pending until it is
+         * explicitly cancelled.  Leaving it pending makes later scans lose
+         * the peripheral and causes subsequent connect attempts to reuse
+         * stale state. */
+        dispatch_sync(self.queue, ^{
+            [self.centralManager cancelPeripheralConnection:peripheral];
+            if (self.connectedPeripheral == peripheral) {
+                self.connectedPeripheral = nil;
+                [self clearClientMappings];
+            }
+        });
     }
     return result;
 }
@@ -1113,6 +1125,8 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
 - (void)centralManager:(CBCentralManager *)central
   didConnectPeripheral:(CBPeripheral *)peripheral {
     (void)central;
+    fprintf(stderr, "H2_BLE_CORE_DIAG event=did-connect id=%s\n",
+            peripheral.identifier.UUIDString.UTF8String);
     self.connectedPeripheral = peripheral;
     peripheral.delegate = self;
     [self clearClientMappings];
@@ -1131,8 +1145,11 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didFailToConnectPeripheral:(CBPeripheral *)peripheral
                   error:(NSError *)error {
     (void)central;
-    (void)peripheral;
-    (void)error;
+    fprintf(stderr,
+            "H2_BLE_CORE_DIAG event=connect-failed id=%s domain=%s code=%ld description=%s\n",
+            peripheral.identifier.UUIDString.UTF8String,
+            error.domain.UTF8String, (long)error.code,
+            error.localizedDescription.UTF8String);
     self.connectedPeripheral = nil;
     [self clearClientMappings];
     [self completeOperation:H2CoreBluetoothOperationConnect result:H2_PAL_ERR_IO];
@@ -1142,6 +1159,12 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didDisconnectPeripheral:(CBPeripheral *)peripheral
                    error:(NSError *)error {
     (void)central;
+    fprintf(stderr,
+            "H2_BLE_CORE_DIAG event=disconnected id=%s domain=%s code=%ld description=%s\n",
+            peripheral.identifier.UUIDString.UTF8String,
+            error != nil ? error.domain.UTF8String : "none",
+            error != nil ? (long)error.code : 0L,
+            error != nil ? error.localizedDescription.UTF8String : "none");
     h2_pal_ble_disconnected_info_t info;
     memset(&info, 0, sizeof(info));
     info.conn_handle = H2_COREBLUETOOTH_CONN_HANDLE;

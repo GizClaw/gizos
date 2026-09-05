@@ -44,7 +44,10 @@ cc_library(
         "-fno-exceptions",
         "-fno-rtti",
         "-w",
-    ],
+    ] + select({
+        "@//tools/bazel/platforms:is_pi32v2": ["-DH2_FDK_EMBEDDED_NO_STDIO=1"],
+        "//conditions:default": [],
+    }),
     includes = [
         "libAACdec/include",
         "libAACdec/src",

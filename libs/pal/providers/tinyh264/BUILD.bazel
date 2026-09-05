@@ -1,6 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -17,11 +16,13 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
+    defines = select({
+        "//tools/bazel/platforms:is_pi32v2": ["H2_TINYH264_SINGLE_THREADED_ALLOCATOR_SCOPE=1"],
+        "//conditions:default": [],
+    }),
     includes = [
         "include",
     ],
-    # The vendor decoder includes <memory.h>, which the JieLi pi32v2 libc does not ship.
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/pal",
         "//tools/bazel:vendor_third_party_tinyh264",

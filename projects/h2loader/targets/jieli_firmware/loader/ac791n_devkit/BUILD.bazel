@@ -1,0 +1,194 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "reliable_transport",
+    component_name = "h2loader_ac791n_devkit_reliable_transport",
+    deps = ["//libs/iostreamikcp"],
+)
+
+firmware_lib_component(
+    name = "ble_loader",
+    component_name = "h2loader_ac791n_devkit_ble_loader",
+    deps = ["//libs/bleikcp"],
+)
+
+firmware_lib_component(
+    name = "loader_support",
+    component_name = "h2loader_ac791n_devkit_support",
+    deps = [
+        "//libs/command",
+        "//libs/runtime",
+    ],
+)
+
+firmware_native_component(
+    name = "loader_task_policy",
+    srcs = ["src/loader_task_policy.c"],
+    component_name = "h2loader_ac791n_devkit_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "usb_log_smoke_task_policy",
+    srcs = ["src/usb_log_smoke_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_usb_log_smoke_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "bundle_native",
+    hdrs = [
+        "//libs/bundle:include/h2_bundle.h",
+        "//libs/bundle:include/h2_bundle_archive.h",
+        "//libs/bundle:include/h2_bundle_installer.h",
+        "//libs/bundle:include/h2_bundle_manifest.h",
+        "//libs/bundle:include/h2_bundle_path.h",
+        "//libs/bundle:include/h2_bundle_tar.h",
+        "//libs/bundle:include/h2_bundle_types.h",
+    ],
+    include_roots = ["libs/bundle/include"],
+    native_srcs = [
+        "//libs/bundle:src/h2_bundle_archive.c",
+        "//libs/bundle:src/h2_bundle_installer.c",
+        "//libs/bundle:src/h2_bundle_manifest.c",
+        "//libs/bundle:src/h2_bundle_path.c",
+        "//libs/bundle:src/h2_bundle_tar.c",
+        "//libs/bundle:src/h2_bundle_types.c",
+    ],
+    component_name = "h2loader_ac791n_devkit_bundle",
+    deps = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pixa",
+        "//native_component_src/jieli/wl82/zlib",
+    ],
+)
+
+firmware_native_component(
+    name = "ble_loader_service",
+    hdrs = ["//projects/h2loader/libs/h2loader:h2loader_headers"],
+    include_roots = ["projects/h2loader/libs/h2loader/include"],
+    native_srcs = ["//projects/h2loader/libs/h2loader:src/h2_loader_ble.c"],
+    component_name = "h2loader_ac791n_devkit_ble_service",
+    deps = [
+        ":ble_loader",
+        "//libs/bundle",
+        "//libs/command",
+    ],
+)
+
+firmware_native_component(
+    name = "loader_common",
+    hdrs = [
+        "//projects/h2loader/apps/loader/app:h2loader_bleikcp_internal.h",
+        "//projects/h2loader/apps/loader/app:include/h2loader_app.h",
+        "//projects/h2loader/libs/h2loader:h2loader_headers",
+    ],
+    include_roots = [
+        "projects/h2loader/apps/loader/app",
+        "projects/h2loader/apps/loader/app/include",
+        "projects/h2loader/libs/h2loader/include",
+    ],
+    native_srcs = [
+        "//projects/h2loader/apps/loader/app:app.c",
+        "//projects/h2loader/apps/loader/app:h2loader_bleikcp.c",
+        "//projects/h2loader/apps/loader/app:task_names.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_boot.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_mfg.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_metadata.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
+    ],
+    component_name = "h2loader_ac791n_devkit_common",
+    deps = [
+        ":ble_loader_service",
+        ":bundle_native",
+        ":loader_support",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+firmware_native_component(
+    name = "loader_launcher",
+    srcs = [
+        "src/h2loader_sha256.c",
+        "src/jieli_loader_platform.c",
+        "src/loader_launcher.c",
+    ],
+    hdrs = [
+        "src/h2loader_sha256.h",
+        "src/jieli_loader_platform.h",
+    ],
+    include_roots = [
+        "projects/h2loader/apps/loader/app/include",
+        "projects/h2loader/apps/loader/app",
+        "projects/h2loader/libs/h2loader/include",
+    ],
+    component_name = "h2loader_ac791n_devkit_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":loader_common",
+        ":reliable_transport",
+        "//boards/ac791n_chip/ac791n",
+        "//native_component_src/jieli/wl82/h2_pal_core",
+    ],
+)
+
+firmware_native_component(
+    name = "usb_log_smoke_launcher",
+    srcs = ["src/usb_log_smoke.c"],
+    component_name = "jieli_ac791n_devkit_usb_log_smoke_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = ["//boards/ac791n_chip/ac791n"],
+)
+
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":loader_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "loader",
+    target = "wl82",
+    task_policy = ":loader_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "usb_log_smoke_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":usb_log_smoke_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "usb-log-smoke",
+    target = "wl82",
+    task_policy = ":usb_log_smoke_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "loader",
+    role = "h2loader",
+    target = "wl82",
+)

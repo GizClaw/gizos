@@ -17,13 +17,15 @@ cc_library(
     srcs = [
         "src/h2_h2loader_cli_app.c",
         "src/h2_h2loader_cli_bleikcp_speed.c",
-        "src/h2_h2loader_cli_internal.h",
         "src/h2_h2loader_cli_output.c",
         "src/h2_h2loader_cli_package_command.c",
         "src/h2_h2loader_cli_server_command.c",
         "src/h2_h2loader_cli_transport.c",
     ],
-    hdrs = ["include/h2_h2loader_cli_app.h"],
+    hdrs = [
+        "include/h2_h2loader_cli_app.h",
+        "src/h2_h2loader_cli_internal.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
@@ -40,7 +42,6 @@ cc_library(
 cc_test(
     name = "h2loader_cli_app_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_app.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -62,7 +63,6 @@ cc_test(
 cc_test(
     name = "h2loader_cli_server_command_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_server_command.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -84,7 +84,6 @@ cc_test(
 cc_test(
     name = "h2loader_cli_package_command_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_package_command.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -105,7 +104,6 @@ cc_test(
 cc_test(
     name = "h2loader_cli_bleikcp_speed_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_bleikcp_speed.c",
     ],
     conlyopts = H2_C11_OPTS,

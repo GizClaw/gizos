@@ -126,6 +126,8 @@ typedef struct h2_h2loader_e2e_config {
   void *case_user;
   h2_h2loader_e2e_progress_event_fn on_progress;
   void *progress_user;
+  h2_h2loader_host_transport_log_fn on_log;
+  void *log_user;
 
   /** Optional deterministic executor used by unit tests and custom targets. */
   h2_h2loader_e2e_case_executor_fn execute_case;

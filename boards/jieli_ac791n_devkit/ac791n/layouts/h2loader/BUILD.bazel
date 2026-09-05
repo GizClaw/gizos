@@ -1,0 +1,37 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "defs.bzl",
+    "include/app_config.h",
+    "isd_reserved_expand.ini",
+    "project.mk",
+    "sdk_patches/early_app_boot.patch",
+    "sdk_patches/uart1_console.patch",
+    "sdk_patches/crash_recovery.patch",
+    "sdk_patches/h2_retained_ram.patch",
+    "sdk_patches/preserve_exception_log.patch",
+    "sdk_patches/pcm_play_runtime_block.patch",
+    "src/coredump.c",
+    "src/platform.c",
+])
+
+firmware_native_component(
+    name = "layout",
+    srcs = [
+        "src/coredump.c",
+        "src/platform.c",
+    ],
+    hdrs = [
+        "include/app_config.h",
+        "isd_reserved_expand.ini",
+    ],
+    component_name = "jieli_ac791n_devkit_h2loader_layout",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac791n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

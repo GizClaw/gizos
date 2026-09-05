@@ -1,0 +1,11 @@
+diff --git a/apps/demo/demo_ble/board/wl82/board.c b/apps/demo/demo_ble/board/wl82/board.c
+--- a/apps/demo/demo_ble/board/wl82/board.c
++++ b/apps/demo/demo_ble/board/wl82/board.c
+@@ -121,7 +121,6 @@ static const struct charge_wakeup charge_wkup = {
+ };
+ 
+ static const struct wakeup_param wk_param = {
+-    .port[PORT_WAKEUP_NUM] = &port0,
+     .sub = &sub_wkup,
+     .charge = &charge_wkup,
+     .lpres = &lpres_port,
