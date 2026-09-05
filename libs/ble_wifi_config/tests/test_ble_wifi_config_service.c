@@ -505,13 +505,15 @@ static int fake_wifi_scan(
     if (result != H2_PAL_OK) {
         return result;
     }
+    /*
+     * A filtered request is a hint to the radio, not a promise that the
+     * callback only sees matches, so deliver every entry and let the caller
+     * do its own matching.
+     */
+    (void)request;
     for (size_t i = 0u; i < count; ++i) {
-        if (request != NULL && request->ssid_len > 0u &&
-            (request->ssid_len != entries[i].ssid_len ||
-             memcmp(request->ssid, entries[i].ssid, entries[i].ssid_len) != 0)) {
-            continue;
-        }
-        if (on_result(callback_user, &entries[i])) {
+        /* Both Wi-Fi providers keep scanning while the callback returns true. */
+        if (!on_result(callback_user, &entries[i])) {
             break;
         }
     }
@@ -974,6 +976,8 @@ static void write_credentials(
 static void test_provision_success(void) {
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);
+    /* The requested network is not the first entry the radio reports. */
+    fake_add_scan_entry(&runtime, "neighbour", -70, H2_PAL_WIFI_SECURITY_WPA2);
     fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
     runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
     runtime.status.ip_valid = 1u;

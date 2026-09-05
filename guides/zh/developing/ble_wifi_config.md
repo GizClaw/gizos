@@ -94,6 +94,8 @@ packet-beta
 
 ## 任务模型与并发
 
+`h2_pal_wifi_scan_result_fn` 的返回值语义与 `h2_pal_ble_scan_result_fn` 相反：**返回 true 继续扫描，返回 false 提前停止**（两个 Wi-Fi provider 都在 `!on_result(...)` 时 break）。逐条上报和连接前的定向探测都必须按这个方向返回，否则扫描会在第一条结果就结束——上报路径只剩第一个 AP（若第一条恰好被丢弃则一个都没有），探测路径则会把「排在后面的网络」误报成 `0x02` 找不到 AP。定向 scan request 只是给射频的提示，不保证 callback 只看到匹配项，因此 SSID 比对由 library 自己做。
+
 Scan 和 connect 都在 library 自己的 worker task 上执行，因此彼此串行。GATT write callback 只做校验和入队，不阻塞 BLE Host：重复写 `0x01` 在扫描排队或进行中是 no-op；PROV 在上一组凭据还没处理完时返回 `H2_PAL_ERR_BUSY`。`on_event` 只在 worker task 上调用，且不持有 library 的锁。
 
 Library 同时只跟随一个 peripheral connection：先到的连接被采纳，携带其它 connection handle 的写入返回 `H2_PAL_ERR_INVALID_STATE`，直到该连接结束。

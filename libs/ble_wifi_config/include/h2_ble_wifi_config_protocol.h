@@ -49,13 +49,28 @@ extern "C" {
  * A credential frame is at most 2 + 32 + 63 = 97 bytes, so the negotiated
  * ATT MTU must be at least 100 bytes.
  *
- * Provisioning characteristic, device -> application, after the connection
- * attempt has finished:
+ * Provisioning characteristic, device -> application. The device reports every
+ * station transition as it happens rather than one verdict at the end, so the
+ * application can show real progress and does not have to guess how far along
+ * a silent device is:
+ *
+ *     u8  type        0x01 = progress, 0x02 = final
+ *
+ * A progress frame is exactly two bytes:
+ *
+ *     u8  state       0x01 = associating, 0x02 = associated,
+ *                     0x03 = address acquired
+ *
+ * A final frame is exactly three bytes and ends the attempt:
  *
  *     u8  status      0x00 = success, nonzero = failure
  *     u8  reason      0x00 = none, 0x01 = wrong password,
  *                     0x02 = access point not found, 0x03 = DHCP failed,
  *                     0x04 = connect timeout, 0xff = unknown error
+ *
+ * Progress frames are advisory: an application that ignores them still learns
+ * the outcome from the final frame. They are not retried, because a dropped
+ * progress frame costs a UI step and nothing else.
  */
 
 /** Longest SSID the protocol can carry, in bytes. */
@@ -73,8 +88,10 @@ extern "C" {
 /** Longest credential frame, in bytes. */
 #define H2_BLE_WIFI_CONFIG_CREDENTIALS_FRAME_MAX_LEN \
     (2u + H2_BLE_WIFI_CONFIG_SSID_MAX + H2_BLE_WIFI_CONFIG_PASSWORD_MAX)
+/** Length of a provisioning progress frame, in bytes. */
+#define H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN 2u
 /** Length of a provisioning result frame, in bytes. */
-#define H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN 2u
+#define H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN 3u
 
 _Static_assert(
     H2_BLE_WIFI_CONFIG_SSID_MAX <= (unsigned)H2_PAL_WIFI_SSID_MAX,
@@ -98,6 +115,25 @@ typedef enum h2_ble_wifi_config_scan_frame {
 
 /** Access point is not open. */
 #define H2_BLE_WIFI_CONFIG_AP_FLAG_SECURED ((uint8_t)(1u << 0))
+
+/** First byte of a provisioning notification. */
+typedef enum h2_ble_wifi_config_provision_frame {
+    H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS = 0x01,
+    H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL = 0x02,
+} h2_ble_wifi_config_provision_frame_t;
+
+/**
+ * State byte of a progress frame.
+ *
+ * These follow the Wi-Fi station events the runtime already publishes, so the
+ * device reports what actually happened instead of the library inferring it
+ * from one blocking call.
+ */
+typedef enum h2_ble_wifi_config_progress {
+    H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING = 0x01,
+    H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED = 0x02,
+    H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED = 0x03,
+} h2_ble_wifi_config_progress_t;
 
 /** Status byte of a provisioning result frame. */
 typedef enum h2_ble_wifi_config_status {

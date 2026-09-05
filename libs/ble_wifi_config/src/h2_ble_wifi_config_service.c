@@ -255,6 +255,12 @@ typedef struct h2_ble_wifi_config_scan_context {
     h2_ble_wifi_config_peer_t peer;
 } h2_ble_wifi_config_scan_context_t;
 
+/*
+ * h2_pal_wifi_scan_result_fn keeps iterating while the callback returns true;
+ * returning the stop condition itself ended every scan on its first entry, and
+ * ended it with nothing at all whenever that first entry was one this callback
+ * drops.
+ */
 static bool h2_ble_wifi_config_on_scan_result(
     void *user,
     const h2_pal_wifi_scan_entry_t *entry) {
@@ -266,7 +272,7 @@ static bool h2_ble_wifi_config_on_scan_result(
         service->stats.aps_dropped++;
         bool stop = service->scan_stop_requested || service->closing;
         h2_ble_wifi_config_unlock(service);
-        return stop;
+        return !stop;
     }
     uint8_t frame[H2_BLE_WIFI_CONFIG_SCAN_FRAME_MAX_LEN];
     size_t frame_len = 0u;
@@ -276,7 +282,7 @@ static bool h2_ble_wifi_config_on_scan_result(
         service->stats.aps_dropped++;
         bool stop = service->scan_stop_requested || service->closing;
         h2_ble_wifi_config_unlock(service);
-        return stop;
+        return !stop;
     }
     /* One access point per notification: the application renders as it goes. */
     int rc = h2_ble_wifi_config_notify(
@@ -288,7 +294,7 @@ static bool h2_ble_wifi_config_on_scan_result(
     bool stop = service->scan_stop_requested || service->closing ||
                 rc == H2_PAL_ERR_INVALID_STATE;
     h2_ble_wifi_config_unlock(service);
-    return stop;
+    return !stop;
 }
 
 static void h2_ble_wifi_config_run_scan(
@@ -339,19 +345,21 @@ typedef struct h2_ble_wifi_config_ap_probe {
     bool found;
 } h2_ble_wifi_config_ap_probe_t;
 
+/*
+ * Same contract as the reporting callback: true keeps the scan going. The
+ * requested access point is not necessarily the first entry, so stopping on a
+ * mismatch would report "no such network" for one that is simply listed later.
+ */
 static bool h2_ble_wifi_config_on_probe_result(
     void *user,
     const h2_pal_wifi_scan_entry_t *entry) {
     h2_ble_wifi_config_ap_probe_t *probe = user;
-    if (entry == NULL) {
-        return false;
-    }
-    if (entry->ssid_len == probe->credentials->ssid_len &&
+    if (entry != NULL &&
+        entry->ssid_len == probe->credentials->ssid_len &&
         memcmp(entry->ssid, probe->credentials->ssid, entry->ssid_len) == 0) {
         probe->found = true;
-        return true;
     }
-    return false;
+    return !probe->found;
 }
 
 /**
