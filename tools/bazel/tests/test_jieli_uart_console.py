@@ -95,6 +95,65 @@ int main(void) {
 
 
 class UartConsoleTest(unittest.TestCase):
+    def test_app_console_sync_create_failure_unwinds(self):
+        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
+                  "jieli_ac791n_devkit/src/jieli_app_iostreamikcp.c").read_text()
+        begin = source.index("static int console_sync_init(")
+        end = source.index("int h2_jieli_app_iostreamikcp_start(", begin)
+        stub = r'''
+#include <assert.h>
+#include <string.h>
+enum { OS_NO_ERR=0, H2_PAL_OK=0, H2_PAL_ERR_NO_MEMORY=-1 };
+typedef struct {
+  int rx_mutex, tx_mutex, rx_wakeup_sem, rx_data_sem;
+} h2_jieli_app_console_t;
+static int attempt, fail_at, live, deleted, deletion_order[4];
+static int create(int *object) {
+  ++attempt;
+  assert(*object == 0);
+  if (attempt == fail_at) return -1;
+  *object = attempt; ++live; return 0;
+}
+static int os_mutex_create(int *object) { return create(object); }
+static int os_sem_create(int *object, int count) {
+  assert(count == 0); return create(object);
+}
+static int destroy(int *object, int force) {
+  assert(*object != 0 && force == 0);
+  deletion_order[deleted++] = *object;
+  *object = 0; --live; return 0;
+}
+static int os_mutex_del(int *object, int force) { return destroy(object, force); }
+static int os_sem_del(int *object, int force) { return destroy(object, force); }
+'''
+        main = r'''
+int main(void) {
+  h2_jieli_app_console_t state = {0};
+  for (fail_at = 1; fail_at <= 4; ++fail_at) {
+    attempt = deleted = 0;
+    assert(console_sync_init(&state) == H2_PAL_ERR_NO_MEMORY);
+    assert(attempt == fail_at && live == 0 && deleted == fail_at - 1);
+    for (int i = 0; i < deleted; ++i) {
+      assert(deletion_order[i] == fail_at - 1 - i);
+    }
+  }
+  attempt = deleted = fail_at = 0;
+  assert(console_sync_init(&state) == H2_PAL_OK);
+  assert(live == 4 && attempt == 4 && deleted == 0);
+  console_sync_destroy(&state);
+  assert(live == 0 && deleted == 4);
+  for (int i = 0; i < deleted; ++i) assert(deletion_order[i] == 4 - i);
+  return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-app-sync-test-") as directory:
+            test = Path(directory) / "test.c"
+            test.write_text(stub + source[begin:end] + main)
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            str(test), "-o", str(binary)], check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=60)
+
     def test_ble_smoke_uses_shared_layout_and_is_not_a_release(self):
         target = (ROOT / "projects/e2e/targets/h2loader_tar_zlib/"
                   "pal-ble-smoke/jieli_ac791n_devkit")

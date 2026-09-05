@@ -513,6 +513,39 @@ int h2_jieli_app_iostreamikcp_log(const char *data, size_t len) {
          : H2_PAL_ERR_IO;
 }
 
+/* No callbacks or tasks may observe these objects until every create succeeds. */
+static int console_sync_init(h2_jieli_app_console_t *self) {
+  if (os_mutex_create(&self->rx_mutex) != OS_NO_ERR) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (os_mutex_create(&self->tx_mutex) != OS_NO_ERR) {
+    goto fail_tx;
+  }
+  if (os_sem_create(&self->rx_wakeup_sem, 0) != OS_NO_ERR) {
+    goto fail_wakeup;
+  }
+  if (os_sem_create(&self->rx_data_sem, 0) != OS_NO_ERR) {
+    goto fail_data;
+  }
+  return H2_PAL_OK;
+
+fail_data:
+  (void)os_sem_del(&self->rx_wakeup_sem, 0);
+fail_wakeup:
+  (void)os_mutex_del(&self->tx_mutex, 0);
+fail_tx:
+  (void)os_mutex_del(&self->rx_mutex, 0);
+  return H2_PAL_ERR_NO_MEMORY;
+}
+
+/* Only valid before callbacks/workers have been published. */
+static void console_sync_destroy(h2_jieli_app_console_t *self) {
+  (void)os_sem_del(&self->rx_data_sem, 0);
+  (void)os_sem_del(&self->rx_wakeup_sem, 0);
+  (void)os_mutex_del(&self->tx_mutex, 0);
+  (void)os_mutex_del(&self->rx_mutex, 0);
+}
+
 int h2_jieli_app_iostreamikcp_start(
     h2_loader_app_client_t *client,
     const h2_pal_task_api_t *task,
@@ -535,19 +568,17 @@ int h2_jieli_app_iostreamikcp_start(
       .user = &state.transport,
       .vtable = &command_io_vtable,
   };
-  if (os_mutex_create(&state.rx_mutex) != OS_NO_ERR ||
-      os_mutex_create(&state.tx_mutex) != OS_NO_ERR ||
-      os_sem_create(&state.rx_wakeup_sem, 0) != OS_NO_ERR ||
-      os_sem_create(&state.rx_data_sem, 0) != OS_NO_ERR) {
-    return H2_PAL_ERR_NO_MEMORY;
-  }
+  int sync_result = console_sync_init(&state);
+  if (sync_result != H2_PAL_OK) return sync_result;
   state.usb_id = 0;
 #if defined CONFIG_H2_UART1_DEBUG_ENABLE
   if (h2_jieli_ac791n_devkit_console_start() != H2_PAL_OK) {
+    console_sync_destroy(&state);
     return H2_PAL_ERR_IO;
   }
 #else
   if (h2_jieli_ac791n_devkit_usb_debug_start() != H2_PAL_OK) {
+    console_sync_destroy(&state);
     return H2_PAL_ERR_IO;
   }
   for (usb_dev id = 0; id < USB_MAX_HW_NUM; ++id) {
