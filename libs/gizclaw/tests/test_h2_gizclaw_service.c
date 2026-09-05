@@ -591,6 +591,55 @@ static void *run_sync_rpc(void *user) {
   return NULL;
 }
 
+/* The test thread is the App: dispatch here until the request reports its own
+ * result. Requests that never finish fail the test after the bounded spin. */
+static h2_pal_result_t app_wait_request(h2_gizclaw_service_t *service,
+                                        h2_gizclaw_req_t *request) {
+  for (unsigned spin = 0u; spin < 20000u; ++spin) {
+    size_t dispatched = 0u;
+    h2_pal_result_t rc = h2_gizclaw_service_poll(service, 1u, &dispatched);
+    if (rc != H2_PAL_OK)
+      return rc;
+    rc = h2_gizclaw_req_wait(request, 1u);
+    if (rc != H2_PAL_ERR_TIMEOUT)
+      return rc;
+  }
+  return H2_PAL_ERR_TIMEOUT;
+}
+
+/* The test thread is the App. Run a synchronous helper on a job thread and
+ * keep dispatching here until it returns, the way H106 calls them. */
+typedef struct app_sync_call {
+  h2_pal_result_t (*fn)(void *ctx);
+  void *ctx;
+  h2_pal_result_t result;
+  atomic_bool returned;
+} app_sync_call_t;
+
+static void *app_sync_entry(void *user) {
+  app_sync_call_t *call = user;
+  call->result = call->fn(call->ctx);
+  atomic_store_explicit(&call->returned, true, memory_order_release);
+  return NULL;
+}
+
+static h2_pal_result_t app_call_sync(h2_gizclaw_service_t *service,
+                                     h2_pal_result_t (*fn)(void *ctx),
+                                     void *ctx) {
+  app_sync_call_t call = {.fn = fn, .ctx = ctx};
+  atomic_init(&call.returned, false);
+  pthread_t job;
+  assert(pthread_create(&job, NULL, app_sync_entry, &call) == 0);
+  while (!atomic_load_explicit(&call.returned, memory_order_acquire)) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    if (dispatched == 0u)
+      sched_yield();
+  }
+  assert(pthread_join(job, NULL) == 0);
+  return call.result;
+}
+
 static int fail_task_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_entry_t entry, void *ctx,
                            h2_pal_task_t **out_task) {
@@ -625,6 +674,9 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   atomic_init(&env->run_gate, false);
   s_env = env;
   h2_gizclaw_service_test_set_client_ops(&s_client_ops);
+  /* The test thread is the App: it owns dispatch through service_poll(), and
+   * the Service signals dispatch work through the (fake) Runtime. */
+  h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
 
   static h2_gizclaw_config_t client_config;
   memset(&client_config, 0, sizeof(client_config));
@@ -637,6 +689,7 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
       .task = h2_desktop_platform_task_api(),
       .queue = &s_queue_api,
       .sync = h2_desktop_platform_sync_api(),
+      .runtime = (h2_runtime_t *)env,
       .net_task_options = {.name = "gizclaw-net-test", .min_stack_size = 0u},
       .operation_capacity = capacity,
       .client_poll_timeout_ms = 1,
@@ -4895,6 +4948,106 @@ static const h2_gizclaw_async_rpc_ops_t download_test_ops = {
     .destroy = download_test_destroy,
 };
 
+/* H106 shape: a job task calls a synchronous data-down helper while the App
+ * task keeps polling. The helper must only wait; every output write and the
+ * completion must run from the App task's service_poll(). */
+typedef struct sync_pixa_job {
+  h2_gizclaw_service_t *service;
+  download_test_wire_t *wire;
+  h2_gizclaw_resp_storage_t storage;
+  h2_gizclaw_pet_pixa_info_t info;
+  h2_pal_result_t result;
+  atomic_bool returned;
+} sync_pixa_job_t;
+
+static h2_pal_result_t sync_pixa_call(void *ctx) {
+  sync_pixa_job_t *job = ctx;
+  return h2_gizclaw_rpc_pet_pixa_download(
+      job->service, (h2_gizclaw_str_t){"x", 1u}, download_test_sink, job->wire,
+      1234u, &job->storage, &job->info);
+}
+
+static void *run_sync_pixa(void *user) {
+  sync_pixa_job_t *job = user;
+  job->result = sync_pixa_call(job);
+  atomic_store_explicit(&job->returned, true, memory_order_release);
+  return NULL;
+}
+
+static void test_sync_helper_from_job_task_while_app_polls(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  service->client_config.time = h2_desktop_platform_time_api();
+  h2_gizclaw_async_rpc_test_set_ops(&download_test_ops);
+  /* Hold the connection so the request is still pending while the App task
+   * is busy inside a callback (dispatching set) and the job task waits. */
+  atomic_store(&env.connect_gate, false);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  static const uint8_t input[] = {0x0a, 3, 0x0a, 1, 'x'};
+  uint8_t metadata[] = {0x0a, 11,   0x0a, 1,   'x',  0x12, 1,
+                        'd',  0x1a, 1,    'p', 0x20, 3};
+  static const uint8_t data[] = {'a', 'b', 'c'};
+  download_test_wire_t wire = {
+      .method = H2_GIZCLAW_RPC_SERVER_PET_PIXA_DOWNLOAD,
+      .input = {input, sizeof(input)},
+      .events = {{.kind = H2_GIZCLAW_RPC_STREAM_RESPONSE,
+                  .result_payload = {metadata, sizeof(metadata)}},
+                 {.kind = H2_GIZCLAW_RPC_STREAM_DATA,
+                  .data = {data, sizeof(data)}},
+                 {.kind = H2_GIZCLAW_RPC_STREAM_EOS}},
+      .event_count = 3u,
+  };
+  s_download_wire = &wire;
+  uint8_t buffer[1024];
+  sync_pixa_job_t job = {.service = service,
+                         .wire = &wire,
+                         .storage = {.data = buffer, .capacity = sizeof(buffer)}};
+  atomic_init(&job.returned, false);
+  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+  service->dispatching = true;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+         H2_PAL_OK);
+  pthread_t task;
+  assert(pthread_create(&task, NULL, run_sync_pixa, &job) == 0);
+  h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 50u);
+  /* A helper that polled on its own would have failed with INVALID_STATE. */
+  assert(!atomic_load_explicit(&job.returned, memory_order_acquire));
+  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+  service->dispatching = false;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+         H2_PAL_OK);
+  atomic_store(&env.connect_gate, true);
+  /* Only the App task polls; nobody else may ever find it dispatching. */
+  for (unsigned spin = 0u; spin < 1000000u; ++spin) {
+    if (atomic_load_explicit(&job.returned, memory_order_acquire))
+      break;
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    if (dispatched == 0u)
+      sched_yield();
+  }
+  assert(pthread_join(task, NULL) == 0);
+  assert(job.result == H2_PAL_OK);
+  assert(job.info.size_bytes == 3u && job.info.received_bytes == 3u &&
+         strcmp(job.info.pet_name, "x") == 0);
+  /* download_test_sink asserted it never ran on the network thread; the job
+   * task never dispatched either, so the bytes came through the App poll. */
+  assert(wire.bytes_written == 3u && memcmp(wire.bytes, data, 3u) == 0);
+  assert(wire.destroy_count == 1);
+  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) >=
+         1u);
+  /* Drain the retire item left for the App task before deinit. */
+  for (;;) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    if (dispatched == 0u)
+      break;
+  }
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 static void test_pixa_download_request_paths(void) {
   for (unsigned mode = 0u; mode < 12u; ++mode) {
     test_env_t env;
@@ -4988,7 +5141,7 @@ static void test_pixa_download_request_paths(void) {
       assert(atomic_load(&wire.event_received));
       assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
     }
-    h2_pal_result_t actual = h2_gizclaw_req_wait_dispatch_internal(request);
+    h2_pal_result_t actual = app_wait_request(service, request);
     if (actual != expected)
       fprintf(stderr,
               "pixa mode=%u result=%d expected=%d starts=%d events=%zu\n", mode,
@@ -5015,9 +5168,10 @@ static void test_pixa_download_request_paths(void) {
     if (mode == 0u) {
       wire.next_event = 0u;
       wire.bytes_written = 0u;
-      assert(h2_gizclaw_rpc_pet_pixa_download(
-                 service, (h2_gizclaw_str_t){"x", 1u}, download_test_sink,
-                 &wire, 1234u, &storage, &info) == H2_PAL_OK);
+      sync_pixa_job_t job = {.service = service, .wire = &wire,
+                             .storage = storage};
+      assert(app_call_sync(service, sync_pixa_call, &job) == H2_PAL_OK);
+      info = job.info;
     }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -5973,6 +6127,8 @@ typedef struct conversation_test {
   unsigned loss_markers;
   h2_pal_result_t result;
   char stream[64];
+  /* Mode 20: the library-owned speaker Track, read by the app thread. */
+  h2_gizclaw_track_t *owned_track;
 } conversation_test_t;
 static conversation_test_t *s_conversation;
 
@@ -6052,6 +6208,63 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
   conversation_test_t *test = user;
   (void)timeout;
   assert(stream == (gzc_event_stream_t *)test);
+  if (test->mode == 20) {
+    /* Realtime barge-in with all twelve first-burst packets already echoed:
+     * 0 BOS turn-one, 1 TEXT_DELTA turn-one, 2 BOS turn-two (interrupts
+     * turn-one), 3 late EOS{STREAM_INTERRUPTED} turn-one (dropped), then
+     * after the second burst and the input commit: 4 TEXT_DONE turn-two,
+     * 5 EOS turn-two (terminal). */
+    unsigned stage = test->reply_events;
+    if (stage >= 6 || test->packets < 12u ||
+        (stage >= 4 && (test->packets < 16u || !atomic_load(&test->eos))))
+      return GZC_ERR_WOULD_BLOCK;
+    ++test->reply_events;
+    memset(event, 0, sizeof(*event));
+    event->version = GZC_PEER_EVENT_VERSION;
+    char id[64];
+    snprintf(id, sizeof(id), "%s:%s", test->stream,
+             stage == 0 || stage == 1 || stage == 3 ? "turn-one" : "turn-two");
+    if (stage == 0 || stage == 2) {
+      event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+      event->which_payload = gizclaw_events_v1_PeerEvent_bos_tag;
+      snprintf(event->payload.bos.stream_id,
+               sizeof(event->payload.bos.stream_id), "%s", id);
+      snprintf(event->payload.bos.label, sizeof(event->payload.bos.label),
+               "assistant");
+      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+    } else if (stage == 1) {
+      event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
+      event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
+      snprintf(event->payload.text_delta.stream_id,
+               sizeof(event->payload.text_delta.stream_id), "%s", id);
+      snprintf(event->payload.text_delta.label,
+               sizeof(event->payload.text_delta.label), "assistant");
+      snprintf(event->payload.text_delta.text,
+               sizeof(event->payload.text_delta.text), "reply");
+    } else if (stage == 4) {
+      event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
+      event->which_payload = gizclaw_events_v1_PeerEvent_text_done_tag;
+      snprintf(event->payload.text_done.stream_id,
+               sizeof(event->payload.text_done.stream_id), "%s", id);
+      snprintf(event->payload.text_done.label,
+               sizeof(event->payload.text_done.label), "assistant");
+      snprintf(event->payload.text_done.text,
+               sizeof(event->payload.text_done.text), "reply");
+    } else {
+      event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+      event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+      snprintf(event->payload.eos.stream_id,
+               sizeof(event->payload.eos.stream_id), "%s", id);
+      snprintf(event->payload.eos.label, sizeof(event->payload.eos.label),
+               "assistant");
+      if (stage == 3) {
+        event->payload.eos.has_error = true;
+        snprintf(event->payload.eos.error.code,
+                 sizeof(event->payload.eos.error.code), "STREAM_INTERRUPTED");
+      }
+    }
+    return GZC_OK;
+  }
   if (test->mode == 15 || test->mode == 16) {
     unsigned stage = test->reply_events;
     bool second = stage >= 8;
@@ -6267,6 +6480,30 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
                        const h2_gizclaw_conversation_event_t *event) {
   conversation_test_t *test = user;
   assert(pthread_equal(pthread_self(), test->app_thread));
+  if (test->mode == 20) {
+    assert(event->kind != H2_GIZCLAW_CONVERSATION_EVENT_ERROR);
+    if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO) {
+      test->hook_offset += event->audio_len;
+    } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE) {
+      ++test->reply_text_ends;
+    } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
+      unsigned turn = atomic_load(&test->turns_done) + 1u;
+      assert(turn <= 2u);
+      if (turn == 1u) {
+        /* The interrupted reply: every first-burst chunk was decoded and
+         * observed by the hook, but the speaker Track holds none of it. Both
+         * discards ran (the Track tail at staging, and the frames that
+         * drained behind the EOS marker at dispatch). */
+        assert(test->hook_offset == 12u * 640u);
+        uint8_t probe[2];
+        assert(h2_gizclaw_pcm_track_read(test->owned_track, probe,
+                                         sizeof(probe)) ==
+               H2_PAL_ERR_WOULD_BLOCK);
+      }
+      atomic_store(&test->turns_done, turn);
+    }
+    return H2_PAL_OK;
+  }
   if (test->mode == 15 || test->mode == 16) {
     if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE) {
       assert(
@@ -6416,6 +6653,116 @@ static void test_conversation_reply_route_ids(void) {
   }
 }
 
+static gzc_peer_event_t barge_in_event(int type, const char *label,
+                                       const char *id, const char *code) {
+  gzc_peer_event_t event = {0};
+  event.type = type;
+  if (type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
+             label);
+    snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
+             "%s", id);
+    event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+  } else if (type ==
+             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
+    snprintf(event.payload.text_delta.label,
+             sizeof(event.payload.text_delta.label), "%s", label);
+    snprintf(event.payload.text_delta.stream_id,
+             sizeof(event.payload.text_delta.stream_id), "%s", id);
+  } else if (type ==
+             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE) {
+    snprintf(event.payload.text_done.label,
+             sizeof(event.payload.text_done.label), "%s", label);
+    snprintf(event.payload.text_done.stream_id,
+             sizeof(event.payload.text_done.stream_id), "%s", id);
+  } else {
+    snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
+             label);
+    snprintf(event.payload.eos.stream_id, sizeof(event.payload.eos.stream_id),
+             "%s", id);
+    if (code != NULL) {
+      event.payload.eos.has_error = true;
+      snprintf(event.payload.eos.error.code,
+               sizeof(event.payload.eos.error.code), "%s", code);
+    }
+  }
+  return event;
+}
+
+/* Server-side barge-in: the next reply's BOS arrives while the previous
+ * assistant route is still open. It must pin the new route instead of being
+ * dropped, and the old reply's late EOS must no longer reach the app. */
+static void test_conversation_barge_in_supersedes_open_reply(void) {
+  static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+  static const int DELTA =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
+  static const int DONE =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
+  static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+  const char *labels[] = {"assistant", ""};
+  for (size_t label = 0; label < 2u; ++label) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 2u);
+    h2_gizclaw_conversation_t *conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+               &conversation) == H2_PAL_OK);
+    const char *reply = labels[label];
+    gzc_peer_event_t event = barge_in_event(BOS, reply, "reply-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(DELTA, reply, "reply-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(DONE, reply, "reply-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    // The user speaks again; the transcript route is independent.
+    event = barge_in_event(BOS, "transcript", "heard-1", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    // An open transcript is not superseded by another transcript BOS.
+    event = barge_in_event(BOS, "transcript", "heard-2", NULL);
+    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                &event));
+    // A sub-stream of the same reply is not a new reply.
+    event = barge_in_event(BOS, reply, "reply-1:audio", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    // The next reply starts before reply-1 ended: reply-1 is interrupted.
+    event = barge_in_event(BOS, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    assert(h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    // The old reply's late EOS and text no longer match the pinned route.
+    event = barge_in_event(EOS, reply, "reply-1", "STREAM_INTERRUPTED");
+    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                &event));
+    event = barge_in_event(DONE, reply, "reply-1", NULL);
+    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                &event));
+    event = barge_in_event(DELTA, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(DONE, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = barge_in_event(EOS, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+        conversation));
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
 static void
 assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
   void *route = atomic_load(&service->media_request);
@@ -6454,7 +6801,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 20; ++mode) {
+  for (unsigned mode = 0; mode < 21; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -6495,12 +6842,15 @@ static void test_conversation_public_audio_tasks(void) {
         .write = conversation_test_track_write};
     h2_gizclaw_track_t track = {.user = &test, .vtable = &track_vt};
     h2_gizclaw_track_t *owned_track = NULL;
-    if (mode == 17u) {
+    if (mode == 17u || mode == 20u) {
       const h2_gizclaw_pcm_track_config_t config = {
           .allocator = service->client_config.allocator,
           .uplink_capacity = 8192u,
           .downlink_capacity = 16384u};
       assert(h2_gizclaw_pcm_track_create(&config, &owned_track) == H2_PAL_OK);
+      test.owned_track = owned_track;
+    }
+    if (mode == 17u) {
       const uint8_t stale[2] = {0xff, 0xee};
       assert(h2_gizclaw_pcm_track_write(owned_track, stale, sizeof(stale)) ==
              H2_PAL_OK);
@@ -6535,6 +6885,15 @@ static void test_conversation_public_audio_tasks(void) {
       assert(h2_gizclaw_pcm_track_write(owned_track, later, sizeof(later)) ==
              H2_PAL_OK);
       assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+    }
+    if (mode == 20u) {
+      /* First burst: twelve whole frames echoed back as the first reply's
+       * audio. The input stays open (realtime). */
+      uint8_t pcm[12u * 640u];
+      for (size_t i = 0u; i < sizeof(pcm); ++i)
+        pcm[i] = (uint8_t)(i % 127u);
+      assert(h2_gizclaw_pcm_track_write(owned_track, pcm, sizeof(pcm)) ==
+             H2_PAL_OK);
     }
     atomic_store(&test.connect_gate, true);
     if (mode == 0) {
@@ -6606,6 +6965,18 @@ static void test_conversation_public_audio_tasks(void) {
         input_ended = true;
       } else if (mode == 18 && atomic_load(&test.captured) == 20u * 640u &&
                  !input_ended) {
+        assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+        input_ended = true;
+      } else if (mode == 20 && atomic_load(&test.turns_done) == 1u &&
+                 !input_ended) {
+        /* The interrupted boundary was non-terminal: the second burst is
+         * the next reply's audio, then the input ends (push-to-talk commit)
+         * so its EOS becomes the terminal boundary. */
+        uint8_t pcm[4u * 640u];
+        for (size_t i = 0u; i < sizeof(pcm); ++i)
+          pcm[i] = (uint8_t)(i % 127u);
+        assert(h2_gizclaw_pcm_track_write(owned_track, pcm, sizeof(pcm)) ==
+               H2_PAL_OK);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
       }
@@ -6706,6 +7077,17 @@ static void test_conversation_public_audio_tasks(void) {
     }
     if (mode == 11 || mode == 12)
       assert(test.hook_offset == 0);
+    if (mode == 20) {
+      /* Both replies reached the hook; the speaker Track holds exactly the
+       * second reply, the interrupted first reply was discarded. */
+      assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 6u);
+      assert(test.reply_text_ends == 1u && test.packets == 16u);
+      assert(test.hook_offset == 16u * 640u && test.result == H2_PAL_OK);
+      assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 4u * 640u) ==
+             H2_PAL_OK);
+      assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 2u) ==
+             H2_PAL_ERR_WOULD_BLOCK);
+    }
     assert(conversation_test_notification_count(&test) == 0);
     size_t captured = atomic_load(&test.captured),
            written = atomic_load(&test.written);
@@ -6895,6 +7277,18 @@ static const h2_gizclaw_async_rpc_ops_t speed_wire_ops = {
     .destroy = speed_wire_destroy,
 };
 
+typedef struct sync_speedtest_job {
+  h2_gizclaw_service_t *service;
+  size_t upload, download;
+  h2_gizclaw_speedtest_result_t *result;
+} sync_speedtest_job_t;
+
+static h2_pal_result_t sync_speedtest_call(void *ctx) {
+  sync_speedtest_job_t *job = ctx;
+  return h2_gizclaw_rpc_speedtest(job->service, job->upload, job->download,
+                                  1234u, job->result);
+}
+
 static void test_speedtest_managed_requests(void) {
   static const h2_pal_time_vtable_t clock_vtable = {
       .get_monotonic_ms = fake_req_clock,
@@ -6950,7 +7344,7 @@ static void test_speedtest_managed_requests(void) {
         : mode == 11u ? H2_PAL_ERR_INVALID_STATE
         : mode == 8u  ? H2_PAL_ERR_TIMEOUT
                       : H2_PAL_OK;
-    const int wait_rc = h2_gizclaw_req_wait_dispatch_internal(request);
+    const int wait_rc = app_wait_request(service, request);
     if (wait_rc != expected)
       fprintf(stderr, "speedtest mode=%u expected=%d actual=%d\n", mode,
               expected, wait_rc);
@@ -7001,8 +7395,11 @@ static void test_speedtest_managed_requests(void) {
       atomic_store(&env.clock_ms, 100u);
       const h2_gizclaw_speedtest_result_t request_result = result;
       memset(&result, 0xa5, sizeof(result));
-      assert(h2_gizclaw_rpc_speedtest(service, wire.upload, wire.download,
-                                      1234u, &result) == expected);
+      sync_speedtest_job_t job = {.service = service,
+                                  .upload = wire.upload,
+                                  .download = wire.download,
+                                  .result = &result};
+      assert(app_call_sync(service, sync_speedtest_call, &job) == expected);
       assert(memcmp(&result, &request_result, sizeof(result)) == 0);
       assert(wire.destroys == (mode == 8u || mode == 13u ? 0u : 1u));
     }
@@ -7391,7 +7788,7 @@ static void test_stream_data_task_handoff(void) {
                  atomic_load(&test.stop_exited));
         }
       } else {
-        assert(h2_gizclaw_req_wait_dispatch_internal(request) == test.expected);
+        assert(app_wait_request(service, request) == test.expected);
         assert(atomic_load(&test.callbacks) == 0u);
         h2_gizclaw_req_release(request);
         request = NULL;
@@ -7673,7 +8070,7 @@ static void test_stream_data_task_parallel_requests(void) {
   }
   atomic_store(&env.connect_gate, true);
   for (unsigned i = 0u; i < 2u; ++i) {
-    assert(h2_gizclaw_req_wait_dispatch_internal(requests[i]) == H2_PAL_OK);
+    assert(app_wait_request(service, requests[i]) == H2_PAL_OK);
     h2_gizclaw_req_release(requests[i]);
   }
   for (unsigned i = 0u; i < 2u; ++i) {
@@ -7973,6 +8370,7 @@ int main(int argc, char **argv) {
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();
   test_conversation_reply_route_ids();
+  test_conversation_barge_in_supersedes_open_reply();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();
   test_stream_data_task_handoff();
@@ -7987,6 +8385,7 @@ int main(int argc, char **argv) {
   test_track_read_validation_and_rebinding();
   test_track_unset_waits_for_read_and_write();
   test_pixa_download_request_paths();
+  test_sync_helper_from_job_task_while_app_polls();
   assert(test_pet_delete_rpc_regression() == 0);
   test_pet_public_request_paths();
   test_social_full_page_arena_growth();

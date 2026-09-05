@@ -69,8 +69,6 @@ h2_pal_result_t h2_gizclaw_req_create_send_internal(
 h2_pal_result_t h2_gizclaw_req_context_internal(const h2_gizclaw_req_t *request,
                                                 const void *tag,
                                                 const void **out_context);
-h2_pal_result_t
-h2_gizclaw_req_wait_dispatch_internal(h2_gizclaw_req_t *request);
 /* Unary RPC with owned parser metadata. Context ownership transfers only on
  * successful construction. */
 h2_pal_result_t h2_gizclaw_req_create_rpc_context_internal(

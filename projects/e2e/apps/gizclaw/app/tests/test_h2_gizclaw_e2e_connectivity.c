@@ -296,6 +296,12 @@ void h2_gizclaw_e2e_evidence(const char *symbol, const char *where, int rc) {
     printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n", symbol, where,
            rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
 }
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
+                                     h2_gizclaw_service_t *service,
+                                     int (*fn)(void *ctx), void *ctx) {
+  assert(fixture != NULL && service != NULL && fn != NULL);
+  return fn(ctx);
+}
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
                                      uint32_t ms) {
   ++s_budget_calls;
