@@ -1,6 +1,8 @@
 # BLE Wi-Fi Config
 
-`libs/ble_wifi_config` 提供设备尚未联网时使用的 BLE 配网服务：手机 App 通过 BLE 扫描周边 AP，并把 Wi-Fi 凭据下发给设备。Library 只依赖 PAL，不依赖 `libs/bleikcp`，也不依赖 GizClaw RPC —— 配网发生在联网之前，这条路径必须尽量薄。
+`libs/ble_wifi_config` 提供设备尚未联网时使用的 BLE 配网服务：手机 App 通过 BLE 扫描周边 AP，并把 Wi-Fi 凭据下发给设备。Library 依赖 PAL 与 `libs/runtime`，不依赖 `libs/bleikcp`，也不依赖 GizClaw RPC —— 配网发生在联网之前，这条路径必须尽量薄。
+
+依赖 Runtime 的原因只有一个：station 状态。`h2_pal_wifi_sta_connect()` 在 AP 接受密钥时就返回，地址还要几百毫秒到几秒才落地，此时读 `ip_valid` 会把正常网络判成 DHCP 失败。真正的状态来自 Wi-Fi system event，而 Runtime event queue 只能由它自己的 main loop 消费，因此 library 不订阅原始 PAL 事件，改为轮询 Runtime 发布的 station 快照（`h2_runtime_system_state_wifi_sta()`，读端无锁）。
 
 ## API Reference
 
@@ -83,7 +85,7 @@ packet-beta
 
 `state` 取值 `0x01` 正在关联、`0x02` 已关联、`0x03` 已取得地址。progress 是 advisory：忽略它的 App 仍然能从 final 帧知道结果，因此丢帧不重传——丢一帧只损失一次 UI 变化。
 
-连接这一步是阻塞的，station 状态变化会在 worker 还在里面时排队，因此 library 在发送 final 帧之前先把队列排空：progress 一定排在 final 之前。让 App 先看到结论、再看到「正在关联」，比完全没有 progress 更糟。Final 帧发出之后到达的 station 变化属于已经结束的尝试，直接丢弃。
+关联成功后 worker 继续轮询快照直到拿到地址、station 掉线，或超过 `dhcp_timeout_ms`（默认 12 秒），沿途每观察到一次状态变化就立即发一条 progress 帧。progress 因此天然排在 final 之前——worker 在这个循环返回之前根本走不到 final 帧，不需要队列，也不存在「先看到结论再看到正在关联」的顺序问题。掉线时用快照里的 `disconnect_reason` 映射 reason，而不是拿超时当结论。
 
 final 帧固定三字节，代表本次尝试结束：
 

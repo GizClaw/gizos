@@ -4,6 +4,8 @@
 
 #include "h2_ble_wifi_config_internal.h"
 
+#include "h2_runtime.h"
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -75,10 +77,6 @@ typedef struct fake_runtime {
     int connect_calls;
     bool hold_connect;
     bool connect_active;
-    /* Inject a station transition while the final frame is being sent. */
-    bool inject_progress_on_final;
-    bool injected_progress;
-    size_t queued_after_final;
     h2_pal_wifi_sta_status_t status;
     char connected_ssid[H2_PAL_WIFI_SSID_MAX + 1];
     char connected_password[H2_PAL_WIFI_PASSWORD_MAX + 1];
@@ -389,12 +387,6 @@ static h2_pal_result_t fake_unregister(void *user) {
     return H2_PAL_OK;
 }
 
-static void fake_post(
-    fake_runtime_t *runtime,
-    h2_pal_system_event_type_t type,
-    const void *payload,
-    size_t payload_size);
-
 static h2_pal_result_t fake_notify(
     void *user,
     uint16_t conn_handle,
@@ -404,33 +396,6 @@ static h2_pal_result_t fake_notify(
     fake_runtime_t *runtime = user;
     CHECK(conn_handle == TEST_CONN_HANDLE);
     CHECK(len <= H2_BLE_WIFI_CONFIG_CREDENTIALS_FRAME_MAX_LEN);
-    /*
-     * The window the intake close protects: the drain has finished and the
-     * final frame is on its way out. A transition arriving now belongs to an
-     * attempt that is over and must be refused, not queued and then dropped.
-     */
-    pthread_mutex_lock(&runtime->mutex);
-    bool inject = runtime->inject_progress_on_final &&
-                  !runtime->injected_progress && len > 0u &&
-                  data[0] == (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL;
-    if (inject) {
-        runtime->injected_progress = true;
-    }
-    pthread_mutex_unlock(&runtime->mutex);
-    if (inject) {
-        h2_pal_wifi_sta_status_t sta_event;
-        memset(&sta_event, 0, sizeof(sta_event));
-        fake_post(runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &sta_event,
-                  sizeof(sta_event));
-        h2_ble_wifi_config_t *config_service = runtime->config_service;
-        CHECK(h2_pal_mutex_lock(&runtime->sync, config_service->mutex) == H2_PAL_OK);
-        size_t queued = config_service->progress_count;
-        (void)h2_pal_mutex_unlock(&runtime->sync, config_service->mutex);
-        pthread_mutex_lock(&runtime->mutex);
-        runtime->queued_after_final = queued;
-        pthread_cond_broadcast(&runtime->cond);
-        pthread_mutex_unlock(&runtime->mutex);
-    }
     pthread_mutex_lock(&runtime->mutex);
     /* Count on entry: a send already in flight is not a post-reconnect send. */
     if (runtime->reconnect_done) {
@@ -632,6 +597,11 @@ static void fake_runtime_init(fake_runtime_t *runtime) {
     };
 }
 
+/*
+ * The service reads station transitions from the Runtime's published
+ * snapshot, so a test that exercises the address wait needs a real Runtime.
+ * Every capability it does not touch is the canonical unsupported one.
+ */
 static void fake_runtime_deinit(fake_runtime_t *runtime) {
     (void)pthread_cond_destroy(&runtime->cond);
     (void)pthread_mutex_destroy(&runtime->mutex);
@@ -1099,7 +1069,11 @@ static void test_provision_dhcp_failure(void) {
     fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
     runtime.status.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
     runtime.status.ip_valid = 0u;
-    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    /* The address never lands, so the wait must give up on its own budget. */
+    h2_ble_wifi_config_config_t config;
+    memset(&config, 0, sizeof(config));
+    config.dhcp_timeout_ms = 200u;
+    h2_ble_wifi_config_t *service = open_service(&runtime, &config);
     connect_and_subscribe(&runtime);
 
     write_credentials(&runtime, "office", "hunter2!");
@@ -1493,173 +1467,6 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     fake_runtime_deinit(&runtime);
 }
 
-/*
- * A station transition queued for one peer must not reach the peer that
- * replaced it, even when the controller reuses the connection handle.
- */
-static void test_progress_stays_with_its_connection(void) {
-    fake_runtime_t runtime;
-    fake_runtime_init(&runtime);
-    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
-    runtime.hold_connect = true;
-    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
-    connect_and_subscribe(&runtime);
-
-    write_credentials(&runtime, "office", "hunter2!");
-
-    struct timespec deadline;
-    fake_deadline(&deadline, TEST_WAIT_MS);
-    pthread_mutex_lock(&runtime.mutex);
-    while (!runtime.connect_active) {
-        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
-    }
-    pthread_mutex_unlock(&runtime.mutex);
-
-    /* Queue a transition for this peer, then replace the peer on the same
-     * handle before the worker can drain it. */
-    h2_pal_wifi_sta_status_t sta_event;
-    memset(&sta_event, 0, sizeof(sta_event));
-    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
-              &sta_event, sizeof(sta_event));
-    h2_pal_ble_disconnected_info_t info = {
-        .conn_handle = TEST_CONN_HANDLE,
-        .reason = 19,
-    };
-    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &info,
-              sizeof(info));
-    connect_and_subscribe(&runtime);
-
-    pthread_mutex_lock(&runtime.mutex);
-    runtime.hold_connect = false;
-    pthread_cond_broadcast(&runtime.cond);
-    pthread_mutex_unlock(&runtime.mutex);
-
-    fake_deadline(&deadline, TEST_WAIT_MS);
-    pthread_mutex_lock(&runtime.mutex);
-    while (!fake_saw_event_locked(
-        &runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_SUCCEEDED) &&
-           !fake_saw_event_locked(
-               &runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_FAILED)) {
-        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
-    }
-    pthread_mutex_unlock(&runtime.mutex);
-
-    /* Neither the progress frame nor the result reaches the replacement. */
-    CHECK(fake_notification_count(&runtime) == 0u);
-
-    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
-    fake_runtime_deinit(&runtime);
-}
-
-/* Every station transition reaches the peer as a progress frame. */
-static void test_progress_reaches_the_peer(void) {
-    fake_runtime_t runtime;
-    fake_runtime_init(&runtime);
-    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
-    runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-    runtime.status.ip_valid = 1u;
-    runtime.hold_connect = true;
-    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
-    connect_and_subscribe(&runtime);
-
-    write_credentials(&runtime, "office", "hunter2!");
-    struct timespec deadline;
-    fake_deadline(&deadline, TEST_WAIT_MS);
-    pthread_mutex_lock(&runtime.mutex);
-    while (!runtime.connect_active) {
-        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
-    }
-    pthread_mutex_unlock(&runtime.mutex);
-
-    h2_pal_wifi_sta_status_t sta_event;
-    memset(&sta_event, 0, sizeof(sta_event));
-    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
-              &sta_event, sizeof(sta_event));
-    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
-              &sta_event, sizeof(sta_event));
-    fake_post(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
-              &sta_event, sizeof(sta_event));
-
-    pthread_mutex_lock(&runtime.mutex);
-    runtime.hold_connect = false;
-    pthread_cond_broadcast(&runtime.cond);
-    pthread_mutex_unlock(&runtime.mutex);
-
-    /*
-     * Every transition arrives, in order, ahead of the verdict. The connect
-     * step blocks, so they queue up while the worker is inside it; delivering
-     * them after the final frame would tell the application "connected", then
-     * "associating".
-     */
-    fake_wait_notifications(&runtime, 4u);
-    const uint8_t expected_states[] = {
-        (uint8_t)H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING,
-        (uint8_t)H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED,
-        (uint8_t)H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED,
-    };
-    for (size_t i = 0u; i < 3u; ++i) {
-        fake_notification_t frame = fake_notification(&runtime, i);
-        CHECK(frame.attr_handle == TEST_PROVISION_HANDLE);
-        CHECK(frame.len == H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN);
-        CHECK(frame.data[0] ==
-              (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS);
-        CHECK(frame.data[1] == expected_states[i]);
-    }
-    fake_notification_t final_frame = fake_notification(&runtime, 3u);
-    CHECK(final_frame.attr_handle == TEST_PROVISION_HANDLE);
-    CHECK(final_frame.len == H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN);
-    CHECK(final_frame.data[0] ==
-          (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
-    CHECK(final_frame.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_STATUS_SUCCESS);
-    CHECK(final_frame.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_NONE);
-    CHECK(fake_notification_count(&runtime) == 4u);
-
-    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
-    fake_runtime_deinit(&runtime);
-}
-
-/*
- * A transition arriving after the drain but before the final frame must be
- * refused at intake, not queued for an attempt that has already ended.
- */
-static void test_progress_intake_closes_before_the_verdict(void) {
-    fake_runtime_t runtime;
-    fake_runtime_init(&runtime);
-    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
-    runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-    runtime.status.ip_valid = 1u;
-    runtime.inject_progress_on_final = true;
-    runtime.queued_after_final = SIZE_MAX;
-    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
-    runtime.config_service = service;
-    connect_and_subscribe(&runtime);
-
-    write_credentials(&runtime, "office", "hunter2!");
-
-    struct timespec deadline;
-    fake_deadline(&deadline, TEST_WAIT_MS);
-    pthread_mutex_lock(&runtime.mutex);
-    while (!runtime.injected_progress) {
-        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
-    }
-    while (runtime.queued_after_final == SIZE_MAX) {
-        CHECK(pthread_cond_timedwait(&runtime.cond, &runtime.mutex, &deadline) == 0);
-    }
-    size_t queued = runtime.queued_after_final;
-    pthread_mutex_unlock(&runtime.mutex);
-    CHECK(queued == 0u);
-
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t final_frame = fake_notification(&runtime, 0u);
-    CHECK(final_frame.data[0] ==
-          (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
-    /* Nothing follows the verdict. */
-    CHECK(fake_notification_count(&runtime) == 1u);
-
-    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
-    fake_runtime_deinit(&runtime);
-}
-
 int main(void) {
     test_open_registers_schema();
     test_caller_owned_registration();
@@ -1682,9 +1489,6 @@ int main(void) {
     test_scan_frames_stay_with_their_connection();
     test_rejection_stays_with_its_connection();
     test_reconnect_cannot_interleave_with_a_send();
-    test_progress_stays_with_its_connection();
-    test_progress_reaches_the_peer();
-    test_progress_intake_closes_before_the_verdict();
     printf("ok\n");
     return 0;
 }

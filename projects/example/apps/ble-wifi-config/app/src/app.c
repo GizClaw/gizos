@@ -147,6 +147,7 @@ int h2_smoke_ble_wifi_config_run(h2_runtime_t *runtime) {
     }
 
     const h2_ble_wifi_config_api_t api = {
+        .runtime = runtime,
         .ble = runtime->ble_host,
         .wifi_sta = runtime->wifi_sta,
         .task = runtime->task,

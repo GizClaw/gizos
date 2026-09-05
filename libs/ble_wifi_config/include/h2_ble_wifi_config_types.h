@@ -3,6 +3,8 @@
 
 #include "h2_ble_wifi_config_protocol.h"
 
+#include "h2_runtime_system_state.h"
+
 #include "h2/pal/hal/h2_pal_ble.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/os/h2_pal_mem.h"
@@ -22,6 +24,14 @@ extern "C" {
 #define H2_BLE_WIFI_CONFIG_DEFAULT_SCAN_TIMEOUT_MS 10000u
 /** Default connect timeout passed to the Wi-Fi PAL, in milliseconds. */
 #define H2_BLE_WIFI_CONFIG_DEFAULT_CONNECT_TIMEOUT_MS 15000u
+/**
+ * Default time to wait for the address after the station associates, in
+ * milliseconds. Association returns as soon as the access point accepts the
+ * key; the address lands hundreds of milliseconds to a couple of seconds
+ * later, and judging the lease before then reports a healthy network as a
+ * DHCP failure.
+ */
+#define H2_BLE_WIFI_CONFIG_DEFAULT_DHCP_TIMEOUT_MS 12000u
 /** Number of characteristics in the provisioning service. */
 #define H2_BLE_WIFI_CONFIG_CHARACTERISTIC_COUNT 3u
 
@@ -117,6 +127,12 @@ typedef h2_ble_wifi_config_reason_t (*h2_ble_wifi_config_reason_fn)(
 
 /** Platform capabilities borrowed by the service for its whole lifetime. */
 typedef struct h2_ble_wifi_config_api {
+    /*
+     * Station transitions come from the Runtime's published snapshot rather
+     * than raw PAL events: the Runtime already consumes those events and keeps
+     * one coherent state, and only its main loop may drain the event queue.
+     */
+    h2_runtime_t *runtime;
     const h2_pal_ble_host_api_t *ble;
     const h2_pal_wifi_sta_api_t *wifi_sta;
     const h2_pal_task_api_t *task;
@@ -141,6 +157,8 @@ typedef struct h2_ble_wifi_config_config {
     uint32_t scan_timeout_ms;
     /** Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_CONNECT_TIMEOUT_MS. */
     uint32_t connect_timeout_ms;
+    /** Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_DHCP_TIMEOUT_MS. */
+    uint32_t dhcp_timeout_ms;
     /**
      * Connect without first scanning for the requested SSID. The default
      * scans, which costs one extra scan per attempt but reports a missing

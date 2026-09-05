@@ -90,6 +90,9 @@ static int h2_ble_wifi_config_resolve(h2_ble_wifi_config_t *service) {
     if (config->scan_timeout_ms == 0u) {
         config->scan_timeout_ms = H2_BLE_WIFI_CONFIG_DEFAULT_SCAN_TIMEOUT_MS;
     }
+    if (config->dhcp_timeout_ms == 0u) {
+        config->dhcp_timeout_ms = H2_BLE_WIFI_CONFIG_DEFAULT_DHCP_TIMEOUT_MS;
+    }
     if (config->connect_timeout_ms == 0u) {
         config->connect_timeout_ms =
             H2_BLE_WIFI_CONFIG_DEFAULT_CONNECT_TIMEOUT_MS;
@@ -390,9 +393,99 @@ static bool h2_ble_wifi_config_ap_present(
     return probe.found;
 }
 
+static void h2_ble_wifi_config_send_progress(
+    h2_ble_wifi_config_t *service,
+    h2_ble_wifi_config_peer_t peer,
+    h2_ble_wifi_config_progress_t state);
+
+/*
+ * Follow the station through the Runtime's published snapshot until it holds
+ * an address or drops, forwarding every transition to the peer as it happens.
+ *
+ * Polling rather than subscribing: only the Runtime's main loop may drain the
+ * event queue, and the snapshot is wait-free to read, so the worker that is
+ * already committed to this attempt just looks. Sending from here also keeps
+ * progress ahead of the verdict without a queue - the worker cannot reach the
+ * final frame until this returns.
+ */
+static bool h2_ble_wifi_config_await_address(
+    h2_ble_wifi_config_t *service,
+    h2_ble_wifi_config_peer_t peer,
+    h2_ble_wifi_config_reason_t *out_reason) {
+    const uint32_t slice_ms = 200u;
+    uint32_t waited_ms = 0u;
+    h2_runtime_system_wifi_sta_status_t reported =
+        H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_UNKNOWN;
+
+    for (;;) {
+        h2_runtime_system_wifi_sta_state_t state;
+        memset(&state, 0, sizeof(state));
+        bool have_state =
+            h2_runtime_system_state_wifi_sta(service->api.runtime, &state) ==
+                H2_PAL_OK &&
+            state.valid != 0u;
+
+        if (have_state && state.status != reported) {
+            reported = state.status;
+            switch (state.status) {
+            case H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTING:
+                h2_ble_wifi_config_send_progress(
+                    service, peer, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING);
+                break;
+            case H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED:
+                h2_ble_wifi_config_send_progress(
+                    service, peer, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED);
+                break;
+            case H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP:
+                h2_ble_wifi_config_send_progress(
+                    service, peer,
+                    H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED);
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (have_state && state.ip_valid != 0u) {
+            return true;
+        }
+        if (have_state &&
+            state.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED) {
+            /* The snapshot carries why it went away; map that, not the clock. */
+            h2_pal_wifi_sta_status_t pal;
+            memset(&pal, 0, sizeof(pal));
+            pal.disconnect_reason = (int)state.disconnect_reason;
+            *out_reason = service->config.map_reason != NULL
+                              ? service->config.map_reason(
+                                    service->config.user,
+                                    H2_PAL_ERR_UNAVAILABLE, &pal)
+                              : h2_ble_wifi_config_default_reason(
+                                    H2_PAL_ERR_UNAVAILABLE, &pal);
+            return false;
+        }
+
+        h2_ble_wifi_config_lock(service);
+        bool closing = service->closing;
+        if (!closing && waited_ms < service->config.dhcp_timeout_ms) {
+            (void)h2_pal_cond_wait(
+                service->api.sync, service->cond, service->mutex, slice_ms);
+            closing = service->closing;
+        }
+        h2_ble_wifi_config_unlock(service);
+        if (closing || waited_ms >= service->config.dhcp_timeout_ms) {
+            break;
+        }
+        waited_ms += slice_ms;
+    }
+
+    *out_reason = H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED;
+    return false;
+}
+
 static int h2_ble_wifi_config_connect(
     h2_ble_wifi_config_t *service,
     const h2_ble_wifi_config_credentials_t *credentials,
+    h2_ble_wifi_config_peer_t peer,
     h2_ble_wifi_config_reason_t *out_reason) {
     *out_reason = H2_BLE_WIFI_CONFIG_REASON_NONE;
     if (service->config.connect != NULL) {
@@ -425,11 +518,18 @@ static int h2_ble_wifi_config_connect(
     bool status_valid =
         h2_pal_wifi_sta_get_status(service->api.wifi_sta, &status) == H2_PAL_OK;
     if (rc == H2_PAL_OK) {
-        /* Association alone is not provisioning: the station needs a lease. */
+        /*
+         * Association alone is not provisioning: the station needs a lease.
+         * h2_pal_wifi_sta_connect() returns once the access point accepts the
+         * key, so the address is still outstanding here - reading it now
+         * reported every healthy network as a DHCP failure.
+         */
         if (!status_valid || status.ip_valid != 0u) {
             return H2_PAL_OK;
         }
-        *out_reason = H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED;
+        if (h2_ble_wifi_config_await_address(service, peer, out_reason)) {
+            return H2_PAL_OK;
+        }
         return H2_PAL_ERR_UNAVAILABLE;
     }
     const h2_pal_wifi_sta_status_t *status_arg = status_valid ? &status : NULL;
@@ -438,39 +538,6 @@ static int h2_ble_wifi_config_connect(
                             service->config.user, rc, status_arg)
                       : h2_ble_wifi_config_default_reason(rc, status_arg);
     return rc;
-}
-
-/*
- * Queue one station transition for the worker. Progress is advisory and this
- * runs on a runtime callback, so a full queue drops the oldest rather than
- * blocking; only a run that is actually provisioning has a peer to tell.
- */
-static void h2_ble_wifi_config_queue_progress(
-    h2_ble_wifi_config_t *service,
-    h2_ble_wifi_config_progress_t state) {
-    h2_ble_wifi_config_lock(service);
-    if (!service->credentials_running || !service->progress_open ||
-        service->closing) {
-        h2_ble_wifi_config_unlock(service);
-        return;
-    }
-    if (service->progress_count == H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN) {
-        service->progress_head = (service->progress_head + 1u) %
-                                 H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
-        service->progress_count--;
-    }
-    size_t tail = (service->progress_head + service->progress_count) %
-                  H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
-    service->progress_queue[tail] = (h2_ble_wifi_config_progress_entry_t){
-        .state = (uint8_t)state,
-        .peer = {
-            .conn_handle = service->conn_handle,
-            .generation = service->conn_generation,
-        },
-    };
-    service->progress_count++;
-    (void)h2_pal_cond_broadcast(service->api.sync, service->cond);
-    h2_ble_wifi_config_unlock(service);
 }
 
 static void h2_ble_wifi_config_send_progress(
@@ -485,47 +552,6 @@ static void h2_ble_wifi_config_send_progress(
     }
     /* Advisory: a dropped progress frame costs a UI step and nothing else. */
     (void)h2_ble_wifi_config_notify(service, false, peer, frame, frame_len);
-}
-
-/**
- * Send every station transition queued so far.
- *
- * The connect step blocks, so transitions pile up while the worker is inside
- * it. Draining here keeps them ahead of the final frame: an application that
- * saw the verdict first, then "associating", would be worse off than one that
- * saw no progress at all.
- */
-static void h2_ble_wifi_config_drain_progress(h2_ble_wifi_config_t *service) {
-    /*
-     * Close intake first. Otherwise a transition arriving between the last
-     * pop and the final frame is accepted, then stranded: the attempt is over
-     * and it would either be discarded or arrive behind the verdict.
-     */
-    h2_ble_wifi_config_lock(service);
-    service->progress_open = false;
-    h2_ble_wifi_config_unlock(service);
-    for (;;) {
-        h2_ble_wifi_config_lock(service);
-        if (service->progress_count == 0u) {
-            h2_ble_wifi_config_unlock(service);
-            return;
-        }
-        h2_ble_wifi_config_progress_entry_t entry =
-            service->progress_queue[service->progress_head];
-        service->progress_head = (service->progress_head + 1u) %
-                                 H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
-        service->progress_count--;
-        h2_ble_wifi_config_unlock(service);
-        h2_ble_wifi_config_send_progress(
-            service, entry.peer, (h2_ble_wifi_config_progress_t)entry.state);
-    }
-}
-
-/* The caller must hold the mutex. */
-static void h2_ble_wifi_config_discard_progress_locked(
-    h2_ble_wifi_config_t *service) {
-    service->progress_head = 0u;
-    service->progress_count = 0u;
 }
 
 static void h2_ble_wifi_config_send_result(
@@ -556,7 +582,7 @@ static void h2_ble_wifi_config_run_provision(
 
     h2_ble_wifi_config_reason_t reason = H2_BLE_WIFI_CONFIG_REASON_NONE;
     h2_ble_wifi_config_pause_advertising(service);
-    int rc = h2_ble_wifi_config_connect(service, credentials, &reason);
+    int rc = h2_ble_wifi_config_connect(service, credentials, peer, &reason);
     h2_ble_wifi_config_resume_advertising(service);
 
     h2_ble_wifi_config_lock(service);
@@ -565,9 +591,6 @@ static void h2_ble_wifi_config_run_provision(
         service->stats.provision_failures++;
     }
     h2_ble_wifi_config_unlock(service);
-
-    /* Progress belongs ahead of the verdict, so flush it first. */
-    h2_ble_wifi_config_drain_progress(service);
 
     /* The application waits for this frame before leaving its progress page. */
     h2_ble_wifi_config_send_result(
@@ -591,7 +614,7 @@ static void h2_ble_wifi_config_worker(void *ctx) {
         h2_ble_wifi_config_lock(service);
         while (!service->closing && service->event_count == 0u &&
                !service->reject_pending && !service->credentials_pending &&
-               service->progress_count == 0u && !service->scan_requested) {
+               !service->scan_requested) {
             (void)h2_pal_cond_wait(
                 service->api.sync, service->cond, service->mutex,
                 H2_PAL_SYNC_WAIT_FOREVER);
@@ -608,19 +631,6 @@ static void h2_ble_wifi_config_worker(void *ctx) {
             service->event_count--;
             h2_ble_wifi_config_unlock(service);
             h2_ble_wifi_config_emit(service, &event);
-            continue;
-        }
-        if (service->progress_count > 0u) {
-            h2_ble_wifi_config_progress_entry_t entry =
-                service->progress_queue[service->progress_head];
-            service->progress_head = (service->progress_head + 1u) %
-                                     H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
-            service->progress_count--;
-            h2_ble_wifi_config_unlock(service);
-            /* The peer the transition was queued for, not whoever is current. */
-            h2_ble_wifi_config_send_progress(
-                service, entry.peer,
-                (h2_ble_wifi_config_progress_t)entry.state);
             continue;
         }
         if (service->reject_pending) {
@@ -640,16 +650,10 @@ static void h2_ble_wifi_config_worker(void *ctx) {
             };
             service->credentials_pending = false;
             service->credentials_running = true;
-            service->progress_open = true;
             h2_ble_wifi_config_unlock(service);
             h2_ble_wifi_config_run_provision(service, &credentials, peer);
             h2_ble_wifi_config_lock(service);
             service->credentials_running = false;
-            /*
-             * A transition that arrived after the verdict belongs to an
-             * attempt the application has already been told about.
-             */
-            h2_ble_wifi_config_discard_progress_locked(service);
             memset(&service->credentials, 0, sizeof(service->credentials));
             h2_ble_wifi_config_unlock(service);
             continue;
@@ -976,18 +980,6 @@ static int h2_ble_wifi_config_system_event(
         memcpy(&transition.payload.disconnected, event->payload,
                sizeof(transition.payload.disconnected));
         break;
-    case H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING:
-        h2_ble_wifi_config_queue_progress(
-            service, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING);
-        return H2_PAL_OK;
-    case H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED:
-        h2_ble_wifi_config_queue_progress(
-            service, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED);
-        return H2_PAL_OK;
-    case H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP:
-        h2_ble_wifi_config_queue_progress(
-            service, H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED);
-        return H2_PAL_OK;
     default:
         return H2_PAL_OK;
     }
@@ -1008,10 +1000,6 @@ static int h2_ble_wifi_config_subscribe_events(h2_ble_wifi_config_t *service) {
         H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
         H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED,
         H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED,
-        /* Forwarded to the peer as provisioning progress. */
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
-        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
     };
     for (size_t i = 0u; i < H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT; ++i) {
         int rc = h2_pal_system_event_subscribe(

@@ -417,6 +417,16 @@ static h2_runtime_input_source_t *find_or_create_input_source(
     return source;
 }
 
+h2_pal_result_t h2_runtime_test_set_system_wifi_sta_state(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_wifi_sta_state_t *state) {
+    if (!h2_runtime_ready(runtime) || state == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_runtime_system_state_publish_wifi_sta(runtime, state);
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_runtime_test_set_component_state(
     h2_runtime_test_control_t *control,
     h2_runtime_component_id_t component_id,
