@@ -2,7 +2,7 @@
 
 `libs/ble_wifi_config` 提供设备尚未联网时使用的 BLE 配网服务：手机 App 通过 BLE 扫描周边 AP，并把 Wi-Fi 凭据下发给设备。Library 依赖 PAL 与 `libs/runtime`，不依赖 `libs/bleikcp`，也不依赖 GizClaw RPC —— 配网发生在联网之前，这条路径必须尽量薄。
 
-依赖 Runtime 的原因只有一个：station 状态。`h2_pal_wifi_sta_connect()` 在 AP 接受密钥时就返回，地址还要几百毫秒到几秒才落地，此时读 `ip_valid` 会把正常网络判成 DHCP 失败。真正的状态来自 Wi-Fi system event，而 Runtime event queue 只能由它自己的 main loop 消费，因此 library 不订阅原始 PAL 事件，改为轮询 Runtime 发布的 station 快照（`h2_runtime_system_state_wifi_sta()`，读端无锁）。
+依赖 Runtime 的原因只有一个：station 状态。`h2_pal_wifi_sta_connect()` 在 AP 接受密钥时就返回，地址还要几百毫秒到几秒才落地，此时读 `ip_valid` 会把正常网络判成 DHCP 失败。真正的状态来自 Wi-Fi system event，而 Runtime event queue 只能由它自己的 main loop 消费，因此 library 不订阅原始 PAL 事件，改为轮询 Runtime 发布的 station 快照（`h2_runtime_system_state_wifi_sta()`）。Runtime 在发布和读取两侧各加一段很短的锁，读者因此总能拿到一个完整快照，自己不需要任何同步。
 
 ## API Reference
 

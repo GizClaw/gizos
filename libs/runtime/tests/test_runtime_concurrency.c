@@ -1106,7 +1106,7 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
 typedef struct station_reader_args {
     h2_runtime_t *runtime;
     atomic_int stop;
-    unsigned long reads;
+    atomic_ulong reads;
     int torn;
 } station_reader_args_t;
 
@@ -1118,7 +1118,7 @@ static void *station_reader_main(void *ctx) {
         if (h2_runtime_system_state_wifi_sta(args->runtime, &state) != H2_PAL_OK) {
             continue;
         }
-        args->reads++;
+        atomic_fetch_add(&args->reads, 1ul);
         if (state.valid == 0u) {
             continue;
         }
@@ -1142,8 +1142,16 @@ static void test_station_snapshot_survives_a_publication_burst(void) {
 
     station_reader_args_t args = { .runtime = runtime };
     atomic_init(&args.stop, 0);
+    atomic_init(&args.reads, 0ul);
     pthread_t reader;
     assert(pthread_create(&reader, NULL, station_reader_main, &args) == 0);
+    /*
+     * Let the reader get going first. Starting the burst immediately can
+     * finish it before the thread runs at all, which proves nothing.
+     */
+    while (atomic_load(&args.reads) == 0ul) {
+        sched_yield();
+    }
 
     for (unsigned int i = 0u; i < 20000u; ++i) {
         uint8_t channel = (uint8_t)(1u + (i % 13u));
@@ -1161,7 +1169,7 @@ static void test_station_snapshot_survives_a_publication_burst(void) {
 
     atomic_store(&args.stop, 1);
     assert(pthread_join(reader, NULL) == 0);
-    assert(args.reads > 0u);
+    assert(atomic_load(&args.reads) > 0ul);
     assert(args.torn == 0);
 
     /* The last publication is what a later reader sees. */

@@ -64,9 +64,11 @@ typedef struct h2_runtime_system_webrtc_state {
 /**
  * @brief Copy the latest completed station snapshot.
  *
- * Wait-free for the reader and never blocks the writer: the Runtime publishes
- * into a retired slot and switches an atomic index, so a caller may poll this
- * as often as it likes without a lock of its own.
+ * The Runtime holds a short lock around the copy on both sides, so a caller
+ * may poll this as often as it likes without any synchronisation of its own
+ * and always sees one coherent moment. A sequence counter alone would only
+ * detect a torn copy after racing on the snapshot, which is a data race in
+ * its own right.
  *
  * @return H2_PAL_OK, or H2_PAL_ERR_INVALID_ARG for a NULL argument or a
  * Runtime that is not ready.

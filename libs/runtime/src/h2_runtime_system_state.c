@@ -13,24 +13,45 @@ static h2_pal_result_t unsupported_system_state(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    const h2_pal_mutex_config_t config = {
+        .name = "h2-runtime-system-state",
+        .allocator = runtime->mem,
+        .flags = H2_PAL_MUTEX_FLAG_NONE,
+    };
+    return h2_pal_mutex_create(
+        runtime->sync, &config, &runtime->private_state->system_state.mutex);
+}
+
+void h2_runtime_system_state_release(h2_runtime_t *runtime) {
+    if (runtime == NULL || runtime->private_state == NULL ||
+        runtime->private_state->system_state.mutex == NULL) {
+        return;
+    }
+    (void)h2_pal_mutex_destroy(
+        runtime->sync, runtime->private_state->system_state.mutex);
+    runtime->private_state->system_state.mutex = NULL;
+}
+
 void h2_runtime_system_state_publish_wifi_sta(
     h2_runtime_t *runtime,
     const h2_runtime_system_wifi_sta_state_t *state) {
     if (!h2_runtime_ready(runtime) || state == NULL) {
         return;
     }
-    h2_runtime_system_state_publication_t *pub = &runtime->private_state->system_state;
-    /*
-     * Odd marks the snapshot in flight, so a reader that sees an odd counter
-     * or a counter that moved knows it copied a torn value and retries. Only
-     * the system-event ingest publishes, so no writer lock is needed.
-     */
-    unsigned int sequence =
-        atomic_load_explicit(&pub->sequence, memory_order_relaxed);
-    atomic_store_explicit(&pub->sequence, sequence + 1u, memory_order_relaxed);
-    atomic_thread_fence(memory_order_release);
+    h2_runtime_system_state_publication_t *pub =
+        &runtime->private_state->system_state;
+    if (pub->mutex == NULL) {
+        return;
+    }
+    if (h2_pal_mutex_lock(runtime->sync, pub->mutex) != H2_PAL_OK) {
+        return;
+    }
     pub->wifi_sta = *state;
-    atomic_store_explicit(&pub->sequence, sequence + 2u, memory_order_release);
+    (void)h2_pal_mutex_unlock(runtime->sync, pub->mutex);
 }
 
 h2_pal_result_t h2_runtime_system_state_wifi_sta(
@@ -39,22 +60,18 @@ h2_pal_result_t h2_runtime_system_state_wifi_sta(
     if (!h2_runtime_ready(runtime) || out_state == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    const h2_runtime_system_state_publication_t *pub =
+    h2_runtime_system_state_publication_t *pub =
         &runtime->private_state->system_state;
-    for (;;) {
-        unsigned int before =
-            atomic_load_explicit(&pub->sequence, memory_order_acquire);
-        if ((before & 1u) != 0u) {
-            continue;
-        }
-        *out_state = pub->wifi_sta;
-        atomic_thread_fence(memory_order_acquire);
-        unsigned int after =
-            atomic_load_explicit(&pub->sequence, memory_order_relaxed);
-        if (before == after) {
-            return H2_PAL_OK;
-        }
+    if (pub->mutex == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
     }
+    h2_pal_result_t rc = h2_pal_mutex_lock(runtime->sync, pub->mutex);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    *out_state = pub->wifi_sta;
+    (void)h2_pal_mutex_unlock(runtime->sync, pub->mutex);
+    return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_runtime_system_state_wifi_ap(

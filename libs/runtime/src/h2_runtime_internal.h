@@ -239,10 +239,20 @@ typedef struct h2_runtime_state_publication {
  * two events away, and station events arrive in bursts.
  */
 typedef struct h2_runtime_system_state_publication {
-    /* Odd while a write is in flight; even when the snapshot is settled. */
-    atomic_uint sequence;
+    /*
+     * One short critical section per publication and per read. A snapshot is
+     * a plain struct, so a sequence counter alone would only detect a torn
+     * copy after racing on it; the copy itself would still be a data race.
+     * Both sides are bounded memcpys off any hot path: the writer runs on the
+     * system-event ingest, the reader polls.
+     */
+    h2_pal_mutex_t *mutex;
     h2_runtime_system_wifi_sta_state_t wifi_sta;
 } h2_runtime_system_state_publication_t;
+
+/* Creates and releases the system state lock; see h2_runtime_system_state.c. */
+h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t *runtime);
+void h2_runtime_system_state_release(h2_runtime_t *runtime);
 
 /* Publishes one station snapshot; see h2_runtime_system_state.c. */
 void h2_runtime_system_state_publish_wifi_sta(

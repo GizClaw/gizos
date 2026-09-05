@@ -221,6 +221,7 @@ static h2_pal_result_t runtime_init_release(
             /* Init never starts the poller, so only prepared state is here. */
             h2_runtime_input_release(runtime);
             h2_runtime_stop_system_events(runtime);
+            h2_runtime_system_state_release(runtime);
             if (private_state->event_queue != NULL) {
                 h2_pal_queue_destroy(
                     runtime->queue, private_state->event_queue);
@@ -348,6 +349,12 @@ h2_pal_result_t h2_runtime_init(
 #undef H2_RUNTIME_BIND_PROXY
 
     private_state->initialized = 1;
+    {
+        h2_pal_result_t state_rc = h2_runtime_system_state_init(runtime);
+        if (state_rc != H2_PAL_OK) {
+            return runtime_init_release(config, runtime, state_rc);
+        }
+    }
     atomic_flag_clear(&private_state->sequence_lock);
     atomic_init(&private_state->system_event_active, 0);
     atomic_init(
@@ -489,6 +496,8 @@ void h2_runtime_deinit(h2_runtime_t *runtime) {
     }
     h2_runtime_input_release(runtime);
     h2_runtime_stop_system_events(runtime);
+    /* After the ingest stops, so no publication can outlive the lock. */
+    h2_runtime_system_state_release(runtime);
     /* Last producer to shut down: app tasks posting custom events. */
     h2_runtime_custom_event_close(runtime);
 

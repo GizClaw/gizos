@@ -3066,12 +3066,16 @@ static void test_input_snapshot_does_not_create_condition(void) {
     h2_runtime_t *runtime = NULL;
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     assert(runtime != NULL);
-    /* Only the input writer mutex is created; no condition variable. */
-    assert(env.sync_state.creates == 1u);
+    /*
+     * Two mutexes, the system state lock and the input writer lock, and no
+     * condition variable: the snapshot readers and the input poller both
+     * take a lock, neither waits on one.
+     */
+    assert(env.sync_state.creates == 2u);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.sync_state.creates == 1u);
+    assert(env.sync_state.creates == 2u);
     h2_runtime_deinit(runtime);
-    assert(env.sync_state.destroys == 1u);
+    assert(env.sync_state.destroys == 2u);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
