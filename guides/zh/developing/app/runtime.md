@@ -132,7 +132,7 @@ Runtime component state 同样使用 `component_id` 读取某个逻辑组件的�
 
 Button、NFC 和 IMU 输入由 Runtime-owned private task 读取并转换为 Runtime event/state。Runtime 初始化先同步发布首帧快照，再启动 task；target 在 Runtime composition 中配置 cadence 和 task policy。Portable App 不调用 input poll、不创建 input task，也不接触 target scheduler。
 
-阻塞式 portable App entry 应通过 `h2_runtime_wait_event()` 等到 Runtime event 或自己的绝对 deadline，而不是在 App source 中调用 target scheduler、libco wait/yield 或固定短 sleep。Target 可以用 OS thread、RTOS task 或 cooperative provider 实现同一个同步 Runtime/PAL contract；该差异不能进入 App public API。
+阻塞式 portable App entry 应通过 `h2_runtime_wait_notify()` 等到 Runtime wake 或自己的绝对 deadline，而不是在 App source 中调用 target scheduler、libco wait/yield 或固定短 sleep。Target 可以用 OS thread、RTOS task 或 cooperative provider 实现同一个同步 Runtime/PAL contract；该差异不能进入 App public API。
 
 每次到达 Button poll deadline，按下状态都会产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` sample 和一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`；松开时产生 `BUTTON_UP` 和最后一个 action。Action 只携带 `pressed_at_ms`、`released_at_ms`：按住时释放时间为 0，松开时释放时间等于事件时间。Runtime 不使用单独的 100 ms action cadence，也不定义 phase、short press、long press 或 click count。App 用事件时间等于按下时间识别首次 sample，用零释放时间识别持续按住，用非零释放时间识别松开，并自行计算长按、双击等策略；不能把同一 sample 的 `BUTTON_DOWN` 与 action 重复投影成两次操作。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
 
@@ -205,7 +205,7 @@ while (!app.should_exit) {
 }
 ```
 
-`h2_runtime_wait_notify()` 是 loop 里唯一的阻塞点。Runtime producer 和 Library 的 `h2_runtime_notify()` 给出的 wake 合并成一次返回；返回后先把 event queue 拉空，再 drain Library 的 dispatch queue。`h2_runtime_wait_event()` 保留为"wait 加一次 poll"的便捷包装，被没有 event 的 wake 叫醒时提前以 `TIMEOUT` 返回。
+`h2_runtime_wait_notify()` 是 loop 里唯一的阻塞点。Runtime producer 和 Library 的 `h2_runtime_notify()` 给出的 wake 合并成一次返回；返回后先把 event queue 完全拉空，再 drain Library 的 dispatch queue。不能每次只取一个 event：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。
 
 Event 的具体类型由 `component + component_id + kind` 共同确定。App 只解释 Runtime-owned event schema，不重新消费 PAL system event，也不依赖 PAL callback payload。
 
@@ -222,7 +222,7 @@ const h2_runtime_custom_event_t event = {
     .payload = &completion,
     .payload_size = sizeof(completion),
 };
-/* 任意后台 Task 都可以调用；立即唤醒 main loop 的 wait_event */
+/* 任意后台 Task 都可以调用；立即唤醒 main loop 的 wait_notify */
 h2_pal_result_t rc = h2_runtime_post_custom_event(runtime, &event);
 ```
 
@@ -293,12 +293,13 @@ h2_pal_result_t example_loop_step(
       .payload_capacity = sizeof(state->event_payload),
   };
 
-  h2_pal_result_t rc =
-      h2_runtime_wait_event(state->runtime, &event, timeout_ms);
-  if (rc == H2_PAL_OK) {
-    rc = example_dispatch_runtime_event(state, &event);
-  } else if (rc == H2_PAL_ERR_TIMEOUT) {
+  h2_pal_result_t rc = h2_runtime_wait_notify(state->runtime, timeout_ms);
+  if (rc == H2_PAL_ERR_TIMEOUT) {
     rc = H2_PAL_OK;
+  }
+  while (rc == H2_PAL_OK &&
+         h2_runtime_poll_event(state->runtime, &event) == H2_PAL_OK) {
+    rc = example_dispatch_runtime_event(state, &event);
   }
   if (rc == H2_PAL_OK) {
     rc = example_tick(state);

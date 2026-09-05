@@ -6,7 +6,7 @@
  * event queue.
  *
  * A background task posts a custom event with h2_runtime_post_custom_event();
- * the consumer keeps waiting on h2_runtime_wait_event() /
+ * the consumer keeps waiting on h2_runtime_wait_notify() /
  * h2_runtime_poll_event() and receives it as H2_RUNTIME_EVENT_CUSTOM. The
  * Runtime copies the payload into the queue and never interprets the id or
  * the bytes: both belong to the posting owner.
@@ -85,7 +85,7 @@ typedef union h2_runtime_event_payload_buffer {
 
 /**
  * Posts a custom event into the Runtime event queue and wakes a consumer
- * blocked in h2_runtime_wait_notify() / h2_runtime_wait_event(), the same
+ * blocked in h2_runtime_wait_notify(), the same
  * way every Runtime producer does. Callable from any task, including
  * concurrently with other posters and with Runtime's own producers. Never
  * blocks.
@@ -113,7 +113,7 @@ h2_pal_result_t h2_runtime_post_custom_event(
     const h2_runtime_custom_event_t *event);
 
 /**
- * Wakes a consumer blocked in h2_runtime_wait_notify() / h2_runtime_wait_event()
+ * Wakes a consumer blocked in h2_runtime_wait_notify()
  * without enqueuing anything. For libraries that keep their own bounded
  * dispatch queue: the main loop drains that queue after every wake, so the
  * wake carries no payload. Callable from any task; never blocks; coalesces

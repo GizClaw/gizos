@@ -592,8 +592,11 @@ static void *waiter_thread(void *user) {
         .payload = state->buffer.bytes,
         .payload_capacity = sizeof(state->buffer.bytes),
     };
-    state->result = h2_runtime_wait_event(
-        state->runtime, &state->event, H2_PAL_QUEUE_WAIT_FOREVER);
+    state->result =
+        h2_runtime_wait_notify(state->runtime, H2_PAL_QUEUE_WAIT_FOREVER);
+    if (state->result == H2_PAL_OK) {
+        state->result = h2_runtime_poll_event(state->runtime, &state->event);
+    }
     state->woke_at_ms = now_ms();
     return NULL;
 }
@@ -907,15 +910,17 @@ static void test_concurrent_producers_preserve_every_event(void) {
             .payload = buffer.bytes,
             .payload_capacity = sizeof(buffer.bytes),
         };
-        h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 5000u);
-        /* A wake whose event an earlier wait already dequeued ends this wait
-         * early as TIMEOUT. Under contention that can repeat any number of
-         * times; only the overall deadline bounds the loop. */
-        if (rc == H2_PAL_ERR_TIMEOUT) {
+        h2_pal_result_t rc = h2_runtime_poll_event(runtime, &event);
+        if (rc != H2_PAL_OK) {
+            /* Drained: block for the next wake. A wake whose event this
+             * loop already dequeued returns OK with nothing to poll; under
+             * contention that can repeat any number of times, so only the
+             * overall deadline bounds the loop. */
+            rc = h2_runtime_wait_notify(runtime, 5000u);
+            assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_TIMEOUT);
             assert(now_ms() - consume_started_ms < 60000u);
             continue;
         }
-        assert(rc == H2_PAL_OK);
         const h2_runtime_custom_event_payload_t *payload =
             custom_payload(&event);
         assert(payload->id == CUSTOM_EVENT_JOB_PROGRESS);
@@ -1107,35 +1112,6 @@ static void test_post_wakes_blocked_wait_notify(void) {
     h2_runtime_deinit(runtime);
 }
 
-/* wait_event: a bare wake ends the wait as TIMEOUT without dequeuing. */
-static void test_wait_event_returns_on_bare_wake(void) {
-    custom_event_env_t env;
-    env_init(&env);
-    h2_runtime_t *runtime = env_runtime_create(&env, 8u);
-
-    h2_runtime_event_payload_buffer_t buffer;
-    h2_runtime_event_t event = {
-        .payload = buffer.bytes,
-        .payload_capacity = sizeof(buffer.bytes),
-    };
-    assert(h2_runtime_notify(runtime) == H2_PAL_OK);
-    uint64_t started = now_ms();
-    assert(h2_runtime_wait_event(runtime, &event, 5000u) == H2_PAL_ERR_TIMEOUT);
-    assert(now_ms() - started < 1000u);
-    /* Nothing pending any more: the full timeout applies. */
-    started = now_ms();
-    assert(h2_runtime_wait_event(runtime, &event, 30u) == H2_PAL_ERR_TIMEOUT);
-    assert(now_ms() - started >= 20u);
-    /* A queued event still wins over the wait. */
-    const uint32_t value = 3u;
-    assert(post_value(runtime, CUSTOM_EVENT_JOB_PROGRESS, &value, sizeof(value)) ==
-           H2_PAL_OK);
-    assert(h2_runtime_wait_event(runtime, &event, 5000u) == H2_PAL_OK);
-    assert(custom_payload(&event)->id == CUSTOM_EVENT_JOB_PROGRESS);
-
-    h2_runtime_deinit(runtime);
-}
-
 /* Once deinit closed the door, notify is refused instead of touching state,
  * and a consumer still blocked in wait_notify is released with CLOSED. */
 static void test_close_releases_waiter_and_refuses_notify(void) {
@@ -1164,7 +1140,6 @@ int main(void) {
     test_notify_coalesces_into_one_wake();
     test_notify_wakes_blocked_waiter_with_full_queue();
     test_post_wakes_blocked_wait_notify();
-    test_wait_event_returns_on_bare_wake();
     test_close_releases_waiter_and_refuses_notify();
     test_custom_event_wakes_indefinite_wait();
     test_custom_event_payload_is_copied();

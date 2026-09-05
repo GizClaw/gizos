@@ -227,15 +227,20 @@ int run_game(const Layout &layout, const GameAdapter &adapter) {
       const auto remaining =
           std::chrono::duration_cast<std::chrono::milliseconds>(
               next_frame - before_frame + std::chrono::milliseconds(1));
-      const int result = h2_runtime_wait_event(
-          runtime, &event, static_cast<std::uint32_t>(remaining.count()));
-      if (result == H2_PAL_OK) {
+      // Drain before waiting: a half-drained queue has no pending wake.
+      while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
         if (!adapter.handle_runtime_event(game, game_runtime, &event)) {
           loop_failed = true;
           break;
         }
-      } else if (result != H2_PAL_ERR_TIMEOUT) {
-        std::fprintf(stderr, "%s: runtime event wait failed: %d\n",
+      }
+      if (loop_failed) {
+        break;
+      }
+      const int result = h2_runtime_wait_notify(
+          runtime, static_cast<std::uint32_t>(remaining.count()));
+      if (result != H2_PAL_OK && result != H2_PAL_ERR_TIMEOUT) {
+        std::fprintf(stderr, "%s: runtime wake wait failed: %d\n",
                      adapter.name, result);
         loop_failed = true;
         break;

@@ -169,24 +169,3 @@ h2_pal_result_t h2_runtime_wait_notify(
         runtime->queue, runtime->private_state->wake_queue, &token, timeout_ms);
     return recv_would_block(rc) ? H2_PAL_ERR_TIMEOUT : rc;
 }
-
-h2_pal_result_t h2_runtime_wait_event(
-    h2_runtime_t *runtime,
-    h2_runtime_event_t *out_event,
-    uint32_t timeout_ms) {
-    h2_pal_result_t rc = recv_event(runtime, out_event, H2_PAL_QUEUE_NO_WAIT);
-    if (!recv_would_block(rc) || timeout_ms == H2_PAL_QUEUE_NO_WAIT) {
-        return rc;
-    }
-    rc = h2_runtime_wait_notify(runtime, timeout_ms);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    /*
-     * A wake without a queued event: h2_runtime_notify() from a library, or
-     * a poll that already drained the queue. The caller runs its usual
-     * timeout path, which is where library dispatch queues are drained.
-     */
-    rc = recv_event(runtime, out_event, H2_PAL_QUEUE_NO_WAIT);
-    return recv_would_block(rc) ? H2_PAL_ERR_TIMEOUT : rc;
-}

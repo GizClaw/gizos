@@ -19,8 +19,14 @@ static h2_pal_result_t h2_smoke_ble_wait(
         .payload_capacity = sizeof(payload),
     };
     for (;;) {
-        h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, H2_SMOKE_BLE_EVENT_TIMEOUT_MS);
-        if (rc != H2_PAL_OK || event.kind == expected) {
+        /* Drain before waiting: a half-drained queue has no pending wake. */
+        while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+            if (event.kind == expected) {
+                return H2_PAL_OK;
+            }
+        }
+        h2_pal_result_t rc = h2_runtime_wait_notify(runtime, H2_SMOKE_BLE_EVENT_TIMEOUT_MS);
+        if (rc != H2_PAL_OK) {
             return rc;
         }
     }
