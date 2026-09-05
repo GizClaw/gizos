@@ -1,5 +1,6 @@
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_sdk_port.h"
+#include "h2_jieli_wl82_atomic.h"
 
 #include <string.h>
 
@@ -15,7 +16,7 @@ struct h2_pal_queue {
     size_t capacity;
     size_t head;
     size_t count;
-    uint8_t closed;
+    volatile uint32_t closed;
 };
 
 static void queue_release(h2_pal_queue_t *queue)
@@ -85,7 +86,7 @@ static int queue_send(void *user, h2_pal_queue_t *queue, const void *item, uint3
     if (queue == NULL || item == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (queue->closed) {
+    if (h2_jieli_atomic_load_u32(&queue->closed)) {
         return H2_PAL_ERR_CLOSED;
     }
     rc = h2_jieli_sdk_sem_take(queue->space, timeout_ms);
@@ -100,7 +101,7 @@ static int queue_send(void *user, h2_pal_queue_t *queue, const void *item, uint3
         (void)h2_jieli_sdk_sem_give(queue->space);
         return H2_PAL_ERR_IO;
     }
-    if (queue->closed) {
+    if (h2_jieli_atomic_load_u32(&queue->closed)) {
         (void)h2_jieli_sdk_mutex_unlock(queue->lock);
         (void)h2_jieli_sdk_sem_give(queue->space);
         return H2_PAL_ERR_CLOSED;
@@ -121,7 +122,7 @@ static int queue_send_latest(void *user, h2_pal_queue_t *queue, const void *item
     if (h2_jieli_sdk_mutex_lock(queue->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
         return H2_PAL_ERR_IO;
     }
-    if (queue->closed) {
+    if (h2_jieli_atomic_load_u32(&queue->closed)) {
         (void)h2_jieli_sdk_mutex_unlock(queue->lock);
         return H2_PAL_ERR_CLOSED;
     }
@@ -144,7 +145,8 @@ static int queue_recv(void *user, h2_pal_queue_t *queue, void *out_item, uint32_
     }
     rc = h2_jieli_sdk_sem_take(queue->items, timeout_ms);
     if (rc > 0) {
-        return queue->closed ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_TIMEOUT;
+        return h2_jieli_atomic_load_u32(&queue->closed)
+            ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_TIMEOUT;
     }
     if (rc < 0) {
         return H2_PAL_ERR_IO;
@@ -158,7 +160,8 @@ static int queue_recv(void *user, h2_pal_queue_t *queue, void *out_item, uint32_
         /* Woken by close() rather than by an item. */
         (void)h2_jieli_sdk_mutex_unlock(queue->lock);
         (void)h2_jieli_sdk_sem_give(queue->items);
-        return queue->closed ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
+        return h2_jieli_atomic_load_u32(&queue->closed)
+            ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_IO;
     }
     memcpy(out_item, slot(queue, queue->head), queue->item_size);
     queue->head = (queue->head + 1u) % queue->capacity;
@@ -199,7 +202,11 @@ static int queue_close(void *user, h2_pal_queue_t *queue)
     if (h2_jieli_sdk_mutex_lock(queue->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
         return H2_PAL_ERR_IO;
     }
-    queue->closed = 1u;
+    if (h2_jieli_atomic_load_u32(&queue->closed)) {
+        (void)h2_jieli_sdk_mutex_unlock(queue->lock);
+        return H2_PAL_OK;
+    }
+    h2_jieli_atomic_store_u32(&queue->closed, 1u);
     (void)h2_jieli_sdk_mutex_unlock(queue->lock);
     /* Wake one blocked receiver and one blocked sender; each re-wakes the
      * next waiter after observing the closed flag. */
