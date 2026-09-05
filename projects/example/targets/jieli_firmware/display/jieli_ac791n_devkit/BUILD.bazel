@@ -1,0 +1,551 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "reliable_transport",
+    component_name = "jieli_ac791n_devkit_display_reliable_transport",
+    deps = [
+        "//libs/command",
+        "//libs/iostreamikcp",
+    ],
+)
+
+firmware_native_component(
+    name = "color_bar_task_policy",
+    srcs = ["src/color_bar_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_color_bar_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "direct_color_bar_task_policy",
+    srcs = ["src/direct_color_bar_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_direct_color_bar_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "coredump_smoke",
+    srcs = ["src/coredump_smoke.c"],
+    component_name = "jieli_ac791n_devkit_coredump_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "mp4_player_small_task_policy",
+    srcs = ["src/mp4_player_small_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_mp4_player_small_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "speaker_smoke_task_policy",
+    srcs = ["src/speaker_smoke_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_speaker_smoke_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "audio_system_task_policy",
+    srcs = ["src/audio_system_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_audio_system_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "touch_task_policy",
+    srcs = ["src/touch_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_touch_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "button_task_policy",
+    srcs = ["src/button_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_button_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_lib_component(
+    name = "audio_system_libs",
+    component_name = "jieli_ac791n_devkit_audio_system_libs",
+    deps = [
+        "//libs/runtime",
+    ],
+)
+
+firmware_lib_component(
+    name = "touch_libs",
+    component_name = "jieli_ac791n_devkit_touch_libs",
+    deps = [
+        "//libs/lvgl",
+        "//libs/runtime",
+    ],
+)
+
+firmware_native_component(
+    name = "audio_system_target",
+    srcs = ["src/audio_system_target.c"],
+    hdrs = [
+        "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system.h",
+        "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system_task_names.h",
+    ],
+    include_roots = ["projects/example/apps/audio-system/app/include"],
+    native_srcs = [
+        "//projects/example/apps/audio-system/app:src/app.c",
+        "//projects/example/apps/audio-system/app:src/task_names.c",
+    ],
+    component_name = "jieli_ac791n_devkit_audio_system_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":audio_system_libs",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/opus_port",
+    ],
+)
+
+firmware_native_component(
+    name = "touch_target",
+    srcs = ["src/touch_target.c"],
+    hdrs = ["//projects/example/apps/touch/app:include/h2_touch_smoke.h"],
+    include_roots = ["projects/example/apps/touch/app/include"],
+    native_srcs = ["//projects/example/apps/touch/app:src/h2_touch_smoke.c"],
+    component_name = "jieli_ac791n_devkit_touch_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":touch_libs",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+firmware_native_component(
+    name = "button_target",
+    srcs = ["src/button_target.c"],
+    hdrs = ["//projects/example/apps/button/app:include/h2_button_smoke.h"],
+    include_roots = ["projects/example/apps/button/app/include"],
+    native_srcs = ["//projects/example/apps/button/app:src/h2_button_smoke.c"],
+    component_name = "jieli_ac791n_devkit_button_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":touch_libs",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+firmware_native_component(
+    name = "speaker_smoke",
+    srcs = ["src/speaker_smoke.c"],
+    component_name = "jieli_ac791n_devkit_speaker_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+firmware_native_component(
+    name = "bundle_native",
+    hdrs = [
+        "//libs/bundle:include/h2_bundle.h",
+        "//libs/bundle:include/h2_bundle_archive.h",
+        "//libs/bundle:include/h2_bundle_installer.h",
+        "//libs/bundle:include/h2_bundle_manifest.h",
+        "//libs/bundle:include/h2_bundle_path.h",
+        "//libs/bundle:include/h2_bundle_tar.h",
+        "//libs/bundle:include/h2_bundle_types.h",
+    ],
+    include_roots = ["libs/bundle/include"],
+    native_srcs = [
+        "//libs/bundle:src/h2_bundle_archive.c",
+        "//libs/bundle:src/h2_bundle_installer.c",
+        "//libs/bundle:src/h2_bundle_manifest.c",
+        "//libs/bundle:src/h2_bundle_path.c",
+        "//libs/bundle:src/h2_bundle_tar.c",
+        "//libs/bundle:src/h2_bundle_types.c",
+    ],
+    component_name = "jieli_ac791n_devkit_bundle",
+    deps = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pixa",
+        "//native_component_src/jieli/wl82/zlib",
+    ],
+)
+
+firmware_native_component(
+    name = "h2loader_app_client",
+    hdrs = [
+        "//projects/h2loader/libs/h2loader:h2loader_headers",
+        "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:src/h2loader_sha256.h",
+    ],
+    include_roots = [
+        "projects/h2loader/libs/h2loader/include",
+        "projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit/src",
+    ],
+    native_srcs = [
+        "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_boot.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_mfg.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_metadata.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
+        "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:src/h2loader_sha256.c",
+    ],
+    component_name = "jieli_ac791n_devkit_h2loader_app_client",
+    deps = [
+        ":bundle_native",
+        "//libs/command",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+firmware_native_component(
+    name = "app_support",
+    srcs = ["src/jieli_h2loader_app_support.c"],
+    hdrs = ["src/jieli_h2loader_app_support.h"],
+    component_name = "jieli_ac791n_devkit_app_support",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":h2loader_app_client",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)
+
+firmware_native_component(
+    name = "app_transport",
+    srcs = [
+        "src/jieli_app_iostreamikcp.c",
+    ],
+    hdrs = ["src/jieli_app_iostreamikcp.h"],
+    component_name = "jieli_ac791n_devkit_app_transport",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":app_support",
+        ":reliable_transport",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)
+
+firmware_native_component(
+    name = "color_bar_launcher",
+    srcs = ["src/color_bar_pal.c"],
+    component_name = "jieli_ac791n_devkit_color_bar_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":app_ble",
+        ":app_transport",
+        ":h2loader_app_client",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)
+
+firmware_lib_component(
+    name = "app_ble_transport",
+    component_name = "jieli_ac791n_devkit_app_ble_transport",
+    deps = ["//libs/bleikcp"],
+)
+
+firmware_native_component(
+    name = "app_ble",
+    srcs = ["src/jieli_app_ble.c"],
+    hdrs = ["//projects/h2loader/apps/loader/app:include/h2loader_app_task_names.h"],
+    include_roots = ["projects/h2loader/apps/loader/app/include"],
+    native_srcs = ["//projects/h2loader/libs/h2loader:src/h2_loader_ble.c"],
+    component_name = "jieli_ac791n_devkit_app_ble",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":app_support",
+        ":app_ble_transport",
+    ],
+)
+
+firmware_lib_component(
+    name = "mp4_player_libs",
+    component_name = "jieli_ac791n_devkit_mp4_player_libs",
+    deps = [
+        "//libs/mp4_decoder",
+        "//libs/pal/providers/linux/fdk_aac_decoder",
+        "//libs/pal/providers/tinyh264",
+        "//libs/runtime",
+        "//projects/example/apps/mp4-player/app:mp4_player",
+    ],
+)
+
+firmware_native_component(
+    name = "mp4_player_small_launcher",
+    srcs = ["src/mp4_player_small_pal.c"],
+    component_name = "jieli_ac791n_devkit_mp4_player_small_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":app_transport",
+        ":h2loader_app_client",
+        ":mp4_player_libs",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)
+
+firmware_native_component(
+    name = "mp4_player_small_direct_mode",
+    srcs = ["src/mp4_player_small_direct_mode.c"],
+    component_name = "jieli_ac791n_devkit_mp4_player_small_direct_mode",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+firmware_native_component(
+    name = "direct_color_bar_launcher",
+    srcs = ["src/color_bar.c"],
+    component_name = "jieli_ac791n_devkit_direct_color_bar_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":app_support",
+        ":h2loader_app_client",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "color-bar",
+    target = "wl82",
+    task_policy = ":color_bar_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "direct_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":direct_color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "direct-color-bar",
+    target = "wl82",
+    task_policy = ":direct_color_bar_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "coredump_smoke_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":coredump_smoke",
+        ":direct_color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "coredump-smoke",
+    target = "wl82",
+    task_policy = ":direct_color_bar_task_policy",
+)
+
+# Keep the crash-persistence probe independent from display initialization and
+# small enough that transport failures cannot be confused with the behavior
+# under test.  The USB smoke launcher supplies app_main; coredump_smoke only
+# overrides the board boot probe to record a deterministic crash and reboot.
+h2loader_jieli_firmware(
+    name = "coredump_minimal_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":coredump_smoke",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:usb_log_smoke_launcher",
+    ],
+    image = "coredump-minimal",
+    target = "wl82",
+    task_policy = "//projects/h2loader/targets/jieli_firmware/loader/ac791n_devkit:usb_log_smoke_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "mp4_player_small_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":mp4_player_small_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "mp4-player-small",
+    target = "wl82",
+    task_policy = ":mp4_player_small_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "mp4_player_small_direct_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":mp4_player_small_launcher",
+        ":mp4_player_small_direct_mode",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "mp4-player-small-direct",
+    target = "wl82",
+    task_policy = ":mp4_player_small_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "speaker_smoke_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":speaker_smoke",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "speaker-smoke",
+    target = "wl82",
+    task_policy = ":speaker_smoke_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "audio_system_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":audio_system_target",
+        ":color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "audio-system",
+    target = "wl82",
+    task_policy = ":audio_system_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "touch_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":touch_target",
+        ":color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "touch",
+    target = "wl82",
+    task_policy = ":touch_task_policy",
+)
+
+h2loader_jieli_firmware(
+    name = "button_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":button_target",
+        ":color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "button",
+    target = "wl82",
+    task_policy = ":button_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "color-bar",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "coredump_smoke_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":coredump_smoke_firmware",
+    image = "coredump-smoke",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "coredump_minimal_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":coredump_minimal_firmware",
+    image = "coredump-minimal",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "mp4_player_small_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":mp4_player_small_firmware",
+    image = "mp4-player-small",
+    package_data = ["//projects/example/apps/mp4-player:small_media"],
+    package_data_root = "projects/example/apps/mp4-player/data/small",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "mp4_player_large_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":mp4_player_small_firmware",
+    image = "mp4-player-large",
+    package_data = ["//projects/example/apps/mp4-player:jieli_ac791n_showcase_media"],
+    package_data_root = "projects/example/apps/mp4-player/data/profiles/jieli_ac791n",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "audio_system_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":audio_system_firmware",
+    image = "audio-system",
+    package_data = ["//projects/example/apps/audio-system:data/audio/music_loop.ogg"],
+    package_data_root = "projects/example/apps/audio-system/data",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "touch_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":touch_firmware",
+    image = "touch",
+    role = "app",
+    target = "wl82",
+)
+
+h2loader_tar_zlib(
+    name = "button_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":button_firmware",
+    image = "button",
+    role = "app",
+    target = "wl82",
+)

@@ -60,7 +60,7 @@ typedef struct h2_smoke_mp4_player_config {
 
 /**
  * @brief Decode, pace, draw, present, and release frames using Runtime PAL APIs only.
- * @param runtime Borrowed initialized Runtime with mem, time, task, queue,
+ * @param runtime Borrowed initialized Runtime with mem, time, task, queue, sync,
  * Video Decoder, and Display PAL capabilities. Audio playback additionally
  * requires Audio Decoder and Audio PAL. The display remains launcher-owned.
  * @param config Borrowed immutable configuration valid until this blocking call returns.

@@ -1,0 +1,46 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "launcher",
+    srcs = ["main/main.c"],
+    component_directory = "projects/example/targets/h2loader_tar_zlib/ble-connect-smoke/amoled/main",
+    component_name = "main",
+    data = ["main/CMakeLists.txt", "main/idf_component.yml"],
+    tags = ["manual"],
+    deps = [
+        "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-client/amoled:firmware_lib",
+        "//boards/amoled/esp32s3",
+        "//libs/pal",
+        "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
+        "//native_component_src/esp-idf6.x/h2_pal_core",
+        "//native_component_src/esp-idf6.x/opus_port",
+        "//native_component_src/esp-idf6.x/zlib",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
+    ],
+)
+
+h2loader_esp_idf_firmware(
+    name = "firmware",
+    srcs = ["CMakeLists.txt", "main/CMakeLists.txt", "main/idf_component.yml", "main/main.c"],
+    board = "amoled",
+    graph = [":launcher"],
+    project = "CMakeLists.txt",
+    project_name = "h2_ble_connect_smoke",
+    target = "esp32s3",
+    task_policy = "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-client/amoled:task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "amoled",
+    firmware = ":firmware",
+    image = "ble-connect-smoke",
+    role = "app",
+    target = "esp32s3",
+)

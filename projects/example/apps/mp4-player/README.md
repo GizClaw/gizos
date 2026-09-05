@@ -6,6 +6,8 @@ The decoder task copies each borrowed MP4 presentation frame into one of three r
 
 The three-slot pipeline absorbs bounded output jitter but does not increase decoder throughput. Each target asset must still keep its native Video Decoder provider below the presentation deadline.
 
+Runtime Sync provides the mutex protecting slot consumer release. The decoder does not wait for the first Audio PAL write: a playback block can require PCM from multiple presentation frames, so such a wait would prevent the audio writer from receiving enough data. The host regression uses 2048-sample audio blocks to exercise this startup case.
+
 ## Test Asset
 
 The Bazel package keeps portable App ownership separate from media ownership. `:mp4_player` contains the App and its documentation, while `:large_media` contains only the 1024×600 sample. Every launcher that consumes this shared asset depends on the portable target plus the matching media target; H2Loader launchers with target-native media keep that media under their own launcher root.
@@ -33,6 +35,7 @@ The P4 and BK7258 launchers package target-native six-second derivatives of the 
 | --- | --- | --- | --- |
 | Waveshare P4 | H.264 Constrained Baseline, 480×800 native scan with pre-rotated landscape content, 6 fps, 1 reference frame | AAC-LC, mono, 16 kHz | `e9fc56908ae50b6abfae67507f3d2edeb12d3b4ef9bee271378245b7a2f1590a` |
 | BK7258 | H.264 Constrained Baseline, 800×480, 15 fps, 1 reference frame | AAC-LC, mono, 16 kHz | `436ebc71592c5c4c4d1962a0532a4852e5336ca3028ac92b5406b634ad44dc96` |
+| JieLi AC791N | H.264, 320×480, 24 fps | AAC, mono, 16 kHz | `4c5c7bf8812140798d449e29f70a15bc36b8d5d9581567d18a9617db73809b15` |
 
 The launcher passes `/data/media/showcase.mp4` to the portable App through Runtime FS. Both images use PSRAM for MP4 state and decoded buffers, confirm the H2Loader image after the first presented frame, and then loop continuously. The one-reference-frame encoding bounds TinyH264's decoded-picture buffer on memory-constrained targets.
 
