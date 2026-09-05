@@ -1225,22 +1225,6 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
   return request->vtable->wait(request, timeout_ms);
 }
 
-h2_pal_result_t
-h2_gizclaw_req_wait_dispatch_internal(h2_gizclaw_req_t *request) {
-  if (request_valid(request) != H2_PAL_OK || request->vtable != &managed_vtable)
-    return H2_PAL_ERR_INVALID_ARG;
-  managed_request_t *managed = (managed_request_t *)request;
-  for (;;) {
-    h2_pal_result_t rc = managed_wait(request, 1u);
-    if (rc != H2_PAL_ERR_TIMEOUT)
-      return rc;
-    size_t dispatched = 0u;
-    rc = h2_gizclaw_service_poll(managed->service, 1u, &dispatched);
-    if (rc != H2_PAL_OK)
-      return rc;
-  }
-}
-
 h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *request) {
   if (request_valid(request) != H2_PAL_OK || request->vtable->cancel == NULL)
     return H2_PAL_ERR_INVALID_ARG;

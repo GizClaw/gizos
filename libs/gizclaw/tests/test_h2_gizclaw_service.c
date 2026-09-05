@@ -591,6 +591,55 @@ static void *run_sync_rpc(void *user) {
   return NULL;
 }
 
+/* The test thread is the App: dispatch here until the request reports its own
+ * result. Requests that never finish fail the test after the bounded spin. */
+static h2_pal_result_t app_wait_request(h2_gizclaw_service_t *service,
+                                        h2_gizclaw_req_t *request) {
+  for (unsigned spin = 0u; spin < 20000u; ++spin) {
+    size_t dispatched = 0u;
+    h2_pal_result_t rc = h2_gizclaw_service_poll(service, 1u, &dispatched);
+    if (rc != H2_PAL_OK)
+      return rc;
+    rc = h2_gizclaw_req_wait(request, 1u);
+    if (rc != H2_PAL_ERR_TIMEOUT)
+      return rc;
+  }
+  return H2_PAL_ERR_TIMEOUT;
+}
+
+/* The test thread is the App. Run a synchronous helper on a job thread and
+ * keep dispatching here until it returns, the way H106 calls them. */
+typedef struct app_sync_call {
+  h2_pal_result_t (*fn)(void *ctx);
+  void *ctx;
+  h2_pal_result_t result;
+  atomic_bool returned;
+} app_sync_call_t;
+
+static void *app_sync_entry(void *user) {
+  app_sync_call_t *call = user;
+  call->result = call->fn(call->ctx);
+  atomic_store_explicit(&call->returned, true, memory_order_release);
+  return NULL;
+}
+
+static h2_pal_result_t app_call_sync(h2_gizclaw_service_t *service,
+                                     h2_pal_result_t (*fn)(void *ctx),
+                                     void *ctx) {
+  app_sync_call_t call = {.fn = fn, .ctx = ctx};
+  atomic_init(&call.returned, false);
+  pthread_t job;
+  assert(pthread_create(&job, NULL, app_sync_entry, &call) == 0);
+  while (!atomic_load_explicit(&call.returned, memory_order_acquire)) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    if (dispatched == 0u)
+      sched_yield();
+  }
+  assert(pthread_join(job, NULL) == 0);
+  return call.result;
+}
+
 static int fail_task_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_entry_t entry, void *ctx,
                            h2_pal_task_t **out_task) {
@@ -625,6 +674,9 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   atomic_init(&env->run_gate, false);
   s_env = env;
   h2_gizclaw_service_test_set_client_ops(&s_client_ops);
+  /* The test thread is the App: it owns dispatch through service_poll(), and
+   * the Service signals dispatch work through the (fake) Runtime. */
+  h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
 
   static h2_gizclaw_config_t client_config;
   memset(&client_config, 0, sizeof(client_config));
@@ -637,6 +689,7 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
       .task = h2_desktop_platform_task_api(),
       .queue = &s_queue_api,
       .sync = h2_desktop_platform_sync_api(),
+      .runtime = (h2_runtime_t *)env,
       .net_task_options = {.name = "gizclaw-net-test", .min_stack_size = 0u},
       .operation_capacity = capacity,
       .client_poll_timeout_ms = 1,
@@ -5200,6 +5253,106 @@ static const h2_gizclaw_async_rpc_ops_t download_test_ops = {
     .destroy = download_test_destroy,
 };
 
+/* H106 shape: a job task calls a synchronous data-down helper while the App
+ * task keeps polling. The helper must only wait; every output write and the
+ * completion must run from the App task's service_poll(). */
+typedef struct sync_pixa_job {
+  h2_gizclaw_service_t *service;
+  download_test_wire_t *wire;
+  h2_gizclaw_resp_storage_t storage;
+  h2_gizclaw_pet_pixa_info_t info;
+  h2_pal_result_t result;
+  atomic_bool returned;
+} sync_pixa_job_t;
+
+static h2_pal_result_t sync_pixa_call(void *ctx) {
+  sync_pixa_job_t *job = ctx;
+  return h2_gizclaw_rpc_pet_pixa_download(
+      job->service, (h2_gizclaw_str_t){"x", 1u}, download_test_sink, job->wire,
+      1234u, &job->storage, &job->info);
+}
+
+static void *run_sync_pixa(void *user) {
+  sync_pixa_job_t *job = user;
+  job->result = sync_pixa_call(job);
+  atomic_store_explicit(&job->returned, true, memory_order_release);
+  return NULL;
+}
+
+static void test_sync_helper_from_job_task_while_app_polls(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  service->client_config.time = h2_desktop_platform_time_api();
+  h2_gizclaw_async_rpc_test_set_ops(&download_test_ops);
+  /* Hold the connection so the request is still pending while the App task
+   * is busy inside a callback (dispatching set) and the job task waits. */
+  atomic_store(&env.connect_gate, false);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  static const uint8_t input[] = {0x0a, 3, 0x0a, 1, 'x'};
+  uint8_t metadata[] = {0x0a, 11,   0x0a, 1,   'x',  0x12, 1,
+                        'd',  0x1a, 1,    'p', 0x20, 3};
+  static const uint8_t data[] = {'a', 'b', 'c'};
+  download_test_wire_t wire = {
+      .method = H2_GIZCLAW_RPC_SERVER_PET_PIXA_DOWNLOAD,
+      .input = {input, sizeof(input)},
+      .events = {{.kind = H2_GIZCLAW_RPC_STREAM_RESPONSE,
+                  .result_payload = {metadata, sizeof(metadata)}},
+                 {.kind = H2_GIZCLAW_RPC_STREAM_DATA,
+                  .data = {data, sizeof(data)}},
+                 {.kind = H2_GIZCLAW_RPC_STREAM_EOS}},
+      .event_count = 3u,
+  };
+  s_download_wire = &wire;
+  uint8_t buffer[1024];
+  sync_pixa_job_t job = {.service = service,
+                         .wire = &wire,
+                         .storage = {.data = buffer, .capacity = sizeof(buffer)}};
+  atomic_init(&job.returned, false);
+  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+  service->dispatching = true;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+         H2_PAL_OK);
+  pthread_t task;
+  assert(pthread_create(&task, NULL, run_sync_pixa, &job) == 0);
+  h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 50u);
+  /* A helper that polled on its own would have failed with INVALID_STATE. */
+  assert(!atomic_load_explicit(&job.returned, memory_order_acquire));
+  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+  service->dispatching = false;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+         H2_PAL_OK);
+  atomic_store(&env.connect_gate, true);
+  /* Only the App task polls; nobody else may ever find it dispatching. */
+  for (unsigned spin = 0u; spin < 1000000u; ++spin) {
+    if (atomic_load_explicit(&job.returned, memory_order_acquire))
+      break;
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    if (dispatched == 0u)
+      sched_yield();
+  }
+  assert(pthread_join(task, NULL) == 0);
+  assert(job.result == H2_PAL_OK);
+  assert(job.info.size_bytes == 3u && job.info.received_bytes == 3u &&
+         strcmp(job.info.pet_name, "x") == 0);
+  /* download_test_sink asserted it never ran on the network thread; the job
+   * task never dispatched either, so the bytes came through the App poll. */
+  assert(wire.bytes_written == 3u && memcmp(wire.bytes, data, 3u) == 0);
+  assert(wire.destroy_count == 1);
+  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) >=
+         1u);
+  /* Drain the retire item left for the App task before deinit. */
+  for (;;) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(service, 8u, &dispatched) == H2_PAL_OK);
+    if (dispatched == 0u)
+      break;
+  }
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 static void test_pixa_download_request_paths(void) {
   for (unsigned mode = 0u; mode < 12u; ++mode) {
     test_env_t env;
@@ -5293,7 +5446,7 @@ static void test_pixa_download_request_paths(void) {
       assert(atomic_load(&wire.event_received));
       assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
     }
-    h2_pal_result_t actual = h2_gizclaw_req_wait_dispatch_internal(request);
+    h2_pal_result_t actual = app_wait_request(service, request);
     if (actual != expected)
       fprintf(stderr,
               "pixa mode=%u result=%d expected=%d starts=%d events=%zu\n", mode,
@@ -5320,9 +5473,10 @@ static void test_pixa_download_request_paths(void) {
     if (mode == 0u) {
       wire.next_event = 0u;
       wire.bytes_written = 0u;
-      assert(h2_gizclaw_rpc_pet_pixa_download(
-                 service, (h2_gizclaw_str_t){"x", 1u}, download_test_sink,
-                 &wire, 1234u, &storage, &info) == H2_PAL_OK);
+      sync_pixa_job_t job = {.service = service, .wire = &wire,
+                             .storage = storage};
+      assert(app_call_sync(service, sync_pixa_call, &job) == H2_PAL_OK);
+      info = job.info;
     }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -5353,6 +5507,21 @@ static bool test_encode_message_audio_response(uint8_t *buffer, size_t capacity,
   }
   *out_len = stream.bytes_written;
   return true;
+}
+
+typedef struct sync_group_audio_job {
+  h2_gizclaw_service_t *service;
+  download_test_wire_t *wire;
+  h2_gizclaw_resp_storage_t *storage;
+  h2_gizclaw_friend_group_message_audio_info_t *info;
+} sync_group_audio_job_t;
+
+static h2_pal_result_t sync_group_audio_call(void *ctx) {
+  sync_group_audio_job_t *job = ctx;
+  return h2_gizclaw_rpc_friend_group_message_audio_download(
+      job->service, (h2_gizclaw_str_t){"group-a", 7u},
+      (h2_gizclaw_str_t){"history-1", 9u}, download_test_sink, job->wire, 1234u,
+      job->storage, job->info);
 }
 
 static void test_group_audio_download_request_paths(void) {
@@ -5409,7 +5578,7 @@ static void test_group_audio_download_request_paths(void) {
     assert(h2_gizclaw_req_do(request, &wire, NULL, download_test_output,
                              NULL) == H2_PAL_OK);
     h2_pal_result_t expected = mode == 0u ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
-    assert(h2_gizclaw_req_wait_dispatch_internal(request) == expected);
+    assert(app_wait_request(service, request) == expected);
     assert(h2_gizclaw_resp_parse_friend_group_message_audio_download(
                request, &storage, &info) == expected);
     if (mode == 0u) {
@@ -5436,10 +5605,9 @@ static void test_group_audio_download_request_paths(void) {
     if (mode == 0u) {
       wire.next_event = 0u;
       wire.bytes_written = 0u;
-      assert(h2_gizclaw_rpc_friend_group_message_audio_download(
-                 service, (h2_gizclaw_str_t){"group-a", 7u},
-                 (h2_gizclaw_str_t){"history-1", 9u}, download_test_sink, &wire,
-                 1234u, &storage, &info) == H2_PAL_OK);
+      sync_group_audio_job_t job = {
+          .service = service, .wire = &wire, .storage = &storage, .info = &info};
+      assert(app_call_sync(service, sync_group_audio_call, &job) == H2_PAL_OK);
     }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -7545,6 +7713,18 @@ static const h2_gizclaw_async_rpc_ops_t speed_wire_ops = {
     .destroy = speed_wire_destroy,
 };
 
+typedef struct sync_speedtest_job {
+  h2_gizclaw_service_t *service;
+  size_t upload, download;
+  h2_gizclaw_speedtest_result_t *result;
+} sync_speedtest_job_t;
+
+static h2_pal_result_t sync_speedtest_call(void *ctx) {
+  sync_speedtest_job_t *job = ctx;
+  return h2_gizclaw_rpc_speedtest(job->service, job->upload, job->download,
+                                  1234u, job->result);
+}
+
 static void test_speedtest_managed_requests(void) {
   static const h2_pal_time_vtable_t clock_vtable = {
       .get_monotonic_ms = fake_req_clock,
@@ -7600,7 +7780,7 @@ static void test_speedtest_managed_requests(void) {
         : mode == 11u ? H2_PAL_ERR_INVALID_STATE
         : mode == 8u  ? H2_PAL_ERR_TIMEOUT
                       : H2_PAL_OK;
-    const int wait_rc = h2_gizclaw_req_wait_dispatch_internal(request);
+    const int wait_rc = app_wait_request(service, request);
     if (wait_rc != expected)
       fprintf(stderr, "speedtest mode=%u expected=%d actual=%d\n", mode,
               expected, wait_rc);
@@ -7651,8 +7831,11 @@ static void test_speedtest_managed_requests(void) {
       atomic_store(&env.clock_ms, 100u);
       const h2_gizclaw_speedtest_result_t request_result = result;
       memset(&result, 0xa5, sizeof(result));
-      assert(h2_gizclaw_rpc_speedtest(service, wire.upload, wire.download,
-                                      1234u, &result) == expected);
+      sync_speedtest_job_t job = {.service = service,
+                                  .upload = wire.upload,
+                                  .download = wire.download,
+                                  .result = &result};
+      assert(app_call_sync(service, sync_speedtest_call, &job) == expected);
       assert(memcmp(&result, &request_result, sizeof(result)) == 0);
       assert(wire.destroys == (mode == 8u || mode == 13u ? 0u : 1u));
     }
@@ -8041,7 +8224,7 @@ static void test_stream_data_task_handoff(void) {
                  atomic_load(&test.stop_exited));
         }
       } else {
-        assert(h2_gizclaw_req_wait_dispatch_internal(request) == test.expected);
+        assert(app_wait_request(service, request) == test.expected);
         assert(atomic_load(&test.callbacks) == 0u);
         h2_gizclaw_req_release(request);
         request = NULL;
@@ -8323,7 +8506,7 @@ static void test_stream_data_task_parallel_requests(void) {
   }
   atomic_store(&env.connect_gate, true);
   for (unsigned i = 0u; i < 2u; ++i) {
-    assert(h2_gizclaw_req_wait_dispatch_internal(requests[i]) == H2_PAL_OK);
+    assert(app_wait_request(service, requests[i]) == H2_PAL_OK);
     h2_gizclaw_req_release(requests[i]);
   }
   for (unsigned i = 0u; i < 2u; ++i) {
@@ -8641,6 +8824,7 @@ int main(int argc, char **argv) {
   test_track_unset_waits_for_read_and_write();
   test_group_audio_download_request_paths();
   test_pixa_download_request_paths();
+  test_sync_helper_from_job_task_while_app_polls();
   assert(test_pet_delete_rpc_regression() == 0);
   test_pet_public_request_paths();
   test_social_full_page_arena_growth();

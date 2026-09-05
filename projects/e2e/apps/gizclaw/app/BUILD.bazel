@@ -126,6 +126,7 @@ cc_library(
     includes = ["include", "src"],
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        ":task_names",
         "//libs/gizclaw",
         "//libs/pal",
         "//libs/runtime",

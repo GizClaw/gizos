@@ -53,6 +53,12 @@ void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
     printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n", symbol, stage,
            rc ? "FAIL" : "PASS", rc);
 }
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
+                                     h2_gizclaw_service_t *service,
+                                     int (*fn)(void *ctx), void *ctx) {
+  assert(fixture != NULL && service != NULL && fn != NULL);
+  return fn(ctx);
+}
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f == state.fixture && ms == 30000u);

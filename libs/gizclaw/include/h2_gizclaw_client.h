@@ -84,7 +84,9 @@ h2_gizclaw_resp_parse_speedtest(const h2_gizclaw_req_t *request,
 /** Single-direction synchronous measurement from immediately before do to
  * successful wait return, including queue/control overhead but not parsing.
  * Unlike the req parser's execution duration, this also includes admission
- * queueing and the caller's wake-up latency. */
+ * queueing and the caller's wake-up latency. Data-down bytes are delivered by
+ * h2_gizclaw_service_poll() on the App task, so call this from another task
+ * while the App keeps polling; it never polls on its own. */
 h2_pal_result_t
 h2_gizclaw_rpc_speedtest(h2_gizclaw_service_t *service, size_t upload_bytes,
                          size_t download_bytes, uint32_t timeout_ms,

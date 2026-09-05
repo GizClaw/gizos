@@ -531,6 +531,9 @@ h2_pal_result_t h2_gizclaw_req_create_friend_group_message_audio_download(
 h2_pal_result_t h2_gizclaw_resp_parse_friend_group_message_audio_download(
     const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_friend_group_message_audio_info_t *out_result);
+/** Synchronous group-audio download. `write` runs from
+ * h2_gizclaw_service_poll() on the App task, so call this from another task
+ * while the App keeps polling; it never polls on its own. */
 h2_pal_result_t h2_gizclaw_rpc_friend_group_message_audio_download(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
     h2_gizclaw_str_t history_id,
