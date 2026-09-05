@@ -871,6 +871,18 @@ static void h2_packet_handler(
                (unsigned)handle);
         const int att_init_result = ble_op_att_send_init(
             handle, h2_att_buffer, sizeof(h2_att_buffer), H2_JIELI_ATT_MTU);
+        if (h2_ble_cmd_result(att_init_result) != H2_PAL_OK) {
+          /* Keep the physical handle until the disconnect callback, but do
+           * not expose an unusable ATT transport as a connected PAL link. */
+          h2_ble.mtu = 0u;
+          const int disconnect_result = ble_op_disconnect(handle);
+          printf(
+              "H2_JIELI_BLE_CONNECT_ERROR step=att_send_init handle=%u "
+              "vendor=%d pal=%d disconnect=%d\r\n",
+              (unsigned)handle, att_init_result,
+              h2_ble_cmd_result(att_init_result), disconnect_result);
+          break;
+        }
         printf(
             "H2_JIELI_BLE_CONNECT_OK step=att_send_init handle=%u "
             "vendor=%d pal=%d\r\n",
