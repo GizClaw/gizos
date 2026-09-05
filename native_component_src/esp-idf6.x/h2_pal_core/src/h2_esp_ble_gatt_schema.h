@@ -42,4 +42,23 @@ static inline size_t h2_esp_ble_gatt_schema_slot(
            characteristic_index;
 }
 
+/**
+ * Bind every characteristic slot of one service to its own callback index.
+ *
+ * @p indices must hold H2_ESP_BLE_MAX_GATT_CHARACTERISTICS entries. NimBLE
+ * hands each entry back to the access callback as its arg, so an entry that
+ * kept a stale value would dispatch that characteristic's reads and writes to
+ * whichever slot the value names. Binding covers the whole service, including
+ * the later characteristics of the second registered service.
+ */
+static inline void h2_esp_ble_gatt_schema_bind_indices(
+    uint8_t *indices,
+    size_t service_index,
+    size_t characteristic_count) {
+    for (size_t i = 0u; i < characteristic_count; ++i) {
+        size_t slot = h2_esp_ble_gatt_schema_slot(service_index, i);
+        indices[slot] = (uint8_t)slot;
+    }
+}
+
 #endif

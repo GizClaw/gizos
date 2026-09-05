@@ -34,6 +34,35 @@ int main(void) {
         assert(seen[slot]);
     }
 
+    /*
+     * Binding writes each slot's own index, so the arg NimBLE hands to the
+     * access callback names that characteristic. The second service's later
+     * slots are the ones a stale table left at zero.
+     */
+    uint8_t indices[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS] = { 0u };
+    h2_esp_ble_gatt_schema_bind_indices(
+        indices, 1u, H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE);
+    assert(indices[3] == 3u);
+    assert(indices[4] == 4u);
+    assert(indices[5] == 5u);
+    /* Another service's slots are left alone. */
+    assert(indices[0] == 0u);
+    assert(indices[1] == 0u);
+    assert(indices[2] == 0u);
+
+    h2_esp_ble_gatt_schema_bind_indices(
+        indices, 0u, H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE);
+    for (size_t slot = 0u; slot < H2_ESP_BLE_MAX_GATT_CHARACTERISTICS; ++slot) {
+        assert(indices[slot] == (uint8_t)slot);
+    }
+
+    /* A partial service binds only the characteristics it registered. */
+    uint8_t partial[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS] = { 0u };
+    h2_esp_ble_gatt_schema_bind_indices(partial, 1u, 1u);
+    assert(partial[3] == 3u);
+    assert(partial[4] == 0u);
+    assert(partial[5] == 0u);
+
     assert(h2_esp_ble_gatt_schema_slot(0u, 0u) == 0u);
     assert(h2_esp_ble_gatt_schema_slot(0u, 2u) == 2u);
     assert(h2_esp_ble_gatt_schema_slot(1u, 0u) == 3u);

@@ -2440,11 +2440,14 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
             .characteristics = s_h2_esp_ble_chr_defs[service_index],
         };
     }
+    /* Every slot of this service points at its own callback index. */
+    h2_esp_ble_gatt_schema_bind_indices(
+        s_h2_esp_ble_char_index, service_index,
+        services[0].characteristic_count);
     for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
         size_t index = first + i;
         const h2_pal_ble_gatt_characteristic_t *ch = &services[0].characteristics[i];
         s_h2_esp_ble_char_uuid[index] = char_uuids[i];
-        s_h2_esp_ble_char_index[index] = (uint8_t)index;
         s_h2_esp_ble_chr_defs[service_index][i] =
             (struct ble_gatt_chr_def){
                 .uuid = &s_h2_esp_ble_char_uuid[index].u,
