@@ -169,6 +169,9 @@ def make_handler(
             ):
                 self.send_error(403, "proxy target origin is not allowed")
                 return True
+            if self.headers.get("Transfer-Encoding") is not None:
+                self.send_error(400, "Transfer-Encoding is not supported")
+                return True
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
@@ -189,6 +192,7 @@ def make_handler(
                     "host",
                     "origin",
                     "referer",
+                    "transfer-encoding",
                 }
                 and not name.lower().startswith("sec-")
             }

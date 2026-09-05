@@ -113,6 +113,19 @@ int main(void) {
   assert(h2_pal_audio_mic_read(audio, &small, 0u) == H2_PAL_ERR_INVALID_ARG && small.bytes == 0);
 
   puts("WEB_MIC bounded=PASS");
+  if (EM_ASM_INT({ return !!Module.h2MicFake; })) {
+    // Saturate the real worklet pool, then exercise defensive overflow delivery.
+    assert(EM_ASM_INT({
+      const entry = Module.h2WebMicrophones.get($0);
+      for (let i = 0; i < 32; ++i)
+        entry.node.processor.process([[new Float32Array(320).fill(0.25)]]);
+      if (entry.queue.length !== 8 || entry.status !== 0) return 0;
+      entry.node.port.onmessage({data: new ArrayBuffer(640)});
+      return entry.queue.length === 8 && entry.status === 0 &&
+        entry.stream.getAudioTracks()[0].readyState === 'live';
+    }, (uintptr_t)platform));
+    read_pcm();
+  }
   // Stop source delivery to test real timeout and cooperative stop wakeup.
   EM_ASM({ Module.h2WebMicrophones.get($0).source.disconnect(); }, (uintptr_t)platform);
   emscripten_sleep(30u);

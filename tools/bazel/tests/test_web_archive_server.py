@@ -177,6 +177,18 @@ class WebArchiveServerTest(unittest.TestCase):
                 self.assertEqual(received["body"], b"offer")
                 self.assertEqual(received["authorization"], "Bearer test")
                 self.assertIsNone(received["cookie"])
+                received.clear()
+                for headers in (
+                    {"Transfer-Encoding": "chunked"},
+                    {"Transfer-Encoding": "chunked", "Content-Length": "5"},
+                ):
+                    with self.subTest(headers=headers):
+                        invalid = Request(request.full_url, data=b"0\r\n\r\n",
+                                          headers=headers, method="POST")
+                        with self.assertRaises(HTTPError) as raised:
+                            urlopen(invalid, timeout=5)
+                        self.assertEqual(raised.exception.code, 400)
+                        self.assertEqual(received, {})
             finally:
                 server.shutdown()
                 server.server_close()

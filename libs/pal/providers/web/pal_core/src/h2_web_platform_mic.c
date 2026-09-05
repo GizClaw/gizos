@@ -123,8 +123,13 @@ EM_JS(int, h2_web_mic_begin_js, (uintptr_t address), {
       });
       node.port.onmessage = ({data}) => {
         if (!current()) return;
-        if (!(data instanceof ArrayBuffer) || data.byteLength !== 640 ||
-            entry.queue.length >= 8) { fail(-4); return; }
+        if (!(data instanceof ArrayBuffer) || data.byteLength !== 640) {
+          fail(-4); return;
+        }
+        if (entry.queue.length >= 8) {
+          node.port.postMessage(data, [data]);
+          return;
+        }
         entry.queue.push(data);
       };
       node.onprocessorerror = () => fail(-4);
