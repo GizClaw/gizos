@@ -996,7 +996,16 @@ static int talk_group_clip(voice_state_t *state) {
       rc = terminal != H2_PAL_OK ? terminal : H2_PAL_ERR_INVALID_STATE;
     }
   }
-  /* Half-duplex: the speaker never hears its own utterance back. */
+  /* Half-duplex: the speaker never hears its own utterance back. The paced
+   * speaker pump may not have run since the last poll, so probe the Track
+   * directly at the boundary: any queued downlink byte is a failure. */
+  if (rc == H2_PAL_OK) {
+    uint8_t sample[2];
+    rc = h2_gizclaw_pcm_track_read(state->track, sample, sizeof(sample));
+    rc = rc == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_OK
+         : rc == H2_PAL_OK           ? H2_PAL_ERR_INVALID_STATE
+                                     : rc;
+  }
   if (rc == H2_PAL_OK &&
       (atomic_load(&state->completions) != 0u ||
        atomic_load(&state->rounds) != 0u || atomic_load(&state->written) != 0u))

@@ -63,6 +63,7 @@ enum {
   HISTORY_UNKNOWN_TYPE,
   GROUP_UNEXPECTED_REPLY,
   GROUP_EARLY_FINISH,
+  GROUP_LATE_DOWNLINK,
   GROUP_EARLY_FAILURE,
   GROUP_CANCEL_ERROR,
   HANGUP_ERROR,
@@ -74,7 +75,7 @@ enum {
 static unsigned s_mode, s_live, s_allocs, s_fail_alloc;
 static unsigned s_begins, s_replies, s_cancels, s_reconnects, s_play_creates;
 static unsigned s_hangups, s_post_hangup_pings;
-static uint64_t s_now, s_last_capture;
+static uint64_t s_now, s_last_capture, s_ended_at;
 static bool s_realtime, s_reconnected;
 static int s_service;
 static uint8_t s_pcm[2560];
@@ -228,6 +229,7 @@ h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
   assert(!s_realtime);
   assert(value->input_bytes == sizeof(s_pcm));
   value->ended = true;
+  s_ended_at = s_now;
   return H2_PAL_OK;
 }
 h2_pal_result_t
@@ -368,6 +370,14 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
       }
       if (s_mode == GROUP_EARLY_FINISH || s_mode == GROUP_EARLY_FAILURE)
         complete(value, false);
+    }
+    /* A forwarded frame landing after the last paced speaker pump, right at
+     * the grace boundary: the case must still see it before passing. */
+    if (s_mode == GROUP_LATE_DOWNLINK && value->ended &&
+        s_now - s_ended_at == 1499u) {
+      uint8_t pcm[64] = {1};
+      assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) ==
+             H2_PAL_OK);
     }
     return H2_PAL_OK;
   }
@@ -773,13 +783,15 @@ int main(int argc, char **argv) {
       BEGIN_ERROR, CREATE_ERROR, SET_ERROR, SECOND_END_ERROR,
       WORKSPACE_UNOWNED_NAME, ACTIVATION_UNTERMINATED_NAME,
       BAD_TERMINAL_RESULT, WRONG_GENERATION, DUPLICATE_COMPLETION,
-      GROUP_UNEXPECTED_REPLY, GROUP_EARLY_FINISH, GROUP_EARLY_FAILURE,
+      GROUP_UNEXPECTED_REPLY, GROUP_EARLY_FINISH, GROUP_LATE_DOWNLINK,
+      GROUP_EARLY_FAILURE,
       GROUP_CANCEL_ERROR};
   for (size_t i = 0u; i < sizeof(group_modes) / sizeof(group_modes[0]); ++i) {
     const unsigned mode = group_modes[i];
     const int expected =
         mode == MISSING_TEXT ? H2_PAL_OK
-        : (mode == GROUP_UNEXPECTED_REPLY || mode == GROUP_EARLY_FINISH)
+        : (mode == GROUP_UNEXPECTED_REPLY || mode == GROUP_EARLY_FINISH ||
+           mode == GROUP_LATE_DOWNLINK)
             ? H2_PAL_ERR_INVALID_STATE
         : (mode == GROUP_EARLY_FAILURE || mode == GROUP_CANCEL_ERROR)
             ? H2_PAL_ERR_IO
