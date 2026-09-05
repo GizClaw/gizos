@@ -114,6 +114,8 @@ borrowed key/value；它用于在不依赖 provider 类型的情况下保留动�
 
 `h2_pal_sync.h` 的 condition 必须与同一 API 创建的 non-recursive mutex 配合。调用 `h2_pal_cond_wait()` 前，调用方必须已经持有 mutex；backend 在进入等待时原子释放 mutex，并在正常唤醒、timeout 或其他普通 error return 前重新取得同一个 mutex。调用方因此总是按“wait 返回时仍持锁”更新 waiter counter、predicate 和 failure state。无法保证该语义的 backend 必须在 condition create 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能提供会在 error path 丢失 mutex ownership 的 partial implementation。
 
+唤醒必须绑定到具体 waiter：`h2_pal_cond_signal()` 至少唤醒一个调用时已注册的 waiter，`h2_pal_cond_broadcast()` 唤醒调用时已注册的全部 waiter，其他 waiter 同时 timeout 或重新进入 wait 不能吞掉属于别人的唤醒；与 timed wait 到期同时到达的唤醒可以返回 `H2_PAL_OK` 或 `H2_PAL_ERR_TIMEOUT`，调用方每次返回后都重新检查 predicate，不依赖返回码；没有 waiter 时的 signal/broadcast 不留下 pending token。Backend 因此不能用共享 counting semaphore 当 token pool（pthread、Windows condition variable 和 libco 的 generation 计数天然满足；ESP 与 BK7258 provider 让每个 waiter 停在自己的 semaphore 上）。
+
 `h2_pal_crypto.h` 固定了跨 backend 的密码能力和 wire format。X25519 的
 private/public/shared value 都是 RFC 7748 的 32-byte little-endian bytes；
 provider 在副本上 clamp private scalar、mask remote public high bit，并拒绝

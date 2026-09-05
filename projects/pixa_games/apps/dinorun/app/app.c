@@ -292,15 +292,15 @@ int h2_pixa_games_dinorun_run(
         uint32_t timeout_ms = wait_ms > UINT32_MAX
                                   ? UINT32_MAX
                                   : (uint32_t)wait_ms;
-        rc = h2_runtime_wait_event(runtime, &event, timeout_ms);
-        if (rc == H2_PAL_ERR_TIMEOUT) {
-            continue;
+        /* Drain before waiting: a half-drained queue has no pending wake. */
+        while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+            rc = handle_runtime_event(&state, &event);
+            if (rc != H2_GAME_RUNTIME_OK) {
+                return cleanup(&state, rc);
+            }
         }
-        if (rc != H2_PAL_OK) {
-            return cleanup(&state, rc);
-        }
-        rc = handle_runtime_event(&state, &event);
-        if (rc != H2_GAME_RUNTIME_OK) {
+        rc = h2_runtime_wait_notify(runtime, timeout_ms);
+        if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
             return cleanup(&state, rc);
         }
     }

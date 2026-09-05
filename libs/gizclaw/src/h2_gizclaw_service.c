@@ -10,16 +10,16 @@
 
 #ifdef H2_GIZCLAW_TESTING
 static const h2_gizclaw_service_client_ops_t *s_client_ops;
-static h2_gizclaw_runtime_post_test_fn s_runtime_post;
+static h2_gizclaw_runtime_notify_test_fn s_runtime_notify;
 
 void h2_gizclaw_service_test_set_client_ops(
     const h2_gizclaw_service_client_ops_t *ops) {
   s_client_ops = ops;
 }
 
-void h2_gizclaw_service_test_set_runtime_post(
-    h2_gizclaw_runtime_post_test_fn post) {
-  s_runtime_post = post;
+void h2_gizclaw_service_test_set_runtime_notify(
+    h2_gizclaw_runtime_notify_test_fn notify) {
+  s_runtime_notify = notify;
 }
 #endif
 
@@ -182,28 +182,16 @@ static bool dispatch_work_ready_locked(const h2_gizclaw_service_t *service) {
 void h2_gizclaw_service_wake_dispatch_internal(h2_gizclaw_service_t *service) {
   if (service == NULL || service->config.runtime == NULL)
     return;
-  bool expected = false;
-  if (!atomic_compare_exchange_strong_explicit(
-          &service->runtime_event_armed, &expected, true, memory_order_acq_rel,
-          memory_order_acquire))
-    return;
-  const h2_runtime_custom_event_t event = {
-      .id = H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY,
-  };
-  h2_pal_result_t rc;
+  /* Level signal: the Runtime keeps at most one wake pending and the App
+   * drains this service after every wake, so nothing here needs to
+   * remember whether a wake is already in flight. */
 #ifdef H2_GIZCLAW_TESTING
-  rc = s_runtime_post != NULL
-           ? s_runtime_post(service->config.runtime, &event)
-           : h2_runtime_post_custom_event(service->config.runtime, &event);
-#else
-  rc = h2_runtime_post_custom_event(service->config.runtime, &event);
-#endif
-  if (rc != H2_PAL_OK) {
-    atomic_store_explicit(&service->runtime_event_armed, false,
-                          memory_order_release);
-    h2_gizclaw_service_log_request(service, H2_PAL_LOG_WARN, "service",
-                                   "runtime_wake_failed", 0u, rc, 0, 0u, 0u);
+  if (s_runtime_notify != NULL) {
+    s_runtime_notify(service->config.runtime);
+    return;
   }
+#endif
+  (void)h2_runtime_notify(service->config.runtime);
 }
 
 static bool service_cancel_requested(void *user) {
@@ -836,8 +824,6 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
     *out_dispatched = 0u;
   if (service == NULL || max_callbacks == 0u)
     return H2_PAL_ERR_INVALID_ARG;
-  atomic_store_explicit(&service->runtime_event_armed, false,
-                        memory_order_release);
   h2_pal_result_t rc = lock_service(service);
   if (rc != H2_PAL_OK)
     return rc;
@@ -962,7 +948,6 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   atomic_init(&service->pcm_track, NULL);
   atomic_init(&service->media_callback_refs, 0u);
   atomic_init(&service->media_holder_tag, 0);
-  atomic_init(&service->runtime_event_armed, false);
 
   const h2_pal_mutex_config_t mutex_config = {
       .name = "gizclaw-service", .allocator = config->client_config->allocator};

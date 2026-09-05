@@ -82,18 +82,35 @@ typedef struct h2_runtime_event {
 } h2_runtime_event_t;
 
 /*
- * poll/wait requires payload to point at a caller-owned buffer with at least
+ * poll requires payload to point at a caller-owned buffer with at least
  * H2_RUNTIME_EVENT_PAYLOAD_MAX bytes. The runtime validates the buffer before
- * dequeuing so a too-small buffer cannot consume an event.
+ * dequeuing so a too-small buffer cannot consume an event. Never blocks:
+ * returns H2_PAL_ERR_WOULD_BLOCK (or a provider's TIMEOUT code) when the
+ * queue is empty.
  */
 
 h2_pal_result_t h2_runtime_poll_event(
     h2_runtime_t *runtime,
     h2_runtime_event_t *out_event);
 
-h2_pal_result_t h2_runtime_wait_event(
+/*
+ * Blocks until something needs the main loop's attention, without dequeuing
+ * anything. Every Runtime producer signals it after enqueuing an event, and
+ * libraries with their own dispatch queues signal it with
+ * h2_runtime_notify(). Signals are coalesced: any number of them between two
+ * waits produce exactly one H2_PAL_OK, and a signal that arrives while the
+ * loop is running is kept for the next wait. Returns H2_PAL_ERR_TIMEOUT when
+ * nothing was signalled within timeout_ms (H2_PAL_QUEUE_WAIT_FOREVER waits
+ * indefinitely), H2_PAL_ERR_CLOSED once deinit has closed the Runtime.
+ *
+ * The loop: wait_notify, then drain the event queue with
+ * h2_runtime_poll_event() until it is empty, then drain the library dispatch
+ * queues, then wait again. Always drain completely before waiting: the wake
+ * is given once per enqueue and coalesced, so a queue left half drained has
+ * no pending wake for the events still in it.
+ */
+h2_pal_result_t h2_runtime_wait_notify(
     h2_runtime_t *runtime,
-    h2_runtime_event_t *out_event,
     uint32_t timeout_ms);
 
 #ifdef __cplusplus

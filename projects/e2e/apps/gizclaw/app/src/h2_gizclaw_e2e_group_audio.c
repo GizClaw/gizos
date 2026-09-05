@@ -55,6 +55,22 @@ static int wait_download(h2_gizclaw_e2e_fixture_t *fixture,
   return rc == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : rc;
 }
 
+typedef struct audio_sync_job {
+  h2_gizclaw_service_t *service;
+  h2_gizclaw_str_t group, history_id;
+  atomic_size_t *bytes;
+  h2_gizclaw_resp_storage_t *storage;
+  h2_gizclaw_friend_group_message_audio_info_t *info;
+} audio_sync_job_t;
+
+/* Runs on the fixture job task; the case task keeps polling meanwhile. */
+static int audio_sync_run(void *ctx) {
+  audio_sync_job_t *job = ctx;
+  return h2_gizclaw_rpc_friend_group_message_audio_download(
+      job->service, job->group, job->history_id, count_audio, job->bytes,
+      DOWNLOAD_TIMEOUT, job->storage, job->info);
+}
+
 int h2_gizclaw_e2e_run_group_audio(h2_gizclaw_e2e_fixture_t *fixture,
                                    h2_gizclaw_resp_storage_t *storage,
                                    h2_gizclaw_str_t history_id) {
@@ -83,11 +99,15 @@ int h2_gizclaw_e2e_run_group_audio(h2_gizclaw_e2e_fixture_t *fixture,
     const char *symbol =
         api ? "h2_gizclaw_rpc_" METHOD : "h2_gizclaw_resp_parse_" METHOD;
     if (api) {
+      audio_sync_job_t job = {.service = service,
+                              .group = group,
+                              .history_id = history_id,
+                              .bytes = &fixture->group_audio_bytes[api],
+                              .storage = storage,
+                              .info = &info};
       rc = record(symbol, "group-audio-rpc",
-                  h2_gizclaw_rpc_friend_group_message_audio_download(
-                      service, group, history_id, count_audio,
-                      &fixture->group_audio_bytes[api], DOWNLOAD_TIMEOUT,
-                      storage, &info));
+                  h2_gizclaw_e2e_fixture_call_sync(fixture, service,
+                                                   audio_sync_run, &job));
     } else {
       h2_gizclaw_req_t *request = NULL;
       rc = record("h2_gizclaw_req_create_" METHOD, "group-audio-req",

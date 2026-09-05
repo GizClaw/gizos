@@ -195,6 +195,14 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
+/* Server EOS error code for a reply cut short by barge-in. While the input is
+ * still open it is a reply boundary (REPLY_DONE); after the input is committed
+ * it stays a conversation error. */
+#define H2_GIZCLAW_CONVERSATION_ERROR_STREAM_INTERRUPTED "STREAM_INTERRUPTED"
+/* Returns and clears whether the pending or last REPLY_DONE ended an
+ * interrupted reply whose queued playback should be discarded. */
+bool h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
+    h2_gizclaw_conversation_t *conversation);
 /* Formats the reply-route state a peer event lands on, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,

@@ -274,7 +274,7 @@ h2_gizclaw_rpc_speedtest(h2_gizclaw_service_t *service, size_t upload_bytes,
         request, &io, upload_bytes != 0u ? speedtest_input_read : NULL,
         NULL, NULL);
   if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_req_wait_dispatch_internal(request);
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
     rc = h2_pal_time_get_monotonic_ms(service->client_config.time, &completed);
   if (rc == H2_PAL_OK && completed < started)
