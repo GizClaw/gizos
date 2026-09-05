@@ -411,9 +411,13 @@ static h2_pal_result_t fake_notify(
         runtime->hold_notify = false;
         runtime->notify_active = true;
         pthread_cond_broadcast(&runtime->cond);
+        struct timespec deadline;
+        fake_deadline(&deadline, TEST_WAIT_MS);
+        while (!runtime->reconnect_done) {
+            CHECK(pthread_cond_timedwait(&runtime->cond, &runtime->mutex,
+                                        &deadline) == 0);
+        }
         pthread_mutex_unlock(&runtime->mutex);
-        struct timespec delay = { .tv_sec = 0, .tv_nsec = 200000000L };
-        (void)nanosleep(&delay, NULL);
         /*
          * Still inside the Host call: the connection identity this send was
          * validated against must not have moved on.
@@ -1422,6 +1426,7 @@ static void *reconnect_thread_main(void *ctx) {
      */
     runtime->posted_during_notify = runtime->notify_active;
     runtime->reconnect_done = true;
+    pthread_cond_broadcast(&runtime->cond);
     pthread_mutex_unlock(&runtime->mutex);
     return NULL;
 }
@@ -1456,14 +1461,6 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     CHECK(runtime.generation_during_send == generation_before);
     pthread_mutex_unlock(&runtime.mutex);
 
-    /*
-     * The service cannot unsend a frame the Host already accepted, so it
-     * reports the peer change and stops rather than sending more frames.
-     */
-    h2_ble_wifi_config_stats_t stats;
-    CHECK(h2_ble_wifi_config_get_stats(service, &stats) == H2_PAL_OK);
-    CHECK(stats.sends_during_peer_change == 1u);
-
     /* Nothing further from the first peer's scan reaches its replacement. */
     struct timespec deadline;
     fake_deadline(&deadline, TEST_WAIT_MS);
@@ -1473,6 +1470,11 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     }
     CHECK(runtime.notifies_after_reconnect == 0);
     pthread_mutex_unlock(&runtime.mutex);
+    /* SCAN_FINISHED follows notify return and its statistics update. Merely
+     * observing entry into the fake Host send does not establish completion. */
+    h2_ble_wifi_config_stats_t stats;
+    CHECK(h2_ble_wifi_config_get_stats(service, &stats) == H2_PAL_OK);
+    CHECK(stats.sends_during_peer_change == 1u);
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
     fake_runtime_deinit(&runtime);
