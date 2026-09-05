@@ -2,8 +2,8 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "fdk_aac",
+filegroup(
+    name = "sources",
     srcs = glob([
         "libAACdec/src/*.cpp",
         "libArithCoding/src/*.cpp",
@@ -15,6 +15,10 @@ cc_library(
         "libSBRdec/src/*.cpp",
         "libSYS/src/*.cpp",
     ]),
+)
+
+cc_library(
+    name = "headers",
     hdrs = glob([
         "libAACdec/include/*.h",
         "libAACdec/src/*.h",
@@ -40,14 +44,6 @@ cc_library(
         "libSBRdec/src/arm/*.cpp",
         "libSYS/include/*.h",
     ]),
-    copts = [
-        "-fno-exceptions",
-        "-fno-rtti",
-        "-w",
-    ] + select({
-        "@//tools/bazel/platforms:is_pi32v2": ["-DH2_FDK_EMBEDDED_NO_STDIO=1"],
-        "//conditions:default": [],
-    }),
     includes = [
         "libAACdec/include",
         "libAACdec/src",

@@ -63,6 +63,8 @@ AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_con
 
 `native_component_src/jieli/wl82/h2_pal_core` 提供 SDK port 与 PAL core 实现，host test 使用 fake SDK。Board 组合 Display、Touch、ADC Button、Wi-Fi、BLE、Audio、SD filesystem 和 Preference；硬件 pin 与 SDK 配置由 board header 和 layout 文件拥有。UART1 的 TX 为 PB3、RX 为 PA6，Loader command 与日志复用该链路，使用 460800 波特率。BLE 使用 SDK host/controller，默认不主动发起配对或保存 bond。
 
+FDK AAC 编译由 `libs/fdk_aac` 拥有，PAL decoder 依赖该 first-party library；`@h2_fdk_aac` 仅暴露 upstream source group 和 header-only target，不引用 GizOS platform labels。pi32v2 的无 stdio 编译选项在 first-party library 内选择，Linux 保留原始 stdio 行为。
+
 H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image；`h2loader_tar_zlib` 从 `JieliFirmwareInfo` 取得它。原生 `jl_isd.bin` 用于独立的 USB DL 恢复流程，不等同于 managed package。Native rule 本身不取得 release identity；外层 package rule 拥有 package metadata。JieLi package 不生成 ESP/BK 格式的 recovery bundle。
 
 物理 NOR 为 8 MiB：`[0, 0x700000)` 由 SDK double-bank packer 管理，Loader/App 是逻辑角色，不是两个固定地址的裸 flash 分区；`[0x700000, 0x740000)` 为 Preference，`[0x740000, 0x780000)` 为 coredump，`[0x780000, 0x7ff000)` 为 vendor reserved，最后 4 KiB 为 boot reserved。`h2_jieli_ac791n_devkit_partitions.h` 是容量与边界的 source of truth；下载文件位于 SD filesystem，不能把 SD 容量当成可执行 NOR 容量。

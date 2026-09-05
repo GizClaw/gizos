@@ -20,8 +20,8 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/fdk_aac",
         "//libs/pal",
-        "@h2_fdk_aac//:fdk_aac",
     ],
 )
 
