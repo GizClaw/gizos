@@ -862,10 +862,15 @@ static int log_write(
     (void)level;
     (void)scope;
     test_state_t *state = user;
-    state->audio_ready_logs +=
-        strcmp(message, "H2_MP4_PLAYER_AUDIO_READY") == 0;
-    state->ready_logs += strcmp(message, "H2_MP4_PLAYER_READY") == 0;
-    state->loop_logs += strcmp(message, "H2_MP4_PLAYER_LOOP") == 0;
+    /* Each marker has one producer. Do not write the other producers'
+     * counters even with += 0: that is still a racing read-modify-write. */
+    if (strcmp(message, "H2_MP4_PLAYER_AUDIO_READY") == 0) {
+        ++state->audio_ready_logs;
+    } else if (strcmp(message, "H2_MP4_PLAYER_READY") == 0) {
+        ++state->ready_logs;
+    } else if (strcmp(message, "H2_MP4_PLAYER_LOOP") == 0) {
+        ++state->loop_logs;
+    }
     return H2_PAL_OK;
 }
 
