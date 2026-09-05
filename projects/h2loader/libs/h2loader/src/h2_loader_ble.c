@@ -460,7 +460,6 @@ static int h2_loader_ble_system_event(
 }
 
 static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
-    printf("H2_LOADER_BLE_OPEN stage=link_mutex_enter\n");
     h2_pal_mutex_config_t mutex_config = {
         .name = h2_loader_ble_link_task_name,
         .allocator = service->config.api.allocator,
@@ -468,9 +467,8 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
     };
     int rc = h2_pal_mutex_create(
         service->config.api.sync, &mutex_config, &service->link_mutex);
-    printf("H2_LOADER_BLE_OPEN stage=link_mutex_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error("link_mutex_create", rc);
     }
     rc = h2_pal_mutex_create(
         service->config.api.sync,
@@ -489,31 +487,27 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         service->config.api.sync,
         &semaphore_config,
         &service->link_semaphore);
-    printf("H2_LOADER_BLE_OPEN stage=link_semaphore_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error("link_semaphore_create", rc);
     }
     semaphore_config.name = "h2loader/blemtu";
     rc = h2_pal_semaphore_create(
         service->config.api.sync,
         &semaphore_config,
         &service->mtu_semaphore);
-    printf("H2_LOADER_BLE_OPEN stage=mtu_semaphore_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error("mtu_semaphore_create", rc);
     }
     const h2_pal_task_options_t task_options = {
         .name = h2_loader_ble_link_task_name,
         .min_stack_size = H2_LOADER_BLE_LINK_TASK_STACK_SIZE,
     };
-    printf("H2_LOADER_BLE_OPEN stage=link_task_enter\n");
     rc = h2_pal_task_start(
         service->config.api.task,
         &task_options,
         h2_loader_ble_link_task,
         service,
         &service->link_task);
-    printf("H2_LOADER_BLE_OPEN stage=link_task_return code=%d\n", rc);
     return rc;
 }
 
@@ -767,25 +761,19 @@ int h2_loader_ble_service_open(
     stream_config.output_retry_count = 40u;
     stream_config.output_retry_delay_ms = 2u;
     stream_config.on_event = h2_loader_ble_stream_event;
-    printf("H2_LOADER_BLE_OPEN stage=server_enter\n");
     rc = h2_bleikcp_server_open(
         &service->config.api, &stream_config, config->handler,
         config->handler_user, &service->server);
-    printf("H2_LOADER_BLE_OPEN stage=server_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
         rc = h2_loader_ble_open_error("server_open", rc);
         goto fail;
     }
-    printf("H2_LOADER_BLE_OPEN stage=host_enter\n");
     rc = h2_pal_ble_start(config->api.ble);
-    printf("H2_LOADER_BLE_OPEN stage=host_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
         rc = h2_loader_ble_open_error("host_start", rc);
         goto fail;
     }
-    printf("H2_LOADER_BLE_OPEN stage=link_resources_enter\n");
     rc = h2_loader_ble_start_link_task(service);
-    printf("H2_LOADER_BLE_OPEN stage=link_resources_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
         rc = h2_loader_ble_open_error("link_task_start", rc);
         goto fail;
@@ -830,10 +818,8 @@ int h2_loader_ble_service_open(
             goto fail;
         }
     }
-    printf("H2_LOADER_BLE_OPEN stage=advertising_enter\n");
     rc = h2_loader_ble_service_update_advertising(
         service, NULL, 0u, false);
-    printf("H2_LOADER_BLE_OPEN stage=advertising_return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
         rc = h2_loader_ble_open_error("adv_data_or_start", rc);
         goto fail;
