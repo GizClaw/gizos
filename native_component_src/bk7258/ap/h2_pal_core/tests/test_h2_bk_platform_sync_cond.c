@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -185,16 +186,16 @@ typedef struct fixture {
   const h2_pal_sync_api_t *api;
   h2_pal_mutex_t *mutex;
   h2_pal_cond_t *cond;
-  volatile bool done;
-  volatile bool stop;
+  atomic_bool done;
+  atomic_bool stop;
 } fixture_t;
 
 typedef struct waiter {
   fixture_t *fx;
   uint32_t timeout_ms;
   pthread_t thread;
-  volatile bool waiting;
-  volatile bool returned;
+  atomic_bool waiting;
+  atomic_bool returned;
   h2_pal_result_t result;
   unsigned wakeups;
 } waiter_t;
@@ -207,7 +208,8 @@ static void *forever_waiter(void *user) {
   while (!fx->done) {
     /* Set while holding the mutex: once main sees it and takes the mutex,
      * this thread is registered on the condition (wait registers before it
-     * releases the mutex). */
+     * releases the mutex). The flags are C11 atomics because the pollers in
+     * main read them without the fixture mutex. */
     w->waiting = true;
     w->result = h2_pal_cond_wait(fx->api, fx->cond, fx->mutex, w->timeout_ms);
     assert(w->result == H2_PAL_OK);
