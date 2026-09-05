@@ -132,10 +132,9 @@ void h2_jieli_sdk_sleep_ms(uint32_t ms)
 
 /* ---- Synchronization -----------------------------------------------------
  * os_api pend timeouts are in ticks and 0 means "wait forever"; PAL timeouts
- * are milliseconds with 0 meaning "do not wait". os_sem_accept/os_mutex_accept
- * are declared but not exported by the closed SDK libraries, so non-blocking
- * attempts go straight to the FreeRTOS receive with a zero wait on the static
- * semaphore storage that os_sem_create/os_mutex_create initialise. */
+ * are milliseconds with 0 meaning "do not wait". The pinned AC791N system.a
+ * exports os_sem_accept/os_mutex_accept; use these documented non-blocking
+ * operations rather than depending on private FreeRTOS semaphore storage. */
 
 static int map_os_wait(int rc)
 {
