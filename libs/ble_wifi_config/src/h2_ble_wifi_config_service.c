@@ -440,6 +440,46 @@ static int h2_ble_wifi_config_connect(
     return rc;
 }
 
+/*
+ * Queue one station transition for the worker. Progress is advisory and this
+ * runs on a runtime callback, so a full queue drops the oldest rather than
+ * blocking; only a run that is actually provisioning has a peer to tell.
+ */
+static void h2_ble_wifi_config_queue_progress(
+    h2_ble_wifi_config_t *service,
+    h2_ble_wifi_config_progress_t state) {
+    h2_ble_wifi_config_lock(service);
+    if (!service->credentials_running || service->closing) {
+        h2_ble_wifi_config_unlock(service);
+        return;
+    }
+    if (service->progress_count == H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN) {
+        service->progress_head = (service->progress_head + 1u) %
+                                 H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
+        service->progress_count--;
+    }
+    size_t tail = (service->progress_head + service->progress_count) %
+                  H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
+    service->progress_queue[tail] = (uint8_t)state;
+    service->progress_count++;
+    (void)h2_pal_cond_broadcast(service->api.sync, service->cond);
+    h2_ble_wifi_config_unlock(service);
+}
+
+static void h2_ble_wifi_config_send_progress(
+    h2_ble_wifi_config_t *service,
+    h2_ble_wifi_config_peer_t peer,
+    h2_ble_wifi_config_progress_t state) {
+    uint8_t frame[H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN];
+    size_t frame_len = 0u;
+    if (h2_ble_wifi_config_encode_progress(
+            state, frame, sizeof(frame), &frame_len) != H2_PAL_OK) {
+        return;
+    }
+    /* Advisory: a dropped progress frame costs a UI step and nothing else. */
+    (void)h2_ble_wifi_config_notify(service, false, peer, frame, frame_len);
+}
+
 static void h2_ble_wifi_config_send_result(
     h2_ble_wifi_config_t *service,
     h2_ble_wifi_config_peer_t peer,
@@ -500,7 +540,7 @@ static void h2_ble_wifi_config_worker(void *ctx) {
         h2_ble_wifi_config_lock(service);
         while (!service->closing && service->event_count == 0u &&
                !service->reject_pending && !service->credentials_pending &&
-               !service->scan_requested) {
+               service->progress_count == 0u && !service->scan_requested) {
             (void)h2_pal_cond_wait(
                 service->api.sync, service->cond, service->mutex,
                 H2_PAL_SYNC_WAIT_FOREVER);
@@ -517,6 +557,21 @@ static void h2_ble_wifi_config_worker(void *ctx) {
             service->event_count--;
             h2_ble_wifi_config_unlock(service);
             h2_ble_wifi_config_emit(service, &event);
+            continue;
+        }
+        if (service->progress_count > 0u) {
+            h2_ble_wifi_config_progress_t state =
+                (h2_ble_wifi_config_progress_t)
+                    service->progress_queue[service->progress_head];
+            service->progress_head = (service->progress_head + 1u) %
+                                     H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN;
+            service->progress_count--;
+            h2_ble_wifi_config_peer_t peer = {
+                .conn_handle = service->conn_handle,
+                .generation = service->conn_generation,
+            };
+            h2_ble_wifi_config_unlock(service);
+            h2_ble_wifi_config_send_progress(service, peer, state);
             continue;
         }
         if (service->reject_pending) {
@@ -866,6 +921,18 @@ static int h2_ble_wifi_config_system_event(
         memcpy(&transition.payload.disconnected, event->payload,
                sizeof(transition.payload.disconnected));
         break;
+    case H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING:
+        h2_ble_wifi_config_queue_progress(
+            service, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING);
+        return H2_PAL_OK;
+    case H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED:
+        h2_ble_wifi_config_queue_progress(
+            service, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED);
+        return H2_PAL_OK;
+    case H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP:
+        h2_ble_wifi_config_queue_progress(
+            service, H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED);
+        return H2_PAL_OK;
     default:
         return H2_PAL_OK;
     }
@@ -886,6 +953,10 @@ static int h2_ble_wifi_config_subscribe_events(h2_ble_wifi_config_t *service) {
         H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
         H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED,
         H2_PAL_SYSTEM_EVENT_TYPE_BLE_SUBSCRIPTION_CHANGED,
+        /* Forwarded to the peer as provisioning progress. */
+        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING,
+        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
+        H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
     };
     for (size_t i = 0u; i < H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT; ++i) {
         int rc = h2_pal_system_event_subscribe(

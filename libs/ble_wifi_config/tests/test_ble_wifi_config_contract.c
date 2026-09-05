@@ -208,17 +208,17 @@ typedef struct result_case {
 
 /* provision_cases.json resultCases, encoded on the device side. */
 static const result_case_t s_result_cases[] = {
-    { "success", "0000", H2_BLE_WIFI_CONFIG_STATUS_SUCCESS,
+    { "success", "020000", H2_BLE_WIFI_CONFIG_STATUS_SUCCESS,
       H2_BLE_WIFI_CONFIG_REASON_NONE },
-    { "wrong_password", "0101", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
+    { "wrong_password", "020101", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
       H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD },
-    { "ap_not_found", "0102", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
+    { "ap_not_found", "020102", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
       H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND },
-    { "dhcp_failed", "0103", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
+    { "dhcp_failed", "020103", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
       H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED },
-    { "timeout", "0104", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
+    { "timeout", "020104", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
       H2_BLE_WIFI_CONFIG_REASON_CONNECT_TIMEOUT },
-    { "unknown", "01ff", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
+    { "unknown", "0201ff", H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
       H2_BLE_WIFI_CONFIG_REASON_UNKNOWN },
 };
 
@@ -231,6 +231,32 @@ static void test_results(void) {
                   result_case->status, result_case->reason, frame, sizeof(frame),
                   &frame_len) == H2_PAL_OK);
         check_hex(frame, frame_len, result_case->hex);
+    }
+}
+
+typedef struct progress_case {
+    const char *id;
+    const char *hex;
+    h2_ble_wifi_config_progress_t state;
+} progress_case_t;
+
+/* provision_cases.json progressCases, encoded on the device side. */
+static const progress_case_t s_progress_cases[] = {
+    { "associating", "0101", H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING },
+    { "associated", "0102", H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED },
+    { "address_acquired", "0103", H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED },
+};
+
+static void test_progress(void) {
+    for (size_t i = 0u;
+         i < sizeof(s_progress_cases) / sizeof(s_progress_cases[0]); ++i) {
+        const progress_case_t *progress_case = &s_progress_cases[i];
+        uint8_t frame[H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN];
+        size_t frame_len = 0u;
+        CHECK(h2_ble_wifi_config_encode_progress(
+                  progress_case->state, frame, sizeof(frame), &frame_len) ==
+              H2_PAL_OK);
+        check_hex(frame, frame_len, progress_case->hex);
     }
 }
 
@@ -284,6 +310,7 @@ int main(void) {
     test_unreportable_entries();
     test_credentials();
     test_results();
+    test_progress();
     test_command_opcodes();
     test_default_uuids();
     test_mtu_floor();

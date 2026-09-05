@@ -208,27 +208,54 @@ static void test_decode_credentials_fuzz(void) {
     }
 }
 
+static void test_encode_progress(void) {
+    uint8_t frame[H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN];
+    size_t len = 0u;
+    CHECK(h2_ble_wifi_config_encode_progress(
+              H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING, frame, sizeof(frame),
+              &len) == H2_PAL_OK);
+    CHECK(len == 2u);
+    CHECK(frame[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS);
+    CHECK(frame[1] == 0x01u);
+
+    CHECK(h2_ble_wifi_config_encode_progress(
+              H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED, frame,
+              sizeof(frame), &len) == H2_PAL_OK);
+    CHECK(frame[1] == 0x03u);
+
+    /* A progress frame never overlaps a final frame's length. */
+    CHECK(len != H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN);
+
+    len = 1u;
+    CHECK(h2_ble_wifi_config_encode_progress(
+              H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED, frame, 1u, &len) ==
+          H2_PAL_ERR_NO_SPACE);
+    CHECK(len == 0u);
+}
+
 static void test_encode_result(void) {
     uint8_t frame[H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN];
     size_t len = 0u;
     CHECK(h2_ble_wifi_config_encode_result(
               H2_BLE_WIFI_CONFIG_STATUS_SUCCESS, H2_BLE_WIFI_CONFIG_REASON_NONE,
               frame, sizeof(frame), &len) == H2_PAL_OK);
-    CHECK(len == 2u);
-    CHECK(frame[0] == 0x00u);
+    CHECK(len == 3u);
+    CHECK(frame[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(frame[1] == 0x00u);
+    CHECK(frame[2] == 0x00u);
 
     CHECK(h2_ble_wifi_config_encode_result(
               H2_BLE_WIFI_CONFIG_STATUS_FAILURE,
               H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD, frame, sizeof(frame), &len) ==
           H2_PAL_OK);
-    CHECK(frame[0] == 0x01u);
+    CHECK(frame[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(frame[1] == 0x01u);
+    CHECK(frame[2] == 0x01u);
 
     CHECK(h2_ble_wifi_config_encode_result(
               H2_BLE_WIFI_CONFIG_STATUS_FAILURE, H2_BLE_WIFI_CONFIG_REASON_UNKNOWN,
               frame, sizeof(frame), &len) == H2_PAL_OK);
-    CHECK(frame[1] == 0xffu);
+    CHECK(frame[2] == 0xffu);
 
     CHECK(h2_ble_wifi_config_encode_result(
               H2_BLE_WIFI_CONFIG_STATUS_SUCCESS, H2_BLE_WIFI_CONFIG_REASON_NONE,
@@ -316,6 +343,7 @@ int main(void) {
     test_encode_scan_status();
     test_decode_credentials();
     test_decode_credentials_fuzz();
+    test_encode_progress();
     test_encode_result();
     test_ap_from_scan_entry();
     test_default_reason();

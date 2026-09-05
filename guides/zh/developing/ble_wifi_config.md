@@ -71,15 +71,28 @@ packet-beta
 
 `ssid_len` 取值 1..32，`pass_len` 取值 0..63，开放网络写 0；`pass_len` 的实际偏移是 `1 + ssid_len`。帧长必须与声明的字段完全一致，多余尾字节会被拒绝，因此最长帧为 97 字节。
 
-PROV 结果 notification：
+PROV notification 分两类，首字节是 type：`0x01` progress，`0x02` final。设备把 station 的每一次状态变化在发生时就报出去，而不是只在最后给一个结论，App 因此能显示真实进度，不必猜一个沉默的设备走到哪一步了。
+
+progress 帧固定两字节：
 
 ```mermaid
 packet-beta
-0-7: "status"
-8-15: "reason"
+0-7: "type = 0x01"
+8-15: "state"
 ```
 
-`status` 为 `0x00` 表示成功，非 0 表示失败。`reason` 取值 `0x00` 无、`0x01` 密码错、`0x02` 找不到该 AP、`0x03` DHCP 失败、`0x04` 连接超时、`0xff` 未知错误。畸形的凭据帧被同时以两种方式回应：ATT write 本身以解码结果失败（`H2_PAL_ERR_FORMAT`，`offset` 非零的 long write 则是 `H2_PAL_ERR_UNSUPPORTED`），worker task 随后仍推送一条 `{0x01, 0xff}` 结果帧，因此 App 不会停在等待页；该回执同样只投递给发起写入的那个连接。
+`state` 取值 `0x01` 正在关联、`0x02` 已关联、`0x03` 已取得地址。progress 是 advisory：忽略它的 App 仍然能从 final 帧知道结果，因此丢帧不重传——丢一帧只损失一次 UI 变化。
+
+final 帧固定三字节，代表本次尝试结束：
+
+```mermaid
+packet-beta
+0-7: "type = 0x02"
+8-15: "status"
+16-23: "reason"
+```
+
+`status` 为 `0x00` 表示成功，非 0 表示失败。`reason` 取值 `0x00` 无、`0x01` 密码错、`0x02` 找不到该 AP、`0x03` DHCP 失败、`0x04` 连接超时、`0xff` 未知错误。畸形的凭据帧被同时以两种方式回应：ATT write 本身以解码结果失败（`H2_PAL_ERR_FORMAT`，`offset` 非零的 long write 则是 `H2_PAL_ERR_UNSUPPORTED`），worker task 随后仍推送一条 `{0x02, 0x01, 0xff}` final 帧，因此 App 不会停在等待页；该回执同样只投递给发起写入的那个连接。
 
 ## 失败原因判定
 

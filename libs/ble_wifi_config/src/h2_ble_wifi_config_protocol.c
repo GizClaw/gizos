@@ -134,9 +134,30 @@ int h2_ble_wifi_config_encode_result(
     if (out_size < H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN) {
         return H2_PAL_ERR_NO_SPACE;
     }
-    out[0] = (uint8_t)status;
-    out[1] = (uint8_t)reason;
+    out[0] = (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL;
+    out[1] = (uint8_t)status;
+    out[2] = (uint8_t)reason;
     *out_len = H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN;
+    return H2_PAL_OK;
+}
+
+int h2_ble_wifi_config_encode_progress(
+    h2_ble_wifi_config_progress_t state,
+    uint8_t *out,
+    size_t out_size,
+    size_t *out_len) {
+    if (out_len != NULL) {
+        *out_len = 0u;
+    }
+    if (out == NULL || out_len == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (out_size < H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN) {
+        return H2_PAL_ERR_NO_SPACE;
+    }
+    out[0] = (uint8_t)H2_BLE_WIFI_CONFIG_PROVISION_FRAME_PROGRESS;
+    out[1] = (uint8_t)state;
+    *out_len = H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN;
     return H2_PAL_OK;
 }
 

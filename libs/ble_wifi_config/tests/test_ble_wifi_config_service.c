@@ -988,9 +988,10 @@ static void test_provision_success(void) {
     fake_wait_notifications(&runtime, 1u);
     fake_notification_t result = fake_notification(&runtime, 0u);
     CHECK(result.attr_handle == TEST_PROVISION_HANDLE);
-    CHECK(result.len == 2u);
-    CHECK(result.data[0] == 0x00u);
+    CHECK(result.len == 3u);
+    CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x00u);
+    CHECK(result.data[2] == 0x00u);
     CHECK(runtime.connect_calls == 1);
     CHECK(strcmp(runtime.connected_ssid, "office") == 0);
     CHECK(strcmp(runtime.connected_password, "hunter2!") == 0);
@@ -1014,8 +1015,9 @@ static void test_provision_wrong_password(void) {
     write_credentials(&runtime, "office", "wrong");
     fake_wait_notifications(&runtime, 1u);
     fake_notification_t result = fake_notification(&runtime, 0u);
-    CHECK(result.data[0] == 0x01u);
-    CHECK(result.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD);
+    CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(result.data[1] == 0x01u);
+    CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD);
     CHECK(fake_saw_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROVISION_FAILED));
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
@@ -1032,8 +1034,9 @@ static void test_provision_ap_not_found(void) {
     write_credentials(&runtime, "elsewhere", "hunter2!");
     fake_wait_notifications(&runtime, 1u);
     fake_notification_t result = fake_notification(&runtime, 0u);
-    CHECK(result.data[0] == 0x01u);
-    CHECK(result.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND);
+    CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(result.data[1] == 0x01u);
+    CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND);
     /* A missing access point is reported without a connect attempt. */
     CHECK(runtime.connect_calls == 0);
 
@@ -1053,8 +1056,9 @@ static void test_provision_dhcp_failure(void) {
     write_credentials(&runtime, "office", "hunter2!");
     fake_wait_notifications(&runtime, 1u);
     fake_notification_t result = fake_notification(&runtime, 0u);
-    CHECK(result.data[0] == 0x01u);
-    CHECK(result.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED);
+    CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(result.data[1] == 0x01u);
+    CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED);
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
     fake_runtime_deinit(&runtime);
@@ -1075,7 +1079,8 @@ static void test_provision_open_network(void) {
     write_credentials(&runtime, "guest", "");
     fake_wait_notifications(&runtime, 1u);
     fake_notification_t result = fake_notification(&runtime, 0u);
-    CHECK(result.data[0] == 0x00u);
+    CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(result.data[1] == 0x00u);
     CHECK(runtime.connect_calls == 1);
     CHECK(runtime.connected_password[0] == '\0');
     /* Verification was skipped, so no scan ran at all. */
@@ -1098,8 +1103,9 @@ static void test_malformed_credentials_report_failure(void) {
     fake_wait_notifications(&runtime, 1u);
     fake_notification_t result = fake_notification(&runtime, 0u);
     CHECK(result.attr_handle == TEST_PROVISION_HANDLE);
-    CHECK(result.data[0] == 0x01u);
-    CHECK(result.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
+    CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(result.data[1] == 0x01u);
+    CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
     CHECK(runtime.connect_calls == 0);
     CHECK(fake_saw_event(&runtime, H2_BLE_WIFI_CONFIG_EVENT_PROTOCOL_ERROR));
 
@@ -1120,9 +1126,10 @@ static void test_malformed_credentials_report_failure(void) {
     fake_wait_notifications(&runtime, 2u);
     fake_notification_t long_write_result = fake_notification(&runtime, 1u);
     CHECK(long_write_result.attr_handle == TEST_PROVISION_HANDLE);
-    CHECK(long_write_result.len == 2u);
-    CHECK(long_write_result.data[0] == 0x01u);
-    CHECK(long_write_result.data[1] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
+    CHECK(long_write_result.len == 3u);
+    CHECK(long_write_result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
+    CHECK(long_write_result.data[1] == 0x01u);
+    CHECK(long_write_result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
     CHECK(runtime.connect_calls == 0);
 
     h2_ble_wifi_config_stats_t stats;

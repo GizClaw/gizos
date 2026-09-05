@@ -244,11 +244,27 @@ int h2_ble_wifi_config_decode_credentials(
  * @param out_size Capacity of @p out in bytes.
  * @param out_len Set to zero first, then to the encoded length on success.
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG for a NULL pointer, or
- * H2_PAL_ERR_NO_SPACE when @p out_size is smaller than two bytes.
+ * H2_PAL_ERR_NO_SPACE when @p out_size is smaller than
+ * H2_BLE_WIFI_CONFIG_RESULT_FRAME_LEN.
  */
 int h2_ble_wifi_config_encode_result(
     h2_ble_wifi_config_status_t status,
     h2_ble_wifi_config_reason_t reason,
+    uint8_t *out,
+    size_t out_size,
+    size_t *out_len);
+
+/**
+ * @brief Encode one provisioning progress frame.
+ *
+ * @param state Station transition being reported.
+ * @param out Buffer of at least H2_BLE_WIFI_CONFIG_PROGRESS_FRAME_LEN bytes.
+ * @param out_size Capacity of @p out.
+ * @param out_len Receives the encoded length; set to zero on failure.
+ * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG or H2_PAL_ERR_NO_SPACE.
+ */
+int h2_ble_wifi_config_encode_progress(
+    h2_ble_wifi_config_progress_t state,
     uint8_t *out,
     size_t out_size,
     size_t *out_len);

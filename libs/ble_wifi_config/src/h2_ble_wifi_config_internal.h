@@ -7,8 +7,17 @@
 
 /** Longest UUID the BLE PAL accepts, in bytes. */
 #define H2_BLE_WIFI_CONFIG_UUID_MAX_LEN 16u
-/** BLE system events the service subscribes to. */
-#define H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT 4u
+/**
+ * System events the service subscribes to: the BLE link, plus the Wi-Fi
+ * station transitions it forwards to the peer as provisioning progress.
+ */
+#define H2_BLE_WIFI_CONFIG_SUBSCRIPTION_COUNT 7u
+/**
+ * Progress frames waiting for the worker task. A station transition is
+ * advisory, so overflow drops the oldest rather than stalling the runtime
+ * callback that produced it.
+ */
+#define H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN 4u
 /**
  * Pending notifications waiting for the worker task. Overflow drops the
  * oldest entry and is counted, because a lost notification must never stall
@@ -94,6 +103,10 @@ struct h2_ble_wifi_config {
     bool credentials_running;
     h2_ble_wifi_config_credentials_t credentials;
     bool reject_pending;
+    /* Station transitions to forward as progress frames; see the worker. */
+    uint8_t progress_queue[H2_BLE_WIFI_CONFIG_PROGRESS_QUEUE_LEN];
+    size_t progress_head;
+    size_t progress_count;
     h2_ble_wifi_config_reason_t reject_reason;
     /** Connection whose write was rejected; the result goes only to it. */
     h2_ble_wifi_config_peer_t reject_peer;
