@@ -96,6 +96,8 @@ static int queue_send(void *user, h2_pal_queue_t *queue, const void *item, uint3
         return H2_PAL_ERR_IO;
     }
     if (h2_jieli_sdk_mutex_lock(queue->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
+        /* No slot was written: return the reservation taken above. */
+        (void)h2_jieli_sdk_sem_give(queue->space);
         return H2_PAL_ERR_IO;
     }
     if (queue->closed) {
@@ -148,6 +150,8 @@ static int queue_recv(void *user, h2_pal_queue_t *queue, void *out_item, uint32_
         return H2_PAL_ERR_IO;
     }
     if (h2_jieli_sdk_mutex_lock(queue->lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
+        /* The queued item is untouched and must remain available to readers. */
+        (void)h2_jieli_sdk_sem_give(queue->items);
         return H2_PAL_ERR_IO;
     }
     if (queue->count == 0u) {

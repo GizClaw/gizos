@@ -247,6 +247,34 @@ static void test_queue_fifo_full_timeout_latest_and_close(void)
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
+static void test_queue_lock_failure_preserves_permits(void)
+{
+    const h2_pal_queue_api_t *api = h2_jieli_wl82_platform_queue_api();
+    const h2_pal_queue_config_t config = {.item_size = sizeof(int), .item_count = 1u};
+    h2_pal_queue_t *queue = NULL;
+    int value = 73;
+    int out = 0;
+    h2_jieli_fake_reset();
+    CHECK(h2_pal_queue_create(api, &config, &queue) == H2_PAL_OK);
+    for (int i = 0; i < 4; ++i) {
+        h2_jieli_fake_fail_next_mutex_lock();
+        CHECK(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_ERR_IO);
+    }
+    CHECK(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+    for (int i = 0; i < 4; ++i) {
+        h2_jieli_fake_fail_next_mutex_lock();
+        CHECK(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_ERR_IO);
+    }
+    CHECK(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_OK);
+    CHECK(out == value);
+    CHECK(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_ERR_TIMEOUT);
+    CHECK(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+    CHECK(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_ERR_FULL);
+    CHECK(h2_pal_queue_close(api, queue) == H2_PAL_OK);
+    h2_pal_queue_destroy(api, queue);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
 static void task_entry(void *ctx)
 {
     int *flag = (int *)ctx;
@@ -595,6 +623,7 @@ int main(void)
     test_time_extends_32bit_wrap_and_sleeps();
     test_sync_mutex_and_semaphore();
     test_queue_fifo_full_timeout_latest_and_close();
+    test_queue_lock_failure_preserves_permits();
     test_task_start_and_join();
     test_system_event_lifecycle_and_dispatch();
     test_timer_one_shot_and_periodic();

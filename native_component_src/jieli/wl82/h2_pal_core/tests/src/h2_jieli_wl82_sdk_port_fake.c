@@ -34,6 +34,7 @@ static size_t s_last_task_stack_bytes;
 static void (*s_last_task_entry)(void *ctx);
 static void *s_last_task_ctx;
 static int s_fail_task_create;
+static int s_fail_next_mutex_lock;
 static int s_task_running;
 static int s_task_delete_calls;
 
@@ -58,6 +59,7 @@ void h2_jieli_fake_reset(void)
     s_last_task_entry = NULL;
     s_last_task_ctx = NULL;
     s_fail_task_create = 0;
+    s_fail_next_mutex_lock = 0;
     s_task_running = 0;
     s_task_delete_calls = 0;
 }
@@ -157,9 +159,18 @@ void h2_jieli_sdk_mutex_destroy(h2_jieli_sdk_mutex_t *mutex)
     h2_jieli_sdk_free(mutex);
 }
 
+void h2_jieli_fake_fail_next_mutex_lock(void)
+{
+    s_fail_next_mutex_lock = 1;
+}
+
 int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t *mutex, uint32_t timeout_ms)
 {
     if (mutex == NULL) {
+        return -1;
+    }
+    if (s_fail_next_mutex_lock) {
+        s_fail_next_mutex_lock = 0;
         return -1;
     }
     if (mutex->locked) {
