@@ -3,10 +3,10 @@
  * @brief PAL core providers for the JieLi AC791N (wl82) SDK.
  *
  * Every accessor returns a process-wide API object backed by the SDK heap,
- * debug UART, tick timer, FreeRTOS-based os_api primitives and sys timers via
- * `h2_jieli_wl82_sdk_port.h`. Providers are stateless between boots and do not
- * own board wiring; the launcher re-initialises the debug UART for its board
- * before using the Log provider.
+ * buffered debug producer, board-owned monotonic clock, os_api primitives and
+ * sys timers via `h2_jieli_wl82_sdk_port.h`. Resource and service lifecycles
+ * follow their PAL contracts. Providers do not own board wiring; the shared
+ * board layout configures the clock and UART/USB diagnostic delivery.
  */
 
 #ifndef H2_JIELI_WL82_PLATFORM_CORE_H
@@ -32,13 +32,15 @@ extern "C" {
 /** SDK heap allocator (malloc/realloc/free). */
 const h2_pal_mem_api_t *h2_jieli_wl82_platform_mem_api(void);
 
-/** Debug UART text sink: `[LEVEL][scope] message\r\n`. */
+/** Buffered text sink: `[LEVEL][scope] message\r\n`.
+ * The board layout selects UART/USB delivery; calls are not ISR-safe. */
 const h2_pal_log_api_t *h2_jieli_wl82_platform_log_api(void);
 
 /**
- * Monotonic time from the SDK tick timer (32-bit wrap extended to 64 bits
- * while queried at least once per wrap), sleep via the OS delay. Wall time is
- * not supported on this target.
+ * Milliseconds and microseconds share the board-owned 64-bit monotonic clock
+ * exposed by h2_jieli_sdk_time_us(). Missing board clock support is reported
+ * as UNSUPPORTED, not substituted with OS tick timestamps. Sleep uses the OS
+ * delay; wall time is unsupported and its status is invalid/unknown.
  */
 const h2_pal_time_api_t *h2_jieli_wl82_platform_time_api(void);
 
