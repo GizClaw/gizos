@@ -8,7 +8,7 @@
 #include "h2_loader_command.h"
 #include "h2loader_app.h"
 #include "h2loader_bleikcp_internal.h"
-#include "h2loader_sha256.h"
+#include "h2_loader_sha256.h"
 #include "jieli_loader_platform.h"
 #include "os/os_api.h"
 #include "system/task.h"
@@ -51,7 +51,7 @@ typedef struct h2_jieli_transport {
 } h2_jieli_transport_t;
 
 typedef struct h2_jieli_digest {
-  h2_jieli_sha256_t sha;
+  h2_loader_sha256_t sha;
   uint32_t bytes;
   int active;
 } h2_jieli_digest_t;
@@ -548,7 +548,7 @@ static const h2_command_io_vtable_t command_io_vtable = {
 
 static int digest_start(void *user) {
   h2_jieli_digest_t *self = user;
-  h2_jieli_sha256_init(&self->sha);
+  h2_loader_sha256_init(&self->sha);
   self->bytes = 0u;
   self->active = 1;
   return H2_PAL_OK;
@@ -560,7 +560,7 @@ static int digest_update(
   if (!self->active || (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_jieli_sha256_update(&self->sha, data, len);
+  h2_loader_sha256_update(&self->sha, data, len);
   self->bytes += (uint32_t)len;
   return H2_PAL_OK;
 }
@@ -570,8 +570,8 @@ static int digest_finish(void *user, uint8_t out[32]) {
   char digest_hex[65];
   char line[128];
   if (!self->active || out == NULL) return H2_PAL_ERR_INVALID_STATE;
-  h2_jieli_sha256_finish(&self->sha, out);
-  h2_jieli_sha256_hex(out, digest_hex);
+  h2_loader_sha256_finish(&self->sha, out);
+  h2_loader_sha256_hex(out, digest_hex);
   (void)snprintf(
       line, sizeof(line),
       "H2_JIELI_DIGEST_FINISH bytes=%u sha256=%s\r\n",
@@ -604,7 +604,7 @@ static int current_loader_identity(
   h2_loader_status_t status;
   const h2_loader_metadata_t *persisted = NULL;
   struct BootInfo boot_info;
-  h2_jieli_sha256_t sha;
+  h2_loader_sha256_t sha;
   uint8_t digest_value[32];
   int rc;
 
@@ -660,17 +660,17 @@ static int current_loader_identity(
    * bootstrap identity from authenticated boot metadata plus the build and
    * target identity.  A Loader-installed image always takes the persisted,
    * package-verified identity path above. */
-  h2_jieli_sha256_init(&sha);
-  h2_jieli_sha256_update(
+  h2_loader_sha256_init(&sha);
+  h2_loader_sha256_update(
       &sha, (const uint8_t *)&boot_info, sizeof(boot_info));
-  h2_jieli_sha256_update(
+  h2_loader_sha256_update(
       &sha, (const uint8_t *)version, strlen(version));
-  h2_jieli_sha256_update(
+  h2_loader_sha256_update(
       &sha, (const uint8_t *)runtime->board, strlen(runtime->board));
-  h2_jieli_sha256_update(
+  h2_loader_sha256_update(
       &sha, (const uint8_t *)runtime->target, strlen(runtime->target));
-  h2_jieli_sha256_finish(&sha, digest_value);
-  h2_jieli_sha256_hex(digest_value, out_identity->image_sha256);
+  h2_loader_sha256_finish(&sha, digest_value);
+  h2_loader_sha256_hex(digest_value, out_identity->image_sha256);
   out_identity->image_size = boot_info.codeLength;
   usb_diag_write("H2_JIELI_ACTIVE_IDENTITY source=flash\r\n");
   return H2_PAL_OK;

@@ -25,6 +25,7 @@ cc_library(
         "src/h2_loader_mfg.c",
         "src/h2_loader_metadata.c",
         "src/h2_loader_package.c",
+        "src/h2_loader_sha256.c",
         "src/h2_loader_status.c",
         "src/h2_loader_stage.c",
     ],
@@ -36,6 +37,7 @@ cc_library(
         "include/h2_loader_memory.h",
         "include/h2_loader_metadata.h",
         "include/h2_loader_package.h",
+        "include/h2_loader_sha256.h",
         "include/h2_loader_status.h",
         "include/h2_loader_stage.h",
     ],
@@ -50,6 +52,20 @@ cc_library(
         "//libs/pal",
         "//tools/bazel:vendor_third_party_zlib",
     ],
+)
+
+cc_test(
+    name = "h2loader_sha256_test",
+    srcs = ["tests/test_h2loader_sha256.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader"],
 )
 
 cc_test(

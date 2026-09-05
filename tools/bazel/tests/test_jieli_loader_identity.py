@@ -23,16 +23,16 @@ typedef struct { int format, role; uint64_t image_size; char board[64], target[6
 typedef struct { unsigned id; } h2_pal_power_boot_partition_t;
 typedef struct { void *power, *pref, *mem; const char *board, *target; } h2_runtime_t;
 struct BootInfo { unsigned codeLength; };
-typedef int h2_jieli_sha256_t;
+typedef int h2_loader_sha256_t;
 static h2_loader_status_t stored;
 static unsigned running_id = 2, bootstrap_calls;
 static int h2_pal_power_get_running_boot_partition(void *p, h2_pal_power_boot_partition_t *v) { v->id=running_id; return 0; }
 static int h2_loader_read_pref_status(void *p, void *m, h2_loader_status_t *v) { *v=stored; return 0; }
 static int get_current_boot_info(struct BootInfo *v) { ++bootstrap_calls; v->codeLength=123; return 0; }
-static void h2_jieli_sha256_init(h2_jieli_sha256_t *s) {}
-static void h2_jieli_sha256_update(h2_jieli_sha256_t *s, const void *p, size_t n) {}
-static void h2_jieli_sha256_finish(h2_jieli_sha256_t *s, uint8_t *p) { memset(p,0,32); }
-static void h2_jieli_sha256_hex(const uint8_t *p, char *s) { memset(s,'0',64); s[64]=0; }
+static void h2_loader_sha256_init(h2_loader_sha256_t *s) {}
+static void h2_loader_sha256_update(h2_loader_sha256_t *s, const void *p, size_t n) {}
+static void h2_loader_sha256_finish(h2_loader_sha256_t *s, uint8_t *p) { memset(p,0,32); }
+static void h2_loader_sha256_hex(const uint8_t *p, char *s) { memset(s,'0',64); s[64]=0; }
 static void usb_diag_write(const char *s) {}
 '''
 MAIN = r'''

@@ -6,7 +6,7 @@
 #include "h2_jieli_ac791n_devkit_partitions.h"
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_loader_boot.h"
-#include "h2loader_sha256.h"
+#include "h2_loader_sha256.h"
 #include "h2/pal/h2_pal_unsupported.h"
 #include "os/os_api.h"
 #include "system/timer.h"
@@ -16,7 +16,7 @@
 extern int snprintf(char *buffer, size_t size, const char *format, ...);
 
 typedef struct h2_jieli_app_digest {
-  h2_jieli_sha256_t sha;
+  h2_loader_sha256_t sha;
   int active;
 } h2_jieli_app_digest_t;
 
@@ -25,7 +25,7 @@ static h2_pal_mutex_t *operation_mutex;
 
 static int digest_start(void *user) {
   h2_jieli_app_digest_t *self = user;
-  h2_jieli_sha256_init(&self->sha);
+  h2_loader_sha256_init(&self->sha);
   self->active = 1;
   return H2_PAL_OK;
 }
@@ -35,14 +35,14 @@ static int digest_update(void *user, const uint8_t *data, size_t len) {
   if (!self->active || (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_jieli_sha256_update(&self->sha, data, len);
+  h2_loader_sha256_update(&self->sha, data, len);
   return H2_PAL_OK;
 }
 
 static int digest_finish(void *user, uint8_t out[32]) {
   h2_jieli_app_digest_t *self = user;
   if (!self->active || out == NULL) return H2_PAL_ERR_INVALID_STATE;
-  h2_jieli_sha256_finish(&self->sha, out);
+  h2_loader_sha256_finish(&self->sha, out);
   self->active = 0;
   return H2_PAL_OK;
 }

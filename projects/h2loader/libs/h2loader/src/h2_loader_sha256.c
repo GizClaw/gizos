@@ -1,4 +1,4 @@
-#include "h2loader_sha256.h"
+#include "h2_loader_sha256.h"
 
 #include <string.h>
 
@@ -43,7 +43,7 @@ static void write_be32(uint8_t *out, uint32_t value) {
   out[3] = (uint8_t)value;
 }
 
-static void transform(h2_jieli_sha256_t *sha, const uint8_t block[64]) {
+static void transform(h2_loader_sha256_t *sha, const uint8_t block[64]) {
   uint32_t schedule[64];
   uint32_t a = sha->state[0], b = sha->state[1], c = sha->state[2];
   uint32_t d = sha->state[3], e = sha->state[4], f = sha->state[5];
@@ -76,7 +76,7 @@ static void transform(h2_jieli_sha256_t *sha, const uint8_t block[64]) {
   sha->state[6] += g; sha->state[7] += h;
 }
 
-void h2_jieli_sha256_init(h2_jieli_sha256_t *sha) {
+void h2_loader_sha256_init(h2_loader_sha256_t *sha) {
   static const uint32_t initial[8] = {
       UINT32_C(0x6a09e667), UINT32_C(0xbb67ae85),
       UINT32_C(0x3c6ef372), UINT32_C(0xa54ff53a),
@@ -87,8 +87,8 @@ void h2_jieli_sha256_init(h2_jieli_sha256_t *sha) {
   memcpy(sha->state, initial, sizeof(initial));
 }
 
-void h2_jieli_sha256_update(
-    h2_jieli_sha256_t *sha, const uint8_t *data, size_t len) {
+void h2_loader_sha256_update(
+    h2_loader_sha256_t *sha, const uint8_t *data, size_t len) {
   if (sha == NULL || (len != 0u && data == NULL)) return;
   sha->total_bytes += len;
   while (len != 0u) {
@@ -105,7 +105,7 @@ void h2_jieli_sha256_update(
   }
 }
 
-void h2_jieli_sha256_finish(h2_jieli_sha256_t *sha, uint8_t out[32]) {
+void h2_loader_sha256_finish(h2_loader_sha256_t *sha, uint8_t out[32]) {
   uint64_t total_bits = sha->total_bytes * UINT64_C(8);
   sha->block[sha->block_len++] = 0x80u;
   if (sha->block_len > 56u) {
@@ -122,7 +122,7 @@ void h2_jieli_sha256_finish(h2_jieli_sha256_t *sha, uint8_t out[32]) {
   memset(sha, 0, sizeof(*sha));
 }
 
-void h2_jieli_sha256_hex(const uint8_t digest[32], char out[65]) {
+void h2_loader_sha256_hex(const uint8_t digest[32], char out[65]) {
   static const char hex[] = "0123456789abcdef";
   for (size_t i = 0; i < 32u; ++i) {
     out[i * 2u] = hex[digest[i] >> 4u];

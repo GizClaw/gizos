@@ -200,11 +200,9 @@ firmware_native_component(
     name = "h2loader_app_client",
     hdrs = [
         "//projects/h2loader/libs/h2loader:h2loader_headers",
-        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/h2loader_sha256.h",
     ],
     include_roots = [
         "projects/h2loader/libs/h2loader/include",
-        "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src",
     ],
     native_srcs = [
         "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
@@ -213,10 +211,10 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_mfg.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_metadata.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_sha256.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
-        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/h2loader_sha256.c",
     ],
     component_name = "jieli_ac791n_devkit_h2loader_app_client",
     deps = [

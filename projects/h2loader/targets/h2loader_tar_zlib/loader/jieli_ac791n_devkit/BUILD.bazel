@@ -111,6 +111,7 @@ firmware_native_component(
         "//projects/h2loader/libs/h2loader:src/h2_loader_mfg.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_metadata.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_sha256.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
         "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
@@ -127,12 +128,10 @@ firmware_native_component(
 firmware_native_component(
     name = "loader_launcher",
     srcs = [
-        "src/h2loader_sha256.c",
         "src/jieli_loader_platform.c",
         "src/loader_launcher.c",
     ],
     hdrs = [
-        "src/h2loader_sha256.h",
         "src/jieli_loader_platform.h",
     ],
     include_roots = [
