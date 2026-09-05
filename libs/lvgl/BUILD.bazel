@@ -1,4 +1,6 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "H2_WARNING_COPTS_NO_ERROR", "h2_gnu_only_copts")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
@@ -190,6 +192,35 @@ cc_library(
 )
 
 cc_library(
+    name = "platform_web",
+    srcs = [
+        "src/h2_lvgl_button.c",
+        "src/h2_lvgl_button_internal.h",
+        "src/h2_lvgl_fs.c",
+        "src/h2_lvgl_fs_internal.h",
+        "src/h2_lvgl_platform_web.c",
+        "src/h2_lvgl_touch.c",
+    ],
+    hdrs = [
+        "include/h2_lvgl_button.h",
+        "include/h2_lvgl_fs.h",
+        "include/h2_lvgl_osal.h",
+        "include/h2_lvgl_platform.h",
+        "include/h2_lvgl_touch.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    strip_include_prefix = "include",
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":lvgl_web",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_library(
     name = "firmware",
     srcs = [
         "src/h2_lvgl_fs.c",
@@ -256,6 +287,40 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":lvgl"],
+)
+
+cc_binary(
+    name = "_wasm/platform_web_test",
+    testonly = True,
+    srcs = ["tests/test_platform_web.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":platform_web"],
+)
+
+wasm_cc_binary(
+    name = "platform_web_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/platform_web_test",
+    exit_runtime = True,
+    outputs = [
+        "platform_web_test.js",
+        "platform_web_test.wasm",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+js_test(
+    name = "platform_web_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":platform_web_test_wasm"],
+    entry_point = "platform_web_test.js",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 cc_test(

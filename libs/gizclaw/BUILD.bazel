@@ -12,11 +12,15 @@ filegroup(
 
 py_test(
     name = "h2_gizclaw_public_headers_test",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     srcs = ["tests/test_h2_gizclaw_public_headers.py"],
-    main = "tests/test_h2_gizclaw_public_headers.py",
+    data = glob([
+        "include/*.h",
+        "src/*.c",
+        "src/*.h",
+    ]) + ["tests/public_api.inc"],
     legacy_create_init = False,
-    data = glob(["include/*.h", "src/*.c", "src/*.h"]) + ["tests/public_api.inc"],
+    main = "tests/test_h2_gizclaw_public_headers.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 cc_test(
@@ -35,7 +39,10 @@ cc_test(
 
 cc_test(
     name = "h2_gizclaw_public_api_test",
-    srcs = ["tests/test_h2_gizclaw_public_api.c", "tests/public_api.inc"],
+    srcs = [
+        "tests/public_api.inc",
+        "tests/test_h2_gizclaw_public_api.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = select({
@@ -103,8 +110,8 @@ cc_library(
         "include/h2_gizclaw_config.h",
         "include/h2_gizclaw_conversation.h",
         "include/h2_gizclaw_firmware.h",
-        "include/h2_gizclaw_pet.h",
         "include/h2_gizclaw_pcm_track.h",
+        "include/h2_gizclaw_pet.h",
         "include/h2_gizclaw_points.h",
         "include/h2_gizclaw_profile.h",
         "include/h2_gizclaw_registration.h",
@@ -133,6 +140,7 @@ cc_library(
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",
     ] + select({
+        "@platforms//cpu:wasm32": ["//tools/bazel:vendor_third_party_gizclaw"],
         "//tools/bazel/platforms:is_bk3633": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_bk7258": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
         "//tools/bazel/platforms:is_esp32p4": ["//tools/bazel:vendor_third_party_gizclaw_firmware"],
@@ -145,15 +153,15 @@ cc_library(
     name = "gizclaw_test_support",
     testonly = True,
     srcs = [
+        "src/h2_gizclaw_async_rpc.c",
         "src/h2_gizclaw_audio_pacer.h",
         "src/h2_gizclaw_audio_play.c",
-        "src/h2_gizclaw_async_rpc.c",
         "src/h2_gizclaw_client.c",
         "src/h2_gizclaw_conversation.c",
         "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_download.c",
-        "src/h2_gizclaw_firmware.c",
         "src/h2_gizclaw_download_internal.h",
+        "src/h2_gizclaw_firmware.c",
         "src/h2_gizclaw_internal.h",
         "src/h2_gizclaw_ogg_opus.c",
         "src/h2_gizclaw_ogg_opus_internal.h",
@@ -186,8 +194,8 @@ cc_library(
         "include/h2_gizclaw_config.h",
         "include/h2_gizclaw_conversation.h",
         "include/h2_gizclaw_firmware.h",
-        "include/h2_gizclaw_pet.h",
         "include/h2_gizclaw_pcm_track.h",
+        "include/h2_gizclaw_pet.h",
         "include/h2_gizclaw_points.h",
         "include/h2_gizclaw_profile.h",
         "include/h2_gizclaw_registration.h",
@@ -249,8 +257,8 @@ cc_test(
     srcs = [
         "src/h2_gizclaw_ogg_opus.c",
         "src/h2_gizclaw_ogg_opus_internal.h",
-        "tests/test_h2_gizclaw_ogg_opus.c",
         "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_ogg_opus.c",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -261,7 +269,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal", "//tools/bazel:vendor_third_party_opus"],
+    deps = [
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_opus",
+    ],
 )
 
 cc_test(
@@ -294,8 +305,8 @@ cc_test(
     name = "h2_gizclaw_service_test",
     srcs = [
         "src/h2_gizclaw_service_internal.h",
-        "tests/test_h2_gizclaw_service.c",
         "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_service.c",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

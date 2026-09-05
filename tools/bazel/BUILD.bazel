@@ -389,6 +389,7 @@ cc_library(
     name = "vendor_third_party_gizclaw",
     tags = ["manual"],
     target_compatible_with = select({
+        "@platforms//cpu:wasm32": [],
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],

@@ -166,7 +166,8 @@ config 显式定义 Linux `_GNU_SOURCE`，并只把 LLVM toolchain 自身
 warning 仍为 error。
 
 `make bazel-coverage-report` 使用同一个 configured graph 查询全部 compatible、
-非 `manual` test，以及全部 compatible `cc_library` 和 `cc_binary` target；
+非 `manual` test，以及全部 compatible `cc_library` 和 `cc_binary` target，
+包含这些测试经 platform transition 引入的依赖（例如 WebAssembly）；
 随后执行 `bazel coverage --config=test_coverage --combined_report=lcov
 --cache_test_results=no <compatible-test-labels...>`。Coverage instrumentation
 filter 由这些 target 声明源码所在的 repository directory 动态生成。因此新增

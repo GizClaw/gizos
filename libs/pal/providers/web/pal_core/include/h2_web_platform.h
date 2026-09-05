@@ -75,8 +75,47 @@ const h2_pal_sync_api_t *
 h2_web_platform_sync_api(h2_web_platform_t *platform);
 const h2_pal_pref_api_t *
 h2_web_platform_pref_api(h2_web_platform_t *platform);
+/** Browser Fetch HTTP provider. Requests remain subject to browser CORS. */
+const h2_pal_http_api_t *
+h2_web_platform_http_api(h2_web_platform_t *platform);
+/** wolfCrypt provider seeded from browser cryptographic randomness. */
+const h2_pal_crypto_api_t *
+h2_web_platform_crypto_api(h2_web_platform_t *platform);
 const h2_pal_display_api_t *
 h2_web_platform_display_api(h2_web_platform_t *platform);
+/**
+ * Browser Web Audio playback and getUserMedia/AudioWorklet microphone provider.
+ *
+ * Microphone capture produces 16 kHz mono S16LE, 320 samples per frame, with
+ * eight reusable buffers and drop-newest overflow. mic_read requires at least
+ * 640 bytes of caller storage; success fills the frame format and byte count.
+ * Zero timeout returns WOULD_BLOCK when empty; finite waits return TIMEOUT.
+ * Capture requests echoCancellation=true and logs the actual track setting.
+ * This is a preference: unconfirmed AEC warns but does not reject capture.
+ * Only one read may be pending (another returns BUSY). Task callers yield
+ * cooperatively; root callers require Asyncify.
+ *
+ * Start requires a user gesture, secure context and browser permission; it waits at most
+ * 30 seconds. Missing APIs return UNSUPPORTED, denied/unavailable devices return
+ * UNAVAILABLE, and browser processing failures return IO. A repeated start
+ * returns INVALID_STATE. Stop is idempotent, clears queued PCM and makes pending
+ * start/read calls return CLOSED. Late permission results are stopped rather
+ * than attached. Device removal returns CLOSED. Stop/cancel outstanding calls
+ * and let them return before destroying the platform.
+ *
+ * While started, Module.h2WebMicrophoneStreams.get(platform_address) exposes a
+ * borrowed MediaStream for caller-owned WebRTC tracks. Unset those tracks before
+ * stopping capture; PAL stop owns and stops this stream's native tracks.
+ * Hosting CSP must permit the microphone worklet's generated blob module.
+ */
+const h2_pal_audio_api_t *
+h2_web_platform_audio_api(h2_web_platform_t *platform);
+/** Browser WebCodecs H.264 Annex-B decoder with allocator-backed RGB565 output. */
+const h2_pal_video_decoder_api_t *
+h2_web_platform_video_decoder_api(h2_web_platform_t *platform);
+/** Browser WebCodecs AAC-LC decoder with allocator-backed S16LE output. */
+const h2_pal_audio_decoder_api_t *
+h2_web_platform_audio_decoder_api(h2_web_platform_t *platform);
 const h2_pal_touch_api_t *
 h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *

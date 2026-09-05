@@ -2,6 +2,7 @@
 
 #include <emscripten.h>
 #include <emscripten/eventloop.h>
+#include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,9 @@ EM_JS(int, h2_web_test_forget_count, (),
 
 EM_JS(int, h2_web_test_close_rejected_before_cancel_settled, (),
       { return globalThis.h2FakeCloseRejectedBeforeCancelSettled ? 1 : 0; });
+
+EM_JS(int, h2_web_test_audio_stopped_sources, (),
+      { return globalThis.h2FakeAudioStoppedSources || 0; });
 
 static void h2_web_test_task(void *user) {
   int *ran = user;
@@ -59,6 +63,20 @@ static h2_web_auto_pump_test_t h2_web_auto_pump;
 static h2_pal_task_t *h2_web_auto_pump_task;
 
 static void h2_web_test_main_loop(void) {}
+
+static int h2_web_test_http_header(void *user,
+                                   const h2_pal_http_request_t *request,
+                                   h2_pal_http_str_t name,
+                                   h2_pal_http_str_t value) {
+  (void)request;
+  int *header_count = user;
+  if (name.len == 0u || name.data == NULL ||
+      (value.len != 0u && value.data == NULL)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  *header_count += 1;
+  return H2_PAL_OK;
+}
 
 typedef struct h2_web_webrtc_test {
   const h2_pal_webrtc_api_t *api;
@@ -637,6 +655,132 @@ static int h2_web_test_run_task(h2_web_platform_t *platform,
   return 0;
 }
 
+typedef struct h2_web_decoder_test {
+  h2_web_platform_t *platform;
+  int result;
+} h2_web_decoder_test_t;
+
+static void h2_web_test_decoders(void *user) {
+  h2_web_decoder_test_t *test = user;
+  const h2_pal_mem_api_t *allocator = h2_web_platform_mem_api();
+  const h2_pal_video_decoder_api_t *video =
+      h2_web_platform_video_decoder_api(test->platform);
+  const h2_video_decoder_config_t video_open = {
+      .frame_allocator = allocator,
+      .preferred_format = H2_VIDEO_PIXEL_FORMAT_RGB565,
+  };
+  const uint8_t h264_config[] = {0u, 0u, 0u, 1u, 0x67u, 0x42u, 0xe0u, 0x1eu};
+  const h2_video_decoder_stream_config_t video_stream = {
+      .codec = H2_VIDEO_CODEC_H264,
+      .bitstream_format = H2_VIDEO_BITSTREAM_H264_ANNEX_B,
+      .coded_width = 2u,
+      .coded_height = 2u,
+      .visible_width = 2u,
+      .visible_height = 2u,
+      .codec_config = h264_config,
+      .codec_config_size = sizeof(h264_config),
+  };
+  const uint8_t h264_packet[] = {0u, 0u, 0u, 1u, 0x65u, 0x88u};
+  const h2_video_decoder_packet_t video_packet = {
+      .data = h264_packet,
+      .size = sizeof(h264_packet),
+      .pts_us = 1000,
+      .duration_us = 33000,
+  };
+  h2_pal_video_decoder_session_t *video_session = NULL;
+  h2_pal_video_decoder_frame_t *video_frame = NULL;
+  h2_video_frame_info_t video_info = {0};
+  test->result = 1;
+  if (h2_pal_video_decoder_open(video, &video_open, &video_session) != H2_PAL_OK ||
+      h2_pal_video_decoder_configure(video, video_session, &video_stream) !=
+          H2_PAL_OK ||
+      h2_pal_video_decoder_submit_packet(video, video_session, &video_packet) !=
+          H2_PAL_OK ||
+      h2_pal_video_decoder_acquire_frame(video, video_session, 100u,
+                                         &video_frame) != H2_PAL_OK ||
+      h2_pal_video_decoder_frame_get_info(video, video_session, video_frame,
+                                          &video_info) != H2_PAL_OK) {
+    return;
+  }
+  const uint16_t *pixels = video_info.planes[0].data;
+  if (video_info.format != H2_VIDEO_PIXEL_FORMAT_RGB565 ||
+      video_info.width != 2u || video_info.height != 2u ||
+      video_info.plane_count != 1u || video_info.planes[0].bytes != 8u ||
+      pixels[0] != 0xf800u || pixels[1] != 0x07e0u ||
+      pixels[2] != 0x001fu || pixels[3] != 0xffffu ||
+      h2_pal_video_decoder_release_frame(video, video_session, video_frame) !=
+          H2_PAL_OK) {
+    return;
+  }
+  const h2_video_decoder_packet_t video_eos = {
+      .flags = H2_VIDEO_DECODER_PACKET_END_OF_STREAM,
+  };
+  if (h2_pal_video_decoder_submit_packet(video, video_session, &video_eos) !=
+          H2_PAL_OK ||
+      h2_pal_video_decoder_acquire_frame(video, video_session, 100u,
+                                         &video_frame) != H2_PAL_EXIT ||
+      h2_pal_video_decoder_close(video, video_session) != H2_PAL_OK) {
+    return;
+  }
+
+  const h2_pal_audio_decoder_api_t *audio =
+      h2_web_platform_audio_decoder_api(test->platform);
+  const h2_audio_decoder_config_t audio_open = {
+      .pcm_allocator = allocator,
+      .preferred_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  const uint8_t audio_specific_config[] = {0x14u, 0x08u};
+  const h2_audio_decoder_stream_config_t audio_stream = {
+      .codec = H2_AUDIO_CODEC_AAC_LC,
+      .bitstream_format = H2_AUDIO_BITSTREAM_AAC_RAW,
+      .sample_rate_hz = 16000u,
+      .channels = 1u,
+      .codec_config = audio_specific_config,
+      .codec_config_size = sizeof(audio_specific_config),
+  };
+  const uint8_t aac_packet[] = {0x01u, 0x02u};
+  const h2_audio_decoder_packet_t audio_packet = {
+      .data = aac_packet,
+      .size = sizeof(aac_packet),
+      .pts_us = 2000,
+      .duration_us = 125,
+  };
+  h2_pal_audio_decoder_session_t *audio_session = NULL;
+  h2_pal_audio_decoder_frame_t *audio_frame = NULL;
+  h2_audio_decoder_frame_info_t audio_info = {0};
+  if (h2_pal_audio_decoder_open(audio, &audio_open, &audio_session) != H2_PAL_OK ||
+      h2_pal_audio_decoder_configure(audio, audio_session, &audio_stream) !=
+          H2_PAL_OK ||
+      h2_pal_audio_decoder_submit_packet(audio, audio_session, &audio_packet) !=
+          H2_PAL_OK ||
+      h2_pal_audio_decoder_acquire_frame(audio, audio_session, 100u,
+                                         &audio_frame) != H2_PAL_OK ||
+      h2_pal_audio_decoder_frame_get_info(audio, audio_session, audio_frame,
+                                          &audio_info) != H2_PAL_OK) {
+    return;
+  }
+  const int16_t *samples = audio_info.data;
+  if (audio_info.sample_format != H2_AUDIO_SAMPLE_S16LE ||
+      audio_info.sample_rate_hz != 16000u || audio_info.channels != 1u ||
+      audio_info.samples_per_channel != 2u || audio_info.bytes != 4u ||
+      samples[0] != 1000 || samples[1] != -1000 ||
+      h2_pal_audio_decoder_release_frame(audio, audio_session, audio_frame) !=
+          H2_PAL_OK) {
+    return;
+  }
+  const h2_audio_decoder_packet_t audio_eos = {
+      .flags = H2_AUDIO_DECODER_PACKET_END_OF_STREAM,
+  };
+  if (h2_pal_audio_decoder_submit_packet(audio, audio_session, &audio_eos) !=
+          H2_PAL_OK ||
+      h2_pal_audio_decoder_acquire_frame(audio, audio_session, 100u,
+                                         &audio_frame) != H2_PAL_EXIT ||
+      h2_pal_audio_decoder_close(audio, audio_session) != H2_PAL_OK) {
+    return;
+  }
+  test->result = 0;
+}
+
 static int run_tests(void) {
   const h2_web_platform_config_t pixel_count_overflow = {
       .display_width = INT32_MAX,
@@ -671,9 +815,19 @@ static int run_tests(void) {
       h2_web_platform_display_api(platform) == NULL ||
       h2_web_platform_touch_api(platform) == NULL ||
       h2_web_platform_pref_api(platform) == NULL ||
+      h2_web_platform_http_api(platform) == NULL ||
+      h2_web_platform_crypto_api(platform) == NULL ||
+      h2_web_platform_audio_api(platform) == NULL ||
+      h2_web_platform_audio_decoder_api(platform) == NULL ||
+      h2_web_platform_video_decoder_api(platform) == NULL ||
       h2_web_platform_serial_host_api(platform) == NULL ||
       h2_web_platform_webrtc_api(platform) == NULL) {
     return 4;
+  }
+  h2_web_decoder_test_t decoder_test = {.platform = platform, .result = 1};
+  if (!h2_web_test_run_task(platform, h2_web_test_decoders, &decoder_test) ||
+      decoder_test.result != 0) {
+    return 107;
   }
   const h2_pal_time_api_t *clock = h2_web_platform_time_api(platform);
   uint64_t wall_ms = 0u, monotonic_us = 0u;
@@ -701,6 +855,100 @@ static int run_tests(void) {
       wall_status.valid)
     return 52;
   EM_ASM({ Date.now = globalThis.h2SavedDateNow; });
+  uint8_t random_bytes[32] = {0};
+  h2_pal_x25519_keypair_t keypair = {0};
+  if (h2_pal_crypto_random(h2_web_platform_crypto_api(platform), random_bytes,
+                           sizeof(random_bytes)) != H2_PAL_OK ||
+      h2_pal_crypto_x25519_keypair_generate(
+          h2_web_platform_crypto_api(platform), &keypair) != H2_PAL_OK) {
+    return 103;
+  }
+  int http_header_count = 0;
+  const h2_pal_http_request_t http_request = {
+      .method = H2_PAL_HTTP_GET,
+      .url = {.data = "data:text/plain,h2-web-http", .len = 27u},
+      .response_header_cb = h2_web_test_http_header,
+      .response_header_user = &http_header_count,
+      .timeout_ms = 1000,
+      .response_allocator = h2_web_platform_mem_api(),
+  };
+  h2_pal_http_response_t http_response;
+  h2_pal_http_response_reset(&http_response);
+  if (h2_pal_http_request(h2_web_platform_http_api(platform), &http_request,
+                          &http_response) != H2_PAL_OK ||
+      http_response.status_code != 200 || http_response.body_len != 11u ||
+      memcmp(http_response.body, "h2-web-http", 11u) != 0 ||
+      http_header_count == 0) {
+    return 104;
+  }
+  h2_pal_http_response_free(h2_web_platform_http_api(platform),
+                            &http_response);
+  // Body failures happen after headers arrive. Repeated retries must not retain
+  // Wasm header allocations, including when AbortController times out the body.
+  // clang-format off
+  EM_ASM({
+    globalThis.h2SavedFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => ({
+      status: 200,
+      headers: new Headers({'x-large-header': 'x'.repeat(16384)}),
+      arrayBuffer: () => globalThis.h2HttpBodyTimeout
+        ? new Promise((_resolve, reject) => options.signal.addEventListener(
+            'abort', () => reject(new DOMException('aborted', 'AbortError')),
+            {once: true}))
+        : Promise.reject(new Error('body transport failed')),
+    });
+  });
+  // clang-format on
+  for (int timeout = 0; timeout < 2; ++timeout) {
+    EM_ASM({ globalThis.h2HttpBodyTimeout = !!$0; }, timeout);
+    h2_pal_http_request_t failed_request = http_request;
+    failed_request.timeout_ms = 10;
+    const int expected = timeout ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
+    // Warm Asyncify and allocator bookkeeping before measuring retained memory.
+    if (h2_pal_http_request(h2_web_platform_http_api(platform), &failed_request,
+                           &http_response) != expected)
+      return 108;
+    const size_t allocated = mallinfo().uordblks;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+      if (h2_pal_http_request(h2_web_platform_http_api(platform), &failed_request,
+                             &http_response) != expected ||
+          http_response.body != NULL || http_response.status_code != 0)
+        return 109;
+    }
+    if ((size_t)mallinfo().uordblks > allocated)
+      return 110;
+  }
+  EM_ASM({ globalThis.fetch = globalThis.h2SavedFetch; });
+  const h2_pal_audio_api_t *audio = h2_web_platform_audio_api(platform);
+  const h2_audio_pcm_format_t audio_format = {
+      .sample_rate_hz = 48000u,
+      .frame_samples_per_channel = 4u,
+      .channels = 1u,
+      .sample_format = H2_AUDIO_SAMPLE_S16LE,
+  };
+  const h2_audio_track_config_t audio_track_config = {
+      .name = "web-test",
+      .format = audio_format,
+      .volume_factor_milli = 1000u,
+      .buffer_frames = 1u,
+  };
+  int16_t audio_samples[4] = {0, 100, -100, 0};
+  h2_audio_frame_t audio_frame = h2_audio_frame_for_buffer(
+      audio_samples, sizeof(audio_samples), audio_format);
+  audio_frame.bytes = sizeof(audio_samples);
+  h2_pal_audio_track_t *audio_track = NULL;
+  if (h2_pal_audio_start_speaker(audio) != H2_AUDIO_OK ||
+      h2_pal_audio_create_track(audio, &audio_track_config, &audio_track) !=
+          H2_AUDIO_OK ||
+      h2_pal_audio_track_write(audio_track, &audio_frame, 1000u) !=
+          H2_AUDIO_OK ||
+      h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
+      h2_web_test_audio_stopped_sources() != 1 ||
+      h2_pal_audio_track_write(audio_track, &audio_frame, 1000u) !=
+          H2_AUDIO_ERR_INVALID_STATE ||
+      h2_pal_audio_track_close(audio_track) != H2_AUDIO_OK) {
+    return 105;
+  }
   h2_web_webrtc_test_t webrtc_test = {0};
   const h2_pal_webrtc_api_t *webrtc = h2_web_platform_webrtc_api(platform);
   EM_ASM({ globalThis.h2FakeCreateMedia(1); });

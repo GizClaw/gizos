@@ -98,17 +98,24 @@ def query_graph(bazel: str, bazel_cache_options: list[str]) -> tuple[list[str], 
         ],
         capture=True,
     ).stdout
+    # Tests can transition dependencies to another platform (for example Wasm).
+    # Include those configured owners when attributing their emitted LCOV.
+    target_graph = (
+        f'{label_set(candidate_targets)} union '
+        'filter("^//", kind("^(cc_binary|cc_library) rule$", '
+        f'deps({label_set(coverage_report.parse_test_inventory(test_output))})))'
+    )
     target_labels_output = run(
         [
             *common,
-            label_set(candidate_targets),
+            target_graph,
             "--output=starlark",
             f"--starlark:expr={TARGET_EXPRESSION}",
         ],
         capture=True,
     ).stdout
     target_json_output = run(
-        [*common, label_set(candidate_targets), "--output=jsonproto"],
+        [*common, target_graph, "--output=jsonproto"],
         capture=True,
     ).stdout
     return (
