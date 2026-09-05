@@ -540,6 +540,11 @@ static int h2_ble_start(void *user) {
       ble_addr[1], ble_addr[0]);
   printf("H2_JIELI_BLE_ENTER step=controller_mac\r\n");
   const int mac_result = le_controller_set_mac(ble_addr);
+  if (mac_result != 0) {
+    h2_ble.starting = 0;
+    printf("H2_JIELI_BLE_ERROR step=controller_mac vendor=%d\r\n", mac_result);
+    return H2_PAL_ERR_IO;
+  }
   printf("H2_JIELI_BLE_OK step=controller_mac vendor=%d\r\n", mac_result);
   printf("H2_JIELI_BLE_ENTER step=btstack_init\r\n");
   const int btstack_result = btstack_init();

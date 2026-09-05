@@ -9,6 +9,59 @@ SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_bl
 
 
 class BleConnectionTest(unittest.TestCase):
+    def test_mac_failure_prevents_stack_start_and_allows_retry(self):
+        source = SOURCE.read_text()
+        begin = source.index("static int h2_ble_start(")
+        end = source.index("static int h2_ble_stop(", begin)
+        stub = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+enum { H2_PAL_OK=0, H2_PAL_ERR_IO=-1 };
+const uint64_t config_btctler_le_features=0;
+static struct { int started, starting; } h2_ble;
+static int mac_result, stack_result, stack_calls, mac_calls;
+void lmp_set_sniff_disable(void) {}
+static const uint8_t *h2_ble_base_mac(void) {
+ static const uint8_t address[6]={1,2,3,4,5,6}; return address;
+}
+void lib_make_ble_address(uint8_t *out, uint8_t *in) { memcpy(out,in,6); }
+int le_controller_set_mac(void *addr) {
+ assert(memcmp(addr,h2_ble_base_mac(),6)==0); ++mac_calls; return mac_result;
+}
+static int btstack_init(void) { ++stack_calls; return stack_result; }
+'''
+        main = r'''
+int main(void) {
+ const int failures[]={-1,1,-100,127};
+ for (unsigned i=0;i<sizeof(failures)/sizeof(failures[0]);++i) {
+  mac_result=failures[i];
+  assert(h2_ble_start(NULL)==H2_PAL_ERR_IO);
+  assert(!h2_ble.starting && !h2_ble.started && stack_calls==0);
+ }
+ assert(mac_calls==4);
+ mac_result=0; stack_result=-1;
+ assert(h2_ble_start(NULL)==H2_PAL_ERR_IO && !h2_ble.starting);
+ stack_result=0;
+ assert(h2_ble_start(NULL)==0 && h2_ble.starting && stack_calls==2);
+ assert(h2_ble_start(NULL)==0 && stack_calls==2 && mac_calls==6);
+ h2_ble.starting=0; h2_ble.started=1;
+ assert(h2_ble_start(NULL)==0 && stack_calls==2 && mac_calls==6);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-ble-start-") as directory:
+            test = Path(directory) / "test.c"
+            test.write_text(stub + source[begin:end] + main)
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            str(test), "-o", str(binary)], check=True, timeout=60)
+            result = subprocess.run([str(binary)], capture_output=True,
+                                    text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_notify_validates_length_before_narrowing(self):
         source = SOURCE.read_text()
         begin = source.index("static int h2_notify(")
