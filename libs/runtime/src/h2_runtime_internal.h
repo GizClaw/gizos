@@ -235,6 +235,13 @@ struct h2_runtime_private {
     int initialized;
     size_t allocation_size;
     h2_pal_queue_t *event_queue;
+    /*
+     * One-slot wake token. Every producer gives it after a successful
+     * enqueue and h2_runtime_notify() gives it directly; a full slot means a
+     * wake is already pending, so any number of gives between two waits
+     * collapse into one h2_runtime_wait_notify() return.
+     */
+    h2_pal_queue_t *wake_queue;
     struct h2_runtime_test_control *test_control;
 
     h2_pal_mem_api_t mem_proxy;
@@ -361,6 +368,9 @@ h2_pal_result_t h2_runtime_emit_event(
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued);
+
+/* Gives the coalescing wake token; never blocks, never fails. */
+void h2_runtime_notify_internal(h2_runtime_t *runtime);
 
 /*
  * Enqueues without the drop-on-full policy the input and system event

@@ -510,9 +510,12 @@ static h2_pal_result_t fake_run_step(void *user, uint32_t timeout_ms) {
       .payload = payload,
       .payload_capacity = sizeof(payload),
   };
-  h2_pal_result_t rc =
-      h2_runtime_wait_event(app->runtime, &event, timeout_ms);
-  if (rc == H2_PAL_OK) {
+  h2_pal_result_t rc = h2_runtime_wait_notify(app->runtime, timeout_ms);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK &&
+      rc != H2_PAL_ERR_TIMEOUT) {
+    return rc;
+  }
+  while (h2_runtime_poll_event(app->runtime, &event) == H2_PAL_OK) {
     app->last_event_kind = event.kind;
     if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
         event.payload_size == sizeof(h2_runtime_button_action_event_t)) {
@@ -523,8 +526,6 @@ static h2_pal_result_t fake_run_step(void *user, uint32_t timeout_ms) {
     }
     app->value +=
         event.kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_READY ? 5 : 1;
-  } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
-    return rc;
   }
   h2_runtime_button_state_t button_state;
   if (h2_runtime_component_state_button(

@@ -101,17 +101,11 @@ typedef struct test_env {
 
 static test_env_t *s_env;
 static atomic_uint s_queue_send_timeout_ms;
-static atomic_uint s_runtime_post_count;
-static h2_runtime_custom_event_id_t s_runtime_event_id;
+static atomic_uint s_runtime_notify_count;
 
-static h2_pal_result_t
-fake_runtime_post(h2_runtime_t *runtime,
-                  const h2_runtime_custom_event_t *event) {
+static void fake_runtime_notify(h2_runtime_t *runtime) {
   assert(runtime == (h2_runtime_t *)s_env);
-  assert(event != NULL && event->payload == NULL && event->payload_size == 0u);
-  s_runtime_event_id = event->id;
-  atomic_fetch_add_explicit(&s_runtime_post_count, 1u, memory_order_release);
-  return H2_PAL_OK;
+  atomic_fetch_add_explicit(&s_runtime_notify_count, 1u, memory_order_release);
 }
 
 static int test_queue_create(void *user, const h2_pal_queue_config_t *config,
@@ -676,7 +670,7 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   h2_gizclaw_service_test_set_client_ops(&s_client_ops);
   /* The test thread is the App: it owns dispatch through service_poll(), and
    * the Service signals dispatch work through the (fake) Runtime. */
-  h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
+  h2_gizclaw_service_test_set_runtime_notify(fake_runtime_notify);
 
   static h2_gizclaw_config_t client_config;
   memset(&client_config, 0, sizeof(client_config));
@@ -744,14 +738,16 @@ static void test_fifo_capacity_and_dispatch(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
-static void test_runtime_dispatch_wakeup_is_coalesced(void) {
+/* Every piece of dispatch work wakes the Runtime; the Runtime, not the
+ * service, coalesces those wakes, and a poll whose budget leaves work pending
+ * wakes it once more. */
+static void test_runtime_dispatch_notifies_runtime(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 2u);
   service->config.runtime = (h2_runtime_t *)&env;
   service->config.on_event = NULL;
-  atomic_store_explicit(&s_runtime_post_count, 0u, memory_order_relaxed);
-  s_runtime_event_id = 0u;
-  h2_gizclaw_service_test_set_runtime_post(fake_runtime_post);
+  atomic_store_explicit(&s_runtime_notify_count, 0u, memory_order_relaxed);
+  h2_gizclaw_service_test_set_runtime_notify(fake_runtime_notify);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
 
   h2_gizclaw_operation_t *first = NULL;
@@ -774,23 +770,24 @@ static void test_runtime_dispatch_wakeup_is_coalesced(void) {
     sched_yield();
   }
   assert(both_ready);
-  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) ==
-         1u);
-  assert(s_runtime_event_id == H2_GIZCLAW_RUNTIME_EVENT_DISPATCH_READY);
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) ==
+         2u);
 
   size_t dispatched = 0u;
   assert(h2_gizclaw_service_poll(service, 1u, &dispatched) == H2_PAL_OK);
   assert(dispatched == 1u);
-  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) ==
-         2u);
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) ==
+         3u);
   assert(h2_gizclaw_service_poll(service, 2u, &dispatched) == H2_PAL_OK);
   assert(dispatched == 1u);
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) ==
+         3u);
   assert(atomic_load_explicit(&env.completion_count, memory_order_acquire) ==
          2u);
 
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-  h2_gizclaw_service_test_set_runtime_post(NULL);
+  h2_gizclaw_service_test_set_runtime_notify(NULL);
 }
 
 static void test_pending_operation_does_not_block_following_work(void) {
@@ -5339,7 +5336,7 @@ static void test_sync_helper_from_job_task_while_app_polls(void) {
    * task never dispatched either, so the bytes came through the App poll. */
   assert(wire.bytes_written == 3u && memcmp(wire.bytes, data, 3u) == 0);
   assert(wire.destroy_count == 1);
-  assert(atomic_load_explicit(&s_runtime_post_count, memory_order_acquire) >=
+  assert(atomic_load_explicit(&s_runtime_notify_count, memory_order_acquire) >=
          1u);
   /* Drain the retire item left for the App task before deinit. */
   for (;;) {
@@ -8853,7 +8850,7 @@ int main(int argc, char **argv) {
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();
-  test_runtime_dispatch_wakeup_is_coalesced();
+  test_runtime_dispatch_notifies_runtime();
   test_pending_operation_does_not_block_following_work();
   test_queued_cancel_and_stop_drain();
   test_stop_cancels_running_without_inline_callback();

@@ -259,11 +259,12 @@ static void image_entry(void *user) {
         .payload = payload.bytes,
         .payload_capacity = sizeof(payload.bytes),
     };
-    rc = h2_runtime_wait_event(runtime, &event,
-                               H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
-    if (rc == H2_PAL_OK) {
+    /* Drain before waiting: a half-drained queue has no pending wake. */
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
       wifi_has_ip = event_has_ip(event.kind, wifi_has_ip);
-    } else if (rc != H2_PAL_ERR_TIMEOUT) {
+    }
+    rc = h2_runtime_wait_notify(runtime, H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
       printf("H2_GIZCLAW_E2E_DEVKIT stage=event status=ERROR rc=%d\n", rc);
       fflush(stdout);
     }

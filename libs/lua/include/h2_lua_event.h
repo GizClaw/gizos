@@ -13,7 +13,7 @@ extern "C" {
 /**
  * Copies one already-consumed Runtime event into the named live job.
  *
- * This function never calls h2_runtime_poll_event() or h2_runtime_wait_event().
+ * This function never calls h2_runtime_poll_event() or h2_runtime_wait_notify().
  */
 h2_pal_result_t h2_lua_dispatch_runtime_event(h2_lua_host_t *host,
                                               h2_lua_job_id_t job_id,
