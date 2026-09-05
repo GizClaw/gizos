@@ -83,7 +83,31 @@ const h2_pal_crypto_api_t *
 h2_web_platform_crypto_api(h2_web_platform_t *platform);
 const h2_pal_display_api_t *
 h2_web_platform_display_api(h2_web_platform_t *platform);
-/** Browser Web Audio playback provider. Microphone capture is unsupported. */
+/**
+ * Browser Web Audio playback and getUserMedia/AudioWorklet microphone provider.
+ *
+ * Microphone capture produces 16 kHz mono S16LE, 320 samples per frame, with
+ * eight reusable buffers and drop-newest overflow. mic_read requires at least
+ * 640 bytes of caller storage; success fills the frame format and byte count.
+ * Zero timeout returns WOULD_BLOCK when empty; finite waits return TIMEOUT.
+ * Capture requests echoCancellation=true and logs the actual track setting.
+ * This is a preference: unconfirmed AEC warns but does not reject capture.
+ * Only one read may be pending (another returns BUSY). Task callers yield
+ * cooperatively; root callers require Asyncify.
+ *
+ * Start requires a user gesture, secure context and browser permission; it waits at most
+ * 30 seconds. Missing APIs return UNSUPPORTED, denied/unavailable devices return
+ * UNAVAILABLE, and browser processing failures return IO. A repeated start
+ * returns INVALID_STATE. Stop is idempotent, clears queued PCM and makes pending
+ * start/read calls return CLOSED. Late permission results are stopped rather
+ * than attached. Device removal returns CLOSED. Stop/cancel outstanding calls
+ * and let them return before destroying the platform.
+ *
+ * While started, Module.h2WebMicrophoneStreams.get(platform_address) exposes a
+ * borrowed MediaStream for caller-owned WebRTC tracks. Unset those tracks before
+ * stopping capture; PAL stop owns and stops this stream's native tracks.
+ * Hosting CSP must permit the microphone worklet's generated blob module.
+ */
 const h2_pal_audio_api_t *
 h2_web_platform_audio_api(h2_web_platform_t *platform);
 /** Browser WebCodecs H.264 Annex-B decoder with allocator-backed RGB565 output. */

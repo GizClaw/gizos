@@ -34,6 +34,10 @@ struct h2_web_platform {
   bool pointer_installed;
   bool crypto_ready;
   bool touch_opened;
+  uint64_t mic_generation;
+  unsigned mic_calls;
+  bool mic_starting;
+  bool mic_reading;
   bool speaker_started;
   bool speaker_stopped;
   uint32_t speaker_volume_percent;
@@ -45,6 +49,10 @@ struct h2_web_platform {
 
 void h2_web_platform_display_init(h2_web_platform_t *platform);
 void h2_web_platform_display_deinit(h2_web_platform_t *platform);
+int h2_web_platform_mic_supported(void);
+int h2_web_platform_mic_start(void *user);
+int h2_web_platform_mic_stop(void *user);
+int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_ms);
 void h2_web_platform_audio_init(h2_web_platform_t *platform);
 void h2_web_platform_audio_deinit(h2_web_platform_t *platform);
 void h2_web_platform_audio_decoder_init(h2_web_platform_t *platform);

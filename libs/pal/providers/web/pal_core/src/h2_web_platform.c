@@ -252,9 +252,9 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   if (platform == NULL) {
     return;
   }
-  // An Asyncify frame still owns its peer and platform. The caller must retry
-  // destruction after the outstanding WebRTC call has returned.
-  if (h2_web_platform_webrtc_busy(platform))
+  // Suspended calls still own the platform. Stop/cancel them and retry
+  // destruction after their PAL calls have returned.
+  if (platform->mic_calls != 0u || h2_web_platform_webrtc_busy(platform))
     return;
   platform->shutting_down = true;
   if (platform->pump_scheduled) {
