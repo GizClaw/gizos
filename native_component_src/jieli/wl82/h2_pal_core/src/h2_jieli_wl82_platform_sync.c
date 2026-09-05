@@ -282,10 +282,11 @@ static void cond_unlink(h2_pal_cond_t *cond, h2_jieli_cond_waiter_t *waiter)
     }
 }
 
-static h2_pal_result_t sync_wait_cond(
-    void *user, h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms)
+h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
+    h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms, int *out_locked)
 {
-    (void)user;
+    if (out_locked == NULL) return H2_PAL_ERR_INVALID_ARG;
+    *out_locked = 1;
     if (cond == NULL || mutex == NULL || mutex->recursive) {
         return H2_PAL_ERR_INVALID_ARG;
     }
@@ -299,6 +300,7 @@ static h2_pal_result_t sync_wait_cond(
     cond_unlock(cond);
 
     const int unlock_result = h2_jieli_sdk_mutex_unlock(mutex->native);
+    if (unlock_result == 0) *out_locked = 0;
     h2_pal_result_t result = unlock_result == 0
         ? map_wait(h2_jieli_sdk_sem_take(waiter.wake, timeout_ms))
         : H2_PAL_ERR_IO;
@@ -310,7 +312,16 @@ static h2_pal_result_t sync_wait_cond(
         h2_jieli_sdk_mutex_lock(mutex->native, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
         return H2_PAL_ERR_IO;
     }
+    *out_locked = 1;
     return result;
+}
+
+static h2_pal_result_t sync_wait_cond(
+    void *user, h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms)
+{
+    (void)user;
+    int locked;
+    return h2_jieli_wl82_cond_wait_owned(cond, mutex, timeout_ms, &locked);
 }
 
 static h2_pal_result_t cond_wake(h2_pal_cond_t *cond, int all)

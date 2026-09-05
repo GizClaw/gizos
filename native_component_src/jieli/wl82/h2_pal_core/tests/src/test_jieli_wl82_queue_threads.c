@@ -16,6 +16,22 @@ struct h2_jieli_sdk_sem {
     unsigned count;
 };
 static atomic_int allocations, waiting, polling;
+static atomic_int reset_parked, reset_release;
+static _Thread_local int park_next_lock;
+
+uint32_t h2_jieli_sdk_time_ms(void) {
+    struct timespec now;
+    assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+    return (uint32_t)((uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u);
+}
+void h2_jieli_sdk_sleep_ms(uint32_t ms) {
+    struct timespec delay = {ms / 1000u, (long)(ms % 1000u) * 1000000L};
+    while (nanosleep(&delay, &delay) != 0) assert(errno == EINTR);
+}
+const void *h2_jieli_sdk_task_current(void) {
+    static _Thread_local int identity;
+    return &identity;
+}
 
 void *h2_jieli_sdk_malloc(size_t size) {
     void *p = calloc(1, size);
@@ -37,6 +53,14 @@ void h2_jieli_sdk_mutex_destroy(h2_jieli_sdk_mutex_t *m) {
 }
 int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t *m, uint32_t timeout) {
     (void)timeout;
+    if (park_next_lock) {
+        park_next_lock = 0;
+        atomic_store(&reset_parked, 1);
+        while (!atomic_load(&reset_release)) {
+            const struct timespec delay = {0, 1000000L};
+            (void)nanosleep(&delay, NULL);
+        }
+    }
     return pthread_mutex_lock(&m->lock) == 0 ? 0 : -1;
 }
 int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t *m) {
@@ -85,6 +109,14 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *s, uint32_t timeout) {
     return rc == 0 ? 0 : 1;
 }
 typedef struct worker { h2_pal_queue_t *queue; int send, result; } worker_t;
+static void *reset_receiver(void *arg) {
+    worker_t *w = arg;
+    int value = 0;
+    park_next_lock = 1;
+    w->result = h2_pal_queue_recv(h2_jieli_wl82_platform_queue_api(),
+                                w->queue, &value, 10u);
+    return NULL;
+}
 static void *run_worker(void *arg) {
     worker_t *w = arg;
     int value = 91;
@@ -117,6 +149,47 @@ static void await_waiters(int count) {
 int main(void) {
     const h2_pal_queue_api_t *api = h2_jieli_wl82_platform_queue_api();
     const h2_pal_queue_config_t config = {.item_size = sizeof(int), .item_count = 1u};
+    {
+        h2_pal_queue_t *queue = NULL;
+        int value = 7;
+        assert(h2_pal_queue_create(api, &config, &queue) == H2_PAL_OK);
+        assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+        worker_t receiver = {queue, 0, -1};
+        pthread_t thread;
+        assert(pthread_create(&thread, NULL, reset_receiver, &receiver) == 0);
+        for (unsigned i = 0; i < 5000u && !atomic_load(&reset_parked); ++i) {
+            const struct timespec delay = {0, 1000000L};
+            (void)nanosleep(&delay, NULL);
+        }
+        assert(atomic_load(&reset_parked));
+        assert(h2_pal_queue_reset(api, queue) == H2_PAL_OK);
+        atomic_store(&reset_release, 1);
+        assert(pthread_join(thread, NULL) == 0);
+        assert(receiver.result == H2_PAL_ERR_TIMEOUT);
+        assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+        assert(h2_pal_queue_recv(api, queue, &value, 0u) == H2_PAL_OK);
+        assert(value == 7);
+        h2_pal_queue_destroy(api, queue);
+        assert(atomic_load(&allocations) == 0);
+    }
+    {
+        h2_pal_queue_t *queue = NULL;
+        int value = 7;
+        assert(h2_pal_queue_create(api, &config, &queue) == H2_PAL_OK);
+        assert(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+        worker_t sender = {queue, 1, -1};
+        pthread_t thread;
+        assert(pthread_create(&thread, NULL, run_worker, &sender) == 0);
+        await_waiters(1);
+        assert(h2_pal_queue_reset(api, queue) == H2_PAL_OK);
+        assert(pthread_join(thread, NULL) == 0);
+        assert(sender.result == H2_PAL_OK);
+        assert(h2_pal_queue_recv(api, queue, &value, 0u) == H2_PAL_OK);
+        assert(value == 91);
+        assert(h2_pal_queue_recv(api, queue, &value, 0u) == H2_PAL_ERR_TIMEOUT);
+        h2_pal_queue_destroy(api, queue);
+        assert(atomic_load(&allocations) == 0);
+    }
     for (unsigned iteration = 0; iteration < 50u; ++iteration) {
         for (int send = 0; send <= 1; ++send) {
             h2_pal_queue_t *queue = NULL;

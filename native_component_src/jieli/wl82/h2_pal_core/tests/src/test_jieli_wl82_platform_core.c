@@ -275,6 +275,27 @@ static void test_queue_lock_failure_preserves_permits(void)
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
+static void test_queue_wait_relock_failure(void)
+{
+    const h2_pal_queue_api_t *api = h2_jieli_wl82_platform_queue_api();
+    const h2_pal_queue_config_t config = {.item_size = sizeof(int), .item_count = 1u};
+    h2_pal_queue_t *queue = NULL;
+    int value = 73, out = 0;
+    h2_jieli_fake_reset();
+    CHECK(h2_pal_queue_create(api, &config, &queue) == H2_PAL_OK);
+    h2_jieli_fake_set_sem_timeout_hook(h2_jieli_fake_fail_next_mutex_lock);
+    CHECK(h2_pal_queue_recv(api, queue, &out, 10u) == H2_PAL_ERR_IO);
+    CHECK(h2_jieli_fake_invalid_mutex_unlocks() == 0);
+    CHECK(h2_pal_queue_send(api, queue, &value, 0u) == H2_PAL_OK);
+    h2_jieli_fake_set_sem_timeout_hook(h2_jieli_fake_fail_next_mutex_lock);
+    CHECK(h2_pal_queue_send(api, queue, &value, 10u) == H2_PAL_ERR_IO);
+    CHECK(h2_jieli_fake_invalid_mutex_unlocks() == 0);
+    CHECK(h2_pal_queue_recv(api, queue, &out, 0u) == H2_PAL_OK);
+    CHECK(out == value);
+    h2_pal_queue_destroy(api, queue);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
 static void task_entry(void *ctx)
 {
     int *flag = (int *)ctx;
@@ -624,6 +645,7 @@ int main(void)
     test_sync_mutex_and_semaphore();
     test_queue_fifo_full_timeout_latest_and_close();
     test_queue_lock_failure_preserves_permits();
+    test_queue_wait_relock_failure();
     test_task_start_and_join();
     test_system_event_lifecycle_and_dispatch();
     test_timer_one_shot_and_periodic();

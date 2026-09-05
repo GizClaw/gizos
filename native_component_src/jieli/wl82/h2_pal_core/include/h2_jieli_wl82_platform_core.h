@@ -45,10 +45,16 @@ const h2_pal_time_api_t *h2_jieli_wl82_platform_time_api(void);
 /** Mutex, counting semaphore and condition variables on os_api. */
 const h2_pal_sync_api_t *h2_jieli_wl82_platform_sync_api(void);
 
+/** Internal wl82 helper for compound providers. Same wait contract as Sync,
+ * with explicit mutex ownership on error (SDK relock may fail). The caller
+ * enters holding mutex; out_locked is set on every path. */
+h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
+    h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms, int *out_locked);
+
 /** Thread-safe in-process event fanout used by BLE, network and loader services. */
 const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void);
 
-/** Bounded FIFO queue built from a heap ring buffer guarded by SDK mutex/semaphores. */
+/** Bounded FIFO with one mutex-protected ring and predicate-based condition waits. */
 const h2_pal_queue_api_t *h2_jieli_wl82_platform_queue_api(void);
 
 /** Task start on os_task_create with PAL completion and join semantics. */

@@ -57,6 +57,8 @@ void h2_jieli_fake_run_last_task_once(void);
 void h2_jieli_fake_fail_task_create(int fail);
 /** Fail the next mutex lock without changing mutex ownership. */
 void h2_jieli_fake_fail_next_mutex_lock(void);
+/** Attempts to unlock a mutex not held in the deterministic fake. */
+int h2_jieli_fake_invalid_mutex_unlocks(void);
 
 #ifdef __cplusplus
 }

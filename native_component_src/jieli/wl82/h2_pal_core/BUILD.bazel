@@ -82,6 +82,7 @@ cc_test(
     name = "test_jieli_wl82_queue_threads",
     srcs = [
         "src/h2_jieli_wl82_platform_queue.c",
+        "src/h2_jieli_wl82_platform_sync.c",
         "tests/src/test_jieli_wl82_queue_threads.c",
         "include/h2_jieli_wl82_atomic.h",
         "include/h2_jieli_wl82_platform_core.h",
