@@ -56,6 +56,9 @@ EM_ASYNC_JS(int, h2_web_http_fetch_js,
       encodedHeaders.push([encodedName, encodedValue]);
       headersLength += 8 + encodedName.byteLength + encodedValue.byteLength;
     });
+    // Finish asynchronous body reads before owning Wasm allocations: rejection
+    // or timeout must not leak headers on each failed attempt.
+    const bytes = new Uint8Array(await response.arrayBuffer());
     const responseHeaders = _malloc(headersLength);
     if (!responseHeaders) return -5;
     const headerView = new DataView(HEAPU8.buffer, responseHeaders,
@@ -71,7 +74,6 @@ EM_ASYNC_JS(int, h2_web_http_fetch_js,
       HEAPU8.set(value, responseHeaders + headerOffset);
       headerOffset += value.byteLength;
     }
-    const bytes = new Uint8Array(await response.arrayBuffer());
     const responseBody = bytes.byteLength ? _malloc(bytes.byteLength) : 0;
     if (bytes.byteLength && !responseBody) {
       _free(responseHeaders);

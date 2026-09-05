@@ -2,6 +2,7 @@
 
 #include <emscripten.h>
 #include <emscripten/eventloop.h>
+#include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -882,6 +883,42 @@ static int run_tests(void) {
   }
   h2_pal_http_response_free(h2_web_platform_http_api(platform),
                             &http_response);
+  // Body failures happen after headers arrive. Repeated retries must not retain
+  // Wasm header allocations, including when AbortController times out the body.
+  // clang-format off
+  EM_ASM({
+    globalThis.h2SavedFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => ({
+      status: 200,
+      headers: new Headers({'x-large-header': 'x'.repeat(16384)}),
+      arrayBuffer: () => globalThis.h2HttpBodyTimeout
+        ? new Promise((_resolve, reject) => options.signal.addEventListener(
+            'abort', () => reject(new DOMException('aborted', 'AbortError')),
+            {once: true}))
+        : Promise.reject(new Error('body transport failed')),
+    });
+  });
+  // clang-format on
+  for (int timeout = 0; timeout < 2; ++timeout) {
+    EM_ASM({ globalThis.h2HttpBodyTimeout = !!$0; }, timeout);
+    h2_pal_http_request_t failed_request = http_request;
+    failed_request.timeout_ms = 10;
+    const int expected = timeout ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
+    // Warm Asyncify and allocator bookkeeping before measuring retained memory.
+    if (h2_pal_http_request(h2_web_platform_http_api(platform), &failed_request,
+                           &http_response) != expected)
+      return 108;
+    const size_t allocated = mallinfo().uordblks;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+      if (h2_pal_http_request(h2_web_platform_http_api(platform), &failed_request,
+                             &http_response) != expected ||
+          http_response.body != NULL || http_response.status_code != 0)
+        return 109;
+    }
+    if ((size_t)mallinfo().uordblks > allocated)
+      return 110;
+  }
+  EM_ASM({ globalThis.fetch = globalThis.h2SavedFetch; });
   const h2_pal_audio_api_t *audio = h2_web_platform_audio_api(platform);
   const h2_audio_pcm_format_t audio_format = {
       .sample_rate_hz = 48000u,
