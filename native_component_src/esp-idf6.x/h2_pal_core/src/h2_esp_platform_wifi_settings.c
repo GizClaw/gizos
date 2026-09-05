@@ -3,6 +3,15 @@
 
 #include <string.h>
 
+/* SDK primary channel domains, including C5 5 GHz channels. The driver
+ * applies the target/country restrictions; zero means no channel hint. */
+static bool h2_esp_wifi_saved_channel_valid(uint8_t channel) {
+    return channel <= 14u ||
+        (channel >= 36u && channel <= 64u && channel % 4u == 0u) ||
+        (channel >= 100u && channel <= 144u && channel % 4u == 0u) ||
+        (channel >= 149u && channel <= 177u && (channel - 149u) % 4u == 0u);
+}
+
 static int h2_esp_wifi_settings_get_saved_sta_config(
     void *user,
     h2_pal_wifi_sta_config_t *out_config) {
@@ -21,7 +30,8 @@ static int h2_esp_wifi_settings_get_saved_sta_config(
         return rc;
     }
     if (record[0] != 1u || record[1] > H2_PAL_WIFI_SSID_MAX ||
-        record[2] > H2_PAL_WIFI_PASSWORD_MAX || record[3] > 1u) {
+        record[2] > H2_PAL_WIFI_PASSWORD_MAX || record[3] > 1u ||
+        !h2_esp_wifi_saved_channel_valid(record[4])) {
         return H2_PAL_ERR_IO;
     }
     if (record[1] == 0u) {
@@ -44,6 +54,9 @@ static int h2_esp_wifi_settings_set_saved_sta_config(
     int rc = h2_pal_wifi_settings_validate_sta_config(config);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    if (!h2_esp_wifi_saved_channel_valid(config->channel)) {
+        return H2_PAL_ERR_INVALID_ARG;
     }
     rc = h2_esp_platform_wifi_ensure_started();
     if (rc != H2_PAL_OK) {

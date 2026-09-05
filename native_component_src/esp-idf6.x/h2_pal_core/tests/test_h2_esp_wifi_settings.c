@@ -66,7 +66,7 @@ int main(void) {
     assert(memcmp(&input, &out, sizeof(input)) == 0);
 
     /* Reject malformed storage before using its lengths for copies. */
-    const unsigned offsets[] = {0u, 1u, 2u, 3u};
+    const unsigned offsets[] = {0u, 1u, 2u, 3u, 4u};
     for (unsigned i = 0u; i < sizeof(offsets) / sizeof(offsets[0]); ++i) {
         const uint8_t original = saved[offsets[i]];
         saved[offsets[i]] = 255u;
@@ -74,6 +74,22 @@ int main(void) {
         assert(h2_pal_wifi_settings_get_saved_sta_config(settings, &out) == H2_PAL_ERR_IO);
         assert_empty(&out);
         saved[offsets[i]] = original;
+    }
+
+    const uint8_t invalid_channels[] = {15u, 35u, 37u, 65u, 99u, 145u, 148u, 178u, 255u};
+    for (unsigned i = 0u; i < sizeof(invalid_channels); ++i) {
+        saved[4] = invalid_channels[i];
+        assert(h2_pal_wifi_settings_get_saved_sta_config(settings, &out) == H2_PAL_ERR_IO);
+        assert_empty(&out);
+        input.channel = invalid_channels[i];
+        assert(h2_pal_wifi_settings_set_saved_sta_config(settings, &input) == H2_PAL_ERR_INVALID_ARG);
+    }
+    const uint8_t valid_channels[] = {0u, 14u, 36u, 64u, 100u, 144u, 149u, 177u};
+    for (unsigned i = 0u; i < sizeof(valid_channels); ++i) {
+        input.channel = valid_channels[i];
+        assert(h2_pal_wifi_settings_set_saved_sta_config(settings, &input) == H2_PAL_OK);
+        assert(h2_pal_wifi_settings_get_saved_sta_config(settings, &out) == H2_PAL_OK);
+        assert(out.channel == input.channel);
     }
 
     assert(h2_pal_wifi_settings_clear_saved_sta_config(settings) == H2_PAL_OK);
