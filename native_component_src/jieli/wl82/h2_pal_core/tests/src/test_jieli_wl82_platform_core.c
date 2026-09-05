@@ -332,6 +332,16 @@ static int system_event_handler(void *user, const h2_pal_system_event_t *event)
     return H2_PAL_OK;
 }
 
+static int system_event_deinit_handler(void *user, const h2_pal_system_event_t *event)
+{
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    (*(unsigned *)user)++;
+    h2_pal_system_event_deinit(api);
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_ERR_BUSY);
+    CHECK(h2_pal_system_event_post(api, event, 0u) == H2_PAL_ERR_INVALID_STATE);
+    return H2_PAL_OK;
+}
+
 static void test_system_event_lifecycle_and_dispatch(void)
 {
     const h2_pal_system_event_api_t *api =
@@ -348,6 +358,16 @@ static void test_system_event_lifecycle_and_dispatch(void)
     int calls = 0;
     h2_jieli_fake_reset();
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
+    unsigned teardown_calls = 0u;
+    CHECK(h2_pal_system_event_subscribe(api, event.type,
+              system_event_deinit_handler, &teardown_calls, &subscription) == H2_PAL_OK);
+    CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    CHECK(teardown_calls == 1u);
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
+    CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    CHECK(teardown_calls == 1u);
+    h2_pal_system_event_deinit(api);
     CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
     CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
     CHECK(h2_pal_system_event_subscribe(
