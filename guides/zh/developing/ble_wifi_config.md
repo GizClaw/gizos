@@ -31,12 +31,14 @@ BLE Wi-Fi Config 负责：
 
 | Characteristic | UUID | 属性 | 用途 |
 | --- | --- | --- | --- |
-| Service | `0000a100-0000-1000-8000-00805f9b34fb` | - | 配网服务 |
-| CMD | `0000a101-0000-1000-8000-00805f9b34fb` | Write | 1 字节 opcode |
-| SCAN | `0000a102-0000-1000-8000-00805f9b34fb` | Notify | 每条一个 AP |
-| PROV | `0000a103-0000-1000-8000-00805f9b34fb` | Write + Notify | 写凭据，回配网结果 |
+| Service | `bdda0001-ca52-4b13-8f17-b1e139bd5d1a` | - | 配网服务 |
+| CMD | `bdda0002-ca52-4b13-8f17-b1e139bd5d1a` | Write | 1 字节 opcode |
+| SCAN | `bdda0003-ca52-4b13-8f17-b1e139bd5d1a` | Notify | 每条一个 AP |
+| PROV | `bdda0004-ca52-4b13-8f17-b1e139bd5d1a` | Write + Notify | 写凭据，回配网结果 |
 
-四个 UUID 都可以通过 `h2_ble_wifi_config_config_t` 覆盖，长度支持 2、4 或 16 字节；零长度选择上表中的默认值。默认 UUID 与仓库中已有的 BLE 服务（`libs/bleikcp` 的 `0xfee0`、H2Loader 的 128-bit 管理服务）不冲突。
+四个 UUID 都可以通过 `h2_ble_wifi_config_config_t` 覆盖，长度支持 2、4 或 16 字节；零长度选择上表中的默认值。
+
+默认值使用随机生成的 vendor base，只有 16-bit slot 在同一族内变化，而不是从 Bluetooth base UUID 派生的 16-bit alias：那段空间由 SIG 管理，占用一个未分配值可能与将来的分配或其它厂商的服务冲突。这与 H2Loader 管理服务使用随机 128-bit UUID 的做法一致，也与 `libs/bleikcp` 的 `0xfee0` 不冲突。App 侧（LiteLink Flutter 与微信小程序）写死同一组值。
 
 凭据帧最长 97 字节，因此协商后的 ATT MTU 必须至少为 100；App 侧请求 247。MTU 不足时 library 上报 `H2_BLE_WIFI_CONFIG_EVENT_MTU_TOO_SMALL`，并且不会自行增加分片层 —— 协议前提是每条 notify 只装一个 AP、每次 write 只装一组凭据，都在单个 chunk 内。
 

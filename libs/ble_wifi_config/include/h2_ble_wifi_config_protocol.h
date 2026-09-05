@@ -223,8 +223,10 @@ int h2_ble_wifi_config_encode_result(
  * @param entry Borrowed scan entry.
  * @param out_ap Cleared first, then filled on success.
  * @return H2_PAL_OK, H2_PAL_ERR_INVALID_ARG for a NULL argument, or
- * H2_PAL_ERR_NOT_FOUND for a hidden or over-long SSID that must not be
- * reported.
+ * H2_PAL_ERR_NOT_FOUND for an SSID that must not be reported: hidden,
+ * over-long, or not valid UTF-8. The phone applications decode the SSID
+ * strictly and drop the whole frame when that fails, so sending one would
+ * make the access point vanish from the list without explanation.
  */
 int h2_ble_wifi_config_ap_from_scan_entry(
     const h2_pal_wifi_scan_entry_t *entry,

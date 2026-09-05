@@ -5,23 +5,28 @@
 
 /*
  * 128-bit UUIDs in ATT byte order, which is the reverse of the printed form.
- * Printed: 0000a1xx-0000-1000-8000-00805f9b34fb.
+ * Printed: bdda000x-ca52-4b13-8f17-b1e139bd5d1a.
+ *
+ * A randomly generated vendor base, not a 16-bit alias off the Bluetooth base
+ * UUID: that range is administered by the SIG, so squatting an unassigned
+ * value there can collide with a future assignment or another vendor. Only
+ * the 16-bit slot varies across the family.
  */
 #define H2_BLE_WIFI_CONFIG_UUID_TAIL \
-    0xfbu, 0x34u, 0x9bu, 0x5fu, 0x80u, 0x00u, 0x00u, 0x80u, \
-    0x00u, 0x10u, 0x00u, 0x00u
+    0x1au, 0x5du, 0xbdu, 0x39u, 0xe1u, 0xb1u, 0x17u, 0x8fu, \
+    0x13u, 0x4bu, 0x52u, 0xcau
 
 const uint8_t h2_ble_wifi_config_default_service_uuid[16] = {
-    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x00u, 0xa1u, 0x00u, 0x00u,
+    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x01u, 0x00u, 0xdau, 0xbdu,
 };
 const uint8_t h2_ble_wifi_config_default_command_uuid[16] = {
-    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x01u, 0xa1u, 0x00u, 0x00u,
+    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x02u, 0x00u, 0xdau, 0xbdu,
 };
 const uint8_t h2_ble_wifi_config_default_scan_uuid[16] = {
-    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x02u, 0xa1u, 0x00u, 0x00u,
+    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x03u, 0x00u, 0xdau, 0xbdu,
 };
 const uint8_t h2_ble_wifi_config_default_provision_uuid[16] = {
-    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x03u, 0xa1u, 0x00u, 0x00u,
+    H2_BLE_WIFI_CONFIG_UUID_TAIL, 0x04u, 0x00u, 0xdau, 0xbdu,
 };
 
 static bool h2_ble_wifi_config_api_valid(const h2_ble_wifi_config_api_t *api) {

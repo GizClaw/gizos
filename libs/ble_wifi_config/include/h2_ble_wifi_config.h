@@ -23,10 +23,13 @@ extern "C" {
  *
  * | Characteristic | UUID | Properties |
  * | --- | --- | --- |
- * | Service | 0000a100-0000-1000-8000-00805f9b34fb | - |
- * | Command | 0000a101-0000-1000-8000-00805f9b34fb | Write |
- * | Scan | 0000a102-0000-1000-8000-00805f9b34fb | Notify |
- * | Provisioning | 0000a103-0000-1000-8000-00805f9b34fb | Write, Notify |
+ * | Service | bdda0001-ca52-4b13-8f17-b1e139bd5d1a | - |
+ * | Command | bdda0002-ca52-4b13-8f17-b1e139bd5d1a | Write |
+ * | Scan | bdda0003-ca52-4b13-8f17-b1e139bd5d1a | Notify |
+ * | Provisioning | bdda0004-ca52-4b13-8f17-b1e139bd5d1a | Write, Notify |
+ *
+ * The family uses a randomly generated vendor base rather than a 16-bit alias
+ * off the Bluetooth base UUID, whose range belongs to the SIG.
  *
  * The wire format of every frame is documented in
  * h2_ble_wifi_config_protocol.h.

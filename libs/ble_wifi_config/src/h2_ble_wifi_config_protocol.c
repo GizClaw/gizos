@@ -1,5 +1,6 @@
 #include "h2_ble_wifi_config_protocol.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 /*
@@ -139,6 +140,62 @@ int h2_ble_wifi_config_encode_result(
     return H2_PAL_OK;
 }
 
+/**
+ * Strict UTF-8 validation, matching what the phone applications accept.
+ *
+ * A beacon SSID is arbitrary bytes. The applications decode it strictly and
+ * drop the whole frame when that fails, so an access point with a non-UTF-8
+ * SSID would silently vanish from the list. Dropping it here instead keeps
+ * both sides on the same rule and counts it.
+ *
+ * Overlong encodings, surrogates and code points above U+10FFFF are rejected.
+ */
+static bool h2_ble_wifi_config_is_valid_utf8(const char *data, size_t len) {
+    size_t i = 0u;
+    while (i < len) {
+        uint8_t byte = (uint8_t)data[i];
+        size_t extra;
+        uint32_t min_code_point;
+        uint32_t code_point;
+        if (byte < 0x80u) {
+            i++;
+            continue;
+        }
+        if (byte >= 0xc2u && byte <= 0xdfu) {
+            extra = 1u;
+            min_code_point = 0x80u;
+            code_point = (uint32_t)(byte & 0x1fu);
+        } else if (byte >= 0xe0u && byte <= 0xefu) {
+            extra = 2u;
+            min_code_point = 0x800u;
+            code_point = (uint32_t)(byte & 0x0fu);
+        } else if (byte >= 0xf0u && byte <= 0xf4u) {
+            extra = 3u;
+            min_code_point = 0x10000u;
+            code_point = (uint32_t)(byte & 0x07u);
+        } else {
+            /* 0x80-0xc1 and 0xf5-0xff cannot start a sequence. */
+            return false;
+        }
+        if (len - i <= extra) {
+            return false;
+        }
+        for (size_t j = 1u; j <= extra; ++j) {
+            uint8_t continuation = (uint8_t)data[i + j];
+            if (continuation < 0x80u || continuation > 0xbfu) {
+                return false;
+            }
+            code_point = (code_point << 6) | (uint32_t)(continuation & 0x3fu);
+        }
+        if (code_point < min_code_point || code_point > 0x10ffffu ||
+            (code_point >= 0xd800u && code_point <= 0xdfffu)) {
+            return false;
+        }
+        i += extra + 1u;
+    }
+    return true;
+}
+
 int h2_ble_wifi_config_ap_from_scan_entry(
     const h2_pal_wifi_scan_entry_t *entry,
     h2_ble_wifi_config_ap_t *out_ap) {
@@ -150,6 +207,9 @@ int h2_ble_wifi_config_ap_from_scan_entry(
     }
     /* Hidden and over-long SSIDs have no representation on the wire. */
     if (entry->ssid_len == 0u || entry->ssid_len > H2_BLE_WIFI_CONFIG_SSID_MAX) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+    if (!h2_ble_wifi_config_is_valid_utf8(entry->ssid, entry->ssid_len)) {
         return H2_PAL_ERR_NOT_FOUND;
     }
     memcpy(out_ap->ssid, entry->ssid, entry->ssid_len);
