@@ -193,6 +193,7 @@ typedef struct waiter {
   fixture_t *fx;
   uint32_t timeout_ms;
   pthread_t thread;
+  volatile bool waiting;
   volatile bool returned;
   h2_pal_result_t result;
   unsigned wakeups;
@@ -204,6 +205,10 @@ static void *forever_waiter(void *user) {
   fixture_t *fx = w->fx;
   assert(h2_pal_mutex_lock(fx->api, fx->mutex) == H2_PAL_OK);
   while (!fx->done) {
+    /* Set while holding the mutex: once main sees it and takes the mutex,
+     * this thread is registered on the condition (wait registers before it
+     * releases the mutex). */
+    w->waiting = true;
     w->result = h2_pal_cond_wait(fx->api, fx->cond, fx->mutex, w->timeout_ms);
     assert(w->result == H2_PAL_OK);
     w->wakeups++;
@@ -259,6 +264,13 @@ static void wait_registered(fixture_t *fx, uint32_t at_least) {
   assert(registered_waiters(fx) >= at_least);
 }
 
+static void wait_waiting(waiter_t *w) {
+  for (unsigned i = 0; i < 5000u && !w->waiting; ++i) {
+    sleep_ms(1u);
+  }
+  assert(w->waiting);
+}
+
 static void wait_returned(waiter_t *w) {
   for (unsigned i = 0; i < 5000u && !w->returned; ++i) {
     sleep_ms(1u);
@@ -299,10 +311,12 @@ static void test_broadcast_reaches_parked_waiter_despite_poller(void) {
     waiter_t parked, poller;
     start(&poller, &fx, 1u, polling_waiter);
     start(&parked, &fx, H2_PAL_SYNC_WAIT_FOREVER, forever_waiter);
-    wait_registered(&fx, 1u);
+    wait_waiting(&parked);
     /* Let the poller cycle a few times around the parked waiter. */
     sleep_ms(3u);
+    /* Taking the mutex here guarantees the parked waiter is registered. */
     assert(h2_pal_mutex_lock(fx.api, fx.mutex) == H2_PAL_OK);
+    assert(registered_waiters(&fx) >= 1u);
     fx.done = true;
     assert(h2_pal_cond_broadcast(fx.api, fx.cond) == H2_PAL_OK);
     assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);

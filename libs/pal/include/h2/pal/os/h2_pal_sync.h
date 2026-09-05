@@ -50,8 +50,9 @@ typedef struct h2_pal_cond_config {
  *   wakes every waiter registered at that moment, regardless of other waiters
  *   timing out or re-entering the wait concurrently: a wakeup is bound to a
  *   specific waiter and cannot be consumed by a later wait call;
- * - a wakeup that lands after the waiter's timeout expired but before the
- *   waiter deregistered is still reported as H2_PAL_OK;
+ * - a wakeup that races with the expiry of a timed wait may be reported as
+ *   either H2_PAL_OK or H2_PAL_ERR_TIMEOUT; callers re-check their predicate
+ *   after every return instead of relying on the result code;
  * - signal or broadcast with no registered waiter is a no-op and leaves no
  *   pending wakeup for a later wait;
  * - destroying a condition that still has a registered waiter is a caller
