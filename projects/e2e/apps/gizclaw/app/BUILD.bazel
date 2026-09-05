@@ -150,31 +150,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", ":runner", ":speech_case", ":profile_case", ":workflow_case", ":workspace_case", ":contact_case", ":friend_case", ":telemetry_case", ":point_case", ":pet_case", ":group_audio_case", ":group_case", ":group_message_case", ":voice_case", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_library(
-    name = "group_message_case",
-    srcs = ["src/h2_gizclaw_e2e_group_message.c"],
-    hdrs = ["src/h2_gizclaw_e2e_group_message.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_test(
-    name = "gizclaw_e2e_group_message_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_group_message.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":group_message_case"],
+    deps = [":fixture", ":runner", ":speech_case", ":profile_case", ":workflow_case", ":workspace_case", ":contact_case", ":friend_case", ":telemetry_case", ":point_case", ":pet_case", ":group_case", ":voice_case", "//libs/gizclaw", "//libs/pal"],
 )
 
 cc_library(
@@ -199,30 +175,6 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":group_case"],
-)
-
-cc_library(
-    name = "group_audio_case",
-    srcs = ["src/h2_gizclaw_e2e_group_audio.c"],
-    hdrs = ["src/h2_gizclaw_e2e_group_audio.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_test(
-    name = "gizclaw_e2e_group_audio_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_group_audio.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":group_audio_case"],
 )
 
 cc_library(

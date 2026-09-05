@@ -49,10 +49,10 @@ class CoverageTest(unittest.TestCase):
         return coverage.audit(lines, self.rules if rules is None else rules,
                               **{**IDENTITY, "process_exit_code": 0, **kwargs})
 
-    def test_independent_matrix_matches_all_190_approved_functions(self):
+    def test_independent_matrix_matches_all_181_approved_functions(self):
         inventory = (coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text()
         coverage.validate_inventory(self.rules, inventory)
-        self.assertEqual(len(self.rules), 190)
+        self.assertEqual(len(self.rules), 181)
         for changed in (self.rules[:-1], self.rules + self.rules[:1]):
             with self.assertRaises(ValueError):
                 coverage.validate_inventory(changed, inventory)
@@ -62,7 +62,7 @@ class CoverageTest(unittest.TestCase):
     def test_all_functions_need_ordered_calls_and_assertion(self):
         result = self.audit(self.lines)
         self.assertTrue(result["valid"], result["issues"])
-        self.assertEqual(result["covered"], 190)
+        self.assertEqual(result["covered"], 181)
         self.assertEqual(result["missing"], 0)
         for row in result["functions"]:
             self.assertEqual(len(row["call_lines"]), len(row["calls"]))

@@ -21,9 +21,9 @@ typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
 
 /** A valid RPC error response, distinct from PAL transport/format failures.
- * Business NOT_FOUND (404) instead returns H2_PAL_ERR_NOT_FOUND from req_wait,
- * response parsers and synchronous RPCs. METHOD_NOT_FOUND and all other remote
- * error codes remain H2_GIZCLAW_ERR_REMOTE. */
+ * A canonical NOT_FOUND status instead returns H2_PAL_ERR_NOT_FOUND from
+ * req_wait, response parsers and synchronous RPCs. UNIMPLEMENTED and all other
+ * status codes remain H2_GIZCLAW_ERR_REMOTE. */
 #define H2_GIZCLAW_ERR_REMOTE ((h2_pal_result_t) - 1000)
 
 /** Fill at most capacity bytes for one data-up request. `OK` with zero bytes

@@ -28,7 +28,7 @@ class PointCoverageTest(unittest.TestCase):
         self.assertEqual(observed, expected)
         # Gameplay's Pet methods and all other cases are still absent here.
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 184)
+        self.assertEqual(result["missing"], 175)
 
 
 if __name__ == "__main__":

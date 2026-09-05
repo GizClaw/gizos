@@ -2359,19 +2359,26 @@ static void test_req_remote_error_mapping(void) {
     h2_pal_result_t expected;
   } cases[] = {
       {true, H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_OK, H2_PAL_ERR_NOT_FOUND},
-      {true, H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND, H2_PAL_OK,
+      {true, H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED, H2_PAL_OK,
        H2_GIZCLAW_ERR_REMOTE},
-      {true, H2_GIZCLAW_RPC_ERROR_BAD_REQUEST, H2_PAL_OK,
+      {true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT, H2_PAL_OK,
        H2_GIZCLAW_ERR_REMOTE},
-      {true, H2_GIZCLAW_RPC_ERROR_FORBIDDEN, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
-      {true, H2_GIZCLAW_RPC_ERROR_CONFLICT, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
+      {true, H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED, H2_PAL_OK,
+       H2_GIZCLAW_ERR_REMOTE},
+      {true, H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION, H2_PAL_OK,
+       H2_GIZCLAW_ERR_REMOTE},
+      {true, H2_GIZCLAW_RPC_ERROR_UNAVAILABLE, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
+      /* The retired HTTP number is no longer resource absence. */
+      {true, 404, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
       {true, 0, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
       {true, INT_MIN, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
       {true, INT_MAX, H2_PAL_OK, H2_GIZCLAW_ERR_REMOTE},
-      {true, 404, H2_PAL_ERR_TIMEOUT, H2_PAL_ERR_TIMEOUT},
-      {true, 404, H2_PAL_ERR_FORMAT, H2_PAL_ERR_FORMAT},
-      {true, 404, H2_PAL_ERR_IO, H2_PAL_ERR_IO},
-      {false, 404, H2_PAL_OK, H2_PAL_OK},
+      {true, H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_ERR_TIMEOUT,
+       H2_PAL_ERR_TIMEOUT},
+      {true, H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_ERR_FORMAT,
+       H2_PAL_ERR_FORMAT},
+      {true, H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_ERR_IO, H2_PAL_ERR_IO},
+      {false, H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_OK, H2_PAL_OK},
   };
   /* A valid empty DeviceInfo, not an error response. */
   static const uint8_t payload[] = {0x0a, 0x00};
@@ -2738,7 +2745,7 @@ static void test_workspace_selection_boundaries(void) {
           .response_len = sizeof(response),
           .has_error = mode == 4u || mode == 5u,
           .error_code = mode == 4u ? H2_GIZCLAW_RPC_ERROR_NOT_FOUND
-                                   : H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND,
+                                   : H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED,
       };
       workspace_test_use_single(&mock);
       h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
@@ -3378,7 +3385,7 @@ static void test_friend_public_request_paths(void) {
                                       &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){text, 1u}, 1u,
                                       1234u, &storage,
                                       &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3428,7 +3435,7 @@ static void test_friend_public_request_paths(void) {
                                           &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_info_get(service, (h2_gizclaw_str_t){text, 1u},
                                           1234u, &storage,
                                           &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3475,7 +3482,7 @@ static void test_friend_public_request_paths(void) {
                                      &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_add(service, (h2_gizclaw_str_t){text, 1u},
                                      1234u, &storage,
                                      &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3522,7 +3529,7 @@ static void test_friend_public_request_paths(void) {
                                         &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_delete(service, (h2_gizclaw_str_t){text, 1u},
                                         1234u, &storage,
                                         &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3574,7 +3581,7 @@ static void test_friend_public_request_paths(void) {
                                                   &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_invite_token_get(
                service, 1234u, &storage, &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -3624,7 +3631,7 @@ static void test_friend_public_request_paths(void) {
                service, 1234u, &storage, &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_invite_token_create(
                service, 1234u, &storage, &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -3666,7 +3673,7 @@ static void test_friend_public_request_paths(void) {
     assert(h2_gizclaw_rpc_friend_invite_token_clear(service, 1234u) ==
            H2_PAL_ERR_FORMAT);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_invite_token_clear(service, 1234u) ==
            H2_PAL_ERR_NOT_FOUND);
   }
@@ -3736,7 +3743,7 @@ static void test_friend_group_public_request_paths(void) {
                                            &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_get(service, text_arg, 1234u, &storage,
                                            &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -3791,7 +3798,7 @@ static void test_friend_group_public_request_paths(void) {
                                               &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_create(service, text_arg, text_arg,
                                               text_arg, 1234u, &storage,
                                               &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3847,7 +3854,7 @@ static void test_friend_group_public_request_paths(void) {
                                            &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_put(service, text_arg, text_arg,
                                            text_arg, 1234u, &storage,
                                            &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3901,7 +3908,7 @@ static void test_friend_group_public_request_paths(void) {
                                               &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_delete(service, text_arg, 1234u,
                                               &storage,
                                               &value) == H2_PAL_ERR_NOT_FOUND);
@@ -3955,7 +3962,7 @@ static void test_friend_group_public_request_paths(void) {
                                             &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_join(service, text_arg, text_arg, 1234u,
                                             &storage,
                                             &value) == H2_PAL_ERR_NOT_FOUND);
@@ -4012,7 +4019,7 @@ static void test_friend_group_public_request_paths(void) {
            H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_invite_token_get(
                service, text_arg, 1234u, &storage, &value) ==
            H2_PAL_ERR_NOT_FOUND);
@@ -4071,7 +4078,7 @@ static void test_friend_group_public_request_paths(void) {
            H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_invite_token_create(
                service, text_arg, 1234u, &storage, &value) ==
            H2_PAL_ERR_NOT_FOUND);
@@ -4117,7 +4124,7 @@ static void test_friend_group_public_request_paths(void) {
                service, text_arg, 1234u) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_friend_group_invite_token_clear(
                service, text_arg, 1234u) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -4126,178 +4133,7 @@ static void test_friend_group_public_request_paths(void) {
   assert(strcmp(saved.name, "x") == 0 && strcmp(saved.display_name, "D") == 0);
 }
 
-static bool test_encode_friend_group_message(pb_ostream_t *stream,
-                                             const pb_field_t *field,
-                                             void *const *arg) {
-  const gizclaw_rpc_v1_FriendGroupMessageObject *message = *arg;
-  return message != NULL && pb_encode_tag_for_field(stream, field) &&
-         pb_encode_submessage(
-             stream, gizclaw_rpc_v1_FriendGroupMessageObject_fields, message);
-}
-
-static void test_friend_group_message_fixture(
-    gizclaw_rpc_v1_FriendGroupMessageObject *message) {
-  *message = (gizclaw_rpc_v1_FriendGroupMessageObject)
-      gizclaw_rpc_v1_FriendGroupMessageObject_init_zero;
-  (void)snprintf(message->created_at, sizeof(message->created_at), "%s",
-                 "2026-08-05T00:00:00Z");
-  (void)snprintf(message->friend_group_name, sizeof(message->friend_group_name),
-                 "%s", "group-1");
-  (void)snprintf(message->sender_peer_public_key,
-                 sizeof(message->sender_peer_public_key), "%s", "peer-1");
-  message->has_sender_peer_public_key = true;
-  (void)snprintf(message->name, sizeof(message->name), "%s", "history-1");
-  (void)snprintf(message->actor_name, sizeof(message->actor_name), "%s",
-                 "Nova");
-  (void)snprintf(message->text, sizeof(message->text), "%s", "hello");
-  message->type =
-      gizclaw_rpc_v1_PeerRunHistoryEntryType_PEER_RUN_HISTORY_ENTRY_TYPE_AGENT;
-  message->audio_available = true;
-}
-
-static bool test_encode_friend_group_message_list_response(uint8_t *buffer,
-                                                           size_t capacity,
-                                                           bool invalid_utf8,
-                                                           size_t *out_len) {
-  gizclaw_rpc_v1_FriendGroupMessageObject message;
-  test_friend_group_message_fixture(&message);
-  if (invalid_utf8) {
-    message.text[0] = (char)0xc0;
-    message.text[1] = (char)0x80;
-    message.text[2] = '\0';
-  }
-  gizclaw_rpc_v1_FriendGroupMessageListResponse response =
-      gizclaw_rpc_v1_FriendGroupMessageListResponse_init_zero;
-  response.items.funcs.encode = test_encode_friend_group_message;
-  response.items.arg = &message;
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer, capacity);
-  if (!pb_encode(&stream, gizclaw_rpc_v1_FriendGroupMessageListResponse_fields,
-                 &response)) {
-    return false;
-  }
-  *out_len = stream.bytes_written;
-  return true;
-}
-
-static bool test_encode_friend_group_message_get_response(uint8_t *buffer,
-                                                          size_t capacity,
-                                                          size_t *out_len) {
-  gizclaw_rpc_v1_FriendGroupMessageGetResponse response =
-      gizclaw_rpc_v1_FriendGroupMessageGetResponse_init_zero;
-  response.has_value = true;
-  test_friend_group_message_fixture(&response.value);
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer, capacity);
-  if (!pb_encode(&stream, gizclaw_rpc_v1_FriendGroupMessageGetResponse_fields,
-                 &response)) {
-    return false;
-  }
-  *out_len = stream.bytes_written;
-  return true;
-}
-
-static int test_friend_group_message_projection_rpcs(void) {
-  int fails = 0;
-  test_env_t env;
-  h2_gizclaw_service_t *service = create_profile_service(&env);
-  h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
-  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-  uint8_t storage_buffer[4096];
-  h2_gizclaw_resp_storage_t storage = {.data = storage_buffer,
-                                       .capacity = sizeof(storage_buffer)};
-  const h2_gizclaw_str_t group_name = {.data = "group-1", .len = 7u};
-  const h2_gizclaw_str_t history_name = {.data = "history-1", .len = 9u};
-  const uint8_t list_request[] = {
-      0x12, 0x07, 'g', 'r', 'o', 'u', 'p', '-', '1', 0x18, 0x08,
-  };
-  uint8_t response[512];
-  size_t response_len = 0u;
-  fails +=
-      workspace_expect(test_encode_friend_group_message_list_response(
-                           response, sizeof(response), false, &response_len),
-                       "friend group message list response fixture encodes");
-  test_contact_rpc_t mock = {
-      .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST,
-      .expected_request = list_request,
-      .expected_request_len = sizeof(list_request),
-      .response = response,
-      .response_len = response_len,
-  };
-  workspace_test_use_single(&mock);
-  h2_gizclaw_friend_group_message_page_t page = {0};
-  fails += workspace_expect(
-      h2_gizclaw_rpc_friend_group_message_list(service, group_name,
-                                               (h2_gizclaw_str_t){0}, 8u, 1234u,
-                                               &storage, &page) == H2_PAL_OK,
-      "friend group message list accepts a history projection");
-  fails += workspace_expect(
-      mock.calls == 1 && mock.request_matches && page.count == 1u &&
-          strcmp(page.items[0].friend_group_name, "group-1") == 0 &&
-          strcmp(page.items[0].history_id, "history-1") == 0 &&
-          strcmp(page.items[0].sender_peer_public_key, "peer-1") == 0 &&
-          strcmp(page.items[0].name, "Nova") == 0 &&
-          strcmp(page.items[0].text, "hello") == 0 &&
-          page.items[0].type == H2_GIZCLAW_FRIEND_GROUP_MESSAGE_TYPE_AGENT &&
-          page.items[0].audio_available,
-      "friend group message list maps group and Workspace History identity");
-  /* Caller storage owns this snapshot. */
-
-  response_len = 0u;
-  fails +=
-      workspace_expect(test_encode_friend_group_message_list_response(
-                           response, sizeof(response), true, &response_len),
-                       "invalid UTF-8 message response fixture encodes");
-  mock = (test_contact_rpc_t){
-      .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST,
-      .expected_request = list_request,
-      .expected_request_len = sizeof(list_request),
-      .response = response,
-      .response_len = response_len,
-  };
-  fails +=
-      workspace_expect(h2_gizclaw_rpc_friend_group_message_list(
-                           service, group_name, (h2_gizclaw_str_t){0}, 8u,
-                           1234u, &storage, &page) == H2_PAL_ERR_FORMAT,
-                       "friend group message list rejects invalid UTF-8 text");
-  fails +=
-      workspace_expect(page.items == NULL && page.count == 0u,
-                       "invalid message projection releases partial ownership");
-
-  const uint8_t get_request[] = {
-      0x0a, 0x07, 'g', 'r', 'o', 'u', 'p', '-', '1', 0x12,
-      0x09, 'h',  'i', 's', 't', 'o', 'r', 'y', '-', '1',
-  };
-  response_len = 0u;
-  fails +=
-      workspace_expect(test_encode_friend_group_message_get_response(
-                           response, sizeof(response), &response_len),
-                       "friend group message get response fixture encodes");
-  mock = (test_contact_rpc_t){
-      .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_GET,
-      .expected_request = get_request,
-      .expected_request_len = sizeof(get_request),
-      .response = response,
-      .response_len = response_len,
-  };
-  h2_gizclaw_friend_group_message_t message = {0};
-  fails +=
-      workspace_expect(h2_gizclaw_rpc_friend_group_message_get(
-                           service, group_name, history_name, 1234u, &storage,
-                           &message) == H2_PAL_OK,
-                       "friend group message get accepts a history projection");
-  fails += workspace_expect(
-      mock.calls == 1 && mock.request_matches &&
-          strcmp(message.friend_group_name, "group-1") == 0 &&
-          strcmp(message.history_id, "history-1") == 0 &&
-          message.audio_available,
-      "friend group message get preserves the requested history identity");
-
-  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-  assert(strcmp(message.history_id, "history-1") == 0);
-  return fails;
-}
-
-static void test_group_member_and_message_request_paths(void) {
+static void test_group_member_request_paths(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
@@ -4366,7 +4202,7 @@ static void test_group_member_and_message_request_paths(void) {
            H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 403;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED;
     assert(h2_gizclaw_rpc_friend_group_member_list(
                service, text_arg, text_arg, 1u, 1234u, &storage, &value) ==
            H2_GIZCLAW_ERR_REMOTE);
@@ -4420,7 +4256,7 @@ static void test_group_member_and_message_request_paths(void) {
                1234u, &storage, &value) == H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 403;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED;
     assert(h2_gizclaw_rpc_friend_group_member_put(
                service, text_arg, text_arg, H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER,
                1234u, &storage, &value) == H2_GIZCLAW_ERR_REMOTE);
@@ -4472,127 +4308,9 @@ static void test_group_member_and_message_request_paths(void) {
            H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 403;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED;
     assert(h2_gizclaw_rpc_friend_group_member_delete(
                service, text_arg, text_arg, 1234u, &storage, &value) ==
-           H2_GIZCLAW_ERR_REMOTE);
-  }
-  {
-    char text[] = "x";
-    h2_gizclaw_str_t text_arg = {text, 1u};
-    static const uint8_t input[] = {0x0a, 1, 'x', 0x12, 1, 'x', 0x18, 1};
-    uint8_t response[512];
-    size_t response_len;
-    assert(test_encode_friend_group_message_list_response(
-        response, sizeof(response), false, &response_len));
-    mock = (test_contact_rpc_t){
-        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST,
-        .expected_request = input,
-        .expected_request_len = sizeof(input),
-        .response = response,
-        .response_len = response_len};
-    h2_gizclaw_friend_group_message_page_t value;
-    assert(h2_gizclaw_req_create_friend_group_message_list(
-               service, 1u, text_arg, text_arg, 1u, 1234u, &request) ==
-           H2_PAL_OK);
-    assert(mock.calls == 0);
-    assert(h2_gizclaw_resp_parse_friend_group_message_list(
-               request, &storage, &value) == H2_PAL_ERR_INVALID_STATE);
-    text[0] = 'y';
-    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
-    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
-           mock.request_matches);
-    assert(h2_gizclaw_resp_parse_friend_group_message_list(
-               request, &storage, &value) == H2_PAL_OK);
-    assert(value.count == 1u);
-    assert(strcmp(value.items[0].history_id, "history-1") == 0);
-    assert(strcmp(value.items[0].text, "hello") == 0 &&
-           value.items[0].audio_available);
-    h2_gizclaw_resp_storage_t tiny = {.data = arena_buffer, .capacity = 1u};
-    assert(h2_gizclaw_resp_parse_friend_group_message_list(
-               request, &tiny, &value) == H2_PAL_ERR_NO_SPACE &&
-           tiny.used == 0u);
-    h2_gizclaw_req_release(request);
-    text[0] = 'x';
-    assert(h2_gizclaw_rpc_friend_group_message_list(service, text_arg, text_arg,
-                                                    1u, 1234u, &storage,
-                                                    &value) == H2_PAL_OK);
-    const size_t checkpoint = storage.used;
-    uint8_t too_many[1024];
-    assert(response_len * 2u <= sizeof(too_many));
-    memcpy(too_many, response, response_len);
-    memcpy(too_many + response_len, response, response_len);
-    mock.response = too_many;
-    mock.response_len = response_len * 2u;
-    assert(h2_gizclaw_rpc_friend_group_message_list(
-               service, text_arg, text_arg, 1u, 1234u, &storage, &value) ==
-           H2_PAL_ERR_FORMAT);
-    assert(value.count == 0u && value.items == NULL &&
-           storage.used == checkpoint);
-    static const uint8_t bad[] = {0x0a};
-    mock.response = bad;
-    mock.response_len = sizeof(bad);
-    assert(h2_gizclaw_rpc_friend_group_message_list(
-               service, text_arg, text_arg, 1u, 1234u, &storage, &value) ==
-           H2_PAL_ERR_FORMAT);
-    assert(storage.used == checkpoint);
-    mock.has_error = true;
-    mock.error_code = 403;
-    assert(h2_gizclaw_rpc_friend_group_message_list(
-               service, text_arg, text_arg, 1u, 1234u, &storage, &value) ==
-           H2_GIZCLAW_ERR_REMOTE);
-  }
-  {
-    char text[] = "x";
-    h2_gizclaw_str_t text_arg = {text, 1u};
-    static const uint8_t input[] = {0x0a, 1, 'x', 0x12, 1, 'x'};
-    uint8_t response[512];
-    size_t response_len;
-    assert(test_encode_friend_group_message_get_response(
-        response, sizeof(response), &response_len));
-    mock = (test_contact_rpc_t){
-        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_GET,
-        .expected_request = input,
-        .expected_request_len = sizeof(input),
-        .response = response,
-        .response_len = response_len};
-    h2_gizclaw_friend_group_message_t value;
-    assert(h2_gizclaw_req_create_friend_group_message_get(
-               service, 1u, text_arg, text_arg, 1234u, &request) == H2_PAL_OK);
-    assert(mock.calls == 0);
-    assert(h2_gizclaw_resp_parse_friend_group_message_get(
-               request, &storage, &value) == H2_PAL_ERR_INVALID_STATE);
-    text[0] = 'y';
-    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
-    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
-           mock.request_matches);
-    assert(h2_gizclaw_resp_parse_friend_group_message_get(request, &storage,
-                                                          &value) == H2_PAL_OK);
-
-    assert(strcmp(value.history_id, "history-1") == 0);
-    assert(strcmp(value.text, "hello") == 0 && value.audio_available);
-    h2_gizclaw_resp_storage_t tiny = {.data = arena_buffer, .capacity = 1u};
-    assert(h2_gizclaw_resp_parse_friend_group_message_get(
-               request, &tiny, &value) == H2_PAL_ERR_NO_SPACE &&
-           tiny.used == 0u);
-    h2_gizclaw_req_release(request);
-    text[0] = 'x';
-    assert(h2_gizclaw_rpc_friend_group_message_get(service, text_arg, text_arg,
-                                                   1234u, &storage,
-                                                   &value) == H2_PAL_OK);
-    const size_t checkpoint = storage.used;
-
-    static const uint8_t bad[] = {0x0a};
-    mock.response = bad;
-    mock.response_len = sizeof(bad);
-    assert(h2_gizclaw_rpc_friend_group_message_get(service, text_arg, text_arg,
-                                                   1234u, &storage, &value) ==
-           H2_PAL_ERR_FORMAT);
-    assert(storage.used == checkpoint);
-    mock.has_error = true;
-    mock.error_code = 403;
-    assert(h2_gizclaw_rpc_friend_group_message_get(service, text_arg, text_arg,
-                                                   1234u, &storage, &value) ==
            H2_GIZCLAW_ERR_REMOTE);
   }
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
@@ -4649,29 +4367,6 @@ static void test_social_full_page_arena_growth(void) {
                1234u, &storage, &page) == H2_PAL_OK);
     assert(mock.request_matches && page.count == 64u);
     assert(strcmp(page.items[63].id, "m") == 0);
-  }
-  {
-    uint8_t item[512];
-    size_t item_len;
-    assert(test_encode_friend_group_message_list_response(item, sizeof(item),
-                                                          false, &item_len));
-    assert(item_len * 64u <= sizeof(payload));
-    for (size_t i = 0; i < 64u; ++i)
-      memcpy(payload + i * item_len, item, item_len);
-    static const uint8_t input[] = {0x12, 1, 'x', 0x18, 64};
-    mock = (test_contact_rpc_t){
-        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST,
-        .expected_request = input,
-        .expected_request_len = sizeof(input),
-        .response = payload,
-        .response_len = item_len * 64u};
-    storage.used = 0u;
-    h2_gizclaw_friend_group_message_page_t page;
-    assert(h2_gizclaw_rpc_friend_group_message_list(
-               service, (h2_gizclaw_str_t){"x", 1u}, (h2_gizclaw_str_t){0}, 64u,
-               1234u, &storage, &page) == H2_PAL_OK);
-    assert(mock.request_matches && page.count == 64u);
-    assert(strcmp(page.items[63].history_id, "history-1") == 0);
   }
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -4740,7 +4435,7 @@ static void test_pet_public_request_paths(void) {
                H2_PAL_ERR_FORMAT &&
            storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_pet_get(service, text_arg, 1234u, &storage, &value) ==
            H2_PAL_ERR_NOT_FOUND);
   }
@@ -4795,7 +4490,7 @@ static void test_pet_public_request_paths(void) {
                                      &value) == H2_PAL_ERR_FORMAT &&
            storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_pet_delete(service, text_arg, 1234u, &storage,
                                      &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -4851,7 +4546,7 @@ static void test_pet_public_request_paths(void) {
                                     &value) == H2_PAL_ERR_FORMAT &&
            storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_pet_adopt(service, &options, 1234u, &storage,
                                     &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -4911,7 +4606,7 @@ static void test_pet_public_request_paths(void) {
                                     &value) == H2_PAL_ERR_FORMAT &&
            storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_pet_drive(service, &options, 1234u, &storage,
                                     &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -4966,7 +4661,7 @@ static void test_pet_public_request_paths(void) {
                                    &value) == H2_PAL_ERR_FORMAT &&
            storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_pet_list(service, text_arg, 1u, 1234u, &storage,
                                    &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -5024,7 +4719,7 @@ static void test_pet_public_request_paths(void) {
                                          &value) == H2_PAL_ERR_FORMAT &&
            storage.used == checkpoint);
     mock.has_error = true;
-    mock.error_code = 404;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
     assert(h2_gizclaw_rpc_pet_action_get(service, text_arg, 1234u, &storage,
                                          &value) == H2_PAL_ERR_NOT_FOUND);
   }
@@ -5391,7 +5086,7 @@ static void test_pixa_download_request_paths(void) {
       break;
     case 4:
       wire.events[0].has_error = true;
-      wire.events[0].error_code = 404;
+      wire.events[0].error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
       expected = H2_PAL_ERR_NOT_FOUND;
       break;
     case 5:
@@ -5479,137 +5174,6 @@ static void test_pixa_download_request_paths(void) {
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     if (mode == 0u)
       assert(strcmp(info.pet_name, "x") == 0);
-  }
-}
-
-static bool test_encode_message_audio_response(uint8_t *buffer, size_t capacity,
-                                               const char *friend_group_name,
-                                               const char *history_name,
-                                               size_t audio_len,
-                                               size_t *out_len) {
-  gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse response =
-      gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_init_zero;
-  (void)snprintf(response.friend_group_name, sizeof(response.friend_group_name),
-                 "%s", friend_group_name);
-  (void)snprintf(response.history_name, sizeof(response.history_name), "%s",
-                 history_name);
-  (void)snprintf(response.mime_type, sizeof(response.mime_type), "%s",
-                 "audio/ogg");
-  response.size_bytes = (int64_t)audio_len;
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer, capacity);
-  if (!pb_encode(&stream,
-                 gizclaw_rpc_v1_FriendGroupMessageAudioDownloadResponse_fields,
-                 &response)) {
-    return false;
-  }
-  *out_len = stream.bytes_written;
-  return true;
-}
-
-typedef struct sync_group_audio_job {
-  h2_gizclaw_service_t *service;
-  download_test_wire_t *wire;
-  h2_gizclaw_resp_storage_t *storage;
-  h2_gizclaw_friend_group_message_audio_info_t *info;
-} sync_group_audio_job_t;
-
-static h2_pal_result_t sync_group_audio_call(void *ctx) {
-  sync_group_audio_job_t *job = ctx;
-  return h2_gizclaw_rpc_friend_group_message_audio_download(
-      job->service, (h2_gizclaw_str_t){"group-a", 7u},
-      (h2_gizclaw_str_t){"history-1", 9u}, download_test_sink, job->wire, 1234u,
-      job->storage, job->info);
-}
-
-static void test_group_audio_download_request_paths(void) {
-  for (unsigned mode = 0u; mode < 8u; ++mode) {
-    test_env_t env;
-    h2_gizclaw_service_t *service = create_profile_service(&env);
-    service->client_config.time = h2_desktop_platform_time_api();
-    h2_gizclaw_async_rpc_test_set_ops(&download_test_ops);
-    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-    const uint8_t input[] = {0x0a, 7,   'g', 'r', 'o', 'u', 'p', '-', 'a', 0x12,
-                             9,    'h', 'i', 's', 't', 'o', 'r', 'y', '-', '1'};
-    const uint8_t audio[] = {0x4f, 0x67, 0x67, 0x53};
-    uint8_t metadata[256];
-    size_t metadata_len;
-    assert(test_encode_message_audio_response(
-        metadata, sizeof(metadata), mode == 1u ? "other-group" : "group-a",
-        mode == 2u ? "other-history" : "history-1",
-        mode == 6u ? 0u : sizeof(audio), &metadata_len));
-    if (mode == 7u)
-      metadata_len = 1u;
-    download_test_wire_t wire = {
-        .method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD,
-        .input = {input, sizeof(input)},
-        .events = {{.kind = H2_GIZCLAW_RPC_STREAM_RESPONSE,
-                    .result_payload = {metadata, metadata_len}},
-                   {.kind = H2_GIZCLAW_RPC_STREAM_DATA, .data = {audio, 2u}},
-                   {.kind = H2_GIZCLAW_RPC_STREAM_DATA,
-                    .data = {audio + 2u, 2u}},
-                   {.kind = H2_GIZCLAW_RPC_STREAM_EOS}},
-        .event_count = 4u};
-    if (mode == 3u)
-      wire.event_count = 3u;
-    if (mode == 4u) {
-      wire.events[4] = wire.events[3];
-      wire.event_count = 5u;
-    }
-    if (mode == 5u)
-      wire.events[0] = wire.events[1];
-    s_download_wire = &wire;
-    char group[] = "group-a", history[] = "history-1";
-    h2_gizclaw_req_t *request = NULL;
-    assert(h2_gizclaw_req_create_friend_group_message_audio_download(
-               service, 1u, (h2_gizclaw_str_t){group, 7u},
-               (h2_gizclaw_str_t){history, 9u}, 1234u, &request) == H2_PAL_OK &&
-           wire.start_count == 0);
-    group[0] = 'X';
-    history[0] = 'Y';
-    uint8_t buffer[1024];
-    h2_gizclaw_resp_storage_t storage = {.data = buffer,
-                                         .capacity = sizeof(buffer)};
-    h2_gizclaw_friend_group_message_audio_info_t info;
-    assert(h2_gizclaw_resp_parse_friend_group_message_audio_download(
-               request, &storage, &info) == H2_PAL_ERR_INVALID_STATE);
-    assert(h2_gizclaw_req_do(request, &wire, NULL, download_test_output,
-                             NULL) == H2_PAL_OK);
-    h2_pal_result_t expected = mode == 0u ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
-    assert(app_wait_request(service, request) == expected);
-    assert(h2_gizclaw_resp_parse_friend_group_message_audio_download(
-               request, &storage, &info) == expected);
-    if (mode == 0u) {
-      assert(strcmp(info.friend_group_name, "group-a") == 0 &&
-             strcmp(info.history_id, "history-1") == 0 &&
-             strcmp(info.mime_type, "audio/ogg") == 0 &&
-             info.size_bytes == 4u && info.received_bytes == 4u &&
-             wire.bytes_written == 4u && memcmp(wire.bytes, audio, 4u) == 0);
-      h2_gizclaw_resp_storage_t tiny = {.data = buffer, .capacity = 1u};
-      h2_gizclaw_friend_group_message_audio_info_t empty;
-      assert(h2_gizclaw_resp_parse_friend_group_message_audio_download(
-                 request, &tiny, &empty) == H2_PAL_ERR_NO_SPACE);
-      assert(empty.friend_group_name == NULL && tiny.used == 0u);
-      h2_gizclaw_pet_pixa_info_t wrong;
-      assert(h2_gizclaw_resp_parse_pet_pixa_download(
-                 request, &storage, &wrong) == H2_PAL_ERR_INVALID_ARG);
-    } else {
-      assert(storage.used == 0u && info.friend_group_name == NULL &&
-             info.history_id == NULL);
-    }
-    assert(wire.cancel_count == (wire.result_done ? 0 : 1) &&
-           wire.destroy_count == 1);
-    h2_gizclaw_req_release(request);
-    if (mode == 0u) {
-      wire.next_event = 0u;
-      wire.bytes_written = 0u;
-      sync_group_audio_job_t job = {
-          .service = service, .wire = &wire, .storage = &storage, .info = &info};
-      assert(app_call_sync(service, sync_group_audio_call, &job) == H2_PAL_OK);
-    }
-    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-    if (mode == 0u)
-      assert(strcmp(info.history_id, "history-1") == 0);
   }
 }
 
@@ -8766,7 +8330,6 @@ int main(int argc, char **argv) {
     test_stream_sink_one_shot();
     test_audio_play_request();
     test_pixa_download_request_paths();
-    test_group_audio_download_request_paths();
     test_track_unset_waits_for_read_and_write();
     return 0;
   }
@@ -8775,7 +8338,6 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--group-download-only") == 0) {
-    test_group_audio_download_request_paths();
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--pcm-stream-only") == 0) {
@@ -8824,14 +8386,12 @@ int main(int argc, char **argv) {
   test_speech_managed_requests();
   test_track_read_validation_and_rebinding();
   test_track_unset_waits_for_read_and_write();
-  test_group_audio_download_request_paths();
   test_pixa_download_request_paths();
   test_sync_helper_from_job_task_while_app_polls();
   assert(test_pet_delete_rpc_regression() == 0);
   test_pet_public_request_paths();
   test_social_full_page_arena_growth();
-  test_group_member_and_message_request_paths();
-  assert(test_friend_group_message_projection_rpcs() == 0);
+  test_group_member_request_paths();
   test_friend_group_public_request_paths();
   test_friend_public_request_paths();
   test_req_start_backpressure_deadline_and_cancel();

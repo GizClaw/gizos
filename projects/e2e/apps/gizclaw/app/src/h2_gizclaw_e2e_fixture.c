@@ -431,7 +431,7 @@ static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
     return H2_PAL_OK;
   }
   out_response->has_error = true;
-  out_response->error_code = H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND;
+  out_response->error_code = H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
   return H2_PAL_OK;
 }
 

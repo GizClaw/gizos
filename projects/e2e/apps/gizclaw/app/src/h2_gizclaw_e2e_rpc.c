@@ -2,8 +2,6 @@
 #include "h2_gizclaw_e2e_contact.h"
 #include "h2_gizclaw_e2e_friend.h"
 #include "h2_gizclaw_e2e_group.h"
-#include "h2_gizclaw_e2e_group_audio.h"
-#include "h2_gizclaw_e2e_group_message.h"
 #include "h2_gizclaw_e2e_pet.h"
 #include "h2_gizclaw_e2e_point.h"
 #include "h2_gizclaw_e2e_profile.h"
@@ -83,18 +81,7 @@ static int run_group(h2_gizclaw_e2e_fixture_t *fixture,
   int rc = h2_gizclaw_e2e_run_group_management(fixture, storage);
   if (rc != H2_PAL_OK)
     return rc;
-  char history_id[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u] = {0};
-  rc = h2_gizclaw_e2e_generate_group_message(fixture, history_id,
-                                             sizeof(history_id));
-  if (rc != H2_PAL_OK)
-    return rc;
-
-  rc = h2_gizclaw_e2e_run_group_message(fixture, storage,
-                                        h2_gizclaw_e2e_str(history_id));
-  if (rc != H2_PAL_OK)
-    return rc;
-  return h2_gizclaw_e2e_run_group_audio(fixture, storage,
-                                        h2_gizclaw_e2e_str(history_id));
+  return h2_gizclaw_e2e_run_group_talk(fixture);
 }
 
 static int run_gameplay(h2_gizclaw_e2e_fixture_t *fixture,

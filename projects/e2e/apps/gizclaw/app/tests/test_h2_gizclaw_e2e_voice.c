@@ -61,9 +61,9 @@ enum {
   ACTIVATION_UNTERMINATED_NAME,
   RESPONSE_USED_OVERFLOW,
   HISTORY_UNKNOWN_TYPE,
-  GROUP_OLD_HISTORY,
-  GROUP_WRONG_TYPE,
-  GROUP_NO_AUDIO,
+  GROUP_UNEXPECTED_REPLY,
+  GROUP_EARLY_FINISH,
+  GROUP_LATE_DOWNLINK,
   GROUP_EARLY_FAILURE,
   GROUP_CANCEL_ERROR,
   HANGUP_ERROR,
@@ -75,7 +75,7 @@ enum {
 static unsigned s_mode, s_live, s_allocs, s_fail_alloc;
 static unsigned s_begins, s_replies, s_cancels, s_reconnects, s_play_creates;
 static unsigned s_hangups, s_post_hangup_pings;
-static uint64_t s_now, s_last_capture;
+static uint64_t s_now, s_last_capture, s_ended_at;
 static bool s_realtime, s_reconnected;
 static int s_service;
 static uint8_t s_pcm[2560];
@@ -229,6 +229,7 @@ h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
   assert(!s_realtime);
   assert(value->input_bytes == sizeof(s_pcm));
   value->ended = true;
+  s_ended_at = s_now;
   return H2_PAL_OK;
 }
 h2_pal_result_t
@@ -294,11 +295,6 @@ static int emit_reply(h2_gizclaw_conversation_t *value) {
     if (rc != H2_PAL_OK)
       return rc;
   }
-  if (s_group) {
-    ++value->replies;
-    ++s_replies;
-    return H2_PAL_OK;
-  }
   uint8_t pcm[64] = {0};
   if (s_mode != SILENT_REPLY)
     pcm[0] = 1u;
@@ -360,9 +356,32 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
       }
     }
   }
-  if (!s_realtime && value->ended && (!s_group || value->replies == 0u)) {
+  if (s_group) {
+    /* An SFU Workspace answers the sender with nothing: no reply, no terminal.
+     * The faults below are the Server behaviours the case must reject. */
+    if (value->ended && s_replies == 0u) {
+      ++s_replies;
+      if (s_mode == REMOTE_ERROR || s_mode == GROUP_UNEXPECTED_REPLY) {
+        int rc = emit_reply(value);
+        if (rc != H2_PAL_OK)
+          return rc;
+      }
+      if (s_mode == GROUP_EARLY_FINISH || s_mode == GROUP_EARLY_FAILURE)
+        complete(value, false);
+    }
+    /* A forwarded frame landing after the last paced speaker pump, right at
+     * the grace boundary: the case must still see it before passing. */
+    if (s_mode == GROUP_LATE_DOWNLINK && value->ended &&
+        s_now - s_ended_at == 1499u) {
+      uint8_t pcm[64] = {1};
+      assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) ==
+             H2_PAL_OK);
+    }
+    return H2_PAL_OK;
+  }
+  if (!s_realtime && value->ended) {
     int rc = emit_reply(value);
-    if (rc == H2_PAL_OK && (!s_group || s_mode == GROUP_EARLY_FAILURE))
+    if (rc == H2_PAL_OK)
       complete(value, false);
   } else if (s_realtime &&
              value->input_bytes == (value->replies + 1u) * sizeof(s_pcm) &&
@@ -449,12 +468,14 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_history_list(
     h2_gizclaw_workspace_history_page_t *out) {
   assert(service == (h2_gizclaw_service_t *)&s_service && workspace.len > 0u &&
          cursor.len == 0u);
+  /* An SFU Workspace owns no History; the group case must never read it. */
+  assert(!s_group);
   assert_workspace(workspace);
   assert(limit == 64u && order == H2_GIZCLAW_WORKSPACE_HISTORY_ORDER_DESC &&
          timeout == 30000u && storage != NULL);
   response_reset(storage);
   *out = (h2_gizclaw_workspace_history_page_t){.available = true};
-  if ((s_replies > 0u || s_mode == GROUP_OLD_HISTORY) && s_mode != NO_HISTORY &&
+  if (s_replies > 0u && s_mode != NO_HISTORY &&
       !(s_mode == LOST_HISTORY && s_reconnected)) {
     size_t count =
         s_mode == HISTORY_DUPLICATE_ID || s_mode == HISTORY_UNKNOWN_TYPE ? 2u
@@ -462,15 +483,10 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_history_list(
     h2_gizclaw_workspace_history_entry_t *items =
         response_alloc(storage, count * sizeof(*items));
     items[0] = (h2_gizclaw_workspace_history_entry_t){
-        .type = s_group && s_mode != GROUP_WRONG_TYPE
-                    ? H2_GIZCLAW_WORKSPACE_HISTORY_GEAR
-                    : H2_GIZCLAW_WORKSPACE_HISTORY_AGENT,
-        .replay_available = s_mode != GROUP_NO_AUDIO};
+        .type = H2_GIZCLAW_WORKSPACE_HISTORY_AGENT, .replay_available = true};
     /* Sequence allocations explicitly: the unterminated-ID fault must put
      * the ID at the arena end, independent of initializer evaluation order. */
     items[0].text = response_string(storage, "reply");
-    if (s_group && s_mode == MISSING_TEXT)
-      items[0].text = NULL;
     items[0].id = response_string(storage, "new-history");
     out->items = items;
     out->count = count;
@@ -636,15 +652,11 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   fixture->actors[0].service = (h2_gizclaw_service_t *)&s_service;
   if (s_emit)
     printf("H2_GIZCLAW_E2E stage=coverage-begin case=voice\n");
-  char history_id[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u] = "sentinel";
-  int rc = s_group ? h2_gizclaw_e2e_generate_group_message(
-                        fixture, history_id, sizeof(history_id))
+  int rc = s_group ? h2_gizclaw_e2e_run_group_talk(fixture)
                    : h2_gizclaw_e2e_run_voice(fixture);
   assert(rc == expected);
   assert(strcmp(fixture->workspace_name, "test-workspace") == 0);
   assert(fixture->workspace_created && fixture->friend_group_created);
-  if (s_group)
-    assert(strcmp(history_id, rc == H2_PAL_OK ? "new-history" : "") == 0);
   const unsigned allocations = s_allocs;
   if (mode == NORMAL && fail_alloc == 0u) {
     assert(s_begins == (s_group ? 1u : 3u) &&
@@ -762,38 +774,32 @@ int main(int argc, char **argv) {
     run_case(NORMAL, H2_PAL_ERR_NO_MEMORY, i);
   s_group = true;
   allocations = run_case(NORMAL, H2_PAL_OK, 0u);
+  /* History faults are unreachable for the group case: an SFU Workspace has
+   * none, and the double asserts the case never reads it. */
   const unsigned group_modes[] = {
-      MISSING_TEXT, REMOTE_ERROR, POLL_ERROR, UNSET_ERROR, NO_HISTORY,
-      END_ERROR, BEGIN_ERROR, CREATE_ERROR, SET_ERROR, SECOND_END_ERROR,
-      HISTORY_TOO_MANY, HISTORY_NULL_ITEMS, HISTORY_UNALIGNED_ITEMS,
-      HISTORY_UNOWNED_ITEMS, HISTORY_NULL_ID, HISTORY_EMPTY_ID,
-      HISTORY_UNTERMINATED_ID, HISTORY_LONG_ID, HISTORY_DUPLICATE_ID,
-      HISTORY_UNOWNED_TEXT, HISTORY_UNTERMINATED_TEXT, HISTORY_UNAVAILABLE,
-      HISTORY_PARTIAL_BASELINE, HISTORY_BAD_CURSOR, WORKSPACE_UNOWNED_NAME,
-      ACTIVATION_UNTERMINATED_NAME, RESPONSE_USED_OVERFLOW, HISTORY_UNKNOWN_TYPE,
-      GROUP_OLD_HISTORY, GROUP_WRONG_TYPE, GROUP_NO_AUDIO,
+      MISSING_TEXT, REMOTE_ERROR, POLL_ERROR, UNSET_ERROR, END_ERROR,
+      BEGIN_ERROR, CREATE_ERROR, SET_ERROR, SECOND_END_ERROR,
+      WORKSPACE_UNOWNED_NAME, ACTIVATION_UNTERMINATED_NAME,
       BAD_TERMINAL_RESULT, WRONG_GENERATION, DUPLICATE_COMPLETION,
-      GROUP_EARLY_FAILURE, GROUP_CANCEL_ERROR};
+      GROUP_UNEXPECTED_REPLY, GROUP_EARLY_FINISH, GROUP_LATE_DOWNLINK,
+      GROUP_EARLY_FAILURE,
+      GROUP_CANCEL_ERROR};
   for (size_t i = 0u; i < sizeof(group_modes) / sizeof(group_modes[0]); ++i) {
     const unsigned mode = group_modes[i];
-    const int expected = mode == MISSING_TEXT ? H2_PAL_OK
-                         : (mode == GROUP_OLD_HISTORY || mode == GROUP_WRONG_TYPE ||
-                            mode == GROUP_NO_AUDIO) ? H2_PAL_ERR_TIMEOUT
-                         : mode >= GROUP_EARLY_FAILURE ? H2_PAL_ERR_IO
-                         : expected_result(mode);
+    const int expected =
+        mode == MISSING_TEXT ? H2_PAL_OK
+        : (mode == GROUP_UNEXPECTED_REPLY || mode == GROUP_EARLY_FINISH ||
+           mode == GROUP_LATE_DOWNLINK)
+            ? H2_PAL_ERR_INVALID_STATE
+        : (mode == GROUP_EARLY_FAILURE || mode == GROUP_CANCEL_ERROR)
+            ? H2_PAL_ERR_IO
+            : expected_result(mode);
     run_case(mode, expected, 0u);
   }
   for (unsigned i = 1u; i <= allocations; ++i)
     run_case(NORMAL, H2_PAL_ERR_NO_MEMORY, i);
   h2_gizclaw_e2e_fixture_t fixture = {0};
-  char history[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u] = "sentinel";
-  assert(h2_gizclaw_e2e_generate_group_message(NULL, history, sizeof(history)) ==
-         H2_PAL_ERR_INVALID_ARG);
-  assert(history[0] == '\0');
-  assert(h2_gizclaw_e2e_generate_group_message(&fixture, NULL, sizeof(history)) ==
-         H2_PAL_ERR_INVALID_ARG);
-  assert(h2_gizclaw_e2e_generate_group_message(&fixture, history, 1u) ==
-         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_e2e_run_group_talk(NULL) == H2_PAL_ERR_INVALID_ARG);
   fixture.allocator = &mem;
   fixture.time = &time_api;
   fixture.pcm = s_pcm;
@@ -815,10 +821,9 @@ int main(int argc, char **argv) {
     const unsigned before = s_allocs;
     if (mode == 5u)
       fixture.actors[0].service = NULL;
-    assert(h2_gizclaw_e2e_generate_group_message(&fixture, history,
-                                                  sizeof(history)) ==
+    assert(h2_gizclaw_e2e_run_group_talk(&fixture) ==
            (mode == 4u ? H2_PAL_ERR_INVALID_STATE : H2_PAL_ERR_INVALID_ARG));
-    assert(history[0] == '\0' && s_allocs == before);
+    assert(s_allocs == before);
     assert(fixture.case_state == (mode == 4u ? &s_service : NULL));
   }
   return 0;

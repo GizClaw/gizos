@@ -104,7 +104,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Mic Task 写入 GizClaw PCM ring，由 GizClaw uplink Task 每 20 ms 切片、编码并通过 WebRTC audio RTP 上行；ring 满时返回 `WOULD_BLOCK`，App 丢弃当前 realtime chunk 并记录 overrun，不等待或改写 payload。
 - Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
-- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Chatroom 可以终止于 transcript route，Agent workflow 可以终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。
+- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Agent workflow 终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。Friend / Friend Group 的 SFU Workspace 不给发言者任何 response route，turn 只能由本地 cancel 结束。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。
@@ -113,6 +113,6 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 
 手动 GizClaw PAL E2E 在测试 integration 中把固定 16 kHz mono S16LE 合成语音编码成 20 ms raw Opus packet，再经 public conversation API 进入 selected Desktop WebRTC PAL。验收要求同 generation 的非空 text、raw Opus 下行和 reply terminal；测试侧固定 libopus decoder 对 raw packet 解码并确认非静音。PAL audio-decoder contract 当前只支持 AAC，因此该测试不把 Opus 编解码错误地声明为 GizClaw 或 audio-decoder PAL 能力。
 
-terminal 后，测试通过 public Workspace history API 查找本轮发送 Gear 对应的新增 Gear entry，要求 transcript 非空且可回放；再 stream 下载 `audio/ogg`，核对 metadata 与接收长度并独立解析、解码 Ogg/Opus。Chatroom 只做转写和转发，不运行 LLM，也不产生 Agent history。这个 transport gate 不替代 provider 语义质量或真实设备声学验收。
+terminal 后，测试通过 public Workspace history API 查找本轮发送 Gear 对应的新增 Gear entry，要求 transcript 非空且可回放；再 stream 下载 `audio/ogg`，核对 metadata 与接收长度并独立解析、解码 Ogg/Opus。这个 transport gate 不替代 provider 语义质量或真实设备声学验收。
 
-Friend Group 语音仍只通过 Group system Workspace 的 Conversation 写入，不存在 `server.friend_group.messages.send`。读取时以 Friend Group scoped name 调用 message list/get；wrapper 返回稳定 `history_id`，其值逐字节来自底层 wire history name。音频通过 `server.friend_group.messages.audio.get` 接收 metadata、二进制 frames 和唯一 EOS，调用方必须核对声明长度与实际接收长度，并在取消、超限或缺失 EOS 时删除部分文件。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。
+Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-sfu` Workflow）的 Conversation 写入。GizClaw 0.15 起该 Workspace 是 LiveKit SFU 的单工对讲：Server 侧 connector 代表 Peer 入房，Device 保持原有 WebRTC 连接、不感知 LiveKit；下行是锁定一路发言者的 Opus 原样透传，发言者收不到自己的下行。SFU Workspace 没有 History、消息或音频资产，`server.friend_group.messages.*` 已删除，libs/gizclaw 不再提供 friend group message list/get/audio download。被拒绝的输入以同一 `stream_id` 的 typed EOS error 返回（`SFU_RUNTIME_NOT_ATTACHED`、`SFU_ACCESS_REVOKED`、`SFU_ACCESS_CHECK_FAILED`），App 按 code 结束本轮录音状态，不自动切换 Workspace。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。

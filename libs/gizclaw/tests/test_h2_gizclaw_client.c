@@ -1068,10 +1068,6 @@ int main(void) {
                   "register wire method remains 90");
   fails += expect(H2_GIZCLAW_RPC_SERVER_PEER_DELETE == 93,
                   "peer delete wire method remains 93");
-  fails +=
-      expect(H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD == 95,
-             "friend group message audio get wire method remains 95");
-
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
   config.server_endpoint.data = "127.0.0.1:19820";
@@ -1650,16 +1646,6 @@ int main(void) {
                           NULL, 0u, id, id, 1000u, &social_request) ==
                           H2_PAL_ERR_INVALID_ARG,
                   "friend group member operations reject invalid arguments");
-  fails += expect(h2_gizclaw_req_create_friend_group_message_list(
-                      NULL, 0u, id, (h2_gizclaw_str_t){0}, 8u, 1000u,
-                      &social_request) == H2_PAL_ERR_INVALID_ARG &&
-                      h2_gizclaw_req_create_friend_group_message_get(
-                          NULL, 0u, id, id, 1000u, &social_request) ==
-                          H2_PAL_ERR_INVALID_ARG &&
-                      h2_gizclaw_req_create_friend_group_message_audio_download(
-                          NULL, 0u, id, id, 1000u, &social_request) ==
-                          H2_PAL_ERR_INVALID_ARG,
-                  "friend group message operations reject invalid arguments");
   fails += expect(h2_gizclaw_provider_result_to_gzc(H2_PAL_ERR_NOT_FOUND) ==
                       GZC_ERR_UNSUPPORTED,
                   "provider not-found maps to unsupported");
