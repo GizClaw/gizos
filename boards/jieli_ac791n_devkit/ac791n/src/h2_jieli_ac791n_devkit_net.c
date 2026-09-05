@@ -9,6 +9,8 @@
 #include "lwip/inet.h"
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
+#include "lwip/dns.h"
+#include "lwip/tcpip.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -16,9 +18,14 @@
 #include <string.h>
 
 struct h2_pal_net_resolver {
+  unsigned references;
   h2_pal_result_t result;
   h2_pal_net_addr_t address;
+  char host[DNS_MAX_NAME_LENGTH];
 };
+
+enum { H2_JIELI_DNS_CAPACITY = 4 };
+static unsigned resolver_count;
 
 static h2_pal_result_t map_socket_error(void) {
   switch (errno) {
@@ -91,14 +98,71 @@ static int resolve_addr(
   return H2_PAL_OK;
 }
 
+static void resolver_release(h2_pal_net_resolver_t *resolver) {
+  if (__atomic_sub_fetch(&resolver->references, 1u, __ATOMIC_ACQ_REL) == 0u) {
+    free(resolver);
+    __atomic_sub_fetch(&resolver_count, 1u, __ATOMIC_RELEASE);
+  }
+}
+
+static void resolver_found(const char *name, const ip_addr_t *address, void *user) {
+  (void)name;
+  h2_pal_net_resolver_t *resolver = user;
+  h2_pal_result_t result = H2_PAL_ERR_NOT_FOUND;
+  if (address != NULL && IP_IS_V4(address)) {
+    resolver->address.family = H2_PAL_NET_FAMILY_IPV4;
+    memcpy(resolver->address.ip, &ip_2_ip4(address)->addr, 4u);
+    result = H2_PAL_OK;
+  }
+  __atomic_store_n(&resolver->result, result, __ATOMIC_RELEASE);
+  resolver_release(resolver);
+}
+
+/* Raw lwIP DNS APIs belong to the TCP/IP thread. Its reference survives an
+ * early caller close and is released by either immediate or delayed completion. */
+static void resolver_begin(void *user) {
+  h2_pal_net_resolver_t *resolver = user;
+  ip_addr_t address;
+  const err_t result = dns_gethostbyname_addrtype(
+      resolver->host, &address, resolver_found, resolver, LWIP_DNS_ADDRTYPE_IPV4);
+  if (result == ERR_OK) {
+    resolver_found(resolver->host, &address, resolver);
+  } else if (result != ERR_INPROGRESS) {
+    __atomic_store_n(&resolver->result,
+                    result == ERR_MEM ? H2_PAL_ERR_NO_SPACE : H2_PAL_ERR_IO,
+                    __ATOMIC_RELEASE);
+    resolver_release(resolver);
+  }
+}
+
 static h2_pal_result_t resolve_start(
     void *user, const char *host, h2_pal_net_resolver_t **out_resolver) {
+  (void)user;
   if (host == NULL || out_resolver == NULL) return H2_PAL_ERR_INVALID_ARG;
   *out_resolver = NULL;
+  const size_t length = strnlen(host, DNS_MAX_NAME_LENGTH);
+  if (length == 0u || length == DNS_MAX_NAME_LENGTH) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  unsigned count = __atomic_load_n(&resolver_count, __ATOMIC_RELAXED);
+  do {
+    if (count >= H2_JIELI_DNS_CAPACITY) return H2_PAL_ERR_NO_SPACE;
+  } while (!__atomic_compare_exchange_n(&resolver_count, &count, count + 1u,
+                                        0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
   h2_pal_net_resolver_t *resolver = malloc(sizeof(*resolver));
-  if (resolver == NULL) return H2_PAL_ERR_NO_MEMORY;
+  if (resolver == NULL) {
+    __atomic_sub_fetch(&resolver_count, 1u, __ATOMIC_RELEASE);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   memset(resolver, 0, sizeof(*resolver));
-  resolver->result = resolve_addr(user, host, &resolver->address);
+  resolver->references = 2u;
+  resolver->result = H2_PAL_ERR_WOULD_BLOCK;
+  memcpy(resolver->host, host, length + 1u);
+  if (tcpip_try_callback(resolver_begin, resolver) != ERR_OK) {
+    resolver_release(resolver);
+    resolver_release(resolver);
+    return H2_PAL_ERR_NO_SPACE;
+  }
   *out_resolver = resolver;
   return H2_PAL_OK;
 }
@@ -107,15 +171,28 @@ static h2_pal_result_t resolve_poll(
     void *user, h2_pal_net_resolver_t *resolver,
     h2_pal_net_addr_t *out_addr, uint32_t timeout_ms) {
   (void)user;
-  (void)timeout_ms;
   if (resolver == NULL || out_addr == NULL) return H2_PAL_ERR_INVALID_ARG;
-  if (resolver->result == H2_PAL_OK) *out_addr = resolver->address;
-  return resolver->result;
+  const uint32_t start = timer_get_ms();
+  for (;;) {
+    const h2_pal_result_t result =
+        __atomic_load_n(&resolver->result, __ATOMIC_ACQUIRE);
+    if (result != H2_PAL_ERR_WOULD_BLOCK) {
+      if (result == H2_PAL_OK) *out_addr = resolver->address;
+      return result;
+    }
+    if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;
+    const uint32_t elapsed = (uint32_t)(timer_get_ms() - start);
+    /* A WL82 scheduler tick is 10 ms; do not round a shorter budget upward. */
+    if (elapsed >= timeout_ms || timeout_ms - elapsed < 10u) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
+    os_time_dly(1u);
+  }
 }
 
 static void resolve_close(void *user, h2_pal_net_resolver_t *resolver) {
   (void)user;
-  free(resolver);
+  if (resolver != NULL) resolver_release(resolver);
 }
 
 static int get_host_addr(
