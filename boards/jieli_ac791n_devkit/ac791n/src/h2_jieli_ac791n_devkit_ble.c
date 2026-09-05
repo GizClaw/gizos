@@ -664,9 +664,11 @@ static int h2_notify(
     void *user, uint16_t conn_handle, uint16_t attr_handle,
     const uint8_t *data, size_t len) {
   (void)user;
-  if (conn_handle != h2_ble.conn_handle ||
+  if (conn_handle == 0u || conn_handle != h2_ble.conn_handle ||
       attr_handle != H2_JIELI_GATT_TX_VALUE_HANDLE ||
-      (len != 0u && data == NULL) || len + 3u > h2_ble.mtu)
+      (len != 0u && data == NULL) ||
+      h2_ble.mtu < H2_PAL_BLE_ATT_HEADER_LEN ||
+      len > (size_t)(h2_ble.mtu - H2_PAL_BLE_ATT_HEADER_LEN))
     return H2_PAL_ERR_INVALID_ARG;
   return h2_ble_cmd_result(ble_op_att_send_data(
       attr_handle, data, (uint16_t)len, ATT_OP_AUTO_READ_CCC));

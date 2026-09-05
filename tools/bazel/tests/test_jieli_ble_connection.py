@@ -9,6 +9,66 @@ SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_bl
 
 
 class BleConnectionTest(unittest.TestCase):
+    def test_notify_validates_length_before_narrowing(self):
+        source = SOURCE.read_text()
+        begin = source.index("static int h2_notify(")
+        end = source.index("static int h2_disconnect(", begin)
+        stub = r'''
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
+enum { H2_PAL_ERR_INVALID_ARG=-1, H2_JIELI_GATT_TX_VALUE_HANDLE=6,
+ H2_PAL_BLE_ATT_HEADER_LEN=3, ATT_OP_AUTO_READ_CCC=1 };
+static struct { uint16_t conn_handle, mtu; } h2_ble;
+static int sends, vendor_result;
+static uint16_t sent_length;
+static int h2_ble_cmd_result(int result) { return result; }
+static int ble_op_att_send_data(uint16_t attr, const uint8_t *data,
+                               uint16_t len, int mode) {
+ assert(attr == 6 && mode == 1); assert(len == 0 || data != NULL);
+ ++sends; sent_length=len; return vendor_result;
+}
+'''
+        main = r'''
+int main(void) {
+ uint8_t data[200]={0};
+ h2_ble.conn_handle=42; h2_ble.mtu=23;
+ assert(h2_notify(NULL,42,6,data,20)==0 && sends==1 && sent_length==20);
+ vendor_result=-100;
+ assert(h2_notify(NULL,42,6,data,1)==-100 && sends==2);
+ vendor_result=0;
+ assert(h2_notify(NULL,42,6,NULL,0)==0 && sends==3);
+ const size_t invalid[]={21,65536,SIZE_MAX,SIZE_MAX-1,SIZE_MAX-2};
+ for (unsigned i=0;i<sizeof(invalid)/sizeof(invalid[0]);++i) {
+  assert(h2_notify(NULL,42,6,data,invalid[i])==-1);
+  assert(sends==3);
+ }
+ assert(h2_notify(NULL,41,6,data,1)==-1);
+ assert(h2_notify(NULL,42,9,data,1)==-1);
+ assert(h2_notify(NULL,42,6,NULL,1)==-1);
+ for (unsigned mtu=0;mtu<3;++mtu) {
+  h2_ble.mtu=mtu;
+  assert(h2_notify(NULL,42,6,NULL,0)==-1);
+  assert(h2_notify(NULL,42,6,data,SIZE_MAX-2)==-1);
+ }
+ h2_ble.mtu=23; h2_ble.conn_handle=0;
+ assert(h2_notify(NULL,0,6,data,1)==-1 && sends==3);
+ h2_ble.conn_handle=42; h2_ble.mtu=200;
+ assert(h2_notify(NULL,42,6,data,197)==0 && sent_length==197 && sends==4);
+ assert(h2_notify(NULL,42,6,data,198)==-1 && sends==4);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-ble-notify-") as directory:
+            test = Path(directory) / "test.c"
+            test.write_text(stub + source[begin:end] + main)
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            str(test), "-o", str(binary)], check=True, timeout=60)
+            result = subprocess.run([str(binary)], timeout=10,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_att_failure_does_not_publish_connected(self):
         source = SOURCE.read_text()
         begin = source.index("        uint16_t handle = subevent ==")
