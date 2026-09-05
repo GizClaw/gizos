@@ -900,7 +900,7 @@ static void test_concurrent_producers_preserve_every_event(void) {
 
     uint32_t next_index[PRODUCER_COUNT] = { 0u };
     size_t received = 0u;
-    unsigned bare_wakes = 0u;
+    const uint64_t consume_started_ms = now_ms();
     h2_runtime_event_payload_buffer_t buffer;
     while (received < PRODUCER_COUNT * EVENTS_PER_PRODUCER) {
         h2_runtime_event_t event = {
@@ -909,12 +909,12 @@ static void test_concurrent_producers_preserve_every_event(void) {
         };
         h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 5000u);
         /* A wake whose event an earlier wait already dequeued ends this wait
-         * early as TIMEOUT; the next wait blocks for real. */
+         * early as TIMEOUT. Under contention that can repeat any number of
+         * times; only the overall deadline bounds the loop. */
         if (rc == H2_PAL_ERR_TIMEOUT) {
-            assert(++bare_wakes <= 3u);
+            assert(now_ms() - consume_started_ms < 60000u);
             continue;
         }
-        bare_wakes = 0u;
         assert(rc == H2_PAL_OK);
         const h2_runtime_custom_event_payload_t *payload =
             custom_payload(&event);
@@ -1136,14 +1136,25 @@ static void test_wait_event_returns_on_bare_wake(void) {
     h2_runtime_deinit(runtime);
 }
 
-/* Once deinit closed the door, notify is refused instead of touching state. */
-static void test_notify_after_close_is_refused(void) {
+/* Once deinit closed the door, notify is refused instead of touching state,
+ * and a consumer still blocked in wait_notify is released with CLOSED. */
+static void test_close_releases_waiter_and_refuses_notify(void) {
     custom_event_env_t env;
     env_init(&env);
     h2_runtime_t *runtime = env_runtime_create(&env, 8u);
 
     assert(h2_runtime_notify(NULL) == H2_PAL_ERR_INVALID_ARG);
+    notify_waiter_state_t state = { .runtime = runtime, .result = H2_PAL_ERR_IO };
+    pthread_t waiter;
+    assert(pthread_create(&waiter, NULL, notify_waiter_thread, &state) == 0);
+    assert(env_sleep(NULL, 50u) == H2_PAL_OK);
+    const uint64_t closed_at_ms = now_ms();
     h2_runtime_custom_event_close(runtime);
+    assert(pthread_join(waiter, NULL) == 0);
+    assert(state.result == H2_PAL_ERR_CLOSED);
+    assert(state.woke_at_ms - closed_at_ms < 1000u);
+    assert(h2_runtime_wait_notify(runtime, H2_PAL_QUEUE_WAIT_FOREVER) ==
+           H2_PAL_ERR_CLOSED);
     assert(h2_runtime_notify(runtime) == H2_PAL_ERR_INVALID_STATE);
 
     h2_runtime_deinit(runtime);
@@ -1154,7 +1165,7 @@ int main(void) {
     test_notify_wakes_blocked_waiter_with_full_queue();
     test_post_wakes_blocked_wait_notify();
     test_wait_event_returns_on_bare_wake();
-    test_notify_after_close_is_refused();
+    test_close_releases_waiter_and_refuses_notify();
     test_custom_event_wakes_indefinite_wait();
     test_custom_event_payload_is_copied();
     test_custom_events_keep_fifo_order();

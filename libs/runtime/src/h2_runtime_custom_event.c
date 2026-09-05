@@ -135,6 +135,10 @@ void h2_runtime_custom_event_close(h2_runtime_t *runtime) {
     if (private_state->event_queue != NULL) {
         (void)h2_pal_queue_close(runtime->queue, private_state->event_queue);
     }
+    /* A consumer still blocked in h2_runtime_wait_notify() gets CLOSED. */
+    if (private_state->wake_queue != NULL) {
+        (void)h2_pal_queue_close(runtime->queue, private_state->wake_queue);
+    }
 
     /*
      * An admitted poster still reads private_state after its send returns, so
