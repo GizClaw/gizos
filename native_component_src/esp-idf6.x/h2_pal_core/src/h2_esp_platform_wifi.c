@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "lwip/def.h"
 #include "nvs_flash.h"
+#include "nvs.h"
 #include "sdkconfig.h"
 
 #include <string.h>
@@ -53,6 +54,8 @@ typedef enum h2_esp_wifi_safe_op {
     H2_ESP_WIFI_SAFE_NVS_INIT = 1,
     H2_ESP_WIFI_SAFE_INIT,
     H2_ESP_WIFI_SAFE_SET_CONFIG,
+    H2_ESP_WIFI_SAFE_READ_SAVED,
+    H2_ESP_WIFI_SAFE_WRITE_SAVED,
 } h2_esp_wifi_safe_op_t;
 
 typedef struct h2_esp_wifi_safe_call {
@@ -60,6 +63,7 @@ typedef struct h2_esp_wifi_safe_call {
     wifi_interface_t interface;
     wifi_init_config_t init_config;
     wifi_config_t config;
+    uint8_t record[H2_ESP_WIFI_SAVED_RECORD_SIZE];
     esp_err_t result;
 } h2_esp_wifi_safe_call_t;
 
@@ -151,6 +155,48 @@ static SemaphoreHandle_t h2_esp_wifi_safe_mutex(void) {
     return s_h2_esp_wifi_safe_mutex;
 }
 
+/* Invoked only on the Internal SafeCall stack under the Wi-Fi safe mutex.
+ * Import the old driver record before the first RAM-only STA configuration.
+ * The versioned tombstone prevents a forgotten legacy network reappearing. */
+static esp_err_t h2_esp_wifi_saved_io(h2_esp_wifi_safe_call_t *call, bool write) {
+    char name[] = "h2wifi";
+    char key[] = "sta_v1";
+    nvs_handle_t handle;
+    esp_err_t rc = nvs_open(name, NVS_READWRITE, &handle);
+    if (rc != ESP_OK)
+        return rc;
+    if (!write) {
+        size_t length = sizeof(call->record);
+        rc = nvs_get_blob(handle, key, call->record, &length);
+        if (rc == ESP_OK && (length != sizeof(call->record) || call->record[0] != 1u))
+            rc = ESP_ERR_INVALID_SIZE;
+        if (rc == ESP_ERR_NVS_NOT_FOUND) {
+            wifi_config_t legacy;
+            memset(&legacy, 0, sizeof(legacy));
+            rc = esp_wifi_get_config(WIFI_IF_STA, &legacy);
+            if (rc == ESP_OK) {
+                memset(call->record, 0, sizeof(call->record));
+                call->record[0] = 1u;
+                call->record[1] = (uint8_t)h2_esp_wifi_strnlen(legacy.sta.ssid, 32u);
+                call->record[2] = (uint8_t)h2_esp_wifi_strnlen(legacy.sta.password, 64u);
+                call->record[3] = legacy.sta.bssid_set ? 1u : 0u;
+                call->record[4] = legacy.sta.channel;
+                memcpy(call->record + 5u, legacy.sta.bssid, 6u);
+                memcpy(call->record + 11u, legacy.sta.ssid, call->record[1]);
+                memcpy(call->record + 43u, legacy.sta.password, call->record[2]);
+                write = true;
+            }
+        }
+    }
+    if (write && rc == ESP_OK) {
+        rc = nvs_set_blob(handle, key, call->record, sizeof(call->record));
+        if (rc == ESP_OK)
+            rc = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return rc;
+}
+
 static void IRAM_ATTR h2_esp_wifi_safe_callback(void *context) {
     h2_esp_wifi_safe_call_t *call = (h2_esp_wifi_safe_call_t *)context;
     if (call->op == H2_ESP_WIFI_SAFE_NVS_INIT) {
@@ -158,7 +204,22 @@ static void IRAM_ATTR h2_esp_wifi_safe_callback(void *context) {
     } else if (call->op == H2_ESP_WIFI_SAFE_INIT) {
         call->result = esp_wifi_init(&call->init_config);
     } else if (call->op == H2_ESP_WIFI_SAFE_SET_CONFIG) {
-        call->result = esp_wifi_set_config(call->interface, &call->config);
+        call->result = call->interface == WIFI_IF_STA
+            ? h2_esp_wifi_saved_io(call, false) : ESP_OK;
+        if (call->result == ESP_OK)
+            call->result = esp_wifi_set_storage(call->interface == WIFI_IF_STA
+                ? WIFI_STORAGE_RAM : WIFI_STORAGE_FLASH);
+        if (call->result == ESP_OK)
+            call->result = esp_wifi_set_config(call->interface, &call->config);
+        if (call->interface != WIFI_IF_STA) {
+            const esp_err_t restore = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+            if (call->result == ESP_OK)
+                call->result = restore;
+        }
+    } else if (call->op == H2_ESP_WIFI_SAFE_READ_SAVED ||
+               call->op == H2_ESP_WIFI_SAFE_WRITE_SAVED) {
+        call->result = h2_esp_wifi_saved_io(call,
+            call->op == H2_ESP_WIFI_SAFE_WRITE_SAVED);
     } else {
         call->result = ESP_ERR_INVALID_ARG;
     }
@@ -177,6 +238,21 @@ static esp_err_t h2_esp_wifi_run_safe(h2_esp_wifi_safe_call_t *call) {
         H2_ESP_WIFI_SAFE_STACK_DEPTH);
     (void)xSemaphoreGive(mutex);
     return rc == H2_PAL_OK ? call->result : ESP_ERR_NO_MEM;
+}
+
+int h2_esp_platform_wifi_saved_record(
+    uint8_t record[H2_ESP_WIFI_SAVED_RECORD_SIZE], bool write) {
+    if (record == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    h2_esp_wifi_safe_call_t call = {
+        .op = write ? H2_ESP_WIFI_SAFE_WRITE_SAVED : H2_ESP_WIFI_SAFE_READ_SAVED,
+    };
+    if (write)
+        memcpy(call.record, record, sizeof(call.record));
+    const int rc = h2_esp_wifi_map_error(h2_esp_wifi_run_safe(&call));
+    if (rc == H2_PAL_OK && !write)
+        memcpy(record, call.record, sizeof(call.record));
+    return rc;
 }
 
 int h2_esp_platform_wifi_set_config_safe(
@@ -1306,28 +1382,12 @@ int h2_esp_platform_wifi_connect_saved(uint32_t timeout_ms) {
         return rc;
     }
 
-    wifi_config_t esp_config;
-    memset(&esp_config, 0, sizeof(esp_config));
-    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &esp_config);
-    if (err != ESP_OK) {
-        return h2_esp_wifi_map_error(err);
-    }
-    size_t ssid_len = h2_esp_wifi_strnlen(esp_config.sta.ssid, H2_PAL_WIFI_SSID_MAX);
-    if (ssid_len == 0u) {
-        return H2_PAL_ERR_NOT_FOUND;
-    }
-
     h2_pal_wifi_sta_config_t config;
     memset(&config, 0, sizeof(config));
-    config.ssid_len = ssid_len;
-    memcpy(config.ssid, esp_config.sta.ssid, ssid_len);
-    config.ssid[ssid_len] = '\0';
-    config.password_len = h2_esp_wifi_strnlen(esp_config.sta.password, H2_PAL_WIFI_PASSWORD_MAX);
-    memcpy(config.password, esp_config.sta.password, config.password_len);
-    config.password[config.password_len] = '\0';
-    config.bssid_set = esp_config.sta.bssid_set ? 1u : 0u;
-    memcpy(config.bssid, esp_config.sta.bssid, sizeof(config.bssid));
-    config.channel = esp_config.sta.channel;
+    rc = h2_pal_wifi_settings_get_saved_sta_config(
+        h2_esp_platform_wifi_settings(), &config);
+    if (rc != H2_PAL_OK)
+        return rc;
 
     TickType_t timeout_ticks = timeout_ms == 0u ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
     TickType_t started_at = xTaskGetTickCount();

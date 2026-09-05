@@ -277,3 +277,23 @@ cc_test(
     }),
     deps = ["//libs/pal"],
 )
+
+cc_test(
+    name = "wifi_settings_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_wifi_settings.c",
+        "src/h2_esp_wifi_saved_record.h",
+        "tests/test_h2_esp_wifi_settings.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
