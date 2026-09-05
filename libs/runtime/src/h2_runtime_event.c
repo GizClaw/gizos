@@ -49,17 +49,36 @@ static h2_pal_result_t recv_event(
     return H2_PAL_OK;
 }
 
+static int queued_event_is_valid(
+    const h2_runtime_t *runtime,
+    const h2_runtime_queued_event_t *queued) {
+    return h2_runtime_ready(runtime) &&
+           runtime->private_state->event_queue != NULL && queued != NULL &&
+           queued->component != H2_RUNTIME_COMPONENT_NONE &&
+           !(component_requires_id(queued->component) &&
+             queued->component_id == H2_RUNTIME_COMPONENT_ID_NONE) &&
+           queued->kind != H2_RUNTIME_EVENT_NONE &&
+           queued->payload_size <=
+               runtime->private_state->event_payload_capacity;
+}
+
+void h2_runtime_notify_internal(h2_runtime_t *runtime) {
+    h2_pal_queue_t *wake = runtime->private_state->wake_queue;
+    if (wake == NULL) {
+        return;
+    }
+    const uint8_t token = 1u;
+    /*
+     * The slot is the coalescing rule: FULL means a wake is already pending
+     * and CLOSED means deinit owns the queue. Neither is an error here.
+     */
+    (void)h2_pal_queue_send(runtime->queue, wake, &token, H2_PAL_QUEUE_NO_WAIT);
+}
+
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued) {
-    if (!h2_runtime_ready(runtime) ||
-        runtime->private_state->event_queue == NULL || queued == NULL ||
-        queued->component == H2_RUNTIME_COMPONENT_NONE ||
-        (component_requires_id(queued->component) &&
-         queued->component_id == H2_RUNTIME_COMPONENT_ID_NONE) ||
-        queued->kind == H2_RUNTIME_EVENT_NONE ||
-        queued->payload_size >
-            runtime->private_state->event_payload_capacity) {
+    if (!queued_event_is_valid(runtime, queued)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
 
@@ -69,6 +88,31 @@ h2_pal_result_t h2_runtime_enqueue_event(
     if (rc == H2_PAL_ERR_FULL || rc == H2_PAL_QUEUE_ERR_TIMEOUT) {
         runtime->private_state->dropped_event_count += 1u;
         return H2_PAL_OK;
+    }
+    if (rc == H2_PAL_OK) {
+        h2_runtime_notify_internal(runtime);
+    }
+    return rc;
+}
+
+h2_pal_result_t h2_runtime_enqueue_event_strict(
+    h2_runtime_t *runtime,
+    const h2_runtime_queued_event_t *queued,
+    uint32_t timeout_ms) {
+    if (!queued_event_is_valid(runtime, queued)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+
+    h2_pal_result_t rc =
+        h2_pal_queue_send(runtime->queue, runtime->private_state->event_queue,
+                          queued, timeout_ms);
+    /* Providers report a full non-blocking send as either code. */
+    if (timeout_ms == H2_PAL_QUEUE_NO_WAIT &&
+        (rc == H2_PAL_QUEUE_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)) {
+        return H2_PAL_ERR_FULL;
+    }
+    if (rc == H2_PAL_OK) {
+        h2_runtime_notify_internal(runtime);
     }
     return rc;
 }
@@ -109,9 +153,19 @@ h2_pal_result_t h2_runtime_poll_event(
     return recv_event(runtime, out_event, H2_PAL_QUEUE_NO_WAIT);
 }
 
-h2_pal_result_t h2_runtime_wait_event(
+static int recv_would_block(h2_pal_result_t rc) {
+    return rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT ||
+           rc == H2_PAL_QUEUE_ERR_TIMEOUT;
+}
+
+h2_pal_result_t h2_runtime_wait_notify(
     h2_runtime_t *runtime,
-    h2_runtime_event_t *out_event,
     uint32_t timeout_ms) {
-    return recv_event(runtime, out_event, timeout_ms);
+    if (!h2_runtime_ready(runtime) || runtime->private_state->wake_queue == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    uint8_t token = 0u;
+    h2_pal_result_t rc = h2_pal_queue_recv(
+        runtime->queue, runtime->private_state->wake_queue, &token, timeout_ms);
+    return recv_would_block(rc) ? H2_PAL_ERR_TIMEOUT : rc;
 }

@@ -3,16 +3,27 @@ name: OpenAI PR Review
 on:
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Approved fork pull request to review
+        required: true
+        type: string
+      head_sha:
+        description: Exact approved fork head to review
+        required: true
+        type: string
 
 concurrency:
-  group: openai-pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: openai-pr-review-${{ github.event.issue.number || inputs.pull_request_number }}
   cancel-in-progress: false
 
 jobs:
   prepare:
     if: >-
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '@codex')
+      startsWith(github.event.comment.body, '@codex') ||
+      github.event_name == 'workflow_dispatch'
     name: Publish pending OpenAI eligibility
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 5
@@ -36,8 +47,10 @@ jobs:
         name: Publish exact-head pending status
         env:
           ELIGIBILITY_STATUS_MODE: start
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
           TRUSTED_SOURCE_SHA: ${{ github.sha }}
         run: node .github/scripts/merge-eligibility-status/run.mjs
 

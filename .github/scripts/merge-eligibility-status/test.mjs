@@ -110,6 +110,9 @@ async function runPublisher({
   statusPostFailure = false,
   runUrl = "https://github.example/actions/runs/1",
   latestTargetUrl = runUrl,
+  eventName = "issue_comment",
+  headRepository = "GizClaw/gizos",
+  ownershipDescription = "Ownership approved fork checks for this exact head",
 }) {
   const requests = [];
   const server = createServer(async (request, response) => {
@@ -132,7 +135,7 @@ async function runPublisher({
           number: 1,
           state: "open",
           draft: false,
-          head: {sha: currentHead},
+          head: {sha: currentHead, repo: {full_name: headRepository}},
           base: {sha: BASE, ref: "main"},
         }),
       );
@@ -150,6 +153,12 @@ async function runPublisher({
             context: OPENAI_ELIGIBILITY_CONTEXT,
             state: "pending",
             target_url: latestTargetUrl,
+          },
+          {
+            context: OWNERSHIP_ELIGIBILITY_CONTEXT,
+            state: "success",
+            description: ownershipDescription,
+            target_url: "https://github.example/actions/runs/ownership",
           },
         ]),
       );
@@ -182,14 +191,18 @@ async function runPublisher({
   const outputPath = resolve(temporaryDirectory, "output.txt");
   await writeFile(
     eventPath,
-    JSON.stringify({
-      issue: {
-        number: 1,
-        pull_request: {
-          url: "https://api.github.example/repos/GizClaw/gizos/pulls/1",
-        },
-      },
-    }),
+    JSON.stringify(
+      eventName === "workflow_dispatch"
+        ? {inputs: {pull_request_number: "1", head_sha: HEAD}}
+        : {
+            issue: {
+              number: 1,
+              pull_request: {
+                url: "https://api.github.example/repos/GizClaw/gizos/pulls/1",
+              },
+            },
+          },
+    ),
   );
   await writeFile(outputPath, "");
 
@@ -203,6 +216,7 @@ async function runPublisher({
         EXPECTED_HEAD_SHA: HEAD,
         EXPECTED_REVIEW_WORKFLOW_SHA: "c".repeat(40),
         GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
+        GITHUB_EVENT_NAME: eventName,
         GITHUB_EVENT_PATH: eventPath,
         GITHUB_OUTPUT: outputPath,
         GITHUB_REPOSITORY: "GizClaw/gizos",
@@ -268,13 +282,57 @@ test("policy workflows serialize complete status generations per pull request", 
   }
 });
 
-test("OpenAI review runs only for an explicit PR comment request", async () => {
+test("OpenAI review accepts comments and approved fork dispatches only", async () => {
   const workflow = await readFile(OPENAI_WORKFLOW, "utf8");
   assert.doesNotMatch(workflow, /pull_request_target:/);
   assert.match(workflow, /issue_comment:\n    types: \[created\]/);
+  assert.match(workflow, /workflow_dispatch:\n    inputs:/);
   assert.match(
     workflow,
     /github\.event\.issue\.pull_request &&\n      startsWith\(github\.event\.comment\.body, '@codex'\)/,
+  );
+});
+
+test("approved fork dispatch starts OpenAI review for the exact head", async () => {
+  const result = await runPublisher({
+    mode: "start",
+    eventName: "workflow_dispatch",
+    headRepository: "contributor/gizos",
+  });
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  assert.match(result.outputs, /pull_request_number=1/);
+  assert.match(result.outputs, new RegExp(`head_sha=${HEAD}`));
+});
+
+test("fork comment cannot start OpenAI review before approval", async () => {
+  const result = await runPublisher({
+    mode: "start",
+    headRepository: "contributor/gizos",
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /require current-head CODEOWNER approval/);
+  assert.equal(
+    result.requests.some((request) =>
+      request.url.startsWith("/repos/GizClaw/gizos/statuses/"),
+    ),
+    false,
+  );
+});
+
+test("fork workflow dispatch cannot bypass ownership approval", async () => {
+  const result = await runPublisher({
+    mode: "start",
+    eventName: "workflow_dispatch",
+    headRepository: "contributor/gizos",
+    ownershipDescription: "Ownership policy passed for this exact head",
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /lacks current-head ownership approval/);
+  assert.equal(
+    result.requests.some((request) =>
+      request.url.startsWith("/repos/GizClaw/gizos/statuses/"),
+    ),
+    false,
   );
 });
 

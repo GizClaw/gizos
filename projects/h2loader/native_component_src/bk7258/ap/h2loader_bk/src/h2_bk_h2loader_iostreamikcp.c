@@ -1,5 +1,7 @@
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
+#include "h2loader_app_task_names.h"
+#include "h2_loader_task_names.h"
 
 #include "h2_bk_platform_core.h"
 #include "h2_command.h"
@@ -13,11 +15,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#define H2_BK_SERIAL_BAUD_RATE 230400u
+#define H2_BK_SERIAL_BAUD_RATE 460800u
 #define H2_BK_SERIAL_DEFAULT_WRITE_TIMEOUT_MS 5000u
 #define H2_BK_SERIAL_MAX_FLUSH_TIMEOUT_MS 120000u
 #define H2_BK_SERIAL_MAX_WAITSND 64u
 #define H2_BK_SERIAL_POLL_INTERVAL_MS 10u
+#define H2_BK_SERIAL_WRITE_POLL_MS 1u
 #define H2_BK_SERIAL_PHYSICAL_READ_SIZE 512u
 #define H2_BK_SERIAL_SEGMENT_TIMEOUT_MS 60u
 #define H2_BK_SERIAL_RECEIVE_WINDOW 20u
@@ -30,6 +33,7 @@ typedef struct h2_bk_serial_transport {
   uint32_t pending_conv;
   uint32_t write_timeout_ms;
   int replacement_pending;
+  int close_pending;
   const atomic_bool *stop_requested;
 } h2_bk_serial_transport_t;
 
@@ -115,6 +119,16 @@ static h2_pal_result_t on_frame(void *user,
     transport->pending_conv = frame->conv;
     transport->replacement_pending = transport->stream != NULL;
     return H2_PAL_OK;
+  }
+  if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE &&
+      transport->stream != NULL && frame->conv == transport->conv) {
+    h2_pal_result_t rc = send_control(
+        transport, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
+    if (rc == H2_PAL_OK) {
+      transport->close_pending = 1;
+      transport->replacement_pending = 1;
+    }
+    return rc;
   }
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA &&
       transport->stream != NULL && frame->conv == transport->conv) {
@@ -247,7 +261,8 @@ static h2_pal_result_t command_write(void *user, const void *buffer, size_t len,
   h2_pal_result_t rc = h2_iostreamikcp_write(transport->stream, buffer, len);
   *out_written = rc == H2_PAL_OK ? len : 0u;
   if (rc == H2_PAL_OK) {
-    h2_pal_result_t poll_rc = poll_physical(transport, 0u);
+    h2_pal_result_t poll_rc =
+        poll_physical(transport, H2_BK_SERIAL_WRITE_POLL_MS);
     if (poll_rc != H2_PAL_OK && poll_rc != H2_PAL_ERR_TIMEOUT &&
         poll_rc != H2_PAL_ERR_WOULD_BLOCK) {
       return poll_rc;
@@ -358,13 +373,23 @@ static h2_command_io_api_t transport_io(h2_bk_serial_transport_t *transport) {
   return io;
 }
 
+static void deactivate_current(h2_bk_serial_transport_t *transport) {
+  if (transport == NULL) {
+    return;
+  }
+  h2_iostreamikcp_close(transport->stream);
+  transport->stream = NULL;
+  transport->conv = 0u;
+  transport->replacement_pending = 0;
+  transport->close_pending = 0;
+}
+
 static h2_pal_result_t activate_pending(h2_bk_serial_transport_t *transport) {
   if (transport == NULL || transport->pending_conv == 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   uint32_t conv = transport->pending_conv;
-  h2_iostreamikcp_close(transport->stream);
-  transport->stream = NULL;
+  deactivate_current(transport);
   const h2_iostreamikcp_config_t config = {
       .io = transport->physical_io,
       .allocator = transport->allocator,
@@ -405,6 +430,10 @@ serve_loader_iostreamikcp(h2_bk_serial_transport_t *transport,
   h2_loader_command_config_t serial_config = *command_config;
   serial_config.io = transport_io(transport);
   while (!transport_stop_requested(transport)) {
+    if (transport->close_pending && transport->pending_conv == 0u) {
+      deactivate_current(transport);
+      continue;
+    }
     if (transport->pending_conv != 0u) {
       rc = h2_loader_command_init(command, &serial_config);
       if (rc == H2_PAL_OK) {
@@ -465,7 +494,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
     return rc;
   }
   const h2_pal_task_options_t options = {
-      .name = "h2loader/appcmd",
+      .name = h2loader_app_command_task_name,
       .min_stack_size = H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE,
   };
   rc = h2_pal_task_start(runtime->task, &options, loader_serial_task, state,
@@ -504,6 +533,11 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
   for (;;) {
     if (atomic_load_explicit(&state->stop_requested, memory_order_acquire)) {
       return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
+    }
+    if (state->transport.close_pending &&
+        state->transport.pending_conv == 0u) {
+      deactivate_current(&state->transport);
+      return EOF;
     }
     if (state->transport.pending_conv != 0u) {
       h2_pal_result_t rc = activate_pending(&state->transport);
@@ -551,17 +585,17 @@ static int app_write(void *user, const char *data, size_t len) {
     }
     offset += written;
   }
-  return state->io.vtable->flush(state->io.user);
+  /* The app console emits each logical line as body + "\n". Flushing the
+   * body first waits for its KCP ACK while the Host deliberately waits for
+   * the line terminator before its terminal flush, so both peers can wait
+   * forever. Queue both writes and flush only at the line boundary. */
+  return len != 0u && (data[len - 1u] == '\n' || data[len - 1u] == '\r')
+      ? state->io.vtable->flush(state->io.user)
+      : H2_PAL_OK;
 }
 
 static int arm_pending_app_rollback(const h2_pal_pref_api_t *pref) {
-  h2_loader_status_t status;
-  int rc = h2_loader_read_pref_status(pref, NULL, &status);
-  if (rc != H2_PAL_OK ||
-      status.install_state !=
-          H2_LOADER_INSTALL_STATE_INSTALLED_PENDING_CONFIRM) {
-    return rc;
-  }
+  if (pref == NULL) return H2_PAL_ERR_INVALID_ARG;
   return h2_bk_h2loader_prepare_pending_app_rollback();
 }
 
@@ -607,7 +641,7 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
       .read_byte = app_read_byte,
       .write_user = state,
       .write = app_write,
-      .task_name = "h2loader/uartcmd",
+      .task_name = h2_loader_uart_command_task_name,
       .stack_size = H2_BK_H2LOADER_APP_COMMAND_STACK_SIZE,
   };
   rc = h2_loader_app_client_start_return_console(&console);

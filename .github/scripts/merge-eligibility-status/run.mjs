@@ -4,6 +4,7 @@ import {execFileSync} from "node:child_process";
 import {
   EligibilityStatusError,
   OPENAI_ELIGIBILITY_CONTEXT,
+  OWNERSHIP_ELIGIBILITY_CONTEXT,
   assertLatestPendingStatus,
   openAiFinalStatus,
   statusPayload,
@@ -11,6 +12,10 @@ import {
 } from "./common.mjs";
 
 const API_VERSION = "2022-11-28";
+const APPROVED_FORK_DESCRIPTIONS = new Set([
+  "Ownership approved fork checks for this exact head",
+  "Ownership passed; approved fork checks were requested",
+]);
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -71,9 +76,32 @@ async function assertCurrentGeneration(repository, sha, runUrl) {
   });
 }
 
+async function assertApprovedForkReview(repository, headSha) {
+  const statuses = await githubRequest(
+    `/repos/${repository}/commits/${validateSha(headSha)}/statuses?per_page=100`,
+  );
+  const ownership = statuses.find(
+    (status) => status.context === OWNERSHIP_ELIGIBILITY_CONTEXT,
+  );
+  if (
+    ownership?.state !== "success" ||
+    !APPROVED_FORK_DESCRIPTIONS.has(ownership.description)
+  ) {
+    throw new EligibilityStatusError(
+      "fork OpenAI review dispatch lacks current-head ownership approval",
+    );
+  }
+}
+
 function pullRequestNumber(event) {
   if (event.issue?.pull_request && event.issue.number) {
     return event.issue.number;
+  }
+  if (process.env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    const number = Number(requiredEnvironment("PULL_REQUEST_NUMBER"));
+    if (Number.isSafeInteger(number) && number > 0) {
+      return number;
+    }
   }
   throw new EligibilityStatusError(
     "event does not identify a pull request eligible for OpenAI review",
@@ -116,6 +144,24 @@ async function start(repository, event, runUrl) {
   }
   const headSha = validateSha(pullRequest.head?.sha, "pull-request head SHA");
   const baseSha = validateSha(pullRequest.base?.sha, "pull-request base SHA");
+  const isFork = pullRequest.head?.repo?.full_name !== repository;
+  if (isFork && process.env.GITHUB_EVENT_NAME !== "workflow_dispatch") {
+    throw new EligibilityStatusError(
+      "fork pull requests require current-head CODEOWNER approval before OpenAI review",
+    );
+  }
+  if (process.env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    const expectedHeadSha = validateSha(
+      requiredEnvironment("EXPECTED_HEAD_SHA"),
+      "approved fork head SHA",
+    );
+    if (!isFork || headSha !== expectedHeadSha) {
+      throw new EligibilityStatusError(
+        `approved fork review identity does not match pull request #${number}`,
+      );
+    }
+    await assertApprovedForkReview(repository, headSha);
+  }
   await publishStatus(
     repository,
     headSha,

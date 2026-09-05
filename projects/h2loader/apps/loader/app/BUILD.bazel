@@ -2,6 +2,15 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["h2loader_bleikcp.c"])
+
+cc_library(
+    name = "task_names",
+    srcs = ["task_names.c"],
+    hdrs = ["include/h2loader_app_task_names.h"],
+    includes = ["include"],
+)
+
 cc_library(
     name = "loader",
     srcs = glob(
@@ -15,6 +24,7 @@ cc_library(
         ],
         allow_empty = True,
         exclude = [
+            "task_names.c",
             "examples/**",
             "test/**",
             "tests/**",
@@ -29,6 +39,7 @@ cc_library(
         ],
         allow_empty = True,
         exclude = [
+            "include/h2loader_app_task_names.h",
             "examples/**",
             "test/**",
             "tests/**",
@@ -67,6 +78,7 @@ cc_library(
         "manual",
     ],
     deps = [
+        ":task_names",
         "//libs/bleikcp",
         "//libs/command",
         "//libs/pal",

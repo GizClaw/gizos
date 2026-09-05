@@ -35,6 +35,7 @@
 #include "h2/pal/hal/h2_pal_display.h"
 #include "h2/pal/hal/h2_pal_audio.h"
 #include "h2/pal/hal/h2_pal_audio_decoder.h"
+#include "h2/pal/hal/h2_pal_audio_task_names.h"
 #include "h2/pal/hal/h2_pal_pwm_switch.h"
 #include "h2/pal/hal/h2_pal_input.h"
 #include "h2/pal/hal/h2_pal_led.h"

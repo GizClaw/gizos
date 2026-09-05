@@ -393,13 +393,6 @@ static int sockaddr_to_addr(const struct sockaddr *sockaddr, h2_pal_net_addr_t *
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
-static void set_recv_timeout(int fd, uint32_t timeout_ms) {
-    struct timeval timeout;
-    timeout.tv_sec = (long)(timeout_ms / 1000u);
-    timeout.tv_usec = (long)((timeout_ms % 1000u) * 1000u);
-    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-}
-
 static int esp_net_socket_error(void) {
     return errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN
         ? H2_PAL_ERR_CLOSED
@@ -785,15 +778,12 @@ static int esp_net_udp_recvfrom(
     if (socket_fd < 0 || data == NULL || len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    int ready = h2_esp_net_wait_fd(socket_fd, 0, timeout_ms);
-    if (ready != H2_PAL_OK) {
-        return ready;
-    }
     struct sockaddr_storage storage;
     socklen_t sock_len = sizeof(storage);
-    int got = recvfrom(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, &sock_len);
+    int got = h2_esp_net_datagram_recv(
+        socket_fd, data, len, timeout_ms, (struct sockaddr *)&storage, &sock_len);
     if (got < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+        return got;
     }
     if (out_addr != NULL) {
         (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_addr);
@@ -896,6 +886,89 @@ static h2_pal_result_t esp_net_tcp_connect(
     return fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK) == 0
         ? H2_PAL_OK
         : H2_PAL_ERR_IO;
+}
+
+static int esp_net_tcp_listen(
+    void *user,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind_config,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    (void)user;
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    h2_pal_net_addr_t bind_addr;
+    memset(&bind_addr, 0, sizeof(bind_addr));
+    bind_addr.family = family;
+    if (bind_config != NULL && bind_config->type != H2_PAL_NET_BIND_DEFAULT) {
+        if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+            return H2_PAL_ERR_UNSUPPORTED;
+        }
+        if (bind_config->source_addr.family != family) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        bind_addr = bind_config->source_addr;
+    }
+    bind_addr.port = port;
+    int fd = socket(family_to_lwip(family), SOCK_STREAM, 0);
+    if (fd < 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_storage storage;
+    socklen_t sock_len = 0;
+    int rc = addr_to_sockaddr(&bind_addr, &storage, &sock_len);
+    if (rc != H2_PAL_OK) {
+        close(fd);
+        return rc;
+    }
+    if (bind(fd, (struct sockaddr *)&storage, sock_len) < 0 ||
+        listen(fd, 4) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    if (getsockname(fd, (struct sockaddr *)&storage, &sock_len) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t esp_net_tcp_accept(
+    void *user,
+    h2_pal_net_socket_t listen_fd,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_peer_addr,
+    uint32_t timeout_ms) {
+    (void)user;
+    if (listen_fd < 0 || out_socket == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    int ready = h2_esp_net_wait_fd(listen_fd, 0, timeout_ms);
+    if (ready != H2_PAL_OK) {
+        return (h2_pal_result_t)ready;
+    }
+    struct sockaddr_storage storage;
+    socklen_t sock_len = sizeof(storage);
+    int fd = accept(listen_fd, (struct sockaddr *)&storage, &sock_len);
+    if (fd < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            return H2_PAL_ERR_WOULD_BLOCK;
+        }
+        return H2_PAL_ERR_IO;
+    }
+    if (out_peer_addr != NULL) {
+        (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_peer_addr);
+    }
+    *out_socket = fd;
+    return H2_PAL_OK;
 }
 
 static int esp_net_tcp_send(
@@ -1076,16 +1149,7 @@ static int esp_net_tcp_recv(
             }
         }
     }
-    set_recv_timeout(socket_fd, timeout_ms);
-    int received = recv(socket_fd, data, (int)len, 0);
-    if (received < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK
-                                    : H2_PAL_ERR_TIMEOUT;
-        }
-        return esp_net_socket_error();
-    }
-    return received == 0 ? H2_PAL_ERR_CLOSED : received;
+    return h2_esp_net_stream_recv(socket_fd, data, len, timeout_ms);
 }
 
 static void esp_net_close(void *user, h2_pal_net_socket_t socket_fd) {
@@ -1355,6 +1419,8 @@ const h2_pal_net_api_t *h2_esp_platform_net_api(void) {
         .tls_wrap = esp_net_tls_wrap,
         .icmp_echo = esp_net_icmp_echo,
         .close = esp_net_close,
+        .tcp_listen = esp_net_tcp_listen,
+        .tcp_accept = esp_net_tcp_accept,
     };
     static const h2_pal_net_api_t api = {
         .user = NULL,

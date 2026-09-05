@@ -110,13 +110,19 @@ static int handle_runtime_event(
         event->component_id != H2_PIXA_GAMES_DINORUN_COMPONENT_RECORD) {
         return H2_GAME_RUNTIME_OK;
     }
-    if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+    if (event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION ||
+        event->payload_size < sizeof(h2_runtime_button_action_event_t)) {
+        return H2_GAME_RUNTIME_OK;
+    }
+    const h2_runtime_button_action_event_t *action = event->payload;
+    if (h2_runtime_button_action_is_released(action)) {
         return send_input(
             state,
             H2_GAME_INPUT_BUTTON_UP,
             (uint32_t)event->timestamp_ms);
     }
-    if (event->kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
+    if (action->released_at_ms != 0u ||
+        event->timestamp_ms != action->pressed_at_ms) {
         return H2_GAME_RUNTIME_OK;
     }
 
@@ -286,15 +292,15 @@ int h2_pixa_games_dinorun_run(
         uint32_t timeout_ms = wait_ms > UINT32_MAX
                                   ? UINT32_MAX
                                   : (uint32_t)wait_ms;
-        rc = h2_runtime_wait_event(runtime, &event, timeout_ms);
-        if (rc == H2_PAL_ERR_TIMEOUT) {
-            continue;
+        /* Drain before waiting: a half-drained queue has no pending wake. */
+        while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+            rc = handle_runtime_event(&state, &event);
+            if (rc != H2_GAME_RUNTIME_OK) {
+                return cleanup(&state, rc);
+            }
         }
-        if (rc != H2_PAL_OK) {
-            return cleanup(&state, rc);
-        }
-        rc = handle_runtime_event(&state, &event);
-        if (rc != H2_GAME_RUNTIME_OK) {
+        rc = h2_runtime_wait_notify(runtime, timeout_ms);
+        if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
             return cleanup(&state, rc);
         }
     }

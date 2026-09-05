@@ -1,5 +1,6 @@
 #include "h2_esp_board_private.h"
 #include "h2_esp_board_internal.h"
+#include "h2_esp_board.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -31,6 +32,13 @@
 #define LCD_CONTROL_PANEL_MASK (LCD_CONTROL_RESET_MASK | LCD_CONTROL_POWER_MASK)
 #define LCD_BITS_PER_PIXEL 16
 #define LCD_DRAW_ROWS 64
+/*
+ * Smallest chunk the panel still draws with. An H2Loader app image opens the
+ * panel after the BLE controller and the loader tasks have fragmented the
+ * internal DMA heap, so the preferred 64-row buffer is often unavailable even
+ * when the total free internal memory is far larger.
+ */
+#define LCD_DRAW_ROWS_MIN 8
 #define LCD_DMA_BUFFER_PIXELS (LCD_WIDTH * LCD_DRAW_ROWS)
 #define LCD_DMA_BUFFER_BYTES (LCD_DMA_BUFFER_PIXELS * sizeof(uint16_t))
 #define LCD_OPCODE_WRITE_CMD 0x02
@@ -51,6 +59,21 @@ typedef struct h2_esp_amoled_display_state {
 
 static const char *TAG = "h2_esp_amoled";
 static h2_esp_amoled_display_state_t s_display_state;
+static h2_esp_board_display_config_t s_display_config;
+
+h2_pal_result_t h2_esp_board_display_configure(
+    const h2_esp_board_display_config_t *config) {
+    if (!h2_esp_board_display_config_is_valid(config)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (!h2_esp_board_display_config_may_apply(
+            s_display_state.panel_io != NULL || s_display_state.initialized ||
+            s_display_state.opened)) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    s_display_config = *config;
+    return H2_PAL_OK;
+}
 
 static const sh8601_lcd_init_cmd_t s_amoled_init_cmds[] = {
     { SH8601_CMD_SLEEP_OUT, NULL, 0, 120 },
@@ -168,10 +191,13 @@ static int init_panel_io(h2_esp_amoled_display_state_t *state) {
     if (state->panel_io != NULL) {
         return H2_DISPLAY_OK;
     }
-    const esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(
+    esp_lcd_panel_io_spi_config_t io_config = SH8601_PANEL_IO_QSPI_CONFIG(
         LCD_CS_GPIO,
         NULL,
         NULL);
+    if (s_display_config.pclk_hz != 0u) {
+        io_config.pclk_hz = (int)s_display_config.pclk_hz;
+    }
     err = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &state->panel_io);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_lcd_new_panel_io_spi failed: %s", esp_err_to_name(err));
@@ -195,12 +221,26 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
         return rc;
     }
     if (state->dma_buffer == NULL) {
-        state->dma_buffer = (uint16_t *)heap_caps_malloc(LCD_DMA_BUFFER_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        /* Halve the chunk until the fragmented internal DMA heap can serve it. */
+        for (int rows = LCD_DRAW_ROWS; rows >= LCD_DRAW_ROWS_MIN; rows /= 2) {
+            const size_t pixels = (size_t)LCD_WIDTH * (size_t)rows;
+            const size_t bytes = pixels * sizeof(uint16_t);
+            state->dma_buffer = (uint16_t *)heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+            if (state->dma_buffer != NULL) {
+                state->dma_buffer_pixels = pixels;
+                ESP_LOGI(TAG, "display dma buffer rows=%d bytes=%u", rows, (unsigned)bytes);
+                break;
+            }
+        }
         if (state->dma_buffer == NULL) {
-            ESP_LOGE(TAG, "display dma buffer alloc failed bytes=%u", (unsigned)LCD_DMA_BUFFER_BYTES);
+            ESP_LOGE(
+                TAG,
+                "display dma buffer alloc failed rows=%d bytes=%u largest=%u",
+                LCD_DRAW_ROWS_MIN,
+                (unsigned)((size_t)LCD_WIDTH * LCD_DRAW_ROWS_MIN * sizeof(uint16_t)),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
             return H2_DISPLAY_ERR_NO_MEMORY;
         }
-        state->dma_buffer_pixels = LCD_DMA_BUFFER_PIXELS;
     }
 
     sh8601_vendor_config_t vendor_config = {

@@ -301,6 +301,43 @@ static h2_pal_result_t h2_bk_netif_get_dns_servers(
     return H2_PAL_ERR_NOT_FOUND;
 }
 
+typedef struct h2_bk_default_select_call {
+    struct tcpip_api_call_data call;
+    const h2_pal_netif_ref_t *ref;
+    int found;
+} h2_bk_default_select_call_t;
+
+static err_t h2_bk_netif_set_default_api_call(
+    struct tcpip_api_call_data *data) {
+    h2_bk_default_select_call_t *request =
+        (h2_bk_default_select_call_t *)data;
+    for (struct netif *netif = netif_list; netif != NULL; netif = netif->next) {
+        h2_pal_netif_status_t status;
+        h2_bk_netif_fill_status(netif, &status);
+        if (h2_bk_netif_matches_ref(&status, request->ref)) {
+            netif_set_default(netif);
+            request->found = 1;
+            break;
+        }
+    }
+    return ERR_OK;
+}
+
+static h2_pal_result_t h2_bk_netif_set_default(
+    void *user,
+    const h2_pal_netif_ref_t *ref) {
+    (void)user;
+    h2_bk_default_select_call_t request = {.ref = ref, .found = 0};
+    if (tcpip_api_call(h2_bk_netif_set_default_api_call, &request.call) !=
+        ERR_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    if (request.found == 0) {
+        return H2_PAL_ERR_NOT_FOUND;
+    }
+    return h2_bk_platform_netif_reconcile_default();
+}
+
 void h2_bk_platform_netif_register(
     void *netif_handle,
     h2_pal_netif_kind_t kind) {
@@ -405,6 +442,7 @@ const h2_pal_netif_api_t *h2_bk_platform_netif_api(void) {
         .find = h2_bk_netif_find,
         .get_status = h2_bk_netif_get_status,
         .get_dns_servers = h2_bk_netif_get_dns_servers,
+        .set_default = h2_bk_netif_set_default,
     };
     static const h2_pal_netif_api_t api = {
         .user = NULL,

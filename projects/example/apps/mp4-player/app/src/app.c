@@ -1,4 +1,5 @@
 #include "h2_smoke_mp4_player.h"
+#include "h2_smoke_mp4_player_task_names.h"
 
 #include <inttypes.h>
 #include <stdatomic.h>
@@ -960,11 +961,11 @@ h2_pal_result_t h2_smoke_mp4_player_run(
     h2_pal_task_t *decoder_task_handle = NULL;
     h2_pal_task_t *audio_task_handle = NULL;
     const h2_pal_task_options_t audio_task_options = {
-        .name = "mp4-audio-writer",
+        .name = h2_smoke_mp4_player_audio_task_name,
         .min_stack_size = 8192u,
     };
     const h2_pal_task_options_t decoder_task_options = {
-        .name = "mp4-decoder",
+        .name = h2_smoke_mp4_player_decoder_task_name,
         .min_stack_size = 32768u,
     };
     player_log(runtime, H2_PAL_LOG_INFO, "H2_MP4_PLAYER_OPEN");

@@ -351,21 +351,25 @@ H2_APP_TEST_CASE(saved_wifi_connect_and_delete) {
 }
 ```
 
-`H2_APP_TEST_BUTTON_ACTION` 注入 `click_count == 1` 的单次 action；需要连续点击
-序号（例如 tapdoki 十连击 reset）时使用
-`H2_APP_TEST_BUTTON_ACTION_COUNT(test, component_id, pressed, released, count)`，
-或直接调用 `h2_app_test_session_button_action()` 传入 `click_count`。
+`H2_APP_TEST_BUTTON_ACTION` 注入只含 `pressed_at_ms`、`released_at_ms` 的完整 released action。
+连续点击序号（例如 tapdoki 十连击 reset）由 App 或 scenario 根据多次 action 的时间自行判断。
 
-`H2_APP_TEST_BUTTON_DOWN` / `UP` 用于必须区分 pressed/released 的场景，例如
-Record 或按住期间触发的长按。不能用 action 代替；Runtime 没有 hold 注入
-helper，长按由 scenario 先 `DOWN`，再按所需时长 `UP` 或设置 Button state 表达：
+`H2_APP_TEST_BUTTON_DOWN` / `UP` 在 App Test scenario 中分别投影为释放时间为 0 / 非零的
+semantic action，使 scenario 与 App 当前消费的契约一致。
+需要直接验证 Runtime raw `BUTTON_DOWN` / `BUTTON_UP` event 的测试应使用 Test Control event injection。
+
+`H2_APP_TEST_BUTTON_HOLD(test, component_id, timestamp)` 表示按键在 `timestamp` 时仍然按住：它复用 `H2_APP_TEST_BUTTON_DOWN` 记录的 `pressed_at_ms`，投影为 `released_at_ms == 0`、observed at `timestamp` 的 semantic action，与 Runtime 每次 poll 重复上报 held key 的行为一致。App 看到 `pressed == true`、原始 `pressed_at_ms` 和 `updated_at_ms == timestamp`，可以据此计算已按住时长。`timestamp` 早于 `pressed_at_ms` 时 step 返回 `H2_PAL_ERR_INVALID_ARG`。长按等 gesture 由 scenario 按 down → hold → up 顺序表达：
 
 ```c
 H2_APP_TEST_BUTTON_DOWN(test, EXAMPLE_BUTTON_RECORD, 500u);
+H2_APP_TEST_EXPECT_BOOL(test, "app.recording", false);
+
+/* 按住 500 ms 后才开始 push-to-talk。 */
+H2_APP_TEST_BUTTON_HOLD(test, EXAMPLE_BUTTON_RECORD, 1000u);
 H2_APP_TEST_EXPECT_BOOL(test, "app.recording", true);
 H2_APP_TEST_EXPECT_BOOL(test, "ui.recording", true);
 
-H2_APP_TEST_BUTTON_UP(test, EXAMPLE_BUTTON_RECORD, 900u);
+H2_APP_TEST_BUTTON_UP(test, EXAMPLE_BUTTON_RECORD, 1400u);
 H2_APP_TEST_EXPECT_BOOL(test, "app.recording", false);
 H2_APP_TEST_EXPECT_BOOL(test, "ui.recording", false);
 ```

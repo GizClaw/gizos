@@ -12,7 +12,10 @@ void h2_esp_h2loader_run_with_ble_config(
     h2_runtime_t *runtime,
     const h2_esp_h2loader_config_t *config);
 
-/** App command identity and partition config; strings remain borrowed while services run. */
+/**
+ * App command identity and service config; strings remain borrowed while
+ * services run. The App partition is derived from the running boot partition.
+ */
 typedef struct h2_esp_h2loader_app_commands_config {
     const char *active_name;
     const char *active_version;

@@ -1,6 +1,11 @@
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
+    name = "live_e2e_command_files",
+    srcs = ["Makefile", ".github/workflows/e2e.yml", ":make_command_files"],
+)
+
+filegroup(
     name = "repository_docs",
     srcs = [
         "LICENSE",

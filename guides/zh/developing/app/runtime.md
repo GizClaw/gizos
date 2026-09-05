@@ -103,7 +103,12 @@ App 不 include board header，不保存固定 `periph_id`，也不按 PAL 枚�
 Runtime event 使用稳定的 `component_id` 标识事件来自哪个逻辑组件。游戏 app 收到 button event 后按逻辑 ID 解释输入，不需要知道当前 board 的物理接线：
 
 ```c
-if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION) {
+if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+    event->payload_size == sizeof(h2_runtime_button_action_event_t)) {
+    const h2_runtime_button_action_event_t *action = event->payload;
+    if (!h2_runtime_button_action_is_released(action)) {
+        return;
+    }
     switch (event->component_id) {
     case H2_GAME_COMPONENT_BUTTON_UP:
         h2_game_dispatch_move(game, H2_GAME_DIRECTION_UP);
@@ -127,9 +132,9 @@ Runtime component state 同样使用 `component_id` 读取某个逻辑组件的�
 
 Button、NFC 和 IMU 输入由 Runtime-owned private task 读取并转换为 Runtime event/state。Runtime 初始化先同步发布首帧快照，再启动 task；target 在 Runtime composition 中配置 cadence 和 task policy。Portable App 不调用 input poll、不创建 input task，也不接触 target scheduler。
 
-阻塞式 portable App entry 应通过 `h2_runtime_wait_event()` 等到 Runtime event 或自己的绝对 deadline，而不是在 App source 中调用 target scheduler、libco wait/yield 或固定短 sleep。Target 可以用 OS thread、RTOS task 或 cooperative provider 实现同一个同步 Runtime/PAL contract；该差异不能进入 App public API。
+阻塞式 portable App entry 应通过 `h2_runtime_wait_notify()` 等到 Runtime wake 或自己的绝对 deadline，而不是在 App source 中调用 target scheduler、libco wait/yield 或固定短 sleep。Target 可以用 OS thread、RTOS task 或 cooperative provider 实现同一个同步 Runtime/PAL contract；该差异不能进入 App public API。
 
-物理边沿立即产生 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` 和 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP`；每次松开后立即产生一个独立的 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`，携带 `pressed_at_ms`、`released_at_ms` 和连续点击计数 `click_count`，Runtime 不等待或合并连续点击，也没有 hold 或 long-press event。App 必须按当前交互需要选择一种语义，不能把同一个 button 的边沿和 action event 重复投影成两次 action；长按由业务层根据 `BUTTON_ACTION` 的两个时间戳判断，需要在仍按住时触发的动作读取 Button state 的 `pressed`/`pressed_at_ms`（state 同时带当前 `click_count`）；双击等连续点击策略由业务层根据 `click_count` 判断。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
+每次到达 Button poll deadline，按下状态都会产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` sample 和一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`；松开时产生 `BUTTON_UP` 和最后一个 action。Action 只携带 `pressed_at_ms`、`released_at_ms`：按住时释放时间为 0，松开时释放时间等于事件时间。Runtime 不使用单独的 100 ms action cadence，也不定义 phase、short press、long press 或 click count。App 用事件时间等于按下时间识别首次 sample，用零释放时间识别持续按住，用非零释放时间识别松开，并自行计算长按、双击等策略；不能把同一 sample 的 `BUTTON_DOWN` 与 action 重复投影成两次操作。App 消费这些 event/state，不再主动调用 PAL Button API 读取同一个按键。GPIO、ADC 或其它物理输入的 debounce 由对应 component/provider 完成；Runtime 和虚拟、触摸等 App-level Button 不统一增加物理 debounce。
 
 ## 通过 Component ID 调用 API
 
@@ -188,16 +193,19 @@ h2_runtime_event_t event = {
 };
 
 while (!app.should_exit) {
-    h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 1000);
-    if (rc == H2_PAL_OK) {
-        h2_example_handle_runtime_event(&app, &event);
+    h2_pal_result_t rc = h2_runtime_wait_notify(runtime, 1000);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
+        h2_example_handle_runtime_error(&app, rc);
         continue;
     }
-    if (rc != H2_PAL_ERR_TIMEOUT) {
-        h2_example_handle_runtime_error(&app, rc);
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+        h2_example_handle_runtime_event(&app, &event);
     }
+    h2_example_drain_library_dispatch(&app);
 }
 ```
+
+`h2_runtime_wait_notify()` 是 loop 里唯一的阻塞点。Runtime producer 和 Library 的 `h2_runtime_notify()` 给出的 wake 合并成一次返回；返回后先把 event queue 完全拉空，再 drain Library 的 dispatch queue。不能每次只取一个 event：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。
 
 Event 的具体类型由 `component + component_id + kind` 共同确定。App 只解释 Runtime-owned event schema，不重新消费 PAL system event，也不依赖 PAL callback payload。
 
@@ -205,9 +213,36 @@ Runtime event queue 是有界队列。App event handler 不能在处理事件时
 
 ## 接入 Runtime Event Loop
 
-当前 public Runtime event producer 只覆盖 Runtime system/component event。App handler 把这些 Runtime event 转换成 app-owned action、更新 app state 并产生 effect。UI input、timer 和 library API completion 不是 Runtime event，不能通过 private `h2_runtime_emit_event()` 接入。
+Runtime system/component event 由 Runtime 自己的 producer 产生。App handler 把这些 Runtime event 转换成 app-owned action、更新 app state 并产生 effect。App 和 Library 自己的 completion 不能伪装成 Runtime system/component fact，也不能通过 private `h2_runtime_emit_event()` 接入；它们使用 public custom event 接口：
 
-Library 可以定义自己的有界 completion queue 和 caller-thread dispatch API。App main loop 先处理本轮已经取得的 Runtime input，再以固定上限 dispatch completion callback；callback 在 main-loop thread 执行 transition，随后完成同一轮 State、Subject 和 UI 投影。Library worker 只执行阻塞工作并入队 completion，不能直接修改 App state，也不能把 callback completion 伪装成 Runtime system/component fact。
+```c
+const h106_job_completion_event_t completion = { job_id, generation, result };
+const h2_runtime_custom_event_t event = {
+    .id = H106_EVENT_JOB_COMPLETED,
+    .payload = &completion,
+    .payload_size = sizeof(completion),
+};
+/* 任意后台 Task 都可以调用；立即唤醒 main loop 的 wait_notify */
+h2_pal_result_t rc = h2_runtime_post_custom_event(runtime, &event);
+```
+
+`main_loop` 因此只等待 Runtime queue，不需要为了发现 completion 而定时轮询：
+
+```c
+if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
+    const h2_runtime_custom_event_payload_t *custom = event.payload;
+
+    switch (custom->id) {
+    case H106_EVENT_JOB_COMPLETED:
+        /* 按 job_id 找到 Job、校验 generation、join task、执行 completion */
+        break;
+    }
+}
+```
+
+Custom event 只携带值（例如 `job_id + generation + result`），不携带 Job 指针、callback 或 Task handle：即使页面已经退出、Job 已被取消或 completion 迟到，main loop 也只会查表失败，不会解引用已释放的对象。Payload 由 Runtime 复制，上限见 `h2_runtime_custom_event_payload_capacity()`；queue 满时投递返回 `H2_PAL_ERR_FULL`，由投递方决定重试还是丢弃。
+
+Library worker 只执行阻塞工作并投递 completion，不能直接修改 App state。Library 也可以继续使用自己的有界 completion queue 加 caller-thread dispatch API，此时用 `h2_runtime_notify()` 叫醒 main loop（不投递 custom event，不占 event queue，重复调用合并）；main loop 在每次 wake 之后 drain 该 dispatch API，callback 在 main-loop thread 执行 transition，随后完成同一轮 State、Subject 和 UI 投影。
 
 ```mermaid
 flowchart TD
@@ -219,8 +254,9 @@ flowchart TD
     Transition --> Effect["Effect command"]
     Effect --> Worker["Runtime API 或后台 task"]
     Effect --> Library["Library operation submit"]
-    Library --> Completion["Library completion queue"]
-    Completion --> Dispatch["App main-loop dispatch"]
+    Library --> Completion["h2_runtime_notify()"]
+    Completion --> RuntimeLoop
+    RuntimeLoop --> Dispatch["App main-loop dispatch"]
     Dispatch --> Transition
 ```
 
@@ -233,7 +269,7 @@ App 按以下顺序管理自己的资源：
 1. 验证 Runtime 和 app config。
 2. 初始化 app-private state 和必要的 library。
 3. 读取 Runtime 初始化时已经发布的 input state，建立 app state 快照。
-4. 阻塞式 entry 使用 `h2_runtime_wait_event()` 等待 Runtime event 或 app-owned deadline。
+4. 阻塞式 entry 使用 `h2_runtime_wait_notify()` 等待 Runtime wake 或 app-owned deadline，然后 poll event queue。
 5. 由 App handler 按序消费 Runtime system/component event；不要调用 private Runtime producer API。
 6. 停止接收新 command，取消或等待进行中的工作。
 7. 停止并 join App 自己创建的业务 worker task；对 library-owned service 先 stop/join，再由 main loop drain completion callback，最后 deinit。
@@ -257,12 +293,13 @@ h2_pal_result_t example_loop_step(
       .payload_capacity = sizeof(state->event_payload),
   };
 
-  h2_pal_result_t rc =
-      h2_runtime_wait_event(state->runtime, &event, timeout_ms);
-  if (rc == H2_PAL_OK) {
-    rc = example_dispatch_runtime_event(state, &event);
-  } else if (rc == H2_PAL_ERR_TIMEOUT) {
+  h2_pal_result_t rc = h2_runtime_wait_notify(state->runtime, timeout_ms);
+  if (rc == H2_PAL_ERR_TIMEOUT) {
     rc = H2_PAL_OK;
+  }
+  while (rc == H2_PAL_OK &&
+         h2_runtime_poll_event(state->runtime, &event) == H2_PAL_OK) {
+    rc = example_dispatch_runtime_event(state, &event);
   }
   if (rc == H2_PAL_OK) {
     rc = example_tick(state);

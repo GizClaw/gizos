@@ -37,110 +37,69 @@ typedef void (*h2_gizclaw_client_event_fn)(
 typedef struct h2_gizclaw_speedtest_result {
   /** Exact download body bytes accepted before the SDK received EOS. */
   uint64_t download_bytes;
-  /** Download duration, normalized to at least one ms when non-empty. */
+  /** Request execution start through server EOS, normalized to at least one ms
+   * when non-empty. Zero for an upload-only request. */
   uint64_t elapsed_ms;
   /** Download rate derived from `download_bytes` and `elapsed_ms`. */
   uint64_t download_bits_per_second;
   /** Exact upload body bytes accepted before the SDK received EOS. */
   uint64_t upload_bytes;
-  /** Upload duration, normalized to at least one ms when non-empty. */
+  /** Request execution start through the server EOS (remote-consumption
+   * acknowledgement), normalized to at least one ms when non-empty.
+   * Zero for a download-only request. */
   uint64_t upload_elapsed_ms;
   /** Upload rate derived from `upload_bytes` and `upload_elapsed_ms`. */
   uint64_t upload_bits_per_second;
 } h2_gizclaw_speedtest_result_t;
 
-int h2_gizclaw_client_init(const h2_gizclaw_config_t *config, h2_gizclaw_client_t **out_client);
+typedef struct h2_gizclaw_service h2_gizclaw_service_t;
+typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 
-/**
- * Establish the GizClaw Peer connection and all mandatory transports.
- *
- * This blocking call registers bidirectional Opus media and returns success
- * only after the connection-scoped Direct Packet and Peer Event channels are
- * ready and the client owns the sole Peer Event access handle.
- */
-int h2_gizclaw_client_connect(h2_gizclaw_client_t *client);
+/** Ping timing covers execution, not time spent waiting for app dispatch. */
+h2_pal_result_t h2_gizclaw_req_create_ping(h2_gizclaw_service_t *service,
+                                           uint64_t identity,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_ping(const h2_gizclaw_req_t *request,
+                           h2_gizclaw_ping_result_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t *service,
+                                    uint32_t timeout_ms,
+                                    h2_gizclaw_ping_result_t *out_result);
 
-/**
- * Drive the connected GizClaw Peer for at most `timeout_ms` milliseconds.
- *
- * `H2_PAL_ERR_CLOSED` means a mandatory connection transport closed or the
- * Peer otherwise became unusable. Callers must close and deinit the complete
- * client before reconnecting; an individual transport is not reopened.
- */
-int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms);
+/** Create one single-direction speed test; exactly one byte count must be
+ * nonzero. Run upload and download as separate requests. Upload req_do needs
+ * input_read; download req_do needs output_write. Downloads also validate the
+ * server's repeating 0..255 benchmark
+ * payload across frames, in addition to lengths and EOS. This is not a
+ * cryptographic checksum; server EOS acknowledges upload consumption/length,
+ * not upload contents. */
+h2_pal_result_t h2_gizclaw_req_create_speedtest(
+    h2_gizclaw_service_t *service, uint64_t identity, size_t upload_bytes,
+    size_t download_bytes, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+/** Copy byte counts and execution timings into caller-owned storage. */
+h2_pal_result_t
+h2_gizclaw_resp_parse_speedtest(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_speedtest_result_t *out_result);
+/** Single-direction synchronous measurement from immediately before do to
+ * successful wait return, including queue/control overhead but not parsing.
+ * Unlike the req parser's execution duration, this also includes admission
+ * queueing and the caller's wake-up latency. Data-down bytes are delivered by
+ * h2_gizclaw_service_poll() on the App task, so call this from another task
+ * while the App keeps polling; it never polls on its own. */
+h2_pal_result_t
+h2_gizclaw_rpc_speedtest(h2_gizclaw_service_t *service, size_t upload_bytes,
+                         size_t download_bytes, uint32_t timeout_ms,
+                         h2_gizclaw_speedtest_result_t *out_result);
 
-/**
- * Read and route at most one Peer Event from the connection-scoped stream.
- *
- * Conversation events are delivered to the active conversation's private
- * mailbox. Connection-scoped events are delivered to @p on_event. A timeout
- * or empty stream returns `H2_PAL_ERR_WOULD_BLOCK` or `H2_PAL_ERR_TIMEOUT`.
- * The client and all conversations must be used from one serialized worker.
- */
-int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
-                                     int timeout_ms,
-                                     h2_gizclaw_client_event_fn on_event,
-                                     void *event_user);
-
-/** Set the connection-scoped event handler used when dispatch has no override. */
-int h2_gizclaw_client_set_event_handler(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_event_fn on_event,
-    void *event_user);
-int h2_gizclaw_client_ping(h2_gizclaw_client_t *client);
-int h2_gizclaw_client_ping_measure(h2_gizclaw_client_t *client,
-                                   h2_gizclaw_ping_result_t *out_result);
-
-/** Run a bidirectional speed test using one megabyte in each direction. */
-int h2_gizclaw_client_speedtest(h2_gizclaw_client_t *client);
-
-/**
- * Run a full-duplex speed test of the exact requested byte lengths.
- *
- * The blocking call succeeds only after the SDK validates the response,
- * transfers both directions completely, and consumes EOS. Upload and download
- * rates use their respective SDK-reported direction durations; a completed
- * non-empty direction with a zero duration is reported as one millisecond. At
- * least one direction must be non-empty and neither may exceed
- * `H2_GIZCLAW_SPEEDTEST_MAX_BYTES`. The call owns one request-scoped Peer RPC
- * channel until it returns. On any failure `out_result` is cleared.
- */
-int h2_gizclaw_client_speedtest_measure(
-    h2_gizclaw_client_t *client, size_t upload_bytes, size_t download_bytes,
-    h2_gizclaw_speedtest_result_t *out_result);
-
-/**
- * Run a download-only speed test of exactly `download_bytes`.
- *
- * The blocking call succeeds only after the SDK validates the response,
- * receives exactly the requested body bytes, and consumes EOS. On any failure
- * `out_result` is cleared.
- */
-int h2_gizclaw_client_speedtest_download(
-    h2_gizclaw_client_t *client, size_t download_bytes,
-    h2_gizclaw_speedtest_result_t *out_result);
-
-/**
- * Request idempotent deletion handoff for the authenticated Peer.
- *
- * This blocking call returns success only after the Server response and EOS
- * have been received. The Server may retire the connection after success.
- */
-int h2_gizclaw_client_delete_peer(h2_gizclaw_client_t *client);
-
-/**
- * Close the complete Peer connection and invalidate active conversation leases.
- *
- * The caller must still deinit every conversation handle before deinitializing
- * the client.
- */
-int h2_gizclaw_client_close(h2_gizclaw_client_t *client);
-
-/**
- * Release the client.
- *
- * All conversation handles borrowing this client must already be deinitialized.
- */
-void h2_gizclaw_client_deinit(h2_gizclaw_client_t *client);
+h2_pal_result_t
+h2_gizclaw_req_create_peer_delete(h2_gizclaw_service_t *service,
+                                  uint64_t identity, uint32_t timeout_ms,
+                                  h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_peer_delete(const h2_gizclaw_req_t *request);
+h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t *service,
+                                           uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

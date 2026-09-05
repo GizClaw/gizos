@@ -194,7 +194,7 @@ static void h2_corebluetooth_address(
     [peripheral.identifier getUUIDBytes:bytes];
     memset(outAddress, 0, sizeof(*outAddress));
     memcpy(outAddress->value, &bytes[10], H2_PAL_BLE_ADDR_LEN);
-    outAddress->type = H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY;
+    outAddress->type = H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID;
 }
 
 static NSString *h2_corebluetooth_address_key(
@@ -1073,7 +1073,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     memset(&connection, 0, sizeof(connection));
     connection.conn_handle = H2_COREBLUETOOTH_CONN_HANDLE;
     connection.role = H2_PAL_BLE_ROLE_PERIPHERAL;
-    connection.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY;
+    connection.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID;
     uuid_t bytes;
     [central.identifier getUUIDBytes:bytes];
     memcpy(connection.peer_addr.value, &bytes[10], H2_PAL_BLE_ADDR_LEN);
@@ -1357,7 +1357,7 @@ didUnsubscribeFromCharacteristic:(CBCharacteristic *)characteristic {
         uuid_t bytes;
         [central.identifier getUUIDBytes:bytes];
         memcpy(info.peer_addr.value, &bytes[10], H2_PAL_BLE_ADDR_LEN);
-        info.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM_IDENTITY;
+        info.peer_addr.type = H2_PAL_BLE_ADDR_TYPE_PLATFORM_ID;
         self.peripheralConnected = NO;
         self.subscribedCentral = nil;
         h2_corebluetooth_post(
@@ -1515,6 +1515,18 @@ static h2_pal_result_t h2_corebluetooth_adv_set_set_data(
     return [h2_corebluetooth_backend() setAdvertisingData:data];
 }
 
+static h2_pal_result_t h2_corebluetooth_adv_set_set_encoded_data_unsupported(
+    void *user,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encodedData,
+    size_t encodedDataLen) {
+    (void)user;
+    (void)set;
+    (void)encodedData;
+    (void)encodedDataLen;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t
 h2_corebluetooth_adv_set_set_scan_response_data_unsupported(
     void *user,
@@ -1559,6 +1571,9 @@ static h2_pal_result_t h2_corebluetooth_start_scan(
     h2_pal_ble_scan_result_fn callback,
     void *scanUser) {
     (void)user;
+    if (params->interval_units_625us != 0u) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
     return [h2_corebluetooth_backend() startScan:params
                                         callback:callback user:scanUser];
 }
@@ -1733,6 +1748,8 @@ static const h2_pal_ble_vtable_t s_h2_corebluetooth_vtable = {
     .stop_advertising = h2_corebluetooth_stop_advertising,
     .adv_set_create = h2_corebluetooth_adv_set_create,
     .adv_set_set_data = h2_corebluetooth_adv_set_set_data,
+    .adv_set_set_encoded_data =
+        h2_corebluetooth_adv_set_set_encoded_data_unsupported,
     .adv_set_set_scan_response_data =
         h2_corebluetooth_adv_set_set_scan_response_data_unsupported,
     .adv_set_start = h2_corebluetooth_adv_set_start,

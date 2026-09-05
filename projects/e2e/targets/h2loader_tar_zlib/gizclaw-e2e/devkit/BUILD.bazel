@@ -8,7 +8,15 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-esp_target_task_policy()
+esp_target_task_policy(
+    task_name_deps = [
+        "//libs/bleikcp:task_names",
+        "//libs/gizclaw:task_names",
+        "//libs/pal/providers/h2peer:task_names",
+        "//projects/h2loader/libs/h2loader:task_names",
+        "//projects/h2loader/apps/loader/app:task_names",
+    ],
+)
 
 firmware_lib_component(
     name = "firmware_lib",
@@ -56,6 +64,7 @@ firmware_native_component(
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/opus_port",
         "//native_component_src/esp-idf6.x/zlib",
+        "//projects/e2e/apps/gizclaw/app:task_names",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
         "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
@@ -72,13 +81,13 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["main"],
-    deps = ["//libs/pal"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = ["//libs/pal"],
 )
 
 h2loader_esp_idf_firmware(
@@ -94,6 +103,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    console = "usb",
     graph = [":gizclaw_e2e_devkit_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_gizclaw_e2e_devkit",

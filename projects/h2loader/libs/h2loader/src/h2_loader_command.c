@@ -11,10 +11,9 @@
 #define H2_LOADER_STAGE_TMP_PATH "/dl/update.tar.zlib.tmp"
 #define H2_LOADER_STAGE_PATH "/dl/update.tar.zlib"
 #define H2_LOADER_STAGE_PREV_PATH "/dl/update.tar.zlib.prev"
-#define H2_LOADER_WIFI_CONNECT_TIMEOUT_MS 30000u
-#define H2_LOADER_WIFI_IP_TIMEOUT_MS 15000u
-#define H2_LOADER_WIFI_IP_POLL_MS 100u
 #define H2_LOADER_WIFI_SETTINGS_SETTLE_MS 250u
+#define H2_LOADER_WIFI_READY_POLL_MS 250u
+#define H2_LOADER_WIFI_READY_TIMEOUT_MS 30000u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT 16u
 #define H2_LOADER_WIFI_SCAN_MAX_LIMIT 16u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
@@ -23,7 +22,7 @@
 #define H2_LOADER_DOWNLOAD_CHUNK 4096u
 #define H2_LOADER_DOWNLOAD_REPORT_STEP 65536u
 #define H2_LOADER_COMMAND_PRINTF_BUFFER_SIZE 1024u
-#define H2_LOADER_COMMAND_STATUS_BUFFER_SIZE 2048u
+#define H2_LOADER_COMMAND_STATUS_BUFFER_SIZE H2_LOADER_STATUS_LINE_MAX
 
 static int h2loader_get_coredump_partition(
     h2_loader_command_t *self,
@@ -39,14 +38,6 @@ static uint32_t h2loader_effective_commands(
     const h2_loader_status_t *status) {
     uint32_t available = h2_loader_get_command_availability(
         self->config.loader, status);
-    h2_pal_wifi_sta_status_t wifi_status;
-    if (h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status) !=
-            H2_PAL_OK ||
-        (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&
-         wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTED &&
-         wifi_status.state != H2_PAL_WIFI_STA_STATE_GOT_IP)) {
-        available &= ~H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT;
-    }
     h2_pal_disk_partition_t partition;
     if (h2loader_get_coredump_partition(self, &partition) != H2_PAL_OK) {
         available &= ~(H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
@@ -74,16 +65,12 @@ static uint32_t h2loader_command_bit(
     if (strcmp(argv[1], "status") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATUS;
     if (strcmp(argv[1], "stats") == 0) return H2_LOADER_COMMAND_AVAILABLE_STATS;
     if (strcmp(argv[1], "memory") == 0) return H2_LOADER_COMMAND_AVAILABLE_MEMORY;
-    if (strcmp(argv[1], "upgrade") == 0) return H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE;
     if (strcmp(argv[1], "reboot") == 0) {
-        return argc >= 3u && strcmp(argv[2], "loader") == 0
-            ? H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER
-            : H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
-    }
-    if (strcmp(argv[1], "hold") == 0) {
-        return argc >= 3u && strcmp(argv[2], "off") == 0
-            ? H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF
-            : H2_LOADER_COMMAND_AVAILABLE_HOLD_ON;
+        if (argc >= 3u && strcmp(argv[2], "loader") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_REBOOT_LOADER;
+        if (argc >= 3u && strcmp(argv[2], "upgrade") == 0)
+            return H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE;
+        return H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP;
     }
     if (strcmp(argv[1], "stage") == 0) {
         if (argc >= 3u && strcmp(argv[2], "abort") == 0)
@@ -153,13 +140,14 @@ static int h2loader_printf(h2_loader_command_t *self, const char *format, ...) {
 static h2_pal_result_t h2loader_write_line(
     h2_loader_command_t *self,
     const char *line) {
-    h2_pal_result_t result;
-
-    result = h2_command_write(&self->command, line, strlen(line));
-    if (result != H2_PAL_OK) {
-        return result;
+    char output[H2_LOADER_COMMAND_STATUS_BUFFER_SIZE + 1u];
+    size_t len = strlen(line);
+    if (len >= H2_LOADER_COMMAND_STATUS_BUFFER_SIZE) {
+        return H2_PAL_ERR_NO_SPACE;
     }
-    return h2_command_write(&self->command, "\n", 1u);
+    memcpy(output, line, len);
+    output[len++] = '\n';
+    return h2_command_write(&self->command, output, len);
 }
 
 static void h2loader_flush(FILE *stream) {
@@ -227,28 +215,55 @@ static void h2loader_close_remove_tmp(h2_loader_command_t *self, h2_pal_fs_file_
     (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
 }
 
-static int h2loader_publish_tmp_stage(h2_loader_command_t *self) {
-    int rc = h2_loader_package_validate_path(
+static int h2loader_publish_tmp_stage(
+    h2_loader_command_t *self,
+    h2_loader_package_inspection_t *out_inspection) {
+    h2_loader_package_inspection_t inspection;
+    h2_pal_fs_stat_t current_stat;
+    int current_moved = 0;
+    int rc = h2_loader_package_inspect_path(
         &self->config.loader->package,
-        H2_LOADER_STAGE_TMP_PATH);
+        H2_LOADER_STAGE_TMP_PATH,
+        &inspection);
     if (rc != H2_PAL_OK) {
         h2loader_stage_error(self, "validate", rc);
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return rc;
     }
-    rc = h2_loader_prepare_stage_publish(self->config.loader);
-    if (rc != H2_PAL_OK) {
-        h2loader_stage_error(self, "prepare_publish", rc);
+    (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_PREV_PATH);
+    rc = h2_pal_fs_stat(self->config.fs, H2_LOADER_STAGE_PATH, &current_stat);
+    if (rc == H2_PAL_FS_OK) {
+        if (current_stat.is_dir) {
+            h2loader_stage_error(self, "current_stage", H2_PAL_ERR_FORMAT);
+            (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+            return H2_PAL_ERR_FORMAT;
+        }
+        rc = h2_pal_fs_rename(
+            self->config.fs,
+            H2_LOADER_STAGE_PATH,
+            H2_LOADER_STAGE_PREV_PATH);
+        if (rc != H2_PAL_FS_OK) {
+            h2loader_stage_error(self, "rename_previous", rc);
+            (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+            return rc;
+        }
+        current_moved = 1;
+    } else if (rc != H2_PAL_FS_ERR_NOT_FOUND) {
+        h2loader_stage_error(self, "stat_current", rc);
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return rc;
     }
-    (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_PREV_PATH);
     rc = h2_pal_fs_rename(self->config.fs, H2_LOADER_STAGE_TMP_PATH, H2_LOADER_STAGE_PATH);
     if (rc != H2_PAL_FS_OK) {
         h2loader_stage_error(self, "rename_stage", rc);
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
+        if (current_moved) {
+            (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_PREV_PATH);
+        }
+        return rc;
     }
-    return rc;
+    if (out_inspection != NULL) *out_inspection = inspection;
+    return H2_PAL_OK;
 }
 
 static void h2loader_finish_stage_publish(h2_loader_command_t *self, int stage_rc) {
@@ -264,7 +279,8 @@ static void h2loader_finish_stage_publish(h2_loader_command_t *self, int stage_r
 static int h2loader_receive_stage(
     h2_loader_command_t *self,
     size_t bytes,
-    const char *expected_sha256) {
+    const char *expected_sha256,
+    h2_loader_package_inspection_t *out_inspection) {
     uint8_t buffer[H2_LOADER_STAGE_CHUNK];
     uint8_t digest[32];
     char actual_sha256[65];
@@ -338,7 +354,7 @@ static int h2loader_receive_stage(
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return H2_PAL_ERR_FORMAT;
     }
-    return h2loader_publish_tmp_stage(self);
+    return h2loader_publish_tmp_stage(self, out_inspection);
 }
 
 typedef struct h2loader_download_context {
@@ -389,7 +405,8 @@ static int h2loader_stage_url(
     h2_loader_command_t *self,
     const char *url,
     size_t bytes,
-    const char *expected_sha256) {
+    const char *expected_sha256,
+    h2_loader_package_inspection_t *out_inspection) {
     uint8_t digest[32];
     char actual_sha256[65];
     h2_pal_fs_file_t *file = NULL;
@@ -403,19 +420,31 @@ static int h2loader_stage_url(
     }
     printf("H2_LOADER_DOWNLOAD state=prepare step=wifi\n");
     fflush(stdout);
-    rc = h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status);
-    if (rc != H2_PAL_OK) {
-        printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi\n", rc);
-        fflush(stdout);
-        return rc;
-    }
-    if (wifi_status.state != H2_PAL_WIFI_STA_STATE_GOT_IP || wifi_status.ip_valid == 0u) {
-        printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi state=%d ip_valid=%u\n",
-            H2_PAL_ERR_UNAVAILABLE,
-            (int)wifi_status.state,
-            (unsigned)wifi_status.ip_valid);
-        fflush(stdout);
-        return H2_PAL_ERR_UNAVAILABLE;
+    for (uint32_t waited_ms = 0u;; waited_ms += H2_LOADER_WIFI_READY_POLL_MS) {
+        rc = h2_pal_wifi_sta_get_status(self->config.wifi, &wifi_status);
+        if (rc != H2_PAL_OK) {
+            printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi\n", rc);
+            fflush(stdout);
+            return rc;
+        }
+        if (wifi_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
+            wifi_status.ip_valid != 0u) {
+            break;
+        }
+        if (waited_ms >= H2_LOADER_WIFI_READY_TIMEOUT_MS ||
+            (wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTING &&
+             wifi_status.state != H2_PAL_WIFI_STA_STATE_CONNECTED &&
+             wifi_status.state != H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
+            printf("H2_LOADER_DOWNLOAD state=error code=%d step=wifi state=%d disconnect_reason=%d ip_valid=%u\n",
+                H2_PAL_ERR_UNAVAILABLE,
+                (int)wifi_status.state,
+                wifi_status.disconnect_reason,
+                (unsigned)wifi_status.ip_valid);
+            fflush(stdout);
+            return H2_PAL_ERR_UNAVAILABLE;
+        }
+        self->config.sleep_ms(
+            self->config.clock_user, H2_LOADER_WIFI_READY_POLL_MS);
     }
     printf("H2_LOADER_DOWNLOAD state=prepare step=open path=%s\n", H2_LOADER_STAGE_TMP_PATH);
     fflush(stdout);
@@ -512,7 +541,7 @@ static int h2loader_stage_url(
         fflush(stdout);
         return H2_PAL_ERR_FORMAT;
     }
-    rc = h2loader_publish_tmp_stage(self);
+    rc = h2loader_publish_tmp_stage(self, out_inspection);
     if (rc != H2_PAL_OK) {
         printf("H2_LOADER_DOWNLOAD state=error code=%d step=publish\n", rc);
         fflush(stdout);
@@ -654,36 +683,6 @@ static int h2loader_wifi_scan_command(
     return rc;
 }
 
-static void h2loader_print_ip4(h2_loader_command_t *self, uint32_t ip4) {
-    uint8_t bytes[4];
-    h2_pal_wifi_ip4_to_bytes(ip4, bytes);
-    printf("%u.%u.%u.%u", (unsigned)bytes[0], (unsigned)bytes[1], (unsigned)bytes[2], (unsigned)bytes[3]);
-}
-
-static int h2loader_wait_wifi_ip(
-    h2_loader_command_t *self,
-    const h2_pal_wifi_sta_api_t *sta,
-    h2_pal_wifi_sta_status_t *out_status,
-    uint32_t timeout_ms) {
-    uint64_t started_at = self->config.now_ms(self->config.clock_user);
-    int rc = H2_PAL_OK;
-
-    if (sta == NULL || out_status == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-
-    do {
-        memset(out_status, 0, sizeof(*out_status));
-        rc = h2_pal_wifi_sta_get_status(sta, out_status);
-        if (rc == H2_PAL_OK && out_status->ip_valid != 0u) {
-            return H2_PAL_OK;
-        }
-        self->config.sleep_ms(self->config.clock_user, H2_LOADER_WIFI_IP_POLL_MS);
-    } while ((self->config.now_ms(self->config.clock_user) - started_at) < timeout_ms);
-
-    return rc == H2_PAL_OK ? H2_PAL_ERR_TIMEOUT : rc;
-}
-
 static int h2loader_wifi_command(
     h2_loader_command_t *self,
     size_t argc,
@@ -709,31 +708,6 @@ static int h2loader_wifi_command(
             printf("H2_LOADER_WIFI result=invalid_config code=%d\n", rc);
             return rc;
         }
-        printf("H2_LOADER_WIFI result=connecting ssid=%s\n", config.ssid);
-        fflush(stdout);
-        rc = h2_pal_wifi_sta_connect(sta, &config, H2_LOADER_WIFI_CONNECT_TIMEOUT_MS);
-        if (rc != H2_PAL_OK) {
-            memset(&status, 0, sizeof(status));
-            if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
-                printf("H2_LOADER_WIFI result=error code=%d state=%d disconnect_reason=%d ip_valid=%u\n",
-                    rc,
-                    (int)status.state,
-                    status.disconnect_reason,
-                    (unsigned)status.ip_valid);
-            } else {
-                printf("H2_LOADER_WIFI result=error code=%d\n", rc);
-            }
-            return rc;
-        }
-        rc = h2loader_wait_wifi_ip(self, sta, &status, H2_LOADER_WIFI_IP_TIMEOUT_MS);
-        if (rc != H2_PAL_OK) {
-            printf("H2_LOADER_WIFI result=error code=%d step=ip state=%d disconnect_reason=%d ip_valid=%u\n",
-                rc,
-                (int)status.state,
-                status.disconnect_reason,
-                (unsigned)status.ip_valid);
-            return rc;
-        }
         if (self->config.wifi_settings != NULL) {
             rc = h2_pal_wifi_settings_set_saved_sta_config(
                 self->config.wifi_settings,
@@ -747,45 +721,30 @@ static int h2loader_wifi_command(
             self->config.sleep_ms(
                 self->config.clock_user,
                 H2_LOADER_WIFI_SETTINGS_SETTLE_MS);
-            memset(&status, 0, sizeof(status));
-            rc = h2_pal_wifi_sta_get_status(sta, &status);
-            if (rc != H2_PAL_OK ||
-                status.state != H2_PAL_WIFI_STA_STATE_GOT_IP ||
-                status.ip_valid == 0u) {
-                rc = h2_pal_wifi_sta_connect(
-                    sta,
-                    &config,
-                    H2_LOADER_WIFI_CONNECT_TIMEOUT_MS);
-                if (rc != H2_PAL_OK) {
-                    printf(
-                        "H2_LOADER_WIFI result=error code=%d step=settings_reconnect\n",
-                        rc);
-                    return rc;
-                }
-                rc = h2loader_wait_wifi_ip(
-                    self,
-                    sta,
-                    &status,
-                    H2_LOADER_WIFI_IP_TIMEOUT_MS);
-                if (rc != H2_PAL_OK) {
-                    printf(
-                        "H2_LOADER_WIFI result=error code=%d step=settings_ip state=%d disconnect_reason=%d ip_valid=%u\n",
-                        rc,
-                        (int)status.state,
-                        status.disconnect_reason,
-                        (unsigned)status.ip_valid);
-                    return rc;
-                }
-            }
         }
-        printf("H2_LOADER_WIFI result=connected ip=");
-        h2loader_print_ip4(self, status.ip.ip4);
-        printf("\n");
+        rc = h2_pal_wifi_sta_connect(sta, &config, 0u);
+        if (rc != H2_PAL_OK) {
+            memset(&status, 0, sizeof(status));
+            if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
+                printf("H2_LOADER_WIFI result=error code=%d state=%d disconnect_reason=%d ip_valid=%u\n",
+                    rc,
+                    (int)status.state,
+                    status.disconnect_reason,
+                    (unsigned)status.ip_valid);
+            } else {
+                printf("H2_LOADER_WIFI result=error code=%d\n", rc);
+            }
+            return rc;
+        }
+        printf("H2_LOADER_WIFI result=connecting ssid=%s\n", config.ssid);
+        fflush(stdout);
         return H2_PAL_OK;
     }
     if (argc >= 3 && strcmp(argv[2], "disconnect") == 0) {
         rc = h2_pal_wifi_sta_disconnect(sta);
-        printf("H2_LOADER_WIFI result=%s code=%d\n", rc == H2_PAL_OK ? "disconnected" : "error", rc);
+        printf("H2_LOADER_WIFI result=%s code=%d\n",
+            rc == H2_PAL_OK ? "disconnected" : "error", rc);
+        fflush(stdout);
         return rc;
     }
     printf("usage: h2loader wifi <scan|connect|disconnect>\n");
@@ -911,7 +870,13 @@ static int h2loader_coredump_command(
             }
             data_line[(size_t)prefix_len + (take * 2u)] = '\n';
             data_line[(size_t)prefix_len + (take * 2u) + 1u] = '\0';
-            printf("%s", data_line);
+            rc = h2_command_write(
+                &self->command,
+                data_line,
+                (size_t)prefix_len + (take * 2u) + 1u);
+            if (rc != H2_PAL_OK) {
+                return rc;
+            }
             offset += take;
         }
         printf("H2_LOADER_COREDUMP_DUMP result=OK bytes=%llu blank=%d\n",
@@ -934,11 +899,7 @@ static h2_pal_result_t h2loader_root_handler(
     h2_pal_result_t availability = h2loader_require_command(
         self, argc, argv, NULL);
     if (availability != H2_PAL_OK) return availability;
-    if (argc < 2u) {
-        printf("usage: h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
-    } else {
-        printf("usage: h2loader <help|status|memory|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
-    }
+    printf("usage: h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n");
     return H2_PAL_OK;
 }
 
@@ -953,7 +914,7 @@ static h2_pal_result_t h2loader_help_handler(
     h2_pal_result_t availability = h2loader_require_command(
         self, argc, argv, NULL);
     if (availability != H2_PAL_OK) return availability;
-    printf("h2loader <help|status|stats|memory|wifi|stage|upgrade|reboot [app|loader]|hold|coredump>\n");
+    printf("h2loader <help|status|stats|memory|wifi|stage|reboot app|loader|upgrade|coredump>\n");
     return H2_PAL_OK;
 }
 
@@ -1034,12 +995,13 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
     size_t argc,
     const char *const *argv) {
     h2_loader_command_t *self = (h2_loader_command_t *)user;
+    h2_loader_package_inspection_t inspection;
     size_t bytes = 0u;
     int rc;
 
     (void)command;
     if (argc >= 3u && strcmp(argv[2], "abort") == 0) {
-        rc = h2_loader_abort_stage(self->config.loader);
+        rc = h2_loader_cancel_stage(self->config.loader);
         printf("H2_LOADER_STAGE_ABORT result=%s code=%d\n",
             rc == H2_PAL_OK ? "OK" : "fail",
             rc);
@@ -1059,7 +1021,7 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
         if (rc != H2_PAL_OK) {
             return (h2_pal_result_t)rc;
         }
-        rc = h2_loader_begin_stage_replacement(
+        rc = h2_loader_begin_stage(
             self->config.loader,
             H2_LOADER_STAGE_TMP_PATH,
             H2_LOADER_STAGE_PREV_PATH);
@@ -1069,11 +1031,12 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
                 rc);
             return (h2_pal_result_t)rc;
         }
-        rc = h2loader_stage_url(self, argv[3], bytes, argv[5]);
+        rc = h2loader_stage_url(self, argv[3], bytes, argv[5], &inspection);
         if (rc != H2_PAL_OK) {
             return (h2_pal_result_t)rc;
         }
-        rc = h2_loader_publish_stage(self->config.loader, (uint32_t)bytes, argv[5]);
+        rc = h2_loader_commit_inspected_stage(
+            self->config.loader, bytes, argv[5], &inspection);
         h2loader_finish_stage_publish(self, rc);
         printf("H2_LOADER_STAGE result=%s code=%d\n",
             rc == H2_PAL_OK ? "OK" : "fail",
@@ -1090,13 +1053,13 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
         rc = H2_PAL_ERR_INVALID_ARG;
     }
     if (rc == H2_PAL_OK) {
-        rc = h2_loader_begin_stage_replacement(
+        rc = h2_loader_begin_stage(
             self->config.loader,
             H2_LOADER_STAGE_TMP_PATH,
             H2_LOADER_STAGE_PREV_PATH);
     }
     if (rc == H2_PAL_OK) {
-        rc = h2loader_receive_stage(self, bytes, argv[3]);
+        rc = h2loader_receive_stage(self, bytes, argv[3], &inspection);
     }
     printf("H2_LOADER_STAGE_RECEIVE result=%s code=%d\n",
         rc == H2_PAL_OK ? "OK" : "fail",
@@ -1104,54 +1067,12 @@ static h2_pal_result_t h2loader_stage_handler_unlocked(
     if (rc != H2_PAL_OK) {
         return (h2_pal_result_t)rc;
     }
-    rc = h2_loader_publish_stage(self->config.loader, (uint32_t)bytes, argv[3]);
+    rc = h2_loader_commit_inspected_stage(
+        self->config.loader, bytes, argv[3], &inspection);
     h2loader_finish_stage_publish(self, rc);
     printf("H2_LOADER_STAGE result=%s code=%d\n",
         rc == H2_PAL_OK ? "OK" : "fail",
         rc);
-    return (h2_pal_result_t)rc;
-}
-
-typedef struct h2loader_upgrade_transition_context {
-    h2_loader_command_t *self;
-    int emitted;
-} h2loader_upgrade_transition_context_t;
-
-static int h2loader_upgrade_transition(void *user) {
-    h2loader_upgrade_transition_context_t *context =
-        (h2loader_upgrade_transition_context_t *)user;
-    h2_loader_command_t *self = context->self;
-    (void)printf(
-        "H2_LOADER_UPGRADE result=OK code=0 transition=reboot\n");
-    context->emitted = 1;
-    /* Waiting for the transport ACK is best-effort because the host may close
-     * the session as soon as it receives the accepted transition. */
-    (void)h2_command_flush(&self->command);
-    return H2_PAL_OK;
-}
-
-static h2_pal_result_t h2loader_upgrade_handler_unlocked(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    h2_loader_command_t *self = (h2_loader_command_t *)user;
-    h2loader_upgrade_transition_context_t transition = {
-        .self = self,
-    };
-    int rc;
-
-    (void)command;
-    (void)argc;
-    (void)argv;
-    rc = h2_loader_upgrade_start_with_transition(
-        self->config.loader, h2loader_upgrade_transition, &transition);
-    if (!transition.emitted || rc != H2_PAL_OK) {
-        printf("H2_LOADER_UPGRADE result=%s code=%d transition=%s\n",
-            rc == H2_PAL_OK ? "OK" : "fail",
-            rc,
-            rc == H2_PAL_OK ? "none" : "failed");
-    }
     return (h2_pal_result_t)rc;
 }
 
@@ -1170,7 +1091,12 @@ static int h2loader_reboot_transition(void *user) {
         "H2_LOADER_REBOOT target=%s result=accepted\n",
         context->target);
     context->emitted = 1;
-    return (int)h2_command_flush(&context->self->command);
+    /* Give the transport a bounded chance to publish the accepted transition
+       before disruptive teardown. The lifecycle request is already durable,
+       so a missing peer ACK must not cancel installation or the whole-device
+       reset. */
+    (void)h2_command_flush(&self->command);
+    return H2_PAL_OK;
 }
 
 static void h2loader_reboot_failure(
@@ -1200,7 +1126,11 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
     int rc;
 
     (void)command;
-    if (argc >= 3u && strcmp(argv[2], "loader") == 0) {
+    if (argc != 3u) {
+        printf("usage: h2loader reboot <app|loader|upgrade>\n");
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (strcmp(argv[2], "loader") == 0) {
         transition.target = "loader";
         rc = h2_loader_reboot_h2loader_with_transition(
             self->config.loader,
@@ -1217,41 +1147,25 @@ static h2_pal_result_t h2loader_reboot_handler_unlocked(
         }
         return (h2_pal_result_t)rc;
     }
-    if (argc >= 3u && strcmp(argv[2], "app") != 0) {
-        printf("usage: h2loader reboot [app|loader]\n");
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    transition.target = "app";
-    rc = self->config.defer_app_install ?
-        h2_loader_request_install_staged_with_transition(
-            self->config.loader,
-            h2loader_reboot_transition,
-            &transition) :
-        h2_loader_install_staged_with_transition(
+    if (strcmp(argv[2], "upgrade") == 0) {
+        transition.target = "upgrade";
+        rc = h2_loader_reboot_upgrade_with_transition(
             self->config.loader,
             h2loader_reboot_transition,
             &transition);
-    h2loader_reboot_failure(&transition, rc);
-    return (h2_pal_result_t)rc;
-}
-
-static h2_pal_result_t h2loader_hold_handler_unlocked(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    h2_loader_command_t *self = (h2_loader_command_t *)user;
-    int rc;
-
-    (void)command;
-    if (argc < 3u || (strcmp(argv[2], "on") != 0 && strcmp(argv[2], "off") != 0)) {
-        printf("usage: h2loader hold <on|off>\n");
-        return H2_PAL_OK;
+        h2loader_reboot_failure(&transition, rc);
+        return (h2_pal_result_t)rc;
     }
-    rc = h2_loader_set_hold(self->config.loader, strcmp(argv[2], "on") == 0);
-    printf("H2_LOADER_HOLD result=%s code=%d\n",
-        rc == H2_PAL_OK ? "OK" : "fail",
-        rc);
+    if (strcmp(argv[2], "app") != 0) {
+        printf("usage: h2loader reboot <app|loader|upgrade>\n");
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    transition.target = "app";
+    rc = h2_loader_reboot_app_with_transition(
+        self->config.loader,
+        h2loader_reboot_transition,
+        &transition);
+    h2loader_reboot_failure(&transition, rc);
     return (h2_pal_result_t)rc;
 }
 
@@ -1374,16 +1288,6 @@ static h2_pal_result_t h2loader_stage_handler(
         h2loader_stage_handler_unlocked);
 }
 
-static h2_pal_result_t h2loader_upgrade_handler(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    return h2loader_invoke_locked(
-        (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        h2loader_upgrade_handler_unlocked);
-}
-
 static h2_pal_result_t h2loader_reboot_handler(
     void *user,
     h2_command_t *command,
@@ -1392,16 +1296,6 @@ static h2_pal_result_t h2loader_reboot_handler(
     return h2loader_invoke_locked(
         (h2_loader_command_t *)user, command, argc, argv, 0, 1,
         h2loader_reboot_handler_unlocked);
-}
-
-static h2_pal_result_t h2loader_hold_handler(
-    void *user,
-    h2_command_t *command,
-    size_t argc,
-    const char *const *argv) {
-    return h2loader_invoke_locked(
-        (h2_loader_command_t *)user, command, argc, argv, 0, 1,
-        h2loader_hold_handler_unlocked);
 }
 
 static h2_pal_result_t h2loader_coredump_handler(
@@ -1428,9 +1322,7 @@ int h2_loader_command_init(
         {"h2loader memory", h2loader_memory_handler},
         {"h2loader wifi", h2loader_wifi_handler},
         {"h2loader stage", h2loader_stage_handler},
-        {"h2loader upgrade", h2loader_upgrade_handler},
         {"h2loader reboot", h2loader_reboot_handler},
-        {"h2loader hold", h2loader_hold_handler},
         {"h2loader coredump", h2loader_coredump_handler},
     };
     h2_command_config_t command_config;
@@ -1483,12 +1375,10 @@ int h2_loader_command_init(
             H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD |
             H2_LOADER_COMMAND_AVAILABLE_STAGE_ABORT |
             H2_LOADER_COMMAND_AVAILABLE_STAGE_URL |
-            H2_LOADER_COMMAND_AVAILABLE_HOLD_ON |
-            H2_LOADER_COMMAND_AVAILABLE_HOLD_OFF |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
             H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
-            H2_LOADER_COMMAND_AVAILABLE_LOADER_UPGRADE |
+            H2_LOADER_COMMAND_AVAILABLE_REBOOT_UPGRADE |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_STATUS |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_DUMP |
             H2_LOADER_COMMAND_AVAILABLE_COREDUMP_ERASE;

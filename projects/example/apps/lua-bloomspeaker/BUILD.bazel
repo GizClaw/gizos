@@ -1,0 +1,10 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "lua-bloomspeaker",
+    srcs = [
+        "data/skills/lua-bloomspeaker/SKILL.md",
+        "data/skills/lua-bloomspeaker/scripts/main.lua",
+        "//projects/example/apps/lua-bloomspeaker/app:lua_bloomspeaker",
+    ],
+)

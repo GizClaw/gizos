@@ -1,4 +1,5 @@
 #include "h2_smoke_mp4_player.h"
+#include "h2_smoke_mp4_player_task_names.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -332,9 +333,9 @@ static int task_start(
     void *context,
     h2_pal_task_t **out_task) {
     test_state_t *state = user;
-    if (strcmp(options->name, "mp4-decoder") == 0) {
+    if (strcmp(options->name, h2_smoke_mp4_player_decoder_task_name) == 0) {
         ++state->decoder_task_starts;
-    } else if (strcmp(options->name, "mp4-audio-writer") == 0) {
+    } else if (strcmp(options->name, h2_smoke_mp4_player_audio_task_name) == 0) {
         ++state->audio_task_starts;
     } else {
         assert(0);
@@ -908,6 +909,10 @@ static const h2_pal_fs_vtable_t s_fs_vtable = {
 };
 
 int main(int argc, char **argv) {
+    assert(strcmp(h2_smoke_mp4_player_audio_task_name,
+                  "$mp4-player/audio") == 0);
+    assert(strcmp(h2_smoke_mp4_player_decoder_task_name,
+                  "$mp4-player/decoder") == 0);
     assert(argc == 2);
     const char *fixture_path = argv[1];
     assert(h2_smoke_mp4_player_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);

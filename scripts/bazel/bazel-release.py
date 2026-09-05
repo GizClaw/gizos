@@ -193,7 +193,8 @@ def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
         [
             bazel,
             "query",
-            'kind("h2loader_tar_zlib rule", //projects/...)',
+            'kind("h2loader_tar_zlib rule", //projects/...) '
+            'except attr("tags", "no-release", //projects/...)',
             "--output=label",
         ],
     )

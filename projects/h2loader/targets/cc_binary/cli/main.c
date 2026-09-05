@@ -57,7 +57,7 @@ static const h2_pal_ble_host_api_t *acquire_ble(void *user) {
 /* Options whose value is a host filesystem path typed by the user. */
 static int is_path_option(const char *arg) {
     static const char *const options[] = {
-        "--file", "--out", "--app-bin", "--data-dir",
+        "--file", "--out", "--output", "--app-bin", "--data-dir",
     };
     for (size_t i = 0u; i < sizeof(options) / sizeof(options[0]); ++i) {
         if (strcmp(arg, options[i]) == 0) return 1;

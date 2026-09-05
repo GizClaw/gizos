@@ -1,12 +1,41 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load(":e2e_test.bzl", "gizclaw_e2e_desktop_deps", "gizclaw_e2e_desktop_live_test")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_library(
+    name = "desktop_options",
+    srcs = ["h2_gizclaw_e2e_desktop_options.cpp"],
+    hdrs = ["h2_gizclaw_e2e_desktop_options.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    deps = ["//projects/e2e/apps/gizclaw/app:fixture"],
+)
+
+cc_test(
+    name = "gizclaw_e2e_desktop_options_test",
+    srcs = ["test_h2_gizclaw_e2e_desktop_options.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":desktop_options", "//projects/e2e/apps/gizclaw/app:fixture"],
+)
+
 gizclaw_e2e_desktop_live_test(
     name = "gizclaw_h2peer_live_test",
     suite = "all",
+)
+
+gizclaw_e2e_desktop_live_test(
+    name = "gizclaw_h2peer_connectivity_live_test",
+    suite = "connectivity",
+    app = "//projects/e2e/apps/gizclaw/app:connectivity_app",
 )
 
 gizclaw_e2e_desktop_live_test(
@@ -20,11 +49,9 @@ cc_library(
     testonly = True,
     srcs = [
         "h2_gizclaw_e2e_desktop.cpp",
-        "h2_gizclaw_pal_e2e_access_point.c",
     ],
     hdrs = [
         "h2_gizclaw_e2e_desktop.h",
-        "h2_gizclaw_pal_e2e_access_point.h",
     ],
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
@@ -34,30 +61,10 @@ cc_library(
 )
 
 cc_test(
-    name = "gizclaw_pal_access_point_test",
-    srcs = [
-        "h2_gizclaw_pal_e2e_access_point.c",
-        "h2_gizclaw_pal_e2e_access_point.h",
-        "test_h2_gizclaw_pal_access_point.c",
-    ],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = ["//libs/pal"],
-)
-
-cc_test(
     name = "gizclaw_e2e_desktop_test",
     srcs = [
         "h2_gizclaw_e2e_desktop.cpp",
         "h2_gizclaw_e2e_desktop.h",
-        "h2_gizclaw_pal_e2e_access_point.c",
-        "h2_gizclaw_pal_e2e_access_point.h",
         "test_h2_gizclaw_e2e_desktop.cpp",
     ],
     copts = H2_WARNING_COPTS,
@@ -69,5 +76,32 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = gizclaw_e2e_desktop_deps(),
+    # Exercise the real launcher and providers with a runner boundary double.
+    # The live targets above still link every production case, including firmware.
+    deps = gizclaw_e2e_desktop_deps(app = "//projects/e2e/apps/gizclaw/app:fixture"),
+)
+
+cc_test(
+    name = "gizclaw_e2e_desktop_pion_test",
+    srcs = [
+        "h2_gizclaw_e2e_desktop.cpp",
+        "h2_gizclaw_e2e_desktop.h",
+        "test_h2_gizclaw_e2e_desktop.cpp",
+    ],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    local_defines = [
+        "H2_GIZCLAW_E2E_DESKTOP_NO_MAIN=1",
+        "H2_GIZCLAW_E2E_USE_PION=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = gizclaw_e2e_desktop_deps(
+        backend = "pion",
+        app = "//projects/e2e/apps/gizclaw/app:fixture",
+    ),
 )

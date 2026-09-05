@@ -1,4 +1,5 @@
 #include "h2_peer_portable_backend.h"
+#include "h2_peer_internal.h"
 
 #include "peer.h"
 #include "peer_connection.h"
@@ -112,11 +113,17 @@ static void h2_peer_portable_on_local_sdp(char *sdp, void *user) {
 
 static void h2_peer_portable_on_opus(uint8_t *data, size_t len, void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed || data == NULL ||
+    if (peer == NULL || peer->closed || (data == NULL && len != 0u) ||
         len > H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE) {
         return;
     }
     h2_peer_webrtc_emit_opus_frame(peer, data, len);
+}
+
+static void h2_peer_portable_on_audio_rtp(uint16_t sequence,
+                                          uint32_t timestamp, void *user) {
+    h2_peer_webrtc_note_audio_rtp((h2_pal_webrtc_peer_t *)user, sequence,
+                                  timestamp);
 }
 
 static void h2_peer_portable_on_state(PeerConnectionState state, void *user) {
@@ -289,6 +296,7 @@ h2_peer_portable_create_connection(h2_pal_webrtc_peer_t *peer) {
     config.video_codec = CODEC_NONE;
     config.datachannel = DATA_CHANNEL_BINARY;
     config.onaudiotrack = h2_peer_portable_on_opus;
+    config.onaudiortp = h2_peer_portable_on_audio_rtp;
     config.user_data = peer;
     for (size_t i = 0u; i < peer->ice_server_count; ++i) {
         config.ice_servers[i].urls = peer->ice_servers[i].url;

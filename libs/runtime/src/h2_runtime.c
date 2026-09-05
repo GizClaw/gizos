@@ -226,6 +226,11 @@ static h2_pal_result_t runtime_init_release(
                     runtime->queue, private_state->event_queue);
                 private_state->event_queue = NULL;
             }
+            if (private_state->wake_queue != NULL) {
+                h2_pal_queue_destroy(
+                    runtime->queue, private_state->wake_queue);
+                private_state->wake_queue = NULL;
+            }
             if (private_state->input_push_edge_queue != NULL) {
                 h2_pal_queue_destroy(
                     runtime->queue, private_state->input_push_edge_queue);
@@ -371,6 +376,18 @@ h2_pal_result_t h2_runtime_init(
         return runtime_init_release(config, runtime, rc);
     }
 
+    const h2_pal_queue_config_t wake_queue_config = {
+        .name = "h2-runtime-wake",
+        .item_size = sizeof(uint8_t),
+        .item_count = 1u,
+        .allocator = config->mem,
+    };
+    rc = h2_pal_queue_create(
+        runtime->queue, &wake_queue_config, &runtime->private_state->wake_queue);
+    if (rc != H2_PAL_OK) {
+        return runtime_init_release(config, runtime, rc);
+    }
+
     const h2_pal_queue_config_t push_edge_queue_config = {
         .name = "h2-runtime-button-push-edges",
         .item_size = sizeof(h2_runtime_button_push_edge_t),
@@ -472,10 +489,16 @@ void h2_runtime_deinit(h2_runtime_t *runtime) {
     }
     h2_runtime_input_release(runtime);
     h2_runtime_stop_system_events(runtime);
+    /* Last producer to shut down: app tasks posting custom events. */
+    h2_runtime_custom_event_close(runtime);
 
     if (runtime->private_state->event_queue != NULL) {
         h2_pal_queue_destroy(runtime->queue, runtime->private_state->event_queue);
         runtime->private_state->event_queue = NULL;
+    }
+    if (runtime->private_state->wake_queue != NULL) {
+        h2_pal_queue_destroy(runtime->queue, runtime->private_state->wake_queue);
+        runtime->private_state->wake_queue = NULL;
     }
     if (runtime->private_state->input_push_edge_queue != NULL) {
         h2_pal_queue_destroy(

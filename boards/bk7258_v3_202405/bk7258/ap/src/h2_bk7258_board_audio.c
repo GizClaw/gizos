@@ -1,6 +1,7 @@
 #include "h2_bk7258_board_private.h"
 
 #include "h2_audio_mixer.h"
+#include "h2/pal/hal/h2_pal_audio_task_names.h"
 
 #include <common/bk_include.h>
 #include <components/log.h>
@@ -381,7 +382,7 @@ static int bk_audio_start_mic_task(h2_bk_audio_state_t *state) {
     }
     int ret = rtos_create_thread(&state->mic_thread,
         BEKEN_DEFAULT_WORKER_PRIORITY,
-        "h2_audio_mic",
+        H2_PAL_AUDIO_MIC_TASK_NAME_VALUE,
         (beken_thread_function_t)bk_audio_mic_task,
         4096,
         state);
@@ -399,7 +400,7 @@ static int bk_audio_start_playback_task(h2_bk_audio_state_t *state) {
     }
     int ret = rtos_create_thread(&state->playback_thread,
         BEKEN_DEFAULT_WORKER_PRIORITY,
-        "h2_audio_mix",
+        H2_PAL_AUDIO_MIX_TASK_NAME_VALUE,
         (beken_thread_function_t)bk_audio_playback_task,
         4096,
         state);

@@ -1,4 +1,5 @@
 #include "h2_lua_internal.h"
+#include "h2_lua_task_names.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -476,7 +477,7 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
     result = h2_pal_task_start(
         host->config.runtime->task,
         &(h2_pal_task_options_t){
-            .name = "h2-lua-worker",
+            .name = h2_lua_worker_task_name,
             .min_stack_size = host->config.worker_stack_size,
         },
         worker_entry, &host->workers[i], &host->workers[i].task);

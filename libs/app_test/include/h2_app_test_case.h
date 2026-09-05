@@ -105,17 +105,11 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
   } while (0)
 
 #define H2_APP_TEST_BUTTON_ACTION(test_, component_id_, pressed_, released_)    \
-  H2_APP_TEST_BUTTON_ACTION_COUNT((test_), (component_id_), (pressed_),        \
-                                  (released_), 1u)
-
-/* Inject one BUTTON_ACTION carrying a consecutive-click count. */
-#define H2_APP_TEST_BUTTON_ACTION_COUNT(test_, component_id_, pressed_,        \
-                                        released_, click_count_)               \
   do {                                                                         \
     H2_APP_TEST_REQUIRE((test_),                                               \
                         h2_app_test_session_button_action(                      \
                             (test_)->session, (component_id_), (pressed_),     \
-                            (released_), (click_count_), 0u,                   \
+                            (released_), 0u,                                   \
                             &(test_)->snapshot));                              \
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
   } while (0)
@@ -126,10 +120,11 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
     H2_APP_TEST_REQUIRE((test_),                                               \
                         h2_app_test_session_button_action(                      \
                             (test_)->session, (component_id_), (pressed_),     \
-                            (released_), 1u, 0u, &(test_)->snapshot));         \
+                            (released_), 0u, &(test_)->snapshot));             \
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), (expected_result_));               \
   } while (0)
 
+/* Inject one held Button Action at its first observation. */                  \
 #define H2_APP_TEST_BUTTON_DOWN(test_, component_id_, timestamp_)              \
   do {                                                                         \
     const size_t h2_app_test_button_index_ = (size_t)(component_id_);          \
@@ -143,6 +138,24 @@ typedef h2_pal_result_t (*h2_app_test_case_fn)(h2_app_test_driver_t *driver);
     H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
   } while (0)
 
+/* Report a key that is still held, observed at `timestamp_`. */              \
+#define H2_APP_TEST_BUTTON_HOLD(test_, component_id_, timestamp_)              \
+  do {                                                                         \
+    const size_t h2_app_test_button_index_ = (size_t)(component_id_);          \
+    h2_runtime_timestamp_ms_t h2_app_test_pressed_at_ = (timestamp_);          \
+    if (h2_app_test_button_index_ < 32u &&                                     \
+        (test_)->button_pressed[h2_app_test_button_index_]) {                  \
+      h2_app_test_pressed_at_ =                                                \
+          (test_)->button_pressed_at[h2_app_test_button_index_];               \
+    }                                                                          \
+    H2_APP_TEST_REQUIRE((test_), h2_app_test_session_button_hold(              \
+                                     (test_)->session, (component_id_),        \
+                                     h2_app_test_pressed_at_, (timestamp_),    \
+                                     0u, &(test_)->snapshot));                 \
+    H2_APP_TEST_EXPECT_STEP_RESULT((test_), H2_PAL_OK);                        \
+  } while (0)
+
+/* Inject one released Button Action. */                                      \
 #define H2_APP_TEST_BUTTON_UP(test_, component_id_, timestamp_)                \
   do {                                                                         \
     const size_t h2_app_test_button_index_ = (size_t)(component_id_);          \

@@ -5,6 +5,7 @@
 #include "components/system.h"
 #include "h2/pal/core/h2_pal_errors.h"
 #include "modules/ota.h"
+#include "wdt_driver.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -116,7 +117,12 @@ static h2_pal_result_t power_set_next_boot_partition(void *user, uint32_t partit
 static h2_pal_result_t power_reboot(void *user, uint32_t reason) {
     (void)user;
     (void)reason;
-    bk_reboot();
+    /* bk_reboot() asks the other core to reset this AP and then spins
+       forever. The H2Loader CP owns a long-running UART transport, so that
+       mailbox reboot can remain pending indefinitely. The watchdog reset is
+       the SDK's whole-device reset path and honors the committed OTA boot
+       selection. */
+    bk_wdt_force_reboot();
     return H2_PAL_OK;
 }
 

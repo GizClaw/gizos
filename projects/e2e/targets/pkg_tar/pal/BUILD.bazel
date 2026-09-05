@@ -30,6 +30,7 @@ cc_binary(
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/e2e/apps/pal/app:pal_e2e",
+        "//projects/e2e/apps/pal/app:task_names",
         "//projects/example/libs/host_runtime",
     ],
 )

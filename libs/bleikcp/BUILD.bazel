@@ -4,6 +4,13 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_bleikcp_task_names.c"],
+    hdrs = ["include/h2_bleikcp_task_names.h"],
+    includes = ["include"],
+)
+
+cc_library(
     name = "bleikcp",
     srcs = [
         "src/h2_bleikcp.c",
@@ -24,6 +31,7 @@ cc_library(
         "include",
     ],
     deps = [
+        ":task_names",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_ikcp",
     ],

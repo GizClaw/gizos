@@ -168,12 +168,23 @@ int h2_smoke_ble_observer_run(h2_runtime_t *runtime) {
             .payload = payload,
             .payload_capacity = sizeof(payload),
         };
-        do {
-            rc = h2_runtime_wait_event(
-                runtime, &event, H2_SMOKE_BLE_OBSERVER_EVENT_TIMEOUT_MS);
-        } while (rc == H2_PAL_OK &&
-                 event.kind != H2_RUNTIME_SYSTEM_EVENT_BLE_SCAN_STOPPED);
-        scan_stopped = rc == H2_PAL_OK;
+        for (;;) {
+            /* Drain before waiting: a half-drained queue has no pending
+             * wake. */
+            while (!scan_stopped &&
+                   h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+                scan_stopped =
+                    event.kind == H2_RUNTIME_SYSTEM_EVENT_BLE_SCAN_STOPPED;
+            }
+            if (scan_stopped) {
+                break;
+            }
+            rc = h2_runtime_wait_notify(
+                runtime, H2_SMOKE_BLE_OBSERVER_EVENT_TIMEOUT_MS);
+            if (rc != H2_PAL_OK) {
+                break;
+            }
+        }
     }
     if (scan_started && !scan_stopped) {
         (void)h2_pal_ble_stop_scan(runtime->ble_host);

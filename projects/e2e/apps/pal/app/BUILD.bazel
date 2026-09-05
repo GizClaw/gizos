@@ -4,6 +4,15 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_pal_e2e_task_names.c"],
+    hdrs = ["include/h2_pal_e2e_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
     name = "pal_e2e",
     srcs = [
         "src/h2_pal_e2e.c",
@@ -15,6 +24,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     deps = [
+        ":task_names",
         "//libs/pal",
         "//libs/runtime",
     ],

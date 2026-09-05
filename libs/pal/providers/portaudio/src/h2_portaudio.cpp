@@ -30,13 +30,64 @@ constexpr uint8_t kMicQueueFrames = 4u;
 constexpr size_t kEchoReferenceFrames = 16u;
 constexpr auto kPlaybackPollInterval = std::chrono::milliseconds(1);
 
-int portaudio_output_open(void *, void **out_stream) {
+int portaudio_default_output_device(void *) {
+  return static_cast<int>(Pa_GetDefaultOutputDevice());
+}
+
+int portaudio_default_high_output_latency(void *, int device,
+                                          double *out_latency) {
+  const PaDeviceInfo *device_info =
+      Pa_GetDeviceInfo(static_cast<PaDeviceIndex>(device));
+  if (device_info == nullptr) {
+    return paInternalError;
+  }
+  *out_latency = device_info->defaultHighOutputLatency;
+  return paNoError;
+}
+
+int portaudio_open_output_device(void *, int device, double suggested_latency,
+                                 void **out_stream) {
+  const PaStreamParameters output_parameters = {
+      static_cast<PaDeviceIndex>(device),
+      kChannels,
+      paInt16,
+      suggested_latency,
+      nullptr,
+  };
   PaStream *stream = nullptr;
-  const PaError error =
-      Pa_OpenDefaultStream(&stream, 0, kChannels, paInt16, kSampleRate,
-                           kFrameSamples, nullptr, nullptr);
+  const PaError error = Pa_OpenStream(
+      &stream, nullptr, &output_parameters, kSampleRate, kFrameSamples,
+      paNoFlag, nullptr, nullptr);
   *out_stream = stream;
   return error;
+}
+
+const h2_portaudio_device_ops_t kPortAudioDeviceOps = {
+    nullptr,
+    portaudio_default_output_device,
+    portaudio_default_high_output_latency,
+    portaudio_open_output_device,
+};
+
+int open_default_output(const h2_portaudio_device_ops_t *ops,
+                        void **out_stream) {
+  const int device = ops->default_output_device(ops->user);
+  if (device == paNoDevice) {
+    *out_stream = nullptr;
+    return paDeviceUnavailable;
+  }
+  double suggested_latency = 0.0;
+  const int info_error =
+      ops->default_high_output_latency(ops->user, device, &suggested_latency);
+  if (info_error != paNoError) {
+    *out_stream = nullptr;
+    return info_error;
+  }
+  return ops->open_output(ops->user, device, suggested_latency, out_stream);
+}
+
+int portaudio_output_open(void *, void **out_stream) {
+  return open_default_output(&kPortAudioDeviceOps, out_stream);
 }
 
 int portaudio_output_start(void *, void *stream) {
@@ -104,6 +155,7 @@ struct AudioState {
   bool playback_thread_started = false;
   std::atomic<bool> playback_running = false;
   std::atomic<int> playback_result = H2_AUDIO_OK;
+  std::atomic<uint64_t> output_underflow_count = 0u;
   std::thread playback_thread;
   std::atomic<uint32_t> speaker_volume_percent = 100u;
   uint32_t mic_counter = 0u;
@@ -298,6 +350,7 @@ int open_output(AudioState *state) {
     state->output_stream = nullptr;
     return state->require_real_devices ? H2_AUDIO_ERR_UNAVAILABLE : H2_AUDIO_OK;
   }
+  state->output_underflow_count.store(0u);
   return H2_AUDIO_OK;
 }
 
@@ -345,6 +398,9 @@ int close_output_stream(AudioState *state, bool abort) {
         state->output_ops.error_text(state->output_ops.user, close_error));
     result = H2_AUDIO_ERR_IO;
   }
+  std::fprintf(
+      stderr, "desktop audio: output underflow count=%llu\n",
+      static_cast<unsigned long long>(state->output_underflow_count.load()));
   state->output_stream = nullptr;
   return result;
 }
@@ -485,6 +541,9 @@ void playback_main(AudioState *state) {
     const int error =
         state->output_ops.write(state->output_ops.user, stream, samples,
                                 static_cast<unsigned long>(frames_to_write));
+    if (error == paOutputUnderflowed) {
+      state->output_underflow_count.fetch_add(1u);
+    }
     if (error != paNoError && error != paOutputUnderflowed) {
       std::fprintf(stderr, "desktop audio: output write failed: %s\n",
                    state->output_ops.error_text(state->output_ops.user, error));
@@ -869,6 +928,50 @@ int h2_portaudio_set_output_test_ops(
   }
   state->output_ops = *ops;
   state->output_ops_overridden = true;
+  return H2_AUDIO_OK;
+}
+
+int h2_portaudio_output_underflow_error_for_test(void) {
+  return paOutputUnderflowed;
+}
+
+int h2_portaudio_device_unavailable_error_for_test(void) {
+  return paDeviceUnavailable;
+}
+
+int h2_portaudio_internal_error_for_test(void) { return paInternalError; }
+
+int h2_portaudio_no_device_for_test(void) { return paNoDevice; }
+
+int h2_portaudio_open_default_output_for_test(
+    const h2_portaudio_device_ops_t *ops, void **out_stream) {
+  if (ops == nullptr || out_stream == nullptr ||
+      ops->default_output_device == nullptr ||
+      ops->default_high_output_latency == nullptr ||
+      ops->open_output == nullptr) {
+    return paInternalError;
+  }
+  return open_default_output(ops, out_stream);
+}
+
+uint64_t
+h2_portaudio_output_underflow_count_for_test(h2_portaudio_t *provider) {
+  if (provider == nullptr) {
+    return 0u;
+  }
+  return provider->state.output_underflow_count.load();
+}
+
+int h2_portaudio_set_require_real_devices_for_test(h2_portaudio_t *provider,
+                                                   int require_real_devices) {
+  if (provider == nullptr) {
+    return H2_AUDIO_ERR_INVALID_ARG;
+  }
+  AudioState *state = &provider->state;
+  if (state->output_stream != nullptr || state->playback_thread_started) {
+    return H2_AUDIO_ERR_INVALID_STATE;
+  }
+  state->require_real_devices = require_real_devices != 0;
   return H2_AUDIO_OK;
 }
 

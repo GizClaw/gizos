@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_POINTS_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
@@ -52,36 +53,32 @@ typedef struct h2_gizclaw_points_transaction_page {
   h2_gizclaw_owned_text_t next_cursor;
 } h2_gizclaw_points_transaction_page_t;
 
-/**
- * Read the current caller's Points account through server.points.get.
- *
- * This is a blocking unary RPC and must run on the GizClaw client owner task.
- * The Server resolves the account from the caller's Runtime Profile. On
- * success `out_account` owns its text fields; release them with
- * h2_gizclaw_points_account_deinit().
- */
-int h2_gizclaw_client_points_get(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_points_account_t *out_account);
+h2_pal_result_t h2_gizclaw_req_create_point_get(h2_gizclaw_service_t *service,
+                                                uint64_t identity,
+                                                uint32_t timeout_ms,
+                                                h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_req_create_point_transaction_list(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
-/**
- * List the current caller's Points ledger through
- * server.points.transactions.list.
- *
- * This is a blocking unary RPC and must run on the GizClaw client owner task.
- * `cursor` is borrowed for the duration of the call; an empty cursor requests
- * the first page. `limit` must be positive. On success `out_page` owns the
- * item array and all text fields; release them with
- * h2_gizclaw_points_transaction_page_deinit().
- */
-int h2_gizclaw_client_points_transactions_list(
-    h2_gizclaw_client_t *client, h2_gizclaw_str_t cursor, size_t limit,
+/** Result pointers live in storage, not in request. NO_SPACE rolls back the
+ * storage checkpoint and leaves output empty; retry with a larger buffer. */
+h2_pal_result_t
+h2_gizclaw_resp_parse_point_get(const h2_gizclaw_req_t *request,
+                                h2_gizclaw_resp_storage_t *storage,
+                                h2_gizclaw_points_account_t *out_account);
+h2_pal_result_t h2_gizclaw_resp_parse_point_transaction_list(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_points_transaction_page_t *out_page);
 
-void h2_gizclaw_points_account_deinit(h2_gizclaw_client_t *client,
-                                      h2_gizclaw_points_account_t *account);
-
-void h2_gizclaw_points_transaction_page_deinit(
-    h2_gizclaw_client_t *client, h2_gizclaw_points_transaction_page_t *page);
+h2_pal_result_t
+h2_gizclaw_rpc_point_get(h2_gizclaw_service_t *service, uint32_t timeout_ms,
+                         h2_gizclaw_resp_storage_t *storage,
+                         h2_gizclaw_points_account_t *out_account);
+h2_pal_result_t h2_gizclaw_rpc_point_transaction_list(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_points_transaction_page_t *out_page);
 
 #ifdef __cplusplus
 }

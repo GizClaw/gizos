@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define H2_LOADER_STATUS_LINE_MAX 4096u
+#define H2_LOADER_STATUS_LINE_MAX 4352u
 
 int h2_loader_status_set_active(
     h2_loader_status_t *status,

@@ -20,4 +20,4 @@ bazel build --config=esp32p4 \
 - 设备横放时显示完整的横屏画面，没有竖屏裁剪、拉伸或倒置。
 - 扬声器播放与视频素材对应的声音。
 - 六秒素材结束后音视频继续循环。
-- `status` 返回 `active_role=app`、`active_name=mp4-player`、`state=confirmed`，且 `staged_valid=0`。
+- `status` 返回 `active_role=app`，active identity 与 package manifest 一致，运行 Partition 2、Partition 2 metadata valid 且 Stage invalid。

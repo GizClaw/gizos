@@ -187,6 +187,7 @@ export function evaluateOwnership({
 
   const selfOwned = [];
   const approved = [];
+  const approvalApprovers = new Set();
   const blockers = [];
   for (const path of paths) {
     const rule = ownersForPath(rules, path);
@@ -204,13 +205,16 @@ export function evaluateOwnership({
       blockers.push(`${path}: line ${rule.lineNumber} has no direct user owner`);
       continue;
     }
+    const matchingApprovers = rule.directOwners.filter((owner) =>
+      validApprovers.has(owner),
+    );
+    for (const approver of matchingApprovers) {
+      approvalApprovers.add(approver);
+    }
     if (rule.directOwners.includes(normalizedAuthor)) {
       selfOwned.push(path);
       continue;
     }
-    const matchingApprovers = rule.directOwners.filter((owner) =>
-      validApprovers.has(owner),
-    );
     if (matchingApprovers.length > 0) {
       approved.push({path, approvers: matchingApprovers});
       continue;
@@ -222,6 +226,7 @@ export function evaluateOwnership({
 
   return {
     success: blockers.length === 0,
+    approvalApprovers: [...approvalApprovers].sort(),
     selfOwned,
     approved,
     blockers,
@@ -245,6 +250,7 @@ export function formatSummary(
     `Evaluated paths: ${result.paths.length}`,
     `Self-owned paths: ${result.selfOwned.length}`,
     `Paths satisfied by independent approval: ${result.approved.length}`,
+    `Current-head approving owners: ${result.approvalApprovers.length}`,
   ];
   if (result.blockers.length > 0) {
     lines.push("", "Blocking paths:");

@@ -39,18 +39,22 @@ static h2_h2loader_host_status_t command_status(
     h2_h2loader_host_active_role_t role,
     uint32_t command_availability) {
     h2_h2loader_host_status_t status = {0};
-    status.states = (uint64_t)role | (UINT64_C(1) << 4u) |
-        (UINT64_C(1) << 11u) | (UINT64_C(1) << 16u);
+    status.active_role = role;
+    status.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    status.mfg_mode = 1u;
     status.command_availability = command_availability;
     return status;
 }
 
-static void test_typed_command_role_contract(void) {
+static void test_typed_command_role_parity(void) {
     h2_h2loader_host_status_t app = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_STATUS |
-            H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_RESTART |
-            H2_H2LOADER_HOST_COMMAND_AVAILABLE_APP_ROLLBACK |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP);
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
@@ -59,7 +63,7 @@ static void test_typed_command_role_contract(void) {
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER |
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
             H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN |
-            H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE);
+            H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE);
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
@@ -71,61 +75,69 @@ static void test_typed_command_role_contract(void) {
     assert(h2_h2loader_host_command_validate(
                &app,
                0u,
-               H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader, 0u, H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK) ==
-           H2_PAL_ERR_INVALID_STATE);
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) ==
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &app, 0u, H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
-           H2_PAL_ERR_INVALID_STATE);
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_APP) ==
+           H2_PAL_OK);
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER;
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) ==
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) == H2_PAL_OK);
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP;
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_APP) == H2_PAL_OK);
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &loader,
                0u,
-               H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER) ==
+               H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) ==
            H2_PAL_ERR_INVALID_STATE);
     loader.command_availability =
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_ABORT |
-        H2_H2LOADER_HOST_COMMAND_AVAILABLE_LOADER_UPGRADE |
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE |
         H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN;
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app, 0u, H2_H2LOADER_HOST_COMMAND_STAGE_ABORT) ==
-           H2_PAL_ERR_INVALID_STATE);
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader, 0u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_OK);
+               &app, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
-               &loader, 1u, H2_H2LOADER_HOST_COMMAND_LOADER_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_validate(
+               &loader, 1u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
+    loader.command_availability &=
+        ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
+    loader.capabilities |= H2_H2LOADER_HOST_CAPABILITY_WIFI;
+    assert(h2_h2loader_host_command_validate(
+               &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT) ==
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) ==
-           H2_PAL_ERR_INVALID_STATE);
+           H2_PAL_OK);
     assert(h2_h2loader_host_command_validate(
                &app,
                1u,
-               H2_H2LOADER_HOST_COMMAND_APP_RESTART) ==
+               H2_H2LOADER_HOST_COMMAND_REBOOT_APP) ==
            H2_PAL_ERR_INVALID_STATE);
     app.command_availability &=
         ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_COREDUMP_DUMP;
@@ -165,15 +177,25 @@ static void test_typed_command_wire_contract(void) {
     assert(contract.success_token == NULL);
     assert(contract.marker_is_success == 1u);
 
-    request.command = H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK;
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     assert(h2_h2loader_host_command_contract(
                &request, &contract) == H2_PAL_OK);
-    assert(strcmp(contract.line, "h2loader rollback\n") == 0);
-    assert(strcmp(contract.marker, "H2_LOADER_ROLLBACK ") == 0);
-    assert(strcmp(contract.success_token, "result=OK") == 0);
+    assert(strcmp(contract.line, "h2loader reboot loader\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_REBOOT ") == 0);
+    assert(strcmp(contract.success_token, "result=accepted") == 0);
     assert(strcmp(contract.accepted_disconnect_token,
-                  "H2_LOADER_ROLLBACK result=OK") == 0);
+                  "H2_LOADER_REBOOT target=loader result=accepted") == 0);
     assert(contract.lifecycle_transition == 1u);
+
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE;
+    assert(h2_h2loader_host_command_contract(
+               &request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.line, "h2loader reboot upgrade\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_REBOOT ") == 0);
+    assert(strcmp(contract.success_token, "result=accepted") == 0);
+    assert(strcmp(
+               contract.accepted_disconnect_token,
+               "H2_LOADER_REBOOT target=upgrade result=accepted") == 0);
 
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
@@ -185,7 +207,7 @@ static void test_typed_command_wire_contract(void) {
     assert(strcmp(contract.marker, "H2_LOADER_STATUS ") == 0);
     assert(contract.marker_is_success == 1u);
 
-    request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     assert(h2_h2loader_host_command_contract(
                &request, &contract) == H2_PAL_OK);
     assert(strcmp(contract.line, "h2loader reboot loader\n") == 0);
@@ -223,8 +245,16 @@ static void test_typed_command_wire_contract(void) {
     request.password = "secret";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
     assert(strcmp(contract.line, "h2loader wifi connect factory secret\n") == 0);
+    assert(strcmp(contract.success_token, "result=connecting") == 0);
     request.password = "bad password";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
+
+    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
+    request.ssid = NULL;
+    request.password = NULL;
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.marker, "H2_LOADER_WIFI ") == 0);
+    assert(strcmp(contract.success_token, "result=disconnected") == 0);
     request.command = H2_H2LOADER_HOST_COMMAND_STAGE_URL;
     request.url = "https://example.test/update.tar.zlib";
     request.expected_bytes = 42u;
@@ -238,9 +268,9 @@ static void test_typed_command_wire_contract(void) {
 
 static void test_typed_command_terminal_contract(void) {
     const h2_h2loader_host_command_contract_t contract = {
-        .line = "h2loader restart\n",
-        .marker = "H2_LOADER_RESTART ",
-        .success_token = "result=OK",
+        .line = "h2loader reboot app\n",
+        .marker = "H2_LOADER_REBOOT ",
+        .success_token = "target=app result=accepted",
     };
     const h2_h2loader_host_command_contract_t status_contract = {
         .line = "h2loader status\n",
@@ -248,38 +278,40 @@ static void test_typed_command_terminal_contract(void) {
         .marker_is_success = 1u,
     };
     static const uint8_t status_ok[] =
-        "noise\nH2_LOADER_STATUS intent=h2loader board=amoled target=esp32s3 "
-        "chip=esp32s3 state=confirmed app_confirmed=1 hold=0 last=0 "
-        "active_role=app capabilities=0x00000013\n";
+        "noise\nH2_LOADER_STATUS board=amoled target=esp32s3 chip=esp32s3 "
+        "capabilities=0x00000007 command_availability=0x000f3f3f "
+        "boot_intent=auto active_role=app active_version=v1 "
+        "active_checksum=abababababababababababababababababababababababababababababababab "
+        "active_image_size=1 running_partition=2 next_partition=2 last_result=0\n";
     static const uint8_t status_error_only[] =
         "H2_LOADER_STATUS_ERROR code=-4\n";
     static const uint8_t status_unsupported[] =
         "H2_LOADER_STATUS result=unsupported\n";
     static const uint8_t ok[] =
-        "noise\nH2_LOADER_RESTART result=OK\n";
+        "noise\nH2_LOADER_REBOOT target=app result=accepted\n";
     static const uint8_t unsupported[] =
-        "H2_LOADER_RESTART result=unsupported\n";
+        "H2_LOADER_REBOOT result=unsupported\n";
     static const uint8_t unavailable[] =
-        "H2_LOADER_RESTART result=unavailable\n";
+        "H2_LOADER_REBOOT result=unavailable\n";
     static const uint8_t usage[] =
-        "H2_LOADER_RESTART usage: h2loader restart\n";
+        "H2_LOADER_REBOOT usage: h2loader reboot app\n";
     static const uint8_t invalid[] =
-        "H2_LOADER_RESTART result=invalid_command\n";
+        "H2_LOADER_REBOOT result=invalid_command\n";
     static const uint8_t error[] =
-        "H2_LOADER_RESTART result=error\n";
+        "H2_LOADER_REBOOT result=error\n";
     static const uint8_t failed[] =
-        "H2_LOADER_RESTART result=fail\n";
+        "H2_LOADER_REBOOT result=fail\n";
     static const uint8_t marker_without_result[] =
-        "H2_LOADER_RESTART code=0\n";
+        "H2_LOADER_REBOOT code=0\n";
     static const uint8_t malformed_success[] =
-        "H2_LOADER_RESTART result=OKAY\n";
+        "H2_LOADER_REBOOT target=app result=accepted-extra\n";
     static const uint8_t incomplete[] = "result=OK\n";
     static const uint8_t stale_error[] =
-        "H2_LOADER_RESTART result=error\n"
-        "H2_LOADER_RESTART result=OK\n";
+        "H2_LOADER_REBOOT result=error\n"
+        "H2_LOADER_REBOOT target=app result=accepted\n";
     static const uint8_t unrelated_error[] =
         "diagnostic result=error\n"
-        "H2_LOADER_RESTART result=OK\n";
+        "H2_LOADER_REBOOT target=app result=accepted\n";
 
     assert(h2_h2loader_host_command_parse_terminal(
                ok, sizeof(ok) - 1u, &contract) ==
@@ -379,7 +411,9 @@ static h2_pal_result_t command_transport_read(
     size_t response_size,
     size_t *out_response_len,
     h2_h2loader_host_command_output_fn on_output,
-    void *output_user) {
+    void *output_user,
+    uint8_t stream_output,
+    size_t *out_output_bytes) {
     command_transport_fixture_t *fixture = user;
     ++fixture->read_count;
     snprintf(fixture->marker, sizeof(fixture->marker), "%s", marker);
@@ -387,17 +421,23 @@ static h2_pal_result_t command_transport_read(
     if (copied > response_size) {
         copied = response_size;
     }
-    memcpy(response, fixture->response, copied);
+    memcpy(
+        response,
+        stream_output && fixture->response_len > copied
+            ? &fixture->response[fixture->response_len - copied]
+            : fixture->response,
+        copied);
     *out_response_len = copied;
-    if (copied > 0u && on_output != NULL) {
+    *out_output_bytes = fixture->response_len;
+    if (fixture->response_len > 0u && on_output != NULL) {
         size_t delivered = 0u;
         size_t chunk_size = fixture->output_chunk_size == 0u
-            ? copied : fixture->output_chunk_size;
-        while (delivered < copied) {
-            size_t chunk = copied - delivered;
+            ? fixture->response_len : fixture->output_chunk_size;
+        while (delivered < fixture->response_len) {
+            size_t chunk = fixture->response_len - delivered;
             if (chunk > chunk_size) chunk = chunk_size;
             h2_pal_result_t output_rc = on_output(
-                output_user, &response[delivered], chunk);
+                output_user, &fixture->response[delivered], chunk);
             if (output_rc != H2_PAL_OK) return output_rc;
             delivered += chunk;
         }
@@ -477,6 +517,39 @@ static void test_typed_command_transport_execution(void) {
     assert(result.transport_result == H2_PAL_OK);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
+    {
+        static uint8_t coredump_response[9000];
+        static const char terminal[] =
+            "\nH2_LOADER_COREDUMP_DUMP result=OK bytes=4096 blank=0\n";
+        memset(coredump_response, 'a', sizeof(coredump_response));
+        memcpy(
+            &coredump_response[sizeof(coredump_response) - sizeof(terminal) + 1u],
+            terminal,
+            sizeof(terminal) - 1u);
+        request.command = H2_H2LOADER_HOST_COMMAND_COREDUMP_DUMP;
+        fixture.response = coredump_response;
+        fixture.response_len = sizeof(coredump_response);
+        fixture.read_result = H2_PAL_OK;
+        fixture.output_chunk_size = 64u;
+        fixture.output_count = 0u;
+        assert(h2_h2loader_host_command_execute_transport(
+                   &fixture,
+                   command_transport_write,
+                   command_transport_read,
+                   NULL,
+                   &request,
+                   &result) == H2_PAL_OK);
+        assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+        assert(result.output_bytes == sizeof(coredump_response));
+        assert(result.output_truncated == 1u);
+        assert(fixture.output_count > 1u);
+    }
+
+    request.command = H2_H2LOADER_HOST_COMMAND_STATUS;
+    fixture.response = ok;
+    fixture.response_len = sizeof(ok) - 1u;
+    fixture.read_result = H2_PAL_OK;
+    fixture.output_chunk_size = 0u;
     fixture.finish_count = 0u;
     assert(h2_h2loader_host_command_execute_transport(
                &fixture,
@@ -567,7 +640,7 @@ static void test_typed_command_transport_execution(void) {
     h2_h2loader_host_status_t loader = command_status(
         H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER,
         H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
-    request.command = H2_H2LOADER_HOST_COMMAND_LOADER_REBOOT_LOADER;
+    request.command = H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER;
     request.status = &loader;
     fixture.output_result = H2_PAL_OK;
     fixture.response = reboot_ok;
@@ -657,52 +730,6 @@ static void test_typed_command_transport_execution(void) {
                &request,
                &result) == H2_PAL_ERR_TIMEOUT);
     assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
-
-    /* restart/rollback: the device acks result=OK then reboots, dropping the
-     * link (CLOSED). The acknowledged line must resolve as accepted. */
-    static const uint8_t restart_ok[] = "H2_LOADER_RESTART result=OK\n";
-    static const uint8_t rollback_ok[] = "H2_LOADER_ROLLBACK result=OK\n";
-    h2_h2loader_host_status_t app_lifecycle = command_status(
-        H2_H2LOADER_HOST_ACTIVE_ROLE_APP,
-        H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
-    request.command = H2_H2LOADER_HOST_COMMAND_APP_RESTART;
-    request.status = &app_lifecycle;
-    fixture.response = restart_ok;
-    fixture.response_len = sizeof(restart_ok) - 1u;
-    fixture.read_result = H2_PAL_ERR_CLOSED;
-    assert(h2_h2loader_host_command_execute_transport(
-               &fixture,
-               command_transport_write,
-               command_transport_read,
-               NULL,
-               &request,
-               &result) == H2_PAL_OK);
-    assert(result.transport_result == H2_PAL_ERR_CLOSED);
-    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
-
-    /* Same restart ack, but the browser reports a read timeout on reboot. */
-    fixture.read_result = H2_PAL_ERR_TIMEOUT;
-    assert(h2_h2loader_host_command_execute_transport(
-               &fixture,
-               command_transport_write,
-               command_transport_read,
-               NULL,
-               &request,
-               &result) == H2_PAL_OK);
-    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
-
-    request.command = H2_H2LOADER_HOST_COMMAND_APP_ROLLBACK;
-    fixture.response = rollback_ok;
-    fixture.response_len = sizeof(rollback_ok) - 1u;
-    fixture.read_result = H2_PAL_ERR_CLOSED;
-    assert(h2_h2loader_host_command_execute_transport(
-               &fixture,
-               command_transport_write,
-               command_transport_read,
-               NULL,
-               &request,
-               &result) == H2_PAL_OK);
-    assert(result.terminal == H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
 
     static const uint8_t wifi_scan[] =
         "H2_LOADER_WIFI_SCAN_RESULT index=1 ssid_hex=666f6f\n"
@@ -852,57 +879,66 @@ static void test_catalog(void) {
 static void test_status(void) {
     static const char checksum[] =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-    char line[2048];
-    int len = snprintf(
-        line,
-        sizeof(line),
-        "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
-        "capabilities=0x00000005 command_availability=0x00000048 "
-        "states=0x000000000001586a active_name=display active_version=v1 "
-        "active_checksum=%s last=0 installed_version=v1 installed_checksum=%s "
-        "staged_version= staged_checksum= staged_bytes=0 running_partition=1 "
-        "next_partition=1 canonical_partition=0 trial_partition=0 "
-        "upgrade_last=0 upgrade_step= upgrade_package_sha256= candidate_board= "
-        "candidate_target= candidate_version= candidate_bytes=0 candidate_sha256=\n",
-        checksum, checksum);
-    assert(len > 0 && (size_t)len < sizeof(line));
     h2_h2loader_host_status_t status;
-    assert(h2_h2loader_host_status_parse(line, &status) == H2_PAL_OK);
+    char v2_line[H2_H2LOADER_HOST_STATUS_LINE_MAX];
+    int v2_len = snprintf(
+        v2_line, sizeof(v2_line),
+        "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
+        "device_uid=102030405060 "
+        "capabilities=0x00000005 command_availability=0x00000008 "
+        "active_role=app active_version=v1 active_checksum=%s active_image_size=4096 "
+        "running_partition=2 next_partition=2 boot_intent=auto "
+        "stage_valid=0 stage_package_checksum=- stage_package_size=0 "
+        "stage_image_checksum=- stage_image_size=0 stage_role=unknown "
+        "stage_version=- stage_board=- stage_target=- "
+        "partition_1_valid=1 partition_1_package_checksum=%s "
+        "partition_1_package_size=3 partition_1_image_checksum=%s "
+        "partition_1_image_size=2 partition_1_role=loader "
+        "partition_1_version=v1 partition_1_board=devkit partition_1_target=esp32s3 "
+        "partition_2_valid=1 partition_2_package_checksum=%s "
+        "partition_2_package_size=3 partition_2_image_checksum=%s "
+        "partition_2_image_size=2 partition_2_role=app "
+        "partition_2_version=v1 partition_2_board=devkit partition_2_target=esp32s3 "
+        "last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000\n",
+        checksum, checksum, checksum, checksum, checksum);
+    assert(v2_len > 0 && (size_t)v2_len < sizeof(v2_line));
+    assert(h2_h2loader_host_status_parse(v2_line, &status) == H2_PAL_OK);
+    assert(status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+    assert(status.boot_intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO);
+    assert(status.partition_1.role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
+    assert(status.partition_2.valid == 1u);
+    assert(strcmp(status.partition_2.package_checksum, checksum) == 0);
+    assert(status.stage.valid == 0u);
     assert(strcmp(status.board, "devkit") == 0);
+    assert(strcmp(status.device_uid, "102030405060") == 0);
     assert(h2_h2loader_host_status_active_role(&status) ==
            H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
     assert(status.capabilities == 5u);
-    assert(status.command_availability == UINT32_C(0x48));
-    assert(status.running_partition == 1u);
-    assert(h2_h2loader_host_status_app_confirmed(&status));
+    assert(status.command_availability == UINT32_C(0x08));
+    assert(status.running_partition == 2u);
 
-    char noncanonical_hex[sizeof(line)];
-    strcpy(noncanonical_hex, line);
-    char *states_suffix = strstr(noncanonical_hex, "states=0x000000000001586a");
-    assert(states_suffix != NULL);
-    states_suffix[strlen("states=0x000000000001586")] = 'A';
-    assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
+    char invalid_uid[sizeof(v2_line)];
+    strcpy(invalid_uid, v2_line);
+    char *uid = strstr(invalid_uid, "device_uid=102030405060");
+    assert(uid != NULL);
+    uid[strlen("device_uid=")] = 'A';
+    assert(h2_h2loader_host_status_parse(invalid_uid, &status) ==
            H2_PAL_ERR_FORMAT);
-    strcpy(noncanonical_hex, line);
+
+    char noncanonical_hex[sizeof(v2_line)];
+    strcpy(noncanonical_hex, v2_line);
     char *unsafe_version = strstr(noncanonical_hex, "active_version=v1");
     assert(unsafe_version != NULL);
     unsafe_version[strlen("active_version=v")] = '\t';
     assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
            H2_PAL_ERR_FORMAT);
-    const char *staged_bytes = strstr(line, "staged_bytes=0");
-    assert(staged_bytes != NULL);
-    const size_t staged_value_offset =
-        (size_t)(staged_bytes - line) + strlen("staged_bytes=");
-    assert(snprintf(
-               noncanonical_hex,
-               sizeof(noncanonical_hex),
-               "%.*s0x0%s",
-               (int)staged_value_offset,
-               line,
-               staged_bytes + strlen("staged_bytes=0")) > 0);
+    strcpy(noncanonical_hex, v2_line);
+    char *package_size = strstr(noncanonical_hex, "stage_package_size=0");
+    assert(package_size != NULL);
+    package_size[strlen("stage_package_size=")] = 'x';
     assert(h2_h2loader_host_status_parse(noncanonical_hex, &status) ==
            H2_PAL_ERR_FORMAT);
-    assert(h2_h2loader_host_status_parse(line, &status) == H2_PAL_OK);
+    assert(h2_h2loader_host_status_parse(v2_line, &status) == H2_PAL_OK);
 
     h2_h2loader_host_catalog_entry_t asset = { 0 };
     strcpy(asset.board, "devkit");
@@ -919,24 +955,14 @@ static void test_status(void) {
     asset.image[0] = '\0';
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_OK);
-    strcpy(status.active_name, "another-app");
-    assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
-           H2_PAL_OK);
-    asset.identity_source =
-        H2_H2LOADER_HOST_ASSET_IDENTITY_RELEASE_CATALOG;
-    assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
-           H2_PAL_ERR_INVALID_STATE);
-    strcpy(status.active_name, "display");
-    strcpy(asset.image, "display");
-    status.active_checksum[0] = '\0';
-    assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
-           H2_PAL_OK);
+    asset.identity_source = H2_H2LOADER_HOST_ASSET_IDENTITY_RELEASE_CATALOG;
+    assert(h2_h2loader_host_status_verify_asset(&status, &asset) == H2_PAL_OK);
     memset(status.active_checksum, '0', H2_H2LOADER_HOST_SHA256_HEX_LEN);
     status.active_checksum[H2_H2LOADER_HOST_SHA256_HEX_LEN] = '\0';
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_ERR_INVALID_STATE);
     strcpy(status.active_checksum, checksum);
-    status.states |= UINT64_C(1) << 15u;
+    status.stage.valid = 1u;
     assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_status_parse(
@@ -946,44 +972,11 @@ static void test_status(void) {
                "H2_APP_STATUS board=devkit\n",
                &status) == H2_PAL_ERR_FORMAT);
 
-    static const char idle_loader[] =
-        "board=waveshare_esp32s3_a7670e_4g target=esp32s3 chip=esp32s3 "
-        "capabilities=0x00000007 command_availability=0x000fffff "
-        "states=0x0000000000010915 active_name=h2loader "
-        "active_version=pr388-f8aa6d36 active_checksum= last=0 "
-        "installed_version= installed_checksum= staged_version= staged_checksum= "
-        "staged_bytes=0 running_partition=1 next_partition=1 "
-        "canonical_partition=1 trial_partition=2 upgrade_last=0 upgrade_step= "
-        "upgrade_package_sha256="
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad "
-        "candidate_board= candidate_target= candidate_version= candidate_bytes=0 "
-        "candidate_sha256=\n";
-    char idle_line[2048];
-    (void)snprintf(idle_line, sizeof(idle_line), "H2_LOADER_STATUS %s", idle_loader);
     assert(h2_h2loader_host_status_parse(
-               idle_line, &status) == H2_PAL_OK);
-    assert(strcmp(status.board, "waveshare_esp32s3_a7670e_4g") == 0);
-    assert(h2_h2loader_host_status_active_role(&status) ==
-           H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER);
-    assert(status.active_checksum[0] == '\0');
-    assert(status.installed_checksum[0] == '\0');
-    assert(!h2_h2loader_host_status_staged_valid(&status));
-    assert(status.upgrade_last == 0);
-    assert(strcmp(status.upgrade_package_sha256, checksum) == 0);
-    memset(&asset, 0, sizeof(asset));
-    strcpy(asset.board, "waveshare_esp32s3_a7670e_4g");
-    strcpy(asset.target, "esp32s3");
-    strcpy(asset.version, "pr388-f8aa6d36");
-    strcpy(asset.image_sha256, checksum);
-    asset.role = H2_H2LOADER_HOST_ASSET_ROLE_LOADER;
-    asset.identity_source =
-        H2_H2LOADER_HOST_ASSET_IDENTITY_PACKAGE_MANIFEST;
-    strcpy(status.active_checksum, checksum);
-    assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
-           H2_PAL_OK);
-    status.states |= UINT64_C(1) << 15u;
-    assert(h2_h2loader_host_status_verify_asset(&status, &asset) ==
-           H2_PAL_ERR_INVALID_STATE);
+        "H2_LOADER_STATUS board=devkit target=esp32s3 chip=esp32s3 "
+        "device_uid=102030405060 "
+        "capabilities=0x00000005 command_availability=0x00000008 "
+        "states=0x000000000001586a\n", &status) == H2_PAL_ERR_FORMAT);
 }
 
 static void write_le16(uint8_t *out, uint16_t value) {
@@ -1287,9 +1280,18 @@ typedef struct operation_fixture {
     int cancelled;
     int bad_final_checksum;
     int stage_only;
+    int fail_stage_status_once;
+    int stage_missing_after_reconnect;
+    int stage_mismatch_after_reconnect;
+    int transient_stage_failures;
+    h2_pal_result_t transient_stage_result;
+    int disconnect_failure_call;
+    h2_h2loader_host_active_role_t initial_active_role;
+    h2_pal_result_t disconnect_result;
     h2_pal_result_t stage_result;
     h2_pal_result_t activate_result;
     h2_pal_result_t rediscover_result;
+    h2_pal_result_t reconnect_connect_result;
     h2_h2loader_host_operation_phase_t event_phase[32];
     h2_pal_result_t event_result[32];
     size_t event_count;
@@ -1302,27 +1304,49 @@ static h2_pal_result_t operation_connect(
     h2_h2loader_host_status_t *out_status) {
     operation_fixture_t *fixture = user;
     ++fixture->connect_count;
+    if (fixture->connect_count > 1 &&
+        fixture->reconnect_connect_result != H2_PAL_OK) {
+        return fixture->reconnect_connect_result;
+    }
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->status_board);
     strcpy(out_status->target, fixture->asset.target);
-    out_status->states = UINT64_C(0x0000000000010915);
+    out_status->active_role = fixture->initial_active_role;
+    out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
+    out_status->running_partition = 1u;
+    out_status->next_partition = 1u;
     if (fixture->connect_count > 1) {
         if (fixture->stage_only) {
-            out_status->states |= UINT64_C(1) << 15u;
-            out_status->staged_bytes = fixture->asset.bytes;
-            strcpy(out_status->staged_checksum, fixture->asset.sha256);
+            if (!fixture->stage_missing_after_reconnect) {
+                out_status->stage.valid = 1u;
+                out_status->stage.package_size = fixture->asset.bytes;
+                strcpy(
+                    out_status->stage.package_checksum,
+                    fixture->stage_mismatch_after_reconnect
+                        ? "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                        : fixture->asset.sha256);
+            }
             return H2_PAL_OK;
         }
-        out_status->states = UINT64_C(0x000000000001586a);
-        strcpy(out_status->active_name, fixture->asset.image);
+        out_status->active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+        out_status->running_partition = 2u;
+        out_status->next_partition = 2u;
+        strcpy(out_status->active_version, fixture->asset.version);
         strcpy(
             out_status->active_checksum,
             fixture->bad_final_checksum
                 ? "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 : fixture->asset.image_sha256);
-        strcpy(
-            out_status->installed_checksum,
-            fixture->asset.sha256);
+        out_status->partition_2.valid = 1u;
+        out_status->partition_2.role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+        strcpy(out_status->partition_2.package_checksum, fixture->asset.sha256);
+        strcpy(out_status->partition_2.image_checksum,
+            fixture->bad_final_checksum
+                ? "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                : fixture->asset.image_sha256);
+        strcpy(out_status->partition_2.version, fixture->asset.version);
+        strcpy(out_status->partition_2.board, fixture->asset.board);
+        strcpy(out_status->partition_2.target, fixture->asset.target);
     }
     return H2_PAL_OK;
 }
@@ -1343,8 +1367,15 @@ static h2_pal_result_t operation_stage(
     (void)cancel_user;
     (void)on_progress;
     (void)progress_user;
-    ++((operation_fixture_t *)user)->stage_count;
-    return ((operation_fixture_t *)user)->stage_result;
+    operation_fixture_t *fixture = user;
+    ++fixture->stage_count;
+    if (fixture->transient_stage_failures > 0) {
+        --fixture->transient_stage_failures;
+        return fixture->transient_stage_result == H2_PAL_OK
+            ? H2_PAL_ERR_CLOSED
+            : fixture->transient_stage_result;
+    }
+    return fixture->stage_result;
 }
 
 static h2_pal_result_t operation_activate(
@@ -1356,8 +1387,13 @@ static h2_pal_result_t operation_activate(
 }
 
 static h2_pal_result_t operation_disconnect(void *user) {
-    ++((operation_fixture_t *)user)->disconnect_count;
-    return H2_PAL_OK;
+    operation_fixture_t *fixture = user;
+    ++fixture->disconnect_count;
+    if (fixture->disconnect_failure_call != 0 &&
+        fixture->disconnect_count != fixture->disconnect_failure_call) {
+        return H2_PAL_OK;
+    }
+    return fixture->disconnect_result;
 }
 
 static h2_pal_result_t operation_read_status(
@@ -1365,12 +1401,16 @@ static h2_pal_result_t operation_read_status(
     h2_h2loader_host_status_t *out_status) {
     operation_fixture_t *fixture = user;
     ++fixture->read_status_count;
+    if (fixture->fail_stage_status_once && fixture->read_status_count == 1) {
+        return H2_PAL_ERR_TIMEOUT;
+    }
     memset(out_status, 0, sizeof(*out_status));
     strcpy(out_status->board, fixture->asset.board);
     strcpy(out_status->target, fixture->asset.target);
-    out_status->states = UINT64_C(0x0000000000018915);
-    out_status->staged_bytes = fixture->asset.bytes;
-    strcpy(out_status->staged_checksum, fixture->asset.sha256);
+    out_status->active_role = fixture->initial_active_role;
+    out_status->stage.valid = 1u;
+    out_status->stage.package_size = fixture->asset.bytes;
+    strcpy(out_status->stage.package_checksum, fixture->asset.sha256);
     return H2_PAL_OK;
 }
 
@@ -1418,6 +1458,7 @@ static void test_managed_operation(void) {
         .sleep_ms = operation_sleep,
     };
     operation_fixture_t fixture = { 0 };
+    fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
     strcpy(fixture.status_board, "devkit");
     strcpy(fixture.asset.board, "devkit");
     strcpy(fixture.asset.target, "esp32s3");
@@ -1457,11 +1498,68 @@ static void test_managed_operation(void) {
     assert(fixture.disconnect_count == 2);
     assert(fixture.rediscover_count == 1);
     assert(fixture.sleep_count == 1);
-    assert(strcmp(final_status.active_name, "display") == 0);
+    assert(final_status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
     assert(fixture.event_count > 0u);
     assert(fixture.event_phase[fixture.event_count - 1u] ==
            H2_H2LOADER_HOST_OPERATION_COMPLETE);
     assert(fixture.event_result[fixture.event_count - 1u] == H2_PAL_OK);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.sleep_count = 0;
+    fixture.event_count = 0u;
+    fixture.transient_stage_failures = 1;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 3);
+    assert(fixture.stage_count == 2);
+    assert(fixture.activate_count == 1);
+    assert(fixture.disconnect_count == 3);
+    assert(fixture.rediscover_count == 2);
+    assert(fixture.sleep_count == 2);
+    assert(final_status.active_role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.sleep_count = 0;
+    fixture.event_count = 0u;
+    fixture.reconnect_connect_result = H2_PAL_ERR_INVALID_STATE;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.sleep_count == 1);
+    assert(fixture.event_phase[fixture.event_count - 1u] ==
+           H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY);
+    fixture.reconnect_connect_result = H2_PAL_OK;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.sleep_count = 0;
+    fixture.event_count = 0u;
+    fixture.disconnect_result = H2_PAL_ERR_UNSUPPORTED;
+    fixture.disconnect_failure_call = 1;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_ERR_UNSUPPORTED);
+    assert(fixture.activate_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.rediscover_count == 0);
+    assert(fixture.sleep_count == 0);
+    assert(fixture.event_phase[fixture.event_count - 1u] ==
+           H2_H2LOADER_HOST_OPERATION_ACTIVATE);
+    assert(fixture.event_result[fixture.event_count - 1u] ==
+           H2_PAL_ERR_UNSUPPORTED);
+    fixture.disconnect_result = H2_PAL_OK;
+    fixture.disconnect_failure_call = 0;
 
     fixture.stage_only = 1;
     fixture.connect_count = 0;
@@ -1479,37 +1577,128 @@ static void test_managed_operation(void) {
     assert(fixture.disconnect_count == 1);
     assert(fixture.rediscover_count == 0);
     assert(fixture.read_status_count == 1);
-    assert(strcmp(final_status.staged_checksum, package_sha) == 0);
-    fixture.stage_only = 0;
+    assert(strcmp(final_status.stage.package_checksum, package_sha) == 0);
 
-    h2_h2loader_host_upgrade_tracker_t tracker;
-    h2_h2loader_host_status_t upgrade_status = {0};
-    strcpy(upgrade_status.board, "devkit");
-    strcpy(upgrade_status.target, "esp32s3");
-    strcpy(upgrade_status.staged_checksum, package_sha);
-    upgrade_status.states = UINT64_C(0x0000000000018911);
-    assert(h2_h2loader_host_upgrade_tracker_init(
-               &upgrade_status, &tracker) == H2_PAL_OK);
-    upgrade_status.board[0] = '\0';
-    h2_h2loader_host_upgrade_tracker_t invalid_tracker;
-    assert(h2_h2loader_host_upgrade_tracker_init(
-               &upgrade_status, &invalid_tracker) == H2_PAL_ERR_INVALID_ARG);
-    strcpy(upgrade_status.board, "devkit");
-    strcpy(upgrade_status.upgrade_package_sha256, package_sha);
-    upgrade_status.states &= ~(UINT64_C(1) << 15u);
-    assert(h2_h2loader_host_upgrade_tracker_observe(
-               &tracker, &upgrade_status) == H2_PAL_ERR_WOULD_BLOCK);
-    upgrade_status.states = (upgrade_status.states &
-        ~(UINT64_C(0x7) << 8u)) | (UINT64_C(3) << 8u);
-    assert(h2_h2loader_host_upgrade_tracker_observe(
-               &tracker, &upgrade_status) == H2_PAL_ERR_WOULD_BLOCK);
-    upgrade_status.states = (upgrade_status.states &
-        ~(UINT64_C(0x7) << 8u)) | (UINT64_C(1) << 8u);
-    assert(h2_h2loader_host_upgrade_tracker_observe(
-               &tracker, &upgrade_status) == H2_PAL_OK);
-    upgrade_status.upgrade_last = -1;
-    assert(h2_h2loader_host_upgrade_tracker_observe(
-               &tracker, &upgrade_status) == H2_PAL_ERR_INVALID_STATE);
+    fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.read_status_count == 1);
+    fixture.initial_active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.fail_stage_status_once = 1;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(strcmp(final_status.stage.package_checksum, package_sha) == 0);
+    fixture.fail_stage_status_once = 0;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.transient_stage_failures = 1;
+    fixture.transient_stage_result = H2_PAL_ERR_TIMEOUT;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 1);
+    fixture.transient_stage_result = H2_PAL_OK;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.stage_missing_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 2);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 1);
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.stage_missing_after_reconnect = 0;
+    fixture.stage_mismatch_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.sleep_count == 1);
+    fixture.stage_mismatch_after_reconnect = 0;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.transient_stage_failures = 1;
+    fixture.reconnect_connect_result = H2_PAL_ERR_INVALID_STATE;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.sleep_count == 1);
+    fixture.reconnect_connect_result = H2_PAL_OK;
+    fixture.stage_missing_after_reconnect = 0;
+
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.fail_stage_status_once = 1;
+    fixture.disconnect_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_IO);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 1);
+    assert(fixture.disconnect_count == 1);
+    assert(fixture.rediscover_count == 0);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 0);
+    fixture.fail_stage_status_once = 0;
+    fixture.disconnect_result = H2_PAL_OK;
+    fixture.stage_only = 0;
 
     fixture.connect_count = 0;
     fixture.stage_count = 0;
@@ -1721,10 +1910,10 @@ static void test_scheduler(void) {
     h2_h2loader_host_status_t status = { 0 };
     strcpy(status.board, "devkit");
     strcpy(status.target, "esp32s3");
-    strcpy(status.active_name, "display");
     strcpy(status.active_version, "v1");
     strcpy(status.active_checksum, sha);
-    status.states = UINT64_C(0x000000000001586a);
+    status.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+    status.boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
     memset(
         status.active_version,
         'x',
@@ -1815,14 +2004,20 @@ static void test_scheduler(void) {
     assert(buffer_contains(
         json.bytes, json.len, "\"operation\":\"managed\""));
     assert(buffer_contains(
-        json.bytes, json.len, "\"final_state\":\"confirmed\""));
+        json.bytes, json.len, "\"final_boot_intent\":\"auto\""));
+    assert(buffer_contains(
+        json.bytes, json.len, "\"stage_valid\":0"));
+    assert(!buffer_contains(
+        json.bytes, json.len, "\"staged_valid\""));
     export_buffer_t csv = { 0 };
     assert(h2_h2loader_host_scheduler_export_csv(
                scheduler, export_write, &csv) == H2_PAL_OK);
     assert(csv.len > 0u);
     assert(buffer_contains(csv.bytes, csv.len, "\"slot-2\""));
     assert(buffer_contains(csv.bytes, csv.len, "\"serial\""));
-    assert(buffer_contains(csv.bytes, csv.len, "\"confirmed\""));
+    assert(buffer_contains(csv.bytes, csv.len, "\"auto\""));
+    assert(buffer_contains(csv.bytes, csv.len, "stage_valid,error_detail"));
+    assert(!buffer_contains(csv.bytes, csv.len, "staged_valid"));
     assert(h2_h2loader_host_scheduler_close(&scheduler) == H2_PAL_OK);
     assert(scheduler == NULL);
 
@@ -1855,8 +2050,130 @@ static void test_scheduler(void) {
     assert(h2_h2loader_host_scheduler_close(&scheduler) == H2_PAL_OK);
 }
 
+typedef struct serial_control_fixture {
+    h2_pal_result_t set_result;
+    h2_pal_result_t stream_result;
+    char events[4];
+    size_t event_count;
+    uint32_t line_mask;
+    uint32_t asserted_lines;
+    uint32_t expected_baud;
+} serial_control_fixture_t;
+
+static h2_pal_result_t serial_control_open(
+    void *user,
+    const char *port_id,
+    const h2_pal_uart_io_stream_config_t *config,
+    h2_pal_serial_host_session_t **out_session) {
+    serial_control_fixture_t *fixture = user;
+    assert(strcmp(port_id, "control-port") == 0);
+    assert(config->baud_rate == fixture->expected_baud);
+    fixture->events[fixture->event_count++] = 'o';
+    *out_session = (h2_pal_serial_host_session_t *)fixture;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t serial_control_set(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    uint32_t line_mask,
+    uint32_t asserted_lines) {
+    serial_control_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->events[fixture->event_count++] = 's';
+    fixture->line_mask = line_mask;
+    fixture->asserted_lines = asserted_lines;
+    return fixture->set_result;
+}
+
+static h2_pal_result_t serial_control_stream(
+    void *user,
+    h2_pal_serial_host_session_t *session,
+    const h2_pal_uart_io_stream_api_t **out_stream) {
+    serial_control_fixture_t *fixture = user;
+    assert(session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->events[fixture->event_count++] = 't';
+    *out_stream = NULL;
+    return fixture->stream_result;
+}
+
+static h2_pal_result_t serial_control_close(
+    void *user,
+    h2_pal_serial_host_session_t **inout_session) {
+    serial_control_fixture_t *fixture = user;
+    assert(*inout_session == (h2_pal_serial_host_session_t *)fixture);
+    fixture->events[fixture->event_count++] = 'c';
+    *inout_session = NULL;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_serial_host_vtable_t serial_control_vtable = {
+    .open = serial_control_open,
+    .session_stream = serial_control_stream,
+    .set_control_lines = serial_control_set,
+    .close = serial_control_close,
+};
+
+static void test_serial_connect_deasserts_dtr_and_rts(void) {
+    h2_pal_time_api_t time = {0};
+    serial_control_fixture_t fixture = {
+        .set_result = H2_PAL_OK,
+        .stream_result = H2_PAL_ERR_IO,
+        .expected_baud = 230400u,
+    };
+    h2_pal_serial_host_api_t serial = {
+        .user = &fixture,
+        .vtable = &serial_control_vtable,
+    };
+    h2_h2loader_host_serial_connection_config_t config = {
+        .serial = &serial,
+        .time = &time,
+        .allocator = &test_mem,
+        .port_id = "control-port",
+        .baud_rate = 230400u,
+    };
+    h2_h2loader_host_serial_connection_t *connection = NULL;
+
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(connection == NULL);
+    assert(fixture.event_count == 4u);
+    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_UNSUPPORTED;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    fixture.expected_baud = 460800u;
+    config.baud_rate = 0u;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(fixture.event_count == 4u);
+    assert(memcmp(fixture.events, "ostc", 4u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_TIMEOUT;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    fixture.expected_baud = 460800u;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_TIMEOUT);
+    assert(fixture.event_count == 3u);
+    assert(memcmp(fixture.events, "osc", 3u) == 0);
+    assert(fixture.line_mask ==
+        (H2_PAL_SERIAL_HOST_CONTROL_DTR |
+         H2_PAL_SERIAL_HOST_CONTROL_RTS));
+    assert(fixture.asserted_lines == 0u);
+}
+
 int main(void) {
-    test_typed_command_role_contract();
+    test_typed_command_role_parity();
     test_typed_command_wire_contract();
     test_typed_command_terminal_contract();
     test_typed_command_transport_execution();
@@ -1866,5 +2183,6 @@ int main(void) {
     test_recovery();
     test_managed_operation();
     test_scheduler();
+    test_serial_connect_deasserts_dtr_and_rts();
     return 0;
 }

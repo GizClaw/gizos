@@ -42,6 +42,8 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | Crash Before Confirm | ✓ | ✓ | — | ✓ | △ | △ | ✓ | ✓ | — | ✓ | ✓ |
 | Partial Update | — | — | — | — | — | — | ✓ | — | — | — | — |
 | GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — |
+| iperf | ✓ | — | — | — | — | — | — | — | — | — | — |
+| WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — |
 | GizClaw E2E | — | — | — | ✓ | — | — | — | — | — | — | — |
 | H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — |
 | Libco Smoke | — | ✓ | — | ✓ | — | — | — | — | — | — | — |
@@ -69,7 +71,7 @@ flowchart TD
     Loader --> Package["/dl staged package"]
     Loader --> AppImage["App image"]
     Loader --> Data["/data App data"]
-    AppImage --> Confirm["确认、restart、rollback"]
+    AppImage --> Confirm["确认 Stage、reboot app、reboot loader"]
     Confirm --> Loader
 ```
 
@@ -137,18 +139,18 @@ Runtime 不是 Common 的直接依赖：portable App 消费 Runtime；H2Loader a
 
 ## Command Transport
 
-Loader 与支持管理命令的 App image 复用同一 command registry。ESP32-S3 与 BK7258 的 managed UART transport 固定为 `230400` baud，并通过 IO Stream iKCP 承载完整 command 与 response；Loader 还在同一 session 接收 stage bytes，App 不注册 stage。Host 不提供 legacy raw H2Loader command transport，可靠握手失败不得自动 fallback。独立的 BootROM recovery driver 不属于 command transport。
+Loader 与支持管理命令的 App image 复用同一 command registry、Stage 实现与 operation mutex。ESP 和 BK7258 的 managed UART transport 固定为 `460800` baud；ESP sdkconfig 和 BK AP/CP defaults 在固件启动时直接应用该值，Host 未显式传入 `--baud` 时也使用同一默认值。Host 在 open 后、借出 stream 前 deassert DTR/RTS，只有 canonical `UNSUPPORTED` 可继续。两者都通过 IO Stream iKCP 承载完整 command、Stage bytes 与 response。Host 不提供 legacy raw H2Loader command transport，可靠握手失败不得自动 fallback。Native USB Serial/JTAG 不使用 baud；独立的 BootROM recovery driver 和外围设备 UART 也不属于 command transport。
 
-支持 BLE 的 board 由具体 launcher 显式注册 H2Loader GATT service，不使用全局 build option。H2Loader 使用 connectable Extended Advertising，不携带 local name；固定 Service UUID 和 Service Data 是唯一的发现与连接 identity。Service Data 提供 protocol version、active role 和静态实现 capabilities；v1 在 board 名不超过 32 bytes 时内联 UTF-8 board，较长名称使用 v2 FNV-1a 64-bit board fingerprint，Host 必须从本地 board registry 唯一解析，hash 缺失或碰撞时不得连接。Host 根据解析出的 board 合成 `h2l.<board>` 显示名。广播 identity 只用于发现和初筛，连接后的 `stats` 必须交叉校验完整 board、role 和当前动态 capabilities，才是 authoritative identity。Loader 与 App 的 BLE task stack 必须分配在 PSRAM，不能静默退回 internal RAM。
+支持 BLE 的 board 由具体 launcher 显式注册 H2Loader GATT service，不使用全局 build option。H2Loader 使用 connectable Extended Advertising，不携带 local name；固定 Service UUID 和 Service Data 是唯一的发现与连接 identity。Service Data 提供 protocol version、active role 和静态实现 capabilities；v1 在 board 名不超过 32 bytes 时内联 UTF-8 board，较长名称使用 v2 FNV-1a 64-bit board fingerprint，Host 必须从本地 board registry 唯一解析，hash 缺失或碰撞时不得连接。Host 根据解析出的 board 合成 `h2l.<board>` 显示名。广播 identity 只用于发现和初筛，连接后的 `stats` 必须交叉校验完整 board、role 和当前动态 capabilities，才是 authoritative identity。Loader 与 App 的 BLE task stack 必须分配在 PSRAM，不能静默退回 internal RAM。 ESP image 在 Wi-Fi 执行 scan、connect 或 disconnect 这类会独占 radio 的操作期间自动暂停 App command service 广播，操作结束后恢复；暂停与恢复请求只发布最新的目标状态并唤醒 BLE link task，由该 task 串行应用；发布路径不获取任何 mutex，调用方不阻塞，重叠的 Wi-Fi operation 全部结束后才恢复广播，且不改变 Service Data identity 或已建立的连接。自动共存暂停与调用方显式的 pause/resume 是两个独立的 pause 原因：只要还有任一原因成立，广播保持停止，自动恢复不会覆盖 launcher 通过显式 API 设置的整段 workload 暂停；原因变更与其对应的 stop/start 串行执行，因此并发的显式暂停不会被在途的自动恢复重新打开。
 
-当前 v1/v2 identity 不能稳定区分多台同型号设备。后续 Service Data v3 将增加 64-bit `device_uid`；在此之前，CoreBluetooth/Bleak `backend_id` 只用于当前 Host/backend 生命周期，不能作为跨扫描或跨进程的设备身份。
+当前 status 固定包含 `device_uid`：由固件读取设备端 BLE public/identity MAC，并编码为 12 位小写十六进制字符串。Service Data、CoreBluetooth/Bleak `backend_id`、主机侧可见的 BLE address、display name 和 board 都只用于发现候选，不能提升为物理身份。Host 首次连接后锁定 status 中的 `device_uid`；每次重启后重新发现、连接并读取 status，只有 UID 完全一致才继续验收终态。
 
-Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同一 typed command contract 和设备 command registry；`bleikcp-speed` 仍只访问独立 Baseline service。BLE payload `send` 必须在当前 GATT/KCP session 中发送 `stage` command 和 package bytes，并在断开前从同一 connection 验证 staged identity。BLE `send-url` 的 Wi-Fi/STAGE_URL control command、下载 terminal 和 staged status 验证也必须留在同一 connection；设备 payload 仍经 Wi-Fi/HTTP 下载。需要断线后重新识别物理设备的 Loader upgrade 在 v1/v2 上必须发送前 fail closed，不能把 backend ID、address、display name 或 board 当成 `device_uid`。
+Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同一 typed command contract 和设备 command registry；`bleikcp-speed` 仍只访问独立 Baseline service。BLE payload `send` 必须在当前 GATT/KCP session 中发送 `stage` command 和 package bytes，并在断开前从同一 connection 验证 staged identity。BLE `send-url` 的 Wi-Fi/STAGE_URL control command、下载 terminal 和 staged status 验证也必须留在同一 connection；设备 payload 仍经 Wi-Fi/HTTP 下载。生命周期命令在首次连接无法取得有效 `device_uid` 时发送前 fail closed；重连后 UID 不同也 fail closed。
 
 串口和 BLE 可以同时等待输入，但共享 operation mutex 串行执行命令。Command line、stage bytes 和 response 始终绑定发起它的 transport；断开的 operation 失败，不转移到另一 transport，也不自动 replay。
 
 ## Image 生命周期
 
-H2Loader 的完成条件不是“传输成功”或“upgrade accepted”。App 更新必须经过 package 校验、写入、trial boot、App confirmation 和 canonical boot；Loader self-upgrade必须经过 canonical → trial → canonical relay。最终验收重新连接设备并确认预期 role、version、running partition、`state=confirmed`、installed checksum 与 `upgrade_phase=idle`，再完成 power-cycle 复查。
+H2Loader 的完成条件不是“传输成功”或“reboot accepted”。App 更新必须经过 package 校验、Partition 2 写入和新 App 启动；新 App 以自身固件 identity 提交 Partition 2 metadata，并清理匹配的 Stage。Loader self-update 必须经过 Partition 1 → Partition 2 → Partition 1 回写；最终验收重新连接设备，确认预期 role/version/board/target、active image checksum/size、running/next partition、`boot_intent`、Stage 与 Partition 1/2 metadata。App 终态要求运行 Partition 2 且 Stage invalid；Loader 终态要求运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，随后再做 power-cycle 复查。
 
 设备仍能通过 H2Loader command transport 通信时，安装、更新、回退和恢复必须继续使用 H2Loader。只有 H2Loader 已验证无法通信或无法自我恢复时，才能进入对应 board 使用文档定义的底层 recovery。

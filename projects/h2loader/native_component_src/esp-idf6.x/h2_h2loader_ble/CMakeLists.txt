@@ -9,6 +9,7 @@ idf_component_register(
     "${H2_REPO_ROOT}/projects/h2loader/apps/loader/app"
   REQUIRES
     h2_firmware_lib
-    h2_h2loader_runtime)
+    h2_h2loader_runtime
+    h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)

@@ -122,13 +122,26 @@ static const h2_pal_fs_api_t s_test_fs = {
     .vtable = &s_test_fs_vtable,
 };
 
+typedef struct test_display_fixture {
+  uint16_t pixels[8u * 8u];
+  h2_display_rect_t draw_rects[8u];
+  size_t draw_count;
+  size_t present_count;
+} test_display_fixture_t;
+
+static test_display_fixture_t s_test_display_fixture;
+
+static void test_display_reset(void) {
+  memset(&s_test_display_fixture, 0, sizeof(s_test_display_fixture));
+}
+
 static int test_display_open(void *user) {
-  (void)user;
+  assert(user == &s_test_display_fixture);
   return H2_DISPLAY_OK;
 }
 
 static int test_display_get_info(void *user, h2_display_info_t *info) {
-  (void)user;
+  assert(user == &s_test_display_fixture);
   if (info == NULL)
     return H2_DISPLAY_ERR_INVALID_ARG;
   *info = (h2_display_info_t){
@@ -139,17 +152,49 @@ static int test_display_get_info(void *user, h2_display_info_t *info) {
   return H2_DISPLAY_OK;
 }
 
+static int test_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
+                                    const void *pixels, size_t stride_bytes,
+                                    h2_display_pixel_format_t format) {
+  test_display_fixture_t *fixture = user;
+  const uint8_t *source = pixels;
+  int row;
+  assert(fixture != NULL && rect != NULL && pixels != NULL);
+  assert(format == H2_DISPLAY_PIXEL_RGB565);
+  assert(rect->x >= 0 && rect->y >= 0 && rect->width > 0 && rect->height > 0 &&
+         rect->x + rect->width <= 8 && rect->y + rect->height <= 8);
+  assert(stride_bytes >= (size_t)rect->width * sizeof(uint16_t));
+  assert(fixture->draw_count <
+         sizeof(fixture->draw_rects) / sizeof(fixture->draw_rects[0]));
+  fixture->draw_rects[fixture->draw_count++] = *rect;
+  for (row = 0; row < rect->height; ++row) {
+    memcpy(fixture->pixels + (size_t)(rect->y + row) * 8u + (size_t)rect->x,
+           source + (size_t)row * stride_bytes,
+           (size_t)rect->width * sizeof(uint16_t));
+  }
+  return H2_DISPLAY_OK;
+}
+
+static int test_display_present(void *user) {
+  test_display_fixture_t *fixture = user;
+  assert(fixture != NULL);
+  fixture->present_count++;
+  return H2_DISPLAY_OK;
+}
+
 static int test_display_close(void *user) {
-  (void)user;
+  assert(user == &s_test_display_fixture);
   return H2_DISPLAY_OK;
 }
 
 static const h2_pal_display_vtable_t s_test_display_vtable = {
     .open = test_display_open,
     .get_info = test_display_get_info,
+    .draw_bitmap = test_display_draw_bitmap,
+    .present = test_display_present,
     .close = test_display_close,
 };
 static const h2_pal_display_api_t s_test_display = {
+    .user = &s_test_display_fixture,
     .vtable = &s_test_display_vtable,
 };
 
@@ -225,6 +270,9 @@ static int test_audio_track_write(h2_pal_audio_track_t *track,
 static atomic_int s_test_audio_close_count;
 static atomic_int s_test_audio_start_count;
 static atomic_int s_test_audio_stop_count;
+static atomic_int s_test_audio_mic_start_count;
+static atomic_int s_test_audio_mic_stop_count;
+static atomic_int s_test_audio_mic_block;
 
 static int test_audio_track_close(h2_pal_audio_track_t *track) {
   (void)track;
@@ -249,6 +297,37 @@ static int test_audio_stop_speaker(void *user) {
   return H2_PAL_OK;
 }
 
+static int test_audio_start_mic(void *user) {
+  (void)user;
+  (void)atomic_fetch_add(&s_test_audio_mic_start_count, 1);
+  return H2_PAL_OK;
+}
+
+static int test_audio_stop_mic(void *user) {
+  (void)user;
+  (void)atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
+  return H2_PAL_OK;
+}
+
+static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
+                               uint32_t timeout_ms) {
+  static const uint8_t samples[] = {0u, 64u, 0u, 192u};
+  (void)user;
+  if (frame == NULL || frame->capacity < sizeof(samples)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (atomic_load(&s_test_audio_mic_block) != 0) {
+    /* Simulates a microphone that never produces a frame, so callers polling
+     * with a long or unbounded timeout stay blocked here until cancelled. */
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  (void)timeout_ms;
+  memcpy(frame->data, samples, sizeof(samples));
+  frame->bytes = sizeof(samples);
+  frame->samples_per_channel = 2u;
+  return H2_PAL_OK;
+}
+
 static int test_audio_create_track(void *user,
                                    const h2_audio_track_config_t *config,
                                    h2_pal_audio_track_t **out_track) {
@@ -268,7 +347,15 @@ static int test_audio_get_info(void *user, h2_audio_info_t *info) {
   (void)user;
   *info = (h2_audio_info_t){
       .available = 1,
+      .mic_supported = 1,
       .playback_supported = 1,
+      .mic_format =
+          {
+              .sample_rate_hz = 16000u,
+              .frame_samples_per_channel = 2u,
+              .channels = 1u,
+              .sample_format = H2_AUDIO_SAMPLE_S16LE,
+          },
       .playback_format =
           {
               .sample_rate_hz = 16000u,
@@ -284,8 +371,11 @@ static int test_audio_get_info(void *user, h2_audio_info_t *info) {
 
 static const h2_pal_audio_vtable_t s_test_audio_vtable = {
     .get_info = test_audio_get_info,
+    .start_mic = test_audio_start_mic,
+    .stop_mic = test_audio_stop_mic,
     .start_speaker = test_audio_start_speaker,
     .stop_speaker = test_audio_stop_speaker,
+    .mic_read = test_audio_mic_read,
     .create_track = test_audio_create_track,
 };
 
@@ -622,6 +712,56 @@ static void run_until_terminal(h2_lua_host_t *host, h2_lua_job_id_t id,
   assert(!"Lua job did not reach a terminal state");
 }
 
+typedef struct expected_pixel {
+  int x;
+  int y;
+} expected_pixel_t;
+
+static h2_lua_job_status_t run_display_script(h2_lua_host_t *host,
+                                              const char *name,
+                                              const uint8_t *script,
+                                              size_t script_size) {
+  h2_lua_job_id_t job_id;
+  h2_lua_job_status_t job_status;
+  test_display_reset();
+  assert(h2_lua_job_submit_text(host, name, script, script_size, NULL, 0u,
+                                &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 64u);
+  job_status = status(host, job_id);
+  assert(job_status.state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  return job_status;
+}
+
+static void assert_draw_rect(size_t index, int x, int y, int width,
+                             int height) {
+  const h2_display_rect_t *rect;
+  assert(index < s_test_display_fixture.draw_count);
+  rect = &s_test_display_fixture.draw_rects[index];
+  assert(rect->x == x && rect->y == y && rect->width == width &&
+         rect->height == height);
+}
+
+static void assert_only_pixels(uint16_t color, const expected_pixel_t *expected,
+                               size_t expected_count) {
+  int x;
+  int y;
+  for (y = 0; y < 8; ++y) {
+    for (x = 0; x < 8; ++x) {
+      int found = 0;
+      size_t index;
+      for (index = 0u; index < expected_count; ++index) {
+        if (expected[index].x == x && expected[index].y == y) {
+          found = 1;
+          break;
+        }
+      }
+      assert(s_test_display_fixture.pixels[(size_t)y * 8u + (size_t)x] ==
+             (found ? color : 0u));
+    }
+  }
+}
+
 int main(void) {
   static const char *const esp_claw_ids[] = {
       "adc",
@@ -684,6 +824,18 @@ int main(void) {
       "b=assert(r.components.get(7));assert(type(b.get_key_level())=='number','"
       "button');"
       "local a=require('audio');local "
+      "input_arg_ok=pcall(a.new_input,{});"
+      "assert(not input_arg_ok,'input-rejects-args');"
+      "local "
+      "input=assert(a.new_input());local ii=input:info();"
+      "assert(ii.opened and ii.role=='input' and ii.sample_rate==16000 and "
+      "ii.channels==1 and ii.frame_samples==2,'input-info');"
+      "local rms,peak,brightness=input:level();"
+      "assert(rms>0.49 and rms<0.51 and peak==0.5 and brightness>0.70 and "
+      "brightness<0.71,'input-level');"
+      "assert(#input:read()==4,'input-read');assert(input:close(),'input-close'"
+      ");"
+      "assert(input:close(),'input-close-idempotent');local "
       "bad=select(1,a.new_output({bits_per_sample=8}));"
       "assert(bad==nil,'invalid audio');local "
       "o1=assert(a.new_output({sample_rate=16000,channels=1,bits_per_sample=16}"
@@ -718,7 +870,14 @@ int main(void) {
       "click_subscription=runtime.components.on(7,runtime.event.BUTTON_ACTION,"
       "function(e) "
       "if e.component_id==7 and type(e.component_kind)=='number' and "
-      "e.click_count==1 then n=n+1 end end)\n"
+      "e.pressed_at_ms==1 and e.released_at_ms==2 and e.gesture_kind==2 and "
+      "e.duration_ms==1 then "
+      "n=n+1 elseif e.released_at_ms==0 and e.gesture_kind==1 and "
+      "e.duration_ms==0 then n=n+8 "
+      "elseif e.released_at_ms==0 and e.gesture_kind==3 and "
+      "e.duration_ms==500 then n=n+1024 "
+      "elseif e.released_at_ms==610 and e.gesture_kind==3 and "
+      "e.duration_ms==600 then n=n+2048 end end)\n"
       "assert(click_subscription~=removed and not "
       "runtime.components.off(removed))\n"
       "runtime.components.on(7,runtime.event.BUTTON_DOWN,function(e) "
@@ -761,7 +920,10 @@ int main(void) {
   h2_lua_host_t *host = create_host(runtime);
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   static const h2_lua_arg_t file_args[] = {{"value", "ok"}};
-  h2_runtime_button_action_event_t click = {1u, 2u, 1u};
+  h2_runtime_button_action_event_t click = {
+      .pressed_at_ms = 1u,
+      .released_at_ms = 2u,
+  };
   h2_runtime_button_down_event_t down = {11u};
   h2_runtime_button_up_event_t up = {11u, 12u};
   h2_runtime_nfc_state_t nfc = {
@@ -881,6 +1043,8 @@ int main(void) {
   atomic_store(&s_test_audio_close_count, 0);
   atomic_store(&s_test_audio_start_count, 0);
   atomic_store(&s_test_audio_stop_count, 0);
+  atomic_store(&s_test_audio_mic_start_count, 0);
+  atomic_store(&s_test_audio_mic_stop_count, 0);
   s_test_audio_written_bytes = 0u;
   s_test_audio_frame_count = 0u;
   assert(h2_lua_job_submit_text(host, "@component-profile.lua",
@@ -894,6 +1058,8 @@ int main(void) {
   assert(atomic_load(&s_test_audio_close_count) == 2);
   assert(atomic_load(&s_test_audio_start_count) == 1);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
+  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
   /* The script wrote 1..6 then 7..10 to o1 (device frame = 4 bytes), 100..103
    * to o2, then closed both. The sub-frame tail of the first write must be
    * carried into the second one, so o1's bytes reach the device in order with
@@ -962,6 +1128,92 @@ int main(void) {
   assert(atomic_load(&s_test_audio_close_count) == 2);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
 
+  static const uint8_t audio_input_wait_script[] =
+      "local a=require('audio');local d=require('delay');"
+      "assert(a.new_input());d.delay_ms(500);return 'done'";
+  h2_lua_job_id_t audio_input_job_1;
+  h2_lua_job_id_t audio_input_job_2;
+  atomic_store(&s_test_audio_mic_start_count, 0);
+  atomic_store(&s_test_audio_mic_stop_count, 0);
+  assert(h2_lua_job_submit_text(host, "@audio-input-wait-1.lua",
+                                audio_input_wait_script,
+                                sizeof(audio_input_wait_script) - 1u, NULL, 0u,
+                                &audio_input_job_1) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, "@audio-input-wait-2.lua",
+                                audio_input_wait_script,
+                                sizeof(audio_input_wait_script) - 1u, NULL, 0u,
+                                &audio_input_job_2) == H2_PAL_OK);
+  while (status(host, audio_input_job_1).state != H2_LUA_JOB_WAITING ||
+         status(host, audio_input_job_2).state != H2_LUA_JOB_WAITING) {
+    assert(h2_lua_host_step(host) == H2_PAL_OK);
+    assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
+  }
+  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(h2_lua_job_cancel(host, audio_input_job_1) == H2_PAL_OK);
+  run_until_terminal(host, audio_input_job_1, 16u);
+  assert(h2_lua_job_release(host, audio_input_job_1) == H2_PAL_OK);
+  assert(atomic_load(&s_test_audio_mic_stop_count) == 0);
+  assert(h2_lua_job_cancel(host, audio_input_job_2) == H2_PAL_OK);
+  run_until_terminal(host, audio_input_job_2, 16u);
+  assert(h2_lua_job_release(host, audio_input_job_2) == H2_PAL_OK);
+  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+
+  {
+    /* A microphone that never produces a frame must not let a script's long
+     * input:read() timeout wedge host shutdown: the worker holds the job
+     * mutex for the whole call, so h2_lua_host_stop/join have to complete
+     * quickly by cancelling the read, not by waiting out the timeout. */
+    static const uint8_t audio_input_block_script[] =
+        "local a=require('audio');local input=assert(a.new_input());"
+        "local ok,err=input:read(60000);return tostring(ok)..'|'..tostring(err)";
+    h2_lua_host_t *block_host = create_host(runtime);
+    h2_lua_job_id_t block_job_id;
+    const h2_pal_time_api_t *real_time = h2_desktop_platform_time_api();
+    uint64_t stop_started_ms;
+    uint64_t stop_elapsed_ms;
+    uint64_t join_elapsed_ms;
+    size_t step;
+
+    atomic_store(&s_test_audio_mic_start_count, 0);
+    atomic_store(&s_test_audio_mic_stop_count, 0);
+    atomic_store(&s_test_audio_mic_block, 1);
+    assert(h2_lua_job_submit_text(block_host, "@audio-input-block.lua",
+                                  audio_input_block_script,
+                                  sizeof(audio_input_block_script) - 1u, NULL,
+                                  0u, &block_job_id) == H2_PAL_OK);
+    /* The worker holds job->mutex for the whole blocking read, so polling
+     * status via h2_lua_job_get_status here would itself block on that same
+     * mutex. Watch the mic-acquired counter instead: it flips before the
+     * script's input:read() call, without needing the lock. */
+    for (step = 0u; step < 500u; ++step) {
+      if (atomic_load(&s_test_audio_mic_start_count) != 0) {
+        break;
+      }
+      assert(h2_lua_host_step(block_host) == H2_PAL_OK);
+      (void)h2_pal_time_sleep_ms(real_time, 1u);
+    }
+    assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+
+    (void)h2_pal_time_get_monotonic_ms(real_time, &stop_started_ms);
+    assert(h2_lua_host_stop(block_host) == H2_PAL_OK);
+    assert(h2_lua_host_join(block_host) == H2_PAL_OK);
+    {
+      uint64_t joined_ms;
+      (void)h2_pal_time_get_monotonic_ms(real_time, &joined_ms);
+      stop_elapsed_ms = h2_pal_time_elapsed_ms(stop_started_ms, joined_ms);
+    }
+    join_elapsed_ms = stop_elapsed_ms;
+    /* The mic never yields a frame, so with a stuck read this would only
+     * unblock after the script's own 60s timeout. Bound the assertion well
+     * under that to prove the wait was actually cancelled, not merely fast
+     * on this machine. */
+    assert(join_elapsed_ms < 5000u);
+
+    atomic_store(&s_test_audio_mic_block, 0);
+    h2_lua_host_destroy(block_host);
+    assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+  }
+
   static const uint8_t audio_failure_script[] =
       "local a=require('audio');"
       "assert(a.new_output({sample_rate=16000,channels=1,bits_per_sample=16}));"
@@ -979,6 +1231,173 @@ int main(void) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   assert(atomic_load(&s_test_audio_close_count) == 1);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
+
+  {
+    static const uint8_t draw_circle_script[] =
+        "local d=require('display');d.present();"
+        "d.draw_circle(3,3,2,'red');d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {3, 1}, {2, 1}, {4, 1}, {1, 2}, {5, 2}, {1, 3},
+        {5, 3}, {1, 4}, {5, 4}, {2, 5}, {3, 5}, {4, 5},
+    };
+    h2_lua_job_status_t display_status =
+        run_display_script(host, "@display-draw-circle.lua", draw_circle_script,
+                           sizeof(draw_circle_script) - 1u);
+    assert(strcmp(display_status.message, "ok") == 0);
+    assert(s_test_display_fixture.draw_count == 2u);
+    assert(s_test_display_fixture.present_count == 2u);
+    assert_draw_rect(0u, 0, 0, 8, 8);
+    assert_draw_rect(1u, 1, 1, 5, 5);
+    assert_only_pixels(0xf800u, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t clipped_circle_script[] =
+        "local d=require('display');d.present();"
+        "d.draw_circle(0,0,2,'blue');d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {2, 0},
+        {2, 1},
+        {0, 2},
+        {1, 2},
+    };
+    (void)run_display_script(host, "@display-clipped-circle.lua",
+                             clipped_circle_script,
+                             sizeof(clipped_circle_script) - 1u);
+    assert(s_test_display_fixture.draw_count == 2u);
+    assert_draw_rect(1u, 0, 0, 3, 3);
+    assert_only_pixels(0x001fu, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t radius_zero_script[] =
+        "local d=require('display');d.present();"
+        "d.draw_circle(7,0,0,'white');d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {{7, 0}};
+    (void)run_display_script(host, "@display-radius-zero.lua",
+                             radius_zero_script,
+                             sizeof(radius_zero_script) - 1u);
+    assert_draw_rect(1u, 7, 0, 1, 1);
+    assert_only_pixels(0xffffu, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t fill_rect_script[] =
+        "local d=require('display');d.present();"
+        "d.fill_rect(-1,1,3,2,'red');d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {0, 1},
+        {1, 1},
+        {0, 2},
+        {1, 2},
+    };
+    (void)run_display_script(host, "@display-fill-rect.lua", fill_rect_script,
+                             sizeof(fill_rect_script) - 1u);
+    assert_draw_rect(1u, 0, 1, 2, 2);
+    assert_only_pixels(0xf800u, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t fill_circle_script[] =
+        "local d=require('display');d.present();"
+        "d.fill_circle(3,3,2,'green');d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {3, 1}, {2, 2}, {3, 2}, {4, 2}, {1, 3}, {2, 3}, {3, 3},
+        {4, 3}, {5, 3}, {2, 4}, {3, 4}, {4, 4}, {3, 5},
+    };
+    (void)run_display_script(host, "@display-fill-circle.lua",
+                             fill_circle_script,
+                             sizeof(fill_circle_script) - 1u);
+    assert_draw_rect(1u, 1, 1, 5, 5);
+    assert_only_pixels(0x0400u, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t fill_round_rect_script[] =
+        "local d=require('display');d.present();"
+        "d.fill_round_rect(1,1,6,4,2,'blue');"
+        "d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {3, 1}, {4, 1}, {2, 2}, {3, 2}, {4, 2}, {5, 2},
+        {2, 3}, {3, 3}, {4, 3}, {5, 3}, {3, 4}, {4, 4},
+    };
+    (void)run_display_script(host, "@display-fill-round-rect.lua",
+                             fill_round_rect_script,
+                             sizeof(fill_round_rect_script) - 1u);
+    assert_draw_rect(1u, 1, 1, 6, 4);
+    assert_only_pixels(0x001fu, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t draw_round_rect_script[] =
+        "local d=require('display');d.present();"
+        "d.draw_round_rect(1,1,6,4,2,'white');"
+        "d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {3, 1}, {4, 1}, {2, 2}, {5, 2}, {2, 3}, {5, 3}, {3, 4}, {4, 4},
+    };
+    (void)run_display_script(host, "@display-draw-round-rect.lua",
+                             draw_round_rect_script,
+                             sizeof(draw_round_rect_script) - 1u);
+    assert_draw_rect(1u, 1, 1, 6, 4);
+    assert_only_pixels(0xffffu, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t dirty_union_script[] =
+        "local d=require('display');d.present();"
+        "d.fill_rect(1,2,2,2,'red');d.draw_circle(5,4,1,'red');"
+        "d.present();d.deinit();return 'ok'";
+    (void)run_display_script(host, "@display-dirty-union.lua",
+                             dirty_union_script,
+                             sizeof(dirty_union_script) - 1u);
+    assert_draw_rect(1u, 1, 2, 6, 4);
+  }
+
+  {
+    static const uint8_t clear_script[] =
+        "local d=require('display');d.present();d.clear('red');"
+        "d.present();d.deinit();return 'ok'";
+    static const expected_pixel_t expected[] = {
+        {0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0},
+        {0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}, {5, 1}, {6, 1}, {7, 1},
+        {0, 2}, {1, 2}, {2, 2}, {3, 2}, {4, 2}, {5, 2}, {6, 2}, {7, 2},
+        {0, 3}, {1, 3}, {2, 3}, {3, 3}, {4, 3}, {5, 3}, {6, 3}, {7, 3},
+        {0, 4}, {1, 4}, {2, 4}, {3, 4}, {4, 4}, {5, 4}, {6, 4}, {7, 4},
+        {0, 5}, {1, 5}, {2, 5}, {3, 5}, {4, 5}, {5, 5}, {6, 5}, {7, 5},
+        {0, 6}, {1, 6}, {2, 6}, {3, 6}, {4, 6}, {5, 6}, {6, 6}, {7, 6},
+        {0, 7}, {1, 7}, {2, 7}, {3, 7}, {4, 7}, {5, 7}, {6, 7}, {7, 7},
+    };
+    (void)run_display_script(host, "@display-clear.lua", clear_script,
+                             sizeof(clear_script) - 1u);
+    assert_draw_rect(1u, 0, 0, 8, 8);
+    assert_only_pixels(0xf800u, expected,
+                       sizeof(expected) / sizeof(expected[0]));
+  }
+
+  {
+    static const uint8_t draw_circle_error_script[] =
+        "local d=require('display');"
+        "local a,ae=pcall(d.draw_circle,0,0,-1,'red');"
+        "local b,be=pcall(d.draw_circle,0,0,9,'red');"
+        "local c,ce=pcall(d.draw_circle,17,0,1,'red');"
+        "d.deinit();assert(not a and not b and not c);"
+        "assert(string.find(ae,'invalid draw_circle',1,true));"
+        "assert(string.find(be,'invalid draw_circle',1,true));"
+        "assert(string.find(ce,'invalid draw_circle',1,true));"
+        "return 'draw-circle-errors'";
+    h2_lua_job_status_t display_status = run_display_script(
+        host, "@display-draw-circle-errors.lua", draw_circle_error_script,
+        sizeof(draw_circle_error_script) - 1u);
+    assert(strcmp(display_status.message, "draw-circle-errors") == 0);
+  }
 
   static const uint8_t display_overflow_script[] =
       "local d=require('display');"
@@ -1001,6 +1420,21 @@ int main(void) {
   }
   assert(strstr(status(host, job_id).message, "invalid draw_text_aligned") !=
          NULL);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
+  static const uint8_t display_aa_script[] =
+      "local d=require('display');"
+      "d.begin_frame({clear=true,color='white'});"
+      "d.fade_to_black(38);"
+      "d.fade_rect_to_black(2,2,4,4,38);"
+      "d.fill_circle_aa(4,4,2,'black');"
+      "d.deinit();return 'display-aa-ok'";
+  assert(h2_lua_job_submit_text(host, "@display-aa.lua", display_aa_script,
+                                sizeof(display_aa_script) - 1u, NULL, 0u,
+                                &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "display-aa-ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
   h2_lua_host_destroy(host);
@@ -1106,6 +1540,31 @@ int main(void) {
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_NOT_FOUND);
   click_event.component_id = 7u;
+  click.pressed_at_ms = 3u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.pressed_at_ms = 1u;
+  click.released_at_ms = 0u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click.released_at_ms = 3u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  click.released_at_ms = 2u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click = (h2_runtime_button_action_event_t){
+      .pressed_at_ms = 10u,
+      .released_at_ms = 0u,
+  };
+  click_event.timestamp_ms = 10u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click_event.timestamp_ms = 510u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
+         H2_PAL_OK);
+  click.released_at_ms = 610u;
+  click_event.timestamp_ms = 610u;
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_OK);
   assert(h2_lua_dispatch_runtime_event(host, job_id, &down_event) == H2_PAL_OK);
@@ -1128,7 +1587,7 @@ int main(void) {
             (unsigned long long)event_status.resume_count);
   }
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
-  assert(strcmp(status(host, job_id).message, "ready:1015") == 0);
+  assert(strcmp(status(host, job_id).message, "ready:4095") == 0);
   assert(h2_lua_dispatch_runtime_event(host, job_id, &click_event) ==
          H2_PAL_ERR_CLOSED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);

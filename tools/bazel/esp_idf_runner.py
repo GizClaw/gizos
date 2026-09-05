@@ -96,6 +96,17 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
     idf_path = locator_path(sdk_locator, "root", "esp-idf-sdk")
     python_root = locator_path(tools_locator, "python_root", "esp-idf-tools")
     tools_root = locator_path(tools_locator, "tools_root", "esp-idf-tools")
+    rom_elfs_root = tools_root / "tools" / "esp-rom-elfs"
+    rom_elf_versions = (
+        sorted(path for path in rom_elfs_root.iterdir() if path.is_dir())
+        if rom_elfs_root.is_dir()
+        else []
+    )
+    if len(rom_elf_versions) != 1:
+        raise RunnerError(
+            "ESP-IDF ROM ELF tools must contain exactly one installed version: "
+            f"{rom_elfs_root}"
+        )
     compiler_name = TARGET_COMPILERS.get(arguments.target)
     if not compiler_name:
         raise RunnerError(f"unsupported ESP target: {arguments.target}")
@@ -113,6 +124,7 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
         "IDF_PATH": str(idf_path),
         "IDF_PYTHON_ENV_PATH": str(python_root),
         "IDF_TOOLS_PATH": str(tools_root),
+        "ESP_ROM_ELF_DIR": f"{rom_elf_versions[0]}{os.sep}",
     })
     if arguments.h2loader_wifi_environment:
         credentials = os.environ.get(H2LOADER_WIFI_CREDENTIALS)
@@ -121,6 +133,11 @@ def require_environment(arguments: argparse.Namespace) -> dict[str, str]:
                 f"required action environment is missing: {H2LOADER_WIFI_CREDENTIALS}"
             )
         environment.update(parse_h2loader_wifi_credentials(credentials))
+    # Deliberately a fixed constant rather than a build flag. This value reaches
+    # ninja through the action's inputs, so making it configurable would put it
+    # in the action key and stop a job that tuned it from sharing remote cache
+    # entries with every other job. Concurrency is tuned instead through
+    # resource_set in tools/bazel/esp_idf.bzl, which the action key ignores.
     environment[NATIVE_BUILD_JOBS] = "4"
     return environment
 
@@ -534,12 +551,40 @@ def resolve_native_component_sources(
     return components
 
 
+def resolve_native_component_includes(
+    source_root: Path,
+    values: list[str],
+    components: dict[str, Path],
+) -> dict[str, list[Path]]:
+    includes = {name: [] for name in components}
+    for value in values:
+        component_name, separator, include_value = value.partition("=")
+        relative_include = Path(include_value)
+        if (
+            not separator
+            or component_name not in components
+            or not include_value
+            or relative_include.is_absolute()
+            or ".." in relative_include.parts
+        ):
+            raise RunnerError(f"invalid ESP-IDF native component include: {value}")
+        include = source_root / relative_include
+        if not include.is_dir():
+            raise RunnerError(
+                f"ESP-IDF native component include is not a directory: {include_value}"
+            )
+        if include not in includes[component_name]:
+            includes[component_name].append(include)
+    return includes
+
+
 def render_native_component_manifest(
     board: str,
     components: dict[str, Path],
     sources: dict[str, list[Path]],
+    includes: dict[str, list[Path]],
 ) -> str:
-    undeclared = sorted(set(sources) - set(components))
+    undeclared = sorted((set(sources) | set(includes)) - set(components))
     if undeclared:
         raise RunnerError(
             "native component sources have no declared component: "
@@ -560,6 +605,10 @@ def render_native_component_manifest(
         lines.append(f"set(H2_BAZEL_COMPONENT_SRCS_{component_name.upper()}")
         for source in sorted(sources.get(component_name, [])):
             lines.append(f'  "{source.as_posix()}"')
+        lines.append(")")
+        lines.append(f"set(H2_BAZEL_COMPONENT_INCLUDES_{component_name.upper()}")
+        for include in sorted(includes.get(component_name, [])):
+            lines.append(f'  "{include.as_posix()}"')
         lines.append(")")
     return "\n".join(lines) + "\n"
 
@@ -647,6 +696,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--prebuilt-component-include", action="append", default=[])
     parser.add_argument("--generate-prebuilt-component", action="append", default=[])
     parser.add_argument("--native-component", action="append", default=[])
+    parser.add_argument("--native-component-include", action="append", default=[])
     parser.add_argument("--native-component-source", action="append", default=[])
     return parser.parse_args(argv)
 
@@ -704,6 +754,11 @@ def run(arguments: argparse.Namespace) -> None:
     native_components = resolve_native_components(
         source_root,
         arguments.native_component,
+    )
+    native_component_includes = resolve_native_component_includes(
+        source_root,
+        arguments.native_component_include,
+        native_components,
     )
     native_component_sources = resolve_native_component_sources(
         source_root,
@@ -837,6 +892,7 @@ def run(arguments: argparse.Namespace) -> None:
                 arguments.board,
                 component_directories,
                 native_component_sources,
+                native_component_includes,
             ),
             encoding="utf-8",
         )

@@ -1,12 +1,14 @@
 #include "h2_showcase.h"
+#include "h2_showcase_task_names.h"
 
 #include "h2_gizclaw.h"
+#include "h2_gizclaw_task_names.h"
 #include "h2_lvgl_platform.h"
 #include "h2_lvgl_touch.h"
 #include "h2_mp4_decoder.h"
 #include "h2_showcase_state.h"
-#include "lvgl.h"
 #include "include/lvgl/font/lv_tiny_ttf.h"
+#include "lvgl.h"
 
 #include <limits.h>
 #include <stdatomic.h>
@@ -37,6 +39,9 @@ typedef enum h2_showcase_gizclaw_status {
 typedef struct h2_showcase_gizclaw_state {
   struct h2_showcase_app *app;
   h2_pal_task_t *task;
+  h2_gizclaw_service_t *service;
+  /* Borrowed by the service until deinit, so it must outlive gizclaw_init. */
+  h2_gizclaw_config_t client_config;
   atomic_bool stop;
   atomic_int status;
 } h2_showcase_gizclaw_state_t;
@@ -111,63 +116,60 @@ static void gizclaw_log(h2_showcase_app_t *app, h2_pal_log_level_t level,
   }
 }
 
-static void gizclaw_task_entry(void *context) {
-  h2_showcase_gizclaw_state_t *state = context;
+static h2_pal_result_t
+gizclaw_finish_registration(h2_showcase_gizclaw_state_t *state,
+                            h2_gizclaw_req_t *request) {
   h2_showcase_app_t *app = state->app;
-  const h2_showcase_config_t *showcase = app->config;
-  const int connect_timeout_ms =
-      showcase->gizclaw_connect_timeout_ms == 0u
-          ? H2_SHOWCASE_GIZCLAW_DEFAULT_CONNECT_TIMEOUT_MS
-          : (int)showcase->gizclaw_connect_timeout_ms;
-  const h2_gizclaw_config_t config = {
-      .server_endpoint = {.data = showcase->gizclaw_server_endpoint,
-                          .len = strlen(showcase->gizclaw_server_endpoint)},
-      .private_key = {.data = showcase->gizclaw_private_key,
-                      .len = strlen(showcase->gizclaw_private_key)},
-      .cipher_mode = H2_GIZCLAW_CIPHER_CHACHA20_POLY1305,
-      .connect_timeout_ms = connect_timeout_ms,
-      .allocator = app->runtime->mem,
-      .http = app->runtime->http,
-      .webrtc = app->runtime->webrtc,
-      .webrtc_media_track = app->runtime->webrtc_media_track,
-      .crypto = app->runtime->crypto,
-      .time = app->runtime->time,
-      .log = app->runtime->log,
-      .cancel_requested = gizclaw_cancel_requested,
-      .cancel_user = state,
-  };
-  h2_gizclaw_client_t *client = NULL;
-  h2_pal_result_t result = h2_gizclaw_client_init(&config, &client);
-  if (result == H2_PAL_OK) {
-    result = h2_gizclaw_client_connect(client);
-  }
-  h2_gizclaw_registration_result_t registration = {0};
-  if (result == H2_PAL_OK) {
-    result = h2_gizclaw_client_register(
-        client, showcase->gizclaw_registration_token, &registration);
-  }
+  h2_gizclaw_registration_result_t registration;
+  h2_pal_result_t result = h2_gizclaw_req_wait(request, 30000u);
+  if (result == H2_PAL_OK)
+    result =
+      h2_gizclaw_resp_parse_register(request, &registration);
   if (result == H2_PAL_OK &&
       strcmp(registration.runtime_profile_name,
-             showcase->gizclaw_runtime_profile_name) != 0) {
-    gizclaw_log(app, H2_PAL_LOG_ERROR,
-                "H2_SHOWCASE_GIZCLAW unexpected_runtime_profile");
-    result = H2_PAL_ERR_INVALID_STATE;
-  }
-  if (result == H2_PAL_OK) {
+             app->config->gizclaw_runtime_profile_name) == 0) {
     atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,
                           memory_order_release);
     gizclaw_log(app, H2_PAL_LOG_INFO,
                 "H2_SHOWCASE_GIZCLAW connected profile=showcase");
-    while (!gizclaw_cancel_requested(state)) {
-      result = h2_gizclaw_client_poll(client, H2_SHOWCASE_GIZCLAW_POLL_MS);
-      if (result != H2_PAL_OK) {
-        break;
-      }
-    }
+  } else {
+    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          memory_order_release);
+    gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
+    atomic_store_explicit(&state->stop, true, memory_order_release);
   }
-  if (client != NULL) {
-    (void)h2_gizclaw_client_close(client);
-    h2_gizclaw_client_deinit(client);
+  h2_gizclaw_req_release(request);
+  return result;
+}
+
+static void gizclaw_terminal(void *user, h2_pal_result_t result) {
+  (void)result;
+  h2_showcase_gizclaw_state_t *state = user;
+  if (!gizclaw_cancel_requested(state)) {
+    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          memory_order_release);
+    gizclaw_log(state->app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
+    atomic_store_explicit(&state->stop, true, memory_order_release);
+  }
+}
+
+static void gizclaw_task_entry(void *context) {
+  h2_showcase_gizclaw_state_t *state = context;
+  h2_showcase_app_t *app = state->app;
+  const h2_showcase_config_t *showcase = app->config;
+  h2_pal_result_t result = H2_PAL_OK;
+  h2_gizclaw_req_t *registration = NULL;
+  if (result == H2_PAL_OK) {
+    result = h2_gizclaw_req_create_register(
+        state->service, 1u, showcase->gizclaw_registration_token, 30000u,
+        &registration);
+    if (result == H2_PAL_OK) {
+      result = h2_gizclaw_req_do(registration, NULL, NULL, NULL, NULL);
+      if (result == H2_PAL_OK)
+        result = gizclaw_finish_registration(state, registration);
+      else
+        h2_gizclaw_req_release(registration);
+    }
   }
   if (!gizclaw_cancel_requested(state) && result != H2_PAL_OK) {
     atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
@@ -205,14 +207,62 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
   app->gizclaw->app = app;
   atomic_init(&app->gizclaw->stop, false);
   atomic_init(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_CONNECTING);
+  const int connect_timeout_ms =
+      config->gizclaw_connect_timeout_ms == 0u
+          ? H2_SHOWCASE_GIZCLAW_DEFAULT_CONNECT_TIMEOUT_MS
+          : (int)config->gizclaw_connect_timeout_ms;
+  app->gizclaw->client_config = (h2_gizclaw_config_t){
+      .server_endpoint = {.data = config->gizclaw_server_endpoint,
+                          .len = strlen(config->gizclaw_server_endpoint)},
+      .private_key = {.data = config->gizclaw_private_key,
+                      .len = strlen(config->gizclaw_private_key)},
+      .cipher_mode = H2_GIZCLAW_CIPHER_CHACHA20_POLY1305,
+      .connect_timeout_ms = connect_timeout_ms,
+      .allocator = app->runtime->mem,
+      .http = app->runtime->http,
+      .webrtc = app->runtime->webrtc,
+      .webrtc_media_track = app->runtime->webrtc_media_track,
+      .crypto = app->runtime->crypto,
+      .time = app->runtime->time,
+      .log = app->runtime->log,
+      .cancel_requested = gizclaw_cancel_requested,
+      .cancel_user = app->gizclaw,
+  };
+  const h2_gizclaw_service_config_t service_config = {
+      .client_config = &app->gizclaw->client_config,
+      .task = app->runtime->task,
+      .queue = app->runtime->queue,
+      .sync = app->runtime->sync,
+      .runtime = app->runtime,
+      .net_task_options = {.name = h2_gizclaw_net_task_name,
+                           .min_stack_size = 16384u},
+      .operation_capacity = 4u,
+      .client_poll_timeout_ms = H2_SHOWCASE_GIZCLAW_POLL_MS,
+      .terminal = gizclaw_terminal,
+      .terminal_user = app->gizclaw,
+  };
+  h2_pal_result_t result =
+      h2_gizclaw_service_init(&service_config, &app->gizclaw->service);
+  if (result == H2_PAL_OK)
+    result = h2_gizclaw_service_start(app->gizclaw->service);
+  if (result != H2_PAL_OK) {
+    if (app->gizclaw->service != NULL) {
+      (void)h2_gizclaw_service_stop(app->gizclaw->service);
+      (void)h2_gizclaw_service_deinit(app->gizclaw->service);
+    }
+    h2_pal_mem_free(app->runtime->mem, app->gizclaw);
+    app->gizclaw = NULL;
+    return result;
+  }
   const h2_pal_task_options_t options = {
-      .name = "showcase-gizclaw",
+      .name = h2_showcase_gizclaw_task_name,
       .min_stack_size = 16384u,
   };
-  const h2_pal_result_t result =
-      h2_pal_task_start(app->runtime->task, &options, gizclaw_task_entry,
-                        app->gizclaw, &app->gizclaw->task);
+  result = h2_pal_task_start(app->runtime->task, &options, gizclaw_task_entry,
+                             app->gizclaw, &app->gizclaw->task);
   if (result != H2_PAL_OK) {
+    (void)h2_gizclaw_service_stop(app->gizclaw->service);
+    (void)h2_gizclaw_service_deinit(app->gizclaw->service);
     h2_pal_mem_free(app->runtime->mem, app->gizclaw);
     app->gizclaw = NULL;
   }
@@ -230,6 +280,23 @@ static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t *app) {
     if (result != H2_PAL_OK) {
       return result;
     }
+  }
+  if (app->gizclaw->service != NULL) {
+    result = h2_gizclaw_service_stop(app->gizclaw->service);
+    if (result != H2_PAL_OK)
+      return result;
+    for (;;) {
+      size_t dispatched = 0u;
+      result =
+          h2_gizclaw_service_poll(app->gizclaw->service, 8u, &dispatched);
+      if (result != H2_PAL_OK || dispatched == 0u)
+        break;
+    }
+    if (result == H2_PAL_OK)
+      result = h2_gizclaw_service_deinit(app->gizclaw->service);
+    if (result != H2_PAL_OK)
+      return result;
+    app->gizclaw->service = NULL;
   }
   h2_pal_mem_free(app->runtime->mem, app->gizclaw);
   app->gizclaw = NULL;
@@ -844,7 +911,7 @@ static h2_pal_result_t audio_init(h2_showcase_app_t *app) {
     return result;
   }
   const h2_pal_task_options_t task_options = {
-      .name = "showcase-audio",
+      .name = h2_showcase_audio_task_name,
       .min_stack_size = 8192u,
   };
   result = h2_pal_task_start(app->runtime->task, &task_options,
@@ -1131,19 +1198,56 @@ static void update_projection(h2_showcase_app_t *app) {
 
 static void process_runtime_events(h2_showcase_app_t *app) {
   const h2_showcase_mode_t previous_mode = app->state.mode;
-  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  bool processed_event = false;
+  h2_runtime_event_payload_buffer_t payload;
   h2_runtime_event_t event = {
-      .payload = payload,
+      .payload = payload.bytes,
       .payload_capacity = sizeof(payload),
   };
+  /* The GizClaw service wakes the Runtime without an event; drain it on
+   * every pass. */
+  if (app->gizclaw != NULL && app->gizclaw->service != NULL) {
+    const h2_pal_result_t rc =
+        h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
+    if (rc != H2_PAL_OK) {
+      atomic_store_explicit(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                            memory_order_release);
+      gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW dispatch failed");
+    }
+  }
   while (h2_runtime_poll_event(app->runtime, &event) == H2_PAL_OK) {
+    processed_event = true;
+    if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
+      continue;
+    }
     if (event.component_id != H2_SHOWCASE_COMPONENT_ACTION_BUTTON) {
       continue;
     }
-    if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
-      h2_showcase_state_button_down(&app->state, event.timestamp_ms);
-    } else if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
-      h2_showcase_state_button_up(&app->state, event.timestamp_ms);
+    if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
+        event.payload_size >= sizeof(h2_runtime_button_action_event_t)) {
+      const h2_runtime_button_action_event_t *action = event.payload;
+      if (action->released_at_ms == 0u &&
+          event.timestamp_ms == action->pressed_at_ms) {
+        h2_showcase_state_button_down(&app->state, event.timestamp_ms);
+      } else if (h2_runtime_button_action_is_released(action)) {
+        h2_showcase_state_button_up(&app->state, event.timestamp_ms);
+      }
+    }
+  }
+  /* A nonblocking GizClaw wake can lose the race with a full Runtime queue.
+   * In that case this batch itself proves the main loop is already awake;
+   * one fallback dispatch after draining the batch preserves progress without
+   * bringing back a periodic GizClaw poll. */
+  if (processed_event && app->gizclaw != NULL &&
+      app->gizclaw->service != NULL) {
+    const h2_pal_result_t rc =
+        h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
+    if (rc != H2_PAL_OK) {
+      atomic_store_explicit(&app->gizclaw->status,
+                            H2_SHOWCASE_GIZCLAW_FAILED,
+                            memory_order_release);
+      gizclaw_log(app, H2_PAL_LOG_ERROR,
+                  "H2_SHOWCASE_GIZCLAW fallback dispatch failed");
     }
   }
   uint64_t now_ms = 0u;

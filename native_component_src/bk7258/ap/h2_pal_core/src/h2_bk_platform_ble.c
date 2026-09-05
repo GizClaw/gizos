@@ -1,5 +1,6 @@
 #include "h2_bk_platform_core.h"
 #include "h2_bk_ble_gatts_tx_tracker.h"
+#include "h2_bk_ble_exact_adapter.h"
 
 #include <common/bk_err.h>
 #include <common/sys_config.h>
@@ -284,6 +285,20 @@ static void h2_bk_ble_post_adv_set(
         .status = status,
     };
     h2_bk_ble_post(type, &payload, sizeof(payload));
+}
+
+static void h2_bk_ble_mark_connectable_advertising_stopped(void) {
+    for (size_t i = 0u; i < H2_BK_BLE_ADV_SET_COUNT; ++i) {
+        h2_pal_ble_adv_set_t *set = &s_h2_bk_ble_adv_sets[i];
+        if (set->allocated && set->active &&
+            set->params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE) {
+            set->active = 0;
+            h2_bk_ble_post_adv_set(
+                H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+                set,
+                H2_PAL_OK);
+        }
+    }
 }
 
 static int h2_bk_ble_adv_set_valid(const h2_pal_ble_adv_set_t *set) {
@@ -829,6 +844,7 @@ static h2_pal_result_t h2_bk_ble_encode_adv_data(
     size_t *scan_rsp_len) {
     uint8_t flags = 0x06u;
     size_t len = 0u;
+    size_t response_len = 0u;
     if (data == NULL || out == NULL || out_len == NULL ||
         (data->service_uuid_count > 0u && data->service_uuids == NULL) ||
         (data->manufacturer_data.len > 0u && data->manufacturer_data.data == NULL) ||
@@ -853,15 +869,19 @@ static h2_pal_result_t h2_bk_ble_encode_adv_data(
             out, &len, capacity, data, 16u, BK_BLE_AD_TYPE_128SRV_CMPL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (data->manufacturer_data.len > 0u &&
-        !h2_bk_ble_adv_put(
-            out,
-            &len,
-            capacity,
-            BK_BLE_AD_TYPE_MANU,
-            data->manufacturer_data.data,
-            data->manufacturer_data.len)) {
-        return H2_PAL_ERR_INVALID_ARG;
+    if (data->manufacturer_data.len > 0u) {
+        if (h2_bk_ble_legacy_place_structured_field(
+                out,
+                &len,
+                capacity,
+                scan_rsp,
+                &response_len,
+                scan_rsp_capacity,
+                BK_BLE_AD_TYPE_MANU,
+                data->manufacturer_data.data,
+                data->manufacturer_data.len) != H2_PAL_OK) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
     }
     if (data->service_data.len > 0u) {
         uint8_t service_data[254u];
@@ -883,26 +903,19 @@ static h2_pal_result_t h2_bk_ble_encode_adv_data(
             return H2_PAL_ERR_INVALID_ARG;
         }
     }
-    size_t response_len = 0u;
     if (data->local_name != NULL) {
         size_t name_len = strlen(data->local_name);
-        if (!h2_bk_ble_adv_put(
+        if (h2_bk_ble_legacy_place_structured_field(
                 out,
                 &len,
                 capacity,
+                scan_rsp,
+                &response_len,
+                scan_rsp_capacity,
                 BK_BLE_AD_TYPE_NAME_CMPL,
                 (const uint8_t *)data->local_name,
-                name_len)) {
-            if (scan_rsp == NULL || scan_rsp_len == NULL ||
-                !h2_bk_ble_adv_put(
-                    scan_rsp,
-                    &response_len,
-                    scan_rsp_capacity,
-                    BK_BLE_AD_TYPE_NAME_CMPL,
-                    (const uint8_t *)data->local_name,
-                    name_len)) {
-                return H2_PAL_ERR_INVALID_ARG;
-            }
+                name_len) != H2_PAL_OK) {
+            return H2_PAL_ERR_INVALID_ARG;
         }
     }
     *out_len = len;
@@ -1514,6 +1527,26 @@ static h2_pal_result_t h2_bk_ble_set_extended_adv_data(
     uint8_t instance,
     const uint8_t *data,
     size_t len) {
+    if (len == 0u) {
+        ble_gap_adv_data_t request = {
+            .adv_handle = instance,
+            .operation = H2_BK_BLE_EXT_ADV_DATA_COMPLETE,
+            .frag_pref = 1u,
+            .adv_data_len = 0u,
+            .cmd_type = CMD_TYPE_ADV_RAW,
+        };
+        h2_bk_ble_drain_signals();
+        h2_pal_result_t rc = h2_bk_ble_map_error(ble_ethermind_post_msg(
+            BLE_ETHERMIND_MSG_GAP_API_REQ,
+            BLE_ETHERMIND_GAP_API_REQ_SUBMSG_SET_ADV_DATA,
+            &request,
+            sizeof(request),
+            NULL));
+        if (rc == H2_PAL_OK) {
+            rc = h2_bk_ble_wait(H2_BK_BLE_TIMEOUT_MS);
+        }
+        return rc;
+    }
     size_t offset = 0u;
     while (offset < len) {
         size_t remaining = len - offset;
@@ -1755,17 +1788,7 @@ static void h2_bk_ble_notice_cb_unlocked(ble_notice_t notice, void *param) {
     } else if (notice == BLE_5_CONNECT_EVENT) {
         const ble_conn_ind_t *conn = (const ble_conn_ind_t *)param;
         if (conn != NULL) {
-            for (size_t i = 0u; i < H2_BK_BLE_ADV_SET_COUNT; ++i) {
-                h2_pal_ble_adv_set_t *set = &s_h2_bk_ble_adv_sets[i];
-                if (set->allocated && set->active &&
-                    set->params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE) {
-                    set->active = 0;
-                    h2_bk_ble_post_adv_set(
-                        H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
-                        set,
-                        H2_PAL_OK);
-                }
-            }
+            h2_bk_ble_mark_connectable_advertising_stopped();
             s_h2_bk_ble_peripheral_conn_handle = conn->conn_idx;
             memcpy(
                 s_h2_bk_ble_peripheral_peer_addr,
@@ -1781,6 +1804,11 @@ static void h2_bk_ble_notice_cb_unlocked(ble_notice_t notice, void *param) {
         }
     } else if (notice == BLE_5_DISCONNECT_EVENT) {
         const ble_discon_ind_t *disconn = (const ble_discon_ind_t *)param;
+        /* A disconnect can still arrive when the stack omitted or delayed the
+         * matching peripheral-connect notice.  Normalize the controller's
+         * stopped connectable advertisement here as well so the upper layer
+         * can always restart it after the session. */
+        h2_bk_ble_mark_connectable_advertising_stopped();
         h2_pal_ble_disconnected_info_t event;
         memset(&event, 0, sizeof(event));
         event.conn_handle = disconn != NULL
@@ -2197,37 +2225,6 @@ static int32_t h2_bk_ble_gatts_cb_unlocked(
                     memcpy(s_h2_bk_ble_value[index], param->write.value, len);
                 }
                 s_h2_bk_ble_value_len[index] = len;
-                for (size_t notify_index = 0u;
-                     notify_index < H2_BK_BLE_MAX_GATT_CHARACTERISTICS;
-                     ++notify_index) {
-                    if ((s_h2_bk_ble_properties[notify_index] &
-                         H2_PAL_BLE_GATT_PROPERTY_NOTIFY) == 0u ||
-                        s_h2_bk_ble_cccd_handle[notify_index] ==
-                            H2_PAL_BLE_INVALID_ATTR_HANDLE) {
-                        continue;
-                    }
-                    uint16_t cccd_len = 0u;
-                    uint8_t *cccd_value = NULL;
-                    if (bk_ble_gatts_get_attr_value(
-                            s_h2_bk_ble_cccd_handle[notify_index],
-                            &cccd_len,
-                            &cccd_value) == BK_OK &&
-                        cccd_value != NULL && cccd_len > 0u) {
-                        size_t copy_len = cccd_len;
-                        if (copy_len > sizeof(s_h2_bk_ble_cccd_value[notify_index])) {
-                            copy_len = sizeof(s_h2_bk_ble_cccd_value[notify_index]);
-                        }
-                        memcpy(
-                            s_h2_bk_ble_cccd_value[notify_index],
-                            cccd_value,
-                            copy_len);
-                        h2_bk_ble_post_subscription_changed(
-                            param->write.conn_id,
-                            notify_index,
-                            s_h2_bk_ble_cccd_value[notify_index],
-                            copy_len);
-                    }
-                }
                 if (s_h2_bk_ble_write[index] != NULL) {
                     h2_pal_ble_gatt_access_t access = {
                         .conn_handle = param->write.conn_id,
@@ -2275,7 +2272,12 @@ static int32_t h2_bk_ble_gatts_cb_unlocked(
         }
         break;
     case BK_GATTS_CONNECT_EVT:
-        if (param != NULL && param->connect.link_role != 0u) {
+        if (param != NULL) {
+            /* A successful peripheral connection terminates connectable
+             * advertising in the controller. EtherMind does not reliably
+             * emit the GAP advertising-terminated callback, so mirror that
+             * physical transition before the disconnect path restarts it. */
+            h2_bk_ble_mark_connectable_advertising_stopped();
             s_h2_bk_ble_peripheral_conn_handle = param->connect.conn_id;
             memcpy(
                 s_h2_bk_ble_peripheral_peer_addr,
@@ -2303,6 +2305,10 @@ static int32_t h2_bk_ble_gatts_cb_unlocked(
         break;
     case BK_GATTS_DISCONNECT_EVT:
         if (param != NULL) {
+            /* EtherMind may report a failed/short-lived session only through
+             * GATTS_DISCONNECT.  Clear the stale advertising state before the
+             * upper-layer disconnect handler schedules a restart. */
+            h2_bk_ble_mark_connectable_advertising_stopped();
             os_printf(
                 "H2_BK_BLE_GATTS_DISCONNECTED conn=%u reason=%u\n",
                 (unsigned)param->disconnect.conn_id,
@@ -3059,6 +3065,63 @@ static h2_pal_result_t h2_bk_ble_adv_set_set_data(
     return rc;
 }
 
+typedef struct h2_bk_ble_exact_submit_context {
+    int extended;
+} h2_bk_ble_exact_submit_context_t;
+
+static h2_pal_result_t h2_bk_ble_submit_exact_data(
+    void *user,
+    uint8_t instance,
+    const uint8_t *data,
+    size_t len) {
+    const h2_bk_ble_exact_submit_context_t *context = user;
+    if (context->extended) {
+        return h2_bk_ble_set_extended_adv_data(instance, data, len);
+    }
+    h2_bk_ble_drain_signals();
+    h2_pal_result_t rc = h2_bk_ble_map_error(
+        bk_ble_gap_set_adv_data_raw(instance, (uint16_t)len, data));
+    if (rc == H2_PAL_OK) {
+        rc = h2_bk_ble_wait(H2_BK_BLE_TIMEOUT_MS);
+    }
+    return rc;
+}
+
+static h2_pal_result_t h2_bk_ble_adv_set_set_encoded_data(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *encoded_data,
+    size_t encoded_data_len) {
+    (void)ble;
+    h2_pal_result_t lock_rc = h2_bk_ble_lock_adv();
+    if (lock_rc != H2_PAL_OK) {
+        return lock_rc;
+    }
+    if (!h2_bk_ble_adv_set_valid(set)) {
+        h2_bk_ble_unlock_adv();
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t capacity = set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY
+                          ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN
+                          : H2_PAL_BLE_EXT_ADV_DATA_MAX_LEN;
+    h2_bk_ble_exact_submit_context_t context = {
+        .extended = set->params.type == H2_PAL_BLE_ADV_TYPE_EXTENDED,
+    };
+    h2_pal_result_t rc = h2_bk_ble_exact_submit(
+        H2_BK_BLE_EXACT_STACK_ETHERMIND,
+        set->instance,
+        encoded_data,
+        encoded_data_len,
+        capacity,
+        h2_bk_ble_submit_exact_data,
+        &context);
+    if (rc == H2_PAL_OK) {
+        set->data_staged = 1;
+    }
+    h2_bk_ble_unlock_adv();
+    return rc;
+}
+
 static h2_pal_result_t h2_bk_ble_adv_set_start(
     h2_pal_ble_t *ble,
     h2_pal_ble_adv_set_t *set) {
@@ -3183,8 +3246,14 @@ static h2_pal_result_t h2_bk_ble_start_scan(
                                           : params->phy_mask == 0u
                                               ? H2_PAL_BLE_SCAN_PHY_1M
                                               : params->phy_mask;
-        uint16_t scan_interval = (uint16_t)((params->interval_ms * 1600u) / 1000u);
-        uint16_t scan_window = (uint16_t)((params->window_ms * 1600u) / 1000u);
+        uint16_t scan_interval;
+        uint16_t scan_window;
+        h2_bk_ble_resolve_scan_units(
+            params,
+            (uint16_t)((params->interval_ms * 1600u) / 1000u),
+            (uint16_t)((params->window_ms * 1600u) / 1000u),
+            &scan_interval,
+            &scan_window);
         bk_ble_ext_scan_cfg_t cfg = {
             .scan_type = params->mode == H2_PAL_BLE_SCAN_MODE_ACTIVE
                              ? BLE_SCAN_TYPE_ACTIVE
@@ -3231,8 +3300,14 @@ static h2_pal_result_t h2_bk_ble_start_scan(
     if (params->type == H2_PAL_BLE_SCAN_TYPE_EXTENDED) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    uint16_t scan_interval = h2_bk_ble_ms_to_units625(params->interval_ms);
-    uint16_t scan_window = h2_bk_ble_ms_to_units625(params->window_ms);
+    uint16_t scan_interval;
+    uint16_t scan_window;
+    h2_bk_ble_resolve_scan_units(
+        params,
+        h2_bk_ble_ms_to_units625(params->interval_ms),
+        h2_bk_ble_ms_to_units625(params->window_ms),
+        &scan_interval,
+        &scan_window);
     if (scan_window > scan_interval) {
         scan_window = scan_interval;
     }
@@ -3476,26 +3551,16 @@ static h2_pal_result_t h2_bk_ble_notify(
         s_h2_bk_ble_legacy_notify_in_flight++;
         return H2_PAL_OK;
     }
-    h2_pal_result_t rc = h2_bk_ble_ensure_notify_sem();
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    rc = h2_bk_ble_begin_gatts_tx(
-        H2_BK_BLE_GATTS_TX_NOTIFY,
+    /* EtherMind only confirms indications. A notification completes when the
+     * controller accepts it, so waiting for BK_GATTS_CONF_EVT always times
+     * out and tears down an otherwise healthy BLEIKCP session. */
+    return h2_bk_ble_map_error(bk_ble_gatts_send_indicate(
+        s_h2_bk_ble_gatts_if,
         conn_handle,
-        attr_handle);
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    h2_bk_ble_drain_notify_signals();
-    rc = h2_bk_ble_map_error(
-        bk_ble_gatts_send_indicate(s_h2_bk_ble_gatts_if, conn_handle, attr_handle, (uint16_t)len, (uint8_t *)data, false));
-    if (rc != H2_PAL_OK) {
-        h2_bk_ble_cancel_gatts_tx_submission(conn_handle, attr_handle);
-        return rc;
-    }
-    rc = h2_bk_ble_wait_notify(H2_BK_BLE_NOTIFY_TIMEOUT_MS);
-    return rc;
+        attr_handle,
+        (uint16_t)len,
+        (uint8_t *)data,
+        false));
 }
 
 static h2_pal_result_t h2_bk_ble_indicate(
@@ -3810,6 +3875,10 @@ static h2_pal_result_t h2_bk_ble_update_connection(
     if (conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE || params == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (bk_ble_get_host_stack_type() == BK_BLE_HOST_STACK_TYPE_ETHERMIND &&
+        conn_handle == s_h2_bk_ble_peripheral_conn_handle) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
     h2_pal_result_t rc = h2_bk_ble_ensure_sem();
     if (rc != H2_PAL_OK) {
         return rc;
@@ -3858,6 +3927,10 @@ static h2_pal_result_t h2_bk_ble_exchange_mtu(
     if (conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE || out_mtu == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (bk_ble_get_host_stack_type() == BK_BLE_HOST_STACK_TYPE_ETHERMIND &&
+        conn_handle == s_h2_bk_ble_peripheral_conn_handle) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
     h2_pal_result_t rc = h2_bk_ble_ensure_sem();
     if (rc != H2_PAL_OK) {
         return rc;
@@ -3895,6 +3968,9 @@ static h2_pal_result_t h2_bk_ble_set_preferred_phy(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (bk_ble_get_host_stack_type() != BK_BLE_HOST_STACK_TYPE_ETHERMIND) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (conn_handle == s_h2_bk_ble_peripheral_conn_handle) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     uint8_t *peer_addr = NULL;
@@ -4195,6 +4271,20 @@ h2_bk_ble_adv_set_set_scan_response_data_unsupported(
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+#if !CONFIG_BLE
+static h2_pal_result_t h2_bk_ble_adv_set_set_encoded_data_unsupported(
+    h2_pal_ble_t *ble,
+    h2_pal_ble_adv_set_t *set,
+    const uint8_t *data,
+    size_t len) {
+    (void)ble;
+    (void)set;
+    (void)data;
+    (void)len;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+#endif
+
 #if CONFIG_BLE
 static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .start = (h2_pal_result_t (*)(void *))h2_bk_ble_start,
@@ -4204,6 +4294,7 @@ static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .stop_advertising = (h2_pal_result_t (*)(void *))h2_bk_ble_stop_advertising,
     .adv_set_create = (h2_pal_result_t (*)(void *, const h2_pal_ble_adv_params_t *, h2_pal_ble_adv_set_t **))h2_bk_ble_adv_set_create,
     .adv_set_set_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_bk_ble_adv_set_set_data,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_bk_ble_adv_set_set_encoded_data,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_bk_ble_adv_set_set_scan_response_data_unsupported,
     .adv_set_start = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_bk_ble_adv_set_start,
     .adv_set_stop = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *))h2_bk_ble_adv_set_stop,
@@ -4257,6 +4348,7 @@ static h2_pal_result_t h2_bk_ble_unsupported_indicate(
 static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .start = (h2_pal_result_t (*)(void *))h2_bk_ble_unsupported_start,
     .stop = (h2_pal_result_t (*)(void *))h2_bk_ble_unsupported_stop,
+    .adv_set_set_encoded_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const uint8_t *, size_t))h2_bk_ble_adv_set_set_encoded_data_unsupported,
     .adv_set_set_scan_response_data = (h2_pal_result_t (*)(void *, h2_pal_ble_adv_set_t *, const h2_pal_ble_adv_data_t *))h2_bk_ble_adv_set_set_scan_response_data_unsupported,
     .indicate = (h2_pal_result_t (*)(void *, uint16_t, uint16_t, const uint8_t *, size_t, uint32_t))h2_bk_ble_unsupported_indicate,
 };

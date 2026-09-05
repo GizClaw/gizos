@@ -14,6 +14,7 @@ cc_library(
         "include/h2/pal/h2_pal_unsupported.h",
         "include/h2/pal/hal/h2_pal_audio.h",
         "include/h2/pal/hal/h2_pal_audio_decoder.h",
+        "include/h2/pal/hal/h2_pal_audio_task_names.h",
         "include/h2/pal/hal/h2_pal_ble.h",
         "include/h2/pal/hal/h2_pal_button.h",
         "include/h2/pal/hal/h2_pal_buzzer.h",

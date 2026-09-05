@@ -1,4 +1,5 @@
 #include "h2_bleikcp_speed.h"
+#include "h2_bleikcp_speed_task_names.h"
 
 #include "internal.h"
 
@@ -577,7 +578,7 @@ static int h2_speed_start_display(h2_speed_context_t *context) {
 
 static int h2_speed_start_renderer(h2_speed_context_t *context) {
     const h2_pal_task_options_t options = {
-        .name = "bleikcp-speed/ui",
+        .name = h2_bleikcp_speed_ui_task_name,
         .min_stack_size = 8u * 1024u,
     };
     atomic_store_explicit(&context->renderer_stop, 0, memory_order_release);
@@ -928,7 +929,7 @@ static int h2_speed_transfer(
     h2_speed_writer_t writer = { context, stream, tx_direction };
     h2_pal_task_t *writer_task = NULL;
     h2_pal_task_options_t options = {
-        .name = "bleikcp-speed/tx",
+        .name = h2_bleikcp_speed_tx_task_name,
         .min_stack_size = 12u * 1024u,
     };
     uint8_t payload[H2_SPEED_CHUNK_SIZE];
@@ -1239,8 +1240,8 @@ static h2_bleikcp_config_t h2_speed_config(h2_speed_context_t *context) {
         .output_retry_count = 40u,
         .output_retry_delay_ms = 2u,
         .setup_timeout_ms = H2_SPEED_SETUP_TIMEOUT_MS,
-        .worker_task_options = { "bleikcp-speed/kcp", 12u * 1024u },
-        .server_task_options = { "bleikcp-speed/server", 12u * 1024u },
+        .worker_task_options = { h2_bleikcp_speed_kcp_task_name, 12u * 1024u },
+        .server_task_options = { h2_bleikcp_speed_server_task_name, 12u * 1024u },
         .user = context,
     };
 }

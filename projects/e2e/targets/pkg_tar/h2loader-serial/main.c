@@ -1,4 +1,5 @@
 #include "h2_h2loader_serial_e2e.h"
+#include "h2_h2loader_serial_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 
@@ -49,23 +50,21 @@ static void h2_web_h2loader_print_ledger(
            result->cases[index].case_id, result->cases[index].result);
   }
   printf("H2_WEB_H2LOADER_INITIAL board=%s target=%s role=%u "
-         "name=%s version=%s checksum=%s states=0x%016llx\n",
+         "version=%s checksum=%s availability=0x%08x\n",
          result->initial_status.board, result->initial_status.target,
          (unsigned int)h2_h2loader_host_status_active_role(
              &result->initial_status),
-         result->initial_status.active_name,
          result->initial_status.active_version,
          result->initial_status.active_checksum,
-         (unsigned long long)result->initial_status.states);
+         result->initial_status.command_availability);
   printf("H2_WEB_H2LOADER_FINAL board=%s target=%s role=%u "
-         "name=%s version=%s checksum=%s states=0x%016llx\n",
+         "version=%s checksum=%s availability=0x%08x\n",
          result->final_status.board, result->final_status.target,
          (unsigned int)h2_h2loader_host_status_active_role(
              &result->final_status),
-         result->final_status.active_name,
          result->final_status.active_version,
          result->final_status.active_checksum,
-         (unsigned long long)result->final_status.states);
+         result->final_status.command_availability);
   printf("H2_WEB_H2LOADER_METRICS command_bytes=%zu command_transport=%d "
          "command_terminal=%d command_truncated=%u command_lifecycle=%u "
          "acknowledged=%llu "
@@ -315,7 +314,7 @@ EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_start(void) {
     app.port_id[0] = '\0';
   }
   const h2_pal_task_options_t task_options = {
-      .name = "h2loader-serial-e2e",
+      .name = h2_h2loader_serial_e2e_runner_task_name,
       .min_stack_size = H2_WEB_H2LOADER_TASK_STACK_SIZE,
   };
   result = h2_pal_task_start(h2_web_platform_task_api(app.platform),
@@ -435,7 +434,6 @@ int main(void) {
   config.task = h2_web_platform_task_api(app.platform);
   config.sync = h2_web_platform_sync_api(app.platform);
   config.webrtc = h2_web_platform_webrtc_api(app.platform);
-  config.webrtc_media_track = h2_web_platform_webrtc_audio_track(app.platform);
   h2_pal_result_t result = h2_runtime_init(&config, &app.runtime);
   if (result != H2_PAL_OK) {
     h2_web_platform_destroy(app.platform);

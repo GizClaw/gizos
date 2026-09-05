@@ -2,9 +2,7 @@
 
 #include "h2/pal/application/h2_pal_http.h"
 
-#include "payload/firmware.pb.h"
-#include "pb_decode.h"
-#include "pb_encode.h"
+#include "h2_gizclaw_firmware.h"
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -221,54 +219,70 @@ static int receive_firmware(void *user, const h2_pal_http_request_t *request,
   return H2_PAL_OK;
 }
 
-static int
-get_firmware_metadata(h2_gizclaw_client_t *client,
-                      gizclaw_rpc_v1_FirmwareGetResponse *out_metadata) {
-  gizclaw_rpc_v1_FirmwareGetRequest request =
-      gizclaw_rpc_v1_FirmwareGetRequest_init_zero;
-  request.channel =
-      gizclaw_rpc_v1_FirmwareChannelName_FIRMWARE_CHANNEL_NAME_DEVELOP;
-  uint8_t request_payload[gizclaw_rpc_v1_FirmwareGetRequest_size];
-  pb_ostream_t output =
-      pb_ostream_from_buffer(request_payload, sizeof(request_payload));
-  if (!pb_encode(&output, gizclaw_rpc_v1_FirmwareGetRequest_fields, &request)) {
-    return H2_PAL_ERR_FORMAT;
-  }
+static int firmware_evidence(const char *symbol, const char *stage, int rc) {
+  h2_gizclaw_e2e_evidence(symbol, stage, rc);
+  return rc;
+}
 
-  h2_gizclaw_rpc_response_t response = {0};
-  int result =
-      h2_gizclaw_client_rpc_call(client, H2_GIZCLAW_RPC_SERVER_FIRMWARE_GET,
-                                 (h2_gizclaw_rpc_bytes_t){
-                                     .data = request_payload,
-                                     .len = output.bytes_written,
-                                 },
-                                 &response);
-  h2_gizclaw_e2e_evidence("H2_GIZCLAW_RPC_SERVER_FIRMWARE_GET", "firmware",
-                          result);
-  if (result == H2_PAL_OK && response.has_error) {
-    result = response.error_code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND
-                 ? H2_PAL_ERR_NOT_FOUND
-                 : H2_PAL_ERR_IO;
-  }
-  if (result == H2_PAL_OK) {
-    pb_istream_t input = pb_istream_from_buffer(response.result_payload,
-                                                response.result_payload_len);
-    if (!pb_decode(&input, gizclaw_rpc_v1_FirmwareGetResponse_fields,
-                   out_metadata)) {
-      result = H2_PAL_ERR_FORMAT;
+static int validate_metadata(const h2_gizclaw_firmware_t *metadata) {
+  return metadata->channel == H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP &&
+                 metadata->size > 0 &&
+                 strncmp(metadata->url, "https://", 8) == 0 &&
+                 memchr(metadata->url, 0, sizeof(metadata->url)) != NULL &&
+                 valid_sha256(metadata->sha256)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_FORMAT;
+}
+
+static int get_firmware_metadata(h2_gizclaw_e2e_fixture_t *fixture,
+                                 h2_gizclaw_firmware_t *out_metadata) {
+  h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
+  const uint32_t timeout_ms = 15000;
+  for (unsigned mode = 0; mode < 2; ++mode) {
+    if (!h2_gizclaw_e2e_fixture_has_time(fixture, timeout_ms))
+      return H2_PAL_ERR_TIMEOUT;
+    int rc;
+    if (mode == 0) {
+      h2_gizclaw_req_t *request = NULL;
+      rc = firmware_evidence(
+          "h2_gizclaw_req_create_firmware_get", "firmware-req",
+          h2_gizclaw_req_create_firmware_get(
+              service, 1, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP, timeout_ms,
+              &request));
+      if (rc == H2_PAL_OK)
+        rc = firmware_evidence("h2_gizclaw_req_do", "firmware-req",
+                               h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL));
+      if (rc == H2_PAL_OK)
+        rc = firmware_evidence("h2_gizclaw_req_wait", "firmware-req",
+                               h2_gizclaw_req_wait(request, timeout_ms));
+      if (rc == H2_PAL_OK)
+        rc = firmware_evidence(
+            "h2_gizclaw_resp_parse_firmware_get", "firmware-req",
+            h2_gizclaw_resp_parse_firmware_get(request, out_metadata));
+      if (rc != H2_PAL_OK && request != NULL)
+        (void)h2_gizclaw_req_cancel(request);
+      h2_gizclaw_req_release(request);
+    } else {
+      rc = firmware_evidence("h2_gizclaw_rpc_firmware_get", "firmware-rpc",
+                             h2_gizclaw_rpc_firmware_get(
+                                 service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
+                                 timeout_ms, out_metadata));
     }
+    if (rc == H2_PAL_OK)
+      rc = firmware_evidence(mode == 0 ? "h2_gizclaw_resp_parse_firmware_get"
+                                       : "h2_gizclaw_rpc_firmware_get",
+                             "firmware_get-assert",
+                             validate_metadata(out_metadata));
+    if (rc != H2_PAL_OK)
+      return rc;
   }
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return result;
+  return H2_PAL_OK;
 }
 
 static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
-                             const gizclaw_rpc_v1_FirmwareGetResponse *metadata,
+                             const h2_gizclaw_firmware_t *metadata,
                              uint64_t *out_received_size) {
-  if (metadata->channel !=
-          gizclaw_rpc_v1_FirmwareChannelName_FIRMWARE_CHANNEL_NAME_DEVELOP ||
-      metadata->size <= 0 || strncmp(metadata->url, "https://", 8u) != 0 ||
-      !valid_sha256(metadata->sha256)) {
+  if (validate_metadata(metadata) != H2_PAL_OK) {
     return H2_PAL_ERR_FORMAT;
   }
   uint8_t *chunk =
@@ -323,13 +337,11 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
 
 int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->http == NULL ||
-      fixture->actors[H2_GIZCLAW_E2E_OWNER].client == NULL) {
+      fixture->actors[H2_GIZCLAW_E2E_OWNER].service == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  gizclaw_rpc_v1_FirmwareGetResponse metadata =
-      gizclaw_rpc_v1_FirmwareGetResponse_init_zero;
-  int result = get_firmware_metadata(
-      fixture->actors[H2_GIZCLAW_E2E_OWNER].client, &metadata);
+  h2_gizclaw_firmware_t metadata = {0};
+  int result = get_firmware_metadata(fixture, &metadata);
   uint64_t received_size = 0u;
   if (result == H2_PAL_OK) {
     result = download_firmware(fixture, &metadata, &received_size);

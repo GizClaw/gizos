@@ -4,10 +4,20 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_runtime_task_names.c"],
+    hdrs = ["include/h2_runtime_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
     name = "runtime",
     srcs = [
         "src/h2_runtime.c",
         "src/h2_runtime_component_mapping.c",
+        "src/h2_runtime_custom_event.c",
         "src/h2_runtime_event.c",
         "src/h2_runtime_input.c",
         "src/h2_runtime_internal.h",
@@ -19,6 +29,7 @@ cc_library(
     hdrs = [
         "include/h2_runtime.h",
         "include/h2_runtime_component.h",
+        "include/h2_runtime_custom_event.h",
         "include/h2_runtime_event.h",
         "include/h2_runtime_input.h",
         "include/h2_runtime_input_button.h",
@@ -46,6 +57,7 @@ cc_library(
         "include",
     ],
     deps = [
+        ":task_names",
         "//libs/pal",
     ],
 )
@@ -82,6 +94,30 @@ cc_test(
     srcs = [
         "src/h2_runtime_internal.h",
         "tests/test_runtime_concurrency.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":runtime",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "runtime_custom_event_test",
+    srcs = [
+        "src/h2_runtime_internal.h",
+        "tests/test_runtime_custom_event.c",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

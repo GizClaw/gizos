@@ -69,11 +69,9 @@ static void app_entry(void *user) {
     }
     rc = h2_bk_h2loader_start_app_ble(runtime, "display");
     if (rc != H2_PAL_OK) {
-        emit_marker("H2_BK_SMOKE_DISPLAY_FAIL stage=app_ble rc=%d", rc);
-        (void)h2_bk_h2loader_reboot_to_loader();
-        for (;;) {
-            rtos_delay_milliseconds(1000);
-        }
+        emit_marker(
+            "H2_BK_SMOKE_DISPLAY_STAGE stage=app_ble rc=%d recovery=uart",
+            rc);
     }
 
     emit_marker("H2_BK_SMOKE_DISPLAY_STAGE stage=run_begin");
@@ -84,7 +82,7 @@ static void app_entry(void *user) {
         emit_marker("H2_BK_SMOKE_DISPLAY_STAGE stage=run_done");
         rtos_delay_milliseconds(500);
         emit_marker("H2_BK_SMOKE_DISPLAY_STAGE stage=confirm_begin");
-        rc = h2_bk_h2loader_confirm_current_app(runtime->pref);
+        rc = h2_bk_h2loader_confirm_current_app(runtime);
         if (rc != H2_PAL_OK) {
             emit_marker("H2_BK_SMOKE_DISPLAY_FAIL stage=confirm rc=%d", rc);
         } else {

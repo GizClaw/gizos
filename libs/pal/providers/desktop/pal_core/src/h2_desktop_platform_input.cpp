@@ -205,7 +205,8 @@ int wifi_get_mac(void *, uint8_t out_mac[6]) {
 }
 
 const h2_pal_wifi_sta_vtable_t wifi_sta_vtable = {
-    wifi_get_status, wifi_scan, wifi_connect, wifi_disconnect, wifi_get_mac};
+    wifi_get_status, wifi_scan,    wifi_connect,
+    wifi_disconnect, wifi_get_mac, /*set_power_save=*/nullptr};
 h2_pal_wifi_sta_t wifi_sta = {nullptr, &wifi_sta_vtable};
 
 int wifi_ap_start(void *, const h2_pal_wifi_ap_config_t *config, uint32_t) {

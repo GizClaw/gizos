@@ -33,7 +33,8 @@ h2_web_platform_create(const h2_web_platform_config_t *config);
 /**
  * Destroy an idle provider after target-owned Runtime/tasks are released.
  *
- * A busy executor is left intact. NULL is accepted. All borrowed accessor
+ * A busy executor or in-flight asynchronous WebRTC call is left intact; retry
+ * after those calls return. NULL is accepted. All borrowed accessor
  * results become invalid when destruction succeeds.
  */
 void h2_web_platform_destroy(h2_web_platform_t *platform);
@@ -95,12 +96,27 @@ const h2_pal_touch_api_t *
 h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *
 h2_web_platform_serial_host_api(h2_web_platform_t *platform);
-/** Browser RTCPeerConnection/DataChannel provider. */
+/** Browser RTCPeerConnection/DataChannel provider, called on the JS thread.
+ * Media is caller-owned: register {stream: MediaStream, audio:
+ * HTMLMediaElement} in Module.h2WebRtcTracks (a Map keyed by a nonzero wasm32
+ * integer token), then pass a caller-constructed h2_pal_webrtc_track_t with
+ * native_handle equal to that token. Either stream or audio may be omitted, but
+ * not both. Keep the objects, registry entry and C Track alive until unset
+ * succeeds or peer closes. No automatic getUserMedia, Audio construction, or
+ * MediaStreamTrack.stop. unset waits for replaceTrack(null) and clears remote
+ * playback; it is valid after an offer. A token may be bound to only one peer
+ * at a time. poll only consumes events; the browser drives transport and media.
+ * A waiting poll wakes on an event, peer close, or timeout (TIMEOUT);
+ * concurrent poll on the same peer returns BUSY. Zero timeout returns
+ * WOULD_BLOCK when empty. The receive FIFO holds at most 256 events / 4 MiB of
+ * payload and labels. Overflow/allocation failure preserves its accepted
+ * prefix, then reports one ERROR event and a sticky error return; close and
+ * recreate the peer to recover. Send pressure returns WOULD_BLOCK and
+ * bufferedamountlow produces WRITABLE; a message larger than 1 MiB or the
+ * negotiated limit returns NO_SPACE.
+ */
 const h2_pal_webrtc_api_t *
 h2_web_platform_webrtc_api(h2_web_platform_t *platform);
-/** Browser-managed microphone and remote playback track. */
-h2_pal_webrtc_track_t *
-h2_web_platform_webrtc_audio_track(h2_web_platform_t *platform);
 
 /**
  * Start the Web Serial chooser; call only from a direct user gesture.

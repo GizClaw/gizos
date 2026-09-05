@@ -32,7 +32,7 @@ flowchart TD
 - `libs/gizclaw` 封装 GizClaw C SDK 和协议，并拥有可复用的单 client request service：一个 worker、bounded admission、operation cancellation、completion queue 和 caller-thread callback dispatch。它消费注入的 PAL HTTP、WebRTC、crypto、time、log、memory、task、queue 和 sync API。
 - App 或 project-owned integration 持有状态、reducer、effect command、重试策略和 UI projection。
 - Runtime 提供统一 event loop 与 Audio、filesystem、network 等 API object。
-- H2Loader 拥有 package validation、staging、安装、trial boot、确认和 rollback。
+- H2Loader 拥有 package validation、Stage、基于三槽 metadata 的 Partition 1/2 安装与启动、APP Stage 收尾和 Loader copy-back；不向 GizClaw 暴露持久化 install/trial/rollback phase。
 - Board 与 launcher 只提供 backend、配置和 component mapping，不定义 GizClaw 产品状态。
 - `projects/e2e/apps/gizclaw/app` 拥有可复用的 headless 正确性测试流程；Desktop 或 firmware launcher 只注入 Runtime/PAL、RegistrationToken、endpoint、suite 和测试音频，不复制测试 case。
 

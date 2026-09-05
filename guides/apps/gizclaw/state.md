@@ -9,9 +9,10 @@ flowchart LR
     Action["App action"] --> Transition["App transition"]
     Transition --> Command["GizClaw effect command"]
     Command --> Submit["service submit"]
-    Submit --> Receive["bounded request receive"]
-    Receive --> Worker["single client worker"]
-    Worker --> Completion["completion queue"]
+    Submit --> Receive["bounded request queue"]
+    Receive --> Net["$gizclaw/net"]
+    Net --> Poll["client poll / response copy"]
+    Poll --> Completion["bounded response queue"]
     Completion --> MainLoop["App main-loop dispatch callback"]
     MainLoop --> Transition
     Transition --> State["GizClaw app-owned state"]
@@ -19,7 +20,7 @@ flowchart LR
     Subject --> UI["LVGL projection"]
 ```
 
-`h2_gizclaw_service_submit()` 把 typed operation context 交给 library-owned bounded queue。唯一 worker 持有 client，执行 operation 并持续调用 `h2_gizclaw_client_poll()`。普通 API operation 只入队 terminal completion；长连接 operation 可以同步入队 progress call，让 App main loop 完成一次 Audio 或状态步骤并把结果返回 worker。App main loop 调用 `h2_gizclaw_service_dispatch()` 后，progress 或 completion callback 才在 dispatch caller thread 执行 transition。它们不是 Runtime event，worker 和底层 WebRTC callback 都不能直接更新 App state 或 LVGL。
+`h2_gizclaw_service_submit()` 把 typed operation context 交给 library-owned bounded queue。`$gizclaw/net` 唯一持有 client，执行网络 operation 并持续调用 `h2_gizclaw_client_poll()`；它复制 response、stream frame 和 Peer Event 后写入有界 response queue，不直接调用用户 callback。App main loop 调用 `h2_gizclaw_service_poll()`，按接收顺序执行 progress、stream、completion 和 connection event callback。队列达到容量时网络层实施背压，不会无限复制 frame。
 
 ## 当前公开状态边界
 
@@ -50,9 +51,15 @@ Server 主动调用 Client 时，C SDK 只负责 request framing、method dispat
 
 ## Request 合同
 
-每个 command 至少携带 operation、generation，以及该 API 要求的 typed resource/record name。Transition 在 command 发出前先写入 pending state；worker 完成后把同一 identity/generation、terminal kind 和 result 放入 completion queue。只有 dispatch callback 中的 generation 与当前 state 匹配时才能提交结果。字段必须保留具体语义，例如 `workspace_name`、`history_id` 或 `firmware_channel`，不能混装成通用 `resource_id`。
+每个 command 至少携带 operation、generation，以及该 API 要求的 typed resource/record name。Transition 在 command 发出前先写入 pending state；网络 task 完成后把同一 identity/generation、terminal kind 和 result 放入 response queue。只有 main-loop dispatch callback 中的 generation 与当前 state 匹配时才能提交结果。字段必须保留具体语义，例如 `workspace_name`、`history_id` 或 `firmware_channel`，不能混装成通用 `resource_id`。
 
 取消操作先使当前 App request generation 失效，再调用 operation cancel。取消是幂等的；queued、running 或 progress-pending operation 仍由 service 持有，最终恰好产生一次 completion callback。Progress-pending 取消会唤醒 worker，已经排队但尚未执行的 progress callback 不再接触产品资源。连接断开时 service 将受影响 operation 标记为 `SERVICE_CLOSED`，App callback 再根据 typed operation 决定失败或恢复行为，不能把未由 GizClaw API 返回的 connection phase 当作 SDK 事实。
+
+配置 Log PAL 后，service、Conversation 与 Speech request 会输出 compact lifecycle
+记录：`request`、`stage`、`identity`、`rc`、`detail`、`frames` 和 `bytes`。这些字段用于
+定位 queue、RPC、transport、cancel 和 dispatch 边界，不定义新的产品状态，也不能替代
+terminal callback。调用者任务和 `$gizclaw/net` 共享的统计计数使用原子访问；日志不得
+为诊断引入跨任务 data race。
 
 ## Subject 投影
 
@@ -62,12 +69,13 @@ Subject 更新只发生在 LVGL 所属 main loop。一次性动作，如开始�
 
 ## 生命周期
 
-App 初始化依次建立 client config、service 和 app-owned state，再启动 service。退出时先停止接收新 command，取消 domain operation 和 conversation/OTA effect，调用 service stop 等待 worker join，继续 dispatch 直到所有 completion callback 已 drain 并释放 caller operation handle，然后 deinit service，最后释放 App state。Partial initialization 失败时只清理已经成功创建的资源。
+App 初始化依次建立 client config、service 和 app-owned state，再启动 service。退出时先停止接收新 command，取消 domain operation 和 conversation/OTA effect，调用 service stop 等待 `$gizclaw/net` 退出，再继续 dispatch，直到所有 completion callback 已 drain 并释放 caller operation handle；随后 App deinit service，最后释放 App state。Partial initialization 失败时只清理已经成功创建的资源。
 
 ## 验收
 
 - App-owned connection request、workspace request、conversation 和 firmware operation 可以独立表达，不互相覆盖，也不冒充 GizClaw SDK enum。
-- 所有 callback 先回到 App main loop，再更新 state 和 subject。
+- 所有 GizClaw callback 都由 App main loop 调用 service dispatch 后执行。
 - 页面退出后的迟到 result 因 generation 不匹配而被丢弃。
 - Subject 不承担请求队列、event bus、网络回调或 Audio callback。
 - Desktop 与设备端使用相同 state、generation 和失败语义。
+- 配置 Log PAL 时，请求失败日志包含 identity、stage、result、detail 与 bounded frame/byte 统计，且不改变 callback lifecycle。

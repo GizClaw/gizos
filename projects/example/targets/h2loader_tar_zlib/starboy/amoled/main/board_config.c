@@ -147,7 +147,6 @@ h2_pal_result_t h2_starboy_amoled_input_poll_config(
     }
     *out_config = (h2_runtime_input_poll_config_t){
         .button_poll_interval_ms = 20u,
-        .task_options = {.name = "starboy_input"},
     };
     return H2_PAL_OK;
 }

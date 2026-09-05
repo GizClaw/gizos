@@ -1,8 +1,174 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
 package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "api_coverage",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py"],
+    data = ["//libs/gizclaw:public_api_inventory"],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "api_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_api_coverage.py"],
+    main = "test_api_coverage.py",
+    imports = ["."],
+    data = ["//libs/gizclaw:public_api_inventory"],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "connectivity_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_connectivity_coverage.py"],
+    main = "test_connectivity_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_connectivity_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "workspace_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_workspace_coverage.py"],
+    main = "test_workspace_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_workspace_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "contact_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_contact_coverage.py"],
+    main = "test_contact_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_contact_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "telemetry_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_telemetry_coverage.py"],
+    main = "test_telemetry_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_telemetry_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "point_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_point_coverage.py"],
+    main = "test_point_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_point_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "pet_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_pet_coverage.py"],
+    main = "test_pet_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_pet_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "group_message_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_group_message_coverage.py"],
+    main = "test_group_message_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_group_message_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "group_audio_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_group_audio_coverage.py"],
+    main = "test_group_audio_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_group_audio_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "group_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_group_coverage.py"],
+    main = "test_group_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_group_test",
+    ],
+    legacy_create_init = False,
+)
 
 filegroup(
     name = "voice_prompt",
     srcs = ["data/voice_prompt_l16_16khz_mono.pcm"],
+)
+
+py_test(
+    name = "friend_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_friend_coverage.py"],
+    main = "test_friend_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_friend_test",
+    ],
+    legacy_create_init = False,
+)
+
+py_test(
+    name = "service_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_service_coverage.py"],
+    main = "test_service_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_request_cases_test",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_fixture_test",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_voice_test",
+    ],
+    legacy_create_init = False,
 )
 
 filegroup(

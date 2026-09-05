@@ -22,6 +22,7 @@ idf_component_register(
     esp_driver_usb_serial_jtag
     h2_firmware_lib
     h2_esp_board
+    h2_h2loader_ble
     h2_h2loader_runtime
     h2_pal_core
     h2_firmware_lib

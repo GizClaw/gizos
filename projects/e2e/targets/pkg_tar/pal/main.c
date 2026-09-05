@@ -1,4 +1,5 @@
 #include "h2_pal_e2e.h"
+#include "h2_pal_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_platform.h"
 
@@ -49,7 +50,6 @@ int main(void) {
   config.sync = h2_web_platform_sync_api(platform);
   config.touch = h2_web_platform_touch_api(platform);
   config.webrtc = h2_web_platform_webrtc_api(platform);
-  config.webrtc_media_track = h2_web_platform_webrtc_audio_track(platform);
   h2_runtime_t *runtime = NULL;
   h2_pal_result_t result = h2_runtime_init(&config, &runtime);
   h2_web_pal_app_t app = {
@@ -58,7 +58,11 @@ int main(void) {
   };
   h2_pal_task_t *task = NULL;
   if (result == H2_PAL_OK) {
-    result = h2_pal_task_start(config.task, NULL, h2_web_pal_run, &app, &task);
+    const h2_pal_task_options_t task_options = {
+        .name = h2_pal_e2e_runner_task_name,
+    };
+    result = h2_pal_task_start(config.task, &task_options, h2_web_pal_run,
+                               &app, &task);
   }
   int joined = 0;
   for (int turn = 0; result == H2_PAL_OK && turn < 128 && !joined; ++turn) {

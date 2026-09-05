@@ -85,8 +85,30 @@ static void test_default_changed_payload(void) {
     assert(!h2_pal_netif_default_changed_is_valid(&change));
 }
 
+static h2_pal_result_t record_default(void *user,
+                                      const h2_pal_netif_ref_t *ref) {
+    h2_pal_netif_ref_t *recorded = user;
+    *recorded = *ref;
+    return H2_PAL_OK;
+}
+
+static void test_set_default_contract(void) {
+    h2_pal_netif_ref_t recorded = h2_pal_netif_default_ref();
+    const h2_pal_netif_vtable_t vtable = {.set_default = record_default};
+    const h2_pal_netif_api_t api = {.user = &recorded, .vtable = &vtable};
+    const h2_pal_netif_ref_t wifi =
+        name_ref("en0", H2_PAL_NETIF_KIND_WIFI_STA);
+    assert(h2_pal_netif_set_default(&api, &wifi) == H2_PAL_OK);
+    assert(h2_pal_netif_ref_equal(&recorded, &wifi));
+    const h2_pal_netif_ref_t default_ref = h2_pal_netif_default_ref();
+    assert(h2_pal_netif_set_default(&api, &default_ref) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_netif_set_default(NULL, &wifi) == H2_PAL_ERR_UNSUPPORTED);
+}
+
 int main(void) {
     test_concrete_refs();
     test_default_changed_payload();
+    test_set_default_contract();
     return 0;
 }

@@ -1,5 +1,7 @@
 #include "h2_audio_mixer.h"
 #include "h2_esp_es8311_audio_system.h"
+#include "h2_esp_es8311_gain.h"
+#include "h2/pal/hal/h2_pal_audio_task_names.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -176,31 +178,6 @@ static esp_err_t es8311_update_reg(h2_esp_es8311_audio_system_t *state, uint8_t 
     return es8311_write_reg(state, reg, regv);
 }
 
-static uint8_t es8311_mic_gain_from_db(uint32_t db) {
-    if (db < 6u) {
-        return 0u;
-    }
-    if (db < 12u) {
-        return 1u;
-    }
-    if (db < 18u) {
-        return 2u;
-    }
-    if (db < 24u) {
-        return 3u;
-    }
-    if (db < 30u) {
-        return 4u;
-    }
-    if (db < 36u) {
-        return 5u;
-    }
-    if (db < 42u) {
-        return 6u;
-    }
-    return 7u;
-}
-
 static uint8_t es8311_volume_from_percent_with_default(uint32_t percent, uint8_t codec_volume_default) {
     const uint32_t scaled = (percent * (uint32_t)codec_volume_default) / 100u;
     if (scaled > 0xffu) {
@@ -268,7 +245,12 @@ static esp_err_t es8311_start(h2_esp_es8311_audio_system_t *state) {
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_ADC_17, state->config.adc_digital_volume), TAG, "adc volume");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_SYSTEM_0E, 0x02), TAG, "sys0e");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_SYSTEM_12, 0x00), TAG, "sys12");
-    ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_SYSTEM_14, 0x1a), TAG, "sys14");
+    ESP_RETURN_ON_ERROR(es8311_write_reg(
+        state,
+        ES8311_REG_SYSTEM_14,
+        (uint8_t)(0x10u |
+            h2_esp_es8311_mic_gain_register(state->config.mic_gain_db))),
+        TAG, "sys14");
     ESP_RETURN_ON_ERROR(es8311_update_reg(state, ES8311_REG_SYSTEM_14, 0x40, 0x00), TAG, "analog mic");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_SYSTEM_0D, 0x01), TAG, "sys0d");
     ESP_RETURN_ON_ERROR(es8311_write_reg(state, ES8311_REG_ADC_15, 0x40), TAG, "adc15");
@@ -427,9 +409,6 @@ static int es8311_audio_init_codec(h2_esp_es8311_audio_system_t *state) {
     }
     if (err == ESP_OK) {
         err = es8311_update_reg(state, ES8311_REG_SDP_OUT, 0x03, 0x00);
-    }
-    if (err == ESP_OK) {
-        err = es8311_write_reg(state, ES8311_REG_ADC_16, es8311_mic_gain_from_db(state->config.mic_gain_db));
     }
     if (err == ESP_OK) {
         err = es8311_start(state);
@@ -600,7 +579,7 @@ static int es8311_audio_start_mic_task(h2_esp_es8311_audio_system_t *state) {
     state->mic_task_started = 1;
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         es8311_audio_mic_task,
-        "h2_audio_mic",
+        H2_PAL_AUDIO_MIC_TASK_NAME_VALUE,
         state->config.mic_task_stack_size,
         state,
         state->config.mic_task_priority,
@@ -693,7 +672,7 @@ static int es8311_audio_start_playback_task_locked(h2_esp_es8311_audio_system_t 
     state->playback_task_started = 1;
     BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(
         es8311_audio_playback_task,
-        "h2_audio_mix",
+        H2_PAL_AUDIO_MIX_TASK_NAME_VALUE,
         state->config.speaker_task_stack_size,
         state,
         state->config.speaker_task_priority,

@@ -40,7 +40,8 @@ typedef struct fake_app {
   h2_runtime_t *runtime;
   int32_t value;
   h2_runtime_event_kind_t last_event_kind;
-  uint16_t last_click_count;
+  h2_runtime_timestamp_ms_t last_pressed_at_ms;
+  h2_runtime_timestamp_ms_t last_released_at_ms;
   bool button_pressed;
   uint64_t button_updated_at_ms;
   unsigned int reset_count;
@@ -509,20 +510,22 @@ static h2_pal_result_t fake_run_step(void *user, uint32_t timeout_ms) {
       .payload = payload,
       .payload_capacity = sizeof(payload),
   };
-  h2_pal_result_t rc =
-      h2_runtime_wait_event(app->runtime, &event, timeout_ms);
-  if (rc == H2_PAL_OK) {
+  h2_pal_result_t rc = h2_runtime_wait_notify(app->runtime, timeout_ms);
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK &&
+      rc != H2_PAL_ERR_TIMEOUT) {
+    return rc;
+  }
+  while (h2_runtime_poll_event(app->runtime, &event) == H2_PAL_OK) {
     app->last_event_kind = event.kind;
     if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
         event.payload_size == sizeof(h2_runtime_button_action_event_t)) {
       h2_runtime_button_action_event_t action;
       memcpy(&action, event.payload, sizeof(action));
-      app->last_click_count = action.click_count;
+      app->last_pressed_at_ms = action.pressed_at_ms;
+      app->last_released_at_ms = action.released_at_ms;
     }
     app->value +=
         event.kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_READY ? 5 : 1;
-  } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
-    return rc;
   }
   h2_runtime_button_state_t button_state;
   if (h2_runtime_component_state_button(
@@ -561,8 +564,12 @@ static h2_pal_result_t fake_snapshot(
         writer, "ui.last_event_kind", (int32_t)app->last_event_kind);
   }
   if (rc == H2_PAL_OK) {
-    rc = h2_app_test_snapshot_write_i32(
-        writer, "ui.last_click_count", (int32_t)app->last_click_count);
+    rc = h2_app_test_snapshot_write_u64(
+        writer, "ui.last_pressed_at_ms", app->last_pressed_at_ms);
+  }
+  if (rc == H2_PAL_OK) {
+    rc = h2_app_test_snapshot_write_u64(
+        writer, "ui.last_released_at_ms", app->last_released_at_ms);
   }
   if (rc == H2_PAL_OK) {
     rc = h2_app_test_snapshot_write_i32(
@@ -635,6 +642,17 @@ H2_APP_TEST_CASE(fake_sequence_case) {
   H2_APP_TEST_EXPECT_I32(test, "app.value", 7);
   H2_APP_TEST_EXPECT_I64(test, "app.signed", INT64_MIN);
   H2_APP_TEST_EXPECT_U64(test, "app.unsigned", UINT64_MAX);
+  /* A hold reuses the press time recorded by BUTTON_DOWN. */
+  H2_APP_TEST_BUTTON_DOWN(test, 7u, 20u);
+  H2_APP_TEST_BUTTON_HOLD(test, 7u, 600u);
+  H2_APP_TEST_EXPECT_U64(test, "ui.last_pressed_at_ms", 20u);
+  H2_APP_TEST_EXPECT_U64(test, "ui.last_released_at_ms", 0u);
+  H2_APP_TEST_EXPECT_I32(test, "ui.button_pressed", 1);
+  H2_APP_TEST_EXPECT_U64(test, "ui.button_updated_at_ms", 600u);
+  H2_APP_TEST_BUTTON_UP(test, 7u, 700u);
+  H2_APP_TEST_EXPECT_U64(test, "ui.last_pressed_at_ms", 20u);
+  H2_APP_TEST_EXPECT_U64(test, "ui.last_released_at_ms", 700u);
+  H2_APP_TEST_EXPECT_I32(test, "ui.button_pressed", 0);
 }
 
 static void fake_driver(h2_app_test_driver_t *driver, fake_app_t *app) {
@@ -801,7 +819,7 @@ static void test_memory_semantic_button_and_component_state_operations(void) {
   int32_t value = 0;
   assert(h2_app_test_snapshot_get_i32(
              &snapshot, "app.last_event_kind", &value) == H2_PAL_OK);
-  assert(value == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(value == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
   assert(h2_app_test_snapshot_get_i32(
              &snapshot, "ui.button_pressed", &value) == H2_PAL_OK);
   assert(value == 1);
@@ -825,27 +843,31 @@ static void test_memory_semantic_button_and_component_state_operations(void) {
   assert(updated_at_ms == 150u);
 
   assert(h2_app_test_session_button_action(
-             session, 7u, 200u, 240u, 1u, 0u,
+             session, 7u, 200u, 240u, 0u,
              &snapshot) == H2_PAL_OK);
   assert(snapshot.generation == 3u);
   assert(h2_app_test_snapshot_get_i32(
              &snapshot, "ui.last_event_kind", &value) == H2_PAL_OK);
   assert(value == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
-  assert(h2_app_test_snapshot_get_i32(
-             &snapshot, "ui.last_click_count", &value) == H2_PAL_OK);
-  assert(value == 1);
+  uint64_t action_timestamp_ms = 0u;
+  assert(h2_app_test_snapshot_get_u64(
+             &snapshot, "ui.last_pressed_at_ms", &action_timestamp_ms) ==
+         H2_PAL_OK);
+  assert(action_timestamp_ms == 200u);
+  assert(h2_app_test_snapshot_get_u64(
+             &snapshot, "ui.last_released_at_ms", &action_timestamp_ms) ==
+         H2_PAL_OK);
+  assert(action_timestamp_ms == 240u);
 
-  /* Consecutive-click counts reach the App exactly as Runtime would send them. */
+  /* Each action carries only its press and release timestamps. */
   assert(h2_app_test_session_button_action(
-             session, 7u, 260u, 280u, 3u, 0u,
+             session, 7u, 260u, 280u, 0u,
              &snapshot) == H2_PAL_OK);
   assert(snapshot.generation == 4u);
-  assert(h2_app_test_snapshot_get_i32(
-             &snapshot, "ui.last_click_count", &value) == H2_PAL_OK);
-  assert(value == 3);
-  assert(h2_app_test_session_button_action(
-             session, 7u, 300u, 320u, 0u, 0u,
-             &snapshot) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_app_test_snapshot_get_u64(
+             &snapshot, "ui.last_pressed_at_ms", &action_timestamp_ms) ==
+         H2_PAL_OK);
+  assert(action_timestamp_ms == 260u);
 
   assert(h2_app_test_session_button_up(
              session, 7u, 300u, 299u, 0u,
@@ -853,6 +875,33 @@ static void test_memory_semantic_button_and_component_state_operations(void) {
   assert(h2_app_test_session_run(
              session, 0u, &snapshot) == H2_PAL_OK);
   assert(snapshot.generation == 5u);
+
+  /* A hold re-reports the original press as still pressed at a later
+   * observation time, the way Runtime keeps reporting a held key. */
+  assert(h2_app_test_session_button_hold(
+             session, 7u, 320u, 900u, 0u, &snapshot) == H2_PAL_OK);
+  assert(snapshot.generation == 6u);
+  assert(h2_app_test_snapshot_get_i32(
+             &snapshot, "ui.last_event_kind", &value) == H2_PAL_OK);
+  assert(value == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  assert(h2_app_test_snapshot_get_u64(
+             &snapshot, "ui.last_pressed_at_ms", &action_timestamp_ms) ==
+         H2_PAL_OK);
+  assert(action_timestamp_ms == 320u);
+  assert(h2_app_test_snapshot_get_u64(
+             &snapshot, "ui.last_released_at_ms", &action_timestamp_ms) ==
+         H2_PAL_OK);
+  assert(action_timestamp_ms == 0u);
+  assert(h2_app_test_snapshot_get_i32(
+             &snapshot, "ui.button_pressed", &value) == H2_PAL_OK);
+  assert(value == 1);
+  assert(h2_app_test_snapshot_get_u64(
+             &snapshot, "ui.button_updated_at_ms",
+             &updated_at_ms) == H2_PAL_OK);
+  assert(updated_at_ms == 900u);
+  assert(h2_app_test_session_button_hold(
+             session, 7u, 1000u, 999u, 0u,
+             &snapshot) == H2_PAL_ERR_INVALID_ARG);
 
   h2_app_test_session_close(session);
   h2_app_test_memory_driver_deinit(&driver);

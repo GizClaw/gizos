@@ -66,66 +66,49 @@ static uint64_t h2_web_now_ms(void *user) {
   return (uint64_t)emscripten_get_now();
 }
 
-EM_JS(double, h2_web_date_now_ms, (), { return Date.now(); });
+EM_JS(double, h2_web_wall_now_ms, (), { return Date.now(); });
 
-static h2_pal_result_t h2_web_time_get_monotonic_ms(void *user,
-                                                     uint64_t *out_ms) {
-  if (user == NULL || out_ms == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  *out_ms = h2_web_now_ms(user);
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t h2_web_time_get_monotonic_us(void *user,
-                                                     uint64_t *out_us) {
-  if (user == NULL || out_us == NULL)
+static h2_pal_result_t h2_web_get_monotonic_us(void *user, uint64_t *out_us) {
+  (void)user;
+  if (out_us == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_us = (uint64_t)(emscripten_get_now() * 1000.0);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_time_get_wall_ms(void *user, uint64_t *out_ms) {
-  h2_web_platform_t *platform = user;
-  if (platform == NULL || out_ms == NULL)
+static h2_pal_result_t h2_web_get_wall_ms(void *user, uint64_t *out_ms) {
+  (void)user;
+  if (out_ms == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  const int64_t adjusted = (int64_t)h2_web_date_now_ms() +
-                           platform->wall_time_offset_ms;
-  if (adjusted <= 0)
+  *out_ms = 0u;
+  const double value = h2_web_wall_now_ms();
+  if (!(value >= 0.0 && value <= 9007199254740991.0))
     return H2_PAL_ERR_UNAVAILABLE;
-  *out_ms = (uint64_t)adjusted;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t h2_web_time_set_wall_ms(void *user, uint64_t wall_ms) {
-  h2_web_platform_t *platform = user;
-  if (platform == NULL || wall_ms == 0u || wall_ms > (uint64_t)INT64_MAX)
-    return H2_PAL_ERR_INVALID_ARG;
-  platform->wall_time_offset_ms =
-      (int64_t)wall_ms - (int64_t)h2_web_date_now_ms();
-  platform->wall_time_source = H2_PAL_TIME_WALL_SOURCE_SERVER_ALIGNED;
+  *out_ms = (uint64_t)value;
   return H2_PAL_OK;
 }
 
 static h2_pal_result_t
-h2_web_time_get_wall_status(void *user,
-                            h2_pal_time_wall_status_t *out_status) {
-  h2_web_platform_t *platform = user;
-  if (platform == NULL || out_status == NULL)
+h2_web_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
+  if (out_status == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  uint64_t wall_ms = 0u;
   *out_status = (h2_pal_time_wall_status_t){
-      .valid = platform->wall_time_source != H2_PAL_TIME_WALL_SOURCE_UNKNOWN,
-      .source = platform->wall_time_source,
+      .valid = h2_web_get_wall_ms(user, &wall_ms) == H2_PAL_OK,
+      // The browser exposes the host clock, not its synchronization source.
+      .source = H2_PAL_TIME_WALL_SOURCE_UNKNOWN,
   };
   return H2_PAL_OK;
 }
 
-static const h2_pal_time_vtable_t h2_web_time_source_vtable = {
-    .get_monotonic_ms = h2_web_time_get_monotonic_ms,
-    .get_monotonic_us = h2_web_time_get_monotonic_us,
-    .get_wall_ms = h2_web_time_get_wall_ms,
-    .set_wall_ms = h2_web_time_set_wall_ms,
-    .get_wall_status = h2_web_time_get_wall_status,
-    .sleep_ms = NULL,
+static const h2_pal_time_vtable_t h2_web_clock_vtable = {
+    .get_monotonic_us = h2_web_get_monotonic_us,
+    .get_wall_ms = h2_web_get_wall_ms,
+    .get_wall_status = h2_web_get_wall_status,
+};
+
+static const h2_pal_time_api_t h2_web_clock = {
+    .vtable = &h2_web_clock_vtable,
 };
 
 static h2_libco_result_t h2_web_poll_external(void *user,
@@ -225,17 +208,12 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   }
   platform->width = config->display_width;
   platform->height = config->display_height;
-  platform->time_source_api = (h2_pal_time_api_t){
-      .user = platform,
-      .vtable = &h2_web_time_source_vtable,
-  };
-  platform->wall_time_source = H2_PAL_TIME_WALL_SOURCE_RTC;
   const h2_libco_config_t executor_config = {
       .user = platform,
       .alloc = h2_web_alloc,
       .free = h2_web_free,
       .now_ms = h2_web_now_ms,
-      .time_source = &platform->time_source_api,
+      .time_source = &h2_web_clock,
       .poll_external = h2_web_poll_external,
       .idle = h2_web_idle,
   };
@@ -274,6 +252,10 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   if (platform == NULL) {
     return;
   }
+  // An Asyncify frame still owns its peer and platform. The caller must retry
+  // destruction after the outstanding WebRTC call has returned.
+  if (h2_web_platform_webrtc_busy(platform))
+    return;
   platform->shutting_down = true;
   if (platform->pump_scheduled) {
     h2_web_pump_cancel_js((uintptr_t)platform);
@@ -401,9 +383,4 @@ h2_web_platform_serial_host_api(h2_web_platform_t *platform) {
 const h2_pal_webrtc_api_t *
 h2_web_platform_webrtc_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->webrtc_api;
-}
-
-h2_pal_webrtc_track_t *
-h2_web_platform_webrtc_audio_track(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : &platform->webrtc_audio_track;
 }

@@ -6,7 +6,12 @@ load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-bk7258_target_task_policy()
+bk7258_target_task_policy(
+    ap_task_name_deps = [
+        "//projects/h2loader/libs/h2loader:task_names",
+        "//projects/h2loader/apps/loader/app:task_names",
+    ],
+)
 
 firmware_lib_component(
     name = "firmware_lib",
@@ -45,20 +50,6 @@ firmware_native_component(
 )
 
 firmware_native_component(
-    name = "cp_launcher_component",
-    srcs = [
-        "cp/cp_main.c",
-    ],
-    hdrs = [],
-    component_directory = "projects/example/targets/h2loader_tar_zlib/ble-broadcaster/bk7258_v3_202405/cp",
-    component_name = "cp",
-    data = [
-        "cp/CMakeLists.txt",
-    ],
-    execution_unit = "cp",
-)
-
-firmware_native_component(
     name = "ble_broadcaster_launcher",
     srcs = [],
     hdrs = [],
@@ -69,7 +60,6 @@ firmware_native_component(
     ],
     deps = [
         ":ap_launcher_component",
-        ":cp_launcher_component",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
         "//libs/pal",
@@ -80,6 +70,7 @@ firmware_native_component(
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
     ],
 )
 
@@ -89,8 +80,6 @@ h2loader_bk7258_firmware(
         "CMakeLists.txt",
         "ap/CMakeLists.txt",
         "ap/ap_main.c",
-        "cp/CMakeLists.txt",
-        "cp/cp_main.c",
     ],
     ap_task_policy = ":ap_task_policy",
     board = "bk7258_v3_202405",

@@ -46,18 +46,9 @@ static h2_pal_result_t app_power_set_next_boot_partition(
 static h2_pal_result_t app_power_reboot(void *user, uint32_t reason) {
   h2_bk_app_power_t *power = user;
   if (!power->returning_to_loader) {
-    h2_loader_status_t status;
-    h2_pal_result_t rc =
-        h2_loader_read_pref_status(power->pref, NULL, &status);
+    h2_pal_result_t rc = h2_bk_h2loader_prepare_pending_app_restart();
     if (rc != H2_PAL_OK) {
       return rc;
-    }
-    if (status.install_state ==
-        H2_LOADER_INSTALL_STATE_INSTALLED_PENDING_CONFIRM) {
-      rc = h2_bk_h2loader_prepare_pending_app_restart();
-      if (rc != H2_PAL_OK) {
-        return rc;
-      }
     }
   }
   power->returning_to_loader = 0;

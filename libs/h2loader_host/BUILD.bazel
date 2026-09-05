@@ -4,6 +4,15 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_h2loader_host_task_names.c"],
+    hdrs = ["include/h2_h2loader_host_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+)
+
+cc_library(
     name = "h2loader_host",
     srcs = [
         "src/h2_h2loader_host_ble.c",
@@ -45,6 +54,7 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
+        ":task_names",
         "//libs/bleikcp",
         "//libs/bundle",
         "//libs/iostreamikcp",
@@ -132,6 +142,20 @@ cc_test(
         "src",
         "tests",
     ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2loader_host"],
+)
+
+cc_test(
+    name = "h2loader_host_discovery_test",
+    srcs = ["tests/test_h2loader_host_discovery.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

@@ -16,6 +16,10 @@ import {
 } from "./common.mjs";
 
 const API_VERSION = "2022-11-28";
+const FORK_CHECKS_AUTHORIZATION_DESCRIPTION =
+  "Ownership approved fork checks for this exact head";
+const FORK_CHECKS_DISPATCH_DESCRIPTION =
+  "Ownership passed; approved fork checks were requested";
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -92,6 +96,35 @@ async function assertCurrentGeneration(repository, headSha, runUrl) {
     context: OWNERSHIP_ELIGIBILITY_CONTEXT,
     runUrl,
   });
+  return statuses;
+}
+
+async function dispatchApprovedForkChecks(
+  repository,
+  baseRef,
+  headSha,
+  pullRequestNumber,
+) {
+  await githubRequest(`/repos/${repository}/actions/workflows/ci.yml/dispatches`, {
+    method: "POST",
+    body: {
+      ref: baseRef,
+      inputs: {checkout_sha: validateSha(headSha, "fork CI checkout SHA")},
+    },
+  });
+  await githubRequest(
+    `/repos/${repository}/actions/workflows/openai-pr-review.yml/dispatches`,
+    {
+      method: "POST",
+      body: {
+        ref: baseRef,
+        inputs: {
+          pull_request_number: String(pullRequestNumber),
+          head_sha: validateSha(headSha, "fork review head SHA"),
+        },
+      },
+    },
+  );
 }
 
 async function writeStepSummary(title, summary) {
@@ -165,6 +198,7 @@ async function main() {
     if (
       currentPr.head.sha !== eventPr.head.sha ||
       currentPr.base.sha !== eventPr.base.sha ||
+      currentPr.base.ref !== "main" ||
       (eventPr.user?.login &&
         currentPr.user.login.toLowerCase() !== eventPr.user.login.toLowerCase())
     ) {
@@ -196,25 +230,60 @@ async function main() {
       author: currentPr.user.login,
       headSha: currentPr.head.sha,
     });
-    await assertCurrentGeneration(repository, headSha, runUrl);
+    const statuses = await assertCurrentGeneration(repository, headSha, runUrl);
+    if (!currentPr.head.repo?.full_name) {
+      throw new PolicyError("pull-request head repository identity is missing");
+    }
+    const isFork = currentPr.head.repo?.full_name !== repository;
+    const hasApprovedForkChecks =
+      isFork && result.success && result.approvalApprovers.length > 0;
+    const forkChecksAlreadyDispatched = statuses.some(
+      (status) =>
+        status.context === OWNERSHIP_ELIGIBILITY_CONTEXT &&
+        status.state === "success" &&
+        status.description === FORK_CHECKS_DISPATCH_DESCRIPTION,
+    );
     await writeStepSummary(
       result.success
         ? "Ownership approval policy satisfied"
         : "Ownership approval required",
       summary,
     );
+    const finalDescription = result.success
+      ? hasApprovedForkChecks
+        ? forkChecksAlreadyDispatched
+          ? FORK_CHECKS_DISPATCH_DESCRIPTION
+          : FORK_CHECKS_AUTHORIZATION_DESCRIPTION
+        : "Ownership policy passed for this exact head"
+      : "Ownership approval is required for this exact head";
     await publishStatus(
       repository,
       headSha,
       statusPayload({
         state: result.success ? "success" : "failure",
         context: OWNERSHIP_ELIGIBILITY_CONTEXT,
-        description: result.success
-          ? "Ownership policy passed for this exact head"
-          : "Ownership approval is required for this exact head",
+        description: finalDescription,
         targetUrl: runUrl,
       }),
     );
+    if (hasApprovedForkChecks && !forkChecksAlreadyDispatched) {
+      await dispatchApprovedForkChecks(
+        repository,
+        currentPr.base.ref,
+        headSha,
+        currentPr.number,
+      );
+      await publishStatus(
+        repository,
+        headSha,
+        statusPayload({
+          state: "success",
+          context: OWNERSHIP_ELIGIBILITY_CONTEXT,
+          description: FORK_CHECKS_DISPATCH_DESCRIPTION,
+          targetUrl: runUrl,
+        }),
+      );
+    }
     await writeOutput("head_sha", headSha);
     await writeOutput("eligible", result.success ? "true" : "false");
   } catch (error) {

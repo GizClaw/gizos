@@ -15,11 +15,14 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `display` | Raw Display PAL RGB565 color bars |
 | `gizclaw-ping-speed` | GizClaw connect、ping 与 speed RPC flow |
 | `log` | 单次 Runtime Log `Hello World` 输出 |
+| `lua-cosmic-drift` | 一个 compiled Lua cosmic evolution game 的分组运动、互食、引力捕获、升级、Desktop hover 与 Touch 控制 |
 | `lua-flappybird` | 一个 compiled Lua Skill 的绘制、触摸、碰撞、计分、重开与 Back 取消 |
+| `lua-bloomspeaker` | 同一 Lua 粒子场景、两端确定性 BLE 配对、加密 iKCP Opus 对讲与有界断线恢复 |
 | `lvgl-smoke` | Full-frame LVGL rendering 与持续刷新 |
 | `modem-smoke` | Modem、SIM、registration、PPP 与 ICMP stages |
 | `mp4-player` | MP4 decode、audio output 与 display presentation |
 | `partial-update` | package data generation 的 filesystem observation |
+| `qrcode` | 由 Display PAL band 绘制的居中 QR Code 符号 |
 | `safe-call` | ESP PSRAM caller 与 Internal safe-call worker validation |
 | `starboy` | 程序化双眼、球面注视、主题、眨眼、音频和运动响应 |
 | `tap-reset` | 同一个 LVGL counter 的 increment 与 Reset |
@@ -59,11 +62,13 @@ projects/example/targets/macos_application/tap-reset/    # macOS/rules_apple ent
 
 Portable App 的阻塞入口是 `h2_tap_reset_run(h2_runtime_t *, const h2_tap_reset_config_t *)`。内存、Display 和 Time capability 全部通过 Runtime 使用；App 不 include UIKit、Android JNI、Emscripten 或 launcher private type。
 
-公共 Runtime 暴露 Touch PAL，`touch` Example 通过 `libs/lvgl` adapter 把 raw down/move/up 接入 LVGL pointer indev；App 定义稳定的 Button component，launcher 把它映射到 `PUSH_EDGE` periph，widget 的 down/up 再进入 Runtime 的公共 button recognizer。Portable App 不知道 evdev device、controller、board calibration 或实际按键来源。现有 `tap-reset` Mobile/Web adapter 仍使用其 stable pointer snapshot config，不把平台 SDK 类型带入 portable App。`should_stop` 是调用方拥有的阻塞入口 lifecycle config。
+公共 Runtime 暴露 Touch PAL，`touch` Example 通过 `libs/lvgl` adapter 把 raw down/move/up 接入 LVGL pointer indev；App 定义稳定的 Button component，launcher 把它映射到 `PUSH_EDGE` periph，widget 的 down/up 再进入 Runtime 的客观 phased action pipeline。Portable App 不知道 evdev device、controller、board calibration 或实际按键来源，gesture 由 App 判断。现有 `tap-reset` Mobile/Web adapter 仍使用其 stable pointer snapshot config，不把平台 SDK 类型带入 portable App。`should_stop` 是调用方拥有的阻塞入口 lifecycle config。
 
 Desktop 入口直接调用同一个 `h2_tap_reset_run()`，不依赖 mobile adapter，也不复制 App source 或重写页面。共享 Desktop adapter 和 Runtime assembly 放在 `projects/example/libs/desktop/tap-reset/`；macOS 的 native entry、`Info.plist` 和 `rules_apple` bundle rule 放在同级 `macos/`。
 
-Example 不能 include target SDK、board API、launcher private type 或 H2Loader package/image policy，也不能自行确认 H2Loader image。Board 与 platform launcher 决定自己能够组装哪些 Example；没有入口表示该平台不提供对应 Example，不由 portable App 按平台身份分支或把 required behavior 转换成运行时 `SKIP`。H2Loader-managed artifact 位于 `projects/example/targets/h2loader_tar_zlib/<app>/<board>/`，负责 Runtime assembly、App client、confirmation、package identity、board wiring 和 release output，但不改变 Example ownership。`crash-before-confirm` 只执行 launcher 注入的 crash callback，`partial-update` 只观察 Runtime filesystem 中的 package data；H2Loader rollback 和 partial-update 判定属于外部验收流程。
+Example 不能 include target SDK、board API、launcher private type 或 H2Loader package/image policy，也不能自行实现 H2Loader Stage 收尾。Board 与 platform launcher 决定自己能够组装哪些 Example；没有入口表示该平台不提供对应 Example，不由 portable App 按平台身份分支或把 required behavior 转换成运行时 `SKIP`。H2Loader-managed artifact 位于 `projects/example/targets/h2loader_tar_zlib/<app>/<board>/`，负责 Runtime assembly、App client、固件 identity、board wiring 和 release output，但不改变 Example ownership。`crash-before-confirm` 只执行 launcher 注入的 crash callback，`partial-update` 只观察 Runtime filesystem 中的 package data；H2Loader 的 metadata transaction、断电恢复和 partial-update 判定属于外部验收流程。
+
+`lua-cosmic-drift` 的 Lua source、simulation、collision、upgrade 和 rendering 归 `projects/example/apps/lua-cosmic-drift/`；portable C App 只拥有 Runtime event consumption、Lua host/job 生命周期、Back 取消和清理。Project-private Desktop hover-to-touch adapter 归 `projects/example/libs/desktop/cosmic-drift/`，薄 executable entry 和 layout 归 `projects/example/targets/cc_binary/lua-cosmic-drift/`，AMOLED Runtime/BSP wiring、task policy、image identity 和 H2Loader package 归 `projects/example/targets/h2loader_tar_zlib/lua-cosmic-drift/amoled/`。两条 target 路径消费同一 App 和同一份 compiled Lua resource，不在 Flappy Bird、board 或 PAL provider 中复制游戏行为。
 
 拥有稳定 case registry、机器结果与跨 launcher 验收合同的 runnable test App 属于 [E2E 测试 App](/apps/e2e)，不作为 Example 维护。
 
@@ -75,6 +80,8 @@ Lua bytes；来源 commit、原始脚本/SKILL hash、MIT license 和 API adapta
 不重复提交 upstream 原始脚本或 patch fixture。Display、Touch 与 Audio module 直接消费
 Runtime 单例 PAL API；只有 Button 等物理外设使用 Runtime component ID。迁移不缩写
 gameplay、rendering、collision、scoring、audio、input 或 state machine。
+
+`lua-bloomspeaker` 的 App、controller、配对协议、Opus packet/jitter policy、两秒无有效音频字节 timeout、场景 theme 与所有 mode crossfade 都属于 `projects/example/apps/lua-bloomspeaker/`。Desktop executable 与 AMOLED H2Loader target 只组装 Runtime/provider、component mapping、image/package 和 target task policy。BLE peer address 只作为当前 connection 的 transport metadata；兼容性只由 versioned beacon 和 encrypted handshake 决定。当前 artifact matrix 为 macOS Desktop 与 ESP32-S3 AMOLED；Linux host tests 验证 portable App/library，但尚未声明 Linux Desktop artifact。BK7258、BK3633、iOS、Android、Web 和 JieLi 没有满足 Audio、BLE 与 Runtime composition 的 BloomSpeaker artifact，因此不以 capability `SKIP` 假装支持。
 
 `log` 的阻塞入口是 `h2_log_example_run(h2_runtime_t *)`。它只要求 Runtime Log，写入一次 INFO record，scope 为 `log`，message 为 `Hello World`，然后返回 provider result。Portable App 不初始化 UART、不 drain target buffer、不循环、不 sleep、不分配内存，也不创建 task。当前只有 `tapdoki_v2_0/log` BK3633 full-image launcher；该入口先直接输出 `H2_BK3633_LOG_UART_READY` 证明 `main()` 已到达 UART 初始化点，再循环调用 portable App、drain target buffer，通过现有 TapDoki UART PAL Log provider 在 115200 baud 持续输出 `[I][log] Hello World`。只有重复出现的第二行验证 Runtime Log 链路；两者都不能替代 Libco Smoke 验收。
 

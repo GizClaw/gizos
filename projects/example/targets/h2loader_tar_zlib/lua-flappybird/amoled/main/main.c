@@ -3,7 +3,7 @@
 #include "h2_esp_board.h"
 #include "h2_esp_h2loader_ble.h"
 #include "h2_esp_platform_core.h"
-#include "h2_loader_boot.h"
+#include "h2_esp_h2loader_runtime.h"
 #include "h2_lua_flappybird.h"
 
 #include "esp_system.h"
@@ -21,7 +21,7 @@ static h2_pal_result_t confirm_ready(void *user) {
   h2_runtime_t *runtime = user;
   h2_pal_result_t result = h2_esp_platform_confirm_running_app();
   if (result == H2_PAL_OK) {
-    result = h2_loader_mark_app_confirmed(runtime->pref);
+    result = h2_esp_h2loader_app_confirm(runtime);
   }
   if (result == H2_PAL_OK) {
     printf(

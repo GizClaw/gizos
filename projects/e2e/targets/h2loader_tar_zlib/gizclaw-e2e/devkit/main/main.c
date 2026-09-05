@@ -7,6 +7,7 @@
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_esp_platform_core.h"
 #include "h2_gizclaw_e2e.h"
+#include "h2_gizclaw_e2e_task_names.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
 #include "h2/pal/os/h2_pal_task.h"
@@ -203,6 +204,14 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_init", rc, false);
   }
+  rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
+                                      H2_PAL_WIFI_POWER_SAVE_NONE);
+  printf("H2_GIZCLAW_E2E_DEVKIT stage=power_save mode=%d rc=%d\n",
+         (int)H2_PAL_WIFI_POWER_SAVE_NONE, rc);
+  fflush(stdout);
+  if (rc != H2_PAL_OK) {
+    fail_launcher("power_save", rc, false);
+  }
   rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
   if (rc != H2_PAL_OK) {
     fail_launcher("command_start", rc, false);
@@ -213,7 +222,7 @@ static void image_entry(void *user) {
       .config = config,
   };
   const h2_pal_task_options_t wifi_options = {
-      .name = "gizclaw-wifi",
+      .name = h2_gizclaw_e2e_wifi_task_name,
       .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_WIFI_STACK_SIZE,
   };
   rc = h2_pal_task_start(runtime->task, &wifi_options, supervise_wifi,
@@ -229,21 +238,56 @@ static void image_entry(void *user) {
   fflush(stdout);
 
   h2_gizclaw_e2e_devkit_event_payload_t payload;
+  /* A saved station may already hold an address before this loop sees its
+   * first event; seed from the current status instead of waiting for a
+   * GOT_IP that was delivered earlier. */
   bool wifi_has_ip = false;
+  {
+    h2_pal_wifi_sta_status_t wifi_status;
+    if (h2_pal_wifi_sta_get_status(runtime->wifi_sta, &wifi_status) ==
+            H2_PAL_OK &&
+        wifi_status.ip_valid != 0u) {
+      wifi_has_ip = true;
+    }
+  }
   bool sntp_initialized = false;
+  bool ble_advertising_paused = false;
+  uint32_t ble_pause_retry_count = 0u;
   uint32_t time_retry_count = 0u;
   for (;;) {
     h2_runtime_event_t event = {
         .payload = payload.bytes,
         .payload_capacity = sizeof(payload.bytes),
     };
-    rc = h2_runtime_wait_event(runtime, &event,
-                               H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
-    if (rc == H2_PAL_OK) {
+    /* Drain before waiting: a half-drained queue has no pending wake. */
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
       wifi_has_ip = event_has_ip(event.kind, wifi_has_ip);
-    } else if (rc != H2_PAL_ERR_TIMEOUT) {
+    }
+    rc = h2_runtime_wait_notify(runtime, H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) {
       printf("H2_GIZCLAW_E2E_DEVKIT stage=event status=ERROR rc=%d\n", rc);
       fflush(stdout);
+    }
+
+    if (!ble_advertising_paused) {
+      rc = h2_esp_h2loader_app_commands_pause_ble_advertising();
+      if (rc == H2_PAL_OK) {
+        ble_advertising_paused = true;
+        printf("H2_GIZCLAW_E2E_DEVKIT stage=ble_adv status=PAUSED rc=%d\n",
+               rc);
+        fflush(stdout);
+      } else {
+        ++ble_pause_retry_count;
+        if (ble_pause_retry_count == 1u ||
+            ble_pause_retry_count %
+                    H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL ==
+                0u) {
+          printf("H2_GIZCLAW_E2E_DEVKIT stage=ble_adv status=RETRY rc=%d "
+                 "retry_ms=%u\n",
+                 rc, H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS);
+          fflush(stdout);
+        }
+      }
     }
 
     if (wifi_has_ip && !state.clock_ready) {
@@ -274,14 +318,15 @@ static void image_entry(void *user) {
         }
       }
     }
-    if (h2_gizclaw_e2e_devkit_state_set_prerequisites(
+    if (ble_advertising_paused &&
+        h2_gizclaw_e2e_devkit_state_set_prerequisites(
             &state, wifi_has_ip, state.clock_ready)) {
       s_runner.runtime = runtime;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       atomic_init(&s_runner.exited, false);
       const h2_pal_task_options_t runner_options = {
-          .name = "gizclaw-e2e",
+          .name = h2_gizclaw_e2e_launcher_task_name,
           .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_RUNNER_STACK_SIZE,
       };
       rc = h2_pal_task_start(runtime->task, &runner_options, run_e2e,

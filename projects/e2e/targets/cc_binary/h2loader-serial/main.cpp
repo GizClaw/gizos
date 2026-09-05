@@ -202,23 +202,21 @@ void print_ledger(const h2_h2loader_serial_e2e_result_t &result) {
                 result.cases[index].case_id, result.cases[index].result);
   }
   std::printf("H2_DESKTOP_H2LOADER_INITIAL board=%s target=%s role=%u "
-              "name=%s version=%s checksum=%s states=0x%016llx\n",
+              "version=%s checksum=%s availability=0x%08x\n",
               result.initial_status.board, result.initial_status.target,
               static_cast<unsigned int>(h2_h2loader_host_status_active_role(
                   &result.initial_status)),
-              result.initial_status.active_name,
               result.initial_status.active_version,
               result.initial_status.active_checksum,
-              static_cast<unsigned long long>(result.initial_status.states));
+              result.initial_status.command_availability);
   std::printf("H2_DESKTOP_H2LOADER_FINAL board=%s target=%s role=%u "
-              "name=%s version=%s checksum=%s states=0x%016llx\n",
+              "version=%s checksum=%s availability=0x%08x\n",
               result.final_status.board, result.final_status.target,
               static_cast<unsigned int>(h2_h2loader_host_status_active_role(
                   &result.final_status)),
-              result.final_status.active_name,
               result.final_status.active_version,
               result.final_status.active_checksum,
-              static_cast<unsigned long long>(result.final_status.states));
+              result.final_status.command_availability);
   std::printf("H2_DESKTOP_H2LOADER_METRICS command_bytes=%zu "
               "command_transport=%d command_terminal=%d "
               "command_truncated=%u command_lifecycle=%u "

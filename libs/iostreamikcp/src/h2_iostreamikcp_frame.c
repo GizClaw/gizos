@@ -44,7 +44,8 @@ uint32_t h2_iostreamikcp_crc32(const uint8_t *data, size_t len) {
 static int frame_flags_valid(uint8_t flags) {
     return flags == H2_IOSTREAMIKCP_FRAME_FLAG_DATA ||
            flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN ||
-           flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK;
+           flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK ||
+           flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_CLOSE;
 }
 
 static int frame_control_valid(const h2_iostreamikcp_frame_t *frame) {

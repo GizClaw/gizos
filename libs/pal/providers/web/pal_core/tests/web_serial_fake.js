@@ -307,17 +307,38 @@ class H2FakeRTCPeerConnection {
   constructor() {
     this.connectionState = 'new';
     this.signalingState = 'stable';
-    this.iceGatheringState = 'complete';
+    this.iceGatheringState =
+        globalThis.h2FakeWaitIce ? 'gathering' : 'complete';
+    this.listeners = new Map();
     this.configuration = {iceServers: []};
     this.channels = [];
     this.nextChannelId = 0;
   }
-  addTrack(track, stream) { this.audioSender = {track, stream}; }
+  addTrack(track, stream) {
+    const sender = {
+      track,
+      stream,
+      replaceTrack(value) {
+        globalThis.h2FakeDetachResolved = false;
+        if (globalThis.h2FakeDetachReject) {
+          globalThis.h2FakeDetachReject = false;
+          return Promise.reject(new Error('replaceTrack failed'));
+        }
+        return new Promise(resolve => setTimeout(() => {
+                             this.track = value;
+                             globalThis.h2FakeDetachResolved = true;
+                             resolve();
+                           }, 5));
+      }
+    };
+    this.audioSender = sender;
+    return sender;
+  }
+  removeTrack(sender) { sender.track = null; }
   addTransceiver(kind, options) {
-    this.audioTransceiver = {kind, direction: options.direction};
-    globalThis.h2FakeAudioTransceiverCount =
-        (globalThis.h2FakeAudioTransceiverCount || 0) + 1;
-    return this.audioTransceiver;
+    globalThis.h2FakeRecvOnly =
+        kind === 'audio' && options.direction === 'recvonly';
+    return {sender : this.addTrack(null, null)};
   }
   getConfiguration() { return this.configuration; }
   setConfiguration(configuration) { this.configuration = configuration; }
@@ -343,10 +364,15 @@ class H2FakeRTCPeerConnection {
         streams: [{getTracks() { return []; }}],
       });
     }
-    return Promise.resolve();
+    return globalThis.h2FakeRemoteDelay
+               ? new Promise(resolve => setTimeout(resolve, 10))
+               : Promise.resolve();
   }
-  addEventListener() {}
-  removeEventListener() {}
+  addEventListener(name, callback) { this.listeners.set(name, callback); }
+  removeEventListener(name, callback) {
+    if (this.listeners.get(name) === callback)
+      this.listeners.delete(name);
+  }
   close() {
     for (const channel of this.channels) channel.close();
     this.connectionState = 'closed';
@@ -358,6 +384,9 @@ globalThis.RTCPeerConnection = H2FakeRTCPeerConnection;
 globalThis.MediaStream = class {
   constructor(tracks) { this.tracks = tracks; }
   getTracks() { return this.tracks; }
+  getAudioTracks() {
+    return this.tracks.filter(track => track.kind === 'audio');
+  }
 };
 globalThis.Audio = class {
   play() {
@@ -365,5 +394,17 @@ globalThis.Audio = class {
         (globalThis.h2FakeAudioPlayCount || 0) + 1;
     return Promise.resolve();
   }
-  pause() {}
+  pause() { this.paused = true; }
+};
+
+// The application, not the PAL, owns and registers media for these tests.
+globalThis.h2FakeCreateMedia = token => {
+  const track = {
+    kind : 'audio',
+    stopped : false,
+    stop() { this.stopped = true; }
+  };
+  const media = {stream : new MediaStream([ track ]), audio : new Audio()};
+  (Module.h2WebRtcTracks ||= new Map()).set(token, media);
+  return media;
 };

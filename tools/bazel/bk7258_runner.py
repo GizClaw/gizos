@@ -504,6 +504,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--generate-prebuilt-component", action="append", default=[])
     parser.add_argument("--native-component", action="append", default=[])
     parser.add_argument("--native-component-file", action="append", default=[])
+    parser.add_argument("--native-component-include", action="append", default=[])
     parser.add_argument("--native-component-source", action="append", default=[])
     return parser.parse_args(argv)
 
@@ -585,6 +586,27 @@ def resolve_native_component_files(
         files = components.setdefault((execution_unit, component_name), [])
         if component_file not in files:
             files.append(component_file)
+    return components
+
+
+def resolve_native_component_includes(
+    source_root: Path,
+    definitions: list[str],
+) -> dict[tuple[str, str], list[Path]]:
+    components: dict[tuple[str, str], list[Path]] = {}
+    for definition in definitions:
+        execution_unit, component_name, value = parse_native_key(
+            definition, "native component include"
+        )
+        relative = Path(value)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RunnerError(f"BK7258 native component include escapes source root: {value}")
+        include = (source_root / relative).resolve()
+        if not include.is_dir():
+            raise RunnerError(f"BK7258 native component include is invalid: {value}")
+        includes = components.setdefault((execution_unit, component_name), [])
+        if include not in includes:
+            includes.append(include)
     return components
 
 
@@ -713,11 +735,19 @@ def run(arguments: argparse.Namespace) -> None:
         source_root,
         arguments.native_component_file,
     )
+    native_component_includes = resolve_native_component_includes(
+        source_root,
+        arguments.native_component_include,
+    )
     native_component_sources = resolve_native_component_sources(
         source_root,
         arguments.native_component_source,
     )
-    for key in sorted(set(native_component_files) | set(native_component_sources)):
+    for key in sorted(
+        set(native_component_files)
+        | set(native_component_includes)
+        | set(native_component_sources)
+    ):
         if key not in native_components:
             raise RunnerError(
                 "BK7258 native component input has no component descriptor: "
@@ -878,6 +908,15 @@ def run(arguments: argparse.Namespace) -> None:
             manifest_lines.append(f"set({variable}")
             for source in sorted(native_component_sources.get((execution_unit, component_name), [])):
                 manifest_lines.append(f'  "{source.as_posix()}"')
+            manifest_lines.append(")")
+            include_variable = (
+                f"H2_BAZEL_COMPONENT_INCLUDES_{execution_unit}_{component_name}".upper()
+            )
+            manifest_lines.append(f"set({include_variable}")
+            for include in sorted(
+                native_component_includes.get((execution_unit, component_name), [])
+            ):
+                manifest_lines.append(f'  "{include.as_posix()}"')
             manifest_lines.append(")")
         component_manifest = project_copy / "h2_bazel_components.cmake"
         component_manifest.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")

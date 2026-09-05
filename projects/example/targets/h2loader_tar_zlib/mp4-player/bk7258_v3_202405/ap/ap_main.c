@@ -32,7 +32,7 @@ static void emit_marker(const char *fmt, ...) {
 static h2_pal_result_t confirm_ready(void *user) {
     h2_runtime_t *runtime = user;
     const h2_pal_result_t result =
-        (h2_pal_result_t)h2_bk_h2loader_confirm_current_app(runtime->pref);
+        (h2_pal_result_t)h2_bk_h2loader_confirm_current_app(runtime);
     if (result == H2_PAL_OK) {
         emit_marker("H2_BK_MP4_PLAYER_READY rc=0");
     }

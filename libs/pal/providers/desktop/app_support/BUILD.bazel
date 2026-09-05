@@ -45,6 +45,8 @@ cc_test(
     deps = [
         ":app_support",
         "//libs/pal",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
     ],
 )
 

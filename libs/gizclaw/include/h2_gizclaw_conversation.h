@@ -2,8 +2,8 @@
 #define H2_GIZCLAW_CONVERSATION_H
 
 #include "h2_gizclaw_config.h"
+#include "h2_gizclaw_service.h"
 #include "h2_gizclaw_types.h"
-#include "h2/pal/hal/h2_pal_audio.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -14,6 +14,9 @@ extern "C" {
 #endif
 
 #define H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES 1275u
+#define H2_GIZCLAW_CONVERSATION_PCM_CHUNK_MAX_BYTES 1280u
+#define H2_GIZCLAW_CONVERSATION_PCM_SAMPLE_RATE_HZ 16000u
+#define H2_GIZCLAW_CONVERSATION_PCM_CHANNELS 1u
 #define H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES 4096u
 #define H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES 63u
 
@@ -30,12 +33,16 @@ typedef enum h2_gizclaw_conversation_event_kind {
 } h2_gizclaw_conversation_event_kind_t;
 
 /**
- * Result of one poll.
- *
- * `generation` is the caller-provided generation from `open`. Audio, text, and
- * error views are borrowed until the next poll or deinit. `REPLY_DONE` is the
- * service terminal; callers must still drain locally accepted playback before
- * publishing their own conversation completion.
+ * One event delivered in service_poll() context. Views are borrowed only for
+ * the duration of the callback. `generation` identifies the current begin/end
+ * cycle. `audio` contains signed PCM16LE, 16 kHz mono, already accepted by the
+ * service's downlink Track. Completion follows draining accepted playback.
+ * REPLY_DONE marks one server reply, not necessarily the end of the begin/end
+ * cycle: while input remains open, server-side VAD may produce further replies.
+ * A reply the server cuts short because the user spoke over it (barge-in)
+ * also ends with REPLY_DONE while input remains open; its queued playback is
+ * discarded. After the input is committed such an interruption is ERROR.
+ * TEXT_DONE may have empty text when earlier TEXT_DELTA events carried it.
  */
 typedef struct h2_gizclaw_conversation_event {
   h2_gizclaw_conversation_event_kind_t kind;
@@ -48,102 +55,37 @@ typedef struct h2_gizclaw_conversation_event {
   bool retryable;
 } h2_gizclaw_conversation_event_t;
 
-/**
- * Opens one generation for an already active Workspace.
- *
- * The returned conversation borrows the client-owned Peer Event access handle.
- * Only one conversation may hold a logical lease for a client at a time; a
- * simultaneous open returns `H2_PAL_ERR_INVALID_STATE`. Success sends the input
- * BOS and transfers ownership of the returned conversation to the caller. The
- * caller must eventually call `deinit`. Conversation operations are not thread
- * safe; one caller must own and serialize open, input, poll, commit, cancel, and
- * deinit for the complete lifetime.
- */
-int h2_gizclaw_conversation_open(h2_gizclaw_client_t *client,
-                                 h2_gizclaw_str_t workspace_name,
-                                 uint64_t generation, int timeout_ms,
-                                 h2_gizclaw_conversation_t **out_conversation);
+/** Optional service_poll() hook. Return OK to continue; any other result aborts
+ * this generation. This is an observation hook, not a retryable audio sink.
+ * Network I/O and other requests continue while the hook runs. */
+typedef h2_pal_result_t (*h2_gizclaw_conversation_callback_fn)(
+    void *user, h2_gizclaw_conversation_t *conversation,
+    const h2_gizclaw_conversation_event_t *event);
 
-/** True while the generation accepts microphone input. */
-bool h2_gizclaw_conversation_input_ready(
-    const h2_gizclaw_conversation_t *conversation);
+typedef void (*h2_gizclaw_conversation_completion_fn)(
+    void *user, h2_gizclaw_conversation_t *conversation,
+    const h2_gizclaw_operation_result_t *result);
 
-/**
- * Selects conversation-owned PCM input and copies its provider format.
- *
- * The format must describe S16LE mono or stereo PCM at an Opus-supported
- * sample rate. `frame_samples_per_channel` is the largest complete provider
- * chunk accepted by one `write_pcm` call; it is not an Opus frame duration.
- * `opus_complexity` must be in the libopus range 0 through 10. Configure
- * exactly once, before any raw Opus packet is written. The caller retains
- * ownership of `format`.
- */
-int h2_gizclaw_conversation_configure_pcm(
-    h2_gizclaw_conversation_t *conversation,
-    const h2_audio_pcm_format_t *format, int opus_complexity);
+/** Configure the Service's conversation route without starting recording.
+ * One configured Conversation per Service; another create returns BUSY.
+ * Use service_audio_start to start recording. For PTT, service_audio_end
+ * submits the input and the generation waits for its reply. Realtime is a
+ * continuous call: reply EOS ends a VAD round, not the call; use
+ * conversation_cancel to hang up without waiting for another reply EOS.
+ * Speech may use the same Service while this Conversation is idle. */
+h2_pal_result_t h2_gizclaw_conversation_create(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t workspace,
+    h2_gizclaw_conversation_callback_fn callback,
+    h2_gizclaw_conversation_completion_fn completion, void *user,
+    h2_gizclaw_conversation_t **out_conversation);
 
-/**
- * Consumes one complete provider-sized PCM frame.
- *
- * The frame data is borrowed only for this call. Success means the complete
- * frame was copied into conversation-owned state, including when transport
- * backpressure leaves encoded Opus packets in the bounded transmit ring. A
- * full ring overwrites its oldest packet so transport backpressure does not
- * block PCM consumption. Other errors are terminal for PCM input and the
- * frame must not be retried.
- */
-int h2_gizclaw_conversation_write_pcm(h2_gizclaw_conversation_t *conversation,
-                                      const h2_audio_frame_t *frame);
+/** Cancel the active generation (hang up a Realtime call), without closing
+ * the Service or Peer. Completion is still delivered by poll. */
+h2_pal_result_t
+h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation);
 
-/**
- * Sends one complete raw Opus packet. `timestamp_ms` remains for source
- * compatibility and is not serialized into the media payload.
- *
- * `H2_PAL_ERR_WOULD_BLOCK` means the packet was not accepted and the caller
- * must retain and retry the same packet before advancing its input stream.
- */
-int h2_gizclaw_conversation_write_opus(h2_gizclaw_conversation_t *conversation,
-                                       const uint8_t *opus, size_t opus_len,
-                                       uint64_t timestamp_ms);
-
-/**
- * Ends microphone input after all accepted audio has been sent.
- *
- * In PCM mode, commit drains complete 20 ms intervals and zero-pads one
- * non-empty final partial interval exactly once before EOS. Empty PCM input
- * does not manufacture an Opus packet. The operation is idempotent after
- * success. `H2_PAL_ERR_WOULD_BLOCK` preserves pending PCM or Opus state and
- * must be retried.
- */
-int h2_gizclaw_conversation_commit(h2_gizclaw_conversation_t *conversation,
-                                   uint64_t timestamp_ms);
-
-/**
- * Polls the ordered reply stream.
- *
- * A successful poll can return `NONE` for a protocol event with no app-facing
- * projection or for an event belonging to an earlier logical stream. Timeout
- * and would-block are non-terminal; `ERROR` and `REPLY_DONE` are terminal
- * app-facing events.
- */
-int h2_gizclaw_conversation_poll(h2_gizclaw_conversation_t *conversation,
-                                 int timeout_ms,
-                                 h2_gizclaw_conversation_event_t *out_event);
-
-/**
- * Invalidates the generation and prevents future input.
- *
- * This operation is idempotent. A caller must still call `deinit`.
- */
-void h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation);
-
-/**
- * Cancel if needed and release the logical Event lease.
- *
- * The client-owned Event access handle and physical Peer Event transport stay
- * open until the complete client connection is closed.
- */
-void h2_gizclaw_conversation_deinit(h2_gizclaw_conversation_t *conversation);
+/** Release an idle conversation. Active audio must first reach terminal. */
+void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t *conversation);
 
 #ifdef __cplusplus
 }

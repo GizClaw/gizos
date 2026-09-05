@@ -48,10 +48,10 @@ http_archive = use_repo_rule(
 
 http_archive(
     name = "h2_gizclaw_c_sdk",
-    integrity = "sha256-ZwMPQka/Oyv3G+WxaAwHd13J/fNTyjNnKU3JKcHGs3k=",
-    strip_prefix = "gizclaw-c-sdk-0.7.8",
+    integrity = "sha256-LMJJt35gAqBiwm+e7ZJQ27QspOYW+T5AkTveN/Z33pw=",
+    strip_prefix = "gizclaw-c-sdk-0.14.3",
     urls = [
-        "https://github.com/GizClaw/gizclaw/releases/download/v0.7.8/gizclaw-c-sdk-0.7.8.tar.gz",
+        "https://github.com/GizClaw/gizclaw/releases/download/v0.14.3/gizclaw-c-sdk-0.14.3.tar.gz",
     ],
 )
 
@@ -204,6 +204,8 @@ use_repo(
     go_deps,
     "com_github_getkin_kin_openapi",
     "com_github_pion_datachannel",
+
+    "com_github_pion_dtls_v3",
     "com_github_pion_rtp",
     "com_github_pion_stun_v3",
     "com_github_pion_turn_v4",
@@ -273,6 +275,20 @@ vendor_repositories.repository(
     sha256 = "291d08cd1fba918645a12078cbb6dfffa0825c57e33c0d0ec093604621bf3292",
     strip_prefix = "kcp-b1a7a2101dcbb96017681a500d6b82bbe5a88766",
     urls = ["https://codeload.github.com/skywind3000/kcp/tar.gz/b1a7a2101dcbb96017681a500d6b82bbe5a88766"],
+)
+vendor_repositories.repository(
+    name = "h2_vendor_iperf",
+    build_file = "//third_party:iperf.BUILD.bazel",
+    sha256 = "dd289b6700d3bc33eda7fa3ce6db217d6ca42239edbcb2e7f152bf7bf5c8a5aa",
+    strip_prefix = "iperf-3.21",
+    urls = ["https://codeload.github.com/esnet/iperf/tar.gz/3.21"],
+)
+vendor_repositories.repository(
+    name = "h2_vendor_qrcodegen",
+    build_file = "//third_party:qrcodegen.BUILD.bazel",
+    sha256 = "ea6326674b89e3af6d055dac722d5d03ffd3a1d3edb5acd8d691a8b89236907b",
+    strip_prefix = "QR-Code-generator-3c6d0b3cefb4e049dc337e82237c9644399716a8",
+    urls = ["https://codeload.github.com/nayuki/QR-Code-generator/tar.gz/3c6d0b3cefb4e049dc337e82237c9644399716a8"],
 )
 vendor_repositories.repository(
     name = "h2_vendor_yyjson",
@@ -450,6 +466,7 @@ use_repo(
     "h2_vendor_esp_serial_flasher",
     "h2_vendor_ffmpeg",
     "h2_vendor_ikcp",
+    "h2_vendor_iperf",
     "h2_vendor_libco",
     "h2_vendor_libsrtp",
     "h2_vendor_lua",
@@ -459,6 +476,7 @@ use_repo(
     "h2_vendor_pixa",
     "h2_vendor_pixelroot32",
     "h2_vendor_portaudio",
+    "h2_vendor_qrcodegen",
     "h2_vendor_sdl3",
     "h2_vendor_speexdsp",
     "h2_vendor_sqlite",

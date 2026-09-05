@@ -35,7 +35,7 @@ static void smoke_ready(void *user, int rc) {
     return;
   }
   emit_marker("H2_BK_SMOKE_WIFI_CSI_STAGE stage=dashboard_ready");
-  rc = h2_bk_h2loader_confirm_current_app(runtime->pref);
+  rc = h2_bk_h2loader_confirm_current_app(runtime);
   if (rc != H2_PAL_OK) {
     emit_marker("H2_BK_SMOKE_WIFI_CSI_FAIL stage=confirm rc=%d", rc);
   } else {

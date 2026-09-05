@@ -3,6 +3,7 @@
 #endif
 
 #include "h2_bleikcp_internal.h"
+#include "h2_bleikcp_task_names.h"
 
 #include <errno.h>
 #include <pthread.h>
@@ -38,6 +39,7 @@ typedef struct fake_runtime {
     atomic_int fail_next_register;
     atomic_int fail_next_join;
     atomic_int drop_next_gatt_write;
+    atomic_int cond_broadcasts;
     uint32_t rx_properties_override;
     h2_pal_mem_api_t allocator;
     h2_pal_ble_t ble;
@@ -157,7 +159,8 @@ static h2_pal_result_t fake_cond_signal(void *user, h2_pal_cond_t *cond) {
 }
 
 static h2_pal_result_t fake_cond_broadcast(void *user, h2_pal_cond_t *cond) {
-    (void)user;
+    fake_runtime_t *runtime = user;
+    atomic_fetch_add(&runtime->cond_broadcasts, 1);
     return pthread_cond_broadcast(&cond->value) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
@@ -606,6 +609,58 @@ static void test_flush_result_precedence(const h2_bleikcp_api_t *api) {
     CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
 }
 
+static void test_nonprogress_does_not_wake_data_waiters(
+    fake_runtime_t *runtime,
+    const h2_bleikcp_api_t *api) {
+    h2_bleikcp_resolved_config_t config;
+    CHECK(h2_bleikcp_resolve_config(api, NULL, &config) == H2_PAL_OK);
+    h2_bleikcp_t *stream = NULL;
+    CHECK(h2_bleikcp_stream_create(
+              api, &config, H2_BLEIKCP_ROLE_SERVER, 10u, 244u, false,
+              &stream) == H2_PAL_OK);
+    CHECK(stream->read_cond != stream->write_cond);
+
+    const uint8_t input[] = {0x01u};
+    int broadcasts_before = atomic_load(&runtime->cond_broadcasts);
+    CHECK(h2_bleikcp_stream_input(stream, input, sizeof(input)) == H2_PAL_OK);
+    CHECK(stream->input.count == 1u);
+    CHECK(atomic_load(&runtime->cond_broadcasts) == broadcasts_before);
+
+    const uint8_t output[] = {0x02u};
+    CHECK(h2_bleikcp_write(stream, output, sizeof(output), 0u) == H2_PAL_OK);
+    CHECK(stream->tx.len == 1u);
+    CHECK(atomic_load(&runtime->cond_broadcasts) == broadcasts_before);
+
+    CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
+
+    stream = NULL;
+    CHECK(h2_bleikcp_stream_create(
+              api, &config, H2_BLEIKCP_ROLE_SERVER, 11u, 244u, false,
+              &stream) == H2_PAL_OK);
+    broadcasts_before = atomic_load(&runtime->cond_broadcasts);
+    CHECK(h2_bleikcp_stream_start(stream) == H2_PAL_OK);
+    CHECK(h2_pal_time_sleep_ms(api->time, 50u) == H2_PAL_OK);
+    CHECK(atomic_load(&runtime->cond_broadcasts) == broadcasts_before);
+    CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
+}
+
+static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
+    const h2_bleikcp_config_t config = {
+        .worker_task_options = { "caller/worker", 7u * 1024u },
+        .server_task_options = { "caller/server", 8u * 1024u },
+    };
+    h2_bleikcp_resolved_config_t resolved;
+    CHECK(h2_bleikcp_resolve_config(api, &config, &resolved) == H2_PAL_OK);
+    CHECK(strcmp(
+              resolved.value.worker_task_options.name,
+              h2_bleikcp_worker_task_name) == 0);
+    CHECK(strcmp(
+              resolved.value.server_task_options.name,
+              h2_bleikcp_server_task_name) == 0);
+    CHECK(resolved.value.worker_task_options.min_stack_size == 7u * 1024u);
+    CHECK(resolved.value.server_task_options.min_stack_size == 8u * 1024u);
+}
+
 static void stream_event(
     void *user,
     h2_bleikcp_t *stream,
@@ -723,7 +778,9 @@ int main(void) {
         .system_event = &runtime.events,
         .allocator = &runtime.allocator,
     };
+    test_task_name_ownership(&api);
     test_flush_result_precedence(&api);
+    test_nonprogress_does_not_wake_data_waiters(&runtime, &api);
     handler_state_t handler_state = { .api = &api };
     event_state_t event_state = {0};
     h2_bleikcp_config_t config = {

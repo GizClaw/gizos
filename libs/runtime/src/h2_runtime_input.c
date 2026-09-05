@@ -1,4 +1,5 @@
 #include "h2_runtime_internal.h"
+#include "h2_runtime_task_names.h"
 
 #include <string.h>
 
@@ -478,11 +479,10 @@ static h2_pal_result_t update_button_pressed(
         state_changed = 1;
         if (is_pressed != 0) {
             button->pressed_at_ms = now_ms;
-            button->click_count = 1u;
             source->button_state.pressed = true;
             source->button_state.pressed_at_ms = now_ms;
-            source->button_state.click_count = button->click_count;
             emit_down = 1;
+            emit_action = 1;
         } else {
             source->button_state.pressed = false;
             source->button_state.pressed_at_ms = 0u;
@@ -490,22 +490,17 @@ static h2_pal_result_t update_button_pressed(
     } else if (is_pressed != 0 && button->is_pressed == 0) {
         button->is_pressed = 1;
         button->pressed_at_ms = now_ms;
-        if (button->last_released_at_ms == 0u ||
-            now_ms < button->last_released_at_ms ||
-            now_ms - button->last_released_at_ms >
-                H2_RUNTIME_BUTTON_CLICK_GAP_MS) {
-            button->click_count = 1u;
-        } else if (button->click_count < UINT16_MAX) {
-            ++button->click_count;
-        }
         source->button_state.pressed = true;
         source->button_state.pressed_at_ms = now_ms;
-        source->button_state.click_count = button->click_count;
         emit_down = 1;
+        emit_action = 1;
+        state_changed = 1;
+    } else if (is_pressed != 0 && button->is_pressed != 0) {
+        emit_down = 1;
+        emit_action = 1;
         state_changed = 1;
     } else if (is_pressed == 0 && button->is_pressed != 0) {
         button->is_pressed = 0;
-        button->last_released_at_ms = now_ms;
         source->button_state.pressed = false;
         source->button_state.pressed_at_ms = 0u;
         emit_up = 1;
@@ -557,8 +552,7 @@ static h2_pal_result_t update_button_pressed(
     if (emit_action != 0) {
         const h2_runtime_button_action_event_t event = {
             .pressed_at_ms = button->pressed_at_ms,
-            .released_at_ms = now_ms,
-            .click_count = button->click_count,
+            .released_at_ms = emit_up != 0 ? now_ms : 0u,
         };
         return append_input_event(
             runtime,
@@ -644,7 +638,7 @@ static h2_pal_result_t poll_radio_button_group(
     /*
      * One pressed_button_id is projected across every child. A successful
      * group state therefore has at most one pressed recognizer, so a
-     * transition emits at most old UP + CLICK and new DOWN.
+     * transition emits at most old UP + ACTION and new DOWN + ACTION.
      */
     for (size_t i = 0u; i < runtime->private_state->input_source_count; ++i) {
         h2_runtime_input_source_t *group_source =
@@ -1318,9 +1312,7 @@ h2_pal_result_t h2_runtime_input_start(
     if (config != NULL) {
         selected = *config;
     }
-    if (selected.task_options.name == NULL) {
-        selected.task_options.name = "h2-runtime-input";
-    }
+    selected.task_options.name = h2_runtime_input_task_name;
     runtime->private_state->input_tick_ms =
         select_interval(selected.tick_ms, H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     runtime->private_state->input_button_poll_interval_ms = select_interval(
@@ -1383,7 +1375,7 @@ h2_pal_result_t h2_runtime_input_start(
     }
     if (has_nfc_source(runtime)) {
         h2_pal_task_options_t nfc_options = selected.task_options;
-        nfc_options.name = "h2-runtime-nfc";
+        nfc_options.name = h2_runtime_nfc_task_name;
         rc = h2_pal_task_start(
             runtime->task,
             &nfc_options,

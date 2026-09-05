@@ -1,8 +1,9 @@
 #ifndef H2_GIZCLAW_REGISTRATION_H
 #define H2_GIZCLAW_REGISTRATION_H
 
-#include "h2_gizclaw_types.h"
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2_gizclaw_service.h"
+#include "h2_gizclaw_types.h"
 
 #include <stdbool.h>
 
@@ -17,17 +18,23 @@ typedef struct h2_gizclaw_registration_result {
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
 } h2_gizclaw_registration_result_t;
 
-/**
- * @brief Apply a stable pre-distributed RegistrationToken to a connected Peer.
- *
- * This blocking call borrows @p token for its duration and clears
- * @p out_result before validation. The returned RuntimeProfile name is copied
- * into caller-owned storage. Firmware selection is a separate channel-only
- * request and is not part of registration.
- */
+/** Copy the token into a CREATED request; no registration is sent yet. */
+h2_pal_result_t h2_gizclaw_req_create_register(h2_gizclaw_service_t *service,
+                                               uint64_t identity,
+                                               const char *token,
+                                               uint32_t timeout_ms,
+                                               h2_gizclaw_req_t **out_request);
+
+/** Copy the server-confirmed Runtime Profile name into caller-owned storage. */
 h2_pal_result_t
-h2_gizclaw_client_register(h2_gizclaw_client_t *client, const char *token,
-                           h2_gizclaw_registration_result_t *out_result);
+h2_gizclaw_resp_parse_register(const h2_gizclaw_req_t *request,
+                               h2_gizclaw_registration_result_t *out_result);
+
+/** Same request path, without a callback; no app poll loop is required. */
+h2_pal_result_t
+h2_gizclaw_rpc_register(h2_gizclaw_service_t *service, const char *token,
+                        uint32_t timeout_ms,
+                        h2_gizclaw_registration_result_t *out_result);
 
 #ifdef __cplusplus
 }

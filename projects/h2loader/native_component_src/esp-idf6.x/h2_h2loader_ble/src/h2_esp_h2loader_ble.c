@@ -1,13 +1,23 @@
 #include "h2_esp_h2loader_ble.h"
+#include "h2loader_app_task_names.h"
 
 #include "h2_esp_h2loader_iostreamikcp.h"
+#include "h2_esp_h2loader_app_commands_preflight.h"
+#include "h2_esp_platform_wifi_activity.h"
 #include "h2loader_bleikcp_internal.h"
 #include "h2_loader_app_client.h"
 #include "h2_loader_ble.h"
 #include "h2_loader_boot.h"
 
+#include "esp_mac.h"
+
 #include <stdio.h>
 #include <string.h>
+
+#define H2_ESP_H2LOADER_APP_COMMAND_STACK_SIZE (32u * 1024u)
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define H2_ESP_H2LOADER_APP_BLE_START_ATTEMPTS 6u
 
@@ -22,17 +32,31 @@ typedef struct h2_esp_h2loader_app_ble {
     h2_loader_app_client_config_t client_config;
     h2_loader_ble_service_t *service;
     h2_pal_mutex_t *operation_mutex;
+    char device_uid[13];
 } h2_esp_h2loader_app_ble_t;
 
 static h2_loader_app_client_t s_serial_client;
 static h2_esp_h2loader_app_ble_t s_ble;
 static int s_serial_started;
 
-static int h2_esp_optional_string_equal(const char *left, const char *right) {
-    if (left == NULL || right == NULL) {
-        return left == right;
+static void app_wifi_activity(void *user, bool active) {
+    (void)user;
+    if (s_ble.service != NULL) {
+        (void)h2_loader_ble_service_request_advertising_paused(
+            s_ble.service, active);
     }
-    return strcmp(left, right) == 0;
+}
+
+static uint64_t app_now_ms(void *user) {
+    const h2_pal_time_api_t *time = user;
+    uint64_t value = 0u;
+    return h2_pal_time_get_monotonic_ms(time, &value) == H2_PAL_OK
+        ? value : 0u;
+}
+
+static void app_sleep_ms(void *user, uint32_t delay_ms) {
+    (void)user;
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
 }
 
 void h2_esp_h2loader_run_with_ble_config(
@@ -67,8 +91,8 @@ static int handle_ble_session(
         .read_byte = h2_loader_ble_app_read_byte,
         .write_user = stream,
         .write = h2_loader_ble_app_write,
-        .task_name = "h2loader/appcmd",
-        .stack_size = 8192u,
+        .task_name = h2loader_app_command_task_name,
+        .stack_size = H2_ESP_H2LOADER_APP_COMMAND_STACK_SIZE,
     };
     rc = h2_loader_app_client_start_return_console(&console);
     if (rc != H2_PAL_OK) {
@@ -83,6 +107,9 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
     if (runtime_config == NULL || runtime_config->task == NULL ||
         runtime_config->sync == NULL || runtime_config->mem == NULL ||
         runtime_config->pref == NULL || runtime_config->power == NULL ||
+        runtime_config->firmware_info == NULL || runtime_config->time == NULL ||
+        runtime_config->fs == NULL || runtime_config->disk == NULL ||
+        runtime_config->http == NULL || runtime_config->wifi_sta == NULL ||
         runtime_config->board == NULL || runtime_config->target == NULL ||
         runtime_config->chip == NULL || config == NULL ||
         config->active_name == NULL || config->active_name[0] == '\0' ||
@@ -94,36 +121,60 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         return H2_PAL_ERR_INVALID_STATE;
     }
     memset(&s_ble, 0, sizeof(s_ble));
-    const h2_pal_mutex_config_t mutex_config = {
-        .name = "h2loader-app-operation",
-        .allocator = runtime_config->mem,
-        .flags = H2_PAL_MUTEX_FLAG_RECURSIVE,
-    };
     int cleanup_rc;
-    int rc = h2_pal_mutex_create(
-        runtime_config->sync, &mutex_config, &s_ble.operation_mutex);
+    uint8_t ble_mac[6];
+    h2_esp_h2loader_app_commands_preflight_t preflight;
+    int rc = h2_esp_h2loader_app_commands_preflight(
+        runtime_config, &preflight);
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    s_ble.operation_mutex = preflight.operation_mutex;
+    rc = esp_read_mac(ble_mac, ESP_MAC_BT);
+    if (rc != ESP_OK) {
+        rc = H2_PAL_ERR_IO;
+        goto cleanup_mutex;
+    }
+    (void)snprintf(
+        s_ble.device_uid,
+        sizeof(s_ble.device_uid),
+        "%02x%02x%02x%02x%02x%02x",
+        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
     s_ble.client_config = (h2_loader_app_client_config_t){
         .pref = runtime_config->pref,
         .power = runtime_config->power,
         .allocator = runtime_config->mem,
         .disk = runtime_config->disk,
+        .fs = runtime_config->fs,
+        .http = runtime_config->http,
+        .wifi = runtime_config->wifi_sta,
+        .wifi_settings = runtime_config->wifi_settings,
+        .digest = h2_esp_h2loader_digest_api(),
         .operation_sync = runtime_config->sync,
         .operation_mutex = s_ble.operation_mutex,
         .board = runtime_config->board,
         .target = runtime_config->target,
         .chip = runtime_config->chip,
-        .active_name = config->active_name,
-        .active_version = config->active_version,
+        .device_uid = s_ble.device_uid,
         .hardware_capabilities = config->hardware_capabilities,
         .memory_stats = {
             .read = h2_esp_h2loader_memory_stats_read,
         },
         .h2loader_partition_id = config->h2loader_partition_id,
+        .app_partition_id = preflight.app_partition_id,
         .coredump_partition_id = config->coredump_partition_id,
+        .clock_user = (void *)runtime_config->time,
+        .now_ms = app_now_ms,
+        .sleep_ms = app_sleep_ms,
     };
+    rc = h2_esp_h2loader_current_image_identity(
+        H2_LOADER_IMAGE_ROLE_APP,
+        runtime_config->board,
+        runtime_config->target,
+        config->active_version != NULL && config->active_version[0] != '\0'
+            ? config->active_version : preflight.firmware_info.version,
+        &s_ble.client_config.active_identity);
+    if (rc != H2_PAL_OK) goto cleanup_mutex;
     rc = h2_loader_app_client_init(&s_serial_client, &s_ble.client_config);
     if (rc != H2_PAL_OK) {
         goto cleanup_mutex;
@@ -132,7 +183,7 @@ int h2_esp_h2loader_app_commands_prepare_serial_with_config(
         &s_serial_client,
         runtime_config->task,
         runtime_config->mem,
-        8192u);
+        H2_ESP_H2LOADER_APP_COMMAND_STACK_SIZE);
     if (rc != H2_PAL_OK) {
         goto cleanup_mutex;
     }
@@ -158,7 +209,8 @@ int h2_esp_h2loader_app_commands_prepare_serial(
     const h2_esp_h2loader_app_commands_config_t config = {
         .active_name = active_name,
         .hardware_capabilities =
-            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI |
+            H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
         .coredump_partition_id = coredump_partition_id,
     };
@@ -181,9 +233,9 @@ int h2_esp_h2loader_app_commands_start_with_config(
     if (!s_serial_started || s_ble.service != NULL) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if (strcmp(s_ble.client_config.active_name, config->active_name) != 0 ||
-        !h2_esp_optional_string_equal(
-            s_ble.client_config.active_version, config->active_version) ||
+    if ((config->active_version != NULL && config->active_version[0] != '\0' &&
+         strcmp(s_ble.client_config.active_identity.version,
+                config->active_version) != 0) ||
         s_ble.client_config.hardware_capabilities !=
             config->hardware_capabilities ||
         s_ble.client_config.h2loader_partition_id !=
@@ -204,6 +256,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
         },
         .board = runtime->board,
         .capabilities = s_ble.client_config.hardware_capabilities,
+        .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
         .handler = handle_ble_session,
         .handler_user = &s_ble,
     };
@@ -213,6 +266,8 @@ int h2_esp_h2loader_app_commands_start_with_config(
          ++attempt) {
         int rc = h2_loader_ble_service_open(&service, &s_ble.service);
         if (rc == H2_PAL_OK) {
+            h2_esp_platform_wifi_set_activity_observer(
+                app_wifi_activity, NULL);
             return H2_PAL_OK;
         }
         s_ble.service = NULL;
@@ -251,7 +306,8 @@ int h2_esp_h2loader_app_commands_start(
     const h2_esp_h2loader_app_commands_config_t config = {
         .active_name = active_name,
         .hardware_capabilities =
-            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
+            H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI |
+            H2_LOADER_CAPABILITY_BLE,
         .h2loader_partition_id = h2loader_partition_id,
         .coredump_partition_id = coredump_partition_id,
     };

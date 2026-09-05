@@ -12,6 +12,16 @@ LUA_TARGET_COMPATIBILITY = select({
     "//conditions:default": [],
 })
 
+cc_library(
+    name = "task_names",
+    srcs = ["src/runtime/h2_lua_task_names.c"],
+    hdrs = ["include/h2_lua_task_names.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = LUA_TARGET_COMPATIBILITY,
+)
+
 py_binary(
     name = "embed_resource",
     srcs = ["embed_resource.py"],
@@ -67,6 +77,7 @@ cc_library(
     target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = [
         ":lua_core",
+        ":task_names",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",

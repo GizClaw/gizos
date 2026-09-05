@@ -285,7 +285,7 @@ Launcher 使用 Bazel 生成 executable，并把 service metadata、resource 与
 
 Example-owned 的最终产物按 rule 放在 `projects/example/targets/<artifact-rule>/<app>[/<board>]`。该 entry 只拥有目标 Runtime、SDK、Board 组装、build entry 和产物路径，可以消费对应 `boards/`、`libs/pal/providers/` 与 `native_component_src/`；它不拥有产品 App 或产品 policy。
 
-Example 不能 include target SDK、launcher private type 或 H2Loader product policy。归属只取决于 public Runtime/PAL contract 和行为是否与产品 lifecycle ownership 解耦，与当前 consumer 数量无关。具体 board 与 platform launcher 决定自己提供哪些 Example；portable App 不按平台身份分支，也不把缺少 required capability 转换成运行时 `SKIP`。只有行为本身用于验证某个 board、image、transport 或 H2Loader confirmation、rollback、update lifecycle 的 fixture 才继续留在对应 owner project。
+Example 不能 include target SDK、launcher private type 或 H2Loader product policy。归属只取决于 public Runtime/PAL contract 和行为是否与产品 lifecycle ownership 解耦，与当前 consumer 数量无关。具体 board 与 platform launcher 决定自己提供哪些 Example；portable App 不按平台身份分支，也不把缺少 required capability 转换成运行时 `SKIP`。只有行为本身用于验证某个 board、image、transport 或 H2Loader Stage 收尾、metadata recovery、update lifecycle 的 fixture 才继续留在对应 owner project。
 
 ### E2E 测试 App
 

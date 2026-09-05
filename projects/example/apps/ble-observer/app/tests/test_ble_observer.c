@@ -26,12 +26,23 @@ typedef struct test_state {
 
 static test_state_t s_test;
 
-h2_pal_result_t h2_runtime_wait_event(
-    h2_runtime_t *runtime,
-    h2_runtime_event_t *out_event,
-    uint32_t timeout_ms) {
+static int s_event_pending;
+
+h2_pal_result_t h2_runtime_wait_notify(h2_runtime_t *runtime, uint32_t timeout_ms) {
     (void)runtime;
     (void)timeout_ms;
+    s_event_pending = 1;
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_runtime_poll_event(
+    h2_runtime_t *runtime,
+    h2_runtime_event_t *out_event) {
+    (void)runtime;
+    if (!s_event_pending) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    s_event_pending = 0;
     out_event->kind = s_test.event;
     return H2_PAL_OK;
 }

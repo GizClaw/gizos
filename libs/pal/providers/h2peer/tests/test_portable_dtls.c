@@ -4,6 +4,10 @@
 #include "rtp.h"
 #include "h2_wolfcrypt_crypto.h"
 
+// These tests use assertions for both checks and the operations under test.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>

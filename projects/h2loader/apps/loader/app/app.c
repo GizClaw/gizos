@@ -1,4 +1,5 @@
 #include "h2loader_app.h"
+#include "h2loader_app_task_names.h"
 
 #include <string.h>
 
@@ -112,7 +113,6 @@ int h2loader_app_run_with_command_service(
     if (loader_config.chip == NULL) {
         loader_config.chip = runtime->chip;
     }
-
     memset(&loader, 0, sizeof(loader));
     rc = h2_loader_init(&loader, &loader_config);
     if (rc != H2_PAL_OK) {
@@ -173,7 +173,7 @@ int h2loader_app_run_with_command_service(
     }
     if (config->before_startup != NULL) {
         const h2_pal_task_options_t options = {
-            .name = "h2loader/appcmd",
+            .name = h2loader_app_command_task_name,
             .min_stack_size = 49152u,
         };
         loader.force_command_mode = 1;
@@ -248,11 +248,7 @@ int h2loader_app_run_with_command_service(
             }
             if (before_startup_rc == H2_PAL_EXIT && rc == H2_PAL_OK &&
                 action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE &&
-                config->rearm_before_startup != NULL &&
-                loader.status.install_state !=
-                    H2_LOADER_INSTALL_STATE_INSTALL_FAILED &&
-                loader.status.install_state !=
-                    H2_LOADER_INSTALL_STATE_MAIN_FAILED) {
+                config->rearm_before_startup != NULL) {
                 config->rearm_before_startup(config->before_startup_user);
                 continue;
             }
@@ -281,7 +277,7 @@ int h2loader_app_run_with_command_service(
     }
     if (serve_handle == NULL) {
         const h2_pal_task_options_t options = {
-            .name = "h2loader/appcmd",
+            .name = h2loader_app_command_task_name,
             .min_stack_size = 49152u,
         };
         serve_context = (h2loader_serve_context_t){

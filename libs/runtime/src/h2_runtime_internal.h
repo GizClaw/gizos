@@ -14,7 +14,7 @@ extern "C" {
     ((size_t)H2_PAL_SYSTEM_EVENT_TYPE_COUNT - 1u)
 #endif
 
-#define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 3u
+#define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 4u
 #define H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY 16u
 
 typedef enum h2_runtime_input_source_kind {
@@ -50,6 +50,7 @@ typedef enum h2_runtime_input_source_kind {
 
 typedef union h2_runtime_queued_payload {
     unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_custom_event_payload_t custom;
     H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS;
 } h2_runtime_queued_payload_t;
 
@@ -107,8 +108,6 @@ typedef struct h2_runtime_button_recognizer {
     int initialized;
     int is_pressed;
     h2_runtime_timestamp_ms_t pressed_at_ms;
-    h2_runtime_timestamp_ms_t last_released_at_ms;
-    uint16_t click_count;
 } h2_runtime_button_recognizer_t;
 
 typedef struct h2_runtime_button_push_edge {
@@ -236,6 +235,13 @@ struct h2_runtime_private {
     int initialized;
     size_t allocation_size;
     h2_pal_queue_t *event_queue;
+    /*
+     * One-slot wake token. Every producer gives it after a successful
+     * enqueue and h2_runtime_notify() gives it directly; a full slot means a
+     * wake is already pending, so any number of gives between two waits
+     * collapse into one h2_runtime_wait_notify() return.
+     */
+    h2_pal_queue_t *wake_queue;
     struct h2_runtime_test_control *test_control;
 
     h2_pal_mem_api_t mem_proxy;
@@ -279,6 +285,17 @@ struct h2_runtime_private {
     h2_pal_input_api_t input_proxy;
     h2_pal_system_event_api_t system_event_proxy;
     h2_pal_video_decoder_api_t video_decoder_proxy;
+
+    /*
+     * Custom event producer guard: h2_runtime_post_custom_event() may run on
+     * any task, so deinit closes the door and drains the in-flight posters
+     * before the event queue is destroyed. The counter uses the same
+     * test-and-set lock pattern as sequence_lock because ARMv5 targets have
+     * no native atomic add.
+     */
+    atomic_flag custom_event_lock;
+    uint32_t custom_event_in_flight;
+    int custom_event_closed;
 
     atomic_flag sequence_lock;
     h2_runtime_sequence_t next_sequence;
@@ -351,6 +368,23 @@ h2_pal_result_t h2_runtime_emit_event(
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued);
+
+/* Gives the coalescing wake token; never blocks, never fails. */
+void h2_runtime_notify_internal(h2_runtime_t *runtime);
+
+/*
+ * Enqueues without the drop-on-full policy the input and system event
+ * producers rely on: a full queue is reported to the caller instead of being
+ * counted as a dropped event.
+ */
+h2_pal_result_t h2_runtime_enqueue_event_strict(
+    h2_runtime_t *runtime,
+    const h2_runtime_queued_event_t *queued,
+    uint32_t timeout_ms);
+
+/* Custom events (h2_runtime_custom_event.c). */
+/* Refuses further posts and waits for in-flight posters to leave. */
+void h2_runtime_custom_event_close(h2_runtime_t *runtime);
 
 h2_runtime_input_source_t *h2_runtime_find_input_source(
     h2_runtime_t *runtime,

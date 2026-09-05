@@ -62,6 +62,37 @@ static void append_json_string(h2_web_json_writer_t *writer,
   append_text(writer, "\"");
 }
 
+static const char *role_name(h2_h2loader_host_active_role_t role) {
+  return role == H2_H2LOADER_HOST_ACTIVE_ROLE_APP ? "app" :
+      role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ? "loader" : "unknown";
+}
+
+static const char *boot_intent_name(h2_h2loader_host_boot_intent_t intent) {
+  return intent == H2_H2LOADER_HOST_BOOT_INTENT_AUTO ? "auto" :
+      intent == H2_H2LOADER_HOST_BOOT_INTENT_LOADER ? "loader" : "unknown";
+}
+
+static void append_metadata(
+    h2_web_json_writer_t *writer,
+    const h2_h2loader_host_metadata_t *metadata) {
+  append_format(writer, "{\"valid\":%s,\"packageChecksum\":",
+                metadata->valid ? "true" : "false");
+  append_json_string(writer, metadata->package_checksum);
+  append_format(writer, ",\"packageSize\":\"%llu\",\"imageChecksum\":",
+                (unsigned long long)metadata->package_size);
+  append_json_string(writer, metadata->image_checksum);
+  append_format(writer, ",\"imageSize\":\"%llu\",\"role\":",
+                (unsigned long long)metadata->image_size);
+  append_json_string(writer, role_name(metadata->role));
+  append_text(writer, ",\"version\":");
+  append_json_string(writer, metadata->version);
+  append_text(writer, ",\"board\":");
+  append_json_string(writer, metadata->board);
+  append_text(writer, ",\"target\":");
+  append_json_string(writer, metadata->target);
+  append_text(writer, "}");
+}
+
 h2_pal_result_t h2_h2loader_web_status_json_write(
     const h2_h2loader_host_status_t *status, char *out, size_t capacity,
     size_t *out_size) {
@@ -83,51 +114,41 @@ h2_pal_result_t h2_h2loader_web_status_json_write(
   append_json_string(&writer, status->target);
   append_text(&writer, ",\"chip\":");
   append_json_string(&writer, status->chip);
+  append_text(&writer, ",\"deviceUid\":");
+  append_json_string(&writer, status->device_uid);
   append_format(&writer,
-                ",\"capabilities\":%u,\"commandAvailability\":%u,"
-                "\"states\":\"0x%016llx\"",
+                ",\"capabilities\":%u,\"commandAvailability\":%u",
                 (unsigned int)status->capabilities,
-                (unsigned int)status->command_availability,
-                (unsigned long long)status->states);
-  append_text(&writer, ",\"activeName\":");
-  append_json_string(&writer, status->active_name);
-  append_text(&writer, ",\"activeVersion\":");
+                (unsigned int)status->command_availability);
+  append_text(&writer, ",\"active\":{\"role\":");
+  append_json_string(&writer, role_name(
+      h2_h2loader_host_status_active_role(status)));
+  append_text(&writer, ",\"version\":");
   append_json_string(&writer, status->active_version);
-  append_text(&writer, ",\"activeChecksum\":");
+  append_text(&writer, ",\"imageChecksum\":");
   append_json_string(&writer, status->active_checksum);
-  append_format(&writer, ",\"last\":%d", (int)status->last);
-  append_text(&writer, ",\"installedVersion\":");
-  append_json_string(&writer, status->installed_version);
-  append_text(&writer, ",\"installedChecksum\":");
-  append_json_string(&writer, status->installed_checksum);
-  append_text(&writer, ",\"stagedVersion\":");
-  append_json_string(&writer, status->staged_version);
-  append_text(&writer, ",\"stagedChecksum\":");
-  append_json_string(&writer, status->staged_checksum);
   append_format(&writer,
-                ",\"stagedBytes\":\"%llu\",\"runningPartition\":%u,"
-                "\"nextPartition\":%u,\"canonicalPartition\":%u,"
-                "\"trialPartition\":%u,\"upgradeLast\":%d",
-                (unsigned long long)status->staged_bytes,
+                ",\"imageSize\":\"%llu\"},\"runningPartition\":%u,\"nextPartition\":%u,"
+                "\"bootIntent\":",
+                (unsigned long long)status->active_image_size,
                 (unsigned)status->running_partition,
-                (unsigned)status->next_partition,
-                (unsigned)status->canonical_partition,
-                (unsigned)status->trial_partition,
-                (int)status->upgrade_last);
-  append_text(&writer, ",\"upgradeStep\":");
-  append_json_string(&writer, status->upgrade_step);
-  append_text(&writer, ",\"upgradePackageSha256\":");
-  append_json_string(&writer, status->upgrade_package_sha256);
-  append_text(&writer, ",\"candidateBoard\":");
-  append_json_string(&writer, status->candidate_board);
-  append_text(&writer, ",\"candidateTarget\":");
-  append_json_string(&writer, status->candidate_target);
-  append_text(&writer, ",\"candidateVersion\":");
-  append_json_string(&writer, status->candidate_version);
-  append_format(&writer, ",\"candidateBytes\":\"%llu\",",
-                (unsigned long long)status->candidate_bytes);
-  append_text(&writer, "\"candidateSha256\":");
-  append_json_string(&writer, status->candidate_sha256);
+                (unsigned)status->next_partition);
+  append_json_string(&writer, boot_intent_name(
+      (h2_h2loader_host_boot_intent_t)
+          h2_h2loader_host_status_boot_intent(status)));
+  append_text(&writer, ",\"stage\":");
+  append_metadata(&writer, &status->stage);
+  append_text(&writer, ",\"partition1\":");
+  append_metadata(&writer, &status->partition_1);
+  append_text(&writer, ",\"partition2\":");
+  append_metadata(&writer, &status->partition_2);
+  append_format(&writer, ",\"lastResult\":%d,\"mfg\":{\"mode\":%u,\"steps\":[",
+                (int)status->last, (unsigned)status->mfg_mode);
+  for (size_t index = 0u; index < H2_H2LOADER_HOST_MFG_STEP_TOTAL; ++index) {
+    append_format(&writer, "%s%u", index == 0u ? "" : ",",
+                  (unsigned)status->mfg_steps[index]);
+  }
+  append_text(&writer, "]}");
   append_text(&writer, "}");
 
   if (writer.failed) {

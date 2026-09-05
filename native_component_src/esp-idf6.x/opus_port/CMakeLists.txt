@@ -14,7 +14,8 @@ idf_component_register(
         "${OPUS_ROOT}/celt"
         "${OPUS_ROOT}/silk"
         "${OPUS_ROOT}/silk/fixed"
-        "${OPUS_ROOT}/src")
+        "${OPUS_ROOT}/src"
+    WHOLE_ARCHIVE)
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     OPUS_BUILD

@@ -13,4 +13,4 @@
 
 ## P4 transport
 
-P4 使用 SDIO 连接固定固件的 C6；ESP-Hosted 将 remote Wi-Fi 和 NimBLE VHCI 暴露给 Runtime。H2Loader command service 同时支持 BLE iKCP 与 UART iKCP，UART0 固定为 `230400` baud。Hosted 未 ready 时，UART 仍是 P4 恢复路径；不要通过本项目的构建或恢复流程改写 C6。
+P4 使用 SDIO 连接固定固件的 C6；ESP-Hosted 将 remote Wi-Fi 和 NimBLE VHCI 暴露给 Runtime。H2Loader command service 同时支持 BLE iKCP 与 UART iKCP，UART0 固定为 `460800` baud。Hosted 未 ready 时，UART 仍是 P4 恢复路径；不要通过本项目的构建或恢复流程改写 C6。

@@ -45,11 +45,15 @@ Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board lay
 
 Netif provider 枚举现有 `esp_netif`，以 implementation index 优先、if-key 兜底
 建立稳定 identity，并映射 IPv4、MAC、DNS 与当前 default。没有 active netif
-时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。
+时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。Portable `set_default` 只接受
+inventory 返回的具体 identity，在 TCPIP context 中解析对应 `esp_netif` 后调用
+`esp_netif_set_default_netif()`；接口不存在或 IDF 提交失败时分别返回
+`NOT_FOUND` 或 `IO`。
 
 System Event init 建立默认 IPv4 接口 baseline。`esp_netif` inventory 和 default
-read 统一转交 TCPIP context；STA 获取/失去 IPv4、接口销毁，以及仓库内所有 PPP
-`esp_netif_set_default_netif()` promotion/restore 路径，都在变更提交后调用
+read 统一转交 TCPIP context；STA 获取/失去 IPv4、接口销毁、portable
+`set_default`，以及仓库内所有 PPP `esp_netif_set_default_netif()`
+promotion/restore 路径，都在变更提交后调用
 reconcile。一个 provider-owned mutex 把 default read、baseline compare/update 和
 event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向覆盖；Netif
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook
@@ -90,7 +94,13 @@ PAL backend 只处理 platform/SDK 能力。具体 display、audio codec、senso
 
 NimBLE GATT server indication 在 component 内串行化 outstanding indication，并使用 `BLE_GAP_EVENT_NOTIFY_TX` 完成同步调用。Status `0` 只表示 command 已发出；只有 `BLE_HS_EDONE` 表示 peer confirmation。其他终态错误、disconnect、Host stop 和 timeout 作为 `h2_pal_ble_indicate()` 的直接结果返回；private generation 防止迟到 completion 错配。提交使用 caller 提供的 payload 创建 mbuf，不能回退到 characteristic 的旧缓存值。
 
+`h2_pal_ble_pair()` 在 component 内用单个每-connection-handle 状态机（`IDLE`/`WAITING`/`DRAINING`/`COMPLETED`）串行化每个 handle 至多一次 outstanding pairing attempt。超时不会立即释放 handle：tracker 转入 `DRAINING`。此后迟到的 `BLE_GAP_EVENT_ENC_CHANGE` 是 no-op，不会释放 handle；只有该 handle 匹配的 `BLE_GAP_EVENT_DISCONNECT` 才是 `DRAINING` 回到 `IDLE` 的唯一转移。在回到 `IDLE` 之前，同一 handle 上的新 `pair()` 调用返回 `H2_PAL_ERR_BUSY`。`ble_gap_terminate()` 用于主动放弃一次超时的 attempt；若该调用本身失败，handle 保持 `DRAINING`，下一次对同一 handle 的 `pair()` 调用会先重试这次 disconnect，而不是无限期停留 `BUSY`。一次已提交为 `COMPLETED` 的结果只能被同一 handle 的下一次 `take()` 消费一次并回到 `IDLE`；若调用方自身的等待与迟到完成竞争，`take()`/`timeout()` 只在 tracker 处于真正 `COMPLETED` 状态时返回该结果，否则报告 `H2_PAL_ERR_WOULD_BLOCK`，调用方据此继续等待剩余 timeout，而不是把一次陈旧通知误当作当前 attempt 的结果。
+
 ESP-IDF BLE Host vtable 显式接入可选的独立 legacy scan-response operation，但当前返回 `H2_PAL_ERR_UNSUPPORTED`。既有 `adv_set_set_data` 对 local name 的内部拆分不提升为独立 scan-response contract；在完成单独的 NimBLE lifecycle、clear、failure 和固件验证前，component 不能报告该 capability。
+
+NimBLE Extended Advertising backend 支持 handle-scoped exact primary data：`h2_pal_ble_adv_set_set_encoded_data()` 把完整 AD-structure byte sequence 原样复制到 mbuf，再交给对应 advertising instance，不插入 Flags、不合并重复 AD type，也不沿用 structured setter 把 legacy name/manufacturer data 放入 scan response 的兼容行为。没有启用 `CONFIG_BT_NIMBLE_EXT_ADV` 时该 operation 在改变 set state 前返回 `H2_PAL_ERR_UNSUPPORTED`。Scan params 选择 exact `interval_units_625us/window_units_625us` 时，legacy 与 Extended Scanning path 都把同一 pair 原样写入 NimBLE controller-unit fields；不能 round、clamp 或回退到 millisecond form。Host adapter test 只证明 production boundary 的 byte/unit mapping，target SDK build 与 RF/controller acceptance 仍需独立验证。
+
+Wi-Fi provider 额外导出 component 私有的 activity observer：`h2_esp_platform_wifi_set_activity_observer()` 注册进程内唯一一个 callback，Wi-Fi scan、connect 和 disconnect 这类会独占 radio 的 operation 在进入前置 active、返回任一终态前置 inactive。这些 operation 之间没有全局串行化，因此 observer 按引用计数跟踪并发数量：只有第一个 operation 进入时通知 active、最后一个退出时通知 inactive，重叠调用不会提前解除 active。该 hook 属于 ESP component 集成边界，不进入 `libs/pal/include`，也不暴露 FreeRTOS 或 SDK handle；callback 在 Wi-Fi 调用线程内联执行（已退出 critical section），因此不得阻塞，也不得回调 Wi-Fi API。传入 NULL callback 注销观察者；注册时立即以当前状态回调一次，使 observer 不会错过已经开始的 operation。H2Loader App command BLE component 是当前唯一 consumer：它把 activity 转成一次无锁的广播暂停/恢复请求，由 BLE link task 实际执行，因此 callback 自身不获取任何 mutex，也就不会阻塞 Wi-Fi 调用方；该自动暂停与调用方显式的 pause/resume 记为独立原因，自动恢复不会解除显式暂停。据此实现 BLE 与 Wi-Fi 的 radio 共存。
 
 Crypto provider 通过 public PSA API 实现 random、X25519、HKDF-SHA256、
 AES-GCM/ChaCha20-Poly1305、AES-CTR、MD5、HMAC-SHA1、P-256 和 ECDSA。
@@ -112,7 +122,9 @@ Component 定义 config shape，BSP 填写当前 board 的 bus handle、GPIO、a
 
 `h2_es8311_audio_system` 与 `h2_es8311_es7210_audio_system` 的 playback worker 使用每次 speaker session 独立的 task。Control mutex 只保护 playback state、task handle、I2S/Mixer 生命周期检查和把一帧 Mixer 数据复制到 worker scratch；PCM conversion 与 I2S write 在锁外执行。Control mutex 与 I2S operation 的单次等待上限都是 100 ms；worker 失败后延迟 20 ms 重试。`stop_speaker` 使用 200 ms 总 deadline，在短锁内发布 stop 后立即关闭 PA，再等待 worker 清空真实 task handle。只有 worker 已退出时才能释放 Mixer、I2S 或 codec；join timeout 保留这些资源并拒绝新的 speaker session，后续 stop 可以继续收敛。成功 stop 结束当前 worker 并释放 session 标记；双 codec system 继续执行既有 idle teardown，单 codec system 保留共享 Mixer/I2S 到静态 system 生命周期。返回后旧 session 不再执行 I2S write。
 
-两套 audio system 的 direct-AEC handle 与工作 buffer 都在 component 初始化成功时建立，并归静态 Audio System 生命周期所有。`start_mic` 只 reset 既有 AEC state；`stop_mic` 与 start partial failure 不释放 AEC。Board composition root 必须在 `h2_runtime_deinit()` 之后调用自身的 Runtime deinit；该入口先调用对应 audio-system deinit，停止并 join microphone/speaker worker，再释放 queue、Mixer、I2S、codec 和 direct-AEC，最后才释放 Audio 依赖的其他 Board provider。Board Runtime deinit 的每个 cleanup step 相互独立：audio-system deinit 返回错误不跳过 HTTP provider destroy、cached Runtime config 清零和 filesystem unmount，入口把第一个错误返回给调用方。Audio-system deinit 是幂等操作；worker 未能在有界 deadline 内退出时返回错误并保留剩余资源，允许调用方安全重试。AEC disabled 时保持现有 fallback。
+两套 audio system 的 direct-AEC handle 与工作 buffer 都在 component 初始化成功时建立，并归静态 Audio System 生命周期所有。`start_mic` 只 reset 既有 AEC state；`stop_mic` 与 start partial failure 不释放 AEC。Board composition root 必须在 `h2_runtime_deinit()` 之后调用自身的 Runtime deinit；该入口先调用对应 audio-system deinit，停止并 join microphone/speaker worker，再释放 queue、Mixer、I2S、codec 和 direct-AEC，最后才释放 Audio 依赖的其他 Board provider。Board Runtime deinit 的每个 cleanup step 相互独立：audio-system deinit 返回错误不跳过 HTTP provider destroy、cached Runtime config 清零和 filesystem unmount，入口把第一个错误返回给调用方。Audio-system deinit 是幂等操作；worker 未能在有界 deadline 内退出时返回错误并保留剩余资源，允许调用方安全重试。AEC disabled 时保持现有 fallback。`h2_es8311_audio_system` 的 `config.aec_nlp_level`（`H2_ESP_ES8311_AEC_NLP_NORMAL` 或 `H2_ESP_ES8311_AEC_NLP_AGGRESSIVE`）直接映射到 ESP-SR direct-AEC 的 `nlp_level`；init 拒绝其他取值。麦克风 PGA gain 写入 `ES8311_REG_SYSTEM_14`，由 `h2_esp_es8311_mic_gain_register()` 把 `mic_gain_db`（0-30 dB）换算成 datasheet 定义的 3 dB 步进寄存器值，component 不再使用与该寄存器语义不符的旧映射表。
+
+AMOLED Board 在 `h2_esp_board_runtime_config()` 之前，通过可选的 `h2_esp_board_audio_configure()` 和 `h2_esp_board_display_configure()` 声明 workload-owned 调优：前者覆盖 I2S DMA descriptor/frame 数、`mic_gain_db`、mic queue frame 数和 `aggressive_aec_nlp`；后者覆盖 SH8601 面板 `pclk_hz`（`0` 保留 component 默认）。两者都只在对应资源（audio system/panel IO）尚未初始化时接受调用，之后调用返回 `H2_PAL_ERR_INVALID_STATE`；重复调用以最后一次为准，字段校验与该 lifecycle guard 都拆成独立的纯函数（`h2_esp_board_audio_config_is_valid`/`_may_apply` 与 display 对应函数），由 host test 直接覆盖。Board 保留未覆盖字段的既有默认值，不引入 Board 级常量表之外的隐式状态。这两个 API 不暴露 mic/speaker task 优先级或绑核：按本节前述约定，portable task name 到 absolute priority、core affinity、minimum stack 的映射只属于最终 firmware target 的 `task_policy/h2_esp_target_task_policy.c`，`h2_es8311_audio_system_config_t` 的 `mic_task_priority`/`mic_task_core_id`/`speaker_task_priority`/`speaker_task_core_id` 继续由 Board 按既有硬编码值传入，不作为 workload 可调项。
 
 ## Library 与 Third-party Integration
 
@@ -136,6 +148,10 @@ ESP-IDF component 变更需要对每个 maintained target 执行 compile validat
 当前 maintained image matrix 只有 ESP32-S3 和 ESP32-P4。`boards/esp32p4_func_ev_board_v1_4/esp32c5/` 仍只有 config/partition skeleton，没有可构建的 BSP、launcher 或 CI toolchain target。在这些 ownership 补齐前，每个受影响的 component PR 都必须完成 S3/P4 validation，并把 C5 记录为 `SKIP` 及 residual risk；不能声称 C5 已通过。
 
 Canonical local SDK 由同级 `firmware-devenv` 固定并经仓库 `.env/devenv` 激活；GizOS 不安装、搜索或回退到系统 ESP-IDF。`IDF_PATH` 与 `IDF_TOOLS_PATH` 只在 repository evaluation 阶段分别定位 ESP-IDF SDK 与 tools repository；tools repository 从固定的 `python_env/idf6.0_py*_env` layout 唯一解析并验证 Python environment。Native action 接收已经验证的 locator 与 committed commit/tool-version identity，不继承这些绝对路径或 caller `PATH`。全部 52 个 maintained ESP launcher 都有内部 `esp_idf_firmware` target，要求显式匹配的 ESP32-S3 或 ESP32-P4 platform，验证 SDK commit、Python、chip compiler 和 launcher `H2_ESP_TARGET`，再在隔离的临时 project/build tree 调用原生 `idf.py build`。
+
+ESP-IDF 的 submodule 必须在构建开始前补全。ESP-IDF CMake 的 `git_submodule_check` 会在 configure 阶段初始化缺失的 submodule，而那个 checkout 被所有 firmware action 共享；两个 launcher 同时 configure 就会互相踩。因此 checkout 阶段一次性初始化全部 submodule，使该检查保持只读。总工作量不变——无论哪种方式它都遍历并初始化同一批 submodule——只是提前到图执行之前。修复不能放进 runner：native-runner contract 要求 runner 不修改它的 SDK 与 source 输入，因此 action 内部初始化 submodule（即使加锁）不是可选项。
+
+每个 native firmware action 从 Bazel 本地调度器预留的核数由 `--define=h2_native_build_jobs` 选择（取值 1/2/4，默认 4），它只作用于 `resource_set`。Bazel 的 action key 由 argv、environment、输入与输出决定，`resource_set` 不在其中，所以调低它的 job 仍与其他 job 及本地构建共享全部 cache entry。Runner 交给每次构建的 ninja `-j` 则是 runner 源码里的固定常量，不可配置——它通过 action 输入进入 key，一旦可配置就会让调过它的 job 拥有独立 key 空间。预留核数刻意小于该 `-j`：launcher 的大量时间阻塞在 remote ccache 与 Bazel cache 读取上，核并非稀缺资源，并发的 launcher 互相填补对方的停顿。默认保持 4，适合只构建单个 target 的开发者与 launcher 数量很少的 job；只有 launcher 数量很大、吞吐受限的 job 才应调低，全局调低反而会让前者的核空转。
 
 CI 与 Release 显式提供 native ccache 时，runner 使用 ESP-IDF 的 `IDF_CCACHE_ENABLE` integration，并分别把 ESP32-S3 与 ESP32-P4 放入独立 cache namespace。Runner 保留每个 action 的独立临时 build tree，但通过 `CCACHE_BASEDIR` 归一化其绝对路径，并关闭 CWD hashing，避免随机临时目录阻断跨 launcher 与跨 workflow 复用。不同 launcher 和 `sdkconfig` 共享 GCS `ccache/esp` family prefix，但是否复用单个 object 完全由 ccache 对 namespace、compiler content、compile flags、preprocessor input、included `sdkconfig` 与 generated header 的 key判定；不得按 project 名或人工判定跳过 native compilation。显式接收单个 `H2LOADER_WIFI_CREDENTIALS` JSON environment 的 image由runner校验并派生 `ssid` 与 `password`，同时把local和remote ccache设为read-only，使公共 object仍可命中，但任何可能包含credential的新object都不能写入共享cache。cache miss、remote暂时不可用或未配置时仍执行相同的完整 `idf.py build`。
 

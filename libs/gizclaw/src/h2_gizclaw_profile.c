@@ -1,6 +1,8 @@
 #include "h2_gizclaw_profile.h"
+#include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_profile_internal.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_service_internal.h"
 
 #include <string.h>
 
@@ -122,10 +124,9 @@ static int decode_device_info(const uint8_t *data, size_t len,
   return H2_PAL_OK;
 }
 
-static int encode_profile_text_request(h2_gizclaw_str_t text,
-                                       size_t max_bytes, uint8_t field_key,
-                                       uint8_t *out, size_t capacity,
-                                       size_t *out_len) {
+static int encode_profile_text_request(h2_gizclaw_str_t text, size_t max_bytes,
+                                       uint8_t field_key, uint8_t *out,
+                                       size_t capacity, size_t *out_len) {
   if (out == NULL || out_len == NULL || text.data == NULL || text.len == 0u ||
       text.len > max_bytes) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -145,11 +146,10 @@ static int encode_profile_text_request(h2_gizclaw_str_t text,
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_profile_encode_name_request(h2_gizclaw_str_t name,
-                                           uint8_t *out, size_t capacity,
-                                           size_t *out_len) {
-  return encode_profile_text_request(
-      name, H2_GIZCLAW_PROFILE_NAME_MAX_BYTES, 0x0au, out, capacity, out_len);
+int h2_gizclaw_profile_encode_name_request(h2_gizclaw_str_t name, uint8_t *out,
+                                           size_t capacity, size_t *out_len) {
+  return encode_profile_text_request(name, H2_GIZCLAW_PROFILE_NAME_MAX_BYTES,
+                                     0x0au, out, capacity, out_len);
 }
 
 int h2_gizclaw_profile_encode_emoji_request(h2_gizclaw_str_t emoji,
@@ -165,6 +165,7 @@ int h2_gizclaw_profile_decode_info_response(const uint8_t *data, size_t len,
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_profile, 0, sizeof(*out_profile));
   size_t offset = 0u;
+  bool has_info = false;
   while (offset < len) {
     uint64_t key = 0u;
     int rc = read_varint(data, len, &offset, &key);
@@ -174,85 +175,162 @@ int h2_gizclaw_profile_decode_info_response(const uint8_t *data, size_t len,
       const uint8_t *info = NULL;
       size_t info_len = 0u;
       rc = read_bytes(data, len, &offset, &info, &info_len);
-      return rc == H2_PAL_OK ? decode_device_info(info, info_len, out_profile)
-                             : rc;
+      if (rc == H2_PAL_OK)
+        rc = decode_device_info(info, info_len, out_profile);
+      if (rc != H2_PAL_OK)
+        return rc;
+      has_info = true;
+      continue;
     }
     rc = skip_field(data, len, &offset, (uint8_t)(key & 7u));
     if (rc != H2_PAL_OK)
       return rc;
   }
-  return H2_PAL_ERR_FORMAT;
+  return has_info ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
-static int response_status(const h2_gizclaw_rpc_response_t *response) {
-  return response != NULL && !response->has_error ? H2_PAL_OK : H2_PAL_ERR_IO;
+static const char profile_get_tag;
+static const char profile_put_name_tag;
+static const char profile_put_emoji_tag;
+
+h2_pal_result_t
+h2_gizclaw_req_create_profile_get(h2_gizclaw_service_t *service,
+                                  uint64_t identity, uint32_t timeout_ms,
+                                  h2_gizclaw_req_t **out_request) {
+  return h2_gizclaw_req_create_rpc_internal(
+      service, identity, H2_GIZCLAW_RPC_SERVER_INFO_GET, &profile_get_tag,
+      (h2_gizclaw_rpc_bytes_t){0}, timeout_ms, out_request);
 }
 
-int h2_gizclaw_client_profile_get(h2_gizclaw_client_t *client,
-                                  h2_gizclaw_profile_t *out_profile) {
-  if (client == NULL || out_profile == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_profile, 0, sizeof(*out_profile));
-  h2_gizclaw_rpc_response_t response = {0};
-  int rc = h2_gizclaw_client_rpc_call(client, H2_GIZCLAW_RPC_SERVER_INFO_GET,
-                                      (h2_gizclaw_rpc_bytes_t){0}, &response);
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_profile_decode_info_response(
-        response.result_payload, response.result_payload_len, out_profile);
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
-}
-
-int h2_gizclaw_client_profile_put_name(h2_gizclaw_client_t *client,
-                                       h2_gizclaw_str_t name,
-                                       h2_gizclaw_profile_t *out_profile) {
-  if (client == NULL || out_profile == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(out_profile, 0, sizeof(*out_profile));
+static h2_pal_result_t create_profile_put(h2_gizclaw_service_t *service,
+                                          uint64_t identity,
+                                          h2_gizclaw_str_t text,
+                                          uint32_t timeout_ms, const void *tag,
+                                          h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
   uint8_t payload[H2_GIZCLAW_PROFILE_NAME_MAX_BYTES + 8u];
   size_t payload_len = 0u;
-  int rc = h2_gizclaw_profile_encode_name_request(
-      name, payload, sizeof(payload), &payload_len);
-  h2_gizclaw_rpc_response_t response = {0};
+  h2_pal_result_t rc =
+      (h2_pal_result_t)(tag == &profile_put_name_tag
+                            ? h2_gizclaw_profile_encode_name_request(
+                                  text, payload, sizeof(payload), &payload_len)
+                            : h2_gizclaw_profile_encode_emoji_request(
+                                  text, payload, sizeof(payload),
+                                  &payload_len));
+  if (rc != H2_PAL_OK)
+    return rc;
+  return h2_gizclaw_req_create_rpc_internal(
+      service, identity, H2_GIZCLAW_RPC_SERVER_INFO_PUT, tag,
+      (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_req_create_profile_put_name(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  return create_profile_put(service, identity, name, timeout_ms,
+                            &profile_put_name_tag, out_request);
+}
+
+h2_pal_result_t h2_gizclaw_req_create_profile_put_emoji(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t emoji,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  return create_profile_put(service, identity, emoji, timeout_ms,
+                            &profile_put_emoji_tag, out_request);
+}
+
+static h2_pal_result_t parse_profile(const h2_gizclaw_req_t *request,
+                                     const void *tag,
+                                     h2_gizclaw_profile_t *out_profile) {
+  if (out_profile == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_profile, 0, sizeof(*out_profile));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, tag, &response);
   if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        &response);
+    h2_gizclaw_profile_t profile = {0};
+    rc = response->result_payload_len == 0u
+             ? H2_PAL_ERR_FORMAT
+             : (h2_pal_result_t)h2_gizclaw_profile_decode_info_response(
+                   response->result_payload, response->result_payload_len,
+                   &profile);
+    if (rc == H2_PAL_OK)
+      *out_profile = profile;
   }
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_profile_decode_info_response(
-        response.result_payload, response.result_payload_len, out_profile);
-  h2_gizclaw_rpc_response_deinit(client, &response);
   return rc;
 }
 
-int h2_gizclaw_client_profile_put_emoji(h2_gizclaw_client_t *client,
-                                        h2_gizclaw_str_t emoji,
+h2_pal_result_t
+h2_gizclaw_resp_parse_profile_get(const h2_gizclaw_req_t *request,
+                                  h2_gizclaw_profile_t *out_profile) {
+  return parse_profile(request, &profile_get_tag, out_profile);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_profile_put_name(const h2_gizclaw_req_t *request,
+                                       h2_gizclaw_profile_t *out_profile) {
+  return parse_profile(request, &profile_put_name_tag, out_profile);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_profile_put_emoji(const h2_gizclaw_req_t *request,
                                         h2_gizclaw_profile_t *out_profile) {
-  if (client == NULL || out_profile == NULL)
+  return parse_profile(request, &profile_put_emoji_tag, out_profile);
+}
+
+static h2_pal_result_t finish_profile_rpc(h2_gizclaw_req_t *request,
+                                          const void *tag,
+                                          h2_gizclaw_profile_t *out_profile) {
+  h2_pal_result_t rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = parse_profile(request, tag, out_profile);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_profile_get(h2_gizclaw_service_t *service,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_profile_t *out_profile) {
+  if (out_profile == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_profile, 0, sizeof(*out_profile));
-  uint8_t payload[H2_GIZCLAW_PROFILE_EMOJI_MAX_BYTES + 8u];
-  size_t payload_len = 0u;
-  int rc = h2_gizclaw_profile_encode_emoji_request(
-      emoji, payload, sizeof(payload), &payload_len);
-  h2_gizclaw_rpc_response_t response = {0};
-  if (rc == H2_PAL_OK) {
-    rc = h2_gizclaw_client_rpc_call(
-        client, H2_GIZCLAW_RPC_SERVER_INFO_PUT,
-        (h2_gizclaw_rpc_bytes_t){.data = payload, .len = payload_len},
-        &response);
-  }
-  if (rc == H2_PAL_OK)
-    rc = response_status(&response);
-  if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_profile_decode_info_response(
-        response.result_payload, response.result_payload_len, out_profile);
-  h2_gizclaw_rpc_response_deinit(client, &response);
-  return rc;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_create_profile_get(service, 0u, timeout_ms, &request);
+  return rc == H2_PAL_OK
+             ? finish_profile_rpc(request, &profile_get_tag, out_profile)
+             : rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_rpc_profile_put_name(h2_gizclaw_service_t *service,
+                                h2_gizclaw_str_t name, uint32_t timeout_ms,
+                                h2_gizclaw_profile_t *out_profile) {
+  if (out_profile == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_profile, 0, sizeof(*out_profile));
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_profile_put_name(
+      service, 0u, name, timeout_ms, &request);
+  return rc == H2_PAL_OK
+             ? finish_profile_rpc(request, &profile_put_name_tag, out_profile)
+             : rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_rpc_profile_put_emoji(h2_gizclaw_service_t *service,
+                                 h2_gizclaw_str_t emoji, uint32_t timeout_ms,
+                                 h2_gizclaw_profile_t *out_profile) {
+  if (out_profile == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_profile, 0, sizeof(*out_profile));
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_profile_put_emoji(
+      service, 0u, emoji, timeout_ms, &request);
+  return rc == H2_PAL_OK
+             ? finish_profile_rpc(request, &profile_put_emoji_tag, out_profile)
+             : rc;
 }

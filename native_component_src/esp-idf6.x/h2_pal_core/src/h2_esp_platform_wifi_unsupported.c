@@ -56,6 +56,14 @@ static int h2_esp_wifi_unsupported_get_mac(h2_pal_wifi_sta_t *sta, uint8_t out_m
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static int h2_esp_wifi_unsupported_set_power_save(
+    h2_pal_wifi_sta_t *sta,
+    h2_pal_wifi_power_save_t mode) {
+    (void)sta;
+    (void)mode;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static int h2_esp_wifi_ap_unsupported_start(
     h2_pal_wifi_ap_t *ap,
     const h2_pal_wifi_ap_config_t *config,
@@ -114,6 +122,8 @@ static const h2_pal_wifi_sta_vtable_t s_h2_esp_wifi_sta_vtable = {
     .connect = (h2_pal_wifi_sta_connect_fn)h2_esp_wifi_unsupported_connect,
     .disconnect = (h2_pal_wifi_sta_disconnect_fn)h2_esp_wifi_unsupported_disconnect,
     .get_mac = (h2_pal_wifi_sta_get_mac_fn)h2_esp_wifi_unsupported_get_mac,
+    .set_power_save =
+        (h2_pal_wifi_sta_set_power_save_fn)h2_esp_wifi_unsupported_set_power_save,
 };
 
 static h2_pal_wifi_sta_t s_h2_esp_wifi_sta = {

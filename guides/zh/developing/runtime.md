@@ -195,10 +195,11 @@ flowchart LR
     Projection --> Queue["Runtime event queue"]
     Recognition --> Queue
     ProxyEvent --> Queue
-    Queue --> Poll["h2_runtime_poll_event()"]
-    Queue --> Wait["h2_runtime_wait_event()"]
+    Queue -. "入队后 notify" .-> Wake["Runtime wake"]
+    Library["h2_runtime_notify()"] --> Wake
+    Wake --> Wait["h2_runtime_wait_notify()"]
+    Wait --> Poll["h2_runtime_poll_event()"]
     Poll --> App["app"]
-    Wait --> App
 ```
 
 Runtime event loop 的 producer 包括：
@@ -208,7 +209,7 @@ Runtime event loop 的 producer 包括：
 - App/LVGL adapter 按 mapped `PUSH_EDGE` Button periph 注入的 raw down/up edge。
 - 部分 proxied PAL API call 在调用过程中产生的事件。
 
-Button App contract 只定义稳定的 `component_id`；launcher 的 component mapping 决定它连接哪个 Button periph。Single-button periph payload 用 `POLL_STATE` 或 `PUSH_EDGE` 描述交付模式：前者由 Runtime 调用 Button PAL 读取稳定状态，后者由拥有该 periph 的 adapter 调用 `h2_runtime_button_push_edge()` 投递 `DOWN`/`UP`。Push edge 先进入 bounded Runtime queue，再由 Input Poller 统一更新 recognizer、snapshot 和 event queue；adapter 不直接写 Poller state，也不需要 input writer mutex。Poller 本身、显式 `poll_once`/sensor-only poll 和 test-control session 的 open/close 由 Runtime 私有的 input writer mutex 串行化，因此 test-control 切换 source 集合时不会与一次 poll 交错；snapshot 总是先于对应事件发布，reader 把全部 retired slot 都 pin 住时事件会延后到下一次成功发布之后。两种模式共用同一个 recognizer，并发布相同的 button state 与 `BUTTON_DOWN`、`BUTTON_UP`、`BUTTON_ACTION`，所以 App 不知道来源是物理采样还是 UI widget。Push API 接受 mapped `periph_id` 而不是 component ID，也不是通用 event 注入入口；unknown、unmapped、非 Button 或非 `PUSH_EDGE` periph 必须 fail closed，queue 满时返回 backpressure error。具体 adapter 还必须强制同一 Runtime/periph 只有一个 live producer。UI timer 和通用 completion 仍没有 public producer；具体 capability 可以定义自己的 completion system event，例如 BLE server indication completion。App 不能 include private header 或调用 private `h2_runtime_emit_event()` 写入未定义的来源。
+Button App contract 只定义稳定的 `component_id`；launcher 的 component mapping 决定它连接哪个 Button periph。Single-button periph payload 用 `POLL_STATE` 或 `PUSH_EDGE` 描述交付模式：前者由 Runtime 调用 Button PAL 读取稳定状态，后者由拥有该 periph 的 adapter 调用 `h2_runtime_button_push_edge()` 投递 `DOWN`/`UP`。Push edge 先进入 bounded Runtime queue，再由 Input Poller 统一更新 Button state、snapshot 和 event queue；adapter 不直接写 Poller state，也不需要 input writer mutex。Poller 本身、显式 `poll_once`/sensor-only poll 和 test-control session 的 open/close 由 Runtime 私有的 input writer mutex 串行化，因此 test-control 切换 source 集合时不会与一次 poll 交错；snapshot 总是先于对应事件发布，reader 把全部 retired slot 都 pin 住时事件会延后到下一次成功发布之后。两种模式共用同一个 objective action pipeline，并发布相同的 button state 与 `BUTTON_DOWN`、`BUTTON_UP`、`BUTTON_ACTION`，所以 App 不知道来源是物理采样还是 UI widget。Runtime 不分类 short press、long press 等 gesture；App 只根据 action 的按下、释放和当前事件时间决定产品语义。Push API 接受 mapped `periph_id` 而不是 component ID，也不是通用 event 注入入口；unknown、unmapped、非 Button 或非 `PUSH_EDGE` periph 必须 fail closed，queue 满时返回 backpressure error。具体 adapter 还必须强制同一 Runtime/periph 只有一个 live producer。UI timer 没有 public producer；App 或 Library 自己的 completion 使用 `h2_runtime_post_custom_event()` 投递 custom event（见 Custom Event），具体 capability 也可以定义自己的 completion system event，例如 BLE server indication completion。App 不能 include private header 或调用 private `h2_runtime_emit_event()` 写入未定义的来源。
 
 不是每个 proxied API call 都必须 emit event。只有该 operation 的 Runtime contract 定义了需要通知 app 的状态变化、执行结果或业务事实时，proxy 才向 queue 写入对应事件。
 
@@ -226,10 +227,23 @@ h2_runtime_event_t event = {
     .payload_capacity = sizeof(payload),
 };
 
-h2_pal_result_t rc = h2_runtime_wait_event(runtime, &event, 1000);
+h2_pal_result_t rc = h2_runtime_wait_notify(runtime, 1000);
+while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    handle(&event);
+}
 ```
 
-`h2_runtime_poll_event()` 不等待；`h2_runtime_wait_event()` 最多等待调用方指定的 timeout。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer；该 counter 是 Runtime private state，不属于 Public API。
+Main loop 只阻塞在一个地方：`h2_runtime_wait_notify()`。它等待的是一个二值的 wake，不是 event queue。每个 Runtime producer 在成功入队后给出这个 wake，Library 自己的 dispatch queue 用 `h2_runtime_notify()` 给出同一个 wake；两次 wait 之间不论来了多少个 wake 都只返回一次 `H2_PAL_OK`，loop 正在运行时到达的 wake 保留到下一次 wait。返回后 App 用 `h2_runtime_poll_event()` 把 queue 拉空，再 drain Library 的 dispatch queue，然后再次 wait：
+
+```c
+h2_pal_result_t rc = h2_runtime_wait_notify(runtime, 1000);
+while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    handle(&event);
+}
+drain_library_dispatch_queues();
+```
+
+`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer，也不给出 wake；该 counter 是 Runtime private state，不属于 Public API。
 
 ## Event Type
 
@@ -298,7 +312,7 @@ H2_RUNTIME_COMPONENT_SYSTEM_MODEM
 PAL system-event callback
 → Runtime 映射 component、kind 和 payload
 → 复制进入 Runtime event queue
-→ h2_runtime_poll_event() / h2_runtime_wait_event()
+→ h2_runtime_wait_notify() / h2_runtime_poll_event()
 → App 根据 component 和 kind 解释 payload
 ```
 
@@ -314,9 +328,59 @@ H2_RUNTIME_COMPONENT_NFC_READER
 H2_RUNTIME_COMPONENT_IMU
 ```
 
-它们的 `kind` 使用统一 `h2_runtime_event_kind_t` 中的 `H2_RUNTIME_COMPONENT_EVENT_*` 值。Button 的物理边沿立即产生 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` 和 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP`；每次松开在 `BUTTON_UP` 之后产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`，携带 `pressed_at_ms`、`released_at_ms` 和 `click_count`；`click_count` 按相邻点击间隔不超过 `H2_RUNTIME_BUTTON_CLICK_GAP_MS`（默认 250 ms）累计，超时后从 1 重新计数。按键保持按下期间 Runtime 不产生任何 event；Runtime 不定义长按阈值，App 在松开后根据 `BUTTON_ACTION` 的两个时间戳判断按压时长，需要在仍按住时触发的动作则读取 Button state 的 `pressed`/`pressed_at_ms`。Button state snapshot 同时携带 `click_count`：按住期间是当前这次按压在连续点击序列中的序号，松开后保留最近一次 action 的计数，直到下一次按压延续或重置序列；首次按压前为 0。某个 proxied PAL API call 也可以按对应 component contract emit component event。
+它们的 `kind` 使用统一 `h2_runtime_event_kind_t` 中的 `H2_RUNTIME_COMPONENT_EVENT_*` 值。每次到达 Button source 的 poll deadline，按下状态都会产生一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN` sample 和一个 `H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION`；松开时先产生 `BUTTON_UP`，再产生最后一个 `BUTTON_ACTION`。Action payload 只有 `pressed_at_ms` 和 `released_at_ms`：按住期间后者为 0，松开那次等于该 action 的事件时间。Action cadence 就是该 source 的 poll cadence，默认 20 ms，没有额外的 100 ms timer。App 可以用 `event.timestamp_ms == pressed_at_ms` 识别首次 sample，用 `released_at_ms == 0` 识别仍在按住，用非零释放时间识别松开，并自行计算时长、长按或连续点击。Button state snapshot 只保存当前 pressed 状态及其时间，不保存 gesture 或点击分类。某个 proxied PAL API call 也可以按对应 component contract emit component event。
 
 Component event 必须携带 app-facing `component_id`，使同一 app 在不同 board 上可以用稳定 identity 消费事件。
+
+### Custom Event
+
+Custom event 是 App 或 Library 自己拥有的事件，用 `h2_runtime_post_custom_event()` 投递，`kind` 固定为 `H2_RUNTIME_EVENT_CUSTOM`，`component` 固定为 `H2_RUNTIME_COMPONENT_APP`。它使后台 Task 在完成工作后可以直接唤醒消费 Runtime queue 的 main loop，而不必额外轮询 completion 状态。
+
+```c
+typedef struct h106_job_completion_event {
+    uint32_t job_id;
+    uint32_t generation;
+    h2_pal_result_t result;
+} h106_job_completion_event_t;
+
+#define H106_EVENT_JOB_COMPLETED H2_RUNTIME_CUSTOM_EVENT_ID(H106_EVENT_OWNER, 1u)
+
+const h106_job_completion_event_t completion = { job_id, generation, result };
+const h2_runtime_custom_event_t event = {
+    .id = H106_EVENT_JOB_COMPLETED,
+    .payload = &completion,
+    .payload_size = sizeof(completion),
+};
+h2_pal_result_t rc = h2_runtime_post_custom_event(runtime, &event);
+```
+
+只需要叫醒 main loop、不需要携带 payload 的 Library（例如持有自己有界 dispatch queue 的 `h2_gizclaw_service_t`）不投递 custom event，而是调用 `h2_runtime_notify()`：它不占 event queue 的位置，不会因为 queue 满而失败，重复调用合并成一次 wake；main loop 在每次 wake 之后 drain 该 Library 的 dispatch queue。
+
+消费端仍然只使用 `h2_runtime_wait_notify()` 和 `h2_runtime_poll_event()`：
+
+```c
+if (event.kind == H2_RUNTIME_EVENT_CUSTOM) {
+    const h2_runtime_custom_event_payload_t *custom = event.payload;
+
+    switch (custom->id) {
+    case H106_EVENT_JOB_COMPLETED:
+        /* 在 main loop 中 dispatch completion */
+        break;
+    }
+}
+```
+
+契约：
+
+- 投递可以来自任意 Task，并且立即唤醒正在 `h2_runtime_wait_notify()` 中等待的消费者。
+- Runtime 把 payload 复制进 queue，调用方返回后可以立即复用自己的缓冲区。
+- Payload 上限是 `h2_runtime_custom_event_payload_capacity()`（默认 `H2_RUNTIME_CUSTOM_EVENT_PAYLOAD_MAX`，随 `event_payload_capacity` 收缩）；超限返回 `H2_PAL_ERR_TRUNCATED`。
+- `h2_runtime_post_custom_event()` 不阻塞；`h2_runtime_post_custom_event_timeout()` 接受有限超时，`H2_PAL_QUEUE_WAIT_FOREVER` 被拒绝。
+- Queue 满时返回 `H2_PAL_ERR_FULL`（或有限超时下的 `H2_PAL_ERR_TIMEOUT`），不会像 Runtime 自己的 producer 那样静默丢弃。
+- Custom event 之间保持 FIFO，并与已入队的 system/component event 共享同一顺序。
+- Runtime 不解释 `id` 和 payload；建议用 `H2_RUNTIME_CUSTOM_EVENT_ID(owner, event)` 携带 owner namespace 以避免不同 Library/App 的 ID 冲突。
+- Payload 只携带值。不要投递裸 callback、Task handle 或生命周期不明确的临时指针；投递 `job_id + generation + result` 这类身份信息，由消费端在 main loop 中解析对象，这样页面退出、Job 被取消或迟到的 completion 都不会解引用已释放的对象。
+- `h2_runtime_deinit()` 先关闭 event queue，再无期限等待所有已进入的投递返回，然后才销毁 queue。该等待一定结束：一次投递只在一次 queue send 期间占用名额，而 send 的超时是有限的。调用方仍然负责保证 deinit 开始之后不再发起新的投递。
 
 ## Component State
 
@@ -342,9 +406,9 @@ Runtime 拥有 input task，但 poller 的开关属于 launcher：`h2_runtime_in
 
 state 与 poller 无关：从 `h2_runtime_init()` 到 `h2_runtime_deinit()` 全程可读。poller 停止期间 `h2_runtime_component_state_*()` 继续返回最后一次成功发布的 snapshot，配套的 `updated_at_ms` 说明它有多旧，`result` 说明那次读取的结果。Runtime 不在 stop 时把 state 清零：零是合法读数，`percent_x100 = 0` 与真的没电、`pressed = false` 与真的没按下无法区分，清零等于用假数据覆盖真数据。reader 需要判断新鲜度时使用 `updated_at_ms`。
 
-同理，`start` 不重置 recognizer 状态，`stop` 也不丢弃已经入队但尚未消费的 push edge——它们都属于 state，不属于 poller。由此产生两个必须知道的后果：poller 关闭期间松开按键时 Runtime 看不到那个边沿，恢复后的第一帧会补发 `BUTTON_UP` 与 `BUTTON_ACTION`，而 `pressed_at_ms` 仍是关闭之前那次按下的时间戳，于是该 action 的时长横跨整个关闭区间；连续点击计数也跨 stop/start 延续，`start` 之后落在 `H2_RUNTIME_BUTTON_CLICK_GAP_MS` 之内的下一次按压会继续既有序列而不是从 1 重新计数。需要忽略恢复后的第一个 action 时由调用方自行判断。
+同理，`start` 不重置 Button action 状态，`stop` 也不丢弃已经入队但尚未消费的 push edge——它们都属于 state，不属于 poller。poller 关闭期间松开按键时 Runtime 看不到那个边沿，恢复后的第一帧会补发 `BUTTON_UP` 与 released `BUTTON_ACTION`，而 `pressed_at_ms` 仍是关闭之前那次按下的时间戳，因此调用方算出的按压时长会横跨整个关闭区间。需要忽略恢复后的第一个 action 时由调用方自行判断。
 
-Battery 与 Temperature 通过 `h2_runtime_component_state_battery()` 和 `h2_runtime_component_state_temperature()` 返回最近一次完成的读数及 PAL result。`PUSH_EDGE` Button 不调用 Button PAL read；拥有 mapped periph 的 LVGL adapter 调用 `h2_runtime_button_push_edge()` 写入 raw edge，Runtime input task 继续推进 click gap 计数。
+Battery 与 Temperature 通过 `h2_runtime_component_state_battery()` 和 `h2_runtime_component_state_temperature()` 返回最近一次完成的读数及 PAL result。`PUSH_EDGE` Button 不调用 Button PAL read；拥有 mapped periph 的 LVGL adapter 调用 `h2_runtime_button_push_edge()` 写入 raw edge，Runtime input task 继续按 Button poll cadence 发布 action。
 
 每个 mapped input component 只允许一种 delivery mode：`POLL_STATE` 由 Runtime input task 读取，`PUSH_EDGE` 由该 component 唯一的 push producer 经 bounded queue 投递；两者都由 Input Poller 在 Runtime 私有的 input writer mutex 下更新 working state。拥有 `PUSH_EDGE` producer 的 target 必须先停止 producer，再调用 `h2_runtime_input_stop()` 或 `h2_runtime_deinit()`；Runtime 随后请求 input task 与 NFC task 停止并 join。input writer mutex、state publication 和 source table 由 `h2_runtime_deinit()` 释放，不由 `stop` 释放。source 发现失败属于配置错误，由 `h2_runtime_init()` 报告；首帧采集或 task 启动失败让 `start` 失败并把 poller 留在停止状态，init 期建立的那三样不受影响，launcher 可以在原因消除后重试 `start`。物理采集的 debounce 仍属于提供读数的 component/provider；Runtime 只识别已经稳定的 PAL reading，不按 board 或 GPIO 类型加入 debounce。
 
@@ -427,6 +491,6 @@ test bytes 或绕过 Runtime 直接处理 input。完整接线见
 
 ## Lua event bridge
 
-Lua Host 不消费 `h2_runtime_poll_event()` 或 `h2_runtime_wait_event()`。App 始终是
+Lua Host 不消费 `h2_runtime_poll_event()` 或 `h2_runtime_wait_notify()`。App 始终是
 Runtime Event queue 的唯一消费者，并把允许脚本观察的复制事件与显式 `job_id`
 交给 `h2_lua_dispatch_runtime_event()`。完整合同见 [Lua Runtime](./lua)。

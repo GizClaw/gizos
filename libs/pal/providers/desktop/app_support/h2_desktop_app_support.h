@@ -101,6 +101,10 @@ struct OwnedNetworkServices {
   OwnedNetworkServices &operator=(const OwnedNetworkServices &) = delete;
   ~OwnedNetworkServices();
 
+  // Close before destroying the composition. On failure keep this object and
+  // retry; dependent providers are never freed under an unjoined peer task.
+  int reset();
+
   const h2_pal_crypto_api_t *crypto() const;
   const h2_pal_dtls_api_t *dtls() const;
   const h2_pal_mqtt_api_t *mqtt() const;

@@ -213,7 +213,7 @@ static h2_pal_result_t session_button(
     h2_app_test_session_t *session, h2_app_test_operation_kind_t kind,
     h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
-    h2_runtime_timestamp_ms_t released_at_ms, uint16_t click_count,
+    h2_runtime_timestamp_ms_t released_at_ms,
     uint32_t timeout_ms, h2_app_test_snapshot_t *snapshot) {
   if (component_id == H2_RUNTIME_COMPONENT_ID_NONE) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -225,7 +225,6 @@ static h2_pal_result_t session_button(
               .component_id = component_id,
               .pressed_at_ms = pressed_at_ms,
               .released_at_ms = released_at_ms,
-              .click_count = click_count,
           },
   };
   return session_execute(session, &operation, timeout_ms, snapshot);
@@ -238,7 +237,23 @@ h2_pal_result_t h2_app_test_session_button_down(
     h2_app_test_snapshot_t *snapshot) {
   return session_button(
       session, H2_APP_TEST_OPERATION_BUTTON_DOWN, component_id,
-      pressed_at_ms, 0u, 0u, timeout_ms, snapshot);
+      pressed_at_ms, 0u, timeout_ms, snapshot);
+}
+
+h2_pal_result_t h2_app_test_session_button_hold(
+    h2_app_test_session_t *session,
+    h2_runtime_component_id_t component_id,
+    h2_runtime_timestamp_ms_t pressed_at_ms,
+    h2_runtime_timestamp_ms_t observed_at_ms, uint32_t timeout_ms,
+    h2_app_test_snapshot_t *snapshot) {
+  if (observed_at_ms < pressed_at_ms) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  /* The button operation carries two timestamps; for a hold the second one
+   * is the observation time, not a release. */
+  return session_button(
+      session, H2_APP_TEST_OPERATION_BUTTON_HOLD, component_id,
+      pressed_at_ms, observed_at_ms, timeout_ms, snapshot);
 }
 
 h2_pal_result_t h2_app_test_session_button_up(
@@ -252,21 +267,21 @@ h2_pal_result_t h2_app_test_session_button_up(
   }
   return session_button(
       session, H2_APP_TEST_OPERATION_BUTTON_UP, component_id,
-      pressed_at_ms, released_at_ms, 0u, timeout_ms, snapshot);
+      pressed_at_ms, released_at_ms, timeout_ms, snapshot);
 }
 
 h2_pal_result_t h2_app_test_session_button_action(
     h2_app_test_session_t *session,
     h2_runtime_component_id_t component_id,
     h2_runtime_timestamp_ms_t pressed_at_ms,
-    h2_runtime_timestamp_ms_t released_at_ms, uint16_t click_count,
-    uint32_t timeout_ms, h2_app_test_snapshot_t *snapshot) {
-  if (released_at_ms < pressed_at_ms || click_count == 0u) {
+    h2_runtime_timestamp_ms_t released_at_ms, uint32_t timeout_ms,
+    h2_app_test_snapshot_t *snapshot) {
+  if (released_at_ms < pressed_at_ms) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   return session_button(
       session, H2_APP_TEST_OPERATION_BUTTON_ACTION, component_id,
-      pressed_at_ms, released_at_ms, click_count, timeout_ms, snapshot);
+      pressed_at_ms, released_at_ms, timeout_ms, snapshot);
 }
 
 h2_pal_result_t h2_app_test_session_run(

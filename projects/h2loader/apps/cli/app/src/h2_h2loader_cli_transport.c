@@ -1,5 +1,6 @@
 #include "h2_h2loader_cli_internal.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define H2_H2LOADER_CLI_BLE_CANDIDATE_CAPACITY 32u
@@ -20,6 +21,7 @@ static h2_pal_result_t resolve_ble_candidate(
         .sync = transport->context->runtime->sync,
         .time = transport->context->runtime->time,
         .ble_timeout_ms = transport->options->wait_timeout_ms,
+        .ble_endpoint = transport->options->port,
         .candidates = candidates,
         .candidate_capacity = H2_H2LOADER_CLI_BLE_CANDIDATE_CAPACITY,
     };
@@ -35,12 +37,6 @@ static h2_pal_result_t resolve_ble_candidate(
     }
     if (matches != 1u) {
         return matches == 0u ? H2_PAL_ERR_NOT_FOUND : H2_PAL_ERR_INVALID_STATE;
-    }
-    if (transport->ble_candidate_valid &&
-        strcmp(
-            transport->ble_candidate.candidate_id,
-            selected.candidate_id) != 0) {
-        return H2_PAL_ERR_INVALID_STATE;
     }
     transport->ble_candidate = selected;
     transport->ble_candidate_valid = 1u;
@@ -92,14 +88,34 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
             .connect_timeout_ms = transport->options->wait_timeout_ms,
             .command_timeout_ms = transport->command_timeout_ms,
         };
-        return h2_h2loader_host_ble_connect(
+        rc = h2_h2loader_host_ble_connect(
             &connect, &transport->ble_connection, out_status);
+        if (rc == H2_PAL_OK &&
+            !transport->authoritative_device_uid_valid) {
+            if (out_status->device_uid[0] == '\0' ||
+                strcmp(out_status->device_uid, "unknown") == 0) {
+                return H2_PAL_OK;
+            }
+            (void)snprintf(transport->authoritative_device_uid,
+                           sizeof(transport->authoritative_device_uid), "%s",
+                           out_status->device_uid);
+            transport->authoritative_device_uid_valid = 1u;
+        } else if (rc == H2_PAL_OK &&
+                   strcmp(transport->authoritative_device_uid,
+                          out_status->device_uid) != 0) {
+            rc = H2_PAL_ERR_INVALID_STATE;
+        }
+        if (rc != H2_PAL_OK) {
+            (void)h2_h2loader_cli_transport_disconnect(transport);
+        }
+        return rc;
     }
     h2_h2loader_host_serial_connection_config_t connect = {
         .serial = transport->context->config->serial,
         .time = transport->context->runtime->time,
         .allocator = transport->context->runtime->mem,
         .port_id = transport->options->port,
+        .baud_rate = transport->options->baud_rate,
         .handshake_timeout_ms = transport->options->wait_timeout_ms,
         .command_timeout_ms = transport->command_timeout_ms,
         .ready_marker = transport->ready_marker,
@@ -180,10 +196,18 @@ h2_pal_result_t h2_h2loader_cli_transport_rediscover(
     if (transport->options->transport != H2_H2LOADER_HOST_TRANSPORT_BLE) {
         return H2_PAL_OK;
     }
-    /* BLE v1/v2 has no authoritative physical device UID. A backend address
-     * may select the initial candidate within this Host lifetime, but must not
-     * be promoted into identity across a new scan or disconnected session. */
-    return H2_PAL_ERR_UNSUPPORTED;
+    if (!transport->authoritative_device_uid_valid) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return resolve_ble_candidate(transport);
+}
+
+int h2_h2loader_cli_reconnect_must_fail_closed(
+    const h2_h2loader_cli_transport_t *transport,
+    h2_pal_result_t connect_result) {
+    return transport != NULL && transport->options != NULL &&
+        transport->options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE &&
+        connect_result == H2_PAL_ERR_INVALID_STATE;
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_monitor_logs(

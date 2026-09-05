@@ -17,6 +17,6 @@ bazel build --config=esp32s3 \
 
 ## 验收
 
-每次启动只运行一个 Preference phase。`seed` 覆盖全部 PAL 类型、16 KiB blob、同值写和 1,000 次变值替换，成功后确认 App 并重启；`verify` 在重启后验证持久化数据、删除与清空，再次重启；`complete` 验证清理后的终态并持续提供 H2Loader command service。
+每次启动只运行一个 Preference phase。`seed` 覆盖全部 PAL 类型、16 KiB blob、同值写和 1,000 次变值替换，成功后提交 App 的 Partition 2 metadata、清理匹配 Stage 并重启；`verify` 在重启后验证持久化数据、删除与清空，再次重启；`complete` 验证清理后的终态并持续提供 H2Loader command service。
 
-验收必须记录每个 `H2_PAL_PREF_E2E` phase、两次真实重启、最终 `H2_PAL_PREF_E2E_READY status=PASS`，并重新执行 H2Loader `status` 确认 `board=devkit`、`target=esp32s3`、`active_role=app`、image `pal-pref` 和 `state=confirmed`。冷启动后还必须重复终态 PASS，不能只把 package 传输或首次启动当作完成。
+验收必须记录每个 `H2_PAL_PREF_E2E` phase、两次真实重启、最终 `H2_PAL_PREF_E2E_READY status=PASS`，并重新执行 H2Loader `status` 确认 `board=devkit`、`target=esp32s3`、`active_role=app`，active identity 与 `pal-pref` package manifest 一致、运行 Partition 2、Partition 2 metadata valid 且 Stage invalid。冷启动后还必须重复终态 PASS，不能只把 package 传输或首次启动当作完成。

@@ -1,10 +1,10 @@
 # H2Loader 使用入口与环境
 
-H2Loader 使用说明的两个入口是正式维护的工厂 Batch Loader 和 repository-only CLI。Batch Loader 通过浏览器 Web Serial 执行多设备扫描与 managed install；CLI 提供 package、可靠串口设备操作与独立 BLE iKCP baseline。
+H2Loader 使用说明的两个入口是正式维护的工厂 Batch Loader 和 repository-only CLI。Batch Loader 通过浏览器 Web Serial 执行多设备扫描与统一 Stage/reboot 生命周期；CLI 提供 package、可靠串口设备操作与独立 BLE iKCP baseline。
 
 ## 选择入口
 
-工厂批量安装使用 H2Loader Batch Loader 的浏览器发布物。Current package 弹窗只校验并保存当前页面 session 中选择的本地 APP 或 Loader package，不上传固件。Devices table 会恢复当前 origin 已授权的 Web Serial port，并允许继续追加；Scan 刷新 authoritative status，选中的 Flash/Rollback/Restart 最多并发四台，额外设备排队。localStorage 中的历史显示信息在重载后始终为 stale，不能替代新的 live Scan。
+工厂批量安装使用 H2Loader Batch Loader 的浏览器发布物。Current package 弹窗只校验并保存当前页面 session 中选择的本地 APP 或 Loader package，不上传固件。Devices table 会恢复当前 origin 已授权的 Web Serial port，并允许继续追加；Scan 刷新 authoritative status。批量操作必须使用当前 `stage`、`abortStage` 与 `rebootApp`/`rebootLoader`/`rebootUpgrade` SDK 合同；旧 Flash/Rollback/Restart API 不属于 `0.2.0`。localStorage 中的历史显示信息在重载后始终为 stale，不能替代新的 live Scan。
 
 在仓库中生成 package、自动化可靠串口操作或运行诊断命令时使用：
 

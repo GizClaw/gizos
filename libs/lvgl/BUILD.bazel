@@ -22,6 +22,13 @@ cc_library(
 )
 
 cc_library(
+    name = "task_names",
+    srcs = ["src/h2_lvgl_task_names.c"],
+    hdrs = ["include/h2_lvgl_task_names.h"],
+    includes = ["include"],
+)
+
+cc_library(
     name = "headers",
     hdrs = [
         "include/h2_lvgl_button.h",
@@ -33,6 +40,7 @@ cc_library(
     includes = ["include"],
     deps = [
         ":config",
+        ":task_names",
         "//libs/pal",
         "//libs/runtime",
         "@h2_vendor_lvgl//:header_group",
@@ -176,6 +184,7 @@ cc_library(
     }),
     deps = [
         ":config",
+        ":task_names",
         "//libs/pal",
         "//libs/runtime",
         "@h2_vendor_lvgl//:header_group",
@@ -234,6 +243,7 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":task_names",
         "//libs/pal",
         "@h2_vendor_lvgl//:header_group",
     ] + select({

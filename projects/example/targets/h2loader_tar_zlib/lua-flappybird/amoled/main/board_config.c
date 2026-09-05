@@ -64,7 +64,6 @@ h2_pal_result_t h2_lua_flappybird_amoled_input_poll_config(
     return H2_PAL_ERR_INVALID_ARG;
   *out_config = (h2_runtime_input_poll_config_t){
       .button_poll_interval_ms = 20u,
-      .task_options = {.name = "lua_flappy_input"},
   };
   return H2_PAL_OK;
 }

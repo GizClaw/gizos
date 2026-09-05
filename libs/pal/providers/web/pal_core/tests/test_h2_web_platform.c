@@ -3,6 +3,7 @@
 #include <emscripten.h>
 #include <emscripten/eventloop.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -132,6 +133,34 @@ static void h2_web_test_webrtc_message(void *user, h2_pal_webrtc_peer_t *peer,
   }
 }
 
+static void h2_web_test_webrtc_drain(h2_web_webrtc_test_t *test,
+                                     h2_pal_webrtc_peer_t *peer) {
+  h2_pal_webrtc_event_t event = {0};
+  while (h2_pal_webrtc_peer_poll(test->api, peer, 0, &event) == H2_PAL_OK) {
+    switch (event.kind) {
+    case H2_PAL_WEBRTC_EVENT_PEER_STATE:
+      h2_web_test_webrtc_peer_state(test, event.peer, event.peer_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_LOCAL_SDP:
+      h2_web_test_webrtc_local_sdp(test, event.peer, event.sdp_type, event.sdp);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_STATE:
+      h2_web_test_webrtc_channel_state(test, event.peer, event.channel,
+                                       &event.channel_info,
+                                       event.channel_state);
+      break;
+    case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+      h2_web_test_webrtc_message(test, event.peer, event.channel,
+                                 &event.channel_info, event.data,
+                                 event.data_len, event.is_text);
+      break;
+    default:
+      break;
+    }
+    h2_pal_webrtc_event_release(&event);
+  }
+}
+
 static void h2_web_test_auto_pump_verify(void *user) {
   (void)user;
   const h2_pal_result_t join_result =
@@ -142,15 +171,21 @@ static void h2_web_test_auto_pump_verify(void *user) {
   h2_web_platform_destroy(h2_web_auto_pump.platform);
   h2_web_auto_pump.platform = NULL;
   if (!success) {
-    exit(38);
+    fprintf(stderr, "Web PAL auto-pump verification failed\n");
+    emscripten_force_exit(38);
   }
   emscripten_cancel_main_loop();
+  puts("Web PAL tests passed");
+  emscripten_force_exit(0);
 }
 
 typedef struct h2_web_serial_test {
   h2_web_platform_t *platform;
   int result;
 } h2_web_serial_test_t;
+
+/* Authorization IDs are invalidated by forget/re-authorize, not reused. */
+static char h2_web_test_serial_port[H2_PAL_SERIAL_HOST_PORT_ID_MAX_LEN];
 
 static void h2_web_test_serial(void *user) {
   h2_web_serial_test_t *test = user;
@@ -198,7 +233,7 @@ static void h2_web_test_serial(void *user) {
       count != 1u ||
       h2_pal_serial_host_snapshot_get(serial, snapshot, 0u, &info) !=
           H2_PAL_OK ||
-      strcmp(info.port_id, "web-serial-1") != 0 ||
+      strcmp(info.port_id, h2_web_test_serial_port) != 0 ||
       h2_pal_serial_host_snapshot_destroy(serial, &snapshot) != H2_PAL_OK) {
     return;
   }
@@ -265,8 +300,8 @@ static void h2_web_test_serial_read_edge(void *user) {
   size_t transferred = 99u;
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -307,8 +342,8 @@ static void h2_web_test_serial_write_timeout(void *user) {
   size_t transferred = 99u;
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -347,8 +382,8 @@ static void h2_web_test_serial_read_timeout_recovery(void *user) {
   size_t transferred = 99u;
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -389,8 +424,8 @@ static void h2_web_test_serial_partial_read(void *user) {
   size_t transferred = 0u;
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -430,8 +465,8 @@ static void h2_web_test_serial_write_unplug(void *user) {
   size_t transferred = 99u;
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -464,8 +499,8 @@ static void h2_web_test_serial_open_failure(void *user) {
   };
   h2_pal_serial_host_session_t *session = NULL;
   h2_web_test_set_serial_mode(test->mode);
-  const h2_pal_result_t result =
-      h2_pal_serial_host_open(serial, "web-serial-1", &config, &session);
+  const h2_pal_result_t result = h2_pal_serial_host_open(
+      serial, h2_web_test_serial_port, &config, &session);
   h2_web_test_set_serial_mode(0);
   test->result = result == test->expected && session == NULL ? 0 : 1;
 }
@@ -502,8 +537,8 @@ static void h2_web_test_serial_shutdown(void *user) {
   size_t transferred = 0u;
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -542,8 +577,8 @@ static void h2_web_test_serial_close_wait(void *user) {
   };
   test->result = 1;
   h2_web_test_set_serial_mode(0);
-  if (h2_pal_serial_host_open(serial, "web-serial-1", &config, &session) !=
-          H2_PAL_OK ||
+  if (h2_pal_serial_host_open(serial, h2_web_test_serial_port, &config,
+                              &session) != H2_PAL_OK ||
       h2_pal_serial_host_session_stream(serial, session, &stream) !=
           H2_PAL_OK) {
     return;
@@ -745,7 +780,7 @@ static void h2_web_test_decoders(void *user) {
   test->result = 0;
 }
 
-int main(void) {
+static int run_tests(void) {
   const h2_web_platform_config_t pixel_count_overflow = {
       .display_width = INT32_MAX,
       .display_height = INT32_MAX,
@@ -793,20 +828,32 @@ int main(void) {
       decoder_test.result != 0) {
     return 107;
   }
-  const h2_pal_time_api_t *time = h2_web_platform_time_api(platform);
+  const h2_pal_time_api_t *clock = h2_web_platform_time_api(platform);
+  uint64_t wall_ms = 0u, monotonic_us = 0u;
   h2_pal_time_wall_status_t wall_status = {0};
-  uint64_t wall_ms = 0u;
-  if (h2_pal_time_get_wall_ms(time, &wall_ms) != H2_PAL_OK || wall_ms == 0u ||
-      h2_pal_time_get_wall_status(time, &wall_status) != H2_PAL_OK ||
-      !wall_status.valid || wall_status.source != H2_PAL_TIME_WALL_SOURCE_RTC ||
-      h2_pal_time_set_wall_ms(time, UINT64_C(1700000000000)) != H2_PAL_OK ||
-      h2_pal_time_get_wall_ms(time, &wall_ms) != H2_PAL_OK ||
-      wall_ms < UINT64_C(1700000000000) ||
-      wall_ms > UINT64_C(1700000001000) ||
-      h2_pal_time_get_wall_status(time, &wall_status) != H2_PAL_OK ||
-      wall_status.source != H2_PAL_TIME_WALL_SOURCE_SERVER_ALIGNED) {
-    return 102;
-  }
+  // clang-format off
+  EM_ASM({
+    globalThis.h2SavedDateNow = Date.now;
+    Date.now = () => 1700000000123;
+  });
+  // clang-format on
+  if (h2_pal_time_get_wall_ms(clock, &wall_ms) != H2_PAL_OK ||
+      wall_ms != UINT64_C(1700000000123) ||
+      h2_pal_time_get_wall_status(clock, &wall_status) != H2_PAL_OK ||
+      !wall_status.valid ||
+      wall_status.source != H2_PAL_TIME_WALL_SOURCE_UNKNOWN ||
+      h2_pal_time_get_monotonic_us(clock, &monotonic_us) != H2_PAL_OK ||
+      h2_pal_time_set_wall_ms(clock, 0u) != H2_PAL_ERR_UNSUPPORTED)
+    return 51;
+  // clang-format off
+  EM_ASM({ Date.now = () => NaN; });
+  // clang-format on
+  if (h2_pal_time_get_wall_ms(clock, &wall_ms) != H2_PAL_ERR_UNAVAILABLE ||
+      wall_ms != 0u ||
+      h2_pal_time_get_wall_status(clock, &wall_status) != H2_PAL_OK ||
+      wall_status.valid)
+    return 52;
+  EM_ASM({ Date.now = globalThis.h2SavedDateNow; });
   uint8_t random_bytes[32] = {0};
   h2_pal_x25519_keypair_t keypair = {0};
   if (h2_pal_crypto_random(h2_web_platform_crypto_api(platform), random_bytes,
@@ -866,16 +913,10 @@ int main(void) {
     return 105;
   }
   h2_web_webrtc_test_t webrtc_test = {0};
-  const h2_pal_webrtc_callbacks_t webrtc_callbacks = {
-      .user = &webrtc_test,
-      .on_peer_state = h2_web_test_webrtc_peer_state,
-      .on_local_sdp = h2_web_test_webrtc_local_sdp,
-      .on_channel_state = h2_web_test_webrtc_channel_state,
-      .on_channel_message = h2_web_test_webrtc_message,
-  };
   const h2_pal_webrtc_api_t *webrtc = h2_web_platform_webrtc_api(platform);
-  h2_pal_webrtc_track_t *webrtc_track =
-      h2_web_platform_webrtc_audio_track(platform);
+  EM_ASM({ globalThis.h2FakeCreateMedia(1); });
+  h2_pal_webrtc_track_t caller_track = {.native_handle = (void *)(uintptr_t)1u};
+  h2_pal_webrtc_track_t *webrtc_track = &caller_track;
   webrtc_test.api = webrtc;
   h2_pal_webrtc_peer_t *webrtc_peer = NULL;
   h2_pal_webrtc_channel_t *webrtc_channel = NULL;
@@ -892,21 +933,22 @@ int main(void) {
       .len = 11u,
   };
   const uint8_t opus[] = {0xf8u, 0xffu, 0xfeu};
-  if (h2_pal_webrtc_peer_create(webrtc, &webrtc_callbacks, &webrtc_peer) !=
-          H2_PAL_OK ||
+  if (h2_pal_webrtc_peer_create(webrtc, &webrtc_peer) != H2_PAL_OK ||
       webrtc_track == NULL ||
-      h2_pal_webrtc_peer_set_media_track(webrtc, webrtc_peer, webrtc_track) !=
+      h2_pal_webrtc_peer_set_track(webrtc, webrtc_peer, webrtc_track) !=
           H2_PAL_OK ||
       h2_pal_webrtc_peer_add_ice_server(webrtc, webrtc_peer, &ice_server) !=
           H2_PAL_OK ||
       h2_pal_webrtc_peer_create_data_channel(
           webrtc, webrtc_peer, &channel_config, &webrtc_channel) != H2_PAL_OK ||
-      h2_pal_webrtc_peer_start_offer(webrtc, webrtc_peer) != H2_PAL_OK ||
-      webrtc_test.local_sdp != 1 ||
+      h2_pal_webrtc_peer_start_offer(webrtc, webrtc_peer) != H2_PAL_OK) {
+    return 101;
+  }
+  h2_web_test_webrtc_drain(&webrtc_test, webrtc_peer);
+  if (webrtc_test.local_sdp != 1 ||
       h2_pal_webrtc_peer_set_remote_sdp(
           webrtc, webrtc_peer, H2_PAL_WEBRTC_SDP_ANSWER, answer) != H2_PAL_OK ||
-      webrtc_test.connected != 1 || webrtc_test.channel_open != 1 ||
-      EM_ASM_INT({ return globalThis.h2FakeGetUserMediaCount || 0; }) != 1 ||
+      EM_ASM_INT({ return globalThis.h2FakeGetUserMediaCount || 0; }) != 0 ||
       EM_ASM_INT({ return globalThis.h2FakeAudioPlayCount || 0; }) != 1 ||
       h2_pal_webrtc_channel_send(webrtc, webrtc_channel,
                                  (const uint8_t *)"ping", 4u, 1) != H2_PAL_OK ||
@@ -914,28 +956,26 @@ int main(void) {
           H2_PAL_ERR_UNSUPPORTED) {
     return 101;
   }
+  h2_web_test_webrtc_drain(&webrtc_test, webrtc_peer);
+  if (webrtc_test.connected != 1 || webrtc_test.channel_open != 1)
+    return 101;
   emscripten_sleep(0u);
+  h2_web_test_webrtc_drain(&webrtc_test, webrtc_peer);
   if (webrtc_test.message != 1)
     return 102;
+  // clang-format off
+  if (h2_pal_webrtc_peer_unset_track(webrtc, webrtc_peer, webrtc_track) !=
+          H2_PAL_OK ||
+      !EM_ASM_INT({
+        return globalThis.h2FakeDetachResolved &&
+                   !Module.h2WebRtcTracks.get(1)
+                        .stream.getAudioTracks()[0]
+                        .stopped &&
+                   Module.h2WebRtcTracks.get(1).audio.srcObject === null;
+      }))
+    return 103;
+  // clang-format on
   h2_pal_webrtc_peer_close(webrtc, webrtc_peer);
-  EM_ASM({ globalThis.h2FakeRejectGetUserMedia = true; });
-  h2_web_webrtc_test_t denied_webrtc_test = {.api = webrtc};
-  const h2_pal_webrtc_callbacks_t denied_webrtc_callbacks = {
-      .user = &denied_webrtc_test,
-      .on_local_sdp = h2_web_test_webrtc_local_sdp,
-  };
-  h2_pal_webrtc_peer_t *denied_webrtc_peer = NULL;
-  if (h2_pal_webrtc_peer_create(webrtc, &denied_webrtc_callbacks,
-                                &denied_webrtc_peer) != H2_PAL_OK ||
-      h2_pal_webrtc_peer_set_media_track(webrtc, denied_webrtc_peer,
-                                         webrtc_track) != H2_PAL_OK ||
-      h2_pal_webrtc_peer_start_offer(webrtc, denied_webrtc_peer) != H2_PAL_OK ||
-      denied_webrtc_test.local_sdp != 1 ||
-      EM_ASM_INT({ return globalThis.h2FakeAudioTransceiverCount || 0; }) != 1) {
-    return 106;
-  }
-  h2_pal_webrtc_peer_close(webrtc, denied_webrtc_peer);
-  EM_ASM({ globalThis.h2FakeRejectGetUserMedia = false; });
   h2_pal_pref_namespace_t *prefs = NULL;
   char *stored_port = NULL;
   const uint8_t status_bytes[] = {1u, 2u, 3u, 4u};
@@ -1023,6 +1063,7 @@ int main(void) {
       strcmp(port_id, "web-serial-2") != 0) {
     return 44;
   }
+  memcpy(h2_web_test_serial_port, port_id, strlen(port_id) + 1u);
   h2_web_serial_test_t serial_test = {
       .platform = platform,
       .result = -1,
@@ -1220,31 +1261,43 @@ int main(void) {
       .result = -1,
   };
   task = NULL;
+  EM_ASM({ globalThis.h2FakePendingReadResolve = null; });
   if (platform == NULL ||
       h2_pal_task_start(h2_web_platform_task_api(platform), NULL,
                         h2_web_test_serial_shutdown, &shutdown_test,
                         &task) != H2_PAL_OK ||
       h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK) {
-    return 38;
+    return 45;
   }
-  emscripten_sleep(0u);
+  // Wait until open has completed and the reader really is blocked. A single
+  // event-loop turn does not guarantee the chained open promises have settled.
+  for (int iteration = 0;
+       iteration < 32 && !EM_ASM_INT(
+                             { return !!globalThis.h2FakePendingReadResolve; });
+       ++iteration) {
+    emscripten_sleep(1u);
+    if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
+      return 45;
+  }
+  if (!EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; }))
+    return 45;
   h2_web_test_set_serial_mode(12);
   if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK ||
       h2_web_platform_serial_shutdown(platform) != H2_PAL_ERR_UNSUPPORTED ||
       !h2_web_test_close_rejected_before_cancel_settled()) {
-    return 38;
+    return 46;
   }
   joined = 0;
   for (int iteration = 0; iteration < 8 && !joined; ++iteration) {
     if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
-      return 38;
+      return 47;
     joined =
         h2_pal_task_join(h2_web_platform_task_api(platform), task) == H2_PAL_OK;
   }
   if (!joined || shutdown_test.result != 0 ||
       h2_web_platform_serial_request_port(platform) !=
           H2_PAL_ERR_INVALID_STATE) {
-    return 38;
+    return 48;
   }
   h2_web_task_cancel_test_t task_cancel_test = {
       .platform = platform,
@@ -1259,7 +1312,7 @@ int main(void) {
       h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK ||
       h2_pal_task_join(h2_web_platform_task_api(platform), task) != H2_PAL_OK ||
       task_cancel_test.result != H2_PAL_EXIT) {
-    return 38;
+    return 49;
   }
   h2_web_platform_destroy(platform);
   h2_web_auto_pump.platform = h2_web_platform_create(&valid);
@@ -1268,9 +1321,18 @@ int main(void) {
                         NULL, h2_web_test_auto_pump, &h2_web_auto_pump,
           &h2_web_auto_pump_task) != H2_PAL_OK ||
       h2_web_platform_pump(h2_web_auto_pump.platform, 1u, NULL) != H2_PAL_OK) {
-    return 38;
+    return 50;
   }
   emscripten_set_timeout(h2_web_test_auto_pump_verify, 5.0, NULL);
   emscripten_set_main_loop(h2_web_test_main_loop, 0, 1);
   return 38;
+}
+
+int main(void) {
+  int result = run_tests();
+  if (result != 0) {
+    fprintf(stderr, "Web PAL test failed: %d\n", result);
+    emscripten_force_exit(result);
+  }
+  return 0;
 }

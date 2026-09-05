@@ -2,6 +2,8 @@
 #include "h2_esp_platform_dtls_state.h"
 #include "h2/pal/h2_pal_unsupported.h"
 
+#include "esp_log.h"
+
 #include <limits.h>
 #include <string.h>
 
@@ -411,6 +413,8 @@ static h2_pal_result_t h2_esp_dtls_handshake(
         }
         session->handshake_complete = 1;
         *out_complete = 1;
+        ESP_LOGI("h2dtls", "handshake complete ciphersuite=%s",
+                 mbedtls_ssl_get_ciphersuite(&session->ssl));
         return H2_PAL_OK;
     }
     if (result == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED &&

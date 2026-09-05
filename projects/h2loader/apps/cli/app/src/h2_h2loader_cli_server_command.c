@@ -205,9 +205,9 @@ int h2_h2loader_cli_server_command_with_transport(
          strcmp(status.target, initial_status.target) != 0 ||
          h2_h2loader_host_status_active_role(&status) !=
              h2_h2loader_host_status_active_role(&initial_status) ||
-         !h2_h2loader_host_status_staged_valid(&status) ||
-         status.staged_bytes != parsed.expected_bytes ||
-         strcmp(status.staged_checksum, parsed.expected_sha256) != 0)) {
+         !status.stage.valid ||
+         status.stage.package_size != parsed.expected_bytes ||
+         strcmp(status.stage.package_checksum, parsed.expected_sha256) != 0)) {
         rc = H2_PAL_ERR_INVALID_STATE;
     }
 cleanup:

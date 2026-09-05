@@ -32,6 +32,11 @@ typedef struct h2_esp_es8311_mic_queue_frame {
 
 typedef int (*h2_esp_es8311_audio_pa_set_fn)(void *user, int enabled);
 
+typedef enum h2_esp_es8311_aec_nlp_level {
+    H2_ESP_ES8311_AEC_NLP_NORMAL = 0,
+    H2_ESP_ES8311_AEC_NLP_AGGRESSIVE = 1,
+} h2_esp_es8311_aec_nlp_level_t;
+
 typedef struct h2_esp_es8311_audio_system_config {
     uint32_t sample_rate_hz;
     uint16_t frame_samples_per_channel;
@@ -73,6 +78,7 @@ typedef struct h2_esp_es8311_audio_system_config {
     const h2_pal_queue_api_t *queue_api;
     const h2_pal_sync_api_t *sync_api;
     int enable_aec;
+    h2_esp_es8311_aec_nlp_level_t aec_nlp_level;
 } h2_esp_es8311_audio_system_config_t;
 
 typedef struct h2_esp_es8311_sr_state {

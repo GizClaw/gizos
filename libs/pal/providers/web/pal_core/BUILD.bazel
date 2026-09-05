@@ -1,9 +1,64 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "_wasm/webrtc_browser_test",
+    testonly = True,
+    srcs = ["tests/test_h2_web_webrtc_browser.c"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+wasm_cc_binary(
+    name = "webrtc_browser_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/webrtc_browser_test",
+    exit_runtime = True,
+    outputs = [
+        "webrtc_browser_test.js",
+        "webrtc_browser_test.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "webrtc_browser_test",
+    size = "medium",
+    srcs = ["tests/run_webrtc_browser.py"],
+    args = [
+        "$(rootpath //tools/webrtc-test-server:webrtc_test_server)",
+        "$(locations :webrtc_browser_test_wasm)",
+    ],
+    data = [
+        ":webrtc_browser_test_wasm",
+        "//tools/webrtc-test-server:webrtc_test_server",
+    ] + select({
+        "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
+        "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
+        "//conditions:default": [],
+    }),
+    legacy_create_init = False,
+    main = "tests/run_webrtc_browser.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
 
 cc_library(
     name = "pal_core",
@@ -31,6 +86,56 @@ cc_library(
         "//libs/pal/providers/libco",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
+)
+
+cc_binary(
+    name = "_wasm/webrtc_track_test",
+    testonly = True,
+    srcs = ["tests/test_h2_web_webrtc_track.c"],
+    additional_linker_inputs = ["tests/web_serial_fake.js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "--pre-js",
+        "$(location tests/web_serial_fake.js)",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+wasm_cc_binary(
+    name = "webrtc_track_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/webrtc_track_test",
+    exit_runtime = True,
+    outputs = [
+        "webrtc_track_test.js",
+        "webrtc_track_test.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "webrtc_track_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":webrtc_track_test_wasm"],
+    entry_point = "webrtc_track_test.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 filegroup(
