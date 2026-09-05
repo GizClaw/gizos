@@ -78,6 +78,8 @@ H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `ap
 
 ## AC791N validation commands
 
+PAL BLE 诊断包位于 `//projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/jieli_ac791n_devkit:package`，通过相同的 `h2loader_jieli_firmware` wrapper 使用正式 board layout，保留 UART App command 通道与分步日志，并带 `no-release` tag。不再维护独立的 vendor demo config、Makefile 或 BLE 实验 patch；该诊断只用于定位 PAL 调用阶段，不替代 H2Loader BLE 生命周期验收。
+
 Host 验证：`bazel test //native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_platform_core //projects/h2loader/libs/h2loader:all //projects/h2loader/apps/cli/app:all //projects/example/apps/mp4-player/app:mp4_player_test`。
 
 Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。

@@ -95,6 +95,21 @@ int main(void) {
 
 
 class UartConsoleTest(unittest.TestCase):
+    def test_ble_smoke_uses_shared_layout_and_is_not_a_release(self):
+        target = (ROOT / "projects/e2e/targets/h2loader_tar_zlib/"
+                  "pal-ble-smoke/jieli_ac791n_devkit")
+        build = (target / "BUILD.bazel").read_text()
+        self.assertIn('h2loader_jieli_firmware(', build)
+        self.assertIn('tags = ["no-release"]', build)
+        self.assertNotIn('project_makefile =', build)
+        self.assertNotIn('sdk_patches =', build)
+        self.assertFalse((target / "project.mk").exists())
+        self.assertFalse((target / "include/app_config.h").exists())
+        self.assertFalse((ROOT / "projects/h2loader/targets/jieli_firmware/"
+                         "ble-smoke/ac791n_devkit/BUILD.bazel").exists())
+        source = (target / "src/pal_ble_smoke.c").read_text()
+        self.assertIn("h2_jieli_app_iostreamikcp_start(", source)
+
     def test_shared_board_does_not_request_ble_bonding(self):
         board = ROOT / "boards/jieli_ac791n_devkit/ac791n"
         config = (board / "include/h2_jieli_ac791n_devkit_sdk_config.h").read_text()
@@ -157,8 +172,8 @@ int main(void) {
         policies += [
             ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/"
                    "jieli_ac791n_devkit/src/loader_task_policy.c",
-            ROOT / "projects/h2loader/targets/jieli_firmware/ble-smoke/"
-                   "ac791n_devkit/src/pal_ble_smoke_task_policy.c",
+            ROOT / "projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/"
+                   "jieli_ac791n_devkit/src/pal_ble_smoke_task_policy.c",
         ]
         for task in ("#C0btctrler", "#C0btstack", "btctrler", "btstack"):
             pattern = r'\{"' + re.escape(task) + r'",\s*(\d+),\s*(\d+),\s*(\d+)\}'

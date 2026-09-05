@@ -11,6 +11,7 @@
 #include "device/device.h"
 
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #include "system/task.h"
@@ -35,7 +36,7 @@ static uint16_t service_handle;
 static uint16_t tx_value_handle;
 static uint16_t tx_cccd_handle;
 static uint16_t rx_value_handle;
-static unsigned write_count;
+static atomic_uint write_count;
 static int ble_result;
 static h2_loader_app_client_t loader_client;
 static h2_pal_fs_api_t loader_fs;
@@ -107,7 +108,8 @@ static void heartbeat_task(void *user) {
   for (unsigned heartbeat = 1u;; ++heartbeat) {
     os_time_dly(100u);
     printf("H2_JIELI_PAL_BLE_HEARTBEAT count=%u writes=%u result=%d\r\n",
-           heartbeat, write_count, ble_result);
+           heartbeat, atomic_load_explicit(&write_count, memory_order_relaxed),
+           ble_result);
   }
 }
 
@@ -132,9 +134,10 @@ static h2_pal_result_t on_write(
     void *user, const h2_pal_ble_gatt_access_t *access,
     const uint8_t *data, size_t len) {
   (void)user;
-  ++write_count;
+  unsigned count = atomic_fetch_add_explicit(
+      &write_count, 1u, memory_order_relaxed) + 1u;
   printf("H2_JIELI_PAL_BLE_WRITE count=%u conn=%u attr=%u bytes=%u\r\n",
-         write_count, (unsigned)access->conn_handle,
+         count, (unsigned)access->conn_handle,
          (unsigned)access->attr_handle, (unsigned)len);
   h2_pal_result_t result = h2_pal_ble_notify(
       ble, access->conn_handle, tx_value_handle, data, len);
