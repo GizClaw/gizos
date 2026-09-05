@@ -16,7 +16,9 @@ enum {
   H2_PREF_NAMESPACE_MAX = 64,
   H2_PREF_KEY_MAX = 96,
   H2_PREF_VALUE_MAX = 16 * 1024,
-  H2_PREF_PATH_MAX = 224,
+  /* Leading slash, hex namespace, slash, hex key, ".tmp" and terminator. */
+  H2_PREF_PATH_MAX =
+      2u * (H2_PREF_NAMESPACE_MAX + H2_PREF_KEY_MAX) + 2u + sizeof(".tmp"),
   H2_PREF_MAGIC = 0x31504648,
 };
 
@@ -533,7 +535,12 @@ static int pref_clear(h2_pal_pref_namespace_t *raw) {
     if (result == H2_PAL_OK) directory_open = 1;
   }
   struct lfs_info info;
-  while (result == H2_PAL_OK && lfs_dir_read(&pref_lfs, &directory, &info) > 0) {
+  while (result == H2_PAL_OK) {
+    int read_result = lfs_dir_read(&pref_lfs, &directory, &info);
+    if (read_result <= 0) {
+      result = map_lfs_error(read_result);
+      break;
+    }
     if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
     char path[H2_PREF_PATH_MAX];
     if (strlen(name_space->path) + strlen(info.name) + 2u > sizeof(path)) {
@@ -545,7 +552,10 @@ static int pref_clear(h2_pal_pref_namespace_t *raw) {
     strcat(path, info.name);
     if (lfs_remove(&pref_lfs, path) != LFS_ERR_OK) result = H2_PAL_ERR_IO;
   }
-  if (directory_open) (void)lfs_dir_close(&pref_lfs, &directory);
+  if (directory_open) {
+    int close_result = map_lfs_error(lfs_dir_close(&pref_lfs, &directory));
+    if (result == H2_PAL_OK) result = close_result;
+  }
   pref_unlock();
   return result;
 }
@@ -590,11 +600,16 @@ static int pref_iterate(
   if (result == H2_PAL_OK && read_result == 0) result = H2_PAL_ERR_NOT_FOUND;
   if (result == H2_PAL_OK) {
     char path[H2_PREF_PATH_MAX];
+    if (strlen(name_space->path) + strlen(info.name) + 2u > sizeof(path)) {
+      result = H2_PAL_ERR_IO;
+      goto done;
+    }
     strcpy(path, name_space->path);
     strcat(path, "/");
     strcat(path, info.name);
     lfs_file_t file;
     result = map_lfs_error(lfs_file_open(&pref_lfs, &file, path, LFS_O_RDONLY));
+    int file_open = result == H2_PAL_OK;
     jieli_pref_header_t header;
     if (result == H2_PAL_OK &&
         lfs_file_read(&pref_lfs, &file, &header, sizeof(header)) !=
@@ -606,7 +621,10 @@ static int pref_iterate(
     if (result == H2_PAL_OK &&
         lfs_file_read(&pref_lfs, &file, (*cursor)->key, header.key_size) !=
             header.key_size) result = H2_PAL_ERR_IO;
-    (void)lfs_file_close(&pref_lfs, &file);
+    if (file_open) {
+      int close_result = map_lfs_error(lfs_file_close(&pref_lfs, &file));
+      if (result == H2_PAL_OK) result = close_result;
+    }
     if (result == H2_PAL_OK) {
       (*cursor)->key[header.key_size] = '\0';
       *out_entry = (h2_pal_pref_entry_t){
@@ -616,6 +634,7 @@ static int pref_iterate(
       };
     }
   }
+done:
   pref_unlock();
   return result;
 }
@@ -626,11 +645,13 @@ static int pref_iterate_close(
   if (cursor == NULL || *cursor == NULL) return H2_PAL_OK;
   int result = pref_lock();
   if (result != H2_PAL_OK) return result;
-  if ((*cursor)->open) (void)lfs_dir_close(&pref_lfs, &(*cursor)->directory);
+  if ((*cursor)->open) {
+    result = map_lfs_error(lfs_dir_close(&pref_lfs, &(*cursor)->directory));
+  }
   free(*cursor);
   *cursor = NULL;
   pref_unlock();
-  return H2_PAL_OK;
+  return result;
 }
 
 static void initialize_namespace(jieli_pref_namespace_t *name_space) {
