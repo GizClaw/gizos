@@ -92,7 +92,7 @@ def _jieli_firmware_impl(ctx):
             ctx.file.sdk_locator,
             ctx.file._toolchain_locator,
             ctx.file._postbuild_locator,
-        ] + [component.archive for component in prebuilt_components] + ctx.files.srcs,
+        ] + [component.archive for component in prebuilt_components] + ctx.files.srcs + ctx.files.sdk_patches,
         transitive = graph_sources + prebuilt_headers,
     )
 
@@ -117,6 +117,8 @@ def _jieli_firmware_impl(ctx):
     args.add("--fw-output", fw.path)
     args.add("--update-output", update_image.path)
     args.add("--manifest-output", manifest.path)
+    for patch in ctx.files.sdk_patches:
+        args.add("--sdk-patch", patch.path)
     for component in native_components:
         args.add("--native-component", component.name)
         for include_root in component.include_roots:
@@ -210,6 +212,10 @@ _jieli_firmware = rule(
         "sdk_locator": attr.label(
             allow_single_file = True,
             mandatory = True,
+        ),
+        "sdk_patches": attr.label_list(
+            allow_files = [".patch"],
+            doc = "Repository-owned patches applied to the invocation-local SDK copy.",
         ),
         "sdk_version": attr.label(
             allow_single_file = True,

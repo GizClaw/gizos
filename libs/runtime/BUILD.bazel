@@ -3,6 +3,13 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 
 package(default_visibility = ["//visibility:public"])
 
+# Source-only vendor firmware components use Runtime declarations without
+# asking Bazel to compile Runtime for the vendor ISA.
+filegroup(
+    name = "runtime_header_files",
+    srcs = glob(["include/*.h"]),
+)
+
 cc_library(
     name = "task_names",
     srcs = ["src/h2_runtime_task_names.c"],

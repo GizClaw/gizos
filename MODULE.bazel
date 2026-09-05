@@ -438,7 +438,10 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_tinyh264",
     build_file = "//third_party:tinyh264.BUILD.bazel",
-    patches = ["//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"],
+    patches = [
+        "//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch",
+        "//tools/bazel/vendor:patches/tinyh264_standard_string_header.patch",
+    ],
     sha256 = "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
     strip_prefix = "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",
     urls = ["https://codeload.github.com/udevbe/tinyh264/tar.gz/524a702b6d98f8b9271238fdda9a064a1e6861e7"],

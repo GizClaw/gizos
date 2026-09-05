@@ -53,6 +53,10 @@ void h2_h2loader_cli_transport_init(
     transport->options = options;
     transport->ready_marker = options->ready_marker;
     transport->command_timeout_ms = command_timeout_ms;
+    if (options->transport != H2_H2LOADER_HOST_TRANSPORT_BLE) {
+        transport->on_log = h2_h2loader_cli_transport_log;
+        transport->log_user = context;
+    }
 }
 
 h2_pal_result_t h2_h2loader_cli_transport_connect(
@@ -87,6 +91,8 @@ h2_pal_result_t h2_h2loader_cli_transport_connect(
             .advertised_board = advertised_board,
             .connect_timeout_ms = transport->options->wait_timeout_ms,
             .command_timeout_ms = transport->command_timeout_ms,
+            .on_log = transport->on_log,
+            .log_user = transport->log_user,
         };
         rc = h2_h2loader_host_ble_connect(
             &connect, &transport->ble_connection, out_status);

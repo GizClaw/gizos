@@ -2,6 +2,7 @@
 
 load("//tools/bazel:bk7258.bzl", "bk7258_firmware")
 load("//tools/bazel:esp_idf.bzl", "esp_idf_firmware")
+load("//tools/bazel:jieli.bzl", "jieli_firmware")
 
 _ESP_LAYOUTS = {
     ("esp32s3", "amoled"): struct(root = "//boards/amoled/esp32s3/layouts/h2loader"),
@@ -21,6 +22,12 @@ _BK7258_BOARDS = {
     ("bk7258", "bk7258_v3_202405"): struct(
         root = "//boards/bk7258_v3_202405/bk7258",
         layouts = ["h2loader", "loader", "media", "wifi_csi"],
+    ),
+}
+
+_JIELI_LAYOUTS = {
+    ("wl82", "jieli_ac791n_devkit"): struct(
+        root = "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader",
     ),
 }
 
@@ -113,6 +120,35 @@ def h2loader_esp_idf_firmware(name, board, target, task_policy = None, layout = 
         partition = layout_files["partition"],
         project_support_files = layout_files["project_support_files"],
         support_files = _support_files(kwargs, layout_files.get("support_files", [])),
+        target = target,
+        **kwargs
+    )
+
+def h2loader_jieli_firmware(name, board, target, task_policy = None, **kwargs):
+    """Declares JieLi firmware using the board's one H2Loader layout.
+
+    As with ESP, the physical board owns SDK, memory and flash layout. A
+    concrete firmware target may vary only its task policy and launcher graph.
+    """
+    entry = _require_layout(_JIELI_LAYOUTS, target, board)
+    for owned in ("project_makefile", "sdk_patches"):
+        if owned in kwargs:
+            fail("h2loader_jieli_firmware owns " + owned)
+    graph = kwargs.pop("graph", [])
+    graph = graph + [_require_target_policy(task_policy, "task_policy", target, board)]
+    jieli_firmware(
+        name = name,
+        board = board,
+        graph = [entry.root + ":layout"] + graph,
+        project_makefile = entry.root + ":project.mk",
+        sdk_patches = [
+            entry.root + ":sdk_patches/h2_retained_ram.patch",
+            entry.root + ":sdk_patches/preserve_exception_log.patch",
+            entry.root + ":sdk_patches/crash_recovery.patch",
+            entry.root + ":sdk_patches/early_app_boot.patch",
+            entry.root + ":sdk_patches/uart1_console.patch",
+            entry.root + ":sdk_patches/pcm_play_runtime_block.patch",
+        ],
         target = target,
         **kwargs
     )

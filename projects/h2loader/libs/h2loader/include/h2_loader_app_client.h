@@ -43,6 +43,8 @@ typedef struct h2_loader_app_client_config {
     const char *board;
     const char *target;
     const char *chip;
+    /** Optional package image entry; must match the board's Loader layout. */
+    const char *app_entry_path;
     /** Device-reported BLE public/identity MAC as 12 lowercase hex digits. */
     const char *device_uid;
     h2_loader_image_identity_t active_identity;

@@ -102,3 +102,41 @@ h2_pal_result_t h2_h2loader_cli_output_json_string(
     escaped[out++] = '"';
     return write_all(stream_io(context, stream), (const uint8_t *)escaped, out);
 }
+
+h2_pal_result_t h2_h2loader_cli_transport_log(
+    void *user,
+    const uint8_t *data,
+    size_t len) {
+    h2_h2loader_cli_context_t *context = user;
+    if (context == NULL || (data == NULL && len != 0u)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    for (size_t index = 0u; index < len; ++index) {
+        uint8_t value = data[index];
+        if (value == 0u || (value < 0x20u && value != '\r' && value != '\n' &&
+                            value != '\t') || value >= 0x7fu) {
+            context->transport_log_line_discard = 1u;
+        }
+        if (context->transport_log_line_len <
+            sizeof(context->transport_log_line)) {
+            context->transport_log_line[context->transport_log_line_len++] =
+                value;
+        } else {
+            context->transport_log_line_discard = 1u;
+        }
+        if (value == '\n') {
+            h2_pal_result_t rc = H2_PAL_OK;
+            if (!context->transport_log_line_discard) {
+                rc = h2_h2loader_cli_output_bytes(
+                    context,
+                    H2_H2LOADER_CLI_STREAM_STDOUT,
+                    context->transport_log_line,
+                    context->transport_log_line_len);
+            }
+            context->transport_log_line_len = 0u;
+            context->transport_log_line_discard = 0u;
+            if (rc != H2_PAL_OK) return rc;
+        }
+    }
+    return H2_PAL_OK;
+}

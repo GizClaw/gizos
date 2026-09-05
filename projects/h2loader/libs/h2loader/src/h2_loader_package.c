@@ -694,6 +694,15 @@ static int image_read(
     return h2_pal_disk_read(package->config.disk, partition_id, offset, data, len);
 }
 
+static void image_writer_abort_finished(h2_loader_package_t *package) {
+    if (package != NULL && package->config.image_writer != NULL &&
+        package->config.image_writer->vtable != NULL &&
+        package->config.image_writer->vtable->abort != NULL) {
+        package->config.image_writer->vtable->abort(
+            package->config.image_writer->user);
+    }
+}
+
 static int hash_partition(
     h2_loader_package_t *package,
     uint32_t partition_id,
@@ -1487,7 +1496,8 @@ int h2_loader_package_plan_install(
             destination_partition_id);
         if (rc == H2_PAL_OK) {
             out_plan->update_app = 0;
-        } else if (rc != H2_PAL_ERR_FORMAT) {
+        } else if (rc != H2_PAL_ERR_FORMAT &&
+            rc != H2_PAL_ERR_NOT_FOUND) {
             return rc;
         }
     }
@@ -1682,9 +1692,11 @@ int h2_loader_package_install_to(
             destination_sha256,
             1);
         if (rc != H2_PAL_OK) {
+            image_writer_abort_finished(package);
             return rc;
         }
         if (strcmp(destination_sha256, inspection->manifest.image_sha256) != 0) {
+            image_writer_abort_finished(package);
             return H2_PAL_ERR_FORMAT;
         }
     }

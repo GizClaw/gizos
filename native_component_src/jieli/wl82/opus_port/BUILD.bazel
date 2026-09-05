@@ -1,0 +1,11 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "opus_port",
+    srcs = ["@h2_vendor_opus//:firmware_sources"],
+    hdrs = ["@h2_vendor_opus//:firmware_headers"],
+    component_name = "h2_jieli_wl82_opus",
+    tags = ["manual"],
+)

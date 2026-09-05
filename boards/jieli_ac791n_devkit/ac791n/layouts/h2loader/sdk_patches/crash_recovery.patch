@@ -1,0 +1,16 @@
+diff --git a/cpu/wl82/debug.c b/cpu/wl82/debug.c
+index 4181088..7dc9e6d 100644
+--- a/cpu/wl82/debug.c
++++ b/cpu/wl82/debug.c
+@@ -556,6 +556,11 @@ static void exception_analyze_sram(void)
+ 
+ void exception_analyze(int *sp)
+ {
++    extern void h2_jieli_wl82_assert_reset_hook(void *caller)
++        __attribute__((weak));
++    if (h2_jieli_wl82_assert_reset_hook) {
++        h2_jieli_wl82_assert_reset_hook((void *)sp[18]);
++    }
+     int len = 0;
+ 
+     log_output_release_deadlock();

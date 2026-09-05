@@ -95,6 +95,7 @@ cc_library(
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//tools/bazel/platforms:is_ac791n": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
@@ -180,6 +181,7 @@ cc_library(
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//tools/bazel/platforms:is_ac791n": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [

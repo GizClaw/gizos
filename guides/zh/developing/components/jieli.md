@@ -29,7 +29,7 @@
 - `target` 只能是 `br23` 或 `wl82`；macro 按 target 绑定 SDK locator、commit 文件、本地 post 脚本（`tools/bazel/jieli/local_post_<target>.sh`）与 SDK 子目录，调用方不得覆盖。
 - `project_makefile` 必须是 `boards/<board>/<chip>/layouts/<profile>/project.mk` 中的仓库文件。它拥有完整 compiler flags、defines、include paths、SDK source inventory、linker inputs、generated files 与 output paths；SDK application/demo Makefile 不得成为 input，也不得被 include。
 - Runner 把 SDK 子树复制到 invocation-local 目录（排除 `.git`、`doc`、`ui_project`），在 SDK 根执行 layout-owned project，并用 `TOOL_DIR=<pi32v2/bin>` 覆盖 `/opt/jieli` 默认值。SDK 只提供 source/header/archive/linker/post-build substrate。随后仓库自有 post 脚本用 objcopy、`isd_download`、`fw_add` 与 `ufw_maker` 生成发布输出。
-- 固定输出 `firmware/firmware.elf`、`symbols.txt`（objsizedump 符号表）、`jl_isd.bin`（完整 NOR flash 镜像）、`jl_isd.fw`、`update.ufw`（USB 虚拟盘 / SD 卡 / OTA 升级包）与 `manifest.json`；`JieliFirmwareInfo`、`DefaultInfo.files` 与 `OutputGroupInfo.release` 暴露相同文件。不返回 `FirmwareReleaseInfo`，不进入 H2Loader package 或 GitHub Release matrix。
+- 固定输出 `firmware/firmware.elf`、`symbols.txt`（objsizedump 符号表）、`jl_isd.bin`（完整 NOR flash 镜像）、`jl_isd.fw`、`update.ufw`（USB 虚拟盘 / SD 卡 / OTA 升级包）与 `manifest.json`；`JieliFirmwareInfo`、`DefaultInfo.files` 与 `OutputGroupInfo.release` 暴露相同文件。Native rule 不返回 `FirmwareReleaseInfo`；managed entry 由外层 `h2loader_tar_zlib` 消费此 provider 并拥有 package 与 release metadata。
 - Action 在当前 runner 上 unsandboxed、non-remote-exec 执行，不设置 `local`，声明 4 CPU / 4 GiB；只读取 allowlist environment（fixed PATH、`QT_QPA_PLATFORM=offscreen`、invocation-local `HOME`/`TMPDIR`），不继承 caller `PATH`。成功结果进入 local/GCS action cache。Action 不执行 flash、串口或设备操作。
 - **执行平台只能是 Linux x86_64。** Rule 的 compatibility 同时要求 `h2_firmware_target` 与 `h2_host_os=linux`，macOS host 上 `bazel build --config=ac695n //...` 把 firmware target 标为 incompatible 并跳过；macOS 开发者在 Linux dev container 内运行整个 Bazel。Runner 自身也在触碰 SDK 前拒绝非 Linux x86_64 host。不在 Bazel action 内包装 `docker run`。
 - `graph` 与 `srcs` 沿用其他 external rule 的语义：`firmware_native_component` 的 transitive source 进入 action key；`firmware_lib_component` archive 会被收集为输入，但在 SDK Make 显式消费 `H2_BAZEL_ARCHIVES` 之前不会注入最终链接。
@@ -49,7 +49,8 @@ AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_con
 ## 板与 entry
 
 - `boards/ac695n_chip/ac695n/layouts/compile_only/` 与 `boards/ac791n_chip/ac791n/layouts/compile_only/` 拥有裸芯片验证 project。
-- Firmware entry 只为仓库自己的 portable App 建立，位于 `projects/<project>/targets/jieli_firmware/<image>/<board>/`；不为 SDK 自带 demo 建 entry。公开 reference-smoke targets 分别验证 AC695N 与 AC791N 的完整 native link。
+- 不经 H2Loader 管理的 native firmware entry 位于 `projects/<project>/targets/jieli_firmware/<image>/<board>/`；只为仓库自己的 portable App 建立，不为 SDK 自带 demo 建 entry。公开 reference-smoke targets 分别验证 AC695N 与 AC791N 的完整 native link。
+- H2Loader-managed package entry 位于 `projects/<owner>/targets/h2loader_tar_zlib/<image>/<board>/`，与 ESP/BK 保持相同的 artifact ownership；其内部 firmware 仍使用 `h2loader_jieli_firmware`。迁移目录不改变 package image、board identity 或 layout。
 
 ## 烧录与升级边界
 
@@ -57,7 +58,39 @@ AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_con
 - 日常迭代用 `update.ufw`：设备虚拟 U 盘拷贝、SD 卡升级或 HTTP/FTP OTA。
 - `jl_isd.bin` 是完整 flash 镜像，供烧写器或有 KEY 的首刷流程使用。
 
-## Validation
+## AC791N DevKit composition
+
+`boards/jieli_ac791n_devkit/ac791n/` 描述物理开发板，区别于 `ac791n_chip` 的 compile-only 验证配置。`layouts/h2loader/` 集中拥有 SDK config、NOR geometry、启动配置与 SDK patches；`h2loader_jieli_firmware` 注入这些输入，各 firmware entry 选择自己的 launcher graph 和 task policy，不能单独覆盖 project makefile 或 SDK patches。
+
+`native_component_src/jieli/wl82/h2_pal_core` 提供 SDK port 与 PAL core 实现，host test 使用 fake SDK。Board 组合 Display、Touch、ADC Button、Wi-Fi、BLE、Audio、SD filesystem 和 Preference；硬件 pin 与 SDK 配置由 board header 和 layout 文件拥有。UART1 的 TX 为 PB3、RX 为 PA6，Loader command 与日志复用该链路，使用 460800 波特率。BLE 使用 SDK host/controller，默认不主动发起配对或保存 bond。
+
+FDK AAC 编译由 `libs/fdk_aac` 拥有，PAL decoder 依赖该 first-party library；`@h2_fdk_aac` 仅暴露 upstream source group 和 header-only target，不引用 GizOS platform labels。pi32v2 的无 stdio 编译选项在 first-party library 内选择，Linux 保留原始 stdio 行为。
+
+wl82 condition 为每个 wait 创建独立的 SDK semaphore，signal/broadcast 只通知当时已经注册且尚未收到通知的等待者；超时退出会注销自己的节点，不把 token 留给后来的等待者。等待者队列用短时间持有的原子 gate 保护，竞争时让出任务；节点在 SDK wait 返回之前始终保持注册，因此 destroy 会拒绝仍有等待者的 condition。与 PAL contract 一致，wait 只接受非递归 mutex，返回前重新取得调用者 mutex。
+
+wl82 Queue 的 ring、数据数量和关闭状态由同一把非递归 mutex 保护；readable/writable condition 只通知线程重新检查条件，不在锁外预占数据或空位。`reset` 在锁内丢弃待处理数据并唤醒等待空位的发送者，不重新打开已关闭的队列；`send_latest` 的追加或替换在一次持锁期间完成。`close` 唤醒所有收发等待者，拒绝后续发送，但允许接收者排空已有数据。调用者必须先 close 并结束所有使用者，再 destroy。有限等待跨多次唤醒共用一个超时预算。Queue 通过 wl82 内部 `h2_jieli_wl82_cond_wait_owned` 获取错误返回时的锁归属：SDK 重新加锁失败会返回 IO，Queue 不再尝试解锁；这不改变公共 PAL API。真实 pthread Queue 测试覆盖 reset 与接收访问交错、reset 唤醒发送者、多等待者关闭及关闭后排空，fake 回归覆盖重新加锁失败；它们不能替代板级性能与完整 Loader 生命周期验收。
+
+TinyH264 的 pi32v2 allocator bridge 使用 SDK port 的 task identity 与 sleep 接口，按任务查找当前 allocator；每个作用域的节点由调用栈持有，enter/leave 对称登记和注销，不分配全局固定容量槽、不占用 SDK TLS 槽，也不依赖 `pthread_once`。登记表只在修改和查找时短暂加锁，解码及 allocator callback 在锁外执行；同一任务的嵌套作用域退出后恢复上一层，不串用其它 decoder task 的 allocator。其它平台保留原有 thread-local 路径。
+
+H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image；`h2loader_tar_zlib` 从 `JieliFirmwareInfo` 取得它。原生 `jl_isd.bin` 用于独立的 USB DL 恢复流程，不等同于 managed package。Native rule 本身不取得 release identity；外层 package rule 拥有 package metadata。JieLi package 不生成 ESP/BK 格式的 recovery bundle。
+
+物理 NOR 为 8 MiB：`[0, 0x700000)` 由 SDK double-bank packer 管理，Loader/App 是逻辑角色，不是两个固定地址的裸 flash 分区；`[0x700000, 0x740000)` 为 Preference，`[0x740000, 0x780000)` 为 coredump，`[0x780000, 0x7ff000)` 为 vendor reserved，最后 4 KiB 为 boot reserved。`h2_jieli_ac791n_devkit_partitions.h` 是容量与边界的 source of truth；下载文件位于 SD filesystem，不能把 SD 容量当成可执行 NOR 容量。
+
+当前实现尚未满足非破坏性的 `App → Loader → 已安装 App` 启动合同：App 返回 Loader 时调用 `flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK)`，会清除自己的原生启动信息；Loader 的 `power_set_next` 则只允许存在新镜像更新事务时提交跨 bank 启动。公共 Loader 在没有新 stage 时仍可请求启动已有 App，因此一次安装成功不能证明后续分区选择正确。此限制是接入验收阻塞，不是公共 Loader 的预期行为，也不能通过重装缓存包来替代 `reboot app`。
+
+SDK 的 `dual_bank_updata_api.h` 公开了新镜像校验后写入 boot info、清除指定 bank boot info 和读取当前 boot info 的接口；目前尚未确认可安全选择已有 bank 的接口。[官方 AC79 升级说明](https://doc.zh-jieli.com/AC79/zh-cn/master/module_example/system/update.html)描述的是写入另一 bank、校验、更新启动标志的升级流程，不是任意选择已有 bank 的保证。修复必须保留可恢复的 Loader，不得取消更新状态 guard 或直接猜测 boot reserved 格式；在取得支持的选择机制并完成真机验收之前，不宣称完整 A/B 生命周期可用。
+
+声明的 `sdk_patches` 只应用于 invocation-local SDK 副本，原始 SDK checkout 不被修改。Firmware、ELF、symbols、manifest 由 Bazel action 发布；手工硬件诊断的日志不属于发布产物。
+
+## AC791N validation commands
+
+PAL BLE 诊断包位于 `//projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/jieli_ac791n_devkit:package`，通过相同的 `h2loader_jieli_firmware` wrapper 使用正式 board layout，保留 UART App command 通道与分步日志，并带 `no-release` tag。不再维护独立的 vendor demo config、Makefile 或 BLE 实验 patch；该诊断只用于定位 PAL 调用阶段，不替代 H2Loader BLE 生命周期验收。
+
+Host 验证：`bazel test //native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_platform_core //projects/h2loader/libs/h2loader:all //projects/h2loader/apps/cli/app:all //projects/example/apps/mp4-player/app:mp4_player_test`。
+
+Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、没有新 stage 时再次启动同一已安装 App、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。再次启动已有 App 时必须确认没有重新上传或重写镜像，同时保留 Loader 的恢复能力。
+
+## Reference validation
 
 - `bazel test //tools/bazel:jieli_runner_test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 在任意 host 运行。
 - Linux x86_64：`. ../firmwares-devenv/export.sh && bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。

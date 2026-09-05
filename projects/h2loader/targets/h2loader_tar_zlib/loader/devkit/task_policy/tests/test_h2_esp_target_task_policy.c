@@ -47,6 +47,7 @@ int main(void) {
   assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
   assert_default_policy("dynamic-default");
   assert_policy(H2LOADER_APP_COMMAND_TASK_NAME_VALUE, 8u);
+  assert_policy(H2LOADER_BLE_COMMAND_TASK_NAME_VALUE, 8u);
   assert_policy(H2_LOADER_RETURN_TASK_NAME_VALUE, 8u);
   assert_policy(H2_LOADER_BLE_LINK_TASK_NAME_VALUE, 6u);
   assert_policy(H2_BLEIKCP_WORKER_TASK_NAME_VALUE, 7u);

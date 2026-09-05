@@ -245,6 +245,19 @@ static h2_pal_result_t ble_read_until(
     }
 }
 
+static void connect_diagnostic(
+    const h2_h2loader_host_ble_connection_config_t *config,
+    const char *stage, h2_pal_result_t result) {
+    if (config->on_log == NULL) return;
+    char line[96];
+    const int length = snprintf(
+        line, sizeof(line), "H2_BLE_HOST_DIAG stage=%s rc=%d\n", stage, result);
+    if (length > 0 && (size_t)length < sizeof(line)) {
+        (void)config->on_log(
+            config->log_user, (const uint8_t *)line, (size_t)length);
+    }
+}
+
 h2_pal_result_t h2_h2loader_host_ble_connect(
     const h2_h2loader_host_ble_connection_config_t *config,
     h2_h2loader_host_ble_connection_t **out_connection,
@@ -297,11 +310,13 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         &connect_params,
         &connection->conn_handle);
     if (rc != H2_PAL_OK) {
+        connect_diagnostic(config, "connect", rc);
         goto fail;
     }
     rc = h2_pal_ble_exchange_mtu(
         config->ble, connection->conn_handle, &mtu, timeout_ms);
     if (rc != H2_PAL_OK) {
+        connect_diagnostic(config, "mtu", rc);
         goto fail;
     }
     const h2_bleikcp_api_t api = {
@@ -337,10 +352,12 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         mtu,
         &connection->stream);
     if (rc != H2_PAL_OK) {
+        connect_diagnostic(config, "bleikcp-open", rc);
         goto fail;
     }
     rc = h2_h2loader_host_ble_read_status(connection, out_status);
     if (rc != H2_PAL_OK) {
+        connect_diagnostic(config, "status", rc);
         goto fail;
     }
     if (config->advertised_board != NULL &&

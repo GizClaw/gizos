@@ -1,6 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,6 +8,7 @@ cc_library(
     srcs = [
         "src/h2_tinyh264.c",
         "src/h2_tinyh264_allocator_bridge.c",
+        "src/h2_tinyh264_allocator_scope.h",
     ],
     hdrs = [
         "include/h2_tinyh264.h",
@@ -17,15 +17,44 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
+    local_defines = select({
+        "//tools/bazel/platforms:is_pi32v2": [
+            "H2_TINYH264_SCOPE_TASK=h2_jieli_sdk_task_current",
+            "H2_TINYH264_SCOPE_YIELD=h2_jieli_sdk_sleep_ms",
+        ],
+        "//conditions:default": [],
+    }),
     includes = [
         "include",
     ],
-    # The vendor decoder includes <memory.h>, which the JieLi pi32v2 libc does not ship.
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/pal",
         "//tools/bazel:vendor_third_party_tinyh264",
     ],
+)
+
+cc_test(
+    name = "allocator_task_scope_test",
+    srcs = [
+        "src/h2_tinyh264_allocator_bridge.c",
+        "src/h2_tinyh264_allocator_scope.h",
+        "include/h2_tinyh264_allocator_bridge.h",
+        "tests/test_allocator_task_scope.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "src"],
+    local_defines = [
+        "H2_TINYH264_SCOPE_TASK=test_scope_task",
+        "H2_TINYH264_SCOPE_YIELD=test_scope_yield",
+    ],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
 )
 
 cc_test(

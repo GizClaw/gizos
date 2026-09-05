@@ -19,12 +19,38 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
+    local_defines = select({
+        "//tools/bazel/platforms:is_pi32v2": [
+            "H2_MP4_PLAYER_DECODER_TASK_STACK_BYTES=131072",
+            "H2_MP4_PLAYER_PROGRESS_LOG_INTERVAL=15",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":task_names",
         "//libs/mp4_decoder",
         "//libs/pal",
         "//libs/runtime",
     ],
+)
+
+cc_test(
+    name = "mp4_player_large_audio_block_test",
+    srcs = ["tests/test_mp4_player.c"],
+    args = [
+        "$(location //libs/mp4_decoder:tests/fixtures/high_bframes_aac.mp4)",
+        "large-audio-block",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["//libs/mp4_decoder:tests/fixtures/high_bframes_aac.mp4"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":mp4_player"],
 )
 
 cc_test(

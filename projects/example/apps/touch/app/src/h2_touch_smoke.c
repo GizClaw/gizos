@@ -190,14 +190,14 @@ static h2_pal_result_t touch_smoke_ui_init(h2_touch_smoke_state_t *state) {
       state->touch_marker == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  lv_label_set_text(title, "K4B Touch PAL -> LVGL");
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 80);
+  lv_label_set_text(title, "Touch PAL -> LVGL");
+  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
   touch_smoke_update_status(state);
-  lv_obj_align(state->status_label, LV_ALIGN_TOP_MID, 0, 150);
+  lv_obj_align(state->status_label, LV_ALIGN_TOP_MID, 0, 55);
   lv_label_set_text(state->position_label, "Touch idle");
-  lv_obj_align(state->position_label, LV_ALIGN_TOP_MID, 0, 190);
-  lv_obj_set_size(button, 520, 180);
-  lv_obj_center(button);
+  lv_obj_align(state->position_label, LV_ALIGN_TOP_MID, 0, 85);
+  lv_obj_set_size(button, (int32_t)state->config->width - 80, 120);
+  lv_obj_align(button, LV_ALIGN_BOTTOM_MID, 0, -25);
   lv_obj_set_style_bg_color(button, lv_color_hex(0x2563ebu), LV_PART_MAIN);
   lv_obj_set_event_bubble(button, true);
   lv_obj_set_size(state->touch_marker, 20, 20);
@@ -278,6 +278,9 @@ h2_pal_result_t h2_touch_smoke_run(
       h2_pal_time_get_monotonic_ms(runtime->time, &state.last_tick_ms);
   if (result == H2_PAL_OK) {
     result = touch_smoke_ui_init(&state);
+  }
+  if (config->on_started != NULL) {
+    config->on_started(config->started_user, result);
   }
   while (result == H2_PAL_OK && !config->should_stop(config->stop_user)) {
     touch_smoke_process_events(&state);

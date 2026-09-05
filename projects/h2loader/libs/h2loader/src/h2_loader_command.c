@@ -555,14 +555,19 @@ static int h2loader_stage_url(
 }
 
 static int h2loader_parse_size_arg(const char *text, size_t *out_value) {
-    char *end = NULL;
-    unsigned long long value;
+    uint32_t value = 0u;
     if (text == NULL || out_value == NULL || text[0] == '\0') {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    value = strtoull(text, &end, 10);
-    if (end == NULL || *end != '\0' || value > UINT32_MAX) {
-        return H2_PAL_ERR_INVALID_ARG;
+    for (const char *cursor = text; *cursor != '\0'; ++cursor) {
+        if (*cursor < '0' || *cursor > '9') {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        uint32_t digit = (uint32_t)(*cursor - '0');
+        if (value > (UINT32_MAX - digit) / 10u) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+        value = value * 10u + digit;
     }
     *out_value = (size_t)value;
     return H2_PAL_OK;

@@ -1,0 +1,97 @@
+diff --git a/apps/common/debug/debug_user.c b/apps/common/debug/debug_user.c
+index b2eb043d..a617e491 100644
+--- a/apps/common/debug/debug_user.c
++++ b/apps/common/debug/debug_user.c
+@@ -308,11 +308,16 @@ module_initcall(sd_log_task_create);
+ 
+ 
+ 
+-#if (defined CONFIG_DEBUG_ENABLE && defined CONFIG_USB_DEBUG_ENABLE)
++#if defined CONFIG_DEBUG_ENABLE && (defined CONFIG_USB_DEBUG_ENABLE || defined CONFIG_H2_UART1_DEBUG_ENABLE)
+ #include "os/os_api.h"//创建线程，系统延时
+ #include "system/init.h"//early_initcall
+ 
+ extern u32 cdc_write_data(int usb_id, u8 *buf, u32 len);
++#if defined CONFIG_H2_UART1_DEBUG_ENABLE
++extern u32 h2_jieli_uart1_debug_write(u8 *buf, u32 len);
++/* Reuse the SDK buffered printf producer; the layout selects its sink. */
++#define cdc_write_data(id, buf, len) h2_jieli_uart1_debug_write(buf, len)
++#endif
+ extern int h2_jieli_usb_debug_try_lock(void) __attribute__((weak));
+ extern void h2_jieli_usb_debug_unlock(void) __attribute__((weak));
+ extern void h2_jieli_usb_debug_delivery_confirmed(void) __attribute__((weak));
+@@ -340,8 +345,12 @@ static void usb_log_task(void *priv)
+                  * complete ring instead of pretending old bytes were sent. */
+                 last_cnt = lg_cnt - sizeof(lg_buf);
+             }
++#if defined CONFIG_H2_UART1_DEBUG_ENABLE
++            int h2_locked = 1; /* The board sink owns the UART write lock. */
++#else
+             int h2_locked = !h2_jieli_usb_debug_try_lock ||
+                 h2_jieli_usb_debug_try_lock();
++#endif
+             if (!h2_locked) {
+                 os_time_dly(1);
+                 continue;
+@@ -362,9 +371,11 @@ static void usb_log_task(void *priv)
+                 }
+                 last_cnt += written;
+             }
++#if !defined CONFIG_H2_UART1_DEBUG_ENABLE
+             if (h2_jieli_usb_debug_unlock) {
+                 h2_jieli_usb_debug_unlock();
+             }
++#endif
+             if (last_cnt == target_cnt &&
+                 h2_jieli_usb_debug_delivery_confirmed) {
+                 h2_jieli_usb_debug_delivery_confirmed();
+@@ -376,7 +387,7 @@ static void usb_log_task(void *priv)
+ 
+ static int usb_log_task_create(void)
+ {
+-#define USB_LOG_STK_SIZE 256
++#define USB_LOG_STK_SIZE 1024
+     static u8 usb_log_tcb_stk_q[sizeof(StaticTask_t) + USB_LOG_STK_SIZE * 4 + sizeof(StaticQueue_t)] ALIGNE(4);
+     return os_task_create_static(usb_log_task, 0, 1, USB_LOG_STK_SIZE, 0, "usb_log_task", usb_log_tcb_stk_q);
+ }
+@@ -387,7 +398,7 @@ module_initcall(usb_log_task_create);
+ 
+ //////////////////////////////////////////
+ 
+-#if (defined CONFIG_NETWORK_DEBUG_ENABLE || defined CONFIG_SDCARD_DEBUG_ENABLE || defined CONFIG_USB_DEBUG_ENABLE)
++#if (defined CONFIG_NETWORK_DEBUG_ENABLE || defined CONFIG_SDCARD_DEBUG_ENABLE || defined CONFIG_USB_DEBUG_ENABLE || defined CONFIG_H2_UART1_DEBUG_ENABLE)
+ void putbyte(char c)
+ {
+     extern void h2_jieli_wl82_log_byte(char value) __attribute__((weak));
+@@ -439,7 +450,7 @@ void putbyte(char c)
+     }
+     first_write = 0;
+ #endif
+-#if defined CONFIG_USB_DEBUG_ENABLE
++#if defined CONFIG_USB_DEBUG_ENABLE || defined CONFIG_H2_UART1_DEBUG_ENABLE
+     if (c == '\r') {
+         return;
+     }
+@@ -516,4 +527,3 @@ int user_putchar(int a)//用户的user_printf 的底层发送函数
+     return a;
+ }
+ #endif
+-
+diff --git a/apps/common/system/init.c b/apps/common/system/init.c
+index 8ee8adec..f7bb8669 100644
+--- a/apps/common/system/init.c
++++ b/apps/common/system/init.c
+@@ -240,11 +240,13 @@ static void app_task_handler(void *p)
+     h2_jieli_wl82_probe(103);
+     board_init();
+     h2_jieli_wl82_probe(104);
++#if !defined CONFIG_H2_UART1_DEBUG_ENABLE
+     extern int h2_jieli_ac791n_devkit_usb_debug_start(void)
+         __attribute__((weak));
+     if (h2_jieli_ac791n_devkit_usb_debug_start) {
+         (void)h2_jieli_ac791n_devkit_usb_debug_start();
+     }
++#endif
+ 
+ #ifdef RF_FCC_TEST_ENABLE
+     u8 rf_fcc_test_init(void);

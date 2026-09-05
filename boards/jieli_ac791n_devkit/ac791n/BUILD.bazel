@@ -1,0 +1,28 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_native_component(
+    name = "ac791n",
+    srcs = glob(["src/*.c"]),
+    hdrs = glob(["include/*.h"]),
+    include_roots = [
+        "boards/jieli_ac791n_devkit/ac791n/include",
+        "libs/pal/include",
+        "libs/runtime/include",
+    ],
+    component_name = "h2_jieli_ac791n_devkit",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac791n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//boards/ac791n_chip/ac791n",
+        "//libs/pal:pal_header_files",
+        "//libs/runtime:runtime_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core",
+        "//native_component_src/jieli/wl82/h2_pal_unsupported",
+    ],
+)

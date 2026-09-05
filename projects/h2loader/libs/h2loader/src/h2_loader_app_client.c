@@ -161,6 +161,7 @@ int h2_loader_app_client_init(
     loader_config.package.disk = config->disk;
     loader_config.package.allocator = config->allocator;
     loader_config.package.digest = config->digest;
+    loader_config.package.app_entry_path = config->app_entry_path;
     loader_config.pref = config->pref;
     loader_config.power = config->power;
     loader_config.board = config->board;

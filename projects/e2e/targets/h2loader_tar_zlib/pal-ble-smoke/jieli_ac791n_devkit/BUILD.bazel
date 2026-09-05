@@ -1,0 +1,55 @@
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_native_component(
+    name = "pal_smoke",
+    srcs = ["src/pal_ble_smoke.c"],
+    include_roots = ["projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"],
+    component_name = "jieli_ac791n_devkit_pal_ble_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+        "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:app_transport",
+    ],
+)
+
+firmware_native_component(
+    name = "pal_smoke_task_policy",
+    srcs = ["src/pal_ble_smoke_task_policy.c"],
+    component_name = "jieli_ac791n_devkit_pal_ble_smoke_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":pal_smoke",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "pal-ble-smoke",
+    target = "wl82",
+    task_policy = ":pal_smoke_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "pal-ble-smoke",
+    role = "app",
+    tags = ["no-release"],
+    target = "wl82",
+)

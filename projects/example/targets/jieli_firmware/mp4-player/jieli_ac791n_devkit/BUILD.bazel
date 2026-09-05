@@ -1,0 +1,56 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "decoder_libs",
+    component_name = "example_jieli_ac791n_tinyh264_config_libs",
+    deps = [
+        "//libs/mp4_decoder",
+        "//libs/pal/providers/tinyh264",
+    ],
+)
+
+firmware_native_component(
+    name = "launcher",
+    srcs = ["src/main.c"],
+    component_name = "example_jieli_ac791n_mp4_first_frame_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":decoder_libs",
+        "//boards/ac791n_chip/ac791n",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+)
+
+firmware_native_component(
+    name = "task_policy",
+    srcs = ["src/task_policy.c"],
+    component_name = "example_jieli_ac791n_mp4_player_task_policy",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+# This is a directly flashed Example application.  The shared board layout
+# supplies the physical memory map, SDK configuration and early USB console;
+# the application graph itself contains no Loader client or transport.
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "example-mp4-player-small-direct",
+    target = "wl82",
+    task_policy = ":task_policy",
+)

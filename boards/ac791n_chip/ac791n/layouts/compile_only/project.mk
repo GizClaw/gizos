@@ -1,7 +1,8 @@
 # Repository-owned AC791N compile-only native project. The pinned SDK supplies
 # reusable CPU, common runtime, header, archive and linker inputs only.
 
-H2_JIELI_LAYOUT_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+H2_JIELI_LAYOUT_ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+H2_JIELI_RESERVED_EXPAND_CONFIG_FILE ?=
 
 # make 编译并下载
 # make VERBOSE=1 显示编译详细过程
@@ -118,7 +119,6 @@ DEFINES := \
 	-DCONFIG_EQ_SUPPORT_ASYNC \
 	-DEQ_CORE_V1 \
 	-DCONFIG_SFC_ENABLE \
-	-DCONFIG_NO_SDRAM_ENABLE \
 	-DEVENT_HANDLER_NUM_CONFIG=2 \
 	-DEVENT_TOUCH_ENABLE_CONFIG=0 \
 	-DEVENT_POOL_SIZE_CONFIG=256 \
@@ -139,8 +139,14 @@ DEFINES := \
 	-D_GNU_SOURCE \
 	-D__ELF__ \
 
+ifeq ($(H2_JIELI_SDRAM_ENABLE),1)
+DEFINES += -DH2_JIELI_SDRAM_ENABLE=1
+else
+DEFINES += -DCONFIG_NO_SDRAM_ENABLE
+endif
 
 DEFINES += $(EXT_CFLAGS) # 额外的一些定义
+DEFINES += $(H2_JIELI_BOARD_DEFINES)
 
 # 头文件搜索路径
 INCLUDES := \
@@ -167,6 +173,7 @@ INCLUDES := \
 	-Iapps \
 	-I$(H2_JIELI_LAYOUT_ROOT)/include \
 	-Iinclude_lib/system/os \
+	$(H2_JIELI_BOARD_INCLUDES) \
 
 
 # 需要编译的 .c 文件
@@ -191,6 +198,7 @@ c_SRC_FILES := \
 	cpu/wl82/key/rdec.c \
 	cpu/wl82/port_waked_up.c \
 	cpu/wl82/setup.c \
+	$(H2_JIELI_BOARD_C_SRC_FILES) \
 
 
 # 需要编译的 .S 文件
@@ -265,6 +273,7 @@ LFLAGS := \
 	cpu/wl82/liba/fs.a \
 	cpu/wl82/liba/common_lib.a \
 	cpu/wl82/liba/update.a \
+	$(H2_JIELI_BOARD_LIBS) \
 	--end-group \
 	include_lib/c++/libstdc++/libemutls.a \
 	include_lib/c++/libstdc++/libc++.a \
@@ -323,6 +332,7 @@ pre_build:
 	$(QUITE) $(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -D__LD__ -E -P cpu/wl82/tools/download.c -o $(POST_SCRIPT)
 	$(QUITE) $(FIXBAT) $(POST_SCRIPT)
 	$(QUITE) $(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -D__LD__ -E -P cpu/wl82/tools/isd_config_rule.c -o cpu/wl82/tools/isd_config.ini
+	$(if $(strip $(H2_JIELI_RESERVED_EXPAND_CONFIG_FILE)),$(QUITE) awk 'NR == FNR { config[++count] = $$0; next } /^\[BURNER_CONFIG\]/ { for (i = 1; i <= count; ++i) print config[i] } { print }' $(H2_JIELI_RESERVED_EXPAND_CONFIG_FILE) cpu/wl82/tools/isd_config.ini > cpu/wl82/tools/isd_config.ini.h2 && mv cpu/wl82/tools/isd_config.ini.h2 cpu/wl82/tools/isd_config.ini)
 	$(QUITE) $(CC) $(CFLAGS) $(DEFINES) $(INCLUDES) -D__LD__ -E -P cpu/wl82/tools/isd_config_rule_loader.c -o cpu/wl82/tools/isd_config_loader.ini
 
 clean:

@@ -1,0 +1,51 @@
+diff --git a/apps/common/debug/debug_user.c b/apps/common/debug/debug_user.c
+index c60bc42..c65b59d 100644
+--- a/apps/common/debug/debug_user.c
++++ b/apps/common/debug/debug_user.c
+@@ -313,6 +313,10 @@
+ #include "system/init.h"//early_initcall
+ 
+ extern u32 cdc_write_data(int usb_id, u8 *buf, u32 len);
++extern void h2_jieli_usb_debug_lock(void) __attribute__((weak));
++extern void h2_jieli_usb_debug_unlock(void) __attribute__((weak));
+ 
+-#define DATA_BUF_SIZE (200 * 1024)
++/* Loader has no SDRAM dependency. USB drains every 100 ms, so a 16 KiB
++ * internal ring keeps early logging while preserving the install heap. */
++#define DATA_BUF_SIZE (16 * 1024)
+ 
+@@ -324,15 +328,18 @@ static void usb_log_task(void *priv)
+ 
+     while (1) {
+         if (lg_cnt > last_cnt && last_cnt != lg_cnt) {
++            if (h2_jieli_usb_debug_lock) {
++                h2_jieli_usb_debug_lock();
++            }
+             if (lg_cnt / sizeof(lg_buf) > last_cnt / sizeof(lg_buf)) {
+                 cdc_write_data(0, (u8 *)lg_buf + (last_cnt % sizeof(lg_buf)), sizeof(lg_buf) - last_cnt % sizeof(lg_buf));
+-                cdc_write_data(1, (u8 *)lg_buf + (last_cnt % sizeof(lg_buf)), sizeof(lg_buf) - last_cnt % sizeof(lg_buf));
+                 cdc_write_data(0, (u8 *)lg_buf, lg_cnt - last_cnt - (sizeof(lg_buf) - last_cnt % sizeof(lg_buf)));
+-                cdc_write_data(1, (u8 *)lg_buf, lg_cnt - last_cnt - (sizeof(lg_buf) - last_cnt % sizeof(lg_buf)));
+             } else {
+                 cdc_write_data(0, (u8 *)lg_buf + (last_cnt % sizeof(lg_buf)), lg_cnt - last_cnt);
+-                cdc_write_data(1, (u8 *)lg_buf + (last_cnt % sizeof(lg_buf)), lg_cnt - last_cnt);
+             }
++            if (h2_jieli_usb_debug_unlock) {
++                h2_jieli_usb_debug_unlock();
++            }
+         }
+         last_cnt = lg_cnt;
+         os_time_dly(10);
+diff --git a/apps/common/system/init.c b/apps/common/system/init.c
+index 1c4985d..4f13c6a 100644
+--- a/apps/common/system/init.c
++++ b/apps/common/system/init.c
+@@ -215,3 +215,8 @@ static void app_task_handler(void *p)
++    extern int h2_jieli_ac791n_devkit_usb_debug_start(void)
++        __attribute__((weak));
++    if (h2_jieli_ac791n_devkit_usb_debug_start) {
++        (void)h2_jieli_ac791n_devkit_usb_debug_start();
++    }
+     app_main();
+ 
+ #ifdef CONFIG_FINSH_ENABLE

@@ -468,7 +468,7 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
     int rc = h2_pal_mutex_create(
         service->config.api.sync, &mutex_config, &service->link_mutex);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error("link_mutex_create", rc);
     }
     rc = h2_pal_mutex_create(
         service->config.api.sync,
@@ -488,7 +488,7 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         &semaphore_config,
         &service->link_semaphore);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error("link_semaphore_create", rc);
     }
     semaphore_config.name = "h2loader/blemtu";
     rc = h2_pal_semaphore_create(
@@ -496,18 +496,19 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         &semaphore_config,
         &service->mtu_semaphore);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error("mtu_semaphore_create", rc);
     }
     const h2_pal_task_options_t task_options = {
         .name = h2_loader_ble_link_task_name,
         .min_stack_size = H2_LOADER_BLE_LINK_TASK_STACK_SIZE,
     };
-    return h2_pal_task_start(
+    rc = h2_pal_task_start(
         service->config.api.task,
         &task_options,
         h2_loader_ble_link_task,
         service,
         &service->link_task);
+    return rc;
 }
 
 static int h2_loader_ble_stop_link_task(h2_loader_ble_service_t *service) {
@@ -591,16 +592,19 @@ int h2_loader_ble_encode_identity(
     if (board_len == 0u || board_len > H2_LOADER_BLE_BOARD_MAX) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    size_t required_capacity = board_len > H2_LOADER_BLE_INLINE_BOARD_MAX
+    const size_t inline_len = H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN + board_len;
+    const bool compact = board_len > H2_LOADER_BLE_INLINE_BOARD_MAX ||
+        inline_len > out_capacity;
+    size_t required_capacity = compact
         ? H2_LOADER_BLE_COMPACT_SERVICE_DATA_LEN
-        : H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN + board_len;
+        : inline_len;
     if (out_capacity < required_capacity) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memcpy(out, "H2LD", 4u);
     out[5] = 0u;
     write_le32(&out[6], capabilities);
-    if (board_len > H2_LOADER_BLE_INLINE_BOARD_MAX) {
+    if (compact) {
         out[4] = H2_LOADER_BLE_COMPACT_PROTOCOL_VERSION;
         write_le64(&out[10], h2_loader_ble_board_hash(board));
         *out_len = H2_LOADER_BLE_COMPACT_SERVICE_DATA_LEN;
@@ -723,9 +727,13 @@ int h2_loader_ble_service_open(
     service->config = *config;
     service->active_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     service->pending_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
+    const size_t identity_capacity = config->advertising_mode ==
+            H2_LOADER_BLE_ADVERTISING_LEGACY
+        ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u
+        : sizeof(service->service_data);
     rc = h2_loader_ble_encode_identity(
         config->capabilities, config->board,
-        service->service_data, sizeof(service->service_data),
+        service->service_data, identity_capacity,
         &service->service_data_len);
     if (rc != H2_PAL_OK) {
         goto fail;
