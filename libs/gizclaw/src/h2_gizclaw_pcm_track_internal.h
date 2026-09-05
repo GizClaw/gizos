@@ -25,9 +25,6 @@ void h2_gizclaw_pcm_track_detach_internal(h2_gizclaw_track_t *track);
 void h2_gizclaw_pcm_track_discard_downlink_internal(h2_gizclaw_track_t *track);
 /* Snapshot only while the single uplink consumer is paused. */
 size_t h2_gizclaw_pcm_track_pending_internal(h2_gizclaw_track_t *track);
-bool h2_gizclaw_pcm_track_downlink_stats_internal(h2_gizclaw_track_t *track,
-                                                  size_t *out_used,
-                                                  size_t *out_capacity);
 
 /* One recording window. Control and consumer access are serialized by the
  * route's input mutex. Only prepare/read, on the uplink task, move read_index. */
