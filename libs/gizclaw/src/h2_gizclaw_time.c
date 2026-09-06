@@ -139,6 +139,10 @@ static void time_worker(void *user) {
 }
 
 void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service) {
+  /* One Service owns exactly one client connection. net_worker calls this on
+   * every poll to retry task creation, not to signal a reconnect. Keep the
+   * completed handle until stop joins it so success does not trigger another
+   * calibration. A reconnect uses a new Service and therefore a new task. */
   if (service->time_task != NULL)
     return;
   uint64_t now = 0u;

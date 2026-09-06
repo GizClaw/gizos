@@ -69,6 +69,7 @@ typedef struct test_env {
   atomic_bool event_dispatch_gate;
   atomic_bool event_emitted;
   atomic_bool original_cancel;
+  atomic_bool disconnect;
   h2_pal_result_t init_result;
   h2_pal_result_t connect_result;
   h2_pal_result_t poll_result;
@@ -198,7 +199,8 @@ static h2_pal_result_t fake_client_poll(h2_gizclaw_client_t *client,
   assert(client == (h2_gizclaw_client_t *)s_env);
   assert(timeout_ms > 0);
   atomic_fetch_add_explicit(&s_env->poll_count, 1u, memory_order_relaxed);
-  return s_env->poll_result;
+  return atomic_load(&s_env->disconnect) ? H2_PAL_ERR_CLOSED
+                                         : s_env->poll_result;
 }
 
 static h2_pal_result_t
@@ -8920,6 +8922,57 @@ static h2_gizclaw_time_sync_status_t time_test_wait(
   assert(!"time sync state timeout");
   return (h2_gizclaw_time_sync_status_t){0};
 }
+/* A Service has one connection lifetime. Reconnect creates a fresh Service
+ * while retaining the platform clock; ordinary network polls do not resync. */
+static void test_time_sync_reconnect(void) {
+  time_test_t test = {0};
+  const h2_pal_time_vtable_t tv = {.get_monotonic_ms = time_test_mono,
+      .get_wall_ms = time_test_wall, .get_wall_status = time_test_status,
+      .set_wall_ms = time_test_set};
+  const h2_pal_time_api_t time = {.user = &test, .vtable = &tv};
+  const h2_pal_http_vtable_t hv = {.request = time_test_http};
+  const h2_pal_http_api_t http = {.user = &test, .vtable = &hv};
+  for (unsigned connection = 0; connection < 2; ++connection) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 2);
+    service->config.on_event = NULL;
+    service->client_config.time = &time;
+    service->client_config.http = &http;
+    service->client_config.server_endpoint =
+        (h2_gizclaw_str_t){"example.test:9821", 17};
+    atomic_store(&test.http_gate, false);
+    atomic_store(&env.connect_gate, false);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    wait_for_count(&env.connect_count, 1);
+    assert(atomic_load(&test.calls) == connection);
+    assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_WAITING).attempts == 0);
+    atomic_store(&env.connect_gate, true);
+    wait_for_count(&test.calls, connection + 1);
+    assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RUNNING).attempts == 1);
+    uint64_t wall = 0;
+    assert(h2_pal_time_get_valid_wall_ms(&time, &wall) ==
+           (connection == 0 ? H2_PAL_TIME_ERR_UNCALIBRATED : H2_PAL_OK));
+    atomic_store(&test.http_gate, true);
+    assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_SUCCEEDED).attempts == 1);
+    /* Even beyond the task-start retry deadline, successful calibration must
+     * remain once per connection, rather than once per network poll. */
+    atomic_fetch_add(&test.offset, 60001);
+    unsigned polls = atomic_load(&env.poll_count);
+    wait_for_count(&env.poll_count, polls + 100);
+    assert(atomic_load(&test.calls) == connection + 1);
+    atomic_store(&env.disconnect, true);
+    wait_until(&env, 0, 1, 0);
+    assert(env.terminal_result == H2_PAL_ERR_CLOSED);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(h2_pal_time_get_valid_wall_ms(&time, &wall) == H2_PAL_OK);
+    assert(wall == 1735689600123ull);
+  }
+  assert(atomic_load(&test.calls) == 2);
+}
+
 static void test_automatic_time_sync(void) {
   const char *invalid[] = {NULL, "{\"server_time\":0}",
       "{\"server_time\":-1}", "{\"server_time\":1.5}",
@@ -9040,6 +9093,7 @@ int main(int argc, char **argv) {
   }
   assert(argc == 1);
   test_automatic_time_sync();
+  test_time_sync_reconnect();
   test_stream_sink_one_shot();
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
