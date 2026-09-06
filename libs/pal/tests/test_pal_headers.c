@@ -82,12 +82,14 @@ static void use_json(void) {
 
 static h2_pal_result_t clock_status(void *user, h2_pal_time_wall_status_t *out) {
     int mode = *(int *)user;
-    out->valid = mode != 0;
+    out->valid = mode != 0 && mode != 4;
     return mode == 1 ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
+static unsigned clock_reads;
 static h2_pal_result_t clock_read(void *user, uint64_t *out) {
+    ++clock_reads;
     *out = 123;
-    return *(int *)user == 2 ? H2_PAL_ERR_UNAVAILABLE : H2_PAL_OK;
+    return (*(int *)user == 2 || *(int *)user == 4) ? H2_PAL_ERR_UNAVAILABLE : H2_PAL_OK;
 }
 static void test_valid_wall(void) {
     int mode = 0;
@@ -100,6 +102,11 @@ static void test_valid_wall(void) {
     assert(value == 0);
     assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_TIME_ERR_UNCALIBRATED);
     assert(value == 0);
+    /* Invalid status wins even if the raw reader would fail. Do not call it. */
+    mode = 4;
+    value = 456;
+    assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_TIME_ERR_UNCALIBRATED);
+    assert(value == 0 && clock_reads == 0);
     mode = 1;
     assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_ERR_IO);
     assert(value == 0);

@@ -851,7 +851,7 @@ static int run_tests(void) {
   // clang-format on
   if (h2_pal_time_get_wall_ms(clock, &wall_ms) != H2_PAL_ERR_UNAVAILABLE ||
       wall_ms != 0u ||
-      h2_pal_time_get_wall_status(clock, &wall_status) != H2_PAL_OK ||
+      h2_pal_time_get_wall_status(clock, &wall_status) != H2_PAL_ERR_UNAVAILABLE ||
       wall_status.valid)
     return 52;
   EM_ASM({ Date.now = globalThis.h2SavedDateNow; });

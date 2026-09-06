@@ -154,7 +154,8 @@ time_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
     out_status->valid = (rc == H2_PAL_OK) ? 1u : 0u;
     out_status->source = (rc == H2_PAL_OK) ? H2_PAL_TIME_WALL_SOURCE_RTC
                                            : H2_PAL_TIME_WALL_SOURCE_UNKNOWN;
-    return H2_PAL_OK;
+    /* Invalid RTC calendar means uncalibrated; transport failures stay errors. */
+    return rc == H2_PAL_ERR_INVALID_STATE ? H2_PAL_OK : rc;
 }
 
 static h2_pal_result_t time_sleep_ms(void *user, uint32_t ms) {

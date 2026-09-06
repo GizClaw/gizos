@@ -71,7 +71,7 @@ static void test_wall_time_status_and_round_trip(void) {
     assert(h2_pal_time_get_wall_ms(time, &wall_ms) == H2_PAL_ERR_IO);
     h2_bm8563_fake_fail_operation(
         &fake, fake.operation_count + 1u, H2_PAL_ERR_IO);
-    assert(h2_pal_time_get_wall_status(time, &status) == H2_PAL_OK);
+    assert(h2_pal_time_get_wall_status(time, &status) == H2_PAL_ERR_IO);
     assert(status.valid == 0u);
     h2_bk3633_platform_time_deinit();
 }

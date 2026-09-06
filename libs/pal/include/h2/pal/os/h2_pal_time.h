@@ -78,18 +78,17 @@ static inline h2_pal_result_t h2_pal_time_get_wall_ms(
     if (api == NULL || api->vtable == NULL ||
         api->vtable->get_wall_ms == NULL || api->vtable->get_wall_status == NULL)
         return H2_PAL_ERR_UNSUPPORTED;
-    uint64_t value = 0u;
-    h2_pal_result_t rc = api->vtable->get_wall_ms(api->user, &value);
-    if (rc != H2_PAL_OK)
-        return rc;
     h2_pal_time_wall_status_t status = {0, H2_PAL_TIME_WALL_SOURCE_UNKNOWN};
-    rc = api->vtable->get_wall_status(api->user, &status);
+    h2_pal_result_t rc = api->vtable->get_wall_status(api->user, &status);
     if (rc != H2_PAL_OK)
         return rc;
     if (!status.valid)
         return H2_PAL_TIME_ERR_UNCALIBRATED;
-    *out_ms = value;
-    return H2_PAL_OK;
+    uint64_t value = 0u;
+    rc = api->vtable->get_wall_ms(api->user, &value);
+    if (rc == H2_PAL_OK)
+        *out_ms = value;
+    return rc;
 }
 
 static inline h2_pal_result_t h2_pal_time_sleep_ms(
