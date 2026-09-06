@@ -2478,6 +2478,9 @@ static int ota_success_http(void *user, const h2_pal_http_request_t *request,
                            h2_pal_http_response_t *response) {
   (void)user;
   assert(request->read_cb);
+  /* A short RPC connection budget must not truncate a large OTA transfer. */
+  assert(request->timeout_ms == 600000);
+  assert(request->cancel_cb && !request->cancel_cb(request->cancel_user));
   response->status_code = 200;
   response->content_length = 4;
   return request->read_cb(request->user, request, (const uint8_t *)"test", 4, 4, 0);

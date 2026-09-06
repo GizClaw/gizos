@@ -28,6 +28,10 @@ Peer/channel 绑定 package 时返回 not found，缺失 URL、SHA-256 或非法
 并同时核对 2xx、声明长度、实际接收长度和 SHA-256。URL 可能包含短期授权信息，不写日志、
 不长期保存，也不通过 UI 或 telemetry 暴露。
 
+设备 OTA worker 为整个流式 HTTP 下载（含 Stage 写入）保留 10 分钟总预算，
+不复用连接/RPC 的短超时；关闭 Service 或取消当前 generation 仍会中断下载。
+超时按失败上报并调用产品 abort 清理，不能把部分下载当作可安装 Stage。
+
 ## OTA 流程
 
 ```mermaid

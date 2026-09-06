@@ -18,6 +18,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* PAL HTTP bounds the entire streamed transfer, including Stage writes.
+ * Firmware packages need a separate budget from short connection/RPC waits. */
+#define OTA_DOWNLOAD_TIMEOUT_MS 600000
+
 /* RPC dispatch is serialized by the client. Only snapshots/commands cross the
  * mutex; HTTP, PCM, telemetry, and backend actions never run under it. */
 typedef struct audio_download audio_download_t;
@@ -1132,7 +1136,7 @@ static void update_firmware(h2_gizclaw_device_t *d) {
     const h2_pal_http_request_t request = {
         .method = H2_PAL_HTTP_GET,
         .url = {firmware.url, strlen(firmware.url)},
-        .timeout_ms = (int)io_timeout(d),
+        .timeout_ms = OTA_DOWNLOAD_TIMEOUT_MS,
         .retry_count = 0,
         .chunk_buf = chunk,
         .chunk_buf_cap = sizeof(chunk),
