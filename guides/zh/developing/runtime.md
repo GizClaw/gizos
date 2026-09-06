@@ -509,4 +509,4 @@ Runtime Event queue 的唯一消费者，并把允许脚本观察的复制事件
 
 `runtime->time` 是 Runtime 包装后的 Time PAL。调用 `h2_pal_time_set_wall_ms(runtime->time, utc_ms)` 成功后自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`，其中 `wall_ms` 是本次请求设置的 UTC Unix 毫秒时间戳。事件 envelope 的 `timestamp_ms` 仍使用单调时钟（读取失败时为零），设置失败以及时间读取、sleep 不发布调整事件。GizClaw 等服务应使用此接口，直接调用原始 provider 不经过 Runtime。
 
-事件通过普通有界事件队列投递并唤醒应用；队列满时沿用丢弃计数规则，不能把已经成功的设置改报失败。它是刷新提示，消费者应重新读取 `h2_pal_time_get_valid_wall_ms()`，不要把可能过时的事件 payload 当作当前时间；保留周期刷新以恢复溢出丢失的通知。并发调用时不承诺事件排序等于实际写入顺序。Runtime 生命周期结束前必须停止所有使用其 Time PAL 的任务。UTC 存储和显示时区相互独立。
+事件通过普通有界事件队列投递并唤醒应用；队列满时沿用丢弃计数规则，不能把已经成功的设置改报失败。它是刷新提示，消费者应重新读取 `h2_pal_time_get_wall_ms()`，不要把可能过时的事件 payload 当作当前时间；保留周期刷新以恢复溢出丢失的通知。并发调用时不承诺事件排序等于实际写入顺序。Runtime 生命周期结束前必须停止所有使用其 Time PAL 的任务。UTC 存储和显示时区相互独立。

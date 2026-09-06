@@ -38,7 +38,7 @@ typedef struct h2_gizclaw_time_sync_status {
  * Connect success automatically starts GET /server-info on a separate task.
  * Failure retries after 30 monotonic seconds without terminating the service
  * or invalidating an existing clock. Each new service connection calibrates
- * again. Use Time PAL get_valid_wall_ms for UTC validity, independently of
+ * again. Use Time PAL get_wall_ms for UTC validity, independently of
  * this attempt status. Returns INVALID_ARG for NULL inputs, or mutex errors.
  */
 h2_pal_result_t h2_gizclaw_service_get_time_sync_status(

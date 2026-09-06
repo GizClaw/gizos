@@ -95,22 +95,22 @@ static void test_valid_wall(void) {
                               .get_wall_status = clock_status};
     h2_pal_time_api_t api = {.user = &mode, .vtable = &vt};
     uint64_t value = 456;
-    assert(h2_pal_time_get_valid_wall_ms(&api, NULL) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_pal_time_get_valid_wall_ms(NULL, &value) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_time_get_wall_ms(&api, NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_time_get_wall_ms(NULL, &value) == H2_PAL_ERR_UNSUPPORTED);
     assert(value == 0);
-    assert(h2_pal_time_get_valid_wall_ms(&api, &value) == H2_PAL_TIME_ERR_UNCALIBRATED);
+    assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_TIME_ERR_UNCALIBRATED);
     assert(value == 0);
     mode = 1;
-    assert(h2_pal_time_get_valid_wall_ms(&api, &value) == H2_PAL_ERR_IO);
+    assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_ERR_IO);
     assert(value == 0);
     mode = 2;
-    assert(h2_pal_time_get_valid_wall_ms(&api, &value) == H2_PAL_ERR_UNAVAILABLE);
+    assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_ERR_UNAVAILABLE);
     assert(value == 0);
     mode = 3;
-    assert(h2_pal_time_get_valid_wall_ms(&api, &value) == H2_PAL_OK);
+    assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_OK);
     assert(value == 123);
     vt.get_wall_status = NULL;
-    assert(h2_pal_time_get_valid_wall_ms(&api, &value) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_time_get_wall_ms(&api, &value) == H2_PAL_ERR_UNSUPPORTED);
     assert(value == 0);
 }
 

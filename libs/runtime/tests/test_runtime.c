@@ -934,7 +934,7 @@ static void test_runtime_capabilities_are_bound_at_init(void) {
            h2_pal_unsupported_firmware_info_api()->vtable);
     assert(runtime->mem->user == env.mem.user);
     assert(runtime->mem->vtable == env.mem.vtable);
-    assert(runtime->time != &env.time && runtime->time->vtable == env.time.vtable);
+    assert(runtime->time != &env.time && runtime->time->vtable != env.time.vtable);
     assert(runtime->queue != &env.queue && runtime->queue->vtable == env.queue.vtable);
     assert(runtime->task != &env.task && runtime->task->vtable == env.task.vtable);
     assert(runtime->sync != &env.sync && runtime->sync->vtable == env.sync.vtable);
@@ -3730,7 +3730,7 @@ static void test_time_adjusted_event(void) {
     unsigned char buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = {.payload = buffer, .payload_capacity = sizeof(buffer)};
     uint64_t wall = 0u;
-    assert(h2_pal_time_get_valid_wall_ms(runtime->time, &wall) == H2_PAL_TIME_ERR_UNCALIBRATED);
+    assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_TIME_ERR_UNCALIBRATED);
     const uint64_t utc = UINT64_C(1788652800000);
     assert(h2_pal_time_set_wall_ms(runtime->time, utc) == H2_PAL_OK);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
@@ -3741,7 +3741,7 @@ static void test_time_adjusted_event(void) {
     h2_runtime_system_event_time_adjusted_t payload;
     memcpy(&payload, buffer, sizeof(payload));
     assert(payload.wall_ms == utc);
-    assert(h2_pal_time_get_valid_wall_ms(runtime->time, &wall) == H2_PAL_OK);
+    assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_OK);
     assert(wall == utc);
     uint64_t now = 0;
     assert(h2_pal_time_get_monotonic_ms(runtime->time, &now) == H2_PAL_OK);
@@ -3749,7 +3749,7 @@ static void test_time_adjusted_event(void) {
     assert(h2_pal_time_get_monotonic_us(runtime->time, &now) == H2_PAL_ERR_UNSUPPORTED);
     env.time_state.sleep_rc = H2_PAL_ERR_IO;
     assert(h2_pal_time_set_wall_ms(runtime->time, utc + 60000u) == H2_PAL_ERR_IO);
-    assert(h2_pal_time_get_valid_wall_ms(runtime->time, &wall) == H2_PAL_OK);
+    assert(h2_pal_time_get_wall_ms(runtime->time, &wall) == H2_PAL_OK);
     assert(wall == utc);
     assert(h2_runtime_poll_event(runtime, &event) != H2_PAL_OK);
     env.time_state.sleep_rc = H2_PAL_OK;

@@ -42,7 +42,7 @@ static void test_wall_time_status_and_round_trip(void) {
     h2_bk3633_platform_time_deinit();
     assert(h2_pal_time_get_wall_status(time, &status) == H2_PAL_OK);
     assert(status.valid == 0u);
-    assert(h2_pal_time_get_wall_ms(time, &wall_ms) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_pal_time_get_wall_ms(time, &wall_ms) == H2_PAL_TIME_ERR_UNCALIBRATED);
 
     h2_bm8563_fake_init(&fake);
     config = (h2_bk3633_platform_time_config_t){
@@ -55,6 +55,9 @@ static void test_wall_time_status_and_round_trip(void) {
     assert(h2_bk3633_platform_time_init(&config) == H2_PAL_OK);
     assert(h2_pal_time_get_wall_status(time, &status) == H2_PAL_OK);
     assert(status.valid == 0u);
+    wall_ms = 123u;
+    assert(h2_pal_time_get_wall_ms(time, &wall_ms) == H2_PAL_TIME_ERR_UNCALIBRATED);
+    assert(wall_ms == 0u);
 
     assert(h2_pal_time_set_wall_ms(time, expected_ms) == H2_PAL_OK);
     assert(h2_pal_time_get_wall_ms(time, &wall_ms) == H2_PAL_OK);

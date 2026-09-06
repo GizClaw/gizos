@@ -121,9 +121,10 @@ static h2_pal_result_t time_get_wall_ms(void *user, uint64_t *out_ms) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (s_wall_rtc_initialized == 0) {
-        return H2_PAL_ERR_INVALID_STATE;
+        return H2_PAL_TIME_ERR_UNCALIBRATED;
     }
-    return h2_bm8563_get_unix_ms(&s_wall_rtc, out_ms);
+    h2_pal_result_t rc = h2_bm8563_get_unix_ms(&s_wall_rtc, out_ms);
+    return rc == H2_PAL_ERR_INVALID_STATE ? H2_PAL_TIME_ERR_UNCALIBRATED : rc;
 }
 
 static h2_pal_result_t time_set_wall_ms(void *user, uint64_t wall_ms) {

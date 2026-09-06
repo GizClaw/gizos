@@ -36,11 +36,6 @@ typedef struct h2_pal_time_vtable {
 typedef struct h2_pal_time_api {
     void *user;
     const h2_pal_time_vtable_t *vtable;
-    /* Optional owner notification, called synchronously only after successful
-     * set_wall_ms. Providers leave these zero; Runtime installs its event sink.
-     * The observer must not recursively set time through this same API. */
-    void (*wall_adjusted)(void *user, uint64_t wall_ms);
-    void *wall_adjusted_user;
 } h2_pal_time_api_t;
 
 static inline h2_pal_result_t h2_pal_time_get_monotonic_ms(
@@ -67,16 +62,34 @@ static inline h2_pal_result_t h2_pal_time_get_monotonic_us(
     return api->vtable->get_monotonic_us(api->user, out_us);
 }
 
+/** Wall time is calibrated UTC, never a boot-time counter. */
+#define H2_PAL_TIME_ERR_UNCALIBRATED ((h2_pal_result_t)-2000)
+
+/** Read UTC Unix milliseconds. Invalid wall status returns UNCALIBRATED;
+ * provider errors propagate unchanged. Output is zero on failure.
+ * Providers retain validity across retained-clock sleep and failed sets,
+ * and clear it after reset or clock loss. Monotonic time is independent.
+ */
 static inline h2_pal_result_t h2_pal_time_get_wall_ms(
-    const h2_pal_time_api_t *api,
-    uint64_t *out_ms) {
-    if (out_ms == NULL) {
+    const h2_pal_time_api_t *api, uint64_t *out_ms) {
+    if (out_ms == NULL)
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (api == NULL || api->vtable == NULL || api->vtable->get_wall_ms == NULL) {
+    *out_ms = 0u;
+    if (api == NULL || api->vtable == NULL ||
+        api->vtable->get_wall_ms == NULL || api->vtable->get_wall_status == NULL)
         return H2_PAL_ERR_UNSUPPORTED;
-    }
-    return api->vtable->get_wall_ms(api->user, out_ms);
+    uint64_t value = 0u;
+    h2_pal_result_t rc = api->vtable->get_wall_ms(api->user, &value);
+    if (rc != H2_PAL_OK)
+        return rc;
+    h2_pal_time_wall_status_t status = {0, H2_PAL_TIME_WALL_SOURCE_UNKNOWN};
+    rc = api->vtable->get_wall_status(api->user, &status);
+    if (rc != H2_PAL_OK)
+        return rc;
+    if (!status.valid)
+        return H2_PAL_TIME_ERR_UNCALIBRATED;
+    *out_ms = value;
+    return H2_PAL_OK;
 }
 
 static inline h2_pal_result_t h2_pal_time_sleep_ms(
@@ -94,10 +107,7 @@ static inline h2_pal_result_t h2_pal_time_set_wall_ms(
     if (api == NULL || api->vtable == NULL || api->vtable->set_wall_ms == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    h2_pal_result_t rc = api->vtable->set_wall_ms(api->user, wall_ms);
-    if (rc == H2_PAL_OK && api->wall_adjusted != NULL)
-        api->wall_adjusted(api->wall_adjusted_user, wall_ms);
-    return rc;
+    return api->vtable->set_wall_ms(api->user, wall_ms);
 }
 
 static inline h2_pal_result_t h2_pal_time_get_wall_status(
@@ -110,35 +120,6 @@ static inline h2_pal_result_t h2_pal_time_get_wall_status(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return api->vtable->get_wall_status(api->user, out_status);
-}
-
-/** Time PAL result: readable clock has not been calibrated. */
-#define H2_PAL_TIME_ERR_UNCALIBRATED ((h2_pal_result_t)-2000)
-
-/** Read calibrated UTC milliseconds since the Unix epoch into caller storage.
- * Clears output on failure. Invalid status returns TIME_ERR_UNCALIBRATED;
- * status/read failures propagate unchanged, including UNSUPPORTED. Raw
- * get_wall_ms does not certify validity. Providers must retain validity while
- * their clock remains trustworthy, including sleep with a retained clock, and
- * clear it when reset or clock loss prevents establishing UTC. A failed set
- * must preserve the previous clock and validity. Monotonic time is independent.
- */
-static inline h2_pal_result_t h2_pal_time_get_valid_wall_ms(
-    const h2_pal_time_api_t *api, uint64_t *out_ms) {
-    if (out_ms == NULL)
-        return H2_PAL_ERR_INVALID_ARG;
-    *out_ms = 0u;
-    h2_pal_time_wall_status_t status = {0, H2_PAL_TIME_WALL_SOURCE_UNKNOWN};
-    h2_pal_result_t rc = h2_pal_time_get_wall_status(api, &status);
-    if (rc != H2_PAL_OK)
-        return rc;
-    if (!status.valid)
-        return H2_PAL_TIME_ERR_UNCALIBRATED;
-    uint64_t value = 0u;
-    rc = h2_pal_time_get_wall_ms(api, &value);
-    if (rc == H2_PAL_OK)
-        *out_ms = value;
-    return rc;
 }
 
 static inline uint64_t h2_pal_time_elapsed_ms(uint64_t start_ms, uint64_t end_ms) {
