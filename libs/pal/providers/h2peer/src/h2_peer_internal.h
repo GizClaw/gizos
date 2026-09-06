@@ -62,6 +62,7 @@ struct h2_pal_webrtc_channel {
   atomic_int open;
   int wire_opened;
   int remote_created;
+  int close_pending; /* Network owner drains accepted TX before local reset. */
   atomic_int terminal;
   atomic_uint event_refs;
   atomic_uchar ready_slot;
