@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_amoled_ota.h"
+#include "esp_mac.h"
 #include "h2_esp_h2loader_runtime.h"
 #include "h2_gizclaw_api_key.h"
 #include "h2_gizclaw_e2e_amoled_config.h"
@@ -386,6 +387,12 @@ static int run(void) {
                                                 info.version, &lane.active);
   if (rc)
     return rc;
+  uint8_t ble_mac[6];
+  if (esp_read_mac(ble_mac, ESP_MAC_BT) != ESP_OK)
+    return H2_PAL_ERR_IO;
+  (void)snprintf(lane.serial, sizeof(lane.serial), "%02x%02x%02x%02x%02x%02x",
+                 ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4],
+                 ble_mac[5]);
   const h2_loader_config_t loader_config = {
       .package = {.fs = runtime->fs,
                   .disk = runtime->disk,
@@ -396,6 +403,7 @@ static int run(void) {
       .board = "amoled",
       .target = "esp32s3",
       .chip = "esp32s3",
+      .device_uid = lane.serial,
       .hardware_capabilities = 7,
       .active_identity = lane.active,
       .h2loader_partition_id = 1,
@@ -404,11 +412,6 @@ static int run(void) {
   rc = h2_loader_init(&lane.loader, &loader_config);
   if (rc)
     return rc;
-  h2_loader_status_t device_status = {0};
-  rc = h2_loader_read_status(&lane.loader, &device_status);
-  if (rc)
-    return rc;
-  memcpy(lane.serial, device_status.device_uid, sizeof(lane.serial));
   lane.config = (h2_gizclaw_config_t){
       .server_endpoint = h2_gizclaw_e2e_amoled_config()->server_endpoint,
       .private_key = str(lane.private_key),

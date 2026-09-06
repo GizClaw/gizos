@@ -2,7 +2,7 @@
 
 The explicit `H2_GIZCLAW_E2E_OTA_ONLY` lane installs a real AMOLED App package. It is separate from the ordinary device API suite, whose Stage sink deliberately rejects installation. Use only on an operator-authorized AMOLED test device.
 
-Build the same launcher twice with distinct versions containing `source` for the starting image and `target` for the destination. Select the isolated public test fixture explicitly. CMake accepts only the literal `amoled-ota-e2e-20260906`; missing values, `deploy-default`, and arbitrary private tokens fail the OTA-only build. This is intentionally public, disposable E2E registration, following the existing launcher public-fixture convention; it must bind only the isolated test Firmware and must never grant production access. Private registration credentials are not supported build inputs. The launcher reads the device serial from H2Loader status and reuses the existing E2E endpoint configuration:
+Build the same launcher twice with distinct versions containing `source` for the starting image and `target` for the destination. Select the isolated public test fixture explicitly. CMake accepts only the literal `amoled-ota-e2e-20260906`; missing values, `deploy-default`, and arbitrary private tokens fail the OTA-only build. This is intentionally public, disposable E2E registration, following the existing launcher public-fixture convention; it must bind only the isolated test Firmware and must never grant production access. Private registration credentials are not supported build inputs. The launcher derives the device serial from the Bluetooth MAC using the same identity rule as H2Loader and reuses the existing E2E endpoint configuration:
 
 ```sh
 bazel build --config=esp32s3 \
