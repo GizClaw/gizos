@@ -10,7 +10,7 @@
 
 ## 依赖和边界
 
-GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和 app workflow 由调用方负责。
+GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和产品选择由调用方负责。Session 统一持有 Runtime Profile、Workflow catalog、Workspace 与 Conversation 的公共状态，准备、版本一致性和失败处理见[状态与请求](/apps/gizclaw/state)。产品不再重复实现这些准备流程。
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 

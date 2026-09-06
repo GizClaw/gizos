@@ -28,7 +28,7 @@ class ContactCoverageTest(unittest.TestCase):
         self.assertEqual(observed, expected)
         # No real server, other cases, or Desktop summary: acceptance must fail.
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 197 - 15)
+        self.assertEqual(result["missing"], 210 - 15)
 
 
 if __name__ == "__main__":

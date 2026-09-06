@@ -104,6 +104,14 @@ def requirements():
     calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
     rules += [Rule(symbol, "device-api", calls, parse, "debug_set-assert")
               for symbol in (create, parse)]
+    # Session requirements remain fail-closed until a real run emits both
+    # the call and its business assertion. Unit mocks are never live evidence.
+    for method in ("create destroy snapshot catalog_copy register refresh select close "
+                   "conversation_create conversation_release audio_start audio_end "
+                   "cancel_pending").split():
+        symbol = PREFIX + "session_" + method
+        case = "voice" if method.startswith(("conversation_", "audio_")) else "rpc/catalog-workspace"
+        rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
     return sorted(rules, key=lambda rule: rule.symbol)
 
 
@@ -111,9 +119,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 197 or len(set(inventory)) != 197 or
-            len(names) != 197 or len(set(names)) != 197 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 197-function inventory")
+    if (len(inventory) != 210 or len(set(inventory)) != 210 or
+            len(names) != 210 or len(set(names)) != 210 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 210-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

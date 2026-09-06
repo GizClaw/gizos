@@ -16,6 +16,7 @@
 #include "h2_gizclaw_registration.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_service.h"
+#include "h2_gizclaw_session.h"
 #include "h2_gizclaw_social.h"
 #include "h2_gizclaw_speech.h"
 #include "h2_gizclaw_telemetry.h"
