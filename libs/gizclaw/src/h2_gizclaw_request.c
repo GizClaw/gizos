@@ -1,6 +1,7 @@
 #include "h2_gizclaw_service_internal.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 typedef struct managed_stream {
@@ -442,12 +443,22 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
   managed_request_t *request = user;
   request->result = result->result;
   if (request->result == H2_PAL_OK && request->response.has_error) {
-    h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_ERROR, "rpc", "remote_error",
-        request->identity, H2_GIZCLAW_ERR_REMOTE, request->response.error_code,
-        0u, request->response.error_message_len);
     request->result =
         h2_gizclaw_rpc_error_result_internal(request->response.error_code);
+    /* Absence is a valid lookup result. Business callers decide whether it
+     * requires creation or represents a failed operation. */
+    const bool absent = request->result == H2_PAL_ERR_NOT_FOUND;
+    char message[192];
+    (void)snprintf(message, sizeof(message),
+                   "request=rpc stage=%s method=%d identity=%llu rc=%d "
+                   "detail=%d bytes=%zu",
+                   absent ? "not_found" : "remote_error", (int)request->method,
+                   (unsigned long long)request->identity, (int)request->result,
+                   request->response.error_code,
+                   request->response.error_message_len);
+    (void)h2_pal_log_write(request->service->client_config.log,
+                           absent ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+                           "gizclaw", message);
   }
   if (request->clock_result == H2_PAL_OK)
     request->clock_result = h2_pal_time_get_monotonic_ms(

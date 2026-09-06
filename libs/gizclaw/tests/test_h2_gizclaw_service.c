@@ -12,6 +12,7 @@
 #include "h2_gizclaw_pet.h"
 #include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"
+#include "h2_gizclaw_debug.h"
 #include "h2_gizclaw_registration.h"
 #include "h2_gizclaw_service_internal.h"
 #include "h2_gizclaw_social.h"
@@ -1086,6 +1087,67 @@ static h2_gizclaw_service_t *create_profile_service(test_env_t *env) {
   atomic_store(&env->run_gate, true);
   h2_gizclaw_async_rpc_test_set_ops(&s_profile_ops);
   return service;
+}
+
+static void test_debug_set_request_paths(void) {
+  const char *modes[] = {"off", "readonly", "fullcontrol", "future-mode"};
+  for (unsigned scenario = 0; scenario < 9; ++scenario) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    const char *mode = modes[scenario < 4 ? scenario : 1];
+    const size_t len = strlen(mode);
+    uint8_t wire[66] = {0x0a, (uint8_t)len};
+    memcpy(wire + 2, mode, len);
+    env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_PUT;
+    env.expected_payload = wire;
+    env.expected_payload_len = len + 2;
+    env.response_payload = wire;
+    env.response_payload_len = scenario == 4 ? 0 : len + 2;
+    if (scenario == 5)
+      --env.response_payload_len;
+    env.rpc_remote_error = scenario == 6;
+    env.rpc_result = scenario == 7 ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+    char input[64];
+    strcpy(input, mode);
+    h2_gizclaw_req_t *request = NULL;
+    assert(h2_gizclaw_req_create_debug_set(
+               service, 1, (h2_gizclaw_str_t){NULL, 1}, 1234, &request) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(request == NULL);
+    assert(h2_gizclaw_req_create_debug_set(
+               service, 1, (h2_gizclaw_str_t){input, len}, 1234, &request) ==
+           H2_PAL_OK);
+    memset(input, 'X', len);
+    h2_gizclaw_debug_state_t state;
+    assert(h2_gizclaw_resp_parse_debug_set(request, &state) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(state.mode[0] == '\0');
+    assert(atomic_load(&env.rpc_start_count) == 0);
+    if (scenario == 8) {
+      assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
+      assert(h2_gizclaw_resp_parse_debug_set(request, &state) ==
+             H2_PAL_ERR_CLOSED);
+    } else {
+      assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+      assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+      int execution = scenario == 6 ? H2_GIZCLAW_ERR_REMOTE : env.rpc_result;
+      assert(h2_gizclaw_req_wait(request, 2000) == execution);
+      h2_gizclaw_profile_t profile;
+      assert(h2_gizclaw_resp_parse_profile_get(request, &profile) ==
+             H2_PAL_ERR_INVALID_ARG);
+      int result = scenario == 4 || scenario == 5 ? H2_PAL_ERR_FORMAT : execution;
+      assert(h2_gizclaw_resp_parse_debug_set(request, &state) == result);
+      if (result == H2_PAL_OK)
+        assert(strcmp(state.mode, mode) == 0);
+      else
+        assert(state.mode[0] == '\0');
+    }
+    h2_gizclaw_req_release(request);
+    if (scenario < 4)
+      assert(strcmp(state.mode, mode) == 0);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
 }
 
 static void test_firmware_public_request_paths(void) {
@@ -2724,6 +2786,24 @@ typedef struct remote_error_hook {
   unsigned calls;
 } remote_error_hook_t;
 
+typedef struct request_log_capture {
+  unsigned count;
+  h2_pal_log_level_t level;
+  char message[192];
+} request_log_capture_t;
+
+static int capture_request_log(void *user, h2_pal_log_level_t level,
+                               const char *tag, const char *message) {
+  request_log_capture_t *capture = user;
+  (void)tag;
+  if (strstr(message, "request=rpc ") != NULL) {
+    ++capture->count;
+    capture->level = level;
+    (void)snprintf(capture->message, sizeof(capture->message), "%s", message);
+  }
+  return H2_PAL_OK;
+}
+
 static void test_req_remote_error_mapping(void) {
   static const struct {
     bool has_error;
@@ -2759,6 +2839,10 @@ static void test_req_remote_error_mapping(void) {
   for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
+    request_log_capture_t capture = {0};
+    static const h2_pal_log_vtable_t log_vtable = {.write = capture_request_log};
+    const h2_pal_log_api_t log = {.user = &capture, .vtable = &log_vtable};
+    service->client_config.log = &log;
     test_contact_rpc_t mock = {
         .expected_method = H2_GIZCLAW_RPC_SERVER_INFO_GET,
         .has_error = cases[i].has_error,
@@ -2794,6 +2878,19 @@ static void test_req_remote_error_mapping(void) {
            cases[i].expected);
     assert(!profile.has_name && profile.name[0] == '\0');
     assert(mock.request_matches && mock.calls == 2);
+    const bool remote = cases[i].has_error && cases[i].transport == H2_PAL_OK;
+    assert(capture.count == (remote ? 2u : 0u));
+    if (remote) {
+      const bool absent = cases[i].expected == H2_PAL_ERR_NOT_FOUND;
+      assert(capture.level == (absent ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR));
+      char expected[96];
+      (void)snprintf(expected, sizeof(expected), "method=%d identity=0 rc=%d detail=%d",
+                     (int)H2_GIZCLAW_RPC_SERVER_INFO_GET,
+                     (int)cases[i].expected, cases[i].code);
+      assert(strstr(capture.message, expected) != NULL);
+      assert(strstr(capture.message, absent ? "stage=not_found "
+                                            : "stage=remote_error ") != NULL);
+    }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     h2_gizclaw_async_rpc_test_set_ops(NULL);
@@ -8741,6 +8838,7 @@ int main(int argc, char **argv) {
   test_req_remote_error_mapping();
   test_asr_from_owned_pcm_track();
   test_owned_pcm_track_binding();
+  test_debug_set_request_paths();
   test_firmware_public_request_paths();
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();

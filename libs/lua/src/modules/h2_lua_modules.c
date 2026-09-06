@@ -1217,32 +1217,38 @@ static h2_pal_result_t display_open(h2_lua_job_t *job) {
   h2_pal_result_t result;
   if (job->display_open)
     return H2_PAL_OK;
-  result =
-      (h2_pal_result_t)h2_pal_display_open(job->host->config.runtime->display);
-  if (result != H2_PAL_OK)
-    return result;
+  if (!job->host->config.borrow_display) {
+    result =
+        (h2_pal_result_t)h2_pal_display_open(job->host->config.runtime->display);
+    if (result != H2_PAL_OK)
+      return result;
+  }
   result = (h2_pal_result_t)h2_pal_display_get_info(
       job->host->config.runtime->display, &job->display_info);
   if (result != H2_PAL_OK || job->display_info.width <= 0 ||
       job->display_info.height <= 0) {
-    (void)h2_pal_display_close(job->host->config.runtime->display);
+    if (!job->host->config.borrow_display)
+      (void)h2_pal_display_close(job->host->config.runtime->display);
     return result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result;
   }
   if ((size_t)job->display_info.width >
       SIZE_MAX / (size_t)job->display_info.height) {
-    (void)h2_pal_display_close(job->host->config.runtime->display);
+    if (!job->host->config.borrow_display)
+      (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_SPACE;
   }
   pixel_count =
       (size_t)job->display_info.width * (size_t)job->display_info.height;
   if (pixel_count > SIZE_MAX / sizeof(*job->framebuffer)) {
-    (void)h2_pal_display_close(job->host->config.runtime->display);
+    if (!job->host->config.borrow_display)
+      (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_SPACE;
   }
   job->framebuffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
                                       pixel_count * sizeof(*job->framebuffer));
   if (job->framebuffer == NULL) {
-    (void)h2_pal_display_close(job->host->config.runtime->display);
+    if (!job->host->config.borrow_display)
+      (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(job->framebuffer, 0, pixel_count * sizeof(*job->framebuffer));
@@ -2088,7 +2094,8 @@ static int display_end_frame(lua_State *state) {
 static int display_close(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   if (job->display_open) {
-    (void)h2_pal_display_close(job->host->config.runtime->display);
+    if (!job->host->config.borrow_display)
+      (void)h2_pal_display_close(job->host->config.runtime->display);
     h2_pal_mem_free(job->host->config.runtime->mem, job->framebuffer);
     job->framebuffer = NULL;
     job->display_open = 0;

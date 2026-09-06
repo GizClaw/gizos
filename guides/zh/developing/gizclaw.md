@@ -90,6 +90,20 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 设备主动调用 Server 的 unary 或 server-streaming RPC 与 Server 反向调用 Client provider 是两个方向的 contract。前者由 generic RPC call API 发起；后者只能从 poll 驱动的 provider 入口处理，不能由 UI callback 直接执行，也不能跨线程保留 borrowed payload。产品侧的 state、effect command 和 main-loop 投影规则见 [GizClaw 状态与请求](/apps/gizclaw/state)。
 
+## 设备 Debug 访问模式
+
+`h2_gizclaw_req_create_debug_set()` 使用当前 SDK 0.15.5 已有的
+`server.runtime.put` 和 `ServerPutRuntimeRequest.debug_mode`。设备以当前
+Service 的自身身份设置 `off`、`readonly` 或 `fullcontrol`，服务端负责持久化
+和 SN／IMEI 查询后的访问控制；这不是本地日志等级，也不需要向工程师提供设备
+private key。
+
+创建请求时复制 mode，不产生网络请求。调用方使用标准
+`req_do`、`req_wait`／`req_cancel`、`resp_parse_debug_set`、`req_release`
+生命周期；UI 不应阻塞等待网络。只有成功解析服务器响应后才更新显示状态，
+失败不能显示为已开启。响应保留未知 mode 文本，不能把未知值解释为
+`fullcontrol`。关闭使用同一个接口发送 `off`。
+
 ## 上游 API 同步
 
 `@h2_gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。Pet、Points 或其它 RPC schema 更新时，先把 `MODULE.bazel` 中 `h2_gizclaw_c_sdk` 的 Release archive URL、SRI integrity 与 `strip_prefix` 原子更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。

@@ -67,6 +67,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_audio_pacer.h",
     "src/h2_gizclaw_audio_play.c",
     "src/h2_gizclaw_api_key.c",
+    "src/h2_gizclaw_debug.c",
     "src/h2_gizclaw_device.c",
     "src/h2_gizclaw_device_internal.h",
     "src/h2_gizclaw_async_rpc.c",
@@ -110,6 +111,7 @@ cc_library(
     hdrs = [
         "include/h2_gizclaw.h",
         "include/h2_gizclaw_api_key.h",
+        "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_client.h",
         "include/h2_gizclaw_config.h",
         "include/h2_gizclaw_conversation.h",
@@ -161,6 +163,7 @@ cc_library(
     testonly = True,
     srcs = [
         "src/h2_gizclaw_api_key.c",
+        "src/h2_gizclaw_debug.c",
         "src/h2_gizclaw_async_rpc.c",
         "src/h2_gizclaw_audio_pacer.h",
         "src/h2_gizclaw_audio_play.c",
@@ -201,6 +204,7 @@ cc_library(
     hdrs = [
         "include/h2_gizclaw.h",
         "include/h2_gizclaw_api_key.h",
+        "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_client.h",
         "include/h2_gizclaw_config.h",
         "include/h2_gizclaw_conversation.h",
