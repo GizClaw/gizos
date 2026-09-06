@@ -66,3 +66,7 @@ endif()
 if(H2_GIZCLAW_E2E_VOICE_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
 endif()
+
+if(H2_GIZCLAW_E2E_RESOURCE_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_RESOURCE_ONLY=1)
+endif()

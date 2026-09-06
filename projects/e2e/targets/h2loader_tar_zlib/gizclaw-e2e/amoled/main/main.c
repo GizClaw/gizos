@@ -94,7 +94,10 @@ static void emit_progress(void *user,
   fflush(stdout);
 }
 
-#if defined(H2_GIZCLAW_E2E_VOICE_ONLY)
+#if defined(H2_GIZCLAW_E2E_RESOURCE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_RESOURCE
+#define AMOLED_E2E_SUITE_NAME "resource"
+#elif defined(H2_GIZCLAW_E2E_VOICE_ONLY)
 #define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
 #define AMOLED_E2E_SUITE_NAME "voice"
 #elif defined(H2_GIZCLAW_E2E_RPC_ONLY)

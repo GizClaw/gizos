@@ -104,7 +104,7 @@ int h2_gizclaw_e2e_fixture_connect_actors(h2_gizclaw_e2e_fixture_t *fixture,
                                           size_t count) {
   /* The full catalog selects Connectivity then Service; the dedicated
    * catalog runs Connectivity again during the failed-teardown probe. */
-  const size_t expected = h2_gizclaw_e2e_case_count == 7u && s_connected == 1u
+  const size_t expected = h2_gizclaw_e2e_case_count == 8u && s_connected == 1u
                               ? 1u : 2u;
   assert(fixture != NULL && count == expected);
   ++s_connected;
@@ -145,6 +145,7 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
   }
 CASE(run_connectivity)
 CASE(run_rpc)
+CASE(run_resource)
 CASE(run_device)
 CASE(prepare_device)
 CASE(run_firmware)
@@ -157,7 +158,7 @@ CASE(run_service)
 int main(int argc, char **argv) {
   const bool connectivity_only = argc == 2 && !strcmp(argv[1], "connectivity");
   const size_t selected = connectivity_only ? 1u : 2u;
-  assert(h2_gizclaw_e2e_case_count == (connectivity_only ? 1u : 7u));
+  assert(h2_gizclaw_e2e_case_count == (connectivity_only ? 1u : 8u));
   static const h2_pal_mem_vtable_t mem_vtable = {.alloc = allocate,
                                                  .free = release};
   static const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};

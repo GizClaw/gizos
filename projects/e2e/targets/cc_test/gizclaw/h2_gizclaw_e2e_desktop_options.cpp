@@ -22,6 +22,7 @@ uint32_t parse_suite(const char *value) {
        H2_GIZCLAW_E2E_SUITE_FIRMWARE | H2_GIZCLAW_E2E_SUITE_VOICE},
       {"concurrency", H2_GIZCLAW_E2E_SUITE_CONCURRENCY},
       {"service", H2_GIZCLAW_E2E_SUITE_SERVICE},
+      {"resource", H2_GIZCLAW_E2E_SUITE_RESOURCE},
   };
   for (const Suite &suite : suites) {
     if (std::strcmp(value, suite.name) == 0)
@@ -114,6 +115,7 @@ const char *h2_gizclaw_e2e_desktop_parse_options(int argc, char **argv,
     return "invalid-suite";
   constexpr uint32_t pion_suites = H2_GIZCLAW_E2E_SUITE_DEVICE | H2_GIZCLAW_E2E_SUITE_RPC |
                                    H2_GIZCLAW_E2E_SUITE_FIRMWARE |
+                                   H2_GIZCLAW_E2E_SUITE_RESOURCE |
                                    H2_GIZCLAW_E2E_SUITE_VOICE;
   if (pion && (parsed.suites & ~pion_suites) != 0u)
     return "unsupported-pion-suite";

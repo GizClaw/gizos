@@ -50,3 +50,15 @@ ESP32/BK7258 冷启动和重置后的校准状态默认无效；即使 RTC 仍�
 自动测试覆盖无效时间时校时先于连接、已有有效时间时连接前无请求、未校准读数、失败后重试、非法响应、校时中通信继续、 校时后 UTC 读数、断开后保留有效时间、重建 Service 后再次校时、成功后跨重试期限的普通轮询不重复校时、校时请求中和重试等待中停止、设置失败保留旧值及模拟重启失效。 真实硬件的轻睡眠/深睡眠保留行为仍需分别做设备验收。
 
 通过 `runtime->time` 调用 `h2_pal_time_set_wall_ms()` 成功后，Runtime 通过包装既有 Time vtable 的 `set_wall_ms` 自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`（请求设置的 UTC `wall_ms`）。GizClaw 和其他应用调用者共享该行为；失败不发事件，读时钟和 sleep 不发事件。事件 envelope 的时间戳仍为单调时间。必须把 Runtime 的 Time PAL 传给 Service；直接调用底层 provider 会绕过 Runtime。事件遵循现有有界队列的溢出丢弃规则，不改变已经成功的设置返回值；消费者收到事件后重读有效时间，并保留周期刷新作为溢出恢复。并发设置的事件是刷新提示，不应将 payload 当作当前时钟快照。
+
+## 通用资源状态
+
+Contact、个人资料、Points 和 FriendGroup 使用独立的 `h2_gizclaw_resource_t` 实例。每个实例只拥有一种资源，按需创建并借用 Service、PAL 和可选 Runtime；与 Conversation Session 分开分配和串行化，不让联系人加载阻塞 Workspace 的准备锁。同一 Service 上同种资源的 mutation 应统一经过它的 Resource。
+
+Resource 在库内保存有界快照，公开读取深拷贝到调用方 storage。`valid` 区分有效空列表与未加载；`stale` 标记正在刷新、失败或断开后不能保证新鲜的数据；`busy`、`closed` 和 `last_error` 描述操作状态。`revision` 用于通知重新读取，`data_revision` 用于识别新提交的数据；两者都是本地计数，不能解释为服务端 revision。失败保留旧快照，关闭后仍可读到标记 stale 的旧数据。
+
+Contacts 和 Groups 刷新完整拉取有界列表，拒绝重复 identity、无效 cursor、超出容量和无限分页。联系人创建使用调用方提供的稳定 name，只有 Not Found 才创建，响应不确定时 get 同名资源并校验；修改和删除成功后重新加载完整列表。Profile 更新后 get 完整资料再提交，避免由页面合并两份字段。Points 保存余额和流水的独立结果；刷新替换第一页，加载更多使用库自己的游标并追加到有界列表。没有有效的新鲜列表时不允许追加；余额或列表单独成功可独立保留。
+
+执行发生在调用方 worker，不能从 Service worker 或 poll callback 调用。每次 execute 的 timeout 是所有 RPC 的单调时间总期限；同一 Resource 并发 execute 返回 BUSY。close 永久关闭 admission 并丢弃迟到结果，调用方先 close、stop Service，再 join worker 和 destroy Resource；重连新建实例。页面取消仅丢弃页面结果，不回滚已执行的服务器 mutation，资源快照可以继续更新。
+
+Resource 不保存 UI 草稿、页面焦点、产品默认值、电话号码放行策略或文件路径，也不会自动把网络快照持久化为离线授权。例如 H106 只有在完整 Contact 快照通过产品校验且持久化成功后才替换离线通话白名单；网络连接消失不会删除这份已提交的产品白名单。磁盘读取和写入失败仍由该持久化边界报告。
