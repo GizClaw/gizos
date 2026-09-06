@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_amoled_config.h"
+#include "h2_gizclaw_e2e_amoled_ota.h"
 #include "h2_gizclaw_e2e_amoled_state.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -126,6 +127,10 @@ static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
 
 static void run_e2e(void *raw) {
   h2_gizclaw_e2e_amoled_runner_t *runner = raw;
+#if defined(H2_GIZCLAW_E2E_OTA_ONLY)
+  h2_gizclaw_e2e_amoled_ota_run(runner->runtime);
+  return;
+#endif
   const h2_gizclaw_e2e_amoled_config_t *launcher_config =
       h2_gizclaw_e2e_amoled_config();
   const h2_gizclaw_e2e_config_t app_config = {
