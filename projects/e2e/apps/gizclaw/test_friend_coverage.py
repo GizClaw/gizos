@@ -28,7 +28,7 @@ class FriendCoverageTest(unittest.TestCase):
         self.assertEqual(len(expected), 21)
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 170)
+        self.assertEqual(result["missing"], 172)
 
 
 if __name__ == "__main__":
