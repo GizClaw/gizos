@@ -62,3 +62,5 @@ Contacts 和 Groups 刷新完整拉取有界列表，拒绝重复 identity、无
 执行发生在调用方 worker，不能从 Service worker 或 poll callback 调用。每次 execute 的 timeout 是所有 RPC 的单调时间总期限；同一 Resource 并发 execute 返回 BUSY。close 永久关闭 admission 并丢弃迟到结果，调用方先 close、stop Service，再 join worker 和 destroy Resource；重连新建实例。页面取消仅丢弃页面结果，不回滚已执行的服务器 mutation，资源快照可以继续更新。
 
 Resource 不保存 UI 草稿、页面焦点、产品默认值、电话号码放行策略或文件路径，也不会自动把网络快照持久化为离线授权。例如 H106 只有在完整 Contact 快照通过产品校验且持久化成功后才替换离线通话白名单；网络连接消失不会删除这份已提交的产品白名单。磁盘读取和写入失败仍由该持久化边界报告。
+
+Resource 的 `h2_gizclaw_resource_test` 直接执行生产 Resource，仅在 typed RPC 边界提供替身；覆盖完整分页、重复/循环游标、容量不足、快照复制、创建响应丢失恢复、期限/关闭交错及 Points 独立结果。E2E consumer 故障测试和真机验收单独记录。

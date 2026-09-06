@@ -522,6 +522,9 @@ h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *s,
   return finish(s, rc, stage);
 }
 
+/* WorkspaceGetResponse has no collection field in SDK 0.15.6. Validate the
+ * Workflow/collection pair against the registered catalog before this get;
+ * the public workspace.collection is populated only by scoped list calls. */
 static bool workspace_matches(const h2_gizclaw_workspace_get_result_t *r,
                               const h2_gizclaw_session_selection_t *selection,
                               const char *profile, const char *revision) {
