@@ -1,4 +1,7 @@
 #include "gzc_common.h"
+#include "h2_gizclaw_device_internal.h"
+#include "h2_gizclaw_player.h"
+#include "h2_gizclaw_ota.h"
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_conversation.h"
 #include "h2_gizclaw_firmware.h"
@@ -1968,6 +1971,307 @@ static int fake_req_telemetry_send(void *user,
   return env->rpc_result == H2_PAL_ERR_WOULD_BLOCK ? GZC_ERR_WOULD_BLOCK
          : env->rpc_result == H2_PAL_OK            ? GZC_OK
                                                    : GZC_ERR_WEBRTC;
+}
+
+
+typedef struct device_test_state {
+  uint32_t volume;
+  atomic_uint writes, drains, closes, reboots, write_attempts;
+  bool block_download;
+  atomic_bool downloading;
+  h2_pal_audio_track_t track;
+  fixture_t fixture;
+  size_t stream_split;
+} device_test_state_t;
+static int device_volume_get(void *user, uint32_t *out) {
+  *out = ((device_test_state_t *)user)->volume; return H2_PAL_OK;
+}
+static int device_volume_set(void *user, uint32_t volume) {
+  ((device_test_state_t *)user)->volume = volume; return H2_PAL_OK;
+}
+static int device_audio_info(void *user, h2_audio_info_t *out) {
+  (void)user;
+  *out = (h2_audio_info_t){.available = 1, .playback_supported = 1,
+      .playback_format = {.sample_rate_hz = 16000,
+        .frame_samples_per_channel = 512, .channels = 1,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE}};
+  return H2_PAL_OK;
+}
+static int device_speaker(void *user) { (void)user; return H2_PAL_OK; }
+static int device_pcm_write(h2_pal_audio_track_t *track, const h2_audio_frame_t *frame,
+                             uint32_t timeout_ms) {
+  (void)timeout_ms;
+  device_test_state_t *state = track->user;
+  assert(frame->sample_rate_hz == 16000 && frame->channels == 1);
+  assert(frame->bytes == 1024 && frame->samples_per_channel == 512);
+  if (atomic_fetch_add(&state->write_attempts, 1) < 2)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  if (atomic_load(&state->writes) < 2) assert(atomic_load(&state->drains) == 0);
+  if (atomic_load(&state->writes) == 1) {
+    const uint8_t *pcm = frame->data;
+    for (size_t i = 896; i < frame->bytes; ++i) assert(pcm[i] == 0);
+  }
+  atomic_fetch_add(&state->writes, 1); return H2_PAL_OK;
+}
+static int device_pcm_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+  (void)timeout_ms;
+  atomic_fetch_add(&((device_test_state_t *)track->user)->drains, 1); return H2_PAL_OK;
+}
+static int device_pcm_close(h2_pal_audio_track_t *track) {
+  atomic_fetch_add(&((device_test_state_t *)track->user)->closes, 1); return H2_PAL_OK;
+}
+static int device_track_create(void *user, const h2_audio_track_config_t *config,
+                                h2_pal_audio_track_t **out) {
+  device_test_state_t *state = user;
+  assert(config->format.sample_rate_hz == 16000);
+  assert(config->format.frame_samples_per_channel == 512);
+  state->track = (h2_pal_audio_track_t){.user = state, .write = device_pcm_write,
+    .drain = device_pcm_drain, .close = device_pcm_close};
+  *out = &state->track; return H2_PAL_OK;
+}
+static h2_pal_result_t device_reboot(void *user, uint32_t reason) {
+  (void)reason;
+  atomic_fetch_add(&((device_test_state_t *)user)->reboots, 1); return H2_PAL_OK;
+}
+static int device_http(void *user, const h2_pal_http_request_t *request,
+                        h2_pal_http_response_t *response) {
+  device_test_state_t *state = user;
+  atomic_store(&state->downloading, true);
+  if (state->block_download) {
+    while (!h2_pal_http_request_is_canceled(request))
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+    return H2_PAL_ERR_CLOSED;
+  }
+  response->status_code = 200;
+  response->content_length = state->fixture.len;
+  int rc = request->read_cb(request->user, request, state->fixture.bytes,
+                           state->stream_split, state->stream_split,
+                           state->fixture.len - state->stream_split);
+  /* The HTTP response deliberately cannot complete before PCM is played.
+   * This fails a whole-response implementation and exercises ring wrap. */
+  for (unsigned i = 0; rc == H2_PAL_OK && !atomic_load(&state->writes) && i < 2000; ++i) {
+    if (h2_pal_http_request_is_canceled(request)) return H2_PAL_ERR_CLOSED;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  if (rc != H2_PAL_OK) return rc;
+  assert(atomic_load(&state->writes) > 0);
+  return request->read_cb(request->user, request,
+      state->fixture.bytes + state->stream_split,
+      state->fixture.len - state->stream_split, state->fixture.len, 0);
+}
+static int device_telemetry(void *user, const gzc_telemetry_frame_t *frame) {
+  (void)user;
+  assert(frame->observation_count == 1);
+  assert(frame->observations[0].kind == GZC_TELEMETRY_OBSERVATION_AUDIOPLAYER);
+  return GZC_OK;
+}
+static int device_call(h2_gizclaw_service_t *service, int method,
+                        const pb_msgdesc_t *fields, const void *message,
+                        h2_gizclaw_rpc_provider_response_t *response) {
+  uint8_t payload[4096];
+  pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+  assert(pb_encode(&stream, fields, message));
+  assert(service->client_config.rpc_provider(service->client_config.rpc_provider_user,
+    method, (h2_gizclaw_rpc_bytes_t){payload, stream.bytes_written}, response) == H2_PAL_OK);
+  return response->has_error ? response->error_code : 0;
+}
+static gizclaw_rpc_v1_AudioPlayerStatus device_player_status(h2_gizclaw_service_t *service) {
+  h2_gizclaw_rpc_provider_response_t response;
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerGetRequest request = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET,
+      gizclaw_rpc_v1_ClientDeviceAudioPlayerGetRequest_fields, &request, &response) == 0);
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerGetResponse reply = {0};
+  pb_istream_t input = pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&input, gizclaw_rpc_v1_ClientDeviceAudioPlayerGetResponse_fields, &reply));
+  assert(reply.has_value); return reply.value;
+}
+static int device_saved_wifi(void *user, h2_pal_wifi_sta_config_t *out) {
+  (void)user;
+  *out = (h2_pal_wifi_sta_config_t){.ssid = "fixture-wifi", .ssid_len = 12,
+                                  .password = "test-only", .password_len = 9};
+  return H2_PAL_OK;
+}
+static int device_wifi_status(void *user, h2_pal_wifi_sta_status_t *out) {
+  (void)user;
+  *out = (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
+    .ssid = "fixture-wifi", .ssid_len = 12, .rssi = -42, .ip_valid = 1,
+    .ip = {.ip4 = 0xc0000201}};
+  return H2_PAL_OK;
+}
+static h2_pal_result_t device_resolve_sound(void *user, const char *name,
+    char *out_url, size_t capacity) {
+  (void)user; (void)name; (void)out_url; (void)capacity;
+  assert(!"uncompleted sound RPC must not reach the worker");
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+static void test_device_provider_pal_and_player(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  device_test_state_t state = {.volume = 60};
+  make_packet(&state.fixture, 1); headers(&state.fixture, 123, 1, 0, 0);
+  packet_page(&state.fixture, 0, 960, 123, 2, state.fixture.packet, state.fixture.packet_len);
+  packet_page(&state.fixture, 0, 1920, 123, 3, state.fixture.packet, state.fixture.packet_len);
+  state.stream_split = state.fixture.len;
+  packet_page(&state.fixture, 4, 2880, 123, 4, state.fixture.packet, state.fixture.packet_len);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = device_audio_info, .get_speaker_volume_percent = device_volume_get,
+    .set_speaker_volume_percent = device_volume_set, .start_speaker = device_speaker,
+    .create_track = device_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = device_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  const h2_pal_power_vtable_t power_vtable = {.reboot = device_reboot};
+  const h2_pal_power_api_t power = {.user = &state, .vtable = &power_vtable};
+  const h2_pal_wifi_settings_vtable_t settings_vtable = {.get_saved_sta_config = device_saved_wifi};
+  const h2_pal_wifi_settings_api_t settings = {.vtable = &settings_vtable};
+  const h2_pal_wifi_sta_vtable_t wifi_vtable = {.get_status = device_wifi_status};
+  const h2_pal_wifi_sta_api_t wifi = {.vtable = &wifi_vtable};
+  service->client_config.wifi = &wifi;
+  service->client_config.wifi_settings = &settings;
+  service->client_config.audio = &audio;
+  service->client_config.power = &power;
+  service->client_config.http = &http;
+  service->client_config.audio_buffer_bytes = 32;
+  service->client_config.audio_prebuffer_bytes = 1;
+  service->client_config.model = "fixture";
+  const h2_gizclaw_vtable_t supplemental = {.resolve_sound_url = device_resolve_sound};
+  service->client_config.vtable = &supplemental;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_rpc_provider_response_t response;
+  /* Bypass the generated encoder to exercise an overlong wire string. */
+  uint8_t overlong_sound[35] = {0x0a, 33};
+  memset(overlong_sound + 2, 's', 33);
+  assert(service->client_config.rpc_provider(service->client_config.rpc_provider_user,
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY,
+      (h2_gizclaw_rpc_bytes_t){overlong_sound, sizeof(overlong_sound)}, &response) == H2_PAL_OK);
+  assert(response.has_error && response.error_code == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(response.on_complete == NULL);
+  gizclaw_rpc_v1_ClientDeviceSoundPlayRequest sound = {0};
+  memset(sound.sound, 's', sizeof(sound.sound) - 1u);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY,
+      gizclaw_rpc_v1_ClientDeviceSoundPlayRequest_fields, &sound, &response) == 0);
+  assert(response.on_complete != NULL);
+  response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
+  gizclaw_rpc_v1_ClientWifiStatusGetRequest wifi_request = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET,
+    gizclaw_rpc_v1_ClientWifiStatusGetRequest_fields, &wifi_request, &response) == 0);
+  gizclaw_rpc_v1_ClientWifiStatusGetResponse wifi_reply = {0};
+  pb_istream_t wifi_input = pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&wifi_input, gizclaw_rpc_v1_ClientWifiStatusGetResponse_fields, &wifi_reply));
+  assert(wifi_reply.value.connected && !strcmp(wifi_reply.value.ip, "192.0.2.1"));
+  gizclaw_rpc_v1_ClientWifiSavedListRequest saved_request = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST,
+    gizclaw_rpc_v1_ClientWifiSavedListRequest_fields, &saved_request, &response) == 0);
+  gizclaw_rpc_v1_ClientWifiSavedListResponse saved_reply = {0};
+  wifi_input = pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&wifi_input, gizclaw_rpc_v1_ClientWifiSavedListResponse_fields, &saved_reply));
+  assert(saved_reply.networks_count == 1 && !strcmp(saved_reply.networks[0].ssid, "fixture-wifi"));
+  gizclaw_rpc_v1_ClientWifiSavedForgetRequest forget = {0}; strcpy(forget.ssid, "other");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET,
+    gizclaw_rpc_v1_ClientWifiSavedForgetRequest_fields, &forget, &response) == H2_GIZCLAW_RPC_ERROR_NOT_FOUND);
+  gizclaw_rpc_v1_ClientDeviceVolumeSetRequest volume = {.level = 42, .muted = true};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET,
+    gizclaw_rpc_v1_ClientDeviceVolumeSetRequest_fields, &volume, &response) == 0);
+  assert(state.volume == 0);
+  gizclaw_rpc_v1_ClientDeviceStatusGetResponse status = {0};
+  pb_istream_t input = pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&input, gizclaw_rpc_v1_ClientDeviceStatusGetResponse_fields, &status));
+  assert(status.value.has_volume && status.value.volume == 42 && status.value.muted);
+  volume.level = 101;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET,
+    gizclaw_rpc_v1_ClientDeviceVolumeSetRequest_fields, &volume, &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  static gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest playlist;
+  memset(&playlist, 0, sizeof(playlist)); playlist.items_count = 1;
+  strcpy(playlist.items[0].url, "https://example.test/music.ogg");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest_fields, &playlist, &response) == 0);
+  uint32_t revision = device_player_status(service).playlist_revision;
+  strcpy(playlist.items[0].url, "http://example.test/not-https");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest_fields, &playlist, &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(device_player_status(service).playlist_revision == revision);
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest play = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest_fields, &play, &response) == 0);
+  assert(response.on_complete); response.on_complete(response.complete_user, H2_PAL_OK);
+  bool ended = false;
+  for (unsigned i = 0; i < 3000; ++i) {
+    gizclaw_rpc_v1_AudioPlayerStatus s = device_player_status(service);
+    if (!strcmp(s.state, "ended")) { assert(s.position_ms > 0); ended = true; break; }
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(ended && atomic_load(&state.writes) == 2);
+  assert(atomic_load(&state.write_attempts) == 4);
+  assert(atomic_load(&state.drains) == 1);
+  assert(atomic_load(&state.closes) == 1);
+  h2_gizclaw_player_status_t local = {0};
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(!strcmp(local.state, "ended") && local.position_ms == 60);
+  assert(h2_gizclaw_player_play(service, (h2_gizclaw_str_t){"http://bad", 10}) == H2_PAL_ERR_INVALID_ARG);
+  const char *url = "https://example.test/local.ogg";
+  assert(h2_gizclaw_player_play(service, (h2_gizclaw_str_t){url, strlen(url)}) == H2_PAL_OK);
+  assert(h2_gizclaw_player_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(!strcmp(local.state, "stopped"));
+  assert(h2_gizclaw_ota_start(service, 3, (h2_gizclaw_str_t){0}) == H2_PAL_ERR_UNSUPPORTED);
+  state.block_download = true; atomic_store(&state.downloading, false);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest_fields, &play, &response) == 0);
+  assert(response.on_complete); response.on_complete(response.complete_user, H2_PAL_OK);
+  for (unsigned i = 0; i < 3000 && !atomic_load(&state.downloading); ++i)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(atomic_load(&state.downloading));
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerStopRequest stop = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerStopRequest_fields, &stop, &response) == 0);
+  assert(!strcmp(device_player_status(service).state, "stopped"));
+  gizclaw_rpc_v1_ClientDeviceRebootRequest reboot = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
+    gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
+  assert(response.on_complete && atomic_load(&state.reboots) == 0);
+  response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
+  assert(atomic_load(&state.reboots) == 0);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
+    gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  wait_for_count(&state.reboots, 1);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+static int ota_telemetry_capture(void *user, const gzc_telemetry_ota_frame_t *frame) {
+  (void)user;
+  assert(frame->sequence == 19 && frame->ota.state == GZC_OTA_STATE_FAILED);
+  assert(frame->ota.update_id.len == 7 && !memcmp(frame->ota.update_id.data, "attempt", 7));
+  assert(frame->ota.has_error_message && frame->ota.error_message.len == 512);
+  for (size_t i = 0; i < 512; ++i) assert(frame->ota.error_message.data[i] == 'x');
+  return GZC_ERR_WOULD_BLOCK;
+}
+static void test_device_ota_telemetry_copy(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  char id[] = "attempt", error[512]; memset(error, 'x', sizeof(error));
+  h2_gizclaw_telemetry_observation_t observations[2] = {{
+    .kind = H2_GIZCLAW_TELEMETRY_OTA,
+    .value.ota = {.state = H2_GIZCLAW_OTA_STATE_FAILED, .update_id = {id, 7},
+      .has_error_message = true, .error_message = {error, 512}},
+  }, {.kind = H2_GIZCLAW_TELEMETRY_SYSTEM}};
+  h2_gizclaw_telemetry_frame_t frame = {.sequence = 19, .observations = observations, .observation_count = 2};
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 0, &frame, 1000, &request) == H2_PAL_ERR_INVALID_ARG);
+  frame.observation_count = 1;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 0, &frame, 1000, &request) == H2_PAL_OK);
+  id[0] = 'z'; memset(error, 'y', sizeof(error));
+  h2_gizclaw_test_set_ota_send(ota_telemetry_capture, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(request, 2000) == H2_PAL_ERR_WOULD_BLOCK);
+  h2_gizclaw_req_release(request);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_ota_send(NULL, NULL);
 }
 
 static void test_req_telemetry_copy_and_backpressure(void) {
@@ -8410,6 +8714,8 @@ int main(int argc, char **argv) {
   test_req_register_and_peer_delete();
   test_req_ping_execution_timing();
   test_req_unary_context_lifetime();
+  test_device_provider_pal_and_player();
+  test_device_ota_telemetry_copy();
   test_req_telemetry_copy_and_backpressure();
   test_req_point_storage_and_limits();
   test_req_workflow_public_paths();

@@ -375,6 +375,13 @@ int sctp_handle_incoming_data(Sctp* sctp, char* data, size_t len, uint32_t ppid,
     return 0;
   }
   SctpStreamEntry* stream = sctp_find_stream(sctp, sid);
+  if (stream != NULL && stream->remote_open_pending) {
+    /* The DCEP OPEN callback cannot re-enter the SCTP association. Retain
+     * application data arriving in the same input batch until the deferred
+     * channel registration and ACK have completed. Returning OK would discard
+     * the first request even though SCTP has already acknowledged its TSN. */
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
   if (stream == NULL || !stream->negotiated) {
     return 0;
   }

@@ -39,11 +39,27 @@ static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
 
 #include "ogg_opus_fixture.h"
 
-static size_t decode(fixture_t *f, h2_pal_result_t expected, size_t fail_at) {
+typedef struct stream_input {
+  const uint8_t *data;
+  size_t length, offset;
+} stream_input_t;
+static h2_pal_result_t stream_read(void *user, uint8_t *out, size_t capacity, size_t *length) {
+  stream_input_t *input = user;
+  *length = input->length - input->offset;
+  if (*length > capacity) *length = capacity;
+  if (*length > 7) *length = 7; /* Split headers, laces and packet bodies. */
+  memcpy(out, input->data + input->offset, *length);
+  input->offset += *length;
+  return *length ? H2_PAL_OK : H2_PAL_EXIT;
+}
+static size_t decode_mode(fixture_t *f, h2_pal_result_t expected, size_t fail_at,
+                           bool streaming) {
   memory_t mem = {.fail_at = fail_at};
   h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
   h2_gizclaw_ogg_opus_t *decoder = NULL;
-  h2_pal_result_t rc =
+  stream_input_t input = {.data = f->bytes, .length = f->len};
+  h2_pal_result_t rc = streaming ?
+      h2_gizclaw_ogg_opus_create_reader(&allocator, stream_read, &input, &decoder) :
       h2_gizclaw_ogg_opus_create(&allocator, f->bytes, f->len, &decoder);
   uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
   size_t total = 0, nonzero = 0, steps = 0;
@@ -69,6 +85,13 @@ static size_t decode(fixture_t *f, h2_pal_result_t expected, size_t fail_at) {
   h2_gizclaw_ogg_opus_destroy(decoder);
   assert(mem.live == 0);
   return total;
+}
+
+static size_t decode(fixture_t *f, h2_pal_result_t expected, size_t fail_at) {
+  size_t bytes = decode_mode(f, expected, fail_at, false);
+  if (!fail_at && f->len)
+    assert(decode_mode(f, expected, 0, true) == bytes);
+  return bytes;
 }
 
 static void test_valid(void) {

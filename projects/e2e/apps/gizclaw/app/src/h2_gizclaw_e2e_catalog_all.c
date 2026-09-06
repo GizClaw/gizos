@@ -11,17 +11,19 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
 }
 
 const e2e_case_t h2_gizclaw_e2e_cases[] = {
+    {"device-api", H2_GIZCLAW_E2E_SUITE_DEVICE, 1u, false,
+     h2_gizclaw_e2e_run_device, h2_gizclaw_e2e_prepare_device},
     {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY, 2u, false,
-     h2_gizclaw_e2e_run_connectivity},
+     h2_gizclaw_e2e_run_connectivity, NULL},
     {"rpc", H2_GIZCLAW_E2E_SUITE_RPC, H2_GIZCLAW_E2E_ACTOR_COUNT, true,
-     h2_gizclaw_e2e_run_rpc},
+     h2_gizclaw_e2e_run_rpc, NULL},
     {"firmware", H2_GIZCLAW_E2E_SUITE_FIRMWARE, 1u, false,
-     h2_gizclaw_e2e_run_firmware},
-    {"voice", H2_GIZCLAW_E2E_SUITE_VOICE, 1u, true, run_voice},
+     h2_gizclaw_e2e_run_firmware, NULL},
+    {"voice", H2_GIZCLAW_E2E_SUITE_VOICE, 1u, true, run_voice, NULL},
     {"concurrency", H2_GIZCLAW_E2E_SUITE_CONCURRENCY, 1u, false,
-     h2_gizclaw_e2e_run_concurrency},
+     h2_gizclaw_e2e_run_concurrency, NULL},
     {"service", H2_GIZCLAW_E2E_SUITE_SERVICE, 1u, false,
-     h2_gizclaw_e2e_run_service},
+     h2_gizclaw_e2e_run_service, NULL},
 };
 
 const size_t h2_gizclaw_e2e_case_count =

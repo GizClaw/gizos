@@ -46,6 +46,8 @@ typedef struct h2_gizclaw_e2e_speed_hooks {
 
 typedef struct h2_gizclaw_e2e_fixture {
   h2_runtime_t *runtime;
+  const h2_pal_audio_api_t *device_audio;
+  const h2_gizclaw_vtable_t *device_vtable;
   const h2_gizclaw_e2e_config_t *config;
   const h2_pal_mem_api_t *allocator;
   const h2_pal_crypto_api_t *crypto;

@@ -30,7 +30,9 @@ Public consumer 只 include `h2_peer.h`。`src/` 中的 provider type、session�
 
 H2Peer 的本地 DataChannel SID pool 固定为 DTLS client parity 的 150 个 odd SID（`1..299`）。自动创建会从该 pool 扫描可用 SID；所有 live channel 或 reset quarantine 都占用对应 entry，全部占满时稳定返回 `H2_PAL_ERR_NO_SPACE`。显式 SID 必须满足本地 parity、范围且当前可用，否则返回 `H2_PAL_ERR_INVALID_ARG`。尚未成功提交 DCEP 的 channel 关闭后立即回收；已经上 wire 的 channel 必须收到 RFC 6525 outgoing-reset completion 和 peer incoming-reset 两个方向的完成证据，删除旧 stream mapping 后才可复用。一次 peer 只提交一个 reset request，其余关闭排队；`BUSY` 和 `WOULD_BLOCK` 在后续 poll 重试，其他 reset failure 使剩余 channel 进入 `ERROR`、peer 进入 `FAILED`。
 
-`h2_pal_webrtc_channel_close()` 消费 channel handle；调用返回后不能再次发送或关闭。`CLOSED`/`ERROR` event 中的 channel 只用于标识来源，event-owned `channel_info` 在 release 前有效。Peer close 或 transport terminal event 会释放所有仍存活 channel 及其 label storage。
+远端 DCEP OPEN 与首条应用数据可能在同一次 SCTP input 中到达。远端 channel 登记尚未完成时，H2Peer 返回 `WOULD_BLOCK`，让 SCTP 保留应用数据并在登记完成后重试交付，不能把未交付的数据作为成功消费。
+
+`h2_pal_webrtc_channel_close()` 消费 channel handle；调用返回后不能再次发送或关闭。`CLOSED`/`ERROR` event 中的 channel 只用于标识来源，event-owned `channel_info` 在 release 前有效。本地关闭会先排空已经接受的 channel TX 消息，再提交 stream reset，避免 RPC 回包和 EOS 被关闭操作丢弃。Peer close 或 transport terminal event 会释放所有仍存活 channel 及其 label storage。
 
 ## Network Task And Dispatch
 

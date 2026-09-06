@@ -1133,6 +1133,11 @@ static void h2_peer_webrtc_channel_close(h2_pal_webrtc_channel_t *channel) {
   if (channel == NULL || channel->terminal) {
     return;
   }
+  const uint8_t head = atomic_load_explicit(&channel->tx_head, memory_order_acquire);
+  if (atomic_load_explicit(&channel->tx_state[head], memory_order_acquire) != 0u) {
+    channel->close_pending = 1;
+    return;
+  }
   h2_pal_webrtc_peer_t *peer = channel->owner;
   if (channel->wire_opened) {
     uint16_t stream_id = channel->info.stream_id;
@@ -1513,6 +1518,10 @@ int h2_peer_network_service_channel(h2_pal_webrtc_peer_t *peer,
       if (atomic_load_explicit(&channel->tx_state[next_head],
                                memory_order_acquire) != 2u) {
         *snapshot &= ~bit;
+      }
+      if (channel->close_pending &&
+          atomic_load_explicit(&channel->tx_state[next_head], memory_order_acquire) == 0u) {
+        h2_peer_webrtc_channel_close(channel);
       }
       h2_peer_network_notify_send_ready(peer);
       peer->channel_round_robin =

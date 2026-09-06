@@ -13,6 +13,9 @@ struct h2_gizclaw_ogg_opus {
   const h2_pal_mem_api_t *allocator;
   const uint8_t *data;
   size_t len, offset;
+  h2_gizclaw_ogg_opus_read_fn read;
+  void *read_user;
+  uint8_t *page;
   const uint8_t *laces, *body;
   size_t lace_count, lace_index, body_offset, last_complete;
   uint8_t flags;
@@ -46,6 +49,45 @@ static uint32_t page_crc(const uint8_t *p, size_t len) {
   return crc;
 }
 
+static h2_pal_result_t read_exact(h2_gizclaw_ogg_opus_t *d, uint8_t *out,
+                                  size_t length, bool allow_eof) {
+  size_t offset = 0;
+  while (offset < length) {
+    size_t count = 0;
+    int rc = d->read(d->read_user, out + offset, length - offset, &count);
+    if (rc == H2_PAL_EXIT)
+      return offset == 0 && allow_eof ? H2_PAL_EXIT : H2_PAL_ERR_FORMAT;
+    if (rc != H2_PAL_OK)
+      return rc;
+    if (!count || count > length - offset)
+      return H2_PAL_ERR_FORMAT;
+    offset += count;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t read_page(h2_gizclaw_ogg_opus_t *d) {
+  int rc = read_exact(d, d->page, 27, true);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (memcmp(d->page, "OggS", 4) != 0)
+    return H2_PAL_ERR_FORMAT;
+  size_t header = 27u + d->page[26];
+  rc = read_exact(d, d->page + 27, d->page[26], false);
+  if (rc != H2_PAL_OK)
+    return rc;
+  size_t body = 0;
+  for (size_t i = 27; i < header; ++i)
+    body += d->page[i];
+  rc = read_exact(d, d->page + header, body, false);
+  if (rc != H2_PAL_OK)
+    return rc;
+  d->data = d->page;
+  d->offset = 0;
+  d->len = header + body;
+  return H2_PAL_OK;
+}
+
 static h2_pal_result_t load_page(h2_gizclaw_ogg_opus_t *d) {
   if (d->page_loaded) {
     if (d->last_complete == SIZE_MAX && d->granule != UINT64_MAX)
@@ -55,6 +97,13 @@ static h2_pal_result_t load_page(h2_gizclaw_ogg_opus_t *d) {
         return H2_PAL_ERR_FORMAT;
       d->stream_ended = true;
     }
+  }
+  if (d->read) {
+    int rc = read_page(d);
+    if (rc == H2_PAL_EXIT)
+      return d->stream_ended ? H2_PAL_EXIT : H2_PAL_ERR_FORMAT;
+    if (rc != H2_PAL_OK)
+      return rc;
   }
   if (d->offset == d->len)
     return d->stream_ended ? H2_PAL_EXIT : H2_PAL_ERR_FORMAT;
@@ -114,6 +163,8 @@ static h2_pal_result_t append(h2_gizclaw_ogg_opus_t *d, size_t len) {
   if (len > SIZE_MAX - d->packet_len)
     return H2_PAL_ERR_NO_SPACE;
   size_t needed = d->packet_len + len;
+  if (d->read && needed > 65536u)
+    return H2_PAL_ERR_NO_SPACE;
   if (needed > d->packet_capacity) {
     size_t capacity = d->packet_capacity ? d->packet_capacity : 512;
     while (capacity < needed) {
@@ -294,10 +345,35 @@ h2_pal_result_t h2_gizclaw_ogg_opus_create(const h2_pal_mem_api_t *allocator,
   return H2_PAL_OK;
 }
 
+h2_pal_result_t
+h2_gizclaw_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
+                                  h2_gizclaw_ogg_opus_read_fn read, void *user,
+                                  h2_gizclaw_ogg_opus_t **out) {
+  if (out)
+    *out = NULL;
+  if (!read)
+    return H2_PAL_ERR_INVALID_ARG;
+  static const uint8_t empty = 0;
+  int rc = h2_gizclaw_ogg_opus_create(allocator, &empty, 1, out);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_ogg_opus_t *d = *out;
+  d->read = read;
+  d->read_user = user;
+  d->page = h2_pal_mem_alloc(allocator, 27u + 255u + 255u * 255u);
+  if (!d->page) {
+    h2_gizclaw_ogg_opus_destroy(d);
+    *out = NULL;
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  return H2_PAL_OK;
+}
+
 void h2_gizclaw_ogg_opus_destroy(h2_gizclaw_ogg_opus_t *d) {
   if (d == NULL)
     return;
   h2_pal_mem_free(d->allocator, d->opus);
   h2_pal_mem_free(d->allocator, d->packet);
+  h2_pal_mem_free(d->allocator, d->page);
   h2_pal_mem_free(d->allocator, d);
 }

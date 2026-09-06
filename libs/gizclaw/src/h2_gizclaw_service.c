@@ -1,3 +1,4 @@
+#include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_audio_pacer.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_pcm_track_internal.h"
@@ -985,6 +986,9 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                                             &service->dispatch_queue);
   if (rc != H2_PAL_OK)
     goto fail;
+  rc = h2_gizclaw_device_init_internal(service);
+  if (rc != H2_PAL_OK)
+    goto fail;
   *out_service = service;
   return H2_PAL_OK;
 
@@ -1046,6 +1050,8 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
     rc = h2_pal_task_start(service->config.task, &options, data_downlink_worker,
                            service, &service->data_downlink_task);
   }
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_device_start_internal(service->device);
   if (rc != H2_PAL_OK)
     (void)h2_gizclaw_service_stop(service);
   return rc;
@@ -1343,6 +1349,7 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
     return H2_PAL_OK;
   }
   service->stopping = true;
+  h2_gizclaw_device_cancel_internal(service->device);
   (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
   unlock_service(service);
   (void)h2_pal_queue_close(service->config.queue, service->request_queue);
@@ -1376,6 +1383,9 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
       return rc;
     service->data_downlink_task = NULL;
   }
+  rc = h2_gizclaw_device_stop_internal(service->device);
+  if (rc != H2_PAL_OK)
+    return rc;
   if (lock_service(service) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_STATE;
   service->stopped = true;
@@ -1401,6 +1411,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   h2_gizclaw_track_t *track = atomic_exchange(&service->pcm_track, NULL);
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
+  h2_gizclaw_device_destroy_internal(service->device);
   h2_pal_queue_destroy(service->config.queue, service->dispatch_queue);
   h2_pal_queue_destroy(service->config.queue, service->request_queue);
   (void)h2_pal_cond_destroy(service->config.sync, service->progress_cond);

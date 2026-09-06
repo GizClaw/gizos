@@ -12,6 +12,11 @@
 #if defined(H2_GIZCLAW_TESTING)
 static h2_gizclaw_test_telemetry_send_fn test_send;
 static void *test_send_user;
+static h2_gizclaw_test_ota_send_fn test_ota_send;
+static void *test_ota_user;
+void h2_gizclaw_test_set_ota_send(h2_gizclaw_test_ota_send_fn send, void *user) {
+  test_ota_send = send; test_ota_user = user;
+}
 
 void h2_gizclaw_test_set_telemetry_send(h2_gizclaw_test_telemetry_send_fn send,
                                         void *user) {
@@ -83,6 +88,25 @@ static bool system_valid(const h2_gizclaw_telemetry_system_t *value) {
                      H2_GIZCLAW_TELEMETRY_VERSION_MAX));
 }
 
+static bool audioplayer_valid(const h2_gizclaw_telemetry_audioplayer_t *v) {
+  return span_valid(v->state, 16u) && span_valid(v->repeat, 4u) &&
+         v->playlist_length <= 32u &&
+         (!v->has_current_index || v->current_index < v->playlist_length) &&
+         (!v->has_error_code || span_valid(v->error_code, 128u)) &&
+         (!v->has_error_message || span_valid(v->error_message, 512u));
+}
+
+static bool ota_valid(const h2_gizclaw_telemetry_ota_t *v) {
+  return v->state >= H2_GIZCLAW_OTA_STATE_STARTED &&
+         v->state <= H2_GIZCLAW_OTA_STATE_FAILED &&
+         span_valid(v->update_id, 128u) &&
+         (!v->has_target_version || span_valid(v->target_version, 96u)) &&
+         (!v->has_download_percent || (isfinite(v->download_percent) &&
+          v->download_percent >= 0.0 && v->download_percent <= 100.0)) &&
+         (!v->has_error_code || span_valid(v->error_code, 128u)) &&
+         (!v->has_error_message || span_valid(v->error_message, 512u));
+}
+
 static bool
 observation_valid(const h2_gizclaw_telemetry_observation_t *observation) {
   switch (observation->kind) {
@@ -92,6 +116,10 @@ observation_valid(const h2_gizclaw_telemetry_observation_t *observation) {
     return gnss_valid(&observation->value.gnss);
   case H2_GIZCLAW_TELEMETRY_NETWORK:
     return network_valid(&observation->value.network);
+  case H2_GIZCLAW_TELEMETRY_AUDIOPLAYER:
+    return audioplayer_valid(&observation->value.audioplayer);
+  case H2_GIZCLAW_TELEMETRY_OTA:
+    return ota_valid(&observation->value.ota);
   case H2_GIZCLAW_TELEMETRY_SYSTEM:
     return system_valid(&observation->value.system);
   default:
@@ -159,6 +187,21 @@ static void map_observation(const h2_gizclaw_telemetry_observation_t *source,
     target->system.hardware_version =
         to_gzc_str(source->value.system.hardware_version);
     break;
+  case H2_GIZCLAW_TELEMETRY_AUDIOPLAYER:
+    target->audioplayer.state = to_gzc_str(source->value.audioplayer.state);
+    target->audioplayer.has_current_index = source->value.audioplayer.has_current_index;
+    target->audioplayer.current_index = source->value.audioplayer.current_index;
+    target->audioplayer.position_ms = source->value.audioplayer.position_ms;
+    target->audioplayer.has_duration_ms = source->value.audioplayer.has_duration_ms;
+    target->audioplayer.duration_ms = source->value.audioplayer.duration_ms;
+    target->audioplayer.repeat = to_gzc_str(source->value.audioplayer.repeat);
+    target->audioplayer.playlist_length = source->value.audioplayer.playlist_length;
+    target->audioplayer.playlist_revision = source->value.audioplayer.playlist_revision;
+    target->audioplayer.has_error_code = source->value.audioplayer.has_error_code;
+    target->audioplayer.error_code = to_gzc_str(source->value.audioplayer.error_code);
+    target->audioplayer.has_error_message = source->value.audioplayer.has_error_message;
+    target->audioplayer.error_message = to_gzc_str(source->value.audioplayer.error_message);
+    break;
   default:
     break;
   }
@@ -192,10 +235,41 @@ static int telemetry_send_on_net(h2_gizclaw_client_t *client,
       frame->observation_count > H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (frame->observations[0].kind == H2_GIZCLAW_TELEMETRY_OTA) {
+    if (frame->observation_count != 1u ||
+        !observation_valid(&frame->observations[0]))
+      return H2_PAL_ERR_INVALID_ARG;
+    const h2_gizclaw_telemetry_ota_t *v = &frame->observations[0].value.ota;
+    const gzc_telemetry_ota_frame_t mapped = {
+      .sequence = frame->sequence,
+      .observed_at_unix_ms = frame->observed_at_unix_ms,
+      .observed_at_delta_ms = frame->observations[0].observed_at_delta_ms,
+      .ota = {
+        .state = (gzc_ota_state_t)v->state,
+        .update_id = to_gzc_str(v->update_id),
+        .has_target_version = v->has_target_version,
+        .target_version = to_gzc_str(v->target_version),
+        .has_download_percent = v->has_download_percent,
+        .download_percent = v->download_percent,
+        .has_error_code = v->has_error_code,
+        .error_code = to_gzc_str(v->error_code),
+        .has_error_message = v->has_error_message,
+        .error_message = to_gzc_str(v->error_message),
+      },
+    };
+#if defined(H2_GIZCLAW_TESTING)
+    if (test_ota_send) return result_from_gzc(test_ota_send(test_ota_user, &mapped));
+#endif
+    gzc_client_t *gzc = h2_gizclaw_client_gzc_internal(client);
+    if (gzc == NULL)
+      return H2_PAL_ERR_INVALID_STATE;
+    return result_from_gzc(gzc_client_send_ota_telemetry(gzc, &mapped));
+  }
   gzc_telemetry_observation_t
       observations[H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS];
   for (size_t index = 0u; index < frame->observation_count; ++index) {
-    if (!observation_valid(&frame->observations[index]))
+    if (frame->observations[index].kind == H2_GIZCLAW_TELEMETRY_OTA ||
+        !observation_valid(&frame->observations[index]))
       return H2_PAL_ERR_INVALID_ARG;
     map_observation(&frame->observations[index], &observations[index]);
   }
@@ -227,15 +301,19 @@ typedef struct h2_gizclaw_telemetry_request {
   h2_gizclaw_telemetry_frame_t frame;
   h2_gizclaw_telemetry_observation_t
       observations[H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS];
-  char strings[H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS][3]
-              [H2_GIZCLAW_TELEMETRY_VERSION_MAX + 1u];
+  size_t strings_capacity;
+  size_t strings_used;
+  char strings[];
 } h2_gizclaw_telemetry_request_t;
 
-static h2_pal_result_t telemetry_copy_span(char *target, size_t capacity,
+static h2_pal_result_t telemetry_copy_span(h2_gizclaw_telemetry_request_t *request,
                                            h2_gizclaw_str_t source,
                                            h2_gizclaw_str_t *out) {
-  if (source.data == NULL || source.len == 0u || source.len >= capacity)
+  if (source.data == NULL || source.len == 0u ||
+      source.len >= request->strings_capacity - request->strings_used)
     return H2_PAL_ERR_INVALID_ARG;
+  char *target = request->strings + request->strings_used;
+  request->strings_used += source.len + 1u;
   memcpy(target, source.data, source.len);
   target[source.len] = '\0';
   *out = (h2_gizclaw_str_t){.data = target, .len = source.len};
@@ -256,18 +334,45 @@ telemetry_copy_frame(h2_gizclaw_telemetry_request_t *request,
   for (size_t index = 0u; index < frame->observation_count; ++index) {
     h2_gizclaw_telemetry_observation_t *observation =
         &request->observations[index];
-    if (!observation_valid(observation))
+    if (!observation_valid(observation) ||
+        (observation->kind == H2_GIZCLAW_TELEMETRY_OTA &&
+         frame->observation_count != 1u))
       return H2_PAL_ERR_INVALID_ARG;
+    if (observation->kind == H2_GIZCLAW_TELEMETRY_AUDIOPLAYER ||
+        observation->kind == H2_GIZCLAW_TELEMETRY_OTA) {
+      h2_gizclaw_str_t *texts[4];
+      bool present[4];
+      if (observation->kind == H2_GIZCLAW_TELEMETRY_AUDIOPLAYER) {
+        h2_gizclaw_telemetry_audioplayer_t *v = &observation->value.audioplayer;
+        texts[0] = &v->state; texts[1] = &v->repeat;
+        texts[2] = &v->error_code; texts[3] = &v->error_message;
+        present[0] = true; present[1] = true;
+        present[2] = v->has_error_code; present[3] = v->has_error_message;
+      } else {
+        h2_gizclaw_telemetry_ota_t *v = &observation->value.ota;
+        texts[0] = &v->update_id; texts[1] = &v->target_version;
+        texts[2] = &v->error_code; texts[3] = &v->error_message;
+        present[0] = true; present[1] = v->has_target_version;
+        present[2] = v->has_error_code; present[3] = v->has_error_message;
+      }
+      for (size_t i = 0; i < 4; ++i) {
+        if (present[i]) {
+          if (telemetry_copy_span(request,
+                                  *texts[i], texts[i]) != H2_PAL_OK)
+            return H2_PAL_ERR_INVALID_ARG;
+        } else {
+          *texts[i] = (h2_gizclaw_str_t){0};
+        }
+      }
+    }
     if (observation->kind == H2_GIZCLAW_TELEMETRY_NETWORK) {
       if (observation->value.network.has_rat &&
-          telemetry_copy_span(request->strings[index][0],
-                              sizeof(request->strings[index][0]),
+          telemetry_copy_span(request,
                               observation->value.network.rat,
                               &observation->value.network.rat) != H2_PAL_OK)
         return H2_PAL_ERR_INVALID_ARG;
       if (observation->value.network.has_operator_name &&
-          telemetry_copy_span(
-              request->strings[index][1], sizeof(request->strings[index][1]),
+          telemetry_copy_span(request,
               observation->value.network.operator_name,
               &observation->value.network.operator_name) != H2_PAL_OK)
         return H2_PAL_ERR_INVALID_ARG;
@@ -289,8 +394,7 @@ telemetry_copy_frame(h2_gizclaw_telemetry_request_t *request,
       };
       for (size_t text = 0u; text < 3u; ++text) {
         if (present[text] &&
-            telemetry_copy_span(request->strings[index][text],
-                                sizeof(request->strings[index][text]),
+            telemetry_copy_span(request,
                                 sources[text], targets[text]) != H2_PAL_OK)
           return H2_PAL_ERR_INVALID_ARG;
       }
@@ -324,13 +428,29 @@ h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
   if (service == NULL || out_request == NULL || timeout_ms == 0u ||
       timeout_ms > INT32_MAX)
     return H2_PAL_ERR_INVALID_ARG;
+  if (frame == NULL || frame->observations == NULL ||
+      frame->observation_count == 0 ||
+      frame->observation_count > H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS)
+    return H2_PAL_ERR_INVALID_ARG;
+  size_t strings_capacity = 0;
+  for (size_t i = 0; i < frame->observation_count; ++i) {
+    if (!observation_valid(&frame->observations[i])) return H2_PAL_ERR_INVALID_ARG;
+    switch (frame->observations[i].kind) {
+    case H2_GIZCLAW_TELEMETRY_NETWORK: strings_capacity += 2u * 97u; break;
+    case H2_GIZCLAW_TELEMETRY_SYSTEM: strings_capacity += 3u * 97u; break;
+    case H2_GIZCLAW_TELEMETRY_AUDIOPLAYER: strings_capacity += 17u + 5u + 129u + 513u; break;
+    case H2_GIZCLAW_TELEMETRY_OTA: strings_capacity += 4u * 513u; break;
+    default: break;
+    }
+  }
   const h2_pal_mem_api_t *allocator = service->client_config.allocator;
   h2_gizclaw_telemetry_request_t *request =
-      h2_pal_mem_alloc(allocator, sizeof(*request));
+      h2_pal_mem_alloc(allocator, sizeof(*request) + strings_capacity);
   if (request == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(request, 0, sizeof(*request));
   request->allocator = allocator;
+  request->strings_capacity = strings_capacity;
   h2_pal_result_t rc = telemetry_copy_frame(request, frame);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_create_send_internal(

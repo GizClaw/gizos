@@ -217,6 +217,7 @@ typedef struct h2_gizclaw_dispatch_item {
 } h2_gizclaw_dispatch_item_t;
 
 struct h2_gizclaw_service {
+  struct h2_gizclaw_device *device;
   h2_gizclaw_service_config_t config;
   h2_gizclaw_config_t client_config;
   h2_gizclaw_cancel_fn original_cancel;
