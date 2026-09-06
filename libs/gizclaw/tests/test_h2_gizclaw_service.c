@@ -6887,8 +6887,6 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
       }
       return GZC_OK;
     }
-    if (test->mode == 23)
-      return GZC_ERR_WOULD_BLOCK;
     event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
     event->which_payload = gizclaw_events_v1_PeerEvent_audio_input_ready_tag;
     const bool wrong = test->mode == 0 && test->ack_reads == 8;
@@ -7765,7 +7763,8 @@ static void test_conversation_public_audio_tasks(void) {
     if (mode == 22)
       assert(test.bos_attempts == 1 && test.ack_reads == 2 && test.reply_text_ends == 1 && atomic_load(&test.input_ack));
     if (mode == 23)
-      assert(atomic_load(&test.captured) == 0 && !atomic_load(&test.input_ack));
+      assert(test.ack_reads == 2 && atomic_load(&test.input_ack) &&
+             atomic_load(&test.captured) == 0 && test.packets == 0);
     if (mode == 21)
       assert(test.bos_attempts == 1 && atomic_load(&test.captured) == 0 &&
              !atomic_load(&test.input_ack) && atomic_load(&test.canceled));

@@ -155,6 +155,7 @@ struct h2_gizclaw_conversation {
   uint64_t sequence;
   bool bos_sent;
   bool input_ready;
+  bool input_rejected;
   bool committed;
   bool canceled;
   bool terminal_pending;
@@ -766,7 +767,7 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
   if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY) {
     const char *id = event->payload.audio_input_ready.stream_id;
     return conversation->bos_sent && !conversation->canceled &&
-           !conversation->committed &&
+           !conversation->committed && !conversation->input_rejected &&
            memchr(id, '\0', sizeof(event->payload.audio_input_ready.stream_id)) != NULL &&
            strcmp(id, conversation->stream_id) == 0;
   }
@@ -888,6 +889,10 @@ void h2_gizclaw_conversation_enqueue_peer_event_internal(
     }
     return;
   }
+  if (!conversation->input_ready &&
+      event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS &&
+      event->payload.eos.has_error)
+    conversation->input_rejected = true;
   conversation->peer_event = *event;
   conversation->pending_peer_event = true;
 }
