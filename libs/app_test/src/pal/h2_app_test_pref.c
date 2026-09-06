@@ -40,8 +40,9 @@ static entry_t *lookup(entry_t *es, const char *key) {
       return &es[i];
   return NULL;
 }
-static int read_value(handle_t *h, const char *key,
-                      h2_pal_pref_entry_type_t type, entry_t **out) {
+static h2_pal_result_t read_value(handle_t *h, const char *key,
+                                  h2_pal_pref_entry_type_t type,
+                                  entry_t **out) {
   if (!key ||
       length(key, H2_APP_TEST_PREF_NAME_MAX + 1u) > H2_APP_TEST_PREF_NAME_MAX ||
       !key[0])
@@ -57,9 +58,9 @@ static int read_value(handle_t *h, const char *key,
   *out = e;
   return 0;
 }
-static int write_value(handle_t *h, const char *key,
-                       h2_pal_pref_entry_type_t type, const void *value,
-                       size_t size) {
+static h2_pal_result_t write_value(handle_t *h, const char *key,
+                                   h2_pal_pref_entry_type_t type,
+                                   const void *value, size_t size) {
   if (!key || !key[0] ||
       length(key, H2_APP_TEST_PREF_NAME_MAX + 1u) > H2_APP_TEST_PREF_NAME_MAX ||
       (!value && size))
@@ -101,9 +102,10 @@ static int close_ns(h2_pal_pref_namespace_t *ns) {
   h2_pal_mem_free(p->mem, h);
   return 0;
 }
-static int get_alloc(h2_pal_pref_namespace_t *ns, const h2_pal_mem_api_t *mem,
-                     const char *key, void **out, size_t *size,
-                     h2_pal_pref_entry_type_t type) {
+static h2_pal_result_t get_alloc(h2_pal_pref_namespace_t *ns,
+                                 const h2_pal_mem_api_t *mem, const char *key,
+                                 void **out, size_t *size,
+                                 h2_pal_pref_entry_type_t type) {
   if (!out || !size)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
@@ -349,7 +351,8 @@ static int open_ns(void *u, const char *name, h2_pal_pref_open_mode_t mode,
   return 0;
 }
 static const h2_pal_pref_vtable_t vtable = {.open = open_ns};
-int h2_app_test_pref_init(h2_app_test_pref_t *p, const h2_pal_mem_api_t *m) {
+h2_pal_result_t h2_app_test_pref_init(h2_app_test_pref_t *p,
+                                      const h2_pal_mem_api_t *m) {
   if (!p)
     return H2_PAL_ERR_INVALID_ARG;
   memset(p, 0, sizeof(*p));
@@ -363,7 +366,7 @@ int h2_app_test_pref_init(h2_app_test_pref_t *p, const h2_pal_mem_api_t *m) {
   p->api = (h2_pal_pref_api_t){p, &vtable};
   return 0;
 }
-int h2_app_test_pref_deinit(h2_app_test_pref_t *p) {
+h2_pal_result_t h2_app_test_pref_deinit(h2_app_test_pref_t *p) {
   if (!p || !p->implementation)
     return 0;
   if (p->active_handles)

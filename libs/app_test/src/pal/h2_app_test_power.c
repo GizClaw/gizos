@@ -1,18 +1,18 @@
 #include "h2_app_test_power.h"
 #include <string.h>
-static int caps(void *u, h2_pal_power_capabilities_t *o) {
+static h2_pal_result_t caps(void *u, h2_pal_power_capabilities_t *o) {
   *o = ((h2_app_test_power_t *)u)->capabilities;
   return 0;
 }
-static int boot(void *u, h2_pal_power_boot_info_t *o) {
+static h2_pal_result_t boot(void *u, h2_pal_power_boot_info_t *o) {
   *o = ((h2_app_test_power_t *)u)->boot_info;
   return 0;
 }
-static int state(void *u, h2_pal_power_state_t *o) {
+static h2_pal_result_t state(void *u, h2_pal_power_state_t *o) {
   *o = ((h2_app_test_power_t *)u)->state;
   return 0;
 }
-static int hold(void *u, int enabled) {
+static h2_pal_result_t hold(void *u, int enabled) {
   h2_app_test_power_t *p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_HOLD))
     return H2_PAL_ERR_UNSUPPORTED;
@@ -21,11 +21,11 @@ static int hold(void *u, int enabled) {
     p->hold_enabled = !!enabled;
   return rc;
 }
-static int get_hold(void *u, h2_pal_power_hold_state_t *o) {
+static h2_pal_result_t get_hold(void *u, h2_pal_power_hold_state_t *o) {
   o->enabled = ((h2_app_test_power_t *)u)->hold_enabled;
   return 0;
 }
-static int reboot(void *u, uint32_t reason) {
+static h2_pal_result_t reboot(void *u, uint32_t reason) {
   h2_app_test_power_t *p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_REBOOT))
     return H2_PAL_ERR_UNSUPPORTED;
@@ -35,7 +35,7 @@ static int reboot(void *u, uint32_t reason) {
     p->state = H2_PAL_POWER_STATE_REBOOTING;
   return rc;
 }
-static int shutdown(void *u, uint32_t reason) {
+static h2_pal_result_t shutdown(void *u, uint32_t reason) {
   h2_app_test_power_t *p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_SHUTDOWN))
     return H2_PAL_ERR_UNSUPPORTED;
@@ -45,7 +45,7 @@ static int shutdown(void *u, uint32_t reason) {
     p->state = H2_PAL_POWER_STATE_OFF;
   return rc;
 }
-static int sleep(void *u, uint32_t reason) {
+static h2_pal_result_t sleep(void *u, uint32_t reason) {
   h2_app_test_power_t *p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_SLEEP))
     return H2_PAL_ERR_UNSUPPORTED;
@@ -55,7 +55,7 @@ static int sleep(void *u, uint32_t reason) {
     p->state = H2_PAL_POWER_STATE_SLEEPING;
   return rc;
 }
-static int deep_sleep(void *u, uint32_t reason) {
+static h2_pal_result_t deep_sleep(void *u, uint32_t reason) {
   h2_app_test_power_t *p = u;
   if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_DEEP_SLEEP))
     return H2_PAL_ERR_UNSUPPORTED;

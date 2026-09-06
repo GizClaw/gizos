@@ -228,7 +228,8 @@ static const h2_pal_fs_vtable_t vtable = {.mkdir = unsupported_path,
                                           .stat = stat_file,
                                           .remove = remove_file,
                                           .rename = rename_file};
-int h2_app_test_fs_init(h2_app_test_fs_t *f, const h2_pal_mem_api_t *m) {
+h2_pal_result_t h2_app_test_fs_init(h2_app_test_fs_t *f,
+                                    const h2_pal_mem_api_t *m) {
   if (!f)
     return H2_PAL_ERR_INVALID_ARG;
   memset(f, 0, sizeof(*f));
@@ -243,7 +244,7 @@ int h2_app_test_fs_init(h2_app_test_fs_t *f, const h2_pal_mem_api_t *m) {
   f->api = (h2_pal_fs_api_t){f, &vtable};
   return 0;
 }
-int h2_app_test_fs_deinit(h2_app_test_fs_t *f) {
+h2_pal_result_t h2_app_test_fs_deinit(h2_app_test_fs_t *f) {
   if (!f || !f->implementation)
     return 0;
   if (f->active_handles)

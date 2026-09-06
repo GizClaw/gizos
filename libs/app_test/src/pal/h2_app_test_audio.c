@@ -528,7 +528,7 @@ h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
 }
 
 h2_pal_result_t
-h2_app_test_audio_copy_evidence(const h2_app_test_audio_t *audio,
+h2_app_test_audio_copy_evidence(h2_app_test_audio_t *audio,
                                 h2_app_test_audio_evidence_t *out_evidence) {
   if (audio == NULL || out_evidence == NULL) {
     return H2_PAL_ERR_INVALID_ARG;

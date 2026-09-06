@@ -90,7 +90,7 @@ static void test_wifi_modem(void) {
   memset(call.number, 'x', sizeof(call.number));
   assert(h2_pal_modem_call_dial(&m.api, &call) == H2_PAL_ERR_INVALID_ARG);
 }
-static int periph_count(void *u, const h2_pal_periph_info_t *i) {
+static h2_pal_result_t periph_count(void *u, const h2_pal_periph_info_t *i) {
   (void)i;
   ++*(unsigned *)u;
   return H2_PAL_ERR_IO;
@@ -311,6 +311,18 @@ static void test_audio(const h2_pal_mem_api_t *mem) {
   h2_audio_frame_t frame =
       h2_audio_frame_for_buffer(output, sizeof(output), a.info.mic_format);
   FAIL_ONCE(a.read_mic);
+  h2_audio_frame_t malformed = frame;
+  malformed.data = NULL;
+  malformed.bytes = 99;
+  assert(a.api.vtable->mic_read(a.api.user, &malformed, 0u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(malformed.bytes == 0);
+  assert(a.api.vtable->mic_read(a.api.user, NULL, 0u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  malformed = frame;
+  malformed.capacity = 1;
+  assert(h2_pal_audio_mic_read(&a.api, &malformed, 0u) == H2_PAL_ERR_NO_SPACE);
+  assert(a.read_mic.calls == 0 && a.read_mic.remaining == 1);
   OK(h2_pal_audio_mic_read(api, &frame, 0u));
   assert(!memcmp(output, pcm, 4));
   h2_app_test_audio_evidence_t evidence;

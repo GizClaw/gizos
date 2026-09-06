@@ -9,8 +9,8 @@ static h2_app_test_periph_entry_t *find(h2_app_test_periph_t *p,
       return &p->entries[i];
   return NULL;
 }
-static int list(void *u, h2_pal_periph_type_t type, h2_pal_periph_cb_t cb,
-                void *cu) {
+static h2_pal_result_t list(void *u, h2_pal_periph_type_t type,
+                            h2_pal_periph_cb_t cb, void *cu) {
   h2_app_test_periph_t *p = u;
   if (p->count > H2_APP_TEST_PERIPH_MAX)
     return H2_PAL_ERR_FORMAT;
@@ -22,7 +22,8 @@ static int list(void *u, h2_pal_periph_type_t type, h2_pal_periph_cb_t cb,
     }
   return 0;
 }
-static int get(void *u, h2_pal_periph_id_t id, h2_pal_periph_info_t *out) {
+static h2_pal_result_t get(void *u, h2_pal_periph_id_t id,
+                           h2_pal_periph_info_t *out) {
   memset(out, 0, sizeof(*out));
   h2_app_test_periph_entry_t *e = find(u, id);
   if (!e)
@@ -30,8 +31,8 @@ static int get(void *u, h2_pal_periph_id_t id, h2_pal_periph_info_t *out) {
   *out = e->info;
   return 0;
 }
-static int button(void *u, h2_pal_periph_id_t id,
-                  h2_pal_single_button_reading_t *out) {
+static h2_pal_result_t button(void *u, h2_pal_periph_id_t id,
+                              h2_pal_single_button_reading_t *out) {
   memset(out, 0, sizeof(*out));
   h2_app_test_periph_entry_t *e = find(u, id);
   if (!e || e->info.type != H2_PAL_PERIPH_TYPE_SINGLE_BUTTON)
@@ -43,8 +44,8 @@ static int button(void *u, h2_pal_periph_id_t id,
     *out = (h2_pal_single_button_reading_t){id, e->button};
   return rc;
 }
-static int battery(void *u, h2_pal_periph_id_t id,
-                   h2_pal_battery_reading_t *out) {
+static h2_pal_result_t battery(void *u, h2_pal_periph_id_t id,
+                               h2_pal_battery_reading_t *out) {
   memset(out, 0, sizeof(*out));
   h2_app_test_periph_entry_t *e = find(u, id);
   if (!e || e->info.type != H2_PAL_PERIPH_TYPE_BATTERY)
@@ -58,8 +59,8 @@ static int battery(void *u, h2_pal_periph_id_t id,
   }
   return rc;
 }
-static int temperature(void *u, h2_pal_periph_id_t id,
-                       h2_pal_temperature_reading_t *out) {
+static h2_pal_result_t temperature(void *u, h2_pal_periph_id_t id,
+                                   h2_pal_temperature_reading_t *out) {
   memset(out, 0, sizeof(*out));
   h2_app_test_periph_entry_t *e = find(u, id);
   if (!e || e->info.type != H2_PAL_PERIPH_TYPE_TEMPERATURE_SENSOR)
@@ -71,7 +72,7 @@ static int temperature(void *u, h2_pal_periph_id_t id,
   }
   return rc;
 }
-static int set_duty(void *u, h2_pal_periph_id_t id, uint16_t duty) {
+static h2_pal_result_t set_duty(void *u, h2_pal_periph_id_t id, uint16_t duty) {
   h2_app_test_periph_entry_t *e = find(u, id);
   if (duty > 10000u)
     return H2_PAL_ERR_INVALID_ARG;
@@ -83,7 +84,7 @@ static int set_duty(void *u, h2_pal_periph_id_t id, uint16_t duty) {
     e->duty_x100 = duty;
   return rc;
 }
-static int get_duty(void *u, h2_pal_periph_id_t id, uint16_t *out) {
+static h2_pal_result_t get_duty(void *u, h2_pal_periph_id_t id, uint16_t *out) {
   *out = 0;
   h2_app_test_periph_entry_t *e = find(u, id);
   if (!e || e->info.type != H2_PAL_PERIPH_TYPE_PWM_SWITCH)
@@ -108,9 +109,9 @@ void h2_app_test_periph_init(h2_app_test_periph_t *p) {
   p->input = (h2_pal_input_api_t){p, &inputs};
   p->pwm = (h2_pal_pwm_switch_api_t){p, &pwm};
 }
-int h2_app_test_periph_add(h2_app_test_periph_t *p,
-                           const h2_pal_periph_info_t *i,
-                           h2_app_test_periph_entry_t **out) {
+h2_pal_result_t h2_app_test_periph_add(h2_app_test_periph_t *p,
+                                       const h2_pal_periph_info_t *i,
+                                       h2_app_test_periph_entry_t **out) {
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;

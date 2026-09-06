@@ -62,7 +62,11 @@ static int stop_speaker(void *u) {
 }
 static int read_mic(void *u, h2_audio_frame_t *out, uint32_t timeout) {
   h2_app_test_audio_fake_t *a = u;
+  if (!out)
+    return H2_PAL_ERR_INVALID_ARG;
   out->bytes = 0;
+  if (!out->data)
+    return H2_PAL_ERR_INVALID_ARG;
   if (!a->mic_active)
     return H2_PAL_ERR_INVALID_STATE;
   if (!format_valid(&a->info.mic_format))
@@ -193,8 +197,8 @@ static const h2_pal_audio_vtable_t vtable = {
     .create_track = create_track,
     .get_speaker_volume_percent = get_volume,
     .set_speaker_volume_percent = set_volume};
-int h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
-                                const h2_pal_mem_api_t *m) {
+h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
+                                            const h2_pal_mem_api_t *m) {
   if (!a)
     return H2_PAL_ERR_INVALID_ARG;
   memset(a, 0, sizeof(*a));
@@ -215,7 +219,7 @@ int h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
       .max_tracks = H2_APP_TEST_AUDIO_FAKE_TRACKS_MAX};
   return 0;
 }
-int h2_app_test_audio_fake_deinit(h2_app_test_audio_fake_t *a) {
+h2_pal_result_t h2_app_test_audio_fake_deinit(h2_app_test_audio_fake_t *a) {
   if (!a || !a->implementation)
     return 0;
   if (a->mic_active || a->speaker_active || a->active_tracks)

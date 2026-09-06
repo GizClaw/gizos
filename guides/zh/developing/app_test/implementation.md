@@ -33,7 +33,8 @@ queue 或复制 Runtime state。
 | Runtime | public event schema、sequence、queue、component state、drop/wakeup |
 | App Test core | driver/session generation、operation validation、snapshot storage |
 | Memory driver | headless LVGL lifecycle、Runtime control lifetime、operation barrier |
-| App adapter | PAL/provider/preference fixture、production init/step/snapshot/stop |
+| Testing PAL | PAL 输入、失败注入、独立 evidence 与内部资源；不拥有 Runtime state |
+| App adapter | 组装 Testing PAL 和产品 provider/fixture、production init/step/snapshot/stop |
 | App | App state、production subjects、workers 和 result slots |
 | Scenario | operation sequence 和 expected `app.*` / `ui.*` 值 |
 
@@ -65,6 +66,30 @@ static h2_pal_result_t memory_execute(
 ```
 
 实际实现还处理 RUN operation、错误优先级和 cleanup；上面只展示 ownership。
+
+## Testing PAL
+
+`src/pal/` 实现两个独立于 execution driver 的 target：`testing_audio` 包装 Audio PAL，`testing_pal` 提供确定性 fake。对应 public headers 为 `include/h2_app_test_audio.h`、`include/h2_app_test_audio_fake.h`、`include/h2_app_test_crypto.h`、`include/h2_app_test_display.h`、`include/h2_app_test_fault.h`、`include/h2_app_test_fs.h`、`include/h2_app_test_modem.h`、`include/h2_app_test_periph.h`、`include/h2_app_test_power.h`、`include/h2_app_test_pref.h`、`include/h2_app_test_time.h` 和 `include/h2_app_test_wifi.h`；每种 provider 的实现使用同名 `.c`，fault helper 为 header-only。两个 target 仅依赖 PAL。测试环境在 Runtime 初始化前组装这些 API，App 继续使用真实 Runtime。
+
+### 对象、容量与状态
+
+普通 fake 由调用方持有，init 后地址稳定，配置、调用与 evidence 读取串行；它们可以在同一 libco executor 中使用，不提供 native 多线程同步。Preference、FS 和 Audio fake 借用 Memory PAL 分配内部资源，活动句柄阻止 deinit。Product component mapper、preference key、业务 provider 和 fixture 属于 adapter/scenario；Testing PAL 不复制 Runtime queue 或 component state，也不把请求成功解释为异步完成。
+
+Preference 限制为 8 个 namespace、每个 64 个 key、16 个同时打开的 handle；名称/key 最多 63 字节、值最多 1024 字节。每个 namespace 只允许一个 writer，修改在 commit 前只对 writer 可见；commit 失败保留 staged 值，close 放弃未提交修改。FS 支持 16 个 exact path regular file、每条路径最多 127 字节、默认每文件 1 MiB；每文件只允许一个活动 handle，支持短读，目录操作 unsupported。Periph registry 最多 32 项。Audio fake 和 decorator 各最多 4 条 track，decorator capture scratch 最多 8192 字节。具体容量常量和借用约束由 public headers 定义。
+
+### 时间、barrier 与 evidence
+
+Testing Time 的 sleep 仅推进虚拟时钟，不调度其他 task。生产 Runtime 的 resident worker 使用 libco Time，Testing Time 接入 executor 的 `now_ms`/`time_source`；根循环显式 advance 并 schedule。需要锁的 Runtime 操作、test control 和 cleanup 必须在 executor task 中执行。时钟推进不能替代 production-aware completion barrier；worker result 被 production loop 消费之后，才读取 App snapshot 和 PAL evidence。
+
+Audio decorator 借用 delegate、Time、Memory 和 PCM，mic lifecycle 委托给底层，采集 scratch 读取后清零，再按 monotonic time 返回 fixture PCM；EOF 后输出静音。物理采集错误单独观测，不覆盖 fixture 的业务输入。Evidence 支持并发读取，但多字段不是原子快照。Mic lifecycle/read 串行，speaker lifecycle 串行，每条 track 独立串行，销毁前所有调用者 quiescent。
+
+### 失败和 cleanup
+
+Fault 在有效调用到达对应操作时计数，零初始化默认成功；持续失败和有界失败均可配置。Preference commit filter 仅统计匹配 namespace/key 的调用。Wi-Fi connect 和 Modem call 不自动生成完成事件，Power transition 不重启 Host 或增加 boot count，Crypto fixture 不提供真实密码算法。
+
+Cleanup 先停止 App workers、关闭 Runtime test control 和 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 fake。Audio track close、mic/speaker stop 和 FS close 失败时保留 ownership 供重试；不能因为某次失败就丢弃句柄。未成功 init 的动态 fake 可 deinit，重复 deinit 和 NULL deinit 成功；init 不允许覆盖活动对象。普通 fake 无动态资源，不能提前结束其调用方存储生命周期。
+
+Provider 测试覆盖事务可见性、失败重试、短读、容量、错误参数和资源计数；Audio decorator 测试覆盖 pacing、EOF、真实采集故障及输出代理。Runtime/libco 集成测试覆盖 semantic event、component mapping、worker 持久化失败重试、时钟推进与 task 内 cleanup。这些 Host evidence 不替代 H106 产品迁移或真机验收。
 
 ## Runtime Test Control
 

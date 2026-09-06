@@ -1,6 +1,6 @@
 #include "h2_app_test_crypto.h"
 #include <string.h>
-static int random_bytes(void *u, uint8_t *out, size_t len) {
+static h2_pal_result_t random_bytes(void *u, uint8_t *out, size_t len) {
   h2_app_test_crypto_t *c = u;
   if (!out && len)
     return H2_PAL_ERR_INVALID_ARG;
@@ -17,7 +17,7 @@ static int random_bytes(void *u, uint8_t *out, size_t len) {
   c->random_offset += len;
   return 0;
 }
-static int generate(void *u, h2_pal_x25519_keypair_t *out) {
+static h2_pal_result_t generate(void *u, h2_pal_x25519_keypair_t *out) {
   h2_app_test_crypto_t *c = u;
   memset(out, 0, sizeof(*out));
   int rc = h2_app_test_fault_take(&c->generate);
@@ -28,8 +28,8 @@ static int generate(void *u, h2_pal_x25519_keypair_t *out) {
   *out = c->keypair;
   return 0;
 }
-static int derive(void *u, const h2_pal_x25519_private_key_t *key,
-                  h2_pal_x25519_public_key_t *out) {
+static h2_pal_result_t derive(void *u, const h2_pal_x25519_private_key_t *key,
+                              h2_pal_x25519_public_key_t *out) {
   h2_app_test_crypto_t *c = u;
   memset(out, 0, sizeof(*out));
   int rc = h2_app_test_fault_take(&c->derive);

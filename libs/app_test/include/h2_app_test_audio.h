@@ -80,9 +80,10 @@ h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
                               const h2_app_test_audio_fixture_t *fixture);
 
 /** Copy bounded observations, without resetting counters; INVALID_ARG on NULL.
+ * Borrows the mutable instance for portable C11 atomic loads.
  */
 h2_pal_result_t
-h2_app_test_audio_copy_evidence(const h2_app_test_audio_t *audio,
+h2_app_test_audio_copy_evidence(h2_app_test_audio_t *audio,
                                 h2_app_test_audio_evidence_t *out_evidence);
 
 /** Free wrapper only, never the delegate. NULL is OK. Active mic, speaker or

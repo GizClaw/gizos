@@ -13,7 +13,7 @@ h2_pal_result_t h2_app_test_time_advance(h2_app_test_time_t *c,
     c->wall_ms += delta;
   return H2_PAL_OK;
 }
-static int now(void *u, uint64_t *out) {
+static h2_pal_result_t now(void *u, uint64_t *out) {
   h2_app_test_time_t *c = u;
   *out = 0;
   int rc = h2_app_test_fault_take(&c->read);
@@ -21,7 +21,7 @@ static int now(void *u, uint64_t *out) {
     *out = c->monotonic_ms;
   return rc;
 }
-static int micros(void *u, uint64_t *out) {
+static h2_pal_result_t micros(void *u, uint64_t *out) {
   uint64_t ms = 0;
   *out = 0;
   int rc = now(u, &ms);
@@ -32,7 +32,7 @@ static int micros(void *u, uint64_t *out) {
   *out = ms * 1000u;
   return H2_PAL_OK;
 }
-static int wall(void *u, uint64_t *out) {
+static h2_pal_result_t wall(void *u, uint64_t *out) {
   h2_app_test_time_t *c = u;
   *out = 0;
   int rc = h2_app_test_fault_take(&c->read);
@@ -43,7 +43,7 @@ static int wall(void *u, uint64_t *out) {
   *out = c->wall_ms;
   return H2_PAL_OK;
 }
-static int set_wall(void *u, uint64_t value) {
+static h2_pal_result_t set_wall(void *u, uint64_t value) {
   h2_app_test_time_t *c = u;
   int rc = h2_app_test_fault_take(&c->set_wall);
   if (!rc) {
@@ -53,11 +53,11 @@ static int set_wall(void *u, uint64_t value) {
   }
   return rc;
 }
-static int status(void *u, h2_pal_time_wall_status_t *out) {
+static h2_pal_result_t status(void *u, h2_pal_time_wall_status_t *out) {
   *out = ((h2_app_test_time_t *)u)->wall_status;
   return H2_PAL_OK;
 }
-static int sleep_ms(void *u, uint32_t ms) {
+static h2_pal_result_t sleep_ms(void *u, uint32_t ms) {
   h2_app_test_time_t *c = u;
   c->last_sleep_ms = ms;
   int rc = h2_app_test_fault_take(&c->sleep);
