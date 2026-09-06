@@ -3469,7 +3469,236 @@ static void test_control_preserves_runtime_queue_drop_behavior(void) {
     h2_runtime_deinit(runtime);
 }
 
+typedef struct audio_state_fixture {
+    uint32_t actual;
+    int set_result;
+} audio_state_fixture_t;
+
+static int state_audio_get(void *user, uint32_t *out) {
+    *out = ((audio_state_fixture_t *)user)->actual;
+    return H2_PAL_OK;
+}
+
+static int state_audio_set(void *user, uint32_t volume) {
+    audio_state_fixture_t *f = user;
+    if (f->set_result == H2_PAL_OK)
+        f->actual = volume;
+    return f->set_result;
+}
+
+static void test_audio_shared_state(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_state_fixture_t f = {.actual = 60};
+    const h2_pal_audio_vtable_t vtable = {
+        .get_speaker_volume_percent = state_audio_get,
+        .set_speaker_volume_percent = state_audio_set};
+    const h2_pal_audio_api_t audio = {&f, &vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_runtime_system_audio_state_t snapshot;
+    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+    assert(snapshot.volume_percent == 60 && !snapshot.muted);
+    assert(h2_runtime_audio_set_volume(runtime, 42, 1) == H2_PAL_OK);
+    assert(f.actual == 0);
+    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+    assert(snapshot.volume_percent == 42 && snapshot.muted);
+    uint32_t effective = 100;
+    assert(h2_pal_audio_get_speaker_volume_percent(runtime->audio, &effective) == H2_PAL_OK);
+    assert(effective == 0);
+    assert(h2_runtime_audio_set_volume(runtime, snapshot.volume_percent, 0) == H2_PAL_OK);
+    assert(f.actual == 42);
+    assert(h2_runtime_audio_set_volume(runtime, 42, 1) == H2_PAL_OK);
+    assert(h2_pal_audio_set_speaker_volume_percent(runtime->audio, 73) == H2_PAL_OK);
+    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+    assert(snapshot.volume_percent == 73 && !snapshot.muted);
+    f.set_result = H2_PAL_ERR_IO;
+    assert(h2_runtime_audio_set_volume(runtime, 22, 1) == H2_PAL_ERR_IO);
+    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+    assert(snapshot.volume_percent == 73 && !snapshot.muted);
+    assert(h2_runtime_audio_set_volume(runtime, 101, 0) == H2_PAL_ERR_INVALID_ARG);
+    f.actual = 19;
+    assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
+    assert(snapshot.volume_percent == 19);
+    h2_runtime_deinit(runtime);
+}
+
+typedef struct wifi_policy_fixture {
+    h2_pal_wifi_sta_config_t saved, target;
+    int connect_rc, save_rc;
+    unsigned int reads, ready_after, saves, connects, disconnects;
+    test_time_t *time;
+    h2_runtime_t *runtime;
+    uint32_t disconnect_ms, connect_ms, status_ms, observed_timeout;
+    bool check_overlap;
+} wifi_policy_fixture_t;
+
+static int policy_saved_get(void *user, h2_pal_wifi_sta_config_t *out) {
+    wifi_policy_fixture_t *f = user;
+    *out = f->saved;
+    return out->ssid_len ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+}
+
+static int policy_saved_set(void *user, const h2_pal_wifi_sta_config_t *config) {
+    wifi_policy_fixture_t *f = user;
+    ++f->saves;
+    if (f->save_rc == H2_PAL_OK)
+        f->saved = *config;
+    return f->save_rc;
+}
+
+static int policy_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+                          uint32_t timeout_ms) {
+    wifi_policy_fixture_t *f = user;
+    ++f->connects;
+    f->observed_timeout = timeout_ms;
+    if (f->time)
+        f->time->now_ms += f->connect_ms;
+    if (f->check_overlap) {
+        assert(h2_pal_wifi_sta_connect(f->runtime->wifi_sta, config, 10) == H2_PAL_ERR_BUSY);
+        assert(h2_pal_wifi_sta_disconnect(f->runtime->wifi_sta) == H2_PAL_ERR_BUSY);
+    }
+    f->target = *config;
+    f->reads = 0;
+    return f->connect_rc;
+}
+
+static int policy_disconnect(void *user) {
+    wifi_policy_fixture_t *f = user;
+    ++f->disconnects;
+    if (f->time)
+        f->time->now_ms += f->disconnect_ms;
+    return H2_PAL_OK;
+}
+
+static int policy_status(void *user, h2_pal_wifi_sta_status_t *out) {
+    wifi_policy_fixture_t *f = user;
+    if (f->time)
+        f->time->now_ms += f->status_ms;
+    memset(out, 0, sizeof(*out));
+    out->ssid_len = f->target.ssid_len;
+    memcpy(out->ssid, f->target.ssid, out->ssid_len);
+    out->ip_valid = ++f->reads > f->ready_after;
+    out->state = out->ip_valid ? H2_PAL_WIFI_STA_STATE_GOT_IP
+                              : H2_PAL_WIFI_STA_STATE_CONNECTED;
+    return H2_PAL_OK;
+}
+
+static void test_wifi_connection_persistence(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    wifi_policy_fixture_t f = {.ready_after = 2};
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {
+        .connect = policy_connect, .get_status = policy_status,
+        .disconnect = policy_disconnect};
+    const h2_pal_wifi_settings_vtable_t settings_vtable = {
+        .get_saved_sta_config = policy_saved_get,
+        .set_saved_sta_config = policy_saved_set};
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.wifi_sta = &sta;
+    config.wifi_settings = &settings;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(f.reads == 0 && f.saves == 0);
+    assert(h2_runtime_wifi_connect_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    h2_pal_wifi_sta_config_t network = {.ssid = "first", .ssid_len = 5,
+        .password = "password", .password_len = 8};
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_OK);
+    assert(f.reads == 3 && f.saves == 1 && !strcmp(f.saved.ssid, "first"));
+    network.ssid[0] = 'x';
+    f.connect_rc = H2_PAL_ERR_IO;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_ERR_IO);
+    assert(f.saves == 1 && !strcmp(f.saved.ssid, "first"));
+    f.connect_rc = H2_PAL_OK;
+    f.ready_after = 1000;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 40) == H2_PAL_ERR_TIMEOUT);
+    assert(f.saves == 1);
+    f.ready_after = 0;
+    f.save_rc = H2_PAL_ERR_IO;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_ERR_IO);
+    assert(!strcmp(f.saved.ssid, "first"));
+    f.save_rc = H2_PAL_OK;
+    h2_runtime_deinit(runtime);
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_connect_saved(runtime, 100) == H2_PAL_OK);
+    assert(!strcmp(f.target.ssid, "first"));
+    assert(f.target.password_len == 8 && !strcmp(f.target.password, "password"));
+    h2_runtime_deinit(runtime);
+}
+
+static void test_wifi_policy_boundaries(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    wifi_policy_fixture_t f = {.time = &env.time_state};
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {
+        .connect = policy_connect, .get_status = policy_status,
+        .disconnect = policy_disconnect};
+    const h2_pal_wifi_settings_vtable_t settings_vtable = {
+        .get_saved_sta_config = policy_saved_get,
+        .set_saved_sta_config = policy_saved_set};
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.wifi_sta = &sta;
+    config.wifi_settings = &settings;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    f.runtime = runtime;
+    h2_pal_wifi_sta_config_t network = {.ssid = "first", .ssid_len = 5,
+        .password = "password", .password_len = 8};
+    f.saved = f.target = network;
+    f.disconnect_ms = 30;
+    f.check_overlap = true;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_OK);
+    assert(f.observed_timeout == 70 && f.disconnects == 1 && f.saves == 1);
+    assert(h2_pal_wifi_sta_disconnect(runtime->wifi_sta) == H2_PAL_OK);
+    f.status_ms = 10;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_OK);
+    assert(f.observed_timeout == 60);
+    f.status_ms = 0;
+    unsigned int completed_saves = f.saves;
+    f.connect_ms = 70;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_ERR_TIMEOUT);
+    assert(f.saves == completed_saves);
+    f.connect_ms = 0;
+    f.disconnect_ms = 100;
+    unsigned int connects = f.connects;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_ERR_TIMEOUT);
+    assert(f.connects == connects && f.saves == completed_saves);
+    f.disconnect_ms = 0;
+    network.password[0] = 'x';
+    f.connect_rc = H2_PAL_ERR_IO;
+    unsigned int disconnects = f.disconnects;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_ERR_IO);
+    assert(f.disconnects == disconnects + 1 && f.saved.password[0] == 'p');
+    f.connect_rc = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_saved(runtime, 0) == H2_PAL_OK);
+    assert(f.observed_timeout == 15000);
+    h2_runtime_deinit(runtime);
+
+    config.wifi_settings = h2_pal_unsupported_wifi_settings_api();
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    f.runtime = runtime;
+    connects = f.connects;
+    disconnects = f.disconnects;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 100) == H2_PAL_ERR_UNSUPPORTED);
+    assert(f.connects == connects && f.disconnects == disconnects);
+    unsigned int saves = f.saves;
+    uint64_t started = env.time_state.now_ms;
+    assert(h2_pal_wifi_sta_connect(runtime->wifi_sta, &network, 0) == H2_PAL_OK);
+    assert(f.observed_timeout == 0 && f.saves == saves);
+    assert(env.time_state.now_ms == started);
+    h2_runtime_deinit(runtime);
+}
+
 int main(void) {
+    test_wifi_policy_boundaries();
+    test_audio_shared_state();
+    test_wifi_connection_persistence();
     test_runtime_firmware_info_provider();
     test_runtime_capabilities_are_bound_at_init();
     test_runtime_rejects_incomplete_video_decoder();

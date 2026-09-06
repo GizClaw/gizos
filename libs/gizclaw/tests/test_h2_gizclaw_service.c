@@ -1,4 +1,6 @@
 #include "gzc_common.h"
+#include "h2_runtime.h"
+#include "h2/pal/h2_pal_unsupported.h"
 #include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_player.h"
 #include "h2_gizclaw_ota.h"
@@ -2104,6 +2106,60 @@ static h2_pal_result_t device_resolve_sound(void *user, const char *name,
   assert(!"uncompleted sound RPC must not reach the worker");
   return H2_PAL_ERR_UNSUPPORTED;
 }
+static void device_runtime_notify(h2_runtime_t *runtime) {
+  (void)h2_runtime_notify(runtime);
+  atomic_fetch_add_explicit(&s_runtime_notify_count, 1u, memory_order_release);
+}
+static h2_runtime_t *device_test_runtime(h2_gizclaw_service_t *service,
+                                            const h2_pal_audio_api_t *audio) {
+  const h2_runtime_config_t config = {
+    .board = "fixture", .target = "host", .chip = "host",
+    .firmware_info = h2_pal_unsupported_firmware_info_api(),
+    .mem = service->client_config.allocator,
+    .log = h2_pal_unsupported_log_api(),
+    .time = service->client_config.time,
+    .timer = h2_pal_unsupported_timer_api(),
+    .task = h2_pal_unsupported_task_api(),
+    .queue = service->config.queue,
+    .sync = service->config.sync,
+    .fs = h2_pal_unsupported_fs_api(),
+    .disk = h2_pal_unsupported_disk_api(),
+    .pref = h2_pal_unsupported_pref_api(),
+    .crypto = h2_pal_unsupported_crypto_api(),
+    .http = h2_pal_unsupported_http_api(),
+    .net = h2_pal_unsupported_net_api(),
+    .netif = h2_pal_unsupported_netif_api(),
+    .mqtt = h2_pal_unsupported_mqtt_api(),
+    .webrtc = h2_pal_unsupported_webrtc_api(),
+    .wifi_sta = h2_pal_unsupported_wifi_sta_api(),
+    .wifi_ap = h2_pal_unsupported_wifi_ap_api(),
+    .wifi_csi = h2_pal_unsupported_wifi_csi_api(),
+    .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
+    .ble_host = h2_pal_unsupported_ble_host_api(),
+    .modem = h2_pal_unsupported_modem_api(),
+    .power = h2_pal_unsupported_power_api(),
+    .display = h2_pal_unsupported_display_api(),
+    .audio = audio,
+    .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
+    .periph = h2_pal_unsupported_periph_api(),
+    .button = h2_pal_unsupported_button_api(),
+    .touch = h2_pal_unsupported_touch_api(),
+    .buzzer = h2_pal_unsupported_buzzer_api(),
+    .nfc = h2_pal_unsupported_nfc_api(),
+    .nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api(),
+    .imu = h2_pal_unsupported_imu_api(),
+    .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
+    .led = h2_pal_unsupported_led_api(),
+    .switch_api = h2_pal_unsupported_switch_api(),
+    .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
+    .input = h2_pal_unsupported_input_api(),
+    .system_event = h2_pal_unsupported_system_event_api(),
+    .video_decoder = h2_pal_unsupported_video_decoder_api(),
+  };
+  h2_runtime_t *runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  return runtime;
+}
 static void test_device_provider_pal_and_player(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -2127,7 +2183,10 @@ static void test_device_provider_pal_and_player(void) {
   const h2_pal_wifi_sta_api_t wifi = {.vtable = &wifi_vtable};
   service->client_config.wifi = &wifi;
   service->client_config.wifi_settings = &settings;
-  service->client_config.audio = &audio;
+  h2_runtime_t *runtime = device_test_runtime(service, &audio);
+  service->config.runtime = runtime;
+  h2_gizclaw_service_test_set_runtime_notify(device_runtime_notify);
+  service->client_config.audio = runtime->audio;
   service->client_config.power = &power;
   service->client_config.http = &http;
   service->client_config.audio_buffer_bytes = 32;
@@ -2178,6 +2237,15 @@ static void test_device_provider_pal_and_player(void) {
   pb_istream_t input = pb_istream_from_buffer(response.payload.data, response.payload.len);
   assert(pb_decode(&input, gizclaw_rpc_v1_ClientDeviceStatusGetResponse_fields, &status));
   assert(status.value.has_volume && status.value.volume == 42 && status.value.muted);
+  /* A local Runtime/PAL adjustment must supersede the preceding RPC mute. */
+  assert(h2_pal_audio_set_speaker_volume_percent(runtime->audio, 73) == H2_PAL_OK);
+  gizclaw_rpc_v1_ClientDeviceStatusGetRequest get_status = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET,
+    gizclaw_rpc_v1_ClientDeviceStatusGetRequest_fields, &get_status, &response) == 0);
+  input = pb_istream_from_buffer(response.payload.data, response.payload.len);
+  memset(&status, 0, sizeof(status));
+  assert(pb_decode(&input, gizclaw_rpc_v1_ClientDeviceStatusGetResponse_fields, &status));
+  assert(status.value.has_volume && status.value.volume == 73 && !status.value.muted);
   volume.level = 101;
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET,
     gizclaw_rpc_v1_ClientDeviceVolumeSetRequest_fields, &volume, &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
@@ -2239,6 +2307,7 @@ static void test_device_provider_pal_and_player(void) {
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  h2_runtime_deinit(runtime);
 }
 
 static int ota_telemetry_capture(void *user, const gzc_telemetry_ota_frame_t *frame) {
