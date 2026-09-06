@@ -138,12 +138,33 @@ static void time_worker(void *user) {
   }
 }
 
+h2_pal_result_t h2_gizclaw_time_prepare_connect_internal(
+    h2_gizclaw_service_t *service) {
+  uint64_t wall_ms = 0u;
+  if (h2_pal_time_get_wall_ms(service->client_config.time, &wall_ms) ==
+          H2_PAL_OK && wall_ms != 0u)
+    return H2_PAL_OK;
+  /* Signaling authenticates a timestamp. On cold boot, perform the same
+   * cancellable calibration/retry loop before sending any offer. */
+  time_worker(service);
+  if (time_canceled(service))
+    return H2_PAL_ERR_CLOSED;
+  h2_pal_result_t rc =
+      h2_pal_time_get_wall_ms(service->client_config.time, &wall_ms);
+  return rc != H2_PAL_OK ? rc
+                        : (wall_ms != 0u ? H2_PAL_OK
+                                         : H2_PAL_TIME_ERR_UNCALIBRATED);
+}
+
 void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service) {
   /* One Service owns exactly one client connection. net_worker calls this on
    * every poll to retry task creation, not to signal a reconnect. Keep the
    * completed handle until stop joins it so success does not trigger another
-   * calibration. A reconnect uses a new Service and therefore a new task. */
-  if (service->time_task != NULL)
+   * calibration. Before task creation, only net_worker writes time_sync; its
+   * synchronous pre-connect success also suppresses a second calibration.
+   * A reconnect uses a new Service and chooses calibration from clock validity. */
+  if (service->time_task != NULL ||
+      service->time_sync.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED)
     return;
   uint64_t now = 0u;
   if (h2_pal_time_get_monotonic_ms(service->client_config.time, &now) != H2_PAL_OK ||

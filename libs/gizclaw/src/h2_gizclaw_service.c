@@ -679,6 +679,8 @@ static void net_worker(void *ctx) {
                                  service_cancel_requested, service);
   }
   if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_time_prepare_connect_internal(service);
+  if (rc == H2_PAL_OK)
     rc = client_init(&service->client_config, &service->client);
   if (rc == H2_PAL_OK)
     rc = client_connect(service->client);

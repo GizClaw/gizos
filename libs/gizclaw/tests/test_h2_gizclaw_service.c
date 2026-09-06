@@ -106,6 +106,18 @@ typedef struct test_env {
   unsigned retry_mode;
 } test_env_t;
 
+/* RPC timing fakes override monotonic time but retain a calibrated wall clock. */
+static h2_pal_result_t fake_valid_wall(void *user, uint64_t *out) {
+  (void)user;
+  return h2_pal_time_get_wall_ms(h2_desktop_platform_time_api(), out);
+}
+
+static h2_pal_result_t fake_valid_wall_status(
+    void *user, h2_pal_time_wall_status_t *out) {
+  (void)user;
+  return h2_pal_time_get_wall_status(h2_desktop_platform_time_api(), out);
+}
+
 static test_env_t *s_env;
 static atomic_uint s_queue_send_timeout_ms;
 static atomic_uint s_runtime_notify_count;
@@ -1852,8 +1864,10 @@ static h2_pal_result_t fake_req_clock(void *user, uint64_t *out_ms) {
 }
 
 static void test_req_ping_execution_timing(void) {
-  static const h2_pal_time_vtable_t vtable = {.get_monotonic_ms =
-                                                  fake_req_clock};
+  static const h2_pal_time_vtable_t vtable = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   static const uint8_t response[] = {0x08, 123};
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -2408,8 +2422,10 @@ static void test_device_ota_telemetry_copy(void) {
 }
 
 static void test_req_telemetry_copy_and_backpressure(void) {
-  static const h2_pal_time_vtable_t vtable = {.get_monotonic_ms =
-                                                  fake_req_clock};
+  static const h2_pal_time_vtable_t vtable = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   for (unsigned mode = 0u; mode < 5u; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -2909,8 +2925,10 @@ static void test_workspace_direct_input_update(void) {
   int fails = 0;
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
-  static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms =
-                                                       fake_req_clock};
+  static const h2_pal_time_vtable_t time_vtable = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   const h2_pal_time_api_t time = {.user = &env, .vtable = &time_vtable};
   service->client_config.time = &time;
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
@@ -3075,7 +3093,10 @@ static void test_workspace_direct_input_update(void) {
 static void test_workspace_request_and_response_paths(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
-  static const h2_pal_time_vtable_t tv = {.get_monotonic_ms = fake_req_clock};
+  static const h2_pal_time_vtable_t tv = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   const h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
   service->client_config.time = &time;
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
@@ -3262,7 +3283,10 @@ static void test_workspace_request_and_response_paths(void) {
 static void test_workspace_reload_with_options(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
-  static const h2_pal_time_vtable_t tv = {.get_monotonic_ms = fake_req_clock};
+  static const h2_pal_time_vtable_t tv = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   const h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
   service->client_config.time = &time;
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
@@ -3908,12 +3932,20 @@ static void test_req_start_backpressure_deadline_and_cancel(void) {
                                                  .result = fake_profile_result,
                                                  .cancel = fake_rpc_cancel,
                                                  .destroy = fake_rpc_destroy};
-  static const h2_pal_time_vtable_t tv = {.get_monotonic_ms = fake_req_clock};
+  static const h2_pal_time_vtable_t tv = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   for (unsigned mode = 0; mode < 4u; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
     const h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
-    service->client_config.time = mode == 3u ? NULL : &time;
+    /* Missing monotonic time remains an RPC error; signaling has valid UTC. */
+    static const h2_pal_time_vtable_t wall_only_vtable = {
+        .get_wall_ms = fake_valid_wall,
+        .get_wall_status = fake_valid_wall_status};
+    const h2_pal_time_api_t wall_only = {.vtable = &wall_only_vtable};
+    service->client_config.time = mode == 3u ? &wall_only : &time;
     env.retry_mode = mode;
     h2_gizclaw_async_rpc_test_set_ops(&ops);
     assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
@@ -6219,8 +6251,10 @@ static void test_speech_managed_requests(void) {
     atomic_store(&env.event_emitted, true);
     /* Audio now runs on real 20 ms deadlines; retain an offset to inject the
      * timeout case without freezing the audio worker's clock. */
-    static const h2_pal_time_vtable_t tv = {.get_monotonic_ms =
-                                                speech_running_clock};
+    static const h2_pal_time_vtable_t tv = {
+        .get_monotonic_ms = speech_running_clock,
+        .get_wall_ms = fake_valid_wall,
+        .get_wall_status = fake_valid_wall_status};
     h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
     service->client_config.time = &time;
     speech_wire_test_t test = {.service = service,
@@ -6562,8 +6596,10 @@ static void test_audio_play_request(void) {
   for (unsigned mode = 0; mode < 16; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
-    static const h2_pal_time_vtable_t clock_vtable = {.get_monotonic_ms =
-                                                          fake_req_clock};
+    static const h2_pal_time_vtable_t clock_vtable = {
+        .get_monotonic_ms = fake_req_clock,
+        .get_wall_ms = fake_valid_wall,
+        .get_wall_status = fake_valid_wall_status};
     h2_pal_time_api_t clock = {.user = &env, .vtable = &clock_vtable};
     service->client_config.time =
         mode == 2 ? &clock : h2_desktop_platform_time_api();
@@ -7910,7 +7946,8 @@ static h2_pal_result_t sync_speedtest_call(void *ctx) {
 static void test_speedtest_managed_requests(void) {
   static const h2_pal_time_vtable_t clock_vtable = {
       .get_monotonic_ms = fake_req_clock,
-  };
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
   for (unsigned mode = 0u; mode < 22u; ++mode) {
     if (mode == 8u)
       continue; /* Request wait timeout is covered by lifecycle tests. */
@@ -9023,17 +9060,22 @@ static void test_time_sync_reconnect(void) {
     atomic_store(&test.http_gate, false);
     atomic_store(&env.connect_gate, false);
     assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-    wait_for_count(&env.connect_count, 1);
-    assert(atomic_load(&test.calls) == connection);
-    assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_WAITING).attempts == 0);
-    atomic_store(&env.connect_gate, true);
+    if (connection != 0) {
+      wait_for_count(&env.connect_count, 1);
+      assert(atomic_load(&test.calls) == connection);
+      atomic_store(&env.connect_gate, true);
+    }
     wait_for_count(&test.calls, connection + 1);
     assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RUNNING).attempts == 1);
+    if (connection == 0)
+      assert(atomic_load(&env.connect_count) == 0);
     uint64_t wall = 0;
     assert(h2_pal_time_get_wall_ms(&time, &wall) ==
            (connection == 0 ? H2_PAL_TIME_ERR_UNCALIBRATED : H2_PAL_OK));
     atomic_store(&test.http_gate, true);
     assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_SUCCEEDED).attempts == 1);
+    atomic_store(&env.connect_gate, true);
+    wait_for_count(&env.connect_count, 1);
     /* Even beyond the task-start retry deadline, successful calibration must
      * remain once per connection, rather than once per network poll. */
     atomic_fetch_add(&test.offset, 60001);
@@ -9051,6 +9093,35 @@ static void test_time_sync_reconnect(void) {
     assert(wall == 1735689600123ull);
   }
   assert(atomic_load(&test.calls) == 2);
+}
+
+static void test_preconnect_time_stop(void) {
+  for (unsigned waiting_retry = 0; waiting_retry < 2; ++waiting_retry) {
+    test_env_t env;
+    time_test_t test = {.first_result = H2_PAL_ERR_IO};
+    const h2_pal_time_vtable_t tv = {
+        .get_monotonic_ms = time_test_mono, .get_wall_ms = time_test_wall,
+        .get_wall_status = time_test_status, .set_wall_ms = time_test_set};
+    const h2_pal_time_api_t time = {.user = &test, .vtable = &tv};
+    const h2_pal_http_vtable_t hv = {.request = time_test_http};
+    const h2_pal_http_api_t http = {.user = &test, .vtable = &hv};
+    h2_gizclaw_service_t *service = create_service(&env, 2);
+    service->config.on_event = NULL;
+    service->client_config.time = &time;
+    service->client_config.http = &http;
+    service->client_config.server_endpoint =
+        (h2_gizclaw_str_t){"example.test:9821", 17};
+    atomic_store(&test.http_gate, waiting_retry != 0);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    wait_for_count(&test.calls, 1);
+    if (waiting_retry)
+      time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RETRY);
+    assert(atomic_load(&env.connect_count) == 0);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(atomic_load(&env.connect_count) == 0);
+    assert(!atomic_load(&test.valid));
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
 }
 
 static void test_automatic_time_sync(void) {
@@ -9085,16 +9156,21 @@ static void test_automatic_time_sync(void) {
       atomic_store(&test.wall, 1700000000000ull);
       atomic_store(&test.valid, true);
     }
-    /* Connection is gated: no pre-connect HTTP. */
     atomic_store(&env.connect_gate, false);
     assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-    wait_for_count(&env.connect_count, 1);
-    assert(atomic_load(&test.calls) == 0);
-    atomic_store(&env.connect_gate, true);
+    if (i == 0) {
+      /* A retained valid clock allows communication during refresh. */
+      wait_for_count(&env.connect_count, 1);
+      assert(atomic_load(&test.calls) == 0);
+      atomic_store(&env.connect_gate, true);
+    }
     wait_for_count(&test.calls, 1);
-    /* Slow HTTP must not stop the sole network owner. */
-    unsigned polls = atomic_load(&env.poll_count);
-    wait_for_count(&env.poll_count, polls + 2);
+    if (i == 0) {
+      unsigned polls = atomic_load(&env.poll_count);
+      wait_for_count(&env.poll_count, polls + 2);
+    } else {
+      assert(atomic_load(&env.connect_count) == 0);
+    }
     atomic_store(&test.http_gate, true);
     h2_gizclaw_time_sync_status_t status = time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RETRY);
     assert(status.last_result != H2_PAL_OK && status.attempts == 1);
@@ -9113,6 +9189,8 @@ static void test_automatic_time_sync(void) {
     }
     status = time_test_wait(service, H2_GIZCLAW_TIME_SYNC_SUCCEEDED);
     assert(status.attempts == 2 && status.last_result == H2_PAL_OK);
+    atomic_store(&env.connect_gate, true);
+    wait_for_count(&env.connect_count, 1);
     assert(h2_pal_time_get_wall_ms(&time, &value) == H2_PAL_OK);
     assert(value == 1735689600123ull);
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
@@ -9172,6 +9250,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   assert(argc == 1);
+  test_preconnect_time_stop();
   test_automatic_time_sync();
   test_time_sync_reconnect();
   test_stream_sink_one_shot();

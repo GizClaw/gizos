@@ -275,6 +275,8 @@ struct h2_gizclaw_service {
   h2_pal_result_t terminal_result;
 };
 
+h2_pal_result_t h2_gizclaw_time_prepare_connect_internal(
+    h2_gizclaw_service_t *service);
 void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service);
 
 /* Wake the optional Runtime; the Runtime coalesces repeated wakes. */
