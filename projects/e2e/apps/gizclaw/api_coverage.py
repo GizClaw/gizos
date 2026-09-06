@@ -47,7 +47,7 @@ def requirements():
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
             "workspace_create workspace_set_parameters workspace_delete "
-            "workspace_activate workspace_reload workspace_history_list"),
+            "workspace_activate workspace_reload workspace_reload_with_options workspace_history_list"),
         "rpc/contact": "contact_list contact_get contact_create contact_put contact_delete",
         "rpc/friend": (
             "friend_list friend_info_get friend_add friend_delete "
@@ -111,9 +111,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 193 or len(set(inventory)) != 193 or
-            len(names) != 193 or len(set(names)) != 193 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 193-function inventory")
+    if (len(inventory) != 196 or len(set(inventory)) != 196 or
+            len(names) != 196 or len(set(names)) != 196 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 196-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

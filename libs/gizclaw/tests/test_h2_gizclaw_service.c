@@ -3257,6 +3257,86 @@ static void test_workspace_request_and_response_paths(void) {
          strcmp(activation.workspace_name, "ws") == 0);
 }
 
+static void test_workspace_reload_with_options(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  static const h2_pal_time_vtable_t tv = {.get_monotonic_ms = fake_req_clock};
+  const h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
+  service->client_config.time = &time;
+  h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  uint8_t buffer[2048];
+  h2_gizclaw_resp_storage_t storage = {buffer, sizeof(buffer), 0u};
+  static const uint8_t response[] = {0x0a, 10, 0x0a, 2, 'w', 's',
+                                   0x40, 3, 0x6a, 2, 'w', 's'};
+  for (unsigned mode = 0; mode < 4; ++mode) {
+    char name[] = "ws";
+    h2_gizclaw_str_t selection = mode & 1u
+        ? (h2_gizclaw_str_t){name, 2u} : (h2_gizclaw_str_t){0};
+    h2_gizclaw_workspace_parameters_patch_t patch = {
+        .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
+        .has_initiative = true,
+        .initiative = H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT,
+        .has_agent_initiative_policy = true,
+        .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD};
+    uint8_t payload[32];
+    size_t len = 0;
+    if (mode & 1u) {
+      const uint8_t name_bytes[] = {0x0a, 2, 'w', 's'};
+      memcpy(payload + len, name_bytes, sizeof(name_bytes));
+      len += sizeof(name_bytes);
+    }
+    if (mode & 2u) {
+      const uint8_t patch_bytes[] = {0x12, 8, 0x08, 2, 0x12, 4,
+                                    0x08, 2, 0x10, 2};
+      memcpy(payload + len, patch_bytes, sizeof(patch_bytes));
+      len += sizeof(patch_bytes);
+    }
+    test_contact_rpc_t mock = {
+        .expected_method = H2_GIZCLAW_RPC_SERVER_RUN_WORKSPACE_RELOAD_WITH_OPTIONS,
+        .expected_request = payload, .expected_request_len = len,
+        .response = response, .response_len = sizeof(response)};
+    workspace_test_use_single(&mock);
+    h2_gizclaw_req_t *request = NULL;
+    assert(h2_gizclaw_req_create_workspace_reload_with_options(
+        service, 42u, selection, mode & 2u ? &patch : NULL, 1234u,
+        &request) == H2_PAL_OK);
+    name[0] = 'x';
+    patch.input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK;
+    h2_gizclaw_workspace_activation_t result;
+    assert(h2_gizclaw_resp_parse_workspace_reload_with_options(
+        request, &storage, &result) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+    assert(mock.request_matches);
+    assert(h2_gizclaw_resp_parse_workspace_reload(
+        request, &storage, &result) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_gizclaw_resp_parse_workspace_reload_with_options(
+        request, &storage, &result) == H2_PAL_OK);
+    assert(strcmp(result.workspace_name, "ws") == 0);
+    assert(result.runtime_state == H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING);
+    h2_gizclaw_req_release(request);
+    name[0] = 'w';
+    patch.input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME;
+    assert(h2_gizclaw_rpc_workspace_reload_with_options(
+        service, selection, mode & 2u ? &patch : NULL, 1234u, &storage,
+        &result) == H2_PAL_OK && mock.request_matches);
+  }
+  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_workspace_parameters_patch_t bad = {.has_input = true, .input = 99};
+  assert(h2_gizclaw_req_create_workspace_reload_with_options(
+      service, 1u, (h2_gizclaw_str_t){0}, &bad, 1234u, &request) ==
+      H2_PAL_ERR_INVALID_ARG && request == NULL);
+  assert(h2_gizclaw_req_create_workspace_reload_with_options(
+      service, 1u, (h2_gizclaw_str_t){NULL, 2}, NULL, 1234u, &request) ==
+      H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_req_create_workspace_reload_with_options(
+      service, 1u, (h2_gizclaw_str_t){0}, NULL, 0u, &request) ==
+      H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_workspace_selection_boundaries(void) {
   static const uint8_t payload[] = {0x0a, 4, 0x0a, 2, 'w', 's'};
   for (unsigned reload = 0u; reload < 2u; ++reload) {
@@ -8898,6 +8978,7 @@ int main(int argc, char **argv) {
   }
   assert(argc == 1);
   test_stream_sink_one_shot();
+  test_workspace_reload_with_options();
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
   test_asr_from_owned_pcm_track();
