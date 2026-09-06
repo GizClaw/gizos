@@ -123,10 +123,31 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_create(
     h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow_name,
     h2_gizclaw_str_t name, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
-h2_pal_result_t h2_gizclaw_req_create_workspace_set_input(
+typedef enum h2_gizclaw_conversation_initiative {
+  H2_GIZCLAW_CONVERSATION_INITIATIVE_PEER = 1,
+  H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT = 2,
+} h2_gizclaw_conversation_initiative_t;
+
+typedef enum h2_gizclaw_agent_initiative_policy {
+  H2_GIZCLAW_AGENT_INITIATIVE_ONCE_WHEN_EMPTY = 1,
+  H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD = 2,
+} h2_gizclaw_agent_initiative_policy_t;
+
+/** Parameter patch. Unset fields preserve the server's stored values.
+ * Values are copied at request creation; no patch storage is borrowed. */
+typedef struct h2_gizclaw_workspace_parameters_patch {
+  bool has_input;
+  h2_gizclaw_workspace_input_mode_t input;
+  bool has_initiative;
+  h2_gizclaw_conversation_initiative_t initiative;
+  bool has_agent_initiative_policy;
+  h2_gizclaw_agent_initiative_policy_t agent_initiative_policy;
+} h2_gizclaw_workspace_parameters_patch_t;
+
+h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t input_mode, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request);
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_delete(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
@@ -164,10 +185,9 @@ h2_gizclaw_resp_parse_workspace_create(const h2_gizclaw_req_t *request,
                                        h2_gizclaw_resp_storage_t *storage,
                                        h2_gizclaw_workspace_t *out_result);
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_set_input(const h2_gizclaw_req_t *request,
-                                          h2_gizclaw_resp_storage_t *storage,
-                                          h2_gizclaw_workspace_t *out_result);
+h2_pal_result_t h2_gizclaw_resp_parse_workspace_set_parameters(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out_result);
 
 h2_pal_result_t
 h2_gizclaw_resp_parse_workspace_delete(const h2_gizclaw_req_t *request,
@@ -204,10 +224,11 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
     h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
 
-h2_pal_result_t h2_gizclaw_rpc_workspace_set_input(
+h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t input_mode, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,

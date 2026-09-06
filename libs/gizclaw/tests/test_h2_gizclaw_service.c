@@ -2680,11 +2680,11 @@ static bool test_encode_workspace_delete_response(uint8_t *buffer,
   return true;
 }
 
-static bool test_encode_workspace_input_put_response(uint8_t *buffer,
-                                                     size_t capacity,
-                                                     size_t *out_len) {
-  gizclaw_rpc_v1_WorkspaceInputPutResponse response =
-      gizclaw_rpc_v1_WorkspaceInputPutResponse_init_zero;
+static bool test_encode_workspace_parameters_set_response(uint8_t *buffer,
+                                                          size_t capacity,
+                                                          size_t *out_len) {
+  gizclaw_rpc_v1_WorkspaceParametersSetResponse response =
+      gizclaw_rpc_v1_WorkspaceParametersSetResponse_init_zero;
   test_contact_text_t text[] = {
       {.data = "workspace-1", .len = 11u},
       {.data = "chat", .len = 4u},
@@ -2696,7 +2696,7 @@ static bool test_encode_workspace_input_put_response(uint8_t *buffer,
   response.value.workflow_name.arg = &text[1];
   response.value.available = true;
   pb_ostream_t stream = pb_ostream_from_buffer(buffer, capacity);
-  if (!pb_encode(&stream, gizclaw_rpc_v1_WorkspaceInputPutResponse_fields,
+  if (!pb_encode(&stream, gizclaw_rpc_v1_WorkspaceParametersSetResponse_fields,
                  &response)) {
     return false;
   }
@@ -2786,18 +2786,17 @@ typedef struct remote_error_hook {
   unsigned calls;
 } remote_error_hook_t;
 
-typedef struct request_log_capture {
-  unsigned count;
+typedef struct remote_log_capture {
+  unsigned calls;
   h2_pal_log_level_t level;
-  char message[192];
-} request_log_capture_t;
+  char message[256];
+} remote_log_capture_t;
 
-static int capture_request_log(void *user, h2_pal_log_level_t level,
-                               const char *tag, const char *message) {
-  request_log_capture_t *capture = user;
-  (void)tag;
-  if (strstr(message, "request=rpc ") != NULL) {
-    ++capture->count;
+static int capture_remote_log(void *user, h2_pal_log_level_t level,
+                               const char *scope, const char *message) {
+  remote_log_capture_t *capture = user;
+  if (strcmp(scope, "gizclaw") == 0 && strstr(message, "stage=remote_") != NULL) {
+    ++capture->calls;
     capture->level = level;
     (void)snprintf(capture->message, sizeof(capture->message), "%s", message);
   }
@@ -2839,8 +2838,8 @@ static void test_req_remote_error_mapping(void) {
   for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
-    request_log_capture_t capture = {0};
-    static const h2_pal_log_vtable_t log_vtable = {.write = capture_request_log};
+    remote_log_capture_t capture = {0};
+    static const h2_pal_log_vtable_t log_vtable = {.write = capture_remote_log};
     const h2_pal_log_api_t log = {.user = &capture, .vtable = &log_vtable};
     service->client_config.log = &log;
     test_contact_rpc_t mock = {
@@ -2878,18 +2877,20 @@ static void test_req_remote_error_mapping(void) {
            cases[i].expected);
     assert(!profile.has_name && profile.name[0] == '\0');
     assert(mock.request_matches && mock.calls == 2);
-    const bool remote = cases[i].has_error && cases[i].transport == H2_PAL_OK;
-    assert(capture.count == (remote ? 2u : 0u));
-    if (remote) {
-      const bool absent = cases[i].expected == H2_PAL_ERR_NOT_FOUND;
+    if (cases[i].has_error && cases[i].transport == H2_PAL_OK) {
+      assert(capture.calls == 2u);
+      bool absent = cases[i].expected == H2_PAL_ERR_NOT_FOUND;
       assert(capture.level == (absent ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR));
-      char expected[96];
-      (void)snprintf(expected, sizeof(expected), "method=%d identity=0 rc=%d detail=%d",
+      char expected[128];
+      (void)snprintf(expected, sizeof(expected), "method=%d rc=%d detail=%d ",
                      (int)H2_GIZCLAW_RPC_SERVER_INFO_GET,
                      (int)cases[i].expected, cases[i].code);
       assert(strstr(capture.message, expected) != NULL);
-      assert(strstr(capture.message, absent ? "stage=not_found "
+      assert(strstr(capture.message, absent ? "stage=remote_result "
                                             : "stage=remote_error ") != NULL);
+      assert(strstr(capture.message, remote_message) == NULL);
+    } else {
+      assert(capture.calls == 0u);
     }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -2918,37 +2919,100 @@ static void test_workspace_direct_input_update(void) {
   const uint8_t workspace_get_request[] = {
       0x0a, 0x0b, 'w', 'o', 'r', 'k', 's', 'p', 'a', 'c', 'e', '-', '1',
   };
-  const uint8_t workspace_input_put_request[] = {
-      0x0a, 0x0b, 'w', 'o', 'r', 'k',  's',  'p',
-      'a',  'c',  'e', '-', '1', 0x10, 0x02,
+  const uint8_t workspace_parameters_set_request[] = {
+      0x0a, 0x0b, 'w', 'o', 'r',  'k',  's',  'p',  'a',
+      'c',  'e',  '-', '1', 0x12, 0x02, 0x08, 0x02,
   };
-  uint8_t workspace_input_put_response[128];
-  size_t workspace_input_put_response_len = 0u;
-  fails += workspace_expect(test_encode_workspace_input_put_response(
-                                workspace_input_put_response,
-                                sizeof(workspace_input_put_response),
-                                &workspace_input_put_response_len),
+  uint8_t workspace_parameters_set_response[128];
+  size_t workspace_parameters_set_response_len = 0u;
+  fails += workspace_expect(test_encode_workspace_parameters_set_response(
+                                workspace_parameters_set_response,
+                                sizeof(workspace_parameters_set_response),
+                                &workspace_parameters_set_response_len),
                             "workspace input put response fixture encodes");
   test_contact_rpc_t workspace_input_mock = {
-      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_INPUT_PUT,
-      .expected_request = workspace_input_put_request,
-      .expected_request_len = sizeof(workspace_input_put_request),
-      .response = workspace_input_put_response,
-      .response_len = workspace_input_put_response_len,
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET,
+      .expected_request = workspace_parameters_set_request,
+      .expected_request_len = sizeof(workspace_parameters_set_request),
+      .response = workspace_parameters_set_response,
+      .response_len = workspace_parameters_set_response_len,
   };
   workspace_test_use_single(&workspace_input_mock);
   h2_gizclaw_workspace_t workspace = {0};
   fails += workspace_expect(
-      h2_gizclaw_rpc_workspace_set_input(
+      h2_gizclaw_rpc_workspace_set_parameters(
           service, (h2_gizclaw_str_t){.data = "workspace-1", .len = 11u},
-          H2_GIZCLAW_WORKSPACE_INPUT_REALTIME, 1234u, &storage,
-          &workspace) == H2_PAL_OK,
-      "workspace input update uses the direct input PUT RPC");
+          &(h2_gizclaw_workspace_parameters_patch_t){
+              .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME},
+          1234u, &storage, &workspace) == H2_PAL_OK,
+      "workspace input update uses the direct parameters SET RPC");
   fails += workspace_expect(
       workspace_input_mock.calls == 1 && workspace_input_mock.request_matches &&
           strcmp(workspace.name, "workspace-1") == 0 &&
           strcmp(workspace.workflow_name, "chat") == 0 && workspace.available,
       "workspace input update is one request and owns its response");
+  /* Verify every patch field combination on the wire and copied ownership. */
+  for (unsigned mask = 1u; mask < 8u; ++mask) {
+    h2_gizclaw_workspace_parameters_patch_t patch = {
+        .has_input = (mask & 1u) != 0u,
+        .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+        .has_initiative = (mask & 2u) != 0u,
+        .initiative = H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT,
+        .has_agent_initiative_policy = (mask & 4u) != 0u,
+        .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD};
+    uint8_t wire[32];
+    memcpy(wire, workspace_get_request, sizeof(workspace_get_request));
+    size_t n = sizeof(workspace_get_request);
+    wire[n++] = 0x12;
+    size_t patch_length = n++;
+    if (patch.has_input) {
+      wire[n++] = 0x08;
+      wire[n++] = 1u;
+    }
+    if (patch.has_initiative || patch.has_agent_initiative_policy) {
+      wire[n++] = 0x12;
+      wire[n++] = (uint8_t)(2u * (patch.has_initiative +
+                                  patch.has_agent_initiative_policy));
+      if (patch.has_agent_initiative_policy) {
+        wire[n++] = 0x08;
+        wire[n++] = 2u;
+      }
+      if (patch.has_initiative) {
+        wire[n++] = 0x10;
+        wire[n++] = 2u;
+      }
+    }
+    wire[patch_length] = (uint8_t)(n - patch_length - 1u);
+    workspace_input_mock.expected_request = wire;
+    workspace_input_mock.expected_request_len = n;
+    workspace_input_mock.calls = 0;
+    workspace_test_use_single(&workspace_input_mock);
+    h2_gizclaw_req_t *request = NULL;
+    assert(h2_gizclaw_req_create_workspace_set_parameters(
+               service, mask, (h2_gizclaw_str_t){"workspace-1", 11u}, &patch,
+               1234u, &request) == H2_PAL_OK);
+    memset(&patch, 0, sizeof(patch));
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+    storage.used = 0u;
+    assert(h2_gizclaw_resp_parse_workspace_set_parameters(
+               request, &storage, &workspace) == H2_PAL_OK);
+    assert(workspace_input_mock.calls == 1 &&
+           workspace_input_mock.request_matches);
+    h2_gizclaw_req_release(request);
+  }
+  const h2_gizclaw_workspace_parameters_patch_t invalid[] = {
+      {0},
+      {.has_input = true, .input = 0},
+      {.has_initiative = true, .initiative = 0},
+      {.has_agent_initiative_policy = true, .agent_initiative_policy = 0}};
+  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+    h2_gizclaw_req_t *request = NULL;
+    assert(h2_gizclaw_req_create_workspace_set_parameters(
+               service, 0u, (h2_gizclaw_str_t){"workspace-1", 11u}, &invalid[i],
+               1234u, &request) == H2_PAL_ERR_INVALID_ARG);
+    assert(request == NULL);
+  }
   storage.used = 0u;
 
   const uint8_t *workspace_request = workspace_get_request;

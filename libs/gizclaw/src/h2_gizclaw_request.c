@@ -59,6 +59,27 @@ typedef struct h2_gizclaw_managed_request {
   h2_gizclaw_req_complete_fn on_complete;
 } managed_request_t;
 
+/* NOT_FOUND is a result callers may handle by creating the resource. The
+ * caller must report it if absence makes its business operation fail. */
+static void managed_log_remote_result(const managed_request_t *request,
+                                      const char *kind, int code,
+                                      size_t message_len) {
+  const h2_pal_log_api_t *log = request->service->client_config.log;
+  if (log == NULL)
+    return;
+  h2_pal_result_t result = h2_gizclaw_rpc_error_result_internal(code);
+  bool absent = result == H2_PAL_ERR_NOT_FOUND;
+  char message[224];
+  (void)snprintf(message, sizeof(message),
+                 "request=%s stage=%s identity=%llu method=%d rc=%d "
+                 "detail=%d frames=0 bytes=%zu",
+                 kind, absent ? "remote_result" : "remote_error",
+                 (unsigned long long)request->identity, (int)request->method,
+                 (int)result, code, message_len);
+  (void)h2_pal_log_write(log, absent ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+                         "gizclaw", message);
+}
+
 static void managed_unref(void *user);
 
 static managed_request_t **stream_lane_slot(h2_gizclaw_service_t *service,
@@ -319,14 +340,8 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
     (void)h2_pal_mutex_unlock(sync, service->mutex);
   }
   if (frame != NULL && frame->event.has_error) {
-    /* Frame handlers collapse every remote code except NOT_FOUND into
-     * H2_GIZCLAW_ERR_REMOTE. Record the server's code here, on the shared
-     * dispatch path, so a streaming failure is as diagnosable as a unary one.
-     */
-    h2_gizclaw_service_log_request(
-        service, H2_PAL_LOG_ERROR, "stream", "remote_error", request->identity,
-        H2_GIZCLAW_ERR_REMOTE, frame->event.error_code, 0u,
-        frame->event.error_message.len);
+    managed_log_remote_result(request, "stream", frame->event.error_code,
+                              frame->event.error_message.len);
   }
   if (frame != NULL)
     rc = (h2_pal_result_t)stream->on_frame(request->context, &frame->event);
@@ -445,20 +460,8 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
   if (request->result == H2_PAL_OK && request->response.has_error) {
     request->result =
         h2_gizclaw_rpc_error_result_internal(request->response.error_code);
-    /* Absence is a valid lookup result. Business callers decide whether it
-     * requires creation or represents a failed operation. */
-    const bool absent = request->result == H2_PAL_ERR_NOT_FOUND;
-    char message[192];
-    (void)snprintf(message, sizeof(message),
-                   "request=rpc stage=%s method=%d identity=%llu rc=%d "
-                   "detail=%d bytes=%zu",
-                   absent ? "not_found" : "remote_error", (int)request->method,
-                   (unsigned long long)request->identity, (int)request->result,
-                   request->response.error_code,
-                   request->response.error_message_len);
-    (void)h2_pal_log_write(request->service->client_config.log,
-                           absent ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
-                           "gizclaw", message);
+    managed_log_remote_result(request, "rpc", request->response.error_code,
+                              request->response.error_message_len);
   }
   if (request->clock_result == H2_PAL_OK)
     request->clock_result = h2_pal_time_get_monotonic_ms(

@@ -46,7 +46,7 @@ def requirements():
         "rpc/profile": "profile_get profile_put_name profile_put_emoji",
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
-            "workspace_create workspace_set_input workspace_delete "
+            "workspace_create workspace_set_parameters workspace_delete "
             "workspace_activate workspace_reload workspace_history_list"),
         "rpc/contact": "contact_list contact_get contact_create contact_put contact_delete",
         "rpc/friend": (
