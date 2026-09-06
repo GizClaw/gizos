@@ -81,3 +81,9 @@ App 初始化依次建立 client config、service 和 app-owned state，再启�
 - 配置 Log PAL 时，请求失败日志包含 identity、stage、result、detail 与 bounded frame/byte 统计，且不改变 callback lifecycle。远端结果日志还包含数值 RPC `method`，`rc` 为映射后的 PAL 结果，`detail` 保留服务端原始状态码。Not Found 使用 INFO / `remote_result`，允许调用方正常进入创建分支；其他远端错误使用 ERROR / `remote_error`。若资源不存在导致业务失败，调用方仍须明确记录该业务操作失败。
 
 Workspace E2E 在现有创建、配置、激活流程之前，分别通过 request 和同步 RPC 验证新名称返回 Not Found。AMOLED 可用 `--define=H2_GIZCLAW_E2E_RPC_ONLY=ON` 构建同一 E2E package，仅运行 RPC suite；默认仍运行 all，且不要与 `H2_GIZCLAW_E2E_DEVICE_ONLY` 同时设置。
+
+Workspace 参数更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应
+`server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 接口已删除。
+传入 `h2_gizclaw_workspace_parameters_patch_t`，通过各 `has_*` 字段选择更新
+input、conversation initiative 或 agent initiative policy，未指定字段保持不变。
+create 会复制 patch；空 patch 或无效的显式值返回 INVALID_ARG。

@@ -413,15 +413,15 @@ static char *response_string(h2_gizclaw_resp_storage_t *storage,
   memcpy(result, value, len);
   return result;
 }
-h2_pal_result_t h2_gizclaw_rpc_workspace_set_input(
+h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t mode, uint32_t timeout,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
   assert(service == (h2_gizclaw_service_t *)&s_service && timeout == 30000u &&
          storage != NULL);
   assert_workspace(name);
   assert(s_conversation == NULL || !s_conversation->active);
-  s_realtime = mode == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME;
+  s_realtime = parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME;
   response_reset(storage);
   *out = (h2_gizclaw_workspace_t){.name = response_string(storage, name.data),
                                   .available = true};

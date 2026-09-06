@@ -9,7 +9,7 @@ static const char *const creates[] = {
     "h2_gizclaw_req_create_workspace_list",
     "h2_gizclaw_req_create_workspace_get",
     "h2_gizclaw_req_create_workspace_create",
-    "h2_gizclaw_req_create_workspace_set_input",
+    "h2_gizclaw_req_create_workspace_set_parameters",
     "h2_gizclaw_req_create_workspace_delete",
     "h2_gizclaw_req_create_workspace_activate",
     "h2_gizclaw_req_create_workspace_history_list",
@@ -18,7 +18,7 @@ static const char *const parses[] = {
     "h2_gizclaw_resp_parse_workspace_list",
     "h2_gizclaw_resp_parse_workspace_get",
     "h2_gizclaw_resp_parse_workspace_create",
-    "h2_gizclaw_resp_parse_workspace_set_input",
+    "h2_gizclaw_resp_parse_workspace_set_parameters",
     "h2_gizclaw_resp_parse_workspace_delete",
     "h2_gizclaw_resp_parse_workspace_activate",
     "h2_gizclaw_resp_parse_workspace_history_list",
@@ -26,14 +26,14 @@ static const char *const parses[] = {
 static const char *const rpcs[] = {"h2_gizclaw_rpc_workspace_list",
                                    "h2_gizclaw_rpc_workspace_get",
                                    "h2_gizclaw_rpc_workspace_create",
-                                   "h2_gizclaw_rpc_workspace_set_input",
+                                   "h2_gizclaw_rpc_workspace_set_parameters",
                                    "h2_gizclaw_rpc_workspace_delete",
                                    "h2_gizclaw_rpc_workspace_activate",
                                    "h2_gizclaw_rpc_workspace_history_list",
                                    "h2_gizclaw_rpc_workspace_reload"};
 static const char *const proofs[] = {
     "workspace_list-assert",         "workspace_get-assert",
-    "workspace_create-assert",       "workspace_set_input-assert",
+    "workspace_create-assert",       "workspace_set_parameters-assert",
     "workspace_delete-assert",       "workspace_activate-assert",
     "workspace_history_list-assert", "workspace_reload-assert"};
 union response {
@@ -115,8 +115,11 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
           service, id, collection, workflow, name, TIMEOUT_MS, &request);
       break;
     case INPUT:
-      rc = h2_gizclaw_req_create_workspace_set_input(
-          service, id, name, H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+      rc = h2_gizclaw_req_create_workspace_set_parameters(
+          service, id, name,
+          &(h2_gizclaw_workspace_parameters_patch_t){
+              .has_input = true,
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
           TIMEOUT_MS, &request);
       break;
     case DELETE:
@@ -162,8 +165,8 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
         rc = h2_gizclaw_resp_parse_workspace_create(request, s, &out->object);
         break;
       case INPUT:
-        rc =
-            h2_gizclaw_resp_parse_workspace_set_input(request, s, &out->object);
+        rc = h2_gizclaw_resp_parse_workspace_set_parameters(request, s,
+                                                            &out->object);
         break;
       case DELETE:
         rc = h2_gizclaw_resp_parse_workspace_delete(request, s, &out->object);
@@ -206,9 +209,12 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                                            TIMEOUT_MS, s, &out->object);
       break;
     case INPUT:
-      rc = h2_gizclaw_rpc_workspace_set_input(
-          service, name, H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK, TIMEOUT_MS, s,
-          &out->object);
+      rc = h2_gizclaw_rpc_workspace_set_parameters(
+          service, name,
+          &(h2_gizclaw_workspace_parameters_patch_t){
+              .has_input = true,
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+          TIMEOUT_MS, s, &out->object);
       break;
     case DELETE:
       rc = h2_gizclaw_rpc_workspace_delete(service, name, TIMEOUT_MS, s,

@@ -418,24 +418,26 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   return rpc(CREATE, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
-h2_pal_result_t h2_gizclaw_req_create_workspace_set_input(
+h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     h2_gizclaw_service_t *s, uint64_t id, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t mode, uint32_t timeout,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_req_t **out) {
-  assert(mode == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  assert(parameters && parameters->has_input &&
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
   return create_req(INPUT, s, id, name, h2_gizclaw_e2e_str(""), timeout, out);
 }
 h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_set_input(const h2_gizclaw_req_t *r,
-                                          h2_gizclaw_resp_storage_t *s,
-                                          h2_gizclaw_workspace_t *out) {
+h2_gizclaw_resp_parse_workspace_set_parameters(const h2_gizclaw_req_t *r,
+                                               h2_gizclaw_resp_storage_t *s,
+                                               h2_gizclaw_workspace_t *out) {
   return parse(INPUT, r, s, out);
 }
-h2_pal_result_t h2_gizclaw_rpc_workspace_set_input(
+h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     h2_gizclaw_service_t *s, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t mode, uint32_t timeout,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
-  assert(mode == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  assert(parameters && parameters->has_input &&
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
   return rpc(INPUT, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
