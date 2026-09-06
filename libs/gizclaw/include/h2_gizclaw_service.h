@@ -20,7 +20,7 @@ typedef struct h2_gizclaw_service h2_gizclaw_service_t;
 typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
 
-/** Automatic post-connect calibration state, independent of wall validity. */
+/** Automatic calibration state, independent of wall validity. */
 typedef enum h2_gizclaw_time_sync_state {
   H2_GIZCLAW_TIME_SYNC_WAITING = 0,
   H2_GIZCLAW_TIME_SYNC_RUNNING,
@@ -35,7 +35,9 @@ typedef struct h2_gizclaw_time_sync_status {
 } h2_gizclaw_time_sync_status_t;
 
 /** Copy calibration status into required caller storage; thread safe.
- * Connect success automatically starts GET /server-info on a separate task.
+ * An uncalibrated clock requires GET /server-info before signaling connects.
+ * This cancellable startup retries every 30 monotonic seconds. A valid clock
+ * permits immediate connection and refresh on a separate task after connect.
  * Failure retries after 30 monotonic seconds without terminating the service
  * or invalidating an existing clock. Each new service connection calibrates
  * again. Use Time PAL get_wall_ms for UTC validity, independently of
