@@ -104,6 +104,35 @@ static inline h2_pal_result_t h2_pal_time_get_wall_status(
     return api->vtable->get_wall_status(api->user, out_status);
 }
 
+/** Time PAL result: readable clock has not been calibrated. */
+#define H2_PAL_TIME_ERR_UNCALIBRATED ((h2_pal_result_t)-2000)
+
+/** Read calibrated UTC milliseconds since the Unix epoch into caller storage.
+ * Clears output on failure. Invalid status returns TIME_ERR_UNCALIBRATED;
+ * status/read failures propagate unchanged, including UNSUPPORTED. Raw
+ * get_wall_ms does not certify validity. Providers must retain validity while
+ * their clock remains trustworthy, including sleep with a retained clock, and
+ * clear it when reset or clock loss prevents establishing UTC. A failed set
+ * must preserve the previous clock and validity. Monotonic time is independent.
+ */
+static inline h2_pal_result_t h2_pal_time_get_valid_wall_ms(
+    const h2_pal_time_api_t *api, uint64_t *out_ms) {
+    if (out_ms == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    *out_ms = 0u;
+    h2_pal_time_wall_status_t status = {0, H2_PAL_TIME_WALL_SOURCE_UNKNOWN};
+    h2_pal_result_t rc = h2_pal_time_get_wall_status(api, &status);
+    if (rc != H2_PAL_OK)
+        return rc;
+    if (!status.valid)
+        return H2_PAL_TIME_ERR_UNCALIBRATED;
+    uint64_t value = 0u;
+    rc = h2_pal_time_get_wall_ms(api, &value);
+    if (rc == H2_PAL_OK)
+        *out_ms = value;
+    return rc;
+}
+
 static inline uint64_t h2_pal_time_elapsed_ms(uint64_t start_ms, uint64_t end_ms) {
     return end_ms - start_ms;
 }

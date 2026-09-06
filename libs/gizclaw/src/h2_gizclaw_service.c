@@ -392,6 +392,7 @@ static void mark_terminal(h2_gizclaw_service_t *service,
     service->stopping = true;
     service->terminal_pending = true;
     service->terminal_result = result;
+    (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
     newly_terminal = true;
   }
   unlock_service(service);
@@ -705,6 +706,8 @@ static void net_worker(void *ctx) {
     unlock_service(service);
     if (stopping)
       break;
+
+    h2_gizclaw_time_sync_start_internal(service);
 
     if (service->config.on_event != NULL) {
       rc = client_dispatch_event(service->client);
@@ -1358,6 +1361,12 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
     if (rc != H2_PAL_OK)
       return rc;
     service->net_task = NULL;
+  }
+  if (service->time_task != NULL) {
+    rc = h2_pal_task_join(service->config.task, service->time_task);
+    if (rc != H2_PAL_OK)
+      return rc;
+    service->time_task = NULL;
   }
   if (service->uplink_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->uplink_task);

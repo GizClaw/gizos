@@ -87,3 +87,17 @@ Workspace 参数更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对�
 传入 `h2_gizclaw_workspace_parameters_patch_t`，通过各 `has_*` 字段选择更新
 input、conversation initiative 或 agent initiative policy，未指定字段保持不变。
 create 会复制 patch；空 patch 或无效的显式值返回 INVALID_ARG。
+
+## 自动系统校时
+
+Service 在 client 连接成功后启动独立的 `$gizclaw/time` 任务，向同一 `server_endpoint` 请求 `GET /server-info`。连接前不请求校时；其他通信不等待 该 HTTP 请求。请求超时为 5 秒，失败后按单调时间等待 30 秒重试，直到成功或 Service 停止。停止取消在途 HTTP 并等待任务退出。新建 Service 并重新连接后 会再次校时。校时任务创建失败也按 30 秒重试，不触发连接 terminal。
+
+`h2_gizclaw_service_get_time_sync_status()` 返回 WAITING、RUNNING、RETRY 或 SUCCEEDED，以及最近结果和 HTTP 尝试次数；该状态描述本次校准，不代表时钟 是否有效。失败保留此前有效系统时间。响应必须是合法 JSON，顶层 `server_time` 必须为正整数毫秒时间戳，不能是字符串、负数、零或分数。
+
+Time PAL 的 `h2_pal_time_get_valid_wall_ms()` 是业务读取时间的公共入口： `get_wall_status().valid == false` 返回 `H2_PAL_TIME_ERR_UNCALIBRATED`，状态查询 或时钟读取错误则保留原错误，失败输出清零。原始 `get_wall_ms()` 的成功仅表示 读数成功，不能证明已校时。超时、重试及耗时始终使用 monotonic API。
+
+时间值始终是 UTC Unix 毫秒，不添加时区偏移。产品显示层负责时区；H106 使用 北京时间 UTC+08:00。未校准时不得把自启动以来的计数显示为当前时间。
+
+ESP32/BK7258 冷启动和重置后的校准状态默认无效；即使 RTC 仍有读数也保守等待 重新校准。保留运行上下文与系统时钟的轻睡眠保持有效；导致程序重新初始化的 深睡眠唤醒按冷启动处理。更换或丢失时钟的 provider 必须清除 valid。桌面/Web provider 可依据宿主有效的系统时钟提供有效 UTC。`set_wall_ms` 是显式外部设置， ESP32/BK7258 标记 USER 来源；它不声称执行过 NTP 协议。
+
+自动测试覆盖连接前无请求、未校准读数、失败后重试、非法响应、校时中通信继续、 校时后 UTC 读数、断开后保留有效时间、设置失败保留旧值及模拟重启失效。 真实硬件的轻睡眠/深睡眠保留行为仍需分别做设备验收。

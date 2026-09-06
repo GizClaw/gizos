@@ -20,6 +20,30 @@ typedef struct h2_gizclaw_service h2_gizclaw_service_t;
 typedef struct h2_gizclaw_req h2_gizclaw_req_t;
 typedef struct h2_gizclaw_track h2_gizclaw_track_t;
 
+/** Automatic post-connect calibration state, independent of wall validity. */
+typedef enum h2_gizclaw_time_sync_state {
+  H2_GIZCLAW_TIME_SYNC_WAITING = 0,
+  H2_GIZCLAW_TIME_SYNC_RUNNING,
+  H2_GIZCLAW_TIME_SYNC_RETRY,
+  H2_GIZCLAW_TIME_SYNC_SUCCEEDED,
+} h2_gizclaw_time_sync_state_t;
+
+typedef struct h2_gizclaw_time_sync_status {
+  h2_gizclaw_time_sync_state_t state;
+  h2_pal_result_t last_result;
+  uint32_t attempts;
+} h2_gizclaw_time_sync_status_t;
+
+/** Copy calibration status into required caller storage; thread safe.
+ * Connect success automatically starts GET /server-info on a separate task.
+ * Failure retries after 30 monotonic seconds without terminating the service
+ * or invalidating an existing clock. Each new service connection calibrates
+ * again. Use Time PAL get_valid_wall_ms for UTC validity, independently of
+ * this attempt status. Returns INVALID_ARG for NULL inputs, or mutex errors.
+ */
+h2_pal_result_t h2_gizclaw_service_get_time_sync_status(
+    h2_gizclaw_service_t *service, h2_gizclaw_time_sync_status_t *out_status);
+
 /** A valid RPC error response, distinct from PAL transport/format failures.
  * A canonical NOT_FOUND status instead returns H2_PAL_ERR_NOT_FOUND from
  * req_wait, response parsers and synchronous RPCs. UNIMPLEMENTED and all other
