@@ -2484,7 +2484,10 @@ static int ota_success_http(void *user, const h2_pal_http_request_t *request,
 }
 static int ota_success_telemetry(void *user, const gzc_telemetry_ota_frame_t *frame) {
   (void)user;
-  /* Staging is not evidence that the new image has booted successfully. */
+  /* H2_GIZCLAW_OTA_STAGED is a local snapshot phase, not a wire event.
+   * The telemetry enum has STARTED/DOWNLOADING/SUCCEEDED/FAILED only;
+   * update_firmware() emits no terminal telemetry on successful staging.
+   * Keep rejecting SUCCEEDED until a product verifies the new image at boot. */
   assert(frame->ota.state == GZC_OTA_STATE_STARTED ||
          frame->ota.state == GZC_OTA_STATE_DOWNLOADING);
   return GZC_OK;
