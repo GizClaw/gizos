@@ -123,6 +123,8 @@ static h2_pal_result_t begin(void *user, const h2_gizclaw_firmware_t *firmware,
     return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_loader_stage_begin(state->runtime->pref);
   if (!rc)
+    rc = save_text("phase_v1", "downloading");
+  if (!rc)
     rc = save_text("update_id", update_id);
   if (!rc)
     rc = h2_pal_fs_open(state->runtime->fs, OTA_PATH,
@@ -181,6 +183,8 @@ static h2_pal_result_t finish(void *user) {
     rc = h2_loader_stage_commit_inspection(
         state->runtime->pref, state->expected_size, state->expected_sha,
         &inspection, NULL);
+  if (!rc)
+    rc = save_text("phase_v1", "staged");
   printf("H2_AMOLED_OTA stage=verified rc=%d bytes=%llu target=%s sha256=%s\n",
          rc, (unsigned long long)state->written, inspection.manifest.version,
          inspection.manifest.image_sha256);
@@ -192,6 +196,7 @@ static void abort_stage(void *user) {
     (void)h2_pal_fs_close(state->runtime->fs, state->file);
     state->file = NULL;
   }
+  evidence("abort_state", save_text("phase_v1", "failed"));
   evidence("abort", h2_loader_stage_abort(state->runtime->fs,
                                           state->runtime->pref, OTA_PATH));
 }
@@ -305,7 +310,10 @@ static int http_call(bool update, bool *persisted) {
   return rc;
 }
 static int report_success(void) {
-  char target[96], sha[65];
+  char target[96], sha[65], phase[16];
+  if (load_text("phase_v1", phase, sizeof(phase)) ||
+      (strcmp(phase, "staged") && strcmp(phase, "succeeded")))
+    return H2_PAL_ERR_INVALID_STATE;
   if (load_text("update_id", lane.update_id, sizeof(lane.update_id)) ||
       load_text("target_sha", sha, sizeof(sha)) ||
       load_text("target_version", target, sizeof(target)))
@@ -315,7 +323,8 @@ static int report_success(void) {
     return H2_PAL_ERR_INVALID_STATE;
   h2_loader_status_t status = {0};
   int rc = h2_loader_read_status(&lane.loader, &status);
-  if (!rc && (status.stage.valid || !status.partition_2.valid))
+  if (!rc && (status.stage.valid || !status.partition_2.valid ||
+              !status.partition_1.valid || status.last_result != 0))
     rc = H2_PAL_ERR_INVALID_STATE;
   uint64_t wall = 0;
   if (!rc)
@@ -456,6 +465,9 @@ static int run(void) {
     }
     if (!persisted)
       return H2_PAL_ERR_TIMEOUT;
+    rc = save_text("phase_v1", "succeeded");
+    if (rc)
+      return rc;
     evidence("FULL_CHAIN_PASS", H2_PAL_OK);
     rc = h2_gizclaw_rpc_api_key_revoke(lane.service, str(lane.api_key.name),
                                        15000);
@@ -466,7 +478,17 @@ static int run(void) {
     if (rc)
       return rc;
   }
+  uint64_t wait_started = 0;
+  rc = h2_pal_time_get_monotonic_ms(runtime->time, &wait_started);
+  if (rc)
+    return rc;
   for (unsigned seconds = 0;; ++seconds) {
+    uint64_t now = 0;
+    rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
+    if (rc)
+      return rc;
+    if (strstr(info.version, "source") && now - wait_started >= 300000)
+      return H2_PAL_ERR_TIMEOUT;
     size_t dispatched = 0;
     rc = h2_gizclaw_service_poll(lane.service, 8, &dispatched);
     if (rc)
@@ -506,14 +528,23 @@ void h2_gizclaw_e2e_amoled_ota_run(h2_runtime_t *runtime) {
       if (!revoke_rc && lane.pref_open)
         (void)save_text("api_name", "");
     }
-    int stop_rc;
-    do {
+    int stop_rc = H2_PAL_ERR_INVALID_STATE;
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
       stop_rc = h2_gizclaw_service_stop(lane.service);
-      if (stop_rc) {
-        evidence("cleanup_retry", stop_rc);
-        (void)h2_pal_time_sleep_ms(runtime->time, 1000);
+      if (!stop_rc)
+        break;
+      evidence("cleanup_retry", stop_rc);
+      (void)h2_pal_time_sleep_ms(runtime->time, 1000);
+    }
+    if (stop_rc) {
+      /* Workers may still borrow the lane and NVS. Keep their storage alive
+       * and report the retained state instead of closing it underneath them. */
+      for (;;) {
+        evidence("terminal_resources_retained", stop_rc);
+        evidence("terminal", rc);
+        (void)h2_pal_time_sleep_ms(runtime->time, 10000);
       }
-    } while (stop_rc);
+    }
     size_t dispatched = 0;
     do {
       dispatched = 0;

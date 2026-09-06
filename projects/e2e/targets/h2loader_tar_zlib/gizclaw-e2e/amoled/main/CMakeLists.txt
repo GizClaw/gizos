@@ -55,8 +55,8 @@ if(H2_GIZCLAW_E2E_RPC_ONLY)
 endif()
 
 if(H2_GIZCLAW_E2E_OTA_ONLY)
-  if(NOT H2_GIZCLAW_E2E_OTA_TOKEN MATCHES "^[A-Za-z0-9_-]+$")
-    message(FATAL_ERROR "OTA_ONLY requires an isolated H2_GIZCLAW_E2E_OTA_TOKEN (letters, digits, _ or -)")
+  if(NOT H2_GIZCLAW_E2E_OTA_TOKEN STREQUAL "amoled-ota-e2e-20260906")
+    message(FATAL_ERROR "OTA_ONLY accepts only the public amoled-ota-e2e-20260906 fixture; shared or private registration tokens are forbidden")
   endif()
   target_compile_definitions(${COMPONENT_LIB} PRIVATE
     H2_GIZCLAW_E2E_OTA_TOKEN="${H2_GIZCLAW_E2E_OTA_TOKEN}")

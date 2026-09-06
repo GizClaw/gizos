@@ -44,7 +44,7 @@ H2Loader 是 GizOS 的固件管理产品。它由工厂 Batch Loader、repositor
 | GizClaw Ping Speed | ✓ | — | — | — | — | — | — | — | — | — | — |
 | iperf | ✓ | — | — | — | — | — | — | — | — | — | — |
 | WebRTC Performance | ✓ | — | — | ✓ | — | — | — | — | — | — | — |
-| GizClaw E2E | — | — | — | ✓ | — | — | — | — | — | — | — |
+| GizClaw E2E | [✓](./boards/amoled/gizclaw_ota_e2e) | — | — | ✓ | — | — | — | — | — | — | — |
 | H106 E2E | — | — | △ | — | — | — | — | △ | — | — | — |
 | Libco Smoke | — | ✓ | — | ✓ | — | — | — | — | — | — | — |
 | PAL Preference | — | — | — | ✓ | — | — | — | ✓ | — | — | — |
