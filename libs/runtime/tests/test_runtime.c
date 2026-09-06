@@ -56,6 +56,8 @@ typedef struct test_allocator {
 
 typedef struct test_time {
     uint64_t now_ms;
+    uint64_t wall_ms;
+    uint8_t wall_valid;
     uint32_t sleep_calls;
     h2_pal_result_t sleep_rc;
     h2_runtime_t *stop_after_sleep_runtime;
@@ -932,7 +934,7 @@ static void test_runtime_capabilities_are_bound_at_init(void) {
            h2_pal_unsupported_firmware_info_api()->vtable);
     assert(runtime->mem->user == env.mem.user);
     assert(runtime->mem->vtable == env.mem.vtable);
-    assert(runtime->time != &env.time && runtime->time->vtable == env.time.vtable);
+    assert(runtime->time != &env.time && runtime->time->vtable != env.time.vtable);
     assert(runtime->queue != &env.queue && runtime->queue->vtable == env.queue.vtable);
     assert(runtime->task != &env.task && runtime->task->vtable == env.task.vtable);
     assert(runtime->sync != &env.sync && runtime->sync->vtable == env.sync.vtable);
@@ -3695,10 +3697,73 @@ static void test_wifi_policy_boundaries(void) {
     h2_runtime_deinit(runtime);
 }
 
+static h2_pal_result_t test_wall_set(void *user, uint64_t wall_ms) {
+    test_time_t *time = user;
+    if (time->sleep_rc == H2_PAL_OK) {
+        time->wall_ms = wall_ms;
+        time->wall_valid = 1u;
+    }
+    return time->sleep_rc;
+}
+
+static h2_pal_result_t test_wall_get(void *user, uint64_t *out) {
+    *out = ((test_time_t *)user)->wall_ms;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_wall_status(void *user, h2_pal_time_wall_status_t *out) {
+    out->valid = ((test_time_t *)user)->wall_valid;
+    out->source = H2_PAL_TIME_WALL_SOURCE_USER;
+    return H2_PAL_OK;
+}
+
+static void test_time_adjusted_event(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t vtable = *env.time.vtable;
+    vtable.set_wall_ms = test_wall_set;
+    vtable.get_wall_ms = test_wall_get;
+    vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &vtable;
+    env.time_state.now_ms = 123u;
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    unsigned char buffer[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = {.payload = buffer, .payload_capacity = sizeof(buffer)};
+    uint64_t wall = 0u;
+    assert(h2_pal_time_get_valid_wall_ms(runtime->time, &wall) == H2_PAL_TIME_ERR_UNCALIBRATED);
+    const uint64_t utc = UINT64_C(1788652800000);
+    assert(h2_pal_time_set_wall_ms(runtime->time, utc) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED);
+    assert(event.component == H2_RUNTIME_COMPONENT_SYSTEM_TIME);
+    assert(event.timestamp_ms == 123u);
+    assert(event.payload_size == sizeof(h2_runtime_system_event_time_adjusted_t));
+    h2_runtime_system_event_time_adjusted_t payload;
+    memcpy(&payload, buffer, sizeof(payload));
+    assert(payload.wall_ms == utc);
+    assert(h2_pal_time_get_valid_wall_ms(runtime->time, &wall) == H2_PAL_OK);
+    assert(wall == utc);
+    uint64_t now = 0;
+    assert(h2_pal_time_get_monotonic_ms(runtime->time, &now) == H2_PAL_OK);
+    assert(now == 123u);
+    assert(h2_pal_time_get_monotonic_us(runtime->time, &now) == H2_PAL_ERR_UNSUPPORTED);
+    env.time_state.sleep_rc = H2_PAL_ERR_IO;
+    assert(h2_pal_time_set_wall_ms(runtime->time, utc + 60000u) == H2_PAL_ERR_IO);
+    assert(h2_pal_time_get_valid_wall_ms(runtime->time, &wall) == H2_PAL_OK);
+    assert(wall == utc);
+    assert(h2_runtime_poll_event(runtime, &event) != H2_PAL_OK);
+    env.time_state.sleep_rc = H2_PAL_OK;
+    for (size_t i = 0; i < 5u; ++i)
+        assert(h2_pal_time_set_wall_ms(runtime->time, utc + i) == H2_PAL_OK);
+    assert(runtime->private_state->dropped_event_count == 1u);
+    h2_runtime_deinit(runtime);
+}
+
 int main(void) {
     test_wifi_policy_boundaries();
     test_audio_shared_state();
     test_wifi_connection_persistence();
+    test_time_adjusted_event();
     test_runtime_firmware_info_provider();
     test_runtime_capabilities_are_bound_at_init();
     test_runtime_rejects_incomplete_video_decoder();

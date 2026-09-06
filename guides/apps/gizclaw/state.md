@@ -101,3 +101,5 @@ Time PAL 的 `h2_pal_time_get_valid_wall_ms()` 是业务读取时间的公共入
 ESP32/BK7258 冷启动和重置后的校准状态默认无效；即使 RTC 仍有读数也保守等待 重新校准。保留运行上下文与系统时钟的轻睡眠保持有效；导致程序重新初始化的 深睡眠唤醒按冷启动处理。更换或丢失时钟的 provider 必须清除 valid。桌面/Web provider 可依据宿主有效的系统时钟提供有效 UTC。`set_wall_ms` 是显式外部设置， ESP32/BK7258 标记 USER 来源；它不声称执行过 NTP 协议。
 
 自动测试覆盖连接前无请求、未校准读数、失败后重试、非法响应、校时中通信继续、 校时后 UTC 读数、断开后保留有效时间、设置失败保留旧值及模拟重启失效。 真实硬件的轻睡眠/深睡眠保留行为仍需分别做设备验收。
+
+通过 `runtime->time` 调用 `h2_pal_time_set_wall_ms()` 成功后，Runtime 自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`（请求设置的 UTC `wall_ms`）。GizClaw 和其他应用调用者共享该行为；失败不发事件，读时钟和 sleep 不发事件。事件 envelope 的时间戳仍为单调时间。必须把 Runtime 的 Time PAL 传给 Service；直接调用底层 provider 会绕过 Runtime。事件遵循现有有界队列的溢出丢弃规则，不改变已经成功的设置返回值；消费者收到事件后重读有效时间，并保留周期刷新作为溢出恢复。并发设置的事件是刷新提示，不应将 payload 当作当前时钟快照。
