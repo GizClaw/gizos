@@ -127,7 +127,7 @@ void h2_runtime_wifi_bind(h2_runtime_t *runtime) {
     };
     h2_runtime_private_t *state = runtime->private_state;
     state->wifi_sta_backend = state->wifi_sta_proxy;
-    atomic_flag_clear(&state->wifi_connect_busy);
+    state->wifi_connect_busy = (atomic_flag)ATOMIC_FLAG_INIT;
     state->wifi_sta_proxy = (h2_pal_wifi_sta_api_t){runtime, &vtable};
 }
 

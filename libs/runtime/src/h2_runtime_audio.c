@@ -82,6 +82,6 @@ void h2_runtime_audio_bind(h2_runtime_t *runtime) {
     };
     h2_runtime_private_t *state = runtime->private_state;
     state->audio_backend = state->audio_proxy;
-    atomic_flag_clear(&state->audio_state_busy);
+    state->audio_state_busy = (atomic_flag)ATOMIC_FLAG_INIT;
     state->audio_proxy = (h2_pal_audio_api_t){runtime, &vtable};
 }
