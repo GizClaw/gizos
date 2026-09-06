@@ -89,11 +89,13 @@ int main(void) {
     commit_error = 0;
     assert(h2_loader_stage_writer_commit(&writer) == 0 && stage_valid);
     assert(h2_loader_stage_writer_abort(&writer) == 0 && !stage_valid && closes == 1);
-    for (int failure = 0; failure < 4; failure++) {
+    for (int failure = 0; failure < 6; failure++) {
         assert(h2_loader_stage_writer_begin(&writer, &package, &pref, 4, checksum, "test", "host") == 0);
         short_write = failure == 0;
         verify_error = failure == 1 ? H2_PAL_ERR_FORMAT : 0;
         inspection.manifest.role = failure == 2 ? H2_LOADER_IMAGE_ROLE_H2LOADER : H2_LOADER_IMAGE_ROLE_APP;
+        strcpy(inspection.manifest.board, failure == 4 ? "wrong-board" : "test");
+        strcpy(inspection.manifest.target, failure == 5 ? "wrong-target" : "host");
         int written = h2_loader_stage_writer_write(&writer, bytes, failure == 3 ? 3 : 4, &percent);
         if (short_write) assert(written == H2_PAL_ERR_IO);
         assert(h2_loader_stage_writer_inspect(&writer, &result) != 0);
@@ -103,7 +105,7 @@ int main(void) {
     short_write = 0;
     assert(h2_loader_stage_writer_begin(&writer, &package, &pref, UINT64_MAX, checksum, "test", "host") == 0);
     assert(h2_loader_stage_writer_write(&writer, bytes, 4, &percent) == 0 && percent == 0);
-    assert(h2_loader_stage_writer_abort(&writer) == 0 && aborts == 6);
-    assert(h2_loader_stage_writer_abort(&writer) == 0 && aborts == 6);
+    assert(h2_loader_stage_writer_abort(&writer) == 0 && aborts == 8);
+    assert(h2_loader_stage_writer_abort(&writer) == 0 && aborts == 8);
     return 0;
 }
