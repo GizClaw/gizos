@@ -36,6 +36,10 @@ typedef struct ota_lane {
   char update_id[97];
   h2_gizclaw_api_key_t api_key;
   atomic_bool activate;
+  /* HTTP status polling is owned by the runner, not the device worker. */
+  char baseline_update_id[129];
+  bool action_accepted;
+  bool remote_failed;
   nvs_handle_t pref;
   bool pref_open;
   char serial[H2_LOADER_DEVICE_UID_MAX];
@@ -248,6 +252,8 @@ static int http_call(bool update, bool *persisted) {
          response.status_code, rc);
   if (!rc && response.status_code != (update ? 204 : 200))
     rc = H2_PAL_ERR_INVALID_STATE;
+  if (!rc && update)
+    lane.action_accepted = true;
   if (!rc && !update) {
     h2_yyjson_json_t *provider = NULL;
     h2_pal_json_document_t *document = NULL;
@@ -277,6 +283,16 @@ static int http_call(bool update, bool *persisted) {
           H2_PAL_OK)
         (void)h2_pal_json_value_get_number(json, value, &percent);
       if (state.len <= 32 && id.len <= 128 && version.len <= 96) {
+        if (!lane.action_accepted) {
+          if (id.len)
+            memcpy(lane.baseline_update_id, id.data, id.len);
+          lane.baseline_update_id[id.len] = 0;
+        } else if (state.len == 6 && !memcmp(state.data, "failed", 6) &&
+                   id.len &&
+                   (id.len != strlen(lane.baseline_update_id) ||
+                    memcmp(id.data, lane.baseline_update_id, id.len))) {
+          lane.remote_failed = true;
+        }
         printf("H2_AMOLED_OTA stage=persisted state=%.*s update_id=%.*s "
                "target=%.*s percent=%.2f\n",
                (int)state.len, state.data ? state.data : "", (int)id.len,
@@ -508,6 +524,8 @@ static int run(void) {
       int status_rc = http_call(false, NULL);
       if (status_rc)
         evidence("status_retry", status_rc);
+      if (lane.remote_failed)
+        return H2_PAL_ERR_IO;
     }
     rc = h2_pal_time_sleep_ms(runtime->time, 1000);
     if (rc)
