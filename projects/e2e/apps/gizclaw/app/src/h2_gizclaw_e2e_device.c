@@ -312,11 +312,15 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
                              (h2_gizclaw_str_t){0}));
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "local-ota", rc);
   bool local_failed = false;
+  h2_gizclaw_ota_status_t ota_status = {0};
   char local_update_id[65] = {0};
   for (unsigned i = 0; rc == H2_PAL_OK && i < 60; ++i) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
     CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
-    if (text_is(&test, "ota.state", "failed")) {
+    CHECK(h2_gizclaw_ota_get_status(service, &ota_status));
+    h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "local-ota", rc);
+    if (text_is(&test, "ota.state", "failed") &&
+        ota_status.phase == H2_GIZCLAW_OTA_FAILED) {
       h2_pal_json_string_view_t id = {0};
       if (h2_pal_json_value_get_string(test.json, field(&test, "ota.update_id"),
                                        &id) == H2_PAL_OK &&
@@ -327,7 +331,9 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       break;
     }
   }
-  ASSERT(local_failed && atomic_load(&stage_bytes) > 0);
+  ASSERT(local_failed && atomic_load(&stage_bytes) > 0 &&
+         ota_status.result != H2_PAL_OK);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "ota_get_status-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "ota_start-assert", rc);
   int first_failure = rc;
   /* Exercise independent reverse-RPC scenarios even if another scenario fails;
