@@ -102,3 +102,9 @@ Desktop E2E 只通过 `h2_gizclaw_client_rpc_call()` 与 pinned generated schema
 该测试不为 Firmware response 字段增加第二套 GizOS public wrapper。not-found、错误
 channel、非 HTTPS URL、截断和 digest mismatch 等 negative case 由本地确定性测试完成，
 避免向共享 E2E 环境注入破坏性请求。
+
+## Product integration
+
+A product using the App serial/BLE H2Loader services copies their initialized configuration through the target accessor and borrows the same operation mutex for Stage and digest operations. Release the mutex on the acquiring device task before handing activation to the product lifecycle owner; after joining the Service, reacquire it and verify the intended Stage before rebooting. This keeps recovery commands available without racing two package writers.
+
+The local OTA status snapshot covers accepted/running, staged and failed attempts, including failures before Stage begins. It resets with Service recreation and never claims post-boot success. A product Settings page can use it to end a pending request on failure without creating a control-plane API key or polling the device HTTP endpoint. Hardware acceptance still checks the persisted server snapshot as described by the AMOLED E2E guide.

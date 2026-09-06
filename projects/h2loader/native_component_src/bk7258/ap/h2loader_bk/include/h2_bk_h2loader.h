@@ -9,6 +9,8 @@
 #include "h2/pal/os/h2_pal_pref.h"
 #include "h2_runtime.h"
 
+#include "h2_loader_app_client.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -70,6 +72,14 @@ int h2_bk_h2loader_confirm_active_loader(void *user);
 int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime);
 int h2_bk_h2loader_prepare_pending_app_restart(void);
 void h2_bk_h2loader_abort_for_crash_test(void);
+
+/** Copy the initialized App command configuration without starting a service.
+ * Call after command-service startup, before publishing to other tasks. Pointers
+ * remain borrowed for the service lifetime. The consumer must serialize ALL
+ * Stage, digest and reboot operations with operation_sync/operation_mutex, and
+ * release the mutex on the same task that acquired it. Clears output on error.
+ */
+int h2_bk_h2loader_app_commands_get_config(h2_loader_app_client_config_t *out_config);
 
 #ifdef __cplusplus
 }

@@ -2388,6 +2388,56 @@ static void test_device_provider_pal_and_player(void) {
   h2_runtime_deinit(runtime);
 }
 
+static h2_pal_result_t ota_random_failure(void *user, uint8_t *out, size_t len) {
+  (void)user; (void)out; (void)len;
+  return H2_PAL_ERR_IO;
+}
+static h2_pal_result_t ota_unreached_begin(void *user,
+    const h2_gizclaw_firmware_t *firmware, const char *id) {
+  (void)user; (void)firmware; (void)id;
+  assert(false); return H2_PAL_ERR_IO;
+}
+static h2_pal_result_t ota_unreached_write(void *user, const uint8_t *data, size_t len) {
+  (void)user; (void)data; (void)len;
+  assert(false); return H2_PAL_ERR_IO;
+}
+static h2_pal_result_t ota_unreached_finish(void *user) {
+  (void)user; assert(false); return H2_PAL_ERR_IO;
+}
+static void ota_unreached_abort(void *user) { (void)user; assert(false); }
+static void test_ota_status_before_stage_failure(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  const h2_pal_crypto_vtable_t crypto_ops = {.random = ota_random_failure};
+  const h2_pal_crypto_api_t crypto = {.vtable = &crypto_ops};
+  const h2_pal_http_api_t http = {0};
+  const h2_gizclaw_vtable_t operations = {
+    .ota_begin = ota_unreached_begin, .ota_write = ota_unreached_write,
+    .ota_finish = ota_unreached_finish, .ota_activate = ota_unreached_finish,
+    .ota_abort = ota_unreached_abort,
+  };
+  service->client_config.crypto = &crypto;
+  service->client_config.http = &http;
+  service->client_config.vtable = &operations;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_ota_status_t status;
+  assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+  assert(status.phase == H2_GIZCLAW_OTA_IDLE);
+  assert(h2_gizclaw_ota_start(service, 3, (h2_gizclaw_str_t){0}) == H2_PAL_OK);
+  for (unsigned i = 0; i < 3000; ++i) {
+    assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+    if (status.phase == H2_GIZCLAW_OTA_FAILED) break;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(status.phase == H2_GIZCLAW_OTA_FAILED && status.result == H2_PAL_ERR_IO);
+  assert(h2_gizclaw_ota_get_status(NULL, &status) == H2_PAL_ERR_INVALID_ARG);
+  assert(status.phase == H2_GIZCLAW_OTA_IDLE && status.result == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 static int ota_telemetry_capture(void *user, const gzc_telemetry_ota_frame_t *frame) {
   (void)user;
   assert(frame->sequence == 19 && frame->ota.state == GZC_OTA_STATE_FAILED);
@@ -9304,6 +9354,7 @@ int main(int argc, char **argv) {
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
   test_device_ota_telemetry_copy();
+  test_ota_status_before_stage_failure();
   test_req_telemetry_copy_and_backpressure();
   test_req_point_storage_and_limits();
   test_req_workflow_public_paths();
