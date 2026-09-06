@@ -62,16 +62,33 @@ static inline h2_pal_result_t h2_pal_time_get_monotonic_us(
     return api->vtable->get_monotonic_us(api->user, out_us);
 }
 
+/** Wall time is calibrated UTC, never a boot-time counter. */
+#define H2_PAL_TIME_ERR_UNCALIBRATED ((h2_pal_result_t)-2000)
+
+/** Read UTC Unix milliseconds. Invalid wall status returns UNCALIBRATED;
+ * provider errors propagate unchanged. Output is zero on failure.
+ * Providers retain validity across retained-clock sleep and failed sets,
+ * and clear it after reset or clock loss. Monotonic time is independent.
+ */
 static inline h2_pal_result_t h2_pal_time_get_wall_ms(
-    const h2_pal_time_api_t *api,
-    uint64_t *out_ms) {
-    if (out_ms == NULL) {
+    const h2_pal_time_api_t *api, uint64_t *out_ms) {
+    if (out_ms == NULL)
         return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (api == NULL || api->vtable == NULL || api->vtable->get_wall_ms == NULL) {
+    *out_ms = 0u;
+    if (api == NULL || api->vtable == NULL ||
+        api->vtable->get_wall_ms == NULL || api->vtable->get_wall_status == NULL)
         return H2_PAL_ERR_UNSUPPORTED;
-    }
-    return api->vtable->get_wall_ms(api->user, out_ms);
+    h2_pal_time_wall_status_t status = {0, H2_PAL_TIME_WALL_SOURCE_UNKNOWN};
+    h2_pal_result_t rc = api->vtable->get_wall_status(api->user, &status);
+    if (rc != H2_PAL_OK)
+        return rc;
+    if (!status.valid)
+        return H2_PAL_TIME_ERR_UNCALIBRATED;
+    uint64_t value = 0u;
+    rc = api->vtable->get_wall_ms(api->user, &value);
+    if (rc == H2_PAL_OK)
+        *out_ms = value;
+    return rc;
 }
 
 static inline h2_pal_result_t h2_pal_time_sleep_ms(

@@ -61,8 +61,10 @@ static h2_pal_result_t bk_time_set_wall_ms(void *user, uint64_t wall_ms) {
     if (bk_rtc_settimeofday(&tv, NULL) != 0) {
         return H2_PAL_ERR_IO;
     }
+    uint32_t int_level = rtos_enter_critical();
     s_bk_wall_status.valid = 1u;
-    s_bk_wall_status.source = H2_PAL_TIME_WALL_SOURCE_NTP;
+    s_bk_wall_status.source = H2_PAL_TIME_WALL_SOURCE_USER;
+    rtos_exit_critical(int_level);
     return H2_PAL_OK;
 }
 
@@ -71,7 +73,9 @@ static h2_pal_result_t bk_time_get_wall_status(void *user, h2_pal_time_wall_stat
     if (out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    uint32_t int_level = rtos_enter_critical();
     *out_status = s_bk_wall_status;
+    rtos_exit_critical(int_level);
     return H2_PAL_OK;
 }
 

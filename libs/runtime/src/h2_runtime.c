@@ -3,6 +3,54 @@
 #include <stdint.h>
 #include <string.h>
 
+/* Runtime owns the forwarding vtable; the platform API stays user + vtable. */
+static const h2_pal_time_api_t *runtime_time_provider(void *user) {
+    return &((h2_runtime_t *)user)->private_state->time_provider;
+}
+
+static h2_pal_result_t runtime_time_monotonic_ms(void *user, uint64_t *out) {
+    return h2_pal_time_get_monotonic_ms(runtime_time_provider(user), out);
+}
+static h2_pal_result_t runtime_time_monotonic_us(void *user, uint64_t *out) {
+    return h2_pal_time_get_monotonic_us(runtime_time_provider(user), out);
+}
+static h2_pal_result_t runtime_time_wall_ms(void *user, uint64_t *out) {
+    const h2_pal_time_api_t *provider = runtime_time_provider(user);
+    if (provider->vtable == NULL || provider->vtable->get_wall_ms == NULL)
+        return H2_PAL_ERR_UNSUPPORTED;
+    /* The public Time PAL read checks the forwarded status before returning. */
+    return provider->vtable->get_wall_ms(provider->user, out);
+}
+static h2_pal_result_t runtime_time_status(void *user,
+                                         h2_pal_time_wall_status_t *out) {
+    return h2_pal_time_get_wall_status(runtime_time_provider(user), out);
+}
+static h2_pal_result_t runtime_time_sleep(void *user, uint32_t ms) {
+    return h2_pal_time_sleep_ms(runtime_time_provider(user), ms);
+}
+static h2_pal_result_t runtime_time_set(void *user, uint64_t wall_ms) {
+    h2_pal_result_t rc = h2_pal_time_set_wall_ms(runtime_time_provider(user), wall_ms);
+    if (rc != H2_PAL_OK)
+        return rc;
+    h2_runtime_t *runtime = user;
+    uint64_t now_ms = h2_runtime_now_ms(runtime->time);
+    const h2_runtime_system_event_time_adjusted_t payload = {.wall_ms = wall_ms};
+    /* Publication failure cannot undo a successful clock adjustment. */
+    (void)h2_runtime_emit_event(runtime,
+        H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+        H2_RUNTIME_COMPONENT_SYSTEM_TIME, H2_RUNTIME_COMPONENT_ID_NONE,
+        h2_runtime_next_sequence(runtime), now_ms, &payload, sizeof(payload));
+    return H2_PAL_OK;
+}
+static const h2_pal_time_vtable_t runtime_time_vtable = {
+    .get_monotonic_ms = runtime_time_monotonic_ms,
+    .get_monotonic_us = runtime_time_monotonic_us,
+    .get_wall_ms = runtime_time_wall_ms,
+    .set_wall_ms = runtime_time_set,
+    .get_wall_status = runtime_time_status,
+    .sleep_ms = runtime_time_sleep,
+};
+
 typedef struct h2_runtime_private_layout {
     size_t allocation_size;
     size_t component_mappings_offset;
@@ -303,7 +351,10 @@ h2_pal_result_t h2_runtime_init(
     H2_RUNTIME_BIND_PROXY(firmware_info);
     H2_RUNTIME_BIND_PROXY(mem);
     H2_RUNTIME_BIND_PROXY(log);
-    H2_RUNTIME_BIND_PROXY(time);
+    private_state->time_provider = *config->time;
+    private_state->time_proxy = (h2_pal_time_api_t){
+        .user = runtime, .vtable = &runtime_time_vtable};
+    runtime->time = &private_state->time_proxy;
     H2_RUNTIME_BIND_PROXY(timer);
     H2_RUNTIME_BIND_PROXY(task);
     H2_RUNTIME_BIND_PROXY(queue);

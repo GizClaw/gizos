@@ -80,7 +80,7 @@ def requirements():
             if not method.startswith("speech_"):
                 rpc = PREFIX + "rpc_" + method
                 rules.append(Rule(rpc, case, (rpc,), rpc, stage))
-    for method in "init start set_track unset_track audio_start audio_end poll stop deinit".split():
+    for method in "init start set_track unset_track audio_start audio_end poll stop deinit get_time_sync_status".split():
         symbol = PREFIX + "service_" + method
         case = "voice" if method in {"set_track", "unset_track", "audio_start", "audio_end"} else "service"
         rules.append(Rule(symbol, case, (symbol,), symbol, "service_" + method + "-assert"))
@@ -111,9 +111,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 196 or len(set(inventory)) != 196 or
-            len(names) != 196 or len(set(names)) != 196 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 196-function inventory")
+    if (len(inventory) != 197 or len(set(inventory)) != 197 or
+            len(names) != 197 or len(set(names)) != 197 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 197-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

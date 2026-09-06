@@ -67,6 +67,7 @@ typedef enum h2_runtime_event_kind {
      * h2_runtime_custom_event.h.
      */
     H2_RUNTIME_EVENT_CUSTOM,
+    H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
 } h2_runtime_event_kind_t;
 
 typedef struct h2_runtime_event {

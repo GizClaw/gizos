@@ -348,7 +348,8 @@ h2_pal_result_t h2_windows_platform_create(
     }
     platform->mem_api = (h2_pal_mem_api_t){platform, &h2_windows_mem_vtable};
     platform->log_api = (h2_pal_log_api_t){platform, &h2_windows_log_vtable};
-    platform->time_api = (h2_pal_time_api_t){platform, &h2_windows_time_vtable};
+    platform->time_api = (h2_pal_time_api_t){
+        .user = platform, .vtable = &h2_windows_time_vtable};
     platform->timer_api = (h2_pal_timer_api_t){platform, &h2_windows_timer_vtable};
     platform->task_api = (h2_pal_task_api_t){platform, &h2_windows_task_vtable};
     platform->queue_api = (h2_pal_queue_api_t){platform, &h2_windows_queue_vtable};

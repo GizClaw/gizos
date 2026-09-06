@@ -120,6 +120,7 @@ struct h2_runtime {
     const h2_pal_mem_api_t *mem;
 
     const h2_pal_log_api_t *log;
+    /* Successful set_wall_ms publishes TIME_ADJUSTED; use this API in services. */
     const h2_pal_time_api_t *time;
     const h2_pal_timer_api_t *timer;
     const h2_pal_task_api_t *task;

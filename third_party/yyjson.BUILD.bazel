@@ -10,8 +10,19 @@ config_setting(
     ],
 )
 
+config_setting(
+    name = "embedded",
+    constraint_values = ["@platforms//os:none"],
+)
+
 cc_library(
     name = "yyjson",
+    # Embedded images favor ROM size over floating-point conversion throughput.
+    # Calibration reads raw integer tokens and never needs fast FP tables.
+    defines = select({
+        ":embedded": ["YYJSON_DISABLE_FAST_FP_CONV=1"],
+        "//conditions:default": [],
+    }),
     srcs = ["src/src/yyjson.c"],
     hdrs = ["src/src/yyjson.h"],
     conlyopts = select({

@@ -37,8 +37,14 @@ static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
   ++state.sleeps;
   return H2_PAL_OK;
 }
+static h2_pal_result_t wall_status(void *user, h2_pal_time_wall_status_t *out) {
+  assert(user == &state && out != NULL);
+  *out = (h2_pal_time_wall_status_t){.valid = 1u,
+      .source = H2_PAL_TIME_WALL_SOURCE_USER};
+  return H2_PAL_OK;
+}
 static const h2_pal_time_vtable_t time_vtable = {
-    .get_wall_ms = wall, .sleep_ms = sleep_ms};
+    .get_wall_ms = wall, .get_wall_status = wall_status, .sleep_ms = sleep_ms};
 static const h2_pal_time_api_t time_api = {.user = &state, .vtable = &time_vtable};
 
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
