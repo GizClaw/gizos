@@ -99,6 +99,11 @@ def requirements():
     for method in "player_play player_stop player_get_status ota_start".split():
         symbol = PREFIX + method
         rules.append(Rule(symbol, "device-api", (symbol,), symbol, method + "-assert"))
+    create = PREFIX + "req_create_debug_set"
+    parse = PREFIX + "resp_parse_debug_set"
+    calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
+    rules += [Rule(symbol, "device-api", calls, parse, "debug_set-assert")
+              for symbol in (create, parse)]
     return sorted(rules, key=lambda rule: rule.symbol)
 
 
@@ -106,9 +111,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 191 or len(set(inventory)) != 191 or
-            len(names) != 191 or len(set(names)) != 191 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 191-function inventory")
+    if (len(inventory) != 193 or len(set(inventory)) != 193 or
+            len(names) != 193 or len(set(names)) != 193 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 193-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

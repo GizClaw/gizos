@@ -300,7 +300,8 @@ struct h2_runtime_private {
     h2_pal_mqtt_api_t mqtt_proxy;
     h2_pal_webrtc_api_t webrtc_proxy;
     h2_pal_wifi_sta_api_t wifi_sta_backend;
-    atomic_bool wifi_connect_busy;
+    /* C11 atomic_flag is lock-free even on targets without byte exchange helpers. */
+    atomic_flag wifi_connect_busy;
     h2_pal_wifi_sta_api_t wifi_sta_proxy;
     h2_pal_wifi_ap_api_t wifi_ap_proxy;
     h2_pal_wifi_csi_api_t wifi_csi_proxy;
@@ -311,7 +312,7 @@ struct h2_runtime_private {
     h2_pal_display_api_t display_proxy;
     /* All Audio proxy volume operations share this Runtime-owned state. */
     h2_pal_audio_api_t audio_backend;
-    atomic_bool audio_state_busy;
+    atomic_flag audio_state_busy;
     bool audio_state_valid;
     h2_runtime_system_audio_state_t audio_state;
     h2_pal_audio_api_t audio_proxy;

@@ -56,6 +56,13 @@ typedef struct h2_smoke_mp4_player_config {
     h2_pal_result_t (*on_ready)(void *user);
     /** Borrowed ready callback context valid until the blocking call returns. */
     void *ready_user;
+    /**
+     * Nonzero borrows an already-open Display and never calls PAL open/close,
+     * including failure cleanup. The caller suspends other writers before the
+     * call and keeps Display alive until it returns. Zero opens and closes the
+     * Display for this call. Decoder and framebuffer storage remain player-owned.
+     */
+    int borrow_display;
 } h2_smoke_mp4_player_config_t;
 
 /**

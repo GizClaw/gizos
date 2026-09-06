@@ -26,10 +26,10 @@ static int set_power_save(void *user, h2_pal_wifi_power_save_t mode) {
 
 static int disconnect(void *user) {
     h2_runtime_t *runtime = user;
-    if (atomic_exchange(&runtime->private_state->wifi_connect_busy, true))
+    if (atomic_flag_test_and_set(&runtime->private_state->wifi_connect_busy))
         return H2_PAL_ERR_BUSY;
     int rc = h2_pal_wifi_sta_disconnect(backend(runtime));
-    atomic_store(&runtime->private_state->wifi_connect_busy, false);
+    atomic_flag_clear(&runtime->private_state->wifi_connect_busy);
     return rc;
 }
 
@@ -107,12 +107,12 @@ static int connect(void *user, const h2_pal_wifi_sta_config_t *config,
     int rc = h2_pal_wifi_settings_validate_sta_config(config);
     if (rc != H2_PAL_OK)
         return rc;
-    if (atomic_exchange(&runtime->private_state->wifi_connect_busy, true))
+    if (atomic_flag_test_and_set(&runtime->private_state->wifi_connect_busy))
         return H2_PAL_ERR_BUSY;
     rc = timeout_ms == 0u
         ? h2_pal_wifi_sta_connect(backend(runtime), config, 0u)
         : connect_and_save(runtime, config, timeout_ms);
-    atomic_store(&runtime->private_state->wifi_connect_busy, false);
+    atomic_flag_clear(&runtime->private_state->wifi_connect_busy);
     return rc;
 }
 
@@ -127,7 +127,7 @@ void h2_runtime_wifi_bind(h2_runtime_t *runtime) {
     };
     h2_runtime_private_t *state = runtime->private_state;
     state->wifi_sta_backend = state->wifi_sta_proxy;
-    atomic_init(&state->wifi_connect_busy, false);
+    state->wifi_connect_busy = (atomic_flag)ATOMIC_FLAG_INIT;
     state->wifi_sta_proxy = (h2_pal_wifi_sta_api_t){runtime, &vtable};
 }
 

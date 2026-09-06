@@ -189,3 +189,16 @@ bazel run //projects/e2e/targets/cc_binary/lua-runtime:e2e-lua-runtime
 ```
 
 query 和 `rg` 都应为空。E2E 的九个固定 case 见 [E2E 测试 App](/apps/e2e)。
+
+## 借用 Display 与 UI 交接
+
+已有 UI 持有 Display 时，Host 配置的 `borrow_display` 可借用已打开设备。
+调用方先暂停其他写屏者，并保证同一时间只有一个使用 Display 的 Lua job。
+库仍分配和释放自己的 framebuffer；模块 `deinit`、初始化失败、job release、
+取消后 Host stop/join/destroy 都不调用 Display PAL open/close。
+调用方必须等待任务释放或 Host 停止、join 和销毁完成后才恢复 UI 写屏。
+默认配置保留独立运行时由 Lua 打开和关闭 Display 的行为。
+
+MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Display，阻塞播放
+返回后交还 UI；失败和协作取消同样只清理播放器自己的资源。
+借用选项不会自动暂停 LVGL，也不提供多个写屏者之间的调度。

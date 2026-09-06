@@ -45,6 +45,12 @@ typedef struct h2_lua_host_config {
   int32_t utc_offset_minutes;
   const h2_lua_resource_t *resources;
   size_t resource_count;
+  /** Nonzero borrows an already-open Display without calling PAL open/close.
+   * The caller must serialize display-using jobs and suspend other writers
+   * before submission. Keep Display alive until job release or Host stop/join
+   * and destruction finish. Lua deinit only frees its framebuffer in this mode.
+   * Zero preserves the default job-owned open/close lifecycle. */
+  int borrow_display;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

@@ -875,7 +875,7 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   for (size_t i = 0u; i < host->config.max_coroutines_per_vm; ++i) {
     h2_lua_task_timer_destroy(&job->tasks[i]);
   }
-  if (job->display_open) {
+  if (job->display_open && !host->config.borrow_display) {
     (void)h2_pal_display_close(host->config.runtime->display);
   }
   if (job->touch_open) {
