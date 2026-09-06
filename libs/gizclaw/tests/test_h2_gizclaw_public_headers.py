@@ -38,8 +38,8 @@ class PublicHeadersTest(unittest.TestCase):
             root = Path(__file__).absolute().parents[1]
         catalog = without_comments((root / "tests/public_api.inc").read_text())
         expected = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", catalog)
-        self.assertEqual(len(expected), 194)
-        self.assertEqual(len(set(expected)), 194)
+        self.assertEqual(len(expected), 197)
+        self.assertEqual(len(set(expected)), 197)
         actual = []
         headers = sorted((root / "include").glob("*.h"))
         self.assertGreater(len(headers), 0)

@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-enum method { LIST, GET, CREATE, INPUT, DELETE, ACTIVATE, HISTORY, RELOAD };
+enum method { LIST, GET, CREATE, INPUT, DELETE, ACTIVATE, HISTORY, RELOAD, RELOAD_OPTIONS };
 static unsigned s_runs;
 struct h2_gizclaw_req {
   enum method method;
@@ -20,7 +20,7 @@ static struct {
   unsigned stage, fail_stage, budget, fail_budget, live, replies, corrupt_reply,
       mode;
   unsigned creates, deletes, discard_create, discard_delete;
-  unsigned calls[3][8];
+  unsigned calls[3][9];
   bool exists[H2_GIZCLAW_E2E_ACTOR_COUNT], emit,
       selected[H2_GIZCLAW_E2E_ACTOR_COUNT];
   unsigned pagination;
@@ -98,7 +98,7 @@ static int perform(enum method method, const char *name) {
   assert(strcmp(name, state.remote[state.role]) == 0);
   if (method == ACTIVATE)
     state.selected[state.role] = true;
-  if (method == RELOAD)
+  if (method == RELOAD || method == RELOAD_OPTIONS)
     assert(state.selected[state.role]);
   if (method == DELETE)
     state.exists[state.role] = ++state.deletes == state.discard_delete;
@@ -263,7 +263,7 @@ static void reply(enum method method, const char *name, const char *cursor,
       p->items[0].id = alloc(s, 1u, 1u);
       *p->items[0].id = 'x';
     }
-  } else if (method == ACTIVATE || method == RELOAD) {
+  } else if (method == ACTIVATE || (method == RELOAD || method == RELOAD_OPTIONS)) {
     h2_gizclaw_workspace_activation_t *a = out;
     *a = (h2_gizclaw_workspace_activation_t){
         .workspace_name = save(s, name),
@@ -505,6 +505,35 @@ h2_gizclaw_rpc_workspace_reload(h2_gizclaw_service_t *s, uint32_t timeout,
              h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
+h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(h2_gizclaw_service_t *s,
+                                                       uint64_t id,
+    h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+                                                       uint32_t timeout,
+                                                       h2_gizclaw_req_t **out) {
+  assert(parameters && parameters->has_input &&
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  return create_req(RELOAD_OPTIONS, s, id,
+                    name,
+                    h2_gizclaw_e2e_str(""), timeout, out);
+}
+h2_pal_result_t
+h2_gizclaw_resp_parse_workspace_reload_with_options(const h2_gizclaw_req_t *r,
+                                       h2_gizclaw_resp_storage_t *s,
+                                       h2_gizclaw_workspace_activation_t *out) {
+  return parse(RELOAD_OPTIONS, r, s, out);
+}
+h2_pal_result_t
+h2_gizclaw_rpc_workspace_reload_with_options(h2_gizclaw_service_t *s, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
+                                h2_gizclaw_resp_storage_t *storage,
+                                h2_gizclaw_workspace_activation_t *out) {
+  assert(parameters && parameters->has_input &&
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  return rpc(RELOAD_OPTIONS, s, name,
+             h2_gizclaw_e2e_str(""), timeout, storage, out);
+}
+
 h2_pal_result_t h2_gizclaw_req_create_workspace_history_list(
     h2_gizclaw_service_t *s, uint64_t id, h2_gizclaw_str_t name,
     h2_gizclaw_str_t cursor, size_t limit,
@@ -569,10 +598,10 @@ static int run(unsigned fail, unsigned budget, unsigned response, unsigned mode,
            state.deletes == (exercise ? 2u : 0u));
     if (exercise)
       for (unsigned api = 0; api < 3; ++api)
-        for (unsigned method = 0; method < 8; ++method)
+        for (unsigned method = 0; method < 9; ++method)
           assert(state.calls[api][method] > 0);
     if (exercise && !pagination)
-      assert(state.stage == 58u && state.budget == 29u && state.replies == 26u);
+      assert(state.stage == 64u && state.budget == 32u && state.replies == 29u);
   }
   if (emit)
     printf("H2_GIZCLAW_E2E stage=coverage-end case=rpc/catalog-workspace "
@@ -629,7 +658,7 @@ int main(int argc, char **argv) {
   if (argc == 4 && !strcmp(argv[1], "--emit-failure-evidence")) {
     unsigned failure = (unsigned)atoi(argv[2]),
              budget = (unsigned)atoi(argv[3]);
-    assert(failure <= 58u && budget <= 29u && (failure || budget));
+    assert(failure <= 64u && budget <= 32u && (failure || budget));
     state.emit = true;
     assert(run(failure, budget, 0, 0, 0, 0, 0, true) != H2_PAL_OK);
     return 0;
@@ -646,9 +675,9 @@ int main(int argc, char **argv) {
   assert(run(0, 0, 0, 0, 0, 0, 3u, true) == H2_PAL_ERR_NO_SPACE);
   assert(run(0, 0, 0, 0, 0, 0, 4u, true) == H2_PAL_ERR_INVALID_STATE);
   assert(run(0, 0, 0, 0, 0, 0, 5u, true) == H2_PAL_ERR_NO_SPACE);
-  for (unsigned i = 1; i <= 58; ++i)
+  for (unsigned i = 1; i <= 64; ++i)
     assert(run(i, 0, 0, 0, 0, 0, false, true) == H2_PAL_ERR_IO);
-  for (unsigned i = 1; i <= 29; ++i)
+  for (unsigned i = 1; i <= 32; ++i)
     assert(run(0, i, 0, 0, 0, 0, false, true) == H2_PAL_ERR_TIMEOUT);
   for (unsigned i = 1; i <= 3; ++i)
     assert(run(0, 0, 0, 0, i, 0, false, true) == H2_PAL_ERR_NOT_FOUND);
@@ -657,17 +686,14 @@ int main(int argc, char **argv) {
   /* Corrupt each arena with an escaped name or missing terminator. Every
    * nonempty baseline response must reject either corruption. Empty history
    * receives a malformed entry; empty post-delete lists are covered below. */
-  const unsigned replies[] = {1,  2,  3,  4,  5,  6,  7,  8,  9,
-                              10, 11, 12, 13, 14, 15, 16, 17, 18,
-                              19, 20, 21, 22, 23, 24, 25, 26};
+  const unsigned replies[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
   for (size_t i = 0; i < sizeof(replies) / sizeof(replies[0]); ++i)
     for (unsigned mode = 5; mode <= 6; ++mode)
       assert(run(0, 0, replies[i], mode, 0, 0, false, true) ==
              H2_PAL_ERR_INVALID_STATE);
-  for (unsigned i = 1; i <= 26; ++i)
+  for (unsigned i = 1; i <= 29; ++i)
     assert(run(0, 0, i, 17, 0, 0, false, true) == H2_PAL_ERR_INVALID_STATE);
-  const unsigned objects[] = {1,  2,  3,  4,  5,  9,  10, 11, 12,
-                              13, 14, 18, 19, 20, 21, 22, 23};
+  const unsigned objects[] = {1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25};
   for (size_t i = 0; i < sizeof(objects) / sizeof(objects[0]); ++i) {
     assert(run(0, 0, objects[i], 1, 0, 0, false, true) ==
            H2_PAL_ERR_INVALID_STATE);
@@ -676,28 +702,28 @@ int main(int argc, char **argv) {
     assert(run(0, 0, objects[i], 15, 0, 0, false, true) ==
            H2_PAL_ERR_INVALID_STATE);
   }
-  const unsigned metadata[] = {2, 3, 5, 11, 12, 14, 20, 21, 23};
+  const unsigned metadata[] = {2, 3, 5, 12, 13, 15, 22, 23, 25};
   for (size_t i = 0; i < sizeof(metadata) / sizeof(metadata[0]); ++i)
     for (unsigned mode = 3; mode <= 4; ++mode)
       assert(run(0, 0, metadata[i], mode, 0, 0, false, true) ==
              H2_PAL_ERR_INVALID_STATE);
-  const unsigned pages[] = {3, 12, 21};
+  const unsigned pages[] = {3, 13, 23};
   for (size_t i = 0; i < sizeof(pages) / sizeof(pages[0]); ++i)
     for (unsigned mode = 7; mode <= 11; ++mode)
       assert(run(0, 0, pages[i], mode, 0, 0, false, true) ==
              H2_PAL_ERR_INVALID_STATE);
-  const unsigned histories[] = {8, 17, 26};
+  const unsigned histories[] = {9, 19, 29};
   for (size_t i = 0; i < sizeof(histories) / sizeof(histories[0]); ++i)
     assert(run(0, 0, histories[i], 12, 0, 0, false, true) ==
            H2_PAL_ERR_INVALID_STATE);
-  const unsigned activations[] = {7, 16, 25};
+  const unsigned activations[] = {7, 8, 17, 18, 27, 28};
   for (size_t i = 0; i < sizeof(activations) / sizeof(activations[0]); ++i)
     assert(run(0, 0, activations[i], 18, 0, 0, false, true) == H2_PAL_OK);
   for (size_t i = 0; i < sizeof(activations) / sizeof(activations[0]); ++i)
     for (unsigned mode = 13; mode <= 14; ++mode)
       assert(run(0, 0, activations[i], mode, 0, 0, false, true) ==
              H2_PAL_ERR_INVALID_STATE);
-  const unsigned ready[] = {4, 5, 13, 14, 22, 23};
+  const unsigned ready[] = {4, 5, 14, 15, 24, 25};
   for (size_t i = 0; i < sizeof(ready) / sizeof(ready[0]); ++i)
     assert(run(0, 0, ready[i], 16, 0, 0, false, true) ==
            H2_PAL_ERR_INVALID_STATE);

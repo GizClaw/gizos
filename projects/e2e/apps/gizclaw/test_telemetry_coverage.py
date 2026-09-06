@@ -27,7 +27,7 @@ class TelemetryCoverageTest(unittest.TestCase):
         self.assertEqual(len(expected), 3)
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 194 - 3)
+        self.assertEqual(result["missing"], 197 - 3)
 
 
 if __name__ == "__main__":
