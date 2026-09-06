@@ -289,6 +289,8 @@ static void run_cases_task(void *user) {
           (fixture->pcm == NULL || fixture->pcm_len == 0u)) {
         case_rc = H2_PAL_ERR_INVALID_ARG;
       }
+      if (case_rc == H2_PAL_OK && test_case->prepare != NULL)
+        case_rc = test_case->prepare(fixture);
       if (case_rc == H2_PAL_OK) {
         case_rc = h2_gizclaw_e2e_fixture_connect_actors(fixture,
                                                         test_case->actor_count);

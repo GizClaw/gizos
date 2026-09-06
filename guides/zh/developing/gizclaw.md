@@ -38,7 +38,54 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 GizClaw C SDK 的 WebRTC/RPC transport 允许 Server 为 `client.*` method 反向创建 request-scoped Peer RPC channel。SDK 负责接收 request、按 method dispatch、发送 response/error，以及关闭 channel；`libs/gizclaw` 把该入口适配为 GizOS 的 `h2_gizclaw_rpc_provider_fn`，产品 integration 负责提供设备信息、稳定 identifiers、本地 Tool 以及设备控制实现。
 
-SDK 0.15.3 的设备控制 registry 包含 `client.device.status.get`、`client.device.volume.set`、`client.device.sound.play`、`client.device.reboot`、`client.wifi.status.get`、`client.wifi.saved.list`、`client.wifi.saved.forget`、`client.wifi.scan`、`client.wifi.connect` 和 `client.firmware.update`。公共 method 常量只公开 wire identity，不提供默认产品 handler；产品必须按 pinned generated payload 解码、校验并连接实际设备能力。`client.firmware.update` 的可选 channel 缺省为设备当前配置，可选 SHA-256 用于检查设备解析到的 package 是否符合调用者预期。注册 handler 或返回空 ACK 不等于固件已经安装。
+SDK 0.15.5 的标准设备控制由 Service 内置 provider 实现。在现有
+`h2_gizclaw_config_t` 中分别传入 `audio`、`wifi`、`wifi_settings`、`power`；
+HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用 Service 配置。
+不需要第二份 device config、device 实例或额外 start/stop 调用。
+
+厂商、型号、硬件版本和序列号通过 `manufacturer`、`model`、
+`hardware_revision`、`serial` 提供。标准 RPC 的 protobuf 编解码、校验、响应由库处理；
+`rpc_provider` 保留为产品自定义方法的 fallback。没有配置的标准能力返回
+`UNIMPLEMENTED`，不会返回虚假的成功 ACK。
+
+- 音量直接使用 PAL Audio，Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用
+  PAL Wi-Fi Settings。当前 PAL Settings 只保存一个 STA 配置；RPC list 如实返回
+  0 或 1 条。临时连接不会覆盖保存配置。
+- 普通重启直接使用 PAL Power。重启、临时切网、OTA 在本地 RPC response 发送完成后
+  才交给 `$gizclaw/device` task；回复发送失败或 Service 停止会取消待执行动作。
+- 传入 `audio` PAL 即启用 Ogg/Opus 播放器。`audio_buffer_bytes` 设置压缩数据环形
+  缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量
+  （默认 min(16 KiB, 缓冲容量)）。HTTP task 和播放 task 并行，缓冲满时通过背压暂停
+  读取，边下载边解析 Ogg page、解码 Opus，不限制整首音频长度。短音频在下载结束后
+  使用已有数据起播；持续缺数据超时会取消下载并上报错误。
+  解码器保留一个最大 65,307 字节 Ogg page，跨页 packet 上限 64 KiB，独立于环形缓冲。
+  以 16 kHz mono PCM16LE 写入 PAL Audio track，按 PAL 报告的帧大小拼帧，末帧补零
+  不计入播放进度。不支持 Vorbis、AAC 或 MP3。库只关闭自己的 track，不关闭共享 speaker。
+- 播放列表支持最多 32 项、读取/替换/追加、从指定索引播放、停止和 off/one/all
+  循环模式。失败的列表校验保留旧列表和播放；停止或替换取消在途下载/播放。
+  播放中进度按已写入 PCM 扣除队列容量及一个在途帧保守估算，结束时 drain 后
+  校准到全部源采样；不逐帧 drain，避免插入静音。状态变化及约每秒进度通过 telemetry
+  异步提交，不阻塞播放等待网络上报。
+- `h2_gizclaw_vtable_t` 只补 PAL 缺少的产品事实、命名提示音到 HTTPS Ogg/Opus URL
+  的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
+  RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
+  回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。
+- OTA 使用明确的 `firmware_channel`，允许 RPC 覆盖 channel 并附带期望 SHA-256。
+  库获取元数据并通过 PAL HTTP 下载；Stage backend 必须验证 package 的长度、
+  SHA-256、board/target 和 manifest，验证通过才能发布 Stage。库上报 started、
+  downloading、failed；安装后新固件核对运行身份，使用保存的 update_id 上报 succeeded。
+
+C SDK 的 provider 合同仍是同步回复，所以 Wi-Fi scan 在 RPC owner 上执行有界 PAL
+扫描（默认 5 秒、最多 30 秒）。下载、音频解码/播放和 OTA 均在独立设备 task 上执行。
+长扫描期间会占用 RPC owner；不能用一个提前 ACK 冒充扫描结果。
+
+应用主动上报时，`h2_gizclaw_telemetry_observation_t` 增加 `AUDIOPLAYER` 和 `OTA`。
+OTA frame 必须只包含一条 OTA observation，以映射 SDK 独立的 OTA frame API；
+其余 observation 继续使用原有批量 frame。上报成功仅表示本地 transport 接受。
+
+设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用
+`h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。
+返回的 secret 由调用者管理，不应写入日志。
 
 Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出必须在 callback 返回后保持有效，直到 adapter 消费返回的响应；不能返回栈上 buffer。
 

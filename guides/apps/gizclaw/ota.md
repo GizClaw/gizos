@@ -66,7 +66,16 @@ H2Loader 只持久化 `boot_intent=LOADER|AUTO`、`stage`、`partition_1`、`par
 
 ## 指令边界
 
-远端 RPC 只提供 firmware metadata 和授权下载 URL，不直接执行本机安装。App 请求 OTA 时产生 effect command；本机管理端使用 `stage url` 或 `stage payload`，成功后使用 `reboot upgrade`。恢复与角色切换分别使用 `reboot loader` 和 `reboot app`；普通重启不会消费 Stage。H2Loader 的 `status`、`stage` 和 `reboot` command 不作为 GizClaw RPC 名称，也不由页面 callback 直接执行。
+`server.firmware.get` 提供经过授权的 metadata 和下载 URL；
+`client.firmware.update` 由 `libs/gizclaw` 的标准设备 provider 接收。
+配置 `h2_gizclaw_config_t.vtable` 的 Stage 方法后，库在回复发送完成后启动设备 task，
+查询 metadata、下载并上报 OTA telemetry，然后调用 H2Loader Stage adapter 校验与发布。
+`ota_activate` 向产品 owner 安排升级收尾；下载或 Stage 完成均不产生 succeeded。
+新固件验证运行 identity 后，使用 Stage adapter 保存的 update_id 上报最终结果。
+
+本机管理端仍可使用 `stage url` 或 `stage payload`，成功后使用 `reboot upgrade`。
+恢复与角色切换分别使用 `reboot loader` 和 `reboot app`；普通重启不会消费 Stage。
+H2Loader 的 command 名称不作为 GizClaw RPC 名称。
 
 重复检查和重复下载必须幂等。取消下载后保留已经确认的当前固件；partial staging 不能被标记为 staged。断电恢复时，H2Loader 只接受完整、校验通过且状态记录一致的 package。
 

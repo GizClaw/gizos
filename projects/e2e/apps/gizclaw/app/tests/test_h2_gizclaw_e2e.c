@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e.h"
+#include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_rpc.h"
 
@@ -311,40 +312,42 @@ int main(void) {
   assert(memcmp(&result, &empty, sizeof(result)) == 0);
   config.suites = H2_GIZCLAW_E2E_SUITE_ALL;
 
+  assert(h2_gizclaw_e2e_case_count == 7u);
+  assert((config.suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0);
   state.task_join_failures = 1u;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_CASE_FAILURE);
-  assert(result.selected == 6u);
-  assert(result.terminal == 6u);
-  assert(result.failed == 6u);
+  assert(result.selected == 7u);
+  assert(result.terminal == 7u);
+  assert(result.failed == 7u);
   assert(result.errors == 0u);
   assert(result.cleanup_rc == H2_PAL_OK);
   assert(result.complete);
-  assert(state.progress_records == 8u);
+  assert(state.progress_records == 9u);
   assert(state.task_join_calls == 2u);
 
   state.stop = true;
   state.progress_records = 0u;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
-  assert(result.selected == 6u);
-  assert(result.terminal == 6u);
-  assert(result.cancelled == 6u);
+  assert(result.selected == 7u);
+  assert(result.terminal == 7u);
+  assert(result.cancelled == 7u);
   assert(result.complete);
-  assert(state.progress_records == 8u);
+  assert(state.progress_records == 9u);
 
   state.stop = false;
   state.progress_records = 0u;
   state.task_start_rc = H2_PAL_ERR_TASK;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
-  assert(result.selected == 6u);
-  assert(result.terminal == 6u);
-  assert(result.errors == 6u);
+  assert(result.selected == 7u);
+  assert(result.terminal == 7u);
+  assert(result.errors == 7u);
   assert(result.cleanup_rc == H2_PAL_ERR_TASK);
   assert(result.complete);
   assert(result.retained_resources == 0u);
-  assert(state.progress_records == 8u);
+  assert(state.progress_records == 9u);
 
   state.progress_records = 0u;
   state.task_start_rc = H2_PAL_OK;

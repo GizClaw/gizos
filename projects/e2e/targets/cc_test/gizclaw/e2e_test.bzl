@@ -37,6 +37,8 @@ def gizclaw_e2e_desktop_live_test(name, suite, backend = "h2peer", app = "//proj
         env_inherit = [
             "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
             "H2_GIZCLAW_E2E_SUITE",
+            "H2_GIZCLAW_E2E_DEVICE_API_URL",
+            "H2_GIZCLAW_E2E_AUDIO_URL",
         ],
         local_defines = ["H2_GIZCLAW_E2E_USE_PION=1"] if backend == "pion" else [],
         size = "enormous",

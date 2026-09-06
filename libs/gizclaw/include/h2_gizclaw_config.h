@@ -8,6 +8,10 @@
 #include "h2/pal/os/h2_pal_time.h"
 #include "h2/pal/application/h2_pal_webrtc.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_vtable.h"
+#include "h2/pal/hal/h2_pal_audio.h"
+#include "h2/pal/hal/h2_pal_wifi.h"
+#include "h2/pal/hal/h2_pal_power.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -67,6 +71,28 @@ typedef struct h2_gizclaw_config {
     const h2_pal_crypto_api_t *crypto;
     const h2_pal_time_api_t *time;
     const h2_pal_log_api_t *log;
+    /** Optional built-in device RPC capabilities, owned by the Service.
+     * PAL APIs, vtable and strings are borrowed through service_deinit.
+     * Set any device field to enable the standard provider. */
+    const h2_pal_audio_api_t *audio;
+    const h2_pal_wifi_sta_api_t *wifi;
+    const h2_pal_wifi_settings_api_t *wifi_settings;
+    const h2_pal_power_api_t *power;
+    const h2_gizclaw_vtable_t *vtable;
+    void *user;
+    const char *manufacturer;
+    const char *model;
+    const char *hardware_revision;
+    const char *serial;
+    /** Compressed audio ring capacity; zero selects 64 KiB. Passing audio PAL
+     * enables the Ogg/Opus player. Track length is not limited by this buffer. */
+    size_t audio_buffer_bytes;
+    /** Start/refill threshold <= ring capacity; zero selects min(16 KiB, ring).
+     * A completed short response starts with the bytes available. */
+    size_t audio_prebuffer_bytes;
+    /** Default firmware channel when the caller omits one. */
+    int32_t firmware_channel;
+    /** Fallback for application-specific methods, e.g. client tools. */
     h2_gizclaw_rpc_provider_fn rpc_provider;
     void *rpc_provider_user;
     h2_gizclaw_cancel_fn cancel_requested;

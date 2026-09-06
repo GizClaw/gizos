@@ -1,6 +1,9 @@
 #ifndef H2_GIZCLAW_H
 #define H2_GIZCLAW_H
 
+#include "h2_gizclaw_api_key.h"
+#include "h2_gizclaw_player.h"
+#include "h2_gizclaw_ota.h"
 #include "h2_gizclaw_client.h"
 #include "h2_gizclaw_config.h"
 #include "h2_gizclaw_conversation.h"

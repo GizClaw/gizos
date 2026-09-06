@@ -254,6 +254,8 @@ h2_gizclaw_test_replace_event_stream(h2_gizclaw_client_t *client,
                                      gzc_event_stream_t *events);
 bool h2_gizclaw_test_client_terminal_closed(const h2_gizclaw_client_t *client);
 
+typedef int (*h2_gizclaw_test_ota_send_fn)(void *user, const gzc_telemetry_ota_frame_t *frame);
+void h2_gizclaw_test_set_ota_send(h2_gizclaw_test_ota_send_fn send, void *user);
 typedef int (*h2_gizclaw_test_telemetry_send_fn)(
     void *user, const gzc_telemetry_frame_t *frame);
 struct h2_gizclaw_telemetry_frame;
