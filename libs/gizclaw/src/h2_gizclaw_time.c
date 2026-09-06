@@ -1,5 +1,5 @@
 #include "h2_gizclaw_service_internal.h"
-#include "h2_yyjson_json.h"
+#include "yyjson.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -16,35 +16,39 @@ static int time_canceled(void *user) {
 static h2_pal_result_t parse_time(h2_gizclaw_service_t *service,
                                   const uint8_t *body, size_t size,
                                   uint64_t *out_ms) {
-  h2_yyjson_json_t *provider = NULL;
-  h2_pal_result_t rc = h2_yyjson_json_create(
-      service->client_config.allocator, &provider);
-  if (rc != H2_PAL_OK)
-    return rc;
-  const h2_pal_json_api_t *json = h2_yyjson_json_api(provider);
-  h2_pal_json_document_t *doc = NULL;
-  h2_pal_json_value_t *root = NULL, *value = NULL;
-  const h2_pal_json_limits_t limits = {
-      .max_document_bytes = 16384u, .max_depth = 16u, .max_values = 1024u};
-  rc = h2_pal_json_document_parse(json, body, size, &limits, &doc);
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_json_document_root(json, doc, &root);
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_json_object_get(json, root, "server_time", 11u, &value);
-  double number = 0;
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_json_value_get_number(json, value, &number);
-  if (rc == H2_PAL_OK) {
-    /* Epoch milliseconds must be positive, integral and exactly representable.
-     * No timezone offset is applied here. */
-    if (!(number > 0 && number <= 9007199254740991.0) ||
-        (double)(uint64_t)number != number)
-      rc = H2_PAL_ERR_FORMAT;
-    else
-      *out_ms = (uint64_t)number;
+  if (body == NULL || size == 0u || size > 16384u)
+    return H2_PAL_ERR_FORMAT;
+  /* Only a bounded reader is needed here. A full JSON PAL vtable also retains
+   * writer/mutation code on embedded targets, despite never using it. */
+  const yyjson_read_flag flags = YYJSON_READ_NUMBER_AS_RAW;
+  const size_t pool_size = yyjson_read_max_memory_usage(size, flags);
+  void *pool = h2_pal_mem_alloc(service->client_config.allocator, pool_size);
+  if (pool == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  yyjson_alc allocator;
+  yyjson_doc *doc = NULL;
+  if (yyjson_alc_pool_init(&allocator, pool, pool_size))
+    doc = yyjson_read_opts((char *)body, size, flags, &allocator, NULL);
+  h2_pal_result_t rc = H2_PAL_ERR_FORMAT;
+  const char *number = doc == NULL ? NULL :
+      yyjson_get_raw(yyjson_obj_get(yyjson_doc_get_root(doc), "server_time"));
+  if (number != NULL && *number >= '0' && *number <= '9') {
+    uint64_t value = 0u;
+    const char *cursor = number;
+    while (*cursor >= '0' && *cursor <= '9') {
+      const uint64_t digit = (uint64_t)(*cursor - '0');
+      if (value > (UINT64_C(9007199254740991) - digit) / 10u)
+        break;
+      value = value * 10u + digit;
+      ++cursor;
+    }
+    if (*cursor == '\0' && value > 0u) {
+      *out_ms = value;
+      rc = H2_PAL_OK;
+    }
   }
-  (void)h2_pal_json_document_destroy(json, &doc);
-  (void)h2_yyjson_json_destroy(&provider);
+  yyjson_doc_free(doc);
+  h2_pal_mem_free(service->client_config.allocator, pool);
   return rc;
 }
 

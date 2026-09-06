@@ -8926,6 +8926,8 @@ static void test_automatic_time_sync(void) {
       "{\"server_time\":\"1735689600123\"}",
       "{\"nested\":{\"server_time\":1735689600123}}",
       "{\"server_time\":18446744073709551616}",
+      "{\"server_time\":9007199254740992}",
+      "{\"server_time\":1e3}",
       "{\"server_time\":1735689600123}garbage"};
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
     test_env_t env;

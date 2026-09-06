@@ -92,7 +92,7 @@ create 会复制 patch；空 patch 或无效的显式值返回 INVALID_ARG。
 
 Service 在 client 连接成功后启动独立的 `$gizclaw/time` 任务，向同一 `server_endpoint` 请求 `GET /server-info`。连接前不请求校时；其他通信不等待 该 HTTP 请求。请求超时为 5 秒，失败后按单调时间等待 30 秒重试，直到成功或 Service 停止。停止取消在途 HTTP 并等待任务退出。新建 Service 并重新连接后 会再次校时。校时任务创建失败也按 30 秒重试，不触发连接 terminal。
 
-`h2_gizclaw_service_get_time_sync_status()` 返回 WAITING、RUNNING、RETRY 或 SUCCEEDED，以及最近结果和 HTTP 尝试次数；该状态描述本次校准，不代表时钟 是否有效。失败保留此前有效系统时间。响应必须是合法 JSON，顶层 `server_time` 必须为正整数毫秒时间戳，不能是字符串、负数、零或分数。
+`h2_gizclaw_service_get_time_sync_status()` 返回 WAITING、RUNNING、RETRY 或 SUCCEEDED，以及最近结果和 HTTP 尝试次数；该状态描述本次校准，不代表时钟 是否有效。失败保留此前有效系统时间。响应必须是合法 JSON，顶层 `server_time` 必须为正整数毫秒时间戳，使用十进制整数字面量，不能是字符串、负数、零、分数或指数形式。
 
 Time PAL 的 `h2_pal_time_get_valid_wall_ms()` 是业务读取时间的公共入口： `get_wall_status().valid == false` 返回 `H2_PAL_TIME_ERR_UNCALIBRATED`，状态查询 或时钟读取错误则保留原错误，失败输出清零。原始 `get_wall_ms()` 的成功仅表示 读数成功，不能证明已校时。超时、重试及耗时始终使用 monotonic API。
 

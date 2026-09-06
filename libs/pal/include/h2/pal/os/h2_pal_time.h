@@ -36,6 +36,11 @@ typedef struct h2_pal_time_vtable {
 typedef struct h2_pal_time_api {
     void *user;
     const h2_pal_time_vtable_t *vtable;
+    /* Optional owner notification, called synchronously only after successful
+     * set_wall_ms. Providers leave these zero; Runtime installs its event sink.
+     * The observer must not recursively set time through this same API. */
+    void (*wall_adjusted)(void *user, uint64_t wall_ms);
+    void *wall_adjusted_user;
 } h2_pal_time_api_t;
 
 static inline h2_pal_result_t h2_pal_time_get_monotonic_ms(
@@ -89,7 +94,10 @@ static inline h2_pal_result_t h2_pal_time_set_wall_ms(
     if (api == NULL || api->vtable == NULL || api->vtable->set_wall_ms == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
-    return api->vtable->set_wall_ms(api->user, wall_ms);
+    h2_pal_result_t rc = api->vtable->set_wall_ms(api->user, wall_ms);
+    if (rc == H2_PAL_OK && api->wall_adjusted != NULL)
+        api->wall_adjusted(api->wall_adjusted_user, wall_ms);
+    return rc;
 }
 
 static inline h2_pal_result_t h2_pal_time_get_wall_status(

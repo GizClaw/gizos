@@ -287,7 +287,6 @@ struct h2_runtime_private {
     h2_pal_firmware_info_api_t firmware_info_proxy;
     h2_pal_log_api_t log_proxy;
     h2_pal_time_api_t time_proxy;
-    h2_pal_time_api_t time_provider;
     h2_pal_timer_api_t timer_proxy;
     h2_pal_task_api_t task_proxy;
     h2_pal_queue_api_t queue_proxy;

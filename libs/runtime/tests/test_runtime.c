@@ -934,7 +934,7 @@ static void test_runtime_capabilities_are_bound_at_init(void) {
            h2_pal_unsupported_firmware_info_api()->vtable);
     assert(runtime->mem->user == env.mem.user);
     assert(runtime->mem->vtable == env.mem.vtable);
-    assert(runtime->time != &env.time && runtime->time->vtable != env.time.vtable);
+    assert(runtime->time != &env.time && runtime->time->vtable == env.time.vtable);
     assert(runtime->queue != &env.queue && runtime->queue->vtable == env.queue.vtable);
     assert(runtime->task != &env.task && runtime->task->vtable == env.task.vtable);
     assert(runtime->sync != &env.sync && runtime->sync->vtable == env.sync.vtable);
