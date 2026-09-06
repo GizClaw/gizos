@@ -12,7 +12,11 @@
 
 GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和 app workflow 由调用方负责。
 
-Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。调用方只选择 Workspace 的 PTT 或 Realtime input mode；client 先读取现有 typed `WorkspaceParameters`，仅在参数对象恰好包含 agent type 和 input 时按同一类型更新 input，遇到未知类型或额外、缺失、重复字段时在 PUT 前拒绝，不能覆盖服务端管理的参数。
+Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
+
+`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
+
+客户端只发送指定字段，不先 GET typed `WorkspaceParameters`，不解析或重写其 agent_type，也不再依据未知、额外、缺失或重复的服务端 typed 参数字段拒绝更新。服务端根据绑定的 Workflow driver 校验 patch、合并指定字段并保留其他参数；不支持的 driver/字段通过原有远端错误路径返回。公开 patch 是固定的可写字段集合，不是对服务端 metadata 的封闭枚举。SFU input 支持由上游实现，E2E 保留真实配置请求，不能通过跳过它声称完整验收通过。
 
 ## Request service
 
@@ -36,9 +40,58 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 ## RPC provider
 
-GizClaw C SDK 的 WebRTC/RPC transport 允许 Server 为 `client.*` method 反向创建 request-scoped Peer RPC channel。SDK 负责接收 request、按 method dispatch、发送 response/error，以及关闭 channel；`libs/gizclaw` 把该入口适配为 GizOS 的 `h2_gizclaw_rpc_provider_fn`，产品 integration 负责提供设备信息、稳定 identifiers 和本地 Tool 实现。
+GizClaw C SDK 的 WebRTC/RPC transport 允许 Server 为 `client.*` method 反向创建 request-scoped Peer RPC channel。SDK 负责接收 request、按 method dispatch、发送 response/error，以及关闭 channel；`libs/gizclaw` 把该入口适配为 GizOS 的 `h2_gizclaw_rpc_provider_fn`，产品 integration 负责提供设备信息、稳定 identifiers、本地 Tool 以及设备控制实现。
 
-Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出只需保持到 callback 返回，SDK 与 adapter 都不能在返回后继续持有这些 borrowed buffer。
+SDK 0.15.5 的标准设备控制由 Service 内置 provider 实现。在现有
+`h2_gizclaw_config_t` 中分别传入 `audio`、`wifi`、`wifi_settings`、`power`；
+HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用 Service 配置。
+不需要第二份 device config、device 实例或额外 start/stop 调用。
+
+厂商、型号、硬件版本和序列号通过 `manufacturer`、`model`、
+`hardware_revision`、`serial` 提供。标准 RPC 的 protobuf 编解码、校验、响应由库处理；
+`rpc_provider` 保留为产品自定义方法的 fallback。没有配置的标准能力返回
+`UNIMPLEMENTED`，不会返回虚假的成功 ACK。
+
+- 音量直接使用 PAL Audio，Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用
+  PAL Wi-Fi Settings。当前 PAL Settings 只保存一个 STA 配置；RPC list 如实返回
+  0 或 1 条。临时连接不会覆盖保存配置。
+- 普通重启直接使用 PAL Power。重启、临时切网、OTA 在本地 RPC response 发送完成后
+  才交给 `$gizclaw/device` task；回复发送失败或 Service 停止会取消待执行动作。
+- 传入 `audio` PAL 即启用 Ogg/Opus 播放器。`audio_buffer_bytes` 设置压缩数据环形
+  缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量
+  （默认 min(16 KiB, 缓冲容量)）。HTTP task 和播放 task 并行，缓冲满时通过背压暂停
+  读取，边下载边解析 Ogg page、解码 Opus，不限制整首音频长度。短音频在下载结束后
+  使用已有数据起播；持续缺数据超时会取消下载并上报错误。
+  解码器保留一个最大 65,307 字节 Ogg page，跨页 packet 上限 64 KiB，独立于环形缓冲。
+  以 16 kHz mono PCM16LE 写入 PAL Audio track，按 PAL 报告的帧大小拼帧，末帧补零
+  不计入播放进度。不支持 Vorbis、AAC 或 MP3。库只关闭自己的 track，不关闭共享 speaker。
+- 播放列表支持最多 32 项、读取/替换/追加、从指定索引播放、停止和 off/one/all
+  循环模式。失败的列表校验保留旧列表和播放；停止或替换取消在途下载/播放。
+  播放中进度按已写入 PCM 扣除队列容量及一个在途帧保守估算，结束时 drain 后
+  校准到全部源采样；不逐帧 drain，避免插入静音。状态变化及约每秒进度通过 telemetry
+  异步提交，不阻塞播放等待网络上报。
+- `h2_gizclaw_vtable_t` 只补 PAL 缺少的产品事实、命名提示音到 HTTPS Ogg/Opus URL
+  的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
+  RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
+  回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。
+- OTA 使用明确的 `firmware_channel`，允许 RPC 覆盖 channel 并附带期望 SHA-256。
+  库获取元数据并通过 PAL HTTP 下载；Stage backend 必须验证 package 的长度、
+  SHA-256、board/target 和 manifest，验证通过才能发布 Stage。库上报 started、
+  downloading、failed；安装后新固件核对运行身份，使用保存的 update_id 上报 succeeded。
+
+C SDK 的 provider 合同仍是同步回复，所以 Wi-Fi scan 在 RPC owner 上执行有界 PAL
+扫描（默认 5 秒、最多 30 秒）。下载、音频解码/播放和 OTA 均在独立设备 task 上执行。
+长扫描期间会占用 RPC owner；不能用一个提前 ACK 冒充扫描结果。
+
+应用主动上报时，`h2_gizclaw_telemetry_observation_t` 增加 `AUDIOPLAYER` 和 `OTA`。
+OTA frame 必须只包含一条 OTA observation，以映射 SDK 独立的 OTA frame API；
+其余 observation 继续使用原有批量 frame。上报成功仅表示本地 transport 接受。
+
+设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用
+`h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。
+返回的 secret 由调用者管理，不应写入日志。
+
+Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出必须在 callback 返回后保持有效，直到 adapter 消费返回的响应；不能返回栈上 buffer。
 
 设备主动调用 Server 的 unary 或 server-streaming RPC 与 Server 反向调用 Client provider 是两个方向的 contract。前者由 generic RPC call API 发起；后者只能从 poll 驱动的 provider 入口处理，不能由 UI callback 直接执行，也不能跨线程保留 borrowed payload。产品侧的 state、effect command 和 main-loop 投影规则见 [GizClaw 状态与请求](/apps/gizclaw/state)。
 
@@ -113,3 +166,10 @@ merge 前的外部服务合同证据。
 `h2_gizclaw_client_workspace_delete()` 与 `h2_gizclaw_client_pet_delete()` 删除；成功
 返回的 snapshot 按普通 owned-output 规则用对应 deinit API 释放。所有业务资源清理
 完成后才请求 Peer 删除。
+
+
+### 设备控制回复后的本地动作
+
+产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在 SDK 接受响应写入并正常关闭该通道后，从 poll owner 调用一次。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。发送阻塞时继续保留动作，编码错误、发送失败、远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
+
+这是本地发送生命周期，不是对端收到或处理回复的确认，不新增网络消息，也不更改 GizClaw 0.15.3 SDK。回调只能向产品 owner 发布待执行动作，不能阻塞或重入 client API。产品参数必须复制到自身状态，生命周期覆盖完成或取消；不能保留借用请求、栈上的响应或已释放的 user。H106 的重启和临时切网消费此路径，OTA 是否支持仍由产品决定。

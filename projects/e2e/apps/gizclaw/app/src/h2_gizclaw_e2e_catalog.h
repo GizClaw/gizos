@@ -13,10 +13,14 @@ typedef struct e2e_case {
   size_t actor_count;
   bool needs_voice;
   int (*run)(h2_gizclaw_e2e_fixture_t *fixture);
+  /** Optional PAL fixture setup before any actor connects. */
+  int (*prepare)(h2_gizclaw_e2e_fixture_t *fixture);
 } e2e_case_t;
 
-/* Link exactly one catalog. The full app retains all six acceptance cases;
+/* Link exactly one catalog. The full app retains all seven acceptance cases;
  * a dedicated connectivity app is a measurement lane, never full acceptance. */
+int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture);
+int h2_gizclaw_e2e_prepare_device(h2_gizclaw_e2e_fixture_t *fixture);
 extern const e2e_case_t h2_gizclaw_e2e_cases[];
 extern const size_t h2_gizclaw_e2e_case_count;
 

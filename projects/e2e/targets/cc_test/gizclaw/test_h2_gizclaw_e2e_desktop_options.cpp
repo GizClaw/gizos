@@ -46,6 +46,7 @@ int main() {
        {Suite{"all", H2_GIZCLAW_E2E_SUITE_ALL},
         Suite{"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY},
         Suite{"rpc", H2_GIZCLAW_E2E_SUITE_RPC},
+        Suite{"device", H2_GIZCLAW_E2E_SUITE_DEVICE},
         Suite{"firmware", H2_GIZCLAW_E2E_SUITE_FIRMWARE},
         Suite{"voice", H2_GIZCLAW_E2E_SUITE_VOICE},
         Suite{"firmware-voice",

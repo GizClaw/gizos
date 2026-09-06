@@ -21,6 +21,16 @@ typedef struct h2_gizclaw_ogg_opus h2_gizclaw_ogg_opus_t;
 h2_pal_result_t h2_gizclaw_ogg_opus_create(const h2_pal_mem_api_t *allocator,
                                            const uint8_t *data, size_t len,
                                            h2_gizclaw_ogg_opus_t **out);
+/* Blocking sequential reader: OK must supply 1..capacity bytes, EXIT means EOF.
+ * Streaming retains one Ogg page and at most 64 KiB of a continued packet;
+ * total track length is unrestricted. Reader and user live until destroy. */
+typedef h2_pal_result_t (*h2_gizclaw_ogg_opus_read_fn)(void *user, uint8_t *out,
+                                                       size_t capacity,
+                                                       size_t *out_len);
+h2_pal_result_t
+h2_gizclaw_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
+                                  h2_gizclaw_ogg_opus_read_fn read, void *user,
+                                  h2_gizclaw_ogg_opus_t **out);
 h2_pal_result_t h2_gizclaw_ogg_opus_next(h2_gizclaw_ogg_opus_t *decoder,
                                          uint8_t *pcm, size_t capacity,
                                          size_t *out_len);

@@ -27,7 +27,8 @@ typedef enum h2_gizclaw_e2e_suite {
   H2_GIZCLAW_E2E_SUITE_VOICE = 1u << 3,
   H2_GIZCLAW_E2E_SUITE_CONCURRENCY = 1u << 4,
   H2_GIZCLAW_E2E_SUITE_SERVICE = 1u << 5,
-  H2_GIZCLAW_E2E_SUITE_ALL = (1u << 6) - 1u,
+  H2_GIZCLAW_E2E_SUITE_DEVICE = 1u << 6,
+  H2_GIZCLAW_E2E_SUITE_ALL = (1u << 7) - 1u,
 } h2_gizclaw_e2e_suite_t;
 
 typedef enum h2_gizclaw_e2e_exit {
@@ -75,6 +76,11 @@ typedef void (*h2_gizclaw_e2e_progress_fn)(
 typedef struct h2_gizclaw_e2e_config {
   h2_gizclaw_str_t server_endpoint;
   h2_gizclaw_str_t registration_token;
+  /** Optional dedicated device-API acceptance lane endpoints. */
+  const char *device_api_url;
+  const char *device_audio_url;
+  /** Forward the device case PCM sink to runtime.audio for audible testing. */
+  bool device_real_audio;
   const uint8_t *voice_pcm_s16le_16khz_mono;
   size_t voice_pcm_len;
   uint32_t suites;

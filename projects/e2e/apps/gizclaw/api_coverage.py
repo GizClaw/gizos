@@ -18,10 +18,10 @@ import sys
 
 
 PREFIX = "h2_gizclaw_"
-TOP_CASES = {"connectivity", "rpc", "firmware", "voice", "concurrency", "service"}
+TOP_CASES = {"connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
              "contact", "friend", "group", "gameplay", "peer-name-isolation",
-             "telemetry"}
+             "telemetry", "api-key"}
 CASES = TOP_CASES | {"rpc/" + name for name in RPC_CASES}
 
 
@@ -46,7 +46,7 @@ def requirements():
         "rpc/profile": "profile_get profile_put_name profile_put_emoji",
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
-            "workspace_create workspace_set_input workspace_delete "
+            "workspace_create workspace_set_parameters workspace_delete "
             "workspace_activate workspace_reload workspace_history_list"),
         "rpc/contact": "contact_list contact_get contact_create contact_put contact_delete",
         "rpc/friend": (
@@ -61,6 +61,7 @@ def requirements():
             "pet_list pet_get pet_adopt pet_delete pet_drive pet_pixa_download "
             "pet_action_get point_get point_transaction_list"),
         "rpc/telemetry": "telemetry_send",
+        "rpc/api-key": "api_key_create api_key_revoke",
         "rpc/speech": "speech_transcribe speech_extract",
     }
     rules = []
@@ -95,6 +96,9 @@ def requirements():
     symbol = PREFIX + "req_create_audio_play"
     rules.append(Rule(symbol, "voice", (symbol, PREFIX + "req_do", PREFIX + "req_wait"),
                       symbol, "audio_play-assert"))
+    for method in "player_play player_stop player_get_status ota_start".split():
+        symbol = PREFIX + method
+        rules.append(Rule(symbol, "device-api", (symbol,), symbol, method + "-assert"))
     return sorted(rules, key=lambda rule: rule.symbol)
 
 
@@ -102,9 +106,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 181 or len(set(inventory)) != 181 or
-            len(names) != 181 or len(set(names)) != 181 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 181-function inventory")
+    if (len(inventory) != 191 or len(set(inventory)) != 191 or
+            len(names) != 191 or len(set(names)) != 191 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 191-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 
@@ -181,7 +185,7 @@ def audit(lines, rules, *, endpoint, backend, profile, platform, process_exit_co
         issues.append("expected exactly one final Desktop summary")
     else:
         expected = dict(endpoint=endpoint, backend=backend, profile=profile, platform=platform,
-                        suite="all", selected="6", terminal="6", **{"pass": "6"},
+                        suite="all", selected="7", terminal="7", **{"pass": "7"},
                         fail="0", error="0", blocked="0", cancelled="0", cleanup_rc="0",
                         retained_resources="0", complete="true", exit_code="0",
                         first_failure_case="-", first_failure_rc="0")

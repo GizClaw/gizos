@@ -92,10 +92,21 @@ static void emit_progress(void *user,
   fflush(stdout);
 }
 
+#if defined(H2_GIZCLAW_E2E_RPC_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_RPC
+#define AMOLED_E2E_SUITE_NAME "rpc"
+#elif defined(H2_GIZCLAW_E2E_DEVICE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_DEVICE
+#define AMOLED_E2E_SUITE_NAME "device"
+#else
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_ALL
+#define AMOLED_E2E_SUITE_NAME "all"
+#endif
+
 static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=all "
+  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=" AMOLED_E2E_SUITE_NAME " "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
@@ -123,7 +134,10 @@ static void run_e2e(void *raw) {
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
-      .suites = H2_GIZCLAW_E2E_SUITE_ALL,
+      .suites = AMOLED_E2E_SUITES,
+      .device_api_url = "https://ap.e2e.gizclaw.com",
+      .device_audio_url = "https://open.haivivi.com/download/aigc/v1/works/sound-lab/songs/little-penguin-dance.ogg",
+      .device_real_audio = true,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,

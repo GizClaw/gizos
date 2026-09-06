@@ -655,6 +655,9 @@ static void h2_bk_wifi_copy_sta_config(
     }
     out_config->channel = config->channel;
     out_config->security = WIFI_SECURITY_AUTO;
+    /* Saved credentials belong to wifi_settings; SDK fast-connect caching
+     * must not persist a temporary connection behind that API. */
+    out_config->is_not_support_auto_fci = 1u;
     out_config->auto_reconnect_count = 0;
     out_config->auto_reconnect_timeout = 0;
 }

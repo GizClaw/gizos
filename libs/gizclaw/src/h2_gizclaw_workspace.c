@@ -449,18 +449,18 @@ decode_workspace_create_value(const h2_pal_mem_api_t *allocator,
 }
 
 static int
-decode_workspace_input_put_value(const h2_pal_mem_api_t *allocator,
-                                 const uint8_t *data, size_t len,
-                                 h2_gizclaw_workspace_t *out_workspace) {
-  gizclaw_rpc_v1_WorkspaceInputPutResponse decoded =
-      gizclaw_rpc_v1_WorkspaceInputPutResponse_init_zero;
+decode_workspace_parameters_set_value(const h2_pal_mem_api_t *allocator,
+                                      const uint8_t *data, size_t len,
+                                      h2_gizclaw_workspace_t *out_workspace) {
+  gizclaw_rpc_v1_WorkspaceParametersSetResponse decoded =
+      gizclaw_rpc_v1_WorkspaceParametersSetResponse_init_zero;
   text_decode_t text[2];
   set_text_decoder(&decoded.value.name, &text[0], allocator,
                    &out_workspace->name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES);
   set_text_decoder(&decoded.value.workflow_name, &text[1], allocator,
                    &out_workspace->workflow_name, 63u);
   pb_istream_t stream = pb_istream_from_buffer(data, len);
-  if (!pb_decode(&stream, gizclaw_rpc_v1_WorkspaceInputPutResponse_fields,
+  if (!pb_decode(&stream, gizclaw_rpc_v1_WorkspaceParametersSetResponse_fields,
                  &decoded) ||
       !decoded.has_value || out_workspace->name == NULL ||
       out_workspace->workflow_name == NULL) {
@@ -574,12 +574,11 @@ static bool protobuf_find_bytes(const uint8_t *data, size_t len,
   return true;
 }
 
-
 typedef enum workspace_kind {
   WS_LIST,
   WS_GET,
   WS_CREATE,
-  WS_SET_INPUT,
+  WS_SET_PARAMETERS,
   WS_DELETE,
   WS_HISTORY_LIST,
   WS_KIND_COUNT,
@@ -596,7 +595,7 @@ typedef struct workspace_context {
   char *second;
   char *third;
   size_t limit;
-  h2_gizclaw_workspace_input_mode_t input_mode;
+  h2_gizclaw_workspace_parameters_patch_t parameters;
   h2_gizclaw_workspace_history_order_t history_order;
   h2_gizclaw_rpc_method_t method;
   uint8_t *payload;
@@ -697,20 +696,33 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
         request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
         gizclaw_rpc_v1_WorkspaceGetRequest_fields, &message);
   }
-  case WS_SET_INPUT: {
-    gizclaw_rpc_v1_WorkspaceInputPutRequest message =
-        gizclaw_rpc_v1_WorkspaceInputPutRequest_init_zero;
+  case WS_SET_PARAMETERS: {
+    gizclaw_rpc_v1_WorkspaceParametersSetRequest message =
+        gizclaw_rpc_v1_WorkspaceParametersSetRequest_init_zero;
     if (first.len >= sizeof(message.name))
       return H2_PAL_ERR_INVALID_ARG;
     memcpy(message.name, first.data, first.len);
     message.name[first.len] = '\0';
-    message.input =
-        request->input_mode == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
-            ? gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_REALTIME
-            : gizclaw_rpc_v1_WorkspaceInputMode_WORKSPACE_INPUT_MODE_PUSH_TO_TALK;
+    message.has_parameters = true;
+    message.parameters.has_input = request->parameters.has_input;
+    message.parameters.input =
+        (gizclaw_rpc_v1_WorkspaceInputMode)request->parameters.input;
+    message.parameters.has_conversation =
+        request->parameters.has_initiative ||
+        request->parameters.has_agent_initiative_policy;
+    message.parameters.conversation.has_initiative =
+        request->parameters.has_initiative;
+    message.parameters.conversation.initiative =
+        (gizclaw_rpc_v1_ConversationParametersInitiative)
+            request->parameters.initiative;
+    message.parameters.conversation.has_agent_initiative_policy =
+        request->parameters.has_agent_initiative_policy;
+    message.parameters.conversation.agent_initiative_policy =
+        (gizclaw_rpc_v1_ConversationParametersAgentInitiativePolicy)
+            request->parameters.agent_initiative_policy;
     return workspace_request_start_message(
-        request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_INPUT_PUT,
-        gizclaw_rpc_v1_WorkspaceInputPutRequest_fields, &message);
+        request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET,
+        gizclaw_rpc_v1_WorkspaceParametersSetRequest_fields, &message);
   }
   case WS_CREATE: {
     gizclaw_rpc_v1_WorkspaceCreateRequest message =
@@ -777,7 +789,7 @@ static void workspace_destroy(void *user) {
 static h2_pal_result_t workspace_create_request(
     h2_gizclaw_service_t *service, uint64_t identity, workspace_kind_t kind,
     h2_gizclaw_str_t first, h2_gizclaw_str_t second, h2_gizclaw_str_t third,
-    size_t limit, h2_gizclaw_workspace_input_mode_t input_mode,
+    size_t limit, const h2_gizclaw_workspace_parameters_patch_t *parameters,
     h2_gizclaw_workspace_history_order_t order, uint32_t timeout_ms,
     h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
@@ -789,11 +801,14 @@ static h2_pal_result_t workspace_create_request(
   workspace_context_t *context = h2_pal_mem_alloc(allocator, sizeof(*context));
   if (context == NULL)
     return H2_PAL_ERR_NO_MEMORY;
-  *context = (workspace_context_t){.allocator = allocator,
-                                   .kind = kind,
-                                   .limit = limit,
-                                   .input_mode = input_mode,
-                                   .history_order = order};
+  *context = (workspace_context_t){
+      .allocator = allocator,
+      .kind = kind,
+      .limit = limit,
+      .parameters = parameters != NULL
+                        ? *parameters
+                        : (h2_gizclaw_workspace_parameters_patch_t){0},
+      .history_order = order};
   context->first =
       copy_owned(allocator, first.len == 0u ? "" : first.data, first.len);
   context->second =
@@ -1059,31 +1074,39 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_req_create_workspace_set_input(
+h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t input_mode, uint32_t timeout_ms,
-    h2_gizclaw_req_t **out_request) {
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
   if (!(valid_token(name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES) &&
-        workspace_input_mode_valid(input_mode)))
+        parameters != NULL &&
+        (parameters->has_input || parameters->has_initiative ||
+         parameters->has_agent_initiative_policy) &&
+        (!parameters->has_input ||
+         workspace_input_mode_valid(parameters->input)) &&
+        (!parameters->has_initiative ||
+         (parameters->initiative >= 1 && parameters->initiative <= 2)) &&
+        (!parameters->has_agent_initiative_policy ||
+         (parameters->agent_initiative_policy >= 1 &&
+          parameters->agent_initiative_policy <= 2))))
     return H2_PAL_ERR_INVALID_ARG;
-  return workspace_create_request(service, identity, WS_SET_INPUT, name,
+  return workspace_create_request(service, identity, WS_SET_PARAMETERS, name,
                                   (h2_gizclaw_str_t){0}, (h2_gizclaw_str_t){0},
-                                  0u, input_mode, 0, timeout_ms, out_request);
+                                  0u, parameters, 0, timeout_ms, out_request);
 }
 
-h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_set_input(const h2_gizclaw_req_t *request,
-                                          h2_gizclaw_resp_storage_t *storage,
-                                          h2_gizclaw_workspace_t *out_result) {
+h2_pal_result_t h2_gizclaw_resp_parse_workspace_set_parameters(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out_result) {
   if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
   const workspace_context_t *context = NULL;
   const h2_gizclaw_rpc_response_t *response = NULL;
-  h2_pal_result_t rc =
-      workspace_request_response(request, WS_SET_INPUT, &context, &response);
+  h2_pal_result_t rc = workspace_request_response(request, WS_SET_PARAMETERS,
+                                                  &context, &response);
   if (rc != H2_PAL_OK)
     return rc;
   h2_gizclaw_resp_arena_t arena;
@@ -1094,8 +1117,8 @@ h2_gizclaw_resp_parse_workspace_set_input(const h2_gizclaw_req_t *request,
   const uint8_t *data = response->result_payload;
   const size_t len = response->result_payload_len;
   h2_gizclaw_workspace_t result = {0};
-  rc = (h2_pal_result_t)decode_workspace_input_put_value(
-      allocator, data, len, &result);
+  rc = (h2_pal_result_t)decode_workspace_parameters_set_value(allocator, data,
+                                                              len, &result);
 
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
   if (rc == H2_PAL_OK)
@@ -1103,10 +1126,11 @@ h2_gizclaw_resp_parse_workspace_set_input(const h2_gizclaw_req_t *request,
   return rc;
 }
 
-h2_pal_result_t h2_gizclaw_rpc_workspace_set_input(
+h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t input_mode, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result) {
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out_result) {
   if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out_result, 0, sizeof(*out_result));
@@ -1114,15 +1138,15 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_input(
       (storage->capacity != 0u && storage->data == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_req_t *request = NULL;
-  h2_pal_result_t rc = h2_gizclaw_req_create_workspace_set_input(
-      service, 0u, name, input_mode, timeout_ms, &request);
+  h2_pal_result_t rc = h2_gizclaw_req_create_workspace_set_parameters(
+      service, 0u, name, parameters, timeout_ms, &request);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
-    rc =
-        h2_gizclaw_resp_parse_workspace_set_input(request, storage, out_result);
+    rc = h2_gizclaw_resp_parse_workspace_set_parameters(request, storage,
+                                                        out_result);
   h2_gizclaw_req_release(request);
   return rc;
 }

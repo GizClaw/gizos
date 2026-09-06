@@ -227,6 +227,78 @@ static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
   return result;
 }
 
+/* Each key belongs to the fixture peer; fixture deletion also revokes keys if
+ * a create reply is lost before the test can learn its name. */
+static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
+                       h2_gizclaw_resp_storage_t *storage) {
+  (void)storage;
+  h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
+  for (unsigned api = 0; api < 2; ++api) {
+    h2_gizclaw_api_key_t key = {0};
+    h2_gizclaw_req_t *request = NULL;
+    const char *create = api ? "h2_gizclaw_rpc_api_key_create" :
+                              "h2_gizclaw_resp_parse_api_key_create";
+    const char *revoke = api ? "h2_gizclaw_rpc_api_key_revoke" :
+                              "h2_gizclaw_resp_parse_api_key_revoke";
+    int rc;
+    if (api) {
+      rc = h2_gizclaw_rpc_api_key_create(service,
+          h2_gizclaw_e2e_str("e2e temporary"), false, 30000u, &key);
+      h2_gizclaw_e2e_evidence(create, "api-key", rc);
+    } else {
+      rc = h2_gizclaw_req_create_api_key_create(service, 0,
+          h2_gizclaw_e2e_str("e2e temporary"), false, 30000u, &request);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_req_create_api_key_create", "api-key", rc);
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+        h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "api-key", rc);
+      }
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_req_wait(request, 30000u);
+        h2_gizclaw_e2e_evidence("h2_gizclaw_req_wait", "api-key", rc);
+      }
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_resp_parse_api_key_create(request, &key);
+        h2_gizclaw_e2e_evidence(create, "api-key", rc);
+      }
+      if (request) h2_gizclaw_req_release(request);
+      request = NULL;
+    }
+    if (rc == H2_PAL_OK && (!key.name[0] || !key.secret[0]))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_evidence(create, "api_key_create-assert", rc);
+    memset(key.secret, 0, sizeof(key.secret));
+    if (rc != H2_PAL_OK) return rc;
+    if (api) {
+      rc = h2_gizclaw_rpc_api_key_revoke(service, h2_gizclaw_e2e_str(key.name), 30000u);
+      h2_gizclaw_e2e_evidence(revoke, "api-key", rc);
+    } else {
+      rc = h2_gizclaw_req_create_api_key_revoke(service, 0,
+          h2_gizclaw_e2e_str(key.name), 30000u, &request);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_req_create_api_key_revoke", "api-key", rc);
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+        h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "api-key", rc);
+      }
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_req_wait(request, 30000u);
+        h2_gizclaw_e2e_evidence("h2_gizclaw_req_wait", "api-key", rc);
+      }
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_resp_parse_api_key_revoke(request);
+        h2_gizclaw_e2e_evidence(revoke, "api-key", rc);
+      }
+      if (request) h2_gizclaw_req_release(request);
+    }
+    h2_gizclaw_e2e_evidence(revoke, "api_key_revoke-assert", rc);
+    if (rc != H2_PAL_OK) {
+      (void)h2_gizclaw_rpc_api_key_revoke(service, h2_gizclaw_e2e_str(key.name), 30000u);
+      return rc;
+    }
+  }
+  return H2_PAL_OK;
+}
+
 int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->pcm == NULL || fixture->pcm_len == 0u)
     return H2_PAL_ERR_INVALID_ARG;
@@ -241,6 +313,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
     RPC_DOMAIN_GAMEPLAY,
     RPC_DOMAIN_PEER_NAME_ISOLATION,
     RPC_DOMAIN_TELEMETRY,
+    RPC_DOMAIN_API_KEY,
     RPC_DOMAIN_COUNT,
   };
   struct rpc_domain {
@@ -268,6 +341,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
                                               (1u << RPC_DOMAIN_GROUP) |
                                               (1u << RPC_DOMAIN_GAMEPLAY)},
       [RPC_DOMAIN_TELEMETRY] = {"telemetry", h2_gizclaw_e2e_run_telemetry, 0u},
+      [RPC_DOMAIN_API_KEY] = {"api-key", run_api_key, 0u},
   };
   _Static_assert(sizeof(domains) / sizeof(domains[0]) == RPC_DOMAIN_COUNT,
                  "RPC domain table and index must remain synchronized");
