@@ -366,7 +366,7 @@ _LVGL_FIRMWARE_SRCS = [
     if "/src/draw/vg_lite/" not in source
     if "/src/draw/nema_gfx/" not in source
     if "/src/others/" not in source or "/src/others/translation/" in source
-    if "/src/libs/" not in source or "/src/libs/bin_decoder/" in source or "/src/libs/tiny_ttf/" in source
+    if "/src/libs/" not in source or "/src/libs/bin_decoder/" in source or "/src/libs/tiny_ttf/" in source or "/src/libs/lodepng/" in source
     if "/src/osal/" not in source or source.endswith("/src/osal/lv_os.c")
     if "/src/libs/thorvg/" not in source
     if "/src/stdlib/uefi/" not in source
