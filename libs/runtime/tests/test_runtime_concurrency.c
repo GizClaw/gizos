@@ -761,6 +761,9 @@ static void test_pinned_reader_does_not_block_publication(void) {
     concurrency_env_init(&env);
     add_single_button(&env);
     h2_runtime_t *runtime = concurrency_runtime_create(&env);
+    /* This case controls each publication explicitly. The background writer
+     * could otherwise rotate the active slot between read_begin and the load. */
+    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
     const h2_runtime_state_bank_t *bank = NULL;

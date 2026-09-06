@@ -636,7 +636,7 @@ static void test_allocations_and_config(void) {
   f.config.net = h2_pal_unsupported_net_api();
   h2_pal_time_vtable_t time = *f.config.time->vtable;
   time.get_monotonic_us = NULL;
-  h2_pal_time_api_t time_api = {NULL, &time};
+  h2_pal_time_api_t time_api = {.user = NULL, .vtable = &time};
   f.config.time = &time_api;
   assert(h2_peer_create(&f.config, &f.owner) == H2_PAL_ERR_INVALID_ARG);
   f.config.time = h2_desktop_platform_time_api();

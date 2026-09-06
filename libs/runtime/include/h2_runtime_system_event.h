@@ -23,6 +23,16 @@ extern "C" {
 
 typedef int32_t h2_runtime_system_result_t;
 
+/** Published after a successful set_wall_ms through runtime->time.
+ * wall_ms is the requested UTC Unix timestamp, not the later display time.
+ * The event envelope timestamp remains monotonic. Failed setters emit nothing.
+ * Uses the normal bounded Runtime queue (may drop on overflow); consumers must
+ * re-read Time PAL validity and current time, including on periodic refresh.
+ */
+typedef struct h2_runtime_system_event_time_adjusted {
+    uint64_t wall_ms;
+} h2_runtime_system_event_time_adjusted_t;
+
 typedef enum h2_runtime_system_netif_kind {
     H2_RUNTIME_SYSTEM_NETIF_KIND_UNKNOWN = 0,
     H2_RUNTIME_SYSTEM_NETIF_KIND_LOOPBACK,

@@ -230,6 +230,9 @@ struct h2_gizclaw_service {
   bool audio_ended; /* audio_mutex; repeated button release is harmless. */
   h2_pal_cond_t *progress_cond;
   h2_pal_task_t *net_task;
+  h2_pal_task_t *time_task;
+  h2_gizclaw_time_sync_status_t time_sync;
+  uint64_t time_start_retry_ms;
   h2_pal_task_t *uplink_task;
   h2_pal_task_t *downlink_task;
   h2_pal_task_t *data_uplink_task;
@@ -271,6 +274,8 @@ struct h2_gizclaw_service {
   bool terminal_dispatched;
   h2_pal_result_t terminal_result;
 };
+
+void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service);
 
 /* Wake the optional Runtime; the Runtime coalesces repeated wakes. */
 void h2_gizclaw_service_wake_dispatch_internal(

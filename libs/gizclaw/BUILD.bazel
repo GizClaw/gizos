@@ -93,6 +93,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_response.c",
     "src/h2_gizclaw_response_internal.h",
     "src/h2_gizclaw_service.c",
+    "src/h2_gizclaw_time.c",
     "src/h2_gizclaw_service_internal.h",
     "src/h2_gizclaw_social.c",
     "src/h2_gizclaw_social_internal.h",
@@ -144,6 +145,7 @@ cc_library(
     deps = [
         ":task_names",
         "//libs/pal",
+        "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",
     ] + select({
@@ -191,6 +193,7 @@ cc_library(
         "src/h2_gizclaw_response.c",
         "src/h2_gizclaw_response_internal.h",
         "src/h2_gizclaw_service.c",
+        "src/h2_gizclaw_time.c",
         "src/h2_gizclaw_social.c",
         "src/h2_gizclaw_social_internal.h",
         "src/h2_gizclaw_social_ops.c",
@@ -235,6 +238,7 @@ cc_library(
     deps = [
         ":task_names",
         "//libs/pal",
+        "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_gizclaw",
         "//tools/bazel:vendor_third_party_opus",

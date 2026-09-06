@@ -93,12 +93,13 @@ h2_web_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
   if (out_status == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   uint64_t wall_ms = 0u;
+  h2_pal_result_t rc = h2_web_get_wall_ms(user, &wall_ms);
   *out_status = (h2_pal_time_wall_status_t){
-      .valid = h2_web_get_wall_ms(user, &wall_ms) == H2_PAL_OK,
+      .valid = rc == H2_PAL_OK,
       // The browser exposes the host clock, not its synchronization source.
       .source = H2_PAL_TIME_WALL_SOURCE_UNKNOWN,
   };
-  return H2_PAL_OK;
+  return rc;
 }
 
 static const h2_pal_time_vtable_t h2_web_clock_vtable = {
