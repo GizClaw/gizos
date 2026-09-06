@@ -105,7 +105,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "amoled",
-    cmake_variables = ["H2_GIZCLAW_E2E_DEVICE_ONLY"],
+    cmake_variables = ["H2_GIZCLAW_E2E_DEVICE_ONLY", "H2_GIZCLAW_E2E_RPC_ONLY"],
     graph = [":gizclaw_e2e_amoled_launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_gizclaw_e2e_amoled",

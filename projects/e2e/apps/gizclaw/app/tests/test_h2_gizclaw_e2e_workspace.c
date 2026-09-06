@@ -13,6 +13,7 @@ struct h2_gizclaw_req {
   enum method method;
   char name[256], cursor[256];
   bool started, waited;
+  int result;
 };
 static struct {
   h2_gizclaw_e2e_fixture_t *fixture;
@@ -114,7 +115,7 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *r, void *user,
   int rc = step();
   if (!rc) {
     r->started = true;
-    rc = perform(r->method, r->name);
+    r->result = perform(r->method, r->name);
   }
   return rc;
 }
@@ -122,7 +123,7 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *r, uint32_t timeout) {
   assert(r->started && timeout == 30000u);
   int rc = step();
   r->waited = !rc;
-  return rc;
+  return rc ? rc : r->result;
 }
 h2_pal_result_t h2_gizclaw_req_cancel(h2_gizclaw_req_t *r) {
   assert(r);
@@ -391,14 +392,6 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *s, h2_gizclaw_str_t name,
                              uint32_t timeout,
                              h2_gizclaw_resp_storage_t *storage,
                              h2_gizclaw_workspace_get_result_t *out) {
-  /* The production case uses an uninstrumented synchronous get only to wait
-   * for an already-acknowledged asynchronous delete. Preserve the existing
-   * fault-injection stage numbering for that observation. */
-  service(s, timeout);
-  if (!state.exists[state.role]) {
-    assert(storage->used == 0u);
-    return H2_PAL_ERR_NOT_FOUND;
-  }
   return rpc(GET, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
@@ -425,24 +418,26 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   return rpc(CREATE, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
-h2_pal_result_t h2_gizclaw_req_create_workspace_set_input(
+h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     h2_gizclaw_service_t *s, uint64_t id, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t mode, uint32_t timeout,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_req_t **out) {
-  assert(mode == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  assert(parameters && parameters->has_input &&
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
   return create_req(INPUT, s, id, name, h2_gizclaw_e2e_str(""), timeout, out);
 }
 h2_pal_result_t
-h2_gizclaw_resp_parse_workspace_set_input(const h2_gizclaw_req_t *r,
-                                          h2_gizclaw_resp_storage_t *s,
-                                          h2_gizclaw_workspace_t *out) {
+h2_gizclaw_resp_parse_workspace_set_parameters(const h2_gizclaw_req_t *r,
+                                               h2_gizclaw_resp_storage_t *s,
+                                               h2_gizclaw_workspace_t *out) {
   return parse(INPUT, r, s, out);
 }
-h2_pal_result_t h2_gizclaw_rpc_workspace_set_input(
+h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     h2_gizclaw_service_t *s, h2_gizclaw_str_t name,
-    h2_gizclaw_workspace_input_mode_t mode, uint32_t timeout,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
-  assert(mode == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  assert(parameters && parameters->has_input &&
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
   return rpc(INPUT, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
@@ -577,7 +572,7 @@ static int run(unsigned fail, unsigned budget, unsigned response, unsigned mode,
         for (unsigned method = 0; method < 8; ++method)
           assert(state.calls[api][method] > 0);
     if (exercise && !pagination)
-      assert(state.stage == 53u && state.budget == 26u && state.replies == 26u);
+      assert(state.stage == 58u && state.budget == 29u && state.replies == 26u);
   }
   if (emit)
     printf("H2_GIZCLAW_E2E stage=coverage-end case=rpc/catalog-workspace "
@@ -634,7 +629,7 @@ int main(int argc, char **argv) {
   if (argc == 4 && !strcmp(argv[1], "--emit-failure-evidence")) {
     unsigned failure = (unsigned)atoi(argv[2]),
              budget = (unsigned)atoi(argv[3]);
-    assert(failure <= 53u && budget <= 26u && (failure || budget));
+    assert(failure <= 58u && budget <= 29u && (failure || budget));
     state.emit = true;
     assert(run(failure, budget, 0, 0, 0, 0, 0, true) != H2_PAL_OK);
     return 0;
@@ -651,9 +646,9 @@ int main(int argc, char **argv) {
   assert(run(0, 0, 0, 0, 0, 0, 3u, true) == H2_PAL_ERR_NO_SPACE);
   assert(run(0, 0, 0, 0, 0, 0, 4u, true) == H2_PAL_ERR_INVALID_STATE);
   assert(run(0, 0, 0, 0, 0, 0, 5u, true) == H2_PAL_ERR_NO_SPACE);
-  for (unsigned i = 1; i <= 53; ++i)
+  for (unsigned i = 1; i <= 58; ++i)
     assert(run(i, 0, 0, 0, 0, 0, false, true) == H2_PAL_ERR_IO);
-  for (unsigned i = 1; i <= 26; ++i)
+  for (unsigned i = 1; i <= 29; ++i)
     assert(run(0, i, 0, 0, 0, 0, false, true) == H2_PAL_ERR_TIMEOUT);
   for (unsigned i = 1; i <= 3; ++i)
     assert(run(0, 0, 0, 0, i, 0, false, true) == H2_PAL_ERR_NOT_FOUND);

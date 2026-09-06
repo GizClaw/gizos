@@ -48,3 +48,7 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror
 if(H2_GIZCLAW_E2E_DEVICE_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_DEVICE_ONLY=1)
 endif()
+
+if(H2_GIZCLAW_E2E_RPC_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_RPC_ONLY=1)
+endif()

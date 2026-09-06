@@ -67,9 +67,9 @@ ASR/Extract 同样使用共用流式传输，删除 Speech 专用 executor 和�
 
 AudioPlay 使用固定 audio-down task；Pixa 与 Group Audio 使用 data-down task，并通过 `output_write` 在调用方 poll 上下文逐块交付。AudioPlay 在 do 时登记音频下行 slot 并立即拒绝冲突；收到完整成功响应、验证长度与 EOS 后，只通知一次播放路径，后者投递完 PCM 或出错时发布一次完成结果。接收完成不等于 PCM 已交给 Track，更不等于扬声器已播放完。当前仍先保存完整压缩体再解码。`--download-stream-only` 是本地下载、一次性通知和在途取消/停止回归选择器，不连接 BJ。
 
-Workspace case 分别通过 req/resp 和同步 RPC 覆盖八个业务方法，共 24 个函数。两套接口使用不同临时工作区名称，创建后 get/list 读回，set_input 后确认工作区可用，activate 只提交 SET 并核对选中身份，再显式 reload 核对激活身份与 RUNNING 状态，删除后遍历列表确认缺失。只有确认完成才清除对应义务；失败保留 Fixture 中的精确名称。最后创建原名工作区供后续重连使用，Voice 准备只走正常创建/配置路径。
+Workspace case 分别通过 req/resp 和同步 RPC 覆盖八个业务方法，共 24 个函数。两套接口使用不同临时工作区名称，创建后 get/list 读回，set_parameters 后确认工作区可用，activate 只提交 SET 并核对选中身份，再显式 reload 核对激活身份与 RUNNING 状态，删除后遍历列表确认缺失。只有确认完成才清除对应义务；失败保留 Fixture 中的精确名称。最后创建原名工作区供后续重连使用，Voice 准备只走正常创建/配置路径。
 
-Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revision；列表和历史最多 32 页、每页 32 项，游标最多 255 字节。列表检查目标跨页唯一，历史只检查页内 ID 重复，不宣称跨页快照一致性。保留未知历史类型、可选文本和可选 activation workflow 字段。响应没有 input mode，不能把 set_input 的可用性断言当作 PTT/Realtime 行为证明，仍需 Voice E2E。309 组本地边界场景与 `workspace_coverage_test` 验证错误响应、预算、未生效操作和清理标记；这些不是实际服务验收。
+Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revision；列表和历史最多 32 页、每页 32 项，游标最多 255 字节。列表检查目标跨页唯一，历史只检查页内 ID 重复，不宣称跨页快照一致性。保留未知历史类型、可选文本和可选 activation workflow 字段。响应没有 input mode，不能把 set_parameters 的可用性断言当作 PTT/Realtime 行为证明，仍需 Voice E2E。本地边界场景与 `workspace_coverage_test` 验证错误响应、预算、未生效操作和清理标记；这些不是实际服务验收。
 
 测速日志的 `integrity` 区分校验范围：下载成功为 `pattern-verified`（逐字节核对固定上游 v0.13.2 的 0..255 循环模式）；上传成功仅为 `length-ack-only`（服务端 EOS 确认消费及长度，未校验上传内容）；失败为 `not-verified`。模式校验不是密码学摘要，不能据此声称完成上传端到端内容校验。
 

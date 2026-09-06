@@ -425,10 +425,12 @@ static int end_input(voice_state_t *state) {
 static int configure_mode(voice_state_t *state, bool realtime) {
   state->storage.used = 0u;
   h2_gizclaw_workspace_t workspace = {0};
-  int rc = h2_gizclaw_rpc_workspace_set_input(
+  int rc = h2_gizclaw_rpc_workspace_set_parameters(
       state->service, h2_gizclaw_e2e_str(state->workspace_name),
-      realtime ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
-               : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+      &(h2_gizclaw_workspace_parameters_patch_t){
+          .has_input = true,
+          .input = realtime ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+                            : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
       30000u, &state->storage, &workspace);
   if (rc == H2_PAL_OK && (!workspace.available ||
                           !response_text(&state->storage, workspace.name, true,
