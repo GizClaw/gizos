@@ -38,6 +38,10 @@ capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorith
 
 Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access handle 由 `h2_gizclaw_client` 从 connect 成功一直保留到连接关闭。Conversation 只取得该 handle 的逻辑 lease；同一 client 同时只能有一个 conversation。每次 lease 使用 connection 内单调递增且唯一的 input stream ID；服务端可以为下行 `transcript` 和 `assistant` 各自产生 response-local stream ID。Conversation 按 label 分别绑定本轮第一个 response ID，接受其 `:<suffix>` 子流，并丢弃之后不匹配的旧轮文本或 EOS；不能要求下行 ID 等于 input ID。Input 仍然打开时（realtime，server-side VAD），服务端可以打断正在播放的 reply（barge-in）：新 reply 的 BOS 在旧 assistant route 结束前到达时直接取代旧 route，旧 reply 以 `REPLY_DONE` 结束并丢弃已排队的下行 PCM，之后携带 `STREAM_INTERRUPTED` 的旧 EOS 被丢弃；未被取代时该 EOS 本身就是同样的 reply boundary。Input 已经 commit（push-to-talk）后本 generation 不会再有 reply，`STREAM_INTERRUPTED` 保持 `ERROR` 语义。每个 reply 投递给 App 的 conversation event 数量有界：下行 PCM 只写入绑定的 Track，不经 event 复制，第一块 PCM 进入 Track 后、该 reply 的 boundary 之前投递一次 `REPLY_AUDIO_STARTED`，文本事件与它没有顺序关系（文本流独立，可能先到），最后恰好一次 `REPLY_DONE` 或 `ERROR`；dispatch wake 不随 reply 长度增长。Conversation deinit 只释放逻辑 lease，不释放 client access handle，也不关闭物理 channel；所有 conversation handle 必须先于 client deinit 释放。Direct Packet、Peer Event 或 Opus transport 意外关闭时，`h2_gizclaw_client_poll()` 返回 `H2_PAL_ERR_CLOSED`，调用方必须 close、deinit 并重建完整 client，不能只重开单条 transport。
 
+Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但正常回复事件和下行处理继续推进，避免业务事件占住队列后阻塞 READY，也允许服务端提前拒绝输入。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
+
+当前 `MODULE.bazel` 固定的 C SDK 0.15.6 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`；本修复无需升级 SDK。
+
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
 ## RPC provider

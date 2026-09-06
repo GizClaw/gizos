@@ -560,8 +560,8 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
 
 static h2_pal_result_t
 conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
-  if (!atomic_load_explicit(&request->wire_ready, memory_order_acquire) ||
-      atomic_load_explicit(&request->downlink_eos, memory_order_acquire))
+  /* Downlink and server errors must progress while input awaits READY. */
+  if (atomic_load_explicit(&request->downlink_eos, memory_order_acquire))
     return H2_PAL_OK;
   if (request->decoder == NULL) {
     int size = opus_decoder_get_size(1);
@@ -1317,12 +1317,14 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
         conversation_request_close(request);
         return rc;
       }
-      if (!h2_gizclaw_conversation_wire_input_ready_internal(request->conversation))
-        return H2_PAL_ERR_WOULD_BLOCK;
     }
-    h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
-        "conversation", "input_ready", request->identity, H2_PAL_OK, 0, 0, 0);
-    atomic_store_explicit(&request->wire_ready, true, memory_order_release);
+    if (h2_gizclaw_conversation_wire_input_ready_internal(request->conversation)) {
+      h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
+          "conversation", "input_ready", request->identity, H2_PAL_OK, 0, 0, 0);
+      atomic_store_explicit(&request->wire_ready, true, memory_order_release);
+    }
+    /* Continue the reply pump: a queued business event must not prevent the
+     * next dispatch from reaching READY. Only uplink waits on wire_ready. */
   }
   if (request->media_attached &&
       atomic_load_explicit(&request->media_uplink_eos, memory_order_acquire) &&

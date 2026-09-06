@@ -6868,6 +6868,27 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
       return GZC_ERR_WOULD_BLOCK;
     *event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
     event->version = GZC_PEER_EVENT_VERSION;
+    if ((test->mode == 22 || test->mode == 23) && test->ack_reads == 1) {
+      if (test->mode == 22) {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
+        event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
+        snprintf(event->payload.text_delta.stream_id,
+                 sizeof(event->payload.text_delta.stream_id), "%s", test->stream);
+        snprintf(event->payload.text_delta.text,
+                 sizeof(event->payload.text_delta.text), "before-ready");
+      } else {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+        event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+        snprintf(event->payload.eos.stream_id,
+                 sizeof(event->payload.eos.stream_id), "%s", test->stream);
+        event->payload.eos.has_error = true;
+        snprintf(event->payload.eos.error.code,
+                 sizeof(event->payload.eos.error.code), "INPUT_DENIED");
+      }
+      return GZC_OK;
+    }
+    if (test->mode == 23)
+      return GZC_ERR_WOULD_BLOCK;
     event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
     event->which_payload = gizclaw_events_v1_PeerEvent_audio_input_ready_tag;
     const bool wrong = test->mode == 0 && test->ack_reads == 8;
@@ -7194,6 +7215,12 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
       atomic_store(&test->turns_done, turn);
     }
   }
+  if (test->mode == 22 &&
+      event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA) {
+    assert(event->text_len == strlen("before-ready") &&
+           memcmp(event->text, "before-ready", event->text_len) == 0);
+    ++test->reply_text_ends;
+  }
   if (test->mode == 13 || test->mode == 14) {
     assert(event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA);
     assert(event->text_len == strlen("borrowed-wire-text"));
@@ -7475,7 +7502,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 22; ++mode) {
+  for (unsigned mode = 0; mode < 24; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -7635,7 +7662,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
-                  (mode >= 6 && mode <= 10) || mode == 19) &&
+                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22) &&
                  atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
@@ -7684,7 +7711,7 @@ static void test_conversation_public_audio_tasks(void) {
            ((mode == 1 || mode == 2 || (mode >= 11 && mode <= 14) || mode == 16 || mode == 21)
                 ? H2_PAL_ERR_CLOSED
             : mode == 5              ? H2_PAL_ERR_TIMEOUT
-            : mode == 6 || mode == 8 ? H2_PAL_ERR_IO
+            : mode == 6 || mode == 8 || mode == 23 ? H2_PAL_ERR_IO
                                      : H2_PAL_OK));
     assert(test.event_close_count == (mode == 12 || mode == 14 ? 1u : 0u));
     assert(service->stopping == (mode == 12 || mode == 14));
@@ -7716,7 +7743,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.audio_started == 2u && test.bos_attempts == 1u);
     }
     if (mode == 0 || mode == 3 || mode == 4 || mode == 6 || mode == 7 ||
-        mode == 9 || mode == 10 || mode == 17) {
+        mode == 9 || mode == 10 || mode == 17 || mode == 22) {
       assert(test.packets == 13 && atomic_load(&test.written) == 13 * 640);
       assert(test.audio_started == (mode == 3 || mode == 17 ? 0u : 1u));
       size_t nonzero = 0;
@@ -7735,6 +7762,10 @@ static void test_conversation_public_audio_tasks(void) {
              atomic_load(&test.bos) && atomic_load(&test.eos));
     if (mode == 0)
       assert(test.bos_attempts == 1 && test.ack_reads == 9);
+    if (mode == 22)
+      assert(test.bos_attempts == 1 && test.ack_reads == 2 && test.reply_text_ends == 1 && atomic_load(&test.input_ack));
+    if (mode == 23)
+      assert(atomic_load(&test.captured) == 0 && !atomic_load(&test.input_ack));
     if (mode == 21)
       assert(test.bos_attempts == 1 && atomic_load(&test.captured) == 0 &&
              !atomic_load(&test.input_ack) && atomic_load(&test.canceled));
