@@ -12,7 +12,7 @@ Launcher 提供已经初始化的 `h2_runtime_t`、真实 RegistrationToken、�
 
 一次 `h2_gizclaw_e2e_run()` 调用按固定顺序运行所有选中的独立 case。普通 case 失败不会阻止后续独立 case；取消会把尚未运行的 case 标为 `CANCELLED`。如果 Service 无法完成 stop/deinit，则保留 heap fixture，不再启动后续 case，返回 harness error 并保持全局 run guard。App-owned runner task 执行 case，调用方通过 Runtime Log 和同步 progress observer 接收进度。结果包含 terminal counts、首个失败、cleanup result、retained resource count 和注册返回的 RuntimeProfile。未清理的远端资源只按资源类型写入 redacted recovery ledger，不记录资源名称。每个选中 case 生成唯一 terminal record，runner 确认退出后才 join；已退出 runner 的 PAL handle 释放按 cleanup deadline 有界重试。返回 retained resources 非零时，调用方必须保留 Runtime、provider 和 config/user 的生命周期直至进程退出，不能在同一进程重跑。
 
-Fixture 的每个 actor 直接持有一个 `h2_gizclaw_service_t`，通过新 RPC 注册和清理；不再提供 direct client → Service 的转交入口。配置由 actor 持有直到 Service deinit，删除 Peer 必须收到有效确认，不能把连接关闭当作成功。清理阶段忽略用户停止信号，但仍受独立 cleanup deadline 限制。
+Fixture 的每个 actor 持有一个 `h2_gizclaw_service_t`。普通 Voice actor 同时持有连接作用域的 Session，通过 Session 注册并加载 catalog；其余底层 API case 仍通过 RPC 注册。配置由 actor 持有直到 Service deinit，删除 Peer 必须收到有效确认，不能把连接关闭当作成功。清理阶段忽略用户停止信号，但仍受独立 cleanup deadline 限制。
 
 Fixture 仅在注册 profile 非空、完整终止且与已有 actor 一致后发布 `registered`，此时记录同一 Service 上 init/start 的可用性断言。stop 后有界排空通知，拒绝超出 poll 批次的返回数量；排空成功才记录 stop 断言，deinit 成功才清除本地 handle 并记录 deinit 断言。任何阶段失败都保留必要的借用数据，不以重试成功覆盖先前失败的 case 终态。`service_coverage_test` 额外运行 11 种 Fixture 生命周期边界场景，正常场景只识别这四个入口、整体仍为 `valid=false`，失败场景不计入覆盖；不替代 Track、内存泄漏分析或真实网络验收。
 
@@ -67,7 +67,7 @@ ASR/Extract 同样使用共用流式传输，删除 Speech 专用 executor 和�
 
 AudioPlay 使用固定 audio-down task；Pixa 与 Group Audio 使用 data-down task，并通过 `output_write` 在调用方 poll 上下文逐块交付。AudioPlay 在 do 时登记音频下行 slot 并立即拒绝冲突；收到完整成功响应、验证长度与 EOS 后，只通知一次播放路径，后者投递完 PCM 或出错时发布一次完成结果。接收完成不等于 PCM 已交给 Track，更不等于扬声器已播放完。当前仍先保存完整压缩体再解码。`--download-stream-only` 是本地下载、一次性通知和在途取消/停止回归选择器，不连接 BJ。
 
-Workspace case 分别通过 req/resp 和同步 RPC 覆盖八个业务方法，共 24 个函数。两套接口使用不同临时工作区名称，创建后 get/list 读回，set_parameters 后确认工作区可用，activate 只提交 SET 并核对选中身份，再显式 reload 核对激活身份与 RUNNING 状态，删除后遍历列表确认缺失。只有确认完成才清除对应义务；失败保留 Fixture 中的精确名称。最后创建原名工作区供后续重连使用，Voice 准备只走正常创建/配置路径。
+Workspace case 分别通过 req/resp 和同步 RPC 覆盖八个业务方法，共 24 个函数。两套接口使用不同临时工作区名称，创建后 get/list 读回，set_parameters 后确认工作区可用，activate 只提交 SET 并核对选中身份，再显式 reload 核对激活身份与 RUNNING 状态，删除后遍历列表确认缺失。只有确认完成才清除对应义务；失败保留 Fixture 中的精确名称。最后创建原名工作区供后续重连使用，Voice 准备通过 Session 加载完整 catalog、选择 Workflow、确认并准备 Workspace。
 
 Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revision；列表和历史最多 32 页、每页 32 项，游标最多 255 字节。列表检查目标跨页唯一，历史只检查页内 ID 重复，不宣称跨页快照一致性。保留未知历史类型、可选文本和可选 activation workflow 字段。响应没有 input mode，不能把 set_parameters 的可用性断言当作 PTT/Realtime 行为证明，仍需 Voice E2E。本地边界场景与 `workspace_coverage_test` 验证错误响应、预算、未生效操作和清理标记；这些不是实际服务验收。
 
@@ -113,4 +113,4 @@ Debug 的 `req_create_debug_set` / `resp_parse_debug_set` 纳入 210 项审计�
 
 `h2_gizclaw_service_get_time_sync_status` 纳入 210 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。尚未插桩的真实场景继续报告缺失，不能用本地测试替代在线校时验收。
 
-Session 的 13 个公开操作纳入同一 fail-closed 审计，分别要求 catalog/Workspace 或 voice 用例中的真实调用与业务断言。库内 Session 测试覆盖状态、准备、并发等待和失败路径，但不代替真实服务端 Session 场景的覆盖证据。
+Session 的 13 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、释放和重连。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 210 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。

@@ -1349,3 +1349,21 @@ int main(int argc, char **argv) {
   test_call_sync(&runtime, &config);
   return 0;
 }
+
+/* This fixture test isolates the raw Service lane. Session orchestration is
+ * exercised with the real Session in the Voice test. */
+h2_pal_result_t h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config, h2_gizclaw_session_t **out) {
+  (void)config; (void)out; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+}
+h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session, const char *token, uint32_t timeout) {
+  (void)session; (void)token; (void)timeout; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+}
+h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session, h2_gizclaw_session_state_t *out) {
+  (void)session; (void)out; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+}
+h2_pal_result_t h2_gizclaw_session_close(h2_gizclaw_session_t *session) {
+  (void)session; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+}
+h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **session) {
+  (void)session; assert(false); return H2_PAL_ERR_UNSUPPORTED;
+}

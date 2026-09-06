@@ -494,6 +494,7 @@ cc_test(
         ":voice_case",
         "//libs/gizclaw",
         "//libs/pal",
+        "//libs/pal/providers/desktop/pal_core",
     ],
 )
 

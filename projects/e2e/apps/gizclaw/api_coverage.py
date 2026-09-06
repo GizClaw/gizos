@@ -110,7 +110,7 @@ def requirements():
                    "conversation_create conversation_release audio_start audio_end "
                    "cancel_pending").split():
         symbol = PREFIX + "session_" + method
-        case = "voice" if method.startswith(("conversation_", "audio_")) else "rpc/catalog-workspace"
+        case = "voice"
         rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
     return sorted(rules, key=lambda rule: rule.symbol)
 

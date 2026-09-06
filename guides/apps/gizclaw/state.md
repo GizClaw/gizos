@@ -33,7 +33,7 @@ Session 借用 Service、PAL 和配置中的 collection 字符串。准备操作
 
 ## 验证
 
-Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择复用、切换失败、Conversation 回调释放，以及关闭后迟到 catalog/activation 不提交。真实服务器和设备验收与这些自动测试分别记录。
+Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择复用、切换失败、Conversation 回调释放，以及关闭后迟到 catalog/activation 不提交。真实服务器和设备验收与这些自动测试分别记录。Portable E2E 的普通 Voice case 从连接注册开始使用 Session，并在 PTT、Realtime 和 route 释放边界验证公共快照；AMOLED 可通过 `H2_GIZCLAW_E2E_VOICE_ONLY` 单独运行该流程，见 [AMOLED Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
 ## 自动系统校时
 
