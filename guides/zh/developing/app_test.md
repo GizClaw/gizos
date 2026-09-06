@@ -448,6 +448,63 @@ example_subjects_publish(&adapter->state);
 operation 的 barrier 必须等 worker result 被 production loop 消费后再 snapshot；
 不能依靠固定 sleep。
 
+## Testing PAL
+
+`libs/app_test` 也提供独立于 execution driver 的 Testing PAL。它在 PAL API 边界替换输入、委托调用并记录证据，App 仍使用真实 Runtime。Testing PAL 不拥有 Runtime event queue、component state 或 App state；语义事件注入继续由 Runtime test control 负责。
+
+Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver：
+
+- `//libs/app_test:testing_audio`：真实／fake Audio PAL 的 PCM decorator。
+- `//libs/app_test:testing_pal`：根据 H106 Host 测试实际依赖提炼的确定性 fake PAL。
+
+### H106 对应能力
+
+| 能力 | 公共 Header | 控制与观测 |
+| --- | --- | --- |
+| Time | `h2_app_test_time.h` | 显式推进 monotonic/wall time、sleep 失败、overflow |
+| Preference | `h2_app_test_pref.h` | namespace/key 隔离，bool/i32/u32/string/blob，事务 commit，按 namespace 和修改 key 筛选 commit 故障 |
+| FS | `h2_app_test_fs.h` | 内存文件读写、seek/stat/remove/rename、短读、close/sync 故障 |
+| Wi-Fi / Settings | `h2_app_test_wifi.h` | scan 列表与过滤、连接请求、显式状态、保存／忘记网络 |
+| Modem | `h2_app_test_modem.h` | 状态输入、dial/answer/hangup 请求与失败 |
+| Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图 |
+| Display | `h2_app_test_display.h` | open/close、亮度值及失败；不绘制像素 |
+| Periph / Button / Input / PWM | `h2_app_test_periph.h` | 可配置 ID registry、按键状态、电量／温度、振动 duty |
+| Audio fake | `h2_app_test_audio_fake.h` | 无硬件 mic/speaker/track、音量、静音输入、输出字节、失败与 ownership |
+| Crypto fixture | `h2_app_test_crypto.h` | 显式随机字节序列和已知 X25519 keypair，供 identity 存取测试 |
+
+这些对象属于测试环境，不包含 H106 component ID、preference key、语音素材或业务 provider。`h2_app_test_fault_t` 为每项操作提供返回值、剩余失败次数和调用次数；零初始化默认成功，`remaining == UINT32_MAX` 表示持续注入。只有通过参数／状态校验并到达该操作的调用才计入对应 fault 计数。Preference 的 commit 计数只包含匹配 filter 的调用。
+
+简单对象由调用方持有，init 后其地址必须稳定；Preference、FS 和 Audio fake 借用 Memory PAL 分配内部资源，需要 deinit，未关闭的 handle 会阻止释放。
+
+### 执行与状态边界
+
+Fake PAL 是单线程测试对象。调用、fixture 配置和 evidence 读取必须串行；在同一个 libco executor 中运行 worker 时可以复用它们，native 多线程消费者需要外部同步。 Audio decorator 自身的并发约束见对应 public header。
+
+Task／Queue／Sync 复用 `//libs/pal/providers/libco`。把 Testing Time 作为 executor 的 `now_ms`／`time_source`，给 production Runtime 注入 **libco 的 Time PAL**，由测试根循环执行 `h2_app_test_time_advance()` 和 `h2_libco_schedule()`。Runtime 操作和 cleanup 中需要锁的部分必须在 executor task 内执行。Testing Time 自身的 sleep 只推进时钟，不调度任务，不能直接给 resident worker 用来代替可让出的 sleep。
+
+H106 Host 对 Timer、HTTP、WebRTC、NFC 等未实现能力继续选择 canonical unsupported，完整 E2E 对应路径保留真实 provider。H106 的 pairing/update/peer provider、业务 fixture、App observation 和 component mapper 仍属于产品，不进入公共 PAL。 Crypto fixture 不实现密码算法，不应作为真实连接的加密 provider。
+
+Wi-Fi connect 和 Modem call 成功只表示操作被接受，不自动生成 GOT_IP 或通话完成； scenario 明确配置后续 PAL status，并通过 Runtime test control 注入相应 event。 Power fake 记录 transition 意图，不重启 Host，不自动增加 boot_count。这样不会把一个成功的 API 返回值当成完整异步产品结果。
+
+Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取已提交数据。 commit 失败保留待提交修改供重试，close 放弃未提交修改。FS 仅模拟 exact-path regular file，目录操作不支持；所有容量和借用关系由 public header 定义。
+
+### Audio decorator 接线
+
+在 Runtime 初始化前，launcher 或测试环境用原 `config.audio` 创建 decorator，再把 `h2_app_test_audio_api()` 返回的 API 放入 `config.audio`。同一条接线可以用于 Memory adapter 的 reset，也可以用于运行完整生产 App 的 Desktop／真机 E2E。
+
+- PCM fixture 由调用方提供，不包含产品枚举、文件路径或业务语音素材。它使用
+  interleaved S16LE，显式声明采样率、通道数和每帧采样数，并与 delegate mic 格式匹配。
+- Mic start/stop 委托给底层；read 用零超时读取真实采集到 bounded scratch，立即
+  清零，再按注入的 monotonic Time PAL 推进 fixture。零等待时可返回 WOULD_BLOCK，
+  等待预算不足返回 TIMEOUT；EOF 后继续输出静音，直到 App 停止 mic。
+- 真实采集错误单独记录，不影响 fixture 数据；业务成功不能代替真实采集健康。
+- Speaker、volume 和 track 操作继续委托；返回的 track handle 也被包装，记录成功
+  write/drain/close、播放字节和 digest，并保留失败 close 的 ownership 供重试。
+- Fixture PCM 和底层 PAL 都是借用；fixture 只能在 mic 停止时更换。先停止 App
+  workers、关闭 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 provider。
+
+测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
+
 ## Memory Driver
 
 Host 测试入口：

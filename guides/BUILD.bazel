@@ -37,6 +37,8 @@ api_reference(
     }),
     deps = [
         "//libs/app_test",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/audio_mixer",
         "//libs/ble_wifi_config",
         "//libs/bleikcp",
