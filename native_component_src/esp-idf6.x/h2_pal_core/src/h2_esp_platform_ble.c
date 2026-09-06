@@ -1459,6 +1459,41 @@ static int h2_esp_ble_gatt_access_unlocked(
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+#if CONFIG_BT_NIMBLE_DYNAMIC_SERVICE
+static int h2_esp_ble_reserve_dynamic_gatt_capacity(void) {
+    /*
+     * NimBLE sizes the CCCD pool when the host starts, but connectable
+     * advertising still requires a free pool entry after dynamic registration.
+     * Reserve the PAL's full schema, including a CCCD for every possible
+     * characteristic. count_cfg also accounts for every connection and cache.
+     * These definitions are only counted, never registered or advertised.
+     */
+    const ble_uuid16_t uuid = BLE_UUID16_INIT(0xffff);
+    struct ble_gatt_chr_def characteristics[
+        H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE + 1u] = {0};
+    for (size_t i = 0u; i < H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE; ++i) {
+        characteristics[i].uuid = &uuid.u;
+        characteristics[i].access_cb = h2_esp_ble_gatt_access;
+        characteristics[i].flags = BLE_GATT_CHR_F_NOTIFY;
+    }
+    const struct ble_gatt_svc_def services[] = {
+        {
+            .type = BLE_GATT_SVC_TYPE_PRIMARY,
+            .uuid = &uuid.u,
+            .characteristics = characteristics,
+        },
+        {0},
+    };
+    for (size_t i = 0u; i < H2_ESP_BLE_MAX_GATT_SERVICES; ++i) {
+        int rc = ble_gatts_count_cfg(services);
+        if (rc != 0) {
+            return rc;
+        }
+    }
+    return 0;
+}
+#endif
+
 static h2_pal_result_t h2_esp_ble_start(h2_pal_ble_t *ble) {
     (void)ble;
     if (s_h2_esp_ble_started) {
@@ -1529,8 +1564,16 @@ static h2_pal_result_t h2_esp_ble_start(h2_pal_ble_t *ble) {
     if (rc != 0) {
         return h2_esp_ble_map_rc(rc);
     }
+#if CONFIG_BT_NIMBLE_DYNAMIC_SERVICE
+    rc = h2_esp_ble_reserve_dynamic_gatt_capacity();
+    if (rc != 0) {
+        return h2_esp_ble_map_rc(rc);
+    }
+#endif
     if (s_h2_esp_ble_gatt_configured) {
+#if !CONFIG_BT_NIMBLE_DYNAMIC_SERVICE
         rc = ble_gatts_count_cfg(s_h2_esp_ble_svc_defs);
+#endif
         if (rc == 0) {
             rc = ble_gatts_add_svcs(s_h2_esp_ble_svc_defs);
         }
@@ -1755,6 +1798,7 @@ static h2_pal_result_t h2_esp_ble_start_advertising(
     int ext_rc = ble_gap_ext_adv_configure(
         H2_ESP_BLE_EXT_ADV_INSTANCE, &ext_params, NULL, h2_esp_ble_gap_event, NULL);
     if (ext_rc != 0) {
+        ESP_LOGE(TAG, "advertising configure failed rc=%d", ext_rc);
         return h2_esp_ble_map_rc(ext_rc);
     }
     s_h2_esp_ble_ext_adv_configured = true;
