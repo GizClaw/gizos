@@ -39,3 +39,5 @@ bazel test //libs/lvgl:all
 ```
 
 Bazel package 编译 LVGL portable source，并排除 target-specific driver 和未启用 backend。测试验证 PAL allocator bridge、filesystem seek，以及 Display PAL 的尺寸、partial flush、stride、present 与重复 lifecycle。
+
+固件 `firmware` variant 与 Desktop 一样启用公共 LodePNG decoder，固件 source group 同时包含 decoder 和 LodePNG codec。Consumer 可以使用 RAW/RAW_ALPHA PNG image descriptor；下载、尺寸和体积限制、缓存生命周期仍由 consumer 管理。Feature define 由公共 library 传播，不能仅在最终 SDK 配置中启用而遗漏 Bazel archive 中的 codec。
