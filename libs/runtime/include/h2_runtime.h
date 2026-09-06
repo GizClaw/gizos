@@ -138,7 +138,8 @@ struct h2_runtime {
     const h2_pal_webrtc_api_t *webrtc;
     h2_pal_webrtc_track_t *webrtc_media_track;
     /** Connection policy: re-authenticate, wait for target GOT_IP, then save
-     * through wifi_settings. Zero timeout selects 15 seconds. Connect and
+     * through wifi_settings for nonzero timeout. Zero forwards the provider
+     * asynchronous connect without saving credentials. Connect and
      * disconnect are serialized (BUSY on overlap); call from a worker and
      * finish before deinit. Storage errors propagate, even if already online.
      * Scan, status, MAC and power-save keep the PAL provider semantics. */

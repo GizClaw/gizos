@@ -33,6 +33,8 @@ typedef struct h2_loader_app_client_config {
     const h2_pal_fs_api_t *fs;
     const h2_pal_http_api_t *http;
     const h2_pal_wifi_sta_api_t *wifi;
+    /** Set for Runtime proxies that own successful-connection persistence. */
+    int wifi_connect_persists;
     const h2_pal_wifi_settings_api_t *wifi_settings;
     h2_loader_digest_api_t digest;
     /** Optional shared owner lock for serial/BLE command execution. */

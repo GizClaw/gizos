@@ -33,6 +33,18 @@ static int disconnect(void *user) {
     return rc;
 }
 
+static int remaining_budget(h2_runtime_t *runtime, uint64_t started,
+                            uint32_t budget, uint32_t *remaining) {
+    uint64_t now = 0;
+    int rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
+    if (rc != H2_PAL_OK)
+        return rc;
+    if (now < started || now - started >= budget)
+        return H2_PAL_ERR_TIMEOUT;
+    *remaining = budget - (uint32_t)(now - started);
+    return H2_PAL_OK;
+}
+
 static int connect_and_save(h2_runtime_t *runtime,
                             const h2_pal_wifi_sta_config_t *config,
                             uint32_t timeout_ms) {
@@ -63,10 +75,17 @@ static int connect_and_save(h2_runtime_t *runtime,
         if (rc != H2_PAL_OK)
             return rc;
     }
-    rc = h2_pal_wifi_sta_connect(backend(runtime), config, budget);
+    uint32_t remaining = 0;
+    rc = remaining_budget(runtime, started, budget, &remaining);
+    if (rc != H2_PAL_OK)
+        return rc;
+    rc = h2_pal_wifi_sta_connect(backend(runtime), config, remaining);
     while (rc == H2_PAL_OK) {
         h2_pal_wifi_sta_status_t status = {0};
         rc = h2_pal_wifi_sta_get_status(backend(runtime), &status);
+        if (rc != H2_PAL_OK)
+            break;
+        rc = remaining_budget(runtime, started, budget, &remaining);
         if (rc != H2_PAL_OK)
             break;
         if (status.state == H2_PAL_WIFI_STA_STATE_GOT_IP && status.ip_valid &&
@@ -77,13 +96,6 @@ static int connect_and_save(h2_runtime_t *runtime,
         if (status.state == H2_PAL_WIFI_STA_STATE_FAILED ||
             status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)
             return H2_PAL_ERR_UNAVAILABLE;
-        uint64_t now = 0;
-        rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
-        if (rc != H2_PAL_OK)
-            break;
-        if (now < started || now - started >= budget)
-            return H2_PAL_ERR_TIMEOUT;
-        uint32_t remaining = budget - (uint32_t)(now - started);
         rc = h2_pal_time_sleep_ms(runtime->time, remaining < 20u ? remaining : 20u);
     }
     return rc;
@@ -97,7 +109,9 @@ static int connect(void *user, const h2_pal_wifi_sta_config_t *config,
         return rc;
     if (atomic_exchange(&runtime->private_state->wifi_connect_busy, true))
         return H2_PAL_ERR_BUSY;
-    rc = connect_and_save(runtime, config, timeout_ms);
+    rc = timeout_ms == 0u
+        ? h2_pal_wifi_sta_connect(backend(runtime), config, 0u)
+        : connect_and_save(runtime, config, timeout_ms);
     atomic_store(&runtime->private_state->wifi_connect_busy, false);
     return rc;
 }
@@ -124,7 +138,7 @@ h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime,
     h2_pal_wifi_sta_config_t config = {0};
     int rc = h2_pal_wifi_settings_get_saved_sta_config(runtime->wifi_settings, &config);
     if (rc == H2_PAL_OK)
-        rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &config, timeout_ms);
+        rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &config, timeout_ms ? timeout_ms : 15000u);
     memset(&config, 0, sizeof(config));
     return rc;
 }

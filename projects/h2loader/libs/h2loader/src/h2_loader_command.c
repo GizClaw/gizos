@@ -11,7 +11,6 @@
 #define H2_LOADER_STAGE_TMP_PATH "/dl/update.tar.zlib.tmp"
 #define H2_LOADER_STAGE_PATH "/dl/update.tar.zlib"
 #define H2_LOADER_STAGE_PREV_PATH "/dl/update.tar.zlib.prev"
-#define H2_LOADER_WIFI_SETTINGS_SETTLE_MS 250u
 #define H2_LOADER_WIFI_READY_POLL_MS 250u
 #define H2_LOADER_WIFI_READY_TIMEOUT_MS 30000u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT 16u
@@ -708,21 +707,35 @@ static int h2loader_wifi_command(
             printf("H2_LOADER_WIFI result=invalid_config code=%d\n", rc);
             return rc;
         }
-        if (self->config.wifi_settings != NULL) {
-            rc = h2_pal_wifi_settings_set_saved_sta_config(
-                self->config.wifi_settings,
-                &config);
-            if (rc != H2_PAL_OK) {
-                printf(
-                    "H2_LOADER_WIFI result=error code=%d step=settings\n",
-                    rc);
-                return rc;
+        uint64_t started = self->config.now_ms(self->config.clock_user);
+        rc = h2_pal_wifi_sta_connect(sta, &config, 15000u);
+        /* Pre-Runtime recovery consoles inject a raw PAL. They must also
+         * verify IP before saving; Runtime-backed consoles save in the proxy. */
+        while (rc == H2_PAL_OK && !self->config.wifi_connect_persists) {
+            memset(&status, 0, sizeof(status));
+            rc = h2_pal_wifi_sta_get_status(sta, &status);
+            if (rc != H2_PAL_OK) break;
+            uint64_t now = self->config.now_ms(self->config.clock_user);
+            if (now < started || now - started >= 15000u) {
+                rc = H2_PAL_ERR_TIMEOUT;
+                break;
             }
-            self->config.sleep_ms(
-                self->config.clock_user,
-                H2_LOADER_WIFI_SETTINGS_SETTLE_MS);
+            if (status.state == H2_PAL_WIFI_STA_STATE_GOT_IP && status.ip_valid &&
+                status.ssid_len == config.ssid_len &&
+                memcmp(status.ssid, config.ssid, config.ssid_len) == 0) {
+                rc = h2_pal_wifi_settings_set_saved_sta_config(
+                    self->config.wifi_settings, &config);
+                break;
+            }
+            if (status.state == H2_PAL_WIFI_STA_STATE_FAILED ||
+                status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED) {
+                rc = H2_PAL_ERR_UNAVAILABLE;
+                break;
+            }
+            uint32_t remaining = 15000u - (uint32_t)(now - started);
+            self->config.sleep_ms(self->config.clock_user,
+                                 remaining < 20u ? remaining : 20u);
         }
-        rc = h2_pal_wifi_sta_connect(sta, &config, 0u);
         if (rc != H2_PAL_OK) {
             memset(&status, 0, sizeof(status));
             if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
@@ -736,7 +749,7 @@ static int h2loader_wifi_command(
             }
             return rc;
         }
-        printf("H2_LOADER_WIFI result=connecting ssid=%s\n", config.ssid);
+        printf("H2_LOADER_WIFI result=connected ssid=%s\n", config.ssid);
         fflush(stdout);
         return H2_PAL_OK;
     }
