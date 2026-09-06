@@ -32,7 +32,7 @@ class WorkspaceCoverageTest(unittest.TestCase):
         self.assertEqual(observed, expected)
 
     def test_partial_success_is_not_coverage(self):
-        for failure, budget in ([(i, 0) for i in range(1, 54)] + [(0, i) for i in range(1, 27)]):
+        for failure, budget in ([(i, 0) for i in range(1, 59)] + [(0, i) for i in range(1, 30)]):
             with self.subTest(failure=failure, budget=budget):
                 self.assertEqual(self.audit_case("--emit-failure-evidence", str(failure), str(budget)), set())
 

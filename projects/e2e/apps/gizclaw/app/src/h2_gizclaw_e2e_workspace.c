@@ -326,10 +326,44 @@ static int history(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   }
   return proof(req, HISTORY, H2_PAL_ERR_NO_SPACE);
 }
+static int expect_missing(h2_gizclaw_e2e_fixture_t *f,
+                           h2_gizclaw_resp_storage_t *s,
+                           h2_gizclaw_e2e_actor_role_t role, bool req,
+                           uint64_t *id) {
+  if (!h2_gizclaw_e2e_fixture_has_time(f, TIMEOUT_MS))
+    return H2_PAL_ERR_TIMEOUT;
+  h2_gizclaw_service_t *service = f->actors[role].service;
+  h2_gizclaw_str_t name = h2_gizclaw_e2e_str(f->workspace_name);
+  h2_gizclaw_workspace_get_result_t out = {0};
+  s->used = 0u;
+  int rc;
+  if (req) {
+    h2_gizclaw_req_t *request = NULL;
+    rc = h2_gizclaw_req_create_workspace_get(service, (*id)++, name,
+                                             TIMEOUT_MS, &request);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_req_wait(request, TIMEOUT_MS);
+    h2_gizclaw_req_release(request);
+  } else {
+    rc = h2_gizclaw_rpc_workspace_get(service, name, TIMEOUT_MS, s, &out);
+  }
+  /* Absence is the expected outcome here; create/activate retain their
+   * normal failure evidence below. */
+  return evidence(req ? parses[GET] : rpcs[GET],
+                  "workspace_missing_before_create-assert",
+                  rc == H2_PAL_ERR_NOT_FOUND ? H2_PAL_OK
+                  : rc == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : rc);
+}
+
 static int create(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                   h2_gizclaw_e2e_actor_role_t role, bool req, uint64_t *id) {
   union response r;
-  int rc = call(f, s, role, req, CREATE, id, "", &r);
+  int rc = expect_missing(f, s, role, req, id);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = call(f, s, role, req, CREATE, id, "", &r);
   if (rc == H2_PAL_OK &&
       (!matches(f, s, &r.object) || r.object.collection == NULL ||
        strcmp(r.object.collection, "assistants") != 0))

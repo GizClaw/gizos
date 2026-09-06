@@ -2655,6 +2655,23 @@ typedef struct remote_error_hook {
   unsigned calls;
 } remote_error_hook_t;
 
+typedef struct remote_log_capture {
+  unsigned calls;
+  h2_pal_log_level_t level;
+  char message[256];
+} remote_log_capture_t;
+
+static int capture_remote_log(void *user, h2_pal_log_level_t level,
+                               const char *scope, const char *message) {
+  remote_log_capture_t *capture = user;
+  if (strcmp(scope, "gizclaw") == 0 && strstr(message, "stage=remote_") != NULL) {
+    ++capture->calls;
+    capture->level = level;
+    (void)snprintf(capture->message, sizeof(capture->message), "%s", message);
+  }
+  return H2_PAL_OK;
+}
+
 static void test_req_remote_error_mapping(void) {
   static const struct {
     bool has_error;
@@ -2690,6 +2707,10 @@ static void test_req_remote_error_mapping(void) {
   for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
+    remote_log_capture_t capture = {0};
+    static const h2_pal_log_vtable_t log_vtable = {.write = capture_remote_log};
+    const h2_pal_log_api_t log = {.user = &capture, .vtable = &log_vtable};
+    service->client_config.log = &log;
     test_contact_rpc_t mock = {
         .expected_method = H2_GIZCLAW_RPC_SERVER_INFO_GET,
         .has_error = cases[i].has_error,
@@ -2725,6 +2746,21 @@ static void test_req_remote_error_mapping(void) {
            cases[i].expected);
     assert(!profile.has_name && profile.name[0] == '\0');
     assert(mock.request_matches && mock.calls == 2);
+    if (cases[i].has_error && cases[i].transport == H2_PAL_OK) {
+      assert(capture.calls == 2u);
+      bool absent = cases[i].expected == H2_PAL_ERR_NOT_FOUND;
+      assert(capture.level == (absent ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR));
+      char expected[128];
+      (void)snprintf(expected, sizeof(expected), "method=%d rc=%d detail=%d ",
+                     (int)H2_GIZCLAW_RPC_SERVER_INFO_GET,
+                     (int)cases[i].expected, cases[i].code);
+      assert(strstr(capture.message, expected) != NULL);
+      assert(strstr(capture.message, absent ? "stage=remote_result "
+                                            : "stage=remote_error ") != NULL);
+      assert(strstr(capture.message, remote_message) == NULL);
+    } else {
+      assert(capture.calls == 0u);
+    }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     h2_gizclaw_async_rpc_test_set_ops(NULL);
