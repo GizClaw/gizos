@@ -334,6 +334,8 @@ cc_test(
     }),
     deps = [
         ":gizclaw_test_support",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )

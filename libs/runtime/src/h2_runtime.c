@@ -322,11 +322,13 @@ h2_pal_result_t h2_runtime_init(
     H2_RUNTIME_BIND_PROXY(wifi_ap);
     H2_RUNTIME_BIND_PROXY(wifi_csi);
     H2_RUNTIME_BIND_PROXY(wifi_settings);
+    h2_runtime_wifi_bind(runtime);
     H2_RUNTIME_BIND_PROXY(ble_host);
     H2_RUNTIME_BIND_PROXY(modem);
     H2_RUNTIME_BIND_PROXY(power);
     H2_RUNTIME_BIND_PROXY(display);
     H2_RUNTIME_BIND_PROXY(audio);
+    h2_runtime_audio_bind(runtime);
     H2_RUNTIME_BIND_PROXY(audio_decoder);
     H2_RUNTIME_BIND_PROXY(periph);
     H2_RUNTIME_BIND_PROXY(button);

@@ -16,6 +16,8 @@ cc_library(
     name = "runtime",
     srcs = [
         "src/h2_runtime.c",
+        "src/h2_runtime_audio.c",
+        "src/h2_runtime_wifi.c",
         "src/h2_runtime_component_mapping.c",
         "src/h2_runtime_custom_event.c",
         "src/h2_runtime_event.c",

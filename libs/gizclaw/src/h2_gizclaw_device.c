@@ -1,4 +1,5 @@
 #include "h2_gizclaw_device_internal.h"
+#include "h2_runtime.h"
 #include "h2_gizclaw_firmware.h"
 #include "h2_gizclaw_ogg_opus_internal.h"
 #include "h2_gizclaw_ota.h"
@@ -30,8 +31,6 @@ struct h2_gizclaw_device {
   atomic_uint generation;
   uint32_t worker_generation, sequence;
   bool playing, dirty;
-  bool volume_set, muted;
-  uint32_t volume;
   gizclaw_rpc_v1_AudioPlayerStatus status;
   gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistGetResponse *playlist;
   /* Large generated messages are heap-owned, not task stack allocations. */
@@ -321,13 +320,21 @@ static int status_reply(h2_gizclaw_device_t *d,
   reply.value.charging = facts.charging;
   reply.value.has_firmware_sha256 = facts.has_firmware_sha256;
   memcpy(reply.value.firmware_sha256, facts.firmware_sha256, 65);
-  uint32_t volume = 0;
-  if (h2_pal_audio_get_speaker_volume_percent(d->config.audio, &volume) ==
-      H2_PAL_OK) {
+  h2_runtime_system_audio_state_t audio_state = {0};
+  h2_runtime_t *runtime = d->service->config.runtime;
+  int audio_rc;
+  if (runtime && d->config.audio == runtime->audio) {
+    audio_rc = h2_runtime_system_state_audio(runtime, &audio_state);
+  } else {
+    audio_rc = h2_pal_audio_get_speaker_volume_percent(
+        d->config.audio, &audio_state.volume_percent);
+    audio_state.muted = audio_state.volume_percent == 0;
+  }
+  if (audio_rc == H2_PAL_OK) {
     reply.value.has_volume = true;
-    reply.value.volume = d->volume_set && d->muted ? d->volume : volume;
+    reply.value.volume = audio_state.volume_percent;
     reply.value.has_muted = true;
-    reply.value.muted = d->volume_set ? d->muted && volume == 0 : volume == 0;
+    reply.value.muted = audio_state.muted;
   }
   lock(d);
   reply.value.has_audioplayer = d->config.audio != NULL;
@@ -538,13 +545,11 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
                 &request) ||
         request.level < 0 || request.level > 100)
       return H2_PAL_ERR_INVALID_ARG;
-    int rc = h2_pal_audio_set_speaker_volume_percent(
-        d->config.audio, request.muted ? 0 : (uint32_t)request.level);
-    if (rc == H2_PAL_OK) {
-      d->volume_set = true;
-      d->volume = (uint32_t)request.level;
-      d->muted = request.muted;
-    }
+    h2_runtime_t *runtime = d->service->config.runtime;
+    int rc = runtime && d->config.audio == runtime->audio
+        ? h2_runtime_audio_set_volume(runtime, (uint32_t)request.level, request.muted)
+        : h2_pal_audio_set_speaker_volume_percent(
+              d->config.audio, request.muted ? 0 : (uint32_t)request.level);
     return rc == H2_PAL_OK ? status_reply(d, out) : rc;
   }
   if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY) {
@@ -1179,10 +1184,11 @@ static void device_worker(void *user) {
             d->config.user, d->sound, sound_url, sizeof(sound_url));
         if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url))
           (void)play_url(d, sound_url, d->sound_ms, false);
-      } else if (pending == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT)
-        (void)h2_pal_wifi_sta_connect(d->config.wifi, &d->wifi_config,
-                                      io_timeout(d));
-      else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
+      } else if (pending == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
+        int rc = h2_pal_wifi_sta_connect(d->config.wifi, &d->wifi_config,
+                                         io_timeout(d));
+        trace(d, "wifi_connect", pending, rc);
+      } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
         uint32_t remaining = d->delay_ms;
         while (remaining && !atomic_load(&d->stopping)) {
           uint32_t step = remaining > 20 ? 20 : remaining;
