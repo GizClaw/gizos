@@ -554,7 +554,7 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     gizclaw_rpc_v1_ClientDeviceSoundPlayRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceSoundPlayRequest_fields,
                 &request) ||
-        !request.sound[0] ||
+        !request.sound[0] || strlen(request.sound) >= sizeof(d->sound) ||
         (request.has_duration_ms &&
          (request.duration_ms <= 0 || request.duration_ms > 60000)))
       return H2_PAL_ERR_INVALID_ARG;
@@ -779,7 +779,7 @@ static void audio_download_worker(void *user) {
   download->done = true;
   unlock(d);
 }
-static int audio_stream_read(void *user, uint8_t *out, size_t capacity,
+static h2_pal_result_t audio_stream_read(void *user, uint8_t *out, size_t capacity,
                              size_t *out_len) {
   audio_download_t *download = user;
   h2_gizclaw_device_t *d = download->device;

@@ -2098,6 +2098,12 @@ static int device_wifi_status(void *user, h2_pal_wifi_sta_status_t *out) {
     .ip = {.ip4 = 0xc0000201}};
   return H2_PAL_OK;
 }
+static h2_pal_result_t device_resolve_sound(void *user, const char *name,
+    char *out_url, size_t capacity) {
+  (void)user; (void)name; (void)out_url; (void)capacity;
+  assert(!"uncompleted sound RPC must not reach the worker");
+  return H2_PAL_ERR_UNSUPPORTED;
+}
 static void test_device_provider_pal_and_player(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -2127,10 +2133,26 @@ static void test_device_provider_pal_and_player(void) {
   service->client_config.audio_buffer_bytes = 32;
   service->client_config.audio_prebuffer_bytes = 1;
   service->client_config.model = "fixture";
+  const h2_gizclaw_vtable_t supplemental = {.resolve_sound_url = device_resolve_sound};
+  service->client_config.vtable = &supplemental;
   assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   h2_gizclaw_rpc_provider_response_t response;
+  /* Bypass the generated encoder to exercise an overlong wire string. */
+  uint8_t overlong_sound[35] = {0x0a, 33};
+  memset(overlong_sound + 2, 's', 33);
+  assert(service->client_config.rpc_provider(service->client_config.rpc_provider_user,
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY,
+      (h2_gizclaw_rpc_bytes_t){overlong_sound, sizeof(overlong_sound)}, &response) == H2_PAL_OK);
+  assert(response.has_error && response.error_code == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(response.on_complete == NULL);
+  gizclaw_rpc_v1_ClientDeviceSoundPlayRequest sound = {0};
+  memset(sound.sound, 's', sizeof(sound.sound) - 1u);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY,
+      gizclaw_rpc_v1_ClientDeviceSoundPlayRequest_fields, &sound, &response) == 0);
+  assert(response.on_complete != NULL);
+  response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
   gizclaw_rpc_v1_ClientWifiStatusGetRequest wifi_request = {0};
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET,
     gizclaw_rpc_v1_ClientWifiStatusGetRequest_fields, &wifi_request, &response) == 0);

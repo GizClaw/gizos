@@ -43,7 +43,7 @@ typedef struct stream_input {
   const uint8_t *data;
   size_t length, offset;
 } stream_input_t;
-static int stream_read(void *user, uint8_t *out, size_t capacity, size_t *length) {
+static h2_pal_result_t stream_read(void *user, uint8_t *out, size_t capacity, size_t *length) {
   stream_input_t *input = user;
   *length = input->length - input->offset;
   if (*length > capacity) *length = capacity;
