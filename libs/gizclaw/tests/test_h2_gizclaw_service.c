@@ -6771,6 +6771,8 @@ typedef struct conversation_test {
   size_t packets;
   unsigned event_close_count, mode;
   unsigned bos_attempts, eos_attempts;
+  atomic_bool input_ack;
+  unsigned ack_reads;
   unsigned reply_events;
   unsigned reply_text_ends, transcript_text_ends;
   atomic_bool small_buffer_rejected;
@@ -6836,7 +6838,7 @@ static int conversation_test_send(void *user, gzc_event_stream_t *stream,
       assert(strcmp(test->stream, event->payload.bos.stream_id) == 0);
     snprintf(test->stream, sizeof(test->stream), "%s",
              event->payload.bos.stream_id);
-    if ((test->mode == 4 && test->bos_attempts <= 3) || test->mode == 5) {
+    if (test->mode == 4 && test->bos_attempts <= 3) {
       assert(atomic_load(&test->captured) == 0);
       return test->bos_attempts % 2 ? GZC_ERR_WOULD_BLOCK : GZC_ERR_TIMEOUT;
     }
@@ -6859,6 +6861,22 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
   conversation_test_t *test = user;
   (void)timeout;
   assert(stream == (gzc_event_stream_t *)test);
+  if (atomic_load(&test->bos) && !atomic_load(&test->input_ack)) {
+    assert(atomic_load(&test->captured) == 0 && test->pending_len == 0);
+    ++test->ack_reads;
+    if (test->mode == 5 || test->mode == 21 || (test->mode == 0 && test->ack_reads < 8))
+      return GZC_ERR_WOULD_BLOCK;
+    *event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+    event->version = GZC_PEER_EVENT_VERSION;
+    event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+    event->which_payload = gizclaw_events_v1_PeerEvent_audio_input_ready_tag;
+    const bool wrong = test->mode == 0 && test->ack_reads == 8;
+    snprintf(event->payload.audio_input_ready.stream_id,
+             sizeof(event->payload.audio_input_ready.stream_id), "%s",
+             wrong ? "old-stream" : test->stream);
+    if (!wrong) atomic_store(&test->input_ack, true);
+    return GZC_OK;
+  }
   if (test->mode == 20) {
     /* Realtime barge-in with all twelve first-burst packets already echoed:
      * 0 BOS turn-one, 1 TEXT_DELTA turn-one, 2 BOS turn-two (interrupts
@@ -7063,7 +7081,7 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
     test->loss_markers = 1u;
   }
   if (test->pending_len != 0) {
-    assert(atomic_load(&test->bos));
+    assert(atomic_load(&test->bos) && atomic_load(&test->input_ack));
     h2_pal_result_t rc = h2_gizclaw_service_media_write_opus(
         test->service, test->pending, test->pending_len);
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
@@ -7457,7 +7475,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 21; ++mode) {
+  for (unsigned mode = 0; mode < 22; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -7596,7 +7614,11 @@ static void test_conversation_public_audio_tasks(void) {
     unsigned hook_settle = 0u;
     for (unsigned spins = 0; spins < 4000 && !atomic_load(&test.done);
          ++spins) {
-      if (mode == 15 && atomic_load(&test.turns_done) == 1u &&
+      if (mode == 21 && atomic_load(&test.bos) && !input_ended) {
+        assert(atomic_load(&test.captured) == 0 && !atomic_load(&test.input_ack));
+        assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
+        input_ended = true;
+      } else if (mode == 15 && atomic_load(&test.turns_done) == 1u &&
           atomic_load(&test.captured) == 2560u && !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
@@ -7659,7 +7681,7 @@ static void test_conversation_public_audio_tasks(void) {
     }
     assert(atomic_load(&test.done));
     assert(test.result ==
-           ((mode == 1 || mode == 2 || (mode >= 11 && mode <= 14) || mode == 16)
+           ((mode == 1 || mode == 2 || (mode >= 11 && mode <= 14) || mode == 16 || mode == 21)
                 ? H2_PAL_ERR_CLOSED
             : mode == 5              ? H2_PAL_ERR_TIMEOUT
             : mode == 6 || mode == 8 ? H2_PAL_ERR_IO
@@ -7708,8 +7730,14 @@ static void test_conversation_public_audio_tasks(void) {
     if (mode == 7)
       assert(test.reply_events == 2);
     if (mode == 5)
-      assert(test.bos_attempts > 1 && atomic_load(&test.captured) == 0 &&
-             !atomic_load(&test.bos) && !atomic_load(&test.eos));
+      assert(test.bos_attempts == 1 && test.ack_reads > 0 &&
+             atomic_load(&test.captured) == 0 && !atomic_load(&test.input_ack) &&
+             atomic_load(&test.bos) && atomic_load(&test.eos));
+    if (mode == 0)
+      assert(test.bos_attempts == 1 && test.ack_reads == 9);
+    if (mode == 21)
+      assert(test.bos_attempts == 1 && atomic_load(&test.captured) == 0 &&
+             !atomic_load(&test.input_ack) && atomic_load(&test.canceled));
     if (mode == 10)
       assert(test.filler_callbacks == 8);
     if (mode == 18) {

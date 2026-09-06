@@ -43,6 +43,8 @@ request-scoped service DataChannel、长期 Packet/Event DataChannel 和 Opus RT
 Agent Event Stream 中的 BOS/EOS 是按 `stream_id` 划分的业务边界：
 
 - Client 开始一轮输入时上行发送 BOS，结束输入时发送 EOS。
+- BOS 发送成功只表示事件已交给 transport。Conversation 必须等待服务端 `AUDIO_INPUT_READY`，且确认的 `stream_id` 与当前输入完全一致，才放行本地 PCM 采集、编码和 Opus 上行；独立媒体通道不保证与 BOS 的处理顺序。
+- 已成功发送的 BOS 不重复发送；等待 READY 沿用输入建立的超时与取消语义。等待期间取消也发送取消 EOS；错误 stream、取消或提交后迟到的 READY 不会重新打开输入。READY 不绑定下行回复 stream，也不占用业务回复队列。
 - Server 将 Agent output chunk 中的 BeginOfStream/EndOfStream 转换为下行 BOS/EOS event。
 - 业务 EOS 不会关闭 Agent Event Stream DataChannel 或 Peer connection。
 - 同一 client 同时只允许一个 conversation 持有逻辑 lease；连续 conversation
