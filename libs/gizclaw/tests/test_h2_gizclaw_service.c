@@ -6242,6 +6242,7 @@ typedef struct speech_wire_test {
   atomic_uint callbacks;
   atomic_uint pacing_warnings;
   atomic_bool pause_write;
+  atomic_bool audio_started;
   unsigned writes;
   unsigned finishes;
   bool finished;
@@ -6325,6 +6326,12 @@ static int speech_test_result(h2_gizclaw_rpc_request_t *request,
   speech_wire_test_t *test = (speech_wire_test_t *)request;
   assert(pthread_equal(pthread_self(), test->network_thread));
   memset(out, 0, sizeof(*out));
+  /* A real server answers a Speech request only once it has seen input, and a
+   * caller that has not opened the microphone yet still owns the audio route.
+   * Without this gate the network task can settle the request between do and
+   * audio_start, detaching the route under the caller. */
+  if (!atomic_load(&test->audio_started))
+    return H2_PAL_ERR_WOULD_BLOCK;
   if (test->mode == 17u || test->mode == 18u) {
     if (atomic_load(&test->captures) < 2u ||
         test->response_stage >= (test->mode == 17u ? 1u : 2u))
@@ -6417,6 +6424,15 @@ static h2_pal_result_t speech_test_capture(void *user, uint8_t *pcm,
   atomic_fetch_add(&test->captures, 1u);
   return H2_PAL_OK;
 }
+/* Opening the microphone also releases the scripted server: see the gate in
+ * speech_test_result. */
+static h2_pal_result_t speech_audio_start(speech_wire_test_t *test) {
+  const h2_pal_result_t rc = h2_gizclaw_service_audio_start(test->service);
+  if (rc == H2_PAL_OK)
+    atomic_store(&test->audio_started, true);
+  return rc;
+}
+
 static void assert_conversation_route_conflict(h2_gizclaw_service_t *service) {
   const h2_pal_sync_api_t *sync = service->config.sync;
   assert(h2_gizclaw_service_pcm_readable_internal(service));
@@ -6534,7 +6550,7 @@ static void test_speech_managed_requests(void) {
       continue;
     }
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
-    assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+    assert(speech_audio_start(&test) == H2_PAL_OK);
     assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) ==
            H2_PAL_ERR_INVALID_STATE);
     if (mode == 13u) {
@@ -9138,6 +9154,7 @@ static void test_diagnostics_public_invalid_arguments(void) {
 
 typedef struct audio_interaction {
   h2_gizclaw_service_t *service;
+  speech_wire_test_t *wire;
   h2_gizclaw_req_t *request;
   atomic_uint phase;
   atomic_bool start;
@@ -9152,7 +9169,7 @@ static void *audio_request_task(void *user) {
   while (!atomic_load(&interaction->start))
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
-  assert(h2_gizclaw_service_audio_start(interaction->service) == H2_PAL_OK);
+  assert(speech_audio_start(interaction->wire) == H2_PAL_OK);
   atomic_store(&interaction->phase, 2u);
   interaction->result = h2_gizclaw_req_wait(interaction->request, 2000u);
   return NULL;
@@ -9186,7 +9203,8 @@ static void test_asr_from_owned_pcm_track(void) {
   assert(h2_gizclaw_req_create_speech_transcribe(service, 42u, &options, 2000u,
                                                  &request) == H2_PAL_OK);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-  audio_interaction_t interaction = {.service = service, .request = request};
+  audio_interaction_t interaction = {
+      .service = service, .wire = &wire, .request = request};
   pthread_t request_task;
   assert(pthread_create(&request_task, NULL, audio_request_task,
                         &interaction) == 0);
