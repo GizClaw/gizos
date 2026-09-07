@@ -40,6 +40,16 @@ typedef struct h2_gizclaw_vtable {
    * the next firmware must verify its identity and send SUCCEEDED telemetry
    * using the saved update_id. */
   h2_pal_result_t (*ota_activate)(void *user);
+  /** Optional non-blocking handoff for client.device.reboot. Called once on
+   * the device worker after the RPC response was sent, with the requested
+   * delay in milliseconds. The callback must only copy the request and post
+   * it to a product-owned execution context (for example a Runtime custom
+   * event) and return promptly: it must not sleep, block, or stop or destroy
+   * the Service inline. The product applies the delay, runs its orderly
+   * shutdown on its own owner and reboots. A returned error is logged as the
+   * action result; the library never falls back to the power PAL. When unset
+   * the library waits `delay_ms` on the worker and calls the power PAL. */
+  h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }

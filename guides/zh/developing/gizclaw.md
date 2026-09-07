@@ -79,6 +79,11 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
   RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
   回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。
+  `request_reboot` 是 `client.device.reboot` 的可选非阻塞交接：响应发出后在设备
+  task 上调用一次，带上请求的 delay_ms；回调只能复制请求并投递给产品自己的
+  执行上下文（如 Runtime custom event）后立即返回，不能 sleep、阻塞或在回调内
+  停止/销毁 Service。延时、有序关机和重启由产品 owner 执行；库不会回退到
+  power PAL。未设置时库在设备 task 上等待 delay_ms 后直接调用 power PAL。
 - OTA 使用明确的 `firmware_channel`，允许 RPC 覆盖 channel 并附带期望 SHA-256。
   库获取元数据并通过 PAL HTTP 下载；Stage backend 必须验证 package 的长度、
   SHA-256、board/target 和 manifest，验证通过才能发布 Stage。库上报 started、

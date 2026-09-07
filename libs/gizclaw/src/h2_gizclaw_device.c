@@ -578,8 +578,11 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     return rc;
   }
   if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
-    if (!d->config.power || !d->config.power->vtable ||
-        !d->config.power->vtable->reboot)
+    const bool product_reboot =
+        d->config.vtable && d->config.vtable->request_reboot;
+    if (!product_reboot &&
+        (!d->config.power || !d->config.power->vtable ||
+         !d->config.power->vtable->reboot))
       return H2_PAL_ERR_UNSUPPORTED;
     gizclaw_rpc_v1_ClientDeviceRebootRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceRebootRequest_fields,
@@ -1207,14 +1210,25 @@ static void device_worker(void *user) {
                                          io_timeout(d));
         trace(d, "wifi_connect", pending, rc);
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
-        uint32_t remaining = d->delay_ms;
-        while (remaining && !atomic_load(&d->stopping)) {
-          uint32_t step = remaining > 20 ? 20 : remaining;
-          (void)h2_pal_time_sleep_ms(d->config.time, step);
-          remaining -= step;
+        if (d->config.vtable && d->config.vtable->request_reboot) {
+          /* Non-blocking handoff: the product copies the request and owns
+           * the delay, its orderly shutdown and the reboot on its own
+           * owner. Nothing here waits for it. */
+          if (!atomic_load(&d->stopping)) {
+            const int handoff = d->config.vtable->request_reboot(
+                d->config.user, d->delay_ms);
+            trace(d, "reboot_handoff", pending, handoff);
+          }
+        } else {
+          uint32_t remaining = d->delay_ms;
+          while (remaining && !atomic_load(&d->stopping)) {
+            uint32_t step = remaining > 20 ? 20 : remaining;
+            (void)h2_pal_time_sleep_ms(d->config.time, step);
+            remaining -= step;
+          }
+          if (!atomic_load(&d->stopping))
+            (void)h2_pal_power_reboot(d->config.power, 0);
         }
-        if (!atomic_load(&d->stopping))
-          (void)h2_pal_power_reboot(d->config.power, 0);
       }
       lock(d);
       d->pending = 0;
@@ -1255,6 +1269,27 @@ static void device_worker(void *user) {
     } else if (h2_pal_time_sleep_ms(d->config.time, 20u) != H2_PAL_OK)
       break;
   }
+}
+
+h2_pal_result_t h2_gizclaw_device_set_product_internal(
+    h2_gizclaw_service_t *service, const h2_gizclaw_vtable_t *vtable,
+    const h2_pal_power_api_t *power) {
+  if (service == NULL || service->device == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  /* Only a quiescent device may be re-pointed: readers take no lock, so the
+   * caller must guarantee no inbound RPC is being served and the worker has
+   * no accepted action. The lock rules out a pending action; the RPC owner
+   * side is the caller's responsibility (test-only helper). */
+  lock(d);
+  if (d->pending != 0 || d->pending_ready) {
+    unlock(d);
+    return H2_PAL_ERR_BUSY;
+  }
+  d->config.vtable = vtable;
+  d->config.power = power;
+  unlock(d);
+  return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
