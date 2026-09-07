@@ -1103,6 +1103,53 @@ static h2_gizclaw_service_t *create_profile_service(test_env_t *env) {
   return service;
 }
 
+static void test_debug_get_request_paths(void) {
+  /* Wire: ServerGetRuntimeResponse.value (field 1) wrapping
+   * Runtime.debug_mode (field 6). */
+  const char *modes[] = {"off", "readonly", "fullcontrol", "future-mode"};
+  for (unsigned scenario = 0; scenario < 8; ++scenario) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    const char *mode = modes[scenario < 4 ? scenario : 1];
+    const size_t len = strlen(mode);
+    uint8_t wire[72] = {0x0a, (uint8_t)(len + 2), 0x32, (uint8_t)len};
+    memcpy(wire + 4, mode, len);
+    /* scenario 4: value present, no debug_mode stored yet -> empty mode. */
+    const uint8_t no_mode_wire[] = {0x0a, 0x00};
+    env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_GET;
+    env.expected_payload = NULL;
+    env.expected_payload_len = 0;
+    env.response_payload = scenario == 4 ? no_mode_wire : wire;
+    env.response_payload_len = scenario == 4 ? sizeof(no_mode_wire)
+                               : scenario == 5 ? 0 : len + 4;
+    env.rpc_remote_error = scenario == 6;
+    env.rpc_result = scenario == 7 ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+    h2_gizclaw_req_t *request = NULL;
+    assert(h2_gizclaw_req_create_debug_get(service, 1, 1234, &request) ==
+           H2_PAL_OK);
+    h2_gizclaw_debug_state_t state;
+    assert(h2_gizclaw_resp_parse_debug_get(request, &state) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(state.mode[0] == '\0');
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    int execution = scenario == 6 ? H2_GIZCLAW_ERR_REMOTE : env.rpc_result;
+    assert(h2_gizclaw_req_wait(request, 2000) == execution);
+    /* A get response never parses as a set response. */
+    assert(h2_gizclaw_resp_parse_debug_set(request, &state) ==
+           H2_PAL_ERR_INVALID_ARG);
+    int result = scenario == 5 ? H2_PAL_ERR_FORMAT : execution;
+    assert(h2_gizclaw_resp_parse_debug_get(request, &state) == result);
+    if (result == H2_PAL_OK && scenario != 4)
+      assert(strcmp(state.mode, mode) == 0);
+    else
+      assert(state.mode[0] == '\0');
+    h2_gizclaw_req_release(request);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
 static void test_debug_set_request_paths(void) {
   const char *modes[] = {"off", "readonly", "fullcontrol", "future-mode"};
   for (unsigned scenario = 0; scenario < 9; ++scenario) {
@@ -9552,6 +9599,7 @@ int main(int argc, char **argv) {
   test_asr_from_owned_pcm_track();
   test_owned_pcm_track_binding();
   test_debug_set_request_paths();
+  test_debug_get_request_paths();
   test_firmware_public_request_paths();
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();

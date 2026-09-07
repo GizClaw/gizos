@@ -26,6 +26,21 @@ h2_pal_result_t h2_gizclaw_req_create_debug_set(
 h2_pal_result_t h2_gizclaw_resp_parse_debug_set(
     const h2_gizclaw_req_t *request, h2_gizclaw_debug_state_t *out_state);
 
+/** Create server.runtime.get without network I/O. It reads the durable
+ * debug access mode the server currently holds for this device, so a UI can
+ * show the confirmed mode before the user changes it. Same managed request
+ * lifecycle as debug_set. */
+h2_pal_result_t h2_gizclaw_req_create_debug_get(h2_gizclaw_service_t *service,
+                                                uint64_t identity,
+                                                uint32_t timeout_ms,
+                                                h2_gizclaw_req_t **out_request);
+/** Copy the server's current debug mode from a successful server.runtime.get
+ * response. A server that has never stored a mode answers without one; that
+ * is a success with an empty `mode`. Pending, wrong-type, remote failure and
+ * malformed responses fail with an empty out_state. */
+h2_pal_result_t h2_gizclaw_resp_parse_debug_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_debug_state_t *out_state);
+
 #ifdef __cplusplus
 }
 #endif

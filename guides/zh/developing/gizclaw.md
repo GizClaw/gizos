@@ -119,6 +119,11 @@ private key。
 失败不能显示为已开启。响应保留未知 mode 文本，不能把未知值解释为
 `fullcontrol`。关闭使用同一个接口发送 `off`。
 
+`h2_gizclaw_req_create_debug_get()` 使用 `server.runtime.get` 读取服务端当前
+持久化的 debug mode（`Runtime.debug_mode`），供页面在用户改动前显示已确认的
+模式；服务端从未存过模式时响应成功但 `mode` 为空，页面不显示“当前”。解析用
+`resp_parse_debug_get`，生命周期与 debug_set 相同。
+
 ## 上游 API 同步
 
 `@h2_gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。Pet、Points 或其它 RPC schema 更新时，先把 `MODULE.bazel` 中 `h2_gizclaw_c_sdk` 的 Release archive URL、SRI integrity 与 `strip_prefix` 原子更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
