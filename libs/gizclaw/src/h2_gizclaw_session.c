@@ -2,6 +2,7 @@
 #include "h2_gizclaw_response_internal.h"
 #include "h2_runtime.h"
 
+#include <stdio.h>
 #include <string.h>
 
 struct h2_gizclaw_session {
@@ -325,6 +326,8 @@ static h2_pal_result_t finish(h2_gizclaw_session_t *s, h2_pal_result_t result,
   s->busy = false;
   (void)h2_pal_cond_broadcast(s->config.sync, s->progress);
   s->state.last_error = result;
+  s->state.error_code[0] = '\0';
+  s->state.retryable = false;
   if (stage == H2_GIZCLAW_SESSION_BLOCK_WORKSPACE) {
     if (s->state.registration != H2_GIZCLAW_SESSION_READY)
       stage = H2_GIZCLAW_SESSION_BLOCK_REGISTRATION;
@@ -741,6 +744,13 @@ conversation_event(void *user, h2_gizclaw_conversation_t *conversation,
   h2_pal_result_t rc = lock(s);
   if (rc != H2_PAL_OK)
     return rc;
+  if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR) {
+    snprintf(s->state.error_code, sizeof(s->state.error_code), "%s",
+             event->error_code != NULL ? event->error_code : "");
+    s->state.retryable = event->retryable;
+    s->state.last_error = H2_PAL_ERR_IO;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_CONVERSATION;
+  }
   s->state.conversation = event->kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR
                               ? H2_GIZCLAW_SESSION_CONVERSATION_FAILED
                               : H2_GIZCLAW_SESSION_CONVERSATION_ACTIVE;
@@ -765,6 +775,9 @@ static void conversation_complete(void *user,
                               ? H2_GIZCLAW_SESSION_CONVERSATION_COMPLETED
                               : H2_GIZCLAW_SESSION_CONVERSATION_FAILED;
   s->state.last_error = result->result;
+  memcpy(s->state.error_code, result->error_code, sizeof(s->state.error_code));
+  s->state.error_code[sizeof(s->state.error_code) - 1u] = '\0';
+  s->state.retryable = result->retryable;
   s->state.error_stage = result->result == H2_PAL_OK
                              ? H2_GIZCLAW_SESSION_BLOCK_NONE
                              : H2_GIZCLAW_SESSION_BLOCK_CONVERSATION;
@@ -825,6 +838,8 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
   s->busy = false;
   (void)h2_pal_cond_broadcast(s->config.sync, s->progress);
   s->state.last_error = rc;
+  s->state.error_code[0] = '\0';
+  s->state.retryable = false;
   s->state.error_stage = rc == H2_PAL_OK
                              ? H2_GIZCLAW_SESSION_BLOCK_NONE
                              : H2_GIZCLAW_SESSION_BLOCK_CONVERSATION;
@@ -885,8 +900,13 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
   if (rc == H2_PAL_OK) {
     s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_ACTIVE;
     s->state.conversation_input_open = start;
-    if (start)
+    if (start) {
       s->conversation_running = true;
+      s->state.last_error = H2_PAL_OK;
+      s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_NONE;
+      s->state.error_code[0] = '\0';
+      s->state.retryable = false;
+    }
     changed(s);
   }
   unlock(s);

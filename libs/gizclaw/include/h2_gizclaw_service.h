@@ -74,6 +74,11 @@ typedef struct h2_gizclaw_operation_result {
   uint64_t identity;
   h2_gizclaw_operation_terminal_kind_t terminal_kind;
   h2_pal_result_t result;
+  /** Original conversation terminal error code (wire limit: 64 bytes).
+   * Empty when no remote error was received. Owned by this result so it
+   * survives request teardown; result remains the PAL completion status. */
+  char error_code[65];
+  bool retryable;
 } h2_gizclaw_operation_result_t;
 
 /** Optional terminal hook dispatched at most once by service_poll(). The

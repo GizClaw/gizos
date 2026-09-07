@@ -59,6 +59,9 @@ typedef struct h2_gizclaw_session_state {
   h2_gizclaw_session_blocker_t blocking_reason;
   h2_gizclaw_session_blocker_t error_stage;
   h2_pal_result_t last_error;
+  /** Original remote conversation error; empty for local failures or success. */
+  char error_code[65];
+  bool retryable;
 } h2_gizclaw_session_state_t;
 
 /** Dependencies and collection strings are borrowed until destroy. One Session
