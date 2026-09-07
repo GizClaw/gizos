@@ -167,6 +167,15 @@ static void debug_fold(h2_gizclaw_service_t *service) {
   h2_gizclaw_req_release(request);
 }
 
+static void (*s_debug_publish_hook)(void *user);
+static void *s_debug_publish_hook_user;
+
+void h2_gizclaw_debug_test_set_publish_hook(void (*hook)(void *user),
+                                            void *user) {
+  s_debug_publish_hook = hook;
+  s_debug_publish_hook_user = user;
+}
+
 static h2_pal_result_t debug_start(h2_gizclaw_service_t *service, bool is_set,
                                    h2_gizclaw_str_t mode, uint32_t timeout_ms) {
   if (service == NULL)
@@ -192,6 +201,8 @@ static h2_pal_result_t debug_start(h2_gizclaw_service_t *service, bool is_set,
                                                &request);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (s_debug_publish_hook != NULL)
+    s_debug_publish_hook(s_debug_publish_hook_user);
   debug_lock(service);
   service->debug.starting = false;
   if (rc == H2_PAL_OK && (service->stopping || service->stopped)) {

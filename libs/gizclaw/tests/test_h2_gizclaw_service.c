@@ -1261,6 +1261,32 @@ static void test_debug_state_paths(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+/* Stop the Service from inside the starter's publish window. */
+static void debug_race_stop(void *user) {
+  h2_gizclaw_service_t *service = user;
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+}
+
+/* Service stop begins after req_do accepted the request but before
+ * debug_start published it: the starter must cancel and release the request
+ * itself, never publish it, and deinit must still succeed. */
+static void test_debug_start_stop_race(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_GET;
+  env.expected_payload = NULL;
+  env.expected_payload_len = 0;
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  atomic_store(&env.run_gate, false);
+  h2_gizclaw_debug_test_set_publish_hook(debug_race_stop, service);
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_ERR_CLOSED);
+  h2_gizclaw_debug_test_set_publish_hook(NULL, NULL);
+  h2_gizclaw_debug_snapshot_t snapshot;
+  assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+  assert(!snapshot.busy && !snapshot.known);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_debug_set_request_paths(void) {
   const char *modes[] = {"off", "readonly", "fullcontrol", "future-mode"};
   for (unsigned scenario = 0; scenario < 9; ++scenario) {
@@ -9712,6 +9738,7 @@ int main(int argc, char **argv) {
   test_debug_set_request_paths();
   test_debug_get_request_paths();
   test_debug_state_paths();
+  test_debug_start_stop_race();
   test_firmware_public_request_paths();
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();

@@ -379,6 +379,10 @@ h2_pal_result_t h2_gizclaw_service_submit_request_internal(
 
 /* Each distinct public parser uses a distinct static tag, even when two
  * requests share the same wire method (e.g. the two profile updates). */
+/** Test support: run `hook` between req_do and publication in debug_start,
+ * to force the start/stop interleaving. NULL disables it. */
+void h2_gizclaw_debug_test_set_publish_hook(void (*hook)(void *user),
+                                            void *user);
 /** Cancel and drop the library's in-flight debug request (service stop). */
 void h2_gizclaw_debug_stop_internal(h2_gizclaw_service_t *service);
 
