@@ -17,6 +17,8 @@ typedef struct h2_app_test_fault {
   h2_pal_result_t result;
   uint32_t remaining;
   uint32_t calls;
+  /** Successful calls before consuming the armed failures. */
+  uint32_t skip;
 } h2_app_test_fault_t;
 
 /** Record one attempt and consume an armed failure, otherwise return OK. */
@@ -24,6 +26,10 @@ static inline h2_pal_result_t
 h2_app_test_fault_take(h2_app_test_fault_t *fault) {
   if (fault->calls != UINT32_MAX)
     ++fault->calls;
+  if (fault->skip != 0u) {
+    --fault->skip;
+    return H2_PAL_OK;
+  }
   if (fault->remaining == 0u)
     return H2_PAL_OK;
   if (fault->remaining != UINT32_MAX)

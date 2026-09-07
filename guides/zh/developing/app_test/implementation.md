@@ -83,6 +83,8 @@ Testing Time 的 sleep 仅推进虚拟时钟，不调度其他 task。生产 Run
 
 Audio decorator 借用 delegate、Time、Memory 和 PCM，mic lifecycle 委托给底层，采集 scratch 读取后清零，再按 monotonic time 返回 fixture PCM；EOF 后输出静音。物理采集错误单独观测，不覆盖 fixture 的业务输入。Evidence 支持并发读取，但多字段不是原子快照。Mic lifecycle/read 串行，speaker lifecycle 串行，每条 track 独立串行，销毁前所有调用者 quiescent。
 
+Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
+
 ### 失败和 cleanup
 
 Fault 在有效调用到达对应操作时计数，零初始化默认成功；持续失败和有界失败均可配置。Preference commit filter 仅统计匹配 namespace/key 的调用。Wi-Fi connect 和 Modem call 不自动生成完成事件，Power transition 不重启 Host 或增加 boot count，Crypto fixture 不提供真实密码算法。
@@ -285,3 +287,10 @@ Adopter至少覆盖：
 - deterministic PAL/provider worker result；
 - 完整 registry 重复执行；
 - 不把 Host 证据描述成 device/render/audio/network acceptance。
+
+
+GizClaw E2E 的公共支撑新增 `h2_app_test_mem`、`h2_app_test_task`、`h2_app_test_sync`、`h2_app_test_webrtc`，对应同名 public header 与 `src/pal/` 实现，归属 `testing_pal`。Memory 对每个分配维护对齐头和存活链表；失败的 realloc 保留旧块。Task/Sync 只验证串行生命周期，生产并发继续用真实或 libco PAL。Testing Time 可在单调读之后显式步进，成功 sleep 后可通知借用的场景观察函数；故障 helper 支持跳过指定次数后再注入。
+
+WebRTC decorator 每个实例拥有自己的 peer/channel wrapper，无全局实例。每次成功 poll 返回可释放的包装事件，释放时把原始事件完整交还 delegate；callback 只同步借用事件。每个 peer 最多保留 16 个不同 channel handle，直到 peer close。活动 peer 或未释放 event 阻止 decorator destroy。调用方串行访问同一 peer 及其 channel，释放事件后再关闭 peer；不同 peer 的观察 callback 可并发，需要 consumer 自行同步。
+
+Audio decorator 支持 NULL fixture 的仅播放模式：不暴露 mic，直至安装有效 fixture。成功的 S16LE write 记录原子最大幅值（含 -32768），字节数与 digest 保持原语义。Audio fake 可借用 `playback_time`，成功写入按 PCM 时长向上取整等待；失败不记录已播放字节。GizClaw Device 的 PAL 销毁 hook 在所有 actor 停止后执行，保留 stop/close 失败的所有权。

@@ -1,3 +1,5 @@
+#include "h2_app_test_mem.h"
+#include "h2_app_test_time.h"
 #include "h2_gizclaw_e2e_firmware.h"
 #ifdef NDEBUG
 #undef NDEBUG
@@ -8,33 +10,11 @@
 
 /* Run the production firmware case with API/HTTP boundary doubles, not a
  * server. The real SHA-256 implementation must verify the downloaded bytes. */
-static unsigned mode, live, releases, cancels, http_calls, response_frees;
+static unsigned mode, releases, cancels, http_calls, response_frees;
 static unsigned budgets, creates, rpcs, assertions;
 static int request_token, service_token;
-static void *allocate(void *user, size_t len) {
-  (void)user;
-  if (mode == 9)
-    return NULL;
-  void *p = malloc(len);
-  assert(p != NULL);
-  ++live;
-  return p;
-}
-static void release(void *user, void *p) {
-  (void)user;
-  assert(live > 0);
-  --live;
-  free(p);
-}
-static const h2_pal_mem_vtable_t mem_vt = {.alloc = allocate, .free = release};
-static const h2_pal_mem_api_t mem = {.vtable = &mem_vt};
-static int now(void *user, uint64_t *out) {
-  (void)user;
-  *out = 100;
-  return H2_PAL_OK;
-}
-static const h2_pal_time_vtable_t time_vt = {.get_monotonic_ms = now};
-static const h2_pal_time_api_t clock_api = {.vtable = &time_vt};
+static h2_app_test_mem_t allocator;
+static h2_app_test_time_t clock;
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f != NULL && ms == 15000);
@@ -141,20 +121,23 @@ static const h2_pal_http_vtable_t http_vt = {.request = http_request,
 static const h2_pal_http_api_t http = {.vtable = &http_vt};
 int main(void) {
   for (mode = 0; mode < 20; ++mode) {
-    live = releases = cancels = http_calls = response_frees = 0;
+    h2_app_test_mem_init(&allocator, NULL);
+    allocator.fail_at = mode == 9 ? 1u : 0u;
+    h2_app_test_time_init(&clock, 100u);
+    allocator.live_blocks = releases = cancels = http_calls = response_frees = 0;
     budgets = creates = rpcs = assertions = 0;
     h2_gizclaw_e2e_config_t config = {0};
     h2_gizclaw_e2e_fixture_t fixture = {.config = &config,
-                                        .allocator = &mem,
+                                        .allocator = &allocator.api,
                                         .http = &http,
-                                        .time = &clock_api,
+                                        .time = &clock.api,
                                         .deadline_ms = 100000,
                                         .cancel_requested = mode == 8};
     fixture.actors[H2_GIZCLAW_E2E_OWNER].service =
         (h2_gizclaw_service_t *)&service_token;
     int rc = h2_gizclaw_e2e_run_firmware(&fixture);
     assert((rc == H2_PAL_OK) == (mode == 0));
-    assert(live == 0 && response_frees == http_calls);
+    assert(allocator.live_blocks == 0 && response_frees == http_calls);
     assert(releases == (mode == 10 || mode == 12 ? 0u : 1u));
     assert(cancels == (mode >= 13 && mode <= 15 ? 1u : 0u));
     if (mode == 0)

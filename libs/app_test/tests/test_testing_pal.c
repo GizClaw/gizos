@@ -14,13 +14,13 @@
 #include <string.h>
 #define OK(x) assert((x) == H2_PAL_OK)
 #define FAIL_ONCE(field)                                                       \
-  ((field) = (h2_app_test_fault_t){H2_PAL_ERR_IO, 1u, 0u})
+  ((field) = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u, .calls = 0u})
 
 static void test_time(void) {
   h2_app_test_time_t t;
   h2_app_test_time_init(&t, 100u);
   uint64_t n = 0;
-  assert(h2_pal_time_get_wall_ms(&t.api, &n) == H2_PAL_ERR_UNAVAILABLE);
+  assert(h2_pal_time_get_wall_ms(&t.api, &n) == H2_PAL_TIME_ERR_UNCALIBRATED);
   OK(h2_pal_time_set_wall_ms(&t.api, 1000u));
   OK(h2_pal_time_sleep_ms(&t.api, 20u));
   OK(h2_pal_time_get_monotonic_us(&t.api, &n));

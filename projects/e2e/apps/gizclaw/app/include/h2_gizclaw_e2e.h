@@ -82,6 +82,10 @@ typedef struct h2_gizclaw_e2e_config {
   const char *device_audio_url;
   /** Forward the device case PCM sink to runtime.audio for audible testing. */
   bool device_real_audio;
+  /** Borrowed Audio PAL for Voice capture health. NULL selects the public
+   * Testing Audio fake. The App decorates it with the supplied PCM fixture;
+   * physical samples are discarded. Must support 16 kHz mono S16LE capture. */
+  const h2_pal_audio_api_t *voice_audio;
   const uint8_t *voice_pcm_s16le_16khz_mono;
   size_t voice_pcm_len;
   uint32_t suites;

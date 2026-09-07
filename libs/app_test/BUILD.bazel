@@ -11,11 +11,15 @@ cc_library(
         "src/pal/h2_app_test_crypto.c",
         "src/pal/h2_app_test_display.c",
         "src/pal/h2_app_test_fs.c",
+        "src/pal/h2_app_test_mem.c",
         "src/pal/h2_app_test_modem.c",
         "src/pal/h2_app_test_periph.c",
         "src/pal/h2_app_test_power.c",
         "src/pal/h2_app_test_pref.c",
+        "src/pal/h2_app_test_sync.c",
+        "src/pal/h2_app_test_task.c",
         "src/pal/h2_app_test_time.c",
+        "src/pal/h2_app_test_webrtc.c",
         "src/pal/h2_app_test_wifi.c",
     ],
     hdrs = [
@@ -24,11 +28,15 @@ cc_library(
         "include/h2_app_test_display.h",
         "include/h2_app_test_fault.h",
         "include/h2_app_test_fs.h",
+        "include/h2_app_test_mem.h",
         "include/h2_app_test_modem.h",
         "include/h2_app_test_periph.h",
         "include/h2_app_test_power.h",
         "include/h2_app_test_pref.h",
+        "include/h2_app_test_sync.h",
+        "include/h2_app_test_task.h",
         "include/h2_app_test_time.h",
+        "include/h2_app_test_webrtc.h",
         "include/h2_app_test_wifi.h",
     ],
     conlyopts = H2_C11_OPTS,
@@ -36,6 +44,26 @@ cc_library(
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
     deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "testing_support_test",
+    srcs = [
+        "tests/test_testing_support.c",
+        "tests/testing_pal_support.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":testing_audio",
+        ":testing_pal",
+    ],
 )
 
 cc_test(

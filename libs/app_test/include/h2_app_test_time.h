@@ -17,6 +17,11 @@ typedef struct h2_app_test_time {
   h2_pal_time_wall_status_t wall_status;
   h2_app_test_fault_t read, sleep, set_wall;
   uint32_t last_sleep_ms;
+  /** Optional deterministic progress after a successful monotonic read. */
+  uint32_t advance_per_read_ms;
+  /** Optional borrowed observer, invoked after a successful sleep advance. */
+  void (*on_sleep)(void *user, uint32_t ms);
+  void *sleep_user;
 } h2_app_test_time_t;
 /** Initialize caller storage; NULL is a no-op. No allocation or destroy needed.
  */

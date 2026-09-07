@@ -183,7 +183,7 @@ int main(void) {
   assert(h2_libco_create(&executor_config, &e.executor) == H2_LIBCO_OK);
   h2_runtime_config_t config = runtime_config(&e);
   OK(h2_runtime_init(&config, &e.runtime));
-  e.pref.commit = (h2_app_test_fault_t){H2_PAL_ERR_IO, 1u, 0u};
+  e.pref.commit = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u, .calls = 0u};
   h2_pal_task_t *task = NULL;
   h2_pal_task_options_t options = {.name = "test/settings",
                                    .min_stack_size = 65536u};

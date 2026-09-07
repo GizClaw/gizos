@@ -143,6 +143,7 @@ static void run_e2e(void *raw) {
   const h2_gizclaw_e2e_config_t app_config = {
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
+      .voice_audio = runner->runtime->audio,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),

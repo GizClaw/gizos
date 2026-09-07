@@ -3,6 +3,8 @@
 
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2_gizclaw.h"
+#include "h2_app_test_audio.h"
+#include "h2_app_test_audio_fake.h"
 #include "h2_gizclaw_e2e.h"
 
 #include <stdatomic.h>
@@ -48,6 +50,9 @@ typedef struct h2_gizclaw_e2e_speed_hooks {
 typedef struct h2_gizclaw_e2e_fixture {
   h2_runtime_t *runtime;
   const h2_pal_audio_api_t *device_audio;
+  h2_app_test_audio_t *device_audio_wrapper;
+  h2_app_test_audio_fake_t device_audio_fake;
+  int (*device_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
   const h2_gizclaw_vtable_t *device_vtable;
   const h2_gizclaw_e2e_config_t *config;
   const h2_pal_mem_api_t *allocator;
@@ -75,6 +80,12 @@ typedef struct h2_gizclaw_e2e_fixture {
   size_t pcm_len;
   /* Owned by the heap fixture, including after a failed Track unset. */
   h2_gizclaw_track_t *speech_track;
+  h2_app_test_audio_t *speech_audio;
+  h2_app_test_audio_fake_t speech_audio_fake;
+  uint8_t speech_pending[640];
+  size_t speech_pending_bytes;
+  bool speech_mic_started;
+  int (*speech_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
   atomic_size_t speech_offset;
   bool speech_track_bound;
   /* A case may retain borrowed Track/hook state through failed teardown. */

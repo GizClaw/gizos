@@ -3,6 +3,7 @@
 #include "h2/pal/hal/h2_pal_audio.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2_app_test_fault.h"
+#include "h2/pal/os/h2_pal_time.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +17,10 @@ extern "C" {
 typedef struct h2_app_test_audio_fake {
   h2_pal_audio_api_t api;
   const h2_pal_mem_api_t *mem;
+  /** Optional borrowed clock configured before use. Successful track writes
+   * sleep for their PCM duration (rounded up); NULL consumes without waiting.
+   * Use a yielding/real Time PAL with production playback workers. */
+  const h2_pal_time_api_t *playback_time;
   void *implementation;
   h2_audio_info_t info;
   bool mic_active, speaker_active;

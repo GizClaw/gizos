@@ -1,4 +1,6 @@
 #include "h2_gizclaw_e2e_voice.h"
+#include "h2_app_test_audio.h"
+#include "h2_app_test_audio_fake.h"
 
 #include <inttypes.h>
 #include <stdatomic.h>
@@ -32,8 +34,14 @@ typedef struct voice_state {
   uint64_t speaker_next_ms;
   bool mic_write_reported, speaker_read_reported;
   bool replacement_bound;
-  bool bound, realtime, capture_clock_started;
-  uint64_t capture_started_ms, emitted_bytes;
+  bool bound, realtime;
+  h2_app_test_audio_fake_t fake_audio;
+  h2_app_test_audio_t *audio_wrapper;
+  h2_audio_pcm_format_t capture_format;
+  bool mic_started;
+  uint8_t capture_buffer[H2_APP_TEST_AUDIO_SCRATCH_MAX + FRAME_BYTES];
+  size_t capture_size, capture_offset;
+  uint64_t capture_next_restart_ms, delivery_next_ms;
   size_t read_offset;
   unsigned read_round;
   atomic_uint clips_allowed;
@@ -118,6 +126,21 @@ static int step(voice_state_t *state) {
   return rc;
 }
 
+static void capture_enable(voice_state_t *state, bool enabled) {
+  atomic_store(&state->capture_enabled, enabled);
+  h2_app_test_audio_set_capture_active(state->audio_wrapper, enabled);
+}
+
+static int rewind_capture(voice_state_t *state) {
+  h2_app_test_audio_set_capture_active(state->audio_wrapper, false);
+  const h2_app_test_audio_fixture_t pcm = {
+      state->fixture->pcm, state->fixture->pcm_len, state->capture_format};
+  int rc = h2_app_test_audio_set_fixture(state->audio_wrapper, &pcm);
+  if (rc == H2_PAL_OK)
+    h2_app_test_audio_set_capture_active(state->audio_wrapper, true);
+  return rc;
+}
+
 static h2_pal_result_t read_pcm(void *user, uint8_t *out, size_t capacity,
                                 size_t *out_len) {
   voice_state_t *state = user;
@@ -127,45 +150,70 @@ static h2_pal_result_t read_pcm(void *user, uint8_t *out, size_t capacity,
   atomic_fetch_add(&state->read_attempts, 1u);
   if (!atomic_load(&state->capture_enabled))
     return H2_PAL_ERR_WOULD_BLOCK;
-  uint64_t now = 0u;
-  int rc = clock_now(state, &now);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (!state->capture_clock_started) {
-    state->capture_clock_started = true;
-    state->capture_started_ms = now;
+  const h2_pal_audio_api_t *audio = h2_app_test_audio_api(state->audio_wrapper);
+  if (!state->mic_started) {
+    int rc = h2_pal_audio_start_mic(audio);
+    if (rc != H2_PAL_OK)
+      return rc;
+    state->mic_started = true;
   }
-  if (now < state->capture_started_ms)
-    return H2_PAL_ERR_INVALID_STATE;
-  /* Pace actual PCM and VAD silence at 16 kHz mono, not CPU speed. */
-  const uint64_t due_ms = state->emitted_bytes / 32u;
-  if (now - state->capture_started_ms < due_ms)
-    return H2_PAL_ERR_WOULD_BLOCK;
   if (state->read_offset == state->fixture->pcm_len &&
+      state->capture_offset == state->capture_size &&
       state->read_round + 1u < atomic_load(&state->clips_allowed)) {
+    uint64_t now;
+    int rc = clock_now(state, &now);
+    if (rc != H2_PAL_OK)
+      return rc;
+    if (now < state->capture_next_restart_ms)
+      return H2_PAL_ERR_WOULD_BLOCK;
+    rc = rewind_capture(state);
+    if (rc != H2_PAL_OK)
+      return rc;
     state->read_offset = 0u;
     ++state->read_round;
   }
+  if (!state->realtime && state->read_offset == state->fixture->pcm_len)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  uint64_t now;
+  int rc = clock_now(state, &now);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (now < state->delivery_next_ms)
+    return H2_PAL_ERR_WOULD_BLOCK;
+  const size_t voice_left = state->fixture->pcm_len - state->read_offset;
   size_t len = capacity < FRAME_BYTES ? capacity : FRAME_BYTES;
   len &= ~(size_t)1u;
-  if (state->read_offset < state->fixture->pcm_len) {
-    const size_t left = state->fixture->pcm_len - state->read_offset;
-    if (len > left)
-      len = left;
-    memcpy(out, state->fixture->pcm + state->read_offset, len);
-    state->read_offset += len;
-    state->mic_voice_len = len;
-  } else if (state->realtime) {
-    /* Keep RTP alive during model processing. Only the server chooses VAD
-     * turn boundaries; the test does not send an EOS per utterance. */
-    memset(out, 0, len);
-    state->mic_voice_len = 0u;
-  } else {
-    return H2_PAL_ERR_WOULD_BLOCK;
+  if (!state->realtime && len > voice_left)
+    len = voice_left;
+  while (state->capture_size - state->capture_offset < len) {
+    const size_t left = state->capture_size - state->capture_offset;
+    memmove(state->capture_buffer, state->capture_buffer + state->capture_offset, left);
+    state->capture_offset = 0u;
+    state->capture_size = left;
+    h2_audio_frame_t frame = h2_audio_frame_for_buffer(
+        state->capture_buffer + left, sizeof(state->capture_buffer) - left,
+        state->capture_format);
+    rc = h2_pal_audio_mic_read(audio, &frame, 0u);
+    if (rc != H2_PAL_OK)
+      return rc;
+    state->capture_size += frame.bytes;
+    rc = clock_now(state, &now);
+    if (rc != H2_PAL_OK)
+      return rc;
+    uint64_t interval = ((uint64_t)state->capture_format.frame_samples_per_channel * 1000u + 15999u) / 16000u;
+    if (now > UINT64_MAX - interval)
+      return H2_PAL_ERR_NO_SPACE;
+    state->capture_next_restart_ms = now + interval;
   }
-  /* Do not catch up a delayed pump by flooding multiple frames. */
-  state->capture_started_ms = now - due_ms;
-  state->emitted_bytes += len;
+  /* Reframe the board's capture quantum (AMOLED: 512 samples) into the
+   * GizClaw 320-sample uplink without bursting buffered frames after a stall. */
+  if (now > UINT64_MAX - (len + 31u) / 32u)
+    return H2_PAL_ERR_NO_SPACE;
+  state->delivery_next_ms = now + (len + 31u) / 32u;
+  state->mic_voice_len = len < voice_left ? len : voice_left;
+  memcpy(out, state->capture_buffer + state->capture_offset, len);
+  state->capture_offset += len;
+  state->read_offset += state->mic_voice_len;
   *out_len = len;
   return H2_PAL_OK;
 }
@@ -385,8 +433,9 @@ static void on_complete(void *user, h2_gizclaw_conversation_t *conversation,
 
 static void reset_capture(voice_state_t *state, bool realtime) {
   state->realtime = realtime;
-  state->capture_clock_started = false;
-  state->emitted_bytes = state->read_offset = state->read_round = 0u;
+  state->read_offset = state->read_round = 0u;
+  state->capture_size = state->capture_offset = 0u;
+  state->delivery_next_ms = 0u;
   state->mic_pending_len = state->mic_voice_len = 0u;
   state->round_text_seen = state->round_text_done = state->round_audio_started =
       false;
@@ -398,7 +447,7 @@ static void reset_capture(voice_state_t *state, bool realtime) {
   atomic_store(&state->hook_error, H2_PAL_OK);
   atomic_store(&state->completions, 0u);
   atomic_store(&state->rounds, 0u);
-  atomic_store(&state->capture_enabled, true);
+  capture_enable(state, true);
 }
 
 static h2_gizclaw_session_t *voice_session(voice_state_t *state) {
@@ -416,6 +465,9 @@ static int session_input_state(voice_state_t *state, bool open) {
 }
 
 static int begin(voice_state_t *state) {
+  int capture_rc = rewind_capture(state);
+  if (capture_rc != H2_PAL_OK)
+    return capture_rc;
   ++state->generation;
   atomic_store(&state->active, true);
   h2_gizclaw_session_t *session = voice_session(state);
@@ -439,7 +491,7 @@ static int end_input(voice_state_t *state) {
   if (rc == H2_PAL_OK && session != NULL)
     rc = session_input_state(state, false);
   if (rc == H2_PAL_OK)
-    atomic_store(&state->capture_enabled, false);
+    capture_enable(state, false);
   return rc;
 }
 
@@ -528,7 +580,7 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
         /* Telephone semantics: the caller hangs up the active stream. Reply
          * EOS only delimits VAD rounds; do not wait for another server reply
          * or invent a session-completion acknowledgement after two rounds. */
-        atomic_store(&state->capture_enabled, false);
+        capture_enable(state, false);
         rc = clock_now(state, &hangup_started);
         if (rc == H2_PAL_OK)
           rc = evidence("h2_gizclaw_conversation_cancel", "voice-hangup",
@@ -541,7 +593,7 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
     if (rc == H2_PAL_OK)
       rc = step(state);
   }
-  atomic_store(&state->capture_enabled, false);
+  capture_enable(state, false);
   /* The reply PCM never leaves the Track through events, so the speaker
    * pump is the only playback record: PTT keeps pumping until completion
    * and drains the accepted tail; a realtime hangup discards whatever the
@@ -620,7 +672,7 @@ static int cancel_conversation(voice_state_t *state) {
        atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_CANCELED ||
        atomic_load(&state->terminal_result) != H2_PAL_ERR_CLOSED))
     rc = H2_PAL_ERR_INVALID_STATE;
-  atomic_store(&state->capture_enabled, false);
+  capture_enable(state, false);
   if (rc == H2_PAL_OK) {
     rc = prime_idle_track(state->track);
     if (rc == H2_PAL_OK)
@@ -841,7 +893,7 @@ static int dispose_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   voice_state_t *state = fixture->case_state;
   if (state == NULL)
     return H2_PAL_ERR_INVALID_STATE;
-  atomic_store(&state->capture_enabled, false);
+  capture_enable(state, false);
   if (state->play != NULL) {
     (void)h2_gizclaw_req_cancel(state->play);
     h2_gizclaw_req_release(state->play);
@@ -906,6 +958,34 @@ static int dispose_voice(h2_gizclaw_e2e_fixture_t *fixture) {
                 h2_gizclaw_pcm_track_destroy(&state->track));
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_pcm_track_destroy(&state->replacement_track);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (state->mic_started) {
+    rc = h2_pal_audio_stop_mic(h2_app_test_audio_api(state->audio_wrapper));
+    if (rc != H2_PAL_OK)
+      return rc;
+    state->mic_started = false;
+  }
+  if (state->audio_wrapper != NULL) {
+    h2_app_test_audio_evidence_t observed;
+    rc = h2_app_test_audio_copy_evidence(state->audio_wrapper, &observed);
+    if (rc != H2_PAL_OK)
+      return rc;
+    printf("H2_GIZCLAW_E2E stage=testing-audio delegate=%s mic_starts=%" PRIu64
+           " mic_reads=%" PRIu64 " fixture_bytes=%" PRIu64
+           " capture_frames=%" PRIu64 " capture_no_frame=%" PRIu64
+           " capture_first_error=%d capture_last_error=%d mic_active=%d\n",
+           fixture->config && fixture->config->voice_audio ? "real" : "fake",
+           observed.mic_start_count, observed.mic_read_count,
+           observed.fixture_bytes_emitted, observed.real_capture_frames,
+           observed.real_capture_no_frame, observed.real_capture_first_error,
+           observed.real_capture_last_error, (int)observed.mic_active);
+    rc = h2_app_test_audio_destroy(state->audio_wrapper);
+    if (rc != H2_PAL_OK)
+      return rc;
+    state->audio_wrapper = NULL;
+  }
+  rc = h2_app_test_audio_fake_deinit(&state->fake_audio);
   if (rc != H2_PAL_OK)
     return rc;
   fixture->case_state = NULL;
@@ -1102,6 +1182,26 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
   int rc = state->response == NULL ? H2_PAL_ERR_NO_MEMORY
            : group_talk            ? H2_PAL_OK
                                    : capture_history(state, &state->before);
+  const h2_pal_audio_api_t *delegate = fixture->config ? fixture->config->voice_audio : NULL;
+  if (rc == H2_PAL_OK && delegate == NULL) {
+    rc = h2_app_test_audio_fake_init(&state->fake_audio, fixture->allocator);
+    delegate = &state->fake_audio.api;
+  }
+  h2_audio_info_t audio_info = {0};
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_audio_get_info(delegate, &audio_info);
+  if (rc == H2_PAL_OK && (audio_info.mic_format.sample_rate_hz != 16000u ||
+      audio_info.mic_format.channels != 1u ||
+      audio_info.mic_format.sample_format != H2_AUDIO_SAMPLE_S16LE))
+    rc = H2_PAL_ERR_FORMAT;
+  state->capture_format = audio_info.mic_format;
+  const h2_app_test_audio_fixture_t pcm = {
+      fixture->pcm, fixture->pcm_len, state->capture_format};
+  if (rc == H2_PAL_OK)
+    rc = h2_app_test_audio_create(fixture->allocator, fixture->time, delegate,
+                                  &pcm, &state->audio_wrapper);
+  if (rc == H2_PAL_OK)
+    h2_app_test_audio_set_capture_active(state->audio_wrapper, false);
   if (rc == H2_PAL_OK)
     rc = evidence("h2_gizclaw_pcm_track_create", "voice",
                   h2_gizclaw_pcm_track_create(&config, &state->track));

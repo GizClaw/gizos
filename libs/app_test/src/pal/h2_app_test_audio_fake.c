@@ -112,6 +112,15 @@ static int write_track(h2_pal_audio_track_t *api, const h2_audio_frame_t *f,
     return H2_PAL_ERR_FORMAT;
   a->last_timeout_ms = timeout;
   int rc = h2_app_test_fault_take(&a->write_track);
+  if (!rc && a->playback_time) {
+    const uint64_t samples = f->bytes / h2_audio_pcm_frame_bytes(&t->format);
+    if (samples > (UINT64_MAX - t->format.sample_rate_hz + 1u) / 1000u)
+      return H2_PAL_ERR_NO_SPACE;
+    const uint64_t duration = (samples * 1000u + t->format.sample_rate_hz - 1u) /
+                              t->format.sample_rate_hz;
+    if (duration > UINT32_MAX) return H2_PAL_ERR_NO_SPACE;
+    rc = h2_pal_time_sleep_ms(a->playback_time, (uint32_t)duration);
+  }
   if (!rc)
     a->playback_bytes = f->bytes > UINT64_MAX - a->playback_bytes
                             ? UINT64_MAX

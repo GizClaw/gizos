@@ -62,20 +62,40 @@ int h2_gizclaw_e2e_validate_color_json(const h2_pal_mem_api_t *allocator,
   return rc == H2_PAL_OK ? provider_rc : rc;
 }
 
-/* Application-side mic pump: one 20 ms frame per deadline. A full Track
- * retains this exact fixture prefix for the next attempt. */
+static int dispose_speech_audio(h2_gizclaw_e2e_fixture_t *fixture) {
+  if (fixture->speech_mic_started) {
+    int rc = h2_pal_audio_stop_mic(h2_app_test_audio_api(fixture->speech_audio));
+    if (rc != H2_PAL_OK) return rc;
+    fixture->speech_mic_started = false;
+  }
+  int rc = h2_app_test_audio_destroy(fixture->speech_audio);
+  if (rc != H2_PAL_OK) return rc;
+  fixture->speech_audio = NULL;
+  rc = h2_app_test_audio_fake_deinit(&fixture->speech_audio_fake);
+  if (rc == H2_PAL_OK) fixture->speech_cleanup = NULL;
+  return rc;
+}
+
+/* Testing Audio owns source pacing. Track backpressure retains the exact
+ * pending frame; only a successful write advances the business upload count. */
 static int speech_pump(h2_gizclaw_e2e_fixture_t *fixture) {
-  const size_t offset =
-      atomic_load_explicit(&fixture->speech_offset, memory_order_acquire);
-  if (offset >= fixture->pcm_len)
-    return H2_PAL_ERR_WOULD_BLOCK;
-  const size_t remaining = fixture->pcm_len - offset;
-  const size_t copied = remaining < 640u ? remaining : 640u;
+  const size_t offset = atomic_load_explicit(&fixture->speech_offset, memory_order_acquire);
+  if (offset >= fixture->pcm_len) return H2_PAL_ERR_WOULD_BLOCK;
+  if (fixture->speech_pending_bytes == 0u) {
+    h2_audio_frame_t frame = h2_audio_frame_for_buffer(fixture->speech_pending,
+        sizeof(fixture->speech_pending), fixture->speech_audio_fake.info.mic_format);
+    int rc = h2_pal_audio_mic_read(h2_app_test_audio_api(fixture->speech_audio), &frame, 0u);
+    if (rc != H2_PAL_OK) return rc;
+    const size_t remaining = fixture->pcm_len - offset;
+    fixture->speech_pending_bytes = frame.bytes < remaining ? frame.bytes : remaining;
+  }
   int rc = h2_gizclaw_pcm_track_write(fixture->speech_track,
-                                       fixture->pcm + offset, copied);
-  if (rc == H2_PAL_OK)
-    atomic_store_explicit(&fixture->speech_offset, offset + copied,
-                          memory_order_release);
+      fixture->speech_pending, fixture->speech_pending_bytes);
+  if (rc == H2_PAL_OK) {
+    atomic_store_explicit(&fixture->speech_offset,
+        offset + fixture->speech_pending_bytes, memory_order_release);
+    fixture->speech_pending_bytes = 0u;
+  }
   return rc;
 }
 
@@ -88,7 +108,6 @@ static int speech_wait(h2_gizclaw_e2e_fixture_t *fixture,
   if (rc != H2_PAL_OK)
     return rc;
   bool finished = false;
-  uint64_t next_frame = started;
   for (;;) {
     uint64_t now = 0u;
     rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
@@ -98,11 +117,10 @@ static int speech_wait(h2_gizclaw_e2e_fixture_t *fixture,
       return H2_PAL_ERR_TIMEOUT;
     if (!h2_gizclaw_e2e_fixture_has_time(fixture, 10u))
       return H2_PAL_ERR_TIMEOUT;
-    if (!finished && now >= next_frame) {
+    if (!finished) {
       rc = speech_pump(fixture);
       if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK)
         return rc;
-      next_frame = now + 20u;
     }
     if (!finished &&
         atomic_load_explicit(&fixture->speech_offset, memory_order_acquire) ==
@@ -146,6 +164,14 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
     return rc;
   }
   fixture->speech_track_bound = true;
+  fixture->speech_cleanup = dispose_speech_audio;
+  rc = h2_app_test_audio_fake_init(&fixture->speech_audio_fake, fixture->allocator);
+  const h2_app_test_audio_fixture_t input = {fixture->pcm, fixture->pcm_len,
+      fixture->speech_audio_fake.info.mic_format};
+  if (rc == H2_PAL_OK)
+    rc = h2_app_test_audio_create(fixture->allocator, fixture->time,
+        &fixture->speech_audio_fake.api, &input, &fixture->speech_audio);
+
   const h2_gizclaw_speech_transcribe_options_t transcribe_options = {
       .model_name = h2_gizclaw_e2e_str("asr"),
       .content_type = h2_gizclaw_e2e_str("audio/L16;rate=16000;channels=1"),
@@ -167,6 +193,7 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
 
   for (unsigned int kind = 0u; kind < 2u && rc == H2_PAL_OK; ++kind) {
     atomic_store_explicit(&fixture->speech_offset, 0u, memory_order_release);
+    fixture->speech_pending_bytes = 0u;
     h2_gizclaw_req_t *request = NULL;
     const char *create_symbol = kind == 0u
                                     ? "h2_gizclaw_req_create_speech_transcribe"
@@ -183,6 +210,10 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
       rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
     if (rc == H2_PAL_OK)
       rc = h2_gizclaw_service_audio_start(service);
+    if (rc == H2_PAL_OK) {
+      rc = h2_pal_audio_start_mic(h2_app_test_audio_api(fixture->speech_audio));
+      fixture->speech_mic_started = rc == H2_PAL_OK;
+    }
     if (rc == H2_PAL_OK)
       rc = speech_wait(fixture, request);
     if (rc == H2_PAL_OK) {
@@ -206,6 +237,11 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
     if (rc != H2_PAL_OK && request != NULL)
       (void)h2_gizclaw_req_cancel(request);
     h2_gizclaw_req_release(request);
+    if (fixture->speech_mic_started) {
+      int stop_rc = h2_pal_audio_stop_mic(h2_app_test_audio_api(fixture->speech_audio));
+      if (stop_rc == H2_PAL_OK) fixture->speech_mic_started = false;
+      if (rc == H2_PAL_OK) rc = stop_rc;
+    }
     storage->used = 0u;
   }
   const int unset_rc =
@@ -217,6 +253,8 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
     if (rc == H2_PAL_OK)
       rc = destroy_rc;
   }
+  int audio_rc = dispose_speech_audio(fixture);
+  if (rc == H2_PAL_OK) rc = audio_rc;
   /* A failed unset retains the allocated Track until fixture teardown. */
   return rc == H2_PAL_OK ? unset_rc : rc;
 }

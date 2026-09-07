@@ -22,6 +22,9 @@ typedef struct fake_audio {
 typedef struct fake_time {
   h2_pal_time_api_t api;
   uint64_t now_ms;
+  h2_app_test_audio_t *pause_on_sleep;
+  bool resume_on_sleep;
+  const h2_app_test_audio_fixture_t *replace_on_sleep;
 } fake_time_t;
 
 static void *test_alloc(void *user, size_t size) {
@@ -46,6 +49,18 @@ static h2_pal_result_t fake_get_monotonic_ms(void *user, uint64_t *out_ms) {
 static h2_pal_result_t fake_sleep_ms(void *user, uint32_t ms) {
   fake_time_t *time = user;
   time->now_ms += ms;
+  if (time->pause_on_sleep != NULL) {
+    h2_app_test_audio_set_capture_active(time->pause_on_sleep, false);
+    if (time->replace_on_sleep != NULL) {
+      assert(h2_app_test_audio_set_fixture(time->pause_on_sleep,
+                                           time->replace_on_sleep) == H2_PAL_OK);
+      time->replace_on_sleep = NULL;
+    }
+    if (time->resume_on_sleep) {
+      h2_app_test_audio_set_capture_active(time->pause_on_sleep, true);
+    }
+    time->pause_on_sleep = NULL;
+  }
   return H2_PAL_OK;
 }
 
@@ -171,7 +186,136 @@ static const h2_pal_time_vtable_t s_time_vtable = {
     .get_monotonic_ms = fake_get_monotonic_ms,
     .sleep_ms = fake_sleep_ms,
 };
+static void test_capture_gate(void) {
+  const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
+  fake_time_t time = {.now_ms = 1000u};
+  time.api = (h2_pal_time_api_t){.user = &time, .vtable = &s_time_vtable};
+  fake_audio_t fake = {
+      .mic_format = {16000u, 160u, 1u, H2_AUDIO_SAMPLE_S16LE},
+  };
+  fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &s_audio_vtable};
+  uint8_t pcm[960];
+  memset(pcm, 1, 320u);
+  memset(pcm + 320u, 2, 320u);
+  memset(pcm + 640u, 3, 320u);
+  const h2_app_test_audio_fixture_t fixture = {pcm, sizeof(pcm), fake.mic_format};
+  h2_app_test_audio_t *audio = NULL;
+  assert(h2_app_test_audio_create(&mem, &time.api, &fake.api, &fixture,
+                                &audio) == H2_PAL_OK);
+  const h2_pal_audio_api_t *api = h2_app_test_audio_api(audio);
+  uint8_t output[320];
+  h2_audio_frame_t frame =
+      h2_audio_frame_for_buffer(output, sizeof(output), fake.mic_format);
+  h2_app_test_audio_evidence_t evidence;
+  h2_app_test_audio_set_capture_active(NULL, false);
+  h2_app_test_audio_set_capture_active(audio, false);
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+  time.now_ms += 60000u;
+  const uint64_t paused_ms = time.now_ms;
+  memset(output, 0x55, sizeof(output));
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(frame.bytes == 0u && time.now_ms == paused_ms);
+  assert(output[0] == 0x55);
+  fake.mic_read_rc = H2_PAL_ERR_IO;
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.real_capture_frames == 1u);
+  assert(evidence.real_capture_first_error == H2_PAL_ERR_IO);
+  assert(evidence.fixture_bytes_emitted == 0u && !evidence.fixture_complete);
+  assert(evidence.mic_read_count == 0u);
+  fake.mic_read_rc = H2_PAL_OK;
+
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(output, pcm, sizeof(output)) == 0);
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+
+  /* Pause/resume with no intervening read preserves the next PCM frame and
+   * resets pacing, instead of releasing a backlog after the long pause. */
+  h2_app_test_audio_set_capture_active(audio, false);
+  time.now_ms += 60000u;
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(output, pcm + 320u, sizeof(output)) == 0);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+
+  /* The observation callback can pause while the mic reader sleeps. */
+  time.pause_on_sleep = audio;
+  assert(h2_pal_audio_mic_read(api, &frame, 10u) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(frame.bytes == 0u);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_bytes_emitted == 640u && !evidence.fixture_complete);
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(output, pcm + 640u, sizeof(output)) == 0);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_complete && evidence.fixture_bytes_emitted == 960u);
+
+  /* EOF remains EOF across a pause/resume inside the pacing wait. */
+  time.pause_on_sleep = audio;
+  time.resume_on_sleep = true;
+  assert(h2_pal_audio_mic_read(api, &frame, 10u) == H2_PAL_OK);
+  for (size_t index = 0u; index < sizeof(output); ++index) {
+    assert(output[index] == 0u);
+  }
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+
+  /* A resident mic pump can change samples without stopping the delegate. */
+  uint8_t replacement_pcm[320];
+  memset(replacement_pcm, 4, sizeof(replacement_pcm));
+  h2_app_test_audio_fixture_t replacement = {
+      replacement_pcm, sizeof(replacement_pcm), fake.mic_format};
+  assert(h2_app_test_audio_set_fixture(audio, &replacement) ==
+         H2_PAL_ERR_INVALID_STATE);
+  h2_app_test_audio_set_capture_active(audio, false);
+  replacement.format.sample_rate_hz = 48000u;
+  assert(h2_app_test_audio_set_fixture(audio, &replacement) == H2_PAL_ERR_FORMAT);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_complete && evidence.fixture_bytes_emitted == 960u);
+  replacement.format = fake.mic_format;
+  const uint64_t healthy_frames = evidence.real_capture_frames;
+  assert(h2_app_test_audio_set_fixture(audio, &replacement) == H2_PAL_OK);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_bytes_emitted == 0u && !evidence.fixture_complete);
+  assert(evidence.real_capture_frames == healthy_frames);
+  assert(fake.start_mic == 1u && fake.stop_mic == 0u);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(output, replacement_pcm, sizeof(output)) == 0);
+
+  /* Replacement while the reader is sleeping must rewind before returning. */
+  time.pause_on_sleep = audio;
+  time.replace_on_sleep = &fixture;
+  assert(h2_pal_audio_mic_read(api, &frame, 10u) == H2_PAL_OK);
+  assert(memcmp(output, pcm, sizeof(output)) == 0);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_app_test_audio_copy_evidence(audio, &evidence) == H2_PAL_OK);
+  assert(evidence.fixture_bytes_emitted == 320u && !evidence.fixture_complete);
+
+  h2_app_test_audio_set_capture_active(audio, false);
+  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+  assert(h2_app_test_audio_set_fixture(audio, &fixture) == H2_PAL_OK);
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+  h2_app_test_audio_set_capture_active(audio, true);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(memcmp(output, pcm, sizeof(output)) == 0);
+  /* A delayed caller must not drain its missed frames in a catch-up burst. */
+  time.now_ms += 10000u;
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(output[0] == 2u);
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+  time.now_ms += 10u;
+  assert(h2_pal_audio_mic_read(api, &frame, 0u) == H2_PAL_OK);
+  assert(output[0] == 3u);
+  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+  assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_capture_gate();
   const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
   fake_time_t fake_time = {.now_ms = 1000u};
   fake_time.api =
