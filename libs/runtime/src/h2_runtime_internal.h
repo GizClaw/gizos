@@ -216,9 +216,9 @@ typedef struct h2_runtime_state_publication {
     atomic_int ready;
     atomic_uint active_index;
     /*
-     * Guards reader_count updates: ARMv5 targets have no native atomic
-     * add, so the counters use load/store under this test-and-set lock
-     * (the same pattern as the runtime sequence lock).
+     * Guards reader_count updates where atomic add is not lock-free (ARMv5):
+     * the counters then use load/store under this test-and-set lock, taken
+     * Unused where fetch_add is lock-free.
      */
     atomic_flag reader_lock;
     atomic_uint reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
@@ -337,16 +337,19 @@ struct h2_runtime_private {
     /*
      * Custom event producer guard: h2_runtime_post_custom_event() may run on
      * any task, so deinit closes the door and drains the in-flight posters
-     * before the event queue is destroyed. The counter uses the same
-     * test-and-set lock pattern as sequence_lock because ARMv5 targets have
-     * no native atomic add.
+     * before the event queue is destroyed. With lock-free atomic add the
+     * counter is a plain fetch_add; otherwise (ARMv5) updates run under
+     * custom_event_lock.
      */
     atomic_flag custom_event_lock;
-    uint32_t custom_event_in_flight;
-    int custom_event_closed;
+    atomic_uint custom_event_in_flight;
+    atomic_int custom_event_closed;
 
+    /*
+     * Same split: fetch_add where it is lock-free, sequence_lock where not.
+     */
     atomic_flag sequence_lock;
-    h2_runtime_sequence_t next_sequence;
+    atomic_uint next_sequence;
     uint32_t dropped_event_count;
 
     atomic_int system_event_active;
@@ -402,6 +405,34 @@ static inline h2_runtime_timestamp_ms_t h2_runtime_now_ms(const h2_pal_time_api_
 }
 
 h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime);
+
+/*
+ * 1 when a 32-bit atomic add is a single lock-free instruction (Xtensa,
+ * RISC-V, Cortex-M, hosts). ARMv5 (bk3633) reports "sometimes" and lowers
+ * fetch_add to a library call the SDK does not provide, so those targets keep
+ * a short test-and-set critical section instead.
+ *
+ * A bare spin on an atomic_flag is only safe without preemption: on a
+ * preemptive RTOS a waiter that outranks the holder on the holder's core pins
+ * that core forever (ESP-IDF sys_evt vs. $runtime/input on core 0, which is
+ * why the lock-free path exists). The remaining ARMv5 target schedules its
+ * tasks cooperatively on libco coroutines, so a holder is never switched out
+ * inside the critical section and the flag is never contended.
+ */
+#if defined(ATOMIC_INT_LOCK_FREE) && ATOMIC_INT_LOCK_FREE == 2
+#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 1
+#else
+#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 0
+#endif
+
+static inline void h2_runtime_flag_lock(atomic_flag *flag) {
+    while (atomic_flag_test_and_set_explicit(flag, memory_order_acquire)) {
+    }
+}
+
+static inline void h2_runtime_flag_unlock(atomic_flag *flag) {
+    atomic_flag_clear_explicit(flag, memory_order_release);
+}
 
 h2_pal_result_t h2_runtime_emit_event(
     h2_runtime_t *runtime,

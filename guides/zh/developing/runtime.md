@@ -277,7 +277,9 @@ typedef struct h2_runtime_event {
 - `component` 表示事件属于哪类 Runtime component。
 - `component_id` 标识 app 定义的具体 component instance；component event 必须携带非零 id。
 - `kind` 是具体事件类型。System Event 使用 `H2_RUNTIME_SYSTEM_EVENT_*`，Component Event 使用 `H2_RUNTIME_COMPONENT_EVENT_*`。
-- `sequence` 是 Runtime 生成的事件序号。
+- `sequence` 是 Runtime 生成的 32 位事件序号，只用于在一段时间窗口内区分和排序事件，不保证
+  设备生命周期内全局唯一：到达 `UINT32_MAX` 后回绕并跳过 0（0 表示"没有序号"）。比较先后请用
+  `h2_runtime_sequence_after(a, b)`，不要直接用 `<`/`>`。
 - `timestamp_ms` 使用 Runtime monotonic time。
 - `payload` 和 `payload_size` 表示该 kind 对应的 Runtime-owned payload schema。
 

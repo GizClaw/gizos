@@ -172,7 +172,8 @@ static h2_pal_result_t append_input_event(
     memcpy(&pending->payload, payload, payload_size);
 
     source_set_event_time(source, sequence, now_ms);
-    if (sequence > runtime->private_state->input_event_sequence_ceiling) {
+    if (h2_runtime_sequence_after(
+            sequence, runtime->private_state->input_event_sequence_ceiling)) {
         runtime->private_state->input_event_sequence_ceiling = sequence;
     }
     h2_runtime_state_mark_dirty(runtime);

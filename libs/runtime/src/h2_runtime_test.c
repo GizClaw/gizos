@@ -539,7 +539,8 @@ static h2_pal_result_t set_button_state_and_emit(
     source->button_state = *state;
     source->sequence = sequence;
     source->timestamp_ms = timestamp_ms;
-    if (sequence > runtime->private_state->input_event_sequence_ceiling) {
+    if (h2_runtime_sequence_after(
+            sequence, runtime->private_state->input_event_sequence_ceiling)) {
         runtime->private_state->input_event_sequence_ceiling = sequence;
     }
     rc = h2_runtime_input_test_publish(runtime);

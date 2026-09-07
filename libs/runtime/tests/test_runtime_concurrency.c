@@ -1185,7 +1185,71 @@ static void test_station_snapshot_survives_a_publication_burst(void) {
     concurrency_env_deinit(&env);
 }
 
+/*
+ * The sequence is one lock-free add on hosts and every MCU but ARMv5.
+ * Concurrent takers must never see a duplicate or a zero.
+ */
+#define SEQUENCE_TAKER_COUNT 8u
+#define SEQUENCE_TAKES_PER_THREAD 20000u
+
+typedef struct sequence_taker {
+    h2_runtime_t *runtime;
+    h2_runtime_sequence_t taken[SEQUENCE_TAKES_PER_THREAD];
+} sequence_taker_t;
+
+static void *sequence_taker_thread(void *user) {
+    sequence_taker_t *taker = (sequence_taker_t *)user;
+    for (size_t i = 0u; i < SEQUENCE_TAKES_PER_THREAD; ++i) {
+        taker->taken[i] = h2_runtime_next_sequence(taker->runtime);
+    }
+    return NULL;
+}
+
+static int sequence_compare(const void *left, const void *right) {
+    const h2_runtime_sequence_t a = *(const h2_runtime_sequence_t *)left;
+    const h2_runtime_sequence_t b = *(const h2_runtime_sequence_t *)right;
+    return a < b ? -1 : a > b;
+}
+
+static void test_concurrent_sequences_are_unique_across_wrap(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    h2_runtime_t *runtime = concurrency_runtime_create(&env);
+    /* Start just below the wrap so the run crosses UINT32_MAX -> 1. */
+    const size_t total = SEQUENCE_TAKER_COUNT * SEQUENCE_TAKES_PER_THREAD;
+    runtime->private_state->next_sequence =
+        (h2_runtime_sequence_t)(UINT32_MAX - total / 2u);
+
+    static sequence_taker_t takers[SEQUENCE_TAKER_COUNT];
+    pthread_t threads[SEQUENCE_TAKER_COUNT];
+    for (size_t t = 0u; t < SEQUENCE_TAKER_COUNT; ++t) {
+        takers[t].runtime = runtime;
+        assert(pthread_create(
+                   &threads[t], NULL, sequence_taker_thread, &takers[t]) == 0);
+    }
+    static h2_runtime_sequence_t all[SEQUENCE_TAKER_COUNT *
+                                     SEQUENCE_TAKES_PER_THREAD];
+    for (size_t t = 0u; t < SEQUENCE_TAKER_COUNT; ++t) {
+        assert(pthread_join(threads[t], NULL) == 0);
+        memcpy(&all[t * SEQUENCE_TAKES_PER_THREAD],
+               takers[t].taken,
+               sizeof(takers[t].taken));
+    }
+    qsort(all, total, sizeof(all[0]), sequence_compare);
+    for (size_t i = 0u; i < total; ++i) {
+        assert(all[i] != 0u);
+        assert(i == 0u || all[i] != all[i - 1u]);
+    }
+    /* Exactly total values were issued, and 0 was skipped once at the wrap. */
+    assert(runtime->private_state->next_sequence ==
+           (h2_runtime_sequence_t)(UINT32_MAX - total / 2u + total + 1u));
+
+    h2_runtime_deinit(runtime);
+    concurrency_env_deinit(&env);
+}
+
 int main(void) {
+    test_concurrent_sequences_are_unique_across_wrap();
     test_station_snapshot_survives_a_publication_burst();
     test_slow_pal_does_not_block_snapshot_read();
     test_push_edge_does_not_write_while_poller_is_blocked();
