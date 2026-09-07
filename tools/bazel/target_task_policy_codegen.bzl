@@ -184,8 +184,15 @@ def _covering_prefix(prefixes, name):
             covering = prefix
     return covering
 
-def _resolve_tasks(label, graph, policies, default_tasks):
-    """Pairs declared tasks with the target's table, reporting the ones left out."""
+def _routed_tasks(policies, default_tasks):
+    """Returns the routes the table asks for, ordered as the table lists them."""
+    routed = []
+    for name in sorted(policies):
+        routed.append(struct(name = name, policy = policies[name]))
+    return routed, list(default_tasks)
+
+def _audit(label, graph, policies, default_tasks):
+    """Fails when the table and the image's declared tasks disagree."""
     tasks, owners = _declared_tasks(label, graph)
     prefixes = [name[:-1] for name in policies if name.endswith("*")]
     for name in policies.keys() + default_tasks:
@@ -200,24 +207,13 @@ def _resolve_tasks(label, graph, policies, default_tasks):
                 label,
                 name,
             ))
-    routed = []
-    unrouted = []
-    unconfigured = []
-    covered = {}
-    for task in tasks:
-        if task.name in default_tasks:
-            unrouted.append(task.name)
-            continue
-        policy = policies.get(task.name)
-        if policy != None:
-            routed.append(struct(name = task.name, policy = policy))
-            continue
-        prefix = _covering_prefix(prefixes, task.name)
-        if prefix == None:
-            unconfigured.append(task)
-        elif prefix not in covered:
-            covered[prefix] = True
-            routed.append(struct(name = prefix + "*", policy = policies[prefix + "*"]))
+    unconfigured = [
+        task
+        for task in tasks
+        if task.name not in policies and
+           task.name not in default_tasks and
+           _covering_prefix(prefixes, task.name) == None
+    ]
     if unconfigured:
         fail("\n".join([
             "%s: %d task name(s) reachable from this target have no policy." % (
@@ -230,7 +226,7 @@ def _resolve_tasks(label, graph, policies, default_tasks):
             "  %s  (%s)" % (task.name, task.owner)
             for task in unconfigured
         ]))
-    return routed, unrouted
+    return [task.name for task in tasks]
 
 def _initializer(flavor, policy, indent):
     pad = " " * indent
@@ -537,9 +533,7 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
 
 def _task_policy_codegen_impl(ctx):
     label = str(ctx.label)
-    tasks, unrouted = _resolve_tasks(
-        label,
-        ctx.attr.graph,
+    tasks, unrouted = _routed_tasks(
         json.decode(ctx.attr.policies_json),
         ctx.attr.default_tasks,
     )
@@ -581,10 +575,6 @@ task_policy_codegen = rule(
         "default_tasks": attr.string_list(
             doc = "Task names deliberately served by the target default policy.",
         ),
-        "graph": attr.label_list(
-            aspects = [h2_tasks_aspect],
-            doc = "The firmware dependency graph whose task declarations to serve.",
-        ),
         "policies_json": attr.string(
             doc = "Encoded per-task policies assigned by this target.",
             mandatory = True,
@@ -608,4 +598,37 @@ task_policy_codegen = rule(
         ),
     },
     doc = "Generates one target's task policy component and its host test.",
+)
+
+def _task_policy_audit_impl(ctx):
+    declared = _audit(
+        str(ctx.attr.policy_label),
+        ctx.attr.graph,
+        json.decode(ctx.attr.policies_json),
+        ctx.attr.default_tasks,
+    )
+    stamp = ctx.actions.declare_file(ctx.label.name + ".tasks")
+    ctx.actions.write(stamp, "\n".join(sorted(declared)) + "\n")
+    return [DefaultInfo(files = depset([stamp]))]
+
+task_policy_audit = rule(
+    implementation = _task_policy_audit_impl,
+    attrs = {
+        "default_tasks": attr.string_list(
+            doc = "Task names deliberately served by the target default policy.",
+        ),
+        "graph": attr.label_list(
+            aspects = [h2_tasks_aspect],
+            doc = "The firmware dependency graph whose task declarations to audit.",
+        ),
+        "policies_json": attr.string(
+            doc = "Encoded per-task policies assigned by this target.",
+            mandatory = True,
+        ),
+        "policy_label": attr.string(
+            doc = "Policy target named in audit failures.",
+            mandatory = True,
+        ),
+    },
+    doc = "Fails the build when a target's policy table and its image's tasks disagree.",
 )

@@ -13,6 +13,7 @@ load(
     "//tools/bazel:target_task_policy_codegen.bzl",
     "encode_default_policy",
     "encode_policies",
+    "task_policy_audit",
     "task_policy_codegen",
 )
 
@@ -57,12 +58,21 @@ def _generate(
         allocator = allocator,
         default_policy_json = encode_default_policy(label, unit, default_policy),
         default_tasks = default_tasks,
-        graph = graph,
         policies_json = policies_json,
         source_name = source,
         target_directory = _target_directory(""),
         test_source_name = test_source,
         unit = unit,
+    )
+
+    # The table alone decides the routes, so only this audit needs the firmware
+    # graph; keeping it off the generator leaves the host test free of it.
+    task_policy_audit(
+        name = name + "_audit",
+        default_tasks = default_tasks,
+        graph = graph,
+        policies_json = policies_json,
+        policy_label = label,
     )
     native.filegroup(
         name = name + "_source",
@@ -115,7 +125,10 @@ def esp_target_task_policy(
         srcs = [source],
         component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
-        data = [directory + "/CMakeLists.txt"],
+        data = [
+            directory + "/CMakeLists.txt",
+            ":" + name + "_audit",
+        ],
         deps = [_ESP_PAL_CORE],
     )
     cc_test(
@@ -192,7 +205,10 @@ def bk7258_target_task_policy(
         srcs = [ap_source],
         component_directory = _target_directory(ap_directory),
         component_name = "h2_bk_target_task_policy",
-        data = [ap_directory + "/CMakeLists.txt"],
+        data = [
+            ap_directory + "/CMakeLists.txt",
+            ":" + ap_name + "_audit",
+        ],
         execution_unit = "ap",
         deps = [_BK_AP_PAL_CORE],
     )
