@@ -56,6 +56,7 @@ typedef struct test_allocator {
 
 typedef struct test_time {
     uint64_t now_ms;
+    h2_pal_result_t now_rc;
     uint64_t wall_ms;
     uint8_t wall_valid;
     uint32_t sleep_calls;
@@ -288,6 +289,8 @@ static void test_free(void *user, void *ptr) {
 
 static h2_pal_result_t test_time_now(void *user, uint64_t *out_ms) {
     test_time_t *time = (test_time_t *)user;
+    if (time->now_rc != H2_PAL_OK)
+        return time->now_rc;
     *out_ms = time->now_ms;
     return H2_PAL_OK;
 }
@@ -3740,6 +3743,98 @@ static void test_audio_levels_follow_measured_frames(void) {
     h2_runtime_deinit(runtime);
 }
 
+/* The stored timestamp keeps only the low 32 bits of the monotonic clock, so
+ * the widening has to place a frame in the right epoch on both sides of the
+ * UINT32_MAX millisecond rollover. */
+static void test_audio_level_timestamp_survives_rollover(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_level_fixture_t f = {
+        .mic_samples = {0, -16384, 4096, 0},
+        .mic_bytes = 4u * sizeof(int16_t),
+        .mic_format = H2_AUDIO_SAMPLE_S16LE,
+    };
+    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+
+    int16_t buffer[8];
+    h2_audio_frame_t frame = {
+        .data = buffer, .capacity = sizeof(buffer), .channels = 1u,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE};
+    h2_runtime_audio_levels_t levels;
+
+    /* Measured just before the rollover, read just after it. */
+    const uint64_t before = (uint64_t)UINT32_MAX - 100u;
+    env.time_state.now_ms = before;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    env.time_state.now_ms = (uint64_t)UINT32_MAX + 200u;
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_updated_ms == before);
+
+    /* Measured just after the rollover, read a little later in the same epoch. */
+    const uint64_t after = (uint64_t)UINT32_MAX + 1u + 50u;
+    env.time_state.now_ms = after;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    env.time_state.now_ms = after + 100u;
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_updated_ms == after);
+
+    /* Exactly on the wrap boundary the stored low word is zero, which must
+     * still read back as the boundary and not as "never measured". */
+    const uint64_t boundary = (uint64_t)UINT32_MAX + 1u;
+    env.time_state.now_ms = boundary;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    env.time_state.now_ms = boundary + 10u;
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_updated_ms == boundary);
+    assert(levels.capture_percent == 50u);
+
+    /* A clock the Runtime cannot read leaves the previous measurement alone
+     * rather than publishing a valid sample stamped zero. */
+    env.time_state.now_rc = H2_PAL_ERR_IO;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    env.time_state.now_rc = H2_PAL_OK;
+    env.time_state.now_ms = boundary + 20u;
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_updated_ms == boundary);
+    h2_runtime_deinit(runtime);
+}
+
+/* A byte-aligned S16LE buffer must be measured without an aligned load. */
+static void test_audio_level_reads_unaligned_frames(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_level_fixture_t f = {.mic_format = H2_AUDIO_SAMPLE_S16LE};
+    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+
+    h2_pal_audio_track_t *track = NULL;
+    h2_audio_track_config_t track_config = {.name = "unaligned"};
+    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
+
+    /* One byte of padding puts the samples on an odd address. */
+    unsigned char storage[1u + 4u * sizeof(int16_t)];
+    const int16_t samples[2] = {8192, -2048};
+    memcpy(storage + 1, samples, sizeof(samples));
+    h2_audio_frame_t out_frame = {
+        .data = storage + 1, .capacity = sizeof(samples), .bytes = sizeof(samples),
+        .channels = 1u, .samples_per_channel = 2u,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE};
+    env.time_state.now_ms = 2400u;
+    assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
+    h2_runtime_audio_levels_t levels;
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.playback_percent == 25u && levels.playback_updated_ms == 2400u);
+    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+    h2_runtime_deinit(runtime);
+}
+
 static void test_audio_track_wrapper_forwards_absent_operations(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -4006,6 +4101,8 @@ int main(void) {
     test_audio_shared_state();
     test_audio_levels_follow_measured_frames();
     test_audio_track_wrapper_forwards_absent_operations();
+    test_audio_level_timestamp_survives_rollover();
+    test_audio_level_reads_unaligned_frames();
     test_wifi_connection_persistence();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();

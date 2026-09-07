@@ -64,11 +64,16 @@ static int stop_speaker(void *user) { return h2_pal_audio_stop_speaker(backend(u
  * the onset by most of the averaging window.
  */
 static uint8_t frame_peak_percent(const h2_audio_frame_t *frame) {
-    const int16_t *samples = (const int16_t *)frame->data;
+    /* h2_audio_frame_t::data is an unconstrained void *, so the samples are
+     * read with memcpy: a byte-aligned S16LE buffer would make an int16_t
+     * cast undefined and can fault on the ARM targets. */
+    const unsigned char *bytes = (const unsigned char *)frame->data;
     size_t count = frame->bytes / sizeof(int16_t);
     uint32_t peak = 0u;
     for (size_t i = 0u; i < count; ++i) {
-        int32_t sample = samples[i];
+        int16_t sample_value = 0;
+        memcpy(&sample_value, bytes + i * sizeof(int16_t), sizeof(sample_value));
+        int32_t sample = sample_value;
         uint32_t magnitude = (uint32_t)(sample < 0 ? -sample : sample);
         if (magnitude > peak)
             peak = magnitude;
@@ -89,7 +94,11 @@ static void publish_level(h2_runtime_t *runtime, atomic_uint *level,
         frame->bytes < sizeof(int16_t))
         return;
     uint64_t now = 0u;
-    (void)h2_pal_time_get_monotonic_ms(runtime->time, &now);
+    /* Timestamp zero means "never measured", so a clock the Runtime cannot
+     * read leaves the previous measurement in place rather than publishing a
+     * valid sample that looks like no sample at all. */
+    if (h2_pal_time_get_monotonic_ms(runtime->time, &now) != H2_PAL_OK)
+        return;
     atomic_store_explicit(level_ms, (unsigned int)(uint32_t)now, memory_order_relaxed);
     atomic_store_explicit(
         level, H2_RUNTIME_AUDIO_LEVEL_VALID | frame_peak_percent(frame),

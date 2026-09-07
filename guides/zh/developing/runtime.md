@@ -89,6 +89,10 @@ Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 
 
 发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
 
+存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
+
+帧数据按字节读取：`h2_audio_frame_t::data` 是不受约束的 `void *`，PAL 不承诺 `int16_t` 对齐，按 `int16_t` 解引用在 ARM target 上可能取到未定义行为甚至触发异常。时钟读失败时不发布该帧，保留上一次测量，避免出现一个 timestamp 为 0 却标记有效的样本。
+
 ## Component Mapper
 
 Runtime 通过 `h2_runtime_config_t.component_mapper` 接收 `boards/main` 提供的 mapper API。Mapper 使用与 PAL 相同的 `user + vtable` 形态：
