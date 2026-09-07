@@ -50,7 +50,12 @@ cc_library(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + select({
-        "//tools/bazel/platforms:is_bk3633": ["-Wno-error=type-limits"],
+        # bk3633 is BLE-only with no audio path, and its OAD image budget has
+        # no room for observational code, so audio levels build out there.
+        "//tools/bazel/platforms:is_bk3633": [
+            "-Wno-error=type-limits",
+            "-DH2_RUNTIME_AUDIO_LEVELS=0",
+        ],
         "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
         "//conditions:default": [],
     }),

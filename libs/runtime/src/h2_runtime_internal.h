@@ -335,10 +335,12 @@ struct h2_runtime_private {
      * marks that a frame has ever been measured, which keeps a genuine level of
      * zero distinct from "no audio yet".
      */
+#if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
     atomic_uint audio_capture_level;
     atomic_uint audio_capture_level_ms;
     atomic_uint audio_playback_level;
     atomic_uint audio_playback_level_ms;
+#endif
     h2_pal_audio_api_t audio_proxy;
     h2_pal_audio_decoder_api_t audio_decoder_proxy;
     h2_pal_periph_api_t periph_proxy;
