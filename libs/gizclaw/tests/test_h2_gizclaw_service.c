@@ -1150,6 +1150,99 @@ static void test_debug_get_request_paths(void) {
   }
 }
 
+/* Dispatch on the App thread until the library's debug request settles. */
+static h2_gizclaw_debug_snapshot_t debug_settle(h2_gizclaw_service_t *service) {
+  h2_gizclaw_debug_snapshot_t snapshot;
+  for (unsigned spin = 0u; spin < 20000u; ++spin) {
+    assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+    if (!snapshot.busy)
+      return snapshot;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  assert(false);
+  return snapshot;
+}
+
+static void test_debug_state_paths(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  h2_gizclaw_debug_snapshot_t snapshot;
+  assert(h2_gizclaw_debug_snapshot(NULL, &snapshot) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+  assert(!snapshot.known && !snapshot.busy && snapshot.revision == 0u);
+
+  /* Refresh reads server.runtime.get and adopts the confirmed mode. */
+  const uint8_t get_wire[] = {0x0a, 0x0a, 0x32, 0x08, 'r', 'e', 'a', 'd', 'o', 'n', 'l', 'y'};
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_GET;
+  env.expected_payload = NULL;
+  env.expected_payload_len = 0;
+  env.response_payload = get_wire;
+  env.response_payload_len = sizeof(get_wire);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  /* Hold the fake RPC open: one request in flight makes the library busy. */
+  atomic_store(&env.run_gate, false);
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_OK);
+  assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+  assert(snapshot.busy && !snapshot.known);
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_ERR_BUSY);
+  atomic_store(&env.run_gate, true);
+  snapshot = debug_settle(service);
+  assert(snapshot.known && !strcmp(snapshot.mode, "readonly") &&
+         snapshot.last_result == H2_PAL_OK && snapshot.revision == 1u);
+
+  /* A server without a stored mode is known with an empty mode. */
+  const uint8_t no_mode_wire[] = {0x0a, 0x00};
+  env.response_payload = no_mode_wire;
+  env.response_payload_len = sizeof(no_mode_wire);
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_OK);
+  snapshot = debug_settle(service);
+  assert(snapshot.known && snapshot.mode[0] == '\0' && snapshot.revision == 2u);
+
+  /* Set adopts the mode only from the server's confirmation. */
+  const uint8_t put_wire[] = {0x0a, 0x03, 'o', 'f', 'f'};
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_PUT;
+  env.expected_payload = put_wire;
+  env.expected_payload_len = sizeof(put_wire);
+  env.response_payload = put_wire;
+  env.response_payload_len = sizeof(put_wire);
+  atomic_store(&env.run_gate, false);
+  assert(h2_gizclaw_debug_set_mode(service, (h2_gizclaw_str_t){"off", 3}, 1234) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_debug_set_mode(service, (h2_gizclaw_str_t){"off", 3}, 1234) ==
+         H2_PAL_ERR_BUSY);
+  /* The snapshot keeps the last confirmed mode until the server answers. */
+  assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+  assert(snapshot.busy && snapshot.mode[0] == '\0');
+  atomic_store(&env.run_gate, true);
+  snapshot = debug_settle(service);
+  assert(snapshot.known && !strcmp(snapshot.mode, "off") && snapshot.revision == 3u);
+
+  /* A remote failure keeps the last confirmed mode and reports the error. */
+  const uint8_t full_wire[] = {0x0a, 0x0b, 'f', 'u', 'l', 'l', 'c', 'o', 'n', 't', 'r', 'o', 'l'};
+  env.expected_payload = full_wire;
+  env.expected_payload_len = sizeof(full_wire);
+  env.rpc_remote_error = true;
+  assert(h2_gizclaw_debug_set_mode(service, (h2_gizclaw_str_t){"fullcontrol", 11},
+                                   1234) == H2_PAL_OK);
+  snapshot = debug_settle(service);
+  assert(snapshot.known && !strcmp(snapshot.mode, "off") &&
+         snapshot.last_result == H2_GIZCLAW_ERR_REMOTE && snapshot.revision == 4u);
+  env.rpc_remote_error = false;
+
+  /* Stopping the Service drops an in-flight request instead of staying busy. */
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_GET;
+  env.expected_payload = NULL;
+  env.expected_payload_len = 0;
+  env.response_payload = get_wire;
+  env.response_payload_len = sizeof(get_wire);
+  atomic_store(&env.run_gate, false);
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+  assert(!snapshot.busy && !strcmp(snapshot.mode, "off"));
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_debug_set_request_paths(void) {
   const char *modes[] = {"off", "readonly", "fullcontrol", "future-mode"};
   for (unsigned scenario = 0; scenario < 9; ++scenario) {
@@ -9600,6 +9693,7 @@ int main(int argc, char **argv) {
   test_owned_pcm_track_binding();
   test_debug_set_request_paths();
   test_debug_get_request_paths();
+  test_debug_state_paths();
   test_firmware_public_request_paths();
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();

@@ -113,3 +113,119 @@ h2_pal_result_t h2_gizclaw_resp_parse_debug_get(
   *out_state = decoded;
   return H2_PAL_OK;
 }
+
+/* ---- Library-owned snapshot ------------------------------------------- */
+
+static void debug_lock(h2_gizclaw_service_t *service) {
+  (void)h2_pal_mutex_lock(service->config.sync, service->mutex);
+}
+
+static void debug_unlock(h2_gizclaw_service_t *service) {
+  (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
+}
+
+/* Fold the library's in-flight request into the snapshot once it reached a
+ * terminal state. No completion hook is used: the App reads the snapshot
+ * from its own loop, so the request is inspected (never waited for) here,
+ * which also survives a full dispatch queue or a stopped Service. Returns
+ * with the lock released. */
+static void debug_fold(h2_gizclaw_service_t *service) {
+  debug_lock(service);
+  h2_gizclaw_req_t *request = service->debug.request;
+  const bool is_set = service->debug.request_is_set;
+  debug_unlock(service);
+  if (request == NULL || h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT)
+    return;
+  h2_gizclaw_debug_state_t state;
+  const h2_pal_result_t rc = is_set
+                                 ? h2_gizclaw_resp_parse_debug_set(request, &state)
+                                 : h2_gizclaw_resp_parse_debug_get(request, &state);
+  debug_lock(service);
+  if (service->debug.request == request) {
+    service->debug.request = NULL;
+    if (rc == H2_PAL_OK) {
+      service->debug.known = true;
+      memcpy(service->debug.mode, state.mode, sizeof(service->debug.mode));
+    }
+    service->debug.last_result = rc;
+    if (++service->debug.revision == 0u)
+      ++service->debug.revision;
+    debug_unlock(service);
+    h2_gizclaw_req_release(request);
+    return;
+  }
+  debug_unlock(service);
+}
+
+static h2_pal_result_t debug_start(h2_gizclaw_service_t *service, bool is_set,
+                                   h2_gizclaw_str_t mode, uint32_t timeout_ms) {
+  if (service == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  debug_fold(service);
+  debug_lock(service);
+  if (service->debug.request != NULL || service->debug.starting) {
+    debug_unlock(service);
+    return H2_PAL_ERR_BUSY;
+  }
+  service->debug.starting = true;
+  debug_unlock(service);
+
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc =
+      is_set ? h2_gizclaw_req_create_debug_set(service, 0u, mode, timeout_ms,
+                                               &request)
+             : h2_gizclaw_req_create_debug_get(service, 0u, timeout_ms,
+                                               &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  debug_lock(service);
+  service->debug.starting = false;
+  if (rc == H2_PAL_OK) {
+    service->debug.request = request;
+    service->debug.request_is_set = is_set;
+  }
+  debug_unlock(service);
+  if (rc != H2_PAL_OK && request != NULL)
+    h2_gizclaw_req_release(request);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_debug_snapshot(h2_gizclaw_service_t *service,
+                                          h2_gizclaw_debug_snapshot_t *out) {
+  if (service == NULL || out == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, sizeof(*out));
+  debug_fold(service);
+  debug_lock(service);
+  out->known = service->debug.known;
+  memcpy(out->mode, service->debug.mode, sizeof(out->mode));
+  out->busy = service->debug.request != NULL || service->debug.starting;
+  out->last_result = service->debug.last_result;
+  out->revision = service->debug.revision;
+  debug_unlock(service);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_debug_refresh(h2_gizclaw_service_t *service,
+                                         uint32_t timeout_ms) {
+  return debug_start(service, false, (h2_gizclaw_str_t){NULL, 0u}, timeout_ms);
+}
+
+h2_pal_result_t h2_gizclaw_debug_set_mode(h2_gizclaw_service_t *service,
+                                          h2_gizclaw_str_t mode,
+                                          uint32_t timeout_ms) {
+  return debug_start(service, true, mode, timeout_ms);
+}
+
+void h2_gizclaw_debug_stop_internal(h2_gizclaw_service_t *service) {
+  if (service == NULL)
+    return;
+  debug_lock(service);
+  h2_gizclaw_req_t *request = service->debug.request;
+  service->debug.request = NULL;
+  debug_unlock(service);
+  if (request != NULL) {
+    (void)h2_gizclaw_req_cancel(request);
+    h2_gizclaw_req_release(request);
+  }
+}
