@@ -50,7 +50,7 @@ bazel build --config=esp32s3 --define=H2_GIZCLAW_E2E_DEVICE_ONLY=ON \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
 ```
 
-需先配置仓库要求的 `IDF_PATH` / `IDF_TOOLS_PATH`。AMOLED 使用 Deploy AIGC 正式目录中《小企鹅摇摇舞》的已发布 Ogg/Opus：
+需先配置仓库要求的 `IDF_PATH` / `IDF_TOOLS_PATH`。AMOLED 使用本仓库生成并按提交固定版本的 32 秒 Ogg/Opus 测试音频 `playback_tone_32s_v1.ogg`，生成方法见 `projects/e2e/apps/gizclaw/data/README.md`：
 `https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg`。
 播放到 20 秒时检查服务端播放 telemetry，随后继续到整首自然结束，验证结束进度与播放时长；下载使用 64 KiB 环形缓冲。
 
