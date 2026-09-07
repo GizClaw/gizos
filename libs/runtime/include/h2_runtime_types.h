@@ -16,7 +16,27 @@ extern "C" {
 typedef struct h2_runtime h2_runtime_t;
 
 typedef uint32_t h2_runtime_id_t;
-typedef uint64_t h2_runtime_sequence_t;
+/*
+ * Event sequence. Distinguishes and orders events over a window, not for the
+ * lifetime of the device: the counter wraps at UINT32_MAX (skipping 0, which
+ * means "no sequence") and consumers compare with h2_runtime_sequence_after().
+ * 32 bits keep it a single lock-free atomic add on every core that has one.
+ */
+typedef uint32_t h2_runtime_sequence_t;
+
+/*
+ * Wrap-safe "a was issued after b"; a == b is not after. 0 is "no sequence",
+ * so any real sequence is after it and nothing is after a real sequence
+ * when compared with 0 on the left.
+ */
+static inline int h2_runtime_sequence_after(
+    h2_runtime_sequence_t a,
+    h2_runtime_sequence_t b) {
+    if (a == 0u || b == 0u) {
+        return a != 0u && b == 0u;
+    }
+    return (int32_t)(a - b) > 0;
+}
 typedef uint64_t h2_runtime_timestamp_ms_t;
 
 typedef struct h2_runtime_string {
