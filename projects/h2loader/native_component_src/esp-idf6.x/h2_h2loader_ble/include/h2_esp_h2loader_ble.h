@@ -3,6 +3,8 @@
 
 #include "h2_esp_h2loader_runtime.h"
 
+#include "h2_loader_app_client.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -65,6 +67,14 @@ int h2_esp_h2loader_app_commands_resume_ble_advertising(void);
 /** Add one App-owned GATT service UUID to the shared command advertisement. */
 int h2_esp_h2loader_app_commands_advertise_ble_service(
     const h2_pal_ble_uuid_t *service_uuid);
+
+/** Copy the initialized App command configuration without starting a service.
+ * Call after command-service startup, before publishing to other tasks. Pointers
+ * remain borrowed for the service lifetime. The consumer must serialize ALL
+ * Stage, digest and reboot operations with operation_sync/operation_mutex, and
+ * release the mutex on the same task that acquired it. Clears output on error.
+ */
+int h2_esp_h2loader_app_commands_get_config(h2_loader_app_client_config_t *out_config);
 
 #ifdef __cplusplus
 }
