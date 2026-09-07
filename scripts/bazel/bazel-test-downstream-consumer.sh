@@ -35,34 +35,24 @@ cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
 cp "$fixture_root/ram_regions.csv" "$consumer_root/ram_regions.csv"
 cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loader.defaults"
-mkdir -p "$consumer_root/private_esp_task_policy/tests"
-sed 's/private_esp_task_policy/h2_esp_target_task_policy/g' \
-    "$fixture_root/private_esp_task_policy.c" > \
-    "$consumer_root/private_esp_task_policy/h2_esp_target_task_policy.c"
+mkdir -p "$consumer_root/private_esp_task_policy"
 sed 's/PRIVATE_ESP_TASK_POLICY/H2_ESP_TARGET_TASK_POLICY/g; s/private_esp_task_policy/h2_esp_target_task_policy/g' \
     "$fixture_root/private_esp_task_policy.h" > \
     "$consumer_root/private_esp_task_policy/h2_esp_target_task_policy.h"
 sed 's/private_esp_task_policy/h2_esp_target_task_policy/g' \
     "$fixture_root/private_esp_task_policy.CMakeLists.txt.fixture" > \
     "$consumer_root/private_esp_task_policy/CMakeLists.txt"
-cp "$fixture_root/task_policy_test.c" \
-    "$consumer_root/private_esp_task_policy/tests/test_h2_esp_target_task_policy.c"
 
 for unit in ap cp; do
     source_policy="private_bk_${unit}_task_policy"
     destination="$consumer_root/private_bk_task_policy/$unit"
-    mkdir -p "$destination/tests"
-    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
-        "$fixture_root/${source_policy}.c" > \
-        "$destination/h2_bk_target_task_policy.c"
+    mkdir -p "$destination"
     sed "s/${source_policy}/h2_bk_target_task_policy/g" \
         "$fixture_root/${source_policy}.h" > \
         "$destination/h2_bk_target_task_policy.h"
     sed "s/${source_policy}/h2_bk_target_task_policy/g" \
         "$fixture_root/${source_policy}.CMakeLists.txt.fixture" > \
         "$destination/CMakeLists.txt"
-    cp "$fixture_root/task_policy_test.c" \
-        "$destination/tests/test_h2_bk_target_task_policy.c"
 done
 
 case "$(uname -s)-$(uname -m)" in
