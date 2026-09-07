@@ -34,7 +34,6 @@ cc_binary(
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/example/apps/lua-flappybird/app:lua_flappybird",
-        "//projects/example/apps/lua-flappybird/app:task_names",
         "//projects/example/libs/host_runtime",
     ],
 )

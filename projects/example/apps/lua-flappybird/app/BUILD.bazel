@@ -1,6 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -10,26 +11,32 @@ h2_lua_resource(
     symbol = "flappybird_script",
 )
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_lua_flappybird_task_names.c"],
-    hdrs = ["include/h2_lua_flappybird_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "lua-flappybird/runner",
+    ],
 )
 
 cc_library(
     name = "lua_flappybird",
-    srcs = ["src/h2_lua_flappybird.c"],
-    hdrs = ["include/h2_lua_flappybird.h"],
+    srcs = [
+        "src/h2_lua_flappybird.c",
+        "src/h2_lua_flappybird_task_names.c",
+    ],
+    hdrs = [
+        "include/h2_lua_flappybird.h",
+        "include/h2_lua_flappybird_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     tags = ["h2-ci-native-package"],
     deps = [
+        ":tasks",
         ":flappybird_script",
-        ":task_names",
         "//libs/lua",
         "//libs/runtime",
     ],

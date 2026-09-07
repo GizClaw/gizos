@@ -1,14 +1,18 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["h2loader_bleikcp.c"])
+exports_files([
+    "h2loader_bleikcp.c",
+    "task_names.c",
+])
 
-cc_library(
-    name = "task_names",
-    srcs = ["task_names.c"],
-    hdrs = ["include/h2loader_app_task_names.h"],
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "h2loader/appcmd",
+    ],
 )
 
 cc_library(
@@ -24,7 +28,6 @@ cc_library(
         ],
         allow_empty = True,
         exclude = [
-            "task_names.c",
             "examples/**",
             "test/**",
             "tests/**",
@@ -39,7 +42,6 @@ cc_library(
         ],
         allow_empty = True,
         exclude = [
-            "include/h2loader_app_task_names.h",
             "examples/**",
             "test/**",
             "tests/**",
@@ -73,12 +75,14 @@ cc_library(
         allow_empty = True,
     ) + [
     ],
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     tags = [
         "manual",
     ],
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/bleikcp",
         "//libs/command",
         "//libs/pal",

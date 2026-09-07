@@ -2,17 +2,18 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_gizclaw_e2e_task_names.c"],
-    hdrs = ["include/h2_gizclaw_e2e_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "gizclaw/e2e/runner",
+        "gizclaw/e2e/wifi",
+        "gizclaw/e2e/launcher",
+        "gizclaw/e2e/job",
+    ],
 )
 
 cc_library(
@@ -37,6 +38,7 @@ cc_library(
     # The opus vendor build crashes the JieLi pi32v2 clang 4.0.1 backend.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        ":tasks",
         ":connectivity",
         ":device_case",
         ":fixture",
@@ -44,7 +46,6 @@ cc_library(
         ":resource_case",
         ":rpc_cases",
         ":runner",
-        ":task_names",
         ":voice_case",
         "//libs/gizclaw",
         "//libs/pal",
@@ -55,16 +56,16 @@ cc_library(
             "@h2_vendor_opus//:headers",
         ],
         "//tools/bazel/platforms:is_bk7258": [
-            "//tools/bazel:vendor_third_party_gizclaw_firmware",
-            "@h2_vendor_opus//:headers",
+    
+    
         ],
         "//tools/bazel/platforms:is_esp32p4": [
-            "//tools/bazel:vendor_third_party_gizclaw_firmware",
-            "@h2_vendor_opus//:headers",
+    
+    
         ],
         "//tools/bazel/platforms:is_esp32s3": [
-            "//tools/bazel:vendor_third_party_gizclaw_firmware",
-            "@h2_vendor_opus//:headers",
+    
+    
         ],
         "//conditions:default": [
             "//tools/bazel:vendor_third_party_gizclaw",
@@ -119,9 +120,13 @@ cc_test(
 # Keep their local tests runnable independently of the remaining case migration.
 cc_library(
     name = "fixture",
-    srcs = ["src/h2_gizclaw_e2e_fixture.c"],
+    srcs = [
+        "src/h2_gizclaw_e2e_fixture.c",
+        "src/h2_gizclaw_e2e_task_names.c",
+    ],
     hdrs = [
         "include/h2_gizclaw_e2e.h",
+        "include/h2_gizclaw_e2e_task_names.h",
         "src/h2_gizclaw_e2e_internal.h",
     ],
     conlyopts = H2_C11_OPTS,
@@ -132,7 +137,6 @@ cc_library(
     ],
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
-        ":task_names",
         "//libs/app_test:testing_audio",
         "//libs/app_test:testing_pal",
         "//libs/gizclaw",
@@ -588,10 +592,9 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
-        ":fixture",
-        ":task_names",
         "//libs/pal",
         "//libs/runtime",
+        ":fixture",
     ],
 )
 
