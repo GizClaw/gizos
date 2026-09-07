@@ -8,6 +8,46 @@
 extern "C" {
 #endif
 
+/**
+ * Streaming App-package transaction. Zero-initialize before first use. The
+ * caller holds the shared Loader operation mutex from begin through commit or
+ * abort; all calls run on that owning task. Package and Pref are borrowed for
+ * the transaction lifetime. No image/partition or /data writes occur here.
+ * Treat fields as private; inspect returns a borrowed immutable manifest.
+ */
+typedef struct h2_loader_stage_writer {
+    h2_loader_package_t *package;
+    const h2_pal_pref_api_t *pref;
+    h2_pal_fs_file_t *file;
+    uint64_t expected;
+    uint64_t written;
+    char checksum[65];
+    const char *board;
+    const char *target;
+    h2_loader_package_inspection_t inspection;
+    unsigned percent;
+    int started;
+    int verified;
+} h2_loader_stage_writer_t;
+
+/** Begin replacing Stage. On any failure call abort before releasing the lock. */
+int h2_loader_stage_writer_begin(
+    h2_loader_stage_writer_t *writer, h2_loader_package_t *package,
+    const h2_pal_pref_api_t *pref, uint64_t size, const char *checksum,
+    const char *board, const char *target);
+/** Write complete chunks; short writes fail. out_percent counts accepted bytes. */
+int h2_loader_stage_writer_write(
+    h2_loader_stage_writer_t *writer, const uint8_t *data, size_t size,
+    unsigned *out_percent);
+/** Flush, close and validate size, digest, App manifest and device identity. */
+int h2_loader_stage_writer_inspect(
+    h2_loader_stage_writer_t *writer,
+    const h2_loader_package_inspection_t **out_inspection);
+/** Publish verified Stage after the caller's product policy/journal succeeds. */
+int h2_loader_stage_writer_commit(h2_loader_stage_writer_t *writer);
+/** Close partial writes and invalidate owned Stage; safe before begin succeeds. */
+int h2_loader_stage_writer_abort(h2_loader_stage_writer_t *writer);
+
 /** Persist an invalid Stage record before replacing any candidate bytes. */
 int h2_loader_stage_begin(const h2_pal_pref_api_t *pref);
 

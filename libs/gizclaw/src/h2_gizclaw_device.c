@@ -18,6 +18,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* PAL HTTP bounds the entire streamed transfer, including Stage writes.
+ * Firmware packages need a separate budget from short connection/RPC waits. */
+#define OTA_DOWNLOAD_TIMEOUT_MS 600000
+
 /* RPC dispatch is serialized by the client. Only snapshots/commands cross the
  * mutex; HTTP, PCM, telemetry, and backend actions never run under it. */
 typedef struct audio_download audio_download_t;
@@ -44,6 +48,7 @@ struct h2_gizclaw_device {
   char sound[33];
   uint32_t sound_ms;
   gizclaw_rpc_v1_ClientFirmwareUpdateRequest update;
+  h2_gizclaw_ota_status_t ota_status;
   h2_pal_wifi_sta_config_t wifi_config;
 };
 
@@ -607,8 +612,10 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     request.channel = channel;
     lock(d);
     int rc = reserve_action(d, method, out);
-    if (rc == H2_PAL_OK)
+    if (rc == H2_PAL_OK) {
       d->update = request;
+      d->ota_status = (h2_gizclaw_ota_status_t){H2_GIZCLAW_OTA_RUNNING, H2_PAL_OK};
+    }
     unlock(d);
     return rc;
   }
@@ -1092,11 +1099,18 @@ static int ota_read(void *user, const h2_pal_http_request_t *request,
   return H2_PAL_OK;
 }
 static void update_firmware(h2_gizclaw_device_t *d) {
+  lock(d);
+  d->ota_status = (h2_gizclaw_ota_status_t){H2_GIZCLAW_OTA_RUNNING, H2_PAL_OK};
+  unlock(d);
   ota_download_t download = {.device = d};
   uint8_t random[16];
   int rc = h2_pal_crypto_random(d->config.crypto, random, sizeof(random));
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    lock(d);
+    d->ota_status = (h2_gizclaw_ota_status_t){H2_GIZCLAW_OTA_FAILED, rc};
+    unlock(d);
     return;
+  }
   for (size_t i = 0; i < sizeof(random); ++i)
     (void)snprintf(download.update_id + i * 2, 3, "%02x", random[i]);
   report_ota(&download, H2_GIZCLAW_OTA_STATE_STARTED, H2_PAL_OK);
@@ -1122,7 +1136,7 @@ static void update_firmware(h2_gizclaw_device_t *d) {
     const h2_pal_http_request_t request = {
         .method = H2_PAL_HTTP_GET,
         .url = {firmware.url, strlen(firmware.url)},
-        .timeout_ms = (int)io_timeout(d),
+        .timeout_ms = OTA_DOWNLOAD_TIMEOUT_MS,
         .retry_count = 0,
         .chunk_buf = chunk,
         .chunk_buf_cap = sizeof(chunk),
@@ -1153,6 +1167,10 @@ static void update_firmware(h2_gizclaw_device_t *d) {
       v->ota_abort(d->config.user);
     report_ota(&download, H2_GIZCLAW_OTA_STATE_FAILED, rc);
   }
+  lock(d);
+  d->ota_status = (h2_gizclaw_ota_status_t){
+      rc == H2_PAL_OK ? H2_GIZCLAW_OTA_STAGED : H2_GIZCLAW_OTA_FAILED, rc};
+  unlock(d);
 }
 
 static void device_worker(void *user) {
@@ -1432,10 +1450,24 @@ h2_pal_result_t h2_gizclaw_ota_start(h2_gizclaw_service_t *service,
     rc = H2_PAL_ERR_BUSY;
   else {
     d->update = update;
+    d->ota_status = (h2_gizclaw_ota_status_t){H2_GIZCLAW_OTA_RUNNING, H2_PAL_OK};
     cancel_play_locked(d);
     d->pending = H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE;
     d->pending_ready = true;
   }
   unlock(d);
   return rc;
+}
+
+h2_pal_result_t h2_gizclaw_ota_get_status(h2_gizclaw_service_t *service,
+                                         h2_gizclaw_ota_status_t *out_status) {
+  if (out_status == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_status, 0, sizeof(*out_status));
+  if (service == NULL) return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (d == NULL) return H2_PAL_ERR_UNSUPPORTED;
+  lock(d);
+  *out_status = d->ota_status;
+  unlock(d);
+  return H2_PAL_OK;
 }

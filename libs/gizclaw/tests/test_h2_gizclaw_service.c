@@ -2388,6 +2388,173 @@ static void test_device_provider_pal_and_player(void) {
   h2_runtime_deinit(runtime);
 }
 
+static h2_pal_result_t ota_random_failure(void *user, uint8_t *out, size_t len) {
+  (void)user; (void)out; (void)len;
+  return H2_PAL_ERR_IO;
+}
+static h2_pal_result_t ota_unreached_begin(void *user,
+    const h2_gizclaw_firmware_t *firmware, const char *id) {
+  (void)user; (void)firmware; (void)id;
+  assert(false); return H2_PAL_ERR_IO;
+}
+static h2_pal_result_t ota_unreached_write(void *user, const uint8_t *data, size_t len) {
+  (void)user; (void)data; (void)len;
+  assert(false); return H2_PAL_ERR_IO;
+}
+static h2_pal_result_t ota_unreached_finish(void *user) {
+  (void)user; assert(false); return H2_PAL_ERR_IO;
+}
+static void ota_unreached_abort(void *user) { (void)user; assert(false); }
+static void test_ota_status_before_stage_failure(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  const h2_pal_crypto_vtable_t crypto_ops = {.random = ota_random_failure};
+  const h2_pal_crypto_api_t crypto = {.vtable = &crypto_ops};
+  const h2_pal_http_api_t http = {0};
+  const h2_gizclaw_vtable_t operations = {
+    .ota_begin = ota_unreached_begin, .ota_write = ota_unreached_write,
+    .ota_finish = ota_unreached_finish, .ota_activate = ota_unreached_finish,
+    .ota_abort = ota_unreached_abort,
+  };
+  service->client_config.crypto = &crypto;
+  service->client_config.http = &http;
+  service->client_config.vtable = &operations;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_ota_status_t status;
+  assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+  assert(status.phase == H2_GIZCLAW_OTA_IDLE);
+  assert(h2_gizclaw_ota_start(service, 3, (h2_gizclaw_str_t){0}) == H2_PAL_OK);
+  for (unsigned i = 0; i < 3000; ++i) {
+    assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+    if (status.phase == H2_GIZCLAW_OTA_FAILED) break;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(status.phase == H2_GIZCLAW_OTA_FAILED && status.result == H2_PAL_ERR_IO);
+  assert(h2_gizclaw_ota_get_status(NULL, &status) == H2_PAL_ERR_INVALID_ARG);
+  assert(status.phase == H2_GIZCLAW_OTA_IDLE && status.result == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
+/* Hold activation open so RUNNING cannot pass only because of scheduler timing. */
+typedef struct {
+  unsigned step;
+  atomic_bool activating;
+  atomic_bool release_activation;
+} ota_success_state_t;
+static h2_pal_result_t ota_success_random(void *user, uint8_t *out, size_t len) {
+  (void)user;
+  memset(out, 0x12, len);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t ota_success_begin(void *user,
+    const h2_gizclaw_firmware_t *firmware, const char *id) {
+  ota_success_state_t *state = user;
+  assert(state->step++ == 0 && firmware->size == 4);
+  assert(!strcmp(id, "12121212121212121212121212121212"));
+  return H2_PAL_OK;
+}
+static h2_pal_result_t ota_success_write(void *user, const uint8_t *data, size_t len) {
+  ota_success_state_t *state = user;
+  assert(state->step++ == 1 && len == 4 && !memcmp(data, "test", 4));
+  return H2_PAL_OK;
+}
+static h2_pal_result_t ota_success_finish(void *user) {
+  assert(((ota_success_state_t *)user)->step++ == 2);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t ota_success_activate(void *user) {
+  ota_success_state_t *state = user;
+  assert(state->step++ == 3);
+  atomic_store(&state->activating, true);
+  for (unsigned i = 0; i < 3000 && !atomic_load(&state->release_activation); ++i)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(atomic_load(&state->release_activation));
+  return H2_PAL_OK;
+}
+static int ota_success_http(void *user, const h2_pal_http_request_t *request,
+                           h2_pal_http_response_t *response) {
+  (void)user;
+  assert(request->read_cb);
+  /* A short RPC connection budget must not truncate a large OTA transfer. */
+  assert(request->timeout_ms == 600000);
+  assert(request->cancel_cb && !request->cancel_cb(request->cancel_user));
+  response->status_code = 200;
+  response->content_length = 4;
+  return request->read_cb(request->user, request, (const uint8_t *)"test", 4, 4, 0);
+}
+static int ota_success_telemetry(void *user, const gzc_telemetry_ota_frame_t *frame) {
+  (void)user;
+  /* H2_GIZCLAW_OTA_STAGED is a local snapshot phase, not a wire event.
+   * The telemetry enum has STARTED/DOWNLOADING/SUCCEEDED/FAILED only;
+   * update_firmware() emits no terminal telemetry on successful staging.
+   * Keep rejecting SUCCEEDED until a product verifies the new image at boot. */
+  assert(frame->ota.state == GZC_OTA_STATE_STARTED ||
+         frame->ota.state == GZC_OTA_STATE_DOWNLOADING);
+  return GZC_OK;
+}
+static void test_ota_status_successful_stage(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  ota_success_state_t state = {0};
+  gizclaw_rpc_v1_FirmwareGetRequest params = {.channel = 3};
+  uint8_t input[6], payload[4096];
+  pb_ostream_t encoded = pb_ostream_from_buffer(input, sizeof(input));
+  assert(pb_encode(&encoded, gizclaw_rpc_v1_FirmwareGetRequest_fields, &params));
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_FIRMWARE_GET;
+  env.expected_payload = input;
+  env.expected_payload_len = encoded.bytes_written;
+  gizclaw_rpc_v1_FirmwareGetResponse message = gizclaw_rpc_v1_FirmwareGetResponse_init_zero;
+  message.channel = params.channel;
+  message.size = 4;
+  strcpy(message.url, "https://firmware.invalid/test");
+  strcpy(message.sha256, "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
+  encoded = pb_ostream_from_buffer(payload, sizeof(payload));
+  assert(pb_encode(&encoded, gizclaw_rpc_v1_FirmwareGetResponse_fields, &message));
+  env.response_payload = payload;
+  env.response_payload_len = encoded.bytes_written;
+  const h2_pal_crypto_vtable_t crypto_ops = {.random = ota_success_random};
+  const h2_pal_crypto_api_t crypto = {.vtable = &crypto_ops};
+  const h2_pal_http_vtable_t http_ops = {.request = ota_success_http};
+  const h2_pal_http_api_t http = {.vtable = &http_ops};
+  const h2_gizclaw_vtable_t operations = {
+    .ota_begin = ota_success_begin, .ota_write = ota_success_write,
+    .ota_finish = ota_success_finish, .ota_activate = ota_success_activate,
+    .ota_abort = ota_unreached_abort,
+  };
+  service->client_config.user = &state;
+  service->client_config.connect_timeout_ms = 1234;
+  service->client_config.crypto = &crypto;
+  service->client_config.http = &http;
+  service->client_config.vtable = &operations;
+  h2_gizclaw_test_set_ota_send(ota_success_telemetry, NULL);
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_ota_status_t status;
+  assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+  assert(status.phase == H2_GIZCLAW_OTA_IDLE && status.result == H2_PAL_OK);
+  assert(h2_gizclaw_ota_start(service, 3, (h2_gizclaw_str_t){0}) == H2_PAL_OK);
+  for (unsigned i = 0; i < 3000 && !atomic_load(&state.activating); ++i)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(atomic_load(&state.activating));
+  assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+  assert(status.phase == H2_GIZCLAW_OTA_RUNNING && status.result == H2_PAL_OK);
+  atomic_store(&state.release_activation, true);
+  for (unsigned i = 0; i < 3000; ++i) {
+    assert(h2_gizclaw_ota_get_status(service, &status) == H2_PAL_OK);
+    if (status.phase == H2_GIZCLAW_OTA_STAGED) break;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(status.phase == H2_GIZCLAW_OTA_STAGED && status.result == H2_PAL_OK);
+  assert(state.step == 4);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_ota_send(NULL, NULL);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 static int ota_telemetry_capture(void *user, const gzc_telemetry_ota_frame_t *frame) {
   (void)user;
   assert(frame->sequence == 19 && frame->ota.state == GZC_OTA_STATE_FAILED);
@@ -9362,6 +9529,8 @@ int main(int argc, char **argv) {
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
   test_device_ota_telemetry_copy();
+  test_ota_status_before_stage_failure();
+  test_ota_status_successful_stage();
   test_req_telemetry_copy_and_backpressure();
   test_req_point_storage_and_limits();
   test_req_workflow_public_paths();

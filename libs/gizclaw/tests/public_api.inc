@@ -197,7 +197,6 @@ H2_GIZCLAW_API(h2_gizclaw_player_get_status)
 H2_GIZCLAW_API(h2_gizclaw_ota_start)
 H2_GIZCLAW_API(h2_gizclaw_req_create_debug_set)
 H2_GIZCLAW_API(h2_gizclaw_resp_parse_debug_set)
-
 H2_GIZCLAW_API(h2_gizclaw_service_get_time_sync_status)
 H2_GIZCLAW_API(h2_gizclaw_session_create)
 H2_GIZCLAW_API(h2_gizclaw_session_destroy)
@@ -222,3 +221,4 @@ H2_GIZCLAW_API(h2_gizclaw_resource_snapshot)
 H2_GIZCLAW_API(h2_gizclaw_resource_execute)
 
 H2_GIZCLAW_API(h2_gizclaw_resource_close)
+H2_GIZCLAW_API(h2_gizclaw_ota_get_status)

@@ -15,6 +15,7 @@ set(H2_BK_H2LOADER_SRCS
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_mfg.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_package.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_stage.c"
+  "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_stage_writer.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_status.c"
   "${REPO_ROOT}/projects/h2loader/libs/h2loader/src/h2_loader_task_names.c")
 set(H2_BK_H2LOADER_PRIV_REQUIRES

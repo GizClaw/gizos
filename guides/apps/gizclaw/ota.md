@@ -28,6 +28,10 @@ Peer/channel 绑定 package 时返回 not found，缺失 URL、SHA-256 或非法
 并同时核对 2xx、声明长度、实际接收长度和 SHA-256。URL 可能包含短期授权信息，不写日志、
 不长期保存，也不通过 UI 或 telemetry 暴露。
 
+设备 OTA worker 为整个流式 HTTP 下载（含 Stage 写入）保留 10 分钟总预算，
+不复用连接/RPC 的短超时；关闭 Service 或取消当前 generation 仍会中断下载。
+超时按失败上报并调用产品 abort 清理，不能把部分下载当作可安装 Stage。
+
 ## OTA 流程
 
 ```mermaid
@@ -102,3 +106,11 @@ Desktop E2E 只通过 `h2_gizclaw_client_rpc_call()` 与 pinned generated schema
 该测试不为 Firmware response 字段增加第二套 GizOS public wrapper。not-found、错误
 channel、非 HTTPS URL、截断和 digest mismatch 等 negative case 由本地确定性测试完成，
 避免向共享 E2E 环境注入破坏性请求。
+
+## Product integration
+
+A product using the App serial/BLE H2Loader services copies their initialized configuration through the target accessor and borrows the same operation mutex for Stage and digest operations. Release the mutex on the acquiring device task before handing activation to the product lifecycle owner; after joining the Service, reacquire it and verify the intended Stage before rebooting. This keeps recovery commands available without racing two package writers.
+
+The local OTA status snapshot covers accepted/running, staged and failed attempts, including failures before Stage begins. It resets with Service recreation and never claims post-boot success. A product Settings page can use it to end a pending request on failure without creating a control-plane API key or polling the device HTTP endpoint. Hardware acceptance still checks the persisted server snapshot as described by the AMOLED E2E guide.
+
+The public `h2_loader_stage_writer_*` API owns streamed package writes, byte progress, flush/close, size/digest/manifest validation and Stage publication. A product forwards the GizClaw worker payload to this writer under the shared operation mutex; it does not implement filesystem staging or package validation. Between `inspect` and `commit`, the product may persist report identity and recheck battery policy. Any failed transaction is aborted before releasing the mutex. The writer accepts only App packages for the configured board/target; installation remains in the Loader image.
