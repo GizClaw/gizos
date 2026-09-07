@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="736" height="896" viewBox="0 0 368 448">
+  <defs>
+    <linearGradient id="fadeLeft" x1="0" x2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="1"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="fadeRight" x1="1" x2="0">
+      <stop offset="0" stop-color="#000" stop-opacity="1"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <style>
+      .label { font: 10px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #d7f8ff; }
+      .small { font: 8px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #7e9aa6; }
+      .guide { fill: none; stroke: #275363; stroke-width: 1; stroke-dasharray: 3 3; }
+    </style>
+  </defs>
+
+  <rect width="368" height="448" rx="26" fill="#000"/>
+  <rect x="1" y="1" width="366" height="446" rx="25" fill="none" stroke="#17333e" stroke-width="2"/>
+
+  <!-- top status -->
+  <path d="M14 25H80" stroke="#24d9ff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M14 25H58" stroke="#fff" stroke-opacity=".45" stroke-width="2"/>
+  <path d="M288 25H354" stroke="#ff694f" stroke-width="5" stroke-linecap="round"/>
+  <path d="M310 25H354" stroke="#fff" stroke-opacity=".45" stroke-width="2"/>
+  <text x="14" y="14" class="small">玩家 3 HP</text>
+  <text x="354" y="14" text-anchor="end" class="small">AI 3 HP</text>
+  <text x="184" y="27" text-anchor="middle" class="label">回合 01</text>
+
+  <!-- moving background layers -->
+  <rect x="12" y="48" width="344" height="244" rx="8" fill="#031019" stroke="#163846"/>
+  <circle cx="42" cy="79" r="1.2" fill="#6d4cff"/>
+  <circle cx="318" cy="102" r="1" fill="#24d9ff"/>
+  <circle cx="109" cy="136" r=".8" fill="#24d9ff"/>
+  <path d="M12 208L184 148 356 208M12 235L184 148 356 235M12 268L184 148 356 268M184 148V292M142 148L120 292M226 148L248 292" fill="none" stroke="#164354" stroke-width="1"/>
+  <text x="23" y="64" class="small">远景粒子 ← 2–4 px/s</text>
+  <text x="345" y="279" text-anchor="end" class="small">地面网格 ↓ 8–12 px/s</text>
+
+  <!-- opponent -->
+  <circle cx="184" cy="117" r="22" fill="#10192a" stroke="#9c5cff" stroke-width="2"/>
+  <path d="M164 141Q184 130 204 141L215 196 198 219H170L153 196Z" fill="#111a28" stroke="#9c5cff" stroke-width="2"/>
+  <path d="M166 116L178 121 184 113 190 121 202 116" fill="none" stroke="#ff5ccd" stroke-width="2"/>
+  <text x="184" y="235" text-anchor="middle" class="small">对手角色 / 待机上下 2 px</text>
+
+  <!-- first person hands -->
+  <path d="M22 292L47 238 75 216 92 226 83 249 105 269 109 292Z" fill="#0b1821" stroke="#24d9ff" stroke-width="2"/>
+  <path d="M346 292L321 238 293 216 276 226 285 249 263 269 259 292Z" fill="#0b1821" stroke="#24d9ff" stroke-width="2"/>
+  <text x="184" y="272" text-anchor="middle" class="label">第一人称动作 / 特效主区域</text>
+
+  <!-- qi arc -->
+  <path d="M46 344Q184 266 322 344" class="guide"/>
+  <g transform="translate(64 325) rotate(-25)"><rect width="20" height="10" rx="3" fill="#ffc64d"/></g>
+  <g transform="translate(90 313) rotate(-19)"><rect width="20" height="10" rx="3" fill="#ffc64d"/></g>
+  <g transform="translate(118 303) rotate(-13)"><rect width="20" height="10" rx="3" fill="#ffc64d"/></g>
+  <g transform="translate(148 297) rotate(-6)"><rect width="20" height="10" rx="3" fill="#ffc64d"/></g>
+  <g transform="translate(179 295)"><rect width="20" height="10" rx="3" fill="#18262c" stroke="#566b74"/></g>
+  <g transform="translate(210 297) rotate(6)"><rect width="20" height="10" rx="3" fill="#18262c" stroke="#566b74"/></g>
+  <g transform="translate(240 303) rotate(13)"><rect width="20" height="10" rx="3" fill="#18262c" stroke="#566b74"/></g>
+  <g transform="translate(268 313) rotate(19)"><rect width="20" height="10" rx="3" fill="#18262c" stroke="#566b74"/></g>
+  <g transform="translate(294 325) rotate(25)"><rect width="20" height="10" rx="3" fill="#18262c" stroke="#566b74"/></g>
+  <g transform="translate(318 341) rotate(31)"><rect width="20" height="10" rx="3" fill="#18262c" stroke="#566b74"/></g>
+  <text x="184" y="320" text-anchor="middle" class="label">聚气 4 / 10</text>
+
+  <!-- carousel -->
+  <path d="M0 384Q184 302 368 384V448H0Z" fill="#03090e" stroke="#164354" stroke-width="2"/>
+  <circle cx="56" cy="397" r="28" fill="#0b151c" stroke="#24d9ff" stroke-opacity=".45"/>
+  <path d="M43 399Q56 381 69 399V411H43Z" fill="none" stroke="#24d9ff" stroke-width="4"/>
+  <circle cx="184" cy="391" r="48" fill="#09121c" stroke="#ffc64d" stroke-width="3"/>
+  <circle cx="184" cy="391" r="17" fill="none" stroke="#ffc64d" stroke-width="5"/>
+  <path d="M184 363V376M184 406V419M156 391H169M199 391H212" stroke="#ffc64d" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="312" cy="397" r="28" fill="#12091b" stroke="#c85cff" stroke-opacity=".45"/>
+  <path d="M297 405Q312 385 327 405M301 397Q312 383 323 397" fill="none" stroke="#c85cff" stroke-width="4"/>
+  <rect x="0" y="349" width="48" height="99" fill="url(#fadeLeft)"/>
+  <rect x="320" y="349" width="48" height="99" fill="url(#fadeRight)"/>
+  <text x="184" y="442" text-anchor="middle" class="label">← 左右滑动选择 · 点击中央确认 →</text>
+
+  <!-- zone guides -->
+  <path d="M6 48H362M6 292H362M6 318H362" class="guide" opacity=".5"/>
+</svg>

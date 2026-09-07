@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <defs>
+    <style>
+      .title { font: 700 22px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #edfaff; }
+      .sub { font: 14px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; fill: #87a8b5; }
+      .time { font: 12px ui-monospace, monospace; fill: #637f8a; }
+      .panel { fill: #03080d; stroke: #18333f; stroke-width: 2; }
+      .hand { fill: none; stroke: #24d9ff; stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <radialGradient id="gold"><stop stop-color="#fff"/><stop offset=".35" stop-color="#ffd05c"/><stop offset="1" stop-color="#ff8a00" stop-opacity="0"/></radialGradient>
+    <radialGradient id="violet"><stop stop-color="#fff"/><stop offset=".3" stop-color="#c85cff"/><stop offset="1" stop-color="#6e29ff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="620" rx="24" fill="#000"/>
+
+  <!-- charge -->
+  <text x="36" y="48" class="title">聚气 · 900 ms</text>
+  <text x="36" y="73" class="sub">粒子内吸 → 光核压缩 → 气槽回弹</text>
+  <g transform="translate(36 92)">
+    <rect width="258" height="138" rx="12" class="panel"/>
+    <path d="M58 118L106 74M200 118L152 74" class="hand"/>
+    <circle cx="129" cy="66" r="15" fill="url(#gold)"/>
+    <g fill="#ffc64d"><circle cx="42" cy="30" r="3"/><circle cx="222" cy="42" r="2"/><circle cx="76" cy="50" r="2"/><circle cx="186" cy="30" r="3"/></g>
+    <text x="10" y="128" class="time">150–600</text>
+  </g>
+  <g transform="translate(306 92)">
+    <rect width="258" height="138" rx="12" class="panel"/>
+    <path d="M58 118L110 69M200 118L148 69" class="hand"/>
+    <circle cx="129" cy="62" r="45" fill="url(#gold)"/>
+    <text x="10" y="128" class="time">600–760</text>
+  </g>
+  <g transform="translate(576 92)">
+    <rect width="258" height="138" rx="12" class="panel"/>
+    <path d="M58 118L110 74M200 118L148 74" class="hand"/>
+    <circle cx="129" cy="66" r="11" fill="#fff" stroke="#ffc64d" stroke-width="8"/>
+    <g transform="translate(72 20)" fill="#ffc64d">
+      <rect width="18" height="9" rx="3"/><rect x="23" width="18" height="9" rx="3"/><rect x="46" width="18" height="9" rx="3"/>
+      <rect x="69" width="18" height="9" rx="3"/><rect x="92" width="18" height="9" rx="3" opacity=".25"/>
+    </g>
+    <text x="10" y="128" class="time">760–900</text>
+  </g>
+  <path d="M294 161H306M564 161H576" stroke="#607984" stroke-width="2"/>
+
+  <!-- defense -->
+  <text x="36" y="284" class="title">防御 · 800 ms</text>
+  <text x="36" y="309" class="sub">前臂交叉 → 盾面展开 → 冲击波纹 → 消散</text>
+  <g transform="translate(36 328)">
+    <rect width="258" height="138" rx="12" class="panel"/>
+    <path d="M58 118L154 48M200 118L104 48" class="hand"/>
+    <text x="10" y="128" class="time">0–140</text>
+  </g>
+  <g transform="translate(306 328)">
+    <rect width="258" height="138" rx="12" class="panel"/>
+    <path d="M58 118L154 48M200 118L104 48" class="hand"/>
+    <path d="M129 18L192 51V95L129 124 66 95V51Z" fill="#24d9ff" fill-opacity=".12" stroke="#24d9ff" stroke-width="4"/>
+    <text x="10" y="128" class="time">140–260</text>
+  </g>
+  <g transform="translate(576 328)">
+    <rect width="258" height="138" rx="12" class="panel"/>
+    <path d="M58 118L154 48M200 118L104 48" class="hand"/>
+    <path d="M129 18L192 51V95L129 124 66 95V51Z" fill="#24d9ff" fill-opacity=".08" stroke="#24d9ff" stroke-width="4"/>
+    <circle cx="129" cy="72" r="18" fill="none" stroke="#fff" stroke-width="3"/><circle cx="129" cy="72" r="35" fill="none" stroke="#24d9ff" stroke-opacity=".5"/>
+    <text x="10" y="128" class="time">260–520</text>
+  </g>
+  <path d="M294 397H306M564 397H576" stroke="#607984" stroke-width="2"/>
+
+  <!-- wave on right -->
+  <text x="870" y="48" class="title">气功波 · 950 ms</text>
+  <text x="870" y="73" class="sub">压缩 → 推出 → 判定</text>
+  <g transform="translate(870 92)">
+    <rect width="294" height="138" rx="12" class="panel"/>
+    <path d="M46 118L118 79M248 118L176 79" class="hand"/>
+    <circle cx="147" cy="70" r="25" fill="url(#violet)"/>
+    <text x="10" y="128" class="time">0–340</text>
+  </g>
+  <g transform="translate(870 242)">
+    <rect width="294" height="138" rx="12" class="panel"/>
+    <path d="M46 118L123 65M248 118L171 65" class="hand"/>
+    <path d="M70 70Q139 28 226 70Q139 112 70 70Z" fill="url(#violet)"/>
+    <circle cx="188" cy="70" r="21" fill="#fff" stroke="#c85cff" stroke-width="7"/>
+    <text x="10" y="128" class="time">340–650</text>
+  </g>
+  <g transform="translate(870 392)">
+    <rect width="294" height="138" rx="12" class="panel"/>
+    <circle cx="147" cy="67" r="56" fill="url(#violet)"/>
+    <path d="M147 15V119M95 67H199M110 30L184 104M184 30L110 104" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <text x="10" y="128" class="time">650–820 · 命中 / 格挡 / 对消</text>
+  </g>
+
+  <text x="36" y="568" class="sub">共同收尾：亮度恢复、手部复位、生命与气槽结算；动画对象从对象池复用。</text>
+  <text x="36" y="595" class="time">注：这是动作节奏线框，不是最终角色或特效美术。</text>
+</svg>

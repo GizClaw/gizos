@@ -134,6 +134,16 @@ typedef struct test_display_fixture {
 
 static test_display_fixture_t s_test_display_fixture;
 
+static const uint8_t s_test_display_asset[] = {
+    'H',  '2',  'A',  '4',  2,    0,    2,    0,
+    0x00, 0xff, 0xf0, 0xf0, 0x0f, 0xf0, 0xff, 0x0f,
+};
+static const h2_lua_resource_t s_test_resources[] = {{
+    .name = "@test/tiny.a4",
+    .source = s_test_display_asset,
+    .source_size = sizeof(s_test_display_asset),
+}};
+
 static void test_display_reset(void) {
   memset(&s_test_display_fixture, 0, sizeof(s_test_display_fixture));
 }
@@ -593,6 +603,8 @@ static h2_lua_host_t *create_unstarted_host_with_scheduler(
       .instruction_quantum = instruction_quantum,
       .resume_time_budget_ms = resume_time_budget_ms,
       .execution_timeout_ms = execution_timeout_ms,
+      .resources = s_test_resources,
+      .resource_count = sizeof(s_test_resources) / sizeof(s_test_resources[0]),
   };
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   return host;
@@ -1284,6 +1296,21 @@ int main(void) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   assert(atomic_load(&s_test_audio_close_count) == 1);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
+
+  {
+    static const uint8_t draw_asset_script[] =
+        "local d=require('display');d.present();"
+        "d.draw_asset('@test/tiny.a4',2,3);d.present();d.deinit();return 'ok'";
+    h2_lua_job_status_t display_status =
+        run_display_script(host, "@display-draw-asset.lua", draw_asset_script,
+                           sizeof(draw_asset_script) - 1u);
+    assert(strcmp(display_status.message, "ok") == 0);
+    assert_draw_rect(1u, 2, 3, 2, 2);
+    assert(s_test_display_fixture.pixels[3u * 8u + 2u] == 0xf800u);
+    assert(s_test_display_fixture.pixels[3u * 8u + 3u] == 0x07e0u);
+    assert(s_test_display_fixture.pixels[4u * 8u + 2u] == 0x001fu);
+    assert(s_test_display_fixture.pixels[4u * 8u + 3u] == 0x0000u);
+  }
 
   {
     static const uint8_t draw_circle_script[] =

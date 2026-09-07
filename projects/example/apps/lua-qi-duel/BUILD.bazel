@@ -1,0 +1,17 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "lua-qi-duel",
+    srcs = [
+        "README.md",
+        "assets/source/approved-mockup.png",
+        "assets/source/carousel-base-v1.png",
+        "assets/source/opponent-full.png",
+        "assets/source/player-hand-left.png",
+        "assets/source/player-hand-right.png",
+        "assets/source/skill-icons-v1.png",
+        "data/skills/qi-duel/SKILL.md",
+        "data/skills/qi-duel/scripts/main.lua",
+        "//projects/example/apps/lua-qi-duel/app:lua_qi_duel",
+    ],
+)
