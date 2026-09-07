@@ -18,7 +18,7 @@ import sys
 
 
 PREFIX = "h2_gizclaw_"
-TOP_CASES = {"connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
+TOP_CASES = {"resource", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
              "contact", "friend", "group", "gameplay", "peer-name-isolation",
              "telemetry", "api-key"}
@@ -104,6 +104,17 @@ def requirements():
     calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
     rules += [Rule(symbol, "device-api", calls, parse, "debug_set-assert")
               for symbol in (create, parse)]
+    # Session requirements remain fail-closed until a real run emits both
+    # the call and its business assertion. Unit mocks are never live evidence.
+    for method in ("create destroy snapshot catalog_copy register refresh select close "
+                   "conversation_create conversation_release audio_start audio_end "
+                   "cancel_pending").split():
+        symbol = PREFIX + "session_" + method
+        case = "voice"
+        rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
+    for method in "create destroy snapshot execute close".split():
+        symbol = PREFIX + "resource_" + method
+        rules.append(Rule(symbol, "resource", (symbol,), symbol, "resource_" + method + "-assert"))
     return sorted(rules, key=lambda rule: rule.symbol)
 
 
@@ -111,9 +122,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 197 or len(set(inventory)) != 197 or
-            len(names) != 197 or len(set(names)) != 197 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 197-function inventory")
+    if (len(inventory) != 215 or len(set(inventory)) != 215 or
+            len(names) != 215 or len(set(names)) != 215 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 215-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 
@@ -190,7 +201,8 @@ def audit(lines, rules, *, endpoint, backend, profile, platform, process_exit_co
         issues.append("expected exactly one final Desktop summary")
     else:
         expected = dict(endpoint=endpoint, backend=backend, profile=profile, platform=platform,
-                        suite="all", selected="7", terminal="7", **{"pass": "7"},
+                        suite="all", selected=str(len(TOP_CASES)), terminal=str(len(TOP_CASES)),
+                        **{"pass": str(len(TOP_CASES))},
                         fail="0", error="0", blocked="0", cancelled="0", cleanup_rc="0",
                         retained_resources="0", complete="true", exit_code="0",
                         first_failure_case="-", first_failure_rc="0")

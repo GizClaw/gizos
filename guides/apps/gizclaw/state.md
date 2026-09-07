@@ -1,92 +1,39 @@
 # GizClaw 状态与请求
 
-GizClaw 集成使用 app-owned state 投影调用方能够确认的连接事实和异步请求结果。它不是一个 LVGL subject。当前 GizClaw Public API 没有公开 connection、workspace、conversation 或 OTA state enum，因此产品文档不能把调用方自定义阶段写成 GizClaw SDK 状态。
+`libs/gizclaw` 的 Session 持有连接作用域内的 Runtime Profile 身份、Workflow catalog、 Workspace 准备状态和 Conversation 状态。产品读取公共快照并投影到页面，不再维护另一份 可用于业务决策的 Profile/catalog/Workspace 状态。低层 Service/RPC 仍可独立使用； 选择 Session 的同一 Service 必须统一通过 Session 执行注册、catalog、Workspace 修改和 Conversation 操作，不能混用原始接口绕过状态所有者。
 
-## 数据流
+## 数据与职责
 
-```mermaid
-flowchart LR
-    Action["App action"] --> Transition["App transition"]
-    Transition --> Command["GizClaw effect command"]
-    Command --> Submit["service submit"]
-    Submit --> Receive["bounded request queue"]
-    Receive --> Net["$gizclaw/net"]
-    Net --> Poll["client poll / response copy"]
-    Poll --> Completion["bounded response queue"]
-    Completion --> MainLoop["App main-loop dispatch callback"]
-    MainLoop --> Transition
-    Transition --> State["GizClaw app-owned state"]
-    State --> Subject["页面局部 LVGL subject"]
-    Subject --> UI["LVGL projection"]
-```
-
-`h2_gizclaw_service_submit()` 把 typed operation context 交给 library-owned bounded queue。`$gizclaw/net` 唯一持有 client，执行网络 operation 并持续调用 `h2_gizclaw_client_poll()`；它复制 response、stream frame 和 Peer Event 后写入有界 response queue，不直接调用用户 callback。App main loop 调用 `h2_gizclaw_service_poll()`，按接收顺序执行 progress、stream、completion 和 connection event callback。队列达到容量时网络层实施背压，不会无限复制 frame。
-
-## 当前公开状态边界
-
-| Public API | 调用方能够确认的事实 |
+| Session 持有 | 产品持有 |
 | --- | --- |
-| `h2_gizclaw_client_init()` | Client object 是否成功创建 |
-| `h2_gizclaw_client_connect()` | 本次同步连接调用成功或失败 |
-| `h2_gizclaw_client_poll()` | 本次 poll 是否成功、超时或失败 |
-| `h2_gizclaw_client_rpc_call()` / `rpc_call_stream()` | 调用任意 protobuf-encoded unary 或 server-streaming RPC，并获得 response/error/data event |
-| `h2_gizclaw_rpc_provider_fn` | 在 `poll()` 所在线程处理 Server 主动调用的 `client.info.get`、`client.identifiers.get` 和 `client.tool.invoke` |
-| `h2_gizclaw_client_ping_measure()` | Ping RPC 的 server time 与 monotonic round-trip time |
-| `h2_gizclaw_client_speedtest_download()` | 实际接收字节数、elapsed time 与下载 bit rate |
-| `h2_gizclaw_client_close()` / `deinit()` | 调用方已经请求关闭并释放 client |
+| 注册结果、Profile name/revision | Credential 来源、连接重建策略 |
+| 完整 Workflow catalog、加载和失败状态 | 要查询的 collection、必需 Workflow、默认模式 |
+| 当前已确认 Workspace、正在准备的目标 | Workspace 命名、用户选择、页面焦点 |
+| 对话准备、输入开启、活动和终态 | 按键语义、麦克风与扬声器 pump、错误页面 |
 
-Generic RPC API 接收 wire method number 和 protobuf payload，因此 client surface 不需要为每个 generated method 复制一层易漂移 wrapper。Payload message、conversation state、workspace state 和 Audio frame 仍由对应 integration 持有。消费 App 可以保存自己的 request generation、pending、error 和 UI projection，但这些字段必须标记为 App/integration-owned，不能使用 `GizClaw state` 名义暗示 SDK 已提供相同合同。
+Session 不内置产品 collection、默认 Workflow、命名规则或文件路径。Catalog 保存在 库拥有的有界内存中；产品可保存显示投影，但磁盘上的旧投影不是当前连接的有效凭据。 未注册、加载失败、Workspace 未确认或已有对话时，`can_start` 为 false。 `blocking_reason` 区分阻塞阶段；`error_stage` 和 `last_error` 描述最近操作失败。 它们不声称设备麦克风、网络之外的产品使用限制或 UI 已就绪。
 
-Server 主动调用 Client 时，C SDK 只负责 request framing、method dispatch、response/error framing 和 channel 生命周期。Provider callback 在 `poll()` 所在线程同步执行，并在返回成功前生成且提交唯一一次 protobuf-encoded response。Request view 只在 callback 期间有效；response 与 error view 只需保持到 callback 返回，integration 不能把这些 borrowed buffer 交给异步任务后再响应。设备信息、硬件 identifiers 与本地 Tool 的真实实现仍由产品 integration 提供。Tiga H106 launcher 当前返回 board/model 和基于 eFuse MAC 的稳定 SN；尚未注册本地 Tool 时，`client.tool.invoke` 明确返回 method-not-found，不能伪造执行成功。
+## 准备流程
 
-调用方状态通常还需要保存以下稳定数据：
+注册成功立即加载配置要求的 collection，不依赖产品打开页面。分页必须符合容量上限、 有界页数、collection 和唯一 Workflow name 要求，所有页面必须具有同一个 Profile name/revision。只有完整成功才替换 catalog；失败保留已分配的旧数据，但公开读取拒绝 把它当作有效数据。注册成功而 catalog 失败分别记录，不把聊天配置错误误报成连接失败。
 
-| 字段 | 合同 |
-| --- | --- |
-| `active_workspace_name` | 保存 Peer-scoped Workspace name，不从显示名、icon 或 canonical ID 反推 |
-| `request_generation` | 每次启动、取消或替换异步请求时递增 |
-| `last_error` | 记录所属 domain、稳定错误码和可显示摘要 |
-| `retry_count` / `retry_deadline` | 只由 effect policy 更新，不由 UI timer 猜测 |
-| `firmware_channel` / `firmware_sha256` / `firmware_size` | 标识当前 channel 解析出的 OTA package，下载期间保持不变；不保存 admin firmware name 或短期 URL |
+产品选择 collection、Workflow 和 Workspace 后，Session 在必要时刷新 catalog，精确 get Workspace，只有 Not Found 才创建同一个名字。创建结果不确定时仍精确 get 同一名字 进行确认。校验 Profile 版本及 Workflow 归属后，通过 reload-with-options 准备目标； 只有返回 RUNNING 且 active name 匹配才发布新的 current Workspace。版本不一致允许 刷新 catalog 后再尝试一次，所有步骤共享同一个单调时间总期限。
 
-## Request 合同
+`target_workspace` 在准备开始时更新；`current_workspace` 只在服务端确认后更新。 切换失败保留旧名字用于展示，但 workspace phase 为 FAILED，不能假定旧目标仍可对话。 相同有效 Workspace 和参数可复用就绪结果；复用前仍校验所选 Workflow 的 collection 归属，不在每轮对话重复 reload。
 
-每个 command 至少携带 operation、generation，以及该 API 要求的 typed resource/record name。Transition 在 command 发出前先写入 pending state；网络 task 完成后把同一 identity/generation、terminal kind 和 result 放入 response queue。只有 main-loop dispatch callback 中的 generation 与当前 state 匹配时才能提交结果。字段必须保留具体语义，例如 `workspace_name`、`history_id` 或 `firmware_channel`，不能混装成通用 `resource_id`。
+Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定固定 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。新一轮输入必须等待前一轮 completion 已分发；没有活动 generation 时 end 返回 INVALID_STATE，不能把终态改回 ACTIVE。
 
-取消操作先使当前 App request generation 失效，再调用 operation cancel。取消是幂等的；queued、running 或 progress-pending operation 仍由 service 持有，最终恰好产生一次 completion callback。Progress-pending 取消会唤醒 worker，已经排队但尚未执行的 progress callback 不再接触产品资源。连接断开时 service 将受影响 operation 标记为 `SERVICE_CLOSED`，App callback 再根据 typed operation 决定失败或恢复行为，不能把未由 GizClaw API 返回的 connection phase 当作 SDK 事实。
+## 并发与生命周期
 
-配置 Log PAL 后，service、Conversation 与 Speech request 会输出 compact lifecycle
-记录：`request`、`stage`、`identity`、`rc`、`detail`、`frames` 和 `bytes`。这些字段用于
-定位 queue、RPC、transport、cancel 和 dispatch 边界，不定义新的产品状态，也不能替代
-terminal callback。调用者任务和 `$gizclaw/net` 共享的统计计数使用原子访问；日志不得
-为诊断引入跨任务 data race。
+Session 借用 Service、PAL 和配置中的 collection 字符串。准备操作在调用方的后台任务 执行，不能从 `service_poll` callback 或 Service 网络任务调用。一个准备操作拥有网络 编排；select/conversation 在总期限内等待先前准备，register/refresh 遇忙返回 BUSY。 读取只短暂锁定状态或有界 catalog，不执行网络 I/O，也不暴露可变内部指针。
 
-## Subject 投影
+状态 revision 的变化会 notify 可选 Runtime；通知可合并，消费者醒来后重新读取。 这是状态通知，不是要求每个变化都恰好投递一次的事件队列。页面不拥有 Session 生命周期。
 
-页面只创建自己需要的 subject，例如 `chat_phase`、`connection_badge` 或 `ota_progress`。长期 GizClaw state 仍由 App 持有；切换页面时销毁页面 observer 和局部 subject，不销毁 client connection。
+取消准备使 operation generation 失效并唤醒等待者；已经发出的 RPC 仍受剩余期限限制， 返回后不再开始下一步或提交结果。取消不回滚服务端已经执行的副作用；后续选择必须重新 确认。关闭 Session 永久拒绝新操作并丢弃迟到结果。Service 断开时 integration 调用 Session close；显式退出先 close，再 stop Service 以中断网络，dispatch drain 并 join 调用方任务，释放 Conversation，最后 destroy Session 和 deinit Service。重连新建两者。
 
-Subject 更新只发生在 LVGL 所属 main loop。一次性动作，如开始录音、取消下载或重启进入 H2Loader，必须保持 effect command，不能编码为 subject 的瞬时值。
+## 验证
 
-## 生命周期
-
-App 初始化依次建立 client config、service 和 app-owned state，再启动 service。退出时先停止接收新 command，取消 domain operation 和 conversation/OTA effect，调用 service stop 等待 `$gizclaw/net` 退出，再继续 dispatch，直到所有 completion callback 已 drain 并释放 caller operation handle；随后 App deinit service，最后释放 App state。Partial initialization 失败时只清理已经成功创建的资源。
-
-## 验收
-
-- App-owned connection request、workspace request、conversation 和 firmware operation 可以独立表达，不互相覆盖，也不冒充 GizClaw SDK enum。
-- 所有 GizClaw callback 都由 App main loop 调用 service dispatch 后执行。
-- 页面退出后的迟到 result 因 generation 不匹配而被丢弃。
-- Subject 不承担请求队列、event bus、网络回调或 Audio callback。
-- Desktop 与设备端使用相同 state、generation 和失败语义。
-- 配置 Log PAL 时，请求失败日志包含 identity、stage、result、detail 与 bounded frame/byte 统计，且不改变 callback lifecycle。远端结果日志还包含数值 RPC `method`，`rc` 为映射后的 PAL 结果，`detail` 保留服务端原始状态码。Not Found 使用 INFO / `remote_result`，允许调用方正常进入创建分支；其他远端错误使用 ERROR / `remote_error`。若资源不存在导致业务失败，调用方仍须明确记录该业务操作失败。
-
-Workspace E2E 在现有创建、配置、激活流程之前，分别通过 request 和同步 RPC 验证新名称返回 Not Found。AMOLED 可用 `--define=H2_GIZCLAW_E2E_RPC_ONLY=ON` 构建同一 E2E package，仅运行 RPC suite；默认仍运行 all，且不要与 `H2_GIZCLAW_E2E_DEVICE_ONLY` 同时设置。
-
-Workspace 参数更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应
-`server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 接口已删除。
-传入 `h2_gizclaw_workspace_parameters_patch_t`，通过各 `has_*` 字段选择更新
-input、conversation initiative 或 agent initiative policy，未指定字段保持不变。
-create 会复制 patch；空 patch 或无效的显式值返回 INVALID_ARG。
+Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择复用、切换失败、Conversation 回调释放，以及关闭后迟到 catalog/activation 不提交。真实服务器和设备验收与这些自动测试分别记录。Portable E2E 的普通 Voice case 从连接注册开始使用 Session，并在 PTT、Realtime 和 route 释放边界验证公共快照；AMOLED 可通过 `H2_GIZCLAW_E2E_VOICE_ONLY` 单独运行该流程，见 [AMOLED Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
 ## 自动系统校时
 
@@ -103,3 +50,17 @@ ESP32/BK7258 冷启动和重置后的校准状态默认无效；即使 RTC 仍�
 自动测试覆盖无效时间时校时先于连接、已有有效时间时连接前无请求、未校准读数、失败后重试、非法响应、校时中通信继续、 校时后 UTC 读数、断开后保留有效时间、重建 Service 后再次校时、成功后跨重试期限的普通轮询不重复校时、校时请求中和重试等待中停止、设置失败保留旧值及模拟重启失效。 真实硬件的轻睡眠/深睡眠保留行为仍需分别做设备验收。
 
 通过 `runtime->time` 调用 `h2_pal_time_set_wall_ms()` 成功后，Runtime 通过包装既有 Time vtable 的 `set_wall_ms` 自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`（请求设置的 UTC `wall_ms`）。GizClaw 和其他应用调用者共享该行为；失败不发事件，读时钟和 sleep 不发事件。事件 envelope 的时间戳仍为单调时间。必须把 Runtime 的 Time PAL 传给 Service；直接调用底层 provider 会绕过 Runtime。事件遵循现有有界队列的溢出丢弃规则，不改变已经成功的设置返回值；消费者收到事件后重读有效时间，并保留周期刷新作为溢出恢复。并发设置的事件是刷新提示，不应将 payload 当作当前时钟快照。
+
+## 通用资源状态
+
+Contact、个人资料、Points 和 FriendGroup 使用独立的 `h2_gizclaw_resource_t` 实例。每个实例只拥有一种资源，按需创建并借用 Service、PAL 和可选 Runtime；与 Conversation Session 分开分配和串行化，不让联系人加载阻塞 Workspace 的准备锁。同一 Service 上同种资源的 mutation 应统一经过它的 Resource。
+
+Resource 在库内保存有界快照，公开读取深拷贝到调用方 storage。`valid` 区分有效空列表与未加载；`stale` 标记正在刷新、失败或断开后不能保证新鲜的数据；`busy`、`closed` 和 `last_error` 描述操作状态。`revision` 用于通知重新读取，`data_revision` 用于识别新提交的数据；两者都是本地计数，不能解释为服务端 revision。失败保留旧快照，关闭后仍可读到标记 stale 的旧数据。
+
+Contacts 和 Groups 刷新完整拉取有界列表，拒绝重复 identity、无效 cursor、超出容量和无限分页。联系人创建使用调用方提供的稳定 name，只有 Not Found 才创建，响应不确定时 get 同名资源并校验；修改和删除成功后重新加载完整列表。Profile 更新后 get 完整资料再提交，避免由页面合并两份字段。Points 保存余额和流水的独立结果；刷新替换第一页，加载更多使用库自己的游标并追加到有界列表。没有有效的新鲜列表时不允许追加；余额或列表单独成功可独立保留。
+
+执行发生在调用方 worker，不能从 Service worker 或 poll callback 调用。每次 execute 的 timeout 是所有 RPC 的单调时间总期限；同一 Resource 并发 execute 返回 BUSY。close 永久关闭 admission 并丢弃迟到结果，调用方先 close、stop Service，再 join worker 和 destroy Resource；重连新建实例。页面取消仅丢弃页面结果，不回滚已执行的服务器 mutation，资源快照可以继续更新。
+
+Resource 不保存 UI 草稿、页面焦点、产品默认值、电话号码放行策略或文件路径，也不会自动把网络快照持久化为离线授权。例如 H106 只有在完整 Contact 快照通过产品校验且持久化成功后才替换离线通话白名单；网络连接消失不会删除这份已提交的产品白名单。磁盘读取和写入失败仍由该持久化边界报告。
+
+Resource 的 `h2_gizclaw_resource_test` 直接执行生产 Resource，仅在 typed RPC 边界提供替身；覆盖完整分页、重复/循环游标、容量不足、快照复制、创建响应丢失恢复、期限/关闭交错及 Points 独立结果。E2E consumer 故障测试和真机验收单独记录。

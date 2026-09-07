@@ -93,6 +93,8 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_response.c",
     "src/h2_gizclaw_response_internal.h",
     "src/h2_gizclaw_service.c",
+    "src/h2_gizclaw_session.c",
+    "src/h2_gizclaw_resource.c",
     "src/h2_gizclaw_time.c",
     "src/h2_gizclaw_service_internal.h",
     "src/h2_gizclaw_social.c",
@@ -124,6 +126,8 @@ cc_library(
         "include/h2_gizclaw_registration.h",
         "include/h2_gizclaw_rpc.h",
         "include/h2_gizclaw_service.h",
+        "include/h2_gizclaw_session.h",
+        "include/h2_gizclaw_resource.h",
         "include/h2_gizclaw_social.h",
         "include/h2_gizclaw_speech.h",
         "include/h2_gizclaw_telemetry.h",
@@ -193,6 +197,8 @@ cc_library(
         "src/h2_gizclaw_response.c",
         "src/h2_gizclaw_response_internal.h",
         "src/h2_gizclaw_service.c",
+        "src/h2_gizclaw_session.c",
+        "src/h2_gizclaw_resource.c",
         "src/h2_gizclaw_time.c",
         "src/h2_gizclaw_social.c",
         "src/h2_gizclaw_social_internal.h",
@@ -219,6 +225,8 @@ cc_library(
         "include/h2_gizclaw_registration.h",
         "include/h2_gizclaw_rpc.h",
         "include/h2_gizclaw_service.h",
+        "include/h2_gizclaw_session.h",
+        "include/h2_gizclaw_resource.h",
         "include/h2_gizclaw_social.h",
         "include/h2_gizclaw_speech.h",
         "include/h2_gizclaw_telemetry.h",
@@ -357,4 +365,50 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["@h2_gizclaw_c_sdk//:gizclaw_core"],
+)
+
+cc_test(
+    name = "h2_gizclaw_session_test",
+    srcs = [
+        "src/h2_gizclaw_session.c",
+        "src/h2_gizclaw_response.c",
+        "src/h2_gizclaw_response_internal.h",
+        "tests/test_h2_gizclaw_session.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_resource_test",
+    srcs = [
+        "src/h2_gizclaw_resource.c",
+        "src/h2_gizclaw_response.c",
+        "src/h2_gizclaw_response_internal.h",
+        "tests/test_h2_gizclaw_resource.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
 )

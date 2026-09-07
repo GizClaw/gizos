@@ -25,6 +25,7 @@ typedef enum h2_gizclaw_e2e_actor_role {
 
 typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
+  h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   char public_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
@@ -79,6 +80,7 @@ typedef struct h2_gizclaw_e2e_fixture {
   /* A case may retain borrowed Track/hook state through failed teardown. */
   void *case_state;
   int (*case_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
+  bool use_session;
   bool workspace_created;
   h2_gizclaw_e2e_actor_role_t workspace_actor_role;
   /* A valid delete reply is retained until cleanup records the handoff. */

@@ -430,6 +430,48 @@ int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   if (scratch == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   h2_gizclaw_resp_storage_t storage = {.data = scratch, .capacity = 65536u};
+  h2_gizclaw_session_t *session = fixture->actors[H2_GIZCLAW_E2E_OWNER].session;
+  if (session != NULL) {
+    h2_gizclaw_workflow_page_t catalog = {0};
+    int rc = h2_gizclaw_session_refresh(session, 30000u);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session-refresh", rc);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_session_catalog_copy(session, &storage, &catalog);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session-catalog", rc);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_e2e_select_workflow_name(&catalog, fixture->workflow_name,
+                                             sizeof(fixture->workflow_name));
+    h2_gizclaw_session_state_t state;
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_session_snapshot(session, &state);
+    if (rc == H2_PAL_OK && (state.catalog != H2_GIZCLAW_SESSION_READY ||
+        state.workflow_count != catalog.count ||
+        strcmp(state.profile_name, catalog.runtime_profile_name) != 0 ||
+        strcmp(state.profile_revision, catalog.runtime_profile_revision) != 0))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_refresh", "session_refresh-assert", rc);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session_catalog_copy-assert", rc);
+    if (rc == H2_PAL_OK) {
+      const h2_gizclaw_session_selection_t selection = {
+          .collection = "assistants", .workflow_name = fixture->workflow_name,
+          .workspace_name = fixture->workspace_name};
+      fixture->workspace_created = true; /* Retain uncertain creates for cleanup. */
+      fixture->workspace_actor_role = H2_GIZCLAW_E2E_OWNER;
+      rc = h2_gizclaw_session_select(session, &selection, 30000u);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_select", "session-select", rc);
+      if (rc == H2_PAL_OK)
+        rc = h2_gizclaw_session_snapshot(session, &state);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot", "session-snapshot", rc);
+      if (rc == H2_PAL_OK && (!state.can_start ||
+          strcmp(state.current_workspace, fixture->workspace_name) != 0 ||
+          strcmp(state.workflow_name, fixture->workflow_name) != 0))
+        rc = H2_PAL_ERR_INVALID_STATE;
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_select", "session_select-assert", rc);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_snapshot", "session_snapshot-assert", rc);
+    }
+    h2_pal_mem_free(fixture->allocator, scratch);
+    return rc;
+  }
   int rc = h2_gizclaw_e2e_run_workflow(fixture, &storage);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_e2e_run_workspace(fixture, &storage, false);

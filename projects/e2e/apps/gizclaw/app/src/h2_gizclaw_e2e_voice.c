@@ -401,28 +401,68 @@ static void reset_capture(voice_state_t *state, bool realtime) {
   atomic_store(&state->capture_enabled, true);
 }
 
+static h2_gizclaw_session_t *voice_session(voice_state_t *state) {
+  return state->group_talk ? NULL : state->fixture->actors[0].session;
+}
+
+static int session_input_state(voice_state_t *state, bool open) {
+  h2_gizclaw_session_state_t snapshot;
+  int rc = h2_gizclaw_session_snapshot(voice_session(state), &snapshot);
+  if (rc == H2_PAL_OK && (snapshot.conversation_input_open != open ||
+      snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_ACTIVE ||
+      snapshot.can_start))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  return rc;
+}
+
 static int begin(voice_state_t *state) {
   ++state->generation;
   atomic_store(&state->active, true);
-  int rc = evidence("h2_gizclaw_service_audio_start", "voice",
-                    h2_gizclaw_service_audio_start(state->service));
+  h2_gizclaw_session_t *session = voice_session(state);
+  int rc = evidence(session ? "h2_gizclaw_session_audio_start" : "h2_gizclaw_service_audio_start", "voice",
+                    session ? h2_gizclaw_session_audio_start(session) : h2_gizclaw_service_audio_start(state->service));
+  if (rc == H2_PAL_OK && session != NULL)
+    rc = session_input_state(state, true);
   if (rc != H2_PAL_OK)
     atomic_store(&state->active, false);
   return rc;
 }
 
 static int end_input(voice_state_t *state) {
-  int rc = evidence("h2_gizclaw_service_audio_end", "voice",
-                    h2_gizclaw_service_audio_end(state->service));
+  h2_gizclaw_session_t *session = voice_session(state);
+  const char *symbol = session ? "h2_gizclaw_session_audio_end" : "h2_gizclaw_service_audio_end";
+  int rc = evidence(symbol, "voice", session ? h2_gizclaw_session_audio_end(session)
+                                            : h2_gizclaw_service_audio_end(state->service));
   if (rc == H2_PAL_OK)
-    rc = evidence("h2_gizclaw_service_audio_end", "voice-repeat-end",
-                  h2_gizclaw_service_audio_end(state->service));
+    rc = evidence(symbol, "voice-repeat-end", session ? h2_gizclaw_session_audio_end(session)
+                                                     : h2_gizclaw_service_audio_end(state->service));
+  if (rc == H2_PAL_OK && session != NULL)
+    rc = session_input_state(state, false);
   if (rc == H2_PAL_OK)
     atomic_store(&state->capture_enabled, false);
   return rc;
 }
 
 static int configure_mode(voice_state_t *state, bool realtime) {
+  h2_gizclaw_session_t *session = voice_session(state);
+  if (session != NULL) {
+    if (atomic_load(&state->active))
+      return H2_PAL_ERR_BUSY;
+    if (state->conversation != NULL) {
+      h2_gizclaw_session_conversation_release(session, state->conversation);
+      state->conversation = NULL;
+    }
+    const h2_gizclaw_workspace_parameters_patch_t parameters = {
+        .has_input = true, .input = realtime ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
+                                           : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+    const h2_gizclaw_session_selection_t selection = {
+        .collection = "assistants", .workflow_name = state->fixture->workflow_name,
+        .workspace_name = state->workspace_name, .parameters = &parameters};
+    state->generation = 0u; /* A new route starts its own generation sequence. */
+    return evidence("h2_gizclaw_session_conversation_create", "voice",
+                    h2_gizclaw_session_conversation_create(session, &selection, 30000u,
+                        on_event, on_complete, state, &state->conversation));
+  }
   state->storage.used = 0u;
   h2_gizclaw_workspace_t workspace = {0};
   int rc = h2_gizclaw_rpc_workspace_set_parameters(
@@ -534,10 +574,19 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
          : terminal == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE
                                  : terminal;
   }
-  evidence("h2_gizclaw_service_audio_start", "service_audio_start-assert", rc);
+  if (voice_session(state) != NULL && rc == H2_PAL_OK) {
+    h2_gizclaw_session_state_t snapshot;
+    rc = h2_gizclaw_session_snapshot(voice_session(state), &snapshot);
+    if (rc == H2_PAL_OK && (snapshot.conversation_input_open || snapshot.can_start ||
+        snapshot.conversation != (realtime ? H2_GIZCLAW_SESSION_CONVERSATION_CANCELED
+                                           : H2_GIZCLAW_SESSION_CONVERSATION_COMPLETED)))
+      rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  evidence(voice_session(state) ? "h2_gizclaw_session_audio_start" : "h2_gizclaw_service_audio_start",
+           voice_session(state) ? "session_audio_start-assert" : "service_audio_start-assert", rc);
   evidence(realtime ? "h2_gizclaw_conversation_cancel"
-                    : "h2_gizclaw_service_audio_end",
-           realtime ? "conversation_cancel-assert" : "service_audio_end-assert",
+                    : voice_session(state) ? "h2_gizclaw_session_audio_end" : "h2_gizclaw_service_audio_end",
+           realtime ? "conversation_cancel-assert" : voice_session(state) ? "session_audio_end-assert" : "service_audio_end-assert",
            rc);
   printf("H2_GIZCLAW_E2E stage=voice mode=%s result=%s rc=%d rounds=%u "
          "capture_bytes=%zu playback_bytes=%zu\n",
@@ -831,8 +880,11 @@ static int dispose_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   if (rc != H2_PAL_OK)
     return rc;
   if (state->conversation != NULL) {
-    h2_gizclaw_conversation_release(state->conversation);
-    evidence("h2_gizclaw_conversation_release", "voice-cleanup", H2_PAL_OK);
+    if (voice_session(state) != NULL)
+      h2_gizclaw_session_conversation_release(voice_session(state), state->conversation);
+    else
+      h2_gizclaw_conversation_release(state->conversation);
+    evidence(voice_session(state) ? "h2_gizclaw_session_conversation_release" : "h2_gizclaw_conversation_release", "voice-cleanup", H2_PAL_OK);
     state->conversation = NULL;
   }
   if (state->bound) {
@@ -1058,7 +1110,7 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
                   h2_gizclaw_service_set_track(state->service, state->track));
     state->bound = rc == H2_PAL_OK;
   }
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK && voice_session(state) == NULL)
     rc = evidence("h2_gizclaw_conversation_create", "voice",
                   h2_gizclaw_conversation_create(
                       state->service, h2_gizclaw_e2e_str(state->workspace_name),
@@ -1067,7 +1119,8 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
     rc = group_talk ? talk_group_clip(state)
                     : conversation_rounds(state, false);
     evidence("h2_gizclaw_service_set_track", "service_set_track-assert", rc);
-    evidence("h2_gizclaw_conversation_create", "conversation_create-assert",
+    evidence(voice_session(state) ? "h2_gizclaw_session_conversation_create" : "h2_gizclaw_conversation_create",
+             voice_session(state) ? "session_conversation_create-assert" : "conversation_create-assert",
              rc);
   }
   if (group_talk) {
@@ -1110,7 +1163,14 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
   if (rc == H2_PAL_OK) {
     if (fixture->case_state != NULL || fixture->case_cleanup != NULL)
       rc = H2_PAL_ERR_INVALID_STATE;
-    evidence("h2_gizclaw_conversation_release", "conversation_release-assert",
+    if (fixture->actors[0].session != NULL && rc == H2_PAL_OK) {
+      h2_gizclaw_session_state_t snapshot;
+      rc = h2_gizclaw_session_snapshot(fixture->actors[0].session, &snapshot);
+      if (rc == H2_PAL_OK && !snapshot.can_start)
+        rc = H2_PAL_ERR_INVALID_STATE;
+    }
+    evidence(fixture->actors[0].session ? "h2_gizclaw_session_conversation_release" : "h2_gizclaw_conversation_release",
+             fixture->actors[0].session ? "session_conversation_release-assert" : "conversation_release-assert",
              rc);
   }
   /* Only reconnect once all local hooks/Track borrows have ended. */
