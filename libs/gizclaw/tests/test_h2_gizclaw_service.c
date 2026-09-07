@@ -1254,6 +1254,10 @@ static void test_debug_state_paths(void) {
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
   assert(!snapshot.busy && !strcmp(snapshot.mode, "off"));
+  /* After stop no new request is published; the snapshot stays readable. */
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_debug_snapshot(service, &snapshot) == H2_PAL_OK);
+  assert(!snapshot.busy);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 

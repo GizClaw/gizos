@@ -177,6 +177,10 @@ static h2_pal_result_t debug_start(h2_gizclaw_service_t *service, bool is_set,
     debug_unlock(service);
     return H2_PAL_ERR_BUSY;
   }
+  if (service->stopping || service->stopped) {
+    debug_unlock(service);
+    return H2_PAL_ERR_CLOSED;
+  }
   service->debug.starting = true;
   debug_unlock(service);
 
@@ -190,13 +194,20 @@ static h2_pal_result_t debug_start(h2_gizclaw_service_t *service, bool is_set,
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   debug_lock(service);
   service->debug.starting = false;
+  if (rc == H2_PAL_OK && (service->stopping || service->stopped)) {
+    /* Stop ran between submission and publication and could not see the
+     * request; it must not be published after stop, so finish it here. */
+    rc = H2_PAL_ERR_CLOSED;
+  }
   if (rc == H2_PAL_OK) {
     service->debug.request = request;
     service->debug.request_is_set = is_set;
   }
   debug_unlock(service);
-  if (rc != H2_PAL_OK && request != NULL)
+  if (rc != H2_PAL_OK && request != NULL) {
+    (void)h2_gizclaw_req_cancel(request);
     h2_gizclaw_req_release(request);
+  }
   return rc;
 }
 
