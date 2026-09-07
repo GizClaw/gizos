@@ -104,6 +104,20 @@ def requirements():
     calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
     rules += [Rule(symbol, "device-api", calls, parse, "debug_set-assert")
               for symbol in (create, parse)]
+    create = PREFIX + "req_create_debug_get"
+    parse = PREFIX + "resp_parse_debug_get"
+    calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
+    rules += [Rule(symbol, "device-api", calls, parse, "debug_get-assert")
+              for symbol in (create, parse)]
+    # Service-owned debug snapshot: refresh/set_mode start the library's own
+    # request and snapshot must observe the confirmed mode afterwards.
+    snapshot = PREFIX + "debug_snapshot"
+    for method in ("debug_refresh", "debug_set_mode"):
+        symbol = PREFIX + method
+        rules.append(Rule(symbol, "device-api", (symbol, snapshot), snapshot,
+                          method + "-assert"))
+    rules.append(Rule(snapshot, "device-api", (snapshot,), snapshot,
+                      "debug_snapshot-assert"))
     # Session requirements remain fail-closed until a real run emits both
     # the call and its business assertion. Unit mocks are never live evidence.
     for method in ("create destroy snapshot catalog_copy register refresh select close "
@@ -122,9 +136,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 216 or len(set(inventory)) != 216 or
-            len(names) != 216 or len(set(names)) != 216 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 216-function inventory")
+    if (len(inventory) != 221 or len(set(inventory)) != 221 or
+            len(names) != 221 or len(set(names)) != 221 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 221-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 
