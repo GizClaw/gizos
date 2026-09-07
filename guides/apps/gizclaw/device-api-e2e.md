@@ -35,12 +35,14 @@ finish 的测试后端，不会执行物理升级。
 ```c
 h2_gizclaw_player_play(service, (h2_gizclaw_str_t){url, strlen(url)});
 h2_gizclaw_player_get_status(service, &status);
+h2_gizclaw_player_playlist_snapshot(service, &playlist);
+h2_gizclaw_player_play_index(service, 1);
 h2_gizclaw_player_stop(service);
 h2_gizclaw_ota_start(service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
                      (h2_gizclaw_str_t){0});
 ```
 
-以上启动函数只复制参数、发布任务，返回 OK 表示接受。下载、解码、查询 firmware、
+`playlist_snapshot` 和 `get_status` 只读设备已持有的状态，不发起网络请求；`play_index` 的索引越界在本地按 `H2_PAL_ERR_INVALID_ARG` 拒绝，不改动播放。以上启动函数只复制参数、发布任务，返回 OK 表示接受。下载、解码、查询 firmware、
 写入 staging 与进度上报由库拥有的 PAL task 执行。
 
 仅运行 AMOLED 设备控制用例（完整 target 默认仍运行 all）：
