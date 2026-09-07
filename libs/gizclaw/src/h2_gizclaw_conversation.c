@@ -106,6 +106,8 @@ struct h2_gizclaw_conversation_request {
   atomic_size_t reply_frames;
   atomic_size_t reply_bytes;
   h2_gizclaw_operation_result_t operation_result;
+  char terminal_error_code[65];
+  bool terminal_retryable;
   bool has_pending_downlink_message;
   atomic_bool committed;
   atomic_bool terminal;
@@ -1460,6 +1462,21 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
       event.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE ||
       event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR;
   if (terminal) {
+    if (event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR) {
+      snprintf(request->terminal_error_code,
+               sizeof(request->terminal_error_code), "%s",
+               event.error_code != NULL ? event.error_code : "");
+      request->terminal_retryable = event.retryable;
+      if (request->service->client_config.log != NULL) {
+        char message[160];
+        snprintf(message, sizeof(message),
+                 "remote_error code=%s retryable=%s",
+                 request->terminal_error_code,
+                 event.retryable ? "true" : "false");
+        (void)h2_pal_log_write(request->service->client_config.log,
+                              H2_PAL_LOG_ERROR, "gizclaw/conversation", message);
+      }
+    }
     request->reply_boundary_terminal =
         event.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR ||
         request->transport_committed;
@@ -1529,6 +1546,9 @@ conversation_request_complete(void *user, h2_gizclaw_operation_t *operation,
   (void)operation;
   h2_gizclaw_conversation_request_t *request = user;
   request->operation_result = *result;
+  memcpy(request->operation_result.error_code, request->terminal_error_code,
+         sizeof(request->operation_result.error_code));
+  request->operation_result.retryable = request->terminal_retryable;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
   h2_gizclaw_service_log_request(
       request->service,

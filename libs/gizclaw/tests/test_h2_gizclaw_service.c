@@ -7211,6 +7211,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
     event->payload.eos.has_error = true;
     snprintf(event->payload.eos.error.code,
              sizeof(event->payload.eos.error.code), "TEST_REMOTE_ERROR");
+    event->payload.eos.error.retryable = true;
   }
   return GZC_OK;
 }
@@ -7421,6 +7422,17 @@ conversation_test_complete(void *user, h2_gizclaw_conversation_t *conversation,
   (void)conversation;
   conversation_test_t *test = user;
   assert(pthread_equal(pthread_self(), test->app_thread));
+  if (test->mode == 6) {
+    /* Completion runs after the wire/request buffers have been destroyed. */
+    assert(strcmp(result->error_code, "TEST_REMOTE_ERROR") == 0);
+    assert(result->retryable);
+  } else if (test->mode == 23) {
+    assert(strcmp(result->error_code, "INPUT_DENIED") == 0);
+    assert(!result->retryable);
+  } else {
+    assert(result->error_code[0] == '\0');
+    assert(!result->retryable);
+  }
   test->result = result->result;
   atomic_store(&test->done, true);
 }

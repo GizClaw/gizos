@@ -23,6 +23,12 @@ Session 不内置产品 collection、默认 Workflow、命名规则或文件路�
 
 Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定固定 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。新一轮输入必须等待前一轮 completion 已分发；没有活动 generation 时 end 返回 INVALID_STATE，不能把终态改回 ACTIVE。
 
+## 对话错误详情
+
+Conversation 的远端 ERROR 在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。
+
+收到远端错误时，Service 日志输出 `remote_error code=... retryable=...`。新一轮输入成功启动时清除旧错误；新的准备操作完成或 Conversation 创建结果也会替换最近错误状态，没有远端详情时错误码为空且 `retryable=false`。`retryable` 透传服务端提示，不触发自动重试或改变 catalog、Workspace 的有效性判定。测试覆盖输入就绪前的拒绝、回复终止错误、请求释放后的详情读取，以及 Session 快照副本和下一轮清除行为。
+
 ## 并发与生命周期
 
 Session 借用 Service、PAL 和配置中的 collection 字符串。准备操作在调用方的后台任务 执行，不能从 `service_poll` callback 或 Service 网络任务调用。一个准备操作拥有网络 编排；select/conversation 在总期限内等待先前准备，register/refresh 遇忙返回 BUSY。 读取只短暂锁定状态或有界 catalog，不执行网络 I/O，也不暴露可变内部指针。

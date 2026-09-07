@@ -19,6 +19,7 @@ static bool paginated, empty_cycle, get_failure;
 static const char *server_revision;
 static unsigned closed_after_reload;
 static h2_gizclaw_conversation_completion_fn terminal;
+static h2_gizclaw_conversation_callback_fn on_event;
 static void *terminal_user;
 static unsigned terminal_count;
 static atomic_uint_fast64_t now;
@@ -181,7 +182,7 @@ h2_gizclaw_conversation_create(h2_gizclaw_service_t *service,
                                void *user, h2_gizclaw_conversation_t **out) {
   (void)service;
   (void)workspace;
-  (void)callback;
+  on_event = callback;
   ++conversations;
   terminal = completion;
   terminal_user = user;
@@ -356,6 +357,31 @@ int main(void) {
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_COMPLETED);
   assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
   terminal(terminal_user, conversation, &result);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  h2_gizclaw_operation_result_t remote_error = {
+      .result = H2_PAL_ERR_IO,
+      .error_code = "RUNTIME_PROFILE_MISMATCH",
+      .retryable = true,
+  };
+  h2_gizclaw_conversation_event_t error_event = {
+      .kind = H2_GIZCLAW_CONVERSATION_EVENT_ERROR,
+      .error_code = remote_error.error_code,
+      .retryable = remote_error.retryable,
+  };
+  assert(on_event(terminal_user, conversation, &error_event) == H2_PAL_OK);
+  assert(strcmp(snapshot().error_code, "RUNTIME_PROFILE_MISMATCH") == 0);
+  assert(snapshot().retryable && snapshot().last_error == H2_PAL_ERR_IO);
+  terminal(terminal_user, conversation, &remote_error);
+  memset(&remote_error, 0, sizeof(remote_error));
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_FAILED);
+  assert(strcmp(snapshot().error_code, "RUNTIME_PROFILE_MISMATCH") == 0);
+  assert(snapshot().retryable);
+  assert(snapshot().error_stage == H2_GIZCLAW_SESSION_BLOCK_CONVERSATION);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  assert(snapshot().error_code[0] == '\0' && !snapshot().retryable);
+  assert(snapshot().last_error == H2_PAL_OK);
+  terminal(terminal_user, conversation, &result);
+  assert(snapshot().error_code[0] == '\0' && !snapshot().retryable);
   h2_gizclaw_session_conversation_release(session, conversation);
   teardown();
 
