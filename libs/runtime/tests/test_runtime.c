@@ -3119,15 +3119,52 @@ static void test_input_snapshot_does_not_create_condition(void) {
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
-static void test_sequence_continues_past_uint32_max(void) {
+static void test_sequence_wraps_and_skips_zero(void) {
     test_runtime_env_t env;
     test_env_init(&env);
     h2_runtime_t *runtime = test_runtime_create(&env);
-    runtime->private_state->next_sequence = (h2_runtime_sequence_t)UINT32_MAX;
+    runtime->private_state->next_sequence = UINT32_MAX;
 
-    assert(h2_runtime_next_sequence(runtime) == (h2_runtime_sequence_t)UINT32_MAX);
-    assert(h2_runtime_next_sequence(runtime) == (h2_runtime_sequence_t)UINT32_MAX + 1u);
+    assert(h2_runtime_next_sequence(runtime) == UINT32_MAX);
+    /* 0 means "no sequence", so the wrap lands on 1. */
+    assert(h2_runtime_next_sequence(runtime) == 1u);
+    assert(h2_runtime_next_sequence(runtime) == 2u);
 
+    assert(h2_runtime_sequence_after(1u, UINT32_MAX));
+    assert(!h2_runtime_sequence_after(UINT32_MAX, 1u));
+    assert(h2_runtime_sequence_after(2u, 1u));
+    assert(!h2_runtime_sequence_after(1u, 1u));
+    /* 0 is "no sequence": every real sequence is after it. */
+    assert(h2_runtime_sequence_after(UINT32_MAX, 0u));
+    assert(h2_runtime_sequence_after(1u, 0u));
+    assert(!h2_runtime_sequence_after(0u, 1u));
+    assert(!h2_runtime_sequence_after(0u, 0u));
+
+    h2_runtime_deinit(runtime);
+}
+
+/* A first input event with a high sequence must establish the ceiling. */
+static void test_high_first_sequence_sets_input_ceiling(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(
+        &env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    h2_runtime_test_control_t *control = NULL;
+    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    assert(runtime->private_state->input_event_sequence_ceiling == 0u);
+    runtime->private_state->next_sequence = UINT32_MAX;
+    assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
+    assert(runtime->private_state->input_event_sequence_ceiling == UINT32_MAX);
+
+    /* The wrap right after it still advances the ceiling. */
+    assert(h2_runtime_test_button_up(control, 1u, 100u, 160u) == H2_PAL_OK);
+    assert(runtime->private_state->input_event_sequence_ceiling == 1u);
+
+    h2_runtime_test_control_close(control);
     h2_runtime_deinit(runtime);
 }
 
@@ -3820,7 +3857,8 @@ int main(void) {
     test_input_lifecycle_is_closed_during_test_session();
     test_station_snapshot_unavailable_without_mutex();
     test_input_snapshot_does_not_create_condition();
-    test_sequence_continues_past_uint32_max();
+    test_sequence_wraps_and_skips_zero();
+    test_high_first_sequence_sets_input_ceiling();
     test_sensor_component_mapping();
     test_control_keeps_test_sources_while_sensors_poll();
     test_control_button_actions_track_timestamps();

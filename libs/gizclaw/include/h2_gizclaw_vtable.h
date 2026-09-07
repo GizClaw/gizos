@@ -14,11 +14,13 @@ struct h2_gizclaw_firmware;
 #define H2_GIZCLAW_DEVICE_IMEI_NAME_MAX 32
 
 /** One modem IMEI. digits holds exactly 15 ASCII decimal digits plus NUL; the
- * library splits it into TAC (first 8) and serial (last 7). name is optional
- * and distinguishes slots on multi-modem products. */
+ * library splits it into TAC (first 8) and serial (last 7). name is an
+ * optional NUL-terminated slot label for multi-modem products; an empty
+ * string means unnamed. Both are inline buffers so nothing is borrowed from
+ * the provider once get_facts returns. */
 typedef struct h2_gizclaw_device_imei {
-  const char *name;
   char digits[16];
+  char name[H2_GIZCLAW_DEVICE_IMEI_NAME_MAX + 1];
 } h2_gizclaw_device_imei_t;
 
 typedef struct h2_gizclaw_device_facts {
@@ -28,8 +30,8 @@ typedef struct h2_gizclaw_device_facts {
   bool charging;
   bool has_firmware_sha256;
   char firmware_sha256[65];
-  /** Cached modem IMEIs. get_facts must not query the modem; report 0 until a
-   * cached value exists. Values are borrowed for the duration of the call. */
+  /** Cached modem IMEIs, copied out by value. get_facts must not query the
+   * modem; report 0 until a cached value exists. */
   size_t imei_count;
   h2_gizclaw_device_imei_t imeis[H2_GIZCLAW_DEVICE_IMEI_MAX];
 } h2_gizclaw_device_facts_t;
@@ -57,6 +59,16 @@ typedef struct h2_gizclaw_vtable {
    * the next firmware must verify its identity and send SUCCEEDED telemetry
    * using the saved update_id. */
   h2_pal_result_t (*ota_activate)(void *user);
+  /** Optional non-blocking handoff for client.device.reboot. Called once on
+   * the device worker after the RPC response was sent, with the requested
+   * delay in milliseconds. The callback must only copy the request and post
+   * it to a product-owned execution context (for example a Runtime custom
+   * event) and return promptly: it must not sleep, block, or stop or destroy
+   * the Service inline. The product applies the delay, runs its orderly
+   * shutdown on its own owner and reboots. A returned error is logged as the
+   * action result; the library never falls back to the power PAL. When unset
+   * the library waits `delay_ms` on the worker and calls the power PAL. */
+  h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }

@@ -1,3 +1,8 @@
+#include "h2_app_test_mem.h"
+#include "h2_app_test_time.h"
+#include "h2_app_test_sync.h"
+#include "h2_app_test_task.h"
+#include "h2_app_test_crypto.h"
 #include "h2_gizclaw_e2e.h"
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_concurrency.h"
@@ -11,100 +16,15 @@
 #include <string.h>
 
 typedef struct test_state {
-  uint64_t now_ms;
+  h2_app_test_mem_t mem;
+  h2_app_test_time_t clock;
+  h2_app_test_sync_t sync;
+  h2_app_test_task_t task;
+  h2_app_test_crypto_t crypto;
+  uint8_t entropy[16384];
   size_t progress_records;
-  size_t task_join_calls;
-  size_t task_join_failures;
-  int task_start_rc;
-  h2_pal_task_entry_t task_entry;
-  void *task_context;
-  bool in_task;
-  bool task_exited;
   bool stop;
 } test_state_t;
-
-static int s_mutex_storage;
-static int s_task_storage;
-
-static void *test_alloc(void *user, size_t len) {
-  (void)user;
-  return malloc(len);
-}
-
-static void *test_realloc(void *user, void *ptr, size_t len) {
-  (void)user;
-  return realloc(ptr, len);
-}
-
-static void test_free(void *user, void *ptr) {
-  (void)user;
-  free(ptr);
-}
-
-static h2_pal_result_t test_random(void *user, uint8_t *out, size_t len) {
-  (void)user;
-  memset(out, 0x5a, len);
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_time_monotonic(void *user, uint64_t *out_ms) {
-  test_state_t *state = user;
-  *out_ms = state->now_ms++;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_sleep(void *user, uint32_t ms) {
-  test_state_t *state = user;
-  state->now_ms += ms;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_mutex_create(
-    void *user, const h2_pal_mutex_config_t *config,
-    h2_pal_mutex_t **out_mutex) {
-  (void)user;
-  (void)config;
-  *out_mutex = (h2_pal_mutex_t *)&s_mutex_storage;
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t test_mutex_operation(void *user,
-                                            h2_pal_mutex_t *mutex) {
-  (void)user;
-  (void)mutex;
-  return H2_PAL_OK;
-}
-
-static int test_task_start(void *user, const h2_pal_task_options_t *options,
-                           h2_pal_task_entry_t entry, void *context,
-                           h2_pal_task_t **out_task) {
-  (void)options;
-  test_state_t *state = user;
-  state->task_entry = entry;
-  state->task_context = context;
-  state->task_exited = false;
-  if (state->task_start_rc != H2_PAL_OK) {
-    return state->task_start_rc;
-  }
-  *out_task = (h2_pal_task_t *)&s_task_storage;
-  state->in_task = true;
-  entry(context);
-  state->in_task = false;
-  state->task_exited = true;
-  return H2_PAL_OK;
-}
-
-static int test_task_join(void *user, h2_pal_task_t *task) {
-  test_state_t *state = user;
-  (void)task;
-  assert(state->task_exited);
-  state->task_join_calls++;
-  if (state->task_join_failures > 0u) {
-    state->task_join_failures--;
-    return H2_PAL_ERR_TASK;
-  }
-  return H2_PAL_OK;
-}
 
 static int test_log(void *user, h2_pal_log_level_t level, const char *scope,
                     const char *message) {
@@ -124,25 +44,22 @@ static void test_progress(void *user,
                           const h2_gizclaw_e2e_progress_t *progress) {
   test_state_t *state = user;
   assert(progress != NULL);
-  assert(!state->in_task);
+  assert(!state->task.running);
   state->progress_records++;
 }
 
 static h2_runtime_t test_runtime(test_state_t *state) {
-  static const h2_pal_mem_vtable_t mem_vtable = {
-      .alloc = test_alloc,
-      .realloc = test_realloc,
-      .free = test_free,
-  };
-  static const h2_pal_mem_api_t mem = {
-      .vtable = &mem_vtable,
-  };
-  static const h2_pal_crypto_vtable_t crypto_vtable = {
-      .random = test_random,
-  };
-  static const h2_pal_crypto_api_t crypto = {
-      .vtable = &crypto_vtable,
-  };
+  h2_app_test_mem_init(&state->mem, NULL);
+  h2_app_test_time_init(&state->clock, 0u);
+  state->clock.advance_per_read_ms = 1u;
+  h2_app_test_sync_init(&state->sync);
+  h2_app_test_task_init(&state->task);
+  state->task.run_on_start = true;
+  state->task.join.result = H2_PAL_ERR_TASK;
+  h2_app_test_crypto_init(&state->crypto);
+  memset(state->entropy, 0x5a, sizeof(state->entropy));
+  state->crypto.random_bytes = state->entropy;
+  state->crypto.random_size = sizeof(state->entropy);
   static const h2_pal_http_vtable_t http_vtable = {0};
   static const h2_pal_http_api_t http = {
       .vtable = &http_vtable,
@@ -150,23 +67,6 @@ static h2_runtime_t test_runtime(test_state_t *state) {
   static const h2_pal_webrtc_vtable_t webrtc_vtable = {0};
   static const h2_pal_webrtc_api_t webrtc = {
       .vtable = &webrtc_vtable,
-  };
-  static const h2_pal_sync_vtable_t sync_vtable = {
-      .create_mutex = test_mutex_create,
-      .destroy_mutex = test_mutex_operation,
-      .lock_mutex = test_mutex_operation,
-      .try_lock_mutex = test_mutex_operation,
-      .unlock_mutex = test_mutex_operation,
-  };
-  static const h2_pal_sync_api_t sync = {
-      .vtable = &sync_vtable,
-  };
-  static const h2_pal_task_vtable_t task_vtable = {
-      .start = test_task_start,
-      .join = test_task_join,
-  };
-  static h2_pal_task_api_t task = {
-      .vtable = &task_vtable,
   };
   static const h2_pal_queue_vtable_t queue_vtable = {0};
   static const h2_pal_queue_api_t queue = {
@@ -178,23 +78,14 @@ static h2_runtime_t test_runtime(test_state_t *state) {
   static const h2_pal_log_api_t log = {
       .vtable = &log_vtable,
   };
-  static h2_pal_time_vtable_t time_vtable = {
-      .get_monotonic_ms = test_time_monotonic,
-      .sleep_ms = test_sleep,
-  };
-  static h2_pal_time_api_t time = {
-      .vtable = &time_vtable,
-  };
-  time.user = state;
-  task.user = state;
   return (h2_runtime_t){
-      .mem = &mem,
+      .mem = &state->mem.api,
       .log = &log,
-      .time = &time,
-      .task = &task,
+      .time = &state->clock.api,
+      .task = &state->task.api,
       .queue = &queue,
-      .sync = &sync,
-      .crypto = &crypto,
+      .sync = &state->sync.api,
+      .crypto = &state->crypto.api,
       .http = &http,
       .webrtc = &webrtc,
   };
@@ -314,7 +205,7 @@ int main(void) {
 
   assert(h2_gizclaw_e2e_case_count == 8u);
   assert((config.suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0);
-  state.task_join_failures = 1u;
+  state.task.join.remaining = 1u;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_CASE_FAILURE);
   assert(result.selected == 8u);
@@ -324,7 +215,7 @@ int main(void) {
   assert(result.cleanup_rc == H2_PAL_OK);
   assert(result.complete);
   assert(state.progress_records == 10u);
-  assert(state.task_join_calls == 2u);
+  assert(state.task.join.calls == 2u);
 
   state.stop = true;
   state.progress_records = 0u;
@@ -338,7 +229,7 @@ int main(void) {
 
   state.stop = false;
   state.progress_records = 0u;
-  state.task_start_rc = H2_PAL_ERR_TASK;
+  state.task.start = (h2_app_test_fault_t){.result=H2_PAL_ERR_TASK, .remaining=1u};
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(result.selected == 8u);
@@ -350,21 +241,22 @@ int main(void) {
   assert(state.progress_records == 10u);
 
   state.progress_records = 0u;
-  state.task_start_rc = H2_PAL_OK;
-  state.task_join_failures = 100u;
+  state.task.start.remaining = 0u;
+  state.task.join.remaining = 100u;
   config.cleanup_timeout_ms = 20u;
-  const size_t joins_before_timeout = state.task_join_calls;
+  const size_t joins_before_timeout = state.task.join.calls;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(result.complete);
   assert(result.cleanup_rc == H2_PAL_ERR_TIMEOUT);
   assert(result.retained_resources == 3u);
-  assert(state.task_join_calls == joins_before_timeout + 2u);
-  assert(state.task_exited);
+  assert(state.task.join.calls == joins_before_timeout + 2u);
+  assert(state.task.complete);
 
   memset(&result, 0xa5, sizeof(result));
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(memcmp(&result, &empty, sizeof(result)) == 0);
+  h2_app_test_mem_release_all(&state.mem);
   return 0;
 }

@@ -2057,6 +2057,9 @@ static int fake_req_telemetry_send(void *user,
 typedef struct device_test_state {
   uint32_t volume;
   atomic_uint writes, drains, closes, reboots, write_attempts;
+  atomic_uint reboot_requests;
+  uint32_t reboot_request_delay_ms;
+  uint64_t reboot_at_ms;
   bool block_download;
   atomic_bool downloading;
   h2_pal_audio_track_t track;
@@ -2110,8 +2113,16 @@ static int device_track_create(void *user, const h2_audio_track_config_t *config
   *out = &state->track; return H2_PAL_OK;
 }
 static h2_pal_result_t device_reboot(void *user, uint32_t reason) {
+  (void)h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(),
+                                     &((device_test_state_t *)user)->reboot_at_ms);
   (void)reason;
   atomic_fetch_add(&((device_test_state_t *)user)->reboots, 1); return H2_PAL_OK;
+}
+static h2_pal_result_t device_request_reboot(void *user, uint32_t delay_ms) {
+  device_test_state_t *state = user;
+  state->reboot_request_delay_ms = delay_ms;
+  atomic_fetch_add(&state->reboot_requests, 1);
+  return H2_PAL_OK;
 }
 static int device_http(void *user, const h2_pal_http_request_t *request,
                         h2_pal_http_response_t *response) {
@@ -2265,12 +2276,17 @@ static void test_device_provider_pal_and_player(void) {
   service->config.runtime = runtime;
   h2_gizclaw_service_test_set_runtime_notify(device_runtime_notify);
   service->client_config.audio = runtime->audio;
-  service->client_config.power = &power;
+  /* No power PAL at first: the hook alone must make reboot supported. */
+  service->client_config.power = NULL;
   service->client_config.http = &http;
   service->client_config.audio_buffer_bytes = 32;
   service->client_config.audio_prebuffer_bytes = 1;
   service->client_config.model = "fixture";
-  const h2_gizclaw_vtable_t supplemental = {.resolve_sound_url = device_resolve_sound};
+  service->client_config.user = &state;
+  const h2_gizclaw_vtable_t supplemental = {
+      .resolve_sound_url = device_resolve_sound,
+      .request_reboot = device_request_reboot,
+  };
   service->client_config.vtable = &supplemental;
   assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
@@ -2372,16 +2388,55 @@ static void test_device_provider_pal_and_player(void) {
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP,
     gizclaw_rpc_v1_ClientDeviceAudioPlayerStopRequest_fields, &stop, &response) == 0);
   assert(!strcmp(device_player_status(service).state, "stopped"));
-  gizclaw_rpc_v1_ClientDeviceRebootRequest reboot = {0};
+  /* With a product request_reboot hook and no power PAL at all, reboot is
+   * still supported; the hook receives the requested delay after the
+   * response and nothing else runs. */
+  gizclaw_rpc_v1_ClientDeviceRebootRequest reboot = {.has_delay_ms = true,
+                                                     .delay_ms = 1500};
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
     gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
   assert(response.on_complete && atomic_load(&state.reboots) == 0);
   response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
   assert(atomic_load(&state.reboots) == 0);
+  assert(atomic_load(&state.reboot_requests) == 0);
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
     gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
   response.on_complete(response.complete_user, H2_PAL_OK);
+  wait_for_count(&state.reboot_requests, 1);
+  assert(state.reboot_request_delay_ms == 1500u);
+  assert(atomic_load(&state.reboots) == 0);
+  /* Without the hook the legacy path keeps the delay on the worker and then
+   * calls the power PAL. */
+  const h2_gizclaw_vtable_t no_hook = {.resolve_sound_url = device_resolve_sound};
+  /* The hook counter increments before the worker clears the action, so
+   * retry until the device reports quiescence. */
+  {
+    h2_pal_result_t swap_rc = H2_PAL_ERR_BUSY;
+    for (unsigned i = 0; i < 3000 && swap_rc == H2_PAL_ERR_BUSY; ++i) {
+      swap_rc = h2_gizclaw_device_set_product_internal(service, &no_hook, &power);
+      if (swap_rc == H2_PAL_ERR_BUSY)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+    }
+    assert(swap_rc == H2_PAL_OK);
+  }
+  reboot.delay_ms = 300;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
+    gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
+  /* An accepted action makes the device non-quiescent for the helper. */
+  assert(h2_gizclaw_device_set_product_internal(service, &no_hook, &power) ==
+         H2_PAL_ERR_BUSY);
+  state.reboot_at_ms = 0u;
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  /* The delay starts at completion: nothing may have rebooted yet, and the
+   * baseline is sampled after completion so earlier time cannot count. The
+   * worker may have observed completion a few ms before this sample, hence
+   * the small tolerance; the fake power PAL records the reboot time. */
+  assert(atomic_load(&state.reboots) == 0);
+  uint64_t completed_ms = 0u;
+  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &completed_ms) == H2_PAL_OK);
   wait_for_count(&state.reboots, 1);
+  assert((int64_t)(state.reboot_at_ms - completed_ms) >= 250);
+  assert(atomic_load(&state.reboot_requests) == 1);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
@@ -2419,6 +2474,9 @@ static h2_pal_result_t identifiers_get_facts(void *user,
   if (state->result != H2_PAL_OK)
     return state->result;
   *out = state->facts;
+  /* Facts are copied out by value: the library must retain no pointer into
+   * provider storage, so scribbling it here cannot change the reply. */
+  memset(&state->facts, 0xA5, sizeof(state->facts));
   return H2_PAL_OK;
 }
 typedef struct identifiers_capture {
@@ -2537,12 +2595,13 @@ static void test_device_identifiers_imeis(void) {
   assert(!strcmp(capture.tac[0], "12345678"));
   assert(!strcmp(capture.serial[0], "0000001"));
   assert(capture.name[0][0] == '\0');
+  assert(single.calls == 1u);
   /* Two IMEIs keep facts order and carry their optional slot names. */
   identifiers_facts_t pair = {.facts = {.imei_count = 2u}};
   strcpy(pair.facts.imeis[0].digits, "123456780000001");
-  pair.facts.imeis[0].name = "modem-a";
+  strcpy(pair.facts.imeis[0].name, "modem-a");
   strcpy(pair.facts.imeis[1].digits, "356789012345670");
-  pair.facts.imeis[1].name = "modem-b";
+  strcpy(pair.facts.imeis[1].name, "modem-b");
   identifiers_case(&pair, true, 0, &capture);
   assert(capture.count == 2u);
   assert(!strcmp(capture.tac[0], "12345678") &&
@@ -2562,8 +2621,8 @@ static void test_device_identifiers_imeis(void) {
                    &capture);
   identifiers_facts_t long_name = {.facts = {.imei_count = 1u}};
   strcpy(long_name.facts.imeis[0].digits, "123456780000001");
-  long_name.facts.imeis[0].name =
-      "modem-slot-name-that-is-far-too-long-for-the-contract";
+  memset(long_name.facts.imeis[0].name, 'x',
+         sizeof(long_name.facts.imeis[0].name));
   identifiers_case(&long_name, true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT,
                    &capture);
   /* Second IMEI invalid: no partial list is sent. */

@@ -6,103 +6,28 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Virtual device sink: validates real decoded PCM without making host audio
- * output or physical flash writes a prerequisite of the API acceptance lane. */
-static atomic_uint volume;
-static atomic_ullong pcm_bytes;
-static atomic_uint pcm_peak;
+/* OTA rejection is a GizClaw case policy; Audio support belongs to app_test. */
 static atomic_ullong stage_bytes;
-static h2_pal_audio_track_t track;
-static h2_pal_audio_track_t *real_track;
-static const h2_pal_audio_api_t *real_audio;
-static const h2_pal_time_api_t *sink_time;
-static int volume_get(void *user, uint32_t *out) {
-  (void)user;
-  if (real_audio)
-    return h2_pal_audio_get_speaker_volume_percent(real_audio, out);
-  *out = atomic_load(&volume);
-  return H2_PAL_OK;
+static h2_app_test_audio_evidence_t device_evidence(h2_gizclaw_e2e_fixture_t *fixture) {
+  h2_app_test_audio_evidence_t evidence = {0};
+  (void)h2_app_test_audio_copy_evidence(fixture->device_audio_wrapper, &evidence);
+  return evidence;
 }
-static int volume_set(void *user, uint32_t value) {
-  (void)user;
-  atomic_store(&volume, value);
-  return real_audio ? h2_pal_audio_set_speaker_volume_percent(real_audio, value)
-                    : H2_PAL_OK;
-}
-static int audio_info(void *user, h2_audio_info_t *out) {
-  (void)user;
-  if (real_audio)
-    return h2_pal_audio_get_info(real_audio, out);
-  *out = (h2_audio_info_t){
-      .available = 1,
-      .playback_supported = 1,
-      .playback_format = {.sample_rate_hz = 16000,
-                          .frame_samples_per_channel = 320,
-                          .channels = 1,
-                          .sample_format = H2_AUDIO_SAMPLE_S16LE}};
-  return H2_PAL_OK;
-}
-static int speaker_start(void *user) {
-  (void)user;
-  return real_audio ? h2_pal_audio_start_speaker(real_audio) : H2_PAL_OK;
-}
-static int pcm_write(h2_pal_audio_track_t *t, const h2_audio_frame_t *frame,
-                     uint32_t timeout) {
-  (void)t;
-  (void)timeout;
-  if (frame->sample_rate_hz != 16000 || frame->channels != 1 ||
-      frame->bytes != (size_t)frame->samples_per_channel * 2)
-    return H2_PAL_ERR_FORMAT;
-  if (real_track) {
-    int rc = h2_pal_audio_track_write(real_track, frame, timeout);
-    if (rc == H2_PAL_OK) {
-      unsigned peak = 0;
-      const uint8_t *pcm = frame->data;
-      for (size_t i = 0; i < frame->bytes; i += 2) {
-        int value = (int16_t)((unsigned)pcm[i] | ((unsigned)pcm[i + 1] << 8));
-        unsigned amplitude = (unsigned)(value < 0 ? -value : value);
-        if (amplitude > peak)
-          peak = amplitude;
-      }
-      if (peak > atomic_load(&pcm_peak))
-        atomic_store(&pcm_peak, peak);
-      atomic_fetch_add(&pcm_bytes, frame->bytes);
+static int dispose_device_audio(h2_gizclaw_e2e_fixture_t *fixture) {
+  if (fixture->device_audio_wrapper) {
+    if (device_evidence(fixture).speaker_active) {
+      int rc = h2_pal_audio_stop_speaker(fixture->device_audio);
+      if (rc != H2_PAL_OK) return rc;
     }
-    return rc;
+    int rc = h2_app_test_audio_destroy(fixture->device_audio_wrapper);
+    if (rc != H2_PAL_OK) return rc;
+    fixture->device_audio_wrapper = NULL;
+    fixture->device_audio = NULL;
   }
-  atomic_fetch_add(&pcm_bytes, frame->bytes);
-  return h2_pal_time_sleep_ms(sink_time, (uint32_t)(frame->bytes / 32));
-}
-static int pcm_drain(h2_pal_audio_track_t *t, uint32_t timeout) {
-  (void)t;
-  return real_track ? h2_pal_audio_track_drain(real_track, timeout) : H2_PAL_OK;
-}
-static int pcm_close(h2_pal_audio_track_t *t) {
-  (void)t;
-  int rc = real_track ? h2_pal_audio_track_close(real_track) : H2_PAL_OK;
-  real_track = NULL;
+  int rc = h2_app_test_audio_fake_deinit(&fixture->device_audio_fake);
+  if (rc == H2_PAL_OK) fixture->device_cleanup = NULL;
   return rc;
 }
-static int track_create(void *user, const h2_audio_track_config_t *config,
-                        h2_pal_audio_track_t **out) {
-  (void)user;
-  if (real_audio) {
-    int rc = h2_pal_audio_create_track(real_audio, config, &real_track);
-    if (rc != H2_PAL_OK)
-      return rc;
-  }
-  track = (h2_pal_audio_track_t){
-      .write = pcm_write, .drain = pcm_drain, .close = pcm_close};
-  *out = &track;
-  return H2_PAL_OK;
-}
-static const h2_pal_audio_vtable_t audio_vtable = {
-    .get_info = audio_info,
-    .start_speaker = speaker_start,
-    .get_speaker_volume_percent = volume_get,
-    .set_speaker_volume_percent = volume_set,
-    .create_track = track_create};
-static const h2_pal_audio_api_t audio = {.vtable = &audio_vtable};
 static h2_pal_result_t stage_begin(void *user,
                                    const struct h2_gizclaw_firmware *firmware,
                                    const char *update_id) {
@@ -259,15 +184,15 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       printf("H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
              "pcm_bytes=%llu peak=%u\n",
              local.state, (unsigned long long)local.position_ms,
-             (unsigned long long)atomic_load(&pcm_bytes),
-             atomic_load(&pcm_peak));
+             (unsigned long long)device_evidence(fixture).playback_bytes,
+             (unsigned)device_evidence(fixture).playback_peak);
     if (!first_playing_at && !strcmp(local.state, "playing") &&
         local.position_ms)
       first_playing_at = now;
     if (!local_played && !strcmp(local.state, "playing") &&
         local.position_ms >=
             (fixture->config->device_real_audio ? 20000u : 20u) &&
-        atomic_load(&pcm_bytes)) {
+        device_evidence(fixture).playback_bytes) {
       CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
       if (text_is(&test, "audioplayer.state", "playing")) {
         local_played = true;
@@ -342,7 +267,9 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = H2_PAL_OK;
   CHECK(api_call(&test, H2_PAL_HTTP_PUT, "/device/volume",
                  "{\"level\":37,\"muted\":false}", 200));
-  ASSERT(atomic_load(&volume) == 37);
+  uint32_t volume = 0u;
+  CHECK(h2_pal_audio_get_speaker_volume_percent(fixture->device_audio, &volume));
+  ASSERT(volume == 37u);
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   if (test.key.name[0])
@@ -367,7 +294,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
     CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
     if (text_is(&test, "audioplayer.state", "playing") &&
-        atomic_load(&pcm_bytes) > 0) {
+        device_evidence(fixture).playback_bytes > 0) {
       played = true;
       break;
     }
@@ -402,7 +329,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   rc = first_failure;
   printf("H2_GIZCLAW_E2E stage=device-api-assert pcm_bytes=%llu "
          "stage_bytes=%llu result=%s rc=%d\n",
-         (unsigned long long)atomic_load(&pcm_bytes),
+         (unsigned long long)device_evidence(fixture).playback_bytes,
          (unsigned long long)atomic_load(&stage_bytes),
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   if (test.key.name[0]) {
@@ -421,21 +348,24 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
 #undef ASSERT
 }
 int h2_gizclaw_e2e_prepare_device(h2_gizclaw_e2e_fixture_t *fixture) {
-  sink_time = fixture->time;
-  real_audio =
-      fixture->config->device_real_audio ? fixture->runtime->audio : NULL;
-  if (fixture->config->device_real_audio && !real_audio)
-    return H2_PAL_ERR_UNSUPPORTED;
-  if (real_audio) {
-    int rc = h2_pal_audio_set_speaker_volume_percent(real_audio, 100);
-    if (rc != H2_PAL_OK)
-      return rc;
+  const h2_pal_audio_api_t *delegate = fixture->runtime->audio;
+  int rc = H2_PAL_OK;
+  fixture->device_cleanup = dispose_device_audio;
+  if (!fixture->config->device_real_audio) {
+    rc = h2_app_test_audio_fake_init(&fixture->device_audio_fake, fixture->allocator);
+    if (rc != H2_PAL_OK) return rc;
+    fixture->device_audio_fake.playback_time = fixture->time;
+    delegate = &fixture->device_audio_fake.api;
   }
-  atomic_store(&pcm_bytes, 0);
-  atomic_store(&pcm_peak, 0);
+  if (!delegate) return H2_PAL_ERR_UNSUPPORTED;
+  rc = h2_app_test_audio_create(fixture->allocator, fixture->time, delegate,
+                               NULL, &fixture->device_audio_wrapper);
+  if (rc != H2_PAL_OK) return rc;
+  fixture->device_audio = h2_app_test_audio_api(fixture->device_audio_wrapper);
+  rc = h2_pal_audio_set_speaker_volume_percent(fixture->device_audio,
+      fixture->config->device_real_audio ? 100u : 50u);
+  if (rc != H2_PAL_OK) return rc;
   atomic_store(&stage_bytes, 0);
-  atomic_store(&volume, real_audio ? 100 : 50);
-  fixture->device_audio = &audio;
   fixture->device_vtable = &device_vtable;
   return H2_PAL_OK;
 }

@@ -209,17 +209,27 @@ h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime) {
     if (!h2_runtime_ready(runtime)) {
         return 0u;
     }
-    while (atomic_flag_test_and_set_explicit(
-        &runtime->private_state->sequence_lock,
-        memory_order_acquire)) {
-    }
-    h2_runtime_sequence_t sequence = runtime->private_state->next_sequence++;
+    h2_runtime_private_t *private_state = runtime->private_state;
+    h2_runtime_sequence_t sequence;
+#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+    sequence = atomic_fetch_add_explicit(
+        &private_state->next_sequence, 1u, memory_order_relaxed);
     if (sequence == 0u) {
-        sequence = runtime->private_state->next_sequence++;
+        /* Wrapped: 0 means "no sequence", take the next one. */
+        sequence = atomic_fetch_add_explicit(
+            &private_state->next_sequence, 1u, memory_order_relaxed);
     }
-    atomic_flag_clear_explicit(
-        &runtime->private_state->sequence_lock,
-        memory_order_release);
+#else
+    h2_runtime_flag_lock(&private_state->sequence_lock);
+    sequence = atomic_load_explicit(
+        &private_state->next_sequence, memory_order_relaxed);
+    if (sequence == 0u) {
+        sequence = 1u;
+    }
+    atomic_store_explicit(
+        &private_state->next_sequence, sequence + 1u, memory_order_relaxed);
+    h2_runtime_flag_unlock(&private_state->sequence_lock);
+#endif
     return sequence;
 }
 
@@ -415,7 +425,7 @@ h2_pal_result_t h2_runtime_init(
         H2_RUNTIME_INPUT_PHASE_STOPPED);
     atomic_init(&private_state->input_stop_requested, 0);
     atomic_init(&private_state->input_worker_result, H2_PAL_OK);
-    private_state->next_sequence = 1u;
+    atomic_init(&private_state->next_sequence, 1u);
     private_state->input_sources_ready = 0;
 
     size_t event_queue_capacity = config->event_queue_capacity;

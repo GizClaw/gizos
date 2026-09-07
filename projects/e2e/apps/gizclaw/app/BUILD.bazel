@@ -133,6 +133,8 @@ cc_library(
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         ":task_names",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal",
         "//libs/runtime",
@@ -232,7 +234,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":pet_case"],
+    deps = [
+        ":pet_case",
+        "//libs/app_test:testing_pal",
+    ],
 )
 
 cc_library(
@@ -352,6 +357,7 @@ cc_test(
     }),
     deps = [
         ":telemetry_case",
+        "//libs/app_test:testing_pal",
         "//libs/pal",
     ],
 )
@@ -458,6 +464,8 @@ cc_library(
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         ":fixture",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal",
         "//libs/pal/providers/yyjson",
@@ -473,6 +481,8 @@ cc_library(
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         ":fixture",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal",
     ],
@@ -494,6 +504,7 @@ cc_test(
     }),
     deps = [
         ":voice_case",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal",
         "//libs/pal/providers/desktop/pal_core",
@@ -516,6 +527,7 @@ cc_test(
     }),
     deps = [
         ":speech_case",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal",
     ],
@@ -616,6 +628,7 @@ cc_test(
     }),
     deps = [
         ":request_cases",
+        "//libs/app_test:testing_pal",
         "//libs/pal",
     ],
 )
@@ -684,7 +697,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":gizclaw_e2e"],
+    deps = [
+        ":gizclaw_e2e",
+        "//libs/app_test:testing_pal",
+    ],
 )
 
 cc_library(
@@ -696,6 +712,8 @@ cc_library(
     deps = [
         ":fixture",
         ":runner_core",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal/providers/yyjson",
     ],
@@ -719,7 +737,12 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal", "//libs/runtime"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
 )
 
 cc_test(
@@ -733,5 +756,29 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":resource_case", "//libs/pal", "//libs/runtime"],
+    deps = [
+        ":resource_case",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_device_audio_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_device_audio.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device_case",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
 )

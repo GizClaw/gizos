@@ -1,3 +1,4 @@
+#include "h2_app_test_mem.h"
 #include "h2_gizclaw_e2e_resource.h"
 #ifdef NDEBUG
 #undef NDEBUG
@@ -6,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Consumer fault injection only: this does not constitute live Resource proof.
+/* Consumer fault injection only: this does not constitute allocator.live_blocks Resource proof.
  * Library concurrency/pagination implementation tests remain in libs/gizclaw.
  */
 struct h2_gizclaw_resource {
@@ -14,22 +15,16 @@ struct h2_gizclaw_resource {
   h2_gizclaw_contact_t contact;
   char name[256], display[64];
 };
-static int fault, live, creates, closes, destroys, executes, accepted;
+static int fault, creates, closes, destroys, executes, accepted;
+static h2_app_test_mem_t allocator;
 static void *allocate(void *u, size_t n) {
   (void)u;
-  ++live;
-  return malloc(n);
+  return h2_pal_mem_alloc(&allocator.api, n);
 }
 static void release(void *u, void *p) {
   (void)u;
-  if (p) {
-    --live;
-    free(p);
-  }
+  h2_pal_mem_free(&allocator.api, p);
 }
-static const h2_pal_mem_vtable_t mem_vtable = {.alloc = allocate,
-                                               .free = release};
-static const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f && ms == 30000u);
@@ -131,10 +126,11 @@ h2_pal_result_t h2_gizclaw_resource_destroy(h2_gizclaw_resource_t **r) {
   return H2_PAL_OK;
 }
 int main(void) {
+  h2_app_test_mem_init(&allocator, NULL);
   for (fault = 0; fault <= 10; ++fault) {
-    creates = closes = destroys = executes = accepted = live = 0;
+    creates = closes = destroys = executes = accepted = allocator.live_blocks = 0;
     h2_runtime_t runtime = {0};
-    h2_gizclaw_e2e_fixture_t f = {.allocator = &mem, .runtime = &runtime};
+    h2_gizclaw_e2e_fixture_t f = {.allocator = &allocator.api, .runtime = &runtime};
     f.actors[0].service = (void *)&f;
     strcpy(f.run_prefix, "resource-test");
     int rc = h2_gizclaw_e2e_run_resource(&f);
@@ -147,12 +143,12 @@ int main(void) {
         assert(f.contact_created);
     }
     if (fault == 10) {
-      assert(f.case_state && f.case_cleanup && live > 0);
+      assert(f.case_state && f.case_cleanup && allocator.live_blocks > 0);
       fault = 0;
       assert(f.case_cleanup(&f) == H2_PAL_OK);
       fault = 10;
     }
-    assert(!f.case_state && !f.case_cleanup && live == 0 &&
+    assert(!f.case_state && !f.case_cleanup && allocator.live_blocks == 0 &&
            destroys == creates);
   }
   return 0;

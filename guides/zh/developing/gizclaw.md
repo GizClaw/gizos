@@ -79,11 +79,18 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
   RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
   回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。
+  `request_reboot` 是 `client.device.reboot` 的可选非阻塞交接：响应发出后在设备
+  task 上调用一次，带上请求的 delay_ms；回调只能复制请求并投递给产品自己的
+  执行上下文（如 Runtime custom event）后立即返回，不能 sleep、阻塞或在回调内
+  停止/销毁 Service。延时、有序关机和重启由产品 owner 执行；库不会回退到
+  power PAL。未设置时库在设备 task 上等待 delay_ms 后直接调用 power PAL。
 - `get_facts` 的 `imei_count` / `imeis` 上报设备 modem IMEI，最多
   `H2_GIZCLAW_DEVICE_IMEI_MAX` 个。产品必须返回已缓存的号码，不得在回调里发 AT
   命令读取 modem；还没读到时返回 `imei_count = 0`。每项 `digits` 必须是 15 位
-  ASCII 十进制数字加 NUL，可选 `name` 用于区分多 modem 槽位，长度不超过
-  `H2_GIZCLAW_DEVICE_IMEI_NAME_MAX`。库在 `client.identifiers.get` 里按
+  ASCII 十进制数字加 NUL，`name` 是可选的槽位标签，为内联缓冲区，必须在
+  `H2_GIZCLAW_DEVICE_IMEI_NAME_MAX` 内以 NUL 结尾，空串表示不命名；facts 整体
+  按值复制，回调返回后库不持有任何指向产品内存的指针。库在
+  `client.identifiers.get` 里按
   `tac = 前 8 位`、`serial = 后 7 位` 拆分编码，与 Server 的 by-imei 索引一致。
   任一项不合法整个回复失败，不发送部分列表；`get_facts` 失败或没有配置 vtable 时
   回复退化为仅 `sn`，不报错。IMEI 属于个人数据，只出现在 RPC 回复里，不进入
