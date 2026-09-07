@@ -51,9 +51,9 @@ Time PAL 的 `h2_pal_time_get_wall_ms()` 是业务读取时间的公共入口：
 
 时间值始终是 UTC Unix 毫秒，不添加时区偏移。产品显示层负责时区；H106 使用 北京时间 UTC+08:00。未校准时不得把自启动以来的计数显示为当前时间。
 
-ESP32/BK7258 冷启动和重置后的校准状态默认无效；即使 RTC 仍有读数也保守等待 重新校准。保留运行上下文与系统时钟的轻睡眠保持有效；导致程序重新初始化的 深睡眠唤醒按冷启动处理。更换或丢失时钟的 provider 必须清除 valid。桌面/Web provider 可依据宿主有效的系统时钟提供有效 UTC。`set_wall_ms` 是显式外部设置， ESP32/BK7258 标记 USER 来源；它不声称执行过 NTP 协议。
+BK7258 冷启动和重置后的校准状态默认无效；即使 RTC 仍有读数也保守等待重新校准。ESP32 在 `set_wall_ms` 成功后把有效标记写入 RTC slow memory（`RTC_NOINIT_ATTR`）：保留 RTC 定时器的深睡眠唤醒和软件重启（`ESP_RST_DEEPSLEEP`、`ESP_RST_SW` 等）在首次查询时恢复 valid，因此充电唤醒和自重启后仍能显示上次校准的时间；上电和掉电复位（`ESP_RST_POWERON`、`ESP_RST_BROWNOUT`、`ESP_RST_UNKNOWN`）清除标记，读数早于 2020-01-01 的保留时钟也被丢弃。深睡眠期间时钟由 RTC 慢时钟维持，可能有分钟级漂移，连接后由 GizClaw 校时纠正。保留运行上下文与系统时钟的轻睡眠保持有效。更换或丢失时钟的 provider 必须清除 valid。桌面/Web provider 可依据宿主有效的系统时钟提供有效 UTC。`set_wall_ms` 是显式外部设置， ESP32/BK7258 标记 USER 来源；它不声称执行过 NTP 协议。
 
-自动测试覆盖无效时间时校时先于连接、已有有效时间时连接前无请求、未校准读数、失败后重试、非法响应、校时中通信继续、 校时后 UTC 读数、断开后保留有效时间、重建 Service 后再次校时、成功后跨重试期限的普通轮询不重复校时、校时请求中和重试等待中停止、设置失败保留旧值及模拟重启失效。 真实硬件的轻睡眠/深睡眠保留行为仍需分别做设备验收。
+自动测试覆盖无效时间时校时先于连接、已有有效时间时连接前无请求、未校准读数、失败后重试、非法响应、校时中通信继续、 校时后 UTC 读数、断开后保留有效时间、重建 Service 后再次校时、成功后跨重试期限的普通轮询不重复校时、校时请求中和重试等待中停止、设置失败保留旧值及模拟重启失效。 ESP Time provider 的 host 测试（`time_retention_test`）覆盖上电无效、深睡眠唤醒保留、软件重启保留、保留时钟不合理时丢弃、掉电复位清除标记及探测后再次设置；真实硬件的轻睡眠/深睡眠保留行为仍需分别做设备验收。
 
 通过 `runtime->time` 调用 `h2_pal_time_set_wall_ms()` 成功后，Runtime 通过包装既有 Time vtable 的 `set_wall_ms` 自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`（请求设置的 UTC `wall_ms`）。GizClaw 和其他应用调用者共享该行为；失败不发事件，读时钟和 sleep 不发事件。事件 envelope 的时间戳仍为单调时间。必须把 Runtime 的 Time PAL 传给 Service；直接调用底层 provider 会绕过 Runtime。事件遵循现有有界队列的溢出丢弃规则，不改变已经成功的设置返回值；消费者收到事件后重读有效时间，并保留周期刷新作为溢出恢复。并发设置的事件是刷新提示，不应将 payload 当作当前时钟快照。
 

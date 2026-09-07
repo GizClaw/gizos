@@ -4,6 +4,8 @@
 typedef int BaseType_t;
 typedef unsigned int UBaseType_t;
 typedef unsigned char StackType_t;
+typedef uint32_t TickType_t;
+#define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 typedef struct { unsigned char storage[64]; } StaticSemaphore_t;
 typedef struct { unsigned char storage[64]; } StaticTask_t;
 typedef int portMUX_TYPE;
