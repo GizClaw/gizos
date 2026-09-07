@@ -38,7 +38,6 @@ cc_library(
     # The opus vendor build crashes the JieLi pi32v2 clang 4.0.1 backend.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
-        ":tasks",
         ":connectivity",
         ":device_case",
         ":fixture",
@@ -46,6 +45,7 @@ cc_library(
         ":resource_case",
         ":rpc_cases",
         ":runner",
+        ":tasks",
         ":voice_case",
         "//libs/gizclaw",
         "//libs/pal",
@@ -56,16 +56,16 @@ cc_library(
             "@h2_vendor_opus//:headers",
         ],
         "//tools/bazel/platforms:is_bk7258": [
-    
-    
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
         ],
         "//tools/bazel/platforms:is_esp32p4": [
-    
-    
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
         ],
         "//tools/bazel/platforms:is_esp32s3": [
-    
-    
+            "//tools/bazel:vendor_third_party_gizclaw_firmware",
+            "@h2_vendor_opus//:headers",
         ],
         "//conditions:default": [
             "//tools/bazel:vendor_third_party_gizclaw",

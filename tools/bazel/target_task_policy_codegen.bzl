@@ -375,9 +375,9 @@ def render_policy_source(
             "static h2_pal_result_t resolve_policy(void *user, const char *name,",
             "                                      %s *out_policy) {" % policy_type,
             "  (void)user;",
-            "  (void)name;",
-            "  if (out_policy == NULL) {",
-            "    return H2_PAL_ERR_INVALID_ARG;",
+            "  /* Reject invalid inputs the way a routed resolver does. */",
+            "  if (name == NULL || name[0] == '\\0' || out_policy == NULL) {",
+            "    return H2_PAL_ERR_NOT_FOUND;",
             "  }",
             "  *out_policy = (%s){" % policy_type,
         ] + _initializer(flavor, default_policy, 6) + [
@@ -506,22 +506,18 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
         "}",
         "",
         "int main(void) {",
+        "  %s policy = {0};" % policy_type,
+        "  assert(%s() == H2_PAL_OK);" % flavor.install,
     ])
-    if tasks:
-        lines.append("  %s policy = {0};" % policy_type)
-    lines.append("  assert(%s() == H2_PAL_OK);" % flavor.install)
     for task in tasks:
         name = task.name[:-1] + "any-task" if task.name.endswith("*") else task.name
         lines.append(assertion(_literal(name), task.policy))
     lines.append(assertion("\"dynamic-default\"", default_policy))
-    if tasks:
-        lines.extend([
-            "  assert(get_policy(\"\", &policy) == H2_PAL_ERR_NOT_FOUND);",
-            "  assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);",
-            "  assert(get_policy(\"unknown\", NULL) == H2_PAL_ERR_NOT_FOUND);",
-        ])
-    else:
-        lines.append("  assert(get_policy(\"unknown\", NULL) == H2_PAL_ERR_INVALID_ARG);")
+    lines.extend([
+        "  assert(get_policy(\"\", &policy) == H2_PAL_ERR_NOT_FOUND);",
+        "  assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);",
+        "  assert(get_policy(\"unknown\", NULL) == H2_PAL_ERR_NOT_FOUND);",
+    ])
     lines.extend([
         "  s_configure_result = H2_PAL_ERR_INVALID_STATE;",
         "  assert(%s() == H2_PAL_ERR_INVALID_STATE);" % flavor.install,
