@@ -30,6 +30,7 @@ typedef enum h2_runtime_input_source_kind {
 } h2_runtime_input_source_kind_t;
 
 #define H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS \
+    h2_runtime_system_event_time_adjusted_t time_adjusted; \
     h2_runtime_system_event_gpio_irq_t gpio_irq; \
     h2_runtime_system_event_wifi_sta_t wifi_sta; \
     h2_runtime_system_event_wifi_ap_t wifi_ap; \
@@ -286,6 +287,7 @@ struct h2_runtime_private {
     h2_pal_firmware_info_api_t firmware_info_proxy;
     h2_pal_log_api_t log_proxy;
     h2_pal_time_api_t time_proxy;
+    h2_pal_time_api_t time_provider;
     h2_pal_timer_api_t timer_proxy;
     h2_pal_task_api_t task_proxy;
     h2_pal_queue_api_t queue_proxy;

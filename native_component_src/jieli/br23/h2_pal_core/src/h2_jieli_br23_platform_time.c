@@ -37,13 +37,6 @@ static h2_pal_result_t time_get_monotonic_us(void *user, uint64_t *out_us)
     return H2_PAL_OK;
 }
 
-static h2_pal_result_t time_get_wall_ms(void *user, uint64_t *out_ms)
-{
-    (void)user;
-    (void)out_ms;
-    return H2_PAL_ERR_UNSUPPORTED;
-}
-
 static h2_pal_result_t time_set_wall_ms(void *user, uint64_t wall_ms)
 {
     (void)user;
@@ -72,7 +65,7 @@ static h2_pal_result_t time_sleep_ms(void *user, uint32_t ms)
 static const h2_pal_time_vtable_t s_time_vtable = {
     .get_monotonic_ms = time_get_monotonic_ms,
     .get_monotonic_us = time_get_monotonic_us,
-    .get_wall_ms = time_get_wall_ms,
+    .get_wall_ms = NULL, /* Wall time is unsupported on this target. */
     .set_wall_ms = time_set_wall_ms,
     .get_wall_status = time_get_wall_status,
     .sleep_ms = time_sleep_ms,

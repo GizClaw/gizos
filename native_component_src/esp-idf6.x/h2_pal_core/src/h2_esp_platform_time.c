@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 
 #include <sys/time.h>
+#include <stdatomic.h>
 
 static h2_pal_result_t esp_time_get_monotonic_ms(void *user, uint64_t *out_ms) {
     (void)user;
@@ -37,7 +38,8 @@ static h2_pal_result_t esp_time_get_wall_ms(void *user, uint64_t *out_ms) {
     return H2_PAL_OK;
 }
 
-static h2_pal_time_wall_status_t s_esp_wall_status;
+/* Reset clears validity; retained light sleep preserves it. */
+static atomic_bool s_esp_wall_valid;
 
 static h2_pal_result_t esp_time_set_wall_ms(void *user, uint64_t wall_ms) {
     (void)user;
@@ -51,8 +53,7 @@ static h2_pal_result_t esp_time_set_wall_ms(void *user, uint64_t wall_ms) {
     if (settimeofday(&tv, NULL) != 0) {
         return H2_PAL_ERR_IO;
     }
-    s_esp_wall_status.valid = 1u;
-    s_esp_wall_status.source = H2_PAL_TIME_WALL_SOURCE_NTP;
+    atomic_store_explicit(&s_esp_wall_valid, 1, memory_order_release);
     return H2_PAL_OK;
 }
 
@@ -61,7 +62,9 @@ static h2_pal_result_t esp_time_get_wall_status(void *user, h2_pal_time_wall_sta
     if (out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    *out_status = s_esp_wall_status;
+    out_status->valid = atomic_load_explicit(&s_esp_wall_valid, memory_order_acquire);
+    out_status->source = out_status->valid ? H2_PAL_TIME_WALL_SOURCE_USER
+                                          : H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
     return H2_PAL_OK;
 }
 

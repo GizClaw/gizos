@@ -28,7 +28,8 @@ typedef enum h2_gizclaw_e2e_suite {
   H2_GIZCLAW_E2E_SUITE_CONCURRENCY = 1u << 4,
   H2_GIZCLAW_E2E_SUITE_SERVICE = 1u << 5,
   H2_GIZCLAW_E2E_SUITE_DEVICE = 1u << 6,
-  H2_GIZCLAW_E2E_SUITE_ALL = (1u << 7) - 1u,
+  H2_GIZCLAW_E2E_SUITE_RESOURCE = 1u << 7,
+  H2_GIZCLAW_E2E_SUITE_ALL = (1u << 8) - 1u,
 } h2_gizclaw_e2e_suite_t;
 
 typedef enum h2_gizclaw_e2e_exit {

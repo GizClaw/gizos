@@ -52,7 +52,8 @@ int main() {
         Suite{"firmware-voice",
               H2_GIZCLAW_E2E_SUITE_FIRMWARE | H2_GIZCLAW_E2E_SUITE_VOICE},
         Suite{"concurrency", H2_GIZCLAW_E2E_SUITE_CONCURRENCY},
-        Suite{"service", H2_GIZCLAW_E2E_SUITE_SERVICE}}) {
+        Suite{"service", H2_GIZCLAW_E2E_SUITE_SERVICE},
+        Suite{"resource", H2_GIZCLAW_E2E_SUITE_RESOURCE}}) {
     auto args = valid;
     args[2] = suite.name;
     check(args, nullptr, "token", nullptr, false, suite.mask);
@@ -60,6 +61,7 @@ int main() {
   check(valid, nullptr, "token", "rpc", true, H2_GIZCLAW_E2E_SUITE_RPC);
   check(valid, nullptr, "token", "firmware-voice", true,
         H2_GIZCLAW_E2E_SUITE_FIRMWARE | H2_GIZCLAW_E2E_SUITE_VOICE);
+  check(valid, nullptr, "token", "resource", true, H2_GIZCLAW_E2E_SUITE_RESOURCE);
   check(valid, "unsupported-pion-suite", "token", nullptr, true);
   check(valid, "unsupported-pion-suite", "token", "service", true);
   check(valid, "invalid-suite", "token", "unknown");

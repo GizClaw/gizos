@@ -12,17 +12,17 @@ Launcher 提供已经初始化的 `h2_runtime_t`、真实 RegistrationToken、�
 
 一次 `h2_gizclaw_e2e_run()` 调用按固定顺序运行所有选中的独立 case。普通 case 失败不会阻止后续独立 case；取消会把尚未运行的 case 标为 `CANCELLED`。如果 Service 无法完成 stop/deinit，则保留 heap fixture，不再启动后续 case，返回 harness error 并保持全局 run guard。App-owned runner task 执行 case，调用方通过 Runtime Log 和同步 progress observer 接收进度。结果包含 terminal counts、首个失败、cleanup result、retained resource count 和注册返回的 RuntimeProfile。未清理的远端资源只按资源类型写入 redacted recovery ledger，不记录资源名称。每个选中 case 生成唯一 terminal record，runner 确认退出后才 join；已退出 runner 的 PAL handle 释放按 cleanup deadline 有界重试。返回 retained resources 非零时，调用方必须保留 Runtime、provider 和 config/user 的生命周期直至进程退出，不能在同一进程重跑。
 
-Fixture 的每个 actor 直接持有一个 `h2_gizclaw_service_t`，通过新 RPC 注册和清理；不再提供 direct client → Service 的转交入口。配置由 actor 持有直到 Service deinit，删除 Peer 必须收到有效确认，不能把连接关闭当作成功。清理阶段忽略用户停止信号，但仍受独立 cleanup deadline 限制。
+Fixture 的每个 actor 持有一个 `h2_gizclaw_service_t`。普通 Voice actor 同时持有连接作用域的 Session，通过 Session 注册并加载 catalog；其余底层 API case 仍通过 RPC 注册。配置由 actor 持有直到 Service deinit，删除 Peer 必须收到有效确认，不能把连接关闭当作成功。清理阶段忽略用户停止信号，但仍受独立 cleanup deadline 限制。
 
 Fixture 仅在注册 profile 非空、完整终止且与已有 actor 一致后发布 `registered`，此时记录同一 Service 上 init/start 的可用性断言。stop 后有界排空通知，拒绝超出 poll 批次的返回数量；排空成功才记录 stop 断言，deinit 成功才清除本地 handle 并记录 deinit 断言。任何阶段失败都保留必要的借用数据，不以重试成功覆盖先前失败的 case 终态。`service_coverage_test` 额外运行 11 种 Fixture 生命周期边界场景，正常场景只识别这四个入口、整体仍为 `valid=false`，失败场景不计入覆盖；不替代 Track、内存泄漏分析或真实网络验收。
 
 Workspace 清理分别记录主/隔离 actor 的有效删除确认。case 删除后若列表验证失败，Fixture 保留确认并在重试时 get 检查目标缺失；确认存在且 get 返回 NOT_FOUND 才退还义务。未确认删除的 NOT_FOUND、错误对象或查询失败不能算完成；仍查到目标时允许下一次重试删除。清理预算耗尽后不再发送 Peer delete，保留身份用于重试。两个 actor 的 36 组边界场景覆盖此状态交接；不能据此声称超时创建永远不会迟到。
 
-当前公开 API 共 196 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
+当前公开 API 共 215 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
 
 Connectivity 使用两个隔离 Peer，以便分别验证 req/resp 和同步 RPC 的 peer_delete；注册复验、ping 与全部测速始终使用同一个主 Service，不在测量间重连。全部测速成功后才删除两个 Peer，有效删除响应清除对应义务，任何失败仍交给 Fixture 收尾。`gizclaw_e2e_connectivity_test` 的本地场景覆盖调用阶段失败、错误响应、取消失败、预算耗尽、时钟读取失败、上传读取、下载写入、块顺序/内容和 poll 失败；`connectivity_coverage_test` 检查 12 个业务函数、12 条测量记录及六条数据搬运记录，缺少实际 dispatch 记录不能认证 req/resp 下载测速。正常场景仍为 `valid=false`，不是实际网络速度或远端清理验收。
 
-独立测速可使用 `//projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_connectivity_live_test`，同样要求 token 环境变量和显式 endpoint 参数。该目标链接同一个 runner、Fixture 与真实 Connectivity case，但只提供 Connectivity catalog；选择其他 suite 会失败。完整目标包含七个 case（增加 device-api），不能用专用目标取代全量验收。
+独立测速可使用 `//projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_connectivity_live_test`，同样要求 token 环境变量和显式 endpoint 参数。该目标链接同一个 runner、Fixture 与真实 Connectivity case，但只提供 Connectivity catalog；选择其他 suite 会失败。完整目标包含八个 case（包含 device-api 和 resource），不能用专用目标取代全量验收。
 
 2026-09-03 历史代码复测（本轮统一录音控制前）（包含长回复 ID 修复，保留 SCTP RTT / HTNA 及 H2Peer 仅空闲时等待）：真实 macOS / BJ / default，默认 fastbuild（运行 `cff05e12-49b8-4bf6-bd92-c19da25d1226`）上传 7.294–12.336 Mbps、下载 31.775–88.301 Mbps；`-c opt`（`2065a8b4-b73e-458f-b184-0ab068528b29`）上传 6.732–12.633 Mbps、下载 59.494–135.300 Mbps。两次均十二轮全部成功，Connectivity PASS、cleanup_rc=0、retained_resources=0；下载校验循环模式，上传仅确认长度。这不是受控 A/B，每轮仅 1 MiB，不证明完整语音/ASR/全部 RPC 或稳定吞吐。八帧批量发送实验未观察到明确收益，已撤回；剩余发送背压、快速恢复与 T3 仍待排查。历史与逐轮数据保留在本地设计文档和忽略的原始日志中。
 
@@ -67,15 +67,15 @@ ASR/Extract 同样使用共用流式传输，删除 Speech 专用 executor 和�
 
 AudioPlay 使用固定 audio-down task；Pixa 与 Group Audio 使用 data-down task，并通过 `output_write` 在调用方 poll 上下文逐块交付。AudioPlay 在 do 时登记音频下行 slot 并立即拒绝冲突；收到完整成功响应、验证长度与 EOS 后，只通知一次播放路径，后者投递完 PCM 或出错时发布一次完成结果。接收完成不等于 PCM 已交给 Track，更不等于扬声器已播放完。当前仍先保存完整压缩体再解码。`--download-stream-only` 是本地下载、一次性通知和在途取消/停止回归选择器，不连接 BJ。
 
-Workspace case 分别通过 req/resp 和同步 RPC 覆盖八个业务方法，共 24 个函数。两套接口使用不同临时工作区名称，创建后 get/list 读回，set_parameters 后确认工作区可用，activate 只提交 SET 并核对选中身份，再显式 reload 核对激活身份与 RUNNING 状态，删除后遍历列表确认缺失。只有确认完成才清除对应义务；失败保留 Fixture 中的精确名称。最后创建原名工作区供后续重连使用，Voice 准备只走正常创建/配置路径。
+Workspace case 分别通过 req/resp 和同步 RPC 覆盖八个业务方法，共 24 个函数。两套接口使用不同临时工作区名称，创建后 get/list 读回，set_parameters 后确认工作区可用，activate 只提交 SET 并核对选中身份，再显式 reload 核对激活身份与 RUNNING 状态，删除后遍历列表确认缺失。只有确认完成才清除对应义务；失败保留 Fixture 中的精确名称。最后创建原名工作区供后续重连使用，Voice 准备通过 Session 加载完整 catalog、选择 Workflow、确认并准备 Workspace。
 
 Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revision；列表和历史最多 32 页、每页 32 项，游标最多 255 字节。列表检查目标跨页唯一，历史只检查页内 ID 重复，不宣称跨页快照一致性。保留未知历史类型、可选文本和可选 activation workflow 字段。响应没有 input mode，不能把 set_parameters 的可用性断言当作 PTT/Realtime 行为证明，仍需 Voice E2E。本地边界场景与 `workspace_coverage_test` 验证错误响应、预算、未生效操作和清理标记；这些不是实际服务验收。
 
 测速日志的 `integrity` 区分校验范围：下载成功为 `pattern-verified`（逐字节核对固定上游 v0.13.2 的 0..255 循环模式）；上传成功仅为 `length-ack-only`（服务端 EOS 确认消费及长度，未校验上传内容）；失败为 `not-verified`。模式校验不是密码学摘要，不能据此声称完成上传端到端内容校验。
 
-`api_coverage.py` 的矩阵独立列出约定的 196 个函数，并与 `libs/gizclaw/tests/public_api.inc` 核对。每行指定用例、按序成功调用和显式业务断言；req_create / resp_parse 必须有直接 create → do → wait → parse 的记录，同步 RPC 的内部调用不算另一套 API 的覆盖。Profile / Workflow / Contact 已输出对应业务断言，Point 已输出账户/交易字段、存储归属及有界分页检查；不据 Point 查询宣称账务计算或跨页去重正确。其他尚未补齐的断言仍保留为要求，不降级成“调用返回成功”。Telemetry 是单向包，其 `telemetry_send-assert` 仅按公开 API 契约确认传输层接受，不表示服务端确认或落库；两套 API 使用不同 sequence、各自读取当前时间，测试值明确标为 `e2e-fixture`。
+`api_coverage.py` 的矩阵独立列出约定的 215 个函数，并与 `libs/gizclaw/tests/public_api.inc` 核对。每行指定用例、按序成功调用和显式业务断言；req_create / resp_parse 必须有直接 create → do → wait → parse 的记录，同步 RPC 的内部调用不算另一套 API 的覆盖。Profile / Workflow / Contact 已输出对应业务断言，Point 已输出账户/交易字段、存储归属及有界分页检查；不据 Point 查询宣称账务计算或跨页去重正确。其他尚未补齐的断言仍保留为要求，不降级成“调用返回成功”。Telemetry 是单向包，其 `telemetry_send-assert` 仅按公开 API 契约确认传输层接受，不表示服务端确认或落库；两套 API 使用不同 sequence、各自读取当前时间，测试值明确标为 `e2e-fixture`。
 
-Runner 在 actor 初始化前输出 `coverage-begin`，在清理后输出 `coverage-end`；RPC domain 使用 `rpc/<domain>` 嵌套范围。校验器拒绝缺失、重复、乱序、失败或未关闭的范围，父用例清理失败会使子范围失效。最终只接受指定平台、backend、endpoint 和 profile 的一次 `all` 完整运行，以及全部七个顶层用例和十一个 RPC domain。测试进程真实退出码和日志内 summary 都必须成功；不能把 summary 的 exit_code 当成真实进程退出码。
+Runner 在 actor 初始化前输出 `coverage-begin`，在清理后输出 `coverage-end`；RPC domain 使用 `rpc/<domain>` 嵌套范围。校验器拒绝缺失、重复、乱序、失败或未关闭的范围，父用例清理失败会使子范围失效。最终只接受指定平台、backend、endpoint 和 profile 的一次 `all` 完整运行，以及全部八个顶层用例和十一个 RPC domain。测试进程真实退出码和日志内 summary 都必须成功；不能把 summary 的 exit_code 当成真实进程退出码。
 
 Service case 的四个通用 req 函数和 `service_poll` 已接入调用/断言记录：验证不依赖 poll 的重复 wait、释放用户引用，以及空闲 poll 的分发数量。取消检查使用尚未 do 的请求，验证幂等、CLOSED 终态、错误输出清零及禁止再次启动；不代表网络中途取消已经验收。`service_coverage_test` 分别检查请求、Fixture 生命周期和 Voice Track 三类本地记录，不能拼接这些日志当成完整运行或真实服务器的覆盖证明。
 
@@ -101,7 +101,7 @@ bazel run --config=macos_arm64 //projects/e2e/apps/gizclaw:api_coverage -- \
   --backend=h2peer --profile=default --platform=macos
 ```
 
-输出 JSON 包含全部 196 行、调用/断言的日志行号、日志 SHA-256 和未覆盖项；退出码 0 表示日志满足覆盖要求，1 表示验收未通过，2 表示输入无效。`covered` 是日志中的诊断计数，只有 `valid=true` 且真实 E2E 测试通过才能验收。仍须记录实际构建版本并保留本次原始日志，校验器不能鉴别伪造日志或替身服务器。不得合并多轮日志凑覆盖；多轮运行应逐份核验各自 `run_N_of_M/test.log` 和真实运行结果。
+输出 JSON 包含全部 215 行、调用/断言的日志行号、日志 SHA-256 和未覆盖项；退出码 0 表示日志满足覆盖要求，1 表示验收未通过，2 表示输入无效。`covered` 是日志中的诊断计数，只有 `valid=true` 且真实 E2E 测试通过才能验收。仍须记录实际构建版本并保留本次原始日志，校验器不能鉴别伪造日志或替身服务器。不得合并多轮日志凑覆盖；多轮运行应逐份核验各自 `run_N_of_M/test.log` 和真实运行结果。
 
 只有完整 live 日志满足全部函数断言才能通过，历史 Connectivity 子集不能通过此审计。`api_coverage_test` 用合成日志验证校验器，逐一删除每个函数的调用/断言并要求失败，也验证进程崩溃、错误 endpoint/profile、跳过用例及清理失败；它不是 BJ E2E 结果。
 
@@ -109,4 +109,16 @@ Desktop 将 Runtime、provider、配置、endpoint、token 和 PCM 放在同一 
 
 未来 firmware launcher 负责 Wi-Fi credential、重连 task、Runtime event main loop、image/package 和结果传输。`H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP` 第一次出现后，launcher 在独立 runner task 中启动 App；`LOST_IP` 或 `DISCONNECTED` 只更新网络状态，同一次 boot 不启动第二个 runner。
 
-Debug 的 `req_create_debug_set` / `resp_parse_debug_set` 纳入 196 项审计要求；`device-api` 必须提供真实调用链和 `debug_set-assert` 才能计为覆盖。当前尚未加入该设备场景，因此完整覆盖审计仍会报告这两项缺失，不能用单元测试替代真实验收。
+Debug 的 `req_create_debug_set` / `resp_parse_debug_set` 纳入 215 项审计要求；`device-api` 必须提供真实调用链和 `debug_set-assert` 才能计为覆盖。当前尚未加入该设备场景，因此完整覆盖审计仍会报告这两项缺失，不能用单元测试替代真实验收。
+
+`h2_gizclaw_service_get_time_sync_status` 纳入 215 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。尚未插桩的真实场景继续报告缺失，不能用本地测试替代在线校时验收。
+
+Session 的 13 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、释放和重连。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 215 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
+
+## Resource state E2E
+
+`resource` 是独立的 portable suite（`H2_GIZCLAW_E2E_SUITE_RESOURCE`），也包含在 `all` 中。Desktop runner 支持 `resource` suite 参数；AMOLED 使用 `--define=H2_GIZCLAW_E2E_RESOURCE_ONLY=1` 单独构建。它创建一个专用临时 Peer，四种 Resource store 顺序运行并分别关闭/销毁；不同 store 不与原始接口混合执行修改。联系人失败后由 fixture 的精确删除账本兜底，仍有 store 未销毁时禁止交接清理。
+
+验收包括初始无数据与有效空列表的区别、刷新后的有效/新鲜快照、联系人增删改及修改前快照的独立性、Profile 昵称/emoji 回读、积分余额独立有效性和实际游标存在时的追加加载、完整分组列表，以及 close 保留过期快照并拒绝新操作。每次操作、业务断言和最终清理都独立记录；单纯 RPC 返回成功不能算通过。公共函数清单扩展为 215 项。
+
+联系人和分组未强制预置多页数据，积分账户也可能为空，因此无实际下一页时不声称 live 分页已覆盖。并发 BUSY、在途 close 丢弃迟到结果、服务端分页异常仍需 library 专项测试/独立 live 场景。本地 `gizclaw_e2e_resource_test` 使用故障注入验证 consumer 的拒绝和清理逻辑，不作为真实服务器证据。
