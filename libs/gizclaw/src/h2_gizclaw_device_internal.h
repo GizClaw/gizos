@@ -4,6 +4,9 @@
 typedef struct h2_gizclaw_device h2_gizclaw_device_t;
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *device);
+/** Test support: swap the product vtable of a running device. */
+void h2_gizclaw_device_set_vtable_internal(h2_gizclaw_service_t *service,
+                                           const h2_gizclaw_vtable_t *vtable);
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *device);
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *device);
 void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *device);

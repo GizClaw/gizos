@@ -2400,6 +2400,21 @@ static void test_device_provider_pal_and_player(void) {
   wait_for_count(&state.reboot_requests, 1);
   assert(state.reboot_request_delay_ms == 1500u);
   assert(atomic_load(&state.reboots) == 0);
+  /* Without the hook the legacy path keeps the delay on the worker and then
+   * calls the power PAL. */
+  const h2_gizclaw_vtable_t no_hook = {.resolve_sound_url = device_resolve_sound};
+  h2_gizclaw_device_set_vtable_internal(service, &no_hook);
+  reboot.delay_ms = 40;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
+    gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
+  uint64_t handoff_ms = 0u;
+  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &handoff_ms) == H2_PAL_OK);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  wait_for_count(&state.reboots, 1);
+  uint64_t rebooted_ms = 0u;
+  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &rebooted_ms) == H2_PAL_OK);
+  assert(rebooted_ms - handoff_ms >= 40u);
+  assert(atomic_load(&state.reboot_requests) == 1);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);

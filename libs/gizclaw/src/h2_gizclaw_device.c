@@ -1211,10 +1211,14 @@ static void device_worker(void *user) {
         trace(d, "wifi_connect", pending, rc);
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
         if (d->config.vtable && d->config.vtable->request_reboot) {
-          /* The product owns the delay and its orderly shutdown. */
-          if (!atomic_load(&d->stopping))
-            (void)d->config.vtable->request_reboot(d->config.user,
-                                                   d->delay_ms);
+          /* Non-blocking handoff: the product copies the request and owns
+           * the delay, its orderly shutdown and the reboot on its own
+           * owner. Nothing here waits for it. */
+          if (!atomic_load(&d->stopping)) {
+            const int handoff = d->config.vtable->request_reboot(
+                d->config.user, d->delay_ms);
+            trace(d, "reboot_handoff", pending, handoff);
+          }
         } else {
           uint32_t remaining = d->delay_ms;
           while (remaining && !atomic_load(&d->stopping)) {
@@ -1265,6 +1269,12 @@ static void device_worker(void *user) {
     } else if (h2_pal_time_sleep_ms(d->config.time, 20u) != H2_PAL_OK)
       break;
   }
+}
+
+void h2_gizclaw_device_set_vtable_internal(h2_gizclaw_service_t *service,
+                                           const h2_gizclaw_vtable_t *vtable) {
+  if (service != NULL && service->device != NULL)
+    service->device->config.vtable = vtable;
 }
 
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
