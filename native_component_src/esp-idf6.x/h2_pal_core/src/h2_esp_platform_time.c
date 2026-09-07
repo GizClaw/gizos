@@ -44,6 +44,11 @@ static h2_pal_result_t esp_time_get_wall_ms(void *user, uint64_t *out_ms) {
     if (h2_esp_gettimeofday(&tv) != 0) {
         return H2_PAL_ERR_UNAVAILABLE;
     }
+    /* A pre-epoch or malformed reading would wrap when cast to uint64_t and
+     * could pass the plausibility floor as a huge value. */
+    if (tv.tv_sec < 0 || tv.tv_usec < 0 || tv.tv_usec >= 1000000) {
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
     *out_ms = ((uint64_t)tv.tv_sec * 1000u) + ((uint64_t)tv.tv_usec / 1000u);
     return H2_PAL_OK;
 }
@@ -88,8 +93,12 @@ static h2_pal_result_t esp_time_get_wall_status(void *user, h2_pal_time_wall_sta
         return H2_PAL_ERR_INVALID_ARG;
     }
     uint64_t wall_ms = 0u;
-    out_status->valid = esp_time_get_wall_ms(user, &wall_ms) == H2_PAL_OK &&
-                        wall_ms >= H2_ESP_WALL_MIN_VALID_MS;
+    /* A clock that cannot be read is an error, not an uncalibrated clock. */
+    const h2_pal_result_t rc = esp_time_get_wall_ms(user, &wall_ms);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    out_status->valid = wall_ms >= H2_ESP_WALL_MIN_VALID_MS;
     if (!out_status->valid) {
         out_status->source = H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
     } else if (atomic_load_explicit(&s_esp_wall_set_in_session, memory_order_acquire)) {

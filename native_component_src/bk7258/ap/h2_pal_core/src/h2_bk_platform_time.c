@@ -43,6 +43,11 @@ static h2_pal_result_t bk_time_get_wall_ms(void *user, uint64_t *out_ms) {
     if (bk_rtc_gettimeofday(&tv, NULL) != 0) {
         return H2_PAL_ERR_UNAVAILABLE;
     }
+    /* A pre-epoch or malformed reading would wrap when cast to uint64_t and
+     * could pass the plausibility floor as a huge value. */
+    if (tv.tv_sec < 0 || tv.tv_usec < 0 || tv.tv_usec >= 1000000) {
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
     *out_ms = ((uint64_t)tv.tv_sec * 1000u) + ((uint64_t)tv.tv_usec / 1000u);
     return H2_PAL_OK;
 }
@@ -80,8 +85,12 @@ static h2_pal_result_t bk_time_get_wall_status(void *user, h2_pal_time_wall_stat
         return H2_PAL_ERR_INVALID_ARG;
     }
     uint64_t wall_ms = 0u;
-    out_status->valid = bk_time_get_wall_ms(user, &wall_ms) == H2_PAL_OK &&
-                        wall_ms >= H2_BK_WALL_MIN_VALID_MS;
+    /* A clock that cannot be read is an error, not an uncalibrated clock. */
+    const h2_pal_result_t rc = bk_time_get_wall_ms(user, &wall_ms);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    out_status->valid = wall_ms >= H2_BK_WALL_MIN_VALID_MS;
     uint32_t int_level = rtos_enter_critical();
     const uint8_t set_in_session = s_bk_wall_set_in_session;
     rtos_exit_critical(int_level);

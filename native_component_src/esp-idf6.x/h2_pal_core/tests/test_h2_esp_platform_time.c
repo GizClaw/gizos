@@ -19,10 +19,14 @@
 #define TEST_SLEEP_MS 660000ull
 
 static struct timeval s_clock;
+static int s_clock_read_fails;
 
 void h2_esp_platform_time_test_restart(void);
 
 int h2_esp_platform_time_test_gettimeofday(struct timeval *tv) {
+  if (s_clock_read_fails) {
+    return -1;
+  }
   *tv = s_clock;
   return 0;
 }
@@ -121,6 +125,32 @@ static void test_rejected_set_keeps_state(const h2_pal_time_api_t *api) {
   assert(wall_ms(api) == TEST_WALL_MS);
 }
 
+/* An unreadable clock is an error, not an uncalibrated clock. */
+static void test_read_failure_is_an_error(const h2_pal_time_api_t *api) {
+  set_clock_ms(TEST_WALL_MS);
+  h2_esp_platform_time_test_restart();
+  s_clock_read_fails = 1;
+  h2_pal_time_wall_status_t status = {0};
+  assert(h2_pal_time_get_wall_status(api, &status) == H2_PAL_ERR_UNAVAILABLE);
+  uint64_t value = 1u;
+  assert(h2_pal_time_get_wall_ms(api, &value) == H2_PAL_ERR_UNAVAILABLE);
+  assert(value == 0u);
+  s_clock_read_fails = 0;
+}
+
+/* A pre-epoch reading must not wrap past the plausibility floor. */
+static void test_pre_epoch_clock_is_unavailable(const h2_pal_time_api_t *api) {
+  h2_esp_platform_time_test_restart();
+  s_clock.tv_sec = -1;
+  s_clock.tv_usec = 0;
+  h2_pal_time_wall_status_t status = {0};
+  assert(h2_pal_time_get_wall_status(api, &status) == H2_PAL_ERR_UNAVAILABLE);
+  assert(wall_ms(api) == 0u);
+  s_clock.tv_sec = 0;
+  s_clock.tv_usec = 1000000;
+  assert(h2_pal_time_get_wall_status(api, &status) == H2_PAL_ERR_UNAVAILABLE);
+}
+
 int main(void) {
   const h2_pal_time_api_t *api = h2_esp_platform_time_api();
   assert(api != NULL);
@@ -130,5 +160,7 @@ int main(void) {
   test_reading_before_floor_is_invalid(api);
   test_clock_loss_drops_validity(api);
   test_rejected_set_keeps_state(api);
+  test_read_failure_is_an_error(api);
+  test_pre_epoch_clock_is_unavailable(api);
   return 0;
 }
