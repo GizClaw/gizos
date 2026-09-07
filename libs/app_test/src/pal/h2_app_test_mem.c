@@ -3,7 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 typedef union allocation {
+#if defined(_MSC_VER) && !defined(__clang__)
+  /* MSVC's C headers omit max_align_t. These members cover its fundamental
+   * scalar alignments without changing the malloc/free ownership contract. */
+  long double alignment;
+  long long integer_alignment;
+  void *pointer_alignment;
+#else
   max_align_t alignment;
+#endif
   struct {
     size_t size;
     union allocation *previous, *next;

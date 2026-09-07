@@ -81,7 +81,11 @@ int main(void) {
   h2_app_test_mem_t mem;
   h2_app_test_mem_init(&mem, NULL);
   uint8_t *data = h2_pal_mem_alloc(&mem.api, 19);
+#if defined(_MSC_VER) && !defined(__clang__)
+  assert(data && (uintptr_t)data % __alignof(long double) == 0);
+#else
   assert(data && (uintptr_t)data % _Alignof(max_align_t) == 0);
+#endif
   memset(data, 0x42, 19);
   mem.fail_at = mem.calls + 1;
   assert(!h2_pal_mem_realloc(&mem.api, data, 37));
