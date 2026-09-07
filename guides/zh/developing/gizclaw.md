@@ -79,6 +79,15 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
   RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
   回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。
+- `get_facts` 的 `imei_count` / `imeis` 上报设备 modem IMEI，最多
+  `H2_GIZCLAW_DEVICE_IMEI_MAX` 个。产品必须返回已缓存的号码，不得在回调里发 AT
+  命令读取 modem；还没读到时返回 `imei_count = 0`。每项 `digits` 必须是 15 位
+  ASCII 十进制数字加 NUL，可选 `name` 用于区分多 modem 槽位，长度不超过
+  `H2_GIZCLAW_DEVICE_IMEI_NAME_MAX`。库在 `client.identifiers.get` 里按
+  `tac = 前 8 位`、`serial = 后 7 位` 拆分编码，与 Server 的 by-imei 索引一致。
+  任一项不合法整个回复失败，不发送部分列表；`get_facts` 失败或没有配置 vtable 时
+  回复退化为仅 `sn`，不报错。IMEI 属于个人数据，只出现在 RPC 回复里，不进入
+  `h2_pal_log` 输出与 trace 字符串。
 - OTA 使用明确的 `firmware_channel`，允许 RPC 覆盖 channel 并附带期望 SHA-256。
   库获取元数据并通过 PAL HTTP 下载；Stage backend 必须验证 package 的长度、
   SHA-256、board/target 和 manifest，验证通过才能发布 Stage。库上报 started、

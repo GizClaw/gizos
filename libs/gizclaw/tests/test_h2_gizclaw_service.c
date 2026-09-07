@@ -2405,6 +2405,188 @@ static h2_pal_result_t ota_unreached_finish(void *user) {
   (void)user; assert(false); return H2_PAL_ERR_IO;
 }
 static void ota_unreached_abort(void *user) { (void)user; assert(false); }
+
+/* client.identifiers.get: TAC/serial split, validation and privacy. */
+typedef struct identifiers_facts {
+  h2_gizclaw_device_facts_t facts;
+  h2_pal_result_t result;
+  unsigned calls;
+} identifiers_facts_t;
+static h2_pal_result_t identifiers_get_facts(void *user,
+                                             h2_gizclaw_device_facts_t *out) {
+  identifiers_facts_t *state = user;
+  ++state->calls;
+  if (state->result != H2_PAL_OK)
+    return state->result;
+  *out = state->facts;
+  return H2_PAL_OK;
+}
+typedef struct identifiers_capture {
+  size_t count;
+  char sn[32];
+  char name[4][32];
+  char tac[4][32];
+  char serial[4][32];
+} identifiers_capture_t;
+static bool identifiers_string_decode(pb_istream_t *stream,
+                                      const pb_field_t *field, void **arg) {
+  (void)field;
+  char *out = *arg;
+  size_t len = stream->bytes_left;
+  if (len >= 32u)
+    return false;
+  if (!pb_read(stream, (pb_byte_t *)out, len))
+    return false;
+  out[len] = '\0';
+  return true;
+}
+static bool identifiers_imei_decode(pb_istream_t *stream,
+                                    const pb_field_t *field, void **arg) {
+  (void)field;
+  identifiers_capture_t *capture = *arg;
+  if (capture->count >= 4u)
+    return false;
+  gizclaw_rpc_v1_PeerIMEI item = gizclaw_rpc_v1_PeerIMEI_init_zero;
+  item.name.funcs.decode = identifiers_string_decode;
+  item.name.arg = capture->name[capture->count];
+  item.tac.funcs.decode = identifiers_string_decode;
+  item.tac.arg = capture->tac[capture->count];
+  item.serial.funcs.decode = identifiers_string_decode;
+  item.serial.arg = capture->serial[capture->count];
+  if (!pb_decode(stream, gizclaw_rpc_v1_PeerIMEI_fields, &item))
+    return false;
+  ++capture->count;
+  return true;
+}
+static void identifiers_decode(const h2_gizclaw_rpc_provider_response_t *response,
+                               identifiers_capture_t *capture) {
+  memset(capture, 0, sizeof(*capture));
+  gizclaw_rpc_v1_ClientGetIdentifiersResponse reply =
+      gizclaw_rpc_v1_ClientGetIdentifiersResponse_init_zero;
+  reply.value.sn.funcs.decode = identifiers_string_decode;
+  reply.value.sn.arg = capture->sn;
+  reply.value.imeis.funcs.decode = identifiers_imei_decode;
+  reply.value.imeis.arg = capture;
+  pb_istream_t input =
+      pb_istream_from_buffer(response->payload.data, response->payload.len);
+  assert(pb_decode(&input, gizclaw_rpc_v1_ClientGetIdentifiersResponse_fields,
+                   &reply));
+  assert(reply.has_value);
+}
+typedef struct identifiers_log_capture {
+  unsigned calls;
+  bool leaked;
+} identifiers_log_capture_t;
+static int identifiers_capture_log(void *user, h2_pal_log_level_t level,
+                                   const char *scope, const char *message) {
+  identifiers_log_capture_t *capture = user;
+  (void)level;
+  (void)scope;
+  ++capture->calls;
+  if (strstr(message, "123456780000001") || strstr(message, "356789012345670"))
+    capture->leaked = true;
+  return H2_PAL_OK;
+}
+static void identifiers_case(identifiers_facts_t *facts, bool with_vtable,
+                             int expected_code,
+                             identifiers_capture_t *capture) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  identifiers_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write =
+                                                    identifiers_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  const h2_gizclaw_vtable_t operations = {.get_facts = identifiers_get_facts};
+  service->client_config.log = &log;
+  service->client_config.serial = "SN-FIXTURE";
+  service->client_config.user = facts;
+  if (with_vtable)
+    service->client_config.vtable = &operations;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_rpc_provider_response_t response;
+  gizclaw_rpc_v1_ClientGetIdentifiersRequest request = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET,
+                     gizclaw_rpc_v1_ClientGetIdentifiersRequest_fields,
+                     &request, &response) == expected_code);
+  if (expected_code == 0)
+    identifiers_decode(&response, capture);
+  else
+    memset(capture, 0, sizeof(*capture));
+  assert(log_capture.calls > 0u && !log_capture.leaked);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+static void test_device_identifiers_imeis(void) {
+  identifiers_capture_t capture;
+  /* No vtable: sn only. */
+  identifiers_facts_t none = {0};
+  identifiers_case(&none, false, 0, &capture);
+  assert(!strcmp(capture.sn, "SN-FIXTURE") && capture.count == 0u);
+  assert(none.calls == 0u);
+  /* Vtable reporting no cached IMEI: sn only. */
+  identifiers_facts_t empty = {.facts = {.has_charging = true}};
+  identifiers_case(&empty, true, 0, &capture);
+  assert(!strcmp(capture.sn, "SN-FIXTURE") && capture.count == 0u);
+  assert(empty.calls == 1u);
+  /* One IMEI splits into TAC (first 8) and serial (last 7). */
+  identifiers_facts_t single = {.facts = {.imei_count = 1u}};
+  strcpy(single.facts.imeis[0].digits, "123456780000001");
+  identifiers_case(&single, true, 0, &capture);
+  assert(!strcmp(capture.sn, "SN-FIXTURE") && capture.count == 1u);
+  assert(!strcmp(capture.tac[0], "12345678"));
+  assert(!strcmp(capture.serial[0], "0000001"));
+  assert(capture.name[0][0] == '\0');
+  /* Two IMEIs keep facts order and carry their optional slot names. */
+  identifiers_facts_t pair = {.facts = {.imei_count = 2u}};
+  strcpy(pair.facts.imeis[0].digits, "123456780000001");
+  pair.facts.imeis[0].name = "modem-a";
+  strcpy(pair.facts.imeis[1].digits, "356789012345670");
+  pair.facts.imeis[1].name = "modem-b";
+  identifiers_case(&pair, true, 0, &capture);
+  assert(capture.count == 2u);
+  assert(!strcmp(capture.tac[0], "12345678") &&
+         !strcmp(capture.serial[0], "0000001") &&
+         !strcmp(capture.name[0], "modem-a"));
+  assert(!strcmp(capture.tac[1], "35678901") &&
+         !strcmp(capture.serial[1], "2345670") &&
+         !strcmp(capture.name[1], "modem-b"));
+  /* 14 digits, a non-digit and an overlong slot name all fail the whole reply. */
+  identifiers_facts_t short_imei = {.facts = {.imei_count = 1u}};
+  strcpy(short_imei.facts.imeis[0].digits, "12345678000001");
+  identifiers_case(&short_imei, true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT,
+                   &capture);
+  identifiers_facts_t alpha = {.facts = {.imei_count = 1u}};
+  strcpy(alpha.facts.imeis[0].digits, "1234567800000A1");
+  identifiers_case(&alpha, true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT,
+                   &capture);
+  identifiers_facts_t long_name = {.facts = {.imei_count = 1u}};
+  strcpy(long_name.facts.imeis[0].digits, "123456780000001");
+  long_name.facts.imeis[0].name =
+      "modem-slot-name-that-is-far-too-long-for-the-contract";
+  identifiers_case(&long_name, true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT,
+                   &capture);
+  /* Second IMEI invalid: no partial list is sent. */
+  identifiers_facts_t partial = {.facts = {.imei_count = 2u}};
+  strcpy(partial.facts.imeis[0].digits, "123456780000001");
+  strcpy(partial.facts.imeis[1].digits, "35678901234567");
+  identifiers_case(&partial, true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT,
+                   &capture);
+  /* More slots than the contract allows is a format error, not a truncation. */
+  identifiers_facts_t overflow = {.facts = {.imei_count =
+                                                H2_GIZCLAW_DEVICE_IMEI_MAX +
+                                                1u}};
+  strcpy(overflow.facts.imeis[0].digits, "123456780000001");
+  strcpy(overflow.facts.imeis[1].digits, "356789012345670");
+  identifiers_case(&overflow, true, H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT,
+                   &capture);
+  /* get_facts failure degrades to sn only rather than failing the RPC. */
+  identifiers_facts_t failing = {.facts = {.imei_count = 1u},
+                                 .result = H2_PAL_ERR_IO};
+  strcpy(failing.facts.imeis[0].digits, "123456780000001");
+  identifiers_case(&failing, true, 0, &capture);
+  assert(!strcmp(capture.sn, "SN-FIXTURE") && capture.count == 0u);
+}
 static void test_ota_status_before_stage_failure(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -9540,6 +9722,7 @@ int main(int argc, char **argv) {
   test_req_ping_execution_timing();
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
+  test_device_identifiers_imeis();
   test_device_ota_telemetry_copy();
   test_ota_status_before_stage_failure();
   test_ota_status_successful_stage();

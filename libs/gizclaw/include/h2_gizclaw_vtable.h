@@ -8,6 +8,19 @@
 extern "C" {
 #endif
 struct h2_gizclaw_firmware;
+
+/** Modem identity slots reported in client.identifiers.get. */
+#define H2_GIZCLAW_DEVICE_IMEI_MAX 2
+#define H2_GIZCLAW_DEVICE_IMEI_NAME_MAX 32
+
+/** One modem IMEI. digits holds exactly 15 ASCII decimal digits plus NUL; the
+ * library splits it into TAC (first 8) and serial (last 7). name is optional
+ * and distinguishes slots on multi-modem products. */
+typedef struct h2_gizclaw_device_imei {
+  const char *name;
+  char digits[16];
+} h2_gizclaw_device_imei_t;
+
 typedef struct h2_gizclaw_device_facts {
   bool has_battery_percent;
   int64_t battery_percent;
@@ -15,6 +28,10 @@ typedef struct h2_gizclaw_device_facts {
   bool charging;
   bool has_firmware_sha256;
   char firmware_sha256[65];
+  /** Cached modem IMEIs. get_facts must not query the modem; report 0 until a
+   * cached value exists. Values are borrowed for the duration of the call. */
+  size_t imei_count;
+  h2_gizclaw_device_imei_t imeis[H2_GIZCLAW_DEVICE_IMEI_MAX];
 } h2_gizclaw_device_facts_t;
 
 /** Supplement only capabilities absent from PAL. All arguments are borrowed

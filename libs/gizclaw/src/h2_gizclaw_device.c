@@ -114,6 +114,35 @@ static bool string_encode(pb_ostream_t *stream, const pb_field_t *field,
 static pb_callback_t string_field(const char *s) {
   return (pb_callback_t){.funcs.encode = string_encode, .arg = (void *)s};
 }
+/* IMEI is personal data: it is encoded into the response only, never traced
+ * or logged. Products must supply exactly 15 ASCII decimal digits. */
+static bool imei_valid(const h2_gizclaw_device_imei_t *imei) {
+  for (size_t i = 0; i < 15u; ++i) {
+    if (imei->digits[i] < '0' || imei->digits[i] > '9')
+      return false;
+  }
+  return imei->digits[15] == '\0' &&
+         (!imei->name || strlen(imei->name) <= H2_GIZCLAW_DEVICE_IMEI_NAME_MAX);
+}
+static bool imei_encode(pb_ostream_t *stream, const pb_field_t *field,
+                        void *const *arg) {
+  const h2_gizclaw_device_facts_t *facts = *arg;
+  for (size_t i = 0; i < facts->imei_count; ++i) {
+    char tac[9], serial[8];
+    memcpy(tac, facts->imeis[i].digits, 8u);
+    tac[8] = '\0';
+    memcpy(serial, facts->imeis[i].digits + 8, 7u);
+    serial[7] = '\0';
+    gizclaw_rpc_v1_PeerIMEI item = gizclaw_rpc_v1_PeerIMEI_init_zero;
+    item.name = string_field(facts->imeis[i].name);
+    item.tac = string_field(tac);
+    item.serial = string_field(serial);
+    if (!pb_encode_tag_for_field(stream, field) ||
+        !pb_encode_submessage(stream, gizclaw_rpc_v1_PeerIMEI_fields, &item))
+      return false;
+  }
+  return true;
+}
 static bool https_url(const char *s) {
   if (strncmp(s, "https://", 8) != 0 || !s[8] || s[8] == '/')
     return false;
@@ -538,6 +567,21 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     }
     gizclaw_rpc_v1_ClientGetIdentifiersResponse reply = {.has_value = true};
     reply.value.sn = string_field(d->config.serial);
+    /* Absent vtable or a failing get_facts degrades to sn only; malformed
+     * IMEIs fail the whole reply rather than sending a partial list. */
+    h2_gizclaw_device_facts_t facts = {0};
+    if (d->config.vtable && d->config.vtable->get_facts &&
+        d->config.vtable->get_facts(d->config.user, &facts) == H2_PAL_OK &&
+        facts.imei_count) {
+      if (facts.imei_count > H2_GIZCLAW_DEVICE_IMEI_MAX)
+        return H2_PAL_ERR_FORMAT;
+      for (size_t i = 0; i < facts.imei_count; ++i) {
+        if (!imei_valid(&facts.imeis[i]))
+          return H2_PAL_ERR_FORMAT;
+      }
+      reply.value.imeis =
+          (pb_callback_t){.funcs.encode = imei_encode, .arg = &facts};
+    }
     return encode(d, gizclaw_rpc_v1_ClientGetIdentifiersResponse_fields, &reply,
                   out);
   }
