@@ -222,6 +222,8 @@ cc_library(
 
 cc_library(
     name = "firmware",
+    # firmware_sources is a filegroup in srcs, so this define compiles the
+    # upstream decoder/codec here as well as configuring downstream consumers.
     defines = ["LV_USE_LODEPNG=1"],
     srcs = [
         "src/h2_lvgl_fs.c",
