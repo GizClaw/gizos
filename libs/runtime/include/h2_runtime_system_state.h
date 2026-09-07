@@ -31,6 +31,41 @@ h2_pal_result_t h2_runtime_system_state_audio(
 h2_pal_result_t h2_runtime_audio_set_volume(
     h2_runtime_t *runtime, uint32_t percent, uint8_t muted);
 
+/**
+ * Live audio amplitude, as seen by the Runtime audio proxy.
+ *
+ * Each field carries the peak absolute sample of the most recent PCM frame in
+ * that direction, scaled to 0..100, together with the monotonic millisecond at
+ * which that frame passed through the Runtime. Only S16LE frames are measured;
+ * a frame in any other sample format leaves the previous value in place.
+ *
+ * The Runtime publishes the raw last-frame peak and never decays it: it does
+ * not know how often a consumer samples this. Decay, smoothing and hold belong
+ * to the consumer, which knows its own frame rate. A consumer must treat a
+ * timestamp older than its own idea of "recent" as silence rather than holding
+ * the last peak forever.
+ *
+ * `capture_updated_ms` / `playback_updated_ms` are 0 while no frame of that
+ * direction has been measured.
+ */
+typedef struct h2_runtime_audio_levels {
+    uint8_t capture_percent;    /* 0..100, peak of the most recent mic frame */
+    uint8_t playback_percent;   /* 0..100, peak of the most recent played frame */
+    uint64_t capture_updated_ms;   /* monotonic ms of that frame, 0 if never */
+    uint64_t playback_updated_ms;
+} h2_runtime_audio_levels_t;
+
+/**
+ * Read the latest capture and playback frame levels into caller storage.
+ *
+ * Lock-free and safe from any task; the audio hot path only stores. A NULL
+ * runtime, an unready runtime or a NULL `out_levels` returns INVALID_ARG.
+ * The values are observational only: they must never gate an audio path,
+ * open or close a stream, or feed anything but a display.
+ */
+h2_pal_result_t h2_runtime_audio_get_levels(
+    const h2_runtime_t *runtime, h2_runtime_audio_levels_t *out_levels);
+
 typedef struct h2_runtime_system_gpio_irq_state {
     int reserved;
 } h2_runtime_system_gpio_irq_state_t;

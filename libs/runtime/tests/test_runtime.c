@@ -3564,6 +3564,211 @@ static void test_audio_shared_state(void) {
     h2_runtime_deinit(runtime);
 }
 
+typedef struct audio_level_fixture {
+    int16_t mic_samples[4];
+    size_t mic_bytes;
+    h2_audio_sample_format_t mic_format;
+    int mic_result;
+    h2_pal_audio_track_t backend_track;
+    unsigned int writes, closes, gets, sets, drains;
+    uint32_t factor_milli;
+    int backend_track_result;
+    int omit_track_ops;
+} audio_level_fixture_t;
+
+static int level_mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_ms) {
+    audio_level_fixture_t *f = user;
+    (void)timeout_ms;
+    if (f->mic_result != H2_PAL_OK)
+        return f->mic_result;
+    memcpy(frame->data, f->mic_samples, f->mic_bytes);
+    frame->bytes = f->mic_bytes;
+    frame->sample_format = f->mic_format;
+    frame->channels = 1u;
+    frame->samples_per_channel = (uint16_t)(f->mic_bytes / sizeof(int16_t));
+    return H2_PAL_OK;
+}
+
+static int level_track_write(
+    h2_pal_audio_track_t *track, const h2_audio_frame_t *frame, uint32_t timeout_ms) {
+    audio_level_fixture_t *f = track->user;
+    (void)frame;
+    (void)timeout_ms;
+    f->writes += 1u;
+    return H2_PAL_OK;
+}
+
+static int level_track_close(h2_pal_audio_track_t *track) {
+    ((audio_level_fixture_t *)track->user)->closes += 1u;
+    return H2_PAL_OK;
+}
+
+static int level_track_get_factor(h2_pal_audio_track_t *track, uint32_t *out_factor_milli) {
+    audio_level_fixture_t *f = track->user;
+    f->gets += 1u;
+    *out_factor_milli = f->factor_milli;
+    return H2_PAL_OK;
+}
+
+static int level_track_set_factor(h2_pal_audio_track_t *track, uint32_t factor_milli) {
+    audio_level_fixture_t *f = track->user;
+    f->sets += 1u;
+    f->factor_milli = factor_milli;
+    return H2_PAL_OK;
+}
+
+static int level_track_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+    (void)timeout_ms;
+    ((audio_level_fixture_t *)track->user)->drains += 1u;
+    return H2_PAL_OK;
+}
+
+static int level_create_track(
+    void *user, const h2_audio_track_config_t *config, h2_pal_audio_track_t **out) {
+    audio_level_fixture_t *f = user;
+    (void)config;
+    if (f->backend_track_result != H2_PAL_OK)
+        return f->backend_track_result;
+    f->backend_track = (h2_pal_audio_track_t){
+        .user = f,
+        .write = level_track_write,
+        .close = level_track_close,
+        .get_volume_factor = f->omit_track_ops ? NULL : level_track_get_factor,
+        .set_volume_factor = f->omit_track_ops ? NULL : level_track_set_factor,
+        .drain = f->omit_track_ops ? NULL : level_track_drain,
+    };
+    *out = &f->backend_track;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_audio_vtable_t level_audio_vtable = {
+    .mic_read = level_mic_read,
+    .create_track = level_create_track,
+};
+
+static void test_audio_levels_follow_measured_frames(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_level_fixture_t f = {
+        .mic_samples = {0, -16384, 4096, 0},
+        .mic_bytes = 4u * sizeof(int16_t),
+        .mic_format = H2_AUDIO_SAMPLE_S16LE,
+    };
+    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    env.time_state.now_ms = 1000u;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+
+    h2_runtime_audio_levels_t levels;
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_percent == 0 && levels.playback_percent == 0);
+    assert(levels.capture_updated_ms == 0u && levels.playback_updated_ms == 0u);
+
+    /* A mic frame peaking at half scale reports half scale, timestamped. */
+    int16_t buffer[8];
+    h2_audio_frame_t frame = {
+        .data = buffer, .capacity = sizeof(buffer), .channels = 1u,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE};
+    env.time_state.now_ms = 1200u;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_percent == 50u);
+    assert(levels.capture_updated_ms == 1200u);
+    assert(levels.playback_percent == 0u && levels.playback_updated_ms == 0u);
+
+    /* A full-scale negative sample saturates at 100 rather than wrapping. */
+    f.mic_samples[1] = INT16_MIN;
+    env.time_state.now_ms = 1300u;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
+
+    /* A frame the Runtime cannot measure leaves the previous level in place. */
+    f.mic_format = (h2_audio_sample_format_t)99;
+    f.mic_samples[1] = 0;
+    env.time_state.now_ms = 1400u;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_OK);
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
+
+    /* A failed read publishes nothing either. */
+    f.mic_format = H2_AUDIO_SAMPLE_S16LE;
+    f.mic_result = H2_PAL_ERR_IO;
+    env.time_state.now_ms = 1500u;
+    assert(h2_pal_audio_mic_read(runtime->audio, &frame, 0u) == H2_PAL_ERR_IO);
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.capture_updated_ms == 1300u);
+
+    h2_pal_audio_track_t *track = NULL;
+    h2_audio_track_config_t track_config = {.name = "levels"};
+    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
+    assert(track != NULL && track != &f.backend_track);
+
+    int16_t played[2] = {8192, -2048};
+    h2_audio_frame_t out_frame = {
+        .data = played, .capacity = sizeof(played), .bytes = sizeof(played),
+        .channels = 1u, .samples_per_channel = 2u,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE};
+    env.time_state.now_ms = 1600u;
+    assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
+    assert(f.writes == 1u);
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.playback_percent == 25u && levels.playback_updated_ms == 1600u);
+    assert(levels.capture_percent == 100u && levels.capture_updated_ms == 1300u);
+
+    out_frame.sample_format = (h2_audio_sample_format_t)99;
+    env.time_state.now_ms = 1700u;
+    assert(h2_pal_audio_track_write(track, &out_frame, 0u) == H2_PAL_OK);
+    assert(f.writes == 2u);
+    assert(h2_runtime_audio_get_levels(runtime, &levels) == H2_PAL_OK);
+    assert(levels.playback_percent == 25u && levels.playback_updated_ms == 1600u);
+
+    /* Every other track operation reaches the backend track unchanged. */
+    uint32_t factor = 0u;
+    assert(h2_pal_audio_track_set_volume_factor(track, 700u) == H2_PAL_OK);
+    assert(h2_pal_audio_track_get_volume_factor(track, &factor) == H2_PAL_OK);
+    assert(factor == 700u && f.sets == 1u && f.gets == 1u);
+    assert(h2_pal_audio_track_drain(track, 5u) == H2_PAL_OK);
+    assert(f.drains == 1u);
+    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+    assert(f.closes == 1u);
+
+    assert(h2_runtime_audio_get_levels(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_audio_get_levels(NULL, &levels) == H2_PAL_ERR_INVALID_ARG);
+    h2_runtime_deinit(runtime);
+}
+
+static void test_audio_track_wrapper_forwards_absent_operations(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_level_fixture_t f = {.omit_track_ops = 1};
+    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+
+    h2_pal_audio_track_t *track = NULL;
+    h2_audio_track_config_t track_config = {.name = "absent"};
+    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
+    uint32_t factor = 0u;
+    assert(h2_pal_audio_track_get_volume_factor(track, &factor) == H2_AUDIO_ERR_INVALID_ARG);
+    assert(h2_pal_audio_track_set_volume_factor(track, 1u) == H2_AUDIO_ERR_INVALID_ARG);
+    assert(h2_pal_audio_track_drain(track, 0u) == H2_AUDIO_ERR_INVALID_ARG);
+    assert(f.gets == 0u && f.sets == 0u && f.drains == 0u);
+    assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+    assert(f.closes == 1u);
+
+    /* A backend that refuses the track leaves nothing allocated. */
+    f.backend_track_result = H2_PAL_ERR_IO;
+    track = NULL;
+    assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_ERR_IO);
+    assert(track == NULL);
+    h2_runtime_deinit(runtime);
+}
+
 typedef struct wifi_policy_fixture {
     h2_pal_wifi_sta_config_t saved, target;
     int connect_rc, save_rc;
@@ -3799,6 +4004,8 @@ static void test_time_adjusted_event(void) {
 int main(void) {
     test_wifi_policy_boundaries();
     test_audio_shared_state();
+    test_audio_levels_follow_measured_frames();
+    test_audio_track_wrapper_forwards_absent_operations();
     test_wifi_connection_persistence();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();
