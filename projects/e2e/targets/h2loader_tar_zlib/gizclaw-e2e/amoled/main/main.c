@@ -149,7 +149,7 @@ static void run_e2e(void *raw) {
                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = AMOLED_E2E_SUITES,
       .device_api_url = "https://ap.e2e.gizclaw.com",
-      .device_audio_url = "https://open.haivivi.com/download/aigc/v1/works/sound-lab/songs/little-penguin-dance.ogg",
+      .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
       .device_real_audio = true,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,

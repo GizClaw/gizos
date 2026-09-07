@@ -374,6 +374,12 @@ int main(void) {
       .format = {16000u, 4u, 1u, H2_AUDIO_SAMPLE_S16LE},
   };
   assert(h2_pal_audio_create_track(api, &track_config, &track) == H2_PAL_OK);
+  assert(track->write(track, NULL, 100u) == H2_PAL_ERR_INVALID_ARG);
+  h2_audio_frame_t invalid_frame = frame;
+  invalid_frame.data = NULL;
+  invalid_frame.bytes = invalid_frame.capacity;
+  assert(track->write(track, &invalid_frame, 100u) == H2_PAL_ERR_INVALID_ARG);
+  assert(fake.writes == 0u);
   frame.bytes = frame.capacity + 1u;
   assert(h2_pal_audio_track_write(track, &frame, 100u) ==
          H2_PAL_ERR_INVALID_ARG);

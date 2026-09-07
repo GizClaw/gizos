@@ -369,7 +369,8 @@ static int decorated_track_write(h2_pal_audio_track_t *track,
                                  const h2_audio_frame_t *frame,
                                  uint32_t timeout_ms) {
   h2_app_test_audio_track_t *wrapped = track->user;
-  if (frame->bytes > frame->capacity) {
+  if (frame == NULL || frame->data == NULL || frame->bytes == 0u ||
+      frame->bytes > frame->capacity) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   const int rc = h2_pal_audio_track_write(wrapped->delegate, frame, timeout_ms);

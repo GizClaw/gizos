@@ -6,8 +6,8 @@ static int index_of(h2_app_test_sync_t *s, h2_pal_mutex_t *m) {
       return (int)i;
   return -1;
 }
-static int create(void *user, const h2_pal_mutex_config_t *config,
-                  h2_pal_mutex_t **out) {
+static h2_pal_result_t create(void *user, const h2_pal_mutex_config_t *config,
+                              h2_pal_mutex_t **out) {
   h2_app_test_sync_t *s = user;
   if (!out || !config)
     return H2_PAL_ERR_INVALID_ARG;
@@ -27,7 +27,7 @@ static int create(void *user, const h2_pal_mutex_config_t *config,
   }
   return H2_PAL_ERR_NO_SPACE;
 }
-static int destroy(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t destroy(void *user, h2_pal_mutex_t *mutex) {
   h2_app_test_sync_t *s = user;
   int i = index_of(s, mutex);
   if (i < 0)
@@ -39,7 +39,7 @@ static int destroy(void *user, h2_pal_mutex_t *mutex) {
     s->mutexes[i].active = false;
   return rc;
 }
-static int lock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t lock(void *user, h2_pal_mutex_t *mutex) {
   h2_app_test_sync_t *s = user;
   int i = index_of(s, mutex);
   if (i < 0)
@@ -52,7 +52,7 @@ static int lock(void *user, h2_pal_mutex_t *mutex) {
   s->mutexes[i].locked = true;
   return H2_PAL_OK;
 }
-static int unlock(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t unlock(void *user, h2_pal_mutex_t *mutex) {
   h2_app_test_sync_t *s = user;
   int i = index_of(s, mutex);
   if (i < 0 || !s->mutexes[i].locked)

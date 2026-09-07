@@ -51,7 +51,7 @@ bazel build --config=esp32s3 --define=H2_GIZCLAW_E2E_DEVICE_ONLY=ON \
 ```
 
 需先配置仓库要求的 `IDF_PATH` / `IDF_TOOLS_PATH`。AMOLED 使用 Deploy AIGC 正式目录中《小企鹅摇摇舞》的已发布 Ogg/Opus：
-`https://open.haivivi.com/download/aigc/v1/works/sound-lab/songs/little-penguin-dance.ogg`。
+`https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg`。
 播放到 20 秒时检查服务端播放 telemetry，随后继续到整首自然结束，验证结束进度与播放时长；下载使用 64 KiB 环形缓冲。
 
 真实下载、H2Loader 安装、重启及新镜像确认使用显式选择的 [AMOLED OTA hardware acceptance](/apps/h2loader/boards/amoled/gizclaw_ota_e2e) 入口；普通 device suite 的计数 Stage sink 不能作为真机升级通过的证据。
