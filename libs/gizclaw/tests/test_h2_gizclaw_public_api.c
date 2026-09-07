@@ -10,7 +10,7 @@ static void (*volatile public_api[])(void) = {
 #undef H2_GIZCLAW_API
 };
 
-_Static_assert(sizeof(public_api) / sizeof(public_api[0]) == 191u,
+_Static_assert(sizeof(public_api) / sizeof(public_api[0]) == 215u,
                "The approved public function catalog changed");
 
 int main(void) {

@@ -14,7 +14,9 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
+依赖的 GizClaw C SDK 已升级到 0.15.6。`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+
+`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
 客户端只发送指定字段，不先 GET typed `WorkspaceParameters`，不解析或重写其 agent_type，也不再依据未知、额外、缺失或重复的服务端 typed 参数字段拒绝更新。服务端根据绑定的 Workflow driver 校验 patch、合并指定字段并保留其他参数；不支持的 driver/字段通过原有远端错误路径返回。公开 patch 是固定的可写字段集合，不是对服务端 metadata 的封闭枚举。SFU input 支持由上游实现，E2E 保留真实配置请求，不能通过跳过它声称完整验收通过。
 
@@ -36,6 +38,10 @@ capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorith
 
 Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access handle 由 `h2_gizclaw_client` 从 connect 成功一直保留到连接关闭。Conversation 只取得该 handle 的逻辑 lease；同一 client 同时只能有一个 conversation。每次 lease 使用 connection 内单调递增且唯一的 input stream ID；服务端可以为下行 `transcript` 和 `assistant` 各自产生 response-local stream ID。Conversation 按 label 分别绑定本轮第一个 response ID，接受其 `:<suffix>` 子流，并丢弃之后不匹配的旧轮文本或 EOS；不能要求下行 ID 等于 input ID。Input 仍然打开时（realtime，server-side VAD），服务端可以打断正在播放的 reply（barge-in）：新 reply 的 BOS 在旧 assistant route 结束前到达时直接取代旧 route，旧 reply 以 `REPLY_DONE` 结束并丢弃已排队的下行 PCM，之后携带 `STREAM_INTERRUPTED` 的旧 EOS 被丢弃；未被取代时该 EOS 本身就是同样的 reply boundary。Input 已经 commit（push-to-talk）后本 generation 不会再有 reply，`STREAM_INTERRUPTED` 保持 `ERROR` 语义。每个 reply 投递给 App 的 conversation event 数量有界：下行 PCM 只写入绑定的 Track，不经 event 复制，第一块 PCM 进入 Track 后、该 reply 的 boundary 之前投递一次 `REPLY_AUDIO_STARTED`，文本事件与它没有顺序关系（文本流独立，可能先到），最后恰好一次 `REPLY_DONE` 或 `ERROR`；dispatch wake 不随 reply 长度增长。Conversation deinit 只释放逻辑 lease，不释放 client access handle，也不关闭物理 channel；所有 conversation handle 必须先于 client deinit 释放。Direct Packet、Peer Event 或 Opus transport 意外关闭时，`h2_gizclaw_client_poll()` 返回 `H2_PAL_ERR_CLOSED`，调用方必须 close、deinit 并重建完整 client，不能只重开单条 transport。
 
+Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但正常回复事件和下行处理继续推进，避免业务事件占住队列后阻塞 READY，也允许服务端提前拒绝输入。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
+
+当前 `MODULE.bazel` 固定的 C SDK 0.15.6 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`；本修复无需升级 SDK。
+
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
 ## RPC provider
@@ -52,10 +58,9 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
 `rpc_provider` 保留为产品自定义方法的 fallback。没有配置的标准能力返回
 `UNIMPLEMENTED`，不会返回虚假的成功 ACK。
 
-- 音量直接使用 PAL Audio，Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用
-  PAL Wi-Fi Settings。当前 PAL Settings 只保存一个 STA 配置；RPC list 如实返回
-  0 或 1 条。临时连接不会覆盖保存配置。
-- 普通重启直接使用 PAL Power。重启、临时切网、OTA 在本地 RPC response 发送完成后
+- Service 配置 Runtime 且 Audio 来自该 Runtime 时，音量与静音直接读写 Runtime audio state，GizClaw 不保留私有缓存。静音保留设定音量，本地 percent 调整取消静音并更新同一 state。只注入原始 PAL、没有 Runtime 的 library caller 仅能报告有效音量，静音时为零；需要逻辑静音恢复的产品必须提供 Runtime。
+- Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用 PAL Wi-Fi Settings。产品注入 `runtime->wifi_sta` 与 `runtime->wifi_settings` 后，连接由 Runtime 等待 GOT_IP 并持久化凭据；GizClaw 不维护另一份网络记录。RPC list 如实返回现有 PAL Settings 的 0 或 1 条。直接注入原始 PAL 的调用方仍自行承担持久化策略。RPC response 是动作接受结果，后续连接或保存失败通过设备日志记录，不把接受 ACK 当作连接成功。
+- 普通重启直接使用 PAL Power。重启、切网、OTA 在本地 RPC response 发送完成后
   才交给 `$gizclaw/device` task；回复发送失败或 Service 停止会取消待执行动作。
 - 传入 `audio` PAL 即启用 Ogg/Opus 播放器。`audio_buffer_bytes` 设置压缩数据环形
   缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量
@@ -94,6 +99,20 @@ OTA frame 必须只包含一条 OTA observation，以映射 SDK 独立的 OTA fr
 Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出必须在 callback 返回后保持有效，直到 adapter 消费返回的响应；不能返回栈上 buffer。
 
 设备主动调用 Server 的 unary 或 server-streaming RPC 与 Server 反向调用 Client provider 是两个方向的 contract。前者由 generic RPC call API 发起；后者只能从 poll 驱动的 provider 入口处理，不能由 UI callback 直接执行，也不能跨线程保留 borrowed payload。产品侧的 state、effect command 和 main-loop 投影规则见 [GizClaw 状态与请求](/apps/gizclaw/state)。
+
+## 设备 Debug 访问模式
+
+`h2_gizclaw_req_create_debug_set()` 使用当前 SDK 0.15.5 已有的
+`server.runtime.put` 和 `ServerPutRuntimeRequest.debug_mode`。设备以当前
+Service 的自身身份设置 `off`、`readonly` 或 `fullcontrol`，服务端负责持久化
+和 SN／IMEI 查询后的访问控制；这不是本地日志等级，也不需要向工程师提供设备
+private key。
+
+创建请求时复制 mode，不产生网络请求。调用方使用标准
+`req_do`、`req_wait`／`req_cancel`、`resp_parse_debug_set`、`req_release`
+生命周期；UI 不应阻塞等待网络。只有成功解析服务器响应后才更新显示状态，
+失败不能显示为已开启。响应保留未知 mode 文本，不能把未知值解释为
+`fullcontrol`。关闭使用同一个接口发送 `off`。
 
 ## 上游 API 同步
 

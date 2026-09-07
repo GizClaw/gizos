@@ -474,10 +474,34 @@ static int actor_create_identity(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
+static int actor_session_dispose(h2_gizclaw_e2e_actor_t *actor) {
+  if (actor->session == NULL)
+    return H2_PAL_OK;
+  int rc = h2_gizclaw_session_close(actor->session);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session-close", rc);
+  h2_gizclaw_session_state_t state;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_session_snapshot(actor->session, &state);
+  if (rc == H2_PAL_OK && (state.can_start ||
+                          state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_CLOSED))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session_close-assert", rc);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_destroy(&actor->session);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session-destroy", rc);
+    if (rc == H2_PAL_OK && actor->session != NULL)
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session_destroy-assert", rc);
+  }
+  return rc;
+}
+
 static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
   if (actor->service == NULL)
     return H2_PAL_OK;
-  int rc = h2_gizclaw_service_stop(actor->service);
+  int rc = actor->session == NULL ? H2_PAL_OK : h2_gizclaw_session_close(actor->session);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_stop(actor->service);
   h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "fixture-stop", rc);
   if (rc != H2_PAL_OK)
     return rc;
@@ -495,6 +519,9 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
        * claim that stop alone dispatched hooks or released their resources. */
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "service_stop-assert",
                               H2_PAL_OK);
+      rc = actor_session_dispose(actor);
+      if (rc != H2_PAL_OK)
+        return rc;
       rc = h2_gizclaw_service_deinit(actor->service);
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_deinit", "fixture-deinit",
                               rc);
@@ -561,10 +588,45 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
   /* Connection may succeed even if the following registration times out.
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
-  rc =
-      h2_gizclaw_rpc_register(actor->service, fixture->registration_token,
-                              H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS, &registration);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_register", stage, rc);
+  if (fixture->use_session) {
+    static const char *const collections[] = {"assistants"};
+    const h2_gizclaw_session_config_t session_config = {
+        .service = actor->service, .mem = fixture->allocator,
+        .sync = fixture->runtime->sync, .time = fixture->time,
+        .runtime = fixture->runtime, .collections = collections,
+        .collection_count = 1u, .max_workflows = 128u, .catalog_bytes = 65536u};
+    rc = h2_gizclaw_session_create(&session_config, &actor->session);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session-create", rc);
+    if (rc == H2_PAL_OK) {
+      h2_gizclaw_session_state_t state;
+      rc = h2_gizclaw_session_snapshot(actor->session, &state);
+      if (rc == H2_PAL_OK && (state.can_start ||
+          state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_REGISTRATION))
+        rc = H2_PAL_ERR_INVALID_STATE;
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session_create-assert", rc);
+    }
+    if (rc == H2_PAL_OK) {
+      rc = h2_gizclaw_session_register(actor->session, fixture->registration_token,
+                                      H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session-register", rc);
+      h2_gizclaw_session_state_t state;
+      const int snapshot_rc = h2_gizclaw_session_snapshot(actor->session, &state);
+      if (snapshot_rc == H2_PAL_OK && state.registration == H2_GIZCLAW_SESSION_READY) {
+        actor->registered = true; /* Catalog failure must still clean up Peer. */
+        memcpy(registration.runtime_profile_name, state.profile_name,
+               sizeof(registration.runtime_profile_name));
+      }
+      if (rc == H2_PAL_OK && (snapshot_rc != H2_PAL_OK ||
+          state.registration != H2_GIZCLAW_SESSION_READY ||
+          state.catalog != H2_GIZCLAW_SESSION_READY || state.can_start))
+        rc = H2_PAL_ERR_INVALID_STATE;
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session_register-assert", rc);
+    }
+  } else {
+    rc = h2_gizclaw_rpc_register(actor->service, fixture->registration_token,
+                                H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS, &registration);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_register", stage, rc);
+  }
   if (rc != H2_PAL_OK)
     return rc;
   if (registration.runtime_profile_name[0] == '\0' ||
@@ -1175,6 +1237,13 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   if (fixture->case_cleanup != NULL) {
     const int rc = fixture->case_cleanup(fixture);
+    if (rc != H2_PAL_OK)
+      return rc;
+  }
+  /* All Session operations and conversation callbacks have joined. End its
+   * ownership before the resource-ledger cleanup uses low-level deletion. */
+  for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i) {
+    const int rc = actor_session_dispose(&fixture->actors[i]);
     if (rc != H2_PAL_OK)
       return rc;
   }

@@ -12,6 +12,25 @@
 extern "C" {
 #endif
 
+/** Shared logical speaker state. Volume is retained while muted. */
+typedef struct h2_runtime_system_audio_state {
+    uint32_t volume_percent;
+    uint8_t muted;
+} h2_runtime_system_audio_state_t;
+
+/** Read the Runtime-owned speaker state into caller storage. Thread-safe;
+ * BUSY means another volume operation is in progress. Unsupported Audio or
+ * provider read errors propagate. Never returns a borrowed state pointer. */
+h2_pal_result_t h2_runtime_system_state_audio(
+    const h2_runtime_t *runtime, h2_runtime_system_audio_state_t *out_state);
+
+/** Apply and publish volume/mute together on the calling task. Only successful
+ * PAL writes change Runtime state. Percent must be 0..100; muted is 0 or 1.
+ * Thread-safe (BUSY on overlap); do not call from an ISR. Finish before deinit.
+ * Local percent-only Audio proxy writes clear mute and publish their value. */
+h2_pal_result_t h2_runtime_audio_set_volume(
+    h2_runtime_t *runtime, uint32_t percent, uint8_t muted);
+
 typedef struct h2_runtime_system_gpio_irq_state {
     int reserved;
 } h2_runtime_system_gpio_irq_state_t;

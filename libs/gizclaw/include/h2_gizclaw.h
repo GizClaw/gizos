@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_H
 
 #include "h2_gizclaw_api_key.h"
+#include "h2_gizclaw_debug.h"
 #include "h2_gizclaw_player.h"
 #include "h2_gizclaw_ota.h"
 #include "h2_gizclaw_client.h"
@@ -15,6 +16,8 @@
 #include "h2_gizclaw_registration.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_service.h"
+#include "h2_gizclaw_session.h"
+#include "h2_gizclaw_resource.h"
 #include "h2_gizclaw_social.h"
 #include "h2_gizclaw_speech.h"
 #include "h2_gizclaw_telemetry.h"

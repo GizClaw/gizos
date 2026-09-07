@@ -4,7 +4,7 @@
 #define TIMEOUT_MS 30000u
 #define LIMIT 32u
 #define MAX_PAGES 32u
-enum method { LIST, GET, CREATE, INPUT, DELETE, ACTIVATE, HISTORY, RELOAD };
+enum method { LIST, GET, CREATE, INPUT, DELETE, ACTIVATE, HISTORY, RELOAD, RELOAD_OPTIONS };
 static const char *const creates[] = {
     "h2_gizclaw_req_create_workspace_list",
     "h2_gizclaw_req_create_workspace_get",
@@ -13,7 +13,8 @@ static const char *const creates[] = {
     "h2_gizclaw_req_create_workspace_delete",
     "h2_gizclaw_req_create_workspace_activate",
     "h2_gizclaw_req_create_workspace_history_list",
-    "h2_gizclaw_req_create_workspace_reload"};
+    "h2_gizclaw_req_create_workspace_reload",
+    "h2_gizclaw_req_create_workspace_reload_with_options"};
 static const char *const parses[] = {
     "h2_gizclaw_resp_parse_workspace_list",
     "h2_gizclaw_resp_parse_workspace_get",
@@ -22,7 +23,8 @@ static const char *const parses[] = {
     "h2_gizclaw_resp_parse_workspace_delete",
     "h2_gizclaw_resp_parse_workspace_activate",
     "h2_gizclaw_resp_parse_workspace_history_list",
-    "h2_gizclaw_resp_parse_workspace_reload"};
+    "h2_gizclaw_resp_parse_workspace_reload",
+    "h2_gizclaw_resp_parse_workspace_reload_with_options"};
 static const char *const rpcs[] = {"h2_gizclaw_rpc_workspace_list",
                                    "h2_gizclaw_rpc_workspace_get",
                                    "h2_gizclaw_rpc_workspace_create",
@@ -30,12 +32,14 @@ static const char *const rpcs[] = {"h2_gizclaw_rpc_workspace_list",
                                    "h2_gizclaw_rpc_workspace_delete",
                                    "h2_gizclaw_rpc_workspace_activate",
                                    "h2_gizclaw_rpc_workspace_history_list",
-                                   "h2_gizclaw_rpc_workspace_reload"};
+                                   "h2_gizclaw_rpc_workspace_reload",
+    "h2_gizclaw_rpc_workspace_reload_with_options"};
 static const char *const proofs[] = {
     "workspace_list-assert",         "workspace_get-assert",
     "workspace_create-assert",       "workspace_set_parameters-assert",
     "workspace_delete-assert",       "workspace_activate-assert",
-    "workspace_history_list-assert", "workspace_reload-assert"};
+    "workspace_history_list-assert", "workspace_reload-assert",
+    "workspace_reload_with_options-assert"};
 union response {
   h2_gizclaw_workspace_t object;
   h2_gizclaw_workspace_get_result_t get;
@@ -134,6 +138,14 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       rc = h2_gizclaw_req_create_workspace_reload(service, id, TIMEOUT_MS,
                                                   &request);
       break;
+    case RELOAD_OPTIONS:
+      rc = h2_gizclaw_req_create_workspace_reload_with_options(
+          service, id, name,
+          &(h2_gizclaw_workspace_parameters_patch_t){
+              .has_input = true,
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+          TIMEOUT_MS, &request);
+      break;
     case HISTORY:
       rc = h2_gizclaw_req_create_workspace_history_list(
           service, id, name, cursor, LIMIT,
@@ -178,6 +190,10 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       case RELOAD:
         rc = h2_gizclaw_resp_parse_workspace_reload(request, s,
                                                     &out->activation);
+        break;
+      case RELOAD_OPTIONS:
+        rc = h2_gizclaw_resp_parse_workspace_reload_with_options(
+            request, s, &out->activation);
         break;
       case HISTORY:
         rc = h2_gizclaw_resp_parse_workspace_history_list(request, s,
@@ -227,6 +243,14 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
     case RELOAD:
       rc = h2_gizclaw_rpc_workspace_reload(service, TIMEOUT_MS, s,
                                            &out->activation);
+      break;
+    case RELOAD_OPTIONS:
+      rc = h2_gizclaw_rpc_workspace_reload_with_options(
+          service, name,
+          &(h2_gizclaw_workspace_parameters_patch_t){
+              .has_input = true,
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+          TIMEOUT_MS, s, &out->activation);
       break;
     case HISTORY:
       rc = h2_gizclaw_rpc_workspace_history_list(
@@ -415,6 +439,24 @@ static int configure(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       rc = H2_PAL_ERR_INVALID_STATE;
   }
   proof(req, RELOAD, rc);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = call(f, s, role, req, RELOAD_OPTIONS, id, "", &r);
+  if (rc == H2_PAL_OK) {
+    h2_gizclaw_workspace_activation_t *a = &r.activation;
+    if (!text_valid(s, a->workspace_name, true, 255u) ||
+        !text_valid(s, a->active_workspace_name, true, 255u) ||
+        !text_valid(s, a->pending_workspace_name, false, 255u) ||
+        !text_valid(s, a->workflow_name, false, 63u) ||
+        strcmp(a->workspace_name, f->workspace_name) != 0 ||
+        strcmp(a->active_workspace_name, f->workspace_name) != 0 ||
+        (a->workflow_name && a->workflow_name[0] &&
+         strcmp(a->workflow_name, f->workflow_name) != 0) ||
+        (a->pending_workspace_name && a->pending_workspace_name[0]) ||
+        a->runtime_state != H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING)
+      rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  proof(req, RELOAD_OPTIONS, rc);
   return rc == H2_PAL_OK ? history(f, s, role, req, id) : rc;
 }
 static bool fixed_text(const char *value, size_t capacity) {

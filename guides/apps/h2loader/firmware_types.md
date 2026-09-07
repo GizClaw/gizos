@@ -90,3 +90,5 @@ projects/<owner>/targets/h2loader_tar_zlib/<app>/<board>/
 App 固件在业务逻辑之前启动 H2Loader App command service，并在达到 command-ready/healthy point 后确认当前 image。它报告 `active_role=app`。同一 Board 的 Loader 与 App 广播相同的 H2Loader Service UUID 和 Board identity；Host 合成相同的 `h2l.<board>` 显示名，并通过 `active_role` 区分当前运行的固件。
 
 APP 复用上面的完整设备命令实现，包括 Stage payload/url/abort 和三个 reboot 命令。APP 与 Loader 共享 Pref、DL 路径、package validator、digest、HTTP/Wi-Fi provider 和 operation mutex，不复制另一套协议或发布逻辑。
+
+配网命令使用 15 秒非零连接预算。注入 Runtime Wi-Fi proxy 时由 proxy 等待 IP 并保存，命令不重复写入；Runtime 建立前的原始 PAL 恢复控制台在确认目标 SSID 取得有效 IP 后保存，连接失败不覆盖旧凭据。`wifi_connect_persists` 必须与注入的 provider 合同一致。BK 启动恢复的零超时连接保持异步，不阻塞启动恢复流程。

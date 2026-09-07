@@ -24,6 +24,7 @@ idf_component_register(
   REQUIRES
     h2_esp_target_task_policy
     app_update
+    nvs_flash
     espcoredump
     esp_netif
     esp_driver_uart
@@ -51,4 +52,21 @@ endif()
 
 if(H2_GIZCLAW_E2E_RPC_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_RPC_ONLY=1)
+endif()
+
+if(H2_GIZCLAW_E2E_OTA_ONLY)
+  if(NOT H2_GIZCLAW_E2E_OTA_TOKEN STREQUAL "amoled-ota-e2e-20260906")
+    message(FATAL_ERROR "OTA_ONLY accepts only the public amoled-ota-e2e-20260906 fixture; shared or private registration tokens are forbidden")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    H2_GIZCLAW_E2E_OTA_TOKEN="${H2_GIZCLAW_E2E_OTA_TOKEN}")
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_OTA_ONLY=1)
+endif()
+
+if(H2_GIZCLAW_E2E_VOICE_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
+endif()
+
+if(H2_GIZCLAW_E2E_RESOURCE_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_RESOURCE_ONLY=1)
 endif()

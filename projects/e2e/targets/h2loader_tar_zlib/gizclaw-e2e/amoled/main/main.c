@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_amoled_config.h"
+#include "h2_gizclaw_e2e_amoled_ota.h"
 #include "h2_gizclaw_e2e_amoled_state.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -25,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/time.h>
 
 #define H2_GIZCLAW_E2E_AMOLED_RUNNER_STACK_SIZE 65536u
 #define H2_GIZCLAW_E2E_AMOLED_WIFI_STACK_SIZE 8192u
@@ -92,7 +94,13 @@ static void emit_progress(void *user,
   fflush(stdout);
 }
 
-#if defined(H2_GIZCLAW_E2E_RPC_ONLY)
+#if defined(H2_GIZCLAW_E2E_RESOURCE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_RESOURCE
+#define AMOLED_E2E_SUITE_NAME "resource"
+#elif defined(H2_GIZCLAW_E2E_VOICE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
+#define AMOLED_E2E_SUITE_NAME "voice"
+#elif defined(H2_GIZCLAW_E2E_RPC_ONLY)
 #define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_RPC
 #define AMOLED_E2E_SUITE_NAME "rpc"
 #elif defined(H2_GIZCLAW_E2E_DEVICE_ONLY)
@@ -126,6 +134,10 @@ static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
 
 static void run_e2e(void *raw) {
   h2_gizclaw_e2e_amoled_runner_t *runner = raw;
+#if defined(H2_GIZCLAW_E2E_OTA_ONLY)
+  h2_gizclaw_e2e_amoled_ota_run(runner->runtime);
+  return;
+#endif
   const h2_gizclaw_e2e_amoled_config_t *launcher_config =
       h2_gizclaw_e2e_amoled_config();
   const h2_gizclaw_e2e_config_t app_config = {
@@ -317,6 +329,18 @@ static void image_entry(void *user) {
       const esp_err_t time_rc = esp_netif_sntp_sync_wait(
           pdMS_TO_TICKS(H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS));
       if (time_rc == ESP_OK) {
+        /* SNTP updates the SDK clock directly. Publish its calibrated value
+         * through Runtime so the Time PAL validity gate also becomes ready. */
+        struct timeval wall;
+        if (gettimeofday(&wall, NULL) != 0 || wall.tv_sec <= 0) {
+          fail_launcher("time_read", H2_PAL_ERR_IO, true);
+        }
+        const uint64_t wall_ms = (uint64_t)wall.tv_sec * 1000u +
+                                 (uint64_t)wall.tv_usec / 1000u;
+        rc = h2_pal_time_set_wall_ms(runtime->time, wall_ms);
+        if (rc != H2_PAL_OK) {
+          fail_launcher("time_publish", rc, true);
+        }
         state.clock_ready = true;
         printf("H2_GIZCLAW_E2E_AMOLED stage=time status=READY\n");
         fflush(stdout);

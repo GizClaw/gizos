@@ -133,6 +133,7 @@ int h2loader_app_run_with_command_service(
     }
     if (command.wifi == NULL) {
         command.wifi = runtime->wifi_sta;
+        command.wifi_connect_persists = 1;
     }
     if (command.wifi_settings == NULL) {
         command.wifi_settings = runtime->wifi_settings;

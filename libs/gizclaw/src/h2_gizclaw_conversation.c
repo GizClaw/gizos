@@ -153,7 +153,9 @@ struct h2_gizclaw_conversation {
   char stream_id[H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
   conversation_reply_route_t response, transcript, assistant;
   uint64_t sequence;
+  bool bos_sent;
   bool input_ready;
+  bool input_rejected;
   bool committed;
   bool canceled;
   bool terminal_pending;
@@ -559,8 +561,8 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
 
 static h2_pal_result_t
 conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
-  if (!atomic_load_explicit(&request->wire_ready, memory_order_acquire) ||
-      atomic_load_explicit(&request->downlink_eos, memory_order_acquire))
+  /* Downlink and server errors must progress while input awaits READY. */
+  if (atomic_load_explicit(&request->downlink_eos, memory_order_acquire))
     return H2_PAL_OK;
   if (request->decoder == NULL) {
     int size = opus_decoder_get_size(1);
@@ -685,6 +687,8 @@ static const char *peer_event_stream_id(const gzc_peer_event_t *event) {
   if (event == NULL)
     return NULL;
   switch (event->type) {
+  case gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY:
+    return event->payload.audio_input_ready.stream_id;
   case gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS:
     return event->payload.bos.stream_id;
   case gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA:
@@ -760,6 +764,13 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
                                const gzc_peer_event_t *event) {
   if (conversation == NULL || event == NULL)
     return false;
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY) {
+    const char *id = event->payload.audio_input_ready.stream_id;
+    return conversation->bos_sent && !conversation->canceled &&
+           !conversation->committed && !conversation->input_rejected &&
+           memchr(id, '\0', sizeof(event->payload.audio_input_ready.stream_id)) != NULL &&
+           strcmp(id, conversation->stream_id) == 0;
+  }
   conversation_reply_route_t *route =
       conversation_reply_route(conversation, event);
   const char *id = peer_event_stream_id(event);
@@ -859,6 +870,11 @@ void h2_gizclaw_conversation_enqueue_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event) {
   if (conversation == NULL || event == NULL)
     return;
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY) {
+    if (accepts_peer_event(conversation, event))
+      conversation->input_ready = true;
+    return;
+  }
   if (conversation->pending_peer_event) {
     /* The poll has not consumed the previous event yet. Losing a boundary
      * here leaves the reply waiting forever, so make the loss visible. */
@@ -873,6 +889,10 @@ void h2_gizclaw_conversation_enqueue_peer_event_internal(
     }
     return;
   }
+  if (!conversation->input_ready &&
+      event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS &&
+      event->payload.eos.has_error)
+    conversation->input_rejected = true;
   conversation->peer_event = *event;
   conversation->pending_peer_event = true;
 }
@@ -977,9 +997,9 @@ int h2_gizclaw_conversation_wire_open_internal(
     h2_pal_mem_free(allocator, conversation);
     return rc;
   }
-  conversation->input_ready = rc == H2_PAL_OK;
+  conversation->bos_sent = rc == H2_PAL_OK;
   *out_conversation = conversation;
-  return conversation->input_ready ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
+  return conversation->bos_sent ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
 }
 
 bool h2_gizclaw_conversation_wire_input_ready_internal(
@@ -1117,7 +1137,7 @@ int h2_gizclaw_conversation_wire_poll_internal(
 static void conversation_wire_cancel(h2_gizclaw_conversation_t *conversation) {
   if (conversation == NULL || conversation->canceled)
     return;
-  if (conversation->input_ready && !conversation->committed &&
+  if (conversation->bos_sent && !conversation->committed &&
       conversation->events != NULL)
     (void)send_boundary(conversation, true, 0u, "canceled");
   conversation->canceled = true;
@@ -1284,11 +1304,11 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
           (h2_gizclaw_str_t){request->workspace_name,
                              request->workspace_name_len},
           request->generation, request->timeout_ms, &request->conversation);
-    } else {
-      /* Retry the same BOS and lease, without reading any PCM first. */
+    } else if (!request->conversation->bos_sent) {
+      /* Only a backpressured BOS is retried. A sent BOS awaits its ACK. */
       rc = send_boundary(request->conversation, false, 0u, NULL);
       if (rc == H2_PAL_OK)
-        request->conversation->input_ready = true;
+        request->conversation->bos_sent = true;
     }
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_ERR_WOULD_BLOCK;
@@ -1296,7 +1316,20 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
       conversation_request_close(request);
       return rc;
     }
-    atomic_store_explicit(&request->wire_ready, true, memory_order_release);
+    if (!h2_gizclaw_conversation_wire_input_ready_internal(request->conversation)) {
+      rc = h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL);
+      if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
+        conversation_request_close(request);
+        return rc;
+      }
+    }
+    if (h2_gizclaw_conversation_wire_input_ready_internal(request->conversation)) {
+      h2_gizclaw_service_log_request(request->service, H2_PAL_LOG_INFO,
+          "conversation", "input_ready", request->identity, H2_PAL_OK, 0, 0, 0);
+      atomic_store_explicit(&request->wire_ready, true, memory_order_release);
+    }
+    /* Continue the reply pump: a queued business event must not prevent the
+     * next dispatch from reaching READY. Only uplink waits on wire_ready. */
   }
   if (request->media_attached &&
       atomic_load_explicit(&request->media_uplink_eos, memory_order_acquire) &&

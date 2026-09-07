@@ -1,4 +1,7 @@
 #include "h2_gizclaw_e2e_voice.h"
+#include "h2_desktop_platform.h"
+
+static bool s_session;
 #include "h2_gizclaw_pcm_track_fake.h"
 
 #ifdef NDEBUG
@@ -628,6 +631,53 @@ void h2_gizclaw_req_release(h2_gizclaw_req_t *request) {
   release(NULL, request);
 }
 
+/* Typed RPC boundary for the real Session used by the Session voice scenario.
+ * Existing cases continue exercising the raw Conversation path independently. */
+h2_pal_result_t h2_gizclaw_rpc_register(h2_gizclaw_service_t *service,
+    const char *token, uint32_t timeout, h2_gizclaw_registration_result_t *out) {
+  (void)service; (void)token; (void)timeout;
+  strcpy(out->runtime_profile_name, "profile");
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
+    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_page_t *out) {
+  (void)service; (void)collection; (void)cursor; (void)limit; (void)timeout; (void)storage;
+  static h2_gizclaw_workflow_t workflow = {.collection="assistants", .name="assistant"};
+  *out = (h2_gizclaw_workflow_page_t){.items=&workflow, .count=1u,
+      .runtime_profile_name="profile", .runtime_profile_revision="v1"};
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
+    h2_gizclaw_str_t name, uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_get_result_t *out) {
+  (void)service; (void)timeout; (void)storage;
+  *out = (h2_gizclaw_workspace_get_result_t){
+      .workspace={.name=(char *)name.data, .workflow_name="assistant", .available=true},
+      .runtime_profile_name="profile", .runtime_profile_revision="v1"};
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_gizclaw_rpc_workspace_create(h2_gizclaw_service_t *service,
+    h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow, h2_gizclaw_str_t name,
+    uint32_t timeout, h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
+  (void)service; (void)collection; (void)workflow; (void)name; (void)timeout; (void)storage; (void)out;
+  assert(false && "existing Session workspace must not be recreated");
+  return H2_PAL_ERR_INVALID_STATE;
+}
+h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(h2_gizclaw_service_t *service,
+    h2_gizclaw_str_t name, const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout, h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_activation_t *out) {
+  if (parameters != NULL) {
+    h2_gizclaw_workspace_t workspace;
+    int rc = h2_gizclaw_rpc_workspace_set_parameters(service, name, parameters, timeout, storage, &workspace);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  *out = (h2_gizclaw_workspace_activation_t){.active_workspace_name=(char *)name.data,
+      .workflow_name="assistant", .runtime_state=H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING};
+  return H2_PAL_OK;
+}
+
 static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   assert(s_live == 0u && s_track == NULL && s_conversation == NULL);
   s_mode = mode;
@@ -650,6 +700,17 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   fixture->friend_group_created = true;
   strcpy(fixture->friend_group_workspace_name, "group-workspace");
   fixture->actors[0].service = (h2_gizclaw_service_t *)&s_service;
+  if (s_session) {
+    static const char *const collections[] = {"assistants"};
+    h2_gizclaw_session_config_t config = {.service=fixture->actors[0].service,
+        .mem=&mem, .sync=h2_desktop_platform_sync_api(), .time=&time_api,
+        .collections=collections, .collection_count=1u, .max_workflows=4u, .catalog_bytes=4096u};
+    assert(h2_gizclaw_session_create(&config, &fixture->actors[0].session) == H2_PAL_OK);
+    assert(h2_gizclaw_session_register(fixture->actors[0].session, "token", 30000u) == H2_PAL_OK);
+    strcpy(fixture->workflow_name, "assistant");
+    h2_gizclaw_session_selection_t selection={.collection="assistants", .workflow_name="assistant", .workspace_name=fixture->workspace_name};
+    assert(h2_gizclaw_session_select(fixture->actors[0].session, &selection, 30000u) == H2_PAL_OK);
+  }
   if (s_emit)
     printf("H2_GIZCLAW_E2E stage=coverage-begin case=voice\n");
   int rc = s_group ? h2_gizclaw_e2e_run_group_talk(fixture)
@@ -680,6 +741,8 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
     assert(fixture->case_cleanup(fixture) == H2_PAL_OK);
   }
   assert(fixture->case_cleanup == NULL && fixture->case_state == NULL);
+  if (s_session)
+    assert(h2_gizclaw_session_destroy(&fixture->actors[0].session) == H2_PAL_OK);
   assert(s_live == 0u && s_track == NULL && s_conversation == NULL);
   free(fixture);
   return allocations;
@@ -730,6 +793,9 @@ int main(int argc, char **argv) {
     run_case(mode, expected_result(mode), 0u);
     return 0;
   }
+  s_session = true;
+  run_case(NORMAL, H2_PAL_OK, 0u);
+  s_session = false;
   unsigned allocations = run_case(NORMAL, H2_PAL_OK, 0u);
   run_case(SILENT_REPLY, H2_PAL_ERR_INVALID_STATE, 0u);
   run_case(MISSING_TEXT, H2_PAL_ERR_INVALID_STATE, 0u);

@@ -164,6 +164,15 @@ h2_gizclaw_req_create_workspace_reload(h2_gizclaw_service_t *service,
                                        uint64_t identity, uint32_t timeout_ms,
                                        h2_gizclaw_req_t **out_request);
 
+/** Reload with optional workspace selection and parameter patch.
+ * A zero-length name keeps the current selection; NULL parameters leaves them
+ * unchanged. Values are copied at request creation. Unsupported parameter
+ * fields are ignored by the server. */
+h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+
 h2_pal_result_t h2_gizclaw_req_create_workspace_history_list(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t workspace_name, h2_gizclaw_str_t cursor, size_t limit,
@@ -199,6 +208,10 @@ h2_pal_result_t h2_gizclaw_resp_parse_workspace_activate(
     h2_gizclaw_workspace_activation_t *out_result);
 
 h2_pal_result_t h2_gizclaw_resp_parse_workspace_reload(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_activation_t *out_result);
+
+h2_pal_result_t h2_gizclaw_resp_parse_workspace_reload_with_options(
     const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_activation_t *out_result);
 
@@ -244,6 +257,12 @@ h2_gizclaw_rpc_workspace_reload(h2_gizclaw_service_t *service,
                                 uint32_t timeout_ms,
                                 h2_gizclaw_resp_storage_t *storage,
                                 h2_gizclaw_workspace_activation_t *out_result);
+
+h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_activation_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_history_list(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t workspace_name,

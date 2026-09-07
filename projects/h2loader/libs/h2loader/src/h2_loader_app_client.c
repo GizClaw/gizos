@@ -120,6 +120,7 @@ static h2_loader_command_config_t command_config(
         .fs = client->config.fs,
         .http = client->config.http,
         .wifi = client->config.wifi,
+        .wifi_connect_persists = client->config.wifi_connect_persists,
         .wifi_settings = client->config.wifi_settings,
         .disk = client->config.disk,
         .digest = client->config.digest,

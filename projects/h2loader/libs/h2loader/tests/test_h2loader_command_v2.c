@@ -209,7 +209,65 @@ static void test_command_availability_is_runtime_and_capability_bounded(void) {
   assert((available & H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD) != 0u);
 }
 
+typedef struct wifi_fixture {
+  int result;
+  unsigned saves, connects;
+  h2_pal_wifi_sta_config_t target;
+} wifi_fixture_t;
+
+static int wifi_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+                        uint32_t timeout_ms) {
+  wifi_fixture_t *f = user;
+  assert(timeout_ms == 15000u);
+  assert(f->saves == 0);
+  ++f->connects;
+  f->target = *config;
+  return f->result;
+}
+static int wifi_status(void *user, h2_pal_wifi_sta_status_t *status) {
+  wifi_fixture_t *f = user;
+  memset(status, 0, sizeof(*status));
+  status->state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  status->ip_valid = 1;
+  status->ssid_len = f->target.ssid_len;
+  memcpy(status->ssid, f->target.ssid, status->ssid_len);
+  return H2_PAL_OK;
+}
+static int wifi_save(void *user, const h2_pal_wifi_sta_config_t *config) {
+  wifi_fixture_t *f = user;
+  assert(f->connects > 0 && f->result == H2_PAL_OK);
+  assert(config->ssid_len == f->target.ssid_len);
+  ++f->saves;
+  return H2_PAL_OK;
+}
+static void test_wifi_saves_only_after_connection(void) {
+  command_io_fixture_t io = {0};
+  h2_loader_t loader = {0};
+  loader.status.capabilities = H2_LOADER_CAPABILITY_WIFI;
+  h2_loader_command_t command;
+  assert(command_init(&command, &loader, &io) == H2_PAL_OK);
+  wifi_fixture_t f = {.result = H2_PAL_ERR_IO};
+  const h2_pal_wifi_sta_vtable_t sta_vtable = {
+    .connect = wifi_connect, .get_status = wifi_status};
+  const h2_pal_wifi_settings_vtable_t settings_vtable = {.set_saved_sta_config = wifi_save};
+  const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+  const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+  command.config.wifi = &sta;
+  command.config.wifi_settings = &settings;
+  const char *args[] = {"h2loader", "wifi", "connect", "network", "password"};
+  assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_ERR_IO);
+  assert(f.saves == 0);
+  f.result = H2_PAL_OK;
+  assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_OK);
+  assert(f.saves == 1);
+  f.saves = 0;
+  command.config.wifi_connect_persists = 1;
+  assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_OK);
+  assert(f.saves == 0); /* Runtime owns the write, no duplicate save. */
+}
+
 int main(void) {
+  test_wifi_saves_only_after_connection();
   test_exact_v2_routes_and_help();
   test_removed_commands_are_unroutable();
   test_command_availability_is_runtime_and_capability_bounded();
