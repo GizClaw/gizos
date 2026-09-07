@@ -578,8 +578,11 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     return rc;
   }
   if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
-    if (!d->config.power || !d->config.power->vtable ||
-        !d->config.power->vtable->reboot)
+    const bool product_reboot =
+        d->config.vtable && d->config.vtable->request_reboot;
+    if (!product_reboot &&
+        (!d->config.power || !d->config.power->vtable ||
+         !d->config.power->vtable->reboot))
       return H2_PAL_ERR_UNSUPPORTED;
     gizclaw_rpc_v1_ClientDeviceRebootRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceRebootRequest_fields,
@@ -1207,14 +1210,21 @@ static void device_worker(void *user) {
                                          io_timeout(d));
         trace(d, "wifi_connect", pending, rc);
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
-        uint32_t remaining = d->delay_ms;
-        while (remaining && !atomic_load(&d->stopping)) {
-          uint32_t step = remaining > 20 ? 20 : remaining;
-          (void)h2_pal_time_sleep_ms(d->config.time, step);
-          remaining -= step;
+        if (d->config.vtable && d->config.vtable->request_reboot) {
+          /* The product owns the delay and its orderly shutdown. */
+          if (!atomic_load(&d->stopping))
+            (void)d->config.vtable->request_reboot(d->config.user,
+                                                   d->delay_ms);
+        } else {
+          uint32_t remaining = d->delay_ms;
+          while (remaining && !atomic_load(&d->stopping)) {
+            uint32_t step = remaining > 20 ? 20 : remaining;
+            (void)h2_pal_time_sleep_ms(d->config.time, step);
+            remaining -= step;
+          }
+          if (!atomic_load(&d->stopping))
+            (void)h2_pal_power_reboot(d->config.power, 0);
         }
-        if (!atomic_load(&d->stopping))
-          (void)h2_pal_power_reboot(d->config.power, 0);
       }
       lock(d);
       d->pending = 0;

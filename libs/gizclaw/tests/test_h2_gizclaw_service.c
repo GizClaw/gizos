@@ -2057,6 +2057,8 @@ static int fake_req_telemetry_send(void *user,
 typedef struct device_test_state {
   uint32_t volume;
   atomic_uint writes, drains, closes, reboots, write_attempts;
+  atomic_uint reboot_requests;
+  uint32_t reboot_request_delay_ms;
   bool block_download;
   atomic_bool downloading;
   h2_pal_audio_track_t track;
@@ -2112,6 +2114,12 @@ static int device_track_create(void *user, const h2_audio_track_config_t *config
 static h2_pal_result_t device_reboot(void *user, uint32_t reason) {
   (void)reason;
   atomic_fetch_add(&((device_test_state_t *)user)->reboots, 1); return H2_PAL_OK;
+}
+static h2_pal_result_t device_request_reboot(void *user, uint32_t delay_ms) {
+  device_test_state_t *state = user;
+  state->reboot_request_delay_ms = delay_ms;
+  atomic_fetch_add(&state->reboot_requests, 1);
+  return H2_PAL_OK;
 }
 static int device_http(void *user, const h2_pal_http_request_t *request,
                         h2_pal_http_response_t *response) {
@@ -2270,7 +2278,11 @@ static void test_device_provider_pal_and_player(void) {
   service->client_config.audio_buffer_bytes = 32;
   service->client_config.audio_prebuffer_bytes = 1;
   service->client_config.model = "fixture";
-  const h2_gizclaw_vtable_t supplemental = {.resolve_sound_url = device_resolve_sound};
+  service->client_config.user = &state;
+  const h2_gizclaw_vtable_t supplemental = {
+      .resolve_sound_url = device_resolve_sound,
+      .request_reboot = device_request_reboot,
+  };
   service->client_config.vtable = &supplemental;
   assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
@@ -2372,16 +2384,22 @@ static void test_device_provider_pal_and_player(void) {
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP,
     gizclaw_rpc_v1_ClientDeviceAudioPlayerStopRequest_fields, &stop, &response) == 0);
   assert(!strcmp(device_player_status(service).state, "stopped"));
-  gizclaw_rpc_v1_ClientDeviceRebootRequest reboot = {0};
+  /* With a product request_reboot hook the library never touches the
+   * power PAL; the hook receives the requested delay after the response. */
+  gizclaw_rpc_v1_ClientDeviceRebootRequest reboot = {.has_delay_ms = true,
+                                                     .delay_ms = 1500};
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
     gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
   assert(response.on_complete && atomic_load(&state.reboots) == 0);
   response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
   assert(atomic_load(&state.reboots) == 0);
+  assert(atomic_load(&state.reboot_requests) == 0);
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
     gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
   response.on_complete(response.complete_user, H2_PAL_OK);
-  wait_for_count(&state.reboots, 1);
+  wait_for_count(&state.reboot_requests, 1);
+  assert(state.reboot_request_delay_ms == 1500u);
+  assert(atomic_load(&state.reboots) == 0);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);

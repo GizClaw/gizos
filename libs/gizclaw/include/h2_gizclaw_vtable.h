@@ -40,6 +40,12 @@ typedef struct h2_gizclaw_vtable {
    * the next firmware must verify its identity and send SUCCEEDED telemetry
    * using the saved update_id. */
   h2_pal_result_t (*ota_activate)(void *user);
+  /** Optional product-owned reboot for client.device.reboot. Called on the
+   * device worker after the RPC response was sent, with the requested delay
+   * in milliseconds; the product runs its orderly shutdown and reboots
+   * itself. When unset the library waits `delay_ms` and calls the power PAL
+   * directly. */
+  h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }
