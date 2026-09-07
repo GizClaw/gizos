@@ -2425,15 +2425,17 @@ static void test_device_provider_pal_and_player(void) {
   /* An accepted action makes the device non-quiescent for the helper. */
   assert(h2_gizclaw_device_set_product_internal(service, &no_hook, &power) ==
          H2_PAL_ERR_BUSY);
-  uint64_t completed_ms = 0u;
-  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &completed_ms) == H2_PAL_OK);
   state.reboot_at_ms = 0u;
   response.on_complete(response.complete_user, H2_PAL_OK);
   /* The delay starts at completion: nothing may have rebooted yet, and the
-   * fake power PAL records when it finally happens. */
+   * baseline is sampled after completion so earlier time cannot count. The
+   * worker may have observed completion a few ms before this sample, hence
+   * the small tolerance; the fake power PAL records the reboot time. */
   assert(atomic_load(&state.reboots) == 0);
+  uint64_t completed_ms = 0u;
+  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &completed_ms) == H2_PAL_OK);
   wait_for_count(&state.reboots, 1);
-  assert((int64_t)(state.reboot_at_ms - completed_ms) >= 300);
+  assert((int64_t)(state.reboot_at_ms - completed_ms) >= 250);
   assert(atomic_load(&state.reboot_requests) == 1);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
