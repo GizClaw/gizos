@@ -2059,6 +2059,7 @@ typedef struct device_test_state {
   atomic_uint writes, drains, closes, reboots, write_attempts;
   atomic_uint reboot_requests;
   uint32_t reboot_request_delay_ms;
+  uint64_t reboot_at_ms;
   bool block_download;
   atomic_bool downloading;
   h2_pal_audio_track_t track;
@@ -2112,6 +2113,8 @@ static int device_track_create(void *user, const h2_audio_track_config_t *config
   *out = &state->track; return H2_PAL_OK;
 }
 static h2_pal_result_t device_reboot(void *user, uint32_t reason) {
+  (void)h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(),
+                                     &((device_test_state_t *)user)->reboot_at_ms);
   (void)reason;
   atomic_fetch_add(&((device_test_state_t *)user)->reboots, 1); return H2_PAL_OK;
 }
@@ -2405,22 +2408,32 @@ static void test_device_provider_pal_and_player(void) {
   /* Without the hook the legacy path keeps the delay on the worker and then
    * calls the power PAL. */
   const h2_gizclaw_vtable_t no_hook = {.resolve_sound_url = device_resolve_sound};
-  assert(h2_gizclaw_device_set_product_internal(service, &no_hook, &power) ==
-         H2_PAL_OK);
-  reboot.delay_ms = 40;
+  /* The hook counter increments before the worker clears the action, so
+   * retry until the device reports quiescence. */
+  {
+    h2_pal_result_t swap_rc = H2_PAL_ERR_BUSY;
+    for (unsigned i = 0; i < 3000 && swap_rc == H2_PAL_ERR_BUSY; ++i) {
+      swap_rc = h2_gizclaw_device_set_product_internal(service, &no_hook, &power);
+      if (swap_rc == H2_PAL_ERR_BUSY)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+    }
+    assert(swap_rc == H2_PAL_OK);
+  }
+  reboot.delay_ms = 300;
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
     gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
   /* An accepted action makes the device non-quiescent for the helper. */
   assert(h2_gizclaw_device_set_product_internal(service, &no_hook, &power) ==
          H2_PAL_ERR_BUSY);
+  uint64_t completed_ms = 0u;
+  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &completed_ms) == H2_PAL_OK);
+  state.reboot_at_ms = 0u;
   response.on_complete(response.complete_user, H2_PAL_OK);
-  /* Measure from completion so scheduler latency before it cannot count. */
-  uint64_t handoff_ms = 0u;
-  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &handoff_ms) == H2_PAL_OK);
+  /* The delay starts at completion: nothing may have rebooted yet, and the
+   * fake power PAL records when it finally happens. */
+  assert(atomic_load(&state.reboots) == 0);
   wait_for_count(&state.reboots, 1);
-  uint64_t rebooted_ms = 0u;
-  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &rebooted_ms) == H2_PAL_OK);
-  assert(rebooted_ms - handoff_ms >= 40u);
+  assert((int64_t)(state.reboot_at_ms - completed_ms) >= 300);
   assert(atomic_load(&state.reboot_requests) == 1);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
