@@ -52,14 +52,12 @@ static h2_pal_result_t bk_time_get_wall_ms(void *user, uint64_t *out_ms) {
     return H2_PAL_OK;
 }
 
-/* Validity is read out of the clock itself: the AON RTC keeps counting across
- * reboots, so a plausible reading means the clock still carries a calibration
- * from an earlier session. A reading near the epoch means the RTC restarted
- * and the clock waits for the next set_wall_ms. Earliest reading accepted as
- * calibrated: 2020-01-01T00:00:00Z. */
+/* Validity is read out of the clock itself, so nothing has to be remembered
+ * across program starts: the AON RTC keeps counting across reboots, so a
+ * plausible reading means the clock still carries a calibration. A reading
+ * near the epoch means the RTC restarted and the clock waits for the next
+ * set_wall_ms. Earliest reading accepted as calibrated: 2020-01-01T00:00:00Z. */
 #define H2_BK_WALL_MIN_VALID_MS UINT64_C(1577836800000)
-
-static uint8_t s_bk_wall_set_in_session;
 
 static h2_pal_result_t bk_time_set_wall_ms(void *user, uint64_t wall_ms) {
     (void)user;
@@ -70,13 +68,7 @@ static h2_pal_result_t bk_time_set_wall_ms(void *user, uint64_t wall_ms) {
         .tv_sec = (time_t)(wall_ms / 1000u),
         .tv_usec = (suseconds_t)((wall_ms % 1000u) * 1000u),
     };
-    if (bk_rtc_settimeofday(&tv, NULL) != 0) {
-        return H2_PAL_ERR_IO;
-    }
-    uint32_t int_level = rtos_enter_critical();
-    s_bk_wall_set_in_session = 1u;
-    rtos_exit_critical(int_level);
-    return H2_PAL_OK;
+    return bk_rtc_settimeofday(&tv, NULL) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static h2_pal_result_t bk_time_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
@@ -91,17 +83,9 @@ static h2_pal_result_t bk_time_get_wall_status(void *user, h2_pal_time_wall_stat
         return rc;
     }
     out_status->valid = wall_ms >= H2_BK_WALL_MIN_VALID_MS;
-    uint32_t int_level = rtos_enter_critical();
-    const uint8_t set_in_session = s_bk_wall_set_in_session;
-    rtos_exit_critical(int_level);
-    if (!out_status->valid) {
-        out_status->source = H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
-    } else if (set_in_session != 0u) {
-        out_status->source = H2_PAL_TIME_WALL_SOURCE_USER;
-    } else {
-        /* Calibrated in an earlier session and carried over by the AON RTC. */
-        out_status->source = H2_PAL_TIME_WALL_SOURCE_RTC;
-    }
+    out_status->source = out_status->valid
+                             ? H2_PAL_TIME_WALL_SOURCE_RTC
+                             : H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
     return H2_PAL_OK;
 }
 

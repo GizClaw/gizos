@@ -5,7 +5,6 @@
 #include "freertos/task.h"
 
 #include <sys/time.h>
-#include <stdatomic.h>
 
 #if defined(H2_ESP_TIME_TEST)
 int h2_esp_platform_time_test_gettimeofday(struct timeval *tv);
@@ -53,23 +52,14 @@ static h2_pal_result_t esp_time_get_wall_ms(void *user, uint64_t *out_ms) {
     return H2_PAL_OK;
 }
 
-/* Validity is read out of the clock itself. The RTC timer keeps counting
- * through deep sleep and software resets, so a plausible reading means the
- * clock still carries a calibration from an earlier session and the UI can
- * show the time while charging. A power-on or brownout reset restarts the RTC
- * timer near the epoch, which reads as implausible and keeps the clock
- * uncalibrated until the next set_wall_ms. Earliest reading accepted as
- * calibrated: 2020-01-01T00:00:00Z. */
+/* Validity is read out of the clock itself, so nothing has to be remembered
+ * across program starts. The RTC timer keeps counting through deep sleep and
+ * software resets, so a plausible reading means the clock still carries a
+ * calibration and the UI can show the time while charging. A power-on or
+ * brownout reset restarts the RTC timer near the epoch, which reads as
+ * implausible and keeps the clock uncalibrated until the next set_wall_ms.
+ * Earliest reading accepted as calibrated: 2020-01-01T00:00:00Z. */
 #define H2_ESP_WALL_MIN_VALID_MS 1577836800000ull
-
-static atomic_bool s_esp_wall_set_in_session;
-
-#if defined(H2_ESP_TIME_TEST)
-/* Emulates a program start: process state is lost, the RTC clock is not. */
-void h2_esp_platform_time_test_restart(void) {
-    atomic_store_explicit(&s_esp_wall_set_in_session, 0, memory_order_release);
-}
-#endif
 
 static h2_pal_result_t esp_time_set_wall_ms(void *user, uint64_t wall_ms) {
     (void)user;
@@ -80,11 +70,7 @@ static h2_pal_result_t esp_time_set_wall_ms(void *user, uint64_t wall_ms) {
         .tv_sec = (time_t)(wall_ms / 1000u),
         .tv_usec = (suseconds_t)((wall_ms % 1000u) * 1000u),
     };
-    if (h2_esp_settimeofday(&tv) != 0) {
-        return H2_PAL_ERR_IO;
-    }
-    atomic_store_explicit(&s_esp_wall_set_in_session, 1, memory_order_release);
-    return H2_PAL_OK;
+    return h2_esp_settimeofday(&tv) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static h2_pal_result_t esp_time_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
@@ -99,14 +85,9 @@ static h2_pal_result_t esp_time_get_wall_status(void *user, h2_pal_time_wall_sta
         return rc;
     }
     out_status->valid = wall_ms >= H2_ESP_WALL_MIN_VALID_MS;
-    if (!out_status->valid) {
-        out_status->source = H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
-    } else if (atomic_load_explicit(&s_esp_wall_set_in_session, memory_order_acquire)) {
-        out_status->source = H2_PAL_TIME_WALL_SOURCE_USER;
-    } else {
-        /* Calibrated in an earlier session and carried over by the RTC timer. */
-        out_status->source = H2_PAL_TIME_WALL_SOURCE_RTC;
-    }
+    out_status->source = out_status->valid
+                             ? H2_PAL_TIME_WALL_SOURCE_RTC
+                             : H2_PAL_TIME_WALL_SOURCE_BOOT_DEFAULT;
     return H2_PAL_OK;
 }
 
