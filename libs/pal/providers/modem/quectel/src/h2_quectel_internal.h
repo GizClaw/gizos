@@ -25,6 +25,14 @@ h2_pal_result_t h2_quectel_at_exchange(
     const char *cmd,
     h2_quectel_response_t *response,
     int allow_connect);
+/* Same exchange with a per-command timeout; `timeout_ms == 0` keeps the
+ * configured command and I/O timeouts. */
+h2_pal_result_t h2_quectel_at_exchange_timeout(
+    h2_quectel_modem_t *modem,
+    const char *cmd,
+    h2_quectel_response_t *response,
+    int allow_connect,
+    uint32_t timeout_ms);
 const char *h2_quectel_response_find(const h2_quectel_response_t *response, const char *prefix);
 int h2_quectel_parse_int_after(const char *text, const char *prefix, int *out_value);
 void h2_quectel_copy_token(char *dst, size_t dst_len, const char *src);
@@ -36,6 +44,11 @@ int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t *modem);
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line);
 h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem);
 uint32_t h2_quectel_modem_capabilities(const h2_quectel_modem_t *modem);
+int h2_quectel_cell_locate_token_valid(const char *token);
+h2_pal_result_t h2_quectel_modem_cell_locate(
+    h2_pal_modem_t *platform,
+    uint32_t timeout_ms,
+    h2_pal_modem_cell_location_t *out_location);
 void h2_quectel_post_system_event(
     h2_quectel_modem_t *modem,
     h2_pal_system_event_type_t type,

@@ -125,26 +125,44 @@ static h2_pal_result_t quectel_get_gnss_fix(void *user, h2_pal_modem_gnss_fix_t 
     return h2_quectel_modem_get_gnss_fix(quectel_platform_from_user(user), out_fix);
 }
 
+static h2_pal_result_t quectel_cell_locate(
+    void *user,
+    uint32_t timeout_ms,
+    h2_pal_modem_cell_location_t *out_location) {
+    return h2_quectel_modem_cell_locate(quectel_platform_from_user(user), timeout_ms, out_location);
+}
+
+/* Cell locate is the only operation the provider leaves out of the dispatch
+ * table when it is not configured, so the PAL wrapper answers UNSUPPORTED
+ * without the provider having to hold an unusable token. */
+#define H2_QUECTEL_MODEM_VTABLE_BASE \
+    .open = quectel_open, \
+    .close = quectel_close, \
+    .get_capabilities = quectel_get_capabilities, \
+    .get_status = quectel_get_status, \
+    .get_identity = quectel_get_identity, \
+    .get_operator = quectel_get_operator, \
+    .set_apn = quectel_set_apn, \
+    .data_open = quectel_data_open, \
+    .data_close = quectel_data_close, \
+    .get_data_status = quectel_get_data_status, \
+    .get_signal = quectel_get_signal, \
+    .call_dial = quectel_call_dial, \
+    .call_answer = quectel_call_answer, \
+    .call_hangup = quectel_call_hangup, \
+    .get_call_status = quectel_get_call_status, \
+    .gnss_start = quectel_gnss_start, \
+    .gnss_stop = quectel_gnss_stop, \
+    .get_gnss_state = quectel_get_gnss_state, \
+    .get_gnss_fix = quectel_get_gnss_fix
+
 static const h2_pal_modem_vtable_t s_quectel_modem_vtable = {
-    .open = quectel_open,
-    .close = quectel_close,
-    .get_capabilities = quectel_get_capabilities,
-    .get_status = quectel_get_status,
-    .get_identity = quectel_get_identity,
-    .get_operator = quectel_get_operator,
-    .set_apn = quectel_set_apn,
-    .data_open = quectel_data_open,
-    .data_close = quectel_data_close,
-    .get_data_status = quectel_get_data_status,
-    .get_signal = quectel_get_signal,
-    .call_dial = quectel_call_dial,
-    .call_answer = quectel_call_answer,
-    .call_hangup = quectel_call_hangup,
-    .get_call_status = quectel_get_call_status,
-    .gnss_start = quectel_gnss_start,
-    .gnss_stop = quectel_gnss_stop,
-    .get_gnss_state = quectel_get_gnss_state,
-    .get_gnss_fix = quectel_get_gnss_fix,
+    H2_QUECTEL_MODEM_VTABLE_BASE,
+};
+
+static const h2_pal_modem_vtable_t s_quectel_modem_cell_locate_vtable = {
+    H2_QUECTEL_MODEM_VTABLE_BASE,
+    .cell_locate = quectel_cell_locate,
 };
 
 h2_pal_result_t h2_quectel_modem_open(h2_pal_modem_t *platform, uint32_t timeout_ms) {
@@ -185,6 +203,9 @@ h2_pal_result_t h2_quectel_modem_close(h2_pal_modem_t *platform, uint32_t timeou
     (void)h2_quectel_incoming_call_end(modem);
     modem->opened = 0u;
     modem->prepared = 0u;
+    /* The modem keeps the token only while it stays powered through this
+     * instance, so the next open has to configure it again. */
+    modem->cell_locate_token_sent = 0u;
     if (modem->config.deinit != NULL) {
         return modem->config.deinit(modem->config.transport_user);
     }
@@ -236,6 +257,19 @@ h2_pal_result_t h2_quectel_modem_init(
     modem->capabilities = config->capabilities != 0u
         ? config->capabilities
         : (H2_PAL_MODEM_CAPABILITY_CALL | H2_PAL_MODEM_CAPABILITY_GNSS);
+    const int cell_locate_ready = h2_quectel_cell_locate_token_valid(config->cell_locate_token);
+    if (config->cell_locate_token != NULL &&
+        config->cell_locate_token[0] != '\0' &&
+        !cell_locate_ready) {
+        /* Reject a token that cannot be sent verbatim instead of silently
+         * truncating it. The value itself is never reported. */
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (cell_locate_ready) {
+        modem->capabilities |= H2_PAL_MODEM_CAPABILITY_CELL_LOCATE;
+    } else {
+        modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_CELL_LOCATE;
+    }
     if (config->sync_api != NULL) {
         h2_pal_mutex_config_t mutex_config = {
             .name = "quectel/at",
@@ -248,7 +282,9 @@ h2_pal_result_t h2_quectel_modem_init(
         }
     }
     modem->platform.user = modem;
-    modem->platform.vtable = &s_quectel_modem_vtable;
+    modem->platform.vtable = cell_locate_ready
+        ? &s_quectel_modem_cell_locate_vtable
+        : &s_quectel_modem_vtable;
     modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
     return H2_PAL_OK;
 }
