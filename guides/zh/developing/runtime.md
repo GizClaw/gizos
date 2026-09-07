@@ -79,6 +79,20 @@ input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
 音量和静音由 Runtime 的 audio state 共同持有。UI 与 GizClaw 使用 `h2_runtime_system_state_audio()` 读取同一 snapshot，用 `h2_runtime_audio_set_volume()` 同时提交设定音量和静音。静音保留设定音量，PAL 实际输出为零；解除静音可直接使用 snapshot 中的设定值。现有 `runtime->audio` percent setter 同样更新这份 state 并取消静音，percent getter 仍返回实际输出音量。失败的 PAL 写入不改变 state，重叠操作返回 BUSY。Getter 对比 backend 实际值以识别绕过 proxy 的外部调整；GizClaw 和产品不得另存音量真值。
 
+## 音频电平
+
+`h2_runtime_audio_get_levels()` 报告 Runtime audio proxy 最近一帧的电平：`capture_percent` 是最近一帧 mic PCM 的峰值绝对采样，`playback_percent` 是最近一帧播放 PCM 的峰值，都缩放到 0..100，并各自带上该帧的 monotonic 毫秒。取峰值而不是 RMS：峰值在语音起始的第一个响采样上就抬起来，每采样只花一次比较，音频热路径付得起。只测量 S16LE 帧，其他 sample format 的帧保留上一次的值，不会把电平清零。
+
+Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 不知道消费者的刷新率，衰减、平滑和 peak hold 属于消费者自己。消费者必须把过期的 timestamp 当作静音处理，而不是一直显示最后一个峰值；timestamp 为 0 表示该方向还没有测量过任何帧。
+
+这些电平只用于观测。UI 可以据此画 level meter，但任何音频路径都不得由它决定：不得用来开关 mic/speaker、判定 VAD、门控发送或改变对话状态。
+
+发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
+
+存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
+
+帧数据按字节读取：`h2_audio_frame_t::data` 是不受约束的 `void *`，PAL 不承诺 `int16_t` 对齐，按 `int16_t` 解引用在 ARM target 上可能取到未定义行为甚至触发异常。时钟读失败时不发布该帧，保留上一次测量，避免出现一个 timestamp 为 0 却标记有效的样本。
+
 ## Component Mapper
 
 Runtime 通过 `h2_runtime_config_t.component_mapper` 接收 `boards/main` 提供的 mapper API。Mapper 使用与 PAL 相同的 `user + vtable` 形态：
@@ -147,6 +161,8 @@ App 不直接调用 `runtime->xxx_api->vtable->operation(...)`，也不自己传
 包括 Wi-Fi STA/AP、Wi-Fi settings、BLE host、modem、display、video decoder、audio decoder 和 audio 在内的 capability 都由 BSP 初始化为 `xxx_api_t` API object，再放入 runtime config。它们不是 Runtime 持有的 state handle；对应运行状态由 backend 的 `api->user` 和 Runtime state 分别管理。
 
 `runtime->video_decoder` 和 `runtime->audio_decoder` 是透明 PAL proxy。Runtime 复制 API object，不取得 decoder session 或 acquired frame 的 ownership，也不改变 frame 的 acquire/release contract。没有对应 decoder 的 board 必须在 config 中绑定 canonical unsupported API，不能传入 `NULL` 或省略 vtable operation。
+
+`runtime->audio` 的 `create_track` 不是透明转发：Runtime 返回自己持有的 wrapper track，用于测量播放帧的电平（见[音频电平](#音频电平)）。wrapper 把 `write`、`close`、`get_volume_factor`、`set_volume_factor`、`drain` 原样转发给 backend track，backend 没有提供的 operation 在 wrapper 上同样是 `NULL`，PAL wrapper 的报错行为不变。`close` 关闭 backend track 并释放 wrapper，调用方仍然只 close 一次。
 
 `runtime->buzzer` 同样是透明 PAL proxy。Runtime 把 `h2_runtime_config_t.buzzer` 的 API object 按值复制到 private storage，再暴露稳定的 App-facing pointer；它不取得物理 provider、tone 或 PWM channel 的 ownership，也不实现 melody sequencing。Buzzer 是 complete capability surface 的必选 binding：真实支持它的 Board 绑定 provider，其余 Runtime owner 显式绑定 `h2_pal_unsupported_buzzer_api()`，传入 `NULL` 会使 Runtime 初始化失败。
 

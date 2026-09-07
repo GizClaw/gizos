@@ -317,6 +317,28 @@ struct h2_runtime_private {
     atomic_flag audio_state_busy;
     bool audio_state_valid;
     h2_runtime_system_audio_state_t audio_state;
+    /*
+     * Latest measured frame level per direction, published from the audio hot
+     * path by the mic_read and track write thunks.
+     *
+     * Two 32-bit atomics per direction rather than one 64-bit word packing
+     * level and timestamp: a 64-bit atomic lowers to a libatomic call on the
+     * ARMv5 target (bk3633), whose SDK does not provide one, while a 32-bit
+     * atomic load/store is a plain instruction everywhere the Runtime builds.
+     * Level and timestamp are therefore two independent stores, so a reader
+     * racing a frame can pair a new level with the previous frame's timestamp.
+     * The two frames are one frame period apart (10-20 ms), which no level
+     * meter can show, and no consumer may key a decision off the pairing.
+     *
+     * The timestamp holds the low 32 bits of the monotonic millisecond clock
+     * and is widened against the current clock on read; bit 8 of the level word
+     * marks that a frame has ever been measured, which keeps a genuine level of
+     * zero distinct from "no audio yet".
+     */
+    atomic_uint audio_capture_level;
+    atomic_uint audio_capture_level_ms;
+    atomic_uint audio_playback_level;
+    atomic_uint audio_playback_level_ms;
     h2_pal_audio_api_t audio_proxy;
     h2_pal_audio_decoder_api_t audio_decoder_proxy;
     h2_pal_periph_api_t periph_proxy;
