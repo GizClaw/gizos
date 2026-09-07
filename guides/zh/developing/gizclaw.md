@@ -84,6 +84,17 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   执行上下文（如 Runtime custom event）后立即返回，不能 sleep、阻塞或在回调内
   停止/销毁 Service。延时、有序关机和重启由产品 owner 执行；库不会回退到
   power PAL。未设置时库在设备 task 上等待 delay_ms 后直接调用 power PAL。
+- `get_facts` 的 `imei_count` / `imeis` 上报设备 modem IMEI，最多
+  `H2_GIZCLAW_DEVICE_IMEI_MAX` 个。产品必须返回已缓存的号码，不得在回调里发 AT
+  命令读取 modem；还没读到时返回 `imei_count = 0`。每项 `digits` 必须是 15 位
+  ASCII 十进制数字加 NUL，`name` 是可选的槽位标签，为内联缓冲区，必须在
+  `H2_GIZCLAW_DEVICE_IMEI_NAME_MAX` 内以 NUL 结尾，空串表示不命名；facts 整体
+  按值复制，回调返回后库不持有任何指向产品内存的指针。库在
+  `client.identifiers.get` 里按
+  `tac = 前 8 位`、`serial = 后 7 位` 拆分编码，与 Server 的 by-imei 索引一致。
+  任一项不合法整个回复失败，不发送部分列表；`get_facts` 失败或没有配置 vtable 时
+  回复退化为仅 `sn`，不报错。IMEI 属于个人数据，只出现在 RPC 回复里，不进入
+  `h2_pal_log` 输出与 trace 字符串。
 - OTA 使用明确的 `firmware_channel`，允许 RPC 覆盖 channel 并附带期望 SHA-256。
   库获取元数据并通过 PAL HTTP 下载；Stage backend 必须验证 package 的长度、
   SHA-256、board/target 和 manifest，验证通过才能发布 Stage。库上报 started、
