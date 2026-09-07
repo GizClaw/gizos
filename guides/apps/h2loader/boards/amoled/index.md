@@ -11,6 +11,7 @@
 - [MP4 Player Small](./mp4_player_small)
 - [GizClaw Ping Speed](./gizclaw_ping_speed)
 - [GizClaw OTA E2E](./gizclaw_ota_e2e)
+- [GizClaw Session E2E](./gizclaw_e2e)
 - [Crash Before Confirm](./crash_before_confirm)
 - [Starboy](./starboy)
 - [Lua Flappy Bird](./lua_flappybird)

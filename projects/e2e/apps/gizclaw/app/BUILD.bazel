@@ -22,6 +22,7 @@ cc_library(
         "src/h2_gizclaw_e2e_firmware.c",
         "src/h2_gizclaw_e2e_firmware.h",
         "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_resource.h",
         "src/h2_gizclaw_e2e_rpc.h",
         "src/h2_gizclaw_e2e_service.h",
         "src/h2_gizclaw_e2e_voice.h",
@@ -40,6 +41,7 @@ cc_library(
         ":device_case",
         ":fixture",
         ":request_cases",
+        ":resource_case",
         ":rpc_cases",
         ":runner",
         ":task_names",
@@ -494,6 +496,7 @@ cc_test(
         ":voice_case",
         "//libs/gizclaw",
         "//libs/pal",
+        "//libs/pal/providers/desktop/pal_core",
     ],
 )
 
@@ -564,6 +567,7 @@ cc_library(
         "src/h2_gizclaw_e2e_concurrency.h",
         "src/h2_gizclaw_e2e_firmware.h",
         "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_resource.h",
         "src/h2_gizclaw_e2e_rpc.h",
         "src/h2_gizclaw_e2e_service.h",
         "src/h2_gizclaw_e2e_voice.h",
@@ -706,4 +710,28 @@ cc_library(
         ":device_case",
         ":runner_core",
     ],
+)
+
+cc_library(
+    name = "resource_case",
+    srcs = ["src/h2_gizclaw_e2e_resource.c"],
+    hdrs = ["src/h2_gizclaw_e2e_resource.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [":fixture", "//libs/gizclaw", "//libs/pal", "//libs/runtime"],
+)
+
+cc_test(
+    name = "gizclaw_e2e_resource_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_resource.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":resource_case", "//libs/pal", "//libs/runtime"],
 )

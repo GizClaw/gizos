@@ -112,6 +112,8 @@ h2loader_esp_idf_firmware(
     cmake_variables = [
         "H2_GIZCLAW_E2E_DEVICE_ONLY",
         "H2_GIZCLAW_E2E_RPC_ONLY",
+        "H2_GIZCLAW_E2E_VOICE_ONLY",
+        "H2_GIZCLAW_E2E_RESOURCE_ONLY",
         "H2_GIZCLAW_E2E_OTA_ONLY",
         "H2_GIZCLAW_E2E_OTA_TOKEN",
     ],

@@ -31,10 +31,10 @@ def passing_log(rules):
                 emit_case("rpc/" + domain)
         lines.append(record(stage="coverage-end", case=case, status="PASS", rc=0, cleanup_rc=0))
 
-    for case in ("device-api", "connectivity", "rpc", "firmware", "voice", "concurrency", "service"):
+    for case in ("device-api", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "resource"):
         emit_case(case)
-    lines.append(record(stage="summary", **IDENTITY, suite="all", selected=7, terminal=7,
-                        **{"pass": 7}, fail=0, error=0, blocked=0, cancelled=0,
+    lines.append(record(stage="summary", **IDENTITY, suite="all", selected=8, terminal=8,
+                        **{"pass": 8}, fail=0, error=0, blocked=0, cancelled=0,
                         first_failure_case="-", first_failure_rc=0, cleanup_rc=0,
                         retained_resources=0, complete="true", exit_code=0))
     return lines
@@ -49,10 +49,10 @@ class CoverageTest(unittest.TestCase):
         return coverage.audit(lines, self.rules if rules is None else rules,
                               **{**IDENTITY, "process_exit_code": 0, **kwargs})
 
-    def test_independent_matrix_matches_all_198_approved_functions(self):
+    def test_independent_matrix_matches_all_216_approved_functions(self):
         inventory = (coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text()
         coverage.validate_inventory(self.rules, inventory)
-        self.assertEqual(len(self.rules), 198)
+        self.assertEqual(len(self.rules), 216)
         for changed in (self.rules[:-1], self.rules + self.rules[:1]):
             with self.assertRaises(ValueError):
                 coverage.validate_inventory(changed, inventory)
@@ -62,7 +62,7 @@ class CoverageTest(unittest.TestCase):
     def test_all_functions_need_ordered_calls_and_assertion(self):
         result = self.audit(self.lines)
         self.assertTrue(result["valid"], result["issues"])
-        self.assertEqual(result["covered"], 198)
+        self.assertEqual(result["covered"], 216)
         self.assertEqual(result["missing"], 0)
         for row in result["functions"]:
             self.assertEqual(len(row["call_lines"]), len(row["calls"]))

@@ -109,16 +109,43 @@ static bool test_encode_registration_response(uint8_t *buffer, size_t capacity,
   return true;
 }
 
+static char last_input_stream[65];
+
 static int test_event_send(void *user, gzc_event_stream_t *stream,
                            const gzc_peer_event_t *event) {
   test_event_stream_t *test = user;
   if (test == NULL || stream != test->stream || event == NULL)
     return GZC_ERR_INVALID_ARGUMENT;
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS)
+    snprintf(last_input_stream, sizeof(last_input_stream), "%s", event->payload.bos.stream_id);
   ++test->send_count;
   if (test->fail_on_send_count != 0u &&
       test->send_count >= test->fail_on_send_count)
     return test->send_result;
   return GZC_OK;
+}
+
+/* Exercise readiness separately from successful BOS transport acceptance. */
+static int test_open_ready(h2_gizclaw_client_t *client, h2_gizclaw_str_t workspace,
+                          uint64_t generation, int timeout,
+                          h2_gizclaw_conversation_t **out) {
+  int rc = h2_gizclaw_conversation_wire_open_internal(client, workspace, generation, timeout, out);
+  if (rc != H2_PAL_OK) return rc;
+  assert(!h2_gizclaw_conversation_wire_input_ready_internal(*out));
+  gzc_peer_event_t event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+  event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+  event.which_payload = gizclaw_events_v1_PeerEvent_audio_input_ready_tag;
+  snprintf(event.payload.audio_input_ready.stream_id, sizeof(event.payload.audio_input_ready.stream_id), "%s", "wrong-stream");
+  assert(!h2_gizclaw_conversation_accepts_peer_event_internal(*out, &event));
+  h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
+  assert(!h2_gizclaw_conversation_wire_input_ready_internal(*out));
+  snprintf(event.payload.audio_input_ready.stream_id, sizeof(event.payload.audio_input_ready.stream_id), "%s", last_input_stream);
+  assert(h2_gizclaw_conversation_accepts_peer_event_internal(*out, &event));
+  h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
+  h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
+  assert(h2_gizclaw_conversation_wire_input_ready_internal(*out));
+  assert(!h2_gizclaw_conversation_has_pending_peer_event_internal(*out));
+  return rc;
 }
 
 static int test_event_read(void *user, gzc_event_stream_t *stream,
@@ -283,7 +310,7 @@ static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
   };
   h2_gizclaw_conversation_t *conversation = NULL;
   fails +=
-      expect(h2_gizclaw_conversation_wire_open_internal(
+      expect(test_open_ready(
                  client, workspace, 11u, 1000, &conversation) == H2_PAL_OK &&
                  conversation != NULL && event.send_count == 1u,
              "closed-poll mapping test opens an active conversation");
@@ -360,7 +387,7 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   };
   h2_gizclaw_conversation_t *conversation = NULL;
   fails +=
-      expect(h2_gizclaw_conversation_wire_open_internal(
+      expect(test_open_ready(
                  client, workspace, 9u, 1000, &conversation) == H2_PAL_OK &&
                  conversation != NULL && test.send_count == 1u,
              "closed-poll test opens an active logical conversation");
@@ -417,7 +444,7 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
                       send_client, send_test.stream) == NULL,
                   "send-failure test installs the client Event access handle");
   h2_gizclaw_conversation_t *send_conversation = NULL;
-  fails += expect(h2_gizclaw_conversation_wire_open_internal(
+  fails += expect(test_open_ready(
                       send_client, workspace, 10u, 1000, &send_conversation) ==
                           H2_PAL_OK &&
                       send_conversation != NULL && send_test.send_count == 1u,
@@ -551,7 +578,7 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
         "barge-in test installs the client Event handle");
     h2_gizclaw_conversation_t *conv = NULL;
     fails +=
-        expect(h2_gizclaw_conversation_wire_open_internal(
+        expect(test_open_ready(
                    client, workspace, 20u + mode, 1000, &conv) == H2_PAL_OK &&
                    conv != NULL && stream.send_count == 1u,
                "barge-in test opens an active conversation");
@@ -560,6 +587,14 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
                           conv, 5u) == H2_PAL_OK &&
                           stream.send_count == 2u,
                       "push-to-talk commits the input before the reply");
+    if (mode == 2) {
+      gzc_peer_event_t late = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+      late.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+      snprintf(late.payload.audio_input_ready.stream_id, sizeof(late.payload.audio_input_ready.stream_id), "%s", last_input_stream);
+      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &late));
+      h2_gizclaw_conversation_enqueue_peer_event_internal(conv, &late);
+      assert(!h2_gizclaw_conversation_wire_input_ready_internal(conv));
+    }
     h2_gizclaw_conversation_event_t out = {0};
     gzc_peer_event_t event =
         test_reply_event(BOS, "assistant", "reply-1", "", NULL);
