@@ -127,34 +127,44 @@ static void debug_unlock(h2_gizclaw_service_t *service) {
 /* Fold the library's in-flight request into the snapshot once it reached a
  * terminal state. No completion hook is used: the App reads the snapshot
  * from its own loop, so the request is inspected (never waited for) here,
- * which also survives a full dispatch queue or a stopped Service. Returns
- * with the lock released. */
+ * which also survives a full dispatch queue or a stopped Service.
+ *
+ * Terminal detection uses the parser, not req_wait(0): the parser answers
+ * INVALID_STATE only while the request is still in flight and otherwise
+ * returns the terminal result, so a request that ended with an execution
+ * TIMEOUT is folded (as a failure) instead of staying busy forever.
+ *
+ * The parser only reads request-local atomics and never takes the Service
+ * lock, so the whole inspection runs under the lock; the request is detached
+ * from the snapshot before the lock is dropped, which is the same protocol
+ * stop uses, so exactly one side ever releases the reference. */
 static void debug_fold(h2_gizclaw_service_t *service) {
   debug_lock(service);
   h2_gizclaw_req_t *request = service->debug.request;
-  const bool is_set = service->debug.request_is_set;
-  debug_unlock(service);
-  if (request == NULL || h2_gizclaw_req_wait(request, 0u) == H2_PAL_ERR_TIMEOUT)
-    return;
-  h2_gizclaw_debug_state_t state;
-  const h2_pal_result_t rc = is_set
-                                 ? h2_gizclaw_resp_parse_debug_set(request, &state)
-                                 : h2_gizclaw_resp_parse_debug_get(request, &state);
-  debug_lock(service);
-  if (service->debug.request == request) {
-    service->debug.request = NULL;
-    if (rc == H2_PAL_OK) {
-      service->debug.known = true;
-      memcpy(service->debug.mode, state.mode, sizeof(service->debug.mode));
-    }
-    service->debug.last_result = rc;
-    if (++service->debug.revision == 0u)
-      ++service->debug.revision;
+  if (request == NULL) {
     debug_unlock(service);
-    h2_gizclaw_req_release(request);
     return;
   }
+  h2_gizclaw_debug_state_t state;
+  const h2_pal_result_t rc =
+      service->debug.request_is_set
+          ? h2_gizclaw_resp_parse_debug_set(request, &state)
+          : h2_gizclaw_resp_parse_debug_get(request, &state);
+  if (rc == H2_PAL_ERR_INVALID_STATE) {
+    /* Still in flight. */
+    debug_unlock(service);
+    return;
+  }
+  service->debug.request = NULL;
+  if (rc == H2_PAL_OK) {
+    service->debug.known = true;
+    memcpy(service->debug.mode, state.mode, sizeof(service->debug.mode));
+  }
+  service->debug.last_result = rc;
+  if (++service->debug.revision == 0u)
+    ++service->debug.revision;
   debug_unlock(service);
+  h2_gizclaw_req_release(request);
 }
 
 static h2_pal_result_t debug_start(h2_gizclaw_service_t *service, bool is_set,

@@ -1229,6 +1229,20 @@ static void test_debug_state_paths(void) {
          snapshot.last_result == H2_GIZCLAW_ERR_REMOTE && snapshot.revision == 4u);
   env.rpc_remote_error = false;
 
+  /* A terminal execution timeout is folded as a failure, never left busy. */
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_GET;
+  env.expected_payload = NULL;
+  env.expected_payload_len = 0;
+  env.rpc_result = H2_PAL_ERR_TIMEOUT;
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_OK);
+  snapshot = debug_settle(service);
+  assert(!snapshot.busy && snapshot.last_result == H2_PAL_ERR_TIMEOUT &&
+         !strcmp(snapshot.mode, "off") && snapshot.revision == 5u);
+  assert(h2_gizclaw_debug_refresh(service, 1234) == H2_PAL_OK);
+  env.rpc_result = H2_PAL_OK;
+  snapshot = debug_settle(service);
+  assert(!snapshot.busy && snapshot.revision == 6u);
+
   /* Stopping the Service drops an in-flight request instead of staying busy. */
   env.expected_method = H2_GIZCLAW_RPC_SERVER_RUNTIME_GET;
   env.expected_payload = NULL;
