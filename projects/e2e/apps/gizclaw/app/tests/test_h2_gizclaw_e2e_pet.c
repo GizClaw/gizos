@@ -1,3 +1,4 @@
+#include "h2_app_test_time.h"
 #include "h2_gizclaw_e2e_pet.h"
 // Keep test operations and assertions enabled in optimized builds.
 #ifdef NDEBUG
@@ -22,7 +23,7 @@ static struct {
   h2_gizclaw_e2e_fixture_t *fixture;
   unsigned stage, fail_stage, budget, fail_budget, replies, corrupt_reply,
       fault;
-  unsigned live, calls[3][7], runs, deletes, sleeps;
+  unsigned live, calls[3][7], runs, deletes;
   bool exists, emit;
   unsigned variant;
   uint64_t last_id;
@@ -30,18 +31,14 @@ static struct {
   void *late_user;
   char remote[256];
 } state;
-static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
+static h2_app_test_time_t clock;
+static void after_sleep(void *user, uint32_t ms) {
   (void)user;
   assert(ms == 100u);
-  ++state.sleeps;
-  if (state.variant == 9u)
-    return H2_PAL_ERR_IO;
-  if (state.variant == 8u && state.sleeps == 2u)
+  if (state.variant == 8u && clock.sleep.calls == 2u)
     state.exists = false;
-  return H2_PAL_OK;
 }
-static const h2_pal_time_vtable_t time_vtable = {.sleep_ms = sleep_ms};
-static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
+
 static int step(void) {
   return ++state.stage == state.fail_stage ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
@@ -63,7 +60,7 @@ bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f == state.fixture && ms == 30000u);
   return ++state.budget != state.fail_budget &&
-         !(state.variant == 10u && state.sleeps);
+         !(state.variant == 10u && clock.sleep.calls);
 }
 static void service(h2_gizclaw_service_t *s, uint32_t ms) {
   assert(s == (h2_gizclaw_service_t *)&state && ms == 30000u);
@@ -461,7 +458,11 @@ static void run(unsigned failure, unsigned budget, unsigned reply_index,
   state.fault = fault;
   state.variant = variant;
   state.emit = emit;
-  f->time = &time_api;
+  h2_app_test_time_init(&clock, 0u);
+  clock.on_sleep = after_sleep;
+  clock.sleep = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO,
+      .remaining=state.variant == 9u ? UINT32_MAX : 0u};
+  f->time = &clock.api;
   strcpy(f->pet_name, "test-pet");
   f->actors[H2_GIZCLAW_E2E_OWNER].service = (void *)&state;
   uint8_t arena[16384];
@@ -531,7 +532,11 @@ static void test_name_boundaries(void) {
     h2_gizclaw_e2e_fixture_t *f = calloc(1, sizeof(*f));
     assert(f != NULL);
     state.fixture = f;
-    f->time = &time_api;
+    h2_app_test_time_init(&clock, 0u);
+  clock.on_sleep = after_sleep;
+  clock.sleep = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO,
+      .remaining=state.variant == 9u ? UINT32_MAX : 0u};
+  f->time = &clock.api;
     f->actors[H2_GIZCLAW_E2E_OWNER].service = (void *)&state;
     memset(f->pet_name, 'n', lengths[i]);
     char original[sizeof(f->pet_name)];

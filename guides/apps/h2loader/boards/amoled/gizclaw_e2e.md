@@ -11,7 +11,7 @@ bazel build --config=esp32s3 \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
 ```
 
-未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 继续使用已有的北京 E2E endpoint、公开 `deploy-default` fixture 和设备已保存的 Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；该用例不验收物理麦克风采集或扬声器听感。
+未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 继续使用已有的北京 E2E endpoint、公开 `deploy-default` fixture 和设备已保存的 Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；Testing Audio wrapper 同时 drain 真实麦克风并记录采集健康，但上传的仍是 fixture PCM；该用例不验收麦克风音质或扬声器听感。
 
 ## Session 验收
 

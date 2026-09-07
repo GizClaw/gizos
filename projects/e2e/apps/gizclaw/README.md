@@ -124,3 +124,22 @@ Session 的 13 个公开操作纳入同一 fail-closed 审计，归属独立 Voi
 联系人和分组未强制预置多页数据，积分账户也可能为空，因此无实际下一页时不声称 live 分页已覆盖。并发 BUSY、在途 close 丢弃迟到结果、服务端分页异常仍需 library 专项测试/独立 live 场景。本地 `gizclaw_e2e_resource_test` 使用故障注入验证 consumer 的拒绝和清理逻辑，不作为真实服务器证据。
 
 `h2_gizclaw_ota_get_status` 纳入 216 项审计要求。`device-api` 在本地 OTA 的受控失败场景读取状态，必须同时观察本地 `failed`、非零错误及服务端失败记录，才输出 `ota_get_status-assert`；该场景不证明真实 package 安装成功。
+
+
+## app_test 接入
+
+本目录复用 `//libs/app_test:testing_audio` 和 `//libs/app_test:testing_pal`，接线和所有权说明见 [App Test 的 GizClaw 样例](../../../../guides/zh/developing/app_test.md#gizclaw-e2e-接入样例)。
+
+| 路径 | 共享能力 | 本目录保留的职责 |
+| --- | --- | --- |
+| Voice | Audio fixture、capture gate、健康与输出证据 | Conversation/Session、上行分帧、业务终态和历史播放断言 |
+| RPC Speech | Audio fake 与 PCM decorator 的节拍输入 | 转写／提取请求、Track 背压重试和结束断言 |
+| Device | 仅播放 Audio decorator、可配置节拍的 Audio fake | Device API 断言、OTA 拒绝策略、Service 停止后的清理 |
+| fixture | WebRTC decorator | GizClaw channel label/stream 断言、远端资源账本 |
+| 主机测试 | Memory/Time/Task/Sync/Crypto Testing PAL | Request/Session/Resource 替身和业务故障脚本 |
+
+```sh
+bazel test --config=macos_arm64 //libs/app_test:all //projects/e2e/apps/gizclaw/...
+```
+
+以上是主机验证；AMOLED 必须单独构建并运行全量 suite，检查唯一 case terminal、最终 summary、资源回收及 coredump。安装成功不能当作 E2E 通过。
