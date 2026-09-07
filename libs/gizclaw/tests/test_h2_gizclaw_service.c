@@ -2273,7 +2273,8 @@ static void test_device_provider_pal_and_player(void) {
   service->config.runtime = runtime;
   h2_gizclaw_service_test_set_runtime_notify(device_runtime_notify);
   service->client_config.audio = runtime->audio;
-  service->client_config.power = &power;
+  /* No power PAL at first: the hook alone must make reboot supported. */
+  service->client_config.power = NULL;
   service->client_config.http = &http;
   service->client_config.audio_buffer_bytes = 32;
   service->client_config.audio_prebuffer_bytes = 1;
@@ -2384,8 +2385,9 @@ static void test_device_provider_pal_and_player(void) {
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP,
     gizclaw_rpc_v1_ClientDeviceAudioPlayerStopRequest_fields, &stop, &response) == 0);
   assert(!strcmp(device_player_status(service).state, "stopped"));
-  /* With a product request_reboot hook the library never touches the
-   * power PAL; the hook receives the requested delay after the response. */
+  /* With a product request_reboot hook and no power PAL at all, reboot is
+   * still supported; the hook receives the requested delay after the
+   * response and nothing else runs. */
   gizclaw_rpc_v1_ClientDeviceRebootRequest reboot = {.has_delay_ms = true,
                                                      .delay_ms = 1500};
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
@@ -2403,13 +2405,18 @@ static void test_device_provider_pal_and_player(void) {
   /* Without the hook the legacy path keeps the delay on the worker and then
    * calls the power PAL. */
   const h2_gizclaw_vtable_t no_hook = {.resolve_sound_url = device_resolve_sound};
-  h2_gizclaw_device_set_vtable_internal(service, &no_hook);
+  assert(h2_gizclaw_device_set_product_internal(service, &no_hook, &power) ==
+         H2_PAL_OK);
   reboot.delay_ms = 40;
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT,
     gizclaw_rpc_v1_ClientDeviceRebootRequest_fields, &reboot, &response) == 0);
+  /* An accepted action makes the device non-quiescent for the helper. */
+  assert(h2_gizclaw_device_set_product_internal(service, &no_hook, &power) ==
+         H2_PAL_ERR_BUSY);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  /* Measure from completion so scheduler latency before it cannot count. */
   uint64_t handoff_ms = 0u;
   assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &handoff_ms) == H2_PAL_OK);
-  response.on_complete(response.complete_user, H2_PAL_OK);
   wait_for_count(&state.reboots, 1);
   uint64_t rebooted_ms = 0u;
   assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &rebooted_ms) == H2_PAL_OK);

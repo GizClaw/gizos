@@ -4,9 +4,12 @@
 typedef struct h2_gizclaw_device h2_gizclaw_device_t;
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *device);
-/** Test support: swap the product vtable of a running device. */
-void h2_gizclaw_device_set_vtable_internal(h2_gizclaw_service_t *service,
-                                           const h2_gizclaw_vtable_t *vtable);
+/** Test support only. Re-point the product vtable and power PAL of a
+ * quiescent device: no inbound RPC may be in flight and no action may be
+ * accepted (BUSY otherwise). Readers are not synchronized beyond that. */
+h2_pal_result_t h2_gizclaw_device_set_product_internal(
+    h2_gizclaw_service_t *service, const h2_gizclaw_vtable_t *vtable,
+    const h2_pal_power_api_t *power);
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *device);
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *device);
 void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *device);

@@ -1271,10 +1271,25 @@ static void device_worker(void *user) {
   }
 }
 
-void h2_gizclaw_device_set_vtable_internal(h2_gizclaw_service_t *service,
-                                           const h2_gizclaw_vtable_t *vtable) {
-  if (service != NULL && service->device != NULL)
-    service->device->config.vtable = vtable;
+h2_pal_result_t h2_gizclaw_device_set_product_internal(
+    h2_gizclaw_service_t *service, const h2_gizclaw_vtable_t *vtable,
+    const h2_pal_power_api_t *power) {
+  if (service == NULL || service->device == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  /* Only a quiescent device may be re-pointed: readers take no lock, so the
+   * caller must guarantee no inbound RPC is being served and the worker has
+   * no accepted action. The lock rules out a pending action; the RPC owner
+   * side is the caller's responsibility (test-only helper). */
+  lock(d);
+  if (d->pending != 0 || d->pending_ready) {
+    unlock(d);
+    return H2_PAL_ERR_BUSY;
+  }
+  d->config.vtable = vtable;
+  d->config.power = power;
+  unlock(d);
+  return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
