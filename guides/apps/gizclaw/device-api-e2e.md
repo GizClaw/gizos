@@ -14,7 +14,7 @@ bazel test //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_device_live_tes
 
 API URL 与音频 URL 显式传入；API key 只保存在测试内存，不输出 secret。
 设备通过 PAL HTTP 实际下载音频，库实际解码 Ogg/Opus，再写入按 PCM 时长消费的
-虚拟 PAL Audio sink。测试先调用本地 player/OTA 入口，再检查远程音量、非法列表、播放列表、循环模式、播放进度和停止。
+虚拟 PAL Audio sink。测试先调用本地 player/OTA 入口，其中设备侧 `playlist_set` / `repeat_set` 写入后立即用 `playlist_snapshot` 回读条目数、标题与 revision，并检查越界写入和非法模式被拒绝后 playlist 与模式都保持原样；再检查远程音量、非法列表、播放列表、循环模式、播放进度和停止。
 播放器进度和 OTA 结果均读取服务端 `/device/status`，不以 RPC 返回代替 telemetry 验收。
 OTA 使用部署环境的 firmware metadata 和 HTTPS package URL，写入计数 Stage sink，
 在 finish 时故意拒绝校验，检查服务端可读的 failed telemetry，绝不写物理分区或重启。
@@ -37,12 +37,14 @@ h2_gizclaw_player_play(service, (h2_gizclaw_str_t){url, strlen(url)});
 h2_gizclaw_player_get_status(service, &status);
 h2_gizclaw_player_playlist_snapshot(service, &playlist);
 h2_gizclaw_player_play_index(service, 1);
+h2_gizclaw_player_playlist_set(service, entries, 3);
+h2_gizclaw_player_repeat_set(service, (h2_gizclaw_str_t){"all", 3});
 h2_gizclaw_player_stop(service);
 h2_gizclaw_ota_start(service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
                      (h2_gizclaw_str_t){0});
 ```
 
-`playlist_snapshot` 和 `get_status` 只读设备已持有的状态，不发起网络请求；`play_index` 的索引越界在本地按 `H2_PAL_ERR_INVALID_ARG` 拒绝，不改动播放。以上启动函数只复制参数、发布任务，返回 OK 表示接受。下载、解码、查询 firmware、
+`playlist_snapshot` 和 `get_status` 只读设备已持有的状态，不发起网络请求；`play_index` 的索引越界在本地按 `H2_PAL_ERR_INVALID_ARG` 拒绝，不改动播放。`playlist_set` 与 `repeat_set` 复用服务端 `playlist.set` / `mode.set` 的内部处理：校验失败时上一份 playlist 与播放都保持原样；`playlist_set` 是纯写入，不启动播放，专辑开始播放由随后的 `play_index(0)` 负责，末曲推进与循环由库按 repeat 模式负责，产品不要另行实现。以上启动函数只复制参数、发布任务，返回 OK 表示接受。下载、解码、查询 firmware、
 写入 staging 与进度上报由库拥有的 PAL task 执行。
 
 仅运行 AMOLED 设备控制用例（完整 target 默认仍运行 all）：
