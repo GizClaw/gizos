@@ -255,13 +255,18 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set", "local-playlist",
                           rc);
   CHECK(h2_gizclaw_player_playlist_snapshot(service, &queue));
+  /* Every entry is checked, not just the last: a per-entry copy or indexing
+   * regression that drops one reference would otherwise still pass. */
   ASSERT(queue.item_count == 3u && !queue.has_current_index &&
          queue.playlist_revision != stale_revision &&
          queue.items[0].has_title && queue.items[1].has_title &&
-         queue.items[2].has_title && queue.items[2].has_source_ref &&
+         queue.items[2].has_title && queue.items[0].has_source_ref &&
+         queue.items[1].has_source_ref && queue.items[2].has_source_ref &&
          !strcmp(queue.items[0].title, "gizos-e2e-track-1") &&
          !strcmp(queue.items[1].title, "gizos-e2e-track-2") &&
          !strcmp(queue.items[2].title, "gizos-e2e-track-3") &&
+         !strcmp(queue.items[0].source_ref, "gizos-e2e-album") &&
+         !strcmp(queue.items[1].source_ref, "gizos-e2e-album") &&
          !strcmp(queue.items[2].source_ref, "gizos-e2e-album"));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_snapshot",
                           "player_playlist_snapshot-assert", rc);
