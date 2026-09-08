@@ -2,8 +2,6 @@
 #include "h2_gizclaw_e2e_contact.h"
 #include "h2_gizclaw_e2e_friend.h"
 #include "h2_gizclaw_e2e_group.h"
-#include "h2_gizclaw_e2e_pet.h"
-#include "h2_gizclaw_e2e_point.h"
 #include "h2_gizclaw_e2e_profile.h"
 #include "h2_gizclaw_e2e_report.h"
 #include "h2_gizclaw_e2e_speech.h"
@@ -82,12 +80,6 @@ static int run_group(h2_gizclaw_e2e_fixture_t *fixture,
   if (rc != H2_PAL_OK)
     return rc;
   return h2_gizclaw_e2e_run_group_talk(fixture);
-}
-
-static int run_gameplay(h2_gizclaw_e2e_fixture_t *fixture,
-                        h2_gizclaw_resp_storage_t *storage) {
-  int rc = h2_gizclaw_e2e_run_pet(fixture, storage);
-  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_point(fixture, storage) : rc;
 }
 
 static void keep_first_failure(int candidate, int *result) {
@@ -194,34 +186,7 @@ static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
     keep_first_failure(rc, &result);
   }
 
-  h2_gizclaw_pet_t pet = {0};
-  if (result == H2_PAL_OK) {
-    const h2_gizclaw_pet_adopt_options_t options = {
-        .name = h2_gizclaw_e2e_str(fixture->pet_name),
-        .display_name = h2_gizclaw_e2e_str(peer_display_name),
-    };
-    fixture->isolation_pet_pending = true;
-    fixture->isolation_pet_delete_acknowledged = false;
-    rc = h2_gizclaw_rpc_pet_adopt(service, &options, 30000u, storage, &pet);
-    if (rc == H2_PAL_OK &&
-        (pet.name == NULL || strcmp(pet.name, fixture->pet_name) != 0)) {
-      rc = H2_PAL_ERR_INVALID_STATE;
-    }
-    storage->used = 0u;
-    if (rc == H2_PAL_OK) {
-      rc =
-          h2_gizclaw_rpc_pet_get(service, h2_gizclaw_e2e_str(fixture->pet_name),
-                                 30000u, storage, &pet);
-      if (rc == H2_PAL_OK &&
-          (pet.name == NULL || strcmp(pet.name, fixture->pet_name) != 0)) {
-        rc = H2_PAL_ERR_INVALID_STATE;
-      }
-      storage->used = 0u;
-    }
-    keep_first_failure(rc, &result);
-  }
-
-  /* Fixture cleanup owns all four obligations, also on timeout or failure. */
+  /* Fixture cleanup owns all three obligations, also on timeout or failure. */
   printf("H2_GIZCLAW_E2E stage=peer_name_isolation result=%s\n",
          result == H2_PAL_OK ? "PASS" : "FAIL");
   return result;
@@ -310,7 +275,6 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
     RPC_DOMAIN_CONTACT,
     RPC_DOMAIN_FRIEND,
     RPC_DOMAIN_GROUP,
-    RPC_DOMAIN_GAMEPLAY,
     RPC_DOMAIN_PEER_NAME_ISOLATION,
     RPC_DOMAIN_TELEMETRY,
     RPC_DOMAIN_API_KEY,
@@ -333,13 +297,11 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
       [RPC_DOMAIN_CONTACT] = {"contact", h2_gizclaw_e2e_run_contact, 0u},
       [RPC_DOMAIN_FRIEND] = {"friend", h2_gizclaw_e2e_run_friend, 0u},
       [RPC_DOMAIN_GROUP] = {"group", run_group, 0u},
-      [RPC_DOMAIN_GAMEPLAY] = {"gameplay", run_gameplay, 0u},
       [RPC_DOMAIN_PEER_NAME_ISOLATION] = {"peer-name-isolation",
                                           run_peer_name_isolation,
                                           (1u << RPC_DOMAIN_CATALOG_WORKSPACE) |
                                               (1u << RPC_DOMAIN_CONTACT) |
-                                              (1u << RPC_DOMAIN_GROUP) |
-                                              (1u << RPC_DOMAIN_GAMEPLAY)},
+                                              (1u << RPC_DOMAIN_GROUP)},
       [RPC_DOMAIN_TELEMETRY] = {"telemetry", h2_gizclaw_e2e_run_telemetry, 0u},
       [RPC_DOMAIN_API_KEY] = {"api-key", run_api_key, 0u},
   };

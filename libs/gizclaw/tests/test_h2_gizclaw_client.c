@@ -1,8 +1,6 @@
 #include "h2_gizclaw_client.h"
 #include "h2_gizclaw_conversation.h"
 #include "h2_gizclaw_internal.h"
-#include "h2_gizclaw_pet.h"
-#include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_profile_internal.h"
 #include "h2_gizclaw_registration.h"
@@ -13,7 +11,6 @@
 #include "h2_gizclaw_workspace.h"
 
 #include "gzc_common.h"
-#include "payload/gameplay.pb.h"
 #include "payload/social.pb.h"
 #include "payload/system.pb.h"
 #include "payload/workspace.pb.h"
@@ -1205,30 +1202,8 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
 
 int main(void) {
   int fails = 0;
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_LIST == 65,
-                  "pet list wire method remains 65");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_GET == 66,
-                  "pet get wire method remains 66");
-  fails += expect(H2_GIZCLAW_RPC_RUNTIME_ADOPT == 67,
-                  "runtime adopt wire method remains 67");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_PUT == 68,
-                  "pet put wire method remains 68");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_DELETE == 69,
-                  "pet delete wire method remains 69");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_DRIVE == 70,
-                  "pet drive wire method remains 70");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_POINTS_GET == 71,
-                  "points get wire method remains 71");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_POINTS_TRANSACTIONS_LIST == 72,
-                  "points transaction list wire method remains 72");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_POINTS_TRANSACTIONS_GET == 73,
-                  "points transaction get wire method remains 73");
   fails += expect(H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE == 82,
                   "tool invoke wire method remains 82");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_ACTIONS_GET == 86,
-                  "pet actions wire method remains 86");
-  fails += expect(H2_GIZCLAW_RPC_SERVER_PET_PIXA_DOWNLOAD == 87,
-                  "pet PIXA download wire method remains 87");
   fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_INFO_GET == 89,
                   "friend info wire method remains 89");
   fails += expect(H2_GIZCLAW_RPC_SERVER_REGISTER == 90,
@@ -1612,53 +1587,6 @@ int main(void) {
                       &social_request) == H2_PAL_ERR_INVALID_ARG,
                   "friend group list rejects null client");
   h2_gizclaw_profile_t profile = {0};
-  h2_gizclaw_req_t *pet_request = NULL;
-  const h2_gizclaw_pet_adopt_options_t adopt = {
-      .name = {.data = "pet-test-1", .len = 10u},
-      .display_name = {.data = "Test Pet", .len = 8u},
-  };
-  const h2_gizclaw_pet_drive_options_t empty_drive = {
-      .pet_name = {.data = "pet-test-1", .len = 10u},
-      .idempotency_key = {.data = "drive-test-1", .len = 12u},
-  };
-  fails += expect(h2_gizclaw_req_create_pet_get(NULL, 0u, empty_drive.pet_name,
-                                                1000u, &pet_request) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "pet get rejects null client");
-  fails += expect(
-      h2_gizclaw_req_create_pet_adopt(NULL, 0u, &adopt, 1000u, &pet_request) ==
-          H2_PAL_ERR_INVALID_ARG,
-      "pet adopt rejects null client");
-  fails += expect(h2_gizclaw_req_create_pet_adopt(
-                      (h2_gizclaw_service_t *)0x1, 0u, NULL, 1000u,
-                      &pet_request) == H2_PAL_ERR_INVALID_ARG,
-                  "pet adopt rejects null options");
-  fails += expect(h2_gizclaw_req_create_pet_drive(NULL, 0u, &empty_drive, 1000u,
-                                                  &pet_request) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "pet drive rejects null client");
-  fails += expect(h2_gizclaw_req_create_pet_action_get(
-                      NULL, 0u, empty_drive.pet_name, 1000u, &pet_request) ==
-                      H2_PAL_ERR_INVALID_ARG,
-                  "pet actions rejects null client");
-  const h2_gizclaw_pet_game_result_t game_result = {
-      .game_name = {.data = "dinorun", .len = 7u},
-      .score = 120,
-      .max_score = 999,
-      .duration_ms = 3000,
-      .has_score = true,
-      .has_max_score = true,
-      .has_duration_ms = true,
-  };
-  const h2_gizclaw_pet_drive_options_t invalid_mixed_drive = {
-      .pet_name = {.data = "pet-test-1", .len = 10u},
-      .behavior = H2_GIZCLAW_PET_BEHAVIOR_PLAY,
-      .game_result = &game_result,
-  };
-  fails += expect(h2_gizclaw_req_create_pet_drive(
-                      (h2_gizclaw_service_t *)0x1, 0u, &invalid_mixed_drive,
-                      1000u, &pet_request) == H2_PAL_ERR_INVALID_ARG,
-                  "pet drive rejects behavior plus game result");
   uint8_t profile_request[16];
   size_t profile_request_len = 0u;
   fails += expect(h2_gizclaw_profile_encode_name_request(

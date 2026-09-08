@@ -18,7 +18,7 @@ size。产品 App 必须由明确发布策略选择 channel，不能猜测或遍
 这是随 GizClaw release tag `v0.1.0` 对应的 Peer schema
 `064687878378984ff3553613b4479880d2c58ebc` 一次完成的
 clean cutover：GizOS 不保留旧 `firmware_name` 或 artifact path 的兼容 alias，也不根据
-字符串内容猜测旧字段。这与 Points/Friend/history wrapper 保留语义化 public ID
+字符串内容猜测旧字段。这与 Friend/history wrapper 保留语义化 public ID
 并逐字节映射 wire name 的兼容合同无关。旧 Firmware 调用方必须在同一次编译升级中改为显式
 channel；未知或 unspecified channel 在发 RPC 前返回 invalid argument，服务端没有为当前
 Peer/channel 绑定 package 时返回 not found，缺失 URL、SHA-256 或非法 size 按 format error

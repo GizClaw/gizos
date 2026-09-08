@@ -66,19 +66,6 @@ static void copy_group(const h2_pal_mem_api_t *mem,
   dst->description = copy_string(mem, src->description);
   dst->workspace_name = copy_string(mem, src->workspace_name);
 }
-static void copy_transaction(const h2_pal_mem_api_t *mem,
-                             const h2_gizclaw_points_transaction_t *src,
-                             h2_gizclaw_points_transaction_t *dst) {
-  *dst = *src;
-  dst->created_at = copy_text(mem, src->created_at);
-  dst->id = copy_text(mem, src->id);
-  dst->reason = copy_text(mem, src->reason);
-  dst->source_type = copy_text(mem, src->source_type);
-  dst->source_id = copy_text(mem, src->source_id);
-  dst->game_result_id = copy_text(mem, src->game_result_id);
-  dst->pet_name = copy_text(mem, src->pet_name);
-  dst->reward_grant_id = copy_text(mem, src->reward_grant_id);
-}
 static h2_pal_result_t copy_snapshot(const h2_gizclaw_resource_snapshot_t *src,
                                      h2_gizclaw_resp_storage_t *storage,
                                      h2_gizclaw_resource_snapshot_t *out) {
@@ -116,23 +103,6 @@ static h2_pal_result_t copy_snapshot(const h2_gizclaw_resource_snapshot_t *src,
     dst.data.groups.next_cursor =
         copy_string(mem, src->data.groups.next_cursor);
   }
-  if (src->kind == H2_GIZCLAW_RESOURCE_POINTS) {
-    size_t count = src->data.points.transactions.count;
-    dst.data.points.transactions.items = NULL;
-    if (count != 0u) {
-      dst.data.points.transactions.items = h2_pal_mem_alloc(
-          mem, count * sizeof(h2_gizclaw_points_transaction_t));
-      if (dst.data.points.transactions.items != NULL)
-        for (size_t i = 0; i < count; ++i)
-          copy_transaction(mem, &src->data.points.transactions.items[i],
-                           &dst.data.points.transactions.items[i]);
-    }
-    dst.data.points.transactions.next_cursor =
-        copy_text(mem, src->data.points.transactions.next_cursor);
-  }
-  if (src->kind == H2_GIZCLAW_RESOURCE_POINTS)
-    dst.data.points.account.updated_at =
-        copy_text(mem, src->data.points.account.updated_at);
   if (src->kind == H2_GIZCLAW_RESOURCE_APP_CONFIG) {
     const h2_gizclaw_app_config_snapshot_t *a = &src->data.app_config;
     h2_gizclaw_app_config_snapshot_t *b = &dst.data.app_config;
@@ -167,7 +137,9 @@ h2_gizclaw_resource_create(const h2_gizclaw_resource_config_t *c,
     return H2_PAL_ERR_INVALID_ARG;
   if (c->kind != H2_GIZCLAW_RESOURCE_FIRMWARE &&
       (c->max_items == 0u ||
-       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_points_transaction_t) ||
+       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_contact_t) ||
+       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_friend_group_t) ||
+       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_app_config_entry_t) ||
        c->page_size == 0u ||
        c->page_size > (c->kind == H2_GIZCLAW_RESOURCE_APP_CONFIG
                             ? H2_GIZCLAW_APP_CONFIG_PAGE_MAX_ITEMS
@@ -183,7 +155,6 @@ h2_gizclaw_resource_create(const h2_gizclaw_resource_config_t *c,
     r->config.storage_bytes = 1u; /* Inline snapshot; no arena payload. */
   r->snapshot.kind = c->kind;
   r->snapshot.stale = true;
-  r->snapshot.balance_result = H2_PAL_ERR_UNAVAILABLE;
   h2_pal_mutex_config_t mc = {.name = "gizclaw-resource", .allocator = c->mem};
   h2_pal_result_t rc = h2_pal_mutex_create(c->sync, &mc, &r->mutex);
   if (rc != H2_PAL_OK) {
@@ -423,8 +394,6 @@ static bool command_valid(h2_gizclaw_resource_t *r,
              strlen(c->text) <= H2_GIZCLAW_PROFILE_NAME_MAX_BYTES) ||
             (c->operation == H2_GIZCLAW_RESOURCE_PROFILE_EMOJI &&
              strlen(c->text) <= H2_GIZCLAW_PROFILE_EMOJI_MAX_BYTES));
-  case H2_GIZCLAW_RESOURCE_POINTS:
-    return c->operation == H2_GIZCLAW_RESOURCE_LOAD_MORE;
   default:
     return false;
   }
@@ -507,74 +476,6 @@ static h2_pal_result_t profile_run(h2_gizclaw_resource_t *r,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t points_run(h2_gizclaw_resource_t *r, bool append,
-                                  h2_gizclaw_resp_storage_t *storage,
-                                  h2_gizclaw_resource_snapshot_t *next) {
-  uint32_t left = 0;
-  h2_pal_result_t rc = remaining(r, &left);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (!append) {
-    h2_gizclaw_points_account_t account = {0};
-    next->balance_result =
-        h2_gizclaw_rpc_point_get(r->config.service, left, storage, &account);
-    if (next->balance_result == H2_PAL_OK) {
-      next->data.points.account = account;
-      next->balance_valid = true;
-    }
-  }
-  rc = remaining(r, &left);
-  if (rc != H2_PAL_OK)
-    return rc;
-  const h2_gizclaw_points_transaction_page_t *old =
-      &next->data.points.transactions;
-  size_t prior_count = append ? old->count : 0u;
-  if (append && !old->has_next)
-    return H2_PAL_OK;
-  if (prior_count >= r->config.max_items)
-    return H2_PAL_ERR_NO_SPACE;
-  size_t limit = r->config.max_items - prior_count;
-  if (limit > r->config.page_size)
-    limit = r->config.page_size;
-  const char *cursor = append ? old->next_cursor.data : NULL;
-  h2_gizclaw_points_transaction_page_t page = {0};
-  rc = h2_gizclaw_rpc_point_transaction_list(r->config.service, str(cursor),
-                                             limit, left, storage, &page);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (page.count > limit ||
-      (page.has_next &&
-       (page.next_cursor.data == NULL || page.next_cursor.len == 0u ||
-        same(cursor, page.next_cursor.data))))
-    return H2_PAL_ERR_FORMAT;
-  h2_gizclaw_resp_arena_t arena;
-  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
-  if (rc != H2_PAL_OK)
-    return rc;
-  size_t count = prior_count + page.count;
-  h2_gizclaw_points_transaction_t *items = NULL;
-  if (count != 0u)
-    items = h2_pal_mem_alloc(&arena.allocator, count * sizeof(*items));
-  rc = h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
-  if (rc != H2_PAL_OK)
-    return rc;
-  if (prior_count != 0u)
-    memcpy(items, old->items, prior_count * sizeof(*items));
-  for (size_t i = 0u; i < page.count; ++i) {
-    if (page.items[i].id.data == NULL || page.items[i].id.len == 0u)
-      return H2_PAL_ERR_FORMAT;
-    for (size_t j = 0u; j < prior_count + i; ++j)
-      if (same(items[j].id.data, page.items[i].id.data))
-        return H2_PAL_ERR_FORMAT;
-    items[prior_count + i] = page.items[i];
-  }
-  page.items = items;
-  page.count = count;
-  next->data.points.transactions = page;
-  next->valid = true;
-  return H2_PAL_OK;
-}
-
 h2_pal_result_t
 h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
                             const h2_gizclaw_resource_command_t *c,
@@ -595,11 +496,6 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
     unlock(r);
     return rc;
   }
-  if (c->operation == H2_GIZCLAW_RESOURCE_LOAD_MORE &&
-      (!r->snapshot.valid || r->snapshot.stale)) {
-    unlock(r);
-    return H2_PAL_ERR_INVALID_STATE;
-  }
   r->snapshot.busy = true;
   r->snapshot.stale = true;
   r->deadline = now + timeout_ms;
@@ -612,7 +508,6 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
     rc = H2_PAL_ERR_NO_MEMORY;
   else
     rc = h2_gizclaw_resource_snapshot(r, &storage, &next);
-  bool copied = rc == H2_PAL_OK;
   uint64_t old_data_revision = next.data_revision;
   bool commit = false;
   if (rc == H2_PAL_OK) {
@@ -632,12 +527,6 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
         next.valid = true;
     } else if (r->config.kind == H2_GIZCLAW_RESOURCE_APP_CONFIG) {
       rc = app_config_run(r, &storage, &next);
-    } else if (r->config.kind == H2_GIZCLAW_RESOURCE_POINTS) {
-      rc = points_run(r, c->operation == H2_GIZCLAW_RESOURCE_LOAD_MORE,
-                      &storage, &next);
-      commit =
-          rc == H2_PAL_OK || (c->operation == H2_GIZCLAW_RESOURCE_REFRESH &&
-                              next.balance_result == H2_PAL_OK);
     } else {
       if (c->operation != H2_GIZCLAW_RESOURCE_REFRESH)
         rc = contact_mutate(r, c, &storage);
@@ -674,9 +563,6 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
     data = NULL;
     r->snapshot = next;
   }
-  if (copied && r->config.kind == H2_GIZCLAW_RESOURCE_POINTS &&
-      c->operation == H2_GIZCLAW_RESOURCE_REFRESH && !r->snapshot.closed)
-    r->snapshot.balance_result = next.balance_result;
   r->snapshot.busy = false;
   r->snapshot.stale = rc != H2_PAL_OK || r->snapshot.closed;
   r->snapshot.last_error = rc;

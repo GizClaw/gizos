@@ -24,20 +24,6 @@ py_test(
 )
 
 cc_test(
-    name = "h2_gizclaw_sync_download_args_test",
-    srcs = ["tests/test_h2_gizclaw_sync_download_args.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":gizclaw"],
-)
-
-cc_test(
     name = "h2_gizclaw_public_api_test",
     srcs = ["tests/test_h2_gizclaw_public_api.c"],
     additional_compiler_inputs = ["tests/public_api.inc"],
@@ -79,13 +65,11 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_internal.h",
     "src/h2_gizclaw_ogg_opus.c",
     "src/h2_gizclaw_ogg_opus_internal.h",
-    "src/h2_gizclaw_pet.c",
     "src/h2_gizclaw_peer_async.c",
     "src/h2_gizclaw_pcm_ring.c",
     "src/h2_gizclaw_pcm_ring.h",
     "src/h2_gizclaw_pcm_track.c",
     "src/h2_gizclaw_pcm_track_internal.h",
-    "src/h2_gizclaw_points.c",
     "src/h2_gizclaw_profile.c",
     "src/h2_gizclaw_profile_internal.h",
     "src/h2_gizclaw_registration.c",
@@ -121,9 +105,7 @@ cc_library(
         "include/h2_gizclaw_firmware.h",
         "include/h2_gizclaw_ota.h",
         "include/h2_gizclaw_pcm_track.h",
-        "include/h2_gizclaw_pet.h",
         "include/h2_gizclaw_player.h",
-        "include/h2_gizclaw_points.h",
         "include/h2_gizclaw_profile.h",
         "include/h2_gizclaw_registration.h",
         "include/h2_gizclaw_rpc.h",
@@ -190,8 +172,6 @@ cc_library(
         "src/h2_gizclaw_pcm_track.c",
         "src/h2_gizclaw_pcm_track_internal.h",
         "src/h2_gizclaw_peer_async.c",
-        "src/h2_gizclaw_pet.c",
-        "src/h2_gizclaw_points.c",
         "src/h2_gizclaw_profile.c",
         "src/h2_gizclaw_profile_internal.h",
         "src/h2_gizclaw_registration.c",
@@ -222,9 +202,7 @@ cc_library(
         "include/h2_gizclaw_firmware.h",
         "include/h2_gizclaw_ota.h",
         "include/h2_gizclaw_pcm_track.h",
-        "include/h2_gizclaw_pet.h",
         "include/h2_gizclaw_player.h",
-        "include/h2_gizclaw_points.h",
         "include/h2_gizclaw_profile.h",
         "include/h2_gizclaw_registration.h",
         "include/h2_gizclaw_rpc.h",

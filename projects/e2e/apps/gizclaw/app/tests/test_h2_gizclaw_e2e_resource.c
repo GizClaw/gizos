@@ -28,7 +28,7 @@ static void release(void *u, void *p) {
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
   assert(f && ms == 30000u);
-  return fault != 8;
+  return fault != 7;
 }
 void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
   (void)symbol;
@@ -70,9 +70,9 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
                             uint32_t ms) {
   assert(ms == 30000);
   if (r->snapshot.closed)
-    return fault == 7 ? H2_PAL_OK : H2_PAL_ERR_CLOSED;
+    return fault == 6 ? H2_PAL_OK : H2_PAL_ERR_CLOSED;
   ++executes;
-  if (fault == 9 && c->operation == H2_GIZCLAW_RESOURCE_CONTACT_CREATE)
+  if (fault == 8 && c->operation == H2_GIZCLAW_RESOURCE_CONTACT_CREATE)
     return H2_PAL_ERR_TIMEOUT;
   r->snapshot.valid = true;
   r->snapshot.stale = fault == 2;
@@ -97,16 +97,6 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
     r->snapshot.data.profile.has_emoji = true;
     strcpy(r->snapshot.data.profile.emoji, fault == 5 ? "wrong" : c->text);
   }
-  if (r->snapshot.kind == H2_GIZCLAW_RESOURCE_POINTS) {
-    r->snapshot.balance_valid = fault != 6;
-    r->snapshot.balance_result = fault == 6 ? H2_PAL_ERR_IO : H2_PAL_OK;
-    if (c->operation == H2_GIZCLAW_RESOURCE_REFRESH)
-      r->snapshot.data.points.transactions.has_next = true;
-    else {
-      assert(c->operation == H2_GIZCLAW_RESOURCE_LOAD_MORE);
-      r->snapshot.data.points.transactions.has_next = false;
-    }
-  }
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_resource_close(h2_gizclaw_resource_t *r) {
@@ -116,7 +106,7 @@ h2_pal_result_t h2_gizclaw_resource_close(h2_gizclaw_resource_t *r) {
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_resource_destroy(h2_gizclaw_resource_t **r) {
-  if (fault == 10)
+  if (fault == 9)
     return H2_PAL_ERR_BUSY;
   if (*r) {
     ++destroys;
@@ -127,7 +117,7 @@ h2_pal_result_t h2_gizclaw_resource_destroy(h2_gizclaw_resource_t **r) {
 }
 int main(void) {
   h2_app_test_mem_init(&allocator, NULL);
-  for (fault = 0; fault <= 10; ++fault) {
+  for (fault = 0; fault <= 9; ++fault) {
     creates = closes = destroys = executes = accepted = allocator.live_blocks = 0;
     h2_runtime_t runtime = {0};
     h2_gizclaw_e2e_fixture_t f = {.allocator = &allocator.api, .runtime = &runtime};
@@ -135,18 +125,18 @@ int main(void) {
     strcpy(f.run_prefix, "resource-test");
     int rc = h2_gizclaw_e2e_run_resource(&f);
     if (fault == 0) {
-      assert(rc == H2_PAL_OK && creates == 4 && destroys == 4 && accepted == 1);
-      assert(!f.contact_created && executes == 10);
+      assert(rc == H2_PAL_OK && creates == 3 && destroys == 3 && accepted == 1);
+      assert(!f.contact_created && executes == 8);
     } else {
       assert(rc != H2_PAL_OK && accepted == 0);
-      if (fault == 3 || fault == 4 || fault == 9)
+      if (fault == 3 || fault == 4 || fault == 8)
         assert(f.contact_created);
     }
-    if (fault == 10) {
+    if (fault == 9) {
       assert(f.case_state && f.case_cleanup && allocator.live_blocks > 0);
       fault = 0;
       assert(f.case_cleanup(&f) == H2_PAL_OK);
-      fault = 10;
+      fault = 9;
     }
     assert(!f.case_state && !f.case_cleanup && allocator.live_blocks == 0 &&
            destroys == creates);

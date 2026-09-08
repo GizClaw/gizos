@@ -27,4 +27,4 @@ bazel build --config=esp32s3 \
 
 ## Resource suite
 
-将上述构建参数换为 `--define=H2_GIZCLAW_E2E_RESOURCE_ONLY=1` 可单独验收新增 Resource state。该 suite 不运行音频，测试联系人、Profile、积分和分组状态；使用新 Peer，并在 Resource 关闭销毁后完成远端资源清理。最终日志必须为 `suite=resource selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0`。本地替身测试不能代替这一 live 结果；空账户或空分组列表也不代表多页加载已验收。
+将上述构建参数换为 `--define=H2_GIZCLAW_E2E_RESOURCE_ONLY=1` 可单独验收新增 Resource state。该 suite 不运行音频，测试联系人、Profile 和分组状态；使用新 Peer，并在 Resource 关闭销毁后完成远端资源清理。最终日志必须为 `suite=resource selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0`。本地替身测试不能代替这一 live 结果；空联系人或空分组列表也不代表多页加载已验收。
