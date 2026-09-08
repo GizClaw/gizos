@@ -186,6 +186,42 @@ h2_pal_result_t h2_gizclaw_rpc_point_transaction_list(
     out->next_cursor = (h2_gizclaw_owned_text_t){copy(&a, "next"), 4};
   return h2_gizclaw_resp_arena_end(&a, H2_PAL_OK);
 }
+h2_pal_result_t h2_gizclaw_rpc_app_config_list(
+    h2_gizclaw_service_t *s, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_app_config_page_t *out) {
+  begin_rpc(s, timeout);
+  assert(limit > 0);
+  in_flight();
+  h2_gizclaw_resp_arena_t a;
+  assert(h2_gizclaw_resp_arena_begin(storage, &a) == H2_PAL_OK);
+  *out = (h2_gizclaw_app_config_page_t){0};
+  out->runtime_profile_name = copy(&a, "profile");
+  out->runtime_profile_revision = copy(&a, mode == 7 && cursor.len ? "v2" : "v1");
+  if (mode != 9) {
+    out->keys = h2_pal_mem_alloc(&a.allocator, sizeof(char *));
+    assert(out->keys);
+    out->keys[0] = copy(&a, cursor.len && mode != 1 ? "b" : "a");
+    out->count = 1;
+    out->has_next = cursor.len == 0 || mode == 3;
+    out->next_cursor = out->has_next ? copy(&a, "next") : NULL;
+  }
+  return h2_gizclaw_resp_arena_end(&a, H2_PAL_OK);
+}
+h2_pal_result_t h2_gizclaw_rpc_app_config_get(
+    h2_gizclaw_service_t *s, h2_gizclaw_str_t key, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_app_config_value_t *out) {
+  begin_rpc(s, timeout);
+  assert(key.len == 1);
+  if (mode == 10) return H2_PAL_ERR_NOT_FOUND;
+  h2_gizclaw_resp_arena_t a;
+  assert(h2_gizclaw_resp_arena_begin(storage, &a) == H2_PAL_OK);
+  *out = (h2_gizclaw_app_config_value_t){
+    .runtime_profile_name = copy(&a, "profile"),
+    .runtime_profile_revision = copy(&a, mode == 8 ? "v2" : "v1"),
+    .value = {copy(&a, key.data[0] == 'a' ? "raw" : ""), key.data[0] == 'a' ? 3u : 0u}};
+  return h2_gizclaw_resp_arena_end(&a, H2_PAL_OK);
+}
 static void setup(h2_gizclaw_resource_kind_t kind, size_t max_items) {
   mode = calls = gets = creates = 0;
   now = 0;
@@ -209,6 +245,44 @@ static h2_gizclaw_resource_snapshot_t snapshot(void) {
   return out;
 }
 int main(void) {
+  for (unsigned scenario = 0; scenario <= 10; ++scenario) {
+    setup(H2_GIZCLAW_RESOURCE_APP_CONFIG, scenario == 2 ? 1 : 4);
+    if (scenario != 2)
+      assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_OK);
+    h2_gizclaw_resource_snapshot_t before = snapshot();
+    uint64_t prior = before.data_revision;
+    if (before.valid) {
+      assert(before.data.app_config.count == 2);
+      assert(before.data.app_config.items[1].value.len == 0);
+      before.data.app_config.items[0].value.data[0] = 'X';
+      assert(snapshot().data.app_config.items[0].value.data[0] == 'r');
+    }
+    mode = scenario;
+    h2_pal_result_t rc = h2_gizclaw_resource_execute(resource, &refresh, 100);
+    assert(rc == (scenario == 1 || scenario == 3 ? H2_PAL_ERR_FORMAT
+        : scenario == 2 ? H2_PAL_ERR_NO_SPACE
+        : scenario == 4 ? H2_PAL_ERR_TIMEOUT
+        : scenario == 5 ? H2_PAL_ERR_CLOSED
+        : scenario == 7 || scenario == 8 ? H2_PAL_ERR_INVALID_STATE
+        : scenario == 10 ? H2_PAL_ERR_NOT_FOUND : H2_PAL_OK));
+    h2_gizclaw_resource_snapshot_t after = snapshot();
+    assert(!after.busy);
+    if (rc != H2_PAL_OK) {
+      assert(after.stale && after.data_revision == prior);
+      if (after.valid) assert(after.data.app_config.count == 2);
+    } else {
+      assert(after.valid && !after.stale && after.data_revision == prior + 1);
+      assert(after.data.app_config.count == (scenario == 9 ? 0u : 2u));
+    }
+    uint8_t tiny[1];
+    h2_gizclaw_resp_storage_t storage = {tiny, 1, 0};
+    if (after.valid) {
+      assert(h2_gizclaw_resource_snapshot(resource, &storage, &after) == H2_PAL_ERR_NO_SPACE);
+      assert(storage.used == 0 && !after.valid);
+    }
+    assert(h2_gizclaw_resource_destroy(&resource) == H2_PAL_OK);
+  }
+
   for (unsigned scenario = 0; scenario < 7; ++scenario) {
     setup(H2_GIZCLAW_RESOURCE_CONTACTS, scenario == 2 ? 1 : 4);
     if (scenario != 2)

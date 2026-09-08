@@ -133,6 +133,21 @@ static h2_pal_result_t copy_snapshot(const h2_gizclaw_resource_snapshot_t *src,
   if (src->kind == H2_GIZCLAW_RESOURCE_POINTS)
     dst.data.points.account.updated_at =
         copy_text(mem, src->data.points.account.updated_at);
+  if (src->kind == H2_GIZCLAW_RESOURCE_APP_CONFIG) {
+    const h2_gizclaw_app_config_snapshot_t *a = &src->data.app_config;
+    h2_gizclaw_app_config_snapshot_t *b = &dst.data.app_config;
+    b->items = NULL;
+    if (a->count) {
+      b->items = h2_pal_mem_alloc(mem, a->count * sizeof(*b->items));
+      if (b->items != NULL)
+        for (size_t i = 0; i < a->count; ++i) {
+          b->items[i].key = copy_string(mem, a->items[i].key);
+          b->items[i].value = copy_text(mem, a->items[i].value);
+        }
+    }
+    b->runtime_profile_name = copy_string(mem, a->runtime_profile_name);
+    b->runtime_profile_revision = copy_string(mem, a->runtime_profile_revision);
+  }
   rc = h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
   if (rc == H2_PAL_OK)
     *out = dst;
@@ -147,7 +162,7 @@ h2_gizclaw_resource_create(const h2_gizclaw_resource_config_t *c,
   *out = NULL;
   if (c == NULL || c->service == NULL || c->mem == NULL || c->sync == NULL ||
       c->time == NULL || c->kind < H2_GIZCLAW_RESOURCE_CONTACTS ||
-      c->kind > H2_GIZCLAW_RESOURCE_GROUPS || c->max_items == 0u ||
+      c->kind > H2_GIZCLAW_RESOURCE_APP_CONFIG || c->max_items == 0u ||
       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_points_transaction_t) ||
       c->page_size == 0u || c->page_size > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
       c->storage_bytes == 0u)
@@ -309,6 +324,67 @@ static h2_pal_result_t list_all(h2_gizclaw_resource_t *r,
     if (following == NULL || following[0] == 0 || same(following, cursor))
       return H2_PAL_ERR_FORMAT;
     cursor = following;
+  }
+  return H2_PAL_ERR_FORMAT;
+}
+
+static h2_pal_result_t app_config_run(h2_gizclaw_resource_t *r,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_resource_snapshot_t *next) {
+  h2_gizclaw_resp_arena_t arena;
+  h2_pal_result_t rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK) return rc;
+  h2_gizclaw_app_config_snapshot_t result = {0};
+  result.items = h2_pal_mem_alloc(&arena.allocator,
+      r->config.max_items * sizeof(*result.items));
+  rc = h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
+  if (rc != H2_PAL_OK) return rc;
+  const char *cursor = NULL;
+  for (size_t page_index = 0; page_index <= r->config.max_items; ++page_index) {
+    uint32_t left;
+    rc = remaining(r, &left);
+    if (rc != H2_PAL_OK) return rc;
+    size_t limit = r->config.max_items - result.count;
+    if (limit == 0) limit = 1;
+    if (limit > r->config.page_size) limit = r->config.page_size;
+    h2_gizclaw_app_config_page_t page = {0};
+    rc = h2_gizclaw_rpc_app_config_list(r->config.service, str(cursor), limit,
+                                      left, storage, &page);
+    if (rc != H2_PAL_OK) return rc;
+    if (page.runtime_profile_name == NULL || page.runtime_profile_name[0] == 0 ||
+        page.runtime_profile_revision == NULL || page.runtime_profile_revision[0] == 0 ||
+        page.count > limit || (page.count && page.keys == NULL))
+      return H2_PAL_ERR_FORMAT;
+    if (page_index == 0) {
+      result.runtime_profile_name = page.runtime_profile_name;
+      result.runtime_profile_revision = page.runtime_profile_revision;
+    } else if (!same(result.runtime_profile_name, page.runtime_profile_name) ||
+               !same(result.runtime_profile_revision, page.runtime_profile_revision)) {
+      return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (page.count > r->config.max_items - result.count) return H2_PAL_ERR_NO_SPACE;
+    for (size_t i = 0; i < page.count; ++i) {
+      const char *key = page.keys[i];
+      if (key == NULL || key[0] == 0) return H2_PAL_ERR_FORMAT;
+      for (size_t j = 0; j < result.count; ++j)
+        if (same(result.items[j].key, key)) return H2_PAL_ERR_FORMAT;
+      rc = remaining(r, &left);
+      if (rc != H2_PAL_OK) return rc;
+      h2_gizclaw_app_config_value_t value = {0};
+      rc = h2_gizclaw_rpc_app_config_get(r->config.service, str(key), left, storage, &value);
+      if (rc != H2_PAL_OK) return rc;
+      if (!same(result.runtime_profile_name, value.runtime_profile_name) ||
+          !same(result.runtime_profile_revision, value.runtime_profile_revision))
+        return H2_PAL_ERR_INVALID_STATE;
+      result.items[result.count++] = (h2_gizclaw_app_config_entry_t){page.keys[i], value.value};
+    }
+    if (!page.has_next) {
+      next->data.app_config = result;
+      next->valid = true;
+      return H2_PAL_OK;
+    }
+    if (page.count == 0 || page.next_cursor == NULL || page.next_cursor[0] == 0 ||
+        same(cursor, page.next_cursor)) return H2_PAL_ERR_FORMAT;
+    cursor = page.next_cursor;
   }
   return H2_PAL_ERR_FORMAT;
 }
@@ -533,6 +609,8 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
   if (rc == H2_PAL_OK) {
     if (r->config.kind == H2_GIZCLAW_RESOURCE_PROFILE) {
       rc = profile_run(r, c, &next);
+    } else if (r->config.kind == H2_GIZCLAW_RESOURCE_APP_CONFIG) {
+      rc = app_config_run(r, &storage, &next);
     } else if (r->config.kind == H2_GIZCLAW_RESOURCE_POINTS) {
       rc = points_run(r, c->operation == H2_GIZCLAW_RESOURCE_LOAD_MORE,
                       &storage, &next);

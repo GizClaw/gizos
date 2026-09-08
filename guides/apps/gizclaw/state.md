@@ -59,11 +59,15 @@ ESP32/BK7258 的校准状态由读回的时间自身判定，不保存任何标�
 
 ## 通用资源状态
 
-Contact、个人资料、Points 和 FriendGroup 使用独立的 `h2_gizclaw_resource_t` 实例。每个实例只拥有一种资源，按需创建并借用 Service、PAL 和可选 Runtime；与 Conversation Session 分开分配和串行化，不让联系人加载阻塞 Workspace 的准备锁。同一 Service 上同种资源的 mutation 应统一经过它的 Resource。
+Contact、个人资料、Points、FriendGroup 和 AppConfig 使用独立的 `h2_gizclaw_resource_t` 实例。每个实例只拥有一种资源，按需创建并借用 Service、PAL 和可选 Runtime；与 Conversation Session 分开分配和串行化，不让联系人加载阻塞 Workspace 的准备锁。同一 Service 上同种资源的 mutation 应统一经过它的 Resource。
 
 Resource 在库内保存有界快照，公开读取深拷贝到调用方 storage。`valid` 区分有效空列表与未加载；`stale` 标记正在刷新、失败或断开后不能保证新鲜的数据；`busy`、`closed` 和 `last_error` 描述操作状态。`revision` 用于通知重新读取，`data_revision` 用于识别新提交的数据；两者都是本地计数，不能解释为服务端 revision。失败保留旧快照，关闭后仍可读到标记 stale 的旧数据。
 
 Contacts 和 Groups 刷新完整拉取有界列表，拒绝重复 identity、无效 cursor、超出容量和无限分页。联系人创建使用调用方提供的稳定 name，只有 Not Found 才创建，响应不确定时 get 同名资源并校验；修改和删除成功后重新加载完整列表。Profile 更新后 get 完整资料再提交，避免由页面合并两份字段。Points 保存余额和流水的独立结果；刷新替换第一页，加载更多使用库自己的游标并追加到有界列表。没有有效的新鲜列表时不允许追加；余额或列表单独成功可独立保留。
+
+AppConfig 对应 GizClaw 0.16.3 的只读 `server.app_config.list/get`，读取当前选中 RuntimeProfile 的配置。底层 `h2_gizclaw_req_create_app_config_list/get`、`h2_gizclaw_resp_parse_app_config_list/get` 与同步 `h2_gizclaw_rpc_app_config_list/get` 沿用统一请求和调用方 response storage。键遵循 1–63 字节、点分隔的小写 kebab-case；值最多 4096 字节，按 `value.data/len` 原样返回，空字符串与 Not Found 不同。库不解析 JSON，也不提供客户端写接口。
+
+使用 `H2_GIZCLAW_RESOURCE_APP_CONFIG` 创建 Resource，执行 `H2_GIZCLAW_RESOURCE_REFRESH` 后，从 `snapshot.data.app_config` 读取完整 `items[key, value]` 和服务端 `runtime_profile_name/revision`。刷新遍历所有分页并逐项 get，所有响应必须具有同一 Profile name/revision；版本变化、键消失、容量不足、期限耗尽或关闭均保留旧快照并标记 stale。成功刷新会整体替换快照，因此删除的键会消失，空配置也可以是 valid。`max_items`、`page_size`、`storage_bytes` 由消费者给定；storage 需容纳旧快照副本、分页结果和新值。该状态仅保存在内存，产品自行决定何时刷新、解释配置及是否持久化；不会自动订阅配置变化。
 
 执行发生在调用方 worker，不能从 Service worker 或 poll callback 调用。每次 execute 的 timeout 是所有 RPC 的单调时间总期限；同一 Resource 并发 execute 返回 BUSY。close 永久关闭 admission 并丢弃迟到结果，调用方先 close、stop Service，再 join worker 和 destroy Resource；重连新建实例。页面取消仅丢弃页面结果，不回滚已执行的服务器 mutation，资源快照可以继续更新。
 

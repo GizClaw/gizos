@@ -8,6 +8,13 @@
 extern "C" {
 #endif
 
+/** Owned text in caller response storage. len preserves embedded NUL bytes;
+ * data has an additional NUL terminator that is not included in len. */
+typedef struct h2_gizclaw_owned_text {
+  char *data;
+  size_t len;
+} h2_gizclaw_owned_text_t;
+
 typedef struct h2_gizclaw_client h2_gizclaw_client_t;
 
 /** Caller-owned storage for variable-sized parsed responses.

@@ -2,6 +2,7 @@
 #define H2_GIZCLAW_H
 
 #include "h2_gizclaw_api_key.h"
+#include "h2_gizclaw_app_config.h"
 #include "h2_gizclaw_debug.h"
 #include "h2_gizclaw_player.h"
 #include "h2_gizclaw_ota.h"
