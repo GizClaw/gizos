@@ -231,3 +231,10 @@ H2_GIZCLAW_API(h2_gizclaw_resource_execute)
 
 H2_GIZCLAW_API(h2_gizclaw_resource_close)
 H2_GIZCLAW_API(h2_gizclaw_ota_get_status)
+
+H2_GIZCLAW_API(h2_gizclaw_req_create_app_config_list)
+H2_GIZCLAW_API(h2_gizclaw_req_create_app_config_get)
+H2_GIZCLAW_API(h2_gizclaw_resp_parse_app_config_list)
+H2_GIZCLAW_API(h2_gizclaw_resp_parse_app_config_get)
+H2_GIZCLAW_API(h2_gizclaw_rpc_app_config_list)
+H2_GIZCLAW_API(h2_gizclaw_rpc_app_config_get)

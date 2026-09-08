@@ -13,12 +13,6 @@
 extern "C" {
 #endif
 
-/** Owned UTF-8 text returned by a Points operation. */
-typedef struct h2_gizclaw_owned_text {
-  char *data;
-  size_t len;
-} h2_gizclaw_owned_text_t;
-
 /** Server-authoritative Points account snapshot. */
 typedef struct h2_gizclaw_points_account {
   int64_t balance;
