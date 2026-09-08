@@ -2433,6 +2433,11 @@ static h2_runtime_t *device_test_runtime(h2_gizclaw_service_t *service,
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   return runtime;
 }
+/* The local playlist entries carry spans, so the tests need the same NUL
+ * terminated literal to span conversion an application writes. */
+static h2_gizclaw_str_t device_span(const char *s) {
+  return (h2_gizclaw_str_t){s, strlen(s)};
+}
 static void test_device_provider_pal_and_player(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -2486,6 +2491,15 @@ static void test_device_provider_pal_and_player(void) {
   assert(h2_gizclaw_player_playlist_snapshot(service, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_gizclaw_player_play_index(NULL, 0) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_ERR_INVALID_ARG);
+  static h2_gizclaw_player_playlist_entry_t entries[
+      H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1];
+  memset(entries, 0, sizeof(entries));
+  entries[0].url = device_span("https://example.test/local.ogg");
+  assert(h2_gizclaw_player_playlist_set(NULL, entries, 1) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_set(service, NULL, 1) == H2_PAL_ERR_INVALID_ARG);
+  /* A NULL array is only a mistake when it is supposed to carry items. */
+  assert(h2_gizclaw_player_playlist_set(service, NULL, 0) == H2_PAL_OK);
+  assert(h2_gizclaw_player_repeat_set(NULL, device_span("all")) == H2_PAL_ERR_INVALID_ARG);
   h2_gizclaw_rpc_provider_response_t response;
   /* Bypass the generated encoder to exercise an overlong wire string. */
   uint8_t overlong_sound[35] = {0x0a, 33};
@@ -2631,6 +2645,82 @@ static void test_device_provider_pal_and_player(void) {
     gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
   assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
   assert(!strcmp(queue.repeat, "off"));
+  /* The device must be able to write the queue itself, so "the user picked an
+   * album" reaches exactly the state a pushed playlist reaches. */
+  const uint32_t pushed_revision = queue.playlist_revision;
+  memset(entries, 0, sizeof(entries));
+  entries[0].url = device_span("https://example.test/local0.ogg");
+  entries[0].title = device_span("Local 0");
+  entries[0].source_ref = device_span("album:local");
+  entries[1].url = device_span("https://example.test/local1.ogg");
+  entries[1].title = device_span("Local 1");
+  assert(h2_gizclaw_player_playlist_set(service, entries, 2) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 2 && queue.playlist_revision != pushed_revision);
+  assert(queue.items[0].has_title && !strcmp(queue.items[0].title, "Local 0"));
+  assert(queue.items[1].has_title && !strcmp(queue.items[1].title, "Local 1"));
+  assert(queue.items[0].has_source_ref &&
+         !strcmp(queue.items[0].source_ref, "album:local"));
+  assert(!queue.items[1].has_source_ref && queue.items[1].source_ref[0] == 0);
+  /* The write is pure: nothing is selected and nothing starts on its own. */
+  assert(!queue.has_current_index);
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(!local.has_current_index && !strcmp(local.state, "stopped") &&
+         local.playlist_length == 2);
+  /* A URL the RPC would refuse is refused here too, and changes nothing. */
+  const uint32_t local_revision = queue.playlist_revision;
+  entries[1].url = device_span("http://example.test/plain.ogg");
+  assert(h2_gizclaw_player_playlist_set(service, entries, 2) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 2 && queue.playlist_revision == local_revision);
+  assert(!strcmp(queue.items[1].title, "Local 1"));
+  entries[1].url = device_span("https://example.test/local1.ogg");
+  /* Above the ceiling can never fit, so it is a caller mistake, not BUSY. */
+  for (unsigned i = 0; i <= H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS; ++i)
+    entries[i].url = device_span("https://example.test/bulk.ogg");
+  assert(h2_gizclaw_player_playlist_set(
+             service, entries, H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 2 && queue.playlist_revision == local_revision);
+  /* Exactly the ceiling is accepted, and an empty write clears the queue. */
+  assert(h2_gizclaw_player_playlist_set(
+             service, entries, H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS);
+  assert(h2_gizclaw_player_playlist_set(service, entries, 0) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 0 && !queue.has_current_index);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_ERR_INVALID_ARG);
+  /* The device picks the repeat mode through the same three values, so the
+   * library keeps owning end-of-track advance. */
+  assert(h2_gizclaw_player_repeat_set(service, device_span("all")) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "all"));
+  assert(h2_gizclaw_player_repeat_set(service, device_span("one")) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one"));
+  /* Anything else leaves the mode exactly as the last accepted value. */
+  assert(h2_gizclaw_player_repeat_set(service, device_span("mix")) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_repeat_set(service, device_span("random")) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_repeat_set(service, (h2_gizclaw_str_t){0}) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one"));
+  assert(h2_gizclaw_player_repeat_set(service, device_span("off")) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "off"));
+  /* Restore the pushed album locally: the device write must land the same
+   * four items the server pushed, which the rest of this case relies on. */
+  memset(entries, 0, sizeof(entries));
+  for (unsigned i = 0; i < 3; ++i) {
+    entries[i].url = device_span("https://example.test/track.ogg");
+    entries[i].title = device_span(i == 0 ? "Track 0" : i == 1 ? "Track 1" : "Track 2");
+  }
+  entries[3].url = device_span("https://example.test/bonus.ogg");
+  entries[3].title = device_span("Bonus");
+  assert(h2_gizclaw_player_playlist_set(service, entries, 4) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && !strcmp(queue.items[3].title, "Bonus"));
   /* Past the end is rejected before anything is touched. */
   assert(h2_gizclaw_player_play_index(service, 4) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
@@ -2648,6 +2738,16 @@ static void test_device_provider_pal_and_player(void) {
   assert(h2_gizclaw_player_play_index(service, 9) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
   assert(queue.has_current_index && queue.current_index == 1 && queue.item_count == 4);
+  /* Nor may a rejected local write: the playlist and the playing track both
+   * survive a request that never passes validation. */
+  const uint32_t playing_revision = queue.playlist_revision;
+  assert(h2_gizclaw_player_playlist_set(
+             service, entries, H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && queue.playlist_revision == playing_revision);
+  assert(queue.has_current_index && queue.current_index == 1);
+  assert(atomic_load(&state.downloading));
   assert(h2_gizclaw_player_stop(service) == H2_PAL_OK);
   for (unsigned i = 0; i < 3000; ++i) {
     if (!strcmp(device_player_status(service).state, "stopped")) break;
@@ -2721,6 +2821,13 @@ static void test_device_provider_pal_and_player(void) {
   assert(queue.item_count == 4 && !strcmp(queue.items[3].title, "Bonus"));
   assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_player_play_index(service, 4) == H2_PAL_ERR_INVALID_ARG);
+  /* A write once the Service is down is refused and leaves the list alone. */
+  assert(h2_gizclaw_player_playlist_set(service, entries, 2) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_playlist_set(service, entries, 0) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_repeat_set(service, device_span("all")) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_repeat_set(service, device_span("mix")) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && !strcmp(queue.repeat, "off"));
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
   h2_runtime_deinit(runtime);

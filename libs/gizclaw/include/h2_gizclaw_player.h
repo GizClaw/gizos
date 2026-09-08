@@ -43,6 +43,15 @@ typedef struct h2_gizclaw_player_playlist {
   /** off, one or all. */
   char repeat[5];
 } h2_gizclaw_player_playlist_t;
+/** One item a product queues locally. The URL is required and takes the same
+ * HTTPS Ogg/Opus form the RPC accepts; title and source_ref are optional and
+ * absent when len is zero. Spans rather than buffers: a 32-item array of the
+ * wire item would put 40 KB on the caller's stack. */
+typedef struct h2_gizclaw_player_playlist_entry {
+  h2_gizclaw_str_t url;
+  h2_gizclaw_str_t title;
+  h2_gizclaw_str_t source_ref;
+} h2_gizclaw_player_playlist_entry_t;
 /** Replace the playlist with one HTTPS Ogg/Opus URL and begin asynchronously.
  * Copies the URL before returning. OK means accepted, not playback completed.
  * Uses the same player, cancellation and telemetry as remote audio RPCs. */
@@ -53,6 +62,23 @@ h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
  * playlist length is INVALID_ARG and leaves playback untouched. */
 h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
                                              uint32_t index);
+/** Replace the playlist with a caller-owned array, the same way the remote
+ * client.device.audioplayer.playlist.set RPC does: everything is validated
+ * before the queue is touched, so a rejection preserves both the previous
+ * playlist and playback, and the revision moves only on success. A count of
+ * zero clears the playlist; a count above the ceiling is INVALID_ARG, since
+ * no later moment makes it fit. Copies every span before returning.
+ * Deliberately does not start playback: the write is pure on both paths, so a
+ * product that wants the album to begin follows it with play_index(0). */
+h2_pal_result_t h2_gizclaw_player_playlist_set(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_player_playlist_entry_t *items, uint32_t count);
+/** Select off, one or all, the values client.device.audioplayer.mode.set
+ * accepts; anything else is INVALID_ARG and leaves the mode as it was. The
+ * library owns end-of-track advance and looping, so a product picks the mode
+ * here instead of re-implementing "next track, wrap at the end". */
+h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
+                                             h2_gizclaw_str_t repeat);
 h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
                                              h2_gizclaw_player_status_t *out);
