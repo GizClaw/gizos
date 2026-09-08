@@ -74,6 +74,7 @@ api_reference(
         "//libs/pixa",
         "//libs/qrcode",
         "//libs/runtime",
+        "//libs/semver",
         "//libs/utils",
         "//projects/h2loader/libs/h2loader",
     ],
