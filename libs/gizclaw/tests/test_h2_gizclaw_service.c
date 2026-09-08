@@ -1351,7 +1351,7 @@ static void test_debug_set_request_paths(void) {
 }
 
 static void test_firmware_public_request_paths(void) {
-  for (unsigned mode = 0; mode < 13; ++mode) {
+  for (unsigned mode = 0; mode < 14; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
     const int32_t channel = mode == 1 ? 1000 : mode == 2 ? INT32_MAX : 3;
@@ -1369,6 +1369,13 @@ static void test_firmware_public_request_paths(void) {
     message.channel = params.channel;
     message.size = 123;
     message.has_description = mode != 12;
+    message.has_version = mode != 12;
+    strcpy(message.version, "1.2.3-beta.1+build.42");
+    if (mode == 2) {
+      memset(message.version, 'a', 128);
+      memcpy(message.version, "1.2.3-", 6);
+      message.version[128] = 0;
+    }
     memset(message.description, 'd', sizeof(message.description) - 1);
     memset(message.url, 'u', sizeof(message.url) - 1);
     memcpy(message.url, "https://", 8);
@@ -1388,6 +1395,15 @@ static void test_firmware_public_request_paths(void) {
                      &message));
     env.response_payload = payload;
     env.response_payload_len = encoded.bytes_written - (mode == 8 ? 1 : 0);
+    if (mode == 13) {
+      /* A 129-byte version exceeds the wire/public 128-byte capacity. */
+      size_t n = env.response_payload_len;
+      payload[n++] = 0x32;
+      payload[n++] = 0x81;
+      payload[n++] = 0x01;
+      memset(payload + n, 'a', 129);
+      env.response_payload_len = n + 129;
+    }
     if (mode == 11)
       env.response_payload_len = 0;
     env.rpc_remote_error = mode == 9;
@@ -1422,6 +1438,8 @@ static void test_firmware_public_request_paths(void) {
     if (expected == H2_PAL_OK) {
       assert(result.channel == channel && result.size == 123);
       assert(result.has_description == message.has_description);
+      assert(result.has_version == message.has_version);
+      assert(strcmp(result.version, message.has_version ? message.version : "") == 0);
       assert(memcmp(result.url, message.url, sizeof(result.url)) == 0);
       assert(memcmp(result.sha256, message.sha256, sizeof(result.sha256)) == 0);
       assert(strlen(result.description) ==

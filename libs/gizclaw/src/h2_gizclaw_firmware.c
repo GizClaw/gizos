@@ -54,13 +54,16 @@ h2_gizclaw_resp_parse_firmware_get(const h2_gizclaw_req_t *request,
           (c >= 'A' && c <= 'F')))
       return H2_PAL_ERR_FORMAT;
   }
-  _Static_assert(sizeof(out_firmware->url) == sizeof(message.url) &&
+  _Static_assert(sizeof(out_firmware->version) == sizeof(message.version) &&
+                     sizeof(out_firmware->url) == sizeof(message.url) &&
                      sizeof(out_firmware->description) ==
                          sizeof(message.description) &&
                      sizeof(out_firmware->sha256) == sizeof(message.sha256),
                  "Firmware wire and public text capacities must match");
   out_firmware->channel = (int32_t)message.channel;
   out_firmware->size = message.size;
+  out_firmware->has_version = message.has_version;
+  memcpy(out_firmware->version, message.version, sizeof(message.version));
   out_firmware->has_description = message.has_description;
   memcpy(out_firmware->description, message.description,
          sizeof(message.description));
