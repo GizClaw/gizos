@@ -156,6 +156,15 @@ static bool https_url(const char *s) {
   }
   return true;
 }
+/* Wire strings are fixed NUL-terminated buffers. A span that is empty, does
+ * not fit, or carries an embedded NUL is rejected instead of truncated. */
+static bool copy_span(char *dst, size_t cap, h2_gizclaw_str_t s) {
+  if (!s.data || !s.len || s.len >= cap || memchr(s.data, 0, s.len))
+    return false;
+  memcpy(dst, s.data, s.len);
+  dst[s.len] = 0;
+  return true;
+}
 static bool sha_valid(const char *s) {
   if (strlen(s) != 64)
     return false;
@@ -192,6 +201,53 @@ static void cancel_play_locked(h2_gizclaw_device_t *d) {
   changed(d);
 }
 static void response_complete(void *user, int result);
+/* Shared by client.device.audioplayer.playlist.set/.append and the local
+ * playlist write, so both get one validation and one revision bump. Called
+ * with the lock held: d->incoming is the single staging buffer and the RPC
+ * task must not race a product task for it. Everything that can fail is
+ * checked before the queue is touched, so a rejection preserves both the
+ * previous playlist and playback. */
+static int playlist_apply_locked(h2_gizclaw_device_t *d, bool append) {
+  for (size_t i = 0; i < d->incoming->items_count; ++i)
+    if (!https_url(d->incoming->items[i].url))
+      return H2_PAL_ERR_INVALID_ARG;
+  size_t offset = append ? d->playlist->items_count : 0;
+  if (offset + d->incoming->items_count > H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS)
+    return H2_PAL_ERR_BUSY;
+  if (!append) {
+    if (d->pending &&
+        d->pending != H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY)
+      return H2_PAL_ERR_BUSY;
+    cancel_play_locked(d);
+    d->status.has_current_index = false;
+    d->status.position_ms = 0;
+    d->status.has_duration_ms = false;
+    d->status.has_error_code = d->status.has_error_message = false;
+  }
+  memcpy(d->playlist->items + offset, d->incoming->items,
+         d->incoming->items_count * sizeof(d->incoming->items[0]));
+  d->playlist->items_count = (pb_size_t)(offset + d->incoming->items_count);
+  ++d->playlist->playlist_revision;
+  d->status.playlist_revision = d->playlist->playlist_revision;
+  d->status.playlist_length = d->playlist->items_count;
+  changed(d);
+  return H2_PAL_OK;
+}
+/* The one list of accepted repeat modes, shared by
+ * client.device.audioplayer.mode.set and the local setter so it cannot drift.
+ * Separate from the write because the local path, like play_index, rejects a
+ * bad argument before it looks at whether the Service is still up. */
+static bool repeat_valid(const char *repeat) {
+  return !strcmp(repeat, "off") || !strcmp(repeat, "one") ||
+         !strcmp(repeat, "all");
+}
+static int repeat_apply_locked(h2_gizclaw_device_t *d, const char *repeat) {
+  if (!repeat_valid(repeat))
+    return H2_PAL_ERR_INVALID_ARG;
+  strcpy(d->status.repeat, repeat);
+  changed(d);
+  return H2_PAL_OK;
+}
 static int player_rpc(h2_gizclaw_device_t *d, int method,
                       h2_gizclaw_rpc_bytes_t bytes,
                       h2_gizclaw_rpc_provider_response_t *out) {
@@ -217,43 +273,22 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
         return rc;
     }
   } else if (method == base + 2 || method == base + 3) {
+    bool append = method == base + 3;
+    /* The staging buffer is shared with the local playlist write, so decoding
+     * into it happens under the same lock as the swap. */
+    lock(d);
     memset(d->incoming, 0, sizeof(*d->incoming));
+    int rc = H2_PAL_OK;
     if (!decode(bytes,
                 gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest_fields,
-                d->incoming))
-      return H2_PAL_ERR_INVALID_ARG;
-    bool append = method == base + 3;
-    if (append && d->incoming->items_count == 0)
-      return H2_PAL_ERR_INVALID_ARG;
-    for (size_t i = 0; i < d->incoming->items_count; ++i)
-      if (!https_url(d->incoming->items[i].url))
-        return H2_PAL_ERR_INVALID_ARG;
-    lock(d);
-    size_t offset = append ? d->playlist->items_count : 0;
-    if (offset + d->incoming->items_count > 32) {
-      unlock(d);
-      return H2_PAL_ERR_BUSY;
-    }
-    if (!append) {
-      if (d->pending &&
-          d->pending != H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY) {
-        unlock(d);
-        return H2_PAL_ERR_BUSY;
-      }
-      cancel_play_locked(d);
-      d->status.has_current_index = false;
-      d->status.position_ms = 0;
-      d->status.has_duration_ms = false;
-      d->status.has_error_code = d->status.has_error_message = false;
-    }
-    memcpy(d->playlist->items + offset, d->incoming->items,
-           d->incoming->items_count * sizeof(d->incoming->items[0]));
-    d->playlist->items_count = (pb_size_t)(offset + d->incoming->items_count);
-    ++d->playlist->playlist_revision;
-    d->status.playlist_revision = d->playlist->playlist_revision;
-    d->status.playlist_length = d->playlist->items_count;
-    changed(d);
+                d->incoming) ||
+        (append && d->incoming->items_count == 0))
+      rc = H2_PAL_ERR_INVALID_ARG;
+    else
+      rc = playlist_apply_locked(d, append);
     unlock(d);
+    if (rc != H2_PAL_OK)
+      return rc;
   } else if (method == base + 4) {
     gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest_fields,
@@ -287,14 +322,13 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
     gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest request = {0};
     if (!decode(bytes,
                 gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields,
-                &request) ||
-        (strcmp(request.repeat, "off") && strcmp(request.repeat, "one") &&
-         strcmp(request.repeat, "all")))
+                &request))
       return H2_PAL_ERR_INVALID_ARG;
     lock(d);
-    strcpy(d->status.repeat, request.repeat);
-    changed(d);
+    int rc = repeat_apply_locked(d, request.repeat);
     unlock(d);
+    if (rc != H2_PAL_OK)
+      return rc;
   } else
     return H2_PAL_ERR_NOT_FOUND;
   return player_reply(d, out);
@@ -1476,6 +1510,100 @@ h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service) {
   unlock(d);
   return rc;
 }
+/* Same selection the client.device.audioplayer.play RPC performs: validate
+ * the index against the live playlist under the lock, then hand the worker
+ * the new current track. Rejection happens before anything is mutated, so a
+ * bad index cannot disturb the track already playing. */
+h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
+                                             uint32_t index) {
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  lock(d);
+  int rc = H2_PAL_OK;
+  if (index >= d->playlist->items_count)
+    rc = H2_PAL_ERR_INVALID_ARG;
+  else if (!d->task || atomic_load(&d->stopping))
+    rc = H2_PAL_ERR_CLOSED;
+  else if (d->pending)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    cancel_play_locked(d);
+    d->status.has_current_index = true;
+    d->status.current_index = index;
+    d->status.position_ms = 0;
+    d->status.has_duration_ms = false;
+    d->status.has_error_code = d->status.has_error_message = false;
+    strcpy(d->status.state, "buffering");
+    d->playing = true;
+    changed(d);
+  }
+  unlock(d);
+  return rc;
+}
+/* The device-side twin of client.device.audioplayer.playlist.set: the caller's
+ * spans are copied into the same staging buffer the RPC decodes into, under
+ * the lock that keeps the two paths apart, and the swap is the shared handler.
+ * A count that can never fit is INVALID_ARG rather than BUSY, since no later
+ * moment makes it fit. The write is pure, exactly as the RPC is: it clears the
+ * selection instead of starting a track, and play_index picks one. */
+h2_pal_result_t h2_gizclaw_player_playlist_set(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_player_playlist_entry_t *items, uint32_t count) {
+  if (!service || (count && !items) ||
+      count > H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist || !d->incoming)
+    return H2_PAL_ERR_UNSUPPORTED;
+  lock(d);
+  int rc = H2_PAL_OK;
+  if (!d->task || atomic_load(&d->stopping))
+    rc = H2_PAL_ERR_CLOSED;
+  else {
+    memset(d->incoming, 0, sizeof(*d->incoming));
+    for (uint32_t i = 0; i < count && rc == H2_PAL_OK; ++i) {
+      gizclaw_rpc_v1_AudioPlayerItem *item = &d->incoming->items[i];
+      item->has_title = items[i].title.len != 0;
+      item->has_source_ref = items[i].source_ref.len != 0;
+      if (!copy_span(item->url, sizeof(item->url), items[i].url) ||
+          (item->has_title &&
+           !copy_span(item->title, sizeof(item->title), items[i].title)) ||
+          (item->has_source_ref &&
+           !copy_span(item->source_ref, sizeof(item->source_ref),
+                      items[i].source_ref)))
+        rc = H2_PAL_ERR_INVALID_ARG;
+    }
+    if (rc == H2_PAL_OK) {
+      d->incoming->items_count = (pb_size_t)count;
+      rc = playlist_apply_locked(d, false);
+    }
+  }
+  unlock(d);
+  return rc;
+}
+/* Device-side client.device.audioplayer.mode.set. Kept on the shared handler
+ * so the accepted values cannot drift between the two callers, and so the
+ * library keeps owning end-of-track advance for both. */
+h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
+                                             h2_gizclaw_str_t repeat) {
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  char value[sizeof(d->status.repeat)];
+  if (!copy_span(value, sizeof(value), repeat) || !repeat_valid(value))
+    return H2_PAL_ERR_INVALID_ARG;
+  lock(d);
+  int rc = (!d->task || atomic_load(&d->stopping))
+               ? H2_PAL_ERR_CLOSED
+               : repeat_apply_locked(d, value);
+  unlock(d);
+  return rc;
+}
 h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
                                              h2_gizclaw_player_status_t *out) {
   if (!out)
@@ -1495,6 +1623,45 @@ h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
     strcpy(out->error_code, d->status.error_code);
   if (d->status.has_error_message)
     strcpy(out->error_message, d->status.error_message);
+  out->has_current_index = d->status.has_current_index;
+  out->current_index = d->status.current_index;
+  out->playlist_length = d->status.playlist_length;
+  out->playlist_revision = d->status.playlist_revision;
+  unlock(d);
+  return H2_PAL_OK;
+}
+/* The queue is device state, so the snapshot is folded under the same mutex
+ * the RPC provider uses; the caller then owns a detached copy and can redraw
+ * without holding the lock. The revision is copied alongside the items so a
+ * UI can skip the projection when nothing moved. */
+h2_pal_result_t h2_gizclaw_player_playlist_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_player_playlist_t *out) {
+  if (!out)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, sizeof(*out));
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  lock(d);
+  size_t count = d->playlist->items_count;
+  if (count > H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS)
+    count = H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS;
+  for (size_t i = 0; i < count; ++i) {
+    const gizclaw_rpc_v1_AudioPlayerItem *item = &d->playlist->items[i];
+    out->items[i].has_title = item->has_title;
+    if (item->has_title)
+      strcpy(out->items[i].title, item->title);
+    out->items[i].has_source_ref = item->has_source_ref;
+    if (item->has_source_ref)
+      strcpy(out->items[i].source_ref, item->source_ref);
+  }
+  out->item_count = (uint32_t)count;
+  out->has_current_index = d->status.has_current_index;
+  out->current_index = d->status.current_index;
+  out->playlist_revision = d->playlist->playlist_revision;
+  strcpy(out->repeat, d->status.repeat);
   unlock(d);
   return H2_PAL_OK;
 }

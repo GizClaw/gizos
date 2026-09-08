@@ -1,6 +1,7 @@
 #ifndef H2_GIZCLAW_RESOURCE_H
 #define H2_GIZCLAW_RESOURCE_H
 
+#include "h2_gizclaw_app_config.h"
 #include "h2_gizclaw_points.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_social.h"
@@ -16,6 +17,7 @@ typedef enum h2_gizclaw_resource_kind {
   H2_GIZCLAW_RESOURCE_PROFILE,
   H2_GIZCLAW_RESOURCE_POINTS,
   H2_GIZCLAW_RESOURCE_GROUPS,
+  H2_GIZCLAW_RESOURCE_APP_CONFIG,
 } h2_gizclaw_resource_kind_t;
 typedef enum h2_gizclaw_resource_operation {
   H2_GIZCLAW_RESOURCE_REFRESH = 0,
@@ -75,6 +77,7 @@ typedef struct h2_gizclaw_resource_snapshot {
       h2_gizclaw_points_transaction_page_t transactions;
     } points;
     h2_gizclaw_friend_group_page_t groups;
+    h2_gizclaw_app_config_snapshot_t app_config;
   } data;
 } h2_gizclaw_resource_snapshot_t;
 
@@ -101,6 +104,8 @@ h2_gizclaw_resource_snapshot(h2_gizclaw_resource_t *resource,
  * loads the complete bounded list. Points refresh replaces its first page;
  * LOAD_MORE appends using the owned cursor and requires a fresh valid list.
  * Mutations reload confirmed data; failures keep prior data marked stale.
+ * AppConfig supports REFRESH only: loads every key/value at one Profile
+ * name/revision, replacing the complete snapshot only on success.
  * Points may commit a successful balance or list independently.
  * No product defaults, filesystem access or optimistic updates are performed.
  */

@@ -12,7 +12,17 @@
 
 ### Quectel Modem
 
-`modem/quectel` 实现 Quectel modem 的 AT command、URC、call、GNSS、PPP 和状态处理，并输出 `h2_pal_modem_api_t`。Config 注入 transport callback、PAL sync、mem 和 system event API。
+`modem/quectel` 实现 Quectel modem 的 AT command、URC、call、GNSS、cell locate、PPP 和状态处理，并输出 `h2_pal_modem_api_t`。Config 注入 transport callback、PAL sync、mem 和 system event API。
+
+#### Cell Locate
+
+Cell locate 是 QuecLocator 基站定位，与卫星定位是两条独立路径：它不依赖卫星信号，室内和冷启动也能返回粗略位置，代价是每次查询都要经 packet data 访问运营商定位服务。Provider 用 `AT+QLBSCFG="token",<token>` 配置身份、`AT+QLBS` 发起单次查询，结果通过 `h2_pal_modem_cell_locate()` 返回 `h2_pal_modem_cell_location_t`。`valid = 0` 表示服务未能定位，是正常返回而非错误。何时查询、缓存多久、如何与 GNSS fix 融合都属于产品策略，不在 PAL 或 provider 内决定。
+
+Token 由集成方通过 `h2_quectel_modem_config_t` 的 `cell_locate_token` 注入，字符串是借用的，生命周期必须覆盖 modem instance；`cell_locate_timeout_ms` 控制单次查询超时，0 取默认 60 s。Token 为 NULL 或空串时 `cell_locate` 不装配进 vtable，`get_capabilities` 不置 `H2_PAL_MODEM_CAPABILITY_CELL_LOCATE`，调用返回 `H2_PAL_ERR_UNSUPPORTED`，模组上不会出现任何 QLBS 命令。含引号、逗号或换行、或超过 127 字节的 token 会让 `h2_quectel_modem_init` 返回 `H2_PAL_ERR_INVALID_ARG`。
+
+前置条件是 packet data 已激活，provider 不会自行拉起 PPP；数据不可用时返回 `H2_PAL_ERR_INVALID_STATE`。Token 在首次 `cell_locate` 时惰性下发一次，`close` 后重置，因此没有用到基站定位的产品完全不会发出 token。
+
+Token 是企业身份凭据：仓库不提供默认值，也不接受把真实 token 写进代码、测试或注释。除了必须携带它的那一条 QLBSCFG 命令外，token 不进入 modem state、response buffer、错误信息和任何日志输出；模组回显 token 时该次调用按 `H2_PAL_ERR_IO` 失败。返回的坐标同样不写入日志。
 
 ### QMI8658
 

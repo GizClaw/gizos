@@ -14,6 +14,9 @@ extern "C" {
 
 #define H2_QUECTEL_LINE_MAX 192u
 #define H2_QUECTEL_RESPONSE_MAX 4u
+/* QuecLocator accepts at most 127 bytes of token. */
+#define H2_QUECTEL_CELL_LOCATE_TOKEN_MAX 127u
+#define H2_QUECTEL_CELL_LOCATE_TIMEOUT_MS 60000u
 
 typedef struct h2_quectel_modem h2_quectel_modem_t;
 
@@ -53,6 +56,14 @@ typedef struct h2_quectel_modem_config {
     uint32_t capabilities;
     uint32_t command_timeout_ms;
     uint32_t io_timeout_ms;
+    /* QuecLocator identity token supplied by the integrator. Borrowed: the
+     * string must outlive the modem instance. NULL or empty disables cell
+     * locate entirely, so no token ever reaches the modem. The provider never
+     * copies, logs or reports the value. */
+    const char *cell_locate_token;
+    /* Timeout for one cell locate round trip, 0 selects
+     * H2_QUECTEL_CELL_LOCATE_TIMEOUT_MS. */
+    uint32_t cell_locate_timeout_ms;
 } h2_quectel_modem_config_t;
 
 struct h2_quectel_modem {
@@ -61,6 +72,7 @@ struct h2_quectel_modem {
     h2_pal_mutex_t *lock;
     uint8_t prepared;
     uint8_t opened;
+    uint8_t cell_locate_token_sent;
     uint32_t capabilities;
     int32_t incoming_call_id;
     int32_t next_incoming_call_id;

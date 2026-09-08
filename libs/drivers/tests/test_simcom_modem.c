@@ -229,6 +229,15 @@ static void test_identity_status_data_call_and_gnss(void) {
                             H2_PAL_MODEM_CAPABILITY_CALL |
                             H2_PAL_MODEM_CAPABILITY_GNSS));
 
+    /* SIMCom has no equivalent of the operator cell location service. */
+    h2_pal_modem_cell_location_t location;
+    memset(&location, 0xAA, sizeof(location));
+    assert(h2_pal_modem_cell_locate(api, 0u, &location) == H2_PAL_ERR_UNSUPPORTED);
+    assert(location.valid == 0u);
+    assert(location.latitude_e7 == 0);
+    assert(location.longitude_e7 == 0);
+    assert(location.accuracy_m == 0u);
+
     h2_pal_modem_identity_t identity;
     assert(h2_pal_modem_get_identity(api, &identity) == H2_PAL_OK);
     assert(strcmp(identity.manufacturer, "INCORPORATED") == 0);

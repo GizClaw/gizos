@@ -1,4 +1,5 @@
 #include "gzc_common.h"
+#include "gzc_telemetry.h"
 #include "h2_runtime.h"
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_gizclaw_device_internal.h"
@@ -39,6 +40,7 @@
 #include <sched.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Internal RPC test vtables include the optional SDK completion hook. */
@@ -2433,6 +2435,11 @@ static h2_runtime_t *device_test_runtime(h2_gizclaw_service_t *service,
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   return runtime;
 }
+/* The local playlist entries carry spans, so the tests need the same NUL
+ * terminated literal to span conversion an application writes. */
+static h2_gizclaw_str_t device_span(const char *s) {
+  return (h2_gizclaw_str_t){s, strlen(s)};
+}
 static void test_device_provider_pal_and_player(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -2475,6 +2482,26 @@ static void test_device_provider_pal_and_player(void) {
   assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  /* Nothing queued yet: an empty playlist must be reported as such, with no
+   * current index invented, and every new entry point rejects NULL. */
+  static h2_gizclaw_player_playlist_t queue;
+  memset(&queue, 0, sizeof(queue));
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 0 && !queue.has_current_index);
+  assert(queue.playlist_revision == 0 && !strcmp(queue.repeat, "off"));
+  assert(h2_gizclaw_player_playlist_snapshot(NULL, &queue) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_play_index(NULL, 0) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_ERR_INVALID_ARG);
+  static h2_gizclaw_player_playlist_entry_t entries[
+      H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1];
+  memset(entries, 0, sizeof(entries));
+  entries[0].url = device_span("https://example.test/local.ogg");
+  assert(h2_gizclaw_player_playlist_set(NULL, entries, 1) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_set(service, NULL, 1) == H2_PAL_ERR_INVALID_ARG);
+  /* A NULL array is only a mistake when it is supposed to carry items. */
+  assert(h2_gizclaw_player_playlist_set(service, NULL, 0) == H2_PAL_OK);
+  assert(h2_gizclaw_player_repeat_set(NULL, device_span("all")) == H2_PAL_ERR_INVALID_ARG);
   h2_gizclaw_rpc_provider_response_t response;
   /* Bypass the generated encoder to exercise an overlong wire string. */
   uint8_t overlong_sound[35] = {0x0a, 33};
@@ -2562,6 +2589,174 @@ static void test_device_provider_pal_and_player(void) {
   assert(!strcmp(local.state, "stopped"));
   assert(h2_gizclaw_ota_start(service, 3, (h2_gizclaw_str_t){0}) == H2_PAL_ERR_UNSUPPORTED);
   state.block_download = true; atomic_store(&state.downloading, false);
+  /* A pushed album must be readable without a round trip, and selectable. */
+  memset(&playlist, 0, sizeof(playlist)); playlist.items_count = 3;
+  for (unsigned i = 0; i < 3; ++i) {
+    (void)snprintf(playlist.items[i].url, sizeof(playlist.items[i].url),
+                   "https://example.test/track%u.ogg", i);
+    playlist.items[i].has_title = true;
+    (void)snprintf(playlist.items[i].title, sizeof(playlist.items[i].title),
+                   "Track %u", i);
+  }
+  playlist.items[0].has_source_ref = true;
+  strcpy(playlist.items[0].source_ref, "album:1");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest_fields, &playlist, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 3 && !queue.has_current_index);
+  assert(queue.items[0].has_title && !strcmp(queue.items[0].title, "Track 0"));
+  assert(queue.items[2].has_title && !strcmp(queue.items[2].title, "Track 2"));
+  assert(queue.items[0].has_source_ref && !strcmp(queue.items[0].source_ref, "album:1"));
+  assert(!queue.items[1].has_source_ref && queue.items[1].source_ref[0] == 0);
+  const uint32_t set_revision = queue.playlist_revision;
+  assert(set_revision != 0);
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(!local.has_current_index && local.playlist_length == 3 &&
+         local.playlist_revision == set_revision);
+  static gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistAppendRequest extra;
+  memset(&extra, 0, sizeof(extra)); extra.items_count = 1;
+  strcpy(extra.items[0].url, "https://example.test/bonus.ogg");
+  extra.items[0].has_title = true; strcpy(extra.items[0].title, "Bonus");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistAppendRequest_fields, &extra, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && queue.playlist_revision != set_revision);
+  assert(!strcmp(queue.items[0].title, "Track 0") && !strcmp(queue.items[3].title, "Bonus"));
+  assert(!queue.has_current_index);
+  /* The snapshot must follow the repeat mode the server selects, not stay at
+   * the value it was initialised with. */
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest mode = {0};
+  strcpy(mode.repeat, "all");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "all"));
+  strcpy(mode.repeat, "one");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one"));
+  /* A rejected mode must leave the reported mode alone. */
+  strcpy(mode.repeat, "mix");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one") && queue.item_count == 4);
+  strcpy(mode.repeat, "off");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "off"));
+  /* The device must be able to write the queue itself, so "the user picked an
+   * album" reaches exactly the state a pushed playlist reaches. */
+  const uint32_t pushed_revision = queue.playlist_revision;
+  memset(entries, 0, sizeof(entries));
+  entries[0].url = device_span("https://example.test/local0.ogg");
+  entries[0].title = device_span("Local 0");
+  entries[0].source_ref = device_span("album:local");
+  entries[1].url = device_span("https://example.test/local1.ogg");
+  entries[1].title = device_span("Local 1");
+  assert(h2_gizclaw_player_playlist_set(service, entries, 2) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 2 && queue.playlist_revision != pushed_revision);
+  assert(queue.items[0].has_title && !strcmp(queue.items[0].title, "Local 0"));
+  assert(queue.items[1].has_title && !strcmp(queue.items[1].title, "Local 1"));
+  assert(queue.items[0].has_source_ref &&
+         !strcmp(queue.items[0].source_ref, "album:local"));
+  assert(!queue.items[1].has_source_ref && queue.items[1].source_ref[0] == 0);
+  /* The write is pure: nothing is selected and nothing starts on its own. */
+  assert(!queue.has_current_index);
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(!local.has_current_index && !strcmp(local.state, "stopped") &&
+         local.playlist_length == 2);
+  /* A URL the RPC would refuse is refused here too, and changes nothing. */
+  const uint32_t local_revision = queue.playlist_revision;
+  entries[1].url = device_span("http://example.test/plain.ogg");
+  assert(h2_gizclaw_player_playlist_set(service, entries, 2) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 2 && queue.playlist_revision == local_revision);
+  assert(!strcmp(queue.items[1].title, "Local 1"));
+  entries[1].url = device_span("https://example.test/local1.ogg");
+  /* Above the ceiling can never fit, so it is a caller mistake, not BUSY. */
+  for (unsigned i = 0; i <= H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS; ++i)
+    entries[i].url = device_span("https://example.test/bulk.ogg");
+  assert(h2_gizclaw_player_playlist_set(
+             service, entries, H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 2 && queue.playlist_revision == local_revision);
+  /* Exactly the ceiling is accepted, and an empty write clears the queue. */
+  assert(h2_gizclaw_player_playlist_set(
+             service, entries, H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS);
+  assert(h2_gizclaw_player_playlist_set(service, entries, 0) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 0 && !queue.has_current_index);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_ERR_INVALID_ARG);
+  /* The device picks the repeat mode through the same three values, so the
+   * library keeps owning end-of-track advance. */
+  assert(h2_gizclaw_player_repeat_set(service, device_span("all")) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "all"));
+  assert(h2_gizclaw_player_repeat_set(service, device_span("one")) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one"));
+  /* Anything else leaves the mode exactly as the last accepted value. */
+  assert(h2_gizclaw_player_repeat_set(service, device_span("mix")) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_repeat_set(service, device_span("random")) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_repeat_set(service, (h2_gizclaw_str_t){0}) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one"));
+  assert(h2_gizclaw_player_repeat_set(service, device_span("off")) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "off"));
+  /* Restore the pushed album locally: the device write must land the same
+   * four items the server pushed, which the rest of this case relies on. */
+  memset(entries, 0, sizeof(entries));
+  for (unsigned i = 0; i < 3; ++i) {
+    entries[i].url = device_span("https://example.test/track.ogg");
+    entries[i].title = device_span(i == 0 ? "Track 0" : i == 1 ? "Track 1" : "Track 2");
+  }
+  entries[3].url = device_span("https://example.test/bonus.ogg");
+  entries[3].title = device_span("Bonus");
+  assert(h2_gizclaw_player_playlist_set(service, entries, 4) == H2_PAL_OK);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && !strcmp(queue.items[3].title, "Bonus"));
+  /* Past the end is rejected before anything is touched. */
+  assert(h2_gizclaw_player_play_index(service, 4) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(!local.has_current_index && !strcmp(local.state, "stopped"));
+  assert(h2_gizclaw_player_play_index(service, 1) == H2_PAL_OK);
+  assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+  assert(local.has_current_index && local.current_index == 1 &&
+         local.playlist_length == 4);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.has_current_index && queue.current_index == 1);
+  for (unsigned i = 0; i < 3000 && !atomic_load(&state.downloading); ++i)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(atomic_load(&state.downloading));
+  /* Rejecting a bad index must not disturb the track already selected. */
+  assert(h2_gizclaw_player_play_index(service, 9) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.has_current_index && queue.current_index == 1 && queue.item_count == 4);
+  /* Nor may a rejected local write: the playlist and the playing track both
+   * survive a request that never passes validation. */
+  const uint32_t playing_revision = queue.playlist_revision;
+  assert(h2_gizclaw_player_playlist_set(
+             service, entries, H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && queue.playlist_revision == playing_revision);
+  assert(queue.has_current_index && queue.current_index == 1);
+  assert(atomic_load(&state.downloading));
+  assert(h2_gizclaw_player_stop(service) == H2_PAL_OK);
+  for (unsigned i = 0; i < 3000; ++i) {
+    if (!strcmp(device_player_status(service).state, "stopped")) break;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(!strcmp(device_player_status(service).state, "stopped"));
+  atomic_store(&state.downloading, false);
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY,
     gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest_fields, &play, &response) == 0);
   assert(response.on_complete); response.on_complete(response.complete_user, H2_PAL_OK);
@@ -2622,6 +2817,19 @@ static void test_device_provider_pal_and_player(void) {
   assert((int64_t)(state.reboot_at_ms - completed_ms) >= 250);
   assert(atomic_load(&state.reboot_requests) == 1);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  /* A stopping/stopped Service still answers the snapshot from its own
+   * state, but refuses to start anything; a UI can keep the list on screen. */
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && !strcmp(queue.items[3].title, "Bonus"));
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_play_index(service, 4) == H2_PAL_ERR_INVALID_ARG);
+  /* A write once the Service is down is refused and leaves the list alone. */
+  assert(h2_gizclaw_player_playlist_set(service, entries, 2) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_playlist_set(service, entries, 0) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_repeat_set(service, device_span("all")) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_player_repeat_set(service, device_span("mix")) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(queue.item_count == 4 && !strcmp(queue.repeat, "off"));
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
   h2_runtime_deinit(runtime);
@@ -3075,6 +3283,279 @@ static void test_req_telemetry_copy_and_backpressure(void) {
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     h2_gizclaw_test_set_telemetry_send(NULL, NULL);
   }
+}
+
+/* Cellular identity fixtures. They must reach the wire byte for byte and never
+ * reach h2_pal_log or an operation trace. */
+#define TELEMETRY_IMEI "353490069873319"
+#define TELEMETRY_IMSI "460001234567"
+
+typedef struct telemetry_identity_capture {
+  unsigned calls;
+  bool borrowed_copy;
+  bool encoded;
+  bool identity_absent;
+} telemetry_identity_capture_t;
+
+static void *telemetry_platform_malloc(void *user, size_t size) {
+  (void)user;
+  return malloc(size);
+}
+static void *telemetry_platform_realloc(void *user, void *ptr, size_t size) {
+  (void)user;
+  return realloc(ptr, size);
+}
+static void telemetry_platform_free(void *user, void *ptr) {
+  (void)user;
+  free(ptr);
+}
+static int64_t telemetry_platform_time(void *user) {
+  (void)user;
+  return 0;
+}
+static int telemetry_platform_random(void *user, uint8_t *out, size_t len) {
+  (void)user;
+  memset(out, 0, len);
+  return GZC_OK;
+}
+static void telemetry_platform_log(void *user, gzc_log_level_t level,
+                                   gzc_str_t message) {
+  (void)user;
+  (void)level;
+  (void)message;
+}
+static const gzc_platform_t telemetry_platform = {
+    NULL,
+    telemetry_platform_malloc,
+    telemetry_platform_realloc,
+    telemetry_platform_free,
+    telemetry_platform_time,
+    telemetry_platform_time,
+    telemetry_platform_random,
+    telemetry_platform_log,
+};
+
+static bool telemetry_bytes_contain(const uint8_t *data, size_t len,
+                                    const uint8_t *needle, size_t needle_len) {
+  if (needle_len > len)
+    return false;
+  for (size_t offset = 0u; offset + needle_len <= len; ++offset) {
+    if (memcmp(data + offset, needle, needle_len) == 0)
+      return true;
+  }
+  return false;
+}
+
+/* NetworkObservation carries imei on tag 6 and imsi on tag 7, both LEN. */
+static bool telemetry_encodes_identity(const gzc_telemetry_frame_t *frame,
+                                       bool expected) {
+  uint8_t imei_field[2u + sizeof(TELEMETRY_IMEI) - 1u] = {
+      0x32u, (uint8_t)(sizeof(TELEMETRY_IMEI) - 1u)};
+  uint8_t imsi_field[2u + sizeof(TELEMETRY_IMSI) - 1u] = {
+      0x3au, (uint8_t)(sizeof(TELEMETRY_IMSI) - 1u)};
+  memcpy(imei_field + 2, TELEMETRY_IMEI, sizeof(TELEMETRY_IMEI) - 1u);
+  memcpy(imsi_field + 2, TELEMETRY_IMSI, sizeof(TELEMETRY_IMSI) - 1u);
+  gzc_buf_t payload;
+  gzc_buf_init(&payload);
+  const bool ok =
+      gzc_telemetry_encode_frame(frame, &telemetry_platform, &payload) == GZC_OK;
+  const bool found =
+      ok && telemetry_bytes_contain(payload.data, payload.len, imei_field,
+                                    sizeof(imei_field)) &&
+      telemetry_bytes_contain(payload.data, payload.len, imsi_field,
+                              sizeof(imsi_field));
+  gzc_buf_free(&payload, &telemetry_platform);
+  return ok && found == expected;
+}
+
+static int telemetry_identity_send(void *user,
+                                   const gzc_telemetry_frame_t *frame) {
+  telemetry_identity_capture_t *capture = user;
+  ++capture->calls;
+  const gzc_telemetry_network_t *network = &frame->observations[0].network;
+  if (capture->identity_absent) {
+    capture->borrowed_copy = !network->has_imei && !network->has_imsi;
+    capture->encoded = telemetry_encodes_identity(frame, false);
+    return GZC_OK;
+  }
+  capture->borrowed_copy =
+      frame->observation_count == 1u &&
+      frame->observations[0].kind == GZC_TELEMETRY_OBSERVATION_NETWORK &&
+      network->has_imei &&
+      network->imei.len == sizeof(TELEMETRY_IMEI) - 1u &&
+      memcmp(network->imei.data, TELEMETRY_IMEI,
+             sizeof(TELEMETRY_IMEI) - 1u) == 0 &&
+      network->has_imsi &&
+      network->imsi.len == sizeof(TELEMETRY_IMSI) - 1u &&
+      memcmp(network->imsi.data, TELEMETRY_IMSI,
+             sizeof(TELEMETRY_IMSI) - 1u) == 0;
+  capture->encoded = telemetry_encodes_identity(frame, true);
+  return GZC_OK;
+}
+
+typedef struct telemetry_log_capture {
+  unsigned calls;
+  bool leaked;
+} telemetry_log_capture_t;
+static int telemetry_capture_log(void *user, h2_pal_log_level_t level,
+                                 const char *scope, const char *message) {
+  telemetry_log_capture_t *capture = user;
+  (void)level;
+  (void)scope;
+  ++capture->calls;
+  if (strstr(message, TELEMETRY_IMEI) || strstr(message, TELEMETRY_IMSI))
+    capture->leaked = true;
+  return H2_PAL_OK;
+}
+
+static void telemetry_identity_reject(h2_gizclaw_service_t *service,
+                                      const h2_gizclaw_telemetry_network_t *network) {
+  const h2_gizclaw_telemetry_observation_t observation = {
+      .kind = H2_GIZCLAW_TELEMETRY_NETWORK, .value.network = *network};
+  const h2_gizclaw_telemetry_frame_t frame = {
+      .sequence = 7u, .observations = &observation, .observation_count = 1u};
+  h2_gizclaw_req_t *request = (h2_gizclaw_req_t *)1;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 1u, &frame, 30u,
+                                              &request) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(request == NULL);
+}
+
+static void test_req_telemetry_network_identity(void) {
+  static const h2_pal_time_vtable_t vtable = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  const h2_pal_time_api_t time = {.user = &env, .vtable = &vtable};
+  telemetry_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write = telemetry_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  service->client_config.time = &time;
+  service->client_config.log = &log;
+  env.rpc_result = H2_PAL_OK;
+  telemetry_identity_capture_t capture = {0};
+  h2_gizclaw_test_set_telemetry_send(telemetry_identity_send, &capture);
+
+  char rat[] = "lte";
+  char imei[] = TELEMETRY_IMEI;
+  char imsi[] = TELEMETRY_IMSI;
+  h2_gizclaw_telemetry_observation_t observation = {
+      .kind = H2_GIZCLAW_TELEMETRY_NETWORK,
+      .value.network = {.has_rat = true,
+                        .rat = {rat, 3u},
+                        .has_imei = true,
+                        .imei = {imei, sizeof(imei) - 1u},
+                        .has_imsi = true,
+                        .imsi = {imsi, sizeof(imsi) - 1u}},
+  };
+  const h2_gizclaw_telemetry_frame_t frame = {
+      .sequence = 7u, .observations = &observation, .observation_count = 1u};
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 1u, &frame, 30u,
+                                              &request) == H2_PAL_OK);
+  /* The request owns its copy, so mutating the borrowed spans changes nothing. */
+  imei[0] = 'X';
+  imsi[0] = 'X';
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+  assert(h2_gizclaw_resp_parse_telemetry_send(request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  assert(capture.calls == 1u && capture.borrowed_copy && capture.encoded);
+  imei[0] = TELEMETRY_IMEI[0];
+  imsi[0] = TELEMETRY_IMSI[0];
+
+  /* An empty span is the same as an unset field: nothing is encoded. */
+  capture = (telemetry_identity_capture_t){.identity_absent = true};
+  observation.value.network.imei = (h2_gizclaw_str_t){0};
+  observation.value.network.imsi = (h2_gizclaw_str_t){0};
+  assert(h2_gizclaw_rpc_telemetry_send(service, &frame, 30u) == H2_PAL_OK);
+  assert(capture.calls == 1u && capture.borrowed_copy && capture.encoded);
+
+  h2_gizclaw_telemetry_network_t network = {
+      .has_rat = true,
+      .rat = {rat, 3u},
+      .has_imei = true,
+      .imei = {imei, sizeof(imei) - 1u},
+  };
+  /* 14 digits, 16 digits and a non-digit are all rejected before the wire.
+   * The overlength spans are all-digit buffers, so only the length check can
+   * reject them. */
+  char imei_long[] = TELEMETRY_IMEI "0";
+  char imsi_long[] = TELEMETRY_IMSI "0000";
+  network.imei.len = sizeof(imei) - 2u;
+  telemetry_identity_reject(service, &network);
+  network.imei = (h2_gizclaw_str_t){imei_long, sizeof(imei_long) - 1u};
+  telemetry_identity_reject(service, &network);
+  network.imei = (h2_gizclaw_str_t){imei, sizeof(imei) - 1u};
+  imei[7] = 'A';
+  telemetry_identity_reject(service, &network);
+  imei[7] = TELEMETRY_IMEI[7];
+  /* imsi accepts 6 to 15 digits and rejects anything shorter or longer. */
+  network.has_imei = false;
+  network.has_imsi = true;
+  network.imsi = (h2_gizclaw_str_t){imsi, 5u};
+  telemetry_identity_reject(service, &network);
+  network.imsi = (h2_gizclaw_str_t){imsi_long, sizeof(imsi_long) - 1u};
+  telemetry_identity_reject(service, &network);
+  /* The 6 and 15 digit ends of the imsi range are both accepted. */
+  capture = (telemetry_identity_capture_t){.identity_absent = true};
+  {
+    const h2_gizclaw_telemetry_observation_t bounds[2] = {
+        {.kind = H2_GIZCLAW_TELEMETRY_NETWORK,
+         .value.network = {.has_rat = true,
+                           .rat = {rat, 3u},
+                           .has_imsi = true,
+                           .imsi = {imsi_long, 6u}}},
+        {.kind = H2_GIZCLAW_TELEMETRY_NETWORK,
+         .value.network = {.has_rat = true,
+                           .rat = {rat, 3u},
+                           .has_imsi = true,
+                           .imsi = {imsi_long, 15u}}},
+    };
+    for (size_t i = 0u; i < 2u; ++i) {
+      const h2_gizclaw_telemetry_frame_t bound_frame = {
+          .sequence = 7u, .observations = &bounds[i], .observation_count = 1u};
+      assert(h2_gizclaw_rpc_telemetry_send(service, &bound_frame, 30u) ==
+             H2_PAL_OK);
+    }
+    assert(capture.calls == 2u);
+  }
+  network.imsi = (h2_gizclaw_str_t){imsi, 6u};
+  imsi[3] = '-';
+  telemetry_identity_reject(service, &network);
+  imsi[3] = TELEMETRY_IMSI[3];
+  /* Wi-Fi has no subscriber identity, whatever the case of the RAT token. */
+  network.has_imei = true;
+  network.imei = (h2_gizclaw_str_t){imei, sizeof(imei) - 1u};
+  network.imsi = (h2_gizclaw_str_t){imsi, sizeof(imsi) - 1u};
+  char wifi[] = "WiFi";
+  network.rat = (h2_gizclaw_str_t){wifi, 4u};
+  telemetry_identity_reject(service, &network);
+  network.has_imei = false;
+  telemetry_identity_reject(service, &network);
+  network.has_imsi = false;
+  network.has_connected = true;
+  {
+    /* Without an identity the same Wi-Fi observation still encodes. */
+    const h2_gizclaw_telemetry_observation_t wifi_observation = {
+        .kind = H2_GIZCLAW_TELEMETRY_NETWORK, .value.network = network};
+    const h2_gizclaw_telemetry_frame_t wifi_frame = {
+        .sequence = 7u,
+        .observations = &wifi_observation,
+        .observation_count = 1u};
+    capture = (telemetry_identity_capture_t){.identity_absent = true};
+    assert(h2_gizclaw_rpc_telemetry_send(service, &wifi_frame, 30u) ==
+           H2_PAL_OK);
+    assert(capture.calls == 1u && capture.borrowed_copy && capture.encoded);
+  }
+
+  assert(log_capture.calls > 0u && !log_capture.leaked);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
 }
 
 static void test_req_point_storage_and_limits(void) {
@@ -9991,6 +10472,7 @@ int main(int argc, char **argv) {
   test_ota_status_before_stage_failure();
   test_ota_status_successful_stage();
   test_req_telemetry_copy_and_backpressure();
+  test_req_telemetry_network_identity();
   test_req_point_storage_and_limits();
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);

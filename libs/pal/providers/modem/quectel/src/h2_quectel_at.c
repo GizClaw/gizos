@@ -213,21 +213,40 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
     return H2_PAL_ERR_TIMEOUT;
 }
 
-h2_pal_result_t h2_quectel_at_exchange(
+h2_pal_result_t h2_quectel_at_exchange_timeout(
     h2_quectel_modem_t *modem,
     const char *cmd,
     h2_quectel_response_t *response,
-    int allow_connect) {
+    int allow_connect,
+    uint32_t timeout_ms) {
     h2_pal_result_t rc = qlock(modem);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    /* The timeouts live in the config the exchange reads, so they are swapped
+     * under the AT lock and restored before another command can observe them. */
+    const uint32_t saved_command_timeout_ms = modem->config.command_timeout_ms;
+    const uint32_t saved_io_timeout_ms = modem->config.io_timeout_ms;
+    if (timeout_ms != 0u) {
+        modem->config.command_timeout_ms = timeout_ms;
+        modem->config.io_timeout_ms = timeout_ms;
     }
     if (modem->config.flush != NULL) {
         (void)modem->config.flush(modem->config.transport_user);
     }
     rc = h2_quectel_at_exchange_locked(modem, cmd, response, allow_connect);
+    modem->config.command_timeout_ms = saved_command_timeout_ms;
+    modem->config.io_timeout_ms = saved_io_timeout_ms;
     qunlock(modem);
     return rc;
+}
+
+h2_pal_result_t h2_quectel_at_exchange(
+    h2_quectel_modem_t *modem,
+    const char *cmd,
+    h2_quectel_response_t *response,
+    int allow_connect) {
+    return h2_quectel_at_exchange_timeout(modem, cmd, response, allow_connect, 0u);
 }
 
 const char *h2_quectel_response_find(const h2_quectel_response_t *response, const char *prefix) {

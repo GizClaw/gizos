@@ -6,7 +6,13 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 ## 本地在线音乐播放器
 
-`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus decoder，解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`stop()`、`get_status()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
+`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus decoder，解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`play_index()`、`playlist_set()`、`repeat_set()`、`stop()`、`get_status()`、`playlist_snapshot()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
+
+设备自身持有 playlist，服务器 `playlist.set` / `append` 推送的专辑不经过网络回读即可展示。`h2_gizclaw_player_playlist_snapshot()` 在设备锁下整份拷贝出 caller-owned 快照：最多 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）个条目的 title 与 source_ref、条目数、current index 及其存在标志、playlist revision 和 repeat 模式。快照不含每条最长 1 KB 的 URL，只有库自己需要它下载；UI 靠 revision 判断缓存是否失效，未变化就不重绘。`h2_gizclaw_player_get_status()` 另外附带 `has_current_index` / `current_index` / `playlist_length` / `playlist_revision`，使“第 3/8 首”这类投影不必再取一次快照。用户选中某条时调用 `h2_gizclaw_player_play_index()`，它走 `client.device.audioplayer.play` 的同一条内部路径；索引达到或超过 playlist 长度返回 `H2_PAL_ERR_INVALID_ARG`，在改动任何状态之前拒绝，不打断正在播放的曲目。这两个入口都不发起网络请求。
+
+设备自己也能写 playlist：`h2_gizclaw_player_playlist_set()` 接收 caller-owned 的 `h2_gizclaw_player_playlist_entry_t` 数组（每条一个必填的 HTTPS Ogg/Opus URL span，title 与 source_ref 可选，len 为 0 表示不存在）与条目数，走 `client.device.audioplayer.playlist.set` 的同一条内部路径：同样先校验全部 URL 再整体替换，因此失败时上一份 playlist 与正在播放的曲目都不受影响，revision 只在成功时前进。count 为 0 清空 playlist；超过 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）返回 `H2_PAL_ERR_INVALID_ARG`（不是 `BUSY`，因为再等也放不下），服务停止中返回 `H2_PAL_ERR_CLOSED`。它与 RPC 一样是纯写入，不启动播放，也清掉 current index；要让专辑开始播放，紧接着调用 `h2_gizclaw_player_play_index(service, 0)`。这样“用户选中本地专辑”与“手机推送 playlist”在设备内是同一条路径。
+
+`h2_gizclaw_player_repeat_set()` 接受与 `client.device.audioplayer.mode.set` 相同的 `off` / `one` / `all`，其他值返回 `H2_PAL_ERR_INVALID_ARG` 并保持当前模式不变，快照的 `repeat` 字段即为回读入口。末曲推进与循环由 library 的 worker 按该模式负责：`one` 重播当前曲，`all` 到末尾回到第 0 条，`off` 播完即停。产品必须设置模式而不是自己实现“下一首、到末尾回绕”，否则会与库内推进重复触发。
 
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
