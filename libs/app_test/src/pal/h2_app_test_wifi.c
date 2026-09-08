@@ -1,5 +1,6 @@
 #include "h2_app_test_wifi.h"
 #include <string.h>
+#include "h2_wifi_sta.h"
 static bool valid(const h2_pal_wifi_sta_config_t *c) {
   return c && c->ssid_len > 0 && c->ssid_len <= H2_PAL_WIFI_SSID_MAX &&
          c->password_len <= H2_PAL_WIFI_PASSWORD_MAX;
@@ -48,7 +49,10 @@ static int connect(void *u, const h2_pal_wifi_sta_config_t *c,
     return H2_PAL_ERR_INVALID_ARG;
   w->last_connect = *c;
   w->last_timeout_ms = timeout;
-  return h2_app_test_fault_take(&w->connect);
+  int rc = h2_app_test_fault_take(&w->connect);
+  if (!rc && w->connect_status.state != H2_PAL_WIFI_STA_STATE_UNKNOWN)
+    w->status = w->connect_status;
+  return rc;
 }
 static int disconnect(void *u) {
   h2_app_test_wifi_t *w = u;
@@ -88,9 +92,16 @@ static int clear_saved(void *u) {
   }
   return rc;
 }
+static int connect_and_save(void *u, const h2_pal_wifi_sta_config_t *c,
+                            uint32_t timeout) {
+  h2_app_test_wifi_t *w = u;
+  const h2_wifi_sta_dependencies_t deps = {&w->api, &w->settings, &w->time.api};
+  return h2_wifi_sta_connect_and_save(&deps, c, timeout);
+}
 static const h2_pal_wifi_sta_vtable_t vtable = {.get_status = status,
                                                 .scan = scan,
                                                 .connect = connect,
+                                                .connect_and_save = connect_and_save,
                                                 .disconnect = disconnect};
 static const h2_pal_wifi_settings_vtable_t settings = {
     .get_saved_sta_config = get_saved,
@@ -103,4 +114,5 @@ void h2_app_test_wifi_init(h2_app_test_wifi_t *w) {
   w->api = (h2_pal_wifi_sta_api_t){w, &vtable};
   w->settings = (h2_pal_wifi_settings_api_t){w, &settings};
   w->status.state = H2_PAL_WIFI_STA_STATE_IDLE;
+  h2_app_test_time_init(&w->time, 0u);
 }

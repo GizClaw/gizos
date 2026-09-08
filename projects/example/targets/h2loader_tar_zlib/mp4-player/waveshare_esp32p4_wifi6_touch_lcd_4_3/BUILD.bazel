@@ -25,6 +25,7 @@ firmware_lib_component(
         "//libs/iostreamikcp",
         "//libs/mp4_decoder",
         "//libs/pal:unsupported",
+        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",

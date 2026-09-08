@@ -43,7 +43,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    deps = ["//libs/pal"],
+    deps = ["//libs/pal", "//libs/wifi_sta"],
 )
 
 cc_test(

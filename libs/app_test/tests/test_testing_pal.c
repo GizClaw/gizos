@@ -42,6 +42,23 @@ static bool scan_stop(void *u, const h2_pal_wifi_scan_entry_t *e) {
   ++*(unsigned *)u;
   return false;
 }
+static void test_wifi_persistent_operation(void) {
+  h2_app_test_wifi_t w;
+  h2_app_test_wifi_init(&w);
+  h2_pal_wifi_sta_config_t old = {.ssid = "old", .ssid_len = 3};
+  h2_pal_wifi_sta_config_t target = {.ssid = "new", .ssid_len = 3};
+  OK(h2_pal_wifi_settings_set_saved_sta_config(&w.settings, &old));
+  w.connect_status = (h2_pal_wifi_sta_status_t){
+      .state = H2_PAL_WIFI_STA_STATE_GOT_IP, .ssid = "new", .ssid_len = 3,
+      .ip_valid = 1, .ip.ip4 = 0xc0000201};
+  OK(h2_pal_wifi_sta_connect(&w.api, &target, 100));
+  assert(!memcmp(&w.saved, &old, sizeof(old)));
+  OK(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100));
+  assert(!memcmp(&w.saved, &target, sizeof(target)));
+  w.set_saved = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1};
+  assert(h2_pal_wifi_sta_connect_and_save(&w.api, &target, 100) == H2_PAL_ERR_IO);
+}
+
 static void test_wifi_modem(void) {
   h2_app_test_wifi_t w;
   h2_app_test_wifi_init(&w);
@@ -371,6 +388,7 @@ int main(void) {
   test_memory_t m = {0};
   h2_pal_mem_api_t mem = {&m, &test_memory_vtable};
   test_time();
+  test_wifi_persistent_operation();
   test_wifi_modem();
   test_devices();
   test_pref(&mem);

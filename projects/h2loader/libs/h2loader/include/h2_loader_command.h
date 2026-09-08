@@ -22,8 +22,6 @@ typedef struct h2_loader_command_config {
     const h2_pal_fs_api_t *fs;
     const h2_pal_http_api_t *http;
     const h2_pal_wifi_sta_api_t *wifi;
-    /** Nonzero when connect itself waits for IP and persists credentials. */
-    int wifi_connect_persists;
     const h2_pal_wifi_settings_api_t *wifi_settings;
     const h2_pal_disk_api_t *disk;
     h2_loader_digest_api_t digest;

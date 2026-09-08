@@ -2262,6 +2262,7 @@ typedef struct device_test_state {
   uint32_t volume;
   atomic_uint writes, drains, closes, reboots, write_attempts;
   atomic_uint reboot_requests;
+  atomic_uint wifi_persistent_calls;
   uint32_t reboot_request_delay_ms;
   uint64_t reboot_at_ms;
   bool block_download;
@@ -2386,6 +2387,16 @@ static int device_saved_wifi(void *user, h2_pal_wifi_sta_config_t *out) {
                                   .password = "test-only", .password_len = 9};
   return H2_PAL_OK;
 }
+static int device_wifi_connect_and_save(void *user,
+                                        const h2_pal_wifi_sta_config_t *config,
+                                        uint32_t timeout_ms) {
+  device_test_state_t *state = user;
+  assert(config->ssid_len == 7 && !memcmp(config->ssid, "new-net", 7));
+  assert(config->password_len == 8 && !memcmp(config->password, "password", 8));
+  assert(timeout_ms > 0);
+  atomic_fetch_add(&state->wifi_persistent_calls, 1);
+  return H2_PAL_ERR_IO; /* An accepted RPC is not a successful durable save. */
+}
 static int device_wifi_status(void *user, h2_pal_wifi_sta_status_t *out) {
   (void)user;
   *out = (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
@@ -2477,8 +2488,9 @@ static void test_device_provider_pal_and_player(void) {
   const h2_pal_power_api_t power = {.user = &state, .vtable = &power_vtable};
   const h2_pal_wifi_settings_vtable_t settings_vtable = {.get_saved_sta_config = device_saved_wifi};
   const h2_pal_wifi_settings_api_t settings = {.vtable = &settings_vtable};
-  const h2_pal_wifi_sta_vtable_t wifi_vtable = {.get_status = device_wifi_status};
-  const h2_pal_wifi_sta_api_t wifi = {.vtable = &wifi_vtable};
+  const h2_pal_wifi_sta_vtable_t wifi_vtable = {.get_status = device_wifi_status,
+      .connect_and_save = device_wifi_connect_and_save};
+  const h2_pal_wifi_sta_api_t wifi = {.user = &state, .vtable = &wifi_vtable};
   service->client_config.wifi = &wifi;
   service->client_config.wifi_settings = &settings;
   h2_runtime_t *runtime = device_test_runtime(service, &audio);
@@ -2549,6 +2561,16 @@ static void test_device_provider_pal_and_player(void) {
   wifi_input = pb_istream_from_buffer(response.payload.data, response.payload.len);
   assert(pb_decode(&wifi_input, gizclaw_rpc_v1_ClientWifiSavedListResponse_fields, &saved_reply));
   assert(saved_reply.networks_count == 1 && !strcmp(saved_reply.networks[0].ssid, "fixture-wifi"));
+  gizclaw_rpc_v1_ClientWifiConnectRequest connect_request = {.has_passphrase = true};
+  strcpy(connect_request.ssid, "new-net");
+  strcpy(connect_request.passphrase, "password");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT,
+      gizclaw_rpc_v1_ClientWifiConnectRequest_fields, &connect_request, &response) == 0);
+  assert(response.on_complete);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  for (unsigned int i = 0; i < 3000 && !atomic_load(&state.wifi_persistent_calls); ++i)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(atomic_load(&state.wifi_persistent_calls) == 1);
   gizclaw_rpc_v1_ClientWifiSavedForgetRequest forget = {0}; strcpy(forget.ssid, "other");
   assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET,
     gizclaw_rpc_v1_ClientWifiSavedForgetRequest_fields, &forget, &response) == H2_GIZCLAW_RPC_ERROR_NOT_FOUND);

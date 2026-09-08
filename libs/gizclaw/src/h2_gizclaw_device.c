@@ -550,7 +550,7 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
   }
   if (method == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
     if (!d->config.wifi || !d->config.wifi->vtable ||
-        !d->config.wifi->vtable->connect)
+        !d->config.wifi->vtable->connect_and_save)
       return H2_PAL_ERR_UNSUPPORTED;
     gizclaw_rpc_v1_ClientWifiConnectRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientWifiConnectRequest_fields,
@@ -1285,7 +1285,7 @@ static void device_worker(void *user) {
         if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url))
           (void)play_url(d, sound_url, d->sound_ms, false);
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
-        int rc = h2_pal_wifi_sta_connect(d->config.wifi, &d->wifi_config,
+        int rc = h2_pal_wifi_sta_connect_and_save(d->config.wifi, &d->wifi_config,
                                          io_timeout(d));
         trace(d, "wifi_connect", pending, rc);
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {

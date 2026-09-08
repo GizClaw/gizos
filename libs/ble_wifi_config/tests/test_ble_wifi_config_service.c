@@ -567,7 +567,7 @@ static int fake_wifi_get_status(void *user, h2_pal_wifi_sta_status_t *out_status
 static const h2_pal_wifi_sta_vtable_t s_wifi_vtable = {
     .get_status = fake_wifi_get_status,
     .scan = fake_wifi_scan,
-    .connect = fake_wifi_connect,
+    .connect_and_save = fake_wifi_connect,
 };
 
 static void fake_runtime_init(fake_runtime_t *runtime) {
@@ -725,6 +725,23 @@ static void fake_wait_notifications(fake_runtime_t *runtime, size_t expected) {
         CHECK(rc == 0);
     }
     pthread_mutex_unlock(&runtime->mutex);
+}
+
+static fake_notification_t fake_wait_final(fake_runtime_t *runtime) {
+    struct timespec deadline;
+    fake_deadline(&deadline, TEST_WAIT_MS);
+    pthread_mutex_lock(&runtime->mutex);
+    for (;;) {
+        for (size_t i = 0; i < runtime->notification_count; ++i) {
+            fake_notification_t result = runtime->notifications[i];
+            if (result.attr_handle == TEST_PROVISION_HANDLE && result.len == 3u &&
+                result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL) {
+                pthread_mutex_unlock(&runtime->mutex);
+                return result;
+            }
+        }
+        CHECK(pthread_cond_timedwait(&runtime->cond, &runtime->mutex, &deadline) == 0);
+    }
 }
 
 static void fake_wait_scan_in_progress(fake_runtime_t *runtime) {
@@ -1019,8 +1036,7 @@ static void test_provision_success(void) {
     connect_and_subscribe(&runtime);
 
     write_credentials(&runtime, "office", "hunter2!");
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t result = fake_notification(&runtime, 0u);
+    fake_notification_t result = fake_wait_final(&runtime);
     CHECK(result.attr_handle == TEST_PROVISION_HANDLE);
     CHECK(result.len == 3u);
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
@@ -1047,8 +1063,7 @@ static void test_provision_wrong_password(void) {
     connect_and_subscribe(&runtime);
 
     write_credentials(&runtime, "office", "wrong");
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t result = fake_notification(&runtime, 0u);
+    fake_notification_t result = fake_wait_final(&runtime);
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x01u);
     CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_BAD_PASSWORD);
@@ -1066,8 +1081,7 @@ static void test_provision_ap_not_found(void) {
     connect_and_subscribe(&runtime);
 
     write_credentials(&runtime, "elsewhere", "hunter2!");
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t result = fake_notification(&runtime, 0u);
+    fake_notification_t result = fake_wait_final(&runtime);
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x01u);
     CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND);
@@ -1078,13 +1092,32 @@ static void test_provision_ap_not_found(void) {
     fake_runtime_deinit(&runtime);
 }
 
+static void test_provision_save_failure(void) {
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
+    runtime.status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    runtime.status.ip_valid = 1u;
+    runtime.connect_result = H2_PAL_ERR_IO; /* Provider connected but could not save. */
+    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    connect_and_subscribe(&runtime);
+    write_credentials(&runtime, "office", "hunter2!");
+    fake_notification_t result = fake_wait_final(&runtime);
+    CHECK(result.data[1] == 0x01u);
+    CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_UNKNOWN);
+    CHECK(runtime.connect_calls == 1);
+    CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    fake_runtime_deinit(&runtime);
+}
+
 static void test_provision_dhcp_failure(void) {
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);
     fake_add_scan_entry(&runtime, "office", -45, H2_PAL_WIFI_SECURITY_WPA2);
     runtime.status.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
     runtime.status.ip_valid = 0u;
-    /* The address never lands, so the wait must give up on its own budget. */
+    /* The provider reports exhaustion of its association/DHCP budget. */
+    runtime.connect_result = H2_PAL_ERR_TIMEOUT;
     h2_ble_wifi_config_config_t config;
     memset(&config, 0, sizeof(config));
     config.dhcp_timeout_ms = 200u;
@@ -1092,8 +1125,7 @@ static void test_provision_dhcp_failure(void) {
     connect_and_subscribe(&runtime);
 
     write_credentials(&runtime, "office", "hunter2!");
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t result = fake_notification(&runtime, 0u);
+    fake_notification_t result = fake_wait_final(&runtime);
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x01u);
     CHECK(result.data[2] == (uint8_t)H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED);
@@ -1115,8 +1147,7 @@ static void test_provision_open_network(void) {
     connect_and_subscribe(&runtime);
 
     write_credentials(&runtime, "guest", "");
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t result = fake_notification(&runtime, 0u);
+    fake_notification_t result = fake_wait_final(&runtime);
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x00u);
     CHECK(runtime.connect_calls == 1);
@@ -1138,8 +1169,7 @@ static void test_malformed_credentials_report_failure(void) {
     const uint8_t truncated[] = { 32u, 'a', 'b' };
     CHECK(fake_gatt_write(&runtime, TEST_PROVISION_HANDLE, truncated,
                           sizeof(truncated)) == H2_PAL_ERR_FORMAT);
-    fake_wait_notifications(&runtime, 1u);
-    fake_notification_t result = fake_notification(&runtime, 0u);
+    fake_notification_t result = fake_wait_final(&runtime);
     CHECK(result.attr_handle == TEST_PROVISION_HANDLE);
     CHECK(result.data[0] == H2_BLE_WIFI_CONFIG_PROVISION_FRAME_FINAL);
     CHECK(result.data[1] == 0x01u);
@@ -1490,6 +1520,7 @@ int main(void) {
     test_provision_success();
     test_provision_wrong_password();
     test_provision_ap_not_found();
+    test_provision_save_failure();
     test_provision_dhcp_failure();
     test_provision_open_network();
     test_malformed_credentials_report_failure();

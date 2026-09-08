@@ -383,7 +383,6 @@ h2_pal_result_t h2_runtime_init(
     H2_RUNTIME_BIND_PROXY(wifi_ap);
     H2_RUNTIME_BIND_PROXY(wifi_csi);
     H2_RUNTIME_BIND_PROXY(wifi_settings);
-    h2_runtime_wifi_bind(runtime);
     H2_RUNTIME_BIND_PROXY(ble_host);
     H2_RUNTIME_BIND_PROXY(modem);
     H2_RUNTIME_BIND_PROXY(power);

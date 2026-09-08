@@ -499,7 +499,6 @@ static void h2loader_startup_worker(void *user) {
         .fs = &s_h2loader_fs,
         .http = s_runtime->http,
         .wifi = s_runtime->wifi_sta,
-        .wifi_connect_persists = 1,
         .wifi_settings = s_runtime->wifi_settings,
         .disk = &s_coredump_disk,
         .digest = {

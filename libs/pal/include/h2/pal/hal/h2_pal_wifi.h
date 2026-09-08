@@ -188,7 +188,10 @@ typedef int (*h2_pal_wifi_sta_set_power_save_fn)(
 typedef struct h2_pal_wifi_sta_vtable {
     h2_pal_wifi_sta_get_status_fn get_status;
     h2_pal_wifi_sta_scan_fn scan;
+    /** Connect without changing saved credentials, for every timeout value. */
     h2_pal_wifi_sta_connect_fn connect;
+    /** Authenticate, obtain a target IP, then atomically replace saved credentials. */
+    h2_pal_wifi_sta_connect_fn connect_and_save;
     h2_pal_wifi_sta_disconnect_fn disconnect;
     h2_pal_wifi_sta_get_mac_fn get_mac;
     /** Optional; NULL reports H2_PAL_ERR_UNSUPPORTED. */
@@ -285,6 +288,15 @@ static inline int h2_pal_wifi_sta_scan(
     return sta->vtable->scan(sta->user, request, on_result, user, timeout_ms);
 }
 
+/**
+ * @brief Connect without writing or clearing saved credentials.
+ * @param sta Borrowed station API, valid until return.
+ * @param config Borrowed credentials; provider copies any asynchronously used data.
+ * @param timeout_ms Association wait budget in milliseconds; zero starts the
+ * connection without waiting for association. Success need not imply an IP.
+ * @return PAL result. Timeout never selects a persistence policy.
+ * Call from task context. Concurrent connection mutations may return BUSY.
+ */
 static inline int h2_pal_wifi_sta_connect(
     const h2_pal_wifi_sta_api_t *sta,
     const h2_pal_wifi_sta_config_t *config,
@@ -300,6 +312,36 @@ static inline int h2_pal_wifi_sta_connect(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return sta->vtable->connect(sta->user, config, timeout_ms);
+}
+
+/**
+ * @brief Connect and persist only after fresh target authentication and valid IP.
+ * @param sta Borrowed station API, valid until return.
+ * @param config Borrowed credentials, valid until return; not retained.
+ * @param timeout_ms Nonzero total association/DHCP budget in milliseconds.
+ * Zero is INVALID_ARG, with no connection or storage side effects.
+ * @return OK only after durable save. Connection/IP failure preserves old saved
+ * credentials; save failure is returned even if the new network remains active.
+ * Unsupported persistence is rejected before switching networks. Calls block on
+ * the caller task; concurrent connect/connect_and_save/disconnect return BUSY.
+ * Re-authenticate even for the current SSID; cached association cannot validate
+ * a new password. Settings get/set/clear remain separate explicit operations.
+ */
+static inline int h2_pal_wifi_sta_connect_and_save(
+    const h2_pal_wifi_sta_api_t *sta,
+    const h2_pal_wifi_sta_config_t *config,
+    uint32_t timeout_ms) {
+    if (sta == NULL || timeout_ms == 0u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int rc = h2_pal_wifi_settings_validate_sta_config(config);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if (sta->vtable == NULL || sta->vtable->connect_and_save == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return sta->vtable->connect_and_save(sta->user, config, timeout_ms);
 }
 
 static inline int h2_pal_wifi_sta_disconnect(const h2_pal_wifi_sta_api_t *sta) {

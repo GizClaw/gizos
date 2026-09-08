@@ -138,12 +138,9 @@ struct h2_runtime {
     const h2_pal_mqtt_api_t *mqtt;
     const h2_pal_webrtc_api_t *webrtc;
     h2_pal_webrtc_track_t *webrtc_media_track;
-    /** Connection policy: re-authenticate, wait for target GOT_IP, then save
-     * through wifi_settings for nonzero timeout. Zero forwards the provider
-     * asynchronous connect without saving credentials. Connect and
-     * disconnect are serialized (BUSY on overlap); call from a worker and
-     * finish before deinit. Storage errors propagate, even if already online.
-     * Scan, status, MAC and power-save keep the PAL provider semantics. */
+    /** Borrowed PAL provider exposed 1:1, including connect_and_save.
+     * connect never changes saved credentials; persistence must be explicit.
+     * Provider blocking, timeout and error semantics are unchanged. */
     const h2_pal_wifi_sta_api_t *wifi_sta;
     const h2_pal_wifi_ap_api_t *wifi_ap;
     const h2_pal_wifi_csi_api_t *wifi_csi;
@@ -176,8 +173,9 @@ struct h2_runtime {
 h2_pal_result_t h2_runtime_init(const h2_runtime_config_t *config, h2_runtime_t **out_runtime);
 void h2_runtime_deinit(h2_runtime_t *runtime);
 /**
- * Restore the saved station through the Runtime Wi-Fi connection policy.
- * Blocks on the calling task until GOT_IP or timeout; zero selects 15 seconds.
+ * Read saved credentials and call PAL connect without saving them again.
+ * Blocks for association according to the provider; IP may arrive later.
+ * Zero selects a 15-second association budget.
  * Call from a launcher/network worker, never an event callback. Runtime init
  * performs no network connection. NOT_FOUND means no saved credentials.
  * The caller must finish this operation before Runtime deinit.

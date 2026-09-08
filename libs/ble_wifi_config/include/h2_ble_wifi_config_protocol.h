@@ -292,7 +292,7 @@ int h2_ble_wifi_config_ap_from_scan_entry(
  * disconnect_reason uses another numbering supply their own mapping through
  * h2_ble_wifi_config_config_t::map_reason.
  *
- * @param connect_result Result returned by h2_pal_wifi_sta_connect().
+ * @param connect_result Result returned by h2_pal_wifi_sta_connect_and_save().
  * @param status Borrowed station status read after the attempt, or NULL when
  * the status could not be read.
  * @return The reason byte to report, never

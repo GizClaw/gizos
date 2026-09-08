@@ -473,7 +473,7 @@ static int fake_wifi_connect(
 static const h2_pal_wifi_sta_vtable_t s_wifi_vtable = {
     .get_status = fake_wifi_get_status,
     .scan = fake_wifi_scan,
-    .connect = fake_wifi_connect,
+    .connect_and_save = fake_wifi_connect,
 };
 
 static void fake_host_init(fake_host_t *host) {

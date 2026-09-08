@@ -398,98 +398,6 @@ static void h2_ble_wifi_config_send_progress(
     h2_ble_wifi_config_peer_t peer,
     h2_ble_wifi_config_progress_t state);
 
-/*
- * Follow the station through the Runtime's published snapshot until it holds
- * an address or drops, forwarding every transition to the peer as it happens.
- *
- * Polling rather than subscribing: only the Runtime's main loop may drain the
- * event queue, and the snapshot is wait-free to read, so the worker that is
- * already committed to this attempt just looks. Sending from here also keeps
- * progress ahead of the verdict without a queue - the worker cannot reach the
- * final frame until this returns.
- */
-static bool h2_ble_wifi_config_await_address(
-    h2_ble_wifi_config_t *service,
-    h2_ble_wifi_config_peer_t peer,
-    h2_ble_wifi_config_reason_t *out_reason) {
-    const uint32_t slice_ms = 200u;
-    uint32_t waited_ms = 0u;
-    h2_runtime_system_wifi_sta_status_t reported =
-        H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_UNKNOWN;
-
-    for (;;) {
-        h2_runtime_system_wifi_sta_state_t state;
-        memset(&state, 0, sizeof(state));
-        int read_rc = h2_runtime_system_state_wifi_sta(service->api.runtime, &state);
-        if (read_rc == H2_PAL_ERR_UNSUPPORTED) {
-            /*
-             * This Runtime cannot publish a station snapshot (no Sync
-             * provider), so the address can never be observed. Say so at
-             * once rather than burning the DHCP budget on a wait that
-             * cannot succeed.
-             */
-            *out_reason = H2_BLE_WIFI_CONFIG_REASON_UNKNOWN;
-            return false;
-        }
-        bool have_state = read_rc == H2_PAL_OK && state.valid != 0u;
-
-        if (have_state && state.status != reported) {
-            reported = state.status;
-            switch (state.status) {
-            case H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTING:
-                h2_ble_wifi_config_send_progress(
-                    service, peer, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATING);
-                break;
-            case H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED:
-                h2_ble_wifi_config_send_progress(
-                    service, peer, H2_BLE_WIFI_CONFIG_PROGRESS_ASSOCIATED);
-                break;
-            case H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP:
-                h2_ble_wifi_config_send_progress(
-                    service, peer,
-                    H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED);
-                break;
-            default:
-                break;
-            }
-        }
-
-        if (have_state && state.ip_valid != 0u) {
-            return true;
-        }
-        if (have_state &&
-            state.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED) {
-            /* The snapshot carries why it went away; map that, not the clock. */
-            h2_pal_wifi_sta_status_t pal;
-            memset(&pal, 0, sizeof(pal));
-            pal.disconnect_reason = (int)state.disconnect_reason;
-            *out_reason = service->config.map_reason != NULL
-                              ? service->config.map_reason(
-                                    service->config.user,
-                                    H2_PAL_ERR_UNAVAILABLE, &pal)
-                              : h2_ble_wifi_config_default_reason(
-                                    H2_PAL_ERR_UNAVAILABLE, &pal);
-            return false;
-        }
-
-        h2_ble_wifi_config_lock(service);
-        bool closing = service->closing;
-        if (!closing && waited_ms < service->config.dhcp_timeout_ms) {
-            (void)h2_pal_cond_wait(
-                service->api.sync, service->cond, service->mutex, slice_ms);
-            closing = service->closing;
-        }
-        h2_ble_wifi_config_unlock(service);
-        if (closing || waited_ms >= service->config.dhcp_timeout_ms) {
-            break;
-        }
-        waited_ms += slice_ms;
-    }
-
-    *out_reason = H2_BLE_WIFI_CONFIG_REASON_DHCP_FAILED;
-    return false;
-}
-
 static int h2_ble_wifi_config_connect(
     h2_ble_wifi_config_t *service,
     const h2_ble_wifi_config_credentials_t *credentials,
@@ -518,27 +426,21 @@ static int h2_ble_wifi_config_connect(
     memcpy(sta_config.password, credentials->password, credentials->password_len);
     sta_config.password_len = credentials->password_len;
 
-    int rc = h2_pal_wifi_sta_connect(
-        service->api.wifi_sta, &sta_config, service->config.connect_timeout_ms);
+    uint32_t budget = service->config.connect_timeout_ms;
+    uint32_t dhcp = service->config.dhcp_timeout_ms;
+    budget = dhcp > UINT32_MAX - budget ? UINT32_MAX : budget + dhcp;
+    int rc = h2_pal_wifi_sta_connect_and_save(
+        service->api.wifi_sta, &sta_config, budget);
+    memset(&sta_config, 0, sizeof(sta_config));
 
     h2_pal_wifi_sta_status_t status;
     memset(&status, 0, sizeof(status));
     bool status_valid =
         h2_pal_wifi_sta_get_status(service->api.wifi_sta, &status) == H2_PAL_OK;
     if (rc == H2_PAL_OK) {
-        /*
-         * Association alone is not provisioning: the station needs a lease.
-         * h2_pal_wifi_sta_connect() returns once the access point accepts the
-         * key, so the address is still outstanding here - reading it now
-         * reported every healthy network as a DHCP failure.
-         */
-        if (!status_valid || status.ip_valid != 0u) {
-            return H2_PAL_OK;
-        }
-        if (h2_ble_wifi_config_await_address(service, peer, out_reason)) {
-            return H2_PAL_OK;
-        }
-        return H2_PAL_ERR_UNAVAILABLE;
+        h2_ble_wifi_config_send_progress(
+            service, peer, H2_BLE_WIFI_CONFIG_PROGRESS_ADDRESS_ACQUIRED);
+        return H2_PAL_OK;
     }
     const h2_pal_wifi_sta_status_t *status_arg = status_valid ? &status : NULL;
     *out_reason = service->config.map_reason != NULL

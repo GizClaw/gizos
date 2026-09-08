@@ -1,4 +1,5 @@
 #include "h2_desktop_platform.h"
+#include "h2_wifi_sta.h"
 
 #include <algorithm>
 #include <array>
@@ -187,6 +188,8 @@ int wifi_connect(void *, const h2_pal_wifi_sta_config_t *config, uint32_t) {
               sizeof(wifi_status.bssid));
   wifi_status.bssid_set = 1u;
   wifi_status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  wifi_status.ip_valid = 1u;
+  wifi_status.ip = {0xc0000201u, 0xffffff00u, 0xc00002feu};
   return H2_PAL_OK;
 }
 
@@ -204,9 +207,32 @@ int wifi_get_mac(void *, uint8_t out_mac[6]) {
   return H2_PAL_OK;
 }
 
+std::mutex wifi_connection_mutex;
+int wifi_connect_serialized(void *user, const h2_pal_wifi_sta_config_t *config,
+                            uint32_t timeout_ms) {
+  std::unique_lock<std::mutex> lock(wifi_connection_mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return H2_PAL_ERR_BUSY;
+  return wifi_connect(user, config, timeout_ms);
+}
+int wifi_disconnect_serialized(void *user) {
+  std::unique_lock<std::mutex> lock(wifi_connection_mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return H2_PAL_ERR_BUSY;
+  return wifi_disconnect(user);
+}
+int wifi_connect_and_save(void *user, const h2_pal_wifi_sta_config_t *config,
+                          uint32_t timeout_ms) {
+  std::unique_lock<std::mutex> lock(wifi_connection_mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return H2_PAL_ERR_BUSY;
+  const h2_pal_wifi_sta_vtable_t raw_vtable = {
+      wifi_get_status, nullptr, wifi_connect, nullptr, wifi_disconnect, nullptr, nullptr};
+  const h2_pal_wifi_sta_api_t raw = {user, &raw_vtable};
+  const h2_wifi_sta_dependencies_t deps = {
+      &raw, &wifi_settings, h2_desktop_platform_time_api()};
+  return h2_wifi_sta_connect_and_save(&deps, config, timeout_ms);
+}
 const h2_pal_wifi_sta_vtable_t wifi_sta_vtable = {
-    wifi_get_status, wifi_scan,    wifi_connect,
-    wifi_disconnect, wifi_get_mac, /*set_power_save=*/nullptr};
+    wifi_get_status, wifi_scan, wifi_connect_serialized, wifi_connect_and_save,
+    wifi_disconnect_serialized, wifi_get_mac, /*set_power_save=*/nullptr};
 h2_pal_wifi_sta_t wifi_sta = {nullptr, &wifi_sta_vtable};
 
 int wifi_ap_start(void *, const h2_pal_wifi_ap_config_t *config, uint32_t) {

@@ -59,7 +59,7 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
 `UNIMPLEMENTED`，不会返回虚假的成功 ACK。
 
 - Service 配置 Runtime 且 Audio 来自该 Runtime 时，音量与静音直接读写 Runtime audio state，GizClaw 不保留私有缓存。静音保留设定音量，本地 percent 调整取消静音并更新同一 state。只注入原始 PAL、没有 Runtime 的 library caller 仅能报告有效音量，静音时为零；需要逻辑静音恢复的产品必须提供 Runtime。
-- Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用 PAL Wi-Fi Settings。产品注入 `runtime->wifi_sta` 与 `runtime->wifi_settings` 后，连接由 Runtime 等待 GOT_IP 并持久化凭据；GizClaw 不维护另一份网络记录。RPC list 如实返回现有 PAL Settings 的 0 或 1 条。直接注入原始 PAL 的调用方仍自行承担持久化策略。RPC response 是动作接受结果，后续连接或保存失败通过设备日志记录，不把接受 ACK 当作连接成功。
+- Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用 PAL Wi-Fi Settings。用户配网显式调用 PAL `connect_and_save`，由 provider 验证目标 GOT_IP 并持久化凭据；注入 Runtime API 或原始 provider 具有相同语义，GizClaw 不维护另一份网络记录。RPC list 如实返回现有 PAL Settings 的 0 或 1 条。RPC response 是动作接受结果，后续连接或保存失败通过设备日志记录，不把接受 ACK 当作连接成功。
 - 普通重启直接使用 PAL Power。重启、切网、OTA 在本地 RPC response 发送完成后
   才交给 `$gizclaw/device` task；回复发送失败或 Service 停止会取消待执行动作。
 - 传入 `audio` PAL 即启用 Ogg/Opus 播放器。`audio_buffer_bytes` 设置压缩数据环形

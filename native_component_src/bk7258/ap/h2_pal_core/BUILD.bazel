@@ -45,6 +45,7 @@ firmware_native_component(
     ],
     deps = [
         "//libs/pal:unsupported",
+        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",

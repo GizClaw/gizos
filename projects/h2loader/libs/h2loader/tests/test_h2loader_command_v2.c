@@ -233,12 +233,13 @@ static int wifi_status(void *user, h2_pal_wifi_sta_status_t *status) {
   memcpy(status->ssid, f->target.ssid, status->ssid_len);
   return H2_PAL_OK;
 }
-static int wifi_save(void *user, const h2_pal_wifi_sta_config_t *config) {
+static int wifi_connect_and_save(void *user, const h2_pal_wifi_sta_config_t *config,
+                                 uint32_t timeout_ms) {
   wifi_fixture_t *f = user;
-  assert(f->connects > 0 && f->result == H2_PAL_OK);
-  assert(config->ssid_len == f->target.ssid_len);
-  ++f->saves;
-  return H2_PAL_OK;
+  int rc = wifi_connect(user, config, timeout_ms);
+  if (rc == H2_PAL_OK)
+    ++f->saves;
+  return rc;
 }
 static void test_wifi_saves_only_after_connection(void) {
   command_io_fixture_t io = {0};
@@ -248,12 +249,9 @@ static void test_wifi_saves_only_after_connection(void) {
   assert(command_init(&command, &loader, &io) == H2_PAL_OK);
   wifi_fixture_t f = {.result = H2_PAL_ERR_IO};
   const h2_pal_wifi_sta_vtable_t sta_vtable = {
-    .connect = wifi_connect, .get_status = wifi_status};
-  const h2_pal_wifi_settings_vtable_t settings_vtable = {.set_saved_sta_config = wifi_save};
+    .connect_and_save = wifi_connect_and_save, .get_status = wifi_status};
   const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
-  const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
   command.config.wifi = &sta;
-  command.config.wifi_settings = &settings;
   const char *args[] = {"h2loader", "wifi", "connect", "network", "password"};
   assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_ERR_IO);
   assert(f.saves == 0);
@@ -261,9 +259,8 @@ static void test_wifi_saves_only_after_connection(void) {
   assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_OK);
   assert(f.saves == 1);
   f.saves = 0;
-  command.config.wifi_connect_persists = 1;
   assert(h2_loader_command_execute(&command, 5, args) == H2_PAL_OK);
-  assert(f.saves == 0); /* Runtime owns the write, no duplicate save. */
+  assert(f.saves == 1); /* Exactly one persistent provider operation. */
 }
 
 int main(void) {

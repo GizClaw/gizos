@@ -120,6 +120,7 @@ static const h2_pal_wifi_sta_vtable_t s_h2_esp_wifi_sta_vtable = {
     .get_status = (h2_pal_wifi_sta_get_status_fn)h2_esp_wifi_unsupported_get_status,
     .scan = (h2_pal_wifi_sta_scan_fn)h2_esp_wifi_unsupported_scan,
     .connect = (h2_pal_wifi_sta_connect_fn)h2_esp_wifi_unsupported_connect,
+    .connect_and_save = (h2_pal_wifi_sta_connect_fn)h2_esp_wifi_unsupported_connect,
     .disconnect = (h2_pal_wifi_sta_disconnect_fn)h2_esp_wifi_unsupported_disconnect,
     .get_mac = (h2_pal_wifi_sta_get_mac_fn)h2_esp_wifi_unsupported_get_mac,
     .set_power_save =

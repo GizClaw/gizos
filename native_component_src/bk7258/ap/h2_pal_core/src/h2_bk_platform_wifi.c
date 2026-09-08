@@ -8,6 +8,9 @@
 #include <os/os.h>
 
 #include <string.h>
+#include <stdatomic.h>
+
+#include "h2_wifi_sta.h"
 
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -742,7 +745,16 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                 }
             }
             if (started) {
-                (void)bk_wifi_sta_stop();
+                if (h2_bk_wifi_request_lock() != H2_PAL_OK)
+                    goto done;
+                current_generation = __atomic_load_n(
+                    &s_h2_bk_wifi_connect_generation,
+                    __ATOMIC_ACQUIRE) == generation;
+                if (current_generation)
+                    (void)bk_wifi_sta_stop();
+                h2_bk_wifi_request_unlock();
+                if (!current_generation)
+                    goto done;
             }
             rtos_delay_milliseconds(500u);
         }
@@ -958,15 +970,15 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
         &s_h2_bk_wifi_connect_pending,
         0,
         __ATOMIC_RELEASE);
+    /* A fresh authenticated attempt cannot reuse last SSID/IP evidence. */
+    __atomic_store_n(&s_h2_bk_wifi_last_config_valid, 0, __ATOMIC_RELEASE);
     h2_bk_wifi_request_unlock();
     /* BK's disconnect leaves the STA service and netif allocated. A later
      * start is then ignored, which can restore an IP-looking link without a
      * usable default route. Stop fully so the next connect recreates both. */
     bk_err_t err = bk_wifi_sta_stop();
-    if (err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG) {
-        return H2_PAL_OK;
-    }
-    int rc = h2_bk_wifi_map_error(err);
+    int rc = err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG
+        ? H2_PAL_OK : h2_bk_wifi_map_error(err);
     if (rc == H2_PAL_OK) {
         h2_pal_wifi_sta_status_t status;
         memset(&status, 0, sizeof(status));
@@ -1182,11 +1194,54 @@ static int h2_bk_wifi_ap_get_mac(h2_pal_wifi_ap_t *ap, uint8_t out_mac[6]) {
     return h2_bk_wifi_map_error(bk_wifi_ap_get_mac(out_mac));
 }
 
+/* One admission gate covers the entire authentication/IP/save transaction. */
+static atomic_flag s_h2_bk_wifi_connect_busy = ATOMIC_FLAG_INIT;
+
+static int h2_bk_wifi_connect(void *user,
+                             const h2_pal_wifi_sta_config_t *config,
+                             uint32_t timeout_ms) {
+    if (atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy))
+        return H2_PAL_ERR_BUSY;
+    int rc = h2_bk_wifi_sta_connect(user, config, timeout_ms);
+    atomic_flag_clear(&s_h2_bk_wifi_connect_busy);
+    return rc;
+}
+
+static int h2_bk_wifi_disconnect(void *user) {
+    if (atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy))
+        return H2_PAL_ERR_BUSY;
+    int rc = h2_bk_wifi_sta_disconnect(user);
+    atomic_flag_clear(&s_h2_bk_wifi_connect_busy);
+    return rc;
+}
+
+static int h2_bk_wifi_connect_and_save(void *user,
+                                      const h2_pal_wifi_sta_config_t *config,
+                                      uint32_t timeout_ms) {
+    if (atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy))
+        return H2_PAL_ERR_BUSY;
+    static const h2_pal_wifi_sta_vtable_t raw_vtable = {
+        .get_status = (h2_pal_wifi_sta_get_status_fn)h2_bk_wifi_sta_get_status,
+        .connect = (h2_pal_wifi_sta_connect_fn)h2_bk_wifi_sta_connect,
+        .disconnect = (h2_pal_wifi_sta_disconnect_fn)h2_bk_wifi_sta_disconnect,
+    };
+    const h2_pal_wifi_sta_api_t raw = {user, &raw_vtable};
+    const h2_wifi_sta_dependencies_t deps = {
+        .sta = &raw,
+        .settings = h2_bk_platform_wifi_settings(),
+        .time = h2_bk_platform_time_api(),
+    };
+    int rc = h2_wifi_sta_connect_and_save(&deps, config, timeout_ms);
+    atomic_flag_clear(&s_h2_bk_wifi_connect_busy);
+    return rc;
+}
+
 static const h2_pal_wifi_sta_vtable_t s_h2_bk_wifi_sta_vtable = {
     .get_status = (h2_pal_wifi_sta_get_status_fn)h2_bk_wifi_sta_get_status,
     .scan = (h2_pal_wifi_sta_scan_fn)h2_bk_wifi_sta_scan,
-    .connect = (h2_pal_wifi_sta_connect_fn)h2_bk_wifi_sta_connect,
-    .disconnect = (h2_pal_wifi_sta_disconnect_fn)h2_bk_wifi_sta_disconnect,
+    .connect = h2_bk_wifi_connect,
+    .connect_and_save = h2_bk_wifi_connect_and_save,
+    .disconnect = h2_bk_wifi_disconnect,
     .get_mac = (h2_pal_wifi_sta_get_mac_fn)h2_bk_wifi_sta_get_mac,
     .set_power_save =
         (h2_pal_wifi_sta_set_power_save_fn)h2_bk_wifi_sta_set_power_save,
