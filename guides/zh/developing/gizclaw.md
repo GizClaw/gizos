@@ -14,11 +14,13 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 已升级到 0.16.5。`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 已升级到 0.17.0。`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
 客户端只发送指定字段，不先 GET typed `WorkspaceParameters`，不解析或重写其 agent_type，也不再依据未知、额外、缺失或重复的服务端 typed 参数字段拒绝更新。服务端根据绑定的 Workflow driver 校验 patch、合并指定字段并保留其他参数；不支持的 driver/字段通过原有远端错误路径返回。公开 patch 是固定的可写字段集合，不是对服务端 metadata 的封闭枚举。SFU input 支持由上游实现，E2E 保留真实配置请求，不能通过跳过它声称完整验收通过。
+
+0.17.0 已移除 Gameplay：GizOS 不再公开 Pet、积分、领养和宠物 PIXA 下载 API、RPC 常量或对应 Resource。E2E 不再创建这些资源或要求这些调用的覆盖证据。Workspace 图标 PIXA 下载、音频播放器和本地游戏继续由各自接口负责。
 
 ## Request service
 
@@ -40,7 +42,7 @@ Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access h
 
 Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但正常回复事件和下行处理继续推进，避免业务事件占住队列后阻塞 READY，也允许服务端提前拒绝输入。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
 
-当前 `MODULE.bazel` 固定的 C SDK 0.16.5 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`；本修复无需升级 SDK。
+当前 `MODULE.bazel` 固定的 C SDK 0.17.0 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
@@ -156,7 +158,7 @@ Service stop 会取消并丢弃在途请求，快照保留最后确认的模式�
 
 ## 上游 API 同步
 
-`@h2_gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。Pet、Points 或其它 RPC schema 更新时，先把 `MODULE.bazel` 中 `h2_gizclaw_c_sdk` 的 Release archive URL、SRI integrity 与 `strip_prefix` 原子更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+`@h2_gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `h2_gizclaw_c_sdk` 的 Release archive URL、SRI integrity 与 `strip_prefix` 原子更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
 Archive 自带 Bazel targets、生成代码和精确的 nanopb runtime；GizOS 通过 `use_repo_rule(http_archive)` 声明可传递给下游 Bzlmod consumer 的 immutable repository，不再注入 BUILD overlay、单独解析 nanopb 或维护 SDK source patch。该 archive 尚未发布到 Bazel Central Registry，因此不能使用只在根 module 生效的 `archive_override` 作为传递依赖。具体版本和完整性校验以 `MODULE.bazel` 中的 `h2_gizclaw_c_sdk` 声明为准。
 
@@ -166,7 +168,6 @@ Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resou
 | --- | --- |
 | Registration / Firmware / Speech | `runtime_profile_name`；Firmware 由 channel 选择；Speech 使用 `*_model_name` |
 | Workflow / Workspace | Workflow `name`、Workspace `name` / `workflow_name`；history public `id` / `history_id` 映射 wire `name` / `history_name` |
-| Pet / gameplay / Points | resource `name`、`pet_def_name`、`pet_name`、`game_name`；GameResult、reward、transaction、source public `*_id` 映射对应 wire `*_name` |
 | Contact | immutable caller-local `name`、mutable `display_name` |
 | Friend / FriendGroup | Friend/member/history public ID 映射 wire name；FriendGroup `name` / `friend_group_name` 与独立 display name 保持 name 语义 |
 
@@ -216,15 +217,13 @@ live suite 还必须验证 pinned GizClaw C SDK 的 single-client 并发能力�
 上依次启动三个 Ping handle，由唯一 serialized poll owner 推进，记录三个不同 stream ID
 的 request DataChannel、三个 terminal result、零残留 channel 和恢复
 Ping。不得用三个线程调用共享 client，也不得用三个 client/Peer 或三个串行请求伪造支持。
-社交 fixture 的 helper Peer 只用于 Friend/FriendGroup 建模。除此之外，测试还必须验证两个 Peer 可各自使用相同 Workspace、Contact、FriendGroup 和
-Pet name 且互不可见，同一 Peer reconnect 后可恢复原 Workspace/history，并覆盖 method
+社交 fixture 的 helper Peer 只用于 Friend/FriendGroup 建模。除此之外，测试还必须验证两个 Peer 可各自使用相同 Workspace、Contact 和 FriendGroup
+name 且互不可见，同一 Peer reconnect 后可恢复原 Workspace/history，并覆盖 method
 95 的 metadata、stream byte count 与清理失败路径。Linux x86_64 与 macOS arm64 都是
 merge 前的外部服务合同证据。
 
-测试创建的 Workspace 和 Pet 分别通过
-`h2_gizclaw_client_workspace_delete()` 与 `h2_gizclaw_client_pet_delete()` 删除；成功
-返回的 snapshot 按普通 owned-output 规则用对应 deinit API 释放。所有业务资源清理
-完成后才请求 Peer 删除。
+测试创建的 Workspace 通过 `h2_gizclaw_rpc_workspace_delete()` 删除；返回的
+snapshot 使用调用方 response storage。所有业务资源清理完成后才请求 Peer 删除。
 
 
 ### 设备控制回复后的本地动作

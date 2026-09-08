@@ -143,29 +143,6 @@ static int profile(h2_gizclaw_e2e_fixture_t *f, resource_case_t *s,
                    !strcmp(out->data.profile.emoji, cmd.text));
   return rc;
 }
-static int points(h2_gizclaw_e2e_fixture_t *f, resource_case_t *s,
-                  h2_gizclaw_resource_snapshot_t *out) {
-  int rc =
-      proof("h2_gizclaw_resource_execute", "resource-points-balance-assert",
-            out->balance_valid && out->balance_result == H2_PAL_OK);
-  /* Only a real next cursor exercises append. Empty accounts are legitimate;
-   * they do not provide evidence for server pagination. */
-  for (size_t page = 0;
-       rc == H2_PAL_OK && out->data.points.transactions.has_next; ++page) {
-    if (page >= RESOURCE_ITEMS)
-      return H2_PAL_ERR_NO_SPACE;
-    const size_t count = out->data.points.transactions.count;
-    const uint64_t revision = out->data_revision;
-    h2_gizclaw_resource_command_t cmd = {.operation =
-                                             H2_GIZCLAW_RESOURCE_LOAD_MORE};
-    rc = execute(f, s, &cmd, out);
-    if (rc == H2_PAL_OK)
-      rc = proof("h2_gizclaw_resource_execute", "resource-points-append-assert",
-                 out->data.points.transactions.count >= count &&
-                     out->data_revision > revision);
-  }
-  return rc;
-}
 static int run_kind(h2_gizclaw_e2e_fixture_t *f, resource_case_t *s,
                     h2_gizclaw_resource_kind_t kind) {
   h2_gizclaw_resource_config_t config = {
@@ -196,8 +173,6 @@ static int run_kind(h2_gizclaw_e2e_fixture_t *f, resource_case_t *s,
     rc = contacts(f, s, &out);
   if (rc == H2_PAL_OK && kind == H2_GIZCLAW_RESOURCE_PROFILE)
     rc = profile(f, s, &out);
-  if (rc == H2_PAL_OK && kind == H2_GIZCLAW_RESOURCE_POINTS)
-    rc = points(f, s, &out);
   if (rc == H2_PAL_OK && kind == H2_GIZCLAW_RESOURCE_GROUPS)
     rc = proof("h2_gizclaw_resource_execute", "resource-groups-assert",
                !out.data.groups.has_next && (out.data.groups.count == 0u ||

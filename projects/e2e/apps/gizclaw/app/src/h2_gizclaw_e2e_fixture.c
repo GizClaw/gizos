@@ -602,9 +602,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
                  run_hex);
   if (!append_name_suffix(fixture->workspace_name,
                           sizeof(fixture->workspace_name), fixture->run_prefix,
-                          "-workspace") ||
-      !append_name_suffix(fixture->pet_name, sizeof(fixture->pet_name),
-                          fixture->run_prefix, "-pet")) {
+                          "-workspace")) {
     memset(fixture->registration_token, 0, config->registration_token.len + 1u);
     h2_pal_mem_free(fixture->allocator, fixture->registration_token);
     fixture->registration_token = NULL;
@@ -1034,63 +1032,12 @@ static int cleanup_workspace(h2_gizclaw_e2e_fixture_t *fixture,
   return H2_PAL_OK;
 }
 
-static int cleanup_pet(h2_gizclaw_e2e_fixture_t *f,
-                       h2_gizclaw_service_t *service,
-                       h2_gizclaw_resp_storage_t *storage, bool *pending,
-                       bool *acknowledged) {
-  const char *name = f->pet_name;
-  if (!name[0] || !memchr(name, '\0', sizeof(f->pet_name)))
-    return H2_PAL_ERR_INVALID_STATE;
-  storage->used = 0u;
-  if (!*acknowledged) {
-    h2_gizclaw_pet_t value = {0};
-    int rc = h2_gizclaw_e2e_fixture_has_time(f, 15000u)
-                 ? h2_gizclaw_rpc_pet_delete(service, h2_gizclaw_e2e_str(name),
-                                             15000u, storage, &value)
-                 : H2_PAL_ERR_TIMEOUT;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_pet_delete", "cleanup", rc);
-    if (rc == H2_PAL_OK &&
-        (!cleanup_text(storage, value.name) || strcmp(value.name, name)))
-      rc = H2_PAL_ERR_FORMAT;
-    storage->used = 0u;
-    if (rc != H2_PAL_OK)
-      return rc;
-    *acknowledged = true;
-  }
-  for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
-    h2_gizclaw_pet_t value = {0};
-    int rc = h2_gizclaw_e2e_fixture_has_time(f, 15000u)
-                 ? h2_gizclaw_rpc_pet_get(service, h2_gizclaw_e2e_str(name),
-                                          15000u, storage, &value)
-                 : H2_PAL_ERR_TIMEOUT;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_pet_get", "cleanup-absence", rc);
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-      *pending = *acknowledged = false;
-      storage->used = 0u;
-      return H2_PAL_OK;
-    }
-    if (rc == H2_PAL_OK &&
-        (!cleanup_text(storage, value.name) || strcmp(value.name, name)))
-      rc = H2_PAL_ERR_FORMAT;
-    storage->used = 0u;
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (attempt == 31u)
-      return H2_PAL_ERR_TIMEOUT;
-    /* Keep the acknowledgement across retries of asynchronous deletion. */
-    rc = h2_pal_time_sleep_ms(f->time, 100u);
-    if (rc != H2_PAL_OK)
-      return rc;
-  }
-  return H2_PAL_ERR_TIMEOUT;
-}
-
 static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t *fixture,
                                         size_t role) {
   const bool owns_workspace =
       fixture->workspace_created && fixture->workspace_actor_role == role;
   if (role == H2_GIZCLAW_E2E_OWNER)
-    return owns_workspace || fixture->contact_created || fixture->pet_created ||
+    return owns_workspace || fixture->contact_created ||
            fixture->friendship_created || fixture->friend_group_created ||
            fixture->friend_group_invite_created ||
            fixture->friend_group_member_joined;
@@ -1099,7 +1046,7 @@ static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t *fixture,
            fixture->friend_invite_created ||
            fixture->isolation_workspace_pending ||
            fixture->isolation_contact_pending ||
-           fixture->isolation_group_pending || fixture->isolation_pet_pending;
+           fixture->isolation_group_pending;
   return owns_workspace || fixture->friend_group_member_joined;
 }
 
@@ -1203,11 +1150,6 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     if (rc == H2_PAL_OK)
       fixture->contact_created = false;
   }
-  if (owner != NULL && fixture->pet_created) {
-    int rc = cleanup_pet(fixture, owner, &storage, &fixture->pet_created,
-                         &fixture->pet_delete_acknowledged);
-    keep_first_failure(rc, &result);
-  }
   h2_gizclaw_service_t *workspace_service =
       fixture->workspace_actor_role < H2_GIZCLAW_E2E_ACTOR_COUNT
           ? fixture->actors[fixture->workspace_actor_role].service
@@ -1222,12 +1164,6 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   /* The second peer's same-name objects are independent resources. Keep each
    * obligation until acknowledged; never lose it with a returned case stack. */
-  if (friend_service != NULL && fixture->isolation_pet_pending) {
-    int rc = cleanup_pet(fixture, friend_service, &storage,
-                         &fixture->isolation_pet_pending,
-                         &fixture->isolation_pet_delete_acknowledged);
-    keep_first_failure(rc, &result);
-  }
   if (friend_service != NULL && fixture->isolation_group_pending) {
     h2_gizclaw_friend_group_t value = {0};
     int rc = h2_gizclaw_rpc_friend_group_delete(
@@ -1312,7 +1248,6 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
                                      fixture->case_state != NULL);
   retained +=
       emit_retained_resource(fixture, "workspace", fixture->workspace_created);
-  retained += emit_retained_resource(fixture, "pet", fixture->pet_created);
   retained +=
       emit_retained_resource(fixture, "contact", fixture->contact_created);
   retained += emit_retained_resource(fixture, "friendship",
@@ -1331,8 +1266,6 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
                                      fixture->isolation_contact_pending);
   retained += emit_retained_resource(fixture, "isolation-group",
                                      fixture->isolation_group_pending);
-  retained += emit_retained_resource(fixture, "isolation-pet",
-                                     fixture->isolation_pet_pending);
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_ACTOR_COUNT; ++index) {
     retained += emit_retained_resource(
         fixture, "peer", fixture->actors[index].peer_delete_required);

@@ -70,7 +70,6 @@ typedef struct h2_gizclaw_e2e_fixture {
   char run_prefix[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workflow_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workspace_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
-  char pet_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char contact_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_id[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_group_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
@@ -96,10 +95,7 @@ typedef struct h2_gizclaw_e2e_fixture {
   h2_gizclaw_e2e_actor_role_t workspace_actor_role;
   /* A valid delete reply is retained until cleanup records the handoff. */
   bool workspace_delete_acknowledged;
-  bool pet_created;
-  bool pet_delete_acknowledged;
   /* Download sinks may outlive a failed wait; keep their state with Service. */
-  atomic_size_t pet_download_bytes;
   h2_gizclaw_e2e_speed_hooks_t speed_hooks[6];
   bool contact_created;
   bool friendship_created;
@@ -111,8 +107,6 @@ typedef struct h2_gizclaw_e2e_fixture {
   bool isolation_workspace_delete_acknowledged;
   bool isolation_contact_pending;
   bool isolation_group_pending;
-  bool isolation_pet_pending;
-  bool isolation_pet_delete_acknowledged;
   bool cancel_requested;
   bool cleanup_started;
   /* A job task whose join never succeeded. The handle stays owned here and

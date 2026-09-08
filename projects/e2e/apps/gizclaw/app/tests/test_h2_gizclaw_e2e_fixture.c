@@ -146,7 +146,7 @@ h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t *service,
 }
 
 /* Fail closed unless the test explicitly grants the exact business scope. */
-enum { CONTACT = 1u, FRIEND = 2u, GROUP = 4u, PET = 8u, WORKSPACE = 16u };
+enum { CONTACT = 1u, FRIEND = 2u, GROUP = 4u, WORKSPACE = 16u };
 static unsigned s_business_allowed, s_business_failed, s_business_seen;
 static h2_gizclaw_e2e_fixture_t *s_business_fixture;
 static bool s_lookup_friend;
@@ -218,71 +218,6 @@ static void workspace_call(h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
   assert(memcmp(name.data, s_business_fixture->workspace_name, name.len) == 0);
   assert(timeout == 15000u && storage->used == 0u);
   s_business_seen |= WORKSPACE;
-}
-
-static unsigned s_pet_mode, s_pet_role = H2_GIZCLAW_E2E_FRIEND;
-static unsigned s_pet_deletes, s_pet_gets;
-static void pet_call(h2_gizclaw_service_t *service, h2_gizclaw_str_t name,
-                     uint32_t timeout, h2_gizclaw_resp_storage_t *storage) {
-  assert(s_business_fixture && (s_business_allowed & PET));
-  assert(service == s_business_fixture->actors[s_pet_role].service);
-  assert(name.len == strlen(s_business_fixture->pet_name) && name.len > 0u);
-  assert(!memcmp(name.data, s_business_fixture->pet_name, name.len));
-  assert(timeout == 15000u && !storage->used);
-  s_business_seen |= PET;
-}
-h2_pal_result_t h2_gizclaw_rpc_pet_delete(h2_gizclaw_service_t *service,
-                                          h2_gizclaw_str_t name,
-                                          uint32_t timeout,
-                                          h2_gizclaw_resp_storage_t *storage,
-                                          h2_gizclaw_pet_t *out) {
-  pet_call(service, name, timeout, storage);
-  ++s_pet_deletes;
-  if ((s_business_failed & PET) || s_pet_mode == 7u)
-    return H2_PAL_ERR_IO;
-  if (s_pet_mode == 6u)
-    return H2_PAL_ERR_NOT_FOUND;
-  *out = (h2_gizclaw_pet_t){
-      .name = cleanup_save(storage, s_business_fixture->pet_name)};
-  if (s_pet_mode == 1u)
-    out->name = cleanup_save(storage, "wrong");
-  if (s_pet_mode == 2u)
-    out->name = NULL;
-  if (s_pet_mode == 3u)
-    out->name = "unowned";
-  if (s_pet_mode == 4u)
-    out->name[0] = '\0';
-  if (s_pet_mode == 5u)
-    memset(storage->data, 'x', storage->used);
-  if (s_pet_mode == 8u)
-    storage->used = storage->capacity + 1u;
-  if (s_pet_mode == 10u)
-    clock.monotonic_ms += 45000u;
-  return H2_PAL_OK;
-}
-h2_pal_result_t h2_gizclaw_rpc_pet_get(h2_gizclaw_service_t *service,
-                                       h2_gizclaw_str_t name, uint32_t timeout,
-                                       h2_gizclaw_resp_storage_t *storage,
-                                       h2_gizclaw_pet_t *out) {
-  pet_call(service, name, timeout, storage);
-  ++s_pet_gets;
-  if (s_pet_mode == 9u)
-    return H2_PAL_ERR_IO;
-  if ((s_pet_mode >= 11u && s_pet_mode <= 15u) ||
-      (s_pet_mode == 18u && s_pet_gets < 3u)) {
-    *out = (h2_gizclaw_pet_t){
-        .name = cleanup_save(storage, s_business_fixture->pet_name)};
-    if (s_pet_mode == 11u)
-      out->name = cleanup_save(storage, "wrong");
-    if (s_pet_mode == 13u)
-      out->name = "unowned";
-    if (s_pet_mode == 14u)
-      storage->used = storage->capacity + 1u;
-    if (s_pet_mode == 15u)
-      memset(storage->data, 'x', storage->used);
-    return H2_PAL_OK;
-  }
-  return H2_PAL_ERR_NOT_FOUND;
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
@@ -844,7 +779,6 @@ int main(int argc, char **argv) {
   assert(strcmp(fixture.endpoint, endpoint) == 0);
   assert(strcmp(fixture.workspace_name, "h2e2e-6b6b6b6b6b6b6b6b-workspace") ==
          0);
-  assert(strcmp(fixture.pet_name, "h2e2e-6b6b6b6b6b6b6b6b-pet") == 0);
   assert(fixture.runtime_profile_name[0] == '\0');
   assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
   assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
@@ -923,10 +857,10 @@ int main(int argc, char **argv) {
   strcpy(fixture.contact_name, "isolated-contact");
   strcpy(fixture.friend_group_name, "isolated-group");
   fixture.isolation_contact_pending = fixture.isolation_group_pending = true;
-  fixture.isolation_pet_pending = fixture.isolation_workspace_pending = true;
+  fixture.isolation_workspace_pending = true;
   assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 45000u) == H2_PAL_OK);
   s_business_fixture = &fixture;
-  s_business_allowed = CONTACT | GROUP | PET | WORKSPACE;
+  s_business_allowed = CONTACT | GROUP | WORKSPACE;
   s_business_failed = GROUP;
   const unsigned before_deletes = s_deletes;
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_ERR_IO);
@@ -1144,63 +1078,6 @@ int main(int argc, char **argv) {
         assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
         assert(s_workspace_deletes == expected_deletes);
         assert(!*pending && !*ack && s_deletes == before + 2u);
-      }
-      assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
-      assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
-    }
-  }
-  for (unsigned role = 0u; role < 2u; ++role) {
-    for (unsigned mode = 0u; mode <= 18u; ++mode) {
-      assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 45000u) ==
-             H2_PAL_OK);
-      assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 2u) == H2_PAL_OK);
-      bool *pending =
-          role ? &fixture.isolation_pet_pending : &fixture.pet_created;
-      bool *ack = role ? &fixture.isolation_pet_delete_acknowledged
-                       : &fixture.pet_delete_acknowledged;
-      *pending = true;
-      *ack = mode == 17u;
-      s_business_allowed = PET;
-      s_business_failed = 0u;
-      s_pet_role = role;
-      s_pet_mode = mode;
-      s_pet_deletes = s_pet_gets = 0u;
-      if (mode == 16u)
-        assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 1u) == H2_PAL_OK);
-      const unsigned before = s_deletes;
-      int rc = h2_gizclaw_e2e_fixture_cleanup(&fixture);
-      int expected = mode == 0u || mode == 17u || mode == 18u ? H2_PAL_OK
-                     : mode == 6u               ? H2_PAL_ERR_NOT_FOUND
-                     : mode == 7u || mode == 9u ? H2_PAL_ERR_IO
-                     : mode == 10u || mode == 12u || mode == 16u
-                         ? H2_PAL_ERR_TIMEOUT
-                         : H2_PAL_ERR_FORMAT;
-      assert(rc == expected);
-      assert(s_pet_deletes == ((mode == 16u || mode == 17u) ? 0u : 1u));
-      unsigned gets = mode == 12u   ? 32u
-                      : mode == 18u ? 3u
-                      : (mode == 0u || mode == 9u ||
-                         (mode >= 11u && mode <= 15u) || mode == 17u)
-                          ? 1u
-                          : 0u;
-      assert(s_pet_gets == gets);
-      assert(*pending == (rc != H2_PAL_OK));
-      assert(*ack == (mode >= 9u && mode <= 15u));
-      assert(s_deletes == before + (rc == H2_PAL_OK ? 2u
-                                    : mode == 10u   ? 0u
-                                                    : 1u));
-      if (rc != H2_PAL_OK) {
-        assert(fixture.actors[role].registered &&
-               fixture.actors[role].peer_delete_required);
-        assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) ==
-               (mode == 10u ? 3u : 2u));
-        unsigned expected_deletes = s_pet_deletes + (*ack ? 0u : 1u);
-        s_pet_mode = 0u;
-        assert(h2_gizclaw_e2e_fixture_set_deadline(&fixture, 45000u) ==
-               H2_PAL_OK);
-        assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
-        assert(s_pet_deletes == expected_deletes && !*pending && !*ack);
-        assert(s_deletes == before + 2u);
       }
       assert(h2_gizclaw_e2e_fixture_emit_recovery_ledger(&fixture) == 0u);
       assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);

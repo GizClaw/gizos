@@ -12,7 +12,6 @@ static h2_gizclaw_resource_t *resource;
 static unsigned mode, calls, gets, creates;
 static uint64_t now;
 static bool exists;
-static h2_pal_result_t balance_rc, transactions_rc;
 static const h2_gizclaw_resource_command_t refresh = {
     .operation = H2_GIZCLAW_RESOURCE_REFRESH};
 static h2_pal_result_t monotonic(void *user, uint64_t *out) {
@@ -156,36 +155,6 @@ h2_pal_result_t h2_gizclaw_rpc_profile_put_emoji(h2_gizclaw_service_t *s,
   (void)emoji;
   return h2_gizclaw_rpc_profile_get(s, timeout, out);
 }
-h2_pal_result_t h2_gizclaw_rpc_point_get(h2_gizclaw_service_t *s,
-                                         uint32_t timeout,
-                                         h2_gizclaw_resp_storage_t *storage,
-                                         h2_gizclaw_points_account_t *out) {
-  (void)storage;
-  begin_rpc(s, timeout);
-  memset(out, 0, sizeof(*out));
-  return balance_rc;
-}
-h2_pal_result_t h2_gizclaw_rpc_point_transaction_list(
-    h2_gizclaw_service_t *s, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
-    h2_gizclaw_points_transaction_page_t *out) {
-  begin_rpc(s, timeout);
-  assert(limit > 0);
-  if (transactions_rc != H2_PAL_OK)
-    return transactions_rc;
-  h2_gizclaw_resp_arena_t a;
-  assert(h2_gizclaw_resp_arena_begin(storage, &a) == H2_PAL_OK);
-  *out = (h2_gizclaw_points_transaction_page_t){0};
-  out->items = h2_pal_mem_alloc(&a.allocator, sizeof(*out->items));
-  assert(out->items);
-  *out->items = (h2_gizclaw_points_transaction_t){
-      .id = {copy(&a, cursor.len ? "b" : "a"), 1}};
-  out->count = 1;
-  out->has_next = cursor.len == 0;
-  if (out->has_next)
-    out->next_cursor = (h2_gizclaw_owned_text_t){copy(&a, "next"), 4};
-  return h2_gizclaw_resp_arena_end(&a, H2_PAL_OK);
-}
 h2_pal_result_t h2_gizclaw_rpc_app_config_list(
     h2_gizclaw_service_t *s, h2_gizclaw_str_t cursor, size_t limit,
     uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
@@ -240,7 +209,6 @@ static void setup(h2_gizclaw_resource_kind_t kind, size_t max_items) {
   mode = calls = gets = creates = 0;
   now = 0;
   exists = false;
-  balance_rc = transactions_rc = H2_PAL_OK;
   h2_gizclaw_resource_config_t c = {.kind = kind,
                                     .service = (h2_gizclaw_service_t *)&calls,
                                     .mem = h2_desktop_platform_default_allocator(),
@@ -273,8 +241,8 @@ static void test_firmware_state(void) {
     now = 0;
     assert(h2_gizclaw_resource_create(&config, &resource) == H2_PAL_OK);
     assert(!snapshot().valid && snapshot().stale);
-    const h2_gizclaw_resource_command_t more = {.operation = H2_GIZCLAW_RESOURCE_LOAD_MORE};
-    assert(h2_gizclaw_resource_execute(resource, &more, 100) == H2_PAL_ERR_INVALID_ARG);
+    const h2_gizclaw_resource_command_t mutation = {.operation = H2_GIZCLAW_RESOURCE_CONTACT_DELETE};
+    assert(h2_gizclaw_resource_execute(resource, &mutation, 100) == H2_PAL_ERR_INVALID_ARG);
     assert(calls == 0);
     assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_OK);
     h2_gizclaw_resource_snapshot_t before = snapshot();
@@ -414,22 +382,6 @@ int main(void) {
   setup(H2_GIZCLAW_RESOURCE_PROFILE, 4);
   assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_OK);
   assert(strcmp(snapshot().data.profile.name, "Alice") == 0);
-  assert(h2_gizclaw_resource_destroy(&resource) == H2_PAL_OK);
-  setup(H2_GIZCLAW_RESOURCE_POINTS, 4);
-  balance_rc = H2_PAL_ERR_IO;
-  assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_OK);
-  assert(snapshot().valid && !snapshot().balance_valid &&
-         snapshot().balance_result == H2_PAL_ERR_IO);
-  const h2_gizclaw_resource_command_t more = {.operation = H2_GIZCLAW_RESOURCE_LOAD_MORE};
-  assert(h2_gizclaw_resource_execute(resource, &more, 100) == H2_PAL_OK);
-  assert(snapshot().data.points.transactions.count == 2);
-  balance_rc = H2_PAL_OK;
-  transactions_rc = H2_PAL_ERR_IO;
-  assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_ERR_IO);
-  assert(snapshot().balance_valid && snapshot().stale &&
-         snapshot().data.points.transactions.count == 2);
-  assert(h2_gizclaw_resource_execute(resource, &more, 100) ==
-         H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_resource_destroy(&resource) == H2_PAL_OK);
   return 0;
 }

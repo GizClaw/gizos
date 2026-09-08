@@ -2,7 +2,6 @@
 #define H2_GIZCLAW_RESOURCE_H
 
 #include "h2_gizclaw_app_config.h"
-#include "h2_gizclaw_points.h"
 #include "h2_gizclaw_firmware.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_social.h"
@@ -16,14 +15,12 @@ typedef struct h2_gizclaw_resource h2_gizclaw_resource_t;
 typedef enum h2_gizclaw_resource_kind {
   H2_GIZCLAW_RESOURCE_CONTACTS = 0,
   H2_GIZCLAW_RESOURCE_PROFILE,
-  H2_GIZCLAW_RESOURCE_POINTS,
   H2_GIZCLAW_RESOURCE_GROUPS,
   H2_GIZCLAW_RESOURCE_APP_CONFIG,
   H2_GIZCLAW_RESOURCE_FIRMWARE,
 } h2_gizclaw_resource_kind_t;
 typedef enum h2_gizclaw_resource_operation {
   H2_GIZCLAW_RESOURCE_REFRESH = 0,
-  H2_GIZCLAW_RESOURCE_LOAD_MORE,
   H2_GIZCLAW_RESOURCE_CONTACT_CREATE,
   H2_GIZCLAW_RESOURCE_CONTACT_UPDATE,
   H2_GIZCLAW_RESOURCE_CONTACT_DELETE,
@@ -61,8 +58,7 @@ typedef struct h2_gizclaw_resource_command {
  * storage. valid means a complete data snapshot exists; stale means its
  * freshness cannot be asserted (refreshing, failed operation or closed
  * connection). revision counts notifications, data_revision counts committed
- * snapshots. Points balance has independent validity/result from the
- * transaction list. These local revisions are not server revisions. */
+ * snapshots. These local revisions are not server revisions. */
 typedef struct h2_gizclaw_resource_snapshot {
   h2_gizclaw_resource_kind_t kind;
   uint64_t revision;
@@ -72,16 +68,10 @@ typedef struct h2_gizclaw_resource_snapshot {
   bool busy;
   bool closed;
   h2_pal_result_t last_error;
-  bool balance_valid;
-  h2_pal_result_t balance_result;
   union {
     h2_gizclaw_contact_page_t contacts;
     h2_gizclaw_profile_t profile;
     h2_gizclaw_firmware_t firmware;
-    struct {
-      h2_gizclaw_points_account_t account;
-      h2_gizclaw_points_transaction_page_t transactions;
-    } points;
     h2_gizclaw_friend_group_page_t groups;
     h2_gizclaw_app_config_snapshot_t app_config;
   } data;
@@ -107,14 +97,12 @@ h2_gizclaw_resource_snapshot(h2_gizclaw_resource_t *resource,
 /** Blocking caller-worker operation; never call from service_poll callbacks or
  * the Service network task. Concurrent execute returns BUSY. timeout_ms bounds
  * the entire operation including paging/reconciliation. Contact/group refresh
- * loads the complete bounded list. Points refresh replaces its first page;
- * LOAD_MORE appends using the owned cursor and requires a fresh valid list.
+ * loads the complete bounded list.
  * Mutations reload confirmed data; failures keep prior data marked stale.
  * AppConfig supports REFRESH only: loads every key/value at one Profile
  * name/revision, replacing the complete snapshot only on success.
  * Firmware supports REFRESH only for config.firmware_channel; the inline
  * snapshot includes optional version metadata and requires no response arena bytes.
- * Points may commit a successful balance or list independently.
  * No product defaults, filesystem access or optimistic updates are performed.
  */
 h2_pal_result_t
