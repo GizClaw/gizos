@@ -164,7 +164,10 @@ h2_gizclaw_resource_create(const h2_gizclaw_resource_config_t *c,
       c->time == NULL || c->kind < H2_GIZCLAW_RESOURCE_CONTACTS ||
       c->kind > H2_GIZCLAW_RESOURCE_APP_CONFIG || c->max_items == 0u ||
       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_points_transaction_t) ||
-      c->page_size == 0u || c->page_size > H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS ||
+      c->page_size == 0u ||
+      c->page_size > (c->kind == H2_GIZCLAW_RESOURCE_APP_CONFIG
+                           ? H2_GIZCLAW_APP_CONFIG_PAGE_MAX_ITEMS
+                           : H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS) ||
       c->storage_bytes == 0u)
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_resource_t *r = h2_pal_mem_alloc(c->mem, sizeof(*r));

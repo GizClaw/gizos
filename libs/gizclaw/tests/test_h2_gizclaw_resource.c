@@ -245,6 +245,29 @@ static h2_gizclaw_resource_snapshot_t snapshot(void) {
   return out;
 }
 int main(void) {
+  const size_t page_sizes[] = {0, 64, 65};
+  for (size_t i = 0; i < sizeof(page_sizes) / sizeof(page_sizes[0]); ++i) {
+    h2_gizclaw_resource_config_t config = {
+        .kind = H2_GIZCLAW_RESOURCE_APP_CONFIG,
+        .service = (h2_gizclaw_service_t *)&calls,
+        .mem = h2_desktop_platform_default_allocator(),
+        .sync = h2_desktop_platform_sync_api(),
+        .time = &time_api,
+        .max_items = 64,
+        .page_size = page_sizes[i],
+        .storage_bytes = 16384};
+    h2_pal_result_t rc = h2_gizclaw_resource_create(&config, &resource);
+    if (page_sizes[i] == 64) {
+      assert(rc == H2_PAL_OK);
+      mode = 0;
+      assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_OK);
+      assert(snapshot().data.app_config.count == 2);
+      assert(h2_gizclaw_resource_destroy(&resource) == H2_PAL_OK);
+    } else {
+      assert(rc == H2_PAL_ERR_INVALID_ARG && resource == NULL);
+    }
+  }
+
   for (unsigned scenario = 0; scenario <= 10; ++scenario) {
     setup(H2_GIZCLAW_RESOURCE_APP_CONFIG, scenario == 2 ? 1 : 4);
     if (scenario != 2)
