@@ -129,6 +129,12 @@ qi_duel_art(
     symbol = "qi_duel_countdown_rgba",
 )
 
+qi_duel_art(
+    name = "impact_labels_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/impact-labels.h2r8",
+    symbol = "qi_duel_impact_labels_rgba",
+)
+
 h2_lua_resource(
     name = "qi_duel_script",
     src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/main.lua",
@@ -160,6 +166,7 @@ cc_library(
         ":qi_duel_link_protocol",
         ":ui_labels",
         ":countdown_rgba",
+        ":impact_labels_rgba",
         ":wall_atlas",
         ":arena_atlas",
         ":opponent_rgba",

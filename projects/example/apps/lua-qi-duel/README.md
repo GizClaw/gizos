@@ -41,6 +41,8 @@ See `ACTION-PREVIEW.md` for controls, timing and
 deterministic captures. Device performance parity remains unverified.
 H106 keys: Volume+ / Volume- switch the wheel; Record casts. Desktop equivalents
 are Up / Down / Tab. The icon remains stationary while an expanding echo fades.
+Full-qi waves show a large shaking `COMBO` impact word; a broken Guard follows
+with `ARMOR BREAK`, using the same authored pixel-art language as the countdown.
 
 Approved art is embedded as compressed RGBA/style/light resources. Lua drives
 motion and effects; the native compositor submits RGB565 pixels to SDL. Runtime

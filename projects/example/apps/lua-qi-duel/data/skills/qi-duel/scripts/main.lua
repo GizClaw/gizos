@@ -59,6 +59,7 @@ local json=PLAY_GAME and require("json") or nil
 local page,mode,menu_selection=PLAY_GAME and "menu" or "battle","demon",1
 local network,link_error,menu_press=nil,nil,nil
 local fixed_time_ms = tonumber(options.time_ms)
+local impact_probe = options.impact ~= "" and options.impact or nil
 local scene_started_ms = system.millis()
 local supported_layers = {full=true,walls=true,wheel=true,arena=true,dust=true,
     particles=true,opponent=true,["hand-left"]=true,["hand-right"]=true,
@@ -68,6 +69,8 @@ local supported_layers = {full=true,walls=true,wheel=true,arena=true,dust=true,
 assert(supported_layers[inspector_layer], "unsupported inspector layer")
 assert(fixed_time_ms == nil or (fixed_time_ms >= 0 and fixed_time_ms < math.huge),
     "invalid inspector time")
+assert(impact_probe == nil or impact_probe == "combo" or impact_probe == "armor-break",
+    "invalid impact probe")
 
 -- Fixed 368x448 composition values from the approved device layout.
 local HUD_W, HUD_H = 190, 190 * 116 / 398
@@ -1314,6 +1317,73 @@ local function draw_countdown(now)
         x,y-row*size,{0,row*64,64,64})
 end
 
+-- Sprite Maker-authored impact words. The image carries the bevel, glow and
+-- fracture detail; runtime motion supplies the short critical-hit shake/pop.
+local function impact_label_state(now)
+    if impact_probe then return impact_probe,0 end
+    if not PLAY_GAME or not battle or battle.phase~="play" or not cast then return nil end
+    local combo=cast.power and (cast.power[1]==3 or cast.power[2]==3)
+    local broken=battle.result and battle.result.broken and
+        (battle.result.broken[1] or battle.result.broken[2])
+    if broken and now>=cast.started+780 then return "armor-break",cast.started+780 end
+    if combo and now>=cast.started+410 then return "combo",cast.started+410 end
+    return nil
+end
+
+local function draw_impact_label(now)
+    local kind,started=impact_label_state(now)
+    if not kind then return end
+    local duration=kind=="combo" and 560 or 720
+    local age=now-started
+    if age<0 or age>=duration then return end
+    viewport("screen")
+    local p=age/duration
+    local fade=clamp(age/55,0,1)*clamp((duration-age)/150,0,1)
+    local base_scale=H106 and (kind=="combo" and .79 or .76) or
+        (kind=="combo" and 1.02 or .98)
+    local enter=clamp(age/105,0,1)
+    local scale=base_scale*(.58+.48*math.sin(enter*math.pi*.5))
+    if age>105 then
+        scale=scale*(1+.055*math.exp(-(age-105)/190)*math.sin((age-105)*.052))
+    end
+    local strength=kind=="combo" and 5.2 or 7.4
+    local shake=strength*(.18+.82*(1-p)^2)*fade
+    local dx=math.sin(age*.39)*shake
+    local dy=math.cos(age*.31)*shake*.48
+    local cx,cy=SCREEN_W*.5,(H106 and 91 or 184)
+    local row=kind=="combo" and 0 or 1
+    local crop={0,row*96,192,96}
+    local color=kind=="combo" and COLOR.cyan_hot or COLOR.orange
+
+    -- Repeated radial shards read as a compact critical impact at 1x scale.
+    local burst=clamp(1-age/330,0,1)
+    local beat=1-(age%165)/165
+    for i=0,13 do
+        local angle=i*TAU/14+(kind=="combo" and 0 or .11)
+        local inner=(42+age*.055+(i%3)*4)*(H106 and .72 or 1)
+        local length=(9+20*burst*beat)*(H106 and .72 or 1)
+        local x0,y0=cx+math.cos(angle)*inner,cy+math.sin(angle)*inner*.52
+        display.add_line(x0,y0,x0+math.cos(angle)*length,
+            y0+math.sin(angle)*length*.52,kind=="combo" and 1.2 or 1.7,
+            i%3==0 and COLOR.white or color,fade*burst*(.34+.58*beat))
+    end
+    display.add_disc(cx,cy,(18+burst*18)*(H106 and .72 or 1),color,
+        fade*burst*.055)
+
+    local function sprite(draw_scale,angle,opacity,offset_x,offset_y)
+        local a,b=math.cos(angle)*draw_scale,math.sin(angle)*draw_scale
+        local c,d=-b,a
+        local source_cx,source_cy=96,row*96+48
+        local target_x,target_y=cx+dx+offset_x,cy+dy+offset_y
+        display.draw_affine_asset("@qi-duel/impact-labels.h2r8",a,b,c,d,
+            target_x-a*source_cx-c*source_cy,
+            target_y-b*source_cx-d*source_cy,crop,opacity)
+    end
+    local angle=math.sin(age*.47)*(kind=="combo" and .008 or .013)*(1-p)
+    sprite(scale*1.075,-angle,fade*.20,-dx*.7,dy*.5)
+    sprite(scale,angle,fade,0,0)
+end
+
 local function mode_label(row,y,scale)
     local s=scale or (H106 and .75 or 1)
     display.draw_affine_asset("@qi-duel/ui-labels.h2r8",s,0,0,s,
@@ -1388,6 +1458,7 @@ local function render(now_ms)
             if inspector_layer==skill.asset then draw_skill_symbol(i,0) end
         end
         draw_countdown(now_ms)
+        draw_impact_label(now_ms)
         display.end_composite()
     end
     local present_started_ms = system.millis()

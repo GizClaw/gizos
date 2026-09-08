@@ -63,6 +63,13 @@ combo VFX have three pulses. Displayed HP/qi updates at the common impact point,
 750 ms into the 1800 ms result presentation. The next round cannot consume qi
 until that presentation finishes.
 
+Full-qi attacks also punch in a large, shaking `COMBO` sprite. When a combo
+breaks Guard, it is followed by the English `ARMOR BREAK` alert. Both labels use
+the countdown's beveled pixel language, a white-hot flash, offset echo and
+compact radial shards. Source artwork is `assets/source/combo-impact-v1.png` and
+`assets/source/armor-break-impact-v1.png`; `app/tools/pack_impact_labels.mjs`
+packs them into `assets/generated/impact-labels.h2r8`.
+
 ## Bluetooth reuse and boundaries
 
 The native bridge reuses BloomSpeaker's engine with an optional non-audio

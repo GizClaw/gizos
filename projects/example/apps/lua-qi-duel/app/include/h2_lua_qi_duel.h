@@ -55,6 +55,8 @@ typedef struct h2_lua_qi_duel_config {
   const char *action;
   /** Optional rehearsal actor: both (default), player, opponent. */
   const char *actor;
+  /** Optional impact-label probe: combo or armor-break. */
+  const char *impact;
 } h2_lua_qi_duel_config_t;
 
 /** Runs the Qi Duel Lua resource using the supplied initialized Runtime. */

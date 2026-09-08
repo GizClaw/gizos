@@ -12,6 +12,7 @@
 #include "qi_duel_link_protocol_generated.h"
 #include "ui_labels_generated.h"
 #include "countdown_rgba_generated.h"
+#include "impact_labels_rgba_generated.h"
 #include "wall_atlas_generated.h"
 #include "arena_atlas_generated.h"
 #include "arena_full_atlas_generated.h"
@@ -71,6 +72,9 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
        .source_size = qi_duel_ui_labels_size},
       {.name = "@qi-duel/countdown.h2r8", .source = qi_duel_countdown_rgba,
        .source_size = qi_duel_countdown_rgba_size},
+      {.name = "@qi-duel/impact-labels.h2r8",
+       .source = qi_duel_impact_labels_rgba,
+       .source_size = qi_duel_impact_labels_rgba_size},
       {.name = "@qi-duel/action-opponent.h2rs", .source = qi_duel_action_opponent,
        .source_size = qi_duel_action_opponent_size},
       {.name = "@qi-duel/action-hands.h2rs", .source = qi_duel_action_hands,
@@ -169,6 +173,7 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
         {.name = "drag", .value = config->drag ? config->drag : ""},
         {.name = "action", .value = config->action ? config->action : ""},
         {.name = "actor", .value = config->actor ? config->actor : ""},
+        {.name = "impact", .value = config->impact ? config->impact : ""},
     };
     result = h2_lua_job_submit_resource(host, "@qi-duel/main.lua", args, sizeof(args)/sizeof(args[0]),
                                         &job_id);
