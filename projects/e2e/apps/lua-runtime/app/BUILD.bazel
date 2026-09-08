@@ -1,27 +1,34 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_lua_runtime_e2e_task_names.c"],
-    hdrs = ["include/h2_lua_runtime_e2e_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "lua-runtime/e2e/runner",
+    ],
 )
 
 cc_library(
     name = "lua_runtime_e2e",
-    srcs = ["src/h2_lua_runtime_e2e.c"],
-    hdrs = ["include/h2_lua_runtime_e2e.h"],
+    srcs = [
+        "src/h2_lua_runtime_e2e.c",
+        "src/h2_lua_runtime_e2e_task_names.c",
+    ],
+    hdrs = [
+        "include/h2_lua_runtime_e2e.h",
+        "include/h2_lua_runtime_e2e_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     tags = ["h2-ci-native-package"],
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/lua",
         "//libs/runtime",
     ],

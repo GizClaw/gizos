@@ -1,15 +1,15 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_showcase_task_names.c"],
-    hdrs = ["include/h2_showcase_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "showcase/gizclaw",
+        "showcase/audio",
+    ],
 )
 
 cc_library(
@@ -18,11 +18,17 @@ cc_library(
         "src/h2_showcase.c",
         "src/h2_showcase_state.c",
         "src/h2_showcase_state.h",
+        "src/h2_showcase_task_names.c",
     ],
-    hdrs = ["include/h2_showcase.h"],
+    hdrs = [
+        "include/h2_showcase.h",
+        "include/h2_showcase_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -31,7 +37,7 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/gizclaw",
         "//libs/lvgl",
         "//libs/mp4_decoder",

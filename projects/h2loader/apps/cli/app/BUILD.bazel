@@ -1,15 +1,14 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_h2loader_cli_task_names.c"],
-    hdrs = ["include/h2_h2loader_cli_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "h2loader/cli/speed",
+    ],
 )
 
 cc_library(
@@ -21,14 +20,20 @@ cc_library(
         "src/h2_h2loader_cli_output.c",
         "src/h2_h2loader_cli_package_command.c",
         "src/h2_h2loader_cli_server_command.c",
+        "src/h2_h2loader_cli_task_names.c",
         "src/h2_h2loader_cli_transport.c",
     ],
-    hdrs = ["include/h2_h2loader_cli_app.h"],
+    hdrs = [
+        "include/h2_h2loader_cli_app.h",
+        "include/h2_h2loader_cli_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/bleikcp",
         "//libs/command",
         "//libs/h2loader_host",

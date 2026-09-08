@@ -1,13 +1,15 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "H2_WARNING_COPTS_NO_ERROR", "h2_gnu_only_copts")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_peer_task_names.c"],
-    hdrs = ["include/h2_peer_task_names.h"],
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$h2peer/net",
+        "$h2peer/udp",
+    ],
 )
 
 cc_library(
@@ -135,7 +137,7 @@ cc_test(
     }),
     deps = [
         ":portable_protocol_providers",
-        ":task_names",
+        ":webrtc_core",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
@@ -249,18 +251,24 @@ cc_library(
     name = "webrtc_core",
     srcs = [
         "src/h2_peer_internal.h",
+        "src/h2_peer_task_names.c",
         "src/h2_peer_webrtc.c",
         "src/ice/h2_peer_ice.c",
         "src/ice/h2_peer_ice.h",
         "src/providers/h2_peer_portable_backend.h",
     ],
-    hdrs = ["include/h2_peer.h"],
+    hdrs = [
+        "include/h2_peer.h",
+        "include/h2_peer_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src"],
+    includes = [
+        "include",
+        "src",
+    ],
     visibility = ["//visibility:private"],
     deps = [
-        ":task_names",
         "//libs/pal",
     ],
 )
@@ -292,10 +300,10 @@ cc_library(
         "src/providers/portable",
     ],
     deps = [
-        ":portable_protocol_providers",
-        ":task_names",
-        ":webrtc_core",
         "//libs/pal",
+        ":portable_protocol_providers",
+        ":tasks",
+        ":webrtc_core",
     ],
 )
 

@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,6 +19,7 @@ RUNTIME_SRCS = [
     "src/h2_runtime_state.c",
     "src/h2_runtime_system_event.c",
     "src/h2_runtime_system_state.c",
+    "src/h2_runtime_task_names.c",
     "src/h2_runtime_test.c",
 ]
 
@@ -38,12 +40,13 @@ RUNTIME_HDRS = [
     "include/h2_runtime_state.h",
     "include/h2_runtime_system_event.h",
     "include/h2_runtime_system_state.h",
+    "include/h2_runtime_task_names.h",
     "include/h2_runtime_test.h",
     "include/h2_runtime_types.h",
 ]
 
 RUNTIME_DEPS = [
-    ":task_names",
+    ":tasks",
     "//libs/pal",
 ]
 
@@ -55,13 +58,12 @@ RUNTIME_HOST_ONLY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_runtime_task_names.c"],
-    hdrs = ["include/h2_runtime_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$runtime/input",
+        "$runtime/nfc",
+    ],
 )
 
 cc_library(

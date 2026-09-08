@@ -1,8 +1,21 @@
-"""Target-owned task-policy components for native firmware."""
+"""Target-owned task-policy components for native firmware.
+
+Modules declare the task names they start with ``h2_tasks`` and carry that
+declaration in their own dependency list, so the firmware's dependency graph
+yields every task in the image. A target answers with one policy row per
+task; the component that installs them is generated from that table.
+"""
 
 load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load(
+    "//tools/bazel:target_task_policy_codegen.bzl",
+    "encode_default_policy",
+    "encode_policies",
+    "task_policy_audit",
+    "task_policy_codegen",
+)
 
 _HOST_COMPATIBILITY = select({
     Label("//tools/bazel/platforms:host_linux_target_linux"): [],
@@ -22,24 +35,101 @@ _TRIE = Label("//libs/trie")
 
 def _target_directory(relative_directory):
     package = native.package_name()
+    if not relative_directory:
+        return package
     return package + "/" + relative_directory if package else relative_directory
+
+def _generate(
+        name,
+        unit,
+        directory,
+        source_name,
+        graph,
+        policies,
+        default_policy,
+        allocator = ""):
+    """Declares the codegen for one unit and returns its source file labels."""
+    label = "//" + native.package_name() + ":" + name
+    policies_json, default_tasks = encode_policies(label, unit, policies)
+    source = directory + "/" + source_name
+    test_source = directory + "/tests/test_" + source_name
+    task_policy_codegen(
+        name = name + "_codegen",
+        allocator = allocator,
+        default_policy_json = encode_default_policy(label, unit, default_policy),
+        default_tasks = default_tasks,
+        policies_json = policies_json,
+        source_name = source,
+        target_directory = _target_directory(""),
+        test_source_name = test_source,
+        unit = unit,
+    )
+
+    # The table alone decides the routes, so only this audit needs the firmware
+    # graph; keeping it off the generator leaves the host test free of it.
+    task_policy_audit(
+        name = name + "_audit",
+        default_tasks = default_tasks,
+        graph = graph,
+        policies_json = policies_json,
+        policy_label = label,
+    )
+    native.filegroup(
+        name = name + "_source",
+        srcs = [":" + name + "_codegen"],
+        output_group = "source",
+    )
+    native.filegroup(
+        name = name + "_test_source",
+        srcs = [":" + name + "_codegen"],
+        output_group = "test_source",
+    )
+    return ":" + name + "_source", ":" + name + "_test_source"
 
 def esp_target_task_policy(
         name = "task_policy",
         directory = "task_policy",
-        task_name_deps = []):
-    """Declares one ESP policy owned by the calling firmware target package."""
+        graph = [],
+        policies = [],
+        default_policy = ""):
+    """Declares one ESP policy owned by the calling firmware target package.
+
+    Every task declared anywhere in ``graph`` needs a row in ``policies``, and
+    each row states its own priority, core, stack size and stack region, so a
+    task that arrives with a new dependency fails analysis instead of silently
+    inheriting a budget that was never weighed for it.
+
+    Args:
+      name: Name of the generated native component target.
+      directory: Package-relative directory owning the policy component.
+      graph: The firmware dependency graph whose tasks this policy serves.
+      policies: One row per task, ``"<task>  <priority>  <core>  <stack>
+        <region>"``, or ``"<task>  default"`` for a task deliberately served
+        by the default policy.
+      default_policy: ``"<priority>  <core>  <stack>  <region>"`` served to
+        task names without a row of their own.
+    """
     header = directory + "/h2_esp_target_task_policy.h"
-    source = directory + "/h2_esp_target_task_policy.c"
-    test_source = directory + "/tests/test_h2_esp_target_task_policy.c"
+    source, test_source = _generate(
+        name = name,
+        unit = "esp",
+        directory = directory,
+        source_name = "h2_esp_target_task_policy.c",
+        graph = graph,
+        policies = policies,
+        default_policy = default_policy,
+    )
     firmware_native_component(
         name = name,
         hdrs = [header],
         srcs = [source],
         component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
-        data = [directory + "/CMakeLists.txt"],
-        deps = [_ESP_PAL_CORE] + task_name_deps,
+        data = [
+            directory + "/CMakeLists.txt",
+            ":" + name + "_audit",
+        ],
+        deps = [_ESP_PAL_CORE],
     )
     cc_test(
         name = name + "_test",
@@ -56,33 +146,71 @@ def esp_target_task_policy(
             _PAL,
             _TRIE,
             _ESP_POLICY_TEST_SDK,
-        ] + task_name_deps,
+        ],
     )
 
 def bk7258_target_task_policy(
         ap_name = "ap_task_policy",
         cp_name = "cp_task_policy",
         directory = "task_policy",
-        ap_task_name_deps = [],
-        cp_task_name_deps = []):
-    """Declares AP and CP policies owned by one BK7258 firmware target."""
+        graph = [],
+        ap_policies = [],
+        ap_default_policy = "",
+        ap_allocator = "psram",
+        cp_default_policy = ""):
+    """Declares the AP and CP policies owned by one BK7258 firmware target.
+
+    The AP unit runs the image's tasks and answers the same kind of policy
+    table as an ESP target. The CP unit runs SDK-owned tasks only, so it
+    serves one policy to every name and takes no table.
+
+    Args:
+      ap_name: Name of the generated AP native component target.
+      cp_name: Name of the generated CP native component target.
+      directory: Package-relative directory owning the policy components.
+      graph: The firmware dependency graph whose tasks the AP policy serves.
+      ap_policies: One row per AP task. See ``esp_target_task_policy``.
+      ap_default_policy: ``"<priority>  <core>  <stack>  <region>"`` served to
+        AP task names without a row of their own.
+      ap_allocator: Memory the AP allocates task stacks from.
+      cp_default_policy: ``"<priority>  <stack>  <region>"`` served to every
+        CP task name.
+    """
     ap_directory = directory + "/ap"
     cp_directory = directory + "/cp"
     ap_header = ap_directory + "/h2_bk_target_task_policy.h"
     cp_header = cp_directory + "/h2_bk_target_task_policy.h"
-    ap_source = ap_directory + "/h2_bk_target_task_policy.c"
-    cp_source = cp_directory + "/h2_bk_target_task_policy.c"
-    ap_test_source = ap_directory + "/tests/test_h2_bk_target_task_policy.c"
-    cp_test_source = cp_directory + "/tests/test_h2_bk_target_task_policy.c"
+    ap_source, ap_test_source = _generate(
+        name = ap_name,
+        unit = "ap",
+        directory = ap_directory,
+        source_name = "h2_bk_target_task_policy.c",
+        graph = graph,
+        policies = ap_policies,
+        default_policy = ap_default_policy,
+        allocator = ap_allocator,
+    )
+    cp_source, cp_test_source = _generate(
+        name = cp_name,
+        unit = "cp",
+        directory = cp_directory,
+        source_name = "h2_bk_target_task_policy.c",
+        graph = [],
+        policies = [],
+        default_policy = cp_default_policy,
+    )
     firmware_native_component(
         name = ap_name,
         hdrs = [ap_header],
         srcs = [ap_source],
         component_directory = _target_directory(ap_directory),
         component_name = "h2_bk_target_task_policy",
-        data = [ap_directory + "/CMakeLists.txt"],
+        data = [
+            ap_directory + "/CMakeLists.txt",
+            ":" + ap_name + "_audit",
+        ],
         execution_unit = "ap",
-        deps = [_BK_AP_PAL_CORE] + ap_task_name_deps,
+        deps = [_BK_AP_PAL_CORE],
     )
     firmware_native_component(
         name = cp_name,
@@ -92,7 +220,7 @@ def bk7258_target_task_policy(
         component_name = "h2_bk_target_task_policy",
         data = [cp_directory + "/CMakeLists.txt"],
         execution_unit = "cp",
-        deps = [_BK_CP_PAL_CORE] + cp_task_name_deps,
+        deps = [_BK_CP_PAL_CORE],
     )
     cc_test(
         name = ap_name + "_test",
@@ -109,7 +237,7 @@ def bk7258_target_task_policy(
             _PAL,
             _TRIE,
             _BK_AP_POLICY_TEST_SDK,
-        ] + ap_task_name_deps,
+        ],
     )
     cc_test(
         name = cp_name + "_test",
@@ -125,5 +253,5 @@ def bk7258_target_task_policy(
         deps = [
             _PAL,
             _BK_CP_POLICY_TEST_SDK,
-        ] + cp_task_name_deps,
+        ],
     )

@@ -1,24 +1,34 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/task_names.c"],
-    hdrs = ["include/h2_smoke_audio_system_task_names.h"],
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "audio-system/music",
+        "audio-system/mic",
+    ],
 )
 
 cc_library(
     name = "audio_system",
-    srcs = ["src/app.c"],
-    hdrs = ["include/h2_smoke_audio_system.h"],
+    srcs = [
+        "src/app.c",
+        "src/task_names.c",
+    ],
+    hdrs = [
+        "include/h2_smoke_audio_system.h",
+        "include/h2_smoke_audio_system_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",

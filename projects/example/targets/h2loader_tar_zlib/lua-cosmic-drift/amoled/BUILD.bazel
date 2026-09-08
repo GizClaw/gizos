@@ -3,17 +3,31 @@ load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
+h2_tasks(
+    name = "tasks",
+    tasks = ["amoled/lua-cosmic-drift"],
+)
+
 esp_target_task_policy(
-    task_name_deps = [
-        "//libs/bleikcp:task_names",
-        "//libs/lua:task_names",
-        "//libs/pal/providers/h2peer:task_names",
-        "//libs/runtime:task_names",
-        "//projects/h2loader/apps/loader/app:task_names",
-        "//projects/h2loader/libs/h2loader:task_names",
+    default_policy = "3 any 4096 psram",
+    graph = [":lua_cosmic_drift_launcher"],
+    policies = [
+        "h2loader/appcmd          8        0  4096  psram",
+        "$h2loader/return         8        0  4096  psram",
+        "$h2loader/blelink        6        0  4096  psram",
+        "$bleikcp/kcp             7        0  4096  psram",
+        "$bleikcp/server          5        0  4096  psram",
+        "$h2peer/net              7        0  4096  psram",
+        "$h2peer/udp              7        0  4096  psram",
+        "$runtime/input           6        0  4096  psram",
+        "$lua/worker              5        0  4096  psram",
+        "amoled/lua-cosmic-drift  4        0  4096  psram",
+        "$runtime/nfc             default",
+        "$h2loader/uartcmd        default",
     ],
 )
 
@@ -52,6 +66,7 @@ firmware_native_component(
     ],
     tags = ["manual"],
     deps = [
+        ":tasks",
         ":firmware_lib",
         "//boards/amoled/esp32s3",
         "//libs/pal",

@@ -2,6 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -38,13 +39,15 @@ cc_test(
     deps = [":gizclaw"],
 )
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_gizclaw_task_names.c"],
-    hdrs = ["include/h2_gizclaw_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$gizclaw/audio/download",
+        "$gizclaw/device",
+        "$gizclaw/net",
+        "$gizclaw/audio/uplink",
+        "$gizclaw/audio/downlink",
+    ],
 )
 
 _FIRMWARE_COMPATIBLE_SRCS = [
@@ -93,27 +96,28 @@ _FIRMWARE_COMPATIBLE_SRCS = [
 
 cc_library(
     name = "gizclaw",
-    srcs = _FIRMWARE_COMPATIBLE_SRCS,
+    srcs = _FIRMWARE_COMPATIBLE_SRCS + ["src/h2_gizclaw_task_names.c"],
     hdrs = [
         "include/h2_gizclaw.h",
         "include/h2_gizclaw_api_key.h",
         "include/h2_gizclaw_app_config.h",
-        "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_client.h",
         "include/h2_gizclaw_config.h",
         "include/h2_gizclaw_conversation.h",
+        "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_firmware.h",
         "include/h2_gizclaw_ota.h",
         "include/h2_gizclaw_pcm_track.h",
         "include/h2_gizclaw_player.h",
         "include/h2_gizclaw_profile.h",
         "include/h2_gizclaw_registration.h",
+        "include/h2_gizclaw_resource.h",
         "include/h2_gizclaw_rpc.h",
         "include/h2_gizclaw_service.h",
         "include/h2_gizclaw_session.h",
-        "include/h2_gizclaw_resource.h",
         "include/h2_gizclaw_social.h",
         "include/h2_gizclaw_speech.h",
+        "include/h2_gizclaw_task_names.h",
         "include/h2_gizclaw_telemetry.h",
         "include/h2_gizclaw_types.h",
         "include/h2_gizclaw_vtable.h",
@@ -131,7 +135,7 @@ cc_library(
         "include",
     ],
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
@@ -182,6 +186,7 @@ cc_library(
         "src/h2_gizclaw_service.c",
         "src/h2_gizclaw_session.c",
         "src/h2_gizclaw_resource.c",
+        "src/h2_gizclaw_task_names.c",
         "src/h2_gizclaw_time.c",
         "src/h2_gizclaw_social.c",
         "src/h2_gizclaw_social_internal.h",
@@ -211,6 +216,7 @@ cc_library(
         "include/h2_gizclaw_resource.h",
         "include/h2_gizclaw_social.h",
         "include/h2_gizclaw_speech.h",
+        "include/h2_gizclaw_task_names.h",
         "include/h2_gizclaw_telemetry.h",
         "include/h2_gizclaw_types.h",
         "include/h2_gizclaw_vtable.h",
@@ -226,7 +232,6 @@ cc_library(
     ],
     local_defines = ["H2_GIZCLAW_TESTING"],
     deps = [
-        ":task_names",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",

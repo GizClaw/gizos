@@ -6,6 +6,7 @@ load("@gizos//tools/bazel:firmware.bzl", "firmware_version")
 load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
 load("@gizos//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy", "esp_target_task_policy")
+load("@gizos//tools/bazel:tasks.bzl", "h2_tasks")
 load("@gizos//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
 load("@gizos//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
@@ -111,15 +112,27 @@ firmware_native_component(
     ],
 )
 
+h2_tasks(
+    name = "private_tasks",
+    tasks = ["private/consumer"],
+)
+
 esp_target_task_policy(
     name = "private_esp_task_policy",
+    default_policy = "4  any  4096  psram",
     directory = "private_esp_task_policy",
+    graph = [":private_tasks"],
+    policies = ["private/consumer  6  0  8192  internal"],
 )
 
 bk7258_target_task_policy(
+    ap_default_policy = "7  0  4096  default",
     ap_name = "private_bk_ap_task_policy",
+    ap_policies = ["private/consumer  5  0  8192  psram"],
+    cp_default_policy = "6  4096  default",
     cp_name = "private_bk_cp_task_policy",
     directory = "private_bk_task_policy",
+    graph = [":private_tasks"],
 )
 
 firmware_lib_component(
