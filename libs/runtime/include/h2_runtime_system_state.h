@@ -62,6 +62,10 @@ typedef struct h2_runtime_audio_levels {
  * runtime, an unready runtime or a NULL `out_levels` returns INVALID_ARG.
  * The values are observational only: they must never gate an audio path,
  * open or close a stream, or feed anything but a display.
+ *
+ * A target that builds level measurement out (`H2_RUNTIME_AUDIO_LEVELS=0`,
+ * as bk3633 does: BLE-only, no audio, no room in its OAD image) keeps this
+ * entry point and returns UNSUPPORTED.
  */
 h2_pal_result_t h2_runtime_audio_get_levels(
     const h2_runtime_t *runtime, h2_runtime_audio_levels_t *out_levels);

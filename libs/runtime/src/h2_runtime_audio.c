@@ -1,5 +1,13 @@
 #include "h2_runtime_internal.h"
 
+/* Level measurement is observational and costs code the smallest targets
+ * cannot spare: bk3633 is a BLE-only part with no audio path at all, and its
+ * OAD image budget is nearly full. Products that build it out keep the API
+ * and get H2_PAL_ERR_UNSUPPORTED from the getter. */
+#ifndef H2_RUNTIME_AUDIO_LEVELS
+#define H2_RUNTIME_AUDIO_LEVELS 1
+#endif
+
 #define H2_RUNTIME_AUDIO_LEVEL_VALID 0x100u
 
 static const h2_pal_audio_api_t *backend(h2_runtime_t *runtime) {
@@ -56,6 +64,7 @@ static int start_mic(void *user) { return h2_pal_audio_start_mic(backend(user));
 static int stop_mic(void *user) { return h2_pal_audio_stop_mic(backend(user)); }
 static int start_speaker(void *user) { return h2_pal_audio_start_speaker(backend(user)); }
 static int stop_speaker(void *user) { return h2_pal_audio_stop_speaker(backend(user)); }
+#if H2_RUNTIME_AUDIO_LEVELS
 /*
  * Peak, not RMS: the peak of a frame rises on the first loud sample of a
  * speech onset, so a meter driven from it starts moving in the same frame,
@@ -105,17 +114,22 @@ static void publish_level(h2_runtime_t *runtime, atomic_uint *level,
         memory_order_relaxed);
 }
 
+#endif /* H2_RUNTIME_AUDIO_LEVELS */
+
 static int mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_ms) {
     h2_runtime_t *runtime = user;
     int rc = h2_pal_audio_mic_read(backend(runtime), frame, timeout_ms);
+#if H2_RUNTIME_AUDIO_LEVELS
     if (rc == H2_PAL_OK) {
         h2_runtime_private_t *state = runtime->private_state;
         publish_level(runtime, &state->audio_capture_level,
                       &state->audio_capture_level_ms, frame);
     }
+#endif
     return rc;
 }
 
+#if H2_RUNTIME_AUDIO_LEVELS
 /* Playback frames never pass through an audio vtable call, only through the
  * track the backend hands out, so the Runtime wraps that track to see them. */
 typedef struct runtime_audio_track {
@@ -172,9 +186,16 @@ static int track_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
     return h2_pal_audio_track_drain(wrapper->backend_track, timeout_ms);
 }
 
+#endif /* H2_RUNTIME_AUDIO_LEVELS */
+
 static int create_track(void *user, const h2_audio_track_config_t *config,
                         h2_pal_audio_track_t **out) {
     h2_runtime_t *runtime = user;
+#if !H2_RUNTIME_AUDIO_LEVELS
+    /* Without measurement there is nothing to wrap: hand the backend track
+     * straight through, exactly as this proxy did before levels existed. */
+    return h2_pal_audio_create_track(backend(runtime), config, out);
+#else
     h2_pal_audio_track_t *backend_track = NULL;
     int rc = h2_pal_audio_create_track(backend(runtime), config, &backend_track);
     if (rc != H2_PAL_OK)
@@ -204,7 +225,9 @@ static int create_track(void *user, const h2_audio_track_config_t *config,
     };
     *out = &wrapper->track;
     return H2_PAL_OK;
+#endif /* H2_RUNTIME_AUDIO_LEVELS */
 }
+
 static int get_volume(void *user, uint32_t *out) {
     h2_runtime_system_audio_state_t state;
     int rc = h2_runtime_system_state_audio(user, &state);
@@ -216,9 +239,7 @@ static int set_volume(void *user, uint32_t percent) {
     return h2_runtime_audio_set_volume(user, percent, 0);
 }
 
-/* Widen the stored low 32 bits of the monotonic clock against the current
- * reading. Correct for any frame younger than about 24 days, far beyond the
- * seconds a level meter cares about. */
+#if H2_RUNTIME_AUDIO_LEVELS
 static uint64_t widen_level_ms(const h2_runtime_t *runtime, unsigned int level,
                                unsigned int stored_ms) {
     if ((level & H2_RUNTIME_AUDIO_LEVEL_VALID) == 0u)
@@ -252,6 +273,16 @@ h2_pal_result_t h2_runtime_audio_get_levels(
     return H2_PAL_OK;
 }
 
+#else
+h2_pal_result_t h2_runtime_audio_get_levels(
+    const h2_runtime_t *runtime, h2_runtime_audio_levels_t *out_levels) {
+    if (!h2_runtime_ready(runtime) || !out_levels)
+        return H2_PAL_ERR_INVALID_ARG;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+#endif /* H2_RUNTIME_AUDIO_LEVELS */
+
 void h2_runtime_audio_bind(h2_runtime_t *runtime) {
     static const h2_pal_audio_vtable_t vtable = {
         .get_info = get_info, .start_mic = start_mic, .stop_mic = stop_mic,
@@ -263,9 +294,11 @@ void h2_runtime_audio_bind(h2_runtime_t *runtime) {
     h2_runtime_private_t *state = runtime->private_state;
     state->audio_backend = state->audio_proxy;
     state->audio_state_busy = (atomic_flag)ATOMIC_FLAG_INIT;
+#if H2_RUNTIME_AUDIO_LEVELS
     atomic_init(&state->audio_capture_level, 0u);
     atomic_init(&state->audio_capture_level_ms, 0u);
     atomic_init(&state->audio_playback_level, 0u);
     atomic_init(&state->audio_playback_level_ms, 0u);
+#endif
     state->audio_proxy = (h2_pal_audio_api_t){runtime, &vtable};
 }

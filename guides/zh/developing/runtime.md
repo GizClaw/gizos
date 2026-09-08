@@ -91,6 +91,8 @@ Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 
 
 存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
 
+编译期开关 `H2_RUNTIME_AUDIO_LEVELS` 默认打开；置 0 的目标不测量、不包装 track，`h2_runtime_audio_get_levels()` 返回 `H2_PAL_ERR_UNSUPPORTED`，`create_track` 恢复为透明转发。bk3633 只有 BLE、没有音频通路，OAD 镜像也没有余量，因此在该平台构建时关闭。
+
 帧数据按字节读取：`h2_audio_frame_t::data` 是不受约束的 `void *`，PAL 不承诺 `int16_t` 对齐，按 `int16_t` 解引用在 ARM target 上可能取到未定义行为甚至触发异常。时钟读失败时不发布该帧，保留上一次测量，避免出现一个 timestamp 为 0 却标记有效的样本。
 
 ## Component Mapper
