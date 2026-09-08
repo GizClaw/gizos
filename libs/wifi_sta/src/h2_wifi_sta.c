@@ -75,4 +75,3 @@ int h2_wifi_sta_connect_and_save(const h2_wifi_sta_dependencies_t *deps,
     }
     return rc;
 }
-
