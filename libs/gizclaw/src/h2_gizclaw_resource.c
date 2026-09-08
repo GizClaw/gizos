@@ -162,19 +162,25 @@ h2_gizclaw_resource_create(const h2_gizclaw_resource_config_t *c,
   *out = NULL;
   if (c == NULL || c->service == NULL || c->mem == NULL || c->sync == NULL ||
       c->time == NULL || c->kind < H2_GIZCLAW_RESOURCE_CONTACTS ||
-      c->kind > H2_GIZCLAW_RESOURCE_APP_CONFIG || c->max_items == 0u ||
-      c->max_items > SIZE_MAX / sizeof(h2_gizclaw_points_transaction_t) ||
-      c->page_size == 0u ||
-      c->page_size > (c->kind == H2_GIZCLAW_RESOURCE_APP_CONFIG
-                           ? H2_GIZCLAW_APP_CONFIG_PAGE_MAX_ITEMS
-                           : H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS) ||
-      c->storage_bytes == 0u)
+      c->kind > H2_GIZCLAW_RESOURCE_FIRMWARE ||
+      (c->kind == H2_GIZCLAW_RESOURCE_FIRMWARE && c->firmware_channel <= 0))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (c->kind != H2_GIZCLAW_RESOURCE_FIRMWARE &&
+      (c->max_items == 0u ||
+       c->max_items > SIZE_MAX / sizeof(h2_gizclaw_points_transaction_t) ||
+       c->page_size == 0u ||
+       c->page_size > (c->kind == H2_GIZCLAW_RESOURCE_APP_CONFIG
+                            ? H2_GIZCLAW_APP_CONFIG_PAGE_MAX_ITEMS
+                            : H2_GIZCLAW_CONTACT_PAGE_MAX_ITEMS) ||
+       c->storage_bytes == 0u))
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_resource_t *r = h2_pal_mem_alloc(c->mem, sizeof(*r));
   if (r == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(r, 0, sizeof(*r));
   r->config = *c;
+  if (c->kind == H2_GIZCLAW_RESOURCE_FIRMWARE)
+    r->config.storage_bytes = 1u; /* Inline snapshot; no arena payload. */
   r->snapshot.kind = c->kind;
   r->snapshot.stale = true;
   r->snapshot.balance_result = H2_PAL_ERR_UNAVAILABLE;
@@ -612,6 +618,18 @@ h2_gizclaw_resource_execute(h2_gizclaw_resource_t *r,
   if (rc == H2_PAL_OK) {
     if (r->config.kind == H2_GIZCLAW_RESOURCE_PROFILE) {
       rc = profile_run(r, c, &next);
+    } else if (r->config.kind == H2_GIZCLAW_RESOURCE_FIRMWARE) {
+      uint32_t left = 0;
+      rc = remaining(r, &left);
+      if (rc == H2_PAL_OK)
+        rc = h2_gizclaw_rpc_firmware_get(r->config.service,
+                                        r->config.firmware_channel, left,
+                                        &next.data.firmware);
+      if (rc == H2_PAL_OK &&
+          next.data.firmware.channel != r->config.firmware_channel)
+        rc = H2_PAL_ERR_FORMAT;
+      if (rc == H2_PAL_OK)
+        next.valid = true;
     } else if (r->config.kind == H2_GIZCLAW_RESOURCE_APP_CONFIG) {
       rc = app_config_run(r, &storage, &next);
     } else if (r->config.kind == H2_GIZCLAW_RESOURCE_POINTS) {

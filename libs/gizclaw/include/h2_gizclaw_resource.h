@@ -3,6 +3,7 @@
 
 #include "h2_gizclaw_app_config.h"
 #include "h2_gizclaw_points.h"
+#include "h2_gizclaw_firmware.h"
 #include "h2_gizclaw_profile.h"
 #include "h2_gizclaw_social.h"
 
@@ -18,6 +19,7 @@ typedef enum h2_gizclaw_resource_kind {
   H2_GIZCLAW_RESOURCE_POINTS,
   H2_GIZCLAW_RESOURCE_GROUPS,
   H2_GIZCLAW_RESOURCE_APP_CONFIG,
+  H2_GIZCLAW_RESOURCE_FIRMWARE,
 } h2_gizclaw_resource_kind_t;
 typedef enum h2_gizclaw_resource_operation {
   H2_GIZCLAW_RESOURCE_REFRESH = 0,
@@ -39,6 +41,9 @@ typedef struct h2_gizclaw_resource_config {
   size_t max_items;
   size_t page_size;
   size_t storage_bytes;
+  /** Required positive channel for FIRMWARE; fixed for this store.
+   * max_items/page_size/storage_bytes are unused for FIRMWARE and may be zero. */
+  int32_t firmware_channel;
 } h2_gizclaw_resource_config_t;
 
 /** Strings are borrowed only for the duration of execute. Contact names must
@@ -72,6 +77,7 @@ typedef struct h2_gizclaw_resource_snapshot {
   union {
     h2_gizclaw_contact_page_t contacts;
     h2_gizclaw_profile_t profile;
+    h2_gizclaw_firmware_t firmware;
     struct {
       h2_gizclaw_points_account_t account;
       h2_gizclaw_points_transaction_page_t transactions;
@@ -82,7 +88,7 @@ typedef struct h2_gizclaw_resource_snapshot {
 } h2_gizclaw_resource_snapshot_t;
 
 /** Borrows dependencies until destroy; allocates bounded snapshots lazily.
- * Use one store per kind on a Service, and route mutations through that store.
+ * Use one store per kind (per channel for Firmware) on a Service, and route mutations through that store.
  * Persistence, offline admission policy and UI drafts belong to the consumer.
  */
 h2_pal_result_t
@@ -106,6 +112,8 @@ h2_gizclaw_resource_snapshot(h2_gizclaw_resource_t *resource,
  * Mutations reload confirmed data; failures keep prior data marked stale.
  * AppConfig supports REFRESH only: loads every key/value at one Profile
  * name/revision, replacing the complete snapshot only on success.
+ * Firmware supports REFRESH only for config.firmware_channel; the inline
+ * snapshot includes optional version metadata and requires no response arena bytes.
  * Points may commit a successful balance or list independently.
  * No product defaults, filesystem access or optimistic updates are performed.
  */
