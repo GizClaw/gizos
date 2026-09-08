@@ -779,6 +779,14 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
   const char *id_end = id != NULL ? memchr(id, '\0', sizeof(route->id)) : NULL;
   if (id != NULL && (id_end == NULL || id_end == id))
     return false;
+  /* A new input must not adopt delayed replies from the canceled input
+   * while awaiting its READY. Only events explicitly naming this input can
+   * precede that barrier (including early input rejection). Server-assigned
+   * response IDs remain valid after READY. */
+  if (conversation->stream_id[0] != '\0' &&
+      !conversation->input_ready && !conversation->committed &&
+      !stream_id_matches(id, conversation->stream_id))
+    return false;
   if (route->ended) {
     /* A completed response cannot be reopened by a duplicate EOS or delayed
      * text. A new server-side VAD turn announces a distinct route with BOS. */

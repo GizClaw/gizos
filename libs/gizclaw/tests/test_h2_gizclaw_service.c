@@ -7191,6 +7191,28 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
       return GZC_ERR_WOULD_BLOCK;
     *event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
     event->version = GZC_PEER_EVENT_VERSION;
+    /* A canceled input's delayed reply precedes the next input's READY.
+     * None of these events may pin its route or terminate the new input. */
+    if (test->mode == 24 && test->ack_reads <= 3) {
+      if (test->ack_reads == 1) {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+        event->which_payload = gizclaw_events_v1_PeerEvent_bos_tag;
+        snprintf(event->payload.bos.stream_id,
+                 sizeof(event->payload.bos.stream_id), "canceled-reply");
+        event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+      } else if (test->ack_reads == 2) {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
+        event->which_payload = gizclaw_events_v1_PeerEvent_text_done_tag;
+        snprintf(event->payload.text_done.stream_id,
+                 sizeof(event->payload.text_done.stream_id), "canceled-reply");
+      } else {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+        event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+        snprintf(event->payload.eos.stream_id,
+                 sizeof(event->payload.eos.stream_id), "canceled-reply");
+      }
+      return GZC_OK;
+    }
     if ((test->mode == 22 || test->mode == 23) && test->ack_reads == 1) {
       if (test->mode == 22) {
         event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
@@ -7835,7 +7857,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 24; ++mode) {
+  for (unsigned mode = 0; mode < 25; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -7995,7 +8017,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
-                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22) &&
+                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24) &&
                  atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
@@ -8076,7 +8098,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.audio_started == 2u && test.bos_attempts == 1u);
     }
     if (mode == 0 || mode == 3 || mode == 4 || mode == 6 || mode == 7 ||
-        mode == 9 || mode == 10 || mode == 17 || mode == 22) {
+        mode == 9 || mode == 10 || mode == 17 || mode == 22 || mode == 24) {
       assert(test.packets == 13 && atomic_load(&test.written) == 13 * 640);
       assert(test.audio_started == (mode == 3 || mode == 17 ? 0u : 1u));
       size_t nonzero = 0;
@@ -8084,6 +8106,9 @@ static void test_conversation_public_audio_tasks(void) {
         nonzero += test.output[i] != 0;
       assert(nonzero > 0);
     }
+    if (mode == 24)
+      assert(test.ack_reads == 4 && atomic_load(&test.eos) &&
+             !atomic_load(&test.canceled));
     if (mode == 4)
       assert(test.bos_attempts == 4 && test.eos_attempts == 4 &&
              atomic_load(&test.small_buffer_rejected));
