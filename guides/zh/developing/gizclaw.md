@@ -14,7 +14,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 已升级到 0.15.6。`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 已升级到 0.16.3。`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -40,7 +40,7 @@ Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access h
 
 Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但正常回复事件和下行处理继续推进，避免业务事件占住队列后阻塞 READY，也允许服务端提前拒绝输入。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
 
-当前 `MODULE.bazel` 固定的 C SDK 0.15.6 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`；本修复无需升级 SDK。
+当前 `MODULE.bazel` 固定的 C SDK 0.16.3 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`；本修复无需升级 SDK。
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
@@ -107,6 +107,18 @@ C SDK 的 provider 合同仍是同步回复，所以 Wi-Fi scan 在 RPC owner �
 应用主动上报时，`h2_gizclaw_telemetry_observation_t` 增加 `AUDIOPLAYER` 和 `OTA`。
 OTA frame 必须只包含一条 OTA observation，以映射 SDK 独立的 OTA frame API；
 其余 observation 继续使用原有批量 frame。上报成功仅表示本地 transport 接受。
+
+`h2_gizclaw_telemetry_network_t` 的 network observation 还可携带蜂窝身份
+`has_imei` / `imei` 与 `has_imsi` / `imsi`，编码为 `NetworkObservation` 的
+optional string（tag 6 / 7），服务端据此把观测归到 by-imei 索引的 modem 身份上。
+`imei` 恰好 `H2_GIZCLAW_TELEMETRY_IMEI_LEN`（15）位 ASCII 十进制数字，`imsi` 为
+`H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN` 到 `H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN`（6 到
+15）位；空 span 与 `has_*` 为 false 等价，不写入字段也不发送空串。长度、字符集
+不合法，或 `rat` 忽略大小写等于 `wifi` 时仍携带任一字段，
+`h2_gizclaw_req_create_telemetry_send()` 返回 `H2_PAL_ERR_INVALID_ARG` 并且不产生
+网络请求，与服务端的拒绝规则一致。两个字符串只在创建请求期间借用，创建时复制进
+请求自有存储。IMEI / IMSI 属于个人数据，只出现在编码后的 telemetry payload 里，
+不进入 `h2_pal_log` 输出与 trace 字符串。
 
 设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用
 `h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。

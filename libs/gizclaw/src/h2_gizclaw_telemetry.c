@@ -30,6 +30,42 @@ static bool span_valid(h2_gizclaw_str_t value, size_t max_len) {
          memchr(value.data, '\0', value.len) == NULL;
 }
 
+static bool network_str_present(bool has_value, h2_gizclaw_str_t value) {
+  return has_value && value.len > 0u;
+}
+
+static bool digits_span_valid(h2_gizclaw_str_t value, size_t min_len,
+                              size_t max_len) {
+  if (value.data == NULL || value.len < min_len || value.len > max_len) {
+    return false;
+  }
+  for (size_t index = 0u; index < value.len; ++index) {
+    if (value.data[index] < '0' || value.data[index] > '9') {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* The server compares the "wifi" RAT case-insensitively before rejecting
+ * cellular identity, so mirror that comparison instead of a byte match. */
+static bool network_rat_is_wifi(h2_gizclaw_str_t rat) {
+  static const char wifi[] = "wifi";
+  if (rat.data == NULL || rat.len != sizeof(wifi) - 1u) {
+    return false;
+  }
+  for (size_t index = 0u; index < rat.len; ++index) {
+    char value = rat.data[index];
+    if (value >= 'A' && value <= 'Z') {
+      value = (char)(value - 'A' + 'a');
+    }
+    if (value != wifi[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool battery_valid(const h2_gizclaw_telemetry_battery_t *value) {
   if (!value->has_percent && !value->has_charging && !value->has_voltage_mv) {
     return false;
@@ -51,8 +87,24 @@ static bool gnss_valid(const h2_gizclaw_telemetry_gnss_t *value) {
 }
 
 static bool network_valid(const h2_gizclaw_telemetry_network_t *value) {
+  const bool has_imei = network_str_present(value->has_imei, value->imei);
+  const bool has_imsi = network_str_present(value->has_imsi, value->imsi);
   if (!value->has_rssi_dbm && !value->has_signal_level && !value->has_rat &&
-      !value->has_operator_name && !value->has_connected) {
+      !value->has_operator_name && !value->has_connected && !has_imei &&
+      !has_imsi) {
+    return false;
+  }
+  if ((has_imei || has_imsi) && value->has_rat &&
+      network_rat_is_wifi(value->rat)) {
+    return false;
+  }
+  if (has_imei && !digits_span_valid(value->imei, H2_GIZCLAW_TELEMETRY_IMEI_LEN,
+                                     H2_GIZCLAW_TELEMETRY_IMEI_LEN)) {
+    return false;
+  }
+  if (has_imsi &&
+      !digits_span_valid(value->imsi, H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN,
+                         H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN)) {
     return false;
   }
   return (!value->has_rssi_dbm || isfinite(value->rssi_dbm)) &&
@@ -165,6 +217,14 @@ static void map_observation(const h2_gizclaw_telemetry_observation_t *source,
         to_gzc_str(source->value.network.operator_name);
     target->network.has_connected = source->value.network.has_connected;
     target->network.connected = source->value.network.connected;
+    target->network.has_imei =
+        network_str_present(source->value.network.has_imei,
+                            source->value.network.imei);
+    target->network.imei = to_gzc_str(source->value.network.imei);
+    target->network.has_imsi =
+        network_str_present(source->value.network.has_imsi,
+                            source->value.network.imsi);
+    target->network.imsi = to_gzc_str(source->value.network.imsi);
     break;
   case H2_GIZCLAW_TELEMETRY_SYSTEM:
     target->system.has_uptime_seconds = source->value.system.has_uptime_seconds;
@@ -366,15 +426,26 @@ telemetry_copy_frame(h2_gizclaw_telemetry_request_t *request,
       }
     }
     if (observation->kind == H2_GIZCLAW_TELEMETRY_NETWORK) {
-      if (observation->value.network.has_rat &&
-          telemetry_copy_span(request,
-                              observation->value.network.rat,
-                              &observation->value.network.rat) != H2_PAL_OK)
+      h2_gizclaw_telemetry_network_t *network = &observation->value.network;
+      if (network->has_rat &&
+          telemetry_copy_span(request, network->rat, &network->rat) !=
+              H2_PAL_OK)
         return H2_PAL_ERR_INVALID_ARG;
-      if (observation->value.network.has_operator_name &&
-          telemetry_copy_span(request,
-              observation->value.network.operator_name,
-              &observation->value.network.operator_name) != H2_PAL_OK)
+      if (network->has_operator_name &&
+          telemetry_copy_span(request, network->operator_name,
+                              &network->operator_name) != H2_PAL_OK)
+        return H2_PAL_ERR_INVALID_ARG;
+      /* An empty identity span is equivalent to an unset field, so drop it
+       * instead of copying it into the request. */
+      network->has_imei = network_str_present(network->has_imei, network->imei);
+      network->has_imsi = network_str_present(network->has_imsi, network->imsi);
+      if (network->has_imei &&
+          telemetry_copy_span(request, network->imei, &network->imei) !=
+              H2_PAL_OK)
+        return H2_PAL_ERR_INVALID_ARG;
+      if (network->has_imsi &&
+          telemetry_copy_span(request, network->imsi, &network->imsi) !=
+              H2_PAL_OK)
         return H2_PAL_ERR_INVALID_ARG;
     } else if (observation->kind == H2_GIZCLAW_TELEMETRY_SYSTEM) {
       const h2_gizclaw_str_t sources[3] = {
@@ -436,7 +507,9 @@ h2_pal_result_t h2_gizclaw_req_create_telemetry_send(
   for (size_t i = 0; i < frame->observation_count; ++i) {
     if (!observation_valid(&frame->observations[i])) return H2_PAL_ERR_INVALID_ARG;
     switch (frame->observations[i].kind) {
-    case H2_GIZCLAW_TELEMETRY_NETWORK: strings_capacity += 2u * 97u; break;
+    case H2_GIZCLAW_TELEMETRY_NETWORK:
+      strings_capacity += 2u * 97u + 2u * (H2_GIZCLAW_TELEMETRY_IMEI_LEN + 1u);
+      break;
     case H2_GIZCLAW_TELEMETRY_SYSTEM: strings_capacity += 3u * 97u; break;
     case H2_GIZCLAW_TELEMETRY_AUDIOPLAYER: strings_capacity += 17u + 5u + 129u + 513u; break;
     case H2_GIZCLAW_TELEMETRY_OTA: strings_capacity += 4u * 513u; break;
