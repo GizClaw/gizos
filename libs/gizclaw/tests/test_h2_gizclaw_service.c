@@ -2607,6 +2607,30 @@ static void test_device_provider_pal_and_player(void) {
   assert(queue.item_count == 4 && queue.playlist_revision != set_revision);
   assert(!strcmp(queue.items[0].title, "Track 0") && !strcmp(queue.items[3].title, "Bonus"));
   assert(!queue.has_current_index);
+  /* The snapshot must follow the repeat mode the server selects, not stay at
+   * the value it was initialised with. */
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest mode = {0};
+  strcpy(mode.repeat, "all");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "all"));
+  strcpy(mode.repeat, "one");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one"));
+  /* A rejected mode must leave the reported mode alone. */
+  strcpy(mode.repeat, "mix");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "one") && queue.item_count == 4);
+  strcpy(mode.repeat, "off");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+    gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields, &mode, &response) == 0);
+  assert(h2_gizclaw_player_playlist_snapshot(service, &queue) == H2_PAL_OK);
+  assert(!strcmp(queue.repeat, "off"));
   /* Past the end is rejected before anything is touched. */
   assert(h2_gizclaw_player_play_index(service, 4) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
