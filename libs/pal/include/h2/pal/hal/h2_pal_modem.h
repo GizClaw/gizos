@@ -22,6 +22,7 @@ typedef enum h2_pal_modem_capability {
     H2_PAL_MODEM_CAPABILITY_DATA = 1u << 0,
     H2_PAL_MODEM_CAPABILITY_CALL = 1u << 1,
     H2_PAL_MODEM_CAPABILITY_GNSS = 1u << 2,
+    H2_PAL_MODEM_CAPABILITY_CELL_LOCATE = 1u << 3,
 } h2_pal_modem_capability_t;
 
 typedef enum h2_pal_modem_sim_state {
@@ -175,6 +176,17 @@ typedef struct h2_pal_modem_gnss_fix {
     uint8_t second;
 } h2_pal_modem_gnss_fix_t;
 
+/* Cell-based location. Independent of the GNSS path: no altitude, speed,
+ * course, satellite count or UTC time, because the network service does not
+ * report them. `valid == 0` means the service could not place the device and
+ * is a normal result, not an error. */
+typedef struct h2_pal_modem_cell_location {
+    uint8_t valid;
+    int32_t latitude_e7;
+    int32_t longitude_e7;
+    uint32_t accuracy_m; /* Horizontal accuracy reported by the service, 0 when unknown. */
+} h2_pal_modem_cell_location_t;
+
 typedef struct h2_pal_modem_vtable {
     h2_pal_result_t (*open)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*close)(void *user, uint32_t timeout_ms);
@@ -195,6 +207,13 @@ typedef struct h2_pal_modem_vtable {
     h2_pal_result_t (*gnss_stop)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*get_gnss_state)(void *user, h2_pal_modem_gnss_state_t *out_state);
     h2_pal_result_t (*get_gnss_fix)(void *user, h2_pal_modem_gnss_fix_t *out_fix);
+    /* Blocking single-shot query against the operator's location service. It
+     * needs packet data, so it is slower than the local GNSS calls; the
+     * provider never brings data up on its own and returns
+     * H2_PAL_ERR_INVALID_STATE when data is not usable. `timeout_ms == 0`
+     * selects the provider's configured timeout. */
+    h2_pal_result_t (*cell_locate)(void *user, uint32_t timeout_ms,
+                                   h2_pal_modem_cell_location_t *out_location);
 } h2_pal_modem_vtable_t;
 
 struct h2_pal_modem_api {
@@ -404,6 +423,23 @@ static inline h2_pal_result_t h2_pal_modem_get_gnss_fix(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return modem->vtable->get_gnss_fix(modem->user, out_fix);
+}
+
+static inline h2_pal_result_t h2_pal_modem_cell_locate(
+    const h2_pal_modem_api_t *modem,
+    uint32_t timeout_ms,
+    h2_pal_modem_cell_location_t *out_location) {
+    if (modem == NULL || out_location == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    out_location->valid = 0u;
+    out_location->latitude_e7 = 0;
+    out_location->longitude_e7 = 0;
+    out_location->accuracy_m = 0u;
+    if (modem->vtable == NULL || modem->vtable->cell_locate == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->cell_locate(modem->user, timeout_ms, out_location);
 }
 
 #ifdef __cplusplus
