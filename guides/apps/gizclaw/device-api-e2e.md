@@ -14,7 +14,7 @@ bazel test //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_device_live_tes
 
 API URL 与音频 URL 显式传入；API key 只保存在测试内存，不输出 secret。
 设备通过 PAL HTTP 实际下载音频，库实际解码 Ogg/Opus，再写入按 PCM 时长消费的
-虚拟 PAL Audio sink。测试先调用本地 player/OTA 入口，再检查远程音量、非法列表、播放列表、循环模式、播放进度和停止。
+虚拟 PAL Audio sink。测试先调用本地 player/OTA 入口，其中设备侧 `playlist_set` / `repeat_set` 写入后立即用 `playlist_snapshot` 回读条目数、标题与 revision，并检查越界写入和非法模式被拒绝后 playlist 与模式都保持原样；再检查远程音量、非法列表、播放列表、循环模式、播放进度和停止。
 播放器进度和 OTA 结果均读取服务端 `/device/status`，不以 RPC 返回代替 telemetry 验收。
 OTA 使用部署环境的 firmware metadata 和 HTTPS package URL，写入计数 Stage sink，
 在 finish 时故意拒绝校验，检查服务端可读的 failed telemetry，绝不写物理分区或重启。

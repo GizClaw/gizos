@@ -123,9 +123,9 @@ Session 的 13 个公开操作纳入同一 fail-closed 审计，归属独立 Voi
 
 联系人和分组未强制预置多页数据，积分账户也可能为空，因此无实际下一页时不声称 live 分页已覆盖。并发 BUSY、在途 close 丢弃迟到结果、服务端分页异常仍需 library 专项测试/独立 live 场景。本地 `gizclaw_e2e_resource_test` 使用故障注入验证 consumer 的拒绝和清理逻辑，不作为真实服务器证据。
 
-`h2_gizclaw_player_playlist_snapshot` / `h2_gizclaw_player_play_index` 纳入 225 项审计要求，属于 `device-api` 用例。快照必须在服务端下发 playlist 之后读回条目数、标题与 revision 才输出 `player_playlist_snapshot-assert`；`player_play_index-assert` 必须观察被选中条目实际进入播放，越界索引只按本地拒绝记录，不算 live 覆盖。快照不发起任何网络请求，因此它本身不证明服务端 playlist 与设备一致。
+`h2_gizclaw_player_playlist_snapshot` / `h2_gizclaw_player_play_index` 纳入 225 项审计要求，属于 `device-api` 用例。`device-api` 已在设备侧写入 playlist 后用快照读回条目数、标题与 revision 并输出 `player_playlist_snapshot-assert`；`player_play_index-assert` 必须观察被选中条目实际进入播放，越界索引只按本地拒绝记录，不算 live 覆盖，该场景尚未插桩，完整审计继续报告该项缺失。快照不发起任何网络请求，因此它本身不证明服务端 playlist 与设备一致。
 
-`h2_gizclaw_player_playlist_set` / `h2_gizclaw_player_repeat_set` 同样纳入 225 项审计要求，属于 `device-api` 用例。`player_playlist_set-assert` 必须在设备侧写入多条曲目后由快照读回条目数、标题与移动过的 revision，并另行记录清空、越界拒绝时上一份 playlist 与播放均未受影响；`player_repeat_set-assert` 必须观察快照报告新选定的 off/one/all，且被拒绝的值不改变当前模式。写入本身不启动播放，选中曲目仍由 `player_play_index` 记录；末曲推进与循环由库按 repeat 模式负责，产品不得自行实现，因此仅有本地拒绝路径不算 live 覆盖。
+`h2_gizclaw_player_playlist_set` / `h2_gizclaw_player_repeat_set` 同样纳入 225 项审计要求，属于 `device-api` 用例，该场景已经插桩。`player_playlist_set-assert` 在设备侧写入三条带标题的曲目后由快照读回条目数、标题、source_ref 与移动过的 revision，并要求越界写入被 `H2_PAL_ERR_INVALID_ARG` 拒绝且拒绝后的快照与 revision 与上一份 playlist 完全一致；`player_repeat_set-assert` 观察快照报告新选定的 off/one/all，并要求非法模式被拒绝且当前模式与 playlist 都不变。写入本身不启动播放，选中曲目仍由 `player_play_index` 记录；末曲推进与循环由库按 repeat 模式负责，产品不得自行实现，因此仅有本地拒绝路径不算 live 覆盖。
 
 `h2_gizclaw_ota_get_status` 纳入 225 项审计要求。`device-api` 在本地 OTA 的受控失败场景读取状态，必须同时观察本地 `failed`、非零错误及服务端失败记录，才输出 `ota_get_status-assert`；该场景不证明真实 package 安装成功。
 

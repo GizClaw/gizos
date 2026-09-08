@@ -233,6 +233,69 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   CHECK(h2_gizclaw_player_get_status(service, &local));
   ASSERT(!strcmp(local.state, "stopped"));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_stop", "player_stop-assert", rc);
+  /* Device-side playlist and repeat writes, read back through the snapshot a
+   * product would use. The snapshot performs no round trip, so this observes
+   * the device's own queue only; the server view stays the reverse-RPC lane's
+   * job below. Playback is stopped here, so "a rejection changes nothing" is
+   * asserted on the queue and the mode, which are what a rejection could
+   * still have damaged. */
+  h2_gizclaw_player_playlist_t queue = {0};
+  CHECK(h2_gizclaw_player_playlist_snapshot(service, &queue));
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_snapshot",
+                          "local-playlist", rc);
+  uint32_t stale_revision = queue.playlist_revision;
+  h2_gizclaw_str_t track = h2_gizclaw_e2e_str(fixture->config->device_audio_url);
+  h2_gizclaw_str_t album_ref = h2_gizclaw_e2e_str("gizos-e2e-album");
+  const h2_gizclaw_player_playlist_entry_t album[] = {
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-2"), album_ref},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref},
+  };
+  CHECK(h2_gizclaw_player_playlist_set(service, album, 3u));
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set", "local-playlist",
+                          rc);
+  CHECK(h2_gizclaw_player_playlist_snapshot(service, &queue));
+  ASSERT(queue.item_count == 3u && !queue.has_current_index &&
+         queue.playlist_revision != stale_revision &&
+         queue.items[0].has_title && queue.items[1].has_title &&
+         queue.items[2].has_title && queue.items[2].has_source_ref &&
+         !strcmp(queue.items[0].title, "gizos-e2e-track-1") &&
+         !strcmp(queue.items[1].title, "gizos-e2e-track-2") &&
+         !strcmp(queue.items[2].title, "gizos-e2e-track-3") &&
+         !strcmp(queue.items[2].source_ref, "gizos-e2e-album"));
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_snapshot",
+                          "player_playlist_snapshot-assert", rc);
+  uint32_t album_revision = queue.playlist_revision;
+  h2_gizclaw_player_playlist_entry_t
+      oversize[H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS + 1u];
+  for (size_t i = 0; i < sizeof(oversize) / sizeof(oversize[0]); ++i)
+    oversize[i] = (h2_gizclaw_player_playlist_entry_t){.url = track};
+  int rejected = H2_PAL_OK;
+  if (rc == H2_PAL_OK)
+    rejected = h2_gizclaw_player_playlist_set(
+        service, oversize, (uint32_t)(sizeof(oversize) / sizeof(oversize[0])));
+  ASSERT(rejected == H2_PAL_ERR_INVALID_ARG);
+  CHECK(h2_gizclaw_player_playlist_snapshot(service, &queue));
+  ASSERT(queue.item_count == 3u && queue.playlist_revision == album_revision &&
+         !strcmp(queue.items[0].title, "gizos-e2e-track-1"));
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set",
+                          "player_playlist_set-assert", rc);
+  CHECK(h2_gizclaw_player_repeat_set(service, h2_gizclaw_e2e_str("all")));
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_repeat_set", "local-playlist", rc);
+  CHECK(h2_gizclaw_player_playlist_snapshot(service, &queue));
+  ASSERT(!strcmp(queue.repeat, "all"));
+  int mode_rejected = H2_PAL_OK;
+  if (rc == H2_PAL_OK)
+    mode_rejected =
+        h2_gizclaw_player_repeat_set(service, h2_gizclaw_e2e_str("loop"));
+  ASSERT(mode_rejected == H2_PAL_ERR_INVALID_ARG);
+  CHECK(h2_gizclaw_player_playlist_snapshot(service, &queue));
+  ASSERT(!strcmp(queue.repeat, "all") && queue.item_count == 3u &&
+         queue.playlist_revision == album_revision);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_repeat_set",
+                          "player_repeat_set-assert", rc);
+  /* Hand the reverse-RPC lane below the mode it expects to start from. */
+  CHECK(h2_gizclaw_player_repeat_set(service, h2_gizclaw_e2e_str("off")));
   CHECK(h2_gizclaw_ota_start(service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
                              (h2_gizclaw_str_t){0}));
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "local-ota", rc);
