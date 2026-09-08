@@ -1,4 +1,5 @@
 #include "gzc_common.h"
+#include "gzc_telemetry.h"
 #include "h2_runtime.h"
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_gizclaw_device_internal.h"
@@ -39,6 +40,7 @@
 #include <sched.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Internal RPC test vtables include the optional SDK completion hook. */
@@ -3174,6 +3176,252 @@ static void test_req_telemetry_copy_and_backpressure(void) {
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     h2_gizclaw_test_set_telemetry_send(NULL, NULL);
   }
+}
+
+/* Cellular identity fixtures. They must reach the wire byte for byte and never
+ * reach h2_pal_log or an operation trace. */
+#define TELEMETRY_IMEI "353490069873319"
+#define TELEMETRY_IMSI "460001234567"
+
+typedef struct telemetry_identity_capture {
+  unsigned calls;
+  bool borrowed_copy;
+  bool encoded;
+  bool identity_absent;
+} telemetry_identity_capture_t;
+
+static void *telemetry_platform_malloc(void *user, size_t size) {
+  (void)user;
+  return malloc(size);
+}
+static void *telemetry_platform_realloc(void *user, void *ptr, size_t size) {
+  (void)user;
+  return realloc(ptr, size);
+}
+static void telemetry_platform_free(void *user, void *ptr) {
+  (void)user;
+  free(ptr);
+}
+static int64_t telemetry_platform_time(void *user) {
+  (void)user;
+  return 0;
+}
+static int telemetry_platform_random(void *user, uint8_t *out, size_t len) {
+  (void)user;
+  memset(out, 0, len);
+  return GZC_OK;
+}
+static void telemetry_platform_log(void *user, gzc_log_level_t level,
+                                   gzc_str_t message) {
+  (void)user;
+  (void)level;
+  (void)message;
+}
+static const gzc_platform_t telemetry_platform = {
+    NULL,
+    telemetry_platform_malloc,
+    telemetry_platform_realloc,
+    telemetry_platform_free,
+    telemetry_platform_time,
+    telemetry_platform_time,
+    telemetry_platform_random,
+    telemetry_platform_log,
+};
+
+static bool telemetry_bytes_contain(const uint8_t *data, size_t len,
+                                    const uint8_t *needle, size_t needle_len) {
+  if (needle_len > len)
+    return false;
+  for (size_t offset = 0u; offset + needle_len <= len; ++offset) {
+    if (memcmp(data + offset, needle, needle_len) == 0)
+      return true;
+  }
+  return false;
+}
+
+/* NetworkObservation carries imei on tag 6 and imsi on tag 7, both LEN. */
+static bool telemetry_encodes_identity(const gzc_telemetry_frame_t *frame,
+                                       bool expected) {
+  uint8_t imei_field[2u + sizeof(TELEMETRY_IMEI) - 1u] = {
+      0x32u, (uint8_t)(sizeof(TELEMETRY_IMEI) - 1u)};
+  uint8_t imsi_field[2u + sizeof(TELEMETRY_IMSI) - 1u] = {
+      0x3au, (uint8_t)(sizeof(TELEMETRY_IMSI) - 1u)};
+  memcpy(imei_field + 2, TELEMETRY_IMEI, sizeof(TELEMETRY_IMEI) - 1u);
+  memcpy(imsi_field + 2, TELEMETRY_IMSI, sizeof(TELEMETRY_IMSI) - 1u);
+  gzc_buf_t payload;
+  gzc_buf_init(&payload);
+  const bool ok =
+      gzc_telemetry_encode_frame(frame, &telemetry_platform, &payload) == GZC_OK;
+  const bool found =
+      ok && telemetry_bytes_contain(payload.data, payload.len, imei_field,
+                                    sizeof(imei_field)) &&
+      telemetry_bytes_contain(payload.data, payload.len, imsi_field,
+                              sizeof(imsi_field));
+  gzc_buf_free(&payload, &telemetry_platform);
+  return ok && found == expected;
+}
+
+static int telemetry_identity_send(void *user,
+                                   const gzc_telemetry_frame_t *frame) {
+  telemetry_identity_capture_t *capture = user;
+  ++capture->calls;
+  const gzc_telemetry_network_t *network = &frame->observations[0].network;
+  if (capture->identity_absent) {
+    capture->borrowed_copy = !network->has_imei && !network->has_imsi;
+    capture->encoded = telemetry_encodes_identity(frame, false);
+    return GZC_OK;
+  }
+  capture->borrowed_copy =
+      frame->observation_count == 1u &&
+      frame->observations[0].kind == GZC_TELEMETRY_OBSERVATION_NETWORK &&
+      network->has_imei &&
+      network->imei.len == sizeof(TELEMETRY_IMEI) - 1u &&
+      memcmp(network->imei.data, TELEMETRY_IMEI,
+             sizeof(TELEMETRY_IMEI) - 1u) == 0 &&
+      network->has_imsi &&
+      network->imsi.len == sizeof(TELEMETRY_IMSI) - 1u &&
+      memcmp(network->imsi.data, TELEMETRY_IMSI,
+             sizeof(TELEMETRY_IMSI) - 1u) == 0;
+  capture->encoded = telemetry_encodes_identity(frame, true);
+  return GZC_OK;
+}
+
+typedef struct telemetry_log_capture {
+  unsigned calls;
+  bool leaked;
+} telemetry_log_capture_t;
+static int telemetry_capture_log(void *user, h2_pal_log_level_t level,
+                                 const char *scope, const char *message) {
+  telemetry_log_capture_t *capture = user;
+  (void)level;
+  (void)scope;
+  ++capture->calls;
+  if (strstr(message, TELEMETRY_IMEI) || strstr(message, TELEMETRY_IMSI))
+    capture->leaked = true;
+  return H2_PAL_OK;
+}
+
+static void telemetry_identity_reject(h2_gizclaw_service_t *service,
+                                      const h2_gizclaw_telemetry_network_t *network) {
+  const h2_gizclaw_telemetry_observation_t observation = {
+      .kind = H2_GIZCLAW_TELEMETRY_NETWORK, .value.network = *network};
+  const h2_gizclaw_telemetry_frame_t frame = {
+      .sequence = 7u, .observations = &observation, .observation_count = 1u};
+  h2_gizclaw_req_t *request = (h2_gizclaw_req_t *)1;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 1u, &frame, 30u,
+                                              &request) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(request == NULL);
+}
+
+static void test_req_telemetry_network_identity(void) {
+  static const h2_pal_time_vtable_t vtable = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  const h2_pal_time_api_t time = {.user = &env, .vtable = &vtable};
+  telemetry_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write = telemetry_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  service->client_config.time = &time;
+  service->client_config.log = &log;
+  env.rpc_result = H2_PAL_OK;
+  telemetry_identity_capture_t capture = {0};
+  h2_gizclaw_test_set_telemetry_send(telemetry_identity_send, &capture);
+
+  char rat[] = "lte";
+  char imei[] = TELEMETRY_IMEI;
+  char imsi[] = TELEMETRY_IMSI;
+  h2_gizclaw_telemetry_observation_t observation = {
+      .kind = H2_GIZCLAW_TELEMETRY_NETWORK,
+      .value.network = {.has_rat = true,
+                        .rat = {rat, 3u},
+                        .has_imei = true,
+                        .imei = {imei, sizeof(imei) - 1u},
+                        .has_imsi = true,
+                        .imsi = {imsi, sizeof(imsi) - 1u}},
+  };
+  const h2_gizclaw_telemetry_frame_t frame = {
+      .sequence = 7u, .observations = &observation, .observation_count = 1u};
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 1u, &frame, 30u,
+                                              &request) == H2_PAL_OK);
+  /* The request owns its copy, so mutating the borrowed spans changes nothing. */
+  imei[0] = 'X';
+  imsi[0] = 'X';
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+  assert(h2_gizclaw_resp_parse_telemetry_send(request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  assert(capture.calls == 1u && capture.borrowed_copy && capture.encoded);
+  imei[0] = TELEMETRY_IMEI[0];
+  imsi[0] = TELEMETRY_IMSI[0];
+
+  /* An empty span is the same as an unset field: nothing is encoded. */
+  capture = (telemetry_identity_capture_t){.identity_absent = true};
+  observation.value.network.imei = (h2_gizclaw_str_t){0};
+  observation.value.network.imsi = (h2_gizclaw_str_t){0};
+  assert(h2_gizclaw_rpc_telemetry_send(service, &frame, 30u) == H2_PAL_OK);
+  assert(capture.calls == 1u && capture.borrowed_copy && capture.encoded);
+
+  h2_gizclaw_telemetry_network_t network = {
+      .has_rat = true,
+      .rat = {rat, 3u},
+      .has_imei = true,
+      .imei = {imei, sizeof(imei) - 1u},
+  };
+  /* 14 digits, 16 digits and a non-digit are all rejected before the wire. */
+  network.imei.len = sizeof(imei) - 2u;
+  telemetry_identity_reject(service, &network);
+  network.imei.len = sizeof(imei);
+  telemetry_identity_reject(service, &network);
+  network.imei.len = sizeof(imei) - 1u;
+  imei[7] = 'A';
+  telemetry_identity_reject(service, &network);
+  imei[7] = TELEMETRY_IMEI[7];
+  /* imsi accepts 6 to 15 digits and rejects anything shorter or longer. */
+  network.has_imei = false;
+  network.has_imsi = true;
+  network.imsi = (h2_gizclaw_str_t){imsi, 5u};
+  telemetry_identity_reject(service, &network);
+  network.imsi.len = 16u;
+  telemetry_identity_reject(service, &network);
+  network.imsi.len = 6u;
+  imsi[3] = '-';
+  telemetry_identity_reject(service, &network);
+  imsi[3] = TELEMETRY_IMSI[3];
+  /* Wi-Fi has no subscriber identity, whatever the case of the RAT token. */
+  network.has_imei = true;
+  network.imei = (h2_gizclaw_str_t){imei, sizeof(imei) - 1u};
+  network.imsi = (h2_gizclaw_str_t){imsi, sizeof(imsi) - 1u};
+  char wifi[] = "WiFi";
+  network.rat = (h2_gizclaw_str_t){wifi, 4u};
+  telemetry_identity_reject(service, &network);
+  network.has_imei = false;
+  telemetry_identity_reject(service, &network);
+  network.has_imsi = false;
+  network.has_connected = true;
+  {
+    /* Without an identity the same Wi-Fi observation still encodes. */
+    const h2_gizclaw_telemetry_observation_t wifi_observation = {
+        .kind = H2_GIZCLAW_TELEMETRY_NETWORK, .value.network = network};
+    const h2_gizclaw_telemetry_frame_t wifi_frame = {
+        .sequence = 7u,
+        .observations = &wifi_observation,
+        .observation_count = 1u};
+    capture = (telemetry_identity_capture_t){.identity_absent = true};
+    assert(h2_gizclaw_rpc_telemetry_send(service, &wifi_frame, 30u) ==
+           H2_PAL_OK);
+    assert(capture.calls == 1u && capture.borrowed_copy && capture.encoded);
+  }
+
+  assert(log_capture.calls > 0u && !log_capture.leaked);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
 }
 
 static void test_req_point_storage_and_limits(void) {
@@ -10090,6 +10338,7 @@ int main(int argc, char **argv) {
   test_ota_status_before_stage_failure();
   test_ota_status_successful_stage();
   test_req_telemetry_copy_and_backpressure();
+  test_req_telemetry_network_identity();
   test_req_point_storage_and_limits();
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);

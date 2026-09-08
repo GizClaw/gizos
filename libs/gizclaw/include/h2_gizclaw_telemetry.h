@@ -16,6 +16,9 @@ extern "C" {
 #define H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS 4u
 #define H2_GIZCLAW_TELEMETRY_TOKEN_MAX 64u
 #define H2_GIZCLAW_TELEMETRY_VERSION_MAX 96u
+#define H2_GIZCLAW_TELEMETRY_IMEI_LEN 15u
+#define H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN 6u
+#define H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN 15u
 
 typedef enum h2_gizclaw_telemetry_kind {
   H2_GIZCLAW_TELEMETRY_BATTERY = 1,
@@ -55,6 +58,19 @@ typedef struct h2_gizclaw_telemetry_network {
   h2_gizclaw_str_t operator_name;
   bool has_connected;
   bool connected;
+  /*
+   * Cellular subscriber identity, borrowed for the duration of
+   * h2_gizclaw_req_create_telemetry_send() and copied into the request.
+   * imei is exactly H2_GIZCLAW_TELEMETRY_IMEI_LEN ASCII decimal digits; imsi is
+   * H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN to H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN of
+   * them. An empty span is the same as leaving has_* false. Both are rejected
+   * with H2_PAL_ERR_INVALID_ARG when rat compares equal to "wifi", ignoring
+   * case, matching the server rule. Neither value is logged or traced.
+   */
+  bool has_imei;
+  h2_gizclaw_str_t imei;
+  bool has_imsi;
+  h2_gizclaw_str_t imsi;
 } h2_gizclaw_telemetry_network_t;
 
 typedef struct h2_gizclaw_telemetry_system {
