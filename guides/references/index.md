@@ -24,6 +24,7 @@
 - [PIXA](./pixa.md)
 - [QR Code](./qrcode.md)
 - [Runtime](./runtime.md)
+- [SemVer](./semver.md)
 - [Utils](./utils.md)
 - [WolfSSL](./wolfssl.md)
 

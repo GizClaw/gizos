@@ -222,6 +222,20 @@ h2_pal_result_t h2_gizclaw_rpc_app_config_get(
     .value = {copy(&a, key.data[0] == 'a' ? "raw" : ""), key.data[0] == 'a' ? 3u : 0u}};
   return h2_gizclaw_resp_arena_end(&a, H2_PAL_OK);
 }
+h2_pal_result_t h2_gizclaw_rpc_firmware_get(
+    h2_gizclaw_service_t *service, int32_t channel, uint32_t timeout,
+    h2_gizclaw_firmware_t *out) {
+  begin_rpc(service, timeout);
+  assert(channel == 1000);
+  in_flight();
+  if (mode == 1) return H2_PAL_ERR_NOT_FOUND;
+  if (mode == 2) return H2_PAL_ERR_IO;
+  *out = (h2_gizclaw_firmware_t){.channel = mode == 3 ? 3 : channel,
+                                .has_version = mode != 6, .size = 123};
+  if (out->has_version) strcpy(out->version, "1.2.3-beta.1+42");
+  strcpy(out->url, "https://example.com/fw");
+  return H2_PAL_OK;
+}
 static void setup(h2_gizclaw_resource_kind_t kind, size_t max_items) {
   mode = calls = gets = creates = 0;
   now = 0;
@@ -244,7 +258,51 @@ static h2_gizclaw_resource_snapshot_t snapshot(void) {
   assert(h2_gizclaw_resource_snapshot(resource, &storage, &out) == H2_PAL_OK);
   return out;
 }
+static void test_firmware_state(void) {
+  h2_gizclaw_resource_config_t config = {
+      .kind = H2_GIZCLAW_RESOURCE_FIRMWARE,
+      .service = (h2_gizclaw_service_t *)&calls,
+      .mem = h2_desktop_platform_default_allocator(),
+      .sync = h2_desktop_platform_sync_api(), .time = &time_api};
+  assert(h2_gizclaw_resource_create(&config, &resource) == H2_PAL_ERR_INVALID_ARG);
+  config.firmware_channel = -1;
+  assert(h2_gizclaw_resource_create(&config, &resource) == H2_PAL_ERR_INVALID_ARG);
+  config.firmware_channel = 1000;
+  for (unsigned scenario = 0; scenario <= 6; ++scenario) {
+    mode = calls = 0;
+    now = 0;
+    assert(h2_gizclaw_resource_create(&config, &resource) == H2_PAL_OK);
+    assert(!snapshot().valid && snapshot().stale);
+    const h2_gizclaw_resource_command_t more = {.operation = H2_GIZCLAW_RESOURCE_LOAD_MORE};
+    assert(h2_gizclaw_resource_execute(resource, &more, 100) == H2_PAL_ERR_INVALID_ARG);
+    assert(calls == 0);
+    assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == H2_PAL_OK);
+    h2_gizclaw_resource_snapshot_t before = snapshot();
+    assert(before.valid && !before.stale && before.data.firmware.has_version);
+    strcpy(before.data.firmware.version, "changed");
+    assert(strcmp(snapshot().data.firmware.version, "1.2.3-beta.1+42") == 0);
+    mode = scenario;
+    h2_pal_result_t expected = scenario == 1 ? H2_PAL_ERR_NOT_FOUND
+        : scenario == 2 ? H2_PAL_ERR_IO : scenario == 3 ? H2_PAL_ERR_FORMAT
+        : scenario == 4 ? H2_PAL_ERR_TIMEOUT : scenario == 5 ? H2_PAL_ERR_CLOSED
+        : H2_PAL_OK;
+    assert(h2_gizclaw_resource_execute(resource, &refresh, 100) == expected);
+    h2_gizclaw_resource_snapshot_t after;
+    h2_gizclaw_resp_storage_t empty = {0};
+    assert(h2_gizclaw_resource_snapshot(resource, &empty, &after) == H2_PAL_OK);
+    assert(after.valid && !after.busy && after.last_error == expected);
+    assert(after.stale == (expected != H2_PAL_OK));
+    assert(after.data_revision == before.data_revision + (expected == H2_PAL_OK));
+    assert(after.data.firmware.has_version == (scenario != 6));
+    if (scenario == 6) assert(after.data.firmware.version[0] == 0);
+    else assert(strcmp(after.data.firmware.version, "1.2.3-beta.1+42") == 0);
+    assert(after.closed == (scenario == 5));
+    assert(h2_gizclaw_resource_destroy(&resource) == H2_PAL_OK);
+    assert(after.data.firmware.channel == 1000);
+  }
+}
 int main(void) {
+  test_firmware_state();
   const size_t page_sizes[] = {0, 64, 65};
   for (size_t i = 0; i < sizeof(page_sizes) / sizeof(page_sizes[0]); ++i) {
     h2_gizclaw_resource_config_t config = {
