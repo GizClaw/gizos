@@ -44,6 +44,8 @@ h2_tasks(
     tasks = [
         "$gizclaw/audio/download",
         "$gizclaw/device",
+        "$gizclaw/data-up",
+        "$gizclaw/data-down",
         "$gizclaw/net",
         "$gizclaw/audio/uplink",
         "$gizclaw/audio/downlink",
