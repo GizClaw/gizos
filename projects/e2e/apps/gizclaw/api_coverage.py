@@ -96,7 +96,8 @@ def requirements():
     symbol = PREFIX + "req_create_audio_play"
     rules.append(Rule(symbol, "voice", (symbol, PREFIX + "req_do", PREFIX + "req_wait"),
                       symbol, "audio_play-assert"))
-    for method in "player_play player_stop player_get_status ota_start ota_get_status".split():
+    for method in ("player_play player_play_index player_stop player_get_status "
+                   "player_playlist_snapshot ota_start ota_get_status").split():
         symbol = PREFIX + method
         rules.append(Rule(symbol, "device-api", (symbol,), symbol, method + "-assert"))
     create = PREFIX + "req_create_debug_set"
@@ -136,9 +137,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 221 or len(set(inventory)) != 221 or
-            len(names) != 221 or len(set(names)) != 221 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 221-function inventory")
+    if (len(inventory) != 223 or len(set(inventory)) != 223 or
+            len(names) != 223 or len(set(names)) != 223 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 223-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

@@ -6,7 +6,9 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 ## 本地在线音乐播放器
 
-`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus decoder，解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`stop()`、`get_status()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
+`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus decoder，解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`play_index()`、`stop()`、`get_status()`、`playlist_snapshot()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
+
+设备自身持有 playlist，服务器 `playlist.set` / `append` 推送的专辑不经过网络回读即可展示。`h2_gizclaw_player_playlist_snapshot()` 在设备锁下整份拷贝出 caller-owned 快照：最多 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）个条目的 title 与 source_ref、条目数、current index 及其存在标志、playlist revision 和 repeat 模式。快照不含每条最长 1 KB 的 URL，只有库自己需要它下载；UI 靠 revision 判断缓存是否失效，未变化就不重绘。`h2_gizclaw_player_get_status()` 另外附带 `has_current_index` / `current_index` / `playlist_length` / `playlist_revision`，使“第 3/8 首”这类投影不必再取一次快照。用户选中某条时调用 `h2_gizclaw_player_play_index()`，它走 `client.device.audioplayer.play` 的同一条内部路径；索引达到或超过 playlist 长度返回 `H2_PAL_ERR_INVALID_ARG`，在改动任何状态之前拒绝，不打断正在播放的曲目。这两个入口都不发起网络请求。
 
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 

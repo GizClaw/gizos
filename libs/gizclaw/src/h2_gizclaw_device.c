@@ -1476,6 +1476,39 @@ h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service) {
   unlock(d);
   return rc;
 }
+/* Same selection the client.device.audioplayer.play RPC performs: validate
+ * the index against the live playlist under the lock, then hand the worker
+ * the new current track. Rejection happens before anything is mutated, so a
+ * bad index cannot disturb the track already playing. */
+h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
+                                             uint32_t index) {
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  lock(d);
+  int rc = H2_PAL_OK;
+  if (index >= d->playlist->items_count)
+    rc = H2_PAL_ERR_INVALID_ARG;
+  else if (!d->task || atomic_load(&d->stopping))
+    rc = H2_PAL_ERR_CLOSED;
+  else if (d->pending)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    cancel_play_locked(d);
+    d->status.has_current_index = true;
+    d->status.current_index = index;
+    d->status.position_ms = 0;
+    d->status.has_duration_ms = false;
+    d->status.has_error_code = d->status.has_error_message = false;
+    strcpy(d->status.state, "buffering");
+    d->playing = true;
+    changed(d);
+  }
+  unlock(d);
+  return rc;
+}
 h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
                                              h2_gizclaw_player_status_t *out) {
   if (!out)
@@ -1495,6 +1528,45 @@ h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
     strcpy(out->error_code, d->status.error_code);
   if (d->status.has_error_message)
     strcpy(out->error_message, d->status.error_message);
+  out->has_current_index = d->status.has_current_index;
+  out->current_index = d->status.current_index;
+  out->playlist_length = d->status.playlist_length;
+  out->playlist_revision = d->status.playlist_revision;
+  unlock(d);
+  return H2_PAL_OK;
+}
+/* The queue is device state, so the snapshot is folded under the same mutex
+ * the RPC provider uses; the caller then owns a detached copy and can redraw
+ * without holding the lock. The revision is copied alongside the items so a
+ * UI can skip the projection when nothing moved. */
+h2_pal_result_t h2_gizclaw_player_playlist_snapshot(
+    h2_gizclaw_service_t *service, h2_gizclaw_player_playlist_t *out) {
+  if (!out)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, sizeof(*out));
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  lock(d);
+  size_t count = d->playlist->items_count;
+  if (count > H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS)
+    count = H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS;
+  for (size_t i = 0; i < count; ++i) {
+    const gizclaw_rpc_v1_AudioPlayerItem *item = &d->playlist->items[i];
+    out->items[i].has_title = item->has_title;
+    if (item->has_title)
+      strcpy(out->items[i].title, item->title);
+    out->items[i].has_source_ref = item->has_source_ref;
+    if (item->has_source_ref)
+      strcpy(out->items[i].source_ref, item->source_ref);
+  }
+  out->item_count = (uint32_t)count;
+  out->has_current_index = d->status.has_current_index;
+  out->current_index = d->status.current_index;
+  out->playlist_revision = d->playlist->playlist_revision;
+  strcpy(out->repeat, d->status.repeat);
   unlock(d);
   return H2_PAL_OK;
 }
