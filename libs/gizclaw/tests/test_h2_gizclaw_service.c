@@ -3373,12 +3373,16 @@ static void test_req_telemetry_network_identity(void) {
       .has_imei = true,
       .imei = {imei, sizeof(imei) - 1u},
   };
-  /* 14 digits, 16 digits and a non-digit are all rejected before the wire. */
+  /* 14 digits, 16 digits and a non-digit are all rejected before the wire.
+   * The overlength spans are all-digit buffers, so only the length check can
+   * reject them. */
+  char imei_long[] = TELEMETRY_IMEI "0";
+  char imsi_long[] = TELEMETRY_IMSI "0000";
   network.imei.len = sizeof(imei) - 2u;
   telemetry_identity_reject(service, &network);
-  network.imei.len = sizeof(imei);
+  network.imei = (h2_gizclaw_str_t){imei_long, sizeof(imei_long) - 1u};
   telemetry_identity_reject(service, &network);
-  network.imei.len = sizeof(imei) - 1u;
+  network.imei = (h2_gizclaw_str_t){imei, sizeof(imei) - 1u};
   imei[7] = 'A';
   telemetry_identity_reject(service, &network);
   imei[7] = TELEMETRY_IMEI[7];
@@ -3387,9 +3391,32 @@ static void test_req_telemetry_network_identity(void) {
   network.has_imsi = true;
   network.imsi = (h2_gizclaw_str_t){imsi, 5u};
   telemetry_identity_reject(service, &network);
-  network.imsi.len = 16u;
+  network.imsi = (h2_gizclaw_str_t){imsi_long, sizeof(imsi_long) - 1u};
   telemetry_identity_reject(service, &network);
-  network.imsi.len = 6u;
+  /* The 6 and 15 digit ends of the imsi range are both accepted. */
+  capture = (telemetry_identity_capture_t){.identity_absent = true};
+  {
+    const h2_gizclaw_telemetry_observation_t bounds[2] = {
+        {.kind = H2_GIZCLAW_TELEMETRY_NETWORK,
+         .value.network = {.has_rat = true,
+                           .rat = {rat, 3u},
+                           .has_imsi = true,
+                           .imsi = {imsi_long, 6u}}},
+        {.kind = H2_GIZCLAW_TELEMETRY_NETWORK,
+         .value.network = {.has_rat = true,
+                           .rat = {rat, 3u},
+                           .has_imsi = true,
+                           .imsi = {imsi_long, 15u}}},
+    };
+    for (size_t i = 0u; i < 2u; ++i) {
+      const h2_gizclaw_telemetry_frame_t bound_frame = {
+          .sequence = 7u, .observations = &bounds[i], .observation_count = 1u};
+      assert(h2_gizclaw_rpc_telemetry_send(service, &bound_frame, 30u) ==
+             H2_PAL_OK);
+    }
+    assert(capture.calls == 2u);
+  }
+  network.imsi = (h2_gizclaw_str_t){imsi, 6u};
   imsi[3] = '-';
   telemetry_identity_reject(service, &network);
   imsi[3] = TELEMETRY_IMSI[3];
