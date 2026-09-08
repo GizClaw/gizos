@@ -1,6 +1,6 @@
 # GizClaw 状态与请求
 
-`libs/gizclaw` 的 Session 持有连接作用域内的 Runtime Profile 身份、Workflow catalog、 Workspace 准备状态和 Conversation 状态。产品读取公共快照并投影到页面，不再维护另一份 可用于业务决策的 Profile/catalog/Workspace 状态。低层 Service/RPC 仍可独立使用； 选择 Session 的同一 Service 必须统一通过 Session 执行注册、catalog、Workspace 修改和 Conversation 操作，不能混用原始接口绕过状态所有者。
+`libs/gizclaw` 的 Session 持有连接作用域内的 Runtime Profile 身份、Workflow catalog、 Workspace 准备状态和 Conversation 状态。产品读取公共快照并投影到页面，不再维护另一份 可用于业务决策的 Profile/catalog/Workspace 状态。低层 Service/RPC 仍可独立使用； 选择 Session 的同一 Service 通过 Session 执行注册、catalog 和 Conversation 操作。现有同步 Workspace activate/reload/reload-with-options RPC 自动进入 Session 的收尾与状态发布逻辑；低层异步 request 接口仍只处理协议，不能用于绕过 Session 的受管 Workspace 修改。
 
 ## 数据与职责
 
@@ -21,8 +21,20 @@ Session 不内置产品 collection、默认 Workflow、命名规则或文件路�
 
 `target_workspace` 在准备开始时更新；`current_workspace` 只在服务端确认后更新。 切换失败保留旧名字用于展示，但 workspace phase 为 FAILED，不能假定旧目标仍可对话。 相同有效 Workspace 和参数可复用就绪结果；复用前仍校验所选 Workflow 的 collection 归属，不在每轮对话重复 reload。
 
-Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定固定 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。新一轮输入必须等待前一轮 completion 已分发；没有活动 generation 时 end 返回 INVALID_STATE，不能把终态改回 ACTIVE。
+Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定当前 Workspace。后续切换成功时，核心在旧 generation 结束后更新保留 route 的目标，下一次输入使用新 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。等待或回复期间调用 audio start 由核心取消旧 generation，等待取消分发后在同一路由开始新输入；不要求产品先判断 UI 状态。重复 start（输入已开）与重复 end（输入已关）幂等，空闲 end 不会复活旧轮次。
 
+## 交互模式与对话状态
+
+快照中的 `parameters` 复用现有 Workspace 参数类型，`input` 为 Push-to-Talk 或RealTime，`initiative` 保持既有 PEER / AGENT 含义；不引入新的首句发言者字段。只合并成功应用的 patch，省略成员保留原值，失败保留此前已确认参数。
+
+| 交互模式 | 对话状态 |
+| --- | --- |
+| Push-to-Talk | IDLE → RECORDING → WAITING → REPLYING → IDLE |
+| RealTime | IDLE ↔ CALLING |
+
+PTT 在录音期间收到回复也不能关闭输入或影响松手 EOS。RealTime 的文本、音频、单轮 REPLY_DONE 都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
+
+Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品，也不能改回REPLYING。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。
 ## 对话错误详情
 
 Conversation 的远端 ERROR 在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。

@@ -19,6 +19,7 @@
 #include "h2_gizclaw_telemetry.h"
 #include "h2_gizclaw_workflow.h"
 #include "h2_gizclaw_workspace.h"
+#include "h2_gizclaw_session.h"
 #include "payload/ai.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/social.pb.h"
@@ -4314,6 +4315,20 @@ static void test_workspace_reload_with_options(void) {
   service->client_config.time = &time;
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  static const char *const collections[] = {"test"};
+  h2_gizclaw_session_config_t config = {
+      .service = service,
+      .mem = service->client_config.allocator,
+      .sync = service->config.sync,
+      .time = &time,
+      .collections = collections,
+      .collection_count = 1u,
+      .max_workflows = 1u,
+      .catalog_bytes = 4096u,
+  };
+  h2_gizclaw_session_t *session = NULL;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+
   uint8_t buffer[2048];
   h2_gizclaw_resp_storage_t storage = {buffer, sizeof(buffer), 0u};
   static const uint8_t response[] = {0x0a, 10, 0x0a, 2, 'w', 's',
@@ -4370,6 +4385,15 @@ static void test_workspace_reload_with_options(void) {
     assert(h2_gizclaw_rpc_workspace_reload_with_options(
         service, selection, mode & 2u ? &patch : NULL, 1234u, &storage,
         &result) == H2_PAL_OK && mock.request_matches);
+    h2_gizclaw_session_state_t core;
+    assert(h2_gizclaw_session_snapshot(session, &core) == H2_PAL_OK);
+    assert(core.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+    assert(strcmp(core.current_workspace, "ws") == 0);
+    if (mode & 2u) {
+      assert(core.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME);
+      assert(core.parameters.initiative ==
+             H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT);
+    }
   }
   h2_gizclaw_req_t *request = NULL;
   h2_gizclaw_workspace_parameters_patch_t bad = {.has_input = true, .input = 99};
@@ -4382,6 +4406,7 @@ static void test_workspace_reload_with_options(void) {
   assert(h2_gizclaw_req_create_workspace_reload_with_options(
       service, 1u, (h2_gizclaw_str_t){0}, NULL, 0u, &request) ==
       H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }

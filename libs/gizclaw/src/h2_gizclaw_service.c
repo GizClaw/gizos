@@ -1,8 +1,9 @@
-#include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_audio_pacer.h"
+#include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_pcm_track_internal.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_session_internal.h"
 
 #include "h2_gizclaw_task_names.h"
 
@@ -1431,4 +1432,28 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   (void)h2_pal_mutex_destroy(service->config.sync, service->audio_mutex);
   h2_pal_mem_free(service->config.client_config->allocator, service);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_session_t *session) {
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (service->session != NULL)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    service->session = session;
+    ++service->request_reference_count;
+  }
+  unlock_service(service);
+  return rc;
+}
+
+void h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+  if (lock_service(service) != H2_PAL_OK)
+    return;
+  service->session = NULL;
+  --service->request_reference_count;
+  unlock_service(service);
 }

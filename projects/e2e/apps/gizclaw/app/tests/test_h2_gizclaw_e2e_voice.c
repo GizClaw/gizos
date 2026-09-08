@@ -4,6 +4,24 @@
 #include "h2_app_test_audio_fake.h"
 #include "h2_desktop_platform.h"
 
+static h2_gizclaw_session_t *s_attached_session;
+h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
+    h2_gizclaw_session_t *, h2_pal_result_t,
+    const h2_gizclaw_workspace_activation_t *,
+    const h2_gizclaw_workspace_parameters_patch_t *);
+
+h2_pal_result_t
+h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_session_t *session) {
+  (void)service;
+  s_attached_session = session;
+  return H2_PAL_OK;
+}
+void h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+  (void)service;
+  s_attached_session = NULL;
+}
+
 static bool s_session;
 #include "h2_gizclaw_pcm_track_fake.h"
 
@@ -656,6 +674,8 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(h2_gizclaw_service_
   }
   *out = (h2_gizclaw_workspace_activation_t){.active_workspace_name=(char *)name.data,
       .workflow_name="assistant", .runtime_state=H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING};
+  h2_gizclaw_session_workspace_finish_internal(s_attached_session, H2_PAL_OK,
+                                               out, parameters);
   return H2_PAL_OK;
 }
 
@@ -889,4 +909,11 @@ int main(int argc, char **argv) {
     assert(fixture.case_state == (mode == 4u ? &s_service : NULL));
   }
   return 0;
+}
+
+h2_pal_result_t h2_gizclaw_conversation_retarget_internal(
+    h2_gizclaw_conversation_t *conversation, const char *workspace) {
+  (void)conversation;
+  assert(workspace != NULL && workspace[0] != '\0');
+  return H2_PAL_OK;
 }

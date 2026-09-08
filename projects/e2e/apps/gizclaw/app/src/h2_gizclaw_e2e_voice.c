@@ -457,9 +457,15 @@ static h2_gizclaw_session_t *voice_session(voice_state_t *state) {
 static int session_input_state(voice_state_t *state, bool open) {
   h2_gizclaw_session_state_t snapshot;
   int rc = h2_gizclaw_session_snapshot(voice_session(state), &snapshot);
-  if (rc == H2_PAL_OK && (snapshot.conversation_input_open != open ||
-      snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_ACTIVE ||
-      snapshot.can_start))
+  if (rc == H2_PAL_OK &&
+      (snapshot.conversation_input_open != open ||
+       snapshot.conversation !=
+           (state->realtime
+                ? (open ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
+                        : H2_GIZCLAW_SESSION_CONVERSATION_IDLE)
+                : (open ? H2_GIZCLAW_SESSION_CONVERSATION_RECORDING
+                        : H2_GIZCLAW_SESSION_CONVERSATION_WAITING)) ||
+       snapshot.can_start))
     rc = H2_PAL_ERR_INVALID_STATE;
   return rc;
 }
@@ -629,9 +635,9 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
   if (voice_session(state) != NULL && rc == H2_PAL_OK) {
     h2_gizclaw_session_state_t snapshot;
     rc = h2_gizclaw_session_snapshot(voice_session(state), &snapshot);
-    if (rc == H2_PAL_OK && (snapshot.conversation_input_open || snapshot.can_start ||
-        snapshot.conversation != (realtime ? H2_GIZCLAW_SESSION_CONVERSATION_CANCELED
-                                           : H2_GIZCLAW_SESSION_CONVERSATION_COMPLETED)))
+    if (rc == H2_PAL_OK &&
+        (snapshot.conversation_input_open || snapshot.can_start ||
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE))
       rc = H2_PAL_ERR_INVALID_STATE;
   }
   evidence(voice_session(state) ? "h2_gizclaw_session_audio_start" : "h2_gizclaw_service_audio_start",
