@@ -1,5 +1,6 @@
 #include "h2_quectel_internal.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -233,7 +234,9 @@ static int response_contains_token(
 static const char *parse_degrees_e7(const char *text, int32_t limit_e7, int32_t *out_value) {
     char *end = NULL;
     double degrees = strtod(text, &end);
-    if (end == text) {
+    /* strtod also accepts "nan" and "inf"; those compare false against every
+     * limit, so they are rejected before the cast. */
+    if (end == text || !isfinite(degrees)) {
         return NULL;
     }
     double scaled = degrees * 10000000.0;

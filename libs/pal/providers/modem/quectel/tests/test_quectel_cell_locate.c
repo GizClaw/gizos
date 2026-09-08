@@ -281,6 +281,8 @@ static void test_service_and_format_errors(void) {
     /* Malformed responses. */
     check_failure("+QLBS: 0,31.847649\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("+QLBS: 0,north,east\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: 0,nan,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: 0,31.847649,inf\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("+QLBS: 0,131.847649,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("+QLBS: ,31.847649,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("OK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
