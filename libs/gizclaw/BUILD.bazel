@@ -84,6 +84,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_response_internal.h",
     "src/h2_gizclaw_service.c",
     "src/h2_gizclaw_session.c",
+    "src/h2_gizclaw_session_internal.h",
     "src/h2_gizclaw_resource.c",
     "src/h2_gizclaw_time.c",
     "src/h2_gizclaw_service_internal.h",
@@ -187,6 +188,7 @@ cc_library(
         "src/h2_gizclaw_response_internal.h",
         "src/h2_gizclaw_service.c",
         "src/h2_gizclaw_session.c",
+        "src/h2_gizclaw_session_internal.h",
         "src/h2_gizclaw_resource.c",
         "src/h2_gizclaw_task_names.c",
         "src/h2_gizclaw_time.c",
@@ -360,6 +362,7 @@ cc_test(
     name = "h2_gizclaw_session_test",
     srcs = [
         "src/h2_gizclaw_session.c",
+        "src/h2_gizclaw_session_internal.h",
         "src/h2_gizclaw_response.c",
         "src/h2_gizclaw_response_internal.h",
         "tests/test_h2_gizclaw_session.c",

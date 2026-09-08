@@ -19,6 +19,8 @@
 #include "h2_gizclaw_telemetry.h"
 #include "h2_gizclaw_workflow.h"
 #include "h2_gizclaw_workspace.h"
+#include "h2_gizclaw_session.h"
+#include "h2_gizclaw_session_internal.h"
 #include "payload/ai.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/social.pb.h"
@@ -4314,6 +4316,20 @@ static void test_workspace_reload_with_options(void) {
   service->client_config.time = &time;
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  static const char *const collections[] = {"test"};
+  h2_gizclaw_session_config_t config = {
+      .service = service,
+      .mem = service->client_config.allocator,
+      .sync = service->config.sync,
+      .time = &time,
+      .collections = collections,
+      .collection_count = 1u,
+      .max_workflows = 1u,
+      .catalog_bytes = 4096u,
+  };
+  h2_gizclaw_session_t *session = NULL;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+
   uint8_t buffer[2048];
   h2_gizclaw_resp_storage_t storage = {buffer, sizeof(buffer), 0u};
   static const uint8_t response[] = {0x0a, 10, 0x0a, 2, 'w', 's',
@@ -4370,6 +4386,15 @@ static void test_workspace_reload_with_options(void) {
     assert(h2_gizclaw_rpc_workspace_reload_with_options(
         service, selection, mode & 2u ? &patch : NULL, 1234u, &storage,
         &result) == H2_PAL_OK && mock.request_matches);
+    h2_gizclaw_session_state_t core;
+    assert(h2_gizclaw_session_snapshot(session, &core) == H2_PAL_OK);
+    assert(core.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+    assert(strcmp(core.current_workspace, "ws") == 0);
+    if (mode & 2u) {
+      assert(core.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME);
+      assert(core.parameters.initiative ==
+             H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT);
+    }
   }
   h2_gizclaw_req_t *request = NULL;
   h2_gizclaw_workspace_parameters_patch_t bad = {.has_input = true, .input = 99};
@@ -4382,6 +4407,16 @@ static void test_workspace_reload_with_options(void) {
   assert(h2_gizclaw_req_create_workspace_reload_with_options(
       service, 1u, (h2_gizclaw_str_t){0}, NULL, 0u, &request) ==
       H2_PAL_ERR_INVALID_ARG);
+  /* A workspace RPC owns this reference before entering the Session mutex.
+   * Destruction must not free it in that admission window. */
+  h2_gizclaw_session_t *borrowed = NULL;
+  assert(h2_gizclaw_service_acquire_session_internal(service, &borrowed) ==
+         H2_PAL_OK);
+  assert(borrowed == session);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_ERR_BUSY);
+  assert(session == borrowed);
+  h2_gizclaw_service_release_session_internal(service);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -7191,6 +7226,28 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
       return GZC_ERR_WOULD_BLOCK;
     *event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
     event->version = GZC_PEER_EVENT_VERSION;
+    /* A canceled input's delayed reply precedes the next input's READY.
+     * None of these events may pin its route or terminate the new input. */
+    if (test->mode == 24 && test->ack_reads <= 3) {
+      if (test->ack_reads == 1) {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+        event->which_payload = gizclaw_events_v1_PeerEvent_bos_tag;
+        snprintf(event->payload.bos.stream_id,
+                 sizeof(event->payload.bos.stream_id), "canceled-reply");
+        event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+      } else if (test->ack_reads == 2) {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
+        event->which_payload = gizclaw_events_v1_PeerEvent_text_done_tag;
+        snprintf(event->payload.text_done.stream_id,
+                 sizeof(event->payload.text_done.stream_id), "canceled-reply");
+      } else {
+        event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+        event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+        snprintf(event->payload.eos.stream_id,
+                 sizeof(event->payload.eos.stream_id), "canceled-reply");
+      }
+      return GZC_OK;
+    }
     if ((test->mode == 22 || test->mode == 23) && test->ack_reads == 1) {
       if (test->mode == 22) {
         event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
@@ -7835,7 +7892,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 24; ++mode) {
+  for (unsigned mode = 0; mode < 25; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_test_t test = {.service = service,
@@ -7995,7 +8052,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
-                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22) &&
+                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24) &&
                  atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
@@ -8076,7 +8133,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.audio_started == 2u && test.bos_attempts == 1u);
     }
     if (mode == 0 || mode == 3 || mode == 4 || mode == 6 || mode == 7 ||
-        mode == 9 || mode == 10 || mode == 17 || mode == 22) {
+        mode == 9 || mode == 10 || mode == 17 || mode == 22 || mode == 24) {
       assert(test.packets == 13 && atomic_load(&test.written) == 13 * 640);
       assert(test.audio_started == (mode == 3 || mode == 17 ? 0u : 1u));
       size_t nonzero = 0;
@@ -8084,6 +8141,9 @@ static void test_conversation_public_audio_tasks(void) {
         nonzero += test.output[i] != 0;
       assert(nonzero > 0);
     }
+    if (mode == 24)
+      assert(test.ack_reads == 4 && atomic_load(&test.eos) &&
+             !atomic_load(&test.canceled));
     if (mode == 4)
       assert(test.bos_attempts == 4 && test.eos_attempts == 4 &&
              atomic_load(&test.small_buffer_rejected));

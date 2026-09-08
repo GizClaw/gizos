@@ -4,6 +4,7 @@
 #include "h2_gizclaw_response_internal.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_session_internal.h"
 
 #include "payload/ai.pb.h"
 #include "payload/workspace.pb.h"
@@ -1391,12 +1392,26 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_activate(
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workspace_activate(
       service, 0u, name, timeout_ms, &request);
+  h2_gizclaw_session_t *session = NULL;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_acquire_session_internal(service, &session);
+  bool transition = false;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_workspace_begin_internal(session, name, timeout_ms);
+    transition = rc == H2_PAL_OK && session != NULL;
+  }
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_workspace_activate(request, storage, out_result);
+  if (transition) {
+    rc = h2_gizclaw_session_workspace_finish_internal(session, rc, out_result,
+                                                      NULL);
+  }
+  if (session != NULL)
+    h2_gizclaw_service_release_session_internal(service);
   h2_gizclaw_req_release(request);
   return rc;
 }
@@ -1415,12 +1430,31 @@ h2_gizclaw_rpc_workspace_reload(h2_gizclaw_service_t *service,
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc =
       h2_gizclaw_req_create_workspace_reload(service, 0u, timeout_ms, &request);
+  h2_gizclaw_session_t *session = NULL;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_acquire_session_internal(service, &session);
+  bool transition = false;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_workspace_begin_internal(
+        session, (h2_gizclaw_str_t){0}, timeout_ms);
+    transition = rc == H2_PAL_OK && session != NULL;
+  }
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_workspace_reload(request, storage, out_result);
+  if (transition) {
+    if (rc == H2_PAL_OK &&
+        (out_result->runtime_state != H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING ||
+         out_result->active_workspace_name == NULL))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    rc = h2_gizclaw_session_workspace_finish_internal(session, rc, out_result,
+                                                      NULL);
+  }
+  if (session != NULL)
+    h2_gizclaw_service_release_session_internal(service);
   h2_gizclaw_req_release(request);
   return rc;
 }
@@ -1440,6 +1474,14 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   h2_pal_result_t rc =
       h2_gizclaw_req_create_workspace_reload_with_options(
           service, 0u, name, parameters, timeout_ms, &request);
+  h2_gizclaw_session_t *session = NULL;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_acquire_session_internal(service, &session);
+  bool transition = false;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_workspace_begin_internal(session, name, timeout_ms);
+    transition = rc == H2_PAL_OK && session != NULL;
+  }
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
@@ -1447,6 +1489,16 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_workspace_reload_with_options(
         request, storage, out_result);
+  if (transition) {
+    if (rc == H2_PAL_OK &&
+        (out_result->runtime_state != H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING ||
+         out_result->active_workspace_name == NULL))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    rc = h2_gizclaw_session_workspace_finish_internal(session, rc, out_result,
+                                                      parameters);
+  }
+  if (session != NULL)
+    h2_gizclaw_service_release_session_internal(service);
   h2_gizclaw_req_release(request);
   return rc;
 }

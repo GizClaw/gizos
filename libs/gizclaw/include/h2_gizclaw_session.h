@@ -31,11 +31,10 @@ typedef enum h2_gizclaw_session_blocker {
 
 typedef enum h2_gizclaw_session_conversation_phase {
   H2_GIZCLAW_SESSION_CONVERSATION_IDLE = 0,
-  H2_GIZCLAW_SESSION_CONVERSATION_PREPARING,
-  H2_GIZCLAW_SESSION_CONVERSATION_ACTIVE,
-  H2_GIZCLAW_SESSION_CONVERSATION_COMPLETED,
-  H2_GIZCLAW_SESSION_CONVERSATION_CANCELED,
-  H2_GIZCLAW_SESSION_CONVERSATION_FAILED,
+  H2_GIZCLAW_SESSION_CONVERSATION_RECORDING,
+  H2_GIZCLAW_SESSION_CONVERSATION_WAITING,
+  H2_GIZCLAW_SESSION_CONVERSATION_REPLYING,
+  H2_GIZCLAW_SESSION_CONVERSATION_CALLING,
 } h2_gizclaw_session_conversation_phase_t;
 
 /** Copied, pointer-free state. READY describes server-confirmed facts, not
@@ -49,6 +48,10 @@ typedef struct h2_gizclaw_session_state {
   h2_gizclaw_session_phase_t workspace;
   h2_gizclaw_session_conversation_phase_t conversation;
   bool conversation_input_open;
+  /** Confirmed workspace parameters. Unset patch members preserve these values.
+   * input distinguishes PTT (IDLE/RECORDING/WAITING/REPLYING) from realtime
+   * (IDLE/CALLING). Errors are results, never conversation phases. */
+  h2_gizclaw_workspace_parameters_patch_t parameters;
   char profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
   char profile_revision[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
   char current_workspace[H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES + 1u];
@@ -66,8 +69,10 @@ typedef struct h2_gizclaw_session_state {
 
 /** Dependencies and collection strings are borrowed until destroy. One Session
  * per Service; use Session operations exclusively for registration, catalog,
- * workspace mutations and conversations on that Service. Other RPCs may run
- * independently. No product names, defaults or persistence paths are built in.
+ * and conversations on that Service. Existing synchronous workspace RPCs
+ * participate in this Session's lifecycle and publish confirmed parameters.
+ * Low-level asynchronous workspace requests must not bypass this owner. No
+ * product names, defaults or persistence paths are built in.
  */
 typedef struct h2_gizclaw_session_config {
   h2_gizclaw_service_t *service;
@@ -141,8 +146,10 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
     h2_gizclaw_conversation_t **out_conversation);
 /** Start/end input on the Session-owned conversation route and update the
  * public input state. Completion still comes through service_poll. Start
- * rejects an active generation until its completion is dispatched; end requires
- * an active generation. Both return INVALID_STATE when that condition is unmet.
+ * interrupts a previous waiting/replying generation on the same route, waiting
+ * up to 30 seconds for local cancellation dispatch (not for the agent reply).
+ * Repeated start while recording and end while idle are harmless. Call from a
+ * control task; service_poll must continue on its owner while start waits.
  */
 h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t *session);
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *session);

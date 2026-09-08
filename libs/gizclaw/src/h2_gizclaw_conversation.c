@@ -4,6 +4,7 @@
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_pcm_ring.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_session_internal.h"
 #include "h2_gizclaw_task_names.h"
 #include "h2_gizclaw_workspace.h"
 
@@ -778,6 +779,14 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
   const char *id = peer_event_stream_id(event);
   const char *id_end = id != NULL ? memchr(id, '\0', sizeof(route->id)) : NULL;
   if (id != NULL && (id_end == NULL || id_end == id))
+    return false;
+  /* A new input must not adopt delayed replies from the canceled input
+   * while awaiting its READY. Only events explicitly naming this input can
+   * precede that barrier (including early input rejection). Server-assigned
+   * response IDs remain valid after READY. */
+  if (conversation->stream_id[0] != '\0' &&
+      !conversation->input_ready && !conversation->committed &&
+      !stream_id_matches(id, conversation->stream_id))
     return false;
   if (route->ended) {
     /* A completed response cannot be reopened by a duplicate EOS or delayed
@@ -1900,4 +1909,23 @@ void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t *conversation) {
     h2_pal_mem_free(conversation->allocator, conversation);
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
+}
+
+/* The Session has drained the previous generation before changing routes. */
+h2_pal_result_t h2_gizclaw_conversation_retarget_internal(
+    h2_gizclaw_conversation_t *conversation, const char *workspace) {
+  if (conversation == NULL || workspace == NULL || !conversation->service_mode ||
+      !valid_workspace((h2_gizclaw_str_t){workspace, strlen(workspace)}))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_service_t *service = conversation->service;
+  h2_pal_result_t rc = h2_pal_mutex_lock(service->config.sync, service->audio_mutex);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (conversation->service_request != NULL) {
+    rc = H2_PAL_ERR_BUSY;
+  } else {
+    memcpy(conversation->workspace_name, workspace, strlen(workspace) + 1u);
+  }
+  (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
+  return rc;
 }
