@@ -5,6 +5,37 @@ load("//tools/bazel/desktop_layout:desktop_layout.bzl", "h2_desktop_layout_confi
 package(default_visibility = ["//visibility:public"])
 
 h2_desktop_layout_config(
+    name = "layout_h106_generated",
+    src = "layout-h106.json",
+    app_name = "example/lua-qi-duel-h106",
+)
+
+cc_library(
+    name = "layout_h106_config",
+    hdrs = [":layout_h106_generated"],
+    strip_include_prefix = "layout_h106_generated",
+    deps = ["//libs/pal/providers/desktop/app_support", "//libs/pal/providers/desktop/pal_core"],
+)
+
+cc_binary(
+    name = "example-lua-qi-duel-h106",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["layout-h106.json"],
+    tags = ["h2-ci-native-package"],
+    deps = [
+        ":layout_h106_config",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/example/apps/lua-qi-duel/app:lua_qi_duel",
+    ],
+)
+
+h2_desktop_layout_config(
     name = "layout_generated",
     src = "layout.json",
     app_name = "example/lua-qi-duel",

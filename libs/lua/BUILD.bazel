@@ -56,6 +56,8 @@ cc_library(
     srcs = [
         "src/core/h2_lua_internal.h",
         "src/modules/h2_lua_esp_claw.c",
+        "src/modules/h2_lua_canvas.c",
+        "src/modules/h2_lua_canvas.h",
         "src/modules/h2_lua_modules.c",
         "src/runtime/h2_lua.c",
         "src/runtime/h2_lua_event.c",
@@ -81,6 +83,7 @@ cc_library(
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",
+        "//tools/bazel:vendor_third_party_zlib",
     ] + select({
         "//tools/bazel/platforms:is_esp32p4": ["//third_party/lua_patch"],
         "//tools/bazel/platforms:is_esp32s3": ["//third_party/lua_patch"],

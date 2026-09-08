@@ -1,0 +1,10 @@
+{
+  "display": {"title": "Lua Qi Duel - H106 240x240", "width": 240, "height": 240},
+  "filesystem": {"mounts": []},
+  "peripherals": [
+    {"periph_id": 1, "kind": {"button": {"key": "escape"}}},
+    {"periph_id": 106, "kind": {"button": {"key": "up"}}},
+    {"periph_id": 107, "kind": {"button": {"key": "down"}}},
+    {"periph_id": 108, "kind": {"button": {"key": "tab"}}}
+  ]
+}

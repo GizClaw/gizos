@@ -1,4 +1,5 @@
 #include "../runtime/h2_lua_internal.h"
+#include "h2_lua_canvas.h"
 
 #include <limits.h>
 #include <math.h>
@@ -7,6 +8,7 @@
 #include <string.h>
 
 #include "yyjson.h"
+#include "zlib.h"
 
 static char s_json_null;
 
@@ -2050,6 +2052,163 @@ static const h2_lua_resource_t *display_find_resource(const h2_lua_job_t *job,
   return NULL;
 }
 
+static unsigned atlas_u16(const uint8_t *p) {
+  return (unsigned)p[0] | ((unsigned)p[1] << 8u);
+}
+
+static uint32_t atlas_u32(const uint8_t *p) {
+  return (uint32_t)p[0] | ((uint32_t)p[1] << 8u) |
+         ((uint32_t)p[2] << 16u) | ((uint32_t)p[3] << 24u);
+}
+
+/* H2LF: little-endian width,height,lamp-count,level-count after magic;
+ * each lamp has x,y,w,h then offset/size pairs for zlib RGB888 gain tiles.
+ * Animation lives in Lua. Static gain samples retain subpixel coverage and
+ * nonlinear glow; interpolation is performed before a single RGB565 resolve.
+ * Scratch is a VM-budgeted userdata, retained per job and freed with its VM.
+ */
+static int display_draw_light_atlas(lua_State *state) {
+  static char scratch_key;
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const h2_lua_resource_t *resource =
+      display_find_resource(job, luaL_checkstring(state, 1));
+  luaL_checktype(state, 2, LUA_TTABLE);
+  if (!job->display_open || resource == NULL || resource->source_size < 12u ||
+      memcmp(resource->source, "H2LF", 4u) != 0) {
+    return luaL_error(state, "invalid light atlas");
+  }
+  const uint8_t *data = resource->source;
+  unsigned width = atlas_u16(data + 4), height = atlas_u16(data + 6);
+  unsigned count = atlas_u16(data + 8), levels = atlas_u16(data + 10);
+  int transformed = !lua_isnoneornil(state,3);
+  double scale=1, offset_x=0, offset_y=0;
+  if(transformed) {
+    luaL_checktype(state,3,LUA_TTABLE);
+    double *values[]={&scale,&offset_x,&offset_y};
+    for(int i=0;i<3;i++){lua_rawgeti(state,3,i+1);*values[i]=luaL_checknumber(state,-1);lua_pop(state,1);}
+    if(!isfinite(scale) || scale<=0 || scale>8 || !isfinite(offset_x) || !isfinite(offset_y) ||
+        fabs(offset_x)>1000000 || fabs(offset_y)>1000000)return luaL_error(state,"invalid light atlas transform");
+  }
+  if ((!transformed && (width != (unsigned)job->display_info.width ||
+      height != (unsigned)job->display_info.height)) ||
+      width == 0u || height == 0u || width > 4096u || height > 4096u ||
+      count == 0u || count > 256u || levels < 2u || levels > 257u ||
+      lua_rawlen(state, 2) != count) {
+    return luaL_error(state, "invalid light atlas dimensions or gains");
+  }
+  size_t record_size = 8u + levels * 8u;
+  size_t directory_end = 12u + count * record_size;
+  if (directory_end > resource->source_size) {
+    return luaL_error(state, "truncated light atlas directory");
+  }
+  double gains[256];
+  size_t tile_capacity = 0u;
+  for (unsigned i = 0u; i < count; ++i) {
+    const uint8_t *record = data + 12u + i * record_size;
+    unsigned x = atlas_u16(record), y = atlas_u16(record + 2);
+    unsigned w = atlas_u16(record + 4), h = atlas_u16(record + 6);
+    if (w == 0u || h == 0u || x >= width || y >= height ||
+        w > width - x || h > height - y) {
+      return luaL_error(state, "invalid light atlas tile bounds");
+    }
+    size_t tile_size = (size_t)w * h * 3u;
+    if (tile_size > tile_capacity) tile_capacity = tile_size;
+    for (unsigned level = 0u; level < levels; ++level) {
+      const uint8_t *entry = record + 8u + level * 8u;
+      size_t offset = atlas_u32(entry), length = atlas_u32(entry + 4);
+      if (offset < directory_end || offset > resource->source_size ||
+          length == 0u || length > resource->source_size - offset) {
+        return luaL_error(state, "invalid light atlas payload bounds");
+      }
+    }
+    lua_rawgeti(state, 2, i + 1u);
+    gains[i] = luaL_checknumber(state, -1);
+    lua_pop(state, 1);
+    if (!isfinite(gains[i]) || gains[i] < 0.0 || gains[i] > 1.0) {
+      return luaL_error(state, "light atlas gains must be finite and 0..1");
+    }
+  }
+  size_t pixel_count = (size_t)width * height;
+  size_t frame_size = pixel_count * 3u;
+  size_t scratch_size = frame_size + tile_capacity * 2u;
+  lua_rawgetp(state, LUA_REGISTRYINDEX, &scratch_key);
+  if (!lua_isuserdata(state, -1) || lua_rawlen(state, -1) < scratch_size) {
+    lua_pop(state, 1);
+    /* Drop the obsolete buffer before allocating: a larger atlas can require
+     * GC to reclaim it under the job's VM memory budget. */
+    lua_pushnil(state);
+    lua_rawsetp(state, LUA_REGISTRYINDEX, &scratch_key);
+    lua_newuserdatauv(state, scratch_size, 0);
+    lua_pushvalue(state, -1);
+    lua_rawsetp(state, LUA_REGISTRYINDEX, &scratch_key);
+  }
+  uint8_t *frame = lua_touserdata(state, -1);
+  uint8_t *low = frame + frame_size, *high = low + tile_capacity;
+  if(transformed)memset(frame,0,frame_size);
+  else for (size_t p = 0u; p < pixel_count; ++p) {
+    uint16_t color = job->framebuffer[p];
+    unsigned r = color >> 11u, g = (color >> 5u) & 63u, b = color & 31u;
+    frame[p * 3u] = (uint8_t)((r << 3u) | (r >> 2u));
+    frame[p * 3u + 1u] = (uint8_t)((g << 2u) | (g >> 4u));
+    frame[p * 3u + 2u] = (uint8_t)((b << 3u) | (b >> 2u));
+  }
+  for (unsigned i = 0u; i < count; ++i) {
+    if (gains[i] == 0.0) continue;
+    const uint8_t *record = data + 12u + i * record_size;
+    unsigned x = atlas_u16(record), y = atlas_u16(record + 2);
+    unsigned w = atlas_u16(record + 4), h = atlas_u16(record + 6);
+    double position = gains[i] * (levels - 1u);
+    unsigned level = (unsigned)position;
+    if (level >= levels - 1u) level = levels - 2u;
+    unsigned fraction = (unsigned)((position - level) * 256.0 + 0.5);
+    for (unsigned sample = 0u; sample < 2u; ++sample) {
+      const uint8_t *entry = record + 8u + (level + sample) * 8u;
+      uLongf length = (uLongf)w * h * 3u;
+      int result = uncompress(sample == 0u ? low : high, &length,
+                              data + atlas_u32(entry), atlas_u32(entry + 4));
+      if (result != Z_OK || length != (uLongf)w * h * 3u) {
+        return luaL_error(state, "corrupt light atlas tile");
+      }
+    }
+    for (unsigned row = 0u; row < h; ++row) {
+      size_t source = (size_t)row * w * 3u;
+      size_t destination = ((size_t)(y + row) * width + x) * 3u;
+      for (unsigned c = 0u; c < w * 3u; ++c) {
+        unsigned value = ((unsigned)low[source + c] * (256u - fraction) +
+                          (unsigned)high[source + c] * fraction + 128u) >> 8u;
+        value += frame[destination + c];
+        frame[destination + c] = (uint8_t)(value > 255u ? 255u : value);
+      }
+    }
+  }
+  if(transformed) {
+    int dw=job->display_info.width,dh=job->display_info.height;
+    for(int y=0;y<dh;y++)for(int x=0;x<dw;x++) {
+      double sx=(x+.5-offset_x)/scale-.5,sy=(y+.5-offset_y)/scale-.5;
+      if(sx<-.5 || sy<-.5 || sx>=width-.5 || sy>=height-.5)continue;
+      sx=fmax(0,fmin(width-1,sx));sy=fmax(0,fmin(height-1,sy));
+      unsigned ix=(unsigned)sx,iy=(unsigned)sy,ix1=ix+1<width?ix+1:ix,iy1=iy+1<height?iy+1:iy;
+      double u=sx-ix,v=sy-iy,weights[]={(1-u)*(1-v),u*(1-v),(1-u)*v,u*v};
+      size_t samples[]={((size_t)iy*width+ix)*3,((size_t)iy*width+ix1)*3,
+          ((size_t)iy1*width+ix)*3,((size_t)iy1*width+ix1)*3};
+      uint16_t old=job->framebuffer[(size_t)y*dw+x];
+      unsigned r=old>>11,g=(old>>5)&63,b=old&31;
+      unsigned rgb[]={(r<<3)|(r>>2),(g<<2)|(g>>4),(b<<3)|(b>>2)};
+      for(int c=0;c<3;c++) {
+        double value=rgb[c];for(int i=0;i<4;i++)value+=weights[i]*frame[samples[i]+c];
+        rgb[c]=(unsigned)fmin(255,floor(value+.5));
+      }
+      job->framebuffer[(size_t)y*dw+x]=(uint16_t)((rgb[0]>>3)<<11|(rgb[1]>>2)<<5|(rgb[2]>>3));
+    }
+  } else for (size_t p = 0u; p < pixel_count; ++p) {
+    job->framebuffer[p] = (uint16_t)((frame[p * 3u] >> 3u) << 11u |
+        (frame[p * 3u + 1u] >> 2u) << 5u | (frame[p * 3u + 2u] >> 3u));
+  }
+  mark_dirty_rect(job, 0, 0, job->display_info.width, job->display_info.height);
+  lua_pop(state, 1);
+  return 0;
+}
+
 static int display_draw_asset(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   const char *name = luaL_checkstring(state, 1);
@@ -2214,6 +2373,7 @@ static int display_end_frame(lua_State *state) {
 
 static int display_close(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_lua_canvas_reset(state);
   if (job->display_open) {
     if (!job->host->config.borrow_display)
       (void)h2_pal_display_close(job->host->config.runtime->display);
@@ -2234,7 +2394,7 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
     lua_pushfstring(state, "display open failed: %d", result);
     return 2;
   }
-  lua_createtable(state, 0, 20);
+  lua_createtable(state, 0, 26);
   set_function(state, "clear", display_clear, job);
   set_function(state, "fill_rect", display_fill_rect, job);
   set_function(state, "draw_line", display_draw_line, job);
@@ -2249,6 +2409,8 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "draw_text", display_draw_text, job);
   set_function(state, "draw_text_aligned", display_draw_text_aligned, job);
   set_function(state, "draw_asset", display_draw_asset, job);
+  set_function(state, "draw_light_atlas", display_draw_light_atlas, job);
+  h2_lua_canvas_register(state, job);
   set_function(state, "begin_frame", display_begin_frame, job);
   set_function(state, "end_frame", display_end_frame, job);
   set_function(state, "present", display_present, job);

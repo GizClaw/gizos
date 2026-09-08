@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>浏览器 / 原生 SDL 逐层对照</title>
+<style>
+  body{margin:24px auto;padding:0 20px;max-width:1000px;background:#101217;color:#dce3ee;font:16px system-ui}
+  h1{font-size:22px}p{color:#aab6c7;line-height:1.7}button{padding:8px 14px;margin:0 8px 12px 0;cursor:pointer}
+  figure{margin:0}figcaption{display:flex;justify-content:space-around;margin:14px 0}
+  img{display:block;width:736px;max-width:100%;height:auto;background:black}
+  a{color:#74dded}
+</style>
+<h1>01 侧墙随机纵向短灯</h1>
+<p>左：已确认的浏览器画面。右：真实 Lua → SDL target 提交的同时间帧。<br>
+原生窗口运行的是实时动画；此页只用于截图对照，不替代原生应用。01–08、10–11 已确认；当前验收剩余技能图标、转盘交互和完整合成。</p>
+<p><a href="?layer=walls">01 侧墙</a> · <a href="?layer=wheel">02 竞技场灯线</a> · <a href="?layer=arena">01+02 合成</a></p>
+<p><a href="?layer=dust">03 环绕微粒</a> · <a href="?layer=particles">04 空间外射粒子</a> · <a href="?layer=opponent">05 对手</a> · <a href="?layer=hand-left">06 左手</a> · <a href="?layer=hand-right">07 右手</a> · <a href="?layer=scene7">01–07 合成</a></p>
+<p><a href="?layer=hud">08 状态栏</a> · <a href="?layer=player-down">我方减血</a> · <a href="?layer=player-up">我方回血</a> · <a href="?layer=enemy-down">敌方减血</a> · <a href="?layer=enemy-up">敌方回血</a> · <a href="?layer=scene8">01–08 合成</a></p>
+<p id="hud-note" hidden>原生窗口：每条血条左半减血、右半回血，范围 0–5。减血保留原版衰减横震；回血按本次要求新增轻回弹（原预览只有亮闪），因此回血早期帧会有刻意的横向位移差异。</p>
+<p><a href="?layer=carousel-frame">10 转盘底盘</a> · <a href="?layer=charge-cells">11 聚气格</a> · <a href="?layer=charge-up">聚气增加</a> · <a href="?layer=charge-down">聚气减少</a> · <a href="?layer=charge-base">10–11 合成</a> · <a href="?layer=scene11">已迁移元素合成</a></p>
+<p id="charge-note" hidden>原生窗口点击聚气区：左半减少、右半增加，范围 0–10 格。增加时放大弹亮（520 ms），减少时缩小淡出（420 ms），均带六向扩散短光线。底盘与空隙透明。</p>
+<p><a href="?layer=carousel">09 技能转盘完整合成</a> · <a href="?layer=skill-charge">12 聚气</a> · <a href="?layer=skill-wave">13 发波</a> · <a href="?layer=skill-absorb">14 吸收</a> · <a href="?layer=skill-guard">15 防御</a> · <a href="?layer=full">全部元素合成</a></p>
+<p><a href="?layer=carousel-wave">选中发波</a> · <a href="?layer=carousel-absorb">选中吸收</a> · <a href="?layer=carousel-guard">选中防御</a> · <a href="?layer=carousel-left">左滑中间态</a> · <a href="?layer=carousel-right">右滑中间态</a></p>
+<nav aria-label="参考时间">
+  <button data-time="0">0 ms</button><button data-time="1875">1875 ms</button>
+  <button data-time="4000">4000 ms</button><button data-time="9000">9000 ms</button>
+  <button data-time="17000">17000 ms</button>
+</nav>
+<figure><figcaption><span>浏览器 · RGB888</span><span>原生 SDL · RGB565</span></figcaption>
+<img src="pair-walls-1875.png" alt="1875 ms：左浏览器，右原生 SDL" width="736" height="448"></figure>
+<p id="time">1875 ms</p>
+<p>画面不是逐像素完全相同：RGB565 色深、光线抗锯齿和立绘缩小过滤仍有差异。
+<a id="report" href="walls-report.json">多帧差异数据</a> · <a id="reference" href="../?layer=walls">浏览器实时参考</a></p>
+<script>
+const layers={walls:'01 侧墙随机纵向短灯',wheel:'02 竞技场电子灯线',arena:'01+02 侧墙与竞技场合成',dust:'03 轮盘环绕微粒',particles:'04 空间双路径粒子',opponent:'05 对手完整立绘','hand-left':'06 我方左手','hand-right':'07 我方右手','arena-dust':'01–03 合成',scene7:'01–07 原生迁移合成'};
+Object.assign(layers,{hud:'08 顶部状态栏',scene8:'01–08 原生迁移合成','player-down':'08 我方减血','player-up':'08 我方回血','enemy-down':'08 敌方减血','enemy-up':'08 敌方回血'});
+Object.assign(layers,{'carousel-frame':'10 技能转盘底盘','charge-cells':'11 弧形聚气格','charge-base':'10–11 底盘与聚气格','charge-up':'11 聚气增加','charge-down':'11 聚气减少',scene11:'01–08 + 10–11 原生合成（不含技能图标）'});
+const requested=new URLSearchParams(location.search).get('layer');
+Object.assign(layers,{carousel:'09 技能转盘完整合成','skill-charge':'12 聚气技能图标','skill-wave':'13 发波技能图标','skill-absorb':'14 吸收技能图标','skill-guard':'15 防御技能图标',full:'01–15 全部原生元素合成','carousel-wave':'09 选中发波','carousel-absorb':'09 选中吸收','carousel-guard':'09 选中防御','carousel-left':'09 左滑中间态','carousel-right':'09 右滑中间态'});
+const layer=Object.hasOwn(layers,requested)?requested:'walls';
+document.querySelector('h1').textContent=layers[layer];
+const hud=['hud','scene8','player-down','player-up','enemy-down','enemy-up'].includes(layer);
+const charge=['carousel-frame','charge-cells','charge-base','charge-up','charge-down','scene11'].includes(layer);
+const times=charge?[0,65,130,260,390,520]:hud?[0,50,120,240,360,480]:[0,1875,4000,9000,17000];
+const initial=hud||charge?0:1875;
+document.querySelector('img').src=`pair-${layer}-${initial}.png`;
+document.querySelector('img').alt=`${initial} ms：左浏览器，右原生 SDL`;
+document.querySelector('#time').textContent=`${initial} ms`;
+document.querySelector('#hud-note').hidden=!hud;
+document.querySelector('#charge-note').hidden=!charge;
+document.querySelector('nav').replaceChildren(...times.map(time=>{
+  const button=document.createElement('button');button.dataset.time=time;button.textContent=`${time} ms`;return button;
+}));
+document.querySelector('#report').href=`${layer}-report.json`;
+document.querySelector('#reference').href=`../?layer=${['arena','arena-dust','scene7','scene8','scene11','charge-base'].includes(layer)?'full':hud?'hud':charge&&layer!=='carousel-frame'?'charge-cells':layer.startsWith('carousel-')&&layer!=='carousel-frame'?'carousel':layer}`;
+for(const button of document.querySelectorAll('button')) button.onclick=()=>{
+  const time=button.dataset.time,image=document.querySelector('img');
+  image.src=`pair-${layer}-${time}.png`;image.alt=`${time} ms：左浏览器，右原生 SDL`;
+  document.querySelector('#time').textContent=`${time} ms`;
+};
+</script>
+</html>

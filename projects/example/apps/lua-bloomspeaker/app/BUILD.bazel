@@ -40,11 +40,11 @@ cc_library(
 
 cc_library(
     name = "engine",
+    hdrs = ["src/h2_bloomspeaker_engine.h"],
     srcs = [
         "src/h2_bloomspeaker_audio.c",
         "src/h2_bloomspeaker_audio.h",
         "src/h2_bloomspeaker_engine.c",
-        "src/h2_bloomspeaker_engine.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

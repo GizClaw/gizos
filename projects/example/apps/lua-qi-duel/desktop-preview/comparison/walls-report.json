@@ -1,0 +1,77 @@
+[
+  {
+    "time_ms": 0,
+    "original_rgb888": {
+      "mean_absolute_error": 0.06733833139233955,
+      "lit_channel_mean_error": 2.3628946434905993,
+      "max_channel_error": 8,
+      "identical_channel_percent": 97.38895898033127
+    },
+    "equal_rgb565": {
+      "mean_absolute_error": 0.003863790760869565,
+      "lit_channel_mean_error": 0.2960954446854664,
+      "max_channel_error": 9,
+      "identical_channel_percent": 99.93530020703933
+    }
+  },
+  {
+    "time_ms": 1875,
+    "original_rgb888": {
+      "mean_absolute_error": 0.06333907543995859,
+      "lit_channel_mean_error": 2.1893214061080437,
+      "max_channel_error": 8,
+      "identical_channel_percent": 97.34569099378882
+    },
+    "equal_rgb565": {
+      "mean_absolute_error": 0.004175158514492754,
+      "lit_channel_mean_error": 0.3522087668429132,
+      "max_channel_error": 9,
+      "identical_channel_percent": 99.9326717779503
+    }
+  },
+  {
+    "time_ms": 4000,
+    "original_rgb888": {
+      "mean_absolute_error": 0.06510214479813664,
+      "lit_channel_mean_error": 2.2899509280989974,
+      "max_channel_error": 9,
+      "identical_channel_percent": 97.43364227484471
+    },
+    "equal_rgb565": {
+      "mean_absolute_error": 0.0025859698498964805,
+      "lit_channel_mean_error": 0.20516522297080525,
+      "max_channel_error": 9,
+      "identical_channel_percent": 99.95834950828157
+    }
+  },
+  {
+    "time_ms": 9000,
+    "original_rgb888": {
+      "mean_absolute_error": 0.050896496506211183,
+      "lit_channel_mean_error": 2.2332327892122072,
+      "max_channel_error": 9,
+      "identical_channel_percent": 97.92677600931677
+    },
+    "equal_rgb565": {
+      "mean_absolute_error": 0.0018338347567287785,
+      "lit_channel_mean_error": 0.1858606557377049,
+      "max_channel_error": 9,
+      "identical_channel_percent": 99.96866103778468
+    }
+  },
+  {
+    "time_ms": 17000,
+    "original_rgb888": {
+      "mean_absolute_error": 0.052325957556935816,
+      "lit_channel_mean_error": 2.180653859116953,
+      "max_channel_error": 8,
+      "identical_channel_percent": 97.83882472826087
+    },
+    "equal_rgb565": {
+      "mean_absolute_error": 0.0030712182971014495,
+      "lit_channel_mean_error": 0.28698280748157945,
+      "max_channel_error": 9,
+      "identical_channel_percent": 99.95268827639751
+    }
+  }
+]

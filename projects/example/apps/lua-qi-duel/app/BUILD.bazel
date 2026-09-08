@@ -1,8 +1,133 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load(":art_resource.bzl", "qi_duel_art")
 
 package(default_visibility = ["//visibility:public"])
+
+qi_duel_art(
+    name = "action_opponent",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/action-opponent.h2rs",
+    symbol = "qi_duel_action_opponent",
+)
+
+qi_duel_art(
+    name = "action_hands",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/action-hands.h2rs",
+    symbol = "qi_duel_action_hands",
+)
+
+qi_duel_art(
+    name = "skill_styles",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/skill-styles.h2rs",
+    symbol = "qi_duel_skill_styles",
+)
+qi_duel_art(
+    name = "skill_colors",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/skill-colors.h2rs",
+    symbol = "qi_duel_skill_colors",
+)
+
+qi_duel_art(
+    name = "carousel_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/carousel-base.h2r8",
+    symbol = "qi_duel_carousel_rgba",
+)
+qi_duel_art(
+    name = "charge_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/charge-cells.h2r8",
+    symbol = "qi_duel_charge_rgba",
+)
+
+qi_duel_art(
+    name = "hud_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/hud-states.h2r8",
+    symbol = "qi_duel_hud_rgba",
+)
+
+qi_duel_art(
+    name = "opponent_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/opponent.h2r8",
+    symbol = "qi_duel_opponent_rgba",
+)
+qi_duel_art(
+    name = "left_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/hand-left.h2r8",
+    symbol = "qi_duel_left_rgba",
+)
+qi_duel_art(
+    name = "right_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/hand-right.h2r8",
+    symbol = "qi_duel_right_rgba",
+)
+
+genrule(
+    name = "wall_atlas_generated",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/generated/wall-lights.h2lf"],
+    outs = ["wall_atlas_generated.h", "wall_atlas_generated.c"],
+    tools = ["//libs/lua:embed_resource"],
+    cmd = "$(location //libs/lua:embed_resource) --source $(SRCS) " +
+          "--header $(location wall_atlas_generated.h) " +
+          "--implementation $(location wall_atlas_generated.c) --symbol qi_duel_wall_atlas",
+)
+
+cc_library(
+    name = "wall_atlas",
+    srcs = [":wall_atlas_generated.c"],
+    hdrs = [":wall_atlas_generated.h"],
+    strip_include_prefix = ".",
+)
+
+genrule(
+    name = "arena_atlas_generated",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/generated/arena-lights-butt.h2lf"],
+    outs = ["arena_atlas_generated.h", "arena_atlas_generated.c"],
+    tools = ["//libs/lua:embed_resource"],
+    cmd = "$(location //libs/lua:embed_resource) --source $(SRCS) " +
+          "--header $(location arena_atlas_generated.h) " +
+          "--implementation $(location arena_atlas_generated.c) --symbol qi_duel_arena_atlas",
+)
+
+genrule(
+    name = "arena_full_atlas_generated",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/generated/arena-lights-square.h2lf"],
+    outs = ["arena_full_atlas_generated.h", "arena_full_atlas_generated.c"],
+    tools = ["//libs/lua:embed_resource"],
+    cmd = "$(location //libs/lua:embed_resource) --source $(SRCS) " +
+          "--header $(location arena_full_atlas_generated.h) " +
+          "--implementation $(location arena_full_atlas_generated.c) --symbol qi_duel_arena_full_atlas",
+)
+
+cc_library(
+    name = "arena_atlas",
+    srcs = [":arena_atlas_generated.c", ":arena_full_atlas_generated.c"],
+    hdrs = [":arena_atlas_generated.h", ":arena_full_atlas_generated.h"],
+    strip_include_prefix = ".",
+)
+
+h2_lua_resource(
+    name = "qi_duel_rules",
+    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/rules.lua",
+    symbol = "qi_duel_rules",
+)
+
+h2_lua_resource(
+    name = "qi_duel_link_protocol",
+    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/link_protocol.lua",
+    symbol = "qi_duel_link_protocol",
+)
+
+qi_duel_art(
+    name = "ui_labels",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/ui-labels.h2r8",
+    symbol = "qi_duel_ui_labels",
+)
+
+qi_duel_art(
+    name = "countdown_rgba",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/countdown.h2r8",
+    symbol = "qi_duel_countdown_rgba",
+)
 
 h2_lua_resource(
     name = "qi_duel_script",
@@ -15,6 +140,8 @@ cc_library(
     srcs = [
         "src/generated/qi_duel_assets.c",
         "src/h2_lua_qi_duel.c",
+        "src/qi_duel_link.c",
+        "src/qi_duel_link.h",
     ],
     hdrs = [
         "include/h2_lua_qi_duel.h",
@@ -29,9 +156,48 @@ cc_library(
     tags = ["h2-ci-native-package"],
     deps = [
         ":qi_duel_script",
+        ":qi_duel_rules",
+        ":qi_duel_link_protocol",
+        ":ui_labels",
+        ":countdown_rgba",
+        ":wall_atlas",
+        ":arena_atlas",
+        ":opponent_rgba",
+        ":left_rgba",
+        ":right_rgba",
+        ":hud_rgba",
+        ":carousel_rgba",
+        ":charge_rgba",
+        ":skill_styles",
+        ":skill_colors",
+        ":action_opponent",
+        ":action_hands",
         "//libs/lua",
         "//libs/runtime",
+        "//projects/example/apps/lua-bloomspeaker/app:controller",
+        "//projects/example/apps/lua-bloomspeaker/app:engine",
+        "//libs/bleikcp",
+        "//tools/bazel:vendor_third_party_lua",
     ],
+)
+
+cc_test(
+    name = "qi_duel_rules_test",
+    srcs = ["tests/test_rules.c"],
+    deps = [":qi_duel_rules", ":qi_duel_rules_test_script", ":qi_duel_link_protocol",
+            ":qi_duel_link_test_script", "//libs/lua:lua_core"],
+)
+
+h2_lua_resource(
+    name = "qi_duel_link_test_script",
+    src = "tests/link_protocol_test.lua",
+    symbol = "qi_duel_link_test",
+)
+
+h2_lua_resource(
+    name = "qi_duel_rules_test_script",
+    src = "tests/rules_test.lua",
+    symbol = "qi_duel_rules_test",
 )
 
 cc_test(

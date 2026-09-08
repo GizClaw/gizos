@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>气决 · Desktop Preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; margin: 0; }
+    body {
+      display: grid; place-items: center; background: #020407;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #6deaff;
+    }
+    .shell { display: grid; grid-template-columns: auto 230px; gap: 22px; align-items: start; padding: 24px; }
+    .stage { display: grid; gap: 10px; justify-items: center; }
+    canvas {
+      width: min(62vw, 460px); aspect-ratio: 368 / 448;
+      image-rendering: auto; border-radius: 30px;
+      box-shadow: 0 0 0 1px #0c3340, 0 0 50px #006b8a55;
+      background: #000;
+    }
+    .hint { font-size: 11px; letter-spacing: .12em; opacity: .72; }
+    .inspector {
+      width: 230px; max-height: min(82vh, 560px); overflow: auto;
+      padding: 14px; border: 1px solid #0b4053; border-radius: 14px;
+      background: rgba(1, 12, 18, .94); box-shadow: 0 0 28px #006b8a20;
+    }
+    .inspector h1 { margin: 0 0 5px; font-size: 14px; letter-spacing: .12em; }
+    .inspector p { margin: 0 0 12px; color: #578493; font-size: 10px; line-height: 1.5; }
+    .layers { display: grid; gap: 6px; }
+    .layer-button {
+      width: 100%; padding: 8px 10px; border: 1px solid #103b4a; border-radius: 7px;
+      background: #030b10; color: #6e9eaa; text-align: left; font: inherit; font-size: 11px;
+      cursor: pointer; transition: .15s ease;
+    }
+    .layer-button:hover { color: #b4f6ff; border-color: #1d7896; }
+    .layer-button.active { color: #e3fcff; border-color: #2ee4ff; background: #073140; box-shadow: inset 3px 0 #2ee4ff; }
+    .layer-button span { display: inline-block; width: 24px; color: #2ee4ff; }
+    body[data-mode="desktop"] {
+      min-height: 100vh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 44%, rgba(0, 112, 148, .13), transparent 45%),
+        #010305;
+    }
+    body[data-mode="desktop"] .shell {
+      width: 100vw; height: 100vh; grid-template-columns: 1fr;
+      place-items: center; padding: 18px;
+    }
+    body[data-mode="desktop"] .stage { gap: 8px; }
+    body[data-mode="desktop"] canvas {
+      width: min(calc(100vw - 36px), calc((100vh - 54px) * 368 / 448), 552px);
+      border-radius: 0;
+      box-shadow: 0 0 0 1px rgba(46, 228, 255, .3), 0 0 54px rgba(0, 151, 196, .18);
+      touch-action: none;
+    }
+    body[data-mode="desktop"] .inspector { display: none; }
+    body[data-mode="desktop"] .hint {
+      color: #78aab4; font-size: 10px; letter-spacing: .08em;
+    }
+    @media (max-width: 760px) {
+      body { place-items: start center; }
+      .shell { grid-template-columns: 1fr; padding: 14px; }
+      canvas { width: min(92vw, 460px); }
+      .inspector { width: min(92vw, 460px); max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="stage">
+      <canvas id="game" width="368" height="448"></canvas>
+      <div class="hint" id="current-layer">368 × 448 · 30 FPS</div>
+    </section>
+    <aside class="inspector">
+      <h1>动效分层检查台</h1>
+      <p>每次只显示一层，并保留它在最终画面中的真实坐标、尺寸与速度。</p>
+      <div class="layers" id="layers"></div>
+    </aside>
+  </main>
+  <script>
+    const canvas = document.querySelector('#game');
+    const displayCtx = canvas.getContext('2d', { alpha: false });
+    const frameCanvas = document.createElement('canvas');
+    frameCanvas.width = 368; frameCanvas.height = 448;
+    const ctx = frameCanvas.getContext('2d', { alpha: false });
+    const W = 368, H = 448, TAU = Math.PI * 2;
+    const GOLDEN_FRAME_MS = 1875;
+    const query = new URLSearchParams(location.search);
+    const desktopMode = query.get('mode') === 'desktop';
+    const emulateRgb565 = desktopMode && query.get('rgb565') !== '0';
+    document.body.dataset.mode = desktopMode ? 'desktop' : 'inspector';
+    const freezeGoldenFrame = query.get('frame') === 'golden';
+    const layerDefinitions = [
+      ['full', '完整合成'],
+      ['walls', '侧墙随机纵向短灯'],
+      ['wheel', '竞技场电子灯线'],
+      ['dust', '轮盘环绕微粒'],
+      ['particles', '空间双路径粒子'],
+      ['opponent', '对手完整立绘'],
+      ['hand-left', '我方左手'],
+      ['hand-right', '我方右手'],
+      ['hud', '顶部状态栏'],
+      ['carousel', '技能转盘完整合成'],
+      ['carousel-frame', '技能转盘底盘'],
+      ['charge-cells', '弧形聚气格'],
+      ['skill-charge', '聚气技能图标'],
+      ['skill-wave', '发波技能图标'],
+      ['skill-absorb', '吸收技能图标'],
+      ['skill-guard', '防御技能图标'],
+    ];
+    let activeLayer = desktopMode ? 'full' : (query.get('layer') || 'full');
+    if (!layerDefinitions.some(([id]) => id === activeLayer)) activeLayer = 'full';
+    const paths = {
+      mock: '../assets/source/approved-mockup.png',
+      opponent: '../assets/source/opponent-full.png',
+      left: '../assets/source/player-hand-left.png',
+      right: '../assets/source/player-hand-right.png',
+      skills: '../assets/source/skill-icons-v1.png',
+      chargeMeter: '../assets/source/charge-meter-v1.png',
+      carouselBase: '../assets/source/carousel-base-v1.png',
+    };
+    const load = src => new Promise((resolve, reject) => {
+      const image = new Image(); image.onload = () => resolve(image);
+      image.onerror = reject; image.src = src;
+    });
+
+    // Seeded randomness makes every animation frame reproducible. The approved
+    // visual can therefore be captured from the renderer at one exact timestamp.
+    let seed = 0x51D0E1;
+    const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+    // Two independent particle fields: energy streaks burst toward the viewer,
+    // while ring dust stays attached to the arena plane.
+    const particles = Array.from({ length: 104 }, (_, i) => ({
+      a: (i * 2.399 + rand() * .32) % TAU,
+      p0: rand(), speed: .11 + rand() * .23,
+      size: .42 + rand() * 1.18,
+      hue: i % 5 === 0 ? 292 : (i % 7 === 0 ? 28 : 193),
+      wobble: rand() * TAU,
+    }));
+    const ringDust = Array.from({ length: 34 }, (_, i) => ({
+      a: rand() * TAU,
+      r: .24 + rand() * .76,
+      speed: .11 + rand() * .2,
+      size: .45 + rand() * 1.15,
+      hue: i % 4 === 0 ? 286 : 190,
+    }));
+    const floorRectLights = Array.from({ length: 12 }, (_, i) => ({
+      angle: rand() * TAU,
+      radius: .65 + rand() * 1.9,
+      length: .16 + rand() * .42,
+      width: .035 + rand() * .065,
+      phase: rand() * TAU,
+      rate: .42 + rand() * 1.25,
+      tangent: rand() > .72,
+      hue: i % 4 === 0 ? 278 : 190,
+    }));
+    // Sparse wall dashes replace large structural glyphs. Positions are fixed
+    // and reproducible; independent envelopes make individual lamps appear
+    // and disappear without creating a travelling scan.
+    const wallLights = [-1, 1].flatMap(side =>
+      Array.from({ length: 36 }, (_, index) => {
+        const key = index * 109 + side * 31;
+        const lane = Math.floor(index / 12);
+        const depth = Math.min(.995,
+          ((index % 12) + hash01(key + 7) * .88) / 12);
+        return {
+          side, depth,
+          lift: hash01(key + 13),
+          length: .58 + hash01(key + 43) * .86,
+          hue: hash01(key + 59) > .84 ? 28 :
+            (hash01(key + 61) > .62 ? 282 : 191),
+          phase: hash01((index % 12) * 71 + side * 17) * TAU + lane * TAU / 3,
+          rate: .34 + hash01(key + 83) * .72,
+        };
+      })
+    );
+    let selected = 0, dragStart = null, dragX = 0, targetDrag = 0;
+    const hudLayout = {
+      width: 190,
+      height: 190 * 116 / 398,
+      sidePadding: 10,
+      playerY: 57,
+      enemyY: 15,
+    };
+const meterParam = (name, max, fallback) => {
+  const raw = query.get(name);
+  if (raw == null || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.max(0, Math.min(max, Math.round(value))) : fallback;
+};
+    const previewMeters = {
+      charge: meterParam('charge', 10, 3),
+      player: meterParam('playerHp', 5, 4),
+      enemy: meterParam('enemyHp', 5, 4),
+    };
+    const meterFx = { charge: null, player: null, enemy: null };
+
+    function changePreviewMeter(target, delta) {
+      const oldValue = previewMeters[target];
+      const maxValue = target === 'charge' ? 10 : 5;
+      const nextValue = Math.max(0, Math.min(maxValue, oldValue + delta));
+      if (nextValue === oldValue) return;
+      previewMeters[target] = nextValue;
+      const direction = nextValue > oldValue ? 1 : -1;
+      const index = target === 'charge'
+        ? (direction > 0 ? nextValue - 1 : oldValue - 1)
+        : target === 'player'
+          ? (direction > 0 ? nextValue - 1 : oldValue - 1)
+          : (direction > 0 ? 5 - nextValue : 5 - oldValue);
+      meterFx[target] = { index, direction, start: performance.now() };
+      const name = target === 'charge' ? '聚气' : (target === 'player' ? '我方血量' : '敌方血量');
+      currentLayerLabel.textContent = `${name} ${nextValue}/${maxValue} · 左半减少 / 右半增加 · 30 FPS`;
+    }
+
+    // Perspective projection for the horizontal arena plane. Circles are
+    // sampled in world space and projected point by point; they are never
+    // approximated with Canvas ellipse().
+    const ARENA_VERTICAL_OFFSET = 16;
+    const arenaCamera = {
+      cx: 184, horizon: 171 + ARENA_VERTICAL_OFFSET,
+      fx: 420, fy: 624, depth: 8,
+    };
+    const ARENA_LIGHT_GAIN = .8;
+    function arenaProject(worldX, worldZ) {
+      return [
+        arenaCamera.cx + arenaCamera.fx * worldX / worldZ,
+        arenaCamera.horizon + arenaCamera.fy / worldZ,
+      ];
+    }
+    function arenaPolar(radius, angle) {
+      return arenaProject(radius * Math.cos(angle), arenaCamera.depth + radius * Math.sin(angle));
+    }
+    function traceArenaArc(radius, start, end, steps = 32, move = true, yOffset = 0) {
+      for (let i = 0; i <= steps; i++) {
+        const angle = start + (end - start) * i / steps;
+        const [x, y] = arenaPolar(radius, angle);
+        if (i === 0 && move) ctx.moveTo(x, y + yOffset);
+        else ctx.lineTo(x, y + yOffset);
+      }
+    }
+    function hash01(value) {
+      const x = Math.sin(value * 91.733 + 17.133) * 43758.5453;
+      return x - Math.floor(x);
+    }
+    const smoothstep01 = value => value * value * (3 - 2 * value);
+    function drawParticleBar(x1, y1, x2, y2, width, hue, alpha) {
+      const points = [];
+      for (let i = 0; i <= 8; i++) {
+        const u = i / 8;
+        points.push([x1 + (x2 - x1) * u, y1 + (y2 - y1) * u]);
+      }
+      drawParticlePath(points, width, hue, alpha);
+    }
+    function drawParticlePath(points, width, hue, alpha) {
+      if (points.length < 2) return;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (let i = 1; i < points.length; i++) {
+        const u = i / (points.length - 1);
+        const taper = .12 + .88 * Math.pow(u, 1.35);
+        const segmentAlpha = alpha * Math.pow(u, 1.7);
+        ctx.strokeStyle = `hsla(${hue},100%,58%,${segmentAlpha * .18})`;
+        ctx.lineWidth = width * taper * 4.4;
+        ctx.beginPath(); ctx.moveTo(...points[i - 1]); ctx.lineTo(...points[i]); ctx.stroke();
+        ctx.strokeStyle = `hsla(${hue},100%,76%,${segmentAlpha})`;
+        ctx.lineWidth = Math.max(.18, width * taper);
+        ctx.beginPath(); ctx.moveTo(...points[i - 1]); ctx.lineTo(...points[i]); ctx.stroke();
+      }
+    }
+
+    function drawWallNeonSegment(x1, y1, x2, y2, width, hue, brightness) {
+      const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+      gradient.addColorStop(0, `hsla(${hue},100%,58%,.12)`);
+      gradient.addColorStop(.18, `hsla(${hue},100%,62%,.9)`);
+      gradient.addColorStop(.72, `hsla(${hue},100%,68%,1)`);
+      gradient.addColorStop(1, `hsla(${hue},100%,58%,.16)`);
+      ctx.lineCap = 'square';
+
+      ctx.strokeStyle = `hsla(${hue},100%,55%,${brightness * .13})`;
+      ctx.lineWidth = width * 7.5;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+      ctx.save();
+      ctx.shadowColor = `hsla(${hue},100%,60%,${brightness * .95})`;
+      ctx.shadowBlur = 5 + width * 3.2;
+      ctx.globalAlpha = brightness;
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = width * 2.25;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.restore();
+
+      ctx.strokeStyle = `hsla(${hue},100%,88%,${brightness * .92})`;
+      ctx.lineWidth = Math.max(.38, width * .48);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+
+    function drawWallLight(light, t) {
+      const { side, depth, lift, length, hue, phase, rate } = light;
+      const perspective = .25 + depth * .75;
+      const x = 184 + side * (6 + depth * 181);
+      // The visible wall opens vertically toward the viewer: near the side
+      // edges it fills most of the arena wall height, then collapses into the
+      // central vanishing band as depth approaches zero.
+      const wallTop = 164 - depth * 124;
+      const wallBottom = 170 + depth * 44;
+      const y = wallTop + (wallBottom - wallTop) * lift;
+      const pulse = Math.max(0, Math.sin(t * rate + phase));
+      const brightness = Math.pow(pulse, 2.55) * (.58 + depth * .41);
+      if (brightness < .018) return;
+
+      const size = (3.1 + perspective * 7.1) * length;
+      const width = .38 + perspective * .78;
+      drawWallNeonSegment(x, y - size * .5, x, y + size * .5,
+        width, hue, brightness);
+    }
+
+    function drawArenaStructure(time, pass = 'all') {
+      const t = time * .001, cx = 184, horizon = 167, cy = 184;
+      const show = name => pass === 'all' || pass === name;
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Sparse short neon dashes imply the side walls without drawing the
+      // arena disc, floor rails, connector plates, or moving scan lines.
+      if (show('walls')) {
+        wallLights.forEach(light => drawWallLight(light, t));
+      }
+
+      // Every electronic light segment stays in place and fades independently.
+      if (show('wheel')) {
+      ctx.fillStyle = 'rgba(0,12,25,.64)';
+      ctx.beginPath(); traceArenaArc(2.7, 0, TAU, 96); ctx.closePath(); ctx.fill();
+
+      // Front lip gives the horizontal disc visible thickness; the back edge
+      // remains thin because it is farther from the camera.
+      ctx.fillStyle = 'rgba(0,14,25,.82)';
+      ctx.beginPath(); traceArenaArc(2.7, Math.PI, TAU, 48);
+      traceArenaArc(2.7, TAU, Math.PI, 48, false, 3); ctx.closePath(); ctx.fill();
+
+      const wheelRings = [.36, .68, 1.05, 1.45, 1.87, 2.28, 2.7];
+      wheelRings.forEach((radius, ring) => {
+        const slots = 16 + ring * 2;
+        const slotAngle = TAU / slots;
+        for (let s = 0; s < slots; s++) {
+          if (hash01(ring * 401 + s * 97) < .45) continue;
+          const jitter = hash01(ring * 181 + s * 43) * .52;
+          const start = (s + jitter) * slotAngle;
+          const depth = (1 - Math.sin(start + slotAngle * .5)) * .5;
+          const baseSpan = .44 + hash01(ring * 307 + s * 67) * 1.05;
+          const span = baseSpan * (.5 + depth * 1.18);
+          const end = start + slotAngle * span;
+          const faulty = hash01(ring * 263 + s * 41) > .88;
+          const phase = hash01(ring * 117 + s * 19) * TAU;
+          const rate = .65 + hash01(ring * 71 + s * 13) * 2.2;
+          const wave = .5 + .5 * Math.sin(t * rate + phase);
+          const secondary = .72 + .28 * Math.sin(t * (rate * .37 + .31) + phase * 1.7);
+          let brightness = (.08 + .92 * wave * wave) * secondary;
+          if (faulty) {
+            const contact = .5 + .5 * Math.sin(t * (8 + hash01(s + ring * 9) * 10) + phase);
+            brightness *= .07 + .93 * Math.pow(contact, 7);
+          }
+          const near = .16 + .84 * depth;
+          const hue = (ring * 3 + s) % 7 < 2 ? 276 : 190;
+          const width = .42 + depth * 2.25;
+
+          ctx.strokeStyle = `hsla(${hue},100%,60%,${brightness * near * .2 * ARENA_LIGHT_GAIN})`;
+          ctx.lineWidth = width * (3.2 + depth * 1.4);
+          ctx.beginPath(); traceArenaArc(radius, start, end, 5); ctx.stroke();
+          ctx.strokeStyle = `hsla(${hue},100%,72%,${brightness * near * .94 * ARENA_LIGHT_GAIN})`;
+          ctx.lineWidth = width;
+          ctx.beginPath(); traceArenaArc(radius, start, end, 5); ctx.stroke();
+        }
+      });
+
+      // Fixed radial light-line fragments complete the circuit-board pattern.
+      for (let i = 0; i < 32; i++) {
+        if (hash01(i * 173) < .42) continue;
+        const a = i / 32 * TAU;
+        const inner = .3 + hash01(i * 29) * 1.72;
+        const depth = (1 - Math.sin(a)) * .5;
+        const baseLength = .15 + hash01(i * 47) * .42;
+        const length = baseLength * (.52 + depth * 1.2);
+        const [x1, y1] = arenaPolar(inner, a), [x2, y2] = arenaPolar(Math.min(2.62, inner + length), a);
+        const faulty = hash01(i * 83) > .9;
+        const phase = hash01(i * 61) * TAU;
+        const rate = .8 + hash01(i * 37) * 2.6;
+        const wave = .5 + .5 * Math.sin(t * rate + phase);
+        let brightness = .06 + .94 * wave * wave;
+        if (faulty) {
+          const contact = .5 + .5 * Math.sin(t * (9 + hash01(i) * 11) + phase * 1.3);
+          brightness *= .06 + .94 * Math.pow(contact, 8);
+        }
+        const near = .16 + .84 * depth;
+        const hue = i % 6 < 2 ? 276 : 190;
+        const width = .4 + depth * 2.15;
+        ctx.strokeStyle = `hsla(${hue},100%,58%,${brightness * near * .2 * ARENA_LIGHT_GAIN})`;
+        ctx.lineWidth = width * (3.1 + depth * 1.35);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.strokeStyle = `hsla(${hue},100%,73%,${brightness * near * .92 * ARENA_LIGHT_GAIN})`;
+        ctx.lineWidth = width;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+
+      // A few floor-mounted rectangular lamps fade in briefly. Their four
+      // world-space corners are projected independently, creating natural
+      // near-field stretching and far-field compression.
+      floorRectLights.forEach((lamp, i) => {
+        const pulse = .5 + .5 * Math.sin(t * lamp.rate + lamp.phase);
+        const brightness = Math.pow(pulse, 5);
+        if (brightness < .018) return;
+
+        const cxw = Math.cos(lamp.angle) * lamp.radius;
+        const czw = arenaCamera.depth + Math.sin(lamp.angle) * lamp.radius;
+        const orientation = lamp.angle + (lamp.tangent ? Math.PI * .5 : 0);
+        const ux = Math.cos(orientation) * lamp.length * .5;
+        const uz = Math.sin(orientation) * lamp.length * .5;
+        const vx = -Math.sin(orientation) * lamp.width * .5;
+        const vz = Math.cos(orientation) * lamp.width * .5;
+        const corners = [
+          arenaProject(cxw - ux - vx, czw - uz - vz),
+          arenaProject(cxw + ux - vx, czw + uz - vz),
+          arenaProject(cxw + ux + vx, czw + uz + vz),
+          arenaProject(cxw - ux + vx, czw - uz + vz),
+        ];
+        const depth = (1 - Math.sin(lamp.angle)) * .5;
+        ctx.save();
+        ctx.shadowColor = `hsla(${lamp.hue},100%,62%,${brightness * .9 * ARENA_LIGHT_GAIN})`;
+        ctx.shadowBlur = 2 + depth * 5;
+        ctx.fillStyle = `hsla(${lamp.hue},100%,72%,${brightness * (.42 + depth * .55) * ARENA_LIGHT_GAIN})`;
+        ctx.beginPath(); ctx.moveTo(...corners[0]);
+        for (let c = 1; c < corners.length; c++) ctx.lineTo(...corners[c]);
+        ctx.closePath(); ctx.fill(); ctx.restore();
+      });
+      }
+      ctx.restore();
+    }
+
+    function drawArena(images, time, pass = 'all') {
+      drawArenaStructure(time, pass);
+      const t = time * .001;
+      const [originX, originY] = arenaProject(0, arenaCamera.depth);
+      const show = name => pass === 'all' || pass === name;
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Small sparks orbit on the wheel surface so the dial itself feels alive.
+      if (show('dust')) {
+      ringDust.forEach((p, i) => {
+        const a = p.a + t * p.speed * (i % 2 ? 1 : -1);
+        const radius = 28 + p.r * 142;
+        const x = originX + Math.cos(a) * radius;
+        const y = originY + Math.sin(a) * radius * .235;
+        const twinkle = .35 + .65 * Math.abs(Math.sin(t * 2.4 + i));
+        ctx.fillStyle = `hsla(${p.hue},100%,66%,${twinkle * .7})`;
+        ctx.beginPath(); ctx.arc(x, y, p.size, 0, TAU); ctx.fill();
+      });
+      }
+
+      const drawFloorParticles = pass === 'all' || pass === 'particles';
+      const drawWallParticles = pass === 'all' || pass === 'particles';
+
+      // Front-half particles travel on the ground plane toward the camera.
+      // Perspective projection enlarges both bar length and width naturally.
+      if (drawFloorParticles) {
+      particles.slice(0, 52).forEach((p, i) => {
+        const progress = (p.p0 + t * p.speed * .72) % 1;
+        let sizeFraction, opacity;
+        if (progress < .58) {
+          const grow = smoothstep01(progress / .58);
+          sizeFraction = .24 + grow * .76; opacity = .28 + grow * .72;
+        } else {
+          const inverse = 1 - (progress - .58) / .42;
+          sizeFraction = Math.pow(inverse, 1.45); opacity = Math.pow(inverse, 1.7);
+        }
+
+        const route = smoothstep01(progress);
+        const lateral = (hash01(i * 31 + 4) * 2 - 1) * .76;
+        const forward = Math.sqrt(1 - lateral * lateral);
+        const distance = route * (5.05 + hash01(i * 47 + 9) * .72);
+        const worldZ = arenaCamera.depth - forward * distance;
+        if (worldZ <= 1.15) return;
+        const perspective = arenaCamera.depth / worldZ;
+        const trailWorldLength = (.21 + p.size * .11) *
+          (.5 + Math.pow(perspective, .82) * .82);
+        const tailDistance = Math.max(0, distance - trailWorldLength);
+        const [headX, headY] = arenaProject(lateral * distance, worldZ);
+        const [tailX, tailY] = arenaProject(
+          lateral * tailDistance, arenaCamera.depth - forward * tailDistance);
+        const width = Math.min(14,
+          (.44 + p.size * .36) * Math.pow(perspective, 1.58) * sizeFraction);
+        const alpha = Math.min(1, opacity * (.35 + perspective * .28));
+        drawParticleBar(tailX, tailY, headX, headY, width, p.hue, alpha);
+      });
+      }
+
+      // Rear-half particles first cross the floor to the curved wall connector,
+      // then turn and continue vertically upward on the wall surface.
+      if (drawWallParticles) {
+      particles.slice(52).forEach((p, localIndex) => {
+        const i = localIndex + 52;
+        const progress = (p.p0 + t * p.speed * .62) % 1;
+        let sizeFraction, opacity;
+        if (progress < .36) {
+          const grow = smoothstep01(progress / .36);
+          sizeFraction = .24 + grow * .76; opacity = .28 + grow * .72;
+        } else {
+          sizeFraction = 1; opacity = 1;
+        }
+
+        const route = smoothstep01(progress);
+        const angle = .025 +
+          (localIndex + hash01(i * 53 + 7) * .72) / 52 * (Math.PI - .05);
+        const hitRadius = 3 + hash01(i * 79 + 3) * .38;
+        const hitWorldZ = arenaCamera.depth + Math.sin(angle) * hitRadius;
+        const basePerspective = arenaCamera.depth / hitWorldZ;
+        const floorEnd = .56, bendEnd = .72;
+        const turnRadius = hitRadius - .34;
+        const turnStart = arenaPolar(turnRadius, angle);
+        const beforeTurn = arenaPolar(turnRadius - .12, angle);
+        const radialX = turnStart[0] - beforeTurn[0];
+        const radialY = turnStart[1] - beforeTurn[1];
+        const hit = arenaPolar(hitRadius, angle);
+        const turnEnd = [hit[0], hit[1] - 9];
+        const rawControlY = Math.abs(radialX) > .5
+          ? turnStart[1] + (turnEnd[0] - turnStart[0]) * radialY / radialX
+          : (turnStart[1] + turnEnd[1]) * .5;
+        const controlMinY = Math.min(turnStart[1], turnEnd[1]);
+        const controlMaxY = Math.max(turnStart[1], turnEnd[1]);
+        const turnControl = [turnEnd[0],
+          Math.max(controlMinY, Math.min(controlMaxY, rawControlY))];
+        const wallRise = turnEnd[1] + 34 + hash01(i * 101 + 5) * 22;
+
+        const pathPoint = u => {
+          if (u <= floorEnd) {
+            const floorU = u / floorEnd;
+            const radius = turnRadius * floorU;
+            const point = arenaPolar(radius, angle);
+            return [point[0], point[1], arenaCamera.depth /
+              (arenaCamera.depth + Math.sin(angle) * radius)];
+          }
+          if (u <= bendEnd) {
+            const curveU = (u - floorEnd) / (bendEnd - floorEnd);
+            const inverse = 1 - curveU;
+            const x = inverse * inverse * turnStart[0]
+              + 2 * inverse * curveU * turnControl[0]
+              + curveU * curveU * turnEnd[0];
+            const y = inverse * inverse * turnStart[1]
+              + 2 * inverse * curveU * turnControl[1]
+              + curveU * curveU * turnEnd[1];
+            return [x, y, basePerspective * (1 - curveU * .1)];
+          }
+          const wallU = (u - bendEnd) / (1 - bendEnd);
+          return [turnEnd[0], turnEnd[1] - wallRise * wallU,
+            basePerspective * (1 - wallU * .66)];
+        };
+
+        const head = pathPoint(route);
+        const perspective = head[2];
+        if (head[1] < 42) {
+          const topFade = Math.min(1, (42 - head[1]) / 78);
+          const inverse = 1 - topFade;
+          sizeFraction *= Math.pow(inverse, 1.35);
+          opacity *= Math.pow(inverse, 1.65);
+        }
+        const wantedLength = (8 + perspective * 24) * (.34 + sizeFraction * .66);
+        const points = [head];
+        let sampledRoute = route, accumulated = 0;
+        for (let sample = 0; sample < 22 && sampledRoute > 0 && accumulated < wantedLength; sample++) {
+          sampledRoute = Math.max(0, sampledRoute - .005);
+          const point = pathPoint(sampledRoute);
+          const first = points[0];
+          accumulated += Math.hypot(first[0] - point[0], first[1] - point[1]);
+          points.unshift(point);
+        }
+
+        const width = Math.max(.16,
+          (.46 + p.size * .36) * Math.pow(perspective, 1.58) * sizeFraction);
+        const alpha = Math.min(1, opacity * (.38 + perspective * .55));
+        drawParticlePath(points, width, p.hue, alpha);
+      });
+      }
+      ctx.restore();
+    }
+
+    function drawOpponent(image, time) {
+      const t = time * .001;
+      const bob = Math.sin(t * 4.1) * 1.6;
+      const sway = Math.sin(t * 2.2) * 1.15;
+      const lean = Math.sin(t * 2.2) * .009;
+      const breathe = 1 + Math.sin(t * 3.05) * .0045;
+      const height = 156, width = height * image.width / image.height;
+
+      // One intact image pivots at the midpoint between both feet. Breathing,
+      // sway, and lean affect the whole silhouette, so no joint can separate.
+      ctx.save();
+      ctx.translate(184 + sway, arenaCamera.horizon + arenaCamera.fy / arenaCamera.depth + bob);
+      ctx.rotate(lean); ctx.scale(breathe, breathe);
+      ctx.drawImage(image, -width * .5, -height, width, height);
+      ctx.restore();
+    }
+
+    function makeArmEndFade(image, side) {
+      const faded = document.createElement('canvas');
+      faded.width = 145; faded.height = 177;
+      const g = faded.getContext('2d');
+      g.drawImage(image, 0, 0, image.width, image.height, 0, 0, faded.width, faded.height);
+      g.globalCompositeOperation = 'destination-in';
+      // Follow each forearm toward its lower outer corner. The palm and wrist
+      // stay fully opaque; only the open upper-arm end dissolves into the scene.
+      const fade = side === 'left'
+        ? g.createLinearGradient(91, 101, -8, 181)
+        : g.createLinearGradient(54, 101, 153, 181);
+      fade.addColorStop(0, '#fff');
+      fade.addColorStop(.48, '#fff');
+      fade.addColorStop(.8, 'rgba(255,255,255,.22)');
+      fade.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = fade; g.fillRect(0, 0, faded.width, faded.height);
+      return faded;
+    }
+
+    function drawHands(images, time, side = 'all') {
+      const t = time * .001, breathe = Math.sin(t * 3.3), spread = Math.sin(t * 1.8);
+      if (side === 'all' || side === 'left') {
+      ctx.save(); ctx.translate(-5 - spread * 2, 176 + breathe * 2.5); ctx.rotate(-.035 + breathe * .007);
+      ctx.drawImage(images.leftFaded, -12, 0); ctx.restore();
+      }
+      if (side === 'all' || side === 'right') {
+      ctx.save(); ctx.translate(242 + spread * 2, 176 - breathe * 2.5); ctx.rotate(.035 - breathe * .007);
+      ctx.drawImage(images.rightFaded, 0, 0); ctx.restore();
+      }
+    }
+
+    function healthCellPoints(side, index, panelX, panelY, shake) {
+      const startX = side === 'player' ? 68 : 9;
+      const width = 20, height = 13, gap = 2, slant = 3;
+      const x = panelX + shake + startX + index * (width + gap);
+      const y = panelY + 22;
+      return [
+        [x + slant, y], [x + width, y],
+        [x + width - slant, y + height], [x, y + height],
+      ];
+    }
+
+    function healthCellPath(points) {
+      ctx.beginPath();
+      ctx.moveTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+      ctx.closePath();
+    }
+
+    function drawHealthState(side, panelX, panelY, time, shake) {
+      const health = previewMeters[side];
+      const enemy = side === 'enemy';
+      const color = enemy ? '255,133,35' : '70,226,255';
+      // Clear the authored unequal interiors while retaining the portrait and
+      // outer rails. Both players then use the exact same five-cell geometry.
+      const maskX = panelX + shake + (enemy ? 5 : 64);
+      const maskWidth = 116;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,2,5,.995)';
+      ctx.fillRect(maskX, panelY + 20, maskWidth, 18);
+      ctx.restore();
+      for (let i = 0; i < 5; i++) {
+        const filled = enemy ? i >= 5 - health : i < health;
+        const points = healthCellPoints(side, i, panelX, panelY, shake);
+        ctx.save();
+        if (filled) {
+          const light = ctx.createLinearGradient(points[0][0], points[0][1], points[2][0], points[2][1]);
+          light.addColorStop(0, `rgba(${color},.82)`);
+          light.addColorStop(.5, `rgba(${color},1)`);
+          light.addColorStop(1, `rgba(${color},.88)`);
+          ctx.fillStyle = light;
+          ctx.shadowColor = `rgba(${color},.68)`; ctx.shadowBlur = 3;
+        } else {
+          ctx.fillStyle = 'rgba(0,5,9,.98)';
+          ctx.shadowBlur = 0;
+        }
+        healthCellPath(points); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = filled ? `rgba(${color},.9)` : `rgba(${color},.32)`;
+        ctx.lineWidth = .65; ctx.stroke();
+        ctx.restore();
+      }
+
+      const fx = meterFx[side];
+      if (!fx) return;
+      const age = time - fx.start;
+      const duration = fx.direction > 0 ? 480 : 360;
+      if (age < 0 || age > duration) return;
+      const p = age / duration;
+      const points = healthCellPoints(side, fx.index, panelX, panelY, shake);
+      const pulse = Math.sin(Math.PI * Math.min(1, p));
+      ctx.save();
+      ctx.shadowColor = `rgba(${color},${.9 * (1 - p)})`;
+      ctx.shadowBlur = 5 + pulse * 10;
+      ctx.fillStyle = fx.direction > 0
+        ? `rgba(255,255,255,${.62 * (1 - p)})`
+        : `rgba(${color},${.72 * (1 - p)})`;
+      healthCellPath(points); ctx.fill();
+      ctx.strokeStyle = `rgba(255,255,255,${.9 * (1 - p)})`;
+      ctx.lineWidth = 1 + pulse; ctx.stroke();
+      const cx = points.reduce((sum, point) => sum + point[0], 0) / points.length;
+      const cy = points.reduce((sum, point) => sum + point[1], 0) / points.length;
+      ctx.strokeStyle = `rgba(${color},${.8 * (1 - p)})`; ctx.lineWidth = 1;
+      for (let n = 0; n < 4; n++) {
+        const a = n * Math.PI * .5 + .35;
+        const inner = 9 + p * 2, outer = inner + 3 + p * 7;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawHud(mock, time) {
+      const sourceScale = mock.width / 1136;
+      // Preserve every original bevel, outline, portrait frame, and five-cell
+      // bar exactly as authored. The two panels are cropped independently only
+      // to omit the central purple particles, then uniformly scaled and placed
+      // on two non-overlapping staggered rows.
+      const panel = (side, sx, dx, dy) => {
+        const fx = meterFx[side];
+        const age = fx ? time - fx.start : Infinity;
+        const shake = fx && fx.direction < 0 && age >= 0 && age < 280
+          ? Math.sin(age * .095) * (1 - age / 280) * 2.2 : 0;
+        ctx.drawImage(mock,
+        sx * sourceScale, 24 * sourceScale,
+        398 * sourceScale, 116 * sourceScale,
+        dx + shake, dy, hudLayout.width, hudLayout.height);
+        drawHealthState(side, dx, dy, time, shake);
+      };
+      panel('player', 12, hudLayout.sidePadding, hudLayout.playerY);
+      panel('enemy', 726, W - hudLayout.width - hudLayout.sidePadding, hudLayout.enemyY);
+    }
+    function makeSpriteSkillIcon(sprite, index) {
+      const icon = document.createElement('canvas'); icon.width = icon.height = 160;
+      const g = icon.getContext('2d');
+      const sourceSize = sprite.width * .5;
+      const sourceX = (index % 2) * sourceSize;
+      const sourceY = Math.floor(index / 2) * sourceSize;
+      // The approved concept is a 2x2 transparent sprite sheet:
+      // charge, wave, absorb, guard. Preserve the complete authored glow.
+      g.drawImage(sprite, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 160, 160);
+      return icon;
+    }
+    function makeDirectionalFade(source, direction) {
+      const icon = document.createElement('canvas'); icon.width = source.width; icon.height = source.height;
+      const g = icon.getContext('2d'); g.drawImage(source, 0, 0);
+      g.globalCompositeOperation = 'destination-in';
+      const fade = g.createLinearGradient(0, 0, icon.width, 0);
+      if (direction < 0) {
+        fade.addColorStop(0, 'rgba(255,255,255,0)');
+        fade.addColorStop(.42, 'rgba(255,255,255,.32)');
+        fade.addColorStop(1, '#fff');
+      } else {
+        fade.addColorStop(0, '#fff');
+        fade.addColorStop(.58, 'rgba(255,255,255,.32)');
+        fade.addColorStop(1, 'rgba(255,255,255,0)');
+      }
+      g.fillStyle = fade; g.fillRect(0, 0, icon.width, icon.height);
+      return icon;
+    }
+    let skillIconVariants = [];
+    const carouselOrbit = {
+      cx: 184,
+      cy: 678,
+      radius: 278,
+      step: .39,
+    };
+    function carouselPoint(angle) {
+      return [
+        carouselOrbit.cx + Math.sin(angle) * carouselOrbit.radius,
+        carouselOrbit.cy - Math.cos(angle) * carouselOrbit.radius,
+      ];
+    }
+
+    const chargeOrbit = { cx: 184, cy: 694, radius: 359, span: .74 };
+    function chargeCellPoint(index) {
+      const angle = -chargeOrbit.span * .5 + index * chargeOrbit.span / 9;
+      return {
+        angle,
+        x: chargeOrbit.cx + Math.sin(angle) * chargeOrbit.radius,
+        y: chargeOrbit.cy - Math.cos(angle) * chargeOrbit.radius,
+      };
+    }
+    function chargeCellPath(width = 25, height = 15) {
+      const x = width * .5, y = height * .5, cut = 4;
+      ctx.beginPath();
+      ctx.moveTo(-x + cut, -y); ctx.lineTo(x - cut, -y);
+      ctx.lineTo(x, -y + cut); ctx.lineTo(x, y - cut);
+      ctx.lineTo(x - cut, y); ctx.lineTo(-x + cut, y);
+      ctx.lineTo(-x, y - cut);
+      ctx.lineTo(-x, -y + cut); ctx.closePath();
+    }
+    function drawChargeCell(image, index, lit, scale = 1, alpha = 1) {
+      const point = chargeCellPoint(index);
+      ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(point.angle);
+      ctx.scale(scale, scale); ctx.globalAlpha *= alpha;
+      chargeCellPath();
+      ctx.fillStyle = lit ? 'rgba(37,196,238,.9)' : 'rgba(0,6,10,.92)';
+      ctx.shadowColor = lit ? '#64efff' : 'rgba(18,176,219,.42)';
+      ctx.shadowBlur = lit ? 5 : 1.5;
+      ctx.fill();
+      if (lit) {
+        // Keep the approved crystalline material, but clip it to the exact same
+        // canonical cell path used by the empty state.
+        ctx.save(); chargeCellPath(); ctx.clip();
+        ctx.globalAlpha *= .9;
+        ctx.drawImage(image, 470, 285, 150, 125, -12.5, -7.5, 25, 15);
+        const shine = ctx.createLinearGradient(-12, -8, 12, 8);
+        shine.addColorStop(0, 'rgba(255,255,255,.66)');
+        shine.addColorStop(.48, 'rgba(70,225,255,.08)');
+        shine.addColorStop(1, 'rgba(255,255,255,.28)');
+        ctx.fillStyle = shine; ctx.fillRect(-12.5, -7.5, 25, 15);
+        ctx.restore();
+      }
+      ctx.shadowBlur = lit ? 5 : 1;
+      ctx.strokeStyle = lit ? 'rgba(190,252,255,.96)' : 'rgba(23,178,222,.72)';
+      ctx.lineWidth = lit ? 1.35 : 1;
+      chargeCellPath(); ctx.stroke();
+      ctx.globalAlpha *= lit ? .72 : .55;
+      ctx.scale(.82, .72); chargeCellPath(); ctx.stroke();
+      ctx.restore();
+      return point;
+    }
+    function drawChargeState(image, time) {
+      for (let i = 0; i < 10; i++) {
+        drawChargeCell(image, i, i < previewMeters.charge);
+      }
+      const fx = meterFx.charge;
+      if (!fx) return;
+      const age = time - fx.start;
+      const duration = fx.direction > 0 ? 520 : 420;
+      if (age < 0 || age > duration) return;
+      const p = age / duration;
+      const pulse = Math.sin(Math.PI * Math.min(1, p));
+      const point = drawChargeCell(image, fx.index, true,
+        fx.direction > 0 ? 1 + pulse * .2 : 1 - p * .18,
+        fx.direction > 0 ? .72 * (1 - p) : 1 - p);
+      ctx.save();
+      ctx.strokeStyle = `rgba(122,245,255,${.9 * (1 - p)})`;
+      ctx.shadowColor = '#4cecff'; ctx.shadowBlur = 7 + pulse * 9;
+      ctx.lineWidth = 1.2;
+      for (let n = 0; n < 6; n++) {
+        const a = n * TAU / 6 + .18;
+        const inner = 12 + p * 4, outer = inner + 4 + p * 10;
+        ctx.beginPath();
+        ctx.moveTo(point.x + Math.cos(a) * inner, point.y + Math.sin(a) * inner);
+        ctx.lineTo(point.x + Math.cos(a) * outer, point.y + Math.sin(a) * outer);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawCarousel(images, time, part = 'all') {
+      const smooth = dragX;
+      const show = name => part === 'all' || part === name;
+      if (show('frame')) {
+        // Approved three-rail base: two upper rails, one lower rail, staggered
+        // breaks, and a centre index. Its transparent padding is preserved.
+        ctx.save(); ctx.globalAlpha = .9;
+        ctx.drawImage(images.carouselBase, -6, 267, 380, 152);
+        ctx.restore();
+      }
+      if (show('charge-cells')) {
+        // Reuse the approved crystalline lit/empty cells as independent sprites
+        // so taps can animate a real 0-10 state instead of a fixed bitmap.
+        drawChargeState(images.chargeMeter, time);
+      }
+      const skillParts = ['skill-charge', 'skill-wave', 'skill-absorb', 'skill-guard'];
+      const drawSkill = (index, angle) => {
+        const [x, y] = carouselPoint(angle);
+        const focus = Math.max(0, 1 - Math.abs(angle) / carouselOrbit.step);
+        const s = 52 + focus * 36;
+        const direction = angle < -.035 ? 'left' : (angle > .035 ? 'right' : 'full');
+        ctx.save(); ctx.globalAlpha = .34 + focus * .66;
+        if (focus > .5) {
+          ctx.shadowColor = `rgba(255,255,255,${.38 + focus * .46})`;
+          ctx.shadowBlur = 9 + focus * 8;
+          ctx.filter = `brightness(${1.05 + focus * .32})`;
+        }
+        ctx.drawImage(skillIconVariants[index][direction], x - s / 2, y - s / 2, s, s);
+        ctx.restore();
+      };
+      const isolatedSkill = skillParts.indexOf(part);
+      if (isolatedSkill >= 0) {
+        drawSkill(isolatedSkill, 0);
+      } else if (part === 'all') {
+        for (let r = -1; r <= 1; r++) {
+          const index = (selected + r + 4) % 4;
+          drawSkill(index, r * carouselOrbit.step + smooth / carouselOrbit.radius);
+        }
+      }
+    }
+
+    const layersRoot = document.querySelector('#layers');
+    const currentLayerLabel = document.querySelector('#current-layer');
+    function selectLayer(id) {
+      if (desktopMode) id = 'full';
+      activeLayer = id;
+      document.querySelectorAll('.layer-button').forEach(button => {
+        button.classList.toggle('active', button.dataset.layer === id);
+      });
+      const label = layerDefinitions.find(([layerId]) => layerId === id)?.[1] || id;
+      const interactive = ['full', 'hud', 'carousel', 'charge-cells'].includes(id);
+      currentLayerLabel.textContent = desktopMode
+        ? `设备同尺寸桌面实现 · RGB565 · 拖动技能盘 / 点击血条与聚气格`
+        : interactive
+        ? `${label} · 点击目标左半减少 / 右半增加 · 30 FPS`
+        : `${label} · 真实坐标 · 30 FPS`;
+      const next = new URL(location.href); next.searchParams.set('layer', id);
+      history.replaceState(null, '', next);
+    }
+    layerDefinitions.forEach(([id, label], index) => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'layer-button'; button.dataset.layer = id;
+      button.innerHTML = `<span>${String(index).padStart(2, '0')}</span>${label}`;
+      button.addEventListener('click', () => selectLayer(id)); layersRoot.appendChild(button);
+    });
+    selectLayer(activeLayer);
+
+    const arenaPasses = new Set([
+      'walls', 'wheel', 'dust',
+      'particles',
+    ]);
+    const carouselPasses = new Map([
+      ['carousel-frame', 'frame'], ['charge-cells', 'charge-cells'],
+      ['skill-charge', 'skill-charge'], ['skill-wave', 'skill-wave'],
+      ['skill-absorb', 'skill-absorb'], ['skill-guard', 'skill-guard'],
+    ]);
+    function renderScene(images, time) {
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      if (activeLayer === 'full') {
+        drawArena(images, time); drawOpponent(images.opponent, time);
+        drawHands(images, time); drawHud(images.mock, time); drawCarousel(images, time);
+      } else if (arenaPasses.has(activeLayer)) {
+        drawArena(images, time, activeLayer);
+      } else if (activeLayer === 'opponent') {
+        drawOpponent(images.opponent, time);
+      } else if (activeLayer === 'hand-left') {
+        drawHands(images, time, 'left');
+      } else if (activeLayer === 'hand-right') {
+        drawHands(images, time, 'right');
+      } else if (activeLayer === 'hud') {
+        drawHud(images.mock, time);
+      } else if (activeLayer === 'carousel') {
+        drawCarousel(images, time);
+      } else if (carouselPasses.has(activeLayer)) {
+        drawCarousel(images, time, carouselPasses.get(activeLayer));
+      }
+      if (emulateRgb565) {
+        // AMOLED and SDL both consume RGB565. Quantizing the completed frame
+        // here makes the desktop window expose the same colour precision as
+        // the device instead of hiding banding or low-level glow loss.
+        const frame = ctx.getImageData(0, 0, W, H);
+        const pixels = frame.data;
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = pixels[i] >> 3, g = pixels[i + 1] >> 2, b = pixels[i + 2] >> 3;
+          pixels[i] = (r << 3) | (r >> 2);
+          pixels[i + 1] = (g << 2) | (g >> 4);
+          pixels[i + 2] = (b << 3) | (b >> 2);
+        }
+        displayCtx.putImageData(frame, 0, 0);
+      } else {
+        displayCtx.drawImage(frameCanvas, 0, 0);
+      }
+    }
+
+    Promise.all(Object.entries(paths).map(async ([k, p]) => [k, await load(p)]))
+      .then(entries => {
+        const images = Object.fromEntries(entries);
+        images.leftFaded = makeArmEndFade(images.left, 'left');
+        images.rightFaded = makeArmEndFade(images.right, 'right');
+        skillIconVariants = Array.from({ length: 4 }, (_, index) => {
+          const full = makeSpriteSkillIcon(images.skills, index);
+          return { full, left: makeDirectionalFade(full, -1), right: makeDirectionalFade(full, 1) };
+        });
+        let last = 0;
+        function frame(time) {
+          if (time - last >= 32) {
+            last = time; dragX += (targetDrag - dragX) * .24;
+            const sceneTime = freezeGoldenFrame ? GOLDEN_FRAME_MS : time;
+            renderScene(images, sceneTime);
+          }
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      });
+
+    function canvasPoint(e) {
+      const bounds = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - bounds.left) * W / bounds.width,
+        y: (e.clientY - bounds.top) * H / bounds.height,
+      };
+    }
+    function inside(point, x, y, width, height) {
+      return point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height;
+    }
+    function handleMeterTap(point) {
+      if (activeLayer === 'full' || activeLayer === 'hud') {
+        const playerX = hudLayout.sidePadding;
+        const enemyX = W - hudLayout.width - hudLayout.sidePadding;
+        if (inside(point, playerX, hudLayout.playerY, hudLayout.width, hudLayout.height)) {
+          changePreviewMeter('player', point.x < playerX + hudLayout.width * .5 ? -1 : 1);
+          return true;
+        }
+        if (inside(point, enemyX, hudLayout.enemyY, hudLayout.width, hudLayout.height)) {
+          changePreviewMeter('enemy', point.x < enemyX + hudLayout.width * .5 ? -1 : 1);
+          return true;
+        }
+      }
+      if (activeLayer === 'full' || activeLayer === 'carousel' || activeLayer === 'charge-cells') {
+        if (inside(point, 42, 312, 284, 58)) {
+          changePreviewMeter('charge', point.x < W * .5 ? -1 : 1);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    canvas.addEventListener('pointerdown', e => {
+      const point = canvasPoint(e);
+      if (handleMeterTap(point)) return;
+      if (activeLayer !== 'full' && activeLayer !== 'carousel') return;
+      if (point.y < 315) return;
+      dragStart = e.clientX; canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (dragStart == null) return; targetDrag = Math.max(-90, Math.min(90, (e.clientX-dragStart) * 368/canvas.clientWidth));
+    });
+    canvas.addEventListener('pointerup', e => {
+      if (dragStart == null) return;
+      if (targetDrag < -28) selected = (selected + 1) % 4;
+      if (targetDrag > 28) selected = (selected + 3) % 4;
+      dragStart = null; targetDrag = 0;
+    });
+  </script>
+</body>
+</html>

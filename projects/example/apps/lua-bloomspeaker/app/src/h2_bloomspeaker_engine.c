@@ -29,9 +29,6 @@
 #define H2_BLOOMSPEAKER_PENDING_EVENT_WRITING 1
 #define H2_BLOOMSPEAKER_PENDING_EVENT_READY 2
 
-static const uint8_t s_service_uuid[] = {0xb7u, 0xb0u};
-static const uint8_t s_tx_uuid[] = {0xb8u, 0xb0u};
-static const uint8_t s_rx_uuid[] = {0xb9u, 0xb0u};
 
 typedef struct h2_bloomspeaker_observed_address {
   uint64_t device_tag;
@@ -81,6 +78,9 @@ struct h2_bloomspeaker_engine {
   bool advertising_active;
   bool management_advertising_paused;
   bool client_started;
+  uint8_t product_magic,service_uuid[2],tx_uuid[2],rx_uuid[2];
+  int (*on_session)(void *,h2_bleikcp_t *,bool,bool (*)(void *),void *);
+  void *session_user;
 };
 
 static uint64_t now_ms(h2_bloomspeaker_engine_t *engine) {
@@ -143,9 +143,9 @@ static h2_bleikcp_api_t stream_api(h2_bloomspeaker_engine_t *engine) {
 
 static h2_bleikcp_config_t stream_config(h2_bloomspeaker_engine_t *engine) {
   return (h2_bleikcp_config_t){
-      .service_uuid = {s_service_uuid, sizeof(s_service_uuid)},
-      .tx_char_uuid = {s_tx_uuid, sizeof(s_tx_uuid)},
-      .rx_char_uuid = {s_rx_uuid, sizeof(s_rx_uuid)},
+      .service_uuid = {engine->service_uuid, sizeof(engine->service_uuid)},
+      .tx_char_uuid = {engine->tx_uuid, sizeof(engine->tx_uuid)},
+      .rx_char_uuid = {engine->rx_uuid, sizeof(engine->rx_uuid)},
       .send_window = H2_BLOOMSPEAKER_STREAM_WINDOW,
       .recv_window = H2_BLOOMSPEAKER_STREAM_WINDOW,
       .input_frame_capacity = 16u,
@@ -536,7 +536,9 @@ static int server_handler(void *user, h2_bleikcp_t *stream,
     result = H2_PAL_ERR_CLOSED;
   }
   if (result == H2_PAL_OK) {
-    result = engine->audio != NULL
+    result = engine->on_session != NULL
+                 ? engine->on_session(engine->session_user,stream,false,audio_session_should_run,engine)
+                 : engine->audio != NULL
                  ? h2_bloomspeaker_audio_run_session(
                        engine->audio, stream, audio_session_should_run, engine)
                  : session_wait(engine, stream);
@@ -569,7 +571,8 @@ static bool scan_result(void *user, const h2_pal_ble_scan_result_t *result) {
       !result->connectable ||
       result->data_status != H2_PAL_BLE_ADV_DATA_COMPLETE ||
       result->manufacturer_data.len != H2_BLOOMSPEAKER_PAIRING_BEACON_SIZE ||
-      result->manufacturer_data.data == NULL) {
+      result->manufacturer_data.data == NULL ||
+      result->manufacturer_data.data[0] != engine->product_magic) {
     return false;
   }
 
@@ -598,7 +601,7 @@ static void process_scan_event(h2_bloomspeaker_engine_t *engine) {
       H2_BLOOMSPEAKER_PENDING_EVENT_READY) {
     return;
   }
-  const h2_bloomspeaker_pending_scan_t result = engine->pending_scan;
+  h2_bloomspeaker_pending_scan_t result = engine->pending_scan;
   atomic_store_explicit(&engine->pending_scan_state,
                         H2_BLOOMSPEAKER_PENDING_EVENT_EMPTY,
                         memory_order_release);
@@ -607,6 +610,8 @@ static void process_scan_event(h2_bloomspeaker_engine_t *engine) {
   }
 
   h2_bloomspeaker_pairing_beacon_t beacon;
+  if (result.manufacturer_data[0]!=engine->product_magic) return;
+  result.manufacturer_data[0]=0xb7u; /* Reuse the validated beacon codec. */
   if (h2_bloomspeaker_pairing_decode(result.manufacturer_data,
                                      sizeof(result.manufacturer_data),
                                      &beacon) != H2_PAL_OK) {
@@ -657,6 +662,7 @@ static int update_advertising(h2_bloomspeaker_engine_t *engine) {
   if (result != H2_PAL_OK) {
     return result;
   }
+  beacon[0]=engine->product_magic;
   const h2_pal_ble_adv_data_t data = {
       .manufacturer_data = {beacon, sizeof(beacon)},
   };
@@ -1007,7 +1013,9 @@ static int run_client(h2_bloomspeaker_engine_t *engine) {
     result = H2_PAL_ERR_CLOSED;
   }
   if (result == H2_PAL_OK) {
-    result = engine->audio != NULL
+    result = engine->on_session != NULL
+                 ? engine->on_session(engine->session_user,stream,true,audio_session_should_run,engine)
+                 : engine->audio != NULL
                  ? h2_bloomspeaker_audio_run_session(
                        engine->audio, stream, audio_session_should_run, engine)
                  : session_wait(engine, stream);
@@ -1104,6 +1112,11 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
   memset(engine, 0, sizeof(*engine));
   engine->runtime = runtime;
   engine->controller = controller;
+  engine->product_magic=config->product_magic ? config->product_magic : 0xb7u;
+  engine->service_uuid[0]=engine->product_magic;engine->service_uuid[1]=0xb0u;
+  engine->tx_uuid[0]=(uint8_t)(engine->product_magic+1u);engine->tx_uuid[1]=0xb0u;
+  engine->rx_uuid[0]=(uint8_t)(engine->product_magic+2u);engine->rx_uuid[1]=0xb0u;
+  engine->on_session=config->on_session;engine->session_user=config->session_user;
   engine->pause_management_advertising =
       config->pause_management_advertising;
   engine->resume_management_advertising =
@@ -1140,7 +1153,7 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
       .name = h2_bloomspeaker_ble_task_name,
       .min_stack_size = H2_BLOOMSPEAKER_CODEC_TASK_STACK_SIZE,
   };
-  if (result == H2_PAL_OK) {
+  if (result == H2_PAL_OK && engine->on_session==NULL) {
     result = h2_bloomspeaker_audio_start(runtime, controller, &engine->audio);
   }
   if (result == H2_PAL_OK) {

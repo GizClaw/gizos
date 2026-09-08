@@ -138,10 +138,42 @@ static const uint8_t s_test_display_asset[] = {
     'H',  '2',  'A',  '4',  2,    0,    2,    0,
     0x00, 0xff, 0xf0, 0xf0, 0x0f, 0xf0, 0xff, 0x0f,
 };
+/* One 1x1 lamp at (2,3), black and RGB(255,128,64) gain samples. */
+static const uint8_t s_test_light_atlas[] = {
+    72,50,76,70,8,0,8,0,1,0,2,0,2,0,3,0,1,0,1,0,
+    36,0,0,0,11,0,0,0,47,0,0,0,11,0,0,0,
+    120,156,99,96,96,0,0,0,3,0,1,120,156,251,223,224,0,0,4,64,1,192,
+};
+static uint8_t s_test_bad_light_atlas[sizeof(s_test_light_atlas)];
+static const uint8_t s_test_rgba[] = {
+    72,50,82,56,2,0,2,0,120,156,251,207,192,240,31,8,27,192,20,16,0,0,60,88,8,121,
+};
+static uint8_t s_test_bad_rgba[sizeof(s_test_rgba)];
+/* Two 2x2 styles: original RGBA fixture and opaque blue. */
+static const uint8_t s_test_styles[]={
+  72,50,82,83,2,0,2,0,2,0,0,0,28,0,0,0,18,0,0,0,46,0,0,0,15,0,0,0,
+  120,156,251,207,192,240,31,8,27,192,20,16,0,0,60,88,8,121,
+  120,156,99,96,248,255,159,1,9,3,0,59,212,7,249,
+};
+static uint8_t s_test_bad_styles[sizeof(s_test_styles)];
 static const h2_lua_resource_t s_test_resources[] = {{
     .name = "@test/tiny.a4",
     .source = s_test_display_asset,
     .source_size = sizeof(s_test_display_asset),
+}, {
+    .name = "@test/light.h2lf", .source = s_test_light_atlas,
+    .source_size = sizeof(s_test_light_atlas),
+}, {
+    .name = "@test/bad-light.h2lf", .source = s_test_bad_light_atlas,
+    .source_size = sizeof(s_test_bad_light_atlas),
+}, {
+    .name = "@test/tiny.h2r8", .source = s_test_rgba, .source_size = sizeof(s_test_rgba),
+}, {
+    .name = "@test/bad.h2r8", .source = s_test_bad_rgba, .source_size = sizeof(s_test_bad_rgba),
+}, {
+    .name = "@test/styles.h2rs", .source = s_test_styles, .source_size = sizeof(s_test_styles),
+}, {
+    .name = "@test/bad.h2rs", .source = s_test_bad_styles, .source_size = sizeof(s_test_bad_styles),
 }};
 
 static void test_display_reset(void) {
@@ -747,6 +779,8 @@ static h2_lua_job_status_t run_display_script(h2_lua_host_t *host,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 64u);
   job_status = status(host, job_id);
+  if (job_status.state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "%s: %s\n", name, job_status.message);
   assert(job_status.state == H2_LUA_JOB_SUCCEEDED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   return job_status;
@@ -1296,6 +1330,204 @@ int main(void) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   assert(atomic_load(&s_test_audio_close_count) == 1);
   assert(atomic_load(&s_test_audio_stop_count) == 1);
+
+  {
+    static const uint8_t affine_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "d.draw_affine_asset('@test/tiny.h2r8',1,0,0,1,2,3);"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    h2_lua_job_status_t canvas_status = run_display_script(host,"@affine.lua",affine_script,sizeof(affine_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0xf800u);
+    assert(s_test_display_fixture.pixels[3u*8u+3u]==0x0400u);
+    assert(s_test_display_fixture.pixels[4u*8u+2u]==0u);
+    assert(s_test_display_fixture.pixels[4u*8u+3u]==0xffffu);
+
+    static const uint8_t styles_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "d.draw_sprite_atlas('@test/styles.h2rs',1,1,0,2,3);"
+        "d.draw_sprite_atlas('@test/styles.h2rs',1,2,.5,5,3);"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',0,1,0,0,0));"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,3,0,0,0));"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,2,1.1,0,0));"
+        "assert(not pcall(d.draw_sprite_atlas,'missing',1,1,0,0,0));"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@styles.lua",styles_script,sizeof(styles_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0xf800u);
+    assert(s_test_display_fixture.pixels[3u*8u+3u]==0x0400u);
+    assert(s_test_display_fixture.pixels[4u*8u+2u]==0u);
+    assert(s_test_display_fixture.pixels[4u*8u+3u]==0xffffu);
+    assert(s_test_display_fixture.pixels[3u*8u+5u]==0x8010u);
+    assert(s_test_display_fixture.pixels[3u*8u+6u]==0x0210u);
+    assert(s_test_display_fixture.pixels[4u*8u+5u]==0x0010u);
+    assert(s_test_display_fixture.pixels[4u*8u+6u]==0x841fu);
+
+    static const uint8_t scaled_styles_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "d.draw_sprite_atlas('@test/styles.h2rs',1,1,0,2,3,.5);"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,1,0,0,0,0));"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,1,0,0,0,0/0));"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@scaled-styles.lua",scaled_styles_script,sizeof(scaled_styles_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0x8308u);
+
+    static const uint8_t echo_styles_script[] =
+        "local d=require('display');d.clear('blue');d.begin_composite();"
+        "d.draw_sprite_atlas('@test/styles.h2rs',1,1,0,2,3,1,.5);"
+        "d.draw_sprite_atlas('@test/styles.h2rs',1,1,0,5,3,1,0);"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,1,0,0,0,1,-.1));"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,1,0,0,0,1,1.1));"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/styles.h2rs',1,1,0,0,0,1,0/0));"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@echo-styles.lua",echo_styles_script,sizeof(echo_styles_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0x8010u);
+    assert(s_test_display_fixture.pixels[4u*8u+3u]==0x841fu);
+    assert(s_test_display_fixture.pixels[3u*8u+5u]==0x001fu);
+
+    static const uint8_t invalid_styles_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "assert(not pcall(d.draw_sprite_atlas,'@test/bad.h2rs',1,2,.5,0,0));"
+        "d.end_composite();d.deinit();return 'ok'";
+    const size_t corrupt_style_offsets[]={0,4,6,8,12,16,20,28,sizeof(s_test_styles)-1u};
+    for(size_t i=0;i<sizeof(corrupt_style_offsets)/sizeof(corrupt_style_offsets[0]);i++) {
+      memcpy(s_test_bad_styles,s_test_styles,sizeof(s_test_styles));
+      s_test_bad_styles[corrupt_style_offsets[i]]=0;
+      canvas_status=run_display_script(host,"@invalid-styles.lua",invalid_styles_script,sizeof(invalid_styles_script)-1u);
+      assert(strcmp(canvas_status.message,"ok")==0);
+    }
+
+    static const uint8_t mip_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "d.draw_affine_asset('@test/tiny.h2r8',.5,0,0,.5,2,3);"
+        "d.draw_affine_asset('@test/tiny.h2r8',0,1,-1,0,6,1);"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@mip.lua",mip_script,sizeof(mip_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0x8308u);
+    assert(s_test_display_fixture.pixels[1u*8u+5u]==0xf800u);
+    assert(s_test_display_fixture.pixels[2u*8u+5u]==0x0400u);
+    assert(s_test_display_fixture.pixels[2u*8u+4u]==0xffffu);
+
+    static const uint8_t particle_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "local red={r=255,g=0,b=0};local green={r=0,g=255,b=0};"
+        "d.add_disc(2.5,3.5,.5,red,1);d.add_disc(2.5,3.5,.5,red,1);"
+        "d.add_line(1.5,1.5,5.5,1.5,1,green,1);"
+        "d.add_line(-100,-100,-90,-90,1,green,1);"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@canvas-particles.lua",particle_script,sizeof(particle_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0xf800u);
+    assert(s_test_display_fixture.pixels[1u*8u+3u]==0x07e0u);
+
+    static const uint8_t invalid_canvas_script[] =
+        "local d=require('display');d.clear('black');assert(not pcall(d.end_composite));d.begin_composite();"
+        "assert(not pcall(d.begin_composite));local c={r=255,g=255,b=255};"
+        "assert(not pcall(d.add_disc,0/0,0,1,c,1));"
+        "assert(not pcall(d.add_disc,0,0,-1,c,1));"
+        "assert(not pcall(d.add_line,0,0,1,1,129,c,1));"
+        "assert(not pcall(d.add_disc,0,0,1,c,math.huge));"
+        "assert(not pcall(d.add_disc,0,0,1,{r=256,g=0,b=0},1));"
+        "assert(not pcall(d.draw_affine_asset,'@test/tiny.h2r8',0,0,0,0,0,0));"
+        "assert(not pcall(d.draw_affine_asset,'missing',1,0,0,1,0,0));"
+        "assert(not pcall(d.draw_affine_asset,'@test/tiny.h2r8',1,0,0,1,0,0,{0,0,3,2}));"
+        "assert(not pcall(d.draw_affine_asset,'@test/tiny.h2r8',1,0,0,1,0,0,nil,1.1));"
+        "assert(not pcall(d.glow_line,0,0,1,1,1,c,1,33,c));"
+        "assert(not pcall(d.draw_polygon,{},c,1,c,1,1,c,1,3));"
+        "assert(not pcall(d.draw_polygon,{{0,0},{2,0},{2,2}},c,1,c,1,9,c,1,3));"
+        "assert(not pcall(d.draw_polygon,{{0,0},{2,0},{2,2}},c,1,c,1,1,c,1,33));"
+        "d.deinit();assert(not pcall(d.begin_composite));return 'ok'";
+    canvas_status=run_display_script(host,"@canvas-invalid.lua",invalid_canvas_script,sizeof(invalid_canvas_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+
+    static const uint8_t polygon_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "local c={r=255,g=0,b=0};"
+        "d.draw_polygon({{2,2},{4,2},{4,4},{2,4}},c,1,c,0,0,c,0,0);"
+        "d.over_line(2,2.5,4,2.5,1,{r=0,g=255,b=0},.5);"
+        "d.draw_affine_asset('@test/tiny.h2r8',1,0,0,1,4,4,{1,1,1,1});"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@canvas-polygon.lua",polygon_script,sizeof(polygon_script)-1u);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0xf800u);
+    assert(s_test_display_fixture.pixels[2u*8u+2u]==0x7c00u);
+    assert(s_test_display_fixture.pixels[5u*8u+5u]==0xffffu);
+    assert(s_test_display_fixture.pixels[4u*8u+4u]==0u);
+
+    static const uint8_t opacity_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "d.draw_affine_asset('@test/tiny.h2r8',1,0,0,1,2,3,nil,.5);"
+        "local c={r=0,g=255,b=0};d.glow_line(1.5,1.5,5.5,1.5,1,c,1,0,c);"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@canvas-opacity.lua",opacity_script,sizeof(opacity_script)-1u);
+    assert(s_test_display_fixture.pixels[3u*8u+2u]==0x8000u);
+    assert(s_test_display_fixture.pixels[3u*8u+3u]==0x0200u);
+    assert(s_test_display_fixture.pixels[1u*8u+3u]==0x07e0u);
+
+    static const uint8_t invalid_rgba_script[] =
+        "local d=require('display');d.clear('black');d.begin_composite();"
+        "assert(not pcall(d.draw_affine_asset,'@test/bad.h2r8',1,0,0,1,0,0));"
+        "d.end_composite();d.deinit();return 'ok'";
+    static const size_t corrupt_rgba_offsets[]={0,4,8,sizeof(s_test_rgba)-1u};
+    for(size_t i=0;i<sizeof(corrupt_rgba_offsets)/sizeof(corrupt_rgba_offsets[0]);i++) {
+      memcpy(s_test_bad_rgba,s_test_rgba,sizeof(s_test_rgba));
+      s_test_bad_rgba[corrupt_rgba_offsets[i]]=0;
+      canvas_status=run_display_script(host,"@canvas-corrupt.lua",invalid_rgba_script,sizeof(invalid_rgba_script)-1u);
+      assert(strcmp(canvas_status.message,"ok")==0);
+    }
+  }
+
+  {
+    static const uint8_t light_script[] =
+        "local d=require('display');d.clear('black');"
+        "d.draw_light_atlas('@test/light.h2lf',{0});"
+        "d.draw_light_atlas('@test/light.h2lf',{.5});"
+        "d.present();d.deinit();return 'ok'";
+    h2_lua_job_status_t light_status = run_display_script(
+        host, "@light.lua", light_script, sizeof(light_script) - 1u);
+    assert(strcmp(light_status.message, "ok") == 0);
+    assert(s_test_display_fixture.pixels[3u * 8u + 2u] == 0x8204u);
+
+    static const uint8_t full_light_script[] =
+        "local d=require('display');d.clear('black');"
+        "d.draw_light_atlas('@test/light.h2lf',{1});"
+        "d.draw_light_atlas('@test/light.h2lf',{1});"
+        "d.present();d.deinit();return 'ok'";
+    light_status = run_display_script(host, "@light-full.lua", full_light_script,
+                                      sizeof(full_light_script) - 1u);
+    assert(strcmp(light_status.message, "ok") == 0);
+    assert(s_test_display_fixture.pixels[3u * 8u + 2u] == 0xfff0u);
+
+    static const uint8_t invalid_gain_script[] =
+        "local d=require('display');"
+        "for _,g in ipairs({{}, {-1}, {1.1}, {0/0}, {math.huge}, {'bad'}}) do "
+        "assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',g)) end;"
+        "assert(not pcall(d.draw_light_atlas,'@test/tiny.a4',{1}));"
+        "assert(not pcall(d.draw_light_atlas,'missing',{1}));"
+        "assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',{1},{0,0,0}));"
+        "assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',{1},{1,0/0,0}));"
+        "d.deinit();assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',{1}));"
+        "return 'ok'";
+    light_status = run_display_script(host, "@light-gains.lua", invalid_gain_script,
+                                      sizeof(invalid_gain_script) - 1u);
+    assert(strcmp(light_status.message, "ok") == 0);
+
+    static const uint8_t invalid_atlas_script[] =
+        "local d=require('display');"
+        "assert(not pcall(d.draw_light_atlas,'@test/bad-light.h2lf',{1}));"
+        "d.deinit();return 'ok'";
+    /* Header, dimensions, count, levels, tile bounds, offsets, lengths, zlib. */
+    static const size_t corrupt_offsets[] = {0,4,8,10,12,16,20,24,47,57};
+    for (size_t i = 0u; i < sizeof(corrupt_offsets)/sizeof(corrupt_offsets[0]); ++i) {
+      memcpy(s_test_bad_light_atlas, s_test_light_atlas, sizeof(s_test_light_atlas));
+      s_test_bad_light_atlas[corrupt_offsets[i]] = 255u;
+      light_status = run_display_script(host, "@light-bad.lua", invalid_atlas_script,
+                                        sizeof(invalid_atlas_script) - 1u);
+      assert(strcmp(light_status.message, "ok") == 0);
+    }
+  }
 
   {
     static const uint8_t draw_asset_script[] =
