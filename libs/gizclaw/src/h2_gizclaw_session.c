@@ -143,6 +143,9 @@ h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
   unlock(session);
   if (busy)
     return H2_PAL_ERR_BUSY;
+  rc = h2_gizclaw_service_detach_session_internal(session->config.service);
+  if (rc != H2_PAL_OK)
+    return rc;
   if (session->progress != NULL) {
     rc = h2_pal_cond_destroy(session->config.sync, session->progress);
     if (rc != H2_PAL_OK)
@@ -152,7 +155,6 @@ h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
   rc = h2_pal_mutex_destroy(session->config.sync, session->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_gizclaw_service_detach_session_internal(session->config.service);
   h2_pal_mem_free(session->config.mem, session->catalog_data);
   h2_pal_mem_free(session->config.mem, session);
   *ptr = NULL;

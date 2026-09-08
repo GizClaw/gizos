@@ -17,9 +17,11 @@ h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
   s_attached_session = session;
   return H2_PAL_OK;
 }
-void h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+h2_pal_result_t
+h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
   (void)service;
   s_attached_session = NULL;
+  return H2_PAL_OK;
 }
 
 static bool s_session;

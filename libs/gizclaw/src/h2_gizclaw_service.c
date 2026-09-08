@@ -1450,10 +1450,39 @@ h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
   return rc;
 }
 
-void h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+h2_pal_result_t
+h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (service->session_references != 0u) {
+    rc = H2_PAL_ERR_BUSY;
+  } else if (service->session != NULL) {
+    service->session = NULL;
+    --service->request_reference_count;
+  }
+  unlock_service(service);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_service_acquire_session_internal(h2_gizclaw_service_t *service,
+                                            h2_gizclaw_session_t **out) {
+  *out = NULL;
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  *out = service->session;
+  if (*out != NULL)
+    ++service->session_references;
+  unlock_service(service);
+  return H2_PAL_OK;
+}
+
+void h2_gizclaw_service_release_session_internal(
+    h2_gizclaw_service_t *service) {
   if (lock_service(service) != H2_PAL_OK)
     return;
-  service->session = NULL;
-  --service->request_reference_count;
+  --service->session_references;
   unlock_service(service);
 }

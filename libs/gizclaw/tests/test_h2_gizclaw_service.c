@@ -20,6 +20,7 @@
 #include "h2_gizclaw_workflow.h"
 #include "h2_gizclaw_workspace.h"
 #include "h2_gizclaw_session.h"
+#include "h2_gizclaw_session_internal.h"
 #include "payload/ai.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/social.pb.h"
@@ -4406,6 +4407,15 @@ static void test_workspace_reload_with_options(void) {
   assert(h2_gizclaw_req_create_workspace_reload_with_options(
       service, 1u, (h2_gizclaw_str_t){0}, NULL, 0u, &request) ==
       H2_PAL_ERR_INVALID_ARG);
+  /* A workspace RPC owns this reference before entering the Session mutex.
+   * Destruction must not free it in that admission window. */
+  h2_gizclaw_session_t *borrowed = NULL;
+  assert(h2_gizclaw_service_acquire_session_internal(service, &borrowed) ==
+         H2_PAL_OK);
+  assert(borrowed == session);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_ERR_BUSY);
+  assert(session == borrowed);
+  h2_gizclaw_service_release_session_internal(service);
   assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);

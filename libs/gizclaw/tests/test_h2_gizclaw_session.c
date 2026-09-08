@@ -608,8 +608,10 @@ h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
   (void)s;
   return H2_PAL_OK;
 }
-void h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+h2_pal_result_t
+h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
   (void)service;
+  return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *c) {
   (void)c;

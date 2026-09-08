@@ -45,6 +45,8 @@ Conversation 的远端 ERROR 在事件、完成回调和 Session 快照中保留
 
 Session 借用 Service、PAL 和配置中的 collection 字符串。准备操作在调用方的后台任务 执行，不能从 `service_poll` callback 或 Service 网络任务调用。一个准备操作拥有网络 编排；select/conversation 在总期限内等待先前准备，register/refresh 遇忙返回 BUSY。 读取只短暂锁定状态或有界 catalog，不执行网络 I/O，也不暴露可变内部指针。
 
+同步 Workspace RPC 在 Service mutex 下取得 Session 引用，并在 RPC 完成后释放。destroy 遇到尚未进入或尚未退出的 RPC 返回 BUSY；引用清空后先 detach，再销毁 Session 同步对象，避免 RPC 与销毁竞争访问已释放状态。
+
 状态 revision 的变化会 notify 可选 Runtime；通知可合并，消费者醒来后重新读取。 这是状态通知，不是要求每个变化都恰好投递一次的事件队列。页面不拥有 Session 生命周期。
 
 取消准备使 operation generation 失效并唤醒等待者；已经发出的 RPC 仍受剩余期限限制， 返回后不再开始下一步或提交结果。取消不回滚服务端已经执行的副作用；后续选择必须重新 确认。关闭 Session 永久拒绝新操作并丢弃迟到结果。Service 断开时 integration 调用 Session close；显式退出先 close，再 stop Service 以中断网络，dispatch drain 并 join 调用方任务，释放 Conversation，最后 destroy Session 和 deinit Service。重连新建两者。

@@ -7,7 +7,12 @@
 h2_pal_result_t
 h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
                                            h2_gizclaw_session_t *session);
-void h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service);
+h2_pal_result_t
+h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service);
+h2_pal_result_t
+h2_gizclaw_service_acquire_session_internal(h2_gizclaw_service_t *service,
+                                            h2_gizclaw_session_t **out);
+void h2_gizclaw_service_release_session_internal(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
     h2_gizclaw_session_t *session, h2_gizclaw_str_t name, uint32_t timeout_ms);
 h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
