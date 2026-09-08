@@ -194,7 +194,11 @@ def _routed_tasks(policies, default_tasks):
 def _audit(label, graph, policies, default_tasks):
     """Fails when the table and the image's declared tasks disagree."""
     tasks, owners = _declared_tasks(label, graph)
-    prefixes = [name[:-1] for name in policies if name.endswith("*")]
+    prefixes = [
+        name[:-1]
+        for name in policies.keys() + default_tasks
+        if name.endswith("*")
+    ]
     for name in policies.keys() + default_tasks:
         if name.endswith("*"):
             if not [task for task in tasks if task.name.startswith(name[:-1])]:
@@ -509,6 +513,8 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
         "  %s policy = {0};" % policy_type,
         "  assert(%s() == H2_PAL_OK);" % flavor.install,
     ])
+    if flavor.allocator:
+        lines.append("  assert(s_config.task_allocator == &s_allocator);")
     for task in tasks:
         name = task.name[:-1] + "any-task" if task.name.endswith("*") else task.name
         lines.append(assertion(_literal(name), task.policy))
