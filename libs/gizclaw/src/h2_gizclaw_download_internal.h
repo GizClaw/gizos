@@ -24,9 +24,5 @@ h2_pal_result_t h2_gizclaw_req_create_download_internal(
     h2_gizclaw_rpc_method_t method, h2_gizclaw_rpc_bytes_t payload,
     uint32_t timeout_ms, const h2_gizclaw_download_codec_t *codec, void *user,
     h2_gizclaw_req_t **out_request);
-h2_pal_result_t
-h2_gizclaw_download_result_internal(const h2_gizclaw_req_t *request,
-                                    const void *tag, const void **out_user,
-                                    uint64_t *out_received);
 
 #endif

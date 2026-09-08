@@ -124,21 +124,3 @@ h2_pal_result_t h2_gizclaw_req_create_download_internal(
   }
   return rc;
 }
-
-h2_pal_result_t
-h2_gizclaw_download_result_internal(const h2_gizclaw_req_t *request,
-                                    const void *tag, const void **out_user,
-                                    uint64_t *out_received) {
-  if (out_user == NULL || out_received == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  *out_user = NULL;
-  *out_received = 0u;
-  const void *context;
-  h2_pal_result_t rc = h2_gizclaw_req_context_internal(request, tag, &context);
-  if (rc == H2_PAL_OK) {
-    const download_t *download = context;
-    *out_user = download->user;
-    *out_received = download->received;
-  }
-  return rc;
-}
