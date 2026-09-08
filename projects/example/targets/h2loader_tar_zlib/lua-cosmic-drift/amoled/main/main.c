@@ -75,7 +75,7 @@ static void image_entry(void *user) {
 
 void app_main(void) {
   h2_pal_result_t result = h2_esp_board_start_entry_task(
-      H2_LUA_COSMIC_DRIFT_ENTRY_TASK_NAME_VALUE, image_entry, NULL);
+      "amoled/lua-cosmic-drift", image_entry, NULL);
   if (result != H2_PAL_OK) {
     printf("H2_BOARD_ENTRY_FAIL board=amoled image=lua-cosmic-drift code=%d\n",
            (int)result);

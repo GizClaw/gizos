@@ -84,6 +84,12 @@ def _generate(
         srcs = [":" + name + "_codegen"],
         output_group = "test_source",
     )
+    for group in ["header", "cmake"]:
+        native.filegroup(
+            name = name + "_" + group,
+            srcs = [":" + name + "_codegen"],
+            output_group = group,
+        )
     return ":" + name + "_source", ":" + name + "_test_source"
 
 def esp_target_task_policy(
@@ -101,7 +107,7 @@ def esp_target_task_policy(
 
     Args:
       name: Name of the generated native component target.
-      directory: Package-relative directory owning the policy component.
+      directory: Package-relative generated output directory for the policy component.
       graph: The firmware dependency graph whose tasks this policy serves.
       policies: One row per task, ``"<task>  <priority>  <core>  <stack>
         <region>"``, or ``"<task>  default"`` for a task deliberately served
@@ -109,7 +115,7 @@ def esp_target_task_policy(
       default_policy: ``"<priority>  <core>  <stack>  <region>"`` served to
         task names without a row of their own.
     """
-    header = directory + "/h2_esp_target_task_policy.h"
+    header = ":" + name + "_header"
     source, test_source = _generate(
         name = name,
         unit = "esp",
@@ -123,10 +129,9 @@ def esp_target_task_policy(
         name = name,
         hdrs = [header],
         srcs = [source],
-        component_directory = _target_directory(directory),
         component_name = "h2_esp_target_task_policy",
         data = [
-            directory + "/CMakeLists.txt",
+            ":" + name + "_cmake",
             ":" + name + "_audit",
         ],
         deps = [_ESP_PAL_CORE],
@@ -167,7 +172,7 @@ def bk7258_target_task_policy(
     Args:
       ap_name: Name of the generated AP native component target.
       cp_name: Name of the generated CP native component target.
-      directory: Package-relative directory owning the policy components.
+      directory: Package-relative generated output directory for the policy components.
       graph: The firmware dependency graph whose tasks the AP policy serves.
       ap_policies: One row per AP task. See ``esp_target_task_policy``.
       ap_default_policy: ``"<priority>  <core>  <stack>  <region>"`` served to
@@ -178,8 +183,8 @@ def bk7258_target_task_policy(
     """
     ap_directory = directory + "/ap"
     cp_directory = directory + "/cp"
-    ap_header = ap_directory + "/h2_bk_target_task_policy.h"
-    cp_header = cp_directory + "/h2_bk_target_task_policy.h"
+    ap_header = ":" + ap_name + "_header"
+    cp_header = ":" + cp_name + "_header"
     ap_source, ap_test_source = _generate(
         name = ap_name,
         unit = "ap",
@@ -203,10 +208,9 @@ def bk7258_target_task_policy(
         name = ap_name,
         hdrs = [ap_header],
         srcs = [ap_source],
-        component_directory = _target_directory(ap_directory),
         component_name = "h2_bk_target_task_policy",
         data = [
-            ap_directory + "/CMakeLists.txt",
+            ":" + ap_name + "_cmake",
             ":" + ap_name + "_audit",
         ],
         execution_unit = "ap",
@@ -216,9 +220,8 @@ def bk7258_target_task_policy(
         name = cp_name,
         hdrs = [cp_header],
         srcs = [cp_source],
-        component_directory = _target_directory(cp_directory),
         component_name = "h2_bk_target_task_policy",
-        data = [cp_directory + "/CMakeLists.txt"],
+        data = [":" + cp_name + "_cmake"],
         execution_unit = "cp",
         deps = [_BK_CP_PAL_CORE],
     )
