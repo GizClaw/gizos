@@ -75,6 +75,28 @@ cc_test(
 )
 
 cc_test(
+    name = "time_retention_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_time.c",
+        "tests/test_h2_esp_platform_time.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + ["-DH2_ESP_TIME_TEST=1"],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/sdk",
+    ],
+    # The provider builds on <sys/time.h>, which MSVC does not ship.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
     name = "safe_call_policy_test",
     srcs = [
         "include/h2_esp_platform_safe_call.h",

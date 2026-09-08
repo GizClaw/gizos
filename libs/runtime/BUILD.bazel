@@ -4,6 +4,60 @@ load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
+# The Runtime sources, headers and dependencies are shared by every variant of
+# the library below, so a build with a feature compiled out cannot drift away
+# from the shipping one.
+RUNTIME_SRCS = [
+    "src/h2_runtime.c",
+    "src/h2_runtime_audio.c",
+    "src/h2_runtime_wifi.c",
+    "src/h2_runtime_component_mapping.c",
+    "src/h2_runtime_custom_event.c",
+    "src/h2_runtime_event.c",
+    "src/h2_runtime_input.c",
+    "src/h2_runtime_internal.h",
+    "src/h2_runtime_state.c",
+    "src/h2_runtime_system_event.c",
+    "src/h2_runtime_system_state.c",
+    "src/h2_runtime_task_names.c",
+    "src/h2_runtime_test.c",
+]
+
+RUNTIME_HDRS = [
+    "include/h2_runtime.h",
+    "include/h2_runtime_component.h",
+    "include/h2_runtime_custom_event.h",
+    "include/h2_runtime_event.h",
+    "include/h2_runtime_input.h",
+    "include/h2_runtime_input_button.h",
+    "include/h2_runtime_input_button_defs.h",
+    "include/h2_runtime_input_imu.h",
+    "include/h2_runtime_input_imu_defs.h",
+    "include/h2_runtime_input_nfc.h",
+    "include/h2_runtime_input_nfc_defs.h",
+    "include/h2_runtime_input_sensor.h",
+    "include/h2_runtime_input_sensor_defs.h",
+    "include/h2_runtime_state.h",
+    "include/h2_runtime_system_event.h",
+    "include/h2_runtime_system_state.h",
+    "include/h2_runtime_task_names.h",
+    "include/h2_runtime_test.h",
+    "include/h2_runtime_types.h",
+]
+
+RUNTIME_DEPS = [
+    ":tasks",
+    "//libs/pal",
+]
+
+# Host platforms, where the Runtime unit tests can actually run.
+RUNTIME_HOST_ONLY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//tools/bazel/platforms:host_windows_target_windows": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 h2_tasks(
     name = "tasks",
     tasks = [
@@ -14,45 +68,16 @@ h2_tasks(
 
 cc_library(
     name = "runtime",
-    srcs = [
-        "src/h2_runtime.c",
-        "src/h2_runtime_audio.c",
-        "src/h2_runtime_component_mapping.c",
-        "src/h2_runtime_custom_event.c",
-        "src/h2_runtime_event.c",
-        "src/h2_runtime_input.c",
-        "src/h2_runtime_internal.h",
-        "src/h2_runtime_state.c",
-        "src/h2_runtime_system_event.c",
-        "src/h2_runtime_system_state.c",
-        "src/h2_runtime_task_names.c",
-        "src/h2_runtime_test.c",
-        "src/h2_runtime_wifi.c",
-    ],
-    hdrs = [
-        "include/h2_runtime.h",
-        "include/h2_runtime_component.h",
-        "include/h2_runtime_custom_event.h",
-        "include/h2_runtime_event.h",
-        "include/h2_runtime_input.h",
-        "include/h2_runtime_input_button.h",
-        "include/h2_runtime_input_button_defs.h",
-        "include/h2_runtime_input_imu.h",
-        "include/h2_runtime_input_imu_defs.h",
-        "include/h2_runtime_input_nfc.h",
-        "include/h2_runtime_input_nfc_defs.h",
-        "include/h2_runtime_input_sensor.h",
-        "include/h2_runtime_input_sensor_defs.h",
-        "include/h2_runtime_state.h",
-        "include/h2_runtime_system_event.h",
-        "include/h2_runtime_system_state.h",
-        "include/h2_runtime_task_names.h",
-        "include/h2_runtime_test.h",
-        "include/h2_runtime_types.h",
-    ],
+    srcs = RUNTIME_SRCS,
+    hdrs = RUNTIME_HDRS,
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + select({
-        "//tools/bazel/platforms:is_bk3633": ["-Wno-error=type-limits"],
+        # bk3633 is BLE-only with no audio path, and its OAD image budget has
+        # no room for observational code, so audio levels build out there.
+        "//tools/bazel/platforms:is_bk3633": [
+            "-Wno-error=type-limits",
+            "-DH2_RUNTIME_AUDIO_LEVELS=0",
+        ],
         "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
         "//conditions:default": [],
     }),
@@ -60,10 +85,28 @@ cc_library(
     includes = [
         "include",
     ],
-    deps = [
-        ":tasks",
-        "//libs/pal",
+    deps = RUNTIME_DEPS,
+)
+
+# The same Runtime, built with audio level measurement compiled out, so the
+# disabled contract is covered by a test that runs instead of only by a
+# cross-compile. local_defines keeps the switch off this library's own sources
+# without leaking it to anything that depends on it, and testonly keeps a
+# product from picking the variant up by accident.
+cc_library(
+    name = "runtime_no_audio_levels",
+    testonly = True,
+    srcs = RUNTIME_SRCS,
+    hdrs = RUNTIME_HDRS,
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "include",
     ],
+    local_defines = ["H2_RUNTIME_AUDIO_LEVELS=0"],
+    target_compatible_with = RUNTIME_HOST_ONLY,
+    deps = RUNTIME_DEPS,
 )
 
 cc_test(
@@ -137,6 +180,26 @@ cc_test(
     }),
     deps = [
         ":runtime",
+        "//libs/pal:unsupported",
+    ],
+)
+
+cc_test(
+    name = "runtime_audio_levels_disabled_test",
+    srcs = [
+        "src/h2_runtime_internal.h",
+        "tests/test_runtime_audio_levels_disabled.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    target_compatible_with = RUNTIME_HOST_ONLY,
+    deps = [
+        ":runtime_no_audio_levels",
         "//libs/pal:unsupported",
     ],
 )

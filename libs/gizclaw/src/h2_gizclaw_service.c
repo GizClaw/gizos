@@ -1357,6 +1357,7 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
   h2_gizclaw_device_cancel_internal(service->device);
   (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
   unlock_service(service);
+  h2_gizclaw_debug_stop_internal(service);
   (void)h2_pal_queue_close(service->config.queue, service->request_queue);
   if (service->net_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->net_task);
