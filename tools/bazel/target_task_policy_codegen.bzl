@@ -533,6 +533,50 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
     ])
     return "\n".join(lines)
 
+def _render_policy_header(flavor):
+    guard = flavor.header.upper().replace(".", "_")
+    return "\n".join([
+        "/* Generated task policy installation API. Do not edit. */",
+        "#ifndef " + guard,
+        "#define " + guard,
+        "",
+        '#include "h2/pal/core/h2_pal_errors.h"',
+        "",
+        "#ifdef __cplusplus",
+        'extern "C" {',
+        "#endif",
+        "",
+        "h2_pal_result_t %s(void);" % flavor.install,
+        "",
+        "#ifdef __cplusplus",
+        "}",
+        "#endif",
+        "",
+        "#endif",
+        "",
+    ])
+
+def _render_policy_cmake(flavor):
+    component = flavor.prefix + "_target_task_policy"
+    unit = " " + flavor.unit if flavor.unit != "esp" else ""
+    register = "idf" if flavor.unit == "esp" else "armino"
+    requires = ["h2_pal_core"]
+    if flavor.unit != "cp":
+        requires.insert(0, "h2_firmware_lib")
+    if flavor.unit != "esp":
+        requires.append("bk_rtos")
+    return "\n".join([
+        "# Generated task policy component. Do not edit.",
+        'include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")',
+        "h2_bazel_native_component_sources(H2_TARGET_TASK_POLICY_SOURCES %s%s)" % (component, unit),
+        "",
+        "%s_component_register(" % register,
+        "    SRCS ${H2_TARGET_TASK_POLICY_SOURCES}",
+        '    INCLUDE_DIRS "."',
+        "    REQUIRES %s)" % " ".join(requires),
+        "",
+    ])
+
 def _task_policy_codegen_impl(ctx):
     label = str(ctx.label)
     tasks, unrouted = _routed_tasks(
@@ -540,6 +584,12 @@ def _task_policy_codegen_impl(ctx):
         ctx.attr.default_tasks,
     )
     default_policy = json.decode(ctx.attr.default_policy_json)
+    flavor = _FLAVORS[ctx.attr.unit]
+    directory = ctx.attr.source_name.rsplit("/", 1)[0]
+    header = ctx.actions.declare_file(directory + "/" + flavor.header)
+    cmake = ctx.actions.declare_file(directory + "/CMakeLists.txt")
+    ctx.actions.write(header, _render_policy_header(flavor))
+    ctx.actions.write(cmake, _render_policy_cmake(flavor))
     source = ctx.actions.declare_file(ctx.attr.source_name)
     test_source = ctx.actions.declare_file(ctx.attr.test_source_name)
     ctx.actions.write(
@@ -559,8 +609,13 @@ def _task_policy_codegen_impl(ctx):
         render_policy_test(label, ctx.attr.unit, tasks, default_policy, ctx.attr.allocator),
     )
     return [
-        DefaultInfo(files = depset([source, test_source])),
-        OutputGroupInfo(source = depset([source]), test_source = depset([test_source])),
+        DefaultInfo(files = depset([source, header, cmake, test_source])),
+        OutputGroupInfo(
+            source = depset([source]),
+            header = depset([header]),
+            cmake = depset([cmake]),
+            test_source = depset([test_source]),
+        ),
     ]
 
 task_policy_codegen = rule(

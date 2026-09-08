@@ -100,6 +100,22 @@ if mode == "native-graph":
             raise SystemExit(f"native component {unit}:{name} was not staged by name")
         if not staged.joinpath("include/component.h").is_file():
             raise SystemExit(f"native component {unit}:{name} omitted its declared header")
+if mode == "generated-policy-graph":
+    manifest = Path(os.environ["H2_BAZEL_COMPONENT_MANIFEST"])
+    manifest_text = manifest.read_text(encoding="utf-8")
+    for unit in ("ap", "cp"):
+        component = "h2_bk_target_task_policy"
+        staged = manifest.parents[3] / "components" / unit / component
+        for name in ("CMakeLists.txt", component + ".h", component + ".c"):
+            if staged.joinpath(name).read_text(encoding="utf-8") != unit:
+                raise SystemExit(f"generated policy {unit} lost or mixed {name}")
+        key = f"H2_BAZEL_COMPONENT_SRCS_{unit.upper()}_H2_BK_TARGET_TASK_POLICY"
+        if key not in manifest_text:
+            raise SystemExit(f"missing execution-unit source key: {key}")
+        source = f"/bazel-out/fixture/bin/task_policy/{unit}/{component}.c"
+        source_list = manifest_text.split(f"set({key}\n", 1)[1].split(")", 1)[0]
+        if source not in source_list:
+            raise SystemExit(f"wrong generated source for {unit}: {source_list}")
 if mode == "make-failure":
     raise SystemExit(23)
 project.joinpath("generated.lock").write_text("temporary\n", encoding="utf-8")
@@ -541,6 +557,32 @@ class Bk7258RunnerTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(output.joinpath("all-app.bin").is_file())
+
+    def test_generated_policy_components_stage_without_source_directories(self):
+        arguments = []
+        for unit in ("ap", "cp"):
+            directory = f"bazel-out/fixture/bin/task_policy/{unit}"
+            component = "h2_bk_target_task_policy"
+            key = f"{unit}:{component}"
+            generated = self.source / directory
+            generated.mkdir(parents=True)
+            arguments.extend(["--native-component", f"{key}={directory}"])
+            for name in ("CMakeLists.txt", component + ".h", component + ".c"):
+                generated.joinpath(name).write_text(unit, encoding="utf-8")
+                arguments.extend(["--native-component-file", f"{key}={directory}/{name}"])
+            arguments.extend([
+                "--native-component-source", f"{key}={directory}/{component}.c",
+                "--native-component-include", f"{key}={directory}",
+            ])
+        self.assertFalse(self.source.joinpath("task_policy").exists())
+        result, output = self._run(
+            name="generated-policy-graph",
+            mode="generated-policy-graph",
+            extra_arguments=arguments,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(output.joinpath("all-app.bin").is_file())
+        self.assertFalse(self.source.joinpath("task_policy").exists())
 
     def test_native_component_inputs_require_a_matching_descriptor(self):
         result, _ = self._run(

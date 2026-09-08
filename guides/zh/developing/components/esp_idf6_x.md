@@ -39,6 +39,8 @@ ESP chip 差异通过以下方式表达：
 
 `h2_pal_core` 只拥有一次性 policy 配置、policy 校验、FreeRTOS task 创建、诊断、join 和清理，不得比较具体 App、library、Loader、modem、board、packaging workflow 或 product task name。最终 portable name 到 absolute priority、core affinity、minimum stack 和 Internal/PSRAM placement 的映射属于具体 firmware target，由该 target BUILD 里的 `esp_target_task_policy` policy table 给出，component source 由 `//tools/bazel:target_task_policy.bzl` 生成到 bazel-out 的 `task_policy/h2_esp_target_task_policy.c`。每个 target 仍然拥有自己独立的一组 trie routes，不通过共享 route table 或通用字符串比较层转发。
 
+任务策略公共规则同时生成安装 API header、策略源码、SDK component `CMakeLists.txt` 和 host test；consumer 只维护 BUILD 任务声明、策略配置、firmware 接线和启动时的 install 调用，无需保存本地 `task_policy/` 目录。
+
 Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_init()` 或直接 PAL task creation 前调用 `h2_esp_target_task_policy_install()`，安装失败必须停止 startup。配置只能成功一次；未配置启动、重复配置和任意 task start attempt 后配置都返回 `H2_PAL_ERR_INVALID_STATE`。生成的 component 通过 `h2_trie_set_fallback()` 注册默认 handler；trie 未命中时把完整 task name 放在 `match.path` 传给该函数，该 handler 返回 target 在 `default_policy` 里写明的 priority、core、minimum stack 与 stack placement。Public H2Loader targets 的 `default_policy` 是 `"4  any  4096  psram"`；private target 可不注册该 handler，或让 handler 返回 `H2_PAL_ERR_NOT_FOUND` 来拒绝，并通过 firmware macro 的 `task_policy` 参数注入私有 component，不能把私有 task name 发布到 GizOS。PAL 只调用 target 提供的单一 resolver，不实现第二套 fallback 分发。
 
 Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board layouts 的 H2Loader firmware targets。特定 App 的 route 只进入实际构建它的 target：`bleikcp-speed/*` 只属于 BLEIKCP speed client/server，modem routes 只属于 modem smoke。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
