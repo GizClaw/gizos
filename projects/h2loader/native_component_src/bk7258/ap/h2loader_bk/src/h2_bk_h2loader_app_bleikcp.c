@@ -312,7 +312,6 @@ int h2_bk_h2loader_init_app_client(
         .fs = runtime->fs,
         .http = runtime->http,
         .wifi = runtime->wifi_sta,
-        .wifi_connect_persists = 1,
         .wifi_settings = runtime->wifi_settings,
         .digest = {
             .start = app_digest_start,

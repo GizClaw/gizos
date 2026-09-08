@@ -45,6 +45,7 @@ static const h2_pal_wifi_sta_vtable_t unsupported_wifi_sta_vtable = {
     .get_status = unsupported_wifi_sta_get_status,
     .scan = unsupported_wifi_sta_scan,
     .connect = unsupported_wifi_sta_connect,
+    .connect_and_save = unsupported_wifi_sta_connect,
     .disconnect = unsupported_wifi_sta_disconnect,
     .get_mac = unsupported_wifi_sta_get_mac,
     .set_power_save = unsupported_wifi_sta_set_power_save,

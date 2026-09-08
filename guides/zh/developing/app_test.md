@@ -564,3 +564,5 @@ rendered pixel、perceived audio、真实网络或产品验收。
 - 主机边界测试复用 Memory、Time、Task、Sync 和 Crypto fixture。Request/Session/Resource 替身、远端响应脚本和资源清理断言仍在 GizClaw 测试中。串行 Task/Sync fake 不能用于真实 Service worker；并发测试继续使用真实／libco provider。
 
 这些接入不需要第二个 Runtime。真实 E2E 保留真实网络、加密、存储和调度；Testing PAL 证据补充业务断言，不替代服务器结果和真机验收。
+
+Wi-Fi fake 的 `connect_status` 可脚本化下一次成功连接的状态；UNKNOWN 不改变当前状态。`connect_and_save` 使用同一 `libs/wifi_sta` 事务和内嵌虚拟 Time，只有目标 GOT_IP 且非零有效 IPv4 才写模拟 Settings。测试可注入连接、状态、时钟与保存错误；该 fake 仍由调用方串行使用。

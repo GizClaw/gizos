@@ -71,11 +71,11 @@ input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
 ## Wi-Fi 凭据与恢复
 
-`runtime->wifi_sta` 的连接 proxy 统一执行配网策略：连接后等待目标 SSID 取得有效 IP，再通过 `runtime->wifi_settings` 保存完整凭据。菜单、BLE 和 GizClaw 必须注入同一个 Runtime proxy，不能分别保存另一份配置。失败、断开或 DHCP 超时不覆盖旧凭据；持久化失败返回真实错误，即使新网络已经连接也不报告配网成功。重新连接同一 SSID 也先解除旧关联，避免缓存连接掩盖错误密码。保存操作的原子性由 Wi-Fi Settings provider 保证。
+`runtime->wifi_sta` 1:1 暴露注入的 PAL provider，不替换 vtable，也不按 timeout 推断持久化策略。`connect` 只连接，不写入、清除或覆盖保存凭据；`connect_and_save` 显式执行目标网络认证、有效 IP 验证与持久化。菜单、BLE、GizClaw RPC 和 Loader 用户配网调用后者；产测临时连接与读取已存配置后的重连调用前者。
 
-连接和断开通过 Runtime 的非阻塞 admission 串行执行，重叠调用返回 BUSY。连接在调用方任务上执行，不创建后台 task；非零 timeout 覆盖关联与 DHCP 等待；零 timeout 保留底层异步发起语义，不等待 IP、不保存配置，供已有启动恢复调用方使用。等待期间正常发布 Wi-Fi 系统事件，不占用 system-state mutex。调用方必须等待操作结束后才能销毁 Runtime。底层 PAL STA 保持单纯连接语义，Runtime proxy 的成功额外保证凭据已保存。
+`connect_and_save` 在调用任务中执行，非零 timeout 是关联与 DHCP 的总预算；零值返回 INVALID_ARG，不改变连接或存储。Provider 串行接纳 connect、connect_and_save 和 disconnect，重叠调用返回 BUSY。连接失败保留旧凭据，保存失败返回真实错误；即使连接同一 SSID 也重新认证，避免旧关联掩盖错误密码。等待与存储算法由 `libs/wifi_sta` 复用，原子替换由 Wi-Fi Settings provider 保证。调用方等待操作结束后才能销毁 provider 或 Runtime。
 
-开机网络 worker 调用 `h2_runtime_wifi_connect_saved()` 恢复同一持久配置，该显式 API 的零 timeout 使用 15 秒默认预算；没有配置返回 NOT_FOUND。Runtime init 不阻塞等待网络，也不自行打开无线连接。调用方负责启动时机和失败重试，不能把公共恢复算法重新写进产品页面。
+开机网络 worker 调用 `h2_runtime_wifi_connect_saved()` 恢复同一持久配置，该显式 API 的零 timeout 使用 15 秒默认关联预算；没有配置返回 NOT_FOUND。恢复调用不重写凭据，返回成功表示 provider 已完成关联，IP 可随后通过 station event/state 到达。Runtime init 不阻塞等待网络，也不自行打开无线连接。调用方负责启动时机和失败重试，不能把公共恢复算法重新写进产品页面。
 
 音量和静音由 Runtime 的 audio state 共同持有。UI 与 GizClaw 使用 `h2_runtime_system_state_audio()` 读取同一 snapshot，用 `h2_runtime_audio_set_volume()` 同时提交设定音量和静音。静音保留设定音量，PAL 实际输出为零；解除静音可直接使用 snapshot 中的设定值。现有 `runtime->audio` percent setter 同样更新这份 state 并取消静音，percent getter 仍返回实际输出音量。失败的 PAL 写入不改变 state，重叠操作返回 BUSY。Getter 对比 backend 实际值以识别绕过 proxy 的外部调整；GizClaw 和产品不得另存音量真值。
 

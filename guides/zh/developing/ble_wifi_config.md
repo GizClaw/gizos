@@ -2,7 +2,7 @@
 
 `libs/ble_wifi_config` 提供设备尚未联网时使用的 BLE 配网服务：手机 App 通过 BLE 扫描周边 AP，并把 Wi-Fi 凭据下发给设备。Library 依赖 PAL 与 `libs/runtime`，不依赖 `libs/bleikcp`，也不依赖 GizClaw RPC —— 配网发生在联网之前，这条路径必须尽量薄。
 
-依赖 Runtime 的原因只有一个：station 状态。`h2_pal_wifi_sta_connect()` 在 AP 接受密钥时就返回，地址还要几百毫秒到几秒才落地，此时读 `ip_valid` 会把正常网络判成 DHCP 失败。真正的状态来自 Wi-Fi system event，而 Runtime event queue 只能由它自己的 main loop 消费，因此 library 不订阅原始 PAL 事件，改为轮询 Runtime 发布的 station 快照（`h2_runtime_system_state_wifi_sta()`）。Runtime 在发布和读取两侧各加一段很短的锁，读者因此总能拿到一个完整快照，自己不需要任何同步。
+内建配网路径显式调用 PAL `connect_and_save`，由 provider 完成认证、目标网络 IP 验证与持久化。Runtime 提供同一 API 与状态快照，library 不维护第二套 DHCP 等待或保存逻辑。
 
 ## API Reference
 
@@ -85,7 +85,7 @@ packet-beta
 
 `state` 取值 `0x01` 正在关联、`0x02` 已关联、`0x03` 已取得地址。progress 是 advisory：忽略它的 App 仍然能从 final 帧知道结果，因此丢帧不重传——丢一帧只损失一次 UI 变化。
 
-关联成功后 worker 继续轮询快照直到拿到地址、station 掉线，或超过 `dhcp_timeout_ms`（默认 12 秒），沿途每观察到一次状态变化就立即发一条 progress 帧。progress 因此天然排在 final 之前——worker 在这个循环返回之前根本走不到 final 帧，不需要队列，也不存在「先看到结论再看到正在关联」的顺序问题。掉线时用快照里的 `disconnect_reason` 映射 reason，而不是拿超时当结论。
+Worker 将 `connect_timeout_ms` 与 `dhcp_timeout_ms` 相加（溢出时饱和到 UINT32_MAX）作为 provider 的单一关联/DHCP 总预算。只有 provider 返回成功才发送已取得地址 progress 与成功 final；失败时读取当前 station status 映射 reason，保存失败不会发送成功 final。中间关联进度不保证逐项发出，手机仍以 final 为准。
 
 final 帧固定三字节，代表本次尝试结束：
 

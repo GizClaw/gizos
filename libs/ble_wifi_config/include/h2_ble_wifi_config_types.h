@@ -116,7 +116,7 @@ typedef int (*h2_ble_wifi_config_connect_fn)(
  * Optional replacement for the built-in disconnect-reason mapping.
  *
  * @param user h2_ble_wifi_config_config_t::user.
- * @param connect_result Result returned by h2_pal_wifi_sta_connect().
+ * @param connect_result Result returned by h2_pal_wifi_sta_connect_and_save().
  * @param status Borrowed station status, or NULL when it could not be read.
  * @return The reason byte to report to the application.
  */
@@ -155,9 +155,11 @@ typedef struct h2_ble_wifi_config_config {
     uint16_t min_att_mtu;
     /** Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_SCAN_TIMEOUT_MS. */
     uint32_t scan_timeout_ms;
-    /** Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_CONNECT_TIMEOUT_MS. */
+    /** Association allowance; summed with DHCP allowance for the provider call.
+     * Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_CONNECT_TIMEOUT_MS. */
     uint32_t connect_timeout_ms;
-    /** Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_DHCP_TIMEOUT_MS. */
+    /** DHCP allowance, included in the same total provider deadline.
+     * Zero selects H2_BLE_WIFI_CONFIG_DEFAULT_DHCP_TIMEOUT_MS. */
     uint32_t dhcp_timeout_ms;
     /**
      * Connect without first scanning for the requested SSID. The default

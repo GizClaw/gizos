@@ -266,7 +266,6 @@ typedef struct h2_runtime_component_mapping {
     h2_pal_periph_id_t periph_id;
 } h2_runtime_component_mapping_t;
 
-void h2_runtime_wifi_bind(h2_runtime_t *runtime);
 void h2_runtime_audio_bind(h2_runtime_t *runtime);
 
 struct h2_runtime_private {
@@ -301,9 +300,6 @@ struct h2_runtime_private {
     h2_pal_netif_api_t netif_proxy;
     h2_pal_mqtt_api_t mqtt_proxy;
     h2_pal_webrtc_api_t webrtc_proxy;
-    h2_pal_wifi_sta_api_t wifi_sta_backend;
-    /* C11 atomic_flag is lock-free even on targets without byte exchange helpers. */
-    atomic_flag wifi_connect_busy;
     h2_pal_wifi_sta_api_t wifi_sta_proxy;
     h2_pal_wifi_ap_api_t wifi_ap_proxy;
     h2_pal_wifi_csi_api_t wifi_csi_proxy;

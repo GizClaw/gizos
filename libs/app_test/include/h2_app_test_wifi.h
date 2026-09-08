@@ -2,17 +2,22 @@
 #define H2_APP_TEST_WIFI_H
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2_app_test_fault.h"
+#include "h2_app_test_time.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 /** Scripted station and saved settings. scan entries/status are test inputs.
- * connect records the request but does not invent a GOT_IP completion; update
- * status and inject the corresponding Runtime event explicitly. Disconnect
+ * connect records the request and applies an explicitly scripted connect_status;
+ * it never invents a GOT_IP completion. Inject Runtime events explicitly. Disconnect
  * success clears status to IDLE. No passwords are logged by this provider. */
 typedef struct h2_app_test_wifi {
   h2_pal_wifi_sta_api_t api;
   h2_pal_wifi_settings_api_t settings;
   h2_pal_wifi_sta_status_t status;
+  /** Optional post-connect state; UNKNOWN leaves current status untouched. */
+  h2_pal_wifi_sta_status_t connect_status;
+  /** Virtual deadline clock used by connect_and_save. */
+  h2_app_test_time_t time;
   h2_pal_wifi_scan_entry_t entries[H2_PAL_WIFI_SCAN_MAX_RESULTS];
   size_t entry_count;
   bool saved_present;
