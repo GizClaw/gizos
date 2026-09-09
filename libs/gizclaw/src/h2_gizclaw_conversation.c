@@ -115,6 +115,7 @@ struct h2_gizclaw_conversation_request {
   atomic_bool downlink_eos;
   atomic_bool media_uplink_eos;
   atomic_int audio_result;
+  atomic_int cancel_source;
   bool media_attached;
   bool transport_committed;
   bool terminal_waiting_for_audio;
@@ -487,7 +488,9 @@ audio_encode_opus(OpusEncoder *encoder, const int16_t *samples,
 }
 
 static h2_pal_result_t
-conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
+conversation_encode_step(h2_gizclaw_conversation_request_t *request,
+                         const char **stage) {
+  *stage = "pcm_prepare";
   h2_pal_result_t prepare_rc = h2_gizclaw_service_pcm_input_internal(
       request->service, &request->input, H2_GIZCLAW_PCM_INPUT_PREPARE, NULL, 0u,
       NULL);
@@ -497,6 +500,7 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
       request->encoder_eos)
     return H2_PAL_OK;
   if (request->encoder == NULL) {
+    *stage = "encoder_create";
     int size = opus_encoder_get_size(1);
     request->encoder =
         size > 0 ? h2_pal_mem_alloc(request->service->client_config.allocator,
@@ -510,6 +514,7 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
       return H2_PAL_ERR_FORMAT;
   }
   if (request->encoded_pending) {
+    *stage = "opus_enqueue";
     h2_pal_result_t rc =
         audio_ring_send(&request->opus_uplink, &request->encoded);
     if (rc != H2_PAL_OK) {
@@ -525,6 +530,7 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
   const bool ended =
       atomic_load_explicit(&request->committed, memory_order_acquire);
   if (request->capture_len < sizeof(request->capture)) {
+    *stage = "pcm_read";
     size_t len = 0;
     h2_pal_result_t rc = h2_gizclaw_service_pcm_input_internal(
         request->service, &request->input, H2_GIZCLAW_PCM_INPUT_READ,
@@ -552,6 +558,7 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
                      ((uint16_t)request->capture[i * 2 + 1] << 8);
     samples[i] = (int16_t)value;
   }
+  *stage = "opus_encode";
   h2_pal_result_t rc =
       audio_encode_opus(request->encoder, samples, &request->encoded);
   if (rc == H2_PAL_OK) {
@@ -563,7 +570,9 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request) {
 }
 
 static h2_pal_result_t
-conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
+conversation_decode_step(h2_gizclaw_conversation_request_t *request,
+                         const char **stage) {
+  *stage = "decoder_create";
   /* Downlink and server errors must progress while input awaits READY. */
   if (atomic_load_explicit(&request->downlink_eos, memory_order_acquire))
     return H2_PAL_OK;
@@ -579,6 +588,7 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
       return H2_PAL_ERR_FORMAT;
   }
   if (request->decoded_offset == request->decoded_len) {
+    *stage = "opus_dequeue";
     h2_gizclaw_conversation_request_message_t input;
     h2_pal_result_t rc = audio_ring_recv(&request->opus_downlink, &input);
     if (rc != H2_PAL_OK)
@@ -592,6 +602,7 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
 
     /* A zero-length item is the transport's RTP loss marker: ask Opus for
      * packet loss concealment over one packet's worth of samples. */
+    *stage = "opus_decode";
     int samples = opus_decode(request->decoder, input.len ? input.data : NULL,
                               (opus_int32)input.len, request->decoded,
                               input.len != 0u
@@ -616,6 +627,7 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
     pcm[i * 2 + 1] = (uint8_t)(sample >> 8);
   }
   {
+    *stage = "pcm_write";
     h2_pal_result_t rc =
         h2_gizclaw_service_pcm_write_internal(request->service, pcm, len);
     if (rc != H2_PAL_OK)
@@ -630,12 +642,26 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request) {
 }
 
 static void record_audio_result(h2_gizclaw_conversation_request_t *request,
-                                h2_pal_result_t result) {
+                                h2_pal_result_t result, const char *stage) {
   if (result == H2_PAL_OK || result == H2_PAL_ERR_WOULD_BLOCK ||
       result == H2_PAL_ERR_TIMEOUT)
     return;
   int expected = H2_PAL_OK;
-  atomic_compare_exchange_strong(&request->audio_result, &expected, result);
+  if (!atomic_compare_exchange_strong(&request->audio_result, &expected, result))
+    return;
+  /* Exactly the first fatal audio result. The caller has released input_mutex;
+   * read only immutable identifiers and atomic counters shared with control. */
+  char message[384];
+  (void)snprintf(message, sizeof(message),
+      "request=conversation stage=audio_worker_failed phase=%s rc=%d "
+      "identity=%llu generation=%llu wire_ready=%d committed=%d "
+      "media_eos=%d frames=%zu bytes=%zu",
+      stage, (int)result, (unsigned long long)request->identity,
+      (unsigned long long)request->generation, atomic_load(&request->wire_ready),
+      atomic_load(&request->committed), atomic_load(&request->media_uplink_eos),
+      atomic_load(&request->queued_frames), atomic_load(&request->queued_bytes));
+  (void)h2_pal_log_write(request->service->client_config.log, H2_PAL_LOG_ERROR,
+                         "gizclaw", message);
 }
 
 void h2_gizclaw_conversation_uplink_step_internal(
@@ -643,14 +669,15 @@ void h2_gizclaw_conversation_uplink_step_internal(
   h2_gizclaw_conversation_request_t *request = media_request_acquire(service);
   if (request == NULL)
     return;
+  const char *stage = "input_lock";
   h2_pal_result_t rc =
       h2_pal_mutex_lock(service->config.sync, request->input_mutex);
   if (rc == H2_PAL_OK) {
     if (atomic_load(&request->audio_result) == H2_PAL_OK)
-      rc = conversation_encode_step(request);
+      rc = conversation_encode_step(request, &stage);
     (void)h2_pal_mutex_unlock(service->config.sync, request->input_mutex);
   }
-  record_audio_result(request, rc);
+  record_audio_result(request, rc, stage);
   media_request_release(service);
 }
 
@@ -668,8 +695,9 @@ void h2_gizclaw_conversation_downlink_step_internal(
        chunk < H2_GIZCLAW_CONVERSATION_DECODE_BURST_CHUNKS &&
        atomic_load(&request->audio_result) == H2_PAL_OK;
        ++chunk) {
-    const h2_pal_result_t rc = conversation_decode_step(request);
-    record_audio_result(request, rc);
+    const char *stage = "decode";
+    const h2_pal_result_t rc = conversation_decode_step(request, &stage);
+    record_audio_result(request, rc, stage);
     if (rc != H2_PAL_OK)
       break;
   }
@@ -1279,11 +1307,41 @@ static void conversation_reply_boundary_dispatched(
   atomic_store_explicit(&request->downlink_eos, false, memory_order_release);
 }
 
+static void log_conversation_state(h2_gizclaw_conversation_request_t *request,
+                                   const char *stage, h2_pal_result_t rc,
+                                   h2_pal_log_level_t level) {
+  bool stopping = false;
+  const bool state_valid = h2_pal_mutex_lock(request->service->config.sync,
+                                            request->service->mutex) == H2_PAL_OK;
+  if (state_valid) {
+    stopping = request->service->stopping;
+    (void)h2_pal_mutex_unlock(request->service->config.sync, request->service->mutex);
+  }
+  char message[512];
+  (void)snprintf(message, sizeof(message),
+      "request=conversation stage=%s identity=%llu generation=%llu rc=%d "
+      "cancel_source=%d wire_ready=%d committed=%d media_eos=%d "
+      "transport_committed=%d audio_rc=%d frames=%zu bytes=%zu "
+      "reply_frames=%zu reply_bytes=%zu notification_pending=%d "
+      "service_state_valid=%d stopping=%d",
+      stage, (unsigned long long)request->identity,
+      (unsigned long long)request->generation, (int)rc,
+      atomic_load(&request->cancel_source), atomic_load(&request->wire_ready),
+      atomic_load(&request->committed), atomic_load(&request->media_uplink_eos),
+      request->transport_committed, atomic_load(&request->audio_result),
+      atomic_load(&request->queued_frames), atomic_load(&request->queued_bytes),
+      atomic_load(&request->reply_frames), atomic_load(&request->reply_bytes),
+      request->notification_pending, state_valid, stopping);
+  (void)h2_pal_log_write(request->service->client_config.log, level, "gizclaw", message);
+}
+
 static h2_pal_result_t
 conversation_request_poll(void *user, h2_gizclaw_client_t *client,
                           const h2_gizclaw_cancel_token_t *cancel_token) {
   h2_gizclaw_conversation_request_t *request = user;
   if (h2_gizclaw_cancel_requested(cancel_token)) {
+    log_conversation_state(request, "cancel_state", H2_PAL_ERR_CLOSED,
+                           H2_PAL_LOG_INFO);
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_DEBUG, "conversation", "poll_cancelled",
         request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
@@ -1297,6 +1355,7 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   const h2_pal_result_t audio_rc = (h2_pal_result_t)atomic_load_explicit(
       &request->audio_result, memory_order_acquire);
   if (audio_rc != H2_PAL_OK) {
+    log_conversation_state(request, "audio_failed", audio_rc, H2_PAL_LOG_ERROR);
     conversation_request_close(request);
     return audio_rc;
   }
@@ -1307,6 +1366,7 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
         now - request->bos_started_at_ms >= (uint64_t)request->timeout_ms)
       rc = H2_PAL_ERR_TIMEOUT;
     if (rc != H2_PAL_OK) {
+      log_conversation_state(request, "input_ready_deadline", rc, H2_PAL_LOG_ERROR);
       conversation_request_close(request);
       return rc;
     }
@@ -1325,12 +1385,14 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_ERR_WOULD_BLOCK;
     if (rc != H2_PAL_OK) {
+      log_conversation_state(request, "input_bos_failed", rc, H2_PAL_LOG_ERROR);
       conversation_request_close(request);
       return rc;
     }
     if (!h2_gizclaw_conversation_wire_input_ready_internal(request->conversation)) {
       rc = h2_gizclaw_client_dispatch_event(client, 0, NULL, NULL);
       if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT) {
+        log_conversation_state(request, "input_ready_dispatch_failed", rc, H2_PAL_LOG_ERROR);
         conversation_request_close(request);
         return rc;
       }
@@ -1535,6 +1597,8 @@ conversation_request_start(void *user, h2_gizclaw_client_t *client,
                            const h2_gizclaw_cancel_token_t *cancel_token) {
   h2_gizclaw_conversation_request_t *request = user;
   if (h2_gizclaw_cancel_requested(cancel_token)) {
+    log_conversation_state(request, "cancel_state", H2_PAL_ERR_CLOSED,
+                           H2_PAL_LOG_INFO);
     h2_gizclaw_service_log_request(
         request->service, H2_PAL_LOG_DEBUG, "conversation", "start_cancelled",
         request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
@@ -1544,6 +1608,7 @@ conversation_request_start(void *user, h2_gizclaw_client_t *client,
   const h2_pal_result_t rc = h2_gizclaw_client_monotonic_ms_internal(
       client, &request->bos_started_at_ms);
   if (rc != H2_PAL_OK) {
+    log_conversation_state(request, "start_clock_failed", rc, H2_PAL_LOG_ERROR);
     conversation_request_close(request);
     return rc;
   }
@@ -1625,6 +1690,7 @@ static h2_pal_result_t conversation_generation_start(
   atomic_init(&request->downlink_eos, false);
   atomic_init(&request->media_uplink_eos, false);
   atomic_init(&request->audio_result, H2_PAL_OK);
+  atomic_init(&request->cancel_source, H2_GIZCLAW_CANCEL_UNSPECIFIED);
   atomic_init(&request->queued_frames, 0u);
   atomic_init(&request->queued_bytes, 0u);
   atomic_init(&request->pcm_write_failures, 0u);
@@ -1689,8 +1755,10 @@ static h2_pal_result_t conversation_generation_finish_input(
     return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc =
       h2_pal_mutex_lock(request->service->config.sync, request->input_mutex);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    record_audio_request(log, "commit_input_lock", request->identity, rc);
     return rc;
+  }
   if (atomic_load_explicit(&request->terminal, memory_order_acquire)) {
     rc = H2_PAL_ERR_CLOSED;
   }
@@ -1701,9 +1769,20 @@ static h2_pal_result_t conversation_generation_finish_input(
     if (rc == H2_PAL_OK)
       atomic_store_explicit(&request->committed, true, memory_order_release);
   }
+  char *message = h2_gizclaw_audio_log_append_internal(
+      log, rc == H2_PAL_OK ? H2_PAL_LOG_DEBUG : H2_PAL_LOG_ERROR);
+  if (message != NULL)
+    (void)snprintf(message, H2_PAL_LOG_MESSAGE_MAX,
+        "stage=commit identity=%llu generation=%llu rc=%d terminal=%d "
+        "committed=%d input_active=%d input_ended=%d input_begun=%d "
+        "tail_len=%zu tail_offset=%zu",
+        (unsigned long long)request->identity,
+        (unsigned long long)request->generation, (int)rc,
+        atomic_load(&request->terminal), atomic_load(&request->committed),
+        request->input.active, request->input.ended, request->input.begun,
+        request->input.tail_len, request->input.tail_offset);
   (void)h2_pal_mutex_unlock(request->service->config.sync,
                             request->input_mutex);
-  record_audio_request(log, "commit", request->identity, rc);
   return rc;
 }
 
@@ -1757,14 +1836,15 @@ static void record_audio_control(h2_gizclaw_service_t *service,
   (void)snprintf(message, H2_PAL_LOG_MESSAGE_MAX,
                  "service=%p conversation=%p stage=%s rc=%d identity=%llu "
                  "generation=%llu next=%llu request=%d input_ended=%d "
-                 "audio_ended=%d",
+                 "audio_ended=%d cancel_source=%d",
                  (void *)service, (void *)conversation, stage, (int)rc,
                  (unsigned long long)(request != NULL ? request->identity : 0u),
                  (unsigned long long)(request != NULL ? request->generation : 0u),
                  (unsigned long long)(conversation != NULL
                                           ? conversation->next_generation : 0u),
                  request != NULL, conversation != NULL && conversation->input_ended,
-                 service->audio_ended);
+                 service->audio_ended,
+                 request != NULL ? atomic_load(&request->cancel_source) : 0);
 }
 
 static void
@@ -1841,10 +1921,17 @@ conversation_audio_start(h2_gizclaw_conversation_t *conversation,
                          h2_gizclaw_audio_log_t *log) {
   if (conversation == NULL || !conversation->service_mode)
     return H2_PAL_ERR_INVALID_ARG;
-  if (conversation->service_request != NULL)
+  if (conversation->service_request != NULL) {
+    record_audio_request(log, "start_has_request",
+                         conversation->service_request->identity,
+                         H2_PAL_ERR_INVALID_STATE);
     return H2_PAL_ERR_INVALID_STATE;
-  if (!h2_gizclaw_service_pcm_readable_internal(conversation->service))
+  }
+  if (!h2_gizclaw_service_pcm_readable_internal(conversation->service)) {
+    record_audio_request(log, "start_no_readable_track", 0u,
+                         H2_PAL_ERR_INVALID_STATE);
     return H2_PAL_ERR_INVALID_STATE;
+  }
   const uint64_t generation = conversation->next_generation++;
   const int timeout_ms =
       conversation->service->client_config.connect_timeout_ms > 0
@@ -1891,10 +1978,13 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     return H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t rc =
       h2_pal_mutex_lock(service->config.sync, service->audio_mutex);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    record_audio_request(log, start ? "start_audio_lock" : "end_audio_lock", 0u, rc);
     return rc;
+  }
   rc = h2_pal_mutex_lock(service->config.sync, service->mutex);
   if (rc != H2_PAL_OK) {
+    record_audio_request(log, start ? "start_service_lock" : "end_service_lock", 0u, rc);
     (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
     return rc;
   }
@@ -1945,19 +2035,28 @@ h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
 
 h2_pal_result_t
 h2_gizclaw_conversation_cancel_internal(h2_gizclaw_conversation_t *conversation,
-                                        h2_gizclaw_audio_log_t *log) {
+                                        h2_gizclaw_audio_log_t *log,
+                                        int source) {
   if (conversation == NULL || !conversation->service_mode)
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_service_t *service = conversation->service;
   h2_pal_result_t rc =
       h2_pal_mutex_lock(service->config.sync, service->audio_mutex);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    record_audio_request(log, "cancel_audio_lock", 0u, rc);
     return rc;
+  }
   if (conversation->service_request != NULL) {
+    int expected = H2_GIZCLAW_CANCEL_UNSPECIFIED;
+    (void)atomic_compare_exchange_strong(
+        &conversation->service_request->cancel_source, &expected, (int)source);
     rc = h2_gizclaw_operation_cancel(conversation->service_request->operation);
     record_audio_control(service, conversation, "cancel_requested", rc,
                       H2_PAL_LOG_DEBUG, log);
     h2_gizclaw_service_pcm_discard_downlink_internal(service);
+  } else {
+    record_audio_control(service, conversation, "cancel_no_request", rc,
+                         H2_PAL_LOG_DEBUG, log);
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
   return rc;
@@ -1969,7 +2068,8 @@ h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation) {
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_service_t *service = conversation->service;
   h2_gizclaw_audio_log_t logs = {0};
-  h2_pal_result_t rc = h2_gizclaw_conversation_cancel_internal(conversation, &logs);
+  h2_pal_result_t rc = h2_gizclaw_conversation_cancel_internal(
+      conversation, &logs, H2_GIZCLAW_CANCEL_API);
   h2_gizclaw_service_flush_audio_log_internal(service, &logs);
   return rc;
 }

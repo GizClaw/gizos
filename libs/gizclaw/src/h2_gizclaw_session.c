@@ -39,12 +39,13 @@ static void record_audio_level(const h2_gizclaw_session_t *s, const char *stage,
   (void)snprintf(message, H2_PAL_LOG_MESSAGE_MAX,
                  "session=%p conversation=%p stage=%s rc=%d event_generation=%llu "
                  "detail=%d open=%d running=%d restarting=%d state=%d "
-                 "closed=%d busy=%d rpc=%d workspace=%d",
+                 "closed=%d busy=%d rpc=%d workspace=%d gen=%llu",
                  (const void *)s, (void *)s->conversation, stage, (int)rc,
                  (unsigned long long)generation, detail,
                  s->state.conversation_input_open, s->conversation_running,
                  s->restarting_input, (int)s->state.conversation, s->closed,
-                 s->busy, s->workspace_rpc_active, (int)s->state.workspace);
+                 s->busy, s->workspace_rpc_active, (int)s->state.workspace,
+                 (unsigned long long)s->state.generation);
 }
 
 static void record_audio(const h2_gizclaw_session_t *s, const char *stage,
@@ -970,7 +971,8 @@ h2_pal_result_t h2_gizclaw_session_cancel_pending(h2_gizclaw_session_t *s) {
  * reply. The caller is a control task; service_poll runs independently. */
 static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
                                                 uint32_t timeout,
-                                                h2_gizclaw_audio_log_t *logs) {
+                                                h2_gizclaw_audio_log_t *logs,
+                                                h2_gizclaw_cancel_source_t source) {
   if (!s->conversation_running)
     return H2_PAL_OK;
   if (s->state.conversation_input_open) {
@@ -978,7 +980,7 @@ static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
         s->config.service, false, logs);
   }
   h2_pal_result_t rc =
-      h2_gizclaw_conversation_cancel_internal(s->conversation, logs);
+      h2_gizclaw_conversation_cancel_internal(s->conversation, logs, source);
   if (rc != H2_PAL_OK)
     return rc;
   s->state.conversation_input_open = false;
@@ -1033,7 +1035,7 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
     strcpy(s->state.target_workspace, s->state.current_workspace);
   }
   changed(s);
-  rc = stop_conversation_locked(s, timeout, &logs);
+  rc = stop_conversation_locked(s, timeout, &logs, H2_GIZCLAW_CANCEL_WORKSPACE);
   if (rc != H2_PAL_OK) {
     s->workspace_rpc_active = false;
     s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
@@ -1126,6 +1128,7 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
     return rc;
   }
   if (!start && s->conversation == NULL) {
+    record_audio(s, "audio_end_no_conversation", &logs, H2_PAL_OK, 0u, 0);
     unlock_audio(s, &logs);
     return H2_PAL_OK;
   }
@@ -1139,6 +1142,8 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
   }
   if ((!start && !s->state.conversation_input_open) ||
       (start && s->state.conversation_input_open)) {
+    record_audio(s, start ? "audio_start_already_open" : "audio_end_not_open",
+                 &logs, H2_PAL_OK, 0u, 0);
     unlock_audio(s, &logs);
     return H2_PAL_OK;
   }
@@ -1146,7 +1151,7 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
     s->busy = true;
     s->restarting_input = true;
     record_audio_level(s, "interrupt_begin", &logs, H2_PAL_OK, 0u, 0, H2_PAL_LOG_INFO);
-    rc = stop_conversation_locked(s, 30000u, &logs);
+    rc = stop_conversation_locked(s, 30000u, &logs, H2_GIZCLAW_CANCEL_RESTART);
     record_audio(s, "interrupt_drained", &logs, rc, 0u, 0);
     s->restarting_input = false;
     s->busy = false;
@@ -1171,7 +1176,8 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
     s->state.conversation_input_open = start;
     if (!start &&
         s->state.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME) {
-      rc = h2_gizclaw_conversation_cancel_internal(s->conversation, &logs);
+      rc = h2_gizclaw_conversation_cancel_internal(
+          s->conversation, &logs, H2_GIZCLAW_CANCEL_REALTIME_END);
       record_audio(s, "audio_end_cancel", &logs, rc, 0u, 0);
     }
     if (start) {

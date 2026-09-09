@@ -107,6 +107,45 @@ result 由 request handle 持有，通过 `h2_gizclaw_resp_parse_speech_transcri
 
 连接失败不应反复打开 microphone；Audio 启动失败也不应销毁仍可复用的 GizClaw connection。重试由 App policy 决定，observer 不自动重试。
 
+## PTT 控制与输入失败诊断
+
+Session 的 `audio_start` / `audio_end` 返回日志包含 Session 地址、Conversation 地址、
+`gen`（Session generation）、事件 generation、`open/running/restarting/state` 和
+`closed/busy/rpc/workspace`。它们是锁内状态快照，解锁后才调用 Log PAL。
+`audio_end_no_conversation`、`audio_end_not_open`、`audio_start_already_open` 是 DEBUG
+级幂等跳过；成功不代表这次一定执行了新的 input end。真正进入 Service 的控制还会产生
+已有的 `service_audio_start/service_audio_end`，关联 request identity/generation。
+
+`start_has_request`、`start_no_readable_track` 和各控制锁失败标明准确返回位置；
+`commit` 在 input mutex 内记录 `terminal/committed/input_active/input_ended/input_begun`
+及 tail 长度、偏移，随后解锁再输出。`committed=1` 只代表本地 PCM 输入已封口；
+`media_eos=1` 表示媒体上行消费到 EOS；`transport_committed=1` 才是协议 input end 已发送。
+这几个状态不能互相替代。
+
+取消请求记录 `cancel_source`：0 未经带来源的取消入口（例如 Service stop），1 public
+Conversation cancel API，2 Session 按住重启输入，3 Workspace 切换，4 realtime input end。
+该值保留本轮第一次取消调用的来源；`cancel_requested` 的 rc 才说明该调用是否成功。
+网络推进观察到取消时输出一次 INFO `cancel_state`，包含 identity/generation、以上输入
+状态、首个 audio rc、PCM/Opus 计数以及 `service_state_valid/stopping`。来源 1 无法区分
+上层是用户挂断、mic 失败还是命令清理，必须由 App 在调用位置记录真实原因。
+`cancel_no_request` 是 DEBUG 级空操作。普通取消本身不按错误刷屏。
+
+音频 worker 只在本轮第一个致命错误时输出 ERROR `audio_worker_failed`：`phase` 区分
+`input_lock/pcm_prepare/pcm_read/encoder_create/opus_encode/opus_enqueue` 和
+`decoder_create/opus_dequeue/opus_decode/pcm_write`，保留 PAL rc、identity/generation、
+`wire_ready/committed/media_eos` 与已消费 PCM 字节数、已编码帧数。
+成功、WOULD_BLOCK 和常规 TIMEOUT 不新增逐帧日志。网络 owner 随后输出 `audio_failed`
+状态快照；BOS、READY deadline/dispatch 和初始时钟的失败也有独立 ERROR 阶段。
+日志不包含 PCM、Opus、转写或回复文本。
+
+H106 必须分别记录 `session_audio_start → AUDIO_PREPARE → MIC_START` 和
+`MIC_STOP → uplink_finish → session_audio_end` 每个失败返回点。其 COMMIT 分支在
+MIC_STOP 或 uplink_finish 失败时可能根本不调用 GizOS input end；所以“有 PCM、无
+input_committed”不能单独证明 GizOS 丢失了 end。App 需同时记录命令、自己的 generation、
+取消触发原因及 capture start/stop/quiesce 的原始返回，不能将 H106 generation 与库内
+request generation 混为同一个计数。NULL Session/Conversation 无可用 Log PAL 时，参数
+拒绝仍由调用方记录。没有新日志无法追溯断言旧 EOS 串轮或屏幕 INVALID_ARG 的来源。
+
 ## H106 接入
 
 H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC record 键与 Desktop 的 host key 只负责产生相同 action；两端共用 H106 App 自己持有的 chat state 和 effect。具体交互见 产品对话流程。
