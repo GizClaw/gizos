@@ -862,14 +862,14 @@ void h2_gizclaw_conversation_describe_peer_event_internal(
   const char *id = peer_event_stream_id(event);
   (void)snprintf(
       out, cap,
-      "label=%s id=%.40s error=%d route_id=%.40s text_open=%d audio_ended=%d "
-      "ended=%d terminal_pending=%d",
+      "generation=%llu input=%.24s ready=%d committed=%d canceled=%d "
+      "label=%.12s id=%.40s error=%d route=%.16s ended=%d pending=%d",
+      (unsigned long long)conversation->generation, conversation->stream_id,
+      conversation->input_ready, conversation->committed, conversation->canceled,
       label != NULL ? label : "-", id != NULL ? id : "-",
       event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS
-          ? (int)event->payload.eos.has_error
-          : 0,
-      route->id, route->text_open, route->audio_ended, route->ended,
-      conversation->terminal_pending);
+          ? (int)event->payload.eos.has_error : 0,
+      route->id, route->ended, conversation->terminal_pending);
 }
 
 bool h2_gizclaw_conversation_has_pending_peer_event_internal(
@@ -1284,7 +1284,7 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
   h2_gizclaw_conversation_request_t *request = user;
   if (h2_gizclaw_cancel_requested(cancel_token)) {
     h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_WARN, "conversation", "poll_cancelled",
+        request->service, H2_PAL_LOG_INFO, "conversation", "poll_cancelled",
         request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
         request->queued_bytes);
     conversation_request_close(request);
@@ -1535,7 +1535,7 @@ conversation_request_start(void *user, h2_gizclaw_client_t *client,
   h2_gizclaw_conversation_request_t *request = user;
   if (h2_gizclaw_cancel_requested(cancel_token)) {
     h2_gizclaw_service_log_request(
-        request->service, H2_PAL_LOG_WARN, "conversation", "start_cancelled",
+        request->service, H2_PAL_LOG_INFO, "conversation", "start_cancelled",
         request->identity, H2_PAL_ERR_CLOSED, 0, request->queued_frames,
         request->queued_bytes);
     return H2_PAL_ERR_CLOSED;
@@ -1561,8 +1561,11 @@ conversation_request_complete(void *user, h2_gizclaw_operation_t *operation,
   atomic_store_explicit(&request->terminal, true, memory_order_release);
   h2_gizclaw_service_log_request(
       request->service,
-      result->result == H2_PAL_OK ? H2_PAL_LOG_WARN : H2_PAL_LOG_ERROR,
-      "conversation", "completed", request->identity, result->result, 0,
+      result->result == H2_PAL_OK ||
+              result->terminal_kind == H2_GIZCLAW_OPERATION_CANCELED
+          ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+      "conversation", "completed", request->identity, result->result,
+      (int)result->terminal_kind,
       request->queued_frames, request->queued_bytes);
   h2_gizclaw_service_log_request(
       request->service, H2_PAL_LOG_INFO, "conversation", "reply_summary",
@@ -1616,31 +1619,42 @@ static h2_pal_result_t conversation_generation_start(
   atomic_init(&request->reply_bytes, 0u);
   h2_pal_mutex_config_t input_config = {.name = "$gizclaw/conversation-input",
                                         .allocator = allocator};
+  const char *failure_stage = "create_input_mutex";
   h2_pal_result_t rc = h2_pal_mutex_create(service->config.sync, &input_config,
                                            &request->input_mutex);
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK) {
+    failure_stage = "create_uplink_ring";
     rc = audio_ring_init(&request->opus_uplink, service,
                          sizeof(h2_gizclaw_conversation_request_message_t),
                          H2_GIZCLAW_CONVERSATION_OPUS_UPLINK_RING_ITEMS);
-  if (rc == H2_PAL_OK)
+  }
+  if (rc == H2_PAL_OK) {
+    failure_stage = "create_downlink_ring";
     rc = audio_ring_init(&request->opus_downlink, service,
                          sizeof(h2_gizclaw_conversation_request_message_t),
                          H2_GIZCLAW_CONVERSATION_OPUS_DOWNLINK_RING_ITEMS);
+  }
   /* Snapshot before attaching; the uplink task alone discards stale PCM. */
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK) {
+    failure_stage = "create_pcm_input";
     rc = h2_gizclaw_service_pcm_input_internal(
         service, &request->input, H2_GIZCLAW_PCM_INPUT_START, NULL, 0u, NULL);
+  }
   /* Reserve the route before admission. Service audio workers wait for BOS. */
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK) {
+    failure_stage = "create_media_attach";
     rc = h2_gizclaw_conversation_media_attach(service, request);
-  if (rc == H2_PAL_OK)
+  }
+  if (rc == H2_PAL_OK) {
+    failure_stage = "create_submit";
     rc = h2_gizclaw_service_submit_async_internal(
         service, identity, conversation_request_start,
         conversation_request_poll, conversation_request_complete, request,
         &request->operation);
+  }
   if (rc != H2_PAL_OK) {
     h2_gizclaw_service_log_request(service, H2_PAL_LOG_ERROR, "conversation",
-                                   "create_failed", identity, rc, 0, 0u, 0u);
+                                   failure_stage, identity, rc, 0, 0u, 0u);
     h2_gizclaw_conversation_media_detach(request);
     audio_ring_close(&request->opus_uplink);
     audio_ring_close(&request->opus_downlink);
@@ -1718,6 +1732,31 @@ service_conversation_event(void *user,
                                       event);
 }
 
+/* audio_mutex protects the logical route and request lifetime. */
+static void log_audio_control(h2_gizclaw_service_t *service,
+                              h2_gizclaw_conversation_t *conversation,
+                              const char *stage, h2_pal_result_t rc) {
+  if (service->client_config.log == NULL)
+    return;
+  const h2_gizclaw_conversation_request_t *request =
+      conversation != NULL ? conversation->service_request : NULL;
+  char message[H2_PAL_LOG_MESSAGE_MAX];
+  (void)snprintf(message, sizeof(message),
+                 "service=%p conversation=%p stage=%s rc=%d identity=%llu "
+                 "generation=%llu next=%llu request=%d input_ended=%d "
+                 "audio_ended=%d",
+                 (void *)service, (void *)conversation, stage, (int)rc,
+                 (unsigned long long)(request != NULL ? request->identity : 0u),
+                 (unsigned long long)(request != NULL ? request->generation : 0u),
+                 (unsigned long long)(conversation != NULL
+                                          ? conversation->next_generation : 0u),
+                 request != NULL, conversation != NULL && conversation->input_ended,
+                 service->audio_ended);
+  (void)h2_pal_log_write(service->client_config.log,
+                         rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
+                         "gizclaw", message);
+}
+
 static void
 service_conversation_complete(void *user,
                               h2_gizclaw_conversation_request_t *request) {
@@ -1729,6 +1768,7 @@ service_conversation_complete(void *user,
     (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
     return;
   }
+  log_audio_control(service, conversation, "completion_release", H2_PAL_OK);
   const h2_gizclaw_operation_result_t result_copy = request->operation_result;
   h2_gizclaw_conversation_completion_fn completion = conversation->completion;
   void *callback_user = conversation->callback_user;
@@ -1860,6 +1900,8 @@ static h2_pal_result_t service_audio_control(h2_gizclaw_service_t *service,
                : conversation_audio_end(conversation);
   else
     rc = H2_PAL_ERR_INVALID_STATE;
+  log_audio_control(service, conversation,
+                    start ? "service_audio_start" : "service_audio_end", rc);
   if (rc == H2_PAL_OK)
     service->audio_ended = !start;
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
@@ -1888,6 +1930,7 @@ h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation) {
     return rc;
   if (conversation->service_request != NULL) {
     rc = h2_gizclaw_operation_cancel(conversation->service_request->operation);
+    log_audio_control(service, conversation, "cancel_requested", rc);
     h2_gizclaw_service_pcm_discard_downlink_internal(service);
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);

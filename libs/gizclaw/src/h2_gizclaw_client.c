@@ -429,7 +429,7 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
   }
   if (peer_event.type !=
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
-    char detail[160] = "";
+    char detail[H2_PAL_LOG_MESSAGE_MAX] = "";
     if (client->active_conversation != NULL)
       h2_gizclaw_conversation_describe_peer_event_internal(
           client->active_conversation, &peer_event, detail, sizeof(detail));

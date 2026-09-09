@@ -3,6 +3,11 @@
 
 #include "h2_gizclaw_session.h"
 
+/* Borrow the Service Log PAL without exposing Service state to Session. */
+void h2_gizclaw_service_log_session_internal(
+    const h2_gizclaw_service_t *service, h2_pal_log_level_t level,
+    const char *message);
+
 /* Session and its Service outlive all admitted RPC calls. */
 h2_pal_result_t
 h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,

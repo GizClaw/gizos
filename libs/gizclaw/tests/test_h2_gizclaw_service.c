@@ -7891,10 +7891,40 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
   }
 }
 
+typedef struct conversation_log_capture {
+  atomic_bool control_error;
+  atomic_bool canceled_completion;
+} conversation_log_capture_t;
+
+static int conversation_capture_log(void *user, h2_pal_log_level_t level,
+                                     const char *scope, const char *message) {
+  (void)scope;
+  conversation_log_capture_t *capture = user;
+  if (strstr(message, "stage=completed") != NULL &&
+      strstr(message, "rc=-10 detail=1") != NULL) {
+    assert(level == H2_PAL_LOG_INFO);
+    atomic_store(&capture->canceled_completion, true);
+  }
+  /* Simulate an ERROR-only sink for control failures. */
+  if (level != H2_PAL_LOG_ERROR)
+    return H2_PAL_OK;
+  if (strstr(message, "stage=service_audio_start") != NULL) {
+    assert(strstr(message, "conversation=") != NULL);
+    assert(strstr(message, "identity=1 generation=1 next=2 request=1") != NULL);
+    assert(strstr(message, "input_ended=0 audio_ended=0") != NULL);
+    atomic_store(&capture->control_error, true);
+  }
+  return H2_PAL_OK;
+}
+
 static void test_conversation_public_audio_tasks(void) {
   for (unsigned mode = 0; mode < 25; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
+    conversation_log_capture_t log_capture = {0};
+    const h2_pal_log_vtable_t log_vtable = {.write = conversation_capture_log};
+    const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+    service->client_config.log = &log;
     conversation_test_t test = {.service = service,
                                 .env = &env,
                                 .app_thread = pthread_self(),
@@ -7956,6 +7986,8 @@ static void test_conversation_public_audio_tasks(void) {
                mode == 3 || mode == 17 ? NULL : conversation_test_hook,
                conversation_test_complete, &test, &conversation) == H2_PAL_OK);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
+    assert(atomic_load(&log_capture.control_error));
     if (mode == 10) {
       for (unsigned i = 0; i < 8; ++i)
         assert(h2_gizclaw_service_post_internal(
@@ -8208,6 +8240,8 @@ static void test_conversation_public_audio_tasks(void) {
     assert(h2_gizclaw_pcm_track_destroy(&owned_track) == H2_PAL_OK);
     assert(atomic_load(&test.starts) == 6 && atomic_load(&test.joins) == 6);
     assert(test.event_close_count == 1);
+    if (mode == 21)
+      assert(atomic_load(&log_capture.canceled_completion));
     h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
     h2_gizclaw_test_set_packet_read(NULL, NULL);
   }

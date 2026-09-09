@@ -45,6 +45,14 @@ void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
                          message);
 }
 
+void h2_gizclaw_service_log_session_internal(
+    const h2_gizclaw_service_t *service, h2_pal_log_level_t level,
+    const char *message) {
+  if (service != NULL && service->client_config.log != NULL)
+    (void)h2_pal_log_write(service->client_config.log, level, "gizclaw",
+                           message);
+}
+
 static uint64_t service_monotonic_ms(const h2_gizclaw_service_t *service) {
   uint64_t now_ms = 0u;
   if (service == NULL || service->config.client_config == NULL ||
