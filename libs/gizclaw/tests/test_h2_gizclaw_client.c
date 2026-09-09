@@ -40,6 +40,8 @@ static int test_sleep_calls;
 static uint32_t test_last_sleep_ms;
 static h2_pal_result_t test_sleep_result = H2_PAL_OK;
 static int test_warn_logs;
+static int test_error_logs;
+static char test_last_error[H2_PAL_LOG_MESSAGE_MAX];
 static char test_last_log_message[H2_PAL_LOG_MESSAGE_MAX];
 static int test_send_would_block_count = 1;
 static h2_pal_result_t test_send_result = H2_PAL_OK;
@@ -948,12 +950,84 @@ static int test_log_write(void *user, h2_pal_log_level_t level,
                           const char *scope, const char *message) {
   (void)user;
   assert(strcmp(scope, "gizclaw") == 0);
+  if (level == H2_PAL_LOG_ERROR) {
+    ++test_error_logs;
+    snprintf(test_last_error, sizeof(test_last_error), "%s", message);
+  }
   if (level == H2_PAL_LOG_WARN) {
     ++test_warn_logs;
     (void)snprintf(test_last_log_message, sizeof(test_last_log_message), "%s",
                    message);
   }
   return H2_PAL_OK;
+}
+
+int h2_gizclaw_test_http_request(h2_gizclaw_client_t *client,
+                                 const gzc_http_request_t *request,
+                                 gzc_http_response_t *response);
+
+static int test_http_rc;
+static int test_http_status;
+static int test_http_request(void *user, const h2_pal_http_request_t *request,
+                             h2_pal_http_response_t *response) {
+  (void)user;
+  (void)request;
+  test_monotonic_ms += 37u;
+  response->status_code = test_http_status;
+  response->body = (uint8_t *)"SECRET_RESPONSE";
+  response->body_len = strlen("SECRET_RESPONSE");
+  return test_http_rc;
+}
+static void test_http_free(void *user, h2_pal_http_response_t *response) {
+  (void)user;
+  (void)response;
+}
+static void test_http_diagnostics(h2_gizclaw_config_t config) {
+  const h2_pal_http_vtable_t vtable = {
+      .request = test_http_request,
+      .response_free = test_http_free,
+  };
+  const h2_pal_http_api_t http = {.vtable = &vtable};
+  config.http = &http;
+  h2_gizclaw_client_t *client = NULL;
+  assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
+  const char *urls[] = {
+      "http://user:SECRET_USER@ap.example:9821/server-info?key=SECRET_QUERY",
+      "https://[::1]:443/SECRET_PATH?key=SECRET_QUERY#SECRET_FRAGMENT",
+      "http://bad\nhost/SECRET_PATH",
+  };
+  for (size_t i = 0u; i < sizeof(urls) / sizeof(urls[0]); ++i) {
+    gzc_http_request_t request = {0};
+    request.method = (gzc_http_method_t)H2_PAL_HTTP_GET;
+    request.url.data = urls[i];
+    request.url.len = strlen(urls[i]);
+    for (int failure = 0; failure < 2; ++failure) {
+      test_http_rc = failure == 0 ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+      test_http_status = failure == 0 ? 0 : 503;
+      test_error_logs = 0;
+      gzc_http_response_t response = {0};
+      int rc = h2_gizclaw_test_http_request(client, &request, &response);
+      assert(rc == (failure == 0 ? GZC_ERR_HTTP : GZC_OK));
+      assert(test_error_logs == 1);
+      assert(strstr(test_last_error, "SECRET") == NULL);
+      assert(strstr(test_last_error, "elapsed_ms=37 clock_valid=1") != NULL);
+      assert(strstr(test_last_error,
+                    failure == 0 ? "pal_rc=-6" : "status=503") != NULL);
+      assert(strstr(test_last_error, "method=GET") != NULL);
+      if (i == 0u)
+        assert(strstr(test_last_error,
+                      "endpoint=ap.example:9821 path=/server-info") != NULL);
+      if (i == 1u)
+        assert(strstr(test_last_error, "endpoint=[::1]:443 path=redacted") !=
+               NULL);
+      if (i == 2u)
+        assert(strstr(test_last_error, "endpoint=redacted") != NULL);
+    }
+  }
+  test_http_rc = H2_PAL_ERR_TIMEOUT;
+  assert(h2_gizclaw_client_connect(client) == H2_PAL_ERR_IO);
+  assert(strstr(test_last_error, "stage=client_connect") != NULL);
+  h2_gizclaw_client_deinit(client);
 }
 
 static h2_pal_result_t test_get_monotonic_ms_unsupported(void *user,
@@ -1266,6 +1340,7 @@ int main(void) {
   config.log = &log;
   config.cancel_requested = test_cancel;
   test_provider_completions(config);
+  test_http_diagnostics(config);
 
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)0x1;
   fails +=
