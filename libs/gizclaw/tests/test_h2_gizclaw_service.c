@@ -7128,7 +7128,7 @@ typedef struct conversation_test {
   uint8_t output[16000];
   size_t packets;
   unsigned event_close_count, mode;
-  unsigned bos_attempts, eos_attempts;
+  unsigned bos_attempts, eos_attempts, audio_bos_attempts;
   atomic_bool input_ack, audio_bos, audio_eos;
   uint64_t sent_sequence;
   unsigned ack_reads;
@@ -7196,6 +7196,9 @@ static int conversation_test_send(void *user, gzc_event_stream_t *stream,
       assert(atomic_load(&test->bos) && !atomic_load(&test->audio_bos));
       assert(strcmp(event->payload.bos.mime_type, "audio/opus") == 0);
       assert(strcmp(event->payload.bos.stream_id, test->stream) == 0);
+      assert(!atomic_load(&test->eos));
+      if (test->mode == 27 && ++test->audio_bos_attempts <= 3u)
+        return GZC_ERR_WOULD_BLOCK;
       atomic_store(&test->audio_bos, true);
     } else {
       assert(event->payload.bos.kind == gizclaw_events_v1_StreamKind_STREAM_KIND_UNSPECIFIED);
@@ -7984,7 +7987,7 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 27; ++mode) {
+  for (unsigned mode = 0; mode < 28; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_log_capture_t log_capture = {.service = service};
@@ -8156,7 +8159,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
-                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24) &&
+                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24 || mode == 27) &&
                  atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
@@ -8208,6 +8211,10 @@ static void test_conversation_public_audio_tasks(void) {
             : mode == 5              ? H2_PAL_ERR_TIMEOUT
             : mode == 6 || mode == 8 || mode == 23 ? H2_PAL_ERR_IO
                                      : H2_PAL_OK));
+    if (mode == 27) {
+      assert(test.audio_bos_attempts == 4u && test.packets > 0u);
+      assert(atomic_load(&test.audio_eos) && atomic_load(&test.eos));
+    }
     if (mode == 26) {
       assert(test.sent_sequence == 2u && test.packets == 0u);
       assert(atomic_load(&test.eos) && !atomic_load(&test.canceled));

@@ -177,6 +177,8 @@ void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
  * Audio packets use the PAL Track exclusively; these are not user APIs.
  * A WOULD_BLOCK open retains its lease in out_conversation for BOS retry;
  * the network owner must destroy it on every terminal path. */
+int h2_gizclaw_conversation_wire_begin_audio_internal(
+    h2_gizclaw_conversation_t *conversation);
 int h2_gizclaw_conversation_wire_open_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t workspace_name,
     uint64_t generation, int timeout_ms,
