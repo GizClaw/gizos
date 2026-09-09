@@ -148,6 +148,8 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
  * public input state. Completion still comes through service_poll. Start
  * interrupts a previous waiting/replying generation on the same route, waiting
  * up to 30 seconds for local cancellation dispatch (not for the agent reply).
+ * Start opens a control BOS immediately. PCM opens its audio channel lazily;
+ * start followed by end without PCM sends only a control BOS/EOS pair.
  * Repeated start while recording and end while idle are harmless. Call from a
  * control task; service_poll must continue on its owner while start waits.
  */
