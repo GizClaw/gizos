@@ -214,6 +214,25 @@ static int draw_polygon(lua_State *s) {
   double fa=color_args(s,2,3,fill),sa=color_args(s,4,5,stroke);
   double width=finite_number(s,6),sha=color_args(s,7,8,shadow),blur=finite_number(s,9);
   if(width<0 || width>8 || blur<0 || blur>32)return luaL_error(s,"invalid polygon stroke/blur");
+  /* Integer-aligned, fill-only rectangles need neither supersampling nor a
+   * scratch mask. Clip to the canvas so full-screen fades stay bounded by the
+   * framebuffer instead of the small UI polygon raster limit. */
+  if(count==4 && (sa==0 || width==0) && sha==0 &&
+      minx<maxx && miny<maxy && minx==floor(minx) && maxx==floor(maxx) &&
+      miny==floor(miny) && maxy==floor(maxy) &&
+      points[0][0]==points[3][0] && points[1][0]==points[2][0] &&
+      points[0][1]==points[1][1] && points[2][1]==points[3][1]) {
+    int left=(int)fmax(0,fmin(canvas->width,minx));
+    int right=(int)fmax(0,fmin(canvas->width,maxx));
+    int top=(int)fmax(0,fmin(canvas->height,miny));
+    int bottom=(int)fmax(0,fmin(canvas->height,maxy));
+    if(fa==0)return 0;
+    for(int y=top;y<bottom;y++)for(int x=left;x<right;x++) {
+      uint8_t *pixel=canvas->rgb+((size_t)y*canvas->width+x)*3;
+      for(int c=0;c<3;c++)pixel[c]=(uint8_t)fmin(255,floor(pixel[c]*(1-fa)+fill[c]+.5));
+    }
+    return 0;
+  }
   int radius=(int)ceil(blur*1.5),pad=radius+(int)ceil(width*.5)+2;
   int x0=(int)floor(minx)-pad,y0=(int)floor(miny)-pad;
   int w=(int)ceil(maxx)+pad-x0,h=(int)ceil(maxy)+pad-y0;
@@ -438,7 +457,18 @@ static int draw_sprite_atlas(lua_State *s) {
   lua_rawgetp(s,LUA_REGISTRYINDEX,&s_styles_key);
   style_cache_t *cache=lua_touserdata(s,-1);
   if(!cache || lua_rawlen(s,-1)<sizeof(*cache)+bytes*6) {
-    lua_pop(s,1);cache=lua_newuserdatauv(s,sizeof(*cache)+bytes*6,0);
+    /* Replacing the registry value alone leaves the old userdata alive until
+     * the next GC cycle.  When a scene switches from a smaller atlas to a
+     * larger one, allocating both caches at once can exceed an otherwise
+     * sufficient VM budget.  Drop the sole strong reference and collect it
+     * before allocating the replacement so cache growth is not additive. */
+    int replacing=cache!=NULL;
+    lua_pop(s,1);
+    if(replacing) {
+      lua_pushnil(s);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_styles_key);
+      lua_gc(s,LUA_GCCOLLECT,0);
+    }
+    cache=lua_newuserdatauv(s,sizeof(*cache)+bytes*6,0);
     memset(cache,0,sizeof(*cache));
     lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_styles_key);
   }

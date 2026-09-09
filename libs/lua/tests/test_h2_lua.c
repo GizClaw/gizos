@@ -1456,6 +1456,20 @@ int main(void) {
     assert(s_test_display_fixture.pixels[5u*8u+5u]==0xffffu);
     assert(s_test_display_fixture.pixels[4u*8u+4u]==0u);
 
+    /* AMOLED entry fades used to exceed the 256-pixel polygon scratch limit.
+     * Oversized rectangles must clip and blend correctly without that mask. */
+    static const uint8_t screen_fade_script[] =
+        "local d=require('display');d.clear('white');d.begin_composite();"
+        "local c={r=0,g=0,b=0};"
+        "d.draw_polygon({{0,0},{368,0},{368,448},{0,448}},c,.5,c,0,0,c,0,0);"
+        "d.draw_polygon({{-368,-448},{2,-448},{2,448},{-368,448}},c,1,c,0,0,c,0,0);"
+        "d.draw_polygon({{368,0},{736,0},{736,448},{368,448}},c,1,c,0,0,c,0,0);"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@screen-fade.lua",screen_fade_script,sizeof(screen_fade_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    for(unsigned y=0;y<8;y++)for(unsigned x=0;x<8;x++)
+      assert(s_test_display_fixture.pixels[y*8u+x]==(x<2?0u:0x7befu)); /* alpha rounds to 128/255 */
+
     static const uint8_t opacity_script[] =
         "local d=require('display');d.clear('black');d.begin_composite();"
         "d.draw_affine_asset('@test/tiny.h2r8',1,0,0,1,2,3,nil,.5);"

@@ -18,6 +18,42 @@ qi_duel_art(
 )
 
 qi_duel_art(
+    name = "beam_clash_h106",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/beam-clash-h106.h2rs",
+    symbol = "qi_duel_beam_clash_h106",
+)
+
+qi_duel_art(
+    name = "beam_clash_amoled",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/beam-clash-amoled.h2rs",
+    symbol = "qi_duel_beam_clash_amoled",
+)
+
+qi_duel_art(
+    name = "beam_clash_fade_h106",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/beam-clash-fade-h106.h2rs",
+    symbol = "qi_duel_beam_clash_fade_h106",
+)
+
+qi_duel_art(
+    name = "beam_clash_fade_amoled",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/beam-clash-fade-amoled.h2rs",
+    symbol = "qi_duel_beam_clash_fade_amoled",
+)
+
+qi_duel_art(
+    name = "result_words",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/result-words.h2rs",
+    symbol = "qi_duel_result_words",
+)
+
+qi_duel_art(
+    name = "result_streaks",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/result-streaks.h2r8",
+    symbol = "qi_duel_result_streaks",
+)
+
+qi_duel_art(
     name = "skill_styles",
     src = "//projects/example/apps/lua-qi-duel:assets/generated/skill-styles.h2rs",
     symbol = "qi_duel_skill_styles",
@@ -118,12 +154,6 @@ h2_lua_resource(
 )
 
 qi_duel_art(
-    name = "ui_labels",
-    src = "//projects/example/apps/lua-qi-duel:assets/generated/ui-labels.h2r8",
-    symbol = "qi_duel_ui_labels",
-)
-
-qi_duel_art(
     name = "countdown_rgba",
     src = "//projects/example/apps/lua-qi-duel:assets/generated/countdown.h2r8",
     symbol = "qi_duel_countdown_rgba",
@@ -139,6 +169,18 @@ h2_lua_resource(
     name = "qi_duel_script",
     src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/main.lua",
     symbol = "qi_duel_script",
+)
+
+h2_lua_resource(
+    name = "qi_duel_sounds",
+    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/sounds.lua",
+    symbol = "qi_duel_sounds",
+)
+
+h2_lua_resource(
+    name = "qi_duel_sounds_pcm",
+    src = "//projects/example/apps/lua-qi-duel:assets/generated/sounds/sounds_pcm.lua",
+    symbol = "qi_duel_sounds_pcm",
 )
 
 cc_library(
@@ -162,9 +204,10 @@ cc_library(
     tags = ["h2-ci-native-package"],
     deps = [
         ":qi_duel_script",
+        ":qi_duel_sounds",
+        ":qi_duel_sounds_pcm",
         ":qi_duel_rules",
         ":qi_duel_link_protocol",
-        ":ui_labels",
         ":countdown_rgba",
         ":impact_labels_rgba",
         ":wall_atlas",
@@ -179,6 +222,12 @@ cc_library(
         ":skill_colors",
         ":action_opponent",
         ":action_hands",
+        ":beam_clash_h106",
+        ":beam_clash_amoled",
+        ":beam_clash_fade_h106",
+        ":beam_clash_fade_amoled",
+        ":result_words",
+        ":result_streaks",
         "//libs/lua",
         "//libs/runtime",
         "//projects/example/apps/lua-bloomspeaker/app:controller",
@@ -224,5 +273,22 @@ cc_test(
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
         "//projects/example/libs/host_runtime",
+    ],
+)
+
+h2_lua_resource(
+    name = "qi_duel_sounds_test_script",
+    src = "tests/sounds_test.lua",
+    symbol = "qi_duel_sounds_test",
+)
+
+cc_test(
+    name = "qi_duel_sounds_test",
+    srcs = ["tests/test_sounds.c"],
+    deps = [
+        ":qi_duel_sounds",
+        ":qi_duel_sounds_pcm",
+        ":qi_duel_sounds_test_script",
+        "//libs/lua:lua_core",
     ],
 )

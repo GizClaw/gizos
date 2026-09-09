@@ -28,6 +28,7 @@ typedef struct fixture {
   unsigned button_id;
   int button_sent;
   int game_lock_probe;
+  int intro_probe;
 } fixture_t;
 
 static h2_pal_result_t button_map_list(void *user,h2_runtime_component_t kind,
@@ -117,7 +118,7 @@ static int draw_bitmap(void *user, const h2_display_rect_t *rect,
         assert(frame[i] == 0u);
     }
     assert(lit > 50u);
-    if (fixture->draw != 0u && !fixture->tap_count && !fixture->drag_distance && !fixture->drag_dy && !fixture->button_id && !fixture->game_lock_probe) assert(hash == fixture->frame_hash);
+    if (fixture->draw != 0u && !fixture->tap_count && !fixture->drag_distance && !fixture->drag_dy && !fixture->button_id && !fixture->game_lock_probe && !fixture->intro_probe) assert(hash == fixture->frame_hash);
     fixture->frame_hash = hash;
   }
   fixture->draw++;
@@ -494,21 +495,27 @@ int main(void) {
       .layer="carousel",.time_ms="0",.drag="0",.click_controls=1})==H2_PAL_OK);
     assert(fixture.frame_hash==idle[0]);
   }
-  /* Game mode menu, direct computer start and one-click BLE-unavailable path. */
+  /* The default game is a single click-to-pair intro. Fixed-time game probes
+   * bypass the real-time intro so combat selection tests remain deterministic. */
   uint32_t game_unlocked_hash=0;
   for(int h106=0;h106<=1;h106++) {
-    uint32_t menu_hash=0;
-    for(int choice=0;choice<3;choice++) {
-      fixture=(fixture_t){.h106=h106,.inspector_layer=22,
-        .tap_count=choice?1:0,.tap_x=choice?(h106?120:184):0,
-        .tap_y=choice?(h106?(choice==1?120:175):(choice==1?215:285)):0};
-      assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
-        .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
-        .layer="full",.time_ms="0",.battle=1,.click_controls=1})==H2_PAL_OK);
-      if(!choice)menu_hash=fixture.frame_hash;
-      else assert(menu_hash!=fixture.frame_hash);
-      if(h106 && choice==1)game_unlocked_hash=fixture.frame_hash;
-    }
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="0",.battle=1,.click_controls=1})==H2_PAL_OK);
+    if(h106)game_unlocked_hash=fixture.frame_hash;
+
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22,.intro_probe=1};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.battle=1,.click_controls=1})==H2_PAL_OK);
+    uint32_t waiting_hash=fixture.frame_hash;
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22,.intro_probe=1,.tap_count=1,
+      .tap_x=h106?120:184,.tap_y=h106?120:224};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.battle=1,.click_controls=1})==H2_PAL_OK);
+    assert(waiting_hash!=fixture.frame_hash);
   }
   /* Confirmed glass state differs from candidate and rejects side clicks. */
   uint32_t locked_hash=0;
@@ -532,6 +539,60 @@ int main(void) {
       if(!sample)first=fixture.frame_hash;
       else assert(first==fixture.frame_hash);
     }
+  }
+  /* Beam-clash close-ups render on both layouts and the combo push reaches a
+   * visibly different final composition from an equal-power midpoint. */
+  for(int h106=0;h106<=1;h106++) {
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="420",.clash="equal"})==H2_PAL_OK);
+    uint32_t equal_clash=fixture.frame_hash;
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="820",.clash="player-combo"})==H2_PAL_OK);
+    assert(fixture.frame_hash!=equal_clash);
+
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="1080",.clash="equal"})==H2_PAL_OK);
+    assert(fixture.frame_hash!=equal_clash); /* Reviewed four-frame fade reaches black. */
+
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="240",.result="win"})==H2_PAL_OK);
+    uint32_t sliding_result=fixture.frame_hash;
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="640",.result="win"})==H2_PAL_OK);
+    uint32_t lit_result=fixture.frame_hash;
+    assert(lit_result!=sliding_result); /* Split words arrive before lighting. */
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="640",.result="lose"})==H2_PAL_OK);
+    assert(fixture.frame_hash!=lit_result);
+
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="1200",.result="win"})==H2_PAL_OK);
+    uint32_t moving_result=fixture.frame_hash;
+    assert(moving_result!=lit_result); /* Directional bars keep passing after word light-up. */
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="1600",.result="win"})==H2_PAL_OK);
+    assert(fixture.frame_hash!=moving_result); /* The light train remains in motion. */
+    fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+      .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+      .layer="full",.time_ms="2600",.result="win"})==H2_PAL_OK);
+    assert(fixture.frame_hash!=moving_result); /* Independent speeds do not collapse into one tile loop. */
   }
   h2_runtime_deinit(runtime);
   static const h2_runtime_component_mapper_vtable_t button_mapper_vtable={button_map_list,button_map_get};

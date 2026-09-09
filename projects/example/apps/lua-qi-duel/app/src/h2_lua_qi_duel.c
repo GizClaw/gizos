@@ -8,9 +8,10 @@
 #include "qi_duel_link.h"
 #include "qi_duel_assets.h"
 #include "qi_duel_script_generated.h"
+#include "qi_duel_sounds_generated.h"
+#include "qi_duel_sounds_pcm_generated.h"
 #include "qi_duel_rules_generated.h"
 #include "qi_duel_link_protocol_generated.h"
-#include "ui_labels_generated.h"
 #include "countdown_rgba_generated.h"
 #include "impact_labels_rgba_generated.h"
 #include "wall_atlas_generated.h"
@@ -26,6 +27,12 @@
 #include "skill_colors_generated.h"
 #include "action_opponent_generated.h"
 #include "action_hands_generated.h"
+#include "beam_clash_h106_generated.h"
+#include "beam_clash_amoled_generated.h"
+#include "beam_clash_fade_h106_generated.h"
+#include "beam_clash_fade_amoled_generated.h"
+#include "result_words_generated.h"
+#include "result_streaks_generated.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -61,6 +68,10 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
     .source_size = symbol##_size,                                              \
   }
   const h2_lua_resource_t resources[] = {
+      {.name = "@qi-duel/sounds.lua", .source = qi_duel_sounds,
+       .source_size = qi_duel_sounds_size},
+      {.name = "@qi-duel/sounds_pcm.lua", .source = qi_duel_sounds_pcm,
+       .source_size = qi_duel_sounds_pcm_size},
       {.name = "@qi-duel/main.lua",
        .source = qi_duel_script,
        .source_size = qi_duel_script_size},
@@ -68,8 +79,6 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
        .source_size = qi_duel_rules_size},
       {.name = "@qi-duel/link_protocol.lua", .source = qi_duel_link_protocol,
        .source_size = qi_duel_link_protocol_size},
-      {.name = "@qi-duel/ui-labels.h2r8", .source = qi_duel_ui_labels,
-       .source_size = qi_duel_ui_labels_size},
       {.name = "@qi-duel/countdown.h2r8", .source = qi_duel_countdown_rgba,
        .source_size = qi_duel_countdown_rgba_size},
       {.name = "@qi-duel/impact-labels.h2r8",
@@ -79,6 +88,24 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
        .source_size = qi_duel_action_opponent_size},
       {.name = "@qi-duel/action-hands.h2rs", .source = qi_duel_action_hands,
        .source_size = qi_duel_action_hands_size},
+      {.name = "@qi-duel/beam-clash-h106.h2rs",
+       .source = qi_duel_beam_clash_h106,
+       .source_size = qi_duel_beam_clash_h106_size},
+      {.name = "@qi-duel/beam-clash-amoled.h2rs",
+       .source = qi_duel_beam_clash_amoled,
+       .source_size = qi_duel_beam_clash_amoled_size},
+      {.name = "@qi-duel/beam-clash-fade-h106.h2rs",
+       .source = qi_duel_beam_clash_fade_h106,
+       .source_size = qi_duel_beam_clash_fade_h106_size},
+      {.name = "@qi-duel/beam-clash-fade-amoled.h2rs",
+       .source = qi_duel_beam_clash_fade_amoled,
+       .source_size = qi_duel_beam_clash_fade_amoled_size},
+      {.name = "@qi-duel/result-words.h2rs",
+       .source = qi_duel_result_words,
+       .source_size = qi_duel_result_words_size},
+      {.name = "@qi-duel/result-streaks.h2r8",
+       .source = qi_duel_result_streaks,
+       .source_size = qi_duel_result_streaks_size},
       {.name = "@qi-duel/wall-lights.h2lf",
        .source = qi_duel_wall_atlas,
        .source_size = qi_duel_wall_atlas_size},
@@ -174,6 +201,8 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
         {.name = "action", .value = config->action ? config->action : ""},
         {.name = "actor", .value = config->actor ? config->actor : ""},
         {.name = "impact", .value = config->impact ? config->impact : ""},
+        {.name = "clash", .value = config->clash ? config->clash : ""},
+        {.name = "result", .value = config->result ? config->result : ""},
     };
     result = h2_lua_job_submit_resource(host, "@qi-duel/main.lua", args, sizeof(args)/sizeof(args[0]),
                                         &job_id);

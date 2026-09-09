@@ -53,14 +53,28 @@ local options = type(args) == "table" and args or {}
 local DESKTOP_CLICKS = options.click_controls=="1"
 local inspector_layer = options.layer or "full"
 local PLAY_GAME=options.battle=="1" and inspector_layer=="full"
+local sfx
+if PLAY_GAME then
+    local ok,audio = pcall(require,"audio")
+    if ok and type(audio)=="table" then
+        sfx = require("sounds").new(audio,require("sounds_pcm"))
+    end
+end
+local fixed_time_ms = tonumber(options.time_ms)
+local impact_probe = options.impact ~= "" and options.impact or nil
+local result_probe = options.result ~= "" and options.result or nil
 local Link=PLAY_GAME and require("duel_link") or nil
 local Protocol=PLAY_GAME and require("link_protocol") or nil
 local json=PLAY_GAME and require("json") or nil
-local page,mode,menu_selection=PLAY_GAME and "menu" or "battle","demon",1
-local network,link_error,menu_press=nil,nil,nil
-local fixed_time_ms = tonumber(options.time_ms)
-local impact_probe = options.impact ~= "" and options.impact or nil
+local INTRO_ENABLED=PLAY_GAME and fixed_time_ms==nil and result_probe==nil
+local page,mode=INTRO_ENABLED and "intro" or "battle",
+    INTRO_ENABLED and "pending" or "demon"
+local network=nil
 local scene_started_ms = system.millis()
+local Intro={PAIR_TIMEOUT_MS=8000,MIN_SEARCH_MS=2400,SLOWDOWN_MS=650,
+    TILT_MS=1450,FADE_MS=480,
+    clash_probe=options.clash and options.clash~="" and options.clash or nil}
+local intro=INTRO_ENABLED and {phase="ready",particle_ms=0,last_ms=0} or nil
 local supported_layers = {full=true,walls=true,wheel=true,arena=true,dust=true,
     particles=true,opponent=true,["hand-left"]=true,["hand-right"]=true,
     ["arena-dust"]=true,scene7=true,hud=true,scene8=true,scene11=true,
@@ -71,6 +85,11 @@ assert(fixed_time_ms == nil or (fixed_time_ms >= 0 and fixed_time_ms < math.huge
     "invalid inspector time")
 assert(impact_probe == nil or impact_probe == "combo" or impact_probe == "armor-break",
     "invalid impact probe")
+assert(result_probe == nil or result_probe == "win" or result_probe == "lose",
+    "invalid result probe")
+assert(Intro.clash_probe==nil or Intro.clash_probe=="equal" or
+    Intro.clash_probe=="player-combo" or Intro.clash_probe=="enemy-combo" or
+    Intro.clash_probe=="both-combo","invalid clash probe")
 
 -- Fixed 368x448 composition values from the approved device layout.
 local HUD_W, HUD_H = 190, 190 * 116 / 398
@@ -115,6 +134,11 @@ local function clamp(value, low, high)
     if value < low then return low end
     if value > high then return high end
     return value
+end
+
+local function ease(value)
+    value=clamp(value,0,1)
+    return value*value*(3-2*value)
 end
 
 local function iround(value)
@@ -193,6 +217,8 @@ assert(qi>=0 and qi<=CHARGE_MAX and qi%1==0,"invalid charge value")
 local player_hp, enemy_hp = 4, 4
 if PLAY_GAME then qi,player_hp,enemy_hp=0,5,5 end
 local battle,invalid_fx,confirm_fx=nil,nil,nil
+local settlement=result_probe and {kind=result_probe,started=0,clash=false} or nil
+local RESULT_ENTRY_MS,RESULT_EXIT_MS,INTRO_REENTRY_MS=1100,1050,480
 local SKILL_SCALE=H106 and .82 or 1
 local function controls_locked()
     return PLAY_GAME and battle and battle.phase~="over" and
@@ -371,26 +397,124 @@ local function begin_round(now)
     battle.bot_at=now+math.random(650,1500)
 end
 local function new_battle(now)
+    if sfx then sfx.stop() end
     battle={players=Rules.new(),number=1}
     qi,player_hp,enemy_hp=0,5,5
     meter_fx={charge=nil,player=nil,enemy=nil}
-    cast,throw_fx,invalid_fx,confirm_fx=nil,nil,nil,nil
+    cast,throw_fx,invalid_fx,confirm_fx,settlement=nil,nil,nil,nil,nil
     begin_round(now)
 end
-local function activate_mode(index,now)
-    menu_selection=index;network=nil;link_error=nil;battle=nil;cast=nil
-    if index==1 then mode="demon";page="battle";new_battle(now)
+
+local function begin_settlement_exit(now)
+    if not PLAY_GAME or not settlement or settlement.exit_started then return false end
+    if now-settlement.started<RESULT_ENTRY_MS then return false end
+    settlement.exit_started=now
+    print("H2_QI_DUEL_RESULT phase=fade-out")
+    return true
+end
+
+local function finish_settlement_exit(now)
+    if not settlement or not settlement.exit_started or
+        now-settlement.exit_started<RESULT_EXIT_MS then return false end
+    if mode=="void" then pcall(Link.stop) end
+    network,battle,cast,throw_fx,invalid_fx,confirm_fx=nil,nil,nil,nil,nil,nil
+    settlement=nil;mode="pending";page="intro"
+    intro={phase="ready",particle_ms=0,last_ms=now,reentry_started=now}
+    -- Result input is the new-session confirmation. Begin pairing immediately;
+    -- do not require a second press after the black transition.
+    Intro.start(now)
+    print("H2_QI_DUEL_RESULT phase=pairing-wait")
+    return true
+end
+
+function Intro.rate(now)
+    if not intro or intro.phase=="done" then return 1 end
+    if intro.phase=="ready" then return .22 end
+    if intro.phase=="search" then
+        local age=now-intro.started
+        if age<1200 then return .22+ease(age/1200)*.38 end
+        if age<2200 then return .60+ease((age-1200)/1000)*1.60 end
+        return 2.20
+    end
+    if intro.phase=="slowdown" then
+        local p=ease((now-intro.phase_started)/Intro.SLOWDOWN_MS)
+        return 2.20+(0.30-2.20)*p
+    end
+    if intro.phase=="tilt" then
+        return .30+.70*ease((now-intro.phase_started)/Intro.TILT_MS)
+    end
+    return 1
+end
+
+function Intro.start(now)
+    if not intro or intro.phase~="ready" then return end
+    intro.phase="search";intro.started=now;intro.phase_started=now
+    intro.last_ms=now;intro.connected=false;intro.decision=nil
+    local called,ok,rc=pcall(Link.pair)
+    intro.pair_started=called and ok or false
+    intro.pair_result=called and rc or tostring(ok)
+    print(string.format("H2_QI_DUEL_INTRO phase=search pair_started=%s result=%s",
+        tostring(intro.pair_started),tostring(intro.pair_result)))
+end
+
+function Intro.finish(now)
+    local online=false
+    if intro.decision=="void" and intro.pair_started then
+        local ok,_,connected=pcall(Link.state)
+        online=ok and connected or false
+    end
+    intro.phase="done";intro.last_ms=now;page="battle"
+    if online then
+        mode="void";network=nil;battle=nil
+        print("H2_QI_DUEL_INTRO result=online")
     else
-        mode="void"
-        local ok,rc=Link.pair()
-        page=ok and "pairing" or "link-error"
-        if not ok then link_error="BLE UNAVAILABLE ("..tostring(rc)..")" end
+        if intro.pair_started then pcall(Link.stop) end
+        intro.pair_started=false;mode="demon";network=nil
+        new_battle(now)
+        print("H2_QI_DUEL_INTRO result=computer")
+    end
+end
+
+function Intro.update(now)
+    if not intro then return end
+    local dt=clamp(now-intro.last_ms,0,100)
+    intro.particle_ms=intro.particle_ms+dt*Intro.rate(now)
+    intro.last_ms=now
+    if intro.phase=="ready" or intro.phase=="done" then return end
+    if intro.phase=="search" then
+        local connected=false
+        if intro.pair_started then
+            local ok,_,is_connected=pcall(Link.state)
+            if ok then connected=is_connected else intro.pair_started=false end
+        end
+        intro.connected=connected
+        local age=now-intro.started
+        if (connected and age>=Intro.MIN_SEARCH_MS) or age>=Intro.PAIR_TIMEOUT_MS then
+            intro.decision=connected and "void" or "demon"
+            intro.phase="slowdown";intro.phase_started=now
+            if not connected and intro.pair_started then
+                pcall(Link.stop);intro.pair_started=false
+            end
+            print(string.format("H2_QI_DUEL_INTRO phase=slowdown decision=%s waited_ms=%d",
+                intro.decision,age))
+        end
+    elseif intro.phase=="slowdown" and now-intro.phase_started>=Intro.SLOWDOWN_MS then
+        intro.phase="tilt";intro.phase_started=now
+        print("H2_QI_DUEL_INTRO phase=tilt")
+    elseif intro.phase=="tilt" and now-intro.phase_started>=Intro.TILT_MS then
+        intro.phase="fade";intro.phase_started=now
+        print("H2_QI_DUEL_INTRO phase=fade")
+    elseif intro.phase=="fade" and now-intro.phase_started>=Intro.FADE_MS then
+        Intro.finish(now)
     end
 end
 local function leave_link()
+    if sfx then sfx.stop() end
     if mode=="void" then Link.stop() end
-    page="menu";network=nil;battle=nil;cast=nil
+    network=nil;battle=nil;cast=nil;settlement=nil;mode="pending";page="intro"
+    intro={phase="ready",particle_ms=0,last_ms=scene_time()}
 end
+if PLAY_GAME and not INTRO_ENABLED and not result_probe then new_battle(0) end
 if PLAY_GAME then
     submit_action=function(kind,now)
         if not battle then return false end
@@ -418,6 +542,10 @@ if PLAY_GAME then
     end
 end
 local function play_result(result,now)
+    if sfx then
+        -- Results are in local-player order, including network matches.
+        sfx.play({result.actions[1]},now)
+    end
     battle.result=result;battle.phase="play";battle.started=now;battle.applied=false
     local index=confirm_fx and confirm_fx.index or selected
     if result.actions[1]=="invalid" then
@@ -425,6 +553,11 @@ local function play_result(result,now)
     else start_icon_echo(index,0) end
     confirm_fx=nil
     cast={started=now,duration=Rules.PLAY_MS,actor="both",round_actions=result.actions,power=result.power}
+    if result.winner==1 or result.winner==2 then
+        local clash=result.actions[1]=="wave" and result.actions[2]=="wave"
+        settlement={kind=result.winner==1 and "win" or "lose",
+            started=now+(clash and 1600 or 1500),clash=clash}
+    else settlement=nil end
     print(string.format("H2_QI_DUEL_ROUND round=%d player=%s enemy=%s damage=%d/%d",
         battle.number,result.actions[1],result.actions[2],result.damage[1],result.damage[2]))
 end
@@ -481,12 +614,15 @@ local function update_network(now)
     elseif network.phase=="ready" and battle then battle.phase="waiting";cast=nil end
 end
 local function update_battle(now)
-    if not PLAY_GAME or page=="menu" or page=="link-error" then return end
+    if not PLAY_GAME then return end
+    if intro and intro.phase~="done" then Intro.update(now);return end
+    if page~="battle" then return end
     if mode=="void" then
         local ok,err=pcall(update_network,now)
         if not ok then
-            link_error=tostring(err):match("([^:]+)$") or "LINK ERROR"
-            page="link-error";Link.stop();network=nil
+            local message=tostring(err):match("([^:]+)$") or "LINK ERROR"
+            print("H2_QI_DUEL_LINK_ERROR "..message)
+            leave_link()
         end
         return
     end
@@ -548,22 +684,13 @@ local function resolve_touch_target(x, y)
 end
 
 local click_zone,click_cancelled=nil,false
-local function mode_button(x,y)
-    local left=(SCREEN_W-math.min(224,SCREEN_W-40))/2
-    if x<left or x>SCREEN_W-left then return nil end
-    local top=math.floor(SCREEN_H*.43);local height=H106 and 42 or 56
-    if y>=top and y<=top+height then return 1 end
-    if y>=top+height+12 and y<=top+height*2+12 then return 2 end
-end
-local function menu_touch(info)
-    if info.just_pressed then
-        menu_press=page=="menu" and mode_button(info.x,info.y) or
-            (info.y>=SCREEN_H*.76 and 3 or nil)
-    end
-    if info.just_released and menu_press then
-        if page=="menu" and mode_button(info.x,info.y)==menu_press then activate_mode(menu_press,scene_time())
-        elseif page~="menu" and menu_press==3 and info.y>=SCREEN_H*.76 then leave_link() end
-        menu_press=nil
+local intro_pressed=false
+local function intro_touch(info)
+    if not intro or intro.phase~="ready" then intro_pressed=false;return end
+    if info.just_pressed then intro_pressed=true end
+    if info.just_released then
+        if intro_pressed then Intro.start(scene_time()) end
+        intro_pressed=false
     end
 end
 local function carousel_click_zone(x,y)
@@ -604,7 +731,11 @@ local function handle_desktop_click(info,x,y)
 end
 
 local function handle_touch(info)
-    if PLAY_GAME and page~="battle" then return menu_touch(info) end
+    if PLAY_GAME and settlement then
+        if info.just_pressed then begin_settlement_exit(scene_time()) end
+        return
+    end
+    if PLAY_GAME and intro and intro.phase~="done" then return intro_touch(info) end
     if controls_locked() then
         click_zone=nil;touch_tracking=false;gesture_mode=nil;gesture_skill=nil
         carousel_offset=carousel_offset*.76
@@ -691,11 +822,12 @@ if H106 then
     local function key_down(id)
         if held[id] then return end
         held[id]=true
-        if PLAY_GAME and page~="battle" then
-            if page=="menu" then
-                if id==9 or id==10 then menu_selection=3-menu_selection
-                elseif id==11 then activate_mode(menu_selection,scene_time()) end
-            elseif id==11 then leave_link() end
+        if PLAY_GAME and settlement then
+            begin_settlement_exit(scene_time())
+            return
+        end
+        if PLAY_GAME and intro and intro.phase~="done" then
+            if id==11 then Intro.start(scene_time()) end
             return
         end
         if inspector_layer~="full" and inspector_layer~="carousel" then return end
@@ -782,7 +914,40 @@ local function hsl(hue, lightness)
     color_cache[key] = result
     return result
 end
-local function arena_project(x,z) return {184+420*x/z,187+624/z} end
+local particle_tilt_value=1
+function Intro.camera_tilt(now)
+    if not intro or intro.phase=="done" or intro.phase=="fade" then return 1 end
+    if intro.phase~="tilt" then return 0 end
+    return ease((now-intro.phase_started)/Intro.TILT_MS)
+end
+function Intro.scene_fade(now)
+    if not intro or intro.phase=="done" then return 1 end
+    if intro.phase~="fade" then return 0 end
+    return ease((now-intro.phase_started)/Intro.FADE_MS)
+end
+local function arena_project_45(x,z) return {184+420*x/z,187+624/z} end
+local function arena_project_top(x,z) return {184+x*36,220+(z-8)*36} end
+local function arena_project(x,z)
+    local top,tilted=arena_project_top(x,z),arena_project_45(x,z)
+    local mix=particle_tilt_value
+    return {top[1]+(tilted[1]-top[1])*mix,top[2]+(tilted[2]-top[2])*mix}
+end
+local function particle_perspective(z)
+    return 1+(8/z-1)*particle_tilt_value
+end
+-- The entry camera starts directly above the arena. Every particle uses the
+-- same clock, size, colour and radius as its diametrically opposite partner,
+-- so the waiting pattern is exactly point-symmetric instead of merely radial.
+function Intro.top_particle(index,t)
+    local zero=index-1
+    local pair=math.floor(zero/2)
+    local seed=space_particles[pair*2+1]
+    local opposite=zero%2
+    local angle=((pair*.61803398875)%1)*TAU+opposite*math.pi
+    local progress=(seed.p0+t*seed.speed*.67)%1
+    local radius=5.10+hash01(pair*47+9)*.72
+    return progress,angle,radius,seed.size,seed.hue
+end
 local function arena_polar(radius,angle)
     return arena_project(radius*math.cos(angle),8+radius*math.sin(angle))
 end
@@ -810,11 +975,20 @@ local function draw_particle_path(points,width,hue,alpha)
     end
 end
 local function draw_space_particles(now_ms)
-    local t=now_ms*.001
+    particle_tilt_value=Intro.camera_tilt(now_ms)
+    local particle_ms=now_ms
+    if intro then
+        particle_ms=intro.particle_ms
+        if intro.phase=="done" then particle_ms=particle_ms+now_ms-intro.last_ms end
+    end
+    local t=particle_ms*.001
     for index,p in ipairs(space_particles) do
         local i=index-1
+        local top_progress,top_angle,top_extent,top_size,top_hue=
+            Intro.top_particle(index,t)
         if i<52 then
-            local progress=(p.p0+t*p.speed*.72)%1
+            local final_progress=(p.p0+t*p.speed*.72)%1
+            local progress=top_progress+(final_progress-top_progress)*particle_tilt_value
             local size_fraction,opacity
             if progress<.58 then
                 local grow=smoothstep(progress/.58)
@@ -825,23 +999,38 @@ local function draw_space_particles(now_ms)
             end
             local lateral=(hash01(i*31+4)*2-1)*.76
             local forward=math.sqrt(1-lateral*lateral)
-            local distance=smoothstep(progress)*(5.05+hash01(i*47+9)*.72)
-            local world_z=8-forward*distance
+            local final_distance=smoothstep(final_progress)*(5.05+hash01(i*47+9)*.72)
+            local top_distance=smoothstep(top_progress)*top_extent
+            local world_z=8-forward*final_distance
             if world_z>1.15 then
-                local perspective=8/world_z
-                local trail=(.21+p.size*.11)*(.5+perspective^.82*.82)
-                local tail_distance=math.max(0,distance-trail)
-                local head=arena_project(lateral*distance,world_z)
-                local tail=arena_project(lateral*tail_distance,8-forward*tail_distance)
+                local final_perspective=8/world_z
+                local perspective=1+(final_perspective-1)*particle_tilt_value
+                local mix=particle_tilt_value
+                local particle_size=top_size+(p.size-top_size)*mix
+                local trail=(.21+particle_size*.11)*(.5+perspective^.82*.82)
+                local final_tail_distance=math.max(0,final_distance-trail)
+                local top_tail_distance=math.max(0,top_distance-trail)
+                local top_head=arena_project_top(top_distance*math.cos(top_angle),
+                    8+top_distance*math.sin(top_angle))
+                local top_tail=arena_project_top(top_tail_distance*math.cos(top_angle),
+                    8+top_tail_distance*math.sin(top_angle))
+                local final_head=arena_project_45(lateral*final_distance,world_z)
+                local final_tail=arena_project_45(lateral*final_tail_distance,
+                    8-forward*final_tail_distance)
+                local head={top_head[1]+(final_head[1]-top_head[1])*mix,
+                    top_head[2]+(final_head[2]-top_head[2])*mix}
+                local tail={top_tail[1]+(final_tail[1]-top_tail[1])*mix,
+                    top_tail[2]+(final_tail[2]-top_tail[2])*mix}
                 local points={}
                 for step=0,8 do
                     points[#points+1]={tail[1]+(head[1]-tail[1])*step/8,tail[2]+(head[2]-tail[2])*step/8}
                 end
-                local width=math.min(14,(.44+p.size*.36)*perspective^1.58*size_fraction)
-                draw_particle_path(points,width,p.hue,math.min(1,opacity*(.35+perspective*.28)))
+                local width=math.min(14,(.44+particle_size*.36)*perspective^1.58*size_fraction)
+                draw_particle_path(points,width,top_hue,math.min(1,opacity*(.35+perspective*.28)))
             end
         else
-            local progress=(p.p0+t*p.speed*.62)%1
+            local final_progress=(p.p0+t*p.speed*.62)%1
+            local progress=top_progress+(final_progress-top_progress)*particle_tilt_value
             local size_fraction,opacity=1,1
             if progress<.36 then
                 local grow=smoothstep(progress/.36)
@@ -850,37 +1039,58 @@ local function draw_space_particles(now_ms)
             local route=smoothstep(progress)
             local angle=.025+(i-52+hash01(i*53+7)*.72)/52*(math.pi-.05)
             local hit_radius=3+hash01(i*79+3)*.38
-            local base_perspective=8/(8+math.sin(angle)*hit_radius)
+            local final_base_perspective=8/(8+math.sin(angle)*hit_radius)
             local turn_radius=hit_radius-.34
-            local turn_start=arena_polar(turn_radius,angle)
-            local before=arena_polar(turn_radius-.12,angle)
+            local turn_start=arena_project_45(turn_radius*math.cos(angle),
+                8+turn_radius*math.sin(angle))
+            local before=arena_project_45((turn_radius-.12)*math.cos(angle),
+                8+(turn_radius-.12)*math.sin(angle))
             local radial_x,radial_y=turn_start[1]-before[1],turn_start[2]-before[2]
-            local hit=arena_polar(hit_radius,angle)
+            local hit=arena_project_45(hit_radius*math.cos(angle),
+                8+hit_radius*math.sin(angle))
             local turn_end={hit[1],hit[2]-9}
             local raw_y=math.abs(radial_x)>.5 and
                 turn_start[2]+(turn_end[1]-turn_start[1])*radial_y/radial_x or
                 (turn_start[2]+turn_end[2])*.5
             local control={turn_end[1],clamp(raw_y,math.min(turn_start[2],turn_end[2]),math.max(turn_start[2],turn_end[2]))}
             local wall_rise=turn_end[2]+34+hash01(i*101+5)*22
-            local function point_at(u)
+            local function final_point_at(u)
                 if u<=.56 then
                     local radius=turn_radius*u/.56
-                    local point=arena_polar(radius,angle)
+                    local point=arena_project_45(radius*math.cos(angle),
+                        8+radius*math.sin(angle))
                     point[3]=8/(8+math.sin(angle)*radius)
                     return point
                 elseif u<=.72 then
                     local q=(u-.56)/(.72-.56);local v=1-q
                     return {v*v*turn_start[1]+2*v*q*control[1]+q*q*turn_end[1],
-                        v*v*turn_start[2]+2*v*q*control[2]+q*q*turn_end[2],base_perspective*(1-q*.1)}
+                        v*v*turn_start[2]+2*v*q*control[2]+q*q*turn_end[2],final_base_perspective*(1-q*.1)}
                 else
                     local wall_u=(u-.72)/(1-.72)
-                    return {turn_end[1],turn_end[2]-wall_rise*wall_u,base_perspective*(1-wall_u*.66)}
+                    return {turn_end[1],turn_end[2]-wall_rise*wall_u,final_base_perspective*(1-wall_u*.66)}
                 end
+            end
+            local function point_at(u)
+                local flat_radius=top_extent*u
+                local top=arena_project_top(flat_radius*math.cos(top_angle),
+                    8+flat_radius*math.sin(top_angle))
+                local tilted=final_point_at(u)
+                local mix=particle_tilt_value
+                return {top[1]+(tilted[1]-top[1])*mix,
+                    top[2]+(tilted[2]-top[2])*mix,
+                    1+(tilted[3]-1)*mix}
             end
             local head=point_at(route);local perspective=head[3]
             if head[2]<42 then
                 local inverse=1-math.min(1,(42-head[2])/78)
-                size_fraction=size_fraction*inverse^1.35;opacity=opacity*inverse^1.65
+                local edge_size=inverse^1.35
+                local edge_opacity=inverse^1.65
+                size_fraction=size_fraction*(1+(edge_size-1)*particle_tilt_value)
+                opacity=opacity*(1+(edge_opacity-1)*particle_tilt_value)
+            end
+            if progress>.80 and particle_tilt_value<1 then
+                local edge=clamp((1-progress)/.20,0,1)
+                opacity=opacity*(edge+(1-edge)*particle_tilt_value)
             end
             local wanted=(8+perspective*24)*(.34+size_fraction*.66)
             local points={head};local sampled,accumulated=route,0
@@ -891,8 +1101,9 @@ local function draw_space_particles(now_ms)
                 accumulated=accumulated+math.sqrt((first[1]-point[1])^2+(first[2]-point[2])^2)
                 table.insert(points,1,point)
             end
-            local width=math.max(.16,(.46+p.size*.36)*perspective^1.58*size_fraction)
-            draw_particle_path(points,width,p.hue,math.min(1,opacity*(.38+perspective*.55)))
+            local particle_size=top_size+(p.size-top_size)*particle_tilt_value
+            local width=math.max(.16,(.46+particle_size*.36)*perspective^1.58*size_fraction)
+            draw_particle_path(points,width,top_hue,math.min(1,opacity*(.38+perspective*.55)))
         end
     end
 end
@@ -1032,6 +1243,170 @@ local function draw_beam(ax,ay,bx,by,near_width,far_width,color,age,alpha)
     end
 end
 
+-- A deterministic, black-stage close-up for wave-vs-wave rounds. The same
+-- renderer is exposed through --clash so desktop captures can be compared at
+-- exact times without changing combat state.
+function Intro.clash_state(now)
+    local player_power,enemy_power,age
+    if Intro.clash_probe then
+        age=now%1080
+        player_power=(Intro.clash_probe=="player-combo" or
+            Intro.clash_probe=="both-combo") and 3 or 1
+        enemy_power=(Intro.clash_probe=="enemy-combo" or
+            Intro.clash_probe=="both-combo") and 3 or 1
+    else
+        if not cast or not cast.round_actions then return nil end
+        local player_action=cast.round_actions[1]
+        local enemy_action=cast.round_actions[2]
+        if player_action~="wave" or enemy_action~="wave" then return nil end
+        age=now-cast.started-ACTIONS.wave.windup
+        if age<0 or age>=1120 then return nil end
+        player_power=cast.power and cast.power[1] or 1
+        enemy_power=cast.power and cast.power[2] or 1
+    end
+    return {age=age,player_power=player_power,enemy_power=enemy_power}
+end
+
+function Intro.draw_clash(now,state)
+    local age=state.age
+    local base
+    if state.player_power==state.enemy_power then base=0
+    elseif state.player_power>state.enemy_power then base=4
+    else base=8 end
+    local fade_started=760
+    local impact=clamp((age-70)/80,0,1)
+    local opacity=age<fade_started and 1 or 1-ease((age-fade_started)/360)
+    local shake=(1.1+1.5*math.sin(age*.083)^2)*impact*opacity
+    local sx=math.sin(age*.71)*shake
+    local sy=math.cos(age*.57)*shake*.72
+    local pulse=1+.008*impact*math.sin(age*.061)^2
+    local frame_w,frame_h=H106 and 240 or 184,H106 and 240 or 224
+    local scale=(H106 and 1 or 2)*pulse
+    local x=(SCREEN_W-frame_w*scale)*.5+sx
+    local y=(SCREEN_H-frame_h*scale)*.5+sy
+    local atlas,lo,hi,blend
+    if age>=fade_started and state.player_power==state.enemy_power then
+        local phase=clamp((age-fade_started)/360*3,0,3)
+        lo=math.floor(phase);hi=math.min(3,lo+1);blend=ease(phase-lo)
+        atlas=H106 and "@qi-duel/beam-clash-fade-h106.h2rs" or
+            "@qi-duel/beam-clash-fade-amoled.h2rs"
+        lo,hi,opacity=lo+1,hi+1,1
+    else
+        local phase=clamp(age/fade_started*3,0,3)
+        lo=math.floor(phase);hi=math.min(3,lo+1);blend=ease(phase-lo)
+        atlas=H106 and "@qi-duel/beam-clash-h106.h2rs" or
+            "@qi-duel/beam-clash-amoled.h2rs"
+        lo,hi=base+lo+1,base+hi+1
+    end
+
+    display.draw_sprite_atlas(atlas,lo,hi,blend,x,y,scale,opacity)
+end
+
+function Intro.settlement_state(now)
+    if not settlement then return nil end
+    if result_probe and not PLAY_GAME then
+        -- Review mode repeats the one-shot entry after a short OLED-black gap;
+        -- real game settlements remain lit until the player restarts.
+        return {kind=settlement.kind,age=fixed_time_ms and now or now%3000-400}
+    end
+    local age=now-settlement.started
+    if age<0 then return nil end
+    return {kind=settlement.kind,age=age,
+        exit_age=settlement.exit_started and now-settlement.exit_started or nil}
+end
+
+function Intro.clash_return_alpha(now)
+    if not cast or not cast.round_actions or settlement then return 0 end
+    if cast.round_actions[1]~="wave" or cast.round_actions[2]~="wave" then return 0 end
+    local age=now-cast.started-ACTIONS.wave.windup
+    if age<1120 or age>=1320 then return 0 end
+    return 1-ease((age-1120)/200)
+end
+
+Intro.result_streaks={}
+for i=1,(H106 and 25 or 30) do
+    Intro.result_streaks[i]={
+        lane=hash01(i*67+3)*2-1,
+        phase=((i*7)%(H106 and 25 or 30))/(H106 and 25 or 30),
+        speed=.30+hash01(i*107+17)*.52,
+        length=.65+hash01(i*131+23)*.90,
+        width=.70+hash01(i*43+7)^2*.90,
+        color=((i-1)%5)+1,
+        alpha=.60+hash01(i*181+37)*.40,
+        pulse=.0022+hash01(i*211+47)*.0031,
+    }
+end
+Intro.result_streak_crops={}
+for row=0,9 do Intro.result_streak_crops[row+1]={0,row*48,160,48} end
+
+local function result_light_bars(age,win,exit_age)
+    local diagonal=math.sqrt(SCREEN_W*SCREEN_W+SCREEN_H*SCREEN_H)
+    local entry=ease(age/180)
+    -- A shared basis keeps every strip, trail and exit trajectory parallel.
+    local tx,ty=math.cos(-.54),math.sin(-.54)
+    local nx,ny=-ty,tx
+    for _,streak in ipairs(Intro.result_streaks) do
+        local phase
+        if exit_age then
+            local exit_started_age=math.max(0,age-exit_age)
+            local phase_at_exit=(exit_started_age*.001*streak.speed+streak.phase)%1
+            -- Existing streaks finish their route with a short exit boost, but
+            -- never wrap back to phase zero: no new light is spawned.
+            phase=phase_at_exit+exit_age*.001*(streak.speed+.75)
+        else
+            phase=(math.max(0,age)*.001*streak.speed+streak.phase)%1
+        end
+        if phase<1 then
+            local along=(phase*2-1)*diagonal*.62
+            local lane=streak.lane*diagonal*.30
+            local cx=SCREEN_W*.5+tx*along+nx*lane
+            local cy=SCREEN_H*.5+ty*along+ny*lane
+            local pulse=.78+.22*math.sin(age*streak.pulse+streak.phase*TAU)^2
+            local edge=clamp(math.sin(phase*math.pi)*3.2,0,1)
+            local opacity=entry*streak.alpha*pulse*edge
+            local scale_x=streak.length*(H106 and .90 or 1.20)
+            local scale_y=streak.width*(H106 and .90 or 1.10)
+            local a,b=tx*scale_x,ty*scale_x
+            local c,d=nx*scale_y,ny*scale_y
+            local row=(win and 0 or 5)+streak.color
+            local source_y=(row-1)*48+24
+            -- One pre-baked affine sprite contains the storyboard's slanted block,
+            -- white core, layered stretched wakes and bloom. Each instance still
+            -- owns its transform, speed, phase, scale, opacity and colour row.
+            display.draw_affine_asset("@qi-duel/result-streaks.h2r8",a,b,c,d,
+                cx-a*80-c*source_y,cy-b*80-d*source_y,
+                Intro.result_streak_crops[row],opacity)
+        end
+    end
+end
+
+function Intro.draw_settlement(now,state)
+    local age=state.age
+    local win=state.kind=="win"
+    result_light_bars(age,win,state.exit_age)
+
+    local scale=H106 and 1 or 1.55
+    local final_x=(SCREEN_W-224*scale)*.5
+    local you_y=H106 and 52 or 105
+    local result_y=H106 and 99 or 205
+    local slide=ease(age/390)
+    local distance=SCREEN_W+224*scale
+    local exit=state.exit_age and ease(state.exit_age/500) or 0
+    local you_x=final_x-distance*(1-slide)+distance*exit
+    local result_x=final_x+distance*(1-slide)-distance*exit
+    local light=ease((age-390)/190)
+    local base=win and 1 or 5
+    display.draw_sprite_atlas("@qi-duel/result-words.h2rs",base,base+1,light,
+        you_x,you_y,scale,1)
+    display.draw_sprite_atlas("@qi-duel/result-words.h2rs",base+2,base+3,light,
+        result_x,result_y,scale,1)
+
+    local flash=math.sin(clamp((age-390)/230,0,1)*math.pi)^3
+    if flash>0 then
+        display.add_disc(SCREEN_W*.5,SCREEN_H*.5,(12+flash*24)*(H106 and 1 or 1.5),
+            COLOR.white,flash*.14)
+    end
+end
 local function draw_action_effects(now_ms)
     if not cast then return end
     viewport("screen")
@@ -1322,9 +1697,11 @@ end
 local function impact_label_state(now)
     if impact_probe then return impact_probe,0 end
     if not PLAY_GAME or not battle or battle.phase~="play" or not cast then return nil end
-    local combo=cast.power and (cast.power[1]==3 or cast.power[2]==3)
-    local broken=battle.result and battle.result.broken and
-        (battle.result.broken[1] or battle.result.broken[2])
+    -- This overlay is strictly player-centric and mutually exclusive: show
+    -- the player's combo, or the player's own broken guard. An opponent combo
+    -- is communicated through the hit animation unless it breaks our guard.
+    local combo=cast.power and cast.power[1]==3
+    local broken=battle.result and battle.result.broken and battle.result.broken[1]
     if broken and now>=cast.started+780 then return "armor-break",cast.started+780 end
     if combo and now>=cast.started+410 then return "combo",cast.started+410 end
     return nil
@@ -1384,49 +1761,40 @@ local function draw_impact_label(now)
     sprite(scale,angle,fade,0,0)
 end
 
-local function mode_label(row,y,scale)
-    local s=scale or (H106 and .75 or 1)
-    display.draw_affine_asset("@qi-duel/ui-labels.h2r8",s,0,0,s,
-        (SCREEN_W-160*s)/2,y-row*32*s,{0,row*32,160,32})
-end
-local function draw_mode_page(now)
-    viewport("screen")
-    local top=math.floor(SCREEN_H*.43);local height=H106 and 42 or 56
-    if page=="menu" then
-        local left=(SCREEN_W-math.min(224,SCREEN_W-40))/2
-        local right=SCREEN_W-left
-        mode_label(2,top-45)
-        for i=1,2 do
-            local y=top+(i-1)*(height+12)
-            local color=i==1 and COLOR.cyan or COLOR.violet
-            display.draw_polygon({{left+4,y},{right-4,y},{right,y+6},
-                {right,y+height-6},{right-4,y+height},{left+4,y+height},
-                {left,y+height-6},{left,y+6}},COLOR.near_black,.85,color,
-                menu_selection==i and .9 or .45,1.2,color,menu_selection==i and .25 or .1,5)
-            mode_label(i-1,y+(height-(H106 and 24 or 32))/2)
-        end
-    else
-        mode_label(page=="pairing" and 3 or 4,top)
-        if page=="pairing" then
-            for i=0,7 do
-                local a=now*.003+i*TAU/8
-                display.add_disc(SCREEN_W/2+math.cos(a)*24,top-26+math.sin(a)*12,
-                    1.8,COLOR.violet,(i+1)/8)
-            end
-        end
-        mode_label(5,SCREEN_H*.8)
-    end
-end
-
 local function render(now_ms)
     local draw_started_ms = system.millis()
-    if PLAY_GAME and page~="battle" then
-        display.clear(COLOR.black);display.begin_composite();draw_mode_page(now_ms);display.end_composite()
-        if page=="link-error" then
-            local text=link_error or "LINK ERROR"
-            text=text:sub(1,math.floor(SCREEN_W/6)-2)
-            display.draw_text(6,math.floor(SCREEN_H*.63),text,{font_size=7,color=COLOR.orange})
+    local intro_active=PLAY_GAME and intro and intro.phase~="done"
+    local intro_fading=intro_active and intro.phase=="fade"
+    if intro_active and not intro_fading then
+        display.clear(COLOR.black);display.begin_composite()
+        viewport("scene");draw_space_particles(now_ms)
+        if intro.reentry_started then
+            local cover=1-ease((now_ms-intro.reentry_started)/INTRO_REENTRY_MS)
+            if cover>0 then
+                viewport("screen")
+                display.draw_polygon({{0,0},{SCREEN_W,0},{SCREEN_W,SCREEN_H},{0,SCREEN_H}},
+                    COLOR.black,cover,COLOR.black,0,0,COLOR.black,0,0)
+            end
         end
+        display.end_composite()
+        display.present()
+        return system.millis()-draw_started_ms,0
+    end
+    local clash_state=inspector_layer=="full" and Intro.clash_state(now_ms) or nil
+    if clash_state then
+        -- A hard cinematic cut keeps the close-up genuinely OLED black: no
+        -- arena, actors, hands, HUD or residual glow is drawn underneath.
+        display.clear(COLOR.black);display.begin_composite()
+        viewport("screen");Intro.draw_clash(now_ms,clash_state)
+        display.end_composite()
+        display.present()
+        return system.millis()-draw_started_ms,0
+    end
+    local settlement_state=inspector_layer=="full" and Intro.settlement_state(now_ms) or nil
+    if settlement_state then
+        display.clear(COLOR.black);display.begin_composite()
+        viewport("screen");Intro.draw_settlement(now_ms,settlement_state)
+        display.end_composite()
         display.present()
         return system.millis()-draw_started_ms,0
     end
@@ -1442,7 +1810,9 @@ local function render(now_ms)
         display.begin_composite()
         viewport("scene")
         if scene7 or inspector_layer=="dust" or inspector_layer=="arena-dust" then draw_dust(now_ms) end
-        if scene7 or inspector_layer=="particles" then draw_space_particles(now_ms) end
+        if (scene7 or inspector_layer=="particles") and not intro_fading then
+            draw_space_particles(now_ms)
+        end
         viewport("opponent")
         if scene7 or inspector_layer=="opponent" then draw_opponent(now_ms) end
         viewport("hands")
@@ -1459,6 +1829,24 @@ local function render(now_ms)
         end
         draw_countdown(now_ms)
         draw_impact_label(now_ms)
+        if intro_fading then
+            local fade=Intro.scene_fade(now_ms)
+            viewport("screen")
+            display.draw_polygon({{0,0},{SCREEN_W,0},{SCREEN_W,SCREEN_H},{0,SCREEN_H}},
+                COLOR.black,1-fade,COLOR.black,0,0,COLOR.black,0,0)
+            viewport("scene");draw_space_particles(now_ms)
+        end
+        if full then
+            local cover=Intro.clash_return_alpha(now_ms)
+            if settlement and not settlement.clash then
+                cover=math.max(cover,clamp((now_ms-(settlement.started-300))/300,0,1))
+            end
+            if cover>0 then
+                viewport("screen")
+                display.draw_polygon({{0,0},{SCREEN_W,0},{SCREEN_W,SCREEN_H},{0,SCREEN_H}},
+                    COLOR.black,cover,COLOR.black,0,0,COLOR.black,0,0)
+            end
+        end
         display.end_composite()
     end
     local present_started_ms = system.millis()
@@ -1470,6 +1858,7 @@ end
 
 local screen_created = true
 local function cleanup()
+    if sfx then sfx.close() end
     if screen_created then
         pcall(display.end_frame)
         pcall(display.deinit)
@@ -1522,9 +1911,11 @@ while true do
         touch_error_reported = false
     end
 
+    finish_settlement_exit(scene_time())
     update_battle(scene_time()) -- Deadline wins over an input arriving too late.
     handle_touch(info)
     update_battle(scene_time()) -- Lock input now; settlement still waits for the deadline.
+    if sfx then sfx.update(scene_time()) end
     local update_finished_ms = system.millis()
     local draw_ms, present_ms = render(fixed_time_ms or (frame_started_ms - scene_started_ms))
     frame_count = frame_count + 1

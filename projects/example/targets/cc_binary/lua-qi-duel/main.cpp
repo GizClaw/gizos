@@ -154,6 +154,8 @@ int main(int argc, char **argv) {
   const char *selected = nullptr, *drag = nullptr;
   const char *action = nullptr, *actor = nullptr;
   const char *impact = nullptr;
+  const char *clash = nullptr;
+  const char *settlement = nullptr;
   bool rehearsal=false, game_probe=false;
   for (int i = 1; i < argc; ++i) {
     if (std::strncmp(argv[i], "--layer=", 8) == 0) layer = argv[i] + 8;
@@ -167,11 +169,13 @@ int main(int argc, char **argv) {
     else if (std::strncmp(argv[i], "--action=", 9) == 0) action = argv[i] + 9;
     else if (std::strncmp(argv[i], "--actor=", 8) == 0) actor = argv[i] + 8;
     else if (std::strncmp(argv[i], "--impact=", 9) == 0) impact = argv[i] + 9;
+    else if (std::strncmp(argv[i], "--clash=", 8) == 0) clash = argv[i] + 8;
+    else if (std::strncmp(argv[i], "--result=", 9) == 0) settlement = argv[i] + 9;
     else if (std::strcmp(argv[i], "--rehearsal") == 0) rehearsal=true;
     else if (std::strcmp(argv[i], "--game") == 0) game_probe=true;
     else {
-      std::fprintf(stderr, "Default: native game mode menu. Use --rehearsal for visual-only controls, --game to enable the menu with fixed-time probes.\n");
-      std::fprintf(stderr, "Usage: %s [--layer=full|walls|wheel|arena|dust|particles|opponent|hand-left|hand-right|arena-dust|scene7|hud|scene8|carousel-frame|charge-cells|charge-base|scene11|carousel|skill-charge|skill-wave|skill-absorb|skill-guard] [--time-ms=N] [--selected=0..3] [--drag=-90..90] [--health-fx=player-down|player-up|enemy-down|enemy-up] [--charge-fx=down|up] [--impact=combo|armor-break] [--capture=new.ppm]\n", argv[0]);
+      std::fprintf(stderr, "Default: native top-down game entry. Use --rehearsal for visual-only controls or --game with fixed-time probes.\n");
+      std::fprintf(stderr, "Usage: %s [--layer=full|walls|wheel|arena|dust|particles|opponent|hand-left|hand-right|arena-dust|scene7|hud|scene8|carousel-frame|charge-cells|charge-base|scene11|carousel|skill-charge|skill-wave|skill-absorb|skill-guard] [--time-ms=N] [--selected=0..3] [--drag=-90..90] [--health-fx=player-down|player-up|enemy-down|enemy-up] [--charge-fx=down|up] [--impact=combo|armor-break] [--clash=equal|player-combo|enemy-combo|both-combo] [--result=win|lose] [--capture=new.ppm]\n", argv[0]);
       return 2;
     }
   }
@@ -194,13 +198,19 @@ int main(int argc, char **argv) {
   bool valid_action = action == nullptr, valid_actor = actor == nullptr;
   bool valid_impact = impact == nullptr || std::strcmp(impact,"combo")==0 ||
                       std::strcmp(impact,"armor-break")==0;
+  bool valid_clash = clash == nullptr || std::strcmp(clash,"equal")==0 ||
+                     std::strcmp(clash,"player-combo")==0 ||
+                     std::strcmp(clash,"enemy-combo")==0 ||
+                     std::strcmp(clash,"both-combo")==0;
+  bool valid_settlement = settlement == nullptr || std::strcmp(settlement,"win")==0 ||
+                          std::strcmp(settlement,"lose")==0;
   for (const char *candidate : {"charge","wave","absorb","guard"})
     if (action && std::strcmp(action,candidate)==0) valid_action=true;
   for (const char *candidate : {"both","player","opponent"})
     if (actor && std::strcmp(actor,candidate)==0) valid_actor=true;
   for (const char *candidate : {"player-down","player-up","enemy-down","enemy-up"})
     if (health_fx && std::strcmp(health_fx,candidate)==0) valid_fx=true;
-  if (!valid_layer || !valid_fx || !valid_action || !valid_actor || !valid_impact || !valid_number(qi,0,5,true) || !valid_number(selected,0,3,true) || !valid_number(drag,-90,90,false) ||
+  if (!valid_layer || !valid_fx || !valid_action || !valid_actor || !valid_impact || !valid_clash || !valid_settlement || !valid_number(qi,0,5,true) || !valid_number(selected,0,3,true) || !valid_number(drag,-90,90,false) ||
       (charge_fx && std::strcmp(charge_fx,"up")!=0 && std::strcmp(charge_fx,"down")!=0) ||
       (time_ms && (end == time_ms || *end != '\0' || !std::isfinite(fixed) || fixed < 0)) ||
       (capture && (capture[0] == '\0' || time_ms == nullptr))) {
@@ -217,6 +227,10 @@ int main(int argc, char **argv) {
   }
 
   h2_runtime_config_t runtime_config = h2::desktop::runtime_config(nullptr);
+  h2::desktop::OwnedAudio audio;
+  if (!capture && h2::desktop::open_audio(true, &audio) == H2_PAL_OK) {
+    runtime_config.audio = audio.api();
+  }
   AppContext context = {&display};
   CaptureDisplay tap = {display.display(), capture, &context};
   const h2_pal_display_t capture_display = {&tap, &kCaptureVtable};
@@ -251,12 +265,14 @@ int main(int argc, char **argv) {
       .charge_fx = charge_fx,
       .qi = qi,
       .click_controls = 1,
-      .battle = game_probe || (!rehearsal && !time_ms && !action && std::strcmp(layer,"full")==0),
+      .battle = game_probe || (!rehearsal && !time_ms && !action && !clash && !settlement && std::strcmp(layer,"full")==0),
       .selected = selected,
       .drag = drag,
       .action = action,
       .actor = actor,
       .impact = impact,
+      .clash = clash,
+      .result = settlement,
   };
   result = h2_lua_qi_duel_run(runtime, &config);
   (void)h2::desktop::poll_events(&display);

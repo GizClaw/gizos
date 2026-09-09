@@ -1,6 +1,7 @@
 # Action rehearsal v1
 
-The default live app now runs the mode menu and game described in `GAMEPLAY.md`.
+The default live app now runs the click-to-pair particle intro and game described
+in `GAMEPLAY.md`.
 This document describes the retained `--rehearsal` / inspector animation mode.
 
 This is the actual Lua/SDL desktop app, not the browser reference. Both desktop

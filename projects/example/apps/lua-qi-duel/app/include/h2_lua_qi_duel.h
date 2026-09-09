@@ -57,6 +57,10 @@ typedef struct h2_lua_qi_duel_config {
   const char *actor;
   /** Optional impact-label probe: combo or armor-break. */
   const char *impact;
+  /** Optional beam-clash VFX probe: equal/player-combo/enemy-combo/both-combo. */
+  const char *clash;
+  /** Optional settlement probe: win or lose. */
+  const char *result;
 } h2_lua_qi_duel_config_t;
 
 /** Runs the Qi Duel Lua resource using the supplied initialized Runtime. */
