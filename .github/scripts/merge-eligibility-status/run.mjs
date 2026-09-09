@@ -194,9 +194,27 @@ async function finish(repository, runUrl) {
     requiredEnvironment("EXPECTED_BASE_SHA"),
     "expected base SHA",
   );
+  const runId = requiredEnvironment("GITHUB_RUN_ID");
+  const attempt = requiredEnvironment("GITHUB_RUN_ATTEMPT");
+  if (!/^[1-9][0-9]*$/.test(runId) || !/^[1-9][0-9]*$/.test(attempt)) {
+    throw new EligibilityStatusError("invalid workflow run identity");
+  }
+  // GitHub records the commit resolved for this run, even if latest moves
+  // before finalization. Do not trust the model evidence to identify itself.
+  const run = await githubRequest(
+    `/repos/${repository}/actions/runs/${runId}/attempts/${attempt}`,
+  );
+  const workflowPath =
+    "GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@latest";
+  const references = Array.isArray(run.referenced_workflows)
+    ? run.referenced_workflows.filter((workflow) => workflow.path === workflowPath)
+    : [];
+  if (references.length !== 1 || run.run_attempt !== Number(attempt)) {
+    throw new EligibilityStatusError("missing or ambiguous resolved review workflow");
+  }
   const expectedWorkflowSourceSha = validateSha(
-    requiredEnvironment("EXPECTED_REVIEW_WORKFLOW_SHA"),
-    "expected review workflow source SHA",
+    references[0].sha,
+    "resolved review workflow source SHA",
   );
   const pullRequest = await githubRequest(`/repos/${repository}/pulls/${number}`);
   const currentHeadSha = validateSha(

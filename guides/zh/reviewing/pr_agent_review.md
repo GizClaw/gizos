@@ -131,3 +131,13 @@ Gate 支持的 CODEOWNERS grammar 固定如下，不能用近似 matcher 扩大�
 `!` negation、`[]` character range、任何 `\` escape，以及 team 或 email owner 都属于 unsupported input。Parser 在读取 pattern 时立即 fail closed；unsupported owner token 在对应 rule 生效时 fail closed。Ownerless rule 可以表达 GitHub CODEOWNERS 的显式无 owner 覆盖，但 gate 对该 path fail closed，不能回退到较早 owner。
 
 `main governance` ruleset 只使用 `Ownership eligibility` 判断 CODEOWNERS coverage。原生 `Require code owner review` 和 `Require approval of the most recent reviewable push` 均关闭。Reviewer requirement 只由 PR 作者和每个 path 的有效 CODEOWNER 决定；协作者 push 不会引入第三人审批。`OpenAI review eligibility`、其它 required checks、review thread resolution、squash-only、linear history、non-fast-forward 和 bypass actor 配置保持独立，不能由这个 status 绕过。
+
+
+### 上游审查版本
+
+Caller 使用 `GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@latest`。
+最终 eligibility publisher 从 GitHub 当前 workflow run attempt 的
+`referenced_workflows` 读取该引用实际解析出的 commit SHA，并与 readiness evidence 的
+`workflow_source_sha` 严格匹配。运行期间 `latest` 移动不改变本次校验目标；不能用 tag
+当前指向或 evidence 自报的 SHA 代替 GitHub 记录。引用缺失、重复、SHA 非法或 evidence
+不匹配时不能发布通过状态。Publisher 为读取该记录拥有 `actions: read`。

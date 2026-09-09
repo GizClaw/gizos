@@ -106,6 +106,10 @@ async function runPublisher({
   currentHead = HEAD,
   reviewResult = "success",
   readinessEvidence = PASS_EVIDENCE,
+  referencedWorkflows = [{
+    path: "GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@latest",
+    sha: "c".repeat(40),
+  }],
   apiFailure = false,
   statusPostFailure = false,
   runUrl = "https://github.example/actions/runs/1",
@@ -126,6 +130,11 @@ async function runPublisher({
     if (apiFailure) {
       response.writeHead(500, {"Content-Type": "application/json"});
       response.end(JSON.stringify({message: "fixture failure"}));
+      return;
+    }
+    if (request.url === "/repos/GizClaw/gizos/actions/runs/1/attempts/1") {
+      response.writeHead(200, {"Content-Type": "application/json"});
+      response.end(JSON.stringify({run_attempt: 1, referenced_workflows: referencedWorkflows}));
       return;
     }
     if (request.url === "/repos/GizClaw/gizos/pulls/1") {
@@ -214,7 +223,8 @@ async function runPublisher({
         ELIGIBILITY_STATUS_MODE: mode,
         EXPECTED_BASE_SHA: BASE,
         EXPECTED_HEAD_SHA: HEAD,
-        EXPECTED_REVIEW_WORKFLOW_SHA: "c".repeat(40),
+        GITHUB_RUN_ID: "1",
+        GITHUB_RUN_ATTEMPT: "1",
         GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
         GITHUB_EVENT_NAME: eventName,
         GITHUB_EVENT_PATH: eventPath,
@@ -597,4 +607,21 @@ test("API failure fails closed without writing fabricated outputs", async () => 
   assert.equal(result.exitCode, 1);
   assert.equal(result.outputs, "");
   assert.match(result.stderr, /fixture failure/);
+});
+
+
+test("latest caller verifies the commit resolved by GitHub for this run", async () => {
+  const workflow = await readFile(OPENAI_WORKFLOW, "utf8");
+  assert.match(workflow, /codex-openai-review\.yml@latest/);
+  assert.doesNotMatch(workflow, /EXPECTED_REVIEW_WORKFLOW_SHA/);
+  for (const referencedWorkflows of [
+    [],
+    [{path: "wrong@latest", sha: "c".repeat(40)}],
+    [{path: "GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@latest", sha: "invalid"}],
+    [{path: "GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@latest", sha: "d".repeat(40)}],
+  ]) {
+    const result = await runPublisher({mode: "finish", referencedWorkflows});
+    assert.notEqual(result.exitCode, 0);
+    assert.ok(result.requests.every((request) => request.body?.state !== "success"));
+  }
 });
