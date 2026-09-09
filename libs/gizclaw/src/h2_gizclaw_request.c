@@ -26,12 +26,11 @@ typedef struct managed_stream {
   h2_pal_result_t error; /* Service mutex. */
   h2_gizclaw_stream_lane_t lane;
   bool bound, data_ready; /* Service mutex. */
-  /* Benchmark-only observation. Network owner writes ingress/activity; the
-   * consumer writes validated counters. Read only after stream_detach joins
+  /* Benchmark-only observation. Network owner writes ingress/activity. Read only after stream_detach joins
    * data_refs, before publishing terminal. No payload or credential logging. */
   bool diagnostic;
-  size_t download_expected, rx_bytes, validated_bytes;
-  bool response_seen, eos_seen, eos_validated, remote_error_seen;
+  size_t download_expected, rx_bytes;
+  bool response_seen, eos_seen, remote_error_seen;
   int remote_error_code;
   bool activity_seen, activity_clock_valid;
   uint64_t last_activity_ms;
@@ -95,19 +94,17 @@ static void managed_log_speedtest_failure(const managed_request_t *request,
   const bool idle_valid = clock_valid && s->activity_seen &&
                          s->activity_clock_valid &&
                          request->completed_ms >= s->last_activity_ms;
-  char message[1024];
+  char message[768];
   (void)snprintf(message, sizeof(message),
       "request=speedtest stage=failed seq=%llu identity=%llu direction=%s "
       "phase=%s rc=%d timeout_ms=%u elapsed_ms=%llu clock_valid=%u "
       "tx_target=%zu rx_target=%zu tx_sdk_accepted=%zu rx_data=%zu "
-      "rx_validated=%zu activity_seen=%u idle_valid=%u idle_ms=%llu "
-      "response_seen=%u eos_seen=%u eos_queued=%u eos_validated=%u "
+      "activity_seen=%u idle_valid=%u idle_ms=%llu "
+      "response_seen=%u eos_seen=%u "
       "input_finished=%u rpc_result_ok=%u stream_rc=%d "
       "remote_error_seen=%u remote_code=%d sdk_available=%u "
       "sdk_completion_seen=%u sdk_completion_gzc_rc=%d "
-      "sdk_error_seen=%u sdk_error_gzc_rc=%d "
-      "channel_terminal=unavailable channel_raw_rc=unavailable "
-      "tx_delivered=unavailable",
+      "sdk_error_seen=%u sdk_error_gzc_rc=%d",
       (unsigned long long)op->trace_sequence,
       (unsigned long long)request->identity,
       s->input_expected != 0u ? "upload" : "download",
@@ -115,11 +112,10 @@ static void managed_log_speedtest_failure(const managed_request_t *request,
       (unsigned)request->timeout_ms,
       (unsigned long long)(clock_valid ? request->completed_ms - request->started_ms : 0u),
       (unsigned)clock_valid, s->input_expected, s->download_expected,
-      s->input_sent, s->rx_bytes, s->validated_bytes,
+      s->input_sent, s->rx_bytes,
       (unsigned)s->activity_seen, (unsigned)idle_valid,
       (unsigned long long)(idle_valid ? request->completed_ms - s->last_activity_ms : 0u),
       (unsigned)s->response_seen, (unsigned)s->eos_seen,
-      (unsigned)s->eos_received, (unsigned)s->eos_validated,
       (unsigned)s->input_finished, (unsigned)s->wire_done, (int)s->observed_error,
       (unsigned)s->remote_error_seen, s->remote_error_code,
       (unsigned)s->sdk.available, (unsigned)s->sdk.completion_seen,
@@ -429,12 +425,6 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
   }
   if (frame != NULL)
     rc = (h2_pal_result_t)stream->on_frame(request->context, &frame->event);
-  if (stream->diagnostic && frame != NULL && rc == H2_PAL_OK) {
-    if (frame->event.kind == H2_GIZCLAW_RPC_STREAM_DATA)
-      stream->validated_bytes += frame->event.data.len;
-    if (frame->event.kind == H2_GIZCLAW_RPC_STREAM_EOS)
-      stream->eos_validated = true;
-  }
   if (notify_sink)
     stream->received(request->context, &request->base);
   if (rc > H2_PAL_OK)

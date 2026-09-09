@@ -1338,28 +1338,17 @@ static void conversation_reply_boundary_dispatched(
 static void log_conversation_state(h2_gizclaw_conversation_request_t *request,
                                    const char *stage, h2_pal_result_t rc,
                                    h2_pal_log_level_t level) {
-  bool stopping = false;
-  const bool state_valid = h2_pal_mutex_lock(request->service->config.sync,
-                                            request->service->mutex) == H2_PAL_OK;
-  if (state_valid) {
-    stopping = request->service->stopping;
-    (void)h2_pal_mutex_unlock(request->service->config.sync, request->service->mutex);
-  }
-  char message[512];
+  char message[384];
   (void)snprintf(message, sizeof(message),
       "request=conversation stage=%s identity=%llu generation=%llu rc=%d "
       "cancel_source=%d wire_ready=%d committed=%d media_eos=%d "
-      "transport_committed=%d audio_rc=%d frames=%zu bytes=%zu "
-      "reply_frames=%zu reply_bytes=%zu notification_pending=%d "
-      "service_state_valid=%d stopping=%d",
+      "transport_committed=%d audio_rc=%d frames=%zu bytes=%zu",
       stage, (unsigned long long)request->identity,
       (unsigned long long)request->generation, (int)rc,
       atomic_load(&request->cancel_source), atomic_load(&request->wire_ready),
       atomic_load(&request->committed), atomic_load(&request->media_uplink_eos),
       request->transport_committed, atomic_load(&request->audio_result),
-      atomic_load(&request->queued_frames), atomic_load(&request->queued_bytes),
-      atomic_load(&request->reply_frames), atomic_load(&request->reply_bytes),
-      request->notification_pending, state_valid, stopping);
+      atomic_load(&request->queued_frames), atomic_load(&request->queued_bytes));
   (void)h2_pal_log_write(request->service->client_config.log, level, "gizclaw", message);
 }
 
@@ -1820,20 +1809,9 @@ static h2_pal_result_t conversation_generation_finish_input(
     if (rc == H2_PAL_OK)
       atomic_store_explicit(&request->committed, true, memory_order_release);
   }
-  char *message = h2_gizclaw_audio_log_append_internal(
-      log, rc == H2_PAL_OK ? H2_PAL_LOG_DEBUG : H2_PAL_LOG_ERROR);
-  if (message != NULL)
-    (void)snprintf(message, H2_PAL_LOG_MESSAGE_MAX,
-        "stage=commit identity=%llu generation=%llu rc=%d terminal=%d "
-        "committed=%d input_active=%d input_ended=%d input_begun=%d "
-        "tail_len=%zu tail_offset=%zu",
-        (unsigned long long)request->identity,
-        (unsigned long long)request->generation, (int)rc,
-        atomic_load(&request->terminal), atomic_load(&request->committed),
-        request->input.active, request->input.ended, request->input.begun,
-        request->input.tail_len, request->input.tail_offset);
   (void)h2_pal_mutex_unlock(request->service->config.sync,
                             request->input_mutex);
+  record_audio_request(log, "commit", request->identity, rc);
   return rc;
 }
 

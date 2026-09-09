@@ -8648,8 +8648,6 @@ static void test_speedtest_managed_requests(void) {
       char field[64];
       (void)snprintf(field, sizeof(field), "rx_data=%zu ", received);
       assert(strstr(capture.message, field) != NULL);
-      (void)snprintf(field, sizeof(field), "rx_validated=%zu ", received);
-      assert(strstr(capture.message, field) != NULL);
       assert(strstr(capture.message, "seq=0 ") == NULL);
       assert(strstr(capture.message, "identity=1 direction=download") != NULL);
       assert(strstr(capture.message, "tx_target=0 rx_target=257") != NULL);
@@ -8657,13 +8655,12 @@ static void test_speedtest_managed_requests(void) {
                     mode == 27u ? "activity_seen=1 idle_valid=0" :
                     "activity_seen=1 idle_valid=1") != NULL);
       assert(strstr(capture.message, mode == 25u ?
-                    "eos_seen=1 eos_queued=1 eos_validated=1" :
-                    "eos_seen=0 eos_queued=0 eos_validated=0") != NULL);
+                    "eos_seen=1 " :
+                    "eos_seen=0 ") != NULL);
       assert(strstr(capture.message, "rpc_result_ok=0") != NULL);
       if (mode == 26u)
         assert(strstr(capture.message,
                       "sdk_completion_seen=1 sdk_completion_gzc_rc=-4321") != NULL);
-      assert(strstr(capture.message, "channel_terminal=unavailable") != NULL);
     }
 
     if (expected == H2_PAL_OK) {
