@@ -160,6 +160,7 @@ struct h2_gizclaw_conversation {
   conversation_reply_route_t response, transcript, assistant;
   uint64_t sequence;
   bool bos_sent;
+  bool audio_bos_requested;
   bool audio_bos_sent;
   bool audio_eos_sent;
   bool input_ready;
@@ -926,7 +927,7 @@ void h2_gizclaw_conversation_enqueue_peer_event_internal(
   if (conversation == NULL || event == NULL)
     return;
   if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY) {
-    if (accepts_peer_event(conversation, event))
+    if (conversation->audio_bos_sent && accepts_peer_event(conversation, event))
       conversation->input_ready = true;
     return;
   }
@@ -1062,6 +1063,21 @@ int h2_gizclaw_conversation_wire_open_internal(
   return conversation->bos_sent ? H2_PAL_OK : H2_PAL_ERR_WOULD_BLOCK;
 }
 
+int h2_gizclaw_conversation_wire_begin_audio_internal(
+    h2_gizclaw_conversation_t *conversation) {
+  if (conversation == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!conversation->bos_sent || conversation->committed || conversation->canceled)
+    return H2_PAL_ERR_INVALID_STATE;
+  conversation->audio_bos_requested = true;
+  if (conversation->audio_bos_sent)
+    return H2_PAL_OK;
+  const int rc = send_boundary(conversation, false, true, 0u, NULL);
+  if (rc == H2_PAL_OK)
+    conversation->audio_bos_sent = true;
+  return rc;
+}
+
 bool h2_gizclaw_conversation_wire_input_ready_internal(
     const h2_gizclaw_conversation_t *conversation) {
   return conversation != NULL && conversation->input_ready &&
@@ -1078,6 +1094,8 @@ int h2_gizclaw_conversation_wire_finish_input_internal(
     return H2_PAL_ERR_CLOSED;
   if (conversation->committed)
     return H2_PAL_OK;
+  if (conversation->audio_bos_requested && !conversation->audio_bos_sent)
+    return H2_PAL_ERR_WOULD_BLOCK;
   if (!conversation->bos_sent ||
       (conversation->audio_bos_sent && !conversation->input_ready))
     return H2_PAL_ERR_INVALID_STATE;
@@ -1421,9 +1439,7 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
       return rc;
     }
     if (!request->conversation->audio_bos_sent) {
-      rc = send_boundary(request->conversation, false, true, 0u, NULL);
-      if (rc == H2_PAL_OK)
-        request->conversation->audio_bos_sent = true;
+      rc = h2_gizclaw_conversation_wire_begin_audio_internal(request->conversation);
     }
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_ERR_WOULD_BLOCK;
@@ -1444,8 +1460,12 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
       atomic_store_explicit(&request->wire_ready, true, memory_order_release);
     }
   }
+  /* Nonempty input can commit only after READY and media drain. Empty input
+   * has no audio channel and completes through the encoder EOS directly. */
   if (request->media_attached &&
       atomic_load_explicit(&request->media_uplink_eos, memory_order_acquire) &&
+      (atomic_load_explicit(&request->queued_bytes, memory_order_acquire) == 0u ||
+       atomic_load_explicit(&request->wire_ready, memory_order_acquire)) &&
       !request->transport_committed) {
     const h2_pal_result_t commit_rc =
         h2_gizclaw_conversation_wire_finish_input_internal(

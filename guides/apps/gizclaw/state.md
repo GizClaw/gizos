@@ -94,3 +94,10 @@ Resource 的 `h2_gizclaw_resource_test` 直接执行生产 Resource，仅在 typ
 使用 `H2_GIZCLAW_RESOURCE_FIRMWARE` 创建 Resource，并设置正数 `firmware_channel`；每个实例固定一个 channel，允许未来的正数 channel。该资源不使用 `max_items/page_size/storage_bytes`，它们可为零。调用方 worker 显式执行 `H2_GIZCLAW_RESOURCE_REFRESH`，通过 `snapshot.data.firmware` 读取 channel、description、URL、SHA-256、size，以及 GizClaw 0.16.5 新增的 `has_version/version`。version 是最多 128 字节的包 SemVer；缺省时 `has_version=false` 且字符串为空，不能据此推断当前设备版本。
 
 快照沿用 `valid/stale/busy/closed/last_error` 和 revision 通知。刷新失败、超时、返回 channel 不匹配或关闭后迟到结果均不覆盖旧快照；成功刷新会替换全部元数据，包括清除旧版本号。读取复制整个内联结构，不占用 response storage 字节，可传入清零的 storage。这里只读取并缓存服务器固件元数据，不自动轮询、比较版本、下载或安装。
+
+### 内部诊断与 Session 快照
+
+PTT 的首个音频 worker 失败阶段和首次取消来源仅写入内部诊断日志，不新增或改写
+Session 快照字段。`error_stage`、`last_error`、远端错误详情的保留规则，以及
+generation、取消完成和 callback 的生命周期保持本页既有合同。日志中的 request
+generation 用于关联本轮执行，不能替代 Session generation 或产品自己的轮次标识。
