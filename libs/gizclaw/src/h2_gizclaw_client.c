@@ -180,6 +180,8 @@ struct h2_gizclaw_rpc_request {
   h2_pal_result_t stream_error;
   bool completion_notified;
   int completion_status;
+  bool sdk_error_seen;
+  int sdk_error;
   h2_gizclaw_rpc_complete_fn on_complete;
   void *complete_user;
 };
@@ -191,6 +193,7 @@ static h2_gizclaw_client_t *s_test_webrtc_client;
 #endif
 
 static h2_pal_result_t h2_gizclaw_result_from_gzc(int result);
+static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t *request, int rc);
 
 static void h2_gizclaw_rpc_complete(void *user, gzc_rpc_request_t *gzc,
                                     int status) {
@@ -2012,7 +2015,7 @@ int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
   memset(&response, 0, sizeof(response));
   int rc = gzc_rpc_request_result(request->gzc, &response);
   if (rc != GZC_OK) {
-    return h2_gizclaw_result_from_gzc(rc);
+    return rpc_record_sdk_result(request, rc);
   }
   out_response->has_error = response.has_error;
   out_response->error_code = response.error.code;
@@ -2040,6 +2043,29 @@ int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
            response.error.message.len);
   }
   return H2_PAL_OK;
+}
+
+void h2_gizclaw_rpc_diagnostic_internal(
+    const h2_gizclaw_rpc_request_t *request,
+    h2_gizclaw_rpc_diagnostic_t *out) {
+  *out = (h2_gizclaw_rpc_diagnostic_t){0};
+  if (request == NULL)
+    return;
+  *out = (h2_gizclaw_rpc_diagnostic_t){
+      .available = true,
+      .completion_seen = request->completion_notified,
+      .completion_gzc_rc = request->completion_status,
+      .error_seen = request->sdk_error_seen,
+      .error_gzc_rc = request->sdk_error,
+  };
+}
+
+static int rpc_record_sdk_result(h2_gizclaw_rpc_request_t *request, int rc) {
+  if (rc != GZC_OK && rc != GZC_ERR_WOULD_BLOCK) {
+    request->sdk_error_seen = true;
+    request->sdk_error = rc;
+  }
+  return h2_gizclaw_result_from_gzc(rc);
 }
 
 void h2_gizclaw_rpc_request_set_complete_handler(
@@ -2103,6 +2129,7 @@ static int h2_gizclaw_stream_frame(void *user, const gzc_rpc_frame_t *frame) {
     int rc = gzc_rpc_decode_response_envelope(
         gzc_str_from_parts((const char *)frame->data, frame->len), &response);
     if (rc != GZC_OK) {
+      (void)rpc_record_sdk_result(request, rc);
       return rc;
     }
     event.kind = H2_GIZCLAW_RPC_STREAM_RESPONSE;
@@ -2128,6 +2155,28 @@ static int h2_gizclaw_stream_frame(void *user, const gzc_rpc_frame_t *frame) {
 }
 
 #if defined(H2_GIZCLAW_TESTING)
+bool h2_gizclaw_test_rpc_diagnostic(void) {
+  h2_gizclaw_rpc_request_t request = {0};
+  request.gzc = (gzc_rpc_request_t *)&request;
+  h2_gizclaw_rpc_diagnostic_t before, after;
+  h2_gizclaw_rpc_diagnostic_internal(&request, &before);
+  if (!before.available || before.completion_seen || before.error_seen)
+    return false;
+  (void)rpc_record_sdk_result(&request, GZC_ERR_WOULD_BLOCK);
+  h2_gizclaw_rpc_diagnostic_internal(&request, &before);
+  if (before.error_seen)
+    return false;
+  (void)rpc_record_sdk_result(&request, GZC_ERR_TIMEOUT);
+  h2_gizclaw_rpc_complete(&request, request.gzc, GZC_ERR_TIMEOUT);
+  h2_gizclaw_rpc_diagnostic_internal(&request, &before);
+  /* A later cleanup notification cannot mutate a copied diagnostic. */
+  h2_gizclaw_rpc_complete(&request, request.gzc, GZC_ERR_CLOSED);
+  h2_gizclaw_rpc_diagnostic_internal(&request, &after);
+  return before.completion_seen && before.completion_gzc_rc == GZC_ERR_TIMEOUT &&
+         before.error_seen && before.error_gzc_rc == GZC_ERR_TIMEOUT &&
+         after.completion_gzc_rc == GZC_ERR_CLOSED;
+}
+
 static int test_stream_failure(void *user,
                                const h2_gizclaw_rpc_stream_event_t *event) {
   (void)event;
@@ -2197,14 +2246,15 @@ int h2_gizclaw_rpc_request_write(h2_gizclaw_rpc_request_t *request,
                                  const uint8_t *data, size_t len) {
   if (request == NULL || request->gzc == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_result_from_gzc(
-      gzc_rpc_request_write(request->gzc, data, len));
+  return rpc_record_sdk_result(
+      request, gzc_rpc_request_write(request->gzc, data, len));
 }
 
 int h2_gizclaw_rpc_request_finish_write(h2_gizclaw_rpc_request_t *request) {
   if (request == NULL || request->gzc == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  return h2_gizclaw_result_from_gzc(gzc_rpc_request_finish_write(request->gzc));
+  return rpc_record_sdk_result(request,
+                               gzc_rpc_request_finish_write(request->gzc));
 }
 
 int h2_gizclaw_client_close(h2_gizclaw_client_t *client) {

@@ -32,6 +32,19 @@ typedef struct h2_gizclaw_rpc_response {
 } h2_gizclaw_rpc_response_t;
 
 typedef struct h2_gizclaw_rpc_request h2_gizclaw_rpc_request_t;
+/* Network-owner snapshot, taken before cancel/destroy. SDK status is not a
+ * PAL status or a DataChannel close reason. */
+typedef struct h2_gizclaw_rpc_diagnostic {
+  bool available;
+  bool completion_seen;
+  int completion_gzc_rc;
+  bool error_seen;
+  int error_gzc_rc;
+} h2_gizclaw_rpc_diagnostic_t;
+void h2_gizclaw_rpc_diagnostic_internal(
+    const h2_gizclaw_rpc_request_t *request,
+    h2_gizclaw_rpc_diagnostic_t *out);
+
 typedef void (*h2_gizclaw_rpc_complete_fn)(void *user,
                                            h2_pal_result_t result);
 
@@ -222,6 +235,7 @@ int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
 #include "gzc_telemetry.h"
 #include "platform/gzc_platform_webrtc.h"
 
+bool h2_gizclaw_test_rpc_diagnostic(void);
 int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
                                           int *out_sdk_result);
 typedef int (*h2_gizclaw_test_event_send_fn)(void *user,

@@ -97,3 +97,16 @@ void h2_gizclaw_rpc_destroy_internal(h2_gizclaw_rpc_request_t *request) {
 #endif
   h2_gizclaw_rpc_request_destroy(request);
 }
+
+void h2_gizclaw_rpc_snapshot_internal(h2_gizclaw_rpc_request_t *request,
+                                      h2_gizclaw_rpc_diagnostic_t *out) {
+  *out = (h2_gizclaw_rpc_diagnostic_t){0};
+#ifdef H2_GIZCLAW_TESTING
+  if (s_rpc_ops != NULL) {
+    if (s_rpc_ops->diagnostic != NULL)
+      s_rpc_ops->diagnostic(request, out);
+    return;
+  }
+#endif
+  h2_gizclaw_rpc_diagnostic_internal(request, out);
+}
