@@ -104,7 +104,7 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         if (line[0] == '\0' || strcmp(line, "OK") == 0 || strcmp(line, "ERROR") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
             continue;
         }
-        h2_quectel_handle_urc_line(modem, line);
+        h2_quectel_handle_urc_locked(modem, line);
         response_add_line(response, line);
     }
 }
@@ -158,13 +158,11 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
         if (allow_connect != 0 && response_text_has_connect(command_response)) {
             if (response != NULL) {
                 response->connected = 1;
-                response_add_text(modem, response, command_response, cmd);
             }
+            response_add_text(modem, response, command_response, cmd);
             return H2_PAL_OK;
         }
-        if (response != NULL) {
-            response_add_text(modem, response, command_response, cmd);
-        }
+        response_add_text(modem, response, command_response, cmd);
         return rc;
     }
     if (modem->config.read == NULL || modem->config.write == NULL) {
@@ -194,6 +192,7 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
             return H2_PAL_OK;
         }
         if (strcmp(line, "ERROR") == 0 || strncmp(line, "+CME ERROR:", 11) == 0 || strncmp(line, "+CMS ERROR:", 11) == 0) {
+            h2_quectel_handle_urc_locked(modem, line);
             if (response != NULL) {
                 response_add_line(response, line);
             }
@@ -205,7 +204,7 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
             }
             return H2_PAL_OK;
         }
-        h2_quectel_handle_urc_line(modem, line);
+        h2_quectel_handle_urc_locked(modem, line);
         if (response != NULL) {
             response_add_line(response, line);
         }
@@ -231,10 +230,23 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
         modem->config.command_timeout_ms = timeout_ms;
         modem->config.io_timeout_ms = timeout_ms;
     }
-    if (modem->config.flush != NULL) {
-        (void)modem->config.flush(modem->config.transport_user);
+    if (response != NULL) {
+        memset(response, 0, sizeof(*response));
     }
-    rc = h2_quectel_at_exchange_locked(modem, cmd, response, allow_connect);
+    rc = h2_quectel_power_wake(modem);
+    /* Do not flush here: unsolicited SIM/call notifications must survive. */
+    if (rc == H2_PAL_OK) {
+        rc = h2_quectel_at_exchange_locked(modem, cmd, response, allow_connect);
+    }
+    /* A terminal CME response (for example GNSS has no fix) is not an
+     * uncertain transport failure. Session holds still survive failed stops. */
+    int terminal_error = response != NULL &&
+        (h2_quectel_response_find(response, "+CME ERROR:") != NULL ||
+         h2_quectel_response_find(response, "+CMS ERROR:") != NULL);
+    if (rc != H2_PAL_OK && !terminal_error &&
+        (modem->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        modem->power_fault = 1u;
+    }
     modem->config.command_timeout_ms = saved_command_timeout_ms;
     modem->config.io_timeout_ms = saved_io_timeout_ms;
     qunlock(modem);

@@ -136,6 +136,8 @@ static h2_pal_result_t quectel_cell_locate(
  * table when it is not configured, so the PAL wrapper answers UNSUPPORTED
  * without the provider having to hold an unusable token. */
 #define H2_QUECTEL_MODEM_VTABLE_BASE \
+    .set_power_policy = h2_quectel_set_power_policy, \
+    .get_power_status = h2_quectel_get_power_status, \
     .open = quectel_open, \
     .close = quectel_close, \
     .get_capabilities = quectel_get_capabilities, \
@@ -165,7 +167,7 @@ static const h2_pal_modem_vtable_t s_quectel_modem_cell_locate_vtable = {
     .cell_locate = quectel_cell_locate,
 };
 
-h2_pal_result_t h2_quectel_modem_open(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+static h2_pal_result_t h2_quectel_modem_open_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
     if (modem == NULL) {
@@ -190,7 +192,7 @@ h2_pal_result_t h2_quectel_modem_open(h2_pal_modem_t *platform, uint32_t timeout
     return rc;
 }
 
-h2_pal_result_t h2_quectel_modem_close(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
     if (modem == NULL) {
@@ -199,17 +201,56 @@ h2_pal_result_t h2_quectel_modem_close(h2_pal_modem_t *platform, uint32_t timeou
     if (modem->opened == 0u) {
         return H2_PAL_OK;
     }
-    (void)h2_quectel_modem_drop_ppp(modem);
+    h2_pal_result_t result = h2_quectel_power_wake(modem);
+    if (modem->gnss_hold != 0u) {
+        h2_pal_result_t rc = h2_quectel_modem_gnss_stop(platform, timeout_ms);
+        if (result == H2_PAL_OK) { result = rc; }
+    }
+    if (modem->call_hold != 0u) {
+        h2_pal_result_t rc = h2_quectel_modem_call_hangup(platform, timeout_ms);
+        if (result == H2_PAL_OK) { result = rc; }
+    }
+    h2_pal_result_t rc = h2_quectel_modem_drop_ppp(modem);
+    if (result == H2_PAL_OK) { result = rc; }
+    if ((modem->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        rc = h2_quectel_at_exchange(modem, "AT+QSCLK=0", NULL, 0);
+        if (result == H2_PAL_OK) { result = rc; }
+    }
+    /* A failed stop leaves the modem session unconfirmed. Keep transport,
+     * state and lock alive so close/deinit can retry that session. */
+    if (result != H2_PAL_OK) {
+        modem->power_fault = 1u;
+        return result;
+    }
+    if (modem->config.deinit != NULL) {
+        rc = modem->config.deinit(modem->config.transport_user);
+        if (rc != H2_PAL_OK) {
+            modem->power_fault = 1u;
+            return rc;
+        }
+    }
     (void)h2_quectel_incoming_call_end(modem);
+    modem->power_policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
+    modem->power_configured = 0u;
+    modem->power_fault = 0u;
+    modem->sleep_allowed = 0u;
+    modem->gnss_hold = 0u;
+    modem->call_hold = 0u;
+    modem->data_hold = 0u;
+    modem->model_checked = 0u;
+    modem->sim_seen = 0u;
+    modem->sim_state = H2_PAL_MODEM_SIM_STATE_UNKNOWN;
+    memset(&modem->data_status, 0, sizeof(modem->data_status));
+    modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
+    if (modem->config.invalidate_data != NULL) {
+        modem->config.invalidate_data(modem->config.transport_user);
+    }
     modem->opened = 0u;
     modem->prepared = 0u;
     /* The modem keeps the token only while it stays powered through this
      * instance, so the next open has to configure it again. */
     modem->cell_locate_token_sent = 0u;
-    if (modem->config.deinit != NULL) {
-        return modem->config.deinit(modem->config.transport_user);
-    }
-    return H2_PAL_OK;
+    return result;
 }
 
 h2_quectel_modem_t *h2_quectel_from_platform(h2_pal_modem_t *platform) {
@@ -257,6 +298,19 @@ h2_pal_result_t h2_quectel_modem_init(
     modem->capabilities = config->capabilities != 0u
         ? config->capabilities
         : (H2_PAL_MODEM_CAPABILITY_CALL | H2_PAL_MODEM_CAPABILITY_GNSS);
+    modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_LOW_POWER;
+    if (config->profile == H2_QUECTEL_MODEM_PROFILE_EC25_UART &&
+        config->sleep_gate != NULL && config->sync_api != NULL && config->command != NULL) {
+        modem->capabilities |= H2_PAL_MODEM_CAPABILITY_LOW_POWER;
+    }
+    if (config->sim_hotplug != 0u &&
+        (config->profile != H2_QUECTEL_MODEM_PROFILE_EC25_UART ||
+         config->sync_api == NULL || config->command == NULL || config->invalidate_data == NULL)) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (config->sim_insert_level > 1u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     const int cell_locate_ready = h2_quectel_cell_locate_token_valid(config->cell_locate_token);
     if (config->cell_locate_token != NULL &&
         config->cell_locate_token[0] != '\0' &&
@@ -274,7 +328,7 @@ h2_pal_result_t h2_quectel_modem_init(
         h2_pal_mutex_config_t mutex_config = {
             .name = "quectel/at",
             .allocator = config->allocator,
-            .flags = 0u,
+            .flags = H2_PAL_MUTEX_FLAG_RECURSIVE,
         };
         h2_pal_result_t rc = h2_pal_mutex_create(config->sync_api, &mutex_config, &modem->lock);
         if (rc != H2_PAL_OK) {
@@ -293,8 +347,11 @@ void h2_quectel_modem_deinit(h2_quectel_modem_t *modem) {
     if (modem == NULL) {
         return;
     }
-    if (modem->opened != 0u && modem->config.deinit != NULL) {
-        (void)modem->config.deinit(modem->config.transport_user);
+    if (modem->opened != 0u) {
+        h2_pal_result_t rc = h2_quectel_modem_close(&modem->platform, 0u);
+        if (rc != H2_PAL_OK && modem->opened != 0u) {
+            return;
+        }
     }
     if (modem->lock != NULL && modem->config.sync_api != NULL) {
         h2_pal_mutex_destroy(modem->config.sync_api, modem->lock);
@@ -304,4 +361,24 @@ void h2_quectel_modem_deinit(h2_quectel_modem_t *modem) {
 
 h2_pal_modem_t *h2_quectel_modem_platform(h2_quectel_modem_t *modem) {
     return modem != NULL ? &modem->platform : NULL;
+}
+
+h2_pal_result_t h2_quectel_modem_open(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = h2_quectel_modem_open_impl(platform, timeout_ms);
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_close(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = h2_quectel_modem_close_impl(platform, timeout_ms);
+    return h2_quectel_operation_end(modem_state, rc);
 }

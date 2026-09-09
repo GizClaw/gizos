@@ -108,7 +108,7 @@ int h2_quectel_parse_clcc_line(const char *line, h2_pal_modem_call_status_t *out
     return 1;
 }
 
-h2_pal_result_t h2_quectel_modem_call_dial(
+static h2_pal_result_t h2_quectel_modem_call_dial_impl(
     h2_pal_modem_t *platform,
     const h2_pal_modem_call_request_t *request) {
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
@@ -136,7 +136,7 @@ h2_pal_result_t h2_quectel_modem_call_dial(
     return rc;
 }
 
-h2_pal_result_t h2_quectel_modem_call_answer(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+static h2_pal_result_t h2_quectel_modem_call_answer_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
     h2_pal_result_t rc = modem != NULL ? h2_quectel_at_exchange(modem, "ATA", NULL, 0) : H2_PAL_ERR_INVALID_ARG;
@@ -155,7 +155,7 @@ h2_pal_result_t h2_quectel_modem_call_answer(h2_pal_modem_t *platform, uint32_t 
     return rc;
 }
 
-h2_pal_result_t h2_quectel_modem_call_hangup(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+static h2_pal_result_t h2_quectel_modem_call_hangup_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
     h2_pal_result_t rc = modem != NULL ? h2_quectel_at_exchange(modem, "ATH", NULL, 0) : H2_PAL_ERR_INVALID_ARG;
@@ -177,7 +177,7 @@ h2_pal_result_t h2_quectel_modem_call_hangup(h2_pal_modem_t *platform, uint32_t 
     return rc;
 }
 
-h2_pal_result_t h2_quectel_modem_get_call_status(
+static h2_pal_result_t h2_quectel_modem_get_call_status_impl(
     h2_pal_modem_t *platform,
     h2_pal_modem_call_status_t *out_status) {
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
@@ -209,4 +209,99 @@ h2_pal_result_t h2_quectel_modem_get_call_status(
         post_call_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, out_status);
     }
     return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_quectel_modem_call_dial(
+    h2_pal_modem_t *platform,
+    const h2_pal_modem_call_request_t *request) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    const uint8_t saved_hold = modem_state->call_hold;
+    modem_state->call_hold = 1u;
+    rc = h2_quectel_modem_call_dial_impl(platform, request);
+    if (rc == H2_PAL_ERR_INVALID_ARG || rc == H2_PAL_ERR_INVALID_STATE) {
+        modem_state->call_hold = saved_hold;
+    }
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_call_answer(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    const uint8_t saved_hold = modem_state->call_hold;
+    modem_state->call_hold = 1u;
+    rc = h2_quectel_modem_call_answer_impl(platform, timeout_ms);
+    if (rc == H2_PAL_ERR_INVALID_ARG || rc == H2_PAL_ERR_INVALID_STATE) {
+        modem_state->call_hold = saved_hold;
+    }
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_call_hangup(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    rc = h2_quectel_modem_call_hangup_impl(platform, timeout_ms);
+    if (rc == H2_PAL_OK) { modem_state->call_hold = 0u; }
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_get_call_status(
+    h2_pal_modem_t *platform,
+    h2_pal_modem_call_status_t *out_status) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    rc = h2_quectel_modem_get_call_status_impl(platform, out_status);
+    if (rc == H2_PAL_OK) {
+        modem_state->call_hold = out_status->state != H2_PAL_MODEM_CALL_STATE_IDLE &&
+            out_status->state != H2_PAL_MODEM_CALL_STATE_ENDED;
+    }
+    return h2_quectel_operation_end(modem_state, rc);
 }
