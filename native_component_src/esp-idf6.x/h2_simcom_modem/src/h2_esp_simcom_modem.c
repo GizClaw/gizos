@@ -199,7 +199,10 @@ static esp_err_t urc_handler(uint8_t *data, size_t len) {
         }
         char saved = *end;
         *end = '\0';
-        h2_simcom_handle_urc_line(&s_urc_modem->driver, cursor);
+        h2_pal_result_t rc = h2_simcom_post_urc_line(&s_urc_modem->driver, cursor);
+        if (rc != H2_PAL_OK) {
+            ESP_LOGW(TAG, "URC delivery failed: %d", (int)rc);
+        }
         if (strncmp(
                 cursor,
                 "+CGNSSPWR: READY!",
@@ -603,6 +606,8 @@ h2_pal_result_t h2_esp_simcom_modem_create(
         .data_close = transport_data_close,
         .wait_gnss_ready = transport_wait_gnss_ready,
         .sync_api = config->sync_api,
+        .urc_task_api = h2_esp_platform_task_api(),
+        .urc_queue_api = h2_esp_platform_queue_api(),
         .allocator = config->allocator,
         .system_events = config->system_events,
         .capabilities = H2_PAL_MODEM_CAPABILITY_DATA |
@@ -620,15 +625,21 @@ h2_pal_result_t h2_esp_simcom_modem_create(
     return H2_PAL_OK;
 }
 
-void h2_esp_simcom_modem_destroy(h2_esp_simcom_modem_t *modem) {
+h2_pal_result_t h2_esp_simcom_modem_destroy(h2_esp_simcom_modem_t *modem) {
     if (modem == NULL) {
-        return;
+        return H2_PAL_ERR_INVALID_ARG;
     }
-    h2_simcom_modem_deinit(&modem->driver);
-    if (modem->transport_ready) {
-        (void)transport_deinit(modem);
+    /* Also covers a partially failed open: stop RX before joining its worker. */
+    h2_pal_result_t rc = transport_deinit(modem);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = h2_simcom_modem_deinit(&modem->driver);
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
     free(modem);
+    return H2_PAL_OK;
 }
 
 h2_pal_modem_api_t *h2_esp_simcom_modem_api(h2_esp_simcom_modem_t *modem) {

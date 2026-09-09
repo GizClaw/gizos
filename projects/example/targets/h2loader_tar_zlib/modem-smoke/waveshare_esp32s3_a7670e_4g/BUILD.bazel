@@ -21,6 +21,7 @@ esp_target_task_policy(
         "$net/modem_ppp_rx  7     0     4096   psram",
         "$modem/call_in     6     0     4096   psram",
         "$modem/gnss_fix    5     0     4096   psram",
+        "$modem/urc         6     0     4096   psram",
         # The loader UART command task is not started in this image.
         "$h2loader/uartcmd  default",
         "$runtime/input  default",
@@ -36,7 +37,6 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
@@ -44,6 +44,7 @@ firmware_lib_component(
         "//libs/pal/providers/modem/simcom:simcom_modem",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
     ],
 )
 

@@ -14,6 +14,13 @@
 
 `modem/quectel` 实现 Quectel modem 的 AT command、URC、call、GNSS、cell locate、PPP 和状态处理，并输出 `h2_pal_modem_api_t`。Config 注入 transport callback、PAL sync、mem 和 system event API。
 
+Quectel 和 SIMCom 共用 `providers/modem/common:urc`，通过 `h2_tasks` 声明 `$modem/urc`，每个异步 Modem 实例启动独立的 PAL task。接入方在 provider config 同时注入 `urc_task_api`、`urc_queue_api` 和 `sync_api`，并在 firmware target 配置该任务策略；`h2_tasks` 本身不启动任务。
+
+串口接收回调调用 `h2_quectel_post_urc_line` / `h2_simcom_post_urc_line`，复制完整通知后立即返回。公共 worker 按 FIFO 顺序调用厂商解析器，获取 Modem 锁、更新状态和发布 PAL 事件。队列固定 16 项，每项最多 191 字节正文；满队列或过长输入返回 FULL/TRUNCATED，由 transport 处理交付失败，不覆盖旧消息，也不回退到接收线程同步执行。没有配置 worker 的 `post` 返回 INVALID_STATE。同步 AT 解析仍走原有内部路径；transport 负责命令响应与异步通知的分流，不应把同一行重复投递到两个路径。
+
+worker 从 provider init 存活到 deinit。销毁前必须停止并等待外部 API/RX 调用退出；deinit 在 Modem 锁外关闭队列并 join worker，停止时尚未处理的通知可以丢弃。deinit 返回错误时必须保留整个实例并重试，不能释放仍被 worker 引用的资源。worker 回调及 AT command 不能相互等待，也不能在 worker 中调用 deinit。同步轮询 transport 可不配置 worker，但调用方仍须满足原有同步入口的串行化要求。
+
+
 #### Cell Locate
 
 Cell locate 是 QuecLocator 基站定位，与卫星定位是两条独立路径：它不依赖卫星信号，室内和冷启动也能返回粗略位置，代价是每次查询都要经 packet data 访问运营商定位服务。Provider 用 `AT+QLBSCFG="token",<token>` 配置身份、`AT+QLBS` 发起单次查询，结果通过 `h2_pal_modem_cell_locate()` 返回 `h2_pal_modem_cell_location_t`。`valid = 0` 表示服务未能定位，是正常返回而非错误。何时查询、缓存多久、如何与 GNSS fix 融合都属于产品策略，不在 PAL 或 provider 内决定。

@@ -8,6 +8,7 @@ idf_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/providers/modem/simcom/include"
+    "${REPO_ROOT}/libs/pal/providers/modem/common/include"
     "${REPO_ROOT}/libs/pal/include"
   PRIV_INCLUDE_DIRS
     "${REPO_ROOT}/libs/pal/providers/modem/simcom/src"

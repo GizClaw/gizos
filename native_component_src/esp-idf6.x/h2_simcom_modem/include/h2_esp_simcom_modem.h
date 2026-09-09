@@ -29,7 +29,8 @@ typedef struct h2_esp_simcom_modem_config {
 h2_pal_result_t h2_esp_simcom_modem_create(
     const h2_esp_simcom_modem_config_t *config,
     h2_esp_simcom_modem_t **out_modem);
-void h2_esp_simcom_modem_destroy(h2_esp_simcom_modem_t *modem);
+/* On failure keep the instance and retry shutdown. */
+h2_pal_result_t h2_esp_simcom_modem_destroy(h2_esp_simcom_modem_t *modem);
 h2_pal_modem_api_t *h2_esp_simcom_modem_api(h2_esp_simcom_modem_t *modem);
 
 #ifdef __cplusplus

@@ -21,7 +21,10 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    deps = ["//libs/pal"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/modem/common:urc",
+    ],
 )
 
 cc_test(
