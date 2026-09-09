@@ -438,7 +438,7 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
                    "event=peer_read type=%d active=%d accepted=%d %s",
                    (int)peer_event.type, client->active_conversation != NULL,
                    accepted, detail);
-    (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
+    (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_DEBUG, "gizclaw",
                            message);
   }
   return H2_PAL_OK;

@@ -49,7 +49,7 @@ static void log_audio_level(const h2_gizclaw_session_t *s, const char *stage,
 static void log_audio(const h2_gizclaw_session_t *s, const char *stage,
                       h2_pal_result_t rc, uint64_t generation, int detail) {
   log_audio_level(s, stage, rc, generation, detail,
-                  rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR);
+                  rc == H2_PAL_OK ? H2_PAL_LOG_DEBUG : H2_PAL_LOG_ERROR);
 }
 
 static h2_pal_result_t lock(h2_gizclaw_session_t *session) {
@@ -826,7 +826,7 @@ static void conversation_complete(void *user,
   log_audio_level(s, "complete", result->result, 0u, (int)result->terminal_kind,
                   result->result == H2_PAL_OK ||
                           result->terminal_kind == H2_GIZCLAW_OPERATION_CANCELED
-                      ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR);
+                      ? H2_PAL_LOG_DEBUG : H2_PAL_LOG_ERROR);
   s->conversation_running = false;
   (void)h2_pal_cond_broadcast(s->config.sync, s->progress);
   if (s->restarting_input) {
@@ -1128,14 +1128,13 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
   }
   if ((!start && !s->state.conversation_input_open) ||
       (start && s->state.conversation_input_open)) {
-    log_audio(s, start ? "audio_start_noop" : "audio_end_noop", H2_PAL_OK, 0u, 0);
     unlock(s);
     return H2_PAL_OK;
   }
   if (start && s->conversation_running) {
     s->busy = true;
     s->restarting_input = true;
-    log_audio(s, "interrupt_begin", H2_PAL_OK, 0u, 0);
+    log_audio_level(s, "interrupt_begin", H2_PAL_OK, 0u, 0, H2_PAL_LOG_INFO);
     rc = stop_conversation_locked(s, 30000u);
     log_audio(s, "interrupt_drained", rc, 0u, 0);
     s->restarting_input = false;

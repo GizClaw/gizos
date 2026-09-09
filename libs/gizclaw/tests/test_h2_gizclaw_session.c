@@ -31,6 +31,8 @@ void h2_gizclaw_service_log_session_internal(
     const h2_gizclaw_service_t *service, h2_pal_log_level_t level,
     const char *message) {
   (void)service;
+  if (level == H2_PAL_LOG_INFO)
+    assert(strstr(message, "stage=interrupt_begin") != NULL);
   if (level != H2_PAL_LOG_ERROR)
     return;
   assert(strlen(message) < sizeof(audio_error_log));

@@ -7900,6 +7900,12 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
                                      const char *scope, const char *message) {
   (void)scope;
   conversation_log_capture_t *capture = user;
+  if (strstr(message, "stage=terminal_staged") != NULL ||
+      strstr(message, "stage=terminal_dispatch") != NULL ||
+      strstr(message, "event=peer_read") != NULL ||
+      (strstr(message, "stage=hook_dispatched") != NULL &&
+       strstr(message, "rc=0 ") != NULL))
+    assert(level == H2_PAL_LOG_DEBUG);
   if (strstr(message, "stage=completed") != NULL &&
       strstr(message, "rc=-10 detail=1") != NULL) {
     assert(level == H2_PAL_LOG_INFO);
