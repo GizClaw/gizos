@@ -103,6 +103,22 @@ firmware 不添加私有 header、不直接组 RTP，也不使用 DataChannel fa
 
 实时音频格式、背压、播放 drain 和 cancel 顺序见 [Audio System](/apps/gizclaw/audio)；App-owned state 和 event loop 边界见 [状态与请求](/apps/gizclaw/state)。
 
+## 建连失败诊断日志
+
+仅保留 ERROR 日志时，按以下层次定位失败；日志不改变连接、重试或错误码映射。
+
+| Scope / 字段 | 可观测边界 |
+| --- | --- |
+| `gizclaw stage=client_connect gzc_rc=...` | SDK connect 失败；包含 server-info、信令及 WebRTC 建连，不能仅凭此行判断 DNS、TLS 或服务器故障。 |
+| `gizclaw stage=event_stream_open gzc_rc=...` | SDK connect 已返回成功，随后获取 Event Stream handle 失败；保留原有整条连接关闭行为。 |
+| `gizclaw http_result` | HTTP PAL 返回失败或非 2xx 时为 ERROR，保留 `pal_rc`、`status`、`body_len`、`elapsed_ms` 和 `clock_valid`；成功仍为 INFO。耗时覆盖 PAL request（包括 provider 内部重试），时钟不可用时 `clock_valid=0`，耗时不可用。 |
+| `corehttp stage=...` | 每个失败 attempt 记录一次 `bind`、`dns`、`tcp_open`、`tcp_connect`、`tls_wrap`、`send`、`receive` 或 `redirect` 阶段及 PAL / exchange 错误；正常 I/O slice 超时不刷屏。 |
+| ESP32 `h2_net` | DNS 的 `getaddrinfo_rc`，TCP 建连的 `errno` / `so_error`，TCP 发送、接收的原始 `errno`，以及 TLS handshake 的 `mbedtls_rc`（存在底层失败时）。 |
+
+HTTP 请求只记录 method、scheme 和经过字符验证的 endpoint（host 及显式 port），仅允许固定`/server-info` 路径，其余路径为 `redacted`。不记录 userinfo、query、fragment、header、请求正文或响应正文；过长或不安全的 endpoint 整体脱敏。server-info 返回的信令地址可能不同于初始 endpoint，应以失败 HTTP request 的 endpoint 为准。默认端口未显式出现在URL 时不补写，可按记录的 scheme 判断默认端口。非固定路径的具体信令阶段仍属于外部 SDK边界，不能从 GizOS 日志进一步区分 SDK 内部步骤。
+
+需要给 GizClaw config 和 coreHTTP config 注入可用的 Log PAL，并保留 ESP32 原生 ERROR日志。provider 会在清理 response 前记录已有状态和 body 长度；适配层随后看到的`status=0 body_len=0` 可能是 provider 已清理 response，不证明没有收到网络字节。`service transport_terminal` 的 `detail` 是 active request 数，`frames/bytes` 的零值不是网络流量计数；`TASK_READY` 也不是连接成功证据。没有新设备串口日志时，这些改动不能追溯确定历史故障的根因。
+
 ## Desktop E2E gate
 
 `projects/e2e/targets/cc_test/gizclaw` 的手动 E2E 在一条

@@ -51,6 +51,20 @@ static size_t count_bytes(
     return count;
 }
 
+static int error_logs;
+static char last_error[256];
+static int capture_log(void *user, h2_pal_log_level_t level,
+    const char *scope, const char *message) {
+    (void)user;
+    if (level == H2_PAL_LOG_ERROR && strcmp(scope, "corehttp") == 0) {
+        ++error_logs;
+        snprintf(last_error, sizeof(last_error), "%s", message);
+    }
+    return H2_PAL_OK;
+}
+static const h2_pal_log_vtable_t log_vtable = {.write = capture_log};
+static const h2_pal_log_api_t log_api = {.vtable = &log_vtable};
+
 static h2_corehttp_t *create_provider(
     fake_http_platform_t *platform,
     h2_pal_http_api_t *out_api,
@@ -60,6 +74,7 @@ static h2_corehttp_t *create_provider(
         .allocator = &platform->mem,
         .net = &platform->net,
         .time = &platform->time,
+        .log = &log_api,
         .tls_verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
         .root_ca_pem = root_ca,
         .root_ca_pem_len = root_ca_len,
@@ -83,6 +98,7 @@ static h2_corehttp_t *create_provider_with_header_limit(
         .allocator = &platform->mem,
         .net = &platform->net,
         .time = &platform->time,
+        .log = &log_api,
         .tls_verify = H2_PAL_NET_TLS_VERIFY_REQUIRED,
         .max_header_bytes = max_header_bytes,
         .max_redirects = 5u,
@@ -610,6 +626,7 @@ static int test_dns_deadline_and_cancel(void) {
     h2_pal_http_api_t api;
     h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
     CHECK(provider != NULL);
+    error_logs = 0;
     platform.resolve_timeout_count = 8;
     h2_pal_http_request_t request = {
         .method = H2_PAL_HTTP_GET,
@@ -619,6 +636,8 @@ static int test_dns_deadline_and_cancel(void) {
     h2_pal_http_response_t response;
     CHECK(h2_pal_http_request(&api, &request, &response) ==
           H2_PAL_ERR_TIMEOUT);
+    CHECK(error_logs == 1);
+    CHECK(strstr(last_error, "stage=dns pal_rc=-6") != NULL);
     CHECK(platform.resolve_poll_count >= 1);
     CHECK(platform.resolver_close_count == 1);
     CHECK(platform.open_count == 0);
@@ -629,6 +648,7 @@ static int test_dns_deadline_and_cancel(void) {
         &platform, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
     provider = create_provider(&platform, &api, NULL, 0u);
     CHECK(provider != NULL);
+    error_logs = 0;
     platform.resolve_timeout_count = 8;
     request = (h2_pal_http_request_t){
         .method = H2_PAL_HTTP_GET,
@@ -941,7 +961,39 @@ static int test_redirect_method_rules(void) {
     return 0;
 }
 
+static int test_failure_diagnostics(void) {
+    const char *stages[] = {"stage=tcp_connect", "stage=send", "stage=receive", "stage=tls_wrap"};
+    for (size_t i = 0u; i < 4u; ++i) {
+        fake_http_platform_t platform;
+        fake_http_platform_init(&platform);
+        fake_http_platform_add_response(&platform,
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        if (i == 0u) platform.connect_result = H2_PAL_ERR_IO;
+        if (i == 1u) platform.send_result = H2_PAL_ERR_IO;
+        if (i == 2u) platform.recv_result = H2_PAL_ERR_IO;
+        if (i == 3u) platform.tls_result = H2_PAL_ERR_TLS_VERIFY;
+        h2_pal_http_api_t api;
+        h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
+        CHECK(provider != NULL);
+        const char *url = "https://example.test/SECRET_PATH?key=SECRET_QUERY";
+        h2_pal_http_request_t request = {
+            .method = H2_PAL_HTTP_GET, .url = {.data = url, .len = strlen(url)},
+        };
+        h2_pal_http_response_t response;
+        error_logs = 0;
+        CHECK(h2_pal_http_request(&api, &request, &response) ==
+              (i == 3u ? H2_PAL_ERR_TLS_VERIFY : H2_PAL_ERR_IO));
+        CHECK(error_logs == 1);
+        CHECK(strstr(last_error, stages[i]) != NULL);
+        CHECK(strstr(last_error, "SECRET") == NULL);
+        CHECK(platform.close_count == 1);
+        h2_corehttp_destroy(provider);
+    }
+    return 0;
+}
+
 int main(void) {
+    if (test_failure_diagnostics() != 0) return 1;
     int rc = test_create_failure_resets_outputs();
     if (rc == 0) {
         rc = test_content_length_response();

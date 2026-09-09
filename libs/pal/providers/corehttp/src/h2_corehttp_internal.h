@@ -49,6 +49,7 @@ struct h2_corehttp_exchange {
     struct NetworkContext network;
     TransportInterface_t transport;
     h2_pal_result_t result;
+    const char *stage;
     llhttp_t parser;
     llhttp_settings_t parser_settings;
     size_t header_bytes;

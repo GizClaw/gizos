@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 
 #include "esp_netif.h"
+#include "esp_log.h"
 #include "esp_crt_bundle.h"
 
 #include <mbedtls/ssl.h>
@@ -328,6 +329,7 @@ static h2_pal_result_t esp_net_tls_handshake(
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            ESP_LOGE("h2_net", "stage=tls_handshake mbedtls_rc=%d", result);
             return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
                 ? H2_PAL_ERR_TLS_VERIFY
                 : H2_PAL_ERR_IO;
@@ -426,6 +428,7 @@ static int esp_net_resolve_host(
     struct addrinfo *res = NULL;
     int rc = getaddrinfo(host, NULL, &hints, &res);
     if (rc != 0 || res == NULL) {
+        ESP_LOGE("h2_net", "stage=dns getaddrinfo_rc=%d", rc);
         return H2_PAL_ERR_NOT_FOUND;
     }
     int out_rc = H2_PAL_ERR_NOT_FOUND;
@@ -802,6 +805,7 @@ static int esp_net_tcp_open(
     *out_socket = -1;
     int fd = socket(family_to_lwip(family), SOCK_STREAM, 0);
     if (fd < 0) {
+        ESP_LOGE("h2_net", "stage=tcp_open errno=%d", errno);
         return H2_PAL_ERR_IO;
     }
     *out_socket = fd;
@@ -855,6 +859,7 @@ static h2_pal_result_t esp_net_tcp_connect(
     }
     int flags = fcntl(socket_fd, F_GETFL, 0);
     if (flags < 0 || fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        ESP_LOGE("h2_net", "stage=tcp_flags errno=%d", errno);
         return H2_PAL_ERR_IO;
     }
     if (connect(socket_fd, (struct sockaddr *)&storage, sock_len) == 0 ||
@@ -863,6 +868,9 @@ static h2_pal_result_t esp_net_tcp_connect(
         return H2_PAL_OK;
     }
     if (errno != EINPROGRESS && errno != EALREADY && errno != EINTR) {
+        int error = errno;
+        ESP_LOGE("h2_net", "stage=tcp_connect errno=%d", error);
+        errno = error;
         (void)fcntl(socket_fd, F_SETFL, flags);
         return esp_net_socket_error();
     }
@@ -876,9 +884,11 @@ static h2_pal_result_t esp_net_tcp_connect(
     }
     int socket_error = 0;
     socklen_t error_len = sizeof(socket_error);
-    if (getsockopt(
-            socket_fd, SOL_SOCKET, SO_ERROR,
-            &socket_error, &error_len) < 0 || socket_error != 0) {
+    int socket_rc = getsockopt(
+        socket_fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len);
+    if (socket_rc < 0 || socket_error != 0) {
+        ESP_LOGE("h2_net", "stage=tcp_connect so_error=%d errno=%d",
+                 socket_error, socket_rc < 0 ? errno : 0);
         (void)fcntl(socket_fd, F_SETFL, flags);
         errno = socket_error;
         return esp_net_socket_error();
@@ -1004,6 +1014,11 @@ static int esp_net_tcp_send(
     if (sent == 0) {
         return H2_PAL_ERR_CLOSED;
     }
+    if (sent < 0) {
+        int error = errno;
+        ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
+        errno = error;
+    }
     return sent < 0 ? esp_net_socket_error() : sent;
 }
 
@@ -1084,6 +1099,9 @@ static int esp_net_tcp_send_timeout(
             return H2_PAL_ERR_CLOSED;
         }
         if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            int error = errno;
+            ESP_LOGE("h2_net", "stage=tcp_send errno=%d", error);
+            errno = error;
             return esp_net_socket_error();
         }
         if (timeout_ms == 0u) {

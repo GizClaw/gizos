@@ -821,26 +821,100 @@ static void h2_gizclaw_log_infof(h2_gizclaw_client_t *client, const char *fmt,
                          message);
 }
 
-static void h2_gizclaw_log_http_status(h2_gizclaw_client_t *client,
-                                       int status_code, const uint8_t *body,
-                                       size_t body_len) {
-  if (client == NULL || client->config.log == NULL) {
+/* Only a validated authority and the fixed server-info path are retained.
+ * Arbitrary paths, userinfo, query and fragments may contain credentials. */
+static void h2_gizclaw_log_http_result(h2_gizclaw_client_t *client,
+                                       const gzc_http_request_t *request,
+                                       const h2_pal_http_response_t *response,
+                                       int rc, uint64_t start_ms,
+                                       bool clock_valid) {
+  if (client->config.log == NULL)
     return;
+  char endpoint[96] = "redacted";
+  const char *scheme = "unknown";
+  const char *path = "redacted";
+  const char *url = request->url.data;
+  size_t len = request->url.len;
+  size_t begin = 0u;
+  if (url != NULL) {
+    if (len >= 7u && memcmp(url, "http://", 7u) == 0) {
+      begin = 7u;
+      scheme = "http";
+    } else if (len >= 8u && memcmp(url, "https://", 8u) == 0) {
+      begin = 8u;
+      scheme = "https";
+    }
+    size_t end = begin;
+    while (end < len && url[end] != '/' && url[end] != '?' && url[end] != '#')
+      ++end;
+    size_t path_end = end;
+    while (path_end < len && url[path_end] != '?' && url[path_end] != '#')
+      ++path_end;
+    if (path_end - end == sizeof("/server-info") - 1u &&
+        memcmp(url + end, "/server-info", sizeof("/server-info") - 1u) == 0) {
+      path = "/server-info";
+    }
+    for (size_t i = begin; i < end; ++i) {
+      if (url[i] == '@')
+        begin = i + 1u;
+    }
+    bool safe = end > begin && end - begin < sizeof(endpoint);
+    for (size_t i = begin; i < end; ++i) {
+      unsigned char c = (unsigned char)url[i];
+      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '.' || c == '-' || c == ':' ||
+            c == '[' || c == ']'))
+        safe = false;
+    }
+    if (safe) {
+      memcpy(endpoint, url + begin, end - begin);
+      endpoint[end - begin] = '\0';
+    }
   }
-  char message[192];
-  char body_text[80];
-  size_t copy_len =
-      body_len < (sizeof(body_text) - 1u) ? body_len : (sizeof(body_text) - 1u);
-  if (body != NULL && copy_len > 0u) {
-    memcpy(body_text, body, copy_len);
-  } else {
-    copy_len = 0u;
+  uint64_t end_ms = 0u;
+  clock_valid =
+      clock_valid &&
+      h2_pal_time_get_monotonic_ms(client->config.time, &end_ms) == H2_PAL_OK &&
+      end_ms >= start_ms;
+  const char *method = "UNKNOWN";
+  switch ((h2_pal_http_method_t)request->method) {
+  case H2_PAL_HTTP_GET:
+    method = "GET";
+    break;
+  case H2_PAL_HTTP_POST:
+    method = "POST";
+    break;
+  case H2_PAL_HTTP_PUT:
+    method = "PUT";
+    break;
+  case H2_PAL_HTTP_PATCH:
+    method = "PATCH";
+    break;
+  case H2_PAL_HTTP_DELETE:
+    method = "DELETE";
+    break;
+  case H2_PAL_HTTP_HEAD:
+    method = "HEAD";
+    break;
+  case H2_PAL_HTTP_OPTIONS:
+    method = "OPTIONS";
+    break;
+  default:
+    break;
   }
-  body_text[copy_len] = '\0';
-  (void)snprintf(message, sizeof(message),
-                 "http_status=%d body_len=%zu body=%s", status_code, body_len,
-                 body_text);
-  (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_ERROR, "gizclaw",
+  char message[320];
+  (void)snprintf(
+      message, sizeof(message),
+      "http_result method=%s scheme=%s endpoint=%s path=%s pal_rc=%d status=%d "
+      "body_len=%zu elapsed_ms=%llu clock_valid=%d",
+      method, scheme, endpoint, path, rc, response->status_code,
+      response->body_len,
+      (unsigned long long)(clock_valid ? end_ms - start_ms : 0u),
+      (int)clock_valid);
+  bool failed = rc != H2_PAL_OK || response->status_code < 200 ||
+                response->status_code >= 300;
+  (void)h2_pal_log_write(client->config.log,
+                         failed ? H2_PAL_LOG_ERROR : H2_PAL_LOG_INFO, "gizclaw",
                          message);
 }
 
@@ -1140,19 +1214,18 @@ static int h2_gzc_http_request(void *user, const gzc_http_request_t *request,
   };
   h2_pal_http_response_t h2_response;
   h2_pal_http_response_reset(&h2_response);
+  uint64_t start_ms = 0u;
+  bool clock_valid =
+      h2_pal_time_get_monotonic_ms(client->config.time, &start_ms) == H2_PAL_OK;
   int rc = h2_pal_http_request(client->config.http, &h2_request, &h2_response);
   if (headers != stack_headers) {
     h2_pal_mem_free(client->config.allocator, headers);
   }
-  h2_gizclaw_log_infof(client, "http_result rc=%d status=%d body_len=%zu", rc,
-                       h2_response.status_code, h2_response.body_len);
+  h2_gizclaw_log_http_result(client, request, &h2_response, rc, start_ms,
+                              clock_valid);
   if (rc != H2_PAL_OK) {
     h2_pal_http_response_free(client->config.http, &h2_response);
     return GZC_ERR_HTTP;
-  }
-  if (h2_response.status_code < 200 || h2_response.status_code >= 300) {
-    h2_gizclaw_log_http_status(client, h2_response.status_code,
-                               h2_response.body, h2_response.body_len);
   }
   out_response->status_code = h2_response.status_code;
   out_response->content_length = h2_response.content_length;
@@ -1161,6 +1234,13 @@ static int h2_gzc_http_request(void *user, const gzc_http_request_t *request,
   out_response->body.cap = h2_response.body_len;
   return GZC_OK;
 }
+
+#if defined(H2_GIZCLAW_TESTING)
+int h2_gizclaw_test_http_request(h2_gizclaw_client_t *client,
+    const gzc_http_request_t *request, gzc_http_response_t *response) {
+  return h2_gzc_http_request(client, request, response);
+}
+#endif
 
 static void h2_gzc_http_response_free(void *user,
                                       gzc_http_response_t *response) {
@@ -1827,8 +1907,10 @@ int h2_gizclaw_client_connect(h2_gizclaw_client_t *client) {
   if (client->terminal_closed) {
     return H2_PAL_ERR_CLOSED;
   }
+  const char *stage = "client_connect";
   int rc = gzc_client_connect(client->gzc);
   if (rc == GZC_OK) {
+    stage = "event_stream_open";
     rc = gzc_event_stream_open(client->gzc, client->config.connect_timeout_ms,
                                &client->events);
     if (rc != GZC_OK) {
@@ -1836,7 +1918,7 @@ int h2_gizclaw_client_connect(h2_gizclaw_client_t *client) {
     }
   }
   if (rc != GZC_OK) {
-    h2_gizclaw_log_error(client, "connect", rc);
+    h2_gizclaw_log_error(client, stage, rc);
     h2_gizclaw_release_event_handle(client);
   }
   return h2_gizclaw_result_from_gzc(rc);
