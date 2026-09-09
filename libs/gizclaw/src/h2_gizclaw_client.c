@@ -429,15 +429,15 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
   }
   if (peer_event.type !=
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
-    char detail[H2_PAL_LOG_MESSAGE_MAX] = "";
-    if (client->active_conversation != NULL)
-      h2_gizclaw_conversation_describe_peer_event_internal(
-          client->active_conversation, &peer_event, detail, sizeof(detail));
     char message[H2_PAL_LOG_MESSAGE_MAX];
-    (void)snprintf(message, sizeof(message),
-                   "event=peer_read type=%d active=%d accepted=%d %s",
-                   (int)peer_event.type, client->active_conversation != NULL,
-                   accepted, detail);
+    const int prefix_len = snprintf(
+        message, sizeof(message), "event=peer_read type=%d active=%d accepted=%d ",
+        (int)peer_event.type, client->active_conversation != NULL, accepted);
+    if (prefix_len > 0 && (size_t)prefix_len < sizeof(message) &&
+        client->active_conversation != NULL)
+      h2_gizclaw_conversation_describe_peer_event_internal(
+          client->active_conversation, &peer_event, message + prefix_len,
+          sizeof(message) - (size_t)prefix_len);
     (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_DEBUG, "gizclaw",
                            message);
   }

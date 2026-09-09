@@ -27,17 +27,36 @@ static unsigned audio_starts, audio_ends;
 static h2_pal_result_t audio_start_result, audio_end_result;
 static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
 /* This test mocks Service; capture Session's production ERROR formatting. */
-void h2_gizclaw_service_log_session_internal(
-    const h2_gizclaw_service_t *service, h2_pal_log_level_t level,
-    const char *message) {
+void h2_gizclaw_service_flush_audio_log_internal(
+    const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
   (void)service;
-  if (level == H2_PAL_LOG_INFO)
-    assert(strstr(message, "stage=interrupt_begin") != NULL);
-  if (level != H2_PAL_LOG_ERROR)
-    return;
-  assert(strlen(message) < sizeof(audio_error_log));
-  strcpy(audio_error_log, message);
+  for (size_t i = 0u; i < log->count; ++i) {
+    /* A diagnostic sink may read Session state: the outer lock must be free. */
+    h2_gizclaw_session_state_t state;
+    assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+    const char *message = log->messages[i];
+    if (log->levels[i] == H2_PAL_LOG_INFO)
+      assert(strstr(message, "stage=interrupt_begin") != NULL);
+    if (log->levels[i] != H2_PAL_LOG_ERROR)
+      continue;
+    assert(strlen(message) < sizeof(audio_error_log));
+    strcpy(audio_error_log, message);
+  }
 }
+
+h2_pal_result_t h2_gizclaw_service_audio_control_internal(
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
+  (void)log;
+  return start ? h2_gizclaw_service_audio_start(service)
+               : h2_gizclaw_service_audio_end(service);
+}
+
+h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log) {
+  (void)log;
+  return h2_gizclaw_conversation_cancel(conversation);
+}
+
 static atomic_bool cancel_entered;
 static atomic_uint_fast64_t now;
 static uint64_t list_delay;

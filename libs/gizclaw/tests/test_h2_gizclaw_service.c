@@ -7892,6 +7892,7 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
 }
 
 typedef struct conversation_log_capture {
+  h2_gizclaw_service_t *service;
   atomic_bool control_error;
   atomic_bool canceled_completion;
 } conversation_log_capture_t;
@@ -7900,6 +7901,18 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
                                      const char *scope, const char *message) {
   (void)scope;
   conversation_log_capture_t *capture = user;
+  if (strstr(message, "stage=service_audio_") != NULL ||
+      strstr(message, "stage=cancel_requested") != NULL ||
+      strstr(message, "stage=completion_release") != NULL) {
+    /* Reenter both owner locks from the application-provided Log PAL. */
+    assert(h2_pal_mutex_lock(capture->service->config.sync,
+                            capture->service->audio_mutex) == H2_PAL_OK);
+    h2_gizclaw_time_sync_status_t status;
+    assert(h2_gizclaw_service_get_time_sync_status(capture->service, &status) ==
+           H2_PAL_OK);
+    assert(h2_pal_mutex_unlock(capture->service->config.sync,
+                              capture->service->audio_mutex) == H2_PAL_OK);
+  }
   if (strstr(message, "stage=terminal_staged") != NULL ||
       strstr(message, "stage=terminal_dispatch") != NULL ||
       strstr(message, "event=peer_read") != NULL ||
@@ -7927,7 +7940,7 @@ static void test_conversation_public_audio_tasks(void) {
   for (unsigned mode = 0; mode < 25; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
-    conversation_log_capture_t log_capture = {0};
+    conversation_log_capture_t log_capture = {.service = service};
     const h2_pal_log_vtable_t log_vtable = {.write = conversation_capture_log};
     const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
     service->client_config.log = &log;
