@@ -132,9 +132,9 @@ managed request 诊断。已提交请求失败时仅增加一条 ERROR：
 | `direction`、`phase`、`rc`、`timeout_ms` | 方向、最后推进阶段、PAL 请求结果、实际配置的期限。phase 可以是 queued、start、await_input、write、finish_write、await_result、drain；不是 SDK 内部 transport 状态。 |
 | `elapsed_ms`、`clock_valid` | managed request 开始执行到结算的耗时，包含清理、不包含排队。未开始执行或时钟不可用/倒退时 valid 为 0，数值不可使用。 |
 | `tx_sdk_accepted` | SDK write 返回成功的 payload 字节数；不是服务端已收到的字节数。SDK write 内部部分发送后返回失败时，其部分进度不可见。 |
-| `rx_data`、`rx_validated` | GizOS ingress 看到的非空 RPC DATA payload 字节数，及方向 worker 已校验通过的字节数。前者在入队/校验前计数，包含后来被拒绝的数据，不包括响应 envelope、EOS 和 transport framing。 |
+| `rx_data` | GizOS ingress 看到的非空 RPC DATA payload 字节数，在入队/校验前计数，不代表校验通过，也不包括响应 envelope、EOS 和 transport framing。 |
 | `activity_seen`、`idle_valid`、`idle_ms` | 最近一次非空 DATA ingress 或成功 SDK write 的时间距结算的间隔。没有活动、该次活动时钟失败或时钟倒退时 idle_valid 为 0；idle_ms=0 本身不能证明仍在传输。 |
-| `response_seen`、`eos_seen`、`eos_queued`、`eos_validated` | 响应到达 ingress、协议 EOS 到达 ingress、EOS 入队、EOS 通过测速完整性校验。看到 EOS 不等于完成。 |
+| `response_seen`、`eos_seen` | 响应和协议 EOS 是否到达 ingress；看到 EOS 不等于完成。 |
 | `input_finished`、`rpc_result_ok`、`stream_rc` | SDK finish_write 已成功、SDK result 及远端结果均成功、清理前的本地流错误。前两者不推断底层 channel 状态。 |
 | `remote_error_seen`、`remote_code` | ingress 收到的远端 RPC 错误及原始协议错误码，不记录错误消息内容。 |
 | `sdk_available`、`sdk_completion_seen`、`sdk_completion_gzc_rc` | 清理前 GizOS SDK 适配对象是否存在，以及其完成回调和原始 GZC 状态。completion 未见时其码无意义。 |
@@ -147,8 +147,7 @@ managed request 诊断。已提交请求失败时仅增加一条 ERROR：
 EOS 已见但 `rpc_result_ok=0` 则还没有取得成功的最终请求结果。
 
 当前固定 C SDK v0.17.0 的公开 RPC API 不提供 request → DataChannel 关联、通道终态原因、
-原始 PAL/transport 错误或实际远端收取量，日志因此明确标记
-`channel_terminal=unavailable channel_raw_rc=unavailable tx_delivered=unavailable`。
+原始 PAL/transport 错误或实际远端收取量，因此日志不提供这些字段。
 SDK 的 `GZC_ERR_CLOSED` 同时用于 DataChannel close、client close 和主动 cancel，不能仅凭
 该码进一步归因；SDK 已映射的错误也不能当作原始 PAL 错误。
 需要上游增加 request-owned、在 channel 清理后仍可读取的诊断 snapshot：终止来源、
