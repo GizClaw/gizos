@@ -1,5 +1,6 @@
 #include "h2_esp_simcom_modem.h"
 #include "h2_esp_simcom_teardown.h"
+#include "h2_esp_simcom_urc.h"
 
 #include "h2_esp_platform_core.h"
 #include "h2_simcom_modem.h"
@@ -177,46 +178,24 @@ static void ppp_status_handler(void *arg, esp_event_base_t base, int32_t event_i
 }
 
 #ifdef CONFIG_ESP_MODEM_URC_HANDLER
+static h2_pal_result_t post_urc(void *user, const char *line) {
+    h2_esp_simcom_modem_t *modem = user;
+    h2_pal_result_t rc = h2_simcom_post_urc_line(&modem->driver, line);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if (strncmp(line, "+CGNSSPWR: READY!", sizeof("+CGNSSPWR: READY!") - 1u) == 0 &&
+        modem->events != NULL) {
+        xEventGroupSetBits(modem->events, H2_ESP_SIMCOM_GNSS_READY_BIT);
+    }
+    return H2_PAL_OK;
+}
+
 static esp_err_t urc_handler(uint8_t *data, size_t len) {
-    if (s_urc_modem == NULL || data == NULL || len == 0u) {
+    if (s_urc_modem == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    char line[H2_SIMCOM_LINE_MAX];
-    size_t copy_len = len < sizeof(line) - 1u ? len : sizeof(line) - 1u;
-    memcpy(line, data, copy_len);
-    line[copy_len] = '\0';
-    char *cursor = line;
-    while (*cursor != '\0') {
-        while (*cursor == '\r' || *cursor == '\n') {
-            ++cursor;
-        }
-        if (*cursor == '\0') {
-            break;
-        }
-        char *end = cursor;
-        while (*end != '\0' && *end != '\r' && *end != '\n') {
-            ++end;
-        }
-        char saved = *end;
-        *end = '\0';
-        h2_pal_result_t rc = h2_simcom_post_urc_line(&s_urc_modem->driver, cursor);
-        if (rc != H2_PAL_OK) {
-            ESP_LOGW(TAG, "URC delivery failed: %d", (int)rc);
-        }
-        if (strncmp(
-                cursor,
-                "+CGNSSPWR: READY!",
-                sizeof("+CGNSSPWR: READY!") - 1u) == 0 &&
-            s_urc_modem->events != NULL) {
-            xEventGroupSetBits(
-                s_urc_modem->events, H2_ESP_SIMCOM_GNSS_READY_BIT);
-        }
-        if (saved == '\0') {
-            break;
-        }
-        cursor = end + 1;
-    }
-    return ESP_OK;
+    return h2_esp_simcom_forward_urcs(s_urc_modem, data, len, post_urc);
 }
 #endif
 
