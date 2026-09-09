@@ -39,7 +39,9 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
                : h2_gizclaw_service_audio_end(service);
 }
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
+    int source) {
+  (void)source;
   (void)log;
   return h2_gizclaw_conversation_cancel(conversation);
 }

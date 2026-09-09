@@ -7506,6 +7506,8 @@ static h2_pal_result_t conversation_test_track_read(void *user, uint8_t *pcm,
     return H2_PAL_ERR_WOULD_BLOCK;
   if (test->mode == 2 && test->read_offset != 0)
     return H2_PAL_ERR_CLOSED;
+  if (test->mode == 25 && test->read_offset != 0)
+    return H2_PAL_ERR_INVALID_ARG;
   const bool multi_turn = test->mode == 15 || test->mode == 16;
   /* Mode 18 echoes more reply chunks than the hook ring holds (8 x 1280 B =
    * 16 chunks) so a stalled hook consumer is actually exercised. */
@@ -7895,6 +7897,9 @@ typedef struct conversation_log_capture {
   h2_gizclaw_service_t *service;
   atomic_bool control_error;
   atomic_bool canceled_completion;
+  atomic_uint worker_errors;
+  atomic_bool invalid_pcm_read;
+  atomic_bool api_cancel_state;
 } conversation_log_capture_t;
 
 static int conversation_capture_log(void *user, h2_pal_log_level_t level,
@@ -7924,6 +7929,26 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
     assert(level == H2_PAL_LOG_INFO);
     atomic_store(&capture->canceled_completion, true);
   }
+  if (strstr(message, "stage=audio_worker_failed") != NULL) {
+    assert(level == H2_PAL_LOG_ERROR);
+    assert(strstr(message, "identity=1 generation=1") != NULL);
+    /* First fatal error only, and the Log PAL may inspect Service state. */
+    h2_gizclaw_time_sync_status_t status;
+    assert(h2_gizclaw_service_get_time_sync_status(capture->service, &status) ==
+           H2_PAL_OK);
+    atomic_fetch_add(&capture->worker_errors, 1u);
+    if (strstr(message, "phase=pcm_read rc=-1") != NULL) {
+      assert(strstr(message, "wire_ready=1 committed=0 media_eos=0") != NULL);
+      assert(strstr(message, "frames=0 bytes=100") != NULL);
+      atomic_store(&capture->invalid_pcm_read, true);
+    }
+  }
+  if (strstr(message, "stage=cancel_state") != NULL &&
+      strstr(message, "cancel_source=1") != NULL) {
+    assert(level == H2_PAL_LOG_INFO);
+    assert(strstr(message, "identity=1 generation=1") != NULL);
+    atomic_store(&capture->api_cancel_state, true);
+  }
   /* Simulate an ERROR-only sink for control failures. */
   if (level != H2_PAL_LOG_ERROR)
     return H2_PAL_OK;
@@ -7937,7 +7962,7 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 25; ++mode) {
+  for (unsigned mode = 0; mode < 26; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_log_capture_t log_capture = {.service = service};
@@ -8151,9 +8176,18 @@ static void test_conversation_public_audio_tasks(void) {
     assert(test.result ==
            ((mode == 1 || mode == 2 || (mode >= 11 && mode <= 14) || mode == 16 || mode == 21)
                 ? H2_PAL_ERR_CLOSED
+            : mode == 25             ? H2_PAL_ERR_INVALID_ARG
             : mode == 5              ? H2_PAL_ERR_TIMEOUT
             : mode == 6 || mode == 8 || mode == 23 ? H2_PAL_ERR_IO
                                      : H2_PAL_OK));
+    if (mode == 25) {
+      assert(atomic_load(&log_capture.worker_errors) == 1u);
+      assert(atomic_load(&log_capture.invalid_pcm_read));
+      /* Teardown emits cancellation EOS, not a committed input EOS. */
+      assert(atomic_load(&test.eos) && atomic_load(&test.canceled));
+    }
+    if (mode == 21)
+      assert(atomic_load(&log_capture.api_cancel_state));
     assert(test.event_close_count == (mode == 12 || mode == 14 ? 1u : 0u));
     assert(service->stopping == (mode == 12 || mode == 14));
     assert(atomic_load(&service->media_request) == NULL);
