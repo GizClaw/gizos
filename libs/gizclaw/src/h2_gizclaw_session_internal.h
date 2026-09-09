@@ -3,6 +3,29 @@
 
 #include "h2_gizclaw_session.h"
 
+/* Call-owned snapshots: collect under owner locks, emit after the outermost
+ * Session/audio lock is released. A control call records at most eight lines. */
+typedef struct h2_gizclaw_audio_log {
+  size_t count;
+  h2_pal_log_level_t levels[8];
+  char messages[8][H2_PAL_LOG_MESSAGE_MAX];
+} h2_gizclaw_audio_log_t;
+
+static inline char *h2_gizclaw_audio_log_append_internal(
+    h2_gizclaw_audio_log_t *log, h2_pal_log_level_t level) {
+  if (log->count == 8u)
+    return NULL;
+  log->levels[log->count] = level;
+  return log->messages[log->count++];
+}
+
+void h2_gizclaw_service_flush_audio_log_internal(
+    const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log);
+h2_pal_result_t h2_gizclaw_service_audio_control_internal(
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log);
+h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log);
+
 /* Session and its Service outlive all admitted RPC calls. */
 h2_pal_result_t
 h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,

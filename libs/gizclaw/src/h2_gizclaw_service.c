@@ -45,6 +45,15 @@ void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
                          message);
 }
 
+void h2_gizclaw_service_flush_audio_log_internal(
+    const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
+  const h2_pal_log_api_t *api = service != NULL ? service->client_config.log : NULL;
+  if (api == NULL)
+    return;
+  for (size_t i = 0u; i < log->count; ++i)
+    (void)h2_pal_log_write(api, log->levels[i], "gizclaw", log->messages[i]);
+}
+
 static uint64_t service_monotonic_ms(const h2_gizclaw_service_t *service) {
   uint64_t now_ms = 0u;
   if (service == NULL || service->config.client_config == NULL ||

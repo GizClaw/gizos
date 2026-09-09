@@ -144,6 +144,15 @@ static int test_open_ready(h2_gizclaw_client_t *client, h2_gizclaw_str_t workspa
   h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
   assert(h2_gizclaw_conversation_wire_input_ready_internal(*out));
   assert(!h2_gizclaw_conversation_has_pending_peer_event_internal(*out));
+  char detail[H2_PAL_LOG_MESSAGE_MAX];
+  h2_gizclaw_conversation_describe_peer_event_internal(*out, &event, detail,
+                                                       sizeof(detail));
+  char expected[64];
+  snprintf(expected, sizeof(expected), "generation=%llu input=",
+           (unsigned long long)generation);
+  assert(strstr(detail, expected) == detail);
+  assert(strstr(detail, "ready=1 committed=0 canceled=0") != NULL);
+  assert(strstr(detail, "pending=0") != NULL);
   return rc;
 }
 
