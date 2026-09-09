@@ -62,7 +62,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    uses: GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@cff6ec446b57dff4cd682dd8539bc6de79f516c4
+    uses: GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@a7a6648331d10741012b8d54fc23e246a30a1a7a
     with:
       model: gpt-5.6-terra
       effort: medium
@@ -102,7 +102,7 @@ jobs:
           ELIGIBILITY_STATUS_MODE: finish
           EXPECTED_BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
           EXPECTED_HEAD_SHA: ${{ needs.prepare.outputs.head_sha }}
-          EXPECTED_REVIEW_WORKFLOW_SHA: cff6ec446b57dff4cd682dd8539bc6de79f516c4
+          EXPECTED_REVIEW_WORKFLOW_SHA: a7a6648331d10741012b8d54fc23e246a30a1a7a
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           PULL_REQUEST_NUMBER: ${{ needs.prepare.outputs.pull_request_number }}
