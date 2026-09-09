@@ -248,6 +248,40 @@ static void test_policy_and_holds(void) {
     finish(&f);
 }
 
+static void test_close_preserves_failed_sessions(void) {
+    const char *failed_commands[] = {"AT+QGPSEND", "ATH", "AT+QPPPDROP"};
+    for (size_t i = 0; i < sizeof(failed_commands) / sizeof(failed_commands[0]); ++i) {
+        fixture_t f;
+        h2_pal_system_event_api_t events;
+        init_fixture(&f, &events, 0);
+        h2_pal_modem_t *api = &f.modem.platform;
+        assert(h2_pal_modem_open(api, 0u) == H2_PAL_OK);
+        assert(h2_pal_modem_set_power_policy(api, H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP) ==
+               H2_PAL_OK);
+        if (i == 0u) {
+            assert(h2_pal_modem_gnss_start(api, 0u) == H2_PAL_OK);
+        } else if (i == 1u) {
+            h2_quectel_handle_urc_line(&f.modem, "RING");
+        } else {
+            assert(h2_quectel_modem_dial_ppp(&f.modem) == H2_PAL_OK);
+        }
+        f.fail_command = failed_commands[i];
+        h2_pal_mutex_t *lock = f.modem.lock;
+        assert(h2_pal_modem_close(api, 0u) == H2_PAL_ERR_TIMEOUT);
+        assert(f.modem.opened && f.modem.lock == lock && f.deinit_count == 0u);
+        assert(!f.asleep_allowed);
+        assert((i == 0u && f.modem.gnss_hold) || (i == 1u && f.modem.call_hold) ||
+               (i == 2u && f.modem.data_hold));
+        assert(f.modem.power_policy == H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP);
+        h2_quectel_modem_deinit(&f.modem);
+        assert(f.modem.opened && f.modem.lock == lock && f.deinit_count == 0u);
+        f.fail_command = NULL;
+        assert(h2_pal_modem_close(api, 0u) == H2_PAL_OK);
+        assert(!f.modem.opened && f.deinit_count == 1u);
+        finish(&f);
+    }
+}
+
 static void test_sim_and_reset(void) {
     fixture_t f;
     h2_pal_system_event_api_t events;
@@ -377,6 +411,7 @@ static void test_concurrent_close(void) {
 
 int main(void) {
     test_policy_and_holds();
+    test_close_preserves_failed_sessions();
     test_sim_and_reset();
     test_unsupported_and_restart();
     test_concurrent_close();

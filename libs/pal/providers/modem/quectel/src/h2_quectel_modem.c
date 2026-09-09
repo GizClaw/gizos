@@ -216,14 +216,18 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
         rc = h2_quectel_at_exchange(modem, "AT+QSCLK=0", NULL, 0);
         if (result == H2_PAL_OK) { result = rc; }
     }
+    /* A failed stop leaves the modem session unconfirmed. Keep transport,
+     * state and lock alive so close/deinit can retry that session. */
+    if (result != H2_PAL_OK) {
+        modem->power_fault = 1u;
+        return result;
+    }
     if (modem->config.deinit != NULL) {
         rc = modem->config.deinit(modem->config.transport_user);
         if (rc != H2_PAL_OK) {
             modem->power_fault = 1u;
             return rc;
         }
-    } else if (result != H2_PAL_OK) {
-        return result;
     }
     (void)h2_quectel_incoming_call_end(modem);
     modem->power_policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
