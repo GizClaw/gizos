@@ -24,6 +24,26 @@ h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
   return H2_PAL_OK;
 }
 
+/* Keep the real Session on the fake Service boundary, including its deferred
+ * diagnostics. The App test does not own or inspect private log records. */
+typedef struct h2_gizclaw_audio_log h2_gizclaw_audio_log_t;
+void h2_gizclaw_service_flush_audio_log_internal(
+    const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
+  (void)service;
+  (void)log;
+}
+h2_pal_result_t h2_gizclaw_service_audio_control_internal(
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
+  (void)log;
+  return start ? h2_gizclaw_service_audio_start(service)
+               : h2_gizclaw_service_audio_end(service);
+}
+h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log) {
+  (void)log;
+  return h2_gizclaw_conversation_cancel(conversation);
+}
+
 static bool s_session;
 #include "h2_gizclaw_pcm_track_fake.h"
 
