@@ -279,12 +279,25 @@ void h2_quectel_post_system_event(
     (void)h2_pal_system_event_post(modem->config.system_events, &event, 0u);
 }
 
+static void dispatch_urc(void *user, const char *line) {
+    h2_quectel_modem_t *modem = user;
+    h2_quectel_handle_urc_line(modem, line);
+}
+
+h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *line) {
+    return modem != NULL ? h2_modem_urc_post(&modem->urc_worker, line) : H2_PAL_ERR_INVALID_ARG;
+}
+
 h2_pal_result_t h2_quectel_modem_init(
     h2_quectel_modem_t *modem,
     const h2_quectel_modem_config_t *config) {
     if (modem == NULL ||
         config == NULL ||
         (config->command == NULL && (config->read == NULL || config->write == NULL))) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if ((config->urc_task_api != NULL || config->urc_queue_api != NULL) &&
+        (config->urc_task_api == NULL || config->urc_queue_api == NULL || config->sync_api == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(modem, 0, sizeof(*modem));
@@ -340,23 +353,42 @@ h2_pal_result_t h2_quectel_modem_init(
         ? &s_quectel_modem_cell_locate_vtable
         : &s_quectel_modem_vtable;
     modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
+    if (config->urc_task_api != NULL) {
+        h2_pal_result_t rc = h2_modem_urc_start(&modem->urc_worker,
+            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem);
+        if (rc != H2_PAL_OK) {
+            (void)h2_pal_mutex_destroy(config->sync_api, modem->lock);
+            modem->lock = NULL;
+            return rc;
+        }
+    }
     return H2_PAL_OK;
 }
 
-void h2_quectel_modem_deinit(h2_quectel_modem_t *modem) {
+h2_pal_result_t h2_quectel_modem_deinit(h2_quectel_modem_t *modem) {
     if (modem == NULL) {
-        return;
+        return H2_PAL_ERR_INVALID_ARG;
     }
     if (modem->opened != 0u) {
-        h2_pal_result_t rc = h2_quectel_modem_close(&modem->platform, 0u);
+        h2_pal_result_t rc = h2_quectel_modem_close(&modem->platform, modem->config.command_timeout_ms);
         if (rc != H2_PAL_OK && modem->opened != 0u) {
-            return;
+            return rc;
         }
     }
+    /* Transport RX is stopped by close (or externally joined by the owner).
+     * Never join while holding the provider lock needed by dispatch_urc. */
+    h2_pal_result_t rc = h2_modem_urc_stop(&modem->urc_worker);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
     if (modem->lock != NULL && modem->config.sync_api != NULL) {
-        h2_pal_mutex_destroy(modem->config.sync_api, modem->lock);
+        rc = h2_pal_mutex_destroy(modem->config.sync_api, modem->lock);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
     }
     memset(modem, 0, sizeof(*modem));
+    return H2_PAL_OK;
 }
 
 h2_pal_modem_t *h2_quectel_modem_platform(h2_quectel_modem_t *modem) {

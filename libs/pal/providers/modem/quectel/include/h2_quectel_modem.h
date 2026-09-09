@@ -2,6 +2,7 @@
 #define H2_QUECTEL_MODEM_H
 
 #include "h2/pal/hal/h2_pal_modem.h"
+#include "h2_modem_urc.h"
 #include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/os/h2_pal_system_event.h"
 
@@ -73,6 +74,10 @@ typedef struct h2_quectel_modem_config {
     h2_quectel_modem_write_fn write;
     h2_quectel_modem_command_fn command;
     const h2_pal_sync_api_t *sync_api;
+    /* Supply both APIs for asynchronous RX. The worker lives from init to
+     * deinit; sync_api is required to serialize it with AT exchanges. */
+    const h2_pal_task_api_t *urc_task_api;
+    const h2_pal_queue_api_t *urc_queue_api;
     const h2_pal_mem_api_t *allocator;
     const h2_pal_system_event_api_t *system_events;
     uint32_t capabilities;
@@ -103,6 +108,7 @@ struct h2_quectel_modem {
     h2_pal_modem_t platform;
     h2_quectel_modem_config_t config;
     h2_pal_mutex_t *lock;
+    h2_modem_urc_worker_t urc_worker;
     uint32_t operation_depth;
     h2_pal_modem_power_policy_t power_policy;
     uint8_t power_configured;
@@ -131,10 +137,10 @@ struct h2_quectel_modem {
 h2_pal_result_t h2_quectel_modem_init(
     h2_quectel_modem_t *modem,
     const h2_quectel_modem_config_t *config);
-/** @brief Best-effort close and release after all API/URC callers are joined.
- * If transport shutdown fails with the instance still open, retain its state
- * and lock so the owner can retry close before calling deinit again. */
-void h2_quectel_modem_deinit(h2_quectel_modem_t *modem);
+/** Stop/join external API and RX callers before deinit. Closes the transport,
+ * stops the URC worker outside the provider lock, then releases resources.
+ * On failure retain the instance and retry; never free it before success. */
+h2_pal_result_t h2_quectel_modem_deinit(h2_quectel_modem_t *modem);
 h2_pal_modem_t *h2_quectel_modem_platform(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_modem_set_apn(
     h2_pal_modem_t *platform,
@@ -147,6 +153,10 @@ h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem);
  * Without sync_api all calls require external serialization.
  */
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line);
+/* RX entry: copies a complete notification to $modem/urc without waiting.
+ * Requires urc_task_api/urc_queue_api. Handle FULL/TRUNCATED in transport.
+ * Never call handle_urc_line directly from an asynchronous RX callback. */
+h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *line);
 h2_pal_result_t h2_quectel_modem_dial_ppp(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_modem_drop_ppp(h2_quectel_modem_t *modem);
 

@@ -1,0 +1,40 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["$modem/urc"],
+)
+
+cc_library(
+    name = "urc",
+    srcs = ["src/h2_modem_urc.c"],
+    hdrs = ["include/h2_modem_urc.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":tasks",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "urc_test",
+    srcs = ["tests/test_modem_urc.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":urc",
+        "//libs/pal/providers/modem/quectel:quectel_modem",
+        "//libs/pal/providers/modem/simcom:simcom_modem",
+    ],
+)

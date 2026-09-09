@@ -20,6 +20,7 @@ esp_target_task_policy(
         "$net/modem_ppp_rx  default",
         "$modem/call_in     default",
         "$modem/gnss_fix    default",
+        "$modem/urc         default",
         "$runtime/input     default",
         "$runtime/nfc       default",
         "$h2loader/uartcmd  default",
@@ -34,7 +35,6 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
@@ -42,6 +42,7 @@ firmware_lib_component(
         "//libs/pal/providers/modem/simcom:simcom_modem",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
     ],
 )
 

@@ -38,5 +38,6 @@ cc_library(
     deps = [
         ":tasks",
         "//libs/pal",
+        "//libs/pal/providers/modem/common:urc",
     ],
 )
