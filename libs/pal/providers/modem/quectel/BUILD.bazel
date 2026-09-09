@@ -11,6 +11,7 @@ cc_library(
         "src/h2_quectel_gnss.c",
         "src/h2_quectel_internal.h",
         "src/h2_quectel_modem.c",
+        "src/h2_quectel_power.c",
         "src/h2_quectel_ppp.c",
         "src/h2_quectel_status.c",
         "src/h2_quectel_urc.c",
@@ -35,4 +36,20 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":quectel_modem"],
+)
+
+cc_test(
+    name = "quectel_power_test",
+    srcs = ["tests/test_quectel_power.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quectel_modem",
+        "//libs/pal:unsupported",
+    ],
 )

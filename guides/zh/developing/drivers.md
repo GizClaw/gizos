@@ -47,3 +47,24 @@ Driver 可以知道具体 device protocol 和 register，但不能知道 board p
 ```sh
 bazel test //libs/drivers/...
 ```
+
+## Quectel 低功耗与 SIM 热插拔
+
+Modem 的 ACTIVE/AUTO_SLEEP 是易失策略；实际状态独立报告。当前 Quectel provider 没有可信的休眠状态传感器，`get_power_status` 始终报告 UNKNOWN，也不发送 AT 或为查询唤醒模组。成功设置 AUTO_SLEEP 只表示允许空闲休眠。关闭后策略回到 ACTIVE；意外 RDY 后在下一次功能调用恢复配置。AT 或 sleep gate 失败会禁止自动释放唤醒，调用方可重试设置策略；尚未确认结束的通话、GNSS 和数据会话仍须成功停止。
+
+支持范围显式限定为 EC25 UART profile，并在准备时通过 CGMM 校验型号。未声明 profile、缺少独立 command channel、sleep gate 或 PAL recursive mutex 时不发布 LOW_POWER capability，调用返回 UNSUPPORTED。其他 Quectel 系列、USB-only 接线及 SIMCom 等 provider 不因通用 capability 配置而获得低功耗支持。独立 command channel 可以是由 transport 维护的 CMUX AT DLCI；PPP 数据 DLCI 活跃期间保持唤醒，不依赖未经验证的 CMUX/PPP 休眠行为。
+
+[EC25 Hardware Design V2.4](https://quectel.com/content/uploads/2024/02/Quectel_EC25_Series_Hardware_Design_V2.4-4.pdf) §3.4–3.5.1.1 说明普通 sleep 保留网络寻呼及语音来电，UART 场景用 QSCLK 与 DTR 配合，DTR 拉低唤醒，RI 通知主机。Provider 使用 QSCLK 0/1，不使用关闭 RF/SIM 的 CFUN 模式。Board 的 sleep gate 负责 DTR 电平、唤醒后 transport 就绪等待、所有 DLCI 排空、RI 唤醒及无损 URC 接收；存在 USB、WAKEUP_IN 或 AP_READY 时还要满足该板接线条件。官方资料未给出适用于所有固件和接线的固定唤醒延迟，因此 portable provider 不硬编码通用毫秒值。
+
+完整 PAL 操作和 public PPP/prepare 入口共享 recursive mutex。定位的 token 配置与查询不会被关闭或策略更新穿插；GNSS 从启动到停止、通话从拨号/来电到挂断或结束 URC、PPP 从拨号到停止均保持活动。持续活动期间即使策略是 AUTO_SLEEP，也不会允许休眠。Cell locate 仍要求调用方先使 packet data 可用，provider 不建立 PPP；它依赖 QuecLocator 的结果/CME 错误判断数据不可用，不能把本地 PPP 缓存当作模组内部 PDP 激活证明。
+
+[EC25/EC21 AT Commands Manual V1.3](https://quectel.com/content/uploads/2021/03/Quectel_EC25EC21_AT_Commands_Manual_V1.3.pdf) §5.10–5.11、§13.5 定义 QSIMDET、QSIMSTAT 和 QSCLK。启用热插拔需明确 SIM_DET 插入有效电平并提供 host data invalidation callback。准备流程读取 QSIMDET；配置不一致时写入期望值并返回 INVALID_STATE，集成方须重启模组、销毁旧 instance 并重新初始化。Provider 不自动重启或写产品偏好。已匹配时启用 QSIMSTAT 通知，命令失败则 open 失败。
+
+QSIMSTAT 的 absent、inserted、unknown 结合 CPIN 的 READY、SIM PIN/PUK、NOT READY 复用 MODEM_SIM_CHANGED；插入通知本身不等于 READY。重复状态被合并；拔出后的 NOT READY 不覆盖已知 ABSENT。无卡、锁卡或失效状态会清除 provider 的数据/IP 状态并触发 host invalidation callback，旧 PPP link-up 回调必须被 consumer 丢弃。重新插入只通知状态，不自动拨号，也不改写用户 4G 开关。接收侧应在任务中投递完整 URC；command callback 等待期间不能同步等待另一个调用 provider 的 URC worker，否则会形成锁循环。ISR 只负责缓存/唤醒。
+
+Consumer 集成需要同时完成：
+
+- 转发新增 PAL power 操作和 capability，提供实际 EC25 profile、DTR/RI/transport callback；主控深睡时由私有 board 保留 Modem 电源域和唤醒线路。
+- PPP adapter 在 SIM invalidation 时撤销旧 IP/DNS、取消旧 generation 回调并异步清理 netif；所有拨号和停止经过 provider 的 PPP 入口，不能绕过活动保持。
+- H106 根据 Wi-Fi 优先和用户期望设置策略，拔卡不复用“用户关闭 4G”的持久化动作；重新插卡按产品期望恢复。
+- 实机核验空闲电流、来电 RI/URC、主控深睡唤醒、DTR 时序、CMUX/PPP、GNSS 与反复插拔。Host mock 和并发测试不能替代这些硬件验收。

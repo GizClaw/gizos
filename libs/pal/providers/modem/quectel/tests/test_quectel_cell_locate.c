@@ -364,7 +364,22 @@ static void test_gnss_path_unchanged(void) {
     h2_quectel_modem_deinit(&modem);
 }
 
+static void test_locate_rejects_known_absent_sim(void) {
+    transport_state_t state = {0};
+    h2_quectel_modem_config_t config;
+    init_config(&config, &state);
+    config.cell_locate_token = FAKE_TOKEN;
+    h2_quectel_modem_t modem;
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+    h2_pal_modem_cell_location_t location;
+    assert(h2_pal_modem_cell_locate(&modem.platform, 0u, &location) == H2_PAL_ERR_INVALID_STATE);
+    assert(!location.valid && state.count == 0u);
+    h2_quectel_modem_deinit(&modem);
+}
+
 int main(void) {
+    test_locate_rejects_known_absent_sim();
     test_locate_sends_token_once();
     test_locate_without_token();
     test_token_that_breaks_command_framing();

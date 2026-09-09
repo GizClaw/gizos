@@ -66,12 +66,52 @@ static void post_call_status(h2_quectel_modem_t *modem, h2_pal_system_event_type
     h2_quectel_post_system_event(modem, type, &event, sizeof(event));
 }
 
-void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
+void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     if (modem == NULL || line == NULL || line[0] == '\0') {
         return;
     }
 
+    if (strncmp(line, "+QSIMSTAT", 9u) == 0) {
+        int enabled = -1;
+        int inserted = -1;
+        char tail = '\0';
+        if (sscanf(line + 9, " : %d , %d %c", &enabled, &inserted, &tail) != 2 ||
+            enabled < 0 || enabled > 1 || inserted < 0 || inserted > 2) {
+            return;
+        }
+        /* Inserted does not mean PIN-ready; repeated insertion indications
+         * must not downgrade an already READY/LOCKED card. */
+        if (inserted == 1 && modem->sim_seen != 0u &&
+            (modem->sim_state == H2_PAL_MODEM_SIM_STATE_READY ||
+             modem->sim_state == H2_PAL_MODEM_SIM_STATE_LOCKED)) {
+            return;
+        }
+        h2_quectel_sim_update(modem, inserted == 0 ? H2_PAL_MODEM_SIM_STATE_ABSENT : H2_PAL_MODEM_SIM_STATE_UNKNOWN);
+        return;
+    }
+    if (strncmp(line, "+CPIN:", 6u) == 0) {
+        const char *value = line + 6;
+        while (*value == ' ') { value++; }
+        h2_pal_modem_sim_state_t state = H2_PAL_MODEM_SIM_STATE_UNKNOWN;
+        if (strcmp(value, "READY") == 0) {
+            state = H2_PAL_MODEM_SIM_STATE_READY;
+        } else if (strcmp(value, "SIM PIN") == 0 || strcmp(value, "SIM PUK") == 0) {
+            state = H2_PAL_MODEM_SIM_STATE_LOCKED;
+        } else if (modem->sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT) {
+            state = H2_PAL_MODEM_SIM_STATE_ABSENT;
+        }
+        h2_quectel_sim_update(modem, state);
+        return;
+    }
+    if (strcmp(line, "+CME ERROR: 10") == 0 || strcmp(line, "+CME ERROR: SIM not inserted") == 0) {
+        h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_ABSENT);
+        return;
+    }
+
     if (strcmp(line, "RING") == 0 || strncmp(line, "+CRING:", 7) == 0) {
+        modem->call_hold = 1u;
+        (void)h2_quectel_power_wake(modem);
+        /* RI/transport wakes and retains the host before delivering this URC. */
         h2_pal_modem_call_status_t status;
         memset(&status, 0, sizeof(status));
         status.call_id = h2_quectel_incoming_call_begin(modem);
@@ -124,6 +164,7 @@ void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
         strcmp(line, "NO ANSWER") == 0) {
         h2_pal_modem_call_status_t status;
         memset(&status, 0, sizeof(status));
+        modem->call_hold = 0u;
         const int32_t incoming_call_id =
             h2_quectel_incoming_call_end(modem);
         status.call_id = incoming_call_id != 0 ? incoming_call_id : -1;
@@ -174,11 +215,53 @@ void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
         return;
     }
 
-    if (strncmp(line, "RDY", 3) == 0 || strncmp(line, "APP RDY", 7) == 0) {
+    if (strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0) {
+        modem->prepared = 0u;
+        modem->power_configured = 0u;
+        modem->cell_locate_token_sent = 0u;
+        modem->gnss_hold = 0u;
+        modem->call_hold = 0u;
+        modem->sim_seen = 0u;
+        h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_UNKNOWN);
         h2_quectel_post_system_event(
             modem,
             H2_PAL_SYSTEM_EVENT_TYPE_MODEM_READY,
             NULL,
             0u);
     }
+}
+
+void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t state) {
+    if (modem->sim_seen != 0u && modem->sim_state == state) {
+        return;
+    }
+    modem->sim_seen = 1u;
+    modem->sim_state = state;
+    h2_pal_modem_status_t status = {0};
+    status.capabilities = modem->capabilities;
+    status.sim = state;
+    if (state != H2_PAL_MODEM_SIM_STATE_READY) {
+        modem->sim_generation++;
+        memset(&modem->data_status, 0, sizeof(modem->data_status));
+        modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
+        modem->data_status.last_error = H2_PAL_ERR_UNAVAILABLE;
+        modem->data_hold = 0u;
+        if (modem->config.invalidate_data != NULL) {
+            modem->config.invalidate_data(modem->config.transport_user);
+        }
+        status.registration = H2_PAL_MODEM_REGISTRATION_OFFLINE;
+        status.packet = H2_PAL_MODEM_PACKET_DETACHED;
+        h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
+            &status, sizeof(status));
+    }
+    h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED,
+        &status, sizeof(status));
+}
+
+void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
+    if (h2_quectel_operation_begin(modem) != H2_PAL_OK) {
+        return;
+    }
+    h2_quectel_handle_urc_locked(modem, line);
+    (void)h2_quectel_operation_end(modem, H2_PAL_OK);
 }

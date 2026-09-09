@@ -39,19 +39,19 @@ static void parse_fix_datetime(const char *time_buf, const char *date_buf, h2_pa
     }
 }
 
-h2_pal_result_t h2_quectel_modem_gnss_start(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+static h2_pal_result_t h2_quectel_modem_gnss_start_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
     return modem != NULL ? h2_quectel_at_exchange(modem, "AT+QGPS=1", NULL, 0) : H2_PAL_ERR_INVALID_ARG;
 }
 
-h2_pal_result_t h2_quectel_modem_gnss_stop(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+static h2_pal_result_t h2_quectel_modem_gnss_stop_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
     return modem != NULL ? h2_quectel_at_exchange(modem, "AT+QGPSEND", NULL, 0) : H2_PAL_ERR_INVALID_ARG;
 }
 
-h2_pal_result_t h2_quectel_modem_get_gnss_state(
+static h2_pal_result_t h2_quectel_modem_get_gnss_state_impl(
     h2_pal_modem_t *platform,
     h2_pal_modem_gnss_state_t *out_state) {
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
@@ -71,7 +71,7 @@ h2_pal_result_t h2_quectel_modem_get_gnss_state(
     return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_quectel_modem_get_gnss_fix(
+static h2_pal_result_t h2_quectel_modem_get_gnss_fix_impl(
     h2_pal_modem_t *platform,
     h2_pal_modem_gnss_fix_t *out_fix) {
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
@@ -323,7 +323,7 @@ static h2_pal_result_t cell_locate_send_token(h2_quectel_modem_t *modem, uint32_
     return rc;
 }
 
-h2_pal_result_t h2_quectel_modem_cell_locate(
+static h2_pal_result_t h2_quectel_modem_cell_locate_impl(
     h2_pal_modem_t *platform,
     uint32_t timeout_ms,
     h2_pal_modem_cell_location_t *out_location) {
@@ -335,6 +335,10 @@ h2_pal_result_t h2_quectel_modem_cell_locate(
     if ((h2_quectel_modem_capabilities(modem) & H2_PAL_MODEM_CAPABILITY_CELL_LOCATE) == 0u ||
         !h2_quectel_cell_locate_token_valid(modem->config.cell_locate_token)) {
         return H2_PAL_ERR_UNSUPPORTED;
+    }
+
+    if (modem->sim_seen != 0u && modem->sim_state != H2_PAL_MODEM_SIM_STATE_READY) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
 
     uint32_t effective_timeout_ms = timeout_ms != 0u
@@ -367,4 +371,115 @@ h2_pal_result_t h2_quectel_modem_cell_locate(
         return rc;
     }
     return parsed;
+}
+
+h2_pal_result_t h2_quectel_modem_gnss_start(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    const uint8_t saved_hold = modem_state->gnss_hold;
+    modem_state->gnss_hold = 1u;
+    rc = h2_quectel_modem_gnss_start_impl(platform, timeout_ms);
+    if (rc == H2_PAL_ERR_INVALID_ARG || rc == H2_PAL_ERR_INVALID_STATE) {
+        modem_state->gnss_hold = saved_hold;
+    }
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_gnss_stop(h2_pal_modem_t *platform, uint32_t timeout_ms) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    rc = h2_quectel_modem_gnss_stop_impl(platform, timeout_ms);
+    if (rc == H2_PAL_OK) { modem_state->gnss_hold = 0u; }
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_get_gnss_state(
+    h2_pal_modem_t *platform,
+    h2_pal_modem_gnss_state_t *out_state) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    rc = h2_quectel_modem_get_gnss_state_impl(platform, out_state);
+    if (rc == H2_PAL_OK) {
+        modem_state->gnss_hold = *out_state != H2_PAL_MODEM_GNSS_OFF;
+    }
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_get_gnss_fix(
+    h2_pal_modem_t *platform,
+    h2_pal_modem_gnss_fix_t *out_fix) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    rc = h2_quectel_modem_get_gnss_fix_impl(platform, out_fix);
+    return h2_quectel_operation_end(modem_state, rc);
+}
+
+h2_pal_result_t h2_quectel_modem_cell_locate(
+    h2_pal_modem_t *platform,
+    uint32_t timeout_ms,
+    h2_pal_modem_cell_location_t *out_location) {
+    h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem_state->opened == 0u) {
+            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
+        }
+        rc = h2_quectel_modem_prepare(modem_state);
+        if (rc != H2_PAL_OK) {
+            return h2_quectel_operation_end(modem_state, rc);
+        }
+    }
+    rc = h2_quectel_modem_cell_locate_impl(platform, timeout_ms, out_location);
+    return h2_quectel_operation_end(modem_state, rc);
 }

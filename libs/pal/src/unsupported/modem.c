@@ -116,7 +116,22 @@ static h2_pal_result_t unsupported_modem_get_gnss_fix(void *p0, h2_pal_modem_gns
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_modem_set_power_policy(void *user, h2_pal_modem_power_policy_t policy) {
+    (void)user;
+    (void)policy;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_modem_get_power_status(void *user, h2_pal_modem_power_status_t *out_status) {
+    (void)user;
+    out_status->policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
+    out_status->state = H2_PAL_MODEM_POWER_STATE_UNKNOWN;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_modem_vtable_t unsupported_modem_vtable = {
+    .set_power_policy = unsupported_modem_set_power_policy,
+    .get_power_status = unsupported_modem_get_power_status,
     .open = unsupported_modem_open,
     .close = unsupported_modem_close,
     .get_capabilities = unsupported_modem_get_capabilities,
