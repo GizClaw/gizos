@@ -26,6 +26,18 @@ typedef struct managed_stream {
   h2_pal_result_t error; /* Service mutex. */
   h2_gizclaw_stream_lane_t lane;
   bool bound, data_ready; /* Service mutex. */
+  /* Benchmark-only observation. Network owner writes ingress/activity; the
+   * consumer writes validated counters. Read only after stream_detach joins
+   * data_refs, before publishing terminal. No payload or credential logging. */
+  bool diagnostic;
+  size_t download_expected, rx_bytes, validated_bytes;
+  bool response_seen, eos_seen, eos_validated, remote_error_seen;
+  int remote_error_code;
+  bool activity_seen, activity_clock_valid;
+  uint64_t last_activity_ms;
+  const char *phase;
+  h2_gizclaw_rpc_diagnostic_t sdk;
+  h2_pal_result_t observed_error;
 } managed_stream_t;
 
 typedef struct h2_gizclaw_managed_request {
@@ -37,6 +49,7 @@ typedef struct h2_gizclaw_managed_request {
   atomic_uint refs;
   atomic_bool terminal;
   bool started;
+  bool clock_started;
   uint64_t identity;
   h2_gizclaw_rpc_method_t method;
   const void *tag;
@@ -58,6 +71,62 @@ typedef struct h2_gizclaw_managed_request {
   h2_gizclaw_req_output_write_fn output_write;
   h2_gizclaw_req_complete_fn on_complete;
 } managed_request_t;
+
+static void stream_data_activity(managed_request_t *request) {
+  managed_stream_t *s = request->stream;
+  if (!s->diagnostic)
+    return;
+  s->activity_seen = true;
+  s->activity_clock_valid = h2_pal_time_get_monotonic_ms(
+      request->service->client_config.time, &s->last_activity_ms) == H2_PAL_OK;
+}
+
+/* Runs after the network owner has detached all workers and snapshotted the
+ * live SDK request. Cleanup cancellation must not become failure evidence. */
+static void managed_log_speedtest_failure(const managed_request_t *request,
+                                          const h2_gizclaw_operation_t *op) {
+  const managed_stream_t *s = request->stream;
+  if (s == NULL || !s->diagnostic || request->result == H2_PAL_OK ||
+      request->service->client_config.log == NULL)
+    return;
+  const bool clock_valid = request->clock_started &&
+                           request->clock_result == H2_PAL_OK &&
+                           request->completed_ms >= request->started_ms;
+  const bool idle_valid = clock_valid && s->activity_seen &&
+                         s->activity_clock_valid &&
+                         request->completed_ms >= s->last_activity_ms;
+  char message[1024];
+  (void)snprintf(message, sizeof(message),
+      "request=speedtest stage=failed seq=%llu identity=%llu direction=%s "
+      "phase=%s rc=%d timeout_ms=%u elapsed_ms=%llu clock_valid=%u "
+      "tx_target=%zu rx_target=%zu tx_sdk_accepted=%zu rx_data=%zu "
+      "rx_validated=%zu activity_seen=%u idle_valid=%u idle_ms=%llu "
+      "response_seen=%u eos_seen=%u eos_queued=%u eos_validated=%u "
+      "input_finished=%u rpc_result_ok=%u stream_rc=%d "
+      "remote_error_seen=%u remote_code=%d sdk_available=%u "
+      "sdk_completion_seen=%u sdk_completion_gzc_rc=%d "
+      "sdk_error_seen=%u sdk_error_gzc_rc=%d "
+      "channel_terminal=unavailable channel_raw_rc=unavailable "
+      "tx_delivered=unavailable",
+      (unsigned long long)op->trace_sequence,
+      (unsigned long long)request->identity,
+      s->input_expected != 0u ? "upload" : "download",
+      s->phase != NULL ? s->phase : "queued", (int)request->result,
+      (unsigned)request->timeout_ms,
+      (unsigned long long)(clock_valid ? request->completed_ms - request->started_ms : 0u),
+      (unsigned)clock_valid, s->input_expected, s->download_expected,
+      s->input_sent, s->rx_bytes, s->validated_bytes,
+      (unsigned)s->activity_seen, (unsigned)idle_valid,
+      (unsigned long long)(idle_valid ? request->completed_ms - s->last_activity_ms : 0u),
+      (unsigned)s->response_seen, (unsigned)s->eos_seen,
+      (unsigned)s->eos_received, (unsigned)s->eos_validated,
+      (unsigned)s->input_finished, (unsigned)s->wire_done, (int)s->observed_error,
+      (unsigned)s->remote_error_seen, s->remote_error_code,
+      (unsigned)s->sdk.available, (unsigned)s->sdk.completion_seen,
+      s->sdk.completion_gzc_rc, (unsigned)s->sdk.error_seen, s->sdk.error_gzc_rc);
+  (void)h2_pal_log_write(request->service->client_config.log, H2_PAL_LOG_ERROR,
+                         "gizclaw", message);
+}
 
 /* NOT_FOUND is a result callers may handle by creating the resource. The
  * caller must report it if absence makes its business operation fail. */
@@ -184,6 +253,21 @@ static int stream_ingress(void *user,
   h2_gizclaw_service_t *service = request->service;
   if (event == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  if (stream->diagnostic) {
+    if (event->kind == H2_GIZCLAW_RPC_STREAM_DATA && event->data.data != NULL &&
+        event->data.len != 0u) {
+      stream->rx_bytes += event->data.len;
+      stream_data_activity(request);
+    }
+    if (event->kind == H2_GIZCLAW_RPC_STREAM_RESPONSE)
+      stream->response_seen = true;
+    if (event->kind == H2_GIZCLAW_RPC_STREAM_EOS)
+      stream->eos_seen = true;
+    if (event->has_error) {
+      stream->remote_error_seen = true;
+      stream->remote_error_code = event->error_code;
+    }
+  }
   if ((event->result_payload.len != 0u && event->result_payload.data == NULL) ||
       (event->data.len != 0u && event->data.data == NULL) ||
       (event->error_message.len != 0u && event->error_message.data == NULL))
@@ -345,6 +429,12 @@ bool h2_gizclaw_req_data_step_internal(h2_gizclaw_service_t *service,
   }
   if (frame != NULL)
     rc = (h2_pal_result_t)stream->on_frame(request->context, &frame->event);
+  if (stream->diagnostic && frame != NULL && rc == H2_PAL_OK) {
+    if (frame->event.kind == H2_GIZCLAW_RPC_STREAM_DATA)
+      stream->validated_bytes += frame->event.data.len;
+    if (frame->event.kind == H2_GIZCLAW_RPC_STREAM_EOS)
+      stream->eos_validated = true;
+  }
   if (notify_sink)
     stream->received(request->context, &request->base);
   if (rc > H2_PAL_OK)
@@ -466,6 +556,7 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
   if (request->clock_result == H2_PAL_OK)
     request->clock_result = h2_pal_time_get_monotonic_ms(
         request->service->client_config.time, &request->completed_ms);
+  managed_log_speedtest_failure(request, operation);
   operation->result.result = request->result;
   atomic_store_explicit(&request->terminal, true, memory_order_release);
   (void)h2_pal_semaphore_give(request->service->config.sync,
@@ -520,6 +611,7 @@ managed_stream_network_step(managed_request_t *request,
   if (rc != H2_PAL_OK)
     return rc;
   if (request->wire_request == NULL) {
+    stream->phase = "start";
     rc = (h2_pal_result_t)h2_gizclaw_rpc_start_stream_internal(
         client, request->method,
         (h2_gizclaw_rpc_bytes_t){request->payload, request->payload_len},
@@ -542,6 +634,7 @@ managed_stream_network_step(managed_request_t *request,
     const size_t count = stream->input_ready;
     (void)h2_pal_mutex_unlock(sync, service->mutex);
     if (count != 0u) {
+      stream->phase = "write";
       rc = (h2_pal_result_t)h2_gizclaw_rpc_write_internal(request->wire_request,
                                                           stream->input, count);
       if (rc != H2_PAL_OK &&
@@ -550,6 +643,7 @@ managed_stream_network_step(managed_request_t *request,
       if (rc == H2_PAL_OK) {
         (void)h2_pal_mutex_lock(sync, service->mutex);
         stream->input_sent += count;
+        stream_data_activity(request);
         stream->input_ready = 0u;
         stream_mark_ready(request);
         (void)h2_pal_cond_broadcast(sync, service->progress_cond);
@@ -565,9 +659,12 @@ managed_stream_network_step(managed_request_t *request,
     (void)h2_pal_mutex_unlock(sync, service->mutex);
     if (short_input)
       return H2_PAL_ERR_FORMAT;
-    if (!drained && !stream->pcm_source)
+    if (!drained && !stream->pcm_source) {
+      stream->phase = "await_input";
       return H2_PAL_ERR_WOULD_BLOCK;
+    }
     if (drained) {
+      stream->phase = "finish_write";
       rc = (h2_pal_result_t)h2_gizclaw_rpc_finish_write_internal(
           request->wire_request);
       if (rc == H2_PAL_OK)
@@ -577,6 +674,7 @@ managed_stream_network_step(managed_request_t *request,
     }
   }
   if (!stream->wire_done) {
+    stream->phase = "await_result";
     rc = (h2_pal_result_t)h2_gizclaw_rpc_result_internal(request->wire_request,
                                                          &request->response);
     if (rc != H2_PAL_OK)
@@ -584,6 +682,7 @@ managed_stream_network_step(managed_request_t *request,
     if (request->response.has_error)
       return h2_gizclaw_rpc_error_result_internal(request->response.error_code);
     stream->wire_done = true;
+    stream->phase = "drain";
   }
   (void)h2_pal_mutex_lock(sync, service->mutex);
   rc = stream->error;
@@ -654,6 +753,7 @@ static h2_pal_result_t
 managed_start(void *user, h2_gizclaw_client_t *client,
               const h2_gizclaw_cancel_token_t *cancel_token) {
   managed_request_t *request = user;
+  request->clock_started = true;
   request->clock_result = h2_pal_time_get_monotonic_ms(
       request->service->client_config.time, &request->started_ms);
   if (request->stream != NULL)
@@ -685,6 +785,10 @@ static void managed_stop(void *user) {
   managed_request_t *request = user;
   if (request->stream != NULL) {
     stream_detach(request);
+    request->stream->observed_error = request->stream->error;
+    if (request->stream->diagnostic && request->wire_request != NULL)
+      h2_gizclaw_rpc_snapshot_internal(request->wire_request,
+                                        &request->stream->sdk);
     if (request->stream->detach != NULL)
       request->stream->detach(request->context);
     if (request->wire_request != NULL) {
@@ -918,6 +1022,13 @@ h2_pal_result_t h2_gizclaw_req_create_rpc_context_internal(
     *out_request = base;
   }
   return rc;
+}
+
+void h2_gizclaw_req_speedtest_diagnostic_internal(h2_gizclaw_req_t *base,
+                                                size_t download_bytes) {
+  managed_request_t *request = (managed_request_t *)base;
+  request->stream->diagnostic = true;
+  request->stream->download_expected = download_bytes;
 }
 
 h2_pal_result_t h2_gizclaw_req_create_stream_internal(

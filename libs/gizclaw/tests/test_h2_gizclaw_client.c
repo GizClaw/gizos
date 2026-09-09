@@ -1857,6 +1857,8 @@ int main(void) {
           "stream callbacks preserve PAL errors without SDK code collisions");
     }
   }
+  fails += expect(h2_gizclaw_test_rpc_diagnostic(),
+                  "RPC diagnostic preserves raw SDK status before cleanup");
   fails += expect(h2_gizclaw_test_audio_rings(),
                   "PCM and packet rings preserve wrap order and bounds");
 

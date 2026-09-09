@@ -119,6 +119,43 @@ HTTP 请求只记录 method、scheme 和经过字符验证的 endpoint（host �
 
 需要给 GizClaw config 和 coreHTTP config 注入可用的 Log PAL，并保留 ESP32 原生 ERROR日志。provider 会在清理 response 前记录已有状态和 body 长度；适配层随后看到的`status=0 body_len=0` 可能是 provider 已清理 response，不证明没有收到网络字节。`service transport_terminal` 的 `detail` 是 active request 数，`frames/bytes` 的零值不是网络流量计数；`TASK_READY` 也不是连接成功证据。没有新设备串口日志时，这些改动不能追溯确定历史故障的根因。
 
+## 测速失败诊断
+
+`h2_gizclaw_req_create_speedtest()` 和同步 `h2_gizclaw_rpc_speedtest()` 使用同一套
+managed request 诊断。已提交请求失败时仅增加一条 ERROR：
+`request=speedtest stage=failed`；成功和正常数据流不增加日志。`seq` 与 service operation
+日志关联，`identity` 保留调用方标识；同步 helper 的 identity 为 0。每个请求只有一个方向，
+`tx_target` / `rx_target` 是该次调用的参数，不从固件默认值推测。
+
+| 字段 | 含义 |
+| --- | --- |
+| `direction`、`phase`、`rc`、`timeout_ms` | 方向、最后推进阶段、PAL 请求结果、实际配置的期限。phase 可以是 queued、start、await_input、write、finish_write、await_result、drain；不是 SDK 内部 transport 状态。 |
+| `elapsed_ms`、`clock_valid` | managed request 开始执行到结算的耗时，包含清理、不包含排队。未开始执行或时钟不可用/倒退时 valid 为 0，数值不可使用。 |
+| `tx_sdk_accepted` | SDK write 返回成功的 payload 字节数；不是服务端已收到的字节数。SDK write 内部部分发送后返回失败时，其部分进度不可见。 |
+| `rx_data`、`rx_validated` | GizOS ingress 看到的非空 RPC DATA payload 字节数，及方向 worker 已校验通过的字节数。前者在入队/校验前计数，包含后来被拒绝的数据，不包括响应 envelope、EOS 和 transport framing。 |
+| `activity_seen`、`idle_valid`、`idle_ms` | 最近一次非空 DATA ingress 或成功 SDK write 的时间距结算的间隔。没有活动、该次活动时钟失败或时钟倒退时 idle_valid 为 0；idle_ms=0 本身不能证明仍在传输。 |
+| `response_seen`、`eos_seen`、`eos_queued`、`eos_validated` | 响应到达 ingress、协议 EOS 到达 ingress、EOS 入队、EOS 通过测速完整性校验。看到 EOS 不等于完成。 |
+| `input_finished`、`rpc_result_ok`、`stream_rc` | SDK finish_write 已成功、SDK result 及远端结果均成功、清理前的本地流错误。前两者不推断底层 channel 状态。 |
+| `remote_error_seen`、`remote_code` | ingress 收到的远端 RPC 错误及原始协议错误码，不记录错误消息内容。 |
+| `sdk_available`、`sdk_completion_seen`、`sdk_completion_gzc_rc` | 清理前 GizOS SDK 适配对象是否存在，以及其完成回调和原始 GZC 状态。completion 未见时其码无意义。 |
+| `sdk_error_seen`、`sdk_error_gzc_rc` | 适配对象保存的最近一次 SDK write、finish_write、result 或 response decode 非成功、非 WOULD_BLOCK 原始错误；只有 error_seen=1 才可解释。 |
+
+所有终态诊断在本地主动 cancel/destroy 前保存，避免把清理导致的 CLOSED 当作原始故障。
+`rx_data=0` 表示没有 DATA 到达 GizOS ingress，不能证明没有底层网络字节；
+`0 < rx_data < rx_target` 且 idle 有效可判断部分下载后无数据活动；
+`rx_data == rx_target` 但 `eos_seen=0` 表示数据量已齐却未见协议结束；
+EOS 已见但 `rpc_result_ok=0` 则还没有取得成功的最终请求结果。
+
+当前固定 C SDK v0.17.0 的公开 RPC API 不提供 request → DataChannel 关联、通道终态原因、
+原始 PAL/transport 错误或实际远端收取量，日志因此明确标记
+`channel_terminal=unavailable channel_raw_rc=unavailable tx_delivered=unavailable`。
+SDK 的 `GZC_ERR_CLOSED` 同时用于 DataChannel close、client close 和主动 cancel，不能仅凭
+该码进一步归因；SDK 已映射的错误也不能当作原始 PAL 错误。
+需要上游增加 request-owned、在 channel 清理后仍可读取的诊断 snapshot：终止来源、
+channel 关联标识、原始 transport/PAL 错误及其有效性，若 SDK 支持部分 write 则同时暴露
+实际接受/发送计数。GizOS 不读取 SDK 私有结构，不修改 external 缓存。
+创建/提交失败尚无执行中的请求或 SDK handle，仍由调用方报告；没有诊断记录不能作为成功证据。
+
 ## Desktop E2E gate
 
 `projects/e2e/targets/cc_test/gizclaw` 的手动 E2E 在一条

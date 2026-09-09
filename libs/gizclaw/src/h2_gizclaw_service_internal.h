@@ -87,6 +87,12 @@ h2_pal_result_t h2_gizclaw_req_create_stream_internal(
     h2_gizclaw_rpc_stream_fn on_frame, void (*destroy)(void *), void *context,
     h2_gizclaw_req_t **out_request);
 
+/* Enable failure-only benchmark accounting before request submission. */
+void h2_gizclaw_req_speedtest_diagnostic_internal(h2_gizclaw_req_t *request,
+                                                size_t download_bytes);
+void h2_gizclaw_rpc_snapshot_internal(h2_gizclaw_rpc_request_t *request,
+                                      h2_gizclaw_rpc_diagnostic_t *out);
+
 /* Select direct worker-side consumption for streams whose payload is only
  * counted/validated internally and does not need caller delivery. */
 void h2_gizclaw_req_output_optional_internal(h2_gizclaw_req_t *request);
@@ -463,6 +469,8 @@ typedef struct h2_gizclaw_async_rpc_ops {
                h2_gizclaw_rpc_request_t **out_request);
   int (*result)(h2_gizclaw_rpc_request_t *request,
                 h2_gizclaw_rpc_response_t *out_response);
+  void (*diagnostic)(h2_gizclaw_rpc_request_t *request,
+                     h2_gizclaw_rpc_diagnostic_t *out);
   void (*cancel)(h2_gizclaw_rpc_request_t *request);
   void (*destroy)(h2_gizclaw_rpc_request_t *request);
   void (*set_complete)(h2_gizclaw_rpc_request_t *request,
