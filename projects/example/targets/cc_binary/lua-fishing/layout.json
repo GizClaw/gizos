@@ -1,0 +1,20 @@
+{
+  "display": {
+    "title": "Lua Fishing | AMOLED 368x448",
+    "width": 368,
+    "height": 448
+  },
+  "filesystem": {
+    "mounts": []
+  },
+  "peripherals": [
+    {
+      "periph_id": 1,
+      "kind": {
+        "button": {
+          "key": "escape"
+        }
+      }
+    }
+  ]
+}

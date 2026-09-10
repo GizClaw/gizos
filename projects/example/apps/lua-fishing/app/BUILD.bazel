@@ -1,0 +1,18 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+package(default_visibility = ["//visibility:public"])
+h2_lua_resource(
+    name = "fishing_script",
+    src = "//projects/example/apps/lua-fishing:data/main.lua",
+    symbol = "fishing_script",
+)
+cc_library(
+    name = "lua_fishing",
+    srcs = ["src/h2_lua_fishing.c"],
+    hdrs = ["include/h2_lua_fishing.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [":fishing_script", "//libs/lua", "//libs/runtime"],
+)
