@@ -1,5 +1,6 @@
 # BK7258 v3 Loader layout CP configuration.
 # CONFIG_PM_LV_WDT_PROTECTION is not set
-CONFIG_INT_WDT_PERIOD_MS=180000
+# The SDK rejects periods above its 16-bit watchdog limit.
+CONFIG_INT_WDT_PERIOD_MS=8000
 CONFIG_TASK_WDT_PERIOD_MS=180000
 # CONFIG_AON_WDT is not set

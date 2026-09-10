@@ -31,6 +31,7 @@ static void emit_marker(const char *fmt, ...) {
 static void app_entry(void *user) {
     h2_runtime_config_t runtime_config;
     h2_runtime_t *runtime = NULL;
+    int startup_locked = 0;
     int rc;
 
     (void)user;
@@ -56,20 +57,23 @@ static void app_entry(void *user) {
         }
     }
     if (rc == H2_PAL_OK) {
+        rc = h2_bk_h2loader_prepare_app_operation(runtime);
+    }
+    if (rc == H2_PAL_OK) {
+        rc = h2_bk_h2loader_app_operation_lock();
+        startup_locked = rc == H2_PAL_OK;
+    }
+    if (rc == H2_PAL_OK) {
+        /* Publish transports for connection/logging, but serialize commands
+         * behind startup confirmation. Otherwise a same-version upload can
+         * be mistaken for the installed Stage by delayed confirmation. */
         rc = h2_bk_h2loader_start_app_iostreamikcp(
             runtime,
             "ble-broadcaster");
     }
     if (rc != H2_PAL_OK) {
         emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_FAIL stage=app_cli rc=%d", rc);
-        (void)h2_bk_h2loader_reboot_to_loader();
-        for (;;) {
-            rtos_delay_milliseconds(1000);
-        }
-    }
-    rc = h2_bk_h2loader_start_app_ble(runtime, "ble-broadcaster");
-    if (rc != H2_PAL_OK) {
-        emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_FAIL stage=app_ble rc=%d", rc);
+        if (startup_locked) h2_bk_h2loader_app_operation_unlock();
         (void)h2_bk_h2loader_reboot_to_loader();
         for (;;) {
             rtos_delay_milliseconds(1000);
@@ -82,6 +86,17 @@ static void app_entry(void *user) {
         emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_FAIL stage=run rc=%d", rc);
     } else {
         emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_STAGE stage=run_done");
+        /* The diagnostic owns the default advertising instance until it
+         * finishes; start the Loader service only after that instance is free. */
+        rc = h2_bk_h2loader_start_app_ble(runtime, "ble-broadcaster");
+        if (rc != H2_PAL_OK) {
+            emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_FAIL stage=app_ble rc=%d", rc);
+            h2_bk_h2loader_app_operation_unlock();
+            (void)h2_bk_h2loader_reboot_to_loader();
+            for (;;) {
+                rtos_delay_milliseconds(1000);
+            }
+        }
         rtos_delay_milliseconds(500);
         emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_STAGE stage=confirm_begin");
         rc = h2_bk_h2loader_confirm_current_app(runtime);
@@ -91,6 +106,7 @@ static void app_entry(void *user) {
             emit_marker("H2_BK_SMOKE_BLE_ADVERTISING_READY rc=0");
         }
     }
+    h2_bk_h2loader_app_operation_unlock();
     for (;;) {
         rtos_delay_milliseconds(1000);
     }

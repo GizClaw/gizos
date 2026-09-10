@@ -118,7 +118,8 @@ static h2_pal_result_t stage_with_recovery(
             config->on_progress,
             config->progress_user);
         if (rc == H2_PAL_OK ||
-            (rc != H2_PAL_ERR_CLOSED && rc != H2_PAL_ERR_TIMEOUT) ||
+            (rc != H2_PAL_ERR_CLOSED && rc != H2_PAL_ERR_TIMEOUT &&
+             rc != H2_PAL_ERR_WOULD_BLOCK) ||
             attempt + 1u == H2_H2LOADER_HOST_STAGE_ATTEMPTS) {
             return rc;
         }

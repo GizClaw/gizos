@@ -1495,7 +1495,7 @@ static void append_case(const h2_h2loader_e2e_config_t *config,
   uint64_t started = 0u;
   uint64_t finished = 0u;
   (void)now_ms(config, &started);
-  entry->result = config->execute_case != NULL
+  entry->result = cancelled(config) ? H2_PAL_EXIT : config->execute_case != NULL
                       ? config->execute_case(config->execute_user, transport,
                                              test_case, entry)
                       : execute_real_case(context, test_case);

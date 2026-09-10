@@ -286,6 +286,7 @@ static h2_pal_result_t bk_cond_wait(
         return H2_PAL_ERR_NO_MEMORY;
     }
     if (rtos_lock_mutex(&cond->lock) != kNoErr) {
+        (void)rtos_deinit_semaphore(&waiter.handle);
         return H2_PAL_ERR_IO;
     }
     if (cond->tail == NULL) {
@@ -303,6 +304,7 @@ static h2_pal_result_t bk_cond_wait(
         }
         cond->waiters--;
         (void)rtos_unlock_mutex(&cond->lock);
+        (void)rtos_deinit_semaphore(&waiter.handle);
         return H2_PAL_ERR_IO;
     }
     (void)rtos_get_semaphore(&waiter.handle, timeout_ms_to_bk(timeout_ms));
@@ -318,6 +320,9 @@ static h2_pal_result_t bk_cond_wait(
     }
     cond->waiters--;
     (void)rtos_unlock_mutex(&cond->lock);
+    /* Static semaphore storage still owns an SDK dynamic spinlock. Delete
+     * the semaphore after unlinking, before its stack storage goes away. */
+    (void)rtos_deinit_semaphore(&waiter.handle);
     if (rtos_lock_mutex(&mutex->handle) != kNoErr) {
         return H2_PAL_ERR_IO;
     }

@@ -16,13 +16,26 @@ class CpStartupContractTest(unittest.TestCase):
             self.assertEqual(1, len(sources), [str(path) for path in sources])
             self.assertIn(expected, sources[0].read_text(encoding="utf-8"))
 
-        defaults = list(runfiles.rglob("cp.defaults"))
+        defaults = [path for path in runfiles.rglob("cp.defaults")
+                    if "layouts/loader" not in path.as_posix()]
         self.assertEqual(2, len(defaults), [str(path) for path in defaults])
         for path in defaults:
             self.assertIn(
                 "CONFIG_UART_PRINT_BAUD_RATE=460800",
                 path.read_text(encoding="utf-8"),
             )
+
+    def test_loader_watchdog_period_fits_sdk_register(self):
+        runfiles = Path(os.environ["TEST_SRCDIR"])
+        defaults = list(runfiles.rglob("layouts/loader/cp.defaults"))
+        self.assertEqual(1, len(defaults))
+        values = dict(line.split("=", 1) for line in
+                      defaults[0].read_text(encoding="utf-8").splitlines()
+                      if line.startswith("CONFIG_") and "=" in line)
+        # BK SDK rejects periods above WDT_F_PERIOD_V before enabling feeding.
+        period = int(values["CONFIG_INT_WDT_PERIOD_MS"])
+        self.assertGreater(period, 0)
+        self.assertLessEqual(period, 0xffff)
 
     def test_shared_launcher_registers_transport_after_bk_init(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])

@@ -1,4 +1,5 @@
 #include "h2_loader_boot.h"
+#include "h2_loader_app_client.h"
 #include "h2_loader_status.h"
 
 #include <assert.h>
@@ -146,6 +147,7 @@ static int pref_get_u32(h2_pal_pref_namespace_t *ns, const char *key,
                         uint32_t *out_value) {
   test_fixture_t *fixture = ns->user;
   if (strcmp(key, "boot_intent") != 0 || !fixture->boot_intent_present) {
+    *out_value = 0u; /* BK clears outputs even when the key is absent. */
     return H2_PAL_ERR_NOT_FOUND;
   }
   *out_value = fixture->boot_intent;
@@ -988,6 +990,33 @@ static void test_rolled_back_app_leaves_partition_2_state_untouched(void) {
   assert(fixture.reboot_calls == 0u);
 }
 
+static void test_interrupted_replacement_does_not_boot_failed_app(void) {
+  test_fixture_t fixture;
+  h2_loader_startup_action_t action;
+  h2_loader_metadata_t p1 = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+  h2_loader_metadata_t failed = metadata(H2_LOADER_IMAGE_ROLE_APP, SHA_B);
+  failed.package_size = 1024u;
+  (void)snprintf(failed.package_checksum, sizeof(failed.package_checksum), "%s", SHA_A);
+  fixture_init(&fixture, 1u);
+  fixture.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
+  fixture.boot_intent_present = 1;
+  fixture.app_partition_bootable = 0;
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &failed);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &p1);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &failed);
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  assert(h2_loader_begin_stage(&fixture.loader, "/dl/update.tar.zlib.tmp",
+                               "/dl/update.tar.zlib.prev") == H2_PAL_OK);
+  /* A reset after begin but before publish leaves no replacement Stage. */
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  assert(!fixture.loader.status.stage.valid);
+  assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
+  assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
+  assert(fixture.reboot_calls == 0u);
+  assert(fixture.writer_offset == 0u);
+  assert(h2_loader_metadata_image_equal(&fixture.loader.status.partition_2, &failed));
+}
+
 static void test_app_finalize_only_consumes_matching_stage(void) {
   test_fixture_t fixture;
   int present;
@@ -1269,7 +1298,103 @@ test_stage_begin_invalidates_metadata_and_removes_old_package(void) {
   assert(fixture.loader.status.stage.valid == 0);
 }
 
+static void test_empty_pref_preserves_default_boot_intent(void) {
+  test_fixture_t fixture;
+  h2_loader_status_t status;
+  fixture_init(&fixture, 1u);
+  fixture.boot_intent_present = 0;
+  fixture.last_result_present = 0;
+  assert(h2_loader_read_pref_status(&fixture.pref, &fixture.mem, &status) == H2_PAL_OK);
+  assert(status.boot_intent == H2_LOADER_BOOT_INTENT_LOADER);
+  assert(status.last_result == H2_PAL_OK);
+}
+
+/* Legacy tar.zlib with checksum and app/bk/app_ab_crc.rbl ("firmware"). */
+static const uint8_t bk_test_archive[] = {
+    0x78, 0x9c, 0xed, 0xd3, 0x41, 0x0a, 0xc2, 0x30, 0x10, 0x85, 0xe1, 0xae,
+    0x3d, 0x85, 0x17, 0xd0, 0x26, 0x35, 0xc4, 0xe3, 0x94, 0x64, 0xa8, 0xb4,
+    0xd4, 0x42, 0x49, 0xad, 0x5e, 0xbf, 0xa1, 0x28, 0xa2, 0x1b, 0x41, 0x6c,
+    0xea, 0xe2, 0xff, 0x36, 0x13, 0x66, 0x33, 0x6f, 0x91, 0x27, 0x75, 0x25,
+    0xed, 0x30, 0x76, 0xd9, 0x82, 0x54, 0x64, 0x8d, 0x99, 0x67, 0xf4, 0x3e,
+    0x95, 0x2a, 0xf4, 0xf3, 0x3d, 0xef, 0x8f, 0xc6, 0x1e, 0xb2, 0xad, 0x5a,
+    0x32, 0xd4, 0xc3, 0x38, 0x5c, 0x5c, 0x88, 0x27, 0x53, 0xdc, 0xfa, 0x43,
+    0x2e, 0x48, 0xdd, 0x5c, 0xab, 0x9d, 0xdc, 0xff, 0xc1, 0x66, 0xed, 0x40,
+    0x48, 0xca, 0xf5, 0x7d, 0xee, 0xdb, 0x3c, 0x8e, 0xd2, 0xf9, 0x52, 0x82,
+    0xec, 0x83, 0x3f, 0xff, 0xf8, 0xc6, 0xc7, 0xfe, 0x6b, 0xf5, 0xda, 0x7f,
+    0xad, 0xad, 0x2d, 0xe8, 0x7f, 0x0a, 0xa7, 0x26, 0x74, 0x37, 0x17, 0xaa,
+    0xb5, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xe0, 0x3b, 0x13, 0xe9, 0x8f, 0x2d, 0x53,
+};
+
+static int archive_open(void *user, const char *path,
+                        h2_pal_fs_open_mode_t mode,
+                        h2_pal_fs_file_t **out_file) {
+  (void)path;
+  assert(mode == H2_PAL_FS_OPEN_READ);
+  *(size_t *)user = 0u;
+  *out_file = (h2_pal_fs_file_t *)user;
+  return H2_PAL_OK;
+}
+
+static int archive_read(void *user, h2_pal_fs_file_t *file, void *data,
+                        size_t len, size_t *out_read) {
+  size_t *offset = user;
+  (void)file;
+  size_t take = sizeof(bk_test_archive) - *offset;
+  if (take > len) take = len;
+  memcpy(data, bk_test_archive + *offset, take);
+  *offset += take;
+  *out_read = take;
+  return H2_PAL_OK;
+}
+
+static int archive_close(void *user, h2_pal_fs_file_t *file) {
+  (void)user;
+  (void)file;
+  return H2_PAL_OK;
+}
+
+static uint64_t app_test_now(void *user) { (void)user; return 0u; }
+static void app_test_sleep(void *user, uint32_t ms) { (void)user; (void)ms; }
+
+static void test_app_client_validates_target_archive_entry(void) {
+  test_fixture_t fixture;
+  h2_loader_app_client_t client;
+  h2_loader_package_inspection_t inspection;
+  size_t offset = 0u;
+  static const h2_pal_fs_vtable_t fs_vtable = {
+      .open = archive_open, .read = archive_read, .close = archive_close,
+  };
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_wifi_sta_api_t wifi = {0};
+  static const h2_pal_disk_api_t disk = {0};
+  const h2_pal_fs_api_t fs = {.user = &offset, .vtable = &fs_vtable};
+  fixture_init(&fixture, 2u);
+  h2_loader_app_client_config_t config = {
+      .pref = &fixture.pref, .power = &fixture.power, .allocator = &fixture.mem,
+      .fs = &fs, .http = &http, .wifi = &wifi, .disk = &disk,
+      .digest = fixture.config.package.digest,
+      .board = "devkit", .target = "esp32s3", .chip = "test",
+      .active_identity = identity(H2_LOADER_IMAGE_ROLE_APP, SHA_A),
+      .hardware_capabilities = H2_LOADER_CAPABILITY_UART,
+      .h2loader_partition_id = 1u, .app_partition_id = 2u,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+  };
+  /* The default ESP layout must continue rejecting another target's entry. */
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  assert(h2_loader_package_inspect_path(&client.loader.package, "archive",
+                                      &inspection) == H2_BUNDLE_ERR_LAYOUT);
+  config.app_entry_path = "app/bk/app_ab_crc.rbl";
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  assert(h2_loader_package_inspect_path(&client.loader.package, "archive",
+                                      &inspection) == H2_PAL_OK);
+  assert(strcmp(inspection.image_path, config.app_entry_path) == 0);
+  assert(inspection.manifest.image_size == 8u);
+}
+
 int main(void) {
+  test_app_client_validates_target_archive_entry();
+  test_empty_pref_preserves_default_boot_intent();
   test_max_status_fits_public_capacity();
   test_loader_intent_stays_and_seeds_partition_1();
   test_seed_running_metadata_preserves_package_origin();
@@ -1283,6 +1408,7 @@ int main(void) {
   test_converged_loader_does_not_ignore_different_stage();
   test_same_image_new_package_is_still_inspected();
   test_rolled_back_app_leaves_partition_2_state_untouched();
+  test_interrupted_replacement_does_not_boot_failed_app();
   test_app_finalize_only_consumes_matching_stage();
   test_app_confirmation_is_between_metadata_and_stage_cleanup();
   test_reboot_commands_only_set_intent_and_partition();

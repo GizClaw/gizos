@@ -31,6 +31,12 @@ static h2_pal_result_t app_power_get_running_boot_partition(
                                                   out_partition);
 }
 
+static h2_pal_result_t app_power_get_next_boot_partition(
+    void *user, h2_pal_power_boot_partition_t *out_partition) {
+  (void)user;
+  return h2_pal_power_get_next_boot_partition(h2_bk_h2loader_power_api(), out_partition);
+}
+
 static h2_pal_result_t app_power_set_next_boot_partition(
     void *user, uint32_t partition_id) {
   h2_bk_app_power_t *power = user;
@@ -62,6 +68,7 @@ const h2_pal_power_api_t *h2_bk_h2loader_app_power_api(
       .get_capabilities = app_power_get_capabilities,
       .list_boot_partitions = app_power_list_boot_partitions,
       .get_running_boot_partition = app_power_get_running_boot_partition,
+      .get_next_boot_partition = app_power_get_next_boot_partition,
       .set_next_boot_partition = app_power_set_next_boot_partition,
       .reboot = app_power_reboot,
   };

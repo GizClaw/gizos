@@ -1,0 +1,14 @@
+{
+  "loader": {
+    "bytes": 1691554,
+    "sha256": "ae2aa95db4cc1664faefe64e7a2d357c8c54d56b4043ed5cf4354972c74cd595"
+  },
+  "ble-broadcaster": {
+    "bytes": 1716998,
+    "sha256": "49dd20c8c58913cadfffeaa4af8b606f4ec4296e34fffe4c0c9330335595da38"
+  },
+  "crash-before-confirm": {
+    "bytes": 1714243,
+    "sha256": "8b9edd7f635cb7e58dfa9baaec9162dc84ed81814c79157bb4852625c5644121"
+  }
+}
