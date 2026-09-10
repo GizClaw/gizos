@@ -23,7 +23,10 @@ int h2_loader_status_set_device(
     const char *target,
     const char *chip);
 const char *h2_loader_mfg_state_name(const h2_loader_mfg_summary_t *summary);
-/** Validates the fixed total and all four-state MFG slots. */
+/**
+ * Validates total (0 or 1..H2_LOADER_MFG_STEP_MAX), that every slot is one of
+ * the four step states, and that slots at index >= total are UNTESTED.
+ */
 int h2_loader_mfg_summary_validate(const h2_loader_mfg_summary_t *summary);
 /** Returns non-zero only when every required MFG slot is PASSED. */
 int h2_loader_mfg_summary_is_passed(

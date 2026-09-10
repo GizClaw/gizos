@@ -97,7 +97,19 @@ typedef enum h2_loader_disruptive_action {
     H2_LOADER_DISRUPTIVE_REBOOT_APP = 3,
 } h2_loader_disruptive_action_t;
 
-#define H2_LOADER_MFG_STEP_TOTAL 22u
+/**
+ * Compile-time upper bound for the per-product MFG step count.
+ *
+ * A product chooses its step count at runtime (1..H2_LOADER_MFG_STEP_MAX) via
+ * h2_loader_config_t.mfg_required_total and the total it writes/resets.
+ */
+#define H2_LOADER_MFG_STEP_MAX 32u
+/**
+ * Step count implied by legacy v1/v2/v3 MFG records. It is also the width of
+ * the `mfg_steps=` status field when MFG is disabled (total 0), which keeps the
+ * disabled status line byte-for-byte unchanged for existing hosts.
+ */
+#define H2_LOADER_MFG_LEGACY_STEP_TOTAL 22u
 #define H2_LOADER_DEVICE_UID_MAX 13u
 
 typedef enum h2_loader_mfg_step_status {
@@ -107,9 +119,16 @@ typedef enum h2_loader_mfg_step_status {
     H2_LOADER_MFG_STEP_FAILED = 3,
 } h2_loader_mfg_step_status_t;
 
+/**
+ * MFG progress snapshot.
+ *
+ * total is 0 when no record exists (MFG disabled), otherwise the number of
+ * meaningful steps in 1..H2_LOADER_MFG_STEP_MAX. step_status entries at index
+ * >= total must be H2_LOADER_MFG_STEP_UNTESTED (zero).
+ */
 typedef struct h2_loader_mfg_summary {
     uint32_t total;
-    uint8_t step_status[H2_LOADER_MFG_STEP_TOTAL];
+    uint8_t step_status[H2_LOADER_MFG_STEP_MAX];
 } h2_loader_mfg_summary_t;
 
 #if defined(_MSC_VER)
@@ -154,6 +173,10 @@ typedef struct h2_loader_config {
     const char *device_uid;
     uint32_t h2loader_partition_id;
     uint32_t app_partition_id;
+    /**
+     * Number of MFG steps that must all be PASSED before APP work is allowed:
+     * 0 disables the gate, otherwise 1..H2_LOADER_MFG_STEP_MAX.
+     */
     uint32_t mfg_required_total;
     uint32_t hardware_capabilities;
     h2_loader_image_identity_t active_identity;
@@ -185,15 +208,37 @@ uint32_t h2_loader_get_command_availability(
     const h2_loader_t *loader, const h2_loader_status_t *status);
 
 const char *h2_loader_boot_intent_name(h2_loader_boot_intent_t intent);
+/**
+ * Reads the persisted MFG record ("h2loader"/"mfg").
+ *
+ * On success out_summary->total is the stored step count. Legacy v1/v2/v3
+ * records decode as H2_LOADER_MFG_LEGACY_STEP_TOTAL steps and are rewritten as
+ * v4. A corrupt or unknown record is replaced by an all-UNTESTED record of
+ * H2_LOADER_MFG_LEGACY_STEP_TOTAL steps. A missing record reports
+ * *out_present == 0 and total 0.
+ */
 int h2_loader_mfg_read(
     const h2_pal_pref_api_t *pref,
     const h2_pal_mem_api_t *allocator,
     h2_loader_mfg_summary_t *out_summary,
     int *out_present);
+/**
+ * Persists a v4 MFG record. summary->total must be 1..H2_LOADER_MFG_STEP_MAX,
+ * every status must be <= H2_LOADER_MFG_STEP_FAILED and every entry at index
+ * >= total must be zero; otherwise returns H2_PAL_ERR_INVALID_ARG.
+ */
 int h2_loader_mfg_write(
     const h2_pal_pref_api_t *pref,
     const h2_loader_mfg_summary_t *summary);
+/** Writes an all-UNTESTED record with total steps (1..STEP_MAX). */
 int h2_loader_mfg_reset(const h2_pal_pref_api_t *pref, uint32_t total);
+/**
+ * Resets MFG progress to total all-UNTESTED steps unless the stored
+ * acceptance revision equals required_revision AND the stored record is a
+ * valid record with exactly total steps. After a reset the acceptance
+ * revision is stored. total must be 1..H2_LOADER_MFG_STEP_MAX and
+ * required_revision non-zero.
+ */
 int h2_loader_mfg_ensure_acceptance_revision(
     const h2_pal_pref_api_t *pref,
     uint32_t total,

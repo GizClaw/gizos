@@ -26,6 +26,23 @@ Host CLI 对应 `send`、`send-url` 和 `stage abort`。传输成功只表示 St
 
 三份 metadata 都包含 `valid`、image checksum/size、role、version、board 和 target；Stage 以及有来源 package 的 Partition metadata 还包含 package checksum/size。`last_result` 只用于诊断，不参与升级判断。
 
+## MFG 进度记录
+
+MFG 进度与升级槽位分开保存在同一 Preference namespace `h2loader`：
+
+| Key | 类型 | 合法值 | 写入时机 |
+| --- | --- | --- | --- |
+| `mfg` | blob | v4：u32 LE `format=4`、u8 `total`（1..`H2_LOADER_MFG_STEP_MAX`=32）、`total` 个 u8 step status；长度必须恰好为 `5 + total` | `h2_loader_mfg_write`/`h2_loader_mfg_reset`，以及读取 legacy 记录后的一次性迁移 |
+| `mfg_acceptance_revision` | u32 | 非 0 产品验收 revision | `h2_loader_mfg_ensure_acceptance_revision` 在重置 `mfg` 之后写入 |
+
+Step status 为 `0` 未测、`1` 通过、`2` 跳过、`3` 失败。步数由产品决定：`h2_loader_config_t.mfg_required_total` 为 0 表示不启用 MFG gate，否则取 1..32，并且只有记录的 `total` 与之相等且每一步都通过时才放行 APP 相关命令。
+
+- 旧 v1（16 字节计数）、v2（24 字节计数加 passed/skipped mask）和 v3（`format=3` 加 22 个 status byte）一律解码为 22 步，读取后原内容改写为 v4。
+- 未知 format、长度或 `total` 不合法、status 超出 0..3 的记录视为损坏，读取时重置为 22 步全未测的 v4 记录；key 不存在时 MFG 视为未启用（`total=0`）。
+- `h2_loader_mfg_ensure_acceptance_revision(pref, total, revision)` 在以下任一条件成立时重置为 `total` 步全未测并写入 revision：已存 revision 缺失或不同；`mfg` 缺失或损坏；已存 `total` 与请求不同。因此产品从 22 步改为 24 步后首次启动会从头开始产测，而 revision 与步数都未变的 legacy 22 步记录保持原进度。
+
+`H2_LOADER_STATUS` 的 `mfg_mode` 为 `1` 未启用、`2` 启用；`mfg_steps` 按顺序输出恰好 `total` 个十进制 status 数字。未启用时保持旧格式，输出 22 个 `0`。Host Core 接受 1..32 位 `mfg_steps` 并保存解析出的步数，Browser SDK 的 `mfg.steps` 数组长度与之相同。
+
 ## Stage 发布合同
 
 发布顺序固定为：

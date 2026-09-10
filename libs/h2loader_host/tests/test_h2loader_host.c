@@ -876,6 +876,67 @@ static void test_catalog(void) {
     assert(catalog == NULL);
 }
 
+static h2_pal_result_t parse_with_mfg_tail(
+    const char *base_line,
+    const char *tail,
+    h2_h2loader_host_status_t *out_status) {
+    char line[H2_H2LOADER_HOST_STATUS_LINE_MAX];
+    const char *mode = strstr(base_line, "mfg_mode=");
+    assert(mode != NULL);
+    const size_t prefix = (size_t)(mode - base_line);
+    assert(prefix + strlen(tail) + 2u <= sizeof(line));
+    memcpy(line, base_line, prefix);
+    (void)snprintf(line + prefix, sizeof(line) - prefix, "%s\n", tail);
+    return h2_h2loader_host_status_parse(line, out_status);
+}
+
+static void test_status_mfg_step_lengths(const char *base_line) {
+    h2_h2loader_host_status_t status;
+
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=1111111111111111111111", &status) ==
+           H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 22u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 21u) == 1u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 22u) == UINT32_MAX);
+
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=012312312312312312312302", &status) ==
+           H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_mode(&status) == 2u);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 24u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 0u) == 0u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 1u) == 1u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 3u) == 3u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 22u) == 0u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 23u) == 2u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 24u) == UINT32_MAX);
+    for (size_t index = 24u; index < H2_H2LOADER_HOST_MFG_STEP_MAX; ++index) {
+        assert(status.mfg_steps[index] == 0u);
+    }
+
+    assert(parse_with_mfg_tail(base_line, "mfg_mode=2 mfg_steps=3", &status) ==
+           H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 1u);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=33333333333333333333333333333333",
+               &status) == H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) ==
+           H2_H2LOADER_HOST_MFG_STEP_MAX);
+
+    assert(parse_with_mfg_tail(base_line, "mfg_mode=2 mfg_steps=", &status) ==
+           H2_PAL_ERR_FORMAT);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=333333333333333333333333333333333",
+               &status) == H2_PAL_ERR_FORMAT);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=000000000000000000000004", &status) ==
+           H2_PAL_ERR_FORMAT);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=1 mfg_steps=000000000000000000000001", &status) ==
+           H2_PAL_ERR_FORMAT);
+}
+
 static void test_status(void) {
     static const char checksum[] =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -916,6 +977,11 @@ static void test_status(void) {
     assert(status.capabilities == 5u);
     assert(status.command_availability == UINT32_C(0x08));
     assert(status.running_partition == 2u);
+    assert(status.mfg_mode == 1u);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 22u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 21u) == 0u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 22u) == UINT32_MAX);
+    test_status_mfg_step_lengths(v2_line);
 
     char invalid_uid[sizeof(v2_line)];
     strcpy(invalid_uid, v2_line);
