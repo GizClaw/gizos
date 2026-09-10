@@ -1,10 +1,9 @@
-# App build: code is linked at its final XIP addresses. The native bootloader
-# image from this build is not the factory Loader bootloader.
+# Fixed Loader CP/AP; App executes from its independently linked Flash address.
 #Name,Offset,Size,Type,Read,Write
 primary_bootloader,0x0,68k,code,TRUE,FALSE
-primary_cp_app,0x264000,1156k,code,TRUE,TRUE
-primary_ap_app,,3944k,code,TRUE,TRUE
-s_app,0x11000,2380k,data,TRUE,TRUE
+primary_cp_app,0x11000,1156k,code,TRUE,TRUE
+primary_ap_app,,1224k,code,TRUE,TRUE
+s_app,,5100k,data,TRUE,TRUE
 ota_fina_executive,0x75f000,4k,data,TRUE,TRUE
 usr_config,0x760000,124K,data,TRUE,TRUE
 h2_boot_request,0x77f000,4K,data,TRUE,TRUE

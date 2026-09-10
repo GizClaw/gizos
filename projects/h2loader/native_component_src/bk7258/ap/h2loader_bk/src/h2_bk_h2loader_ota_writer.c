@@ -1,5 +1,7 @@
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
+#include "h2_bk_fixed_boot.h"
+#include "layout.h"
 
 #include "bk_private/bk_ota_private.h"
 #include "common/bk_err.h"
@@ -47,6 +49,7 @@ static int s_flash_open;
 static int s_staged_app_ready;
 static uint8_t s_verify_buffer[H2_BK_OTA_VERIFY_CHUNK_SIZE];
 static bk_logic_partition_t s_primary_window_partition;
+static bk_logic_partition_t s_fixed_partitions[2];
 
 static const bk_logic_partition_t *image_partition(uint32_t partition_id);
 
@@ -218,14 +221,18 @@ static int ota_writer_begin_partition(uint32_t partition_id, uint64_t image_size
         return H2_PAL_ERR_INVALID_ARG;
     }
     if ((partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
-            bk_ota_get_current_partition() == EXEX_A_PART) ||
+            h2_bk_fixed_current_slot() == EXEX_A_PART) ||
         (partition_id == H2_BK_H2LOADER_APP_PARTITION_ID &&
-            bk_ota_get_current_partition() == EXEC_B_PART)) {
+            h2_bk_fixed_current_slot() == EXEC_B_PART)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     target = image_partition(partition_id);
     if (target == NULL || image_size > target->partition_length) {
         return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (h2_bk_fixed_layout_active() && partition_id == H2_BK_H2LOADER_APP_PARTITION_ID) {
+        int rc = h2_bk_fixed_invalidate_app();
+        if (rc != H2_PAL_OK) return rc;
     }
     s_protect_type = bk_flash_get_protect_type();
     if (bk_flash_set_protect_type(FLASH_PROTECT_NONE) != BK_OK) {
@@ -361,6 +368,18 @@ int h2_bk_h2loader_commit_staged_app_boot(void) {
 }
 
 static const bk_logic_partition_t *image_partition(uint32_t partition_id) {
+    if (h2_bk_fixed_layout_active()) {
+        const bk_logic_partition_t *cp = bk_flash_partition_get_info(BK_PARTITION_APPLICATION);
+        if (partition_id != H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
+            partition_id != H2_BK_H2LOADER_APP_PARTITION_ID) return NULL;
+        bk_logic_partition_t *fixed = &s_fixed_partitions[partition_id == H2_BK_H2LOADER_APP_PARTITION_ID];
+        *fixed = *cp;
+        fixed->partition_start_addr = partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID
+            ? H2_FIXED_LOADER_OFFSET : H2_FIXED_APP_OFFSET;
+        fixed->partition_length = partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID
+            ? H2_FIXED_LOADER_SIZE : H2_FIXED_APP_SIZE;
+        return fixed;
+    }
     if (partition_id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID) {
         const bk_logic_partition_t *primary_cp =
             bk_flash_partition_get_info(BK_PARTITION_APPLICATION);
@@ -404,12 +423,10 @@ int h2_bk_h2loader_managed_app_image_size(uint64_t *out_size) {
     primary = image_partition(H2_BK_H2LOADER_PRIMARY_PARTITION_ID);
     trial = image_partition(H2_BK_H2LOADER_APP_PARTITION_ID);
     if (primary == NULL || trial == NULL ||
-        primary->partition_length != trial->partition_length) {
+        (!h2_bk_fixed_layout_active() && primary->partition_length != trial->partition_length)) {
         return H2_PAL_ERR_NOT_FOUND;
     }
-    /* BK packages contain app_ab_crc.rbl, a fixed, padded A/B managed image.
-     * Its manifest size is therefore the validated A/B window length, not an
-     * arbitrary executable partition capacity with unowned trailing bytes. */
+    /* The managed App image is padded to its own physical Flash window. */
     *out_size = trial->partition_length;
     return H2_PAL_OK;
 }
@@ -453,6 +470,11 @@ static int image_writer_begin(
     if (identity == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    /* A fixed Loader image is linked for A and cannot run as a candidate in
+     * App's XIP window. Updating Loader requires the system flashing path. */
+    if (h2_bk_fixed_layout_active() && identity->role != H2_LOADER_IMAGE_ROLE_APP) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
     return ota_writer_begin_partition(partition_id, identity->image_size);
 }
 
@@ -495,11 +517,12 @@ const h2_loader_image_writer_api_t *h2_bk_h2loader_image_writer(void) {
 }
 
 int h2_bk_h2loader_confirm_active_loader(void *user) {
+    if (h2_bk_fixed_layout_active()) return H2_PAL_OK;
     (void)user;
 #if CONFIG_OTA_POSITION_INDEPENDENT_AB
     bk_ota_double_check_for_execution();
 #else
-    uint8_t current = bk_ota_get_current_partition();
+    uint8_t current = h2_bk_fixed_current_slot();
     if (current == EXEX_A_PART) {
         bk_ota_confirm_update_partition(CONFIRM_EXEC_A);
     } else if (current == EXEC_B_PART) {
@@ -512,6 +535,7 @@ int h2_bk_h2loader_confirm_active_loader(void *user) {
 }
 
 static int confirm_app_execution(void *user) {
+    if (h2_bk_fixed_layout_active()) return h2_bk_fixed_confirm_app();
     const bk_logic_partition_t *partition;
     uint8_t confirm_flag = 0xffu;
     uint8_t expected_flag;
@@ -520,7 +544,7 @@ static int confirm_app_execution(void *user) {
 
     (void)user;
 #if CONFIG_OTA_POSITION_INDEPENDENT_AB
-    expected_exec = bk_ota_get_current_partition() == EXEX_A_PART ? EXEX_A_PART : EXEC_B_PART;
+    expected_exec = h2_bk_fixed_current_slot() == EXEX_A_PART ? EXEX_A_PART : EXEC_B_PART;
     expected_flag = expected_exec == EXEX_A_PART ? CONFIRM_EXEC_A : CONFIRM_EXEC_B;
 #else
     expected_exec = EXEC_B_PART;
@@ -576,7 +600,8 @@ int h2_bk_h2loader_confirm_current_app(h2_runtime_t *runtime) {
 }
 
 int h2_bk_h2loader_prepare_pending_app_restart(void) {
-    if (bk_ota_get_current_partition() != EXEC_B_PART) {
+    if (h2_bk_fixed_layout_active()) return h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID);
+    if (h2_bk_fixed_current_slot() != EXEC_B_PART) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     return map_bk_result(
@@ -584,6 +609,7 @@ int h2_bk_h2loader_prepare_pending_app_restart(void) {
 }
 
 int h2_bk_h2loader_select_confirmed_boot_partition(uint32_t partition_id) {
+    if (h2_bk_fixed_layout_active()) return h2_bk_fixed_select(partition_id);
     switch (partition_id) {
     case H2_BK_H2LOADER_PRIMARY_PARTITION_ID:
         return map_bk_result(
@@ -597,7 +623,8 @@ int h2_bk_h2loader_select_confirmed_boot_partition(uint32_t partition_id) {
 }
 
 int h2_bk_h2loader_prepare_pending_app_rollback(void) {
-    if (bk_ota_get_current_partition() != EXEC_B_PART) {
+    if (h2_bk_fixed_layout_active()) return H2_PAL_OK;
+    if (h2_bk_fixed_current_slot() != EXEC_B_PART) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     /* Boot A on a reset before confirmation, retaining B as the attempted

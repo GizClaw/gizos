@@ -2,6 +2,8 @@
 
 Loader 更新使用 Partition 2 临时运行候选 Loader，再把候选镜像完整回写到固定的 Partition 1。流程不保存 trial/canonical phase，也不依赖 Stage 判断运行在 Partition 2 的 Loader 是否需要回写。
 
+该流程要求 Partition 2 能运行 Loader image。BK7258 的 App window 按自身地址链接，不能运行 Loader，因此不支持本流程：Loader package 在写 Flash 前返回 unsupported，Loader 通过系统烧录路径更新，见 [BK7258 H2Loader](../boards/bk7258_v3_202405/h2loader)。
+
 ## Partition 1 AUTO 流程
 
 1. Host 发布 `role=loader` 的 Stage 并执行 `h2loader reboot upgrade`。

@@ -132,6 +132,9 @@ def _bk7258_firmware_impl(ctx):
         for source in component.srcs:
             args.add("--native-component-source", component_key + "=" + source.path)
 
+    if ctx.var.get("h2_bk7258_tmpdir"):
+        args.add("--temporary-root", ctx.var["h2_bk7258_tmpdir"])
+
     ctx.actions.run(
         arguments = [args],
         executable = ctx.executable._runner,

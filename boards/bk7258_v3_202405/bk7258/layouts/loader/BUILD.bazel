@@ -4,6 +4,7 @@ exports_files([
     "ap.defaults",
     "cp.defaults",
     "ram_regions.csv",
+    "partitions/bk7258/auto_partitions.csv",
 ])
 
 filegroup(
@@ -23,7 +24,12 @@ alias(
 
 filegroup(
     name = "layout",
-    srcs = ["//boards/bk7258_v3_202405/bk7258/layouts/h2loader:layout"],
+    srcs = [
+        "partitions/bk7258/auto_partitions.csv",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/ab_position_independent.csv",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:partitions/bk7258/ota_rbl.config",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:pj_config.mk",
+    ],
 )
 
 alias(
