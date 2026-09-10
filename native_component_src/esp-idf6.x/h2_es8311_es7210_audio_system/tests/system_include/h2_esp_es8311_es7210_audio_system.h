@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "h2_es8311_volume.h"
 
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_FRAME_SAMPLES 512u
 #define H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_MAX_RAW_CHANNELS 4u
@@ -64,6 +65,8 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
   const h2_pal_queue_api_t *queue_api;
   const h2_pal_sync_api_t *sync_api;
   int enable_aec;
+    /** Optional board curve; zero initialization preserves legacy mapping. */
+    h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_es7210_audio_system_config_t;
 
 typedef struct h2_esp_es8311_es7210_sr_state {

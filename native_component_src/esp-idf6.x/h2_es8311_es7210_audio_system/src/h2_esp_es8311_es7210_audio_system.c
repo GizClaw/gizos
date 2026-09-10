@@ -85,7 +85,7 @@ int h2_esp_es8311_es7210_audio_system_init(
         config->track_queue_frames == 0u ||
         config->mic_queue_frames == 0u ||
         config->mclk_multiple == 0u ||
-        config->codec_volume_default == 0u ||
+        !h2_es8311_volume_is_valid(&config->speaker_volume, config->codec_volume_default) ||
         config->mic_task_stack_size == 0u ||
         config->speaker_task_stack_size == 0u ||
         config->queue_api == NULL || config->sync_api == NULL) {

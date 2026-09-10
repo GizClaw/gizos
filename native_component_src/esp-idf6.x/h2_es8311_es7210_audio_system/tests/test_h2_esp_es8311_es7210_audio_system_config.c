@@ -27,7 +27,7 @@ void h2_esp_es8311_es7210_sr_deinit(h2_esp_es8311_es7210_sr_state_t *state) {
 
 int main(void) {
   const h2_pal_queue_api_t queue_api = {0};
-  const h2_esp_es8311_es7210_audio_system_config_t config = {
+  h2_esp_es8311_es7210_audio_system_config_t config = {
       .sample_rate_hz = 16000u,
       .frame_samples_per_channel = 320u,
       .raw_channels = 4u,
@@ -52,5 +52,18 @@ int main(void) {
   h2_esp_es8311_es7210_audio_system_t system;
   assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
          H2_AUDIO_ERR_INVALID_ARG);
+  const h2_pal_sync_api_t sync_api = {0};
+  config.sync_api = &sync_api;
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  config.codec_volume_default = 0xb0u;
+  config.speaker_volume = (h2_es8311_volume_config_t){
+      .point_count = 3u, .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},
+  };
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  config.speaker_volume.points[1].attenuation_half_db = 20u;
+  assert(h2_es8311_volume_from_percent(&system.config.speaker_volume,
+                                      system.config.codec_volume_default, 50u) == 164u);
+  config.speaker_volume.point_count = 9u;
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_ERR_INVALID_ARG);
   return 0;
 }
