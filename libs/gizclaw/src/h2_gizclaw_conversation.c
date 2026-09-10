@@ -436,6 +436,10 @@ static void downlink_release(h2_gizclaw_service_t *service) {
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
 }
 
+/* Received downstream audio. While audio play or Speech owns the Track the
+ * packet is dropped (OK); a full ring refuses it with WOULD_BLOCK and the
+ * provider drops it, so a stalled speaker loses audio instead of delaying
+ * it. */
 h2_pal_result_t
 h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
                                     const uint8_t *opus, size_t opus_len) {
@@ -720,12 +724,24 @@ void h2_gizclaw_conversation_downlink_step_internal(
    * Track intermittently dry. While the ring has a backlog and the Track has
    * room, keep decoding; the Track's own depth bounds the burst and its
    * WOULD_BLOCK ends it, so the speaker still paces playback. */
-  if (track && h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
-                   H2_PAL_OK) {
-    for (unsigned int chunk = 0u;
-         chunk < H2_GIZCLAW_CONVERSATION_DECODE_BURST_CHUNKS; ++chunk) {
+  if (h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
+      H2_PAL_OK) {
+    if (track) {
+      for (unsigned int chunk = 0u;
+           chunk < H2_GIZCLAW_CONVERSATION_DECODE_BURST_CHUNKS; ++chunk) {
         if (downlink_decode_step(service, downlink) != H2_PAL_OK)
-        break;
+          break;
+      }
+    } else {
+      /* Audio play or Speech owns the Track: conversation audio queued
+       * before that is dropped, never played afterwards. */
+      atomic_store_explicit(
+          &downlink->opus.read_index,
+          atomic_load_explicit(&downlink->opus.write_index,
+                               memory_order_acquire),
+          memory_order_release);
+      downlink->decoded_len = 0u;
+      downlink->decoded_offset = 0u;
     }
     (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
   }
