@@ -4,6 +4,7 @@ load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -31,6 +32,7 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
+        "bk/h2loader        6        0  24576  default",
         "h2loader/appcmd    5        0  49152  psram",
         "$h2loader/uartcmd  5        0  49152  psram",
         "$bleikcp/kcp       default",
@@ -44,6 +46,11 @@ bk7258_target_task_policy(
     ],
     cp_default_policy = "6 4096 default",
     graph = [":h2loader_launcher"],
+)
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["bk/h2loader"],
 )
 
 firmware_lib_component(
@@ -92,6 +99,7 @@ firmware_native_component(
     ],
     deps = [
         "//projects/h2loader/apps/loader/app:tasks",
+        ":entry_tasks",
         ":ap_launcher_component",
         ":firmware_lib",
         "//libs/bundle",

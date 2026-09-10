@@ -769,11 +769,14 @@ int main(void) {
     bk_init();
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=after_bk_init\r\n");
     os_printf("H2_BK_AP_MAIN stage=after_bk_init\r\n");
-    beken_thread_t entry_thread = NULL;
-    h2_pal_result_t rc = rtos_create_thread(
-        &entry_thread, BEKEN_DEFAULT_WORKER_PRIORITY, "bk/h2loader",
-        (beken_thread_function_t)h2loader_ap_entry, 24u * 1024u, 0) == kNoErr
-        ? H2_PAL_OK : H2_PAL_ERR_TASK;
+    h2_pal_task_t *entry_task = NULL;
+    const h2_pal_task_options_t entry_options = {
+        .name = "bk/h2loader",
+        .min_stack_size = 24u * 1024u,
+    };
+    h2_pal_result_t rc = h2_pal_task_start(
+        h2_bk_platform_task_api(), &entry_options, h2loader_ap_entry, NULL,
+        &entry_task);
     if (rc != H2_PAL_OK) {
         char line[96];
         (void)snprintf(

@@ -56,6 +56,9 @@ class CpStartupContractTest(unittest.TestCase):
         launchers = list(runfiles.rglob("bk7258_v3_202405/ap/ap_main.c"))
         self.assertEqual(1, len(launchers), [str(path) for path in launchers])
         launcher = launchers[0].read_text(encoding="utf-8")
+        # The entry task takes its bk/h2loader policy from the target table.
+        self.assertIn("h2_bk_platform_task_api(), &entry_options", launcher)
+        self.assertNotIn("rtos_create_thread(", launcher)
         probe = launcher.index("static int h2loader_probe_pref(void)")
         namespace_missing = launcher.index(
             "if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;", probe
