@@ -200,6 +200,7 @@ static void recording_window(const h2_pal_mem_api_t *allocator) {
   assert(h2_gizclaw_pcm_input_start(&input, track, allocator) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_pcm_track_write(track, current, sizeof(current)) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_input_end(&input, track) == H2_PAL_OK);
+  assert(!input.empty);
   assert(h2_gizclaw_pcm_track_write(track, later, 2u) == H2_PAL_OK);
   /* Neither control call steals the consumer cursor. */
   assert(h2_gizclaw_pcm_track_pending_internal(track) == 16u);
@@ -228,6 +229,7 @@ static void recording_window(const h2_pal_mem_api_t *allocator) {
   assert(h2_gizclaw_pcm_input_prepare(&input, track) == H2_PAL_OK);
   assert(h2_gizclaw_pcm_track_pending_internal(track) == 0u);
   assert(h2_gizclaw_pcm_input_end(&input, track) == H2_PAL_OK);
+  assert(input.empty);
   assert(h2_gizclaw_pcm_input_read(&input, track, out, 6u, &len) == H2_PAL_OK);
   assert(len == 0u);
   h2_gizclaw_pcm_input_deinit(&input);

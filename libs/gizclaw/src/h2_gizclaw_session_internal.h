@@ -13,8 +13,16 @@ typedef struct h2_gizclaw_audio_log {
 
 static inline char *h2_gizclaw_audio_log_append_internal(
     h2_gizclaw_audio_log_t *log, h2_pal_log_level_t level) {
-  if (log->count == 8u)
+  if (log->count == 8u) {
+    /* Preserve an error return even when interruption filled the trace. */
+    if (level == H2_PAL_LOG_ERROR)
+      for (size_t i = 0u; i < log->count; ++i)
+        if (log->levels[i] != H2_PAL_LOG_ERROR) {
+          log->levels[i] = level;
+          return log->messages[i];
+        }
     return NULL;
+  }
   log->levels[log->count] = level;
   return log->messages[log->count++];
 }
@@ -22,9 +30,18 @@ static inline char *h2_gizclaw_audio_log_append_internal(
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log);
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log);
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty);
+typedef enum h2_gizclaw_cancel_source {
+  H2_GIZCLAW_CANCEL_UNSPECIFIED,
+  H2_GIZCLAW_CANCEL_API,
+  H2_GIZCLAW_CANCEL_RESTART,
+  H2_GIZCLAW_CANCEL_WORKSPACE,
+  H2_GIZCLAW_CANCEL_REALTIME_END,
+} h2_gizclaw_cancel_source_t;
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log);
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
+    int source);
 
 /* Session and its Service outlive all admitted RPC calls. */
 h2_pal_result_t

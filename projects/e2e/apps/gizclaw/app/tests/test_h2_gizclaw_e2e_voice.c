@@ -32,19 +32,16 @@ void h2_gizclaw_service_flush_audio_log_internal(
   (void)service;
   (void)log;
 }
-h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
-  (void)log;
-  return start ? h2_gizclaw_service_audio_start(service)
-               : h2_gizclaw_service_audio_end(service);
-}
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
+    int source) {
+  (void)source;
   (void)log;
   return h2_gizclaw_conversation_cancel(conversation);
 }
 
 static bool s_session;
+static bool s_empty_ptt;
 #include "h2_gizclaw_pcm_track_fake.h"
 
 #ifdef NDEBUG
@@ -251,10 +248,24 @@ h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
     return H2_PAL_ERR_IO;
   /* Realtime never submits a final utterance to obtain an invented EOS ack. */
   assert(!s_realtime);
-  assert(value->input_bytes == sizeof(s_pcm));
+  assert(value->input_bytes == (s_empty_ptt ? 0u : sizeof(s_pcm)));
   value->ended = true;
   s_ended_at = test_time.monotonic_ms;
   return H2_PAL_OK;
+}
+/* Mirrors the Service contract: END reports an empty turn when no PCM was
+ * captured, so the real Session returns to IDLE instead of WAITING. */
+h2_pal_result_t h2_gizclaw_service_audio_control_internal(
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty) {
+  (void)log;
+  if (out_empty != NULL)
+    *out_empty = false;
+  const h2_pal_result_t rc = start ? h2_gizclaw_service_audio_start(service)
+                                   : h2_gizclaw_service_audio_end(service);
+  if (rc == H2_PAL_OK && !start && out_empty != NULL)
+    *out_empty = s_conversation != NULL && s_conversation->input_bytes == 0u;
+  return rc;
 }
 h2_pal_result_t
 h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *value) {
@@ -780,6 +791,55 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   free(fixture);
   return allocations;
 }
+/* A released PTT with no captured PCM completes locally: the Session must
+ * report IDLE rather than wait for a reply that will never arrive. */
+static h2_pal_result_t empty_ptt_event(void *user, h2_gizclaw_conversation_t *conversation,
+                                       const h2_gizclaw_conversation_event_t *event) {
+  (void)user;
+  (void)conversation;
+  (void)event;
+  return H2_PAL_OK;
+}
+static void empty_ptt_complete(void *user, h2_gizclaw_conversation_t *conversation,
+                               const h2_gizclaw_operation_result_t *result) {
+  (void)user;
+  (void)conversation;
+  (void)result;
+}
+static void run_empty_ptt_session(void) {
+  assert(test_mem.live_blocks == 0u && s_conversation == NULL);
+  s_mode = NORMAL;
+  s_empty_ptt = true;
+  static const char *const collections[] = {"assistants"};
+  h2_gizclaw_session_config_t config = {.service=(h2_gizclaw_service_t *)&s_service,
+      .mem=&test_mem.api, .sync=h2_desktop_platform_sync_api(), .time=&test_time.api,
+      .collections=collections, .collection_count=1u, .max_workflows=4u, .catalog_bytes=4096u};
+  h2_gizclaw_session_t *session = NULL;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 30000u) == H2_PAL_OK);
+  const h2_gizclaw_workspace_parameters_patch_t parameters = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  const h2_gizclaw_session_selection_t selection = {.collection="assistants",
+      .workflow_name="assistant", .workspace_name="test-workspace",
+      .parameters=&parameters};
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_session_conversation_create(session, &selection, 30000u,
+             empty_ptt_event, empty_ptt_complete, NULL, &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+  h2_gizclaw_session_state_t state;
+  assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+  assert(state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  /* The fake has no poll loop; deliver the control-only turn's completion. */
+  complete(conversation, false);
+  assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+  assert(state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
+  s_empty_ptt = false;
+  assert(test_mem.live_blocks == 0u && s_conversation == NULL);
+}
 static int expected_result(unsigned mode) {
   switch (mode) {
   case NORMAL:
@@ -834,6 +894,7 @@ int main(int argc, char **argv) {
   s_session = true;
   run_case(NORMAL, H2_PAL_OK, 0u);
   s_session = false;
+  run_empty_ptt_session();
   unsigned allocations = run_case(NORMAL, H2_PAL_OK, 0u);
   run_case(SILENT_REPLY, H2_PAL_ERR_INVALID_STATE, 0u);
   run_case(MISSING_TEXT, H2_PAL_ERR_INVALID_STATE, 0u);

@@ -211,6 +211,8 @@ h2_gizclaw_req_create_speedtest(h2_gizclaw_service_t *service,
         service, identity, H2_GIZCLAW_RPC_ALL_SPEED_TEST_RUN, &speedtest_tag,
         (h2_gizclaw_rpc_bytes_t){payload, payload_len}, timeout_ms,
         upload_bytes, speedtest_frame, speedtest_destroy, context, out_request);
+  if (rc == H2_PAL_OK)
+    h2_gizclaw_req_speedtest_diagnostic_internal(*out_request, download_bytes);
   if (rc == H2_PAL_OK && download_bytes != 0u)
     h2_gizclaw_req_output_optional_internal(*out_request);
   if (rc != H2_PAL_OK)

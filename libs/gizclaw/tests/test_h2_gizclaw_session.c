@@ -26,6 +26,8 @@ static unsigned terminal_count;
 static unsigned audio_starts, audio_ends;
 static h2_pal_result_t audio_start_result, audio_end_result;
 static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
+static atomic_int last_cancel_source;
+static unsigned end_noops;
 /* This test mocks Service; capture Session's production ERROR formatting. */
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
@@ -35,6 +37,8 @@ void h2_gizclaw_service_flush_audio_log_internal(
     h2_gizclaw_session_state_t state;
     assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
     const char *message = log->messages[i];
+    if (strstr(message, "stage=audio_end_not_open") != NULL)
+      ++end_noops;
     if (log->levels[i] == H2_PAL_LOG_INFO)
       assert(strstr(message, "stage=interrupt_begin") != NULL);
     if (log->levels[i] != H2_PAL_LOG_ERROR)
@@ -44,15 +48,22 @@ void h2_gizclaw_service_flush_audio_log_internal(
   }
 }
 
+static bool audio_input_empty;
+
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty) {
+  if (out_empty != NULL)
+    *out_empty = !start && audio_input_empty;
   (void)log;
   return start ? h2_gizclaw_service_audio_start(service)
                : h2_gizclaw_service_audio_end(service);
 }
 
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
+    int source) {
+  atomic_store(&last_cancel_source, source);
   (void)log;
   return h2_gizclaw_conversation_cancel(conversation);
 }
@@ -258,6 +269,7 @@ static void setup(size_t collections) {
   static const char *const names[] = {"alpha", "beta"};
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
   audio_starts = audio_ends = 0u;
+  audio_input_empty = false;
   audio_start_result = audio_end_result = H2_PAL_OK;
   audio_error_log[0] = '\0';
   atomic_store(&cancel_entered, false);
@@ -366,7 +378,7 @@ static void test_control_boundaries(void) {
   const h2_gizclaw_conversation_event_t reply = {
       .kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA,
   };
-  for (unsigned phase = 0; phase < 4u; ++phase) {
+  for (unsigned phase = 0; phase < 5u; ++phase) {
     for (unsigned fail = 0; fail < 2u; ++fail) {
       setup(1u);
       assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
@@ -380,10 +392,13 @@ static void test_control_boundaries(void) {
       assert(snapshot().conversation ==
              (phase == 3u ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
                           : H2_GIZCLAW_SESSION_CONVERSATION_RECORDING));
-      if (phase == 1u || phase == 2u) {
+      if (phase == 1u || phase == 2u || phase == 4u) {
+        audio_input_empty = phase == 4u;
         assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
         assert(snapshot().conversation ==
-               H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+               (phase == 4u ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+                            : H2_GIZCLAW_SESSION_CONVERSATION_WAITING));
+        assert(!snapshot().conversation_input_open);
       }
       if (phase == 2u || phase == 3u) {
         assert(on_event(terminal_user, conversation, &reply) == H2_PAL_OK);
@@ -409,6 +424,7 @@ static void test_control_boundaries(void) {
       assert(h2_pal_task_start(tasks, NULL, switch_thread, &context, &task) ==
              H2_PAL_OK);
       wait_flag(&cancel_entered);
+      assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
       assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
       assert(!snapshot().conversation_input_open);
       assert(audio_ends == 1u);
@@ -438,11 +454,16 @@ static void test_control_boundaries(void) {
                                                 &conversation) == H2_PAL_OK);
   assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
   assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+  const unsigned ends_before_noop = audio_ends;
+  const unsigned noops_before = end_noops;
+  assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+  assert(audio_ends == ends_before_noop && end_noops == noops_before + 1u);
   h2_pal_task_t *task = NULL;
   h2_pal_result_t result = H2_PAL_ERR_IO;
   assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) ==
          H2_PAL_OK);
   wait_flag(&cancel_entered);
+  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
   terminal(terminal_user, conversation, &canceled);
   assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
   assert(result == H2_PAL_OK && audio_starts == 2u && terminal_count == 0u);
@@ -457,6 +478,7 @@ static void test_control_boundaries(void) {
   atomic_store(&cancel_entered, false);
   assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) == H2_PAL_OK);
   wait_flag(&cancel_entered);
+  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
   terminal(terminal_user, conversation, &canceled);
   assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
   assert(result == H2_PAL_ERR_INVALID_ARG);
@@ -465,6 +487,7 @@ static void test_control_boundaries(void) {
   assert(strstr(audio_error_log, "conversation=") != NULL);
   assert(strstr(audio_error_log, "open=0 running=0 restarting=0") != NULL);
   assert(strstr(audio_error_log, "workspace=") != NULL);
+  assert(strstr(audio_error_log, "gen=") != NULL);
   h2_gizclaw_session_conversation_release(session, conversation);
   teardown();
 }

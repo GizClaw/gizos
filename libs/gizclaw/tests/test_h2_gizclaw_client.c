@@ -142,6 +142,11 @@ static int test_open_ready(h2_gizclaw_client_t *client, h2_gizclaw_str_t workspa
   assert(h2_gizclaw_conversation_accepts_peer_event_internal(*out, &event));
   h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
   h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
+  assert(!h2_gizclaw_conversation_wire_input_ready_internal(*out));
+  /* Matching READY before audio BOS must not arm media. */
+  assert(h2_gizclaw_conversation_wire_begin_audio_internal(*out) == H2_PAL_OK);
+  assert(!h2_gizclaw_conversation_wire_input_ready_internal(*out));
+  h2_gizclaw_conversation_enqueue_peer_event_internal(*out, &event);
   assert(h2_gizclaw_conversation_wire_input_ready_internal(*out));
   assert(!h2_gizclaw_conversation_has_pending_peer_event_internal(*out));
   char detail[H2_PAL_LOG_MESSAGE_MAX];
@@ -320,7 +325,7 @@ static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
   fails +=
       expect(test_open_ready(
                  client, workspace, 11u, 1000, &conversation) == H2_PAL_OK &&
-                 conversation != NULL && event.send_count == 1u,
+                 conversation != NULL && event.send_count == 2u,
              "closed-poll mapping test opens an active conversation");
   event.conversation = conversation;
   fails += expect(
@@ -351,7 +356,7 @@ static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
   h2_gizclaw_conversation_wire_destroy_internal(conversation);
   event.conversation = NULL;
   fails +=
-      expect(event.send_count == 1u && event.close_count == 1u,
+      expect(event.send_count == 2u && event.close_count == 1u,
              "conversation deinit does not reuse the released Event handle");
   fails += expect(
       h2_gizclaw_client_close(client) == H2_PAL_OK && event.close_count == 1u,
@@ -397,7 +402,7 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   fails +=
       expect(test_open_ready(
                  client, workspace, 9u, 1000, &conversation) == H2_PAL_OK &&
-                 conversation != NULL && test.send_count == 1u,
+                 conversation != NULL && test.send_count == 2u,
              "closed-poll test opens an active logical conversation");
   test_workspace_history_notification_t notification = {0};
   fails +=
@@ -443,7 +448,7 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
                   "send-failure test initializes an independent client");
   test_event_stream_t send_test = {
       .stream = (gzc_event_stream_t *)(uintptr_t)0x50u,
-      .fail_on_send_count = 2u,
+      .fail_on_send_count = 3u,
       .send_result = GZC_ERR_RPC,
   };
   h2_gizclaw_test_set_event_ops(test_event_send, NULL, test_event_close,
@@ -455,12 +460,12 @@ test_event_failures_poison_client(h2_gizclaw_client_t *client,
   fails += expect(test_open_ready(
                       send_client, workspace, 10u, 1000, &send_conversation) ==
                           H2_PAL_OK &&
-                      send_conversation != NULL && send_test.send_count == 1u,
+                      send_conversation != NULL && send_test.send_count == 2u,
                   "send-failure test opens an active logical conversation");
   fails += expect(
       h2_gizclaw_conversation_wire_finish_input_internal(
           send_conversation, 10u) == H2_PAL_ERR_IO &&
-          send_test.send_count == 2u && send_test.close_count == 1u &&
+          send_test.send_count == 3u && send_test.close_count == 1u &&
           !h2_gizclaw_conversation_wire_input_ready_internal(
               send_conversation) &&
           h2_gizclaw_test_client_terminal_closed(send_client),
@@ -554,6 +559,35 @@ test_drain_reply_event(test_event_stream_t *stream,
  * the server cut short ends with REPLY_DONE, and the next reply's BOS, text
  * and EOS are all accepted. Once the input is committed (push-to-talk) the
  * interruption remains a conversation error. */
+static void test_audio_bos_backpressure(const h2_gizclaw_config_t *config) {
+  h2_gizclaw_client_t *client = NULL;
+  assert(h2_gizclaw_client_init(config, &client) == H2_PAL_OK);
+  test_event_stream_t stream = {
+      .stream = (gzc_event_stream_t *)(uintptr_t)0x70u,
+      .fail_on_send_count = 2u, .send_result = GZC_ERR_WOULD_BLOCK};
+  h2_gizclaw_test_set_event_ops(test_event_send, NULL, test_event_close, &stream);
+  assert(h2_gizclaw_test_replace_event_stream(client, stream.stream) == NULL);
+  h2_gizclaw_conversation_t *conv = NULL;
+  assert(h2_gizclaw_conversation_wire_open_internal(
+      client, (h2_gizclaw_str_t){"workspace", 9u}, 30u, 1000, &conv) == H2_PAL_OK);
+  assert(h2_gizclaw_conversation_wire_begin_audio_internal(conv) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_gizclaw_conversation_wire_finish_input_internal(conv, 0u) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(stream.send_count == 2u); /* No EOS was attempted. */
+  stream.fail_on_send_count = 0u;
+  assert(h2_gizclaw_conversation_wire_begin_audio_internal(conv) == H2_PAL_OK);
+  assert(!h2_gizclaw_conversation_wire_input_ready_internal(conv));
+  gzc_peer_event_t ready = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+  ready.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+  snprintf(ready.payload.audio_input_ready.stream_id,
+      sizeof(ready.payload.audio_input_ready.stream_id), "%s", last_input_stream);
+  h2_gizclaw_conversation_enqueue_peer_event_internal(conv, &ready);
+  assert(h2_gizclaw_conversation_wire_finish_input_internal(conv, 0u) == H2_PAL_OK);
+  assert(stream.send_count == 5u); /* Retried audio BOS, audio EOS, control EOS. */
+  h2_gizclaw_conversation_wire_destroy_internal(conv);
+  h2_gizclaw_client_deinit(client);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+}
+
 static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
   static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
   static const int DELTA =
@@ -588,12 +622,12 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
     fails +=
         expect(test_open_ready(
                    client, workspace, 20u + mode, 1000, &conv) == H2_PAL_OK &&
-                   conv != NULL && stream.send_count == 1u,
+                   conv != NULL && stream.send_count == 2u,
                "barge-in test opens an active conversation");
     if (mode == 2)
       fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(
                           conv, 5u) == H2_PAL_OK &&
-                          stream.send_count == 2u,
+                          stream.send_count == 4u,
                       "push-to-talk commits the input before the reply");
     if (mode == 2) {
       gzc_peer_event_t late = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
@@ -603,6 +637,19 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
       h2_gizclaw_conversation_enqueue_peer_event_internal(conv, &late);
       assert(!h2_gizclaw_conversation_wire_input_ready_internal(conv));
     }
+    /* A canceled reply may end after the next input's READY or commit.
+     * It must not claim the new input's as-yet unbound assistant route. */
+    gzc_peer_event_t orphan =
+        test_reply_event(EOS, "assistant", "previous-reply", "", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
+                        conv, &orphan), "unbound old EOS is ignored");
+    orphan = test_reply_event(EOS, "assistant", "previous-reply", "",
+                              "STREAM_INTERRUPTED");
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
+                        conv, &orphan), "unbound old interruption is ignored");
+    orphan = test_reply_event(DONE, "assistant", "previous-reply", "old", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
+                        conv, &orphan), "unbound old text boundary is ignored");
     h2_gizclaw_conversation_event_t out = {0};
     gzc_peer_event_t event =
         test_reply_event(BOS, "assistant", "reply-1", "", NULL);
@@ -731,6 +778,31 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
                   conv),
           "the next reply ends with a normal REPLY_DONE");
     }
+    h2_gizclaw_conversation_wire_destroy_internal(conv);
+    conv = NULL;
+    fails += expect(test_open_ready(client, workspace, 30u + mode, 1000,
+                                    &conv) == H2_PAL_OK,
+                    "next input reuses the same connected client");
+    const char *retired_reply = mode < 2u ? "reply-2" : "reply-1";
+    event = test_reply_event(BOS, "assistant", retired_reply, "", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "retired reply BOS cannot claim a new input after READY");
+    fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(conv, 9u) == H2_PAL_OK,
+                    "next input commits");
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "retired reply BOS cannot claim a committed input");
+    event = test_reply_event(EOS, "assistant", retired_reply, "", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "retired reply EOS remains ignored");
+    event = test_reply_event(BOS, "assistant", "fresh-reply", "", NULL);
+    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "fresh reply still binds the new input");
+    event = test_reply_event(DONE, "assistant", "fresh-reply", "new", NULL);
+    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "fresh text completion is accepted");
+    event = test_reply_event(EOS, "assistant", "fresh-reply", "", NULL);
+    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "fresh reply EOS is accepted");
     h2_gizclaw_conversation_wire_destroy_internal(conv);
     fails += expect(h2_gizclaw_client_close(client) == H2_PAL_OK,
                     "barge-in test closes the client");
@@ -1644,6 +1716,7 @@ int main(void) {
   fails += test_closed_poll_mapping(&config);
   fails += test_client_event_backpressure(&config);
   fails += test_event_failures_poison_client(client, &config);
+  test_audio_bos_backpressure(&config);
   fails += test_conversation_barge_in(&config);
   h2_gizclaw_client_deinit(client);
   fails += expect(h2_gizclaw_client_connect(NULL) == H2_PAL_ERR_INVALID_ARG,
@@ -1857,6 +1930,8 @@ int main(void) {
           "stream callbacks preserve PAL errors without SDK code collisions");
     }
   }
+  fails += expect(h2_gizclaw_test_rpc_diagnostic(),
+                  "RPC diagnostic preserves raw SDK status before cleanup");
   fails += expect(h2_gizclaw_test_audio_rings(),
                   "PCM and packet rings preserve wrap order and bounds");
 
