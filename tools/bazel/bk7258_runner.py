@@ -772,7 +772,7 @@ def run(arguments: argparse.Namespace) -> None:
         raise RunnerError(f"launcher project escapes source root: {source_project}") from error
 
     with tempfile.TemporaryDirectory(prefix="h2-bk7258-", dir=arguments.temporary_root) as temporary:
-        temporary_root = Path(temporary)
+        temporary_root = Path(temporary).resolve()
         project_copy = temporary_root / "source" / relative_project
         project_copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_project, project_copy)
