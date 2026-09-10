@@ -239,21 +239,19 @@ h2_pal_result_t h2_quectel_modem_get_data_status(
     h2_pal_modem_t *platform,
     h2_pal_modem_data_status_t *out_status) {
     h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
-    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    h2_pal_result_t rc = h2_quectel_state_lock(modem_state);
     if (rc != H2_PAL_OK) {
         return rc;
     }
     if ((modem_state->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
         if (modem_state->opened == 0u) {
-            return h2_quectel_operation_end(modem_state, H2_PAL_ERR_CLOSED);
-        }
-        rc = h2_quectel_modem_prepare(modem_state);
-        if (rc != H2_PAL_OK) {
-            return h2_quectel_operation_end(modem_state, rc);
+            h2_quectel_state_unlock(modem_state);
+            return H2_PAL_ERR_CLOSED;
         }
     }
     rc = h2_quectel_modem_get_data_status_impl(platform, out_status);
-    return h2_quectel_operation_end(modem_state, rc);
+    h2_quectel_state_unlock(modem_state);
+    return rc;
 }
 
 h2_pal_result_t h2_quectel_modem_dial_ppp(h2_quectel_modem_t *modem) {

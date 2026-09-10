@@ -11,8 +11,14 @@ h2_tasks(
 
 cc_library(
     name = "urc",
-    srcs = ["src/h2_modem_urc.c"],
-    hdrs = ["include/h2_modem_urc.h"],
+    srcs = [
+        "src/h2_modem_rx.c",
+        "src/h2_modem_urc.c",
+    ],
+    hdrs = [
+        "include/h2_modem_rx.h",
+        "include/h2_modem_urc.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
@@ -20,6 +26,20 @@ cc_library(
         ":tasks",
         "//libs/pal",
     ],
+)
+
+cc_test(
+    name = "rx_test",
+    srcs = ["tests/test_modem_rx.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":urc"],
 )
 
 cc_test(

@@ -4,22 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static h2_pal_result_t qlock(h2_quectel_modem_t *modem) {
-    if (modem == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    if (modem->lock == NULL) {
-        return H2_PAL_OK;
-    }
-    return h2_pal_mutex_lock(modem->config.sync_api, modem->lock);
-}
-
-static void qunlock(h2_quectel_modem_t *modem) {
-    if (modem != NULL && modem->lock != NULL) {
-        (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->lock);
-    }
-}
-
 static void trim_line(char *line) {
     size_t len = strlen(line);
     while (len > 0u && (line[len - 1u] == '\r' || line[len - 1u] == '\n' || h2_quectel_ascii_space((unsigned char)line[len - 1u]))) {
@@ -37,7 +21,9 @@ static void trim_line(char *line) {
 static h2_pal_result_t write_all(h2_quectel_modem_t *modem, const char *data, uint32_t timeout_ms) {
     size_t len = strlen(data);
     size_t written = 0u;
+    h2_quectel_state_unlock(modem);
     h2_pal_result_t rc = modem->config.write(modem->config.transport_user, (const uint8_t *)data, len, timeout_ms, &written);
+    (void)h2_quectel_state_lock(modem);
     return rc == H2_PAL_OK && written == len ? H2_PAL_OK : (rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc);
 }
 
@@ -46,21 +32,33 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
         return H2_PAL_ERR_INVALID_ARG;
     }
     size_t len = 0u;
+    h2_pal_result_t framing_result = H2_PAL_OK;
     line[0] = '\0';
     for (;;) {
         uint8_t ch = 0u;
         size_t got = 0u;
+        h2_quectel_state_unlock(modem);
         h2_pal_result_t rc = modem->config.read(modem->config.transport_user, &ch, 1u, timeout_ms, &got);
+        (void)h2_quectel_state_lock(modem);
         if (rc != H2_PAL_OK) {
             return rc;
         }
         if (got == 0u) {
             return H2_PAL_ERR_TIMEOUT;
         }
+        if (ch == 0u) {
+            framing_result = H2_PAL_ERR_FORMAT;
+        }
         if (len + 1u < cap) {
             line[len++] = (char)ch;
+        } else if (framing_result == H2_PAL_OK) {
+            framing_result = H2_PAL_ERR_TRUNCATED;
         }
         if (ch == '\n') {
+            if (framing_result != H2_PAL_OK) {
+                line[0] = '\0';
+                return framing_result;
+            }
             line[len] = '\0';
             trim_line(line);
             return H2_PAL_OK;
@@ -95,16 +93,29 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         while (cursor[consume] != '\0' && cursor[consume] != '\r' && cursor[consume] != '\n') {
             consume++;
         }
+        const int truncated = consume != len;
         while (cursor[consume] == '\r' || cursor[consume] == '\n') {
             consume++;
         }
         cursor += consume;
 
+        if (truncated) {
+            continue;
+        }
+
         trim_line(line);
         if (line[0] == '\0' || strcmp(line, "OK") == 0 || strcmp(line, "ERROR") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
             continue;
         }
-        h2_quectel_handle_urc_locked(modem, line);
+        if (h2_quectel_is_urc(line, cmd)) {
+            if (modem->config.urc_task_api == NULL) {
+                h2_quectel_handle_urc_locked(modem, line);
+            }
+            continue;
+        }
+        if (strcmp(cmd, "AT+CPIN?") == 0 || strncmp(line, "+CME ERROR:", 11u) == 0) {
+            h2_quectel_handle_urc_locked(modem, line);
+        }
         response_add_line(response, line);
     }
 }
@@ -149,12 +160,19 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
     if (modem->config.command != NULL) {
         char command_response[H2_QUECTEL_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
         memset(command_response, 0, sizeof(command_response));
+        const uint32_t generation = modem->reset_generation;
+        const uint32_t sim_generation = modem->sim_generation;
+        h2_quectel_state_unlock(modem);
         h2_pal_result_t rc = modem->config.command(
             modem->config.transport_user,
             cmd,
             command_response,
             sizeof(command_response),
             modem->config.command_timeout_ms);
+        (void)h2_quectel_state_lock(modem);
+        if (generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+            return H2_PAL_ERR_INVALID_STATE;
+        }
         if (allow_connect != 0 && response_text_has_connect(command_response)) {
             if (response != NULL) {
                 response->connected = 1;
@@ -174,6 +192,8 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
     if (n <= 0 || (size_t)n >= sizeof(tx)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    const uint32_t reset_generation = modem->reset_generation;
+    const uint32_t sim_generation = modem->sim_generation;
     h2_pal_result_t rc = write_all(modem, tx, modem->config.io_timeout_ms);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -184,6 +204,9 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
         rc = read_line(modem, line, sizeof(line), modem->config.io_timeout_ms);
         if (rc != H2_PAL_OK) {
             return rc;
+        }
+        if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+            return H2_PAL_ERR_INVALID_STATE;
         }
         if (line[0] == '\0' || strcmp(line, cmd) == 0) {
             continue;
@@ -204,10 +227,16 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
             }
             return H2_PAL_OK;
         }
-        h2_quectel_handle_urc_locked(modem, line);
-        if (response != NULL) {
-            response_add_line(response, line);
+        if (h2_quectel_is_urc(line, cmd)) {
+            if (modem->config.urc_task_api == NULL) {
+                h2_quectel_handle_urc_locked(modem, line);
+            }
+            continue;
         }
+        if (strcmp(cmd, "AT+CPIN?") == 0) {
+            h2_quectel_handle_urc_locked(modem, line);
+        }
+        response_add_line(response, line);
     }
     return H2_PAL_ERR_TIMEOUT;
 }
@@ -218,7 +247,7 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
     h2_quectel_response_t *response,
     int allow_connect,
     uint32_t timeout_ms) {
-    h2_pal_result_t rc = qlock(modem);
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -249,8 +278,7 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
     }
     modem->config.command_timeout_ms = saved_command_timeout_ms;
     modem->config.io_timeout_ms = saved_io_timeout_ms;
-    qunlock(modem);
-    return rc;
+    return h2_quectel_operation_end(modem, rc);
 }
 
 h2_pal_result_t h2_quectel_at_exchange(
