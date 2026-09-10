@@ -129,6 +129,9 @@ static int image_path(
 static void writer_abort_internal(void) {
   image_reader_close();
   if (state.update_active) {
+    /* SDK eb04f196: exit kills dw_update synchronously before freeing its
+     * context. The burn callback runs in that task; delete its semaphore only
+     * after exit returns. Recheck this ordering when changing SDK versions. */
     (void)dual_bank_passive_update_exit(NULL);
     (void)os_sem_del(&state.update_sem, 0);
     state.update_active = 0;
@@ -633,6 +636,9 @@ static int power_set_next(void *user, uint32_t partition_id) {
   h2_jieli_loader_diag_write(line);
   if (state.update_active) {
     h2_jieli_loader_diag_write("H2_JIELI_UPDATE_EXIT_ENTER\r\n");
+    /* This is also the callback-quiescence barrier on a pend timeout:
+     * pinned SDK exit -> task_kill -> os_task_del -> vTaskDelete waits until
+     * dw_update is off both cores before retiring its task/event lists. */
     int exit_rc = dual_bank_passive_update_exit(NULL) == 0u
                       ? H2_PAL_OK
                       : H2_PAL_ERR_IO;

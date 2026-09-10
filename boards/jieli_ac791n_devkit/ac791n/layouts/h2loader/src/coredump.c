@@ -46,6 +46,11 @@ struct h2_jieli_coredump_record {
   uint32_t committed;
 };
 
+/* sdfile.h defines the NOR erase sector (4096 bytes), not a 512-byte disk
+ * block. Keep the single-sector write/size checks valid as this record grows. */
+_Static_assert(sizeof(struct h2_jieli_coredump_record) <= SDFILE_SECTOR_SIZE,
+               "coredump record exceeds its erased sector");
+
 struct h2_jieli_retained_log {
   uint32_t magic;
   uint32_t head;
