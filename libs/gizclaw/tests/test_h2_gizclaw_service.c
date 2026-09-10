@@ -7886,6 +7886,123 @@ static void test_conversation_downlink_waits_for_bos(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+/* Between turns, with no request running and no application event sink, the
+ * network loop still reads downstream events: a text BOS keeps the hold, the
+ * next audio BOS clears it. */
+typedef struct {
+  atomic_int stage;
+  atomic_uint idle_reads;
+} bos_drain_test_t;
+static bos_drain_test_t *s_bos_drain;
+
+static h2_pal_result_t bos_drain_connect(h2_gizclaw_client_t *client) {
+  (void)h2_gizclaw_test_replace_event_stream(client,
+                                             (gzc_event_stream_t *)s_bos_drain);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t bos_drain_poll(h2_gizclaw_client_t *client,
+                                      int timeout) {
+  (void)client;
+  (void)timeout;
+  h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static int bos_drain_read(void *user, gzc_event_stream_t *stream, int timeout,
+                          gzc_peer_event_t *event) {
+  bos_drain_test_t *test = user;
+  (void)stream;
+  (void)timeout;
+  const int stage = atomic_load(&test->stage);
+  if (stage == 1 || stage == 3) {
+    *event = stage == 1
+                 ? downstream_bos(gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT,
+                                  "transcript", "demo-1")
+                 : downstream_bos(gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO,
+                                  "assistant", "reply-1");
+    atomic_store(&test->idle_reads, 0u);
+    atomic_store(&test->stage, stage + 1);
+    return GZC_OK;
+  }
+  atomic_fetch_add(&test->idle_reads, 1u);
+  return GZC_ERR_WOULD_BLOCK;
+}
+
+/* The real client dispatch, reading the test Event stream. */
+static h2_pal_result_t bos_drain_dispatch(h2_gizclaw_client_t *client) {
+  return (h2_pal_result_t)h2_gizclaw_client_dispatch_event(client, 0, NULL,
+                                                           NULL);
+}
+
+static void bos_drain_close(void *user, gzc_event_stream_t *stream) {
+  (void)user;
+  (void)stream;
+}
+
+static void bos_drain_wait_idle(bos_drain_test_t *test) {
+  while (atomic_load(&test->idle_reads) < 2u)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+}
+
+/* Arms the next stage and waits until the network loop read past it. */
+static void bos_drain_step(bos_drain_test_t *test, int stage) {
+  atomic_store(&test->idle_reads, 0u);
+  atomic_store(&test->stage, stage);
+  while (atomic_load(&test->stage) != stage + 1)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  bos_drain_wait_idle(test);
+}
+
+static void test_conversation_drains_events_between_turns(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 8u);
+  bos_drain_test_t test = {0};
+  s_bos_drain = &test;
+  static const h2_gizclaw_service_client_ops_t ops = {
+      .connect = bos_drain_connect,
+      .poll = bos_drain_poll,
+      .dispatch_event = bos_drain_dispatch};
+  h2_gizclaw_service_test_set_client_ops(&ops);
+  h2_gizclaw_test_set_event_ops(NULL, bos_drain_read, bos_drain_close, &test);
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_crypto_api_t crypto = {0};
+  static const h2_pal_webrtc_api_t webrtc = {0};
+  service->client_config.http = &http;
+  service->client_config.crypto = &crypto;
+  service->client_config.webrtc = &webrtc;
+  service->client_config.connect_timeout_ms = 1000;
+  service->client_config.server_endpoint = (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+  service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+  service->config.client_config = &service->client_config;
+  service->config.on_event = NULL;
+  service->config.prepare = NULL;
+  service->config.cleanup = NULL;
+  service->config.terminal = NULL;
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  bos_drain_wait_idle(&test);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  h2_gizclaw_conversation_downlink_hold_internal(service);
+  bos_drain_step(&test, 1);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+  bos_drain_step(&test, 3);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 1u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+  h2_gizclaw_service_test_set_client_ops(NULL);
+  s_bos_drain = NULL;
+}
+
 static void
 assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
   void *route = atomic_load(&service->media_request);
@@ -9983,6 +10100,7 @@ int main(int argc, char **argv) {
   test_conversation_accepts_downstream_events();
   test_conversation_downlink_policy();
   test_conversation_downlink_waits_for_bos();
+  test_conversation_drains_events_between_turns();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();
   test_stream_data_task_handoff();

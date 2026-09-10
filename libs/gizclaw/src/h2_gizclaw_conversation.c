@@ -473,6 +473,16 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
 }
 
 #if defined(H2_GIZCLAW_TESTING)
+size_t h2_gizclaw_test_downlink_frames(h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return 0u;
+  const size_t frames = atomic_load(&downlink->frames);
+  downlink_release(service);
+  return frames;
+}
+
 bool h2_gizclaw_test_audio_rings(void) {
   uint8_t pcm_storage[8] = {0};
   h2_gizclaw_pcm_ring_t pcm = {
