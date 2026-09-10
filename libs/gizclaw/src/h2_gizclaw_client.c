@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define H2_GIZCLAW_RETIRED_STREAM_COUNT 32u
+
 #define H2_GIZCLAW_ASSERT_RPC_METHOD(h2_name, gzc_name)                        \
   _Static_assert((int)(h2_name) == (int)(gzc_name),                            \
                  "GizClaw RPC method registry drift: " #h2_name)
@@ -167,6 +169,9 @@ struct h2_gizclaw_client {
       ((gzc_peer_event_t *)0)
           ->payload.workspace_history_updated.workspace_name)];
   uint64_t next_conversation_stream_sequence;
+  /* Bound memory while retaining several rounds of delayed reply boundaries. */
+  char retired_streams[H2_GIZCLAW_RETIRED_STREAM_COUNT][H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
+  size_t retired_stream_next;
   bool terminal_closed;
 };
 
@@ -297,6 +302,33 @@ static void h2_gizclaw_event_stream_close_internal(gzc_event_stream_t *stream) {
   gzc_event_stream_close(stream);
 }
 
+bool h2_gizclaw_client_stream_retired_internal(
+    const h2_gizclaw_client_t *client, const char *stream_id) {
+  if (client == NULL || stream_id == NULL || stream_id[0] == '\0')
+    return false;
+  for (size_t i = 0u; i < H2_GIZCLAW_RETIRED_STREAM_COUNT; ++i) {
+    const size_t len = strlen(client->retired_streams[i]);
+    if (len != 0u && strncmp(stream_id, client->retired_streams[i], len) == 0 &&
+        (stream_id[len] == '\0' || stream_id[len] == ':'))
+      return true;
+  }
+  return false;
+}
+
+void h2_gizclaw_client_retire_stream_internal(
+    h2_gizclaw_client_t *client, const char *stream_id) {
+  if (client == NULL || stream_id == NULL || stream_id[0] == '\0' ||
+      h2_gizclaw_client_stream_retired_internal(client, stream_id))
+    return;
+  const size_t capacity = sizeof(client->retired_streams[0]);
+  const size_t len = strlen(stream_id);
+  if (len >= capacity)
+    return;
+  memcpy(client->retired_streams[client->retired_stream_next], stream_id,
+         len + 1u);
+  client->retired_stream_next = (client->retired_stream_next + 1u) % H2_GIZCLAW_RETIRED_STREAM_COUNT;
+}
+
 int h2_gizclaw_client_conversation_acquire_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation,
     gzc_event_stream_t **out_events, uint64_t *out_stream_sequence) {
@@ -341,6 +373,8 @@ static void h2_gizclaw_release_event_handle(h2_gizclaw_client_t *client) {
     h2_gizclaw_conversation_invalidate_internal(client->active_conversation);
   }
   client->active_conversation = NULL;
+  memset(client->retired_streams, 0, sizeof(client->retired_streams));
+  client->retired_stream_next = 0u;
   client->pending_client_event = false;
   if (client->events != NULL) {
     h2_gizclaw_event_stream_close_internal(client->events);
