@@ -77,7 +77,8 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - PCM uplink/downlink 使用单生产者、单消费者的无锁 byte ring；encoded uplink/downlink 使用无锁 fixed-slot ring。ring 只通过 acquire/release atomic index 发布数据，不持有 service mutex，也不使用 semaphore 唤醒。Audio Task 每 20 ms 尝试消费一帧；`h2_gizclaw_pcm_track_write()` 和内部 slot 写入都不等待。`h2_gizclaw_pcm_track_write()` 成功后调用方可以释放 chunk；`WOULD_BLOCK` 表示本次 chunk 未被接受，实时调用方应丢弃并记录 overrun，不能阻塞 microphone 或积累延迟。`h2_gizclaw_service_audio_end()` 冻结当前已接受的 PCM 前缀并发布 EOS，encoder drain 已接受的 PCM 后补齐最后一个非空残片。
 - 下行解码通道在第一个 Conversation 创建时建立，随 Service 存在到 deinit，不随每轮输入或 Conversation release 销毁：产品每轮创建并释放 Conversation，之后到达的音频照常播放。音频播放或 Speech 占用 Track 下行时，到达的对话音频直接丢弃，之前已排队的也丢弃，Track 空出后不会补播旧音频。下行 Opus ring 为 32 格（约 640 ms），满时拒收并由 provider 丢包，不做 PLC、不报错，扬声器卡住时丢音频而不是累积延迟。下行 PCM 只走 Track，不复制到 callback；App 按 speaker pump 实际播放判断“有声音”。
-- PTT 松手（真正结束输入的那次 `audio_end`，重复调用不算）清空此刻缓冲的下行音频：待解码 Opus、解码器状态和 Track 里未播的 PCM；之后到达的音频照常播放。按下不清空，产品在录音期间自行不播放。挂断和 Workspace 切换同样清空；新输入替换旧输入不清空。
+- PTT 松手（真正结束输入的那次 `audio_end`，重复调用不算）清空此刻缓冲的下行音频：待解码 Opus、解码器状态和 Track 里未播的 PCM；之后到达的音频照常播放。挂断和 Workspace 切换同样清空；新输入替换旧输入不清空。
+- PTT 按下（`audio_start`，短按打断也算）置位 `waiting_for_bos`：此后到达的下行 Opus 直接丢弃，不进入 ring；按下之后收到的第一个下行音频 BOS（`kind=AUDIO`）清除标志，此后的音频照常播放。文本、转写和我们自己输入的 BOS 不清除标志，EOS 不参与，也不看 stream ID。Service 网络任务每一轮都读空 Event stream（与是否有请求在运行、产品是否订阅事件无关），下行 BOS 与下行音频同步处理，不会积压到下一次输入。
 - Opus encode/decode 属于 `libs/gizclaw`，不进入 board driver。接收 provider 的有界重排与 loss marker 合同保持不变；downlink decoder 对 loss marker 执行 PLC，不能直接删除缺失时间。
 - GizClaw service network task 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
@@ -153,4 +154,4 @@ Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-
 
 ### 下行边界与取消
 
-下行媒体不看任何 BOS/EOS 边界，收到即解码。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。
+下行媒体不看 EOS，除按下后的 `waiting_for_bos` 外收到即解码；标志只由按下后的下一个下行音频 BOS 清除。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。
