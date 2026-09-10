@@ -1014,13 +1014,24 @@ void h2_gizclaw_conversation_describe_peer_event_internal(
                                                   : &conversation->downstream;
   const char *label = peer_event_label(event);
   const char *id = peer_event_stream_id(event);
+  int kind = -1;
+  const char *mime = "-";
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    kind = (int)event->payload.bos.kind;
+    mime = event->payload.bos.mime_type;
+  } else if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS) {
+    kind = (int)event->payload.eos.kind;
+    mime = event->payload.eos.mime_type;
+  }
   (void)snprintf(
       out, cap,
       "generation=%llu input=%.24s ready=%d committed=%d canceled=%d "
-      "label=%.12s id=%.40s error=%d route=%.16s ended=%d pending=%d",
+      "label=%.12s id=%.40s kind=%d mime=%.16s error=%d route=%.16s ended=%d "
+      "pending=%d",
       (unsigned long long)conversation->generation, conversation->stream_id,
       conversation->input_ready, conversation->committed, conversation->canceled,
-      label != NULL ? label : "-", id != NULL ? id : "-",
+      label != NULL ? label : "-", id != NULL ? id : "-", kind,
+      mime[0] != '\0' ? mime : "-",
       event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS
           ? (int)event->payload.eos.has_error : 0,
       route->id, route->ended, conversation->terminal_pending);

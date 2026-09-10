@@ -435,8 +435,16 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
   const int rc = h2_gizclaw_event_stream_read_internal(client->events,
                                                        timeout_ms, &peer_event);
   if (rc != GZC_OK) {
-    if (rc != GZC_ERR_TIMEOUT && rc != GZC_ERR_WOULD_BLOCK)
+    if (rc != GZC_ERR_TIMEOUT && rc != GZC_ERR_WOULD_BLOCK) {
+      /* The Event stream is gone for this connection; say why. */
+      char message[96];
+      (void)snprintf(message, sizeof(message),
+                     "event=peer_read_failed gzc_rc=%d active=%d", rc,
+                     client->active_conversation != NULL);
+      (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                             message);
       h2_gizclaw_client_event_stream_failure_internal(client);
+    }
     return h2_gizclaw_result_from_gzc(rc);
   }
   if (peer_event.type ==
