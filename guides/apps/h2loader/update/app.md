@@ -10,7 +10,7 @@ APP 和 Loader 使用同一个 Stage 实现。当前运行 APP 时，Host 可以
 4. 在写 Partition 2 之前提交 `partition_2.valid=false`。
 5. 完整写入并校验 APP image。
 6. 将 Stage identity 复制到 Partition 2 metadata，最后提交 `partition_2.valid=true`。
-7. 选择 Partition 2 并重启。
+7. 选择 Partition 2 并重启。选择只让新 APP 试运行一次；确认前复位或崩溃即回到 Loader。
 
 写入失败时 Partition 2 保持 invalid，Loader 留在 Partition 1，并记录 `last_result`；下次 AUTO 从头重写，不做字节级续写。
 
@@ -36,4 +36,4 @@ Loader 不改变平台的 physical power hold；该 hold 的生命周期继续�
 
 APP 发布命令服务前建立共享操作锁，启动确认与 Stage 接收在该锁下串行执行。平台 OTA 确认成功后才清理匹配的 Stage，避免尚未确认就丢失恢复证据。运行镜像 identity 计算使用独立 digest context，不重置正在收包的 digest。
 
-平台已回退到 Loader 且 Partition 2 不再 BOOTABLE 时，即使 Stage 被取消或新上传清空，AUTO 也不能再次启动该失败 APP。BK 用原生 OTA 控制标记区分待确认与已确认镜像；该标记不增加公共 install state。
+平台已回退到 Loader 且 Partition 2 不再 BOOTABLE 时，即使 Stage 被取消或新上传清空，AUTO 也不能再次启动该失败 APP。BK7258 的原生启动标记固定为 Loader，由私有 App 启动记录区分待试运行、已试运行未确认和已确认：已确认 APP 每次复位直接启动，未确认的试运行复位后撤销 Partition 2 的 BOOTABLE。该记录不增加公共 install state。

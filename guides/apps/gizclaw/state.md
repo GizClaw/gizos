@@ -29,21 +29,21 @@ Conversation 创建在同一个准备操作中完成 Workspace 校验，然后�
 
 | 交互模式 | 对话状态 |
 | --- | --- |
-| Push-to-Talk | IDLE → RECORDING → WAITING → REPLYING → IDLE |
+| Push-to-Talk | IDLE → RECORDING → WAITING → IDLE |
 | RealTime | IDLE ↔ CALLING |
 
-PTT 松手时冻结本轮 PCM 输入窗口：窗口非空才进入 WAITING；窗口为空则回到 IDLE，待控制 EOS 成功发送后正常完成本地请求，不等待服务器回复。按下前和松手后的 PCM 不计入本轮，按住时长不是判据。
+PTT 松手时冻结本轮 PCM 输入窗口：窗口非空才进入 WAITING；窗口为空则回到 IDLE。输入结束发出后本轮请求即完成，不等待服务器回复。WAITING 只是本地状态：按下后到下一个下行音频 BOS 之前的音频被丢弃（见 Audio 文档的 `waiting_for_bos`），一旦有之后的下行音频写入 Track 就回到 IDLE，由声音接管；`H2_GIZCLAW_SESSION_WAIT_MS`（5 秒）内没有任何下行音频也静默回到 IDLE，不报错。该判断在读取快照时进行。没有“回复中”状态。按下前和松手后的 PCM 不计入本轮，按住时长不是判据。
 
-PTT 在录音期间收到回复也不能关闭输入或影响松手 EOS。RealTime 的文本、音频、单轮 REPLY_DONE 都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
+PTT 在录音期间收到下行音频也不能关闭输入或影响松手 EOS。RealTime 的文本和音频都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
 
-Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品，也不能改回REPLYING。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。
+Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。
 
 同步 delete 只在名字等于 `current_workspace` 时参与 Session：与切换相同，先关闭旧输入、取消旧 generation 并占用同一个串行 Workspace RPC 槽位，已有 Workspace RPC 进行中时返回 BUSY。删除成功后 workspace phase 回到 EMPTY，清空 `current_workspace`、`workflow_name` 和已确认的 `parameters`，Conversation route 仍由产品通过 Session release 释放；下一次 select 或 Conversation 创建按正常准备流程 get、Not Found 时创建同名 Workspace 并 reload。删除失败或结果不确定（例如超时）时 workspace phase 为 FAILED，下一次 select 重新 get 校验，不把可能已被删除的名字当作就绪。删除其它 Workspace 不改变 Session 状态，也不打断对话；Session 关闭后 delete 与其它 Workspace RPC 一样返回 CLOSED。
 ## 对话错误详情
 
-Conversation 的远端 ERROR 在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。
+Conversation 的远端 ERROR 只表示服务端拒绝了本轮输入，在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`；下行流的结束（有无错误码）都不是 ERROR。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。
 
-收到远端错误时，Service 日志输出 `remote_error code=... retryable=...`。新一轮输入成功启动时清除旧错误；新的准备操作完成或 Conversation 创建结果也会替换最近错误状态，没有远端详情时错误码为空且 `retryable=false`。`retryable` 透传服务端提示，不触发自动重试或改变 catalog、Workspace 的有效性判定。测试覆盖输入就绪前的拒绝、回复终止错误、请求释放后的详情读取，以及 Session 快照副本和下一轮清除行为。
+收到远端错误时，Service 日志输出 `remote_error code=... retryable=...`。新一轮输入成功启动时清除旧错误；新的准备操作完成或 Conversation 创建结果也会替换最近错误状态，没有远端详情时错误码为空且 `retryable=false`。`retryable` 透传服务端提示，不触发自动重试或改变 catalog、Workspace 的有效性判定。测试覆盖输入就绪前的拒绝、请求释放后的详情读取，以及 Session 快照副本和下一轮清除行为。
 
 ## 并发与生命周期
 

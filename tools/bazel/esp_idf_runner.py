@@ -798,7 +798,7 @@ def run(arguments: argparse.Namespace) -> None:
         if repository_root is not None:
             subprocess_environment[variable] = str(repository_root)
     with tempfile.TemporaryDirectory(prefix=f"h2-esp-idf-{arguments.target}-") as temporary:
-        temporary_root = Path(temporary)
+        temporary_root = Path(temporary).resolve()
         wrapper_directory = create_ninja_wrapper(
             temporary_root,
             ninja,

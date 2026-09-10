@@ -163,6 +163,8 @@ struct h2_gizclaw_client {
   h2_gizclaw_conversation_t *active_conversation;
   h2_gizclaw_client_event_sink_fn event_handler;
   void *event_handler_user;
+  h2_gizclaw_client_bos_fn downlink_bos;
+  void *downlink_bos_user;
   bool pending_client_event;
   h2_gizclaw_client_event_t client_event;
   char event_workspace_name[sizeof(
@@ -435,8 +437,16 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
   const int rc = h2_gizclaw_event_stream_read_internal(client->events,
                                                        timeout_ms, &peer_event);
   if (rc != GZC_OK) {
-    if (rc != GZC_ERR_TIMEOUT && rc != GZC_ERR_WOULD_BLOCK)
+    if (rc != GZC_ERR_TIMEOUT && rc != GZC_ERR_WOULD_BLOCK) {
+      /* The Event stream is gone for this connection; say why. */
+      char message[96];
+      (void)snprintf(message, sizeof(message),
+                     "event=peer_read_failed gzc_rc=%d active=%d", rc,
+                     client->active_conversation != NULL);
+      (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                             message);
       h2_gizclaw_client_event_stream_failure_internal(client);
+    }
     return h2_gizclaw_result_from_gzc(rc);
   }
   if (peer_event.type ==
@@ -464,6 +474,10 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
     h2_gizclaw_conversation_enqueue_peer_event_internal(
         client->active_conversation, &peer_event);
   }
+  if (client->downlink_bos != NULL &&
+      h2_gizclaw_conversation_downstream_audio_bos_internal(
+          client->active_conversation, &peer_event))
+    client->downlink_bos(client->downlink_bos_user);
   if (peer_event.type !=
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
     char message[H2_PAL_LOG_MESSAGE_MAX];
@@ -475,6 +489,8 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
       h2_gizclaw_conversation_describe_peer_event_internal(
           client->active_conversation, &peer_event, message + prefix_len,
           sizeof(message) - (size_t)prefix_len);
+    /* Downstream audio does not depend on these events; they are only
+     * diagnostics. */
     (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_DEBUG, "gizclaw",
                            message);
   }
@@ -489,6 +505,14 @@ int h2_gizclaw_client_set_event_handler(
   client->event_handler = on_event;
   client->event_handler_user = event_user;
   return H2_PAL_OK;
+}
+
+void h2_gizclaw_client_set_downlink_bos_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user) {
+  if (client == NULL)
+    return;
+  client->downlink_bos = on_bos;
+  client->downlink_bos_user = user;
 }
 
 static bool h2_gizclaw_is_canceled(const h2_gizclaw_client_t *client) {

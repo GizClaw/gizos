@@ -9,6 +9,5 @@ armino_component_register(
     h2_bk_target_task_policy
     bk_cli
     bk_rtos
-    h2_cp_transport
     driver
     bk_pm)

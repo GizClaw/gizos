@@ -12,15 +12,18 @@ file(STRINGS "${H2_BK_PARTITION_CSV}" H2_BK_PRIMARY_CP_ROW REGEX "^primary_cp_ap
 file(STRINGS "${H2_BK_PARTITION_CSV}" H2_BK_PRIMARY_AP_ROW REGEX "^primary_ap_app")
 file(STRINGS "${H2_BK_PARTITION_CSV}" H2_BK_S_APP_ROW REGEX "^s_app")
 foreach(H2_BK_ROW_VAR H2_BK_PRIMARY_CP_ROW H2_BK_PRIMARY_AP_ROW H2_BK_S_APP_ROW)
-  string(REGEX MATCH ",,([0-9]+)k," H2_BK_SIZE_MATCH "${${H2_BK_ROW_VAR}}")
+  string(REGEX MATCH ",[^,]*,([0-9]+)[kK]," H2_BK_SIZE_MATCH "${${H2_BK_ROW_VAR}}")
   if(NOT H2_BK_SIZE_MATCH)
-    message(FATAL_ERROR "invalid BK A/B partition row: ${${H2_BK_ROW_VAR}}")
+    message(FATAL_ERROR "invalid BK fixed-XIP partition row: ${${H2_BK_ROW_VAR}}")
   endif()
   set("${H2_BK_ROW_VAR}_KIB" "${CMAKE_MATCH_1}")
 endforeach()
 math(EXPR H2_BK_PRIMARY_WINDOW_KIB "${H2_BK_PRIMARY_CP_ROW_KIB} + ${H2_BK_PRIMARY_AP_ROW_KIB}")
-if(NOT H2_BK_PRIMARY_WINDOW_KIB EQUAL H2_BK_S_APP_ROW_KIB)
-  message(FATAL_ERROR "BK canonical A and trial B windows must have equal physical size")
+math(EXPR H2_BK_TOTAL_CODE_KIB "${H2_BK_PRIMARY_WINDOW_KIB} + ${H2_BK_S_APP_ROW_KIB}")
+if(NOT H2_BK_TOTAL_CODE_KIB EQUAL 7480 OR
+   NOT H2_BK_PRIMARY_CP_ROW_KIB EQUAL 1156 OR
+   NOT H2_BK_PRIMARY_AP_ROW_KIB EQUAL 1224)
+  message(FATAL_ERROR "BK fixed-XIP layout must match fixed_flash/layout.h")
 endif()
 if(NOT H2_BK_PRIMARY_CP_ROW MATCHES ",TRUE,TRUE$" OR
    NOT H2_BK_PRIMARY_AP_ROW MATCHES ",TRUE,TRUE$")

@@ -215,15 +215,15 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
-/* Server EOS error code for a reply cut short by barge-in. While the input is
- * still open it is a reply boundary (REPLY_DONE); after the input is committed
- * it stays a conversation error. */
-#define H2_GIZCLAW_CONVERSATION_ERROR_STREAM_INTERRUPTED "STREAM_INTERRUPTED"
-/* Returns and clears whether the pending or last REPLY_DONE ended an
- * interrupted reply whose queued playback should be discarded. */
-bool h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-    h2_gizclaw_conversation_t *conversation);
-/* Formats the reply-route state a peer event lands on, for diagnostics. */
+/* Whether the event is a downstream audio BOS; text BOS and our input's own
+ * BOS are not. */
+bool h2_gizclaw_conversation_downstream_audio_bos_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
+/* Tells the owner that the server announced a downstream audio stream. */
+typedef void (*h2_gizclaw_client_bos_fn)(void *user);
+void h2_gizclaw_client_set_downlink_bos_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user);
+/* Formats a peer event and the input it arrived for, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,
     const gzc_peer_event_t *event, char *out, size_t cap);

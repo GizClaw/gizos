@@ -2,7 +2,9 @@
 
 BK7258 board profile for the C firmware tree.
 
-- full-size A/B loader/app window: `primary_cp_app=1360K`, `primary_ap_app=2380K`, `s_app=3740K`
+- fixed Loader window: CP `1156 KiB` + AP `1224 KiB` = `2380 KiB`
+- independently linked App window: `5100 KiB` at physical `0x264000`
+- App boot record: `0x77f000`, `4 KiB`; native startup always selects Loader, whose CP enters a pending trial or a confirmed App
 - AP pref storage: SDK EasyFlash AP tail storage
 - reserved FlashDB KV area: offset `0x780000`, size `128 KiB`
 - coredump area: offset `0x7a0000`, size `360 KiB`

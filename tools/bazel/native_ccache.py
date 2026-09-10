@@ -64,7 +64,9 @@ def configure_environment(
     cache_directory.mkdir(parents=True, exist_ok=True)
     environment.update(
         {
-            "CCACHE_BASEDIR": str(temporary_root),
+            # ccache compares base_dir literally against compiler arguments,
+            # which carry the real path (for example /private/var on macOS).
+            "CCACHE_BASEDIR": str(temporary_root.resolve()),
             "CCACHE_COMPILERCHECK": "content",
             "CCACHE_COMPRESS": "1",
             "CCACHE_DIR": str(cache_directory),

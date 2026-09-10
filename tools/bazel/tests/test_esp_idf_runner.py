@@ -96,6 +96,11 @@ if mode == "ccache":
         raise SystemExit("runner did not authenticate the ESP remote ccache")
     if os.environ.get("CCACHE_RESHARE") != "1":
         raise SystemExit("runner did not reshare local ESP ccache hits")
+    base_dir = os.environ["CCACHE_BASEDIR"]
+    if base_dir != os.path.realpath(base_dir):
+        raise SystemExit("runner did not resolve the ESP ccache base directory")
+    if not str(build).startswith(base_dir + os.sep):
+        raise SystemExit("ESP build directory is outside the ccache base directory")
 if mode == "ccache-read-only":
     if os.environ.get("CCACHE_READONLY") != "1":
         raise SystemExit("credential-bearing ESP build can write shared ccache")
@@ -478,10 +483,17 @@ class EspIdfRunnerTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_ccache_environment_reaches_idf(self):
+        # The runner must hand ccache the real path of a symlinked TMPDIR,
+        # as macOS does with /var/folders -> /private/var/folders.
+        temporary = self.root / "temporary"
+        temporary.mkdir()
+        temporary_alias = self.root / "temporary-alias"
+        temporary_alias.symlink_to(temporary, target_is_directory=True)
         result, _ = self._run(
             name="ccache",
             mode="ccache",
             environment_updates={
+                "TMPDIR": str(temporary_alias),
                 "H2_NATIVE_CCACHE": str(self.ccache),
                 "H2_NATIVE_CCACHE_ROOT": str(self.root / "native-cache"),
                 "H2_NATIVE_CCACHE_REMOTE_BASE_URL": (

@@ -85,7 +85,6 @@ firmware_native_component(
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/opus_port",
         "//native_component_src/bk7258/ap/zlib",
-        "//native_component_src/bk7258/cp/h2_cp_transport",
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",

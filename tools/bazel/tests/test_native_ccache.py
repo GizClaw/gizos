@@ -99,11 +99,28 @@ class NativeCcacheTest(unittest.TestCase):
                 environment["CCACHE_DIR"],
                 str(root.resolve() / "cache/esp32s3"),
             )
-            self.assertEqual(environment["CCACHE_BASEDIR"], str(root / "action"))
+            self.assertEqual(
+                environment["CCACHE_BASEDIR"],
+                str(root.resolve() / "action"),
+            )
             self.assertEqual(environment["CCACHE_COMPILERCHECK"], "content")
             self.assertEqual(environment["CCACHE_MAXSIZE"], "1GiB")
             self.assertEqual(environment["CCACHE_NOHASHDIR"], "1")
             self.assertNotIn("CCACHE_REMOTE_STORAGE", environment)
+
+    def test_configure_environment_resolves_symlinked_base_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            locator = self._write_runtime(root)
+            action = root / "private" / "action"
+            action.mkdir(parents=True)
+            alias = root / "alias"
+            alias.symlink_to(root / "private", target_is_directory=True)
+            environment = {"PATH": "/usr/bin:/bin"}
+            native_ccache.configure_environment(
+                environment, "esp32s3", alias / "action", str(locator)
+            )
+            self.assertEqual(environment["CCACHE_BASEDIR"], str(action))
 
     def test_remote_configuration_uses_family_prefix_without_logging_token(self):
         for namespace, family in (

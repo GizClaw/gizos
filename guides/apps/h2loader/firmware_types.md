@@ -24,9 +24,9 @@ ESP target 的 `preference` 是独立的 256 KiB internal LittleFS partition；2
 | 要求 | 合同 |
 | --- | --- |
 | 两个启动位置 | Loader 分区和 App 分区都必须可以启动，并通过 PAL 查询当前分区、选择下次启动分区。 |
-| 非运行分区写入 | Loader 必须能写入并校验 App 分区；trial Loader 必须能读取自身并写回、校验 Loader 分区。任何时候都不能擦写当前正在运行的分区。 |
+| 非运行分区写入 | Loader 必须能写入并校验 App 分区；支持 Loader 自升级的布局中，trial Loader 必须能读取自身并写回、校验 Loader 分区。任何时候都不能擦写当前正在运行的分区。 |
 | ESP 容量 | App 分区必须严格大于 Loader 分区。 |
-| BK7258 容量 | `h2loader` 与 `app` 两个 boot window 必须严格等大。 |
+| BK7258 布局 | 固定 Loader window 与按最终地址链接的 App window 大小独立，App 由 XIP 在自身地址执行，不借用原生 B 槽 remap。App 不能作为 trial Loader 运行，因此该布局不支持 Loader 自升级：Loader package 在写 Flash 前被拒绝，Loader 通过系统烧录路径更新。 |
 | 其它平台容量 | 必须先定义能够完成 Loader -> trial -> canonical 中继的 target-specific 布局；不能默认套用 ESP 或 BK 规则。 |
 | Firmware 边界 | 构建必须拒绝超出目标分区的 raw firmware image；设备端必须在第一次 erase/write 前再次检查 image size 和目标容量。 |
 | `/dl` | 可以位于内部 Flash、外部 Flash 或可移除存储，但必须提供 filesystem 语义，并能容纳一个最大受支持 package 以及临时写入和 filesystem metadata 开销。开始新的 stage 表示替换旧 candidate；设备在接收新 bytes 前删除旧 candidate，只在新 package 完整校验并提交 identity 后发布它。 |
@@ -36,7 +36,7 @@ ESP target 的 `preference` 是独立的 256 KiB internal LittleFS partition；2
 
 分区容量比较使用可写入 raw firmware image 的实际容量，不使用压缩 package 大小。
 
-各 Board 当前采用的存储布局、关键 SDK 配置和源文件入口统一记录在 [Boards 总览](./boards/)。Loader 更新的分区切换过程见 [Loader 更新](./update/loader)。
+各 Board 当前采用的存储布局、关键 SDK 配置和源文件入口统一记录在 [Boards 总览](./boards/)。支持自升级的布局的 Loader 更新分区切换过程见 [Loader 更新](./update/loader)。
 
 ## Loader 固件
 
