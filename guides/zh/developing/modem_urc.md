@@ -14,9 +14,13 @@ receiver 为每个 AT 通道单独配置，生产者串行调用，不能输入 
 
 `DTE::command_cb::process_line` 的旧 URC hook 在命令 parser 之前调用，参数为 `data, consumed + len`，包括普通应答。非 CMUX 使用累计 buffer；CMUX 开启 inflatable 时也可能累计，关闭时则直接提供片段。旧 hook 没有 consumed、buffer epoch 或物理 offset，不能仅靠长度、指针或相同前缀无歧义恢复物理流。
 
-consumer 必须在精确版本的 DTE `process_line(data, consumed, len)` 边界提供新字节观察入口：只把 `data + consumed, len` 送入公共 framer，物理 offset 每次增加 len。原命令 parser 仍取得原始完整输入，不能被 framer 消费或修改。零长度输入不推进 offset。非 CMUX 与两种 CMUX 分支统一走此边界，因此不受 buffer 重置、扩容及 command 成功/超时的影响。
+consumer 必须在只交付新字节的边界调用 `h2_quectel_rx_feed`，物理 offset 每次增加实际读取长度，零长度输入不推进 offset。命令 parser 仍取得原始完整输入，不能被 framer 消费或修改。
 
-这个观察入口需要 consumer 的受控 SDK 集成或正式 dependency patch；不能直接修改共享 SDK/cache。仅替换私有 `tiga_modem_urc_line(data,total_len)` 的切行循环是不充分的。Firmwares 应删除该循环与旧 hook 的重复入队，在新字节入口调用 `h2_quectel_rx_feed`，并在命令发布、完成、取消时同步 RX 上下文。禁止同时从 command response 再交付已经由 RX worker 负责的真实 URC。启用异步 worker 后，公共 command-response 路径假定 transport 负责全部真实 URC；同步 read/write 模式由公共 AT parser 负责。
+- 非 CMUX：观察 UART 终端实际读出的字节。Firmwares 以 `-Wl,--wrap=uart_read_bytes` 包装读取，只处理 modem UART 端口；这正是 DTE 追加到累计 buffer 的字节，因此不受 buffer 重置、command 成功/超时影响。
+- CMUX（未开启 inflatable）：旧 hook 收到的就是 AT 通道的单个 payload 片段，可以直接作为来源；UART 字节此时是帧，不能再输入 framer。开启 inflatable 后 hook 又会累计，consumer 必须拒绝该配置。
+- 切换来源或 CMUX 进出数据模式（AT 通道换 DLCI）时重置 receiver；切到 CMUX 前先切来源，最多重复框出 `AT+CMUX` 的回显/OK，不会把帧当文本。
+
+不能修改共享 SDK/cache。私有 `tiga_modem_urc_line(data,total_len)` 的切行循环必须删除。transport 在命令发布、完成时同步 RX 命令上下文。禁止同时从 command response 再交付已经由 RX worker 负责的真实 URC。启用异步 worker 后，公共 command-response 路径假定 transport 负责全部真实 URC；同步 read/write 模式由公共 AT parser 负责。
 
 ## 锁和生命周期
 
