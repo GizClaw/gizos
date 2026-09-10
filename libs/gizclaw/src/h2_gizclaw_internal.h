@@ -215,6 +215,15 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
+/* The stream ID of a downstream audio BOS, or NULL for any other event,
+ * including text BOS and our input's own BOS. */
+const char *h2_gizclaw_conversation_downstream_stream_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
+/* Tells the owner which downstream audio stream the server announced. */
+typedef void (*h2_gizclaw_client_stream_fn)(void *user, const char *stream_id);
+void h2_gizclaw_client_set_downlink_stream_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_stream_fn on_stream,
+    void *user);
 /* Formats a peer event and the input it arrived for, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,

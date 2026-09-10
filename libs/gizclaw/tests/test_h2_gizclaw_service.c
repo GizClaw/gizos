@@ -7837,6 +7837,66 @@ static void test_conversation_downlink_policy(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+static gzc_peer_event_t downstream_bos(int kind, const char *label,
+                                       const char *stream_id) {
+  gzc_peer_event_t event = {0};
+  event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+  event.payload.bos.kind = kind;
+  snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
+           label);
+  snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
+           "%s", stream_id);
+  return event;
+}
+
+/* A press drops downstream audio until the server announces another audio
+ * stream. Text and transcript BOS, our own input's BOS and the stream that
+ * was playing at the press keep it dropped. */
+static void test_conversation_downlink_waits_for_new_stream(void) {
+  const gzc_peer_event_t audio = downstream_bos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "assistant", "reply-2");
+  const gzc_peer_event_t text = downstream_bos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT, "transcript", "demo-1");
+  const gzc_peer_event_t input =
+      downstream_bos(gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO,
+                     "demo-home", "demo-2");
+  const char *id =
+      h2_gizclaw_conversation_downstream_stream_internal(NULL, &audio);
+  assert(id != NULL && strcmp(id, "reply-2") == 0);
+  assert(h2_gizclaw_conversation_downstream_stream_internal(NULL, &text) ==
+         NULL);
+  assert(h2_gizclaw_conversation_downstream_stream_internal(NULL, &input) ==
+         NULL);
+
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  h2_gizclaw_conversation_downlink_stream_internal(service, "reply-1");
+  h2_gizclaw_conversation_downlink_hold_internal(service);
+  /* Dropped, not queued: the 32-slot ring would refuse the 33rd packet. */
+  for (unsigned i = 0u; i < 40u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  h2_gizclaw_conversation_downlink_stream_internal(service, "reply-1");
+  for (unsigned i = 0u; i < 40u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  h2_gizclaw_conversation_downlink_stream_internal(service, "reply-2");
+  for (unsigned i = 0u; i < 32u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void
 assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
   void *route = atomic_load(&service->media_request);
@@ -9933,6 +9993,7 @@ int main(int argc, char **argv) {
   test_service_terminal_callback_obeys_poll_budget();
   test_conversation_accepts_downstream_events();
   test_conversation_downlink_policy();
+  test_conversation_downlink_waits_for_new_stream();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();
   test_stream_data_task_handoff();

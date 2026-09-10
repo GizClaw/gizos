@@ -142,6 +142,19 @@ client_set_event_handler(h2_gizclaw_client_t *client,
                                                               event_user);
 }
 
+static void service_downlink_stream(void *user, const char *stream_id) {
+  h2_gizclaw_conversation_downlink_stream_internal(user, stream_id);
+}
+
+static void client_set_downlink_stream(h2_gizclaw_service_t *service) {
+#ifdef H2_GIZCLAW_TESTING
+  if (s_client_ops != NULL && s_client_ops->init != NULL)
+    return;
+#endif
+  h2_gizclaw_client_set_downlink_stream_internal(
+      service->client, service_downlink_stream, service);
+}
+
 static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t *client) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL) {
@@ -692,8 +705,10 @@ static void net_worker(void *ctx) {
     rc = h2_gizclaw_time_prepare_connect_internal(service);
   if (rc == H2_PAL_OK)
     rc = client_init(&service->client_config, &service->client);
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK) {
+    client_set_downlink_stream(service);
     rc = client_connect(service->client);
+  }
   if (rc == H2_PAL_OK && service->config.on_event != NULL) {
     rc = client_set_event_handler(service->client, queue_client_event, service);
   }
