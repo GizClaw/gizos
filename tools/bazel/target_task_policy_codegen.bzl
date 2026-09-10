@@ -27,9 +27,17 @@ _ESP = struct(
     regions = {"internal": "H2_ESP_TASK_STACK_INTERNAL", "psram": "H2_ESP_TASK_STACK_PSRAM"},
     # The route trie is looked up only when tasks are created, never with the
     # flash cache disabled, so it does not need internal RAM. esp_attr.h makes
-    # the attribute empty when PSRAM BSS placement is not enabled.
-    route_storage = "EXT_RAM_BSS_ATTR ",
-    route_storage_header = "esp_attr.h",
+    # the attribute empty when PSRAM BSS placement is not enabled. Host tests
+    # compile the same source without ESP-IDF, where it is plain .bss.
+    route_storage = "H2_TASK_POLICY_ROUTE_STORAGE ",
+    route_storage_prelude = [
+        "#if defined(ESP_PLATFORM)",
+        "#include \"esp_attr.h\"",
+        "#define H2_TASK_POLICY_ROUTE_STORAGE EXT_RAM_BSS_ATTR",
+        "#else",
+        "#define H2_TASK_POLICY_ROUTE_STORAGE",
+        "#endif",
+    ],
     sdk_name = False,
     unit = "esp",
 )
@@ -47,7 +55,7 @@ _BK_AP = struct(
     prefix = "h2_bk",
     regions = _BK_REGIONS,
     route_storage = "",
-    route_storage_header = "",
+    route_storage_prelude = [],
     sdk_name = True,
     unit = "ap",
 )
@@ -63,7 +71,7 @@ _BK_CP = struct(
     prefix = "h2_bk",
     regions = _BK_REGIONS,
     route_storage = "",
-    route_storage_header = "",
+    route_storage_prelude = [],
     sdk_name = True,
     unit = "cp",
 )
@@ -311,8 +319,7 @@ def render_policy_source(
     ]
     if tasks:
         lines.append("#include \"h2_trie.h\"")
-        if flavor.route_storage_header:
-            lines.append("#include \"%s\"" % flavor.route_storage_header)
+        lines.extend(flavor.route_storage_prelude)
     lines.extend(["", "#include <stdio.h>", ""])
     if unrouted:
         lines.append("/* Served by the target default policy: %s. */" % ", ".join(unrouted))
