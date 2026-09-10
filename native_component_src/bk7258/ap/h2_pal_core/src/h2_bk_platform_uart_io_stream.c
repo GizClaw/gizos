@@ -1,12 +1,18 @@
+#ifdef H2_BK_UART_IO_TEST
+#include "h2_bk_uart_io_test_sdk.h"
+#else
 #include "h2_bk_platform_core.h"
+#endif
 
 #if CONFIG_SYS_PRINT_DEV_UART
+#ifndef H2_BK_UART_IO_TEST
 #include "common/bk_include.h"
 #include "bk_private/bk_uart.h"
 #include "components/shell_task.h"
 #include "driver/uart.h"
 #include "os/os.h"
 #include "shell_drv.h"
+#endif
 
 /* The board selects the physical console. RX is owned by this provider so
  * shell command parsing cannot consume protocol bytes. */
@@ -71,23 +77,71 @@ static h2_pal_result_t direct_read(void *user, void *buffer, size_t len, size_t 
   } while ((uint32_t)(rtos_get_time() - started) < timeout_ms);
   return H2_PAL_ERR_TIMEOUT;
 }
-static h2_pal_result_t direct_write(void *user, const void *buffer, size_t len, size_t *out_written, uint32_t timeout_ms) {
-  (void)user; (void)timeout_ms;
+/* All retries share one deadline, including contention and console drain. */
+static h2_pal_result_t direct_wait(uint32_t started, uint32_t timeout_ms) {
+  if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;
+  if (timeout_ms != UINT32_MAX &&
+      (uint32_t)(rtos_get_time() - started) >= timeout_ms)
+    return H2_PAL_ERR_TIMEOUT;
+  rtos_delay_milliseconds(1u);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t direct_write(void *user, const void *buffer, size_t len,
+                                    size_t *out_written, uint32_t timeout_ms) {
+  (void)user;
   if (!buffer || !out_written || len > UINT32_MAX) return H2_PAL_ERR_INVALID_ARG;
   *out_written = 0;
   if (!s_direct_initialized) return H2_PAL_ERR_CLOSED;
-  if (rtos_lock_mutex(&s_direct_write_mutex) != kNoErr) return H2_PAL_ERR_IO;
-  shell_log_flush();
-  h2_pal_result_t result = H2_PAL_ERR_IO;
-  if (shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_SUSPEND, NULL)) {
-    (void)bk_uart_set_enable_tx(s_direct_port, true);
-    if (bk_uart_write_bytes(s_direct_port, buffer, (uint32_t)len) == BK_OK) {
-      bk_uart_wait_tx_over(s_direct_port);
-      *out_written = len;
-      result = H2_PAL_OK;
-    }
-    (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_RESUME, NULL);
+  if (len == 0u) return H2_PAL_OK;
+  uint32_t started = rtos_get_time();
+  h2_pal_result_t result = H2_PAL_OK;
+  while (rtos_trylock_mutex(&s_direct_write_mutex) != kNoErr) {
+    result = direct_wait(started, timeout_ms);
+    if (result != H2_PAL_OK) return result;
   }
+
+  /* Never call shell_log_flush: it can wait without a deadline. Suspend only
+   * after the FIFO drains, with interrupts masked across the check and handoff.
+   * SDK TX_SUSPEND then performs only its fixed one-character settling delay. */
+  int suspended = 0;
+  while (!suspended) {
+    uint32_t level = rtos_enter_critical();
+    if (bk_uart_is_tx_over(s_direct_port)) {
+      suspended = shell_uart.dev_drv->io_ctrl(
+          &shell_uart, SHELL_IO_CTRL_TX_SUSPEND, NULL);
+      if (suspended) (void)bk_uart_set_enable_tx(s_direct_port, true);
+      else result = H2_PAL_ERR_IO;
+    }
+    rtos_exit_critical(level);
+    if (suspended || result != H2_PAL_OK) break;
+    result = direct_wait(started, timeout_ms);
+    if (result != H2_PAL_OK) break;
+  }
+  while (suspended && result == H2_PAL_OK && *out_written < len) {
+    /* With shell TX suspended and this mutex held there is no competing FIFO
+     * writer. A ready-checked single-byte write cannot enter SDK's full-FIFO
+     * busy wait. Count bytes accepted by the UART, not physical wire drain. */
+    uint32_t level = rtos_enter_critical();
+    int ready = uart_write_ready(s_direct_port) == BK_OK;
+    if (ready) {
+      if (uart_write_byte(s_direct_port,
+                          ((const uint8_t *)buffer)[*out_written]) == BK_OK)
+        ++*out_written;
+      else result = H2_PAL_ERR_IO;
+    }
+    rtos_exit_critical(level);
+    if (!ready) {
+      if (timeout_ms == 0u && *out_written != 0u) break;
+      result = direct_wait(started, timeout_ms);
+    } else if (*out_written < len && timeout_ms != 0u &&
+               timeout_ms != UINT32_MAX &&
+               (uint32_t)(rtos_get_time() - started) >= timeout_ms) {
+      result = H2_PAL_ERR_TIMEOUT;
+    }
+  }
+  if (suspended)
+    (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_RESUME, NULL);
   (void)rtos_unlock_mutex(&s_direct_write_mutex);
   return result;
 }
