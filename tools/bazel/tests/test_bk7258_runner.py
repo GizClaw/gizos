@@ -74,6 +74,11 @@ if mode == "ccache":
         raise SystemExit("runner did not authenticate the BK remote ccache")
     if os.environ.get("CCACHE_RESHARE") != "1":
         raise SystemExit("runner did not reshare local BK ccache hits")
+    base_dir = os.environ["CCACHE_BASEDIR"]
+    if base_dir != os.path.realpath(base_dir):
+        raise SystemExit("runner did not resolve the BK7258 ccache base directory")
+    if not str(build).startswith(base_dir + os.sep):
+        raise SystemExit("BK7258 build directory is outside the ccache base directory")
 if mode == "native-graph":
     manifest = Path(os.environ["H2_BAZEL_COMPONENT_MANIFEST"])
     manifest_text = manifest.read_text(encoding="utf-8")
@@ -534,10 +539,17 @@ class Bk7258RunnerTest(unittest.TestCase):
         self.assertFalse(self.project.joinpath("generated.lock").exists())
 
     def test_ccache_environment_reaches_armino(self):
+        # The runner must hand ccache the real path of a symlinked TMPDIR,
+        # as macOS does with /var/folders -> /private/var/folders.
+        temporary = self.root / "temporary"
+        temporary.mkdir()
+        temporary_alias = self.root / "temporary-alias"
+        temporary_alias.symlink_to(temporary, target_is_directory=True)
         result, _ = self._run(
             name="ccache",
             mode="ccache",
             environment_updates={
+                "TMPDIR": str(temporary_alias),
                 "H2_NATIVE_CCACHE": str(self.ccache),
                 "H2_NATIVE_CCACHE_ROOT": str(self.root / "native-cache"),
                 "H2_NATIVE_CCACHE_REMOTE_BASE_URL": (
