@@ -4,3 +4,8 @@
 CONFIG_INT_WDT_PERIOD_MS=8000
 CONFIG_TASK_WDT_PERIOD_MS=180000
 # CONFIG_AON_WDT is not set
+
+# Loader keeps update/recovery and BLE; business services belong to App.
+# CONFIG_OTA_HTTP is not set
+
+# CONFIG_OTA_UPDATE_DEFAULT_PARTITION is not set

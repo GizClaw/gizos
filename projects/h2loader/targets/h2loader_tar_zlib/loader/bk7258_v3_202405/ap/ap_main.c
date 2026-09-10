@@ -1,4 +1,6 @@
-#include "h2_bk7258_board.h"
+#include "h2_runtime.h"
+#include "h2_bk_platform_core.h"
+#include "h2/pal/h2_pal_unsupported.h"
 #include "h2_bk_h2loader.h"
 #include "h2_loader_boot.h"
 #include "h2_loader_command.h"
@@ -11,7 +13,6 @@
 #include "bk_private/bk_init.h"
 #include "components/system.h"
 #include "driver/flash.h"
-#include "driver/mb_uart_driver.h"
 #include "driver/wdt.h"
 #include "mbedtls/sha256.h"
 #include "os/os.h"
@@ -22,7 +23,7 @@
 
 static void h2_bk_serial_log_string(int port, const char *string) {
     (void)port;
-    os_printf("%s", string);
+    printf("%s", string);
 }
 
 #define emergency_uart_write_string h2_bk_serial_log_string
@@ -47,12 +48,6 @@ static int s_h2loader_initialized;
 static volatile int s_h2loader_file_points_ready;
 static volatile int s_h2loader_mount_in_progress;
 
-static void h2loader_ap_probe(uint8_t stage) {
-    uint8_t value = (uint8_t)(0xe0u + stage);
-    (void)bk_mb_uart_dev_init(MB_UART1);
-    (void)bk_mb_uart_write(MB_UART1, &value, sizeof(value));
-}
-
 static int h2loader_probe_pref(void) {
     h2_pal_pref_namespace_t *ns = NULL;
     uint32_t boot_intent = 0u;
@@ -64,19 +59,15 @@ static int h2loader_probe_pref(void) {
         &ns);
     if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;
     if (rc != H2_PAL_OK) return rc;
-    h2loader_ap_probe(9u);
     if (ns == NULL || ns->get_u32 == NULL || ns->get_i32 == NULL ||
         ns->close == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     rc = ns->get_u32(ns, "boot_intent", &boot_intent);
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND) return rc;
-    h2loader_ap_probe(10u);
     rc = ns->get_i32(ns, "last_result", &last_result);
     if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND) return rc;
-    h2loader_ap_probe(11u);
     rc = ns->close(ns);
-    if (rc == H2_PAL_OK) h2loader_ap_probe(12u);
     return rc;
 }
 
@@ -330,35 +321,6 @@ static void command_sleep_ms(void *user, uint32_t delay_ms) {
     rtos_delay_milliseconds(delay_ms);
 }
 
-static void restore_saved_wifi(void) {
-    h2_pal_wifi_sta_config_t config;
-    int rc;
-
-    if (s_runtime->wifi_settings == NULL || s_runtime->wifi_sta == NULL) {
-        return;
-    }
-    memset(&config, 0, sizeof(config));
-    rc = h2_pal_wifi_settings_get_saved_sta_config(
-        s_runtime->wifi_settings,
-        &config);
-    if (rc == H2_PAL_OK) {
-        rc = h2_pal_wifi_sta_connect(s_runtime->wifi_sta, &config, 0u);
-    }
-    if (rc == H2_PAL_OK) {
-        emergency_uart_write_string(
-            0,
-            "H2_BK_H2LOADER_STEP stage=wifi_restore rc=0\r\n");
-    } else if (rc != H2_PAL_ERR_NOT_FOUND) {
-        char line[80];
-        (void)snprintf(
-            line,
-            sizeof(line),
-            "H2_BK_H2LOADER_STEP stage=wifi_restore rc=%d\r\n",
-            rc);
-        emergency_uart_write_string(0, line);
-    }
-}
-
 static h2_pal_result_t coredump_disk_get_partition(
     void *user,
     uint32_t partition_id,
@@ -462,7 +424,7 @@ static void h2loader_startup_worker(void *user) {
     h2_loader_config_t config = {
         .package = {
             .fs = &s_h2loader_fs,
-            .allocator = h2_bk7258_board_psram_allocator(),
+            .allocator = h2_bk_platform_psram_allocator(),
             .digest = {
                 .start = command_digest_start,
                 .update = command_digest_update,
@@ -491,7 +453,7 @@ static void h2loader_startup_worker(void *user) {
         .confirm_active_image = h2_bk_h2loader_confirm_active_loader,
         .mount_file_point = h2_bk_h2loader_mount_file_point,
         .on_event = on_event,
-        .hardware_capabilities = H2_LOADER_CAPABILITIES_ALL,
+        .hardware_capabilities = H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_BLE,
     };
     h2_loader_command_config_t command_config = {
         .loader = &s_h2loader,
@@ -512,7 +474,6 @@ static void h2loader_startup_worker(void *user) {
     };
 
     (void)user;
-    h2loader_ap_probe(4u);
 
     int rc;
     rc = bk_get_mac(ble_mac, MAC_TYPE_BLUETOOTH);
@@ -568,7 +529,6 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("active_identity", rc);
         wait_forever();
     }
-    h2loader_ap_probe(5u);
 
     rc = h2loader_probe_pref();
     if (rc != H2_PAL_OK) {
@@ -579,14 +539,11 @@ static void h2loader_startup_worker(void *user) {
     rc = h2_loader_read_pref_status(
         config.pref, config.package.allocator, &probe_status);
     if (rc != H2_PAL_OK) {
-        h2loader_ap_probe(15u);
         record_startup_error("pref_status_probe", rc);
         wait_forever();
     }
-    h2loader_ap_probe(13u);
 
     rc = h2_loader_init(&s_h2loader, &config);
-    h2loader_ap_probe(14u);
     if (rc != H2_PAL_OK) {
         (void)h2_pal_mutex_unlock(
             s_runtime->sync,
@@ -594,7 +551,6 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("loader_init", rc);
         wait_forever();
     }
-    h2loader_ap_probe(6u);
     s_h2loader_initialized = 1;
     emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=loader_init rc=0\r\n");
     h2_bundle_installer_set_progress(&s_h2loader.package.installer, install_progress, NULL);
@@ -609,7 +565,6 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("iostreamikcp", rc);
         wait_forever();
     }
-    h2loader_ap_probe(7u);
     emergency_uart_write_string(
         0,
         "H2_BK_H2LOADER_STEP stage=iostreamikcp_start rc=0\r\n");
@@ -620,7 +575,6 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("initialization_unlock", rc);
         wait_forever();
     }
-    restore_saved_wifi();
 
     for (;;) {
         h2_loader_startup_action_t action = H2_LOADER_STARTUP_ACTION_COMMAND_MODE;
@@ -665,7 +619,8 @@ static void h2loader_startup_worker(void *user) {
         }
 
         record_startup_error("startup_begin", H2_PAL_ERR_INVALID_STATE);
-        (void)persist_startup_result(H2_PAL_ERR_INVALID_STATE);
+        /* A successful startup can reboot without returning. Keep this
+         * in-progress diagnostic local; persist only an actual failure. */
         emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=startup_begin rc=0\r\n");
         rc = h2_loader_startup(&s_h2loader, &action);
         if (rc == H2_PAL_OK) {
@@ -691,7 +646,6 @@ static void h2loader_startup_worker(void *user) {
             rc,
             startup_action_name(action));
         emergency_uart_write_string(0, line);
-        h2loader_ap_probe(8u);
         if (rc == H2_PAL_OK) {
             if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
                 const h2loader_app_command_service_api_t *command_service =
@@ -730,18 +684,68 @@ static void h2loader_startup_worker(void *user) {
     wait_forever();
 }
 
+/* Loader owns only update/recovery services; business providers live in App. */
+static int loader_runtime_config(h2_runtime_config_t *config) {
+    int rc = h2_bk_h2loader_sd_fs_init(&s_h2loader_fs);
+    if (rc != H2_PAL_OK) return rc;
+    *config = (h2_runtime_config_t){
+        .board = "bk7258_v3_202405", .target = "bk7258", .chip = "bk7258",
+        .firmware_info = h2_bk_platform_firmware_info_api(),
+        .mem = h2_bk_platform_default_allocator(),
+        .log = h2_bk_platform_log_api(),
+        .time = h2_bk_platform_time_api(),
+        .task = h2_bk_platform_task_api(),
+        .queue = h2_bk_platform_queue_api(),
+        .sync = h2_bk_platform_sync_api(),
+        .pref = h2_bk_platform_pref_api(),
+        .crypto = h2_bk_platform_crypto_api(),
+        .ble_host = h2_bk_platform_ble(),
+        .system_event = h2_bk_platform_system_event_api(),
+        .power = h2_bk_h2loader_power_api(),
+        .fs = &s_h2loader_fs,
+        .switch_api = h2_pal_unsupported_switch_api(),
+        .timer = h2_pal_unsupported_timer_api(),
+        .disk = h2_pal_unsupported_disk_api(),
+        .http = h2_pal_unsupported_http_api(),
+        .net = h2_pal_unsupported_net_api(),
+        .netif = h2_pal_unsupported_netif_api(),
+        .mqtt = h2_pal_unsupported_mqtt_api(),
+        .webrtc = h2_pal_unsupported_webrtc_api(),
+        .wifi_sta = h2_pal_unsupported_wifi_sta_api(),
+        .wifi_ap = h2_pal_unsupported_wifi_ap_api(),
+        .wifi_csi = h2_pal_unsupported_wifi_csi_api(),
+        .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
+        .modem = h2_pal_unsupported_modem_api(),
+        .display = h2_pal_unsupported_display_api(),
+        .audio = h2_pal_unsupported_audio_api(),
+        .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
+        .periph = h2_pal_unsupported_periph_api(),
+        .button = h2_pal_unsupported_button_api(),
+        .touch = h2_pal_unsupported_touch_api(),
+        .buzzer = h2_pal_unsupported_buzzer_api(),
+        .nfc = h2_pal_unsupported_nfc_api(),
+        .nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api(),
+        .imu = h2_pal_unsupported_imu_api(),
+        .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
+        .led = h2_pal_unsupported_led_api(),
+        .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
+        .input = h2_pal_unsupported_input_api(),
+        .video_decoder = h2_pal_unsupported_video_decoder_api(),
+    };
+    return H2_PAL_OK;
+}
+
 static void h2loader_ap_entry(void *user) {
     h2_runtime_config_t runtime_config;
 
     (void)user;
-    h2loader_ap_probe(2u);
 
     emergency_uart_write_string(0, "H2_BK_AP_ENTRY_EMERG image=h2loader\r\n");
     rtos_delay_milliseconds(500);
     emergency_uart_write_string(0, "H2_BK_AP_BOOT image=h2loader\r\n");
 
     emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=runtime_config begin\r\n");
-    int rc = h2_bk7258_board_runtime_config(&runtime_config);
+    int rc = loader_runtime_config(&runtime_config);
     emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=runtime_config end\r\n");
     if (rc == H2_PAL_OK) {
         emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=runtime_init begin\r\n");
@@ -752,14 +756,6 @@ static void h2loader_ap_entry(void *user) {
         record_startup_error("runtime_init", rc);
         wait_forever();
     }
-    h2loader_ap_probe(3u);
-
-    rc = h2_bk_h2loader_sd_fs_init(&s_h2loader_fs);
-    if (rc != H2_PAL_OK) {
-        record_startup_error("fs_init", rc);
-        wait_forever();
-    }
-    emergency_uart_write_string(0, "H2_BK_H2LOADER_STEP stage=fs_init rc=0\r\n");
 
     h2loader_startup_worker(NULL);
 }
@@ -771,11 +767,13 @@ int main(void) {
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=before_bk_init\r\n");
     os_printf("H2_BK_AP_MAIN stage=before_bk_init\r\n");
     bk_init();
-    h2loader_ap_probe(1u);
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=after_bk_init\r\n");
     os_printf("H2_BK_AP_MAIN stage=after_bk_init\r\n");
-    h2_pal_result_t rc = h2_bk7258_board_start_entry_task(
-        "bk/h2loader", h2loader_ap_entry, NULL);
+    beken_thread_t entry_thread = NULL;
+    h2_pal_result_t rc = rtos_create_thread(
+        &entry_thread, BEKEN_DEFAULT_WORKER_PRIORITY, "bk/h2loader",
+        (beken_thread_function_t)h2loader_ap_entry, 24u * 1024u, 0) == kNoErr
+        ? H2_PAL_OK : H2_PAL_ERR_TASK;
     if (rc != H2_PAL_OK) {
         char line[96];
         (void)snprintf(

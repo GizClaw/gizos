@@ -1,0 +1,1 @@
+board=bk7258_v3_202405 active_role=loader active_version=0.1.42-bk-e2e active_checksum=a75ea290b5284030b5a62014859f7ed00fa8f2220384abaebec1bbe7bcb8fce4 running_partition=1 next_partition=1 boot_intent=loader stage_valid=0
