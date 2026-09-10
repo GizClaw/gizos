@@ -1,1 +1,0 @@
-board=bk7258_v3_202405 active_role=loader active_version=0.1.44-fixed-xip active_checksum=7349534658df4251b7b6c169578a4ab09f044088116a6c230c2d65493dd24b02 running_partition=1 next_partition=1 boot_intent=loader stage_valid=0

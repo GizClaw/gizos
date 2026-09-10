@@ -1,6 +1,0 @@
-H2_FIXED_XIP loader_partition=0 base=02380000 magic=58324648
-H2_FIXED_XIP jump=02380101 no_ota_switch=1
-H2_FIXED_XIP_PAYLOAD pc=0238010a rodata=023801f4 value=72585849
-H2_FIXED_XIP_PAYLOAD pc=0238010a rodata=023801f4 value=72585849
-H2_FIXED_XIP_PAYLOAD pc=0238010a rodata=023801f4 value=72585849
-H2_FIXED_XIP returned pc=0238010a rodata=023801f4 value=72585849 iterations=3 partition=0

@@ -90,8 +90,8 @@ H2_FIXED_XIP returned pc=0238010a rodata=023801f4 value=72585849 iterations=3 pa
 The SDK numbers A as 0; the H2Loader protocol numbers it as 1. Payload CRC image
 size is 544 bytes; SHA-256 is
 `67b7955ae28f3dbcd3e19e3f7dad2f33f7068d565eb52d12e78cbf97a18b5f7d`.
-Filtered UART evidence is retained in `evidence/`. Full Flash backups and raw
-logs remain outside Git because they contain device state.
+The UART trace above is the retained evidence. Full Flash backups and raw logs
+remain outside Git because they contain device state.
 
 Both native firmware builds passed, as did `bk7258_runner_test` and
 `cp_startup_contract_test`. The current Loader CP and AP raw images together
@@ -117,4 +117,4 @@ UART0 programmer completed successfully. Fresh UART1 status then reported
 running/next partition 1, Loader intent and an empty stage. Loader intent is
 retained for bench access (the initial status before entering Loader used auto).
 The original native B App and device configuration were included in the restore.
-See `evidence/restored-status.txt`. No experimental firmware remains installed.
+No experimental firmware remains installed.
