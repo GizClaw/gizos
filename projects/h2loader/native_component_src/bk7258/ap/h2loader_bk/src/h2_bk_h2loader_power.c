@@ -1,11 +1,16 @@
+#ifdef H2_BK_H2LOADER_POWER_HOST_TEST
+#include "h2_bk_h2loader_power_test_sdk.h"
+#else
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
 
 #include "bk_private/bk_ota_private.h"
 #include "components/system.h"
+#include "driver/flash.h"
 #include "h2/pal/core/h2_pal_errors.h"
 #include "modules/ota.h"
 #include "wdt_driver.h"
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -56,10 +61,26 @@ static h2_pal_result_t power_list_boot_partitions(
     void *cb_user) {
     h2_pal_power_boot_partition_t partition;
     h2_pal_result_t rc;
+    const bk_logic_partition_t *control;
+    uint8_t flags[9];
+    uint32_t app_flags = H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE |
+        H2_PAL_POWER_BOOT_PARTITION_FLAG_APP;
 
     (void)user;
     if (cb == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    control = bk_flash_partition_get_info(BK_PARTITION_OTA_FINA_EXECUTIVE);
+    if (control == NULL ||
+        bk_flash_read_bytes(control->partition_start_addr, flags, sizeof(flags)) != BK_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    /* App startup arms A as recovery while retaining B as the attempted
+     * image. On returning to A, this exact flag combination proves that B
+     * never confirmed. Explicit Loader selection writes A/A instead. */
+    if (bk_ota_get_current_partition() == EXEX_A_PART &&
+        flags[0] == EXEX_A_PART && flags[4] == EXEC_B_PART && flags[8] == CONFIRM_EXEC_A) {
+        app_flags &= ~H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE;
     }
     fill_partition(&partition,
         H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
@@ -72,7 +93,7 @@ static h2_pal_result_t power_list_boot_partitions(
     fill_partition(&partition,
         H2_BK_H2LOADER_APP_PARTITION_ID,
         "s_app",
-        H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE | H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
+        app_flags);
     return cb(cb_user, &partition);
 }
 
@@ -99,6 +120,38 @@ static h2_pal_result_t power_get_running_boot_partition(void *user, h2_pal_power
                 H2_PAL_POWER_BOOT_PARTITION_FLAG_RUNNING |
                 H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
     }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t power_get_next_boot_partition(
+    void *user, h2_pal_power_boot_partition_t *out_partition) {
+    const bk_logic_partition_t *control;
+    uint8_t flags[9];
+    uint8_t next;
+
+    if (out_partition == NULL) return H2_PAL_ERR_INVALID_ARG;
+    control = bk_flash_partition_get_info(BK_PARTITION_OTA_FINA_EXECUTIVE);
+    if (control == NULL ||
+        bk_flash_read_bytes(control->partition_start_addr, flags, sizeof(flags)) != BK_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    /* OTA flag 1 requests the temporary partition; otherwise use the
+     * confirmed selection. An erased control record keeps the current boot. */
+    next = flags[8] == 1u ? flags[4] : flags[0];
+    if (flags[0] == 0xffu && flags[4] == 0xffu && flags[8] == 0xffu) {
+        h2_pal_result_t rc = power_get_running_boot_partition(user, out_partition);
+        if (rc == H2_PAL_OK) {
+            out_partition->flags &= ~H2_PAL_POWER_BOOT_PARTITION_FLAG_RUNNING;
+            out_partition->flags |= H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT;
+        }
+        return rc;
+    }
+    if (next != EXEX_A_PART && next != EXEC_B_PART) return H2_PAL_ERR_INVALID_STATE;
+    fill_partition(out_partition,
+        next == EXEX_A_PART ? H2_BK_H2LOADER_PRIMARY_PARTITION_ID : H2_BK_H2LOADER_APP_PARTITION_ID,
+        next == EXEX_A_PART ? "primary_loader" : "s_app",
+        H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE | H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT |
+            (next == EXEX_A_PART ? H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY : H2_PAL_POWER_BOOT_PARTITION_FLAG_APP));
     return H2_PAL_OK;
 }
 
@@ -131,6 +184,7 @@ const h2_pal_power_api_t *h2_bk_h2loader_power_api(void) {
         .get_capabilities = power_get_capabilities,
         .list_boot_partitions = power_list_boot_partitions,
         .get_running_boot_partition = power_get_running_boot_partition,
+        .get_next_boot_partition = power_get_next_boot_partition,
         .set_next_boot_partition = power_set_next_boot_partition,
         .reboot = power_reboot,
     };

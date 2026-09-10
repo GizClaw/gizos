@@ -54,7 +54,7 @@ Managed operation 对串口和 BLE 使用同一个状态机：
 
 1. Connect 并读取 live status。
 2. 校验 board/target 与 asset。
-3. Stage 完整 package。`CLOSED`/`TIMEOUT` 只允许一次同 transport、同 `device_uid` 的受限恢复：重连后若 exact bytes/SHA-256 Stage 已持久化则继续；若 Stage 为空则从 offset 0 完整重放一次；若 UID 不同、已有其它有效 Stage 或再次中断则 fail closed。
+3. Stage 完整 package。`CLOSED`/`TIMEOUT`/`WOULD_BLOCK` 只允许一次同 transport、同 `device_uid` 的受限恢复：重连后若 exact bytes/SHA-256 Stage 已持久化则继续；若 Stage 为空则从 offset 0 完整重放一次；若 UID 不同、已有其它有效 Stage 或再次中断则 fail closed。
 4. 执行 `reboot upgrade` 进入 AUTO 流程。
 5. Disconnect、重新发现并重连。
 6. APP 要求运行在 Partition 2、active/Partition 2 identity 匹配 package 且 `stage.valid=false`；Loader 要求运行在 Partition 1、Partition 1/2 identity 与 package 匹配且 `stage.valid=false`。
@@ -100,3 +100,5 @@ bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
 
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。
+
+BK7258 UART1 provider 的写入 deadline 同时覆盖互斥锁竞争、console FIFO 排空与发送背压；零超时不等待，有部分接收时返回已写字节数，无进展时返回 WOULD_BLOCK。不能调用无截止时间的 log flush 或满 FIFO 忙等发送。

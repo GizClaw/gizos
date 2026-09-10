@@ -292,9 +292,11 @@ static int h2loader_receive_stage(
     }
     rc = h2_pal_fs_open(self->config.fs, H2_LOADER_STAGE_TMP_PATH, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file);
     if (rc != H2_PAL_FS_OK) {
+        h2loader_stage_error(self, "open_tmp", rc);
         return rc;
     }
     if (self->config.digest.start(self->config.digest.user) != H2_PAL_OK) {
+        h2loader_stage_error(self, "digest_start", H2_PAL_ERR_IO);
         h2loader_close_remove_tmp(self, file);
         return H2_PAL_ERR_IO;
     }
@@ -308,18 +310,21 @@ static int h2loader_receive_stage(
         rc = h2loader_read_exact(
             self, buffer, take, H2_LOADER_STAGE_READ_TIMEOUT_MS);
         if (rc != H2_PAL_OK) {
+            h2loader_stage_error(self, "read_payload", rc);
             h2loader_digest_abort(self);
             h2loader_close_remove_tmp(self, file);
             return rc;
         }
         rc = self->config.digest.update(self->config.digest.user, buffer, take);
         if (rc != H2_PAL_OK) {
+            h2loader_stage_error(self, "digest_update", rc);
             h2loader_digest_abort(self);
             h2loader_close_remove_tmp(self, file);
             return rc;
         }
         rc = h2loader_write_all(self, file, buffer, take);
         if (rc != H2_PAL_FS_OK) {
+            h2loader_stage_error(self, "write_tmp", rc);
             h2loader_digest_abort(self);
             h2loader_close_remove_tmp(self, file);
             return rc;
@@ -327,6 +332,7 @@ static int h2loader_receive_stage(
         remaining -= take;
     }
     if (self->config.digest.finish(self->config.digest.user, digest) != H2_PAL_OK) {
+        h2loader_stage_error(self, "digest_finish", H2_PAL_ERR_IO);
         h2loader_digest_abort(self);
         h2loader_close_remove_tmp(self, file);
         return H2_PAL_ERR_IO;
@@ -334,12 +340,14 @@ static int h2loader_receive_stage(
     h2loader_digest_abort(self);
     rc = h2_pal_fs_sync(self->config.fs, file);
     if (rc != H2_PAL_FS_OK) {
+        h2loader_stage_error(self, "sync_tmp", rc);
         h2loader_close_remove_tmp(self, file);
         return rc;
     }
     rc = h2_pal_fs_close(self->config.fs, file);
     file = NULL;
     if (rc != H2_PAL_FS_OK) {
+        h2loader_stage_error(self, "close_tmp", rc);
         (void)h2_pal_fs_remove(self->config.fs, H2_LOADER_STAGE_TMP_PATH);
         return rc;
     }

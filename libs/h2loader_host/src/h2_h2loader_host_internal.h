@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+int h2_h2loader_host_ble_stage_receive_failed(
+    const uint8_t *response, size_t response_len);
+
 typedef struct h2_h2loader_host_sha256 {
     uint32_t state[8];
     uint64_t total_bytes;

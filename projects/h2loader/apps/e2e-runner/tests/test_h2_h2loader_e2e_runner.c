@@ -309,6 +309,30 @@ static void test_crash_app_runs_once_before_cross_transport_coredump(void) {
   assert(fake.cases[18] == H2_H2LOADER_E2E_CASE_COREDUMP_STATUS_AFTER_ERASE);
 }
 
+static int cancel_after_first_case(void *user) {
+  return ((fake_executor_t *)user)->count != 0u;
+}
+
+static void test_cancel_does_not_execute_later_cases(void) {
+  fake_executor_t fake = {0};
+  h2_h2loader_e2e_result_t result;
+  const h2_h2loader_e2e_config_t config = {
+      .uart_endpoint = "/dev/test",
+      .ble_endpoint = "4:001122334455",
+      .repeat_count = 1u,
+      .execute_case = execute_case,
+      .execute_user = &fake,
+      .is_cancelled = cancel_after_first_case,
+      .cancel_user = &fake,
+  };
+  assert(h2_h2loader_e2e_run(&config, &result) == H2_PAL_EXIT);
+  assert(fake.count == 1u);
+  assert(result.passed == 1u);
+  for (size_t i = 1u; i < result.case_count; ++i) {
+    assert(result.cases[i].result == H2_PAL_EXIT);
+  }
+}
+
 static void test_names(void) {
   assert(strcmp(h2_h2loader_e2e_transport_name(H2_H2LOADER_E2E_TRANSPORT_UART),
                 "uart") == 0);
@@ -349,5 +373,6 @@ int main(void) {
   test_monitor_runs_each_reboot_with_a_bootable_target();
   test_crash_app_runs_once_before_cross_transport_coredump();
   test_names();
+  test_cancel_does_not_execute_later_cases();
   return 0;
 }

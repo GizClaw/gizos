@@ -9,6 +9,7 @@ option(H2_BK_PLATFORM_ENABLE_WEBRTC "Enable BK WebRTC platform implementation ba
 option(H2_BK_PLATFORM_BT_ALLOCATOR_PSRAM "Route BK Bluetooth host allocations to PSRAM" OFF)
 set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_common
+  bk_cli
   bk_bluetooth
   easy_flash
   bk_netif
@@ -223,3 +224,5 @@ if(H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH)
   target_link_options(${COMPONENT_LIB} INTERFACE
     "-Wl,--wrap=wdrv_rx_handle_event")
 endif()
+
+target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/components/bk_cli")

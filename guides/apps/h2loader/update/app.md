@@ -31,3 +31,9 @@ APP 启动并完成平台 OTA image 确认后，必须核对：
 Loader 不改变平台的 physical power hold；该 hold 的生命周期继续由平台或产品 owner 管理。
 
 命令返回 accepted 只证明请求已提交；Host 必须在重连后验证 active identity、运行分区、Partition metadata 和 Stage 终态，才能报告安装成功。
+
+## 并发确认与回退
+
+APP 发布命令服务前建立共享操作锁，启动确认与 Stage 接收在该锁下串行执行。平台 OTA 确认成功后才清理匹配的 Stage，避免尚未确认就丢失恢复证据。运行镜像 identity 计算使用独立 digest context，不重置正在收包的 digest。
+
+平台已回退到 Loader 且 Partition 2 不再 BOOTABLE 时，即使 Stage 被取消或新上传清空，AUTO 也不能再次启动该失败 APP。BK 用原生 OTA 控制标记区分待确认与已确认镜像；该标记不增加公共 install state。

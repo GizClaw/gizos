@@ -112,9 +112,10 @@ static void host_sem_deinit(host_sem_t *sem) {
 }
 
 static unsigned binary_semaphores_created;
+static unsigned binary_semaphores_destroyed;
 
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *storage) {
-  binary_semaphores_created++;
+  __atomic_fetch_add(&binary_semaphores_created, 1u, __ATOMIC_RELAXED);
   return host_sem_init(storage, 1u, 0u, false);
 }
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage) {
@@ -166,6 +167,7 @@ int rtos_set_semaphore(beken_semaphore_t *semaphore) {
 }
 int rtos_deinit_semaphore(beken_semaphore_t *semaphore) {
   host_sem_deinit(*semaphore);
+  __atomic_fetch_add(&binary_semaphores_destroyed, 1u, __ATOMIC_RELAXED);
   return kNoErr;
 }
 void *os_memset(void *ptr, int value, size_t size) {
@@ -427,5 +429,6 @@ int main(void) {
   test_destroy_refuses_with_waiter();
   test_signal_wakes_one_broadcast_wakes_all();
   test_broadcast_reaches_parked_waiter_despite_poller();
+  assert(binary_semaphores_created == binary_semaphores_destroyed);
   return 0;
 }
