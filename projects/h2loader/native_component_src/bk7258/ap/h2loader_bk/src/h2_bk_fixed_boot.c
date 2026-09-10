@@ -6,6 +6,7 @@
 #include "driver/flash.h"
 #include "driver/flash_partition.h"
 #include "modules/ota.h"
+#include "layout_check.h"
 #endif
 #include "layout.h"
 #include <stddef.h>
@@ -233,6 +234,45 @@ int h2_bk_fixed_confirm_app(void) {
         !read_request(&r) || r.confirmed != 0u) {
         return H2_PAL_ERR_IO;
     }
+    return H2_PAL_OK;
+}
+
+/* The ROM bootloader validates slot B from the RBL head at the end of the
+ * slot, while a Loader image is sized for the smaller Loader window. Copy the
+ * image's last RBL head area to the end of the App window so B validates
+ * against the Loader image written at the window start. The head is held in
+ * RAM and each touched sector is read, patched and rewritten, so image bytes
+ * sharing a sector with the destination survive the erase. */
+#define H2_BK_RELAY_HEAD_MAX 0x1100u
+static uint8_t s_relay_head[H2_BK_RELAY_HEAD_MAX];
+static uint8_t s_relay_sector[H2_FIXED_SECTOR_SIZE];
+
+int h2_bk_fixed_publish_relay_head(uint32_t window_offset, uint32_t window_size,
+                                   uint32_t image_size, uint32_t head_size) {
+    uint32_t offset = 0u;
+    const int plan = h2_fixed_relay_head_offset(window_size, image_size, head_size, &offset);
+    if (plan < 0 || head_size > sizeof(s_relay_head)) return H2_PAL_ERR_INVALID_STATE;
+    if (plan == 0) return H2_PAL_OK;
+    if (bk_flash_read_bytes(window_offset + image_size - head_size, s_relay_head,
+                            head_size) != BK_OK) {
+        return H2_PAL_ERR_IO;
+    }
+    const uint32_t destination = window_offset + offset;
+    const uint32_t window_end = window_offset + window_size;
+    for (uint32_t sector = destination & ~(H2_FIXED_SECTOR_SIZE - 1u); sector < window_end;
+         sector += H2_FIXED_SECTOR_SIZE) {
+        const uint32_t from = sector > destination ? sector : destination;
+        const uint32_t to = sector + H2_FIXED_SECTOR_SIZE < window_end
+            ? sector + H2_FIXED_SECTOR_SIZE : window_end;
+        if (bk_flash_read_bytes(sector, s_relay_sector, sizeof(s_relay_sector)) != BK_OK) {
+            return H2_PAL_ERR_IO;
+        }
+        memcpy(&s_relay_sector[from - sector], &s_relay_head[from - destination], to - from);
+        if (program(sector, s_relay_sector, sizeof(s_relay_sector), 1) != BK_OK) {
+            return H2_PAL_ERR_IO;
+        }
+    }
+    printf("H2_BK_OTA_WRITER stage=relay_head offset=%08lx\r\n", (unsigned long)destination);
     return H2_PAL_OK;
 }
 

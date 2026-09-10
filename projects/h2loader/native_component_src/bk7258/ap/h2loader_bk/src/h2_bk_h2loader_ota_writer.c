@@ -210,45 +210,12 @@ static int verify_staged_rbl(void) {
     return H2_PAL_OK;
 }
 
-/* The ROM bootloader validates slot B from the RBL head at the end of the
- * slot, while a Loader image is sized for the smaller Loader window. Copy the
- * image's last CRC-encoded RBL head area to the end of the App window so B
- * validates against the Loader image written at the window start. The head is
- * held in RAM and each touched sector is read, patched and rewritten, so an
- * image byte sharing a sector with the destination survives the erase. */
-static uint8_t s_relay_head[H2_BK_OTA_RBL_FOOTER_PHYSICAL_OFFSET];
-
 static int publish_relay_rbl_head(void) {
-    const uint32_t tail = H2_BK_OTA_RBL_FOOTER_PHYSICAL_OFFSET;
-    const uint32_t base = s_partition->partition_start_addr;
-    uint32_t offset = 0u;
-    const int plan = h2_fixed_relay_head_offset(s_partition->partition_length, s_total,
-                                                tail, &offset);
-
-    if (plan < 0) return H2_PAL_ERR_INVALID_STATE;
-    if (plan == 0) return H2_PAL_OK;
-    if (bk_flash_read_bytes(base + s_total - tail, s_relay_head, tail) != BK_OK) {
-        return H2_PAL_ERR_IO;
-    }
-    const uint32_t destination = base + offset;
-    const uint32_t window_end = base + s_partition->partition_length;
-    for (uint32_t sector = destination & ~(H2_BK_OTA_FLASH_SECTOR_SIZE - 1u);
-         sector < window_end; sector += H2_BK_OTA_FLASH_SECTOR_SIZE) {
-        const uint32_t from = sector > destination ? sector : destination;
-        const uint32_t to = sector + H2_BK_OTA_FLASH_SECTOR_SIZE < window_end
-            ? sector + H2_BK_OTA_FLASH_SECTOR_SIZE : window_end;
-        if (bk_flash_read_bytes(sector, s_verify_buffer, H2_BK_OTA_FLASH_SECTOR_SIZE) != BK_OK) {
-            return H2_PAL_ERR_IO;
-        }
-        memcpy(&s_verify_buffer[from - sector], &s_relay_head[from - destination], to - from);
-        if (bk_flash_erase_sector(sector) != BK_OK ||
-            bk_flash_write_bytes(sector, s_verify_buffer, H2_BK_OTA_FLASH_SECTOR_SIZE) != BK_OK) {
-            return H2_PAL_ERR_IO;
-        }
-        feed_watchdogs();
-    }
-    os_printf("H2_BK_OTA_WRITER stage=relay_head offset=%08lx\r\n", (unsigned long)destination);
-    return H2_PAL_OK;
+    const int rc = h2_bk_fixed_publish_relay_head(
+        s_partition->partition_start_addr, s_partition->partition_length, s_total,
+        H2_BK_OTA_RBL_FOOTER_PHYSICAL_OFFSET);
+    feed_watchdogs();
+    return rc;
 }
 
 static int ota_writer_begin_partition(uint32_t partition_id, uint64_t image_size) {

@@ -7,7 +7,9 @@
 /* NOR model: erase sets a 4 KiB sector to 0xff, a write can only clear bits. */
 #define SECTOR 4096u
 #define NATIVE_CONTROL 0x0075f000u
-static uint8_t native_sector[SECTOR], request_sector[SECTOR], app_sector[SECTOR];
+/* The first four App window sectors; the relay-head test uses them all. */
+#define APP_MODEL (4u * SECTOR)
+static uint8_t native_sector[SECTOR], request_sector[SECTOR], app_sector[APP_MODEL];
 static uint8_t native_slot;
 static unsigned native_erases, request_erases;
 /* Board partition table (Loader image): Loader window 2380 KiB, App window
@@ -31,7 +33,7 @@ static uint8_t *sector_at(uint32_t address, uint32_t size) {
       address + size <= control.partition_start_addr + SECTOR)
     return request_sector + (address - control.partition_start_addr);
   if (address >= s_app.partition_start_addr &&
-      address + size <= s_app.partition_start_addr + SECTOR)
+      address + size <= s_app.partition_start_addr + APP_MODEL)
     return app_sector + (address - s_app.partition_start_addr);
   assert(!"flash access outside modeled sectors");
   return NULL;
@@ -55,7 +57,7 @@ int bk_flash_write_bytes(uint32_t address, const uint8_t *in, uint32_t size) {
 int bk_flash_erase_sector(uint32_t address) {
   memset(sector_at(address, SECTOR), 0xff, SECTOR);
   if (address == NATIVE_CONTROL) ++native_erases;
-  else ++request_erases;
+  else if (address == control.partition_start_addr) ++request_erases;
   return BK_OK;
 }
 int bk_flash_set_protect_type(flash_protect_type_t type) { (void)type; return BK_OK; }
@@ -200,6 +202,27 @@ static void test_loader_relay_through_native_b(void) {
   assert(memcmp(native_sector, loader_flags, 12) == 0);
 }
 
+static void test_relay_head_shares_image_sector(void) {
+  /* A 16 KiB window with a 10 KiB image: the head copy lands in the sector
+   * that also holds the image's last 2 KiB, which must survive the erase. */
+  const uint32_t base = s_app.partition_start_addr, window = APP_MODEL;
+  const uint32_t image = 0x2800u, head = 0x1100u;
+  for (uint32_t i = 0; i < APP_MODEL; ++i)
+    app_sector[i] = i < image ? (uint8_t)(i * 7u + 1u) : 0xffu;
+  uint8_t expected[APP_MODEL];
+  memcpy(expected, app_sector, sizeof(expected));
+  memcpy(&expected[window - head], &app_sector[image - head], head);
+  assert(h2_bk_fixed_publish_relay_head(base, window, image, head) == H2_PAL_OK);
+  assert(memcmp(app_sector, expected, sizeof(expected)) == 0);
+  /* Equal window and image: the head already ends the window. */
+  memcpy(expected, app_sector, sizeof(expected));
+  assert(h2_bk_fixed_publish_relay_head(base, window, window, head) == H2_PAL_OK);
+  assert(memcmp(app_sector, expected, sizeof(expected)) == 0);
+  /* A gap smaller than the head would overwrite the image. */
+  assert(h2_bk_fixed_publish_relay_head(base, window, window - 1u, head) ==
+         H2_PAL_ERR_INVALID_STATE);
+}
+
 static void test_app_layout_slot(void) {
   /* The App image's table swaps the roles: own window is App, s_app is the
    * Loader window. */
@@ -240,6 +263,7 @@ int main(void) {
   test_invalidate_before_app_write();
   test_torn_request_is_not_bootable();
   test_loader_relay_through_native_b();
+  test_relay_head_shares_image_sector();
   test_board_owned_loader_size();
   test_app_layout_slot();
   return 0;

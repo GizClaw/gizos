@@ -34,3 +34,6 @@ int h2_bk_fixed_confirm_app(void);
 int h2_bk_fixed_invalidate_app(void);
 int h2_bk_fixed_app_window_holds_loader(void);
 int h2_bk_fixed_confirm_loader(void);
+/* Copy a staged Loader image's RBL head area to the end of the App window. */
+int h2_bk_fixed_publish_relay_head(uint32_t window_offset, uint32_t window_size,
+                                   uint32_t image_size, uint32_t head_size);

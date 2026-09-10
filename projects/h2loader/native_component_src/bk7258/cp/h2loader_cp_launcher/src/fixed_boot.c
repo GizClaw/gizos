@@ -2,6 +2,7 @@
 #include "armstar.h"
 #include "driver/flash.h"
 #include "driver/flash_partition.h"
+#include "layout_check.h"
 #include "os/os.h"
 
 extern void stop_cpu1_core(void);
