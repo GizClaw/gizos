@@ -183,9 +183,9 @@ ESP-IDF Component 不拥有：
 ## ES8311 板级音量映射
 
 `h2_es8311_audio_system` 与 `h2_es8311_es7210_audio_system` 的配置都提供
-`speaker_volume`，由 BSP 选择曲线。两条路径依赖同一个 `h2_es8311_volume`
-原生组件，校验及整数插值只实现一次；不依赖 board 名称，也不改变麦克风增益。
-公共 contract 位于该组件的 `include/h2_es8311_volume.h`。
+`speaker_volume`，由 BSP 选择曲线。两条路径依赖同一个 ES8311
+portable driver library（`libs/drivers/audio/es8311`），校验及整数插值只实现一次；不依赖 board 名称，也不改变麦克风增益。
+公共 contract 位于该 library 的 `include/h2_es8311_volume.h`。
 
 `codec_volume_default` 仍是 100% 的 DAC 输出寄存器上限，范围为 1..255。
 [ES8311 数据手册第 25 页](https://files.waveshare.com/wiki/common/ES8311.DS.pdf)
@@ -238,7 +238,7 @@ I2C 多次写入不是原子事务，失败时硬件可能已应用部分写入�
 Host 回归入口：
 
 ```sh
-bazel test //native_component_src/esp-idf6.x/h2_es8311_volume:volume_test \
+bazel test //libs/drivers/audio/es8311:volume_test \
   //native_component_src/esp-idf6.x/h2_es8311_audio_system:config_test \
   //native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system:config_test
 ```
@@ -246,3 +246,16 @@ bazel test //native_component_src/esp-idf6.x/h2_es8311_volume:volume_test \
 测试覆盖全部 255 个旧上限在 0..100 的兼容输出、配置复制、不同板级上限、
 中段插值、单调性及非法控制点。板级接入后仍需以真实扬声器确认 0%、低音量、
 50%、100%、静音恢复及高幅度 PCM 的失真，并检查 AEC reference 采样是否需要调校。
+
+
+音量 library 由各个固件入口的 `firmware_lib_component` 显式链接到
+`h2_firmware_lib`，音频原生组件只消费其 public header 与 symbol，不为纯计算
+代码创建 ESP-IDF registration 或 CMake adapter。私有 Firmwares 固件入口也需要
+在该 archive composition 中加入 `//libs/drivers/audio/es8311`。
+
+共享 ESP-IDF 组件的编译验证包括 ESP32-S3 的 `audio-system/amoled:firmware`、
+`audio-system/szp:firmware` 以及 ESP32-P4 的
+`audio-system/waveshare_esp32p4_wifi6_touch_lcd_4_3:firmware`，这些 target 均位于
+`//projects/example/targets/h2loader_tar_zlib/`。分别使用 `--config=esp32s3` 和
+`--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
+因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。

@@ -30,9 +30,9 @@ firmware_lib_component(
         "//libs/bleikcp",
         "//libs/bundle",
         "//libs/command",
+        "//libs/drivers/audio/es8311",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
@@ -40,6 +40,7 @@ firmware_lib_component(
         "//libs/pal/providers/yyjson",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
     ],
 )
 

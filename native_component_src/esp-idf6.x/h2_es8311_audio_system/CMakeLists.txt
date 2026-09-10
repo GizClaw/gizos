@@ -6,7 +6,6 @@ idf_component_register(
   INCLUDE_DIRS
     "include"
   REQUIRES
-    h2_es8311_volume
     esp_driver_gpio
     esp_driver_i2c
     esp_driver_i2s

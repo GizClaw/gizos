@@ -15,7 +15,6 @@ idf_component_register(
   PRIV_INCLUDE_DIRS
     "src"
   REQUIRES
-    h2_es8311_volume
     ${H2_ESP_ES8311_ES7210_REQUIRES}
 )
 
