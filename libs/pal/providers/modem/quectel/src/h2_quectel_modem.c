@@ -285,6 +285,16 @@ static void dispatch_urc(void *user, const char *line) {
 }
 
 h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *line) {
+    if (modem == NULL || line == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    /* This provider has no SMS consumer. Do not let message notifications
+     * occupy the bounded queue used by calls and registration changes. */
+    if (strncmp(line, "+CMT:", 5u) == 0 ||
+        strncmp(line, "+CMTI:", 6u) == 0 ||
+        strncmp(line, "+CDS:", 5u) == 0 ||
+        strncmp(line, "+CDSI:", 6u) == 0 ||
+        strncmp(line, "+CBM:", 5u) == 0)
+        return H2_PAL_OK;
     return modem != NULL ? h2_modem_urc_post(&modem->urc_worker, line) : H2_PAL_ERR_INVALID_ARG;
 }
 
