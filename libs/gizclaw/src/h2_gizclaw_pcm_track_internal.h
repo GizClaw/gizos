@@ -35,6 +35,7 @@ typedef struct h2_gizclaw_pcm_input {
   const h2_pal_mem_api_t *tail_allocator;
   size_t tail_len, tail_offset;
   bool active, ended, begun, tail_taken;
+  bool empty; /* Frozen at END for library-owned Tracks. */
 } h2_gizclaw_pcm_input_t;
 
 h2_pal_result_t h2_gizclaw_pcm_input_start(h2_gizclaw_pcm_input_t *input,

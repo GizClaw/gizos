@@ -7244,6 +7244,8 @@ static int conversation_test_send(void *user, gzc_event_stream_t *stream,
 static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                                         int timeout, gzc_peer_event_t *event) {
   conversation_test_t *test = user;
+  if (test->mode == 28u)
+    return GZC_ERR_WOULD_BLOCK;
   (void)timeout;
   assert(stream == (gzc_event_stream_t *)test);
   if (atomic_load(&test->audio_bos) && !atomic_load(&test->input_ack)) {
@@ -8015,7 +8017,7 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
 }
 
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 28; ++mode) {
+  for (unsigned mode = 0; mode < 29; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_log_capture_t log_capture = {.service = service};
@@ -8060,7 +8062,7 @@ static void test_conversation_public_audio_tasks(void) {
         .write = conversation_test_track_write};
     h2_gizclaw_track_t track = {.user = &test, .vtable = &track_vt};
     h2_gizclaw_track_t *owned_track = NULL;
-    if (mode == 17u || mode == 20u) {
+    if (mode == 17u || mode == 20u || mode == 28u) {
       const h2_gizclaw_pcm_track_config_t config = {
           .allocator = service->client_config.allocator,
           .uplink_capacity = 8192u,
@@ -8068,7 +8070,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(h2_gizclaw_pcm_track_create(&config, &owned_track) == H2_PAL_OK);
       test.owned_track = owned_track;
     }
-    if (mode == 17u) {
+    if (mode == 17u || mode == 28u) {
       const uint8_t stale[2] = {0xff, 0xee};
       assert(h2_gizclaw_pcm_track_write(owned_track, stale, sizeof(stale)) ==
              H2_PAL_OK);
@@ -8113,6 +8115,14 @@ static void test_conversation_public_audio_tasks(void) {
       for (size_t i = 0u; i < sizeof(pcm); ++i)
         pcm[i] = (uint8_t)(i % 127u);
       assert(h2_gizclaw_pcm_track_write(owned_track, pcm, sizeof(pcm)) ==
+             H2_PAL_OK);
+    }
+    if (mode == 28u) {
+      /* No PCM in this window: neither stale nor post-END bytes count.
+       * The server never replies; control EOS must still complete locally. */
+      assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+      const uint8_t later[2] = {0x32, 0x71};
+      assert(h2_gizclaw_pcm_track_write(owned_track, later, sizeof(later)) ==
              H2_PAL_OK);
     }
     atomic_store(&test.connect_gate, true);
@@ -8243,10 +8253,14 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.audio_bos_attempts == 4u && test.packets > 0u);
       assert(atomic_load(&test.audio_eos) && atomic_load(&test.eos));
     }
-    if (mode == 26) {
+    if (mode == 26 || mode == 28) {
       assert(test.sent_sequence == 2u && test.packets == 0u);
       assert(atomic_load(&test.eos) && !atomic_load(&test.canceled));
       assert(!atomic_load(&test.audio_bos) && !atomic_load(&test.input_ack));
+    }
+    if (mode == 28) {
+      assert(test.reply_events == 0u && test.audio_started == 0u);
+      assert(atomic_load(&test.written) == 0u);
     }
     if (mode == 25) {
       assert(atomic_load(&log_capture.worker_errors) == 1u);
