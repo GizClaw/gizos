@@ -127,6 +127,9 @@ struct h2_gizclaw_conversation_downlink {
   atomic_size_t bytes;
   /* Chunks written to the Track: the Session's sign that sound arrived. */
   atomic_size_t pcm_writes;
+  /* Set by a push-to-talk press: downstream audio is dropped until the next
+   * downstream audio BOS. */
+  atomic_bool waiting_for_bos;
 };
 
 struct h2_gizclaw_conversation {
@@ -436,10 +439,10 @@ static void downlink_release(h2_gizclaw_service_t *service) {
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
 }
 
-/* Received downstream audio. While audio play or Speech owns the Track the
- * packet is dropped (OK); a full ring refuses it with WOULD_BLOCK and the
- * provider drops it, so a stalled speaker loses audio instead of delaying
- * it. */
+/* Received downstream audio. While audio play or Speech owns the Track, or
+ * waiting_for_bos is set by a press, the packet is dropped (OK); a full ring
+ * refuses it with WOULD_BLOCK and the provider drops it, so a stalled speaker
+ * loses audio instead of delaying it. */
 h2_pal_result_t
 h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
                                     const uint8_t *opus, size_t opus_len) {
@@ -450,6 +453,10 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
   h2_gizclaw_conversation_downlink_t *downlink = downlink_acquire(service);
   if (downlink == NULL)
     return H2_PAL_OK;
+  if (atomic_load_explicit(&downlink->waiting_for_bos, memory_order_acquire)) {
+    downlink_release(service);
+    return H2_PAL_OK;
+  }
   h2_gizclaw_conversation_request_message_t message = {
       .kind = H2_GIZCLAW_AUDIO_MESSAGE_OPUS, .len = opus_len};
   if (opus_len != 0u)
@@ -466,6 +473,16 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
 }
 
 #if defined(H2_GIZCLAW_TESTING)
+size_t h2_gizclaw_test_downlink_frames(h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return 0u;
+  const size_t frames = atomic_load(&downlink->frames);
+  downlink_release(service);
+  return frames;
+}
+
 bool h2_gizclaw_test_audio_rings(void) {
   uint8_t pcm_storage[8] = {0};
   h2_gizclaw_pcm_ring_t pcm = {
@@ -748,8 +765,20 @@ void h2_gizclaw_conversation_downlink_step_internal(
   downlink_release(service);
 }
 
+/* Pressing push-to-talk: drop downstream audio until the next downstream
+ * audio BOS. */
+void h2_gizclaw_conversation_downlink_hold_internal(
+    h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return;
+  atomic_store_explicit(&downlink->waiting_for_bos, true, memory_order_release);
+  downlink_release(service);
+}
+
 /* Releasing push-to-talk: drop everything buffered so far, queued Opus,
- * the half-decoded packet and the Track's unplayed PCM. Later audio plays. */
+ * the half-decoded packet and the Track's unplayed PCM. */
 void h2_gizclaw_conversation_downlink_flush_internal(
     h2_gizclaw_service_t *service) {
   bool track = false;
@@ -771,6 +800,18 @@ void h2_gizclaw_conversation_downlink_flush_internal(
       h2_gizclaw_service_pcm_discard_downlink_internal(service);
     (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
   }
+  downlink_release(service);
+}
+
+/* The server announced a downstream audio stream: its audio plays. */
+void h2_gizclaw_conversation_downlink_bos_internal(
+    h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return;
+  atomic_store_explicit(&downlink->waiting_for_bos, false,
+                        memory_order_release);
   downlink_release(service);
 }
 
@@ -800,6 +841,7 @@ downlink_create(h2_gizclaw_service_t *service,
   atomic_init(&downlink->frames, 0u);
   atomic_init(&downlink->bytes, 0u);
   atomic_init(&downlink->pcm_writes, 0u);
+  atomic_init(&downlink->waiting_for_bos, false);
   const h2_pal_mutex_config_t lock_config = {
       .name = "$gizclaw/downlink", .allocator = allocator};
   h2_pal_result_t rc = h2_pal_mutex_create(service->config.sync, &lock_config,
@@ -911,6 +953,19 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event) {
   return accepts_peer_event(conversation, event);
+}
+
+bool h2_gizclaw_conversation_downstream_audio_bos_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event) {
+  /* Only audio streams count: text and transcript streams open their own
+   * BOS, and our own input's BOS is not downstream. */
+  return event != NULL &&
+         event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
+         event->payload.bos.kind ==
+             gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO &&
+         strcmp(event->payload.bos.label,
+                H2_GIZCLAW_CONVERSATION_INPUT_LABEL) != 0 &&
+         !(active != NULL && event_names_our_input(active, event));
 }
 
 void h2_gizclaw_conversation_describe_peer_event_internal(
@@ -1936,10 +1991,14 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
           &conversation->service_request->input_empty, memory_order_acquire);
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
-  /* Releasing the input clears what is buffered at that moment; whatever the
-   * server sends afterwards plays. */
-  if (rc == H2_PAL_OK && releasing && speech == NULL && conversation != NULL)
-    h2_gizclaw_conversation_downlink_flush_internal(service);
+  /* Pressing holds back downstream audio until the server starts a new
+   * stream; releasing clears what is buffered at that moment. */
+  if (rc == H2_PAL_OK && speech == NULL && conversation != NULL) {
+    if (start)
+      h2_gizclaw_conversation_downlink_hold_internal(service);
+    else if (releasing)
+      h2_gizclaw_conversation_downlink_flush_internal(service);
+  }
   return rc;
 }
 
