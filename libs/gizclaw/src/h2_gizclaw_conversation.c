@@ -18,6 +18,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Label on our own input boundaries; the server echoes it on their end. */
+#define H2_GIZCLAW_CONVERSATION_INPUT_LABEL "demo-home"
+
 #define H2_GIZCLAW_CONVERSATION_OPUS_UPLINK_RING_ITEMS 8u
 #define H2_GIZCLAW_CONVERSATION_OPUS_DOWNLINK_RING_ITEMS 32u
 /* Decoded chunks one downlink wake may push into the Track. */
@@ -111,6 +114,11 @@ struct h2_gizclaw_conversation_request {
   atomic_size_t pcm_write_failures;
   atomic_size_t reply_frames;
   atomic_size_t reply_bytes;
+  /* Frames queued before the downstream stream was replaced are stale: the
+   * decoder drops them and clears the Track when it crosses this mark. */
+  atomic_size_t discard_frames_before;
+  atomic_bool discard_downlink_pending;
+  size_t decoded_frames;
   h2_gizclaw_operation_result_t operation_result;
   char terminal_error_code[65];
   bool terminal_retryable;
@@ -129,10 +137,13 @@ struct h2_gizclaw_conversation_request {
   bool reply_interrupted;
 };
 
+/* One downstream stream as seen on the wire. The server owns its ID; it has
+ * no relation to our input stream ID. */
 typedef struct conversation_reply_route {
   // Server reply IDs are protocol-owned, not bounded by our input ID limit.
   char id[sizeof(((gzc_peer_event_t *)0)->payload.bos.stream_id)];
-  bool text_open, audio_ended, ended;
+  char label[sizeof(((gzc_peer_event_t *)0)->payload.bos.label)];
+  bool audio_open, audio_seen, audio_ended, ended;
 } conversation_reply_route_t;
 
 _Static_assert(
@@ -160,7 +171,11 @@ struct h2_gizclaw_conversation {
   uint64_t generation;
   char workspace_name[H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES + 1u];
   char stream_id[H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
-  conversation_reply_route_t response, transcript, assistant;
+  /* Upstream and downstream each have exactly one active stream. downstream
+   * is whatever the server is currently sending us; a BOS with a new ID
+   * replaces it and the old ID is ignored from then on. transcript is the
+   * server's recognition of our own input and travels under our input ID. */
+  conversation_reply_route_t downstream, transcript;
   uint64_t sequence;
   bool bos_sent;
   bool audio_bos_requested;
@@ -614,6 +629,19 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request,
     if (opus_decoder_init(request->decoder, 16000, 1) != OPUS_OK)
       return H2_PAL_ERR_FORMAT;
   }
+  /* The downstream stream was replaced: everything queued or decoded up to
+   * the mark belongs to the old stream. Drop it, and drop whatever the old
+   * stream already had in the Track, exactly once. */
+  if (atomic_load_explicit(&request->discard_downlink_pending,
+                           memory_order_acquire) &&
+      request->decoded_frames >= atomic_load_explicit(
+                                     &request->discard_frames_before,
+                                     memory_order_acquire)) {
+    request->decoded_offset = request->decoded_len;
+    h2_gizclaw_service_pcm_discard_downlink_internal(request->service);
+    atomic_store_explicit(&request->discard_downlink_pending, false,
+                          memory_order_release);
+  }
   if (request->decoded_offset == request->decoded_len) {
     *stage = "opus_dequeue";
     h2_gizclaw_conversation_request_message_t input;
@@ -626,6 +654,13 @@ conversation_decode_step(h2_gizclaw_conversation_request_t *request,
     }
     if (input.kind != H2_GIZCLAW_AUDIO_MESSAGE_OPUS)
       return H2_PAL_ERR_FORMAT;
+    ++request->decoded_frames;
+    if (atomic_load_explicit(&request->discard_downlink_pending,
+                             memory_order_acquire) &&
+        request->decoded_frames <= atomic_load_explicit(
+                                       &request->discard_frames_before,
+                                       memory_order_acquire))
+      return H2_PAL_OK; /* Stale frame of the replaced stream. */
 
     /* A zero-length item is the transport's RTP loss marker: ask Opus for
      * packet loss concealment over one packet's worth of samples. */
@@ -795,31 +830,57 @@ static bool stream_id_matches(const char *actual, const char *expected) {
           actual[expected_len] == ':');
 }
 
+static bool event_is_audio_boundary(const gzc_peer_event_t *event) {
+  return (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
+          event->payload.bos.kind ==
+              gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO) ||
+         (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS &&
+          event->payload.eos.kind ==
+              gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO);
+}
+
+/* Events that describe the server's view of our upstream: the recognised
+ * transcript, and READY, the echoed end or the rejection of our own input
+ * (our input stream ID with the label we sent, or without audio kind).
+ * Everything else is downstream, even under our input's ID: a server is
+ * free to reuse that ID for its own audio stream. Exact match only: a
+ * server stream is also free to look like "<input>:something". */
+static bool event_is_upstream_side(const h2_gizclaw_conversation_t *conversation,
+                                   const gzc_peer_event_t *event) {
+  const char *label = peer_event_label(event);
+  const char *id = peer_event_stream_id(event);
+  if (label != NULL && strcmp(label, "transcript") == 0)
+    return true;
+  if (id == NULL || conversation->stream_id[0] == '\0' ||
+      strcmp(id, conversation->stream_id) != 0)
+    return false;
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS)
+    return false;
+  if (!event_is_audio_boundary(event))
+    return true;
+  return label == NULL || label[0] == '\0' ||
+         strcmp(label, H2_GIZCLAW_CONVERSATION_INPUT_LABEL) == 0;
+}
+
 static conversation_reply_route_t *
 conversation_reply_route(h2_gizclaw_conversation_t *conversation,
                          const gzc_peer_event_t *event) {
-  const char *label = peer_event_label(event);
-  if (label != NULL && strcmp(label, "transcript") == 0)
-    return &conversation->transcript;
-  if (label != NULL && strcmp(label, "assistant") == 0)
-    return &conversation->assistant;
-  return &conversation->response;
+  return event_is_upstream_side(conversation, event) ? &conversation->transcript
+                                                     : &conversation->downstream;
 }
 
-/* Server-side barge-in: the user spoke over this reply and the server cut it
- * short. While the input is still open the server already produces the next
- * reply, so the interrupted one ends with REPLY_DONE like any VAD reply; the
- * service discards its queued playback. Once the input is committed
- * (push-to-talk) no further reply can follow in this generation, so an
- * interrupted reply keeps the error semantics and ends the conversation. */
+/* Server-side barge-in: the user spoke over the downstream audio and the
+ * server cut it short. While our input is still open (realtime) that is a
+ * normal end and the service discards its queued playback. Once the input is
+ * committed (push-to-talk) it keeps the error semantics. */
 static bool reply_interruptible(const h2_gizclaw_conversation_t *conversation,
                                 const conversation_reply_route_t *route) {
-  return !conversation->committed && route != &conversation->transcript;
+  return !conversation->committed && route == &conversation->downstream;
 }
 
 static void finish_interrupted_reply(h2_gizclaw_conversation_t *conversation,
                                      conversation_reply_route_t *route) {
-  route->text_open = false;
+  route->audio_open = false;
   route->audio_ended = true;
   route->ended = true;
   conversation->terminal_pending = true;
@@ -827,6 +888,12 @@ static void finish_interrupted_reply(h2_gizclaw_conversation_t *conversation,
   conversation->reply_interrupted = true;
 }
 
+/* Upstream and downstream each have one active stream, and only audio
+ * carries state. Text events are forwarded for display but never gate
+ * anything: there are no subtitles to wait for. Streaming is lossy and
+ * unordered at the edges, so be lenient: a new downstream audio ID replaces
+ * the active one (its stragglers are ignored), a duplicate EOS is harmless,
+ * and an EOS for an audio stream we never saw is nothing to act on. */
 static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
                                const gzc_peer_event_t *event) {
   if (conversation == NULL || event == NULL)
@@ -838,72 +905,84 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
            memchr(id, '\0', sizeof(event->payload.audio_input_ready.stream_id)) != NULL &&
            strcmp(id, conversation->stream_id) == 0;
   }
-  conversation_reply_route_t *route =
-      conversation_reply_route(conversation, event);
   const char *id = peer_event_stream_id(event);
-  const char *id_end = id != NULL ? memchr(id, '\0', sizeof(route->id)) : NULL;
-  if (id != NULL && (id_end == NULL || id_end == id))
+  if (id == NULL)
     return false;
-  if (h2_gizclaw_client_stream_retired_internal(conversation->client, id))
+  const char *id_end = memchr(id, '\0', sizeof(conversation->downstream.id));
+  if (id_end == NULL || id_end == id)
     return false;
-  /* A new input must not adopt delayed replies from the canceled input
-   * while awaiting its READY. Only events explicitly naming this input can
-   * precede that barrier (including early input rejection). Server-assigned
-   * response IDs remain valid after READY. */
-  if (conversation->stream_id[0] != '\0' &&
-      !conversation->input_ready && !conversation->committed &&
-      !stream_id_matches(id, conversation->stream_id))
-    return false;
-  /* READY is an input barrier, not proof that an arbitrary response belongs
-   * to this input. In particular, a canceled reply's late EOS must not pin
-   * an empty route. Direct input errors may still name our input stream. */
-  if (route->id[0] == '\0' &&
-      event->type != gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
-      (id == NULL || strcmp(id, conversation->stream_id) != 0))
-    return false;
-  if (route->ended) {
-    /* A completed response cannot be reopened by a duplicate EOS or delayed
-     * text. A new server-side VAD turn announces a distinct route with BOS. */
-    if (event->type != gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS ||
-        id == NULL || strcmp(id, route->id) == 0)
+  const size_t id_len = (size_t)(id_end - id);
+  const char *label = peer_event_label(event);
+
+  if (event_is_upstream_side(conversation, event)) {
+    /* Our input's own boundaries and transcript: always consumed. */
+    conversation_reply_route_t *route = &conversation->transcript;
+    if (route->id[0] == '\0' || !stream_id_matches(id, route->id)) {
+      memset(route, 0, sizeof(*route));
+      memcpy(route->id, id, id_len + 1u);
+    }
+    if (label != NULL)
+      (void)snprintf(route->label, sizeof(route->label), "%s", label);
+    if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS)
+      route->ended = true;
+    return true;
+  }
+  if (!event_is_audio_boundary(event)) {
+    /* Text and other non-audio downstream events: forward, no state. */
+    return true;
+  }
+
+  conversation_reply_route_t *route = &conversation->downstream;
+  const bool same = route->id[0] != '\0' && stream_id_matches(id, route->id);
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    if (!same) {
+      /* A new downstream audio stream replaces the active one; whatever the
+       * old one still has queued or playing is stale. Close the media gate
+       * first so the mark covers everything the old stream managed to queue;
+       * the new BOS reopens it. */
+      h2_gizclaw_conversation_request_t *request = conversation->service_request;
+      if (route->id[0] != '\0' && route->audio_open && request != NULL) {
+        atomic_store_explicit(&request->reply_media_open, false,
+                              memory_order_release);
+        atomic_store_explicit(
+            &request->discard_frames_before,
+            atomic_load_explicit(&request->reply_frames, memory_order_acquire),
+            memory_order_release);
+        atomic_store_explicit(&request->discard_downlink_pending, true,
+                              memory_order_release);
+      }
+      memset(route, 0, sizeof(*route));
+      memcpy(route->id, id, id_len + 1u);
+    }
+    if (label != NULL && label[0] != '\0')
+      (void)snprintf(route->label, sizeof(route->label), "%s", label);
+    route->audio_open = true;
+    route->audio_seen = true;
+    route->audio_ended = false;
+    route->ended = false;
+    return true;
+  }
+  /* EOS of the active audio stream ends the turn. A duplicate end, a
+   * straggler from a replaced stream and the end of a stream we never
+   * played carry nothing to act on, errors included. One exception: with
+   * no downstream audio active, a server that answers under our input's
+   * own ID closes an audio-less turn with that EOS; bind it so the
+   * boundary is dispatched as the turn's end. */
+  if (same) {
+    if (route->ended)
       return false;
-    h2_gizclaw_client_retire_stream_internal(conversation->client, route->id);
-    memset(route, 0, sizeof(*route));
-  } else if (event->type ==
-                 gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
-             id != NULL && route->id[0] != '\0' &&
-             !stream_id_matches(id, route->id) &&
-             reply_interruptible(conversation, route)) {
-    /* The next reply starts before this one ended: the server interrupted
-     * it. Finish it here so the new reply's first BOS pins the route instead
-     * of being dropped; the late EOS of the old reply no longer matches. */
-    finish_interrupted_reply(conversation, route);
-    h2_gizclaw_client_retire_stream_internal(conversation->client, route->id);
-    memset(route, 0, sizeof(*route));
-  }
-  /* Once a reply is pinned, match that route, not the parent input prefix:
-   * input:turn-1 and input:turn-2 are different VAD responses. */
-  if (id != NULL && route->id[0] != '\0' && !stream_id_matches(id, route->id))
+  } else if ((route->id[0] != '\0' && !route->ended) ||
+             strcmp(id, conversation->stream_id) != 0) {
     return false;
-  if (id != NULL && route->id[0] == '\0')
-    memcpy(route->id, id, (size_t)(id_end - id) + 1u);
-  if ((event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
-       event->payload.bos.kind ==
-           gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT) ||
-      event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA)
-    route->text_open = true;
-  if (event->type ==
-      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE) {
-    route->text_open = false;
-    /* Successful transcript streams end with TEXT_DONE, not audio EOS. */
-    route->ended = route->audio_ended || route == &conversation->transcript;
+  } else {
+    memset(route, 0, sizeof(*route));
+    memcpy(route->id, id, id_len + 1u);
+    if (label != NULL && label[0] != '\0')
+      (void)snprintf(route->label, sizeof(route->label), "%s", label);
   }
-  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS) {
-    if (route->audio_ended && !event->payload.eos.has_error)
-      return false;
-    route->audio_ended = true;
-    route->ended = !route->text_open || event->payload.eos.has_error;
-  }
+  route->audio_open = false;
+  route->audio_ended = true;
+  route->ended = true;
   return true;
 }
 
@@ -931,8 +1010,8 @@ void h2_gizclaw_conversation_describe_peer_event_internal(
     return;
   }
   const conversation_reply_route_t *route =
-      conversation_reply_route((h2_gizclaw_conversation_t *)conversation,
-                               event);
+      event_is_upstream_side(conversation, event) ? &conversation->transcript
+                                                  : &conversation->downstream;
   const char *label = peer_event_label(event);
   const char *id = peer_event_stream_id(event);
   (void)snprintf(
@@ -1019,7 +1098,7 @@ static int send_boundary(h2_gizclaw_conversation_t *conversation, bool end,
         ? gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO
         : gizclaw_events_v1_StreamKind_STREAM_KIND_UNSPECIFIED;
     (void)snprintf(event.payload.bos.label, sizeof(event.payload.bos.label),
-                   "%s", "demo-home");
+                   "%s", H2_GIZCLAW_CONVERSATION_INPUT_LABEL);
     (void)snprintf(event.payload.bos.mime_type,
                    sizeof(event.payload.bos.mime_type), "%s", audio ? "audio/opus" : "");
   } else {
@@ -1034,7 +1113,7 @@ static int send_boundary(h2_gizclaw_conversation_t *conversation, bool end,
         ? gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO
         : gizclaw_events_v1_StreamKind_STREAM_KIND_UNSPECIFIED;
     (void)snprintf(event.payload.eos.label, sizeof(event.payload.eos.label),
-                   "%s", "demo-home");
+                   "%s", H2_GIZCLAW_CONVERSATION_INPUT_LABEL);
     (void)snprintf(event.payload.eos.mime_type,
                    sizeof(event.payload.eos.mime_type), "%s", audio ? "audio/opus" : "");
     if (error_code != NULL) {
@@ -1158,18 +1237,6 @@ int h2_gizclaw_conversation_wire_finish_input_internal(
   return rc;
 }
 
-/* The input stream's own end can reach the device before the assistant reply
- * it produced: translation finishes its transcript, closes the input stream
- * and only then streams the translated reply. While an assistant reply that
- * has begun is still open, only that reply's end finishes the turn. */
-static bool assistant_reply_open_elsewhere(
-    const h2_gizclaw_conversation_t *conversation,
-    const conversation_reply_route_t *route) {
-  return route != &conversation->assistant &&
-         conversation->assistant.id[0] != '\0' &&
-         !conversation->assistant.ended;
-}
-
 static void copy_text(char *out, size_t capacity, const char *text,
                       size_t *out_len) {
   size_t len = 0u;
@@ -1234,28 +1301,17 @@ int h2_gizclaw_conversation_wire_poll_internal(
     out_event->kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE;
     out_event->text = conversation->text;
     out_event->text_len = text_len;
-    if (conversation_reply_route(conversation, &event)->audio_ended &&
-        strcmp(event.payload.text_done.label, "transcript") != 0 &&
-        !assistant_reply_open_elsewhere(
-            conversation, conversation_reply_route(conversation, &event))) {
-      conversation->terminal_pending = true;
-      conversation->reply_interrupted = false;
-    }
+    /* Text is display only; the turn ends with the downstream audio. */
     return H2_PAL_OK;
   case gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS:
-    /* Recognition and assistant output are separate logical streams. A
-     * successful transcript boundary does not finish the assistant reply. */
+    /* Only the active downstream audio stream ending finishes a turn. Our
+     * own input's EOS, a transcript and text streams carry no state; an
+     * error on any of them is still terminal. accepts_peer_event() already
+     * bound the stream, so compare against the ID it recorded. */
     if (!event.payload.eos.has_error &&
-        strcmp(event.payload.eos.label, "transcript") == 0)
-      return H2_PAL_OK;
-    /* Audio and text may finish in either order on the same assistant route. */
-    if (!event.payload.eos.has_error &&
-        conversation_reply_route(conversation, &event)->text_open)
-      return H2_PAL_OK;
-    /* The input stream ended before the assistant reply finished streaming. */
-    if (!event.payload.eos.has_error &&
-        assistant_reply_open_elsewhere(
-            conversation, conversation_reply_route(conversation, &event)))
+        (!event_is_audio_boundary(&event) ||
+         strcmp(event.payload.eos.label, "transcript") == 0 ||
+         strcmp(event.payload.eos.stream_id, conversation->downstream.id) != 0))
       return H2_PAL_OK;
     if (event.payload.eos.has_error &&
         strcmp(event.payload.eos.error.code,
@@ -1298,14 +1354,6 @@ void h2_gizclaw_conversation_wire_destroy_internal(
   if (conversation == NULL)
     return;
   conversation_wire_cancel(conversation);
-  h2_gizclaw_client_retire_stream_internal(conversation->client,
-                                           conversation->stream_id);
-  h2_gizclaw_client_retire_stream_internal(conversation->client,
-                                           conversation->response.id);
-  h2_gizclaw_client_retire_stream_internal(conversation->client,
-                                           conversation->transcript.id);
-  h2_gizclaw_client_retire_stream_internal(conversation->client,
-                                           conversation->assistant.id);
   h2_gizclaw_client_conversation_release_internal(conversation->client,
                                                   conversation);
   conversation->client = NULL;
@@ -1824,6 +1872,9 @@ static h2_pal_result_t conversation_generation_start(
   atomic_init(&request->committed, false);
   atomic_init(&request->reply_audio_started, false);
   atomic_init(&request->reply_media_open, false);
+  atomic_init(&request->discard_frames_before, 0u);
+  atomic_init(&request->discard_downlink_pending, false);
+  request->decoded_frames = 0u;
   atomic_init(&request->playback_canceled, false);
   atomic_init(&request->input_empty, false);
   atomic_init(&request->wire_ready, false);

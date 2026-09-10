@@ -7340,7 +7340,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.bos.stream_id), "%s", id);
       snprintf(event->payload.bos.label, sizeof(event->payload.bos.label),
                "assistant");
-      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     } else if (stage == 1) {
       event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
       event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
@@ -7366,6 +7366,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.eos.stream_id), "%s", id);
       snprintf(event->payload.eos.label, sizeof(event->payload.eos.label),
                "assistant");
+      event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
       if (stage == 3) {
         event->payload.eos.has_error = true;
         snprintf(event->payload.eos.error.code,
@@ -7378,7 +7379,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
     unsigned stage = test->reply_events;
     bool second = stage >= 8;
     bool transcript = stage == 0 || stage == 1 || stage == 8 || stage == 9;
-    if (stage >= 15 || test->packets < (second ? 4u : 2u) ||
+    if (stage >= 15 || test->packets < (stage >= 11 ? 4u : 2u) ||
         atomic_load(&test->canceled) ||
         (stage == 14 && test->mode == 15 && !atomic_load(&test->eos)))
       return GZC_ERR_WOULD_BLOCK;
@@ -7399,7 +7400,9 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.bos.stream_id), "%s", id);
       snprintf(event->payload.bos.label, sizeof(event->payload.bos.label), "%s",
                label);
-      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+      event->payload.bos.kind = transcript
+          ? gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT
+          : gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     } else if (stage == 3) {
       event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
       event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
@@ -7430,6 +7433,8 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.eos.stream_id), "%s", id);
       snprintf(event->payload.eos.label, sizeof(event->payload.eos.label), "%s",
                label);
+      if (!transcript)
+        event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     }
     return GZC_OK;
   }
@@ -7537,6 +7542,11 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
   }
   if (test->pending_len != 0) {
     assert(atomic_load(&test->bos) && atomic_load(&test->input_ack));
+    /* A server sends audio only between its BOS and EOS: hold the second
+     * turn's packets until the second stream has opened (stage 10). */
+    if ((test->mode == 15 || test->mode == 16) && test->packets >= 2u &&
+        test->reply_events < 11u)
+      return H2_PAL_ERR_WOULD_BLOCK;
     h2_pal_result_t rc = h2_gizclaw_service_media_write_opus(
         test->service, test->pending, test->pending_len);
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
@@ -7614,29 +7624,23 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
       ++test->reply_text_ends;
     } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
       unsigned turn = atomic_load(&test->turns_done) + 1u;
-      assert(turn <= 2u);
-      /* Each reply announced its audio once, before its own boundary. */
-      assert(test->audio_started == turn);
-      if (turn == 1u) {
-        /* The interrupted reply: every first-burst chunk was decoded into
-         * the speaker Track, which now holds none of it. Both discards ran
-         * (the Track tail at staging, and the frames that drained behind the
-         * EOS marker at dispatch). */
-        uint8_t probe[2];
-        assert(h2_gizclaw_pcm_track_read(test->owned_track, probe,
-                                         sizeof(probe)) ==
-               H2_PAL_ERR_WOULD_BLOCK);
-      }
+      /* The replaced first stream never gets a boundary of its own; the
+       * one answer announced its audio once. The main loop checks that the
+       * Track holds exactly the second stream. */
+      assert(turn == 1u && test->audio_started == 1u);
       atomic_store(&test->turns_done, turn);
     }
     return H2_PAL_OK;
   }
   if (test->mode == 15 || test->mode == 16) {
     if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE) {
+      /* Text is independent of the audio stream: text of a replaced audio
+       * stream ("stale") is still delivered. */
       assert(
           event->text_len == 0u ||
           (event->text_len == 5u && (memcmp(event->text, "reply", 5u) == 0 ||
-                                     memcmp(event->text, "heard", 5u) == 0)));
+                                     memcmp(event->text, "heard", 5u) == 0 ||
+                                     memcmp(event->text, "stale", 5u) == 0)));
       if (event->text_len == 5u && memcmp(event->text, "heard", 5u) == 0)
         ++test->transcript_text_ends;
       else
@@ -7722,9 +7726,15 @@ static int conversation_test_join_task(void *user, h2_pal_task_t *task) {
   return h2_pal_task_join(h2_desktop_platform_task_api(), task);
 }
 
+static gzc_peer_event_t audio_boundary_event(int type, const char *label,
+                                             const char *id,
+                                             const char *code);
+
+/* Downstream audio stream IDs are the server's: any length up to the wire
+ * limit, compared byte for byte, never tied to our input. */
 static void test_conversation_reply_route_ids(void) {
   const size_t lengths[] = {1u, 63u, 64u, 127u, 128u};
-  const char *labels[] = {"", "assistant", "transcript"};
+  const char *labels[] = {"", "assistant", "voice"};
   for (size_t label = 0; label < 3u; ++label) {
     for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
       test_env_t env;
@@ -7735,9 +7745,10 @@ static void test_conversation_reply_route_ids(void) {
                  &conversation) == H2_PAL_OK);
       gzc_peer_event_t event = {0};
       event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+      event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
       snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
                labels[label]);
-      // Empty and non-terminated wire IDs must not pin a route.
+      // Empty and non-terminated wire IDs cannot open a stream.
       assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                   &event));
       memset(event.payload.bos.stream_id, 'x',
@@ -7748,24 +7759,24 @@ static void test_conversation_reply_route_ids(void) {
       assert(length < sizeof(event.payload.bos.stream_id));
       memset(event.payload.bos.stream_id, 'a', length);
       event.payload.bos.stream_id[length] = '\0';
-      event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
       assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                  &event));
       char id[sizeof(event.payload.bos.stream_id)];
       memcpy(id, event.payload.bos.stream_id, length + 1u);
+      // Text is independent of the audio stream and always forwarded.
       memset(&event, 0, sizeof(event));
       event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
-      snprintf(event.payload.text_delta.label,
-               sizeof(event.payload.text_delta.label), "%s", labels[label]);
-      memcpy(event.payload.text_delta.stream_id, id, length + 1u);
+      snprintf(event.payload.text_delta.stream_id,
+               sizeof(event.payload.text_delta.stream_id), "%s", "text-1");
       assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                  &event));
       memset(&event, 0, sizeof(event));
       event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+      event.payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
       snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
                labels[label]);
       memcpy(event.payload.eos.stream_id, id, length + 1u);
-      // IDs which differ only at the final byte must remain distinct.
+      // IDs which differ only at the final byte are different streams.
       event.payload.eos.stream_id[length - 1u] = 'b';
       assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                   &event));
@@ -7776,21 +7787,19 @@ static void test_conversation_reply_route_ids(void) {
                                                                   &event));
       memset(&event, 0, sizeof(event));
       event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
-      snprintf(event.payload.text_done.label,
-               sizeof(event.payload.text_done.label), "%s", labels[label]);
-      memcpy(event.payload.text_done.stream_id, id, length + 1u);
+      snprintf(event.payload.text_done.stream_id,
+               sizeof(event.payload.text_done.stream_id), "%s", "text-1");
       assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                  &event));
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      // A distinct BOS may start the next VAD turn after the completed reply.
+      assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                 &event));
+      // Any audio BOS starts the next stream, a reused ID included.
       memset(&event, 0, sizeof(event));
       event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
-      snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
-               labels[label]);
+      event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
       memcpy(event.payload.bos.stream_id, id, length + 1u);
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
+      assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                                 &event));
       event.payload.bos.stream_id[length - 1u] = 'b';
       assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                  &event));
@@ -7801,29 +7810,19 @@ static void test_conversation_reply_route_ids(void) {
   }
 }
 
-static gzc_peer_event_t barge_in_event(int type, const char *label,
-                                       const char *id, const char *code) {
+static gzc_peer_event_t audio_boundary_event(int type, const char *label,
+                                             const char *id,
+                                             const char *code) {
   gzc_peer_event_t event = {0};
   event.type = type;
   if (type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
              label);
     snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
              "%s", id);
-    event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
-  } else if (type ==
-             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
-    snprintf(event.payload.text_delta.label,
-             sizeof(event.payload.text_delta.label), "%s", label);
-    snprintf(event.payload.text_delta.stream_id,
-             sizeof(event.payload.text_delta.stream_id), "%s", id);
-  } else if (type ==
-             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE) {
-    snprintf(event.payload.text_done.label,
-             sizeof(event.payload.text_done.label), "%s", label);
-    snprintf(event.payload.text_done.stream_id,
-             sizeof(event.payload.text_done.stream_id), "%s", id);
   } else {
+    event.payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
              label);
     snprintf(event.payload.eos.stream_id, sizeof(event.payload.eos.stream_id),
@@ -7837,15 +7836,21 @@ static gzc_peer_event_t barge_in_event(int type, const char *label,
   return event;
 }
 
-/* Server-side barge-in: the next reply's BOS arrives while the previous
- * assistant route is still open. It must pin the new route instead of being
- * dropped, and the old reply's late EOS must no longer reach the app. */
+static gzc_peer_event_t text_bos_event(const char *label, const char *id) {
+  gzc_peer_event_t event = {0};
+  event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+  event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+  snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
+           label);
+  snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
+           "%s", id);
+  return event;
+}
+
+/* Server-side barge-in: a new audio BOS arrives while the active stream is
+ * still open. It replaces the stream; the old ID's late EOS is ignored. */
 static void test_conversation_barge_in_supersedes_open_reply(void) {
   static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
-  static const int DELTA =
-      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
-  static const int DONE =
-      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
   static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
   const char *labels[] = {"assistant", ""};
   for (size_t label = 0; label < 2u; ++label) {
@@ -7856,51 +7861,28 @@ static void test_conversation_barge_in_supersedes_open_reply(void) {
                service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
                &conversation) == H2_PAL_OK);
     const char *reply = labels[label];
-    gzc_peer_event_t event = barge_in_event(BOS, reply, "reply-1", NULL);
+    gzc_peer_event_t event = audio_boundary_event(BOS, reply, "reply-1", NULL);
     assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                &event));
-    event = barge_in_event(DELTA, reply, "reply-1", NULL);
+    // The transcript travels on the upstream side and never touches audio.
+    event = text_bos_event("transcript", "heard-1");
     assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                &event));
-    event = barge_in_event(DONE, reply, "reply-1", NULL);
+    event = text_bos_event("transcript", "heard-2");
     assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                &event));
-    // The user speaks again; the transcript route is independent.
-    event = barge_in_event(BOS, "transcript", "heard-1", NULL);
+    // A sub-stream of the active ID is the same stream.
+    event = audio_boundary_event(BOS, reply, "reply-1:audio", NULL);
     assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                &event));
-    // An open transcript is not superseded by another transcript BOS.
-    event = barge_in_event(BOS, "transcript", "heard-2", NULL);
+    // The next stream starts before reply-1 ended: reply-1 is replaced.
+    event = audio_boundary_event(BOS, reply, "reply-2", NULL);
+    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                               &event));
+    event = audio_boundary_event(EOS, reply, "reply-1", "STREAM_INTERRUPTED");
     assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                 &event));
-    // A sub-stream of the same reply is not a new reply.
-    event = barge_in_event(BOS, reply, "reply-1:audio", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    // The next reply starts before reply-1 ended: reply-1 is interrupted.
-    event = barge_in_event(BOS, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    assert(h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    // The old reply's late EOS and text no longer match the pinned route.
-    event = barge_in_event(EOS, reply, "reply-1", "STREAM_INTERRUPTED");
-    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                &event));
-    event = barge_in_event(DONE, reply, "reply-1", NULL);
-    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                &event));
-    event = barge_in_event(DELTA, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    event = barge_in_event(DONE, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    event = barge_in_event(EOS, reply, "reply-2", NULL);
+    event = audio_boundary_event(EOS, reply, "reply-2", NULL);
     assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                &event));
     assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
@@ -8212,8 +8194,8 @@ static void test_conversation_public_audio_tasks(void) {
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
-      } else if (mode == 20 && atomic_load(&test.turns_done) == 1u &&
-                 !input_ended) {
+      } else if (mode == 20 && test.reply_events >= 4u &&
+                 test.packets >= 12u && !input_ended) {
         /* The interrupted boundary was non-terminal: the second burst is
          * the next reply's audio, then the input ends (push-to-talk commit)
          * so its EOS becomes the terminal boundary. */
@@ -8300,7 +8282,7 @@ static void test_conversation_public_audio_tasks(void) {
     }
     if (mode == 15 || mode == 16) {
       assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 15u);
-      assert(test.reply_text_ends == 2u && test.transcript_text_ends == 2u);
+      assert(test.reply_text_ends == 4u && test.transcript_text_ends == 2u);
       assert(test.packets == 4u && atomic_load(&test.written) == 2560u);
       assert(test.audio_started == 2u && test.bos_attempts == 1u);
     }
@@ -8357,11 +8339,12 @@ static void test_conversation_public_audio_tasks(void) {
     if (mode == 11 || mode == 12)
       assert(test.audio_started == 0u);
     if (mode == 20) {
-      /* Both replies announced their audio; the speaker Track holds exactly
-       * the second reply, the interrupted first reply was discarded. */
-      assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 6u);
+      /* The second stream replaced the first one mid-air: one answer, no
+       * boundary for the replaced stream, and the speaker Track holds
+       * exactly the second stream because the first was discarded. */
+      assert(atomic_load(&test.turns_done) == 1u && test.reply_events == 6u);
       assert(test.reply_text_ends == 1u && test.packets == 16u);
-      assert(test.audio_started == 2u && test.result == H2_PAL_OK);
+      assert(test.audio_started == 1u && test.result == H2_PAL_OK);
       assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 4u * 640u) ==
              H2_PAL_OK);
       assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 2u) ==
