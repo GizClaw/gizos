@@ -55,6 +55,10 @@ void h2_quectel_post_system_event(
     const void *payload,
     size_t payload_size);
 
+h2_pal_result_t h2_quectel_state_lock(h2_quectel_modem_t *modem);
+void h2_quectel_state_unlock(h2_quectel_modem_t *modem);
+h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_t result);
+int h2_quectel_is_urc(const char *line, const char *command);
 h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_operation_end(h2_quectel_modem_t *modem, h2_pal_result_t result);
 h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t *modem);

@@ -54,6 +54,7 @@ static h2_pal_result_t h2_quectel_modem_prepare_impl(h2_quectel_modem_t *modem) 
     if (modem->prepared != 0u) {
         return H2_PAL_OK;
     }
+    const uint32_t reset_generation = modem->reset_generation;
     h2_pal_result_t rc = h2_quectel_at_exchange(modem, "AT", NULL, 0);
     if (rc != H2_PAL_OK) {
         return rc;
@@ -72,6 +73,9 @@ static h2_pal_result_t h2_quectel_modem_prepare_impl(h2_quectel_modem_t *modem) 
     rc = h2_quectel_power_prepare(modem);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    if (reset_generation != modem->reset_generation) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
     modem->prepared = 1u;
     h2_quectel_post_system_event(
@@ -115,6 +119,7 @@ static h2_pal_result_t h2_quectel_modem_get_status_impl(
     }
     out_status->sim = modem->sim_state;
 
+    const uint32_t registration_generation = modem->registration_generation;
     rc = h2_quectel_at_exchange(modem, "AT+CEREG?", &response, 0);
     if (rc != H2_PAL_OK) {
         rc = h2_quectel_at_exchange(modem, "AT+CREG?", &response, 0);
@@ -129,11 +134,24 @@ static h2_pal_result_t h2_quectel_modem_get_status_impl(
     out_status->registration = reg_line != NULL
         ? parse_registration_line(reg_line)
         : H2_PAL_MODEM_REGISTRATION_UNKNOWN;
+    if (registration_generation != modem->registration_generation) {
+        out_status->registration = modem->observed_status.registration;
+    }
 
+    if (modem->sim_seen != 0u && modem->sim_state != H2_PAL_MODEM_SIM_STATE_READY) {
+        out_status->registration = H2_PAL_MODEM_REGISTRATION_OFFLINE;
+    }
+    h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
+        out_status, sizeof(*out_status));
+
+    const uint32_t packet_generation = modem->packet_generation;
     rc = h2_quectel_at_exchange(modem, "AT+CGATT?", &response, 0);
     out_status->packet = rc == H2_PAL_OK
         ? parse_packet(h2_quectel_response_find(&response, "+CGATT:"))
         : H2_PAL_MODEM_PACKET_UNKNOWN;
+    if (packet_generation != modem->packet_generation) {
+        out_status->packet = modem->observed_status.packet;
+    }
     if (modem->data_status.state == H2_PAL_MODEM_DATA_OPEN) {
         out_status->packet = H2_PAL_MODEM_PACKET_CONNECTED;
     }
@@ -142,11 +160,7 @@ static h2_pal_result_t h2_quectel_modem_get_status_impl(
         out_status->registration = H2_PAL_MODEM_REGISTRATION_OFFLINE;
         out_status->packet = H2_PAL_MODEM_PACKET_DETACHED;
     }
-    h2_quectel_post_system_event(
-        modem,
-        H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
-        out_status,
-        sizeof(*out_status));
+    out_status->registration = modem->observed_status.registration;
     h2_quectel_post_system_event(
         modem,
         H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
@@ -167,6 +181,8 @@ static h2_pal_result_t h2_quectel_modem_get_identity_impl(
         return rc;
     }
     memset(out_identity, 0, sizeof(*out_identity));
+    const uint32_t reset_generation = modem->reset_generation;
+    const uint32_t sim_generation = modem->sim_generation;
     h2_quectel_response_t response;
     if (h2_quectel_at_exchange(modem, "AT+CGMI", &response, 0) == H2_PAL_OK && response.count > 0u) {
         h2_quectel_copy_token(out_identity->manufacturer, sizeof(out_identity->manufacturer), response.lines[0]);
@@ -182,6 +198,10 @@ static h2_pal_result_t h2_quectel_modem_get_identity_impl(
     }
     if (h2_quectel_at_exchange(modem, "AT+CIMI", &response, 0) == H2_PAL_OK && response.count > 0u) {
         h2_quectel_copy_token(out_identity->imsi, sizeof(out_identity->imsi), response.lines[0]);
+    }
+    if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+        memset(out_identity, 0, sizeof(*out_identity));
+        return H2_PAL_ERR_INVALID_STATE;
     }
     return out_identity->imei[0] != '\0' || out_identity->model[0] != '\0'
         ? H2_PAL_OK
@@ -255,12 +275,13 @@ h2_pal_result_t h2_quectel_modem_get_capabilities(
     h2_pal_modem_t *platform,
     uint32_t *out_capabilities) {
     h2_quectel_modem_t *modem_state = h2_quectel_from_platform(platform);
-    h2_pal_result_t rc = h2_quectel_operation_begin(modem_state);
+    h2_pal_result_t rc = h2_quectel_state_lock(modem_state);
     if (rc != H2_PAL_OK) {
         return rc;
     }
     rc = h2_quectel_modem_get_capabilities_impl(platform, out_capabilities);
-    return h2_quectel_operation_end(modem_state, rc);
+    h2_quectel_state_unlock(modem_state);
+    return rc;
 }
 
 h2_pal_result_t h2_quectel_modem_get_status(

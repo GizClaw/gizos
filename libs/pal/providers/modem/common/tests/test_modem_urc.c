@@ -166,6 +166,8 @@ typedef struct fixture {
     pthread_cond_t changed;
     int entered, released, received, rx_returned;
     int vendor, timeout;
+    const char *blocked_command;
+    int notify_reset;
     h2_quectel_modem_t quectel;
     h2_simcom_modem_t simcom;
     pthread_t caller;
@@ -234,6 +236,10 @@ static void test_queue_and_lifecycle(void) {
     assert(h2_modem_urc_post(&worker, "closed") == H2_PAL_ERR_CLOSED);
     fail_join = 0;
     assert(h2_modem_urc_stop(&worker) == H2_PAL_OK);
+    h2_modem_urc_stats_t stats;
+    assert(h2_modem_urc_get_stats(&worker, &stats) == H2_PAL_OK);
+    assert(stats.accepted == H2_MODEM_URC_QUEUE_SIZE + 1u);
+    assert(stats.handled == stats.accepted && stats.full == 1u && stats.truncated == 1u);
     assert(strcmp(f.lines[0], "first") == 0);
     for (unsigned i = 0u; i < H2_MODEM_URC_QUEUE_SIZE; ++i) {
         char expected[32];
@@ -256,8 +262,14 @@ static void test_queue_and_lifecycle(void) {
 
 static void *receive(void *user) {
     fixture_t *f = user;
+    if (f->vendor == 0) {
+        uint32_t capabilities = 0u;
+        h2_pal_modem_data_status_t status;
+        assert(h2_pal_modem_get_capabilities(&f->quectel.platform, &capabilities) == H2_PAL_OK);
+        assert(h2_pal_modem_get_data_status(&f->quectel.platform, &status) == H2_PAL_OK);
+    }
     h2_pal_result_t rc = f->vendor == 0
-        ? h2_quectel_post_urc_line(&f->quectel, "RING")
+        ? h2_quectel_post_urc_line(&f->quectel, f->notify_reset ? "RDY" : "RING")
         : h2_simcom_post_urc_line(&f->simcom, "RING");
     assert(rc == H2_PAL_OK);
     assert(pthread_mutex_lock(&f->mutex) == 0);
@@ -269,13 +281,17 @@ static void *receive(void *user) {
 static h2_pal_result_t command(void *user, const char *cmd, char *response, size_t size, uint32_t timeout) {
     fixture_t *f = user;
     (void)timeout;
-    if (strcmp(cmd, "AT+CSQ") == 0) {
+    if (strcmp(cmd, f->blocked_command != NULL ? f->blocked_command : "AT+CSQ") == 0) {
         pthread_t rx;
         assert(pthread_create(&rx, NULL, receive, f) == 0);
         /* AT is holding the provider lock. RX must return before this command
          * can finish, regardless of whether the URC worker got scheduled. */
         wait_value(f, &f->rx_returned, 1);
         assert(pthread_join(rx, NULL) == 0);
+        if (f->vendor == 0) {
+            /* Quectel must APPLY the URC before this AT wait completes. */
+            wait_value(f, &f->received, 1);
+        }
         if (f->timeout) { return H2_PAL_ERR_TIMEOUT; }
         snprintf(response, size, "+CSQ: 20,0\r\nOK\r\n");
     } else {
@@ -291,7 +307,8 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response, size
 static int post_event(void *user, const h2_pal_system_event_t *event, uint32_t timeout) {
     fixture_t *f = user;
     (void)timeout;
-    if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING) {
+    if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING ||
+        (f->notify_reset && event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_READY)) {
         assert(!pthread_equal(f->caller, pthread_self()));
         assert(pthread_mutex_lock(&f->mutex) == 0);
         f->received++;
@@ -333,7 +350,7 @@ static void test_provider_receive(void) {
             fail_join = 1;
             assert((vendor == 0 ? h2_quectel_modem_deinit(&f.quectel)
                                 : h2_simcom_modem_deinit(&f.simcom)) == H2_PAL_ERR_TASK);
-            assert(live_mutexes == 1u && live_tasks == 1u && live_queues == 1u);
+            assert(live_mutexes == (vendor == 0 ? 2u : 1u) && live_tasks == 1u && live_queues == 1u);
             fail_join = 0;
             assert((vendor == 0 ? h2_quectel_modem_deinit(&f.quectel)
                                 : h2_simcom_modem_deinit(&f.simcom)) == H2_PAL_OK);
@@ -342,8 +359,74 @@ static void test_provider_receive(void) {
     }
 }
 
+static void test_quectel_rx_storm(void) {
+    fixture_t fixture;
+    init_fixture(&fixture);
+    h2_pal_system_event_api_t events = {.user = &fixture, .vtable = &event_vtable};
+    h2_quectel_modem_config_t config = {
+        .transport_user = &fixture, .command = command, .sync_api = &sync_api,
+        .urc_task_api = &tasks, .urc_queue_api = &queues, .system_events = &events,
+    };
+    assert(h2_quectel_modem_init(&fixture.quectel, &config) == H2_PAL_OK);
+    h2_modem_rx_t receiver = {0};
+    const uint8_t response[] = "AT+CIMI\r\n001010000000000\r\nOK\r\n";
+    for (unsigned iteration = 0u; iteration < 1000u; iteration++) {
+        assert(h2_quectel_rx_feed(&fixture.quectel, &receiver, receiver.next_offset,
+            response, sizeof(response) - 1u, "AT+CIMI") == H2_PAL_OK);
+    }
+    h2_modem_urc_stats_t stats;
+    assert(h2_modem_urc_get_stats(&fixture.quectel.urc_worker, &stats) == H2_PAL_OK);
+    assert(stats.accepted == 0u && stats.full == 0u);
+    const uint8_t interleaved[] = "+CREG: 2,1\r\nRING\r\nRING\r\nOK\r\n";
+    uint64_t base = receiver.next_offset;
+    for (size_t length = 1u; length < sizeof(interleaved); length++) {
+        assert(h2_quectel_rx_feed(&fixture.quectel, &receiver, base,
+            interleaved, length, "AT+CREG?") == H2_PAL_OK);
+    }
+    wait_value(&fixture, &fixture.received, 2);
+    assert(h2_modem_urc_get_stats(&fixture.quectel.urc_worker, &stats) == H2_PAL_OK);
+    assert(stats.accepted == 2u && stats.full == 0u);
+    assert(h2_quectel_modem_deinit(&fixture.quectel) == H2_PAL_OK);
+    finish_fixture(&fixture);
+}
+
+static void test_identity_registration_progress(void) {
+    const char *commands[] = {"AT+CIMI", "AT+CEREG?", "AT+CIMI"};
+    for (size_t index = 0u; index < sizeof(commands) / sizeof(commands[0]); index++) {
+        fixture_t fixture;
+        init_fixture(&fixture);
+        fixture.blocked_command = commands[index];
+        fixture.timeout = 1;
+        h2_pal_system_event_api_t events = {.user = &fixture, .vtable = &event_vtable};
+        h2_quectel_modem_config_t config = {
+            .transport_user = &fixture, .command = command, .sync_api = &sync_api,
+            .urc_task_api = &tasks, .urc_queue_api = &queues, .system_events = &events,
+        };
+        assert(h2_quectel_modem_init(&fixture.quectel, &config) == H2_PAL_OK);
+        assert(h2_pal_modem_open(&fixture.quectel.platform, 0u) == H2_PAL_OK);
+        fixture.notify_reset = index == 2u;
+        if (index != 1u) {
+            h2_pal_modem_identity_t identity;
+            assert(h2_pal_modem_get_identity(&fixture.quectel.platform, &identity) ==
+                (fixture.notify_reset ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK));
+            assert(identity.imsi[0] == '\0');
+            if (fixture.notify_reset) {
+                assert(identity.imei[0] == '\0' && identity.model[0] == '\0');
+            }
+        } else {
+            h2_pal_modem_status_t status;
+            assert(h2_pal_modem_get_status(&fixture.quectel.platform, &status) == H2_PAL_OK);
+        }
+        wait_value(&fixture, &fixture.received, 1);
+        assert(h2_quectel_modem_deinit(&fixture.quectel) == H2_PAL_OK);
+        finish_fixture(&fixture);
+    }
+}
+
 int main(void) {
     test_queue_and_lifecycle();
     test_provider_receive();
+    test_quectel_rx_storm();
+    test_identity_registration_progress();
     return 0;
 }
