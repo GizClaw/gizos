@@ -91,6 +91,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//projects/h2loader/apps/loader/app:ble_tasks",
         "//projects/h2loader/apps/loader/app:tasks",
         ":ap_launcher_component",
         ":firmware_lib",

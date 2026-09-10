@@ -12,8 +12,12 @@ h2_tasks(
     name = "tasks",
     tasks = [
         "h2loader/appcmd",
-        "h2loader/blecmd",
     ],
+)
+
+h2_tasks(
+    name = "ble_tasks",
+    tasks = ["h2loader/blecmd"],
 )
 
 cc_library(
@@ -83,6 +87,7 @@ cc_library(
         "manual",
     ],
     deps = [
+        ":ble_tasks",
         ":tasks",
         "//libs/bleikcp",
         "//libs/command",
