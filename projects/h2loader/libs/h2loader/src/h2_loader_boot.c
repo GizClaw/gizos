@@ -876,6 +876,7 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
       config->power == NULL || config->h2loader_partition_id == 0u ||
       config->app_partition_id == 0u ||
       config->h2loader_partition_id == config->app_partition_id ||
+      config->mfg_required_total > H2_LOADER_MFG_STEP_MAX ||
       config->hardware_capabilities == 0u ||
       (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u ||
       !identity_valid(&config->active_identity)) {

@@ -27,7 +27,8 @@ extern "C" {
 #define H2_H2LOADER_HOST_WIFI_SCAN_DEFAULT_TIMEOUT_MS 10000u
 #define H2_H2LOADER_HOST_WIFI_SCAN_MAX_TIMEOUT_MS 30000u
 #define H2_H2LOADER_HOST_RELIABLE_SERIAL_BAUD 460800u
-#define H2_H2LOADER_HOST_MFG_STEP_TOTAL 22u
+/** Upper bound for the device-reported `mfg_steps` digit count (1..MAX). */
+#define H2_H2LOADER_HOST_MFG_STEP_MAX 32u
 #define H2_H2LOADER_HOST_CAPABILITY_UART (UINT32_C(1) << 0)
 #define H2_H2LOADER_HOST_CAPABILITY_WIFI (UINT32_C(1) << 1)
 #define H2_H2LOADER_HOST_CAPABILITY_BLE (UINT32_C(1) << 2)
@@ -110,7 +111,10 @@ typedef struct h2_h2loader_host_status {
     h2_h2loader_host_active_role_t active_role;
     h2_h2loader_host_boot_intent_t boot_intent;
     uint32_t mfg_mode;
-    uint8_t mfg_steps[H2_H2LOADER_HOST_MFG_STEP_TOTAL];
+    /** Parsed `mfg_steps` digit count, 1..H2_H2LOADER_HOST_MFG_STEP_MAX. */
+    uint32_t mfg_step_total;
+    /** Per-step status 0..3; entries at index >= mfg_step_total are zero. */
+    uint8_t mfg_steps[H2_H2LOADER_HOST_MFG_STEP_MAX];
     uint32_t capabilities;
     uint32_t command_availability;
     uint32_t running_partition;
@@ -124,6 +128,10 @@ uint32_t h2_h2loader_host_status_boot_intent(
     const h2_h2loader_host_status_t *status);
 uint32_t h2_h2loader_host_status_mfg_mode(
     const h2_h2loader_host_status_t *status);
+/** Returns the parsed MFG step count, or 0 when status is null. */
+uint32_t h2_h2loader_host_status_mfg_step_total(
+    const h2_h2loader_host_status_t *status);
+/** Returns step index status, or UINT32_MAX when index >= step total. */
 uint32_t h2_h2loader_host_status_mfg_step(
     const h2_h2loader_host_status_t *status,
     uint32_t index);

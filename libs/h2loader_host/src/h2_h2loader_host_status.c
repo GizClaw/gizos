@@ -321,9 +321,14 @@ uint32_t h2_h2loader_host_status_boot_intent(const h2_h2loader_host_status_t *st
 uint32_t h2_h2loader_host_status_mfg_mode(const h2_h2loader_host_status_t *status) {
     return status == NULL ? 0u : status->mfg_mode;
 }
+uint32_t h2_h2loader_host_status_mfg_step_total(
+    const h2_h2loader_host_status_t *status) {
+    return status == NULL ? 0u : status->mfg_step_total;
+}
 uint32_t h2_h2loader_host_status_mfg_step(
     const h2_h2loader_host_status_t *status, uint32_t index) {
-    return status == NULL || index >= H2_H2LOADER_HOST_MFG_STEP_TOTAL
+    return status == NULL || index >= status->mfg_step_total ||
+            index >= H2_H2LOADER_HOST_MFG_STEP_MAX
         ? UINT32_MAX : status->mfg_steps[index];
 }
 
@@ -388,9 +393,10 @@ static h2_pal_result_t parse_status_v2(
         !parse_u32(value, len, &out_status->mfg_mode) ||
         (out_status->mfg_mode != 1u && out_status->mfg_mode != 2u) ||
         !take_field(&cursor, "mfg_steps", &value, &len) ||
-        len != H2_H2LOADER_HOST_MFG_STEP_TOTAL) {
+        len == 0u || len > H2_H2LOADER_HOST_MFG_STEP_MAX) {
         return H2_PAL_ERR_FORMAT;
     }
+    out_status->mfg_step_total = (uint32_t)len;
     for (size_t index = 0u; index < len; ++index) {
         if (value[index] < '0' || value[index] > '3') return H2_PAL_ERR_FORMAT;
         out_status->mfg_steps[index] = (uint8_t)(value[index] - '0');
