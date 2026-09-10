@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
       .back_component_id=kBackComponentId,.should_stop=should_stop,.should_stop_user=&context,
       .on_ready=nullptr,.on_ready_user=nullptr,
     };
-    std::printf("AMOLED Lua Fishing: click sea to cast; swipe left for gear; swipe right to return. No textures.\n");
+    std::printf("AMOLED Fishing Game: click sea to cast; swipe left for gear; swipe right to return. No textures.\n");
     result=h2_lua_fishing_run(runtime,&config);
   }
   (void)h2::desktop::poll_events(&display);

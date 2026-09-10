@@ -139,7 +139,7 @@ h2_lua_fishing_run(h2_runtime_t *runtime,
                      "terminal state=%d resumes=%llu memory=%zu message=%s",
                      (int)status.state, (unsigned long long)status.resume_count,
                      status.memory_used, status.message);
-      (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-fishing",
+      (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "fishing-game",
                              diagnostic);
     }
     if (status.state == H2_LUA_JOB_FAILED ||

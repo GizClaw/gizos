@@ -4,7 +4,7 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 package(default_visibility = ["//visibility:public"])
 h2_lua_resource(
     name = "fishing_script",
-    src = "//projects/example/apps/lua-fishing:data/main.lua",
+    src = "//projects/example/apps/fishing-game:data/main.lua",
     symbol = "fishing_script",
 )
 cc_library(
