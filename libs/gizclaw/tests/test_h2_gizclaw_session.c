@@ -48,8 +48,13 @@ void h2_gizclaw_service_flush_audio_log_internal(
   }
 }
 
+static bool audio_input_empty;
+
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty) {
+  if (out_empty != NULL)
+    *out_empty = !start && audio_input_empty;
   (void)log;
   return start ? h2_gizclaw_service_audio_start(service)
                : h2_gizclaw_service_audio_end(service);
@@ -264,6 +269,7 @@ static void setup(size_t collections) {
   static const char *const names[] = {"alpha", "beta"};
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
   audio_starts = audio_ends = 0u;
+  audio_input_empty = false;
   audio_start_result = audio_end_result = H2_PAL_OK;
   audio_error_log[0] = '\0';
   atomic_store(&cancel_entered, false);
@@ -372,7 +378,7 @@ static void test_control_boundaries(void) {
   const h2_gizclaw_conversation_event_t reply = {
       .kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA,
   };
-  for (unsigned phase = 0; phase < 4u; ++phase) {
+  for (unsigned phase = 0; phase < 5u; ++phase) {
     for (unsigned fail = 0; fail < 2u; ++fail) {
       setup(1u);
       assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
@@ -386,10 +392,13 @@ static void test_control_boundaries(void) {
       assert(snapshot().conversation ==
              (phase == 3u ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
                           : H2_GIZCLAW_SESSION_CONVERSATION_RECORDING));
-      if (phase == 1u || phase == 2u) {
+      if (phase == 1u || phase == 2u || phase == 4u) {
+        audio_input_empty = phase == 4u;
         assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
         assert(snapshot().conversation ==
-               H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+               (phase == 4u ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+                            : H2_GIZCLAW_SESSION_CONVERSATION_WAITING));
+        assert(!snapshot().conversation_input_open);
       }
       if (phase == 2u || phase == 3u) {
         assert(on_event(terminal_user, conversation, &reply) == H2_PAL_OK);

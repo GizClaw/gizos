@@ -84,6 +84,7 @@ struct h2_gizclaw_conversation_request {
   atomic_bool reply_audio_started;
   atomic_bool reply_media_open;
   atomic_bool playback_canceled;
+  atomic_bool input_empty;
   bool reply_audio_notified;
   atomic_bool wire_ready;
   atomic_bool control_ready;
@@ -1539,6 +1540,14 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
         request->identity, H2_PAL_OK, 0, request->queued_frames,
         request->queued_bytes);
   }
+  if (atomic_load_explicit(&request->input_empty, memory_order_acquire)) {
+    if (!request->transport_committed)
+      return H2_PAL_ERR_WOULD_BLOCK;
+    /* A control-only interruption has no reply to await. EOS has already
+     * been accepted by the transport; close through normal completion. */
+    conversation_request_close(request);
+    return H2_PAL_OK;
+  }
   if (request->notification_pending) {
     h2_pal_result_t rc = conversation_notification_step(request);
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
@@ -1797,6 +1806,7 @@ static h2_pal_result_t conversation_generation_start(
   atomic_init(&request->reply_audio_started, false);
   atomic_init(&request->reply_media_open, false);
   atomic_init(&request->playback_canceled, false);
+  atomic_init(&request->input_empty, false);
   atomic_init(&request->wire_ready, false);
   atomic_init(&request->control_ready, false);
   atomic_init(&request->notification_done, false);
@@ -1881,8 +1891,18 @@ static h2_pal_result_t conversation_generation_finish_input(
     rc = h2_gizclaw_service_pcm_input_internal(
         request->service, &request->input, H2_GIZCLAW_PCM_INPUT_END, NULL, 0u,
         NULL);
-    if (rc == H2_PAL_OK)
+    if (rc == H2_PAL_OK) {
+      atomic_store_explicit(&request->input_empty, request->input.empty,
+                            memory_order_release);
+      if (request->input.empty) {
+        atomic_store_explicit(&request->playback_canceled, true,
+                              memory_order_release);
+        atomic_store_explicit(&request->reply_media_open, false,
+                              memory_order_release);
+        h2_gizclaw_service_pcm_discard_downlink_internal(request->service);
+      }
       atomic_store_explicit(&request->committed, true, memory_order_release);
+    }
   }
   (void)h2_pal_mutex_unlock(request->service->config.sync,
                             request->input_mutex);
@@ -2075,7 +2095,10 @@ conversation_audio_end(h2_gizclaw_conversation_t *conversation,
 /* Control calls serialize route selection with admission and destruction.
  * PCM copying/encoding remains on the sole uplink consumer. */
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty) {
+  if (out_empty != NULL)
+    *out_empty = false;
   if (start)
     h2_gizclaw_service_pcm_discard_downlink_internal(service);
   if (service == NULL)
@@ -2114,8 +2137,13 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
   record_audio_control(service, conversation,
                     start ? "service_audio_start" : "service_audio_end", rc,
                     H2_PAL_LOG_INFO, log);
-  if (rc == H2_PAL_OK)
+  if (rc == H2_PAL_OK) {
     service->audio_ended = !start;
+    if (!start && out_empty != NULL && conversation != NULL &&
+        conversation->service_request != NULL)
+      *out_empty = atomic_load_explicit(
+          &conversation->service_request->input_empty, memory_order_acquire);
+  }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
   return rc;
 }
@@ -2124,7 +2152,7 @@ static h2_pal_result_t service_audio_control(h2_gizclaw_service_t *service,
                                              bool start) {
   h2_gizclaw_audio_log_t logs = {0};
   h2_pal_result_t rc =
-      h2_gizclaw_service_audio_control_internal(service, start, &logs);
+      h2_gizclaw_service_audio_control_internal(service, start, &logs, NULL);
   h2_gizclaw_service_flush_audio_log_internal(service, &logs);
   return rc;
 }

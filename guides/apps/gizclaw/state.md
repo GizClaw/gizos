@@ -32,6 +32,8 @@ Conversation 创建在同一个准备操作中完成 Workspace 校验，然后�
 | Push-to-Talk | IDLE → RECORDING → WAITING → REPLYING → IDLE |
 | RealTime | IDLE ↔ CALLING |
 
+PTT 松手时冻结本轮 PCM 输入窗口：窗口非空才进入 WAITING；窗口为空则回到 IDLE，待控制 EOS 成功发送后正常完成本地请求，不等待服务器回复。按下前和松手后的 PCM 不计入本轮，按住时长不是判据。
+
 PTT 在录音期间收到回复也不能关闭输入或影响松手 EOS。RealTime 的文本、音频、单轮 REPLY_DONE 都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
 
 Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品，也不能改回REPLYING。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。

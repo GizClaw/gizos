@@ -30,7 +30,8 @@ static inline char *h2_gizclaw_audio_log_append_internal(
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log);
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log);
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty);
 typedef enum h2_gizclaw_cancel_source {
   H2_GIZCLAW_CANCEL_UNSPECIFIED,
   H2_GIZCLAW_CANCEL_API,

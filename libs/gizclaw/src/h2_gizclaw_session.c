@@ -851,7 +851,7 @@ static void conversation_complete(void *user,
       (result->result == H2_PAL_OK ||
        strcmp(result->error_code, "STREAM_INTERRUPTED") == 0)) {
     h2_pal_result_t rc = h2_gizclaw_service_audio_control_internal(
-        s->config.service, true, &logs);
+        s->config.service, true, &logs, NULL);
     record_audio(s, "auto_audio_start", &logs, rc, 0u, 0);
     if (rc == H2_PAL_OK) {
       s->conversation_running = true;
@@ -977,7 +977,7 @@ static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
     return H2_PAL_OK;
   if (s->state.conversation_input_open) {
     (void)h2_gizclaw_service_audio_control_internal(
-        s->config.service, false, logs);
+        s->config.service, false, logs, NULL);
   }
   h2_pal_result_t rc =
       h2_gizclaw_conversation_cancel_internal(s->conversation, logs, source);
@@ -1164,7 +1164,9 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
       return rc;
     }
   }
-  rc = h2_gizclaw_service_audio_control_internal(s->config.service, start, &logs);
+  bool empty_input = false;
+  rc = h2_gizclaw_service_audio_control_internal(
+      s->config.service, start, &logs, &empty_input);
   record_audio(s, start ? "audio_start" : "audio_end", &logs, rc, 0u, 0);
   if (rc == H2_PAL_OK) {
     s->state.conversation =
@@ -1172,7 +1174,8 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
             ? (start ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
                      : H2_GIZCLAW_SESSION_CONVERSATION_IDLE)
             : (start ? H2_GIZCLAW_SESSION_CONVERSATION_RECORDING
-                     : H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+                     : empty_input ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+                                   : H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
     s->state.conversation_input_open = start;
     if (!start &&
         s->state.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME) {

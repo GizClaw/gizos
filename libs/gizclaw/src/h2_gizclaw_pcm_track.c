@@ -204,6 +204,7 @@ h2_pal_result_t h2_gizclaw_pcm_input_end(h2_gizclaw_pcm_input_t *input,
   pcm_track_t *track = owned_track(base);
   input->end = track == NULL ? 0u : atomic_load_explicit(
       &track->uplink.write_index, memory_order_acquire);
+  input->empty = track != NULL && input->end == input->begin;
   input->ended = true;
   return H2_PAL_OK;
 }
