@@ -876,6 +876,101 @@ static void test_catalog(void) {
     assert(catalog == NULL);
 }
 
+static h2_pal_result_t loader_asset_read(
+    void *user,
+    const char *resource_name,
+    uint64_t offset,
+    uint8_t *out,
+    size_t out_size,
+    size_t *out_read) {
+    static const uint8_t payload[] = "abc";
+    (void)user;
+    assert(strcmp(resource_name, "devkit-loader-esp32s3.update.tar.zlib") == 0 ||
+           strcmp(resource_name, "devkit-loader-esp32s3.recovery.h2fb") == 0 ||
+           strcmp(resource_name,
+                  "devkit-loader-esp32s3.combined_factory.bin") == 0);
+    *out_read = 0u;
+    if (offset > sizeof(payload) - 1u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t remaining = sizeof(payload) - 1u - (size_t)offset;
+    size_t take = remaining < out_size ? remaining : out_size;
+    memcpy(out, &payload[offset], take);
+    *out_read = take;
+    return H2_PAL_OK;
+}
+
+/* ESP Loader release metadata lists a factory-flash image next to the managed
+ * package and recovery bundle; the catalog keeps it but never selects it for
+ * managed install or recovery. */
+static void test_catalog_esp_loader_assets(void) {
+#define ABC_SHA256 \
+    "\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\""
+    static const char index[] =
+        "{\"format\":1,\"version\":\"v1\",\"firmware_count\":1,"
+        "\"firmware\":[{"
+        "\"platform\":\"esp\",\"board\":\"devkit\","
+        "\"target\":\"esp32s3\",\"image\":\"loader\","
+        "\"role\":\"h2loader\",\"version\":\"v1\","
+        "\"package_manifest\":{\"image_sha256\":"
+        "\"0000000000000000000000000000000000000000000000000000000000000000\""
+        "},"
+        "\"assets\":["
+        "{\"name\":\"devkit-loader-esp32s3.update.tar.zlib\","
+        "\"operation\":\"managed-install\",\"sha256\":" ABC_SHA256 ","
+        "\"size\":3},"
+        "{\"name\":\"devkit-loader-esp32s3.recovery.h2fb\","
+        "\"operation\":\"recovery\",\"sha256\":" ABC_SHA256 ","
+        "\"size\":3},"
+        "{\"name\":\"devkit-loader-esp32s3.combined_factory.bin\","
+        "\"operation\":\"factory-flash\",\"flash_offset\":0,"
+        "\"release_suffix\":\".combined_factory.bin\","
+        "\"sha256\":" ABC_SHA256 ",\"size\":3}"
+        "]}]}";
+#undef ABC_SHA256
+    const h2_h2loader_host_catalog_config_t config = {
+        .allocator = &test_mem,
+        .index_json = (const uint8_t *)index,
+        .index_json_len = sizeof(index) - 1u,
+        .read_resource = loader_asset_read,
+    };
+    h2_h2loader_host_catalog_t *catalog = NULL;
+    assert(h2_h2loader_host_catalog_open(&config, &catalog) == H2_PAL_OK);
+    size_t count = 0u;
+    assert(h2_h2loader_host_catalog_count(catalog, &count) == H2_PAL_OK);
+    assert(count == 3u);
+    static const h2_h2loader_host_asset_operation_t operations[] = {
+        H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL,
+        H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY,
+        H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH,
+    };
+    static const char *const names[] = {
+        "devkit-loader-esp32s3.update.tar.zlib",
+        "devkit-loader-esp32s3.recovery.h2fb",
+        "devkit-loader-esp32s3.combined_factory.bin",
+    };
+    for (size_t i = 0u; i < 3u; ++i) {
+        size_t index_value = SIZE_MAX;
+        size_t matches = 0u;
+        assert(h2_h2loader_host_catalog_find(
+                   catalog,
+                   "devkit",
+                   "esp32s3",
+                   H2_H2LOADER_HOST_ASSET_ROLE_LOADER,
+                   operations[i],
+                   &index_value,
+                   1u,
+                   &matches) == H2_PAL_OK);
+        assert(matches == 1u);
+        h2_h2loader_host_catalog_entry_t entry;
+        assert(h2_h2loader_host_catalog_get(catalog, index_value, &entry) ==
+               H2_PAL_OK);
+        assert(entry.operation == operations[i]);
+        assert(strcmp(entry.resource_name, names[i]) == 0);
+    }
+    assert(h2_h2loader_host_catalog_close(&catalog) == H2_PAL_OK);
+}
+
 static h2_pal_result_t parse_with_mfg_tail(
     const char *base_line,
     const char *tail,
@@ -2283,6 +2378,7 @@ int main(void) {
     test_typed_command_terminal_contract();
     test_typed_command_transport_execution();
     test_catalog();
+    test_catalog_esp_loader_assets();
     test_status();
     test_factory_bundle();
     test_recovery();

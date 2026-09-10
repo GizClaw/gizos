@@ -11,13 +11,14 @@
 extern "C" {
 #endif
 
-#define H2_H2LOADER_SERIAL_E2E_MAX_CASES 4u
+#define H2_H2LOADER_SERIAL_E2E_MAX_CASES 5u
 
 typedef enum h2_h2loader_serial_e2e_suite {
   H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT = 1u << 0,
   H2_H2LOADER_SERIAL_E2E_SUITE_STATUS = 1u << 1,
   H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND = 1u << 2,
   H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL = 1u << 3,
+  H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE = 1u << 4,
 } h2_h2loader_serial_e2e_suite_t;
 
 typedef enum h2_h2loader_serial_e2e_case_id {
@@ -25,6 +26,7 @@ typedef enum h2_h2loader_serial_e2e_case_id {
   H2_H2LOADER_SERIAL_E2E_CASE_STATUS,
   H2_H2LOADER_SERIAL_E2E_CASE_COMMAND,
   H2_H2LOADER_SERIAL_E2E_CASE_INSTALL,
+  H2_H2LOADER_SERIAL_E2E_CASE_LOADER_UPDATE,
 } h2_h2loader_serial_e2e_case_id_t;
 
 typedef struct h2_h2loader_serial_e2e_config {
@@ -71,10 +73,31 @@ typedef struct h2_h2loader_serial_e2e_result {
   uint64_t acknowledged_bytes;
   uint64_t total_bytes;
   uint64_t elapsed_ms;
+  /** Loader-update only: a reconnect saw the candidate Loader on Partition 2.
+   * Timing-dependent evidence of the relay; not a pass condition. */
+  uint8_t loader_trial_observed;
   h2_h2loader_host_status_t initial_status;
   h2_h2loader_host_status_t final_status;
   int complete;
 } h2_h2loader_serial_e2e_result_t;
+
+/**
+ * Loader-update precondition: the asset is a managed Loader install for this
+ * board and its image differs from the running Loader in Partition 1, so the
+ * device must relay through Partition 2 instead of taking the same-image path.
+ */
+h2_pal_result_t h2_h2loader_serial_e2e_loader_update_ready(
+    const h2_h2loader_host_status_t *before,
+    const h2_h2loader_host_catalog_entry_t *asset);
+
+/**
+ * Loader-update completion: running Loader on Partition 1, Partition 1 and 2
+ * valid Loader metadata with the asset image, the asset package recorded in
+ * Partition 1, the asset version active, and no Stage left.
+ */
+h2_pal_result_t h2_h2loader_serial_e2e_loader_update_complete(
+    const h2_h2loader_host_status_t *after,
+    const h2_h2loader_host_catalog_entry_t *asset);
 
 /** Run selected blocking cases and close every App-owned Host Core handle. */
 h2_pal_result_t h2_h2loader_serial_e2e_run(

@@ -643,6 +643,10 @@ static h2_pal_result_t parse_operation(
         *out_operation = H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC;
         return H2_PAL_OK;
     }
+    if (json_token_equals(json, token, "factory-flash")) {
+        *out_operation = H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH;
+        return H2_PAL_OK;
+    }
     return H2_PAL_ERR_FORMAT;
 }
 
@@ -1031,7 +1035,8 @@ h2_pal_result_t h2_h2loader_host_catalog_find(
          role != H2_H2LOADER_HOST_ASSET_ROLE_LOADER) ||
         (operation != H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL &&
          operation != H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY &&
-         operation != H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC)) {
+         operation != H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC &&
+         operation != H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     for (size_t i = 0u; i < catalog->count; ++i) {

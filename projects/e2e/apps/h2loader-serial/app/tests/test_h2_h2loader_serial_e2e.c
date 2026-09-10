@@ -43,6 +43,118 @@ static h2_pal_result_t fake_destroy(void *user,
   return H2_PAL_OK;
 }
 
+#define OLD_IMAGE "1111111111111111111111111111111111111111111111111111111111111111"
+#define NEW_IMAGE "2222222222222222222222222222222222222222222222222222222222222222"
+#define NEW_PACKAGE "3333333333333333333333333333333333333333333333333333333333333333"
+
+static void set_loader_metadata(h2_h2loader_host_metadata_t *metadata,
+                                const char *image, const char *version) {
+  memset(metadata, 0, sizeof(*metadata));
+  strcpy(metadata->image_checksum, image);
+  strcpy(metadata->package_checksum, NEW_PACKAGE);
+  strcpy(metadata->version, version);
+  strcpy(metadata->board, "board");
+  strcpy(metadata->target, "target");
+  metadata->role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+  metadata->valid = 1u;
+}
+
+static h2_h2loader_host_catalog_entry_t loader_asset(void) {
+  h2_h2loader_host_catalog_entry_t asset;
+  memset(&asset, 0, sizeof(asset));
+  strcpy(asset.board, "board");
+  strcpy(asset.target, "target");
+  strcpy(asset.version, "2.0.0");
+  strcpy(asset.sha256, NEW_PACKAGE);
+  strcpy(asset.image_sha256, NEW_IMAGE);
+  asset.role = H2_H2LOADER_HOST_ASSET_ROLE_LOADER;
+  asset.operation = H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL;
+  return asset;
+}
+
+static h2_h2loader_host_status_t updated_status(void) {
+  h2_h2loader_host_status_t status;
+  memset(&status, 0, sizeof(status));
+  strcpy(status.board, "board");
+  strcpy(status.target, "target");
+  strcpy(status.active_version, "2.0.0");
+  strcpy(status.active_checksum, NEW_IMAGE);
+  status.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER;
+  status.running_partition = 1u;
+  status.next_partition = 1u;
+  set_loader_metadata(&status.partition_1, NEW_IMAGE, "2.0.0");
+  set_loader_metadata(&status.partition_2, NEW_IMAGE, "2.0.0");
+  return status;
+}
+
+static void test_loader_update_ready(void) {
+  h2_h2loader_host_catalog_entry_t asset = loader_asset();
+  h2_h2loader_host_status_t before = updated_status();
+  set_loader_metadata(&before.partition_1, OLD_IMAGE, "1.0.0");
+  assert(h2_h2loader_serial_e2e_loader_update_ready(&before, &asset) ==
+         H2_PAL_OK);
+  /* Running App with an invalid Partition 1 record still needs the relay. */
+  before.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+  before.partition_1.valid = 0u;
+  strcpy(before.partition_1.image_checksum, NEW_IMAGE);
+  assert(h2_h2loader_serial_e2e_loader_update_ready(&before, &asset) ==
+         H2_PAL_OK);
+  /* The same image takes the no-switch path and proves nothing. */
+  before.partition_1.valid = 1u;
+  assert(h2_h2loader_serial_e2e_loader_update_ready(&before, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  set_loader_metadata(&before.partition_1, OLD_IMAGE, "1.0.0");
+  strcpy(before.board, "other");
+  assert(h2_h2loader_serial_e2e_loader_update_ready(&before, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  strcpy(before.board, "board");
+  asset.role = H2_H2LOADER_HOST_ASSET_ROLE_APP;
+  assert(h2_h2loader_serial_e2e_loader_update_ready(&before, &asset) ==
+         H2_PAL_ERR_INVALID_ARG);
+  asset = loader_asset();
+  asset.operation = H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY;
+  assert(h2_h2loader_serial_e2e_loader_update_ready(&before, &asset) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_h2loader_serial_e2e_loader_update_ready(NULL, &asset) ==
+         H2_PAL_ERR_INVALID_ARG);
+}
+
+static void test_loader_update_complete(void) {
+  const h2_h2loader_host_catalog_entry_t asset = loader_asset();
+  h2_h2loader_host_status_t after = updated_status();
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_OK);
+  /* Candidate Loader still on Partition 2 before its writeback. */
+  after.running_partition = 2u;
+  after.stage.valid = 1u;
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  after = updated_status();
+  after.stage.valid = 1u;
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  after = updated_status();
+  set_loader_metadata(&after.partition_2, OLD_IMAGE, "1.0.0");
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  after = updated_status();
+  after.partition_1.valid = 0u;
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  after = updated_status();
+  strcpy(after.partition_1.package_checksum, OLD_IMAGE);
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  after = updated_status();
+  strcpy(after.active_version, "1.0.0");
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+  after = updated_status();
+  after.active_role = H2_H2LOADER_HOST_ACTIVE_ROLE_APP;
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_ERR_INVALID_STATE);
+}
+
 int main(void) {
   static const h2_pal_serial_host_vtable_t vtable = {
       .scan = fake_scan,
@@ -88,6 +200,27 @@ int main(void) {
   assert(h2_h2loader_serial_e2e_run(&runtime, &config, &result) ==
          H2_PAL_ERR_INVALID_ARG);
 
+  config.suite_mask = H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE;
+  assert(h2_h2loader_serial_e2e_run(&runtime, &config, &result) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(result.complete == 1 && result.case_count == 0u);
+  config.suite_mask = 1u << 5;
+  assert(h2_h2loader_serial_e2e_run(&runtime, &config, &result) ==
+         H2_PAL_ERR_INVALID_ARG);
+
+  config.suite_mask = H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT |
+                      H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE;
+  config.port_id = "missing";
+  config.expected_board = "board";
+  config.expected_target = "target";
+  assert(h2_h2loader_serial_e2e_run(&runtime, &config, &result) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(result.skipped == 1u &&
+         result.cases[1].case_id == H2_H2LOADER_SERIAL_E2E_CASE_LOADER_UPDATE &&
+         result.cases[1].result == H2_PAL_ERR_UNAVAILABLE);
+  config.expected_board = NULL;
+  config.expected_target = NULL;
+
   config.suite_mask = H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT |
                       H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND;
   config.port_id = "missing";
@@ -98,6 +231,8 @@ int main(void) {
          result.skipped == 1u && result.case_count == 2u);
   assert(result.cases[1].case_id == H2_H2LOADER_SERIAL_E2E_CASE_COMMAND &&
          result.cases[1].result == H2_PAL_ERR_UNAVAILABLE);
+  test_loader_update_ready();
+  test_loader_update_complete();
   puts("h2loader serial e2e tests passed");
   return 0;
 }
