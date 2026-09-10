@@ -32,4 +32,6 @@ Loader 只要确认自身 role 为 Loader 且运行在 Partition 2，就执行�
 
 回到 Partition 1 后，Loader 发现 Partition 1/2 checksum 相同，不再进入 Partition 2。如果 Stage checksum 也相同，则补齐 Partition 1 的 package 来源 metadata，清理 Stage，并留在 Partition 1 命令模式。
 
-完成条件是：运行在 Partition 1、active role 为 Loader、Partition 1/2 metadata 均 valid 且 identity 相同、Stage invalid。不存在 `loader_upgrade`、phase 或 recovery step 字段。
+Partition 1/2 checksum 相同是 Loader 内部判断回写已结束、可以清理 Stage 的依据，不是外部验收条件。Partition 2 只是回写前临时运行候选 Loader 的中转区，更新后其中是什么不影响结果，下次安装 App 时会被覆盖。
+
+完成条件是：设备从 Partition 1 启动新 Loader，即运行在 Partition 1、active role 为 Loader、active version 与 image 为新包，Partition 1 metadata valid 并记录新包的 image 与 package，Stage invalid。完成条件不检查 Partition 2。不存在 `loader_upgrade`、phase 或 recovery step 字段。
