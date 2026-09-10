@@ -90,7 +90,25 @@ static void test_request_follows_layout(void) {
                                    &loader.loader));
 }
 
+static void test_relay_head_offset(void) {
+    const uint32_t head = 0x1100u;
+    uint32_t offset = 0u;
+    /* App window larger than the Loader image: copy to the window end. */
+    assert(h2_fixed_relay_head_offset(KIB(5100), KIB(2380), head, &offset) == 1 &&
+           offset == KIB(5100) - head);
+    /* Smallest valid board gap, one 68 KiB block: no overlap. */
+    assert(h2_fixed_relay_head_offset(KIB(2448), KIB(2380), head, &offset) == 1 &&
+           offset == KIB(2448) - head && offset >= KIB(2380));
+    /* Equal windows: the image's own head already ends the window. */
+    assert(h2_fixed_relay_head_offset(KIB(2380), KIB(2380), head, &offset) == 0);
+    /* A gap smaller than the head would overlap the image; too large an
+     * image does not fit. */
+    assert(h2_fixed_relay_head_offset(KIB(2380) + head - 1u, KIB(2380), head, &offset) == -1);
+    assert(h2_fixed_relay_head_offset(KIB(2380), KIB(2448), head, &offset) == -1);
+}
+
 int main(void) {
+    test_relay_head_offset();
     test_board_owned_sizes();
     test_rejects_non_fixed_tables();
     test_request_follows_layout();

@@ -103,6 +103,19 @@ static inline int h2_fixed_request_boots_app(const h2_fixed_boot_request_t *r,
                                              const h2_fixed_layout_t *layout) {
     return h2_fixed_request_valid(r, layout) || h2_fixed_request_confirmed(r, layout);
 }
+/* Where a Loader image staged at the start of the App window must also carry
+ * its RBL head area (the image's last head_size bytes) so the ROM bootloader
+ * finds it at the end of slot B. Returns 1 and the window offset to copy to,
+ * 0 when the head already sits at the window end, -1 when the copy would
+ * overlap the image. */
+static inline int h2_fixed_relay_head_offset(uint32_t window_size, uint32_t image_size,
+                                             uint32_t head_size, uint32_t *out_offset) {
+    if (image_size < head_size || image_size > window_size) return -1;
+    if (image_size == window_size) return 0;
+    if (window_size - image_size < head_size) return -1;
+    *out_offset = window_size - head_size;
+    return 1;
+}
 /* Whether a physical PC lies in a window's XIP range. */
 static inline int h2_fixed_xip_in_window(uint32_t pc, const h2_fixed_window_t *w) {
     return pc >= H2_FIXED_XIP_ADDRESS(w->offset) &&
