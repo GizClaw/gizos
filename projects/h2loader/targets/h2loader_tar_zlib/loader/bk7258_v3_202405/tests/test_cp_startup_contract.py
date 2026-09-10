@@ -59,6 +59,11 @@ class CpStartupContractTest(unittest.TestCase):
         # The entry task takes its bk/h2loader policy from the target table.
         self.assertIn("h2_bk_platform_task_api(), &entry_options", launcher)
         self.assertNotIn("rtos_create_thread(", launcher)
+        main = launcher.index("int main(void)")
+        install = launcher.index("h2_bk_target_task_policy_install()", main)
+        start = launcher.index("h2_pal_task_start(", main)
+        self.assertLess(install, launcher.index("bk_init();", main))
+        self.assertLess(install, start)
         probe = launcher.index("static int h2loader_probe_pref(void)")
         namespace_missing = launcher.index(
             "if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;", probe
