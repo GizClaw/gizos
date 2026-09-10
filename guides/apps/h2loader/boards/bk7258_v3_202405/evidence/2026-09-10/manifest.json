@@ -12,8 +12,8 @@
     "sha256": "f1734040525c7f0d5a2a334a7b322cab98a55b351d3b7dee84ebd4ded32935e9"
   },
   "empty-stage-reset-uart0.txt": {
-    "bytes": 921,
-    "sha256": "928ab9a16310fdd6dcc3ab7611f2a149712bba3c99603e2208c5326579273faf"
+    "bytes": 899,
+    "sha256": "b075c3f88b93c161d682d1908bbec8cb14e8012d7b493ae931b7df338959089b"
   },
   "power-cycle-status.txt": {
     "bytes": 1354,
