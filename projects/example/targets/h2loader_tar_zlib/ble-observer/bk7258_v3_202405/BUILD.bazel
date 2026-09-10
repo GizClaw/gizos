@@ -7,10 +7,22 @@ load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 bk7258_target_task_policy(
-    ap_task_name_deps = [
-        "//projects/h2loader/libs/h2loader:task_names",
-        "//projects/h2loader/apps/loader/app:task_names",
+    ap_allocator = "psram",
+    ap_default_policy = "7 0 4096 default",
+    ap_policies = [
+        "h2loader/appcmd    5        0  8192  psram",
+        "$h2loader/uartcmd  5        0  8192  psram",
+        "$bleikcp/kcp       default",
+        "$bleikcp/server    default",
+        "$h2peer/net        default",
+        "$h2peer/udp        default",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/return   default",
+        "$h2loader/blelink  default",
     ],
+    cp_default_policy = "6 4096 default",
+    graph = [":ble_observer_launcher"],
 )
 
 firmware_lib_component(
@@ -22,6 +34,7 @@ firmware_lib_component(
         "//libs/command",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
+        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/coremqtt",
         "//libs/pal/providers/h2peer",
@@ -59,6 +72,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//projects/h2loader/apps/loader/app:tasks",
         ":ap_launcher_component",
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",

@@ -37,7 +37,10 @@ api_reference(
     }),
     deps = [
         "//libs/app_test",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/audio_mixer",
+        "//libs/ble_wifi_config",
         "//libs/bleikcp",
         "//libs/bundle",
         "//libs/command",
@@ -71,6 +74,7 @@ api_reference(
         "//libs/pixa",
         "//libs/qrcode",
         "//libs/runtime",
+        "//libs/semver",
         "//libs/utils",
         "//projects/h2loader/libs/h2loader",
     ],

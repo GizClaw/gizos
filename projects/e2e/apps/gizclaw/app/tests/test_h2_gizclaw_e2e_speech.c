@@ -1,3 +1,5 @@
+#include "h2_app_test_mem.h"
+#include "h2_app_test_time.h"
 #include "h2_gizclaw_e2e_speech.h"
 #include "h2_gizclaw_pcm_track_fake.h"
 
@@ -25,9 +27,8 @@ enum {
   SLEEP_ERROR,
   CLOCK_ERROR
 };
-static unsigned s_mode, s_live, s_created, s_released, s_finished, s_cancelled;
-static unsigned s_unsets, s_alloc_calls, s_fail_alloc;
-static uint64_t s_now;
+static unsigned s_mode, s_created, s_released, s_finished, s_cancelled;
+static unsigned s_unsets;
 static int s_service;
 static h2_gizclaw_track_t *s_track;
 static uint8_t s_pcm[1346];
@@ -37,52 +38,20 @@ struct h2_gizclaw_req {
   size_t received;
 };
 
+static h2_app_test_mem_t test_mem;
+static h2_app_test_time_t test_time;
 static void *allocate(void *user, size_t len) {
   (void)user;
-  if (++s_alloc_calls == s_fail_alloc)
-    return NULL;
-  void *p = malloc(len);
-  if (p != NULL)
-    ++s_live;
-  return p;
+  return h2_pal_mem_alloc(&test_mem.api, len);
 }
-static void *reallocate(void *user, void *p, size_t len) {
-  if (p == NULL)
-    return allocate(user, len);
-  if (++s_alloc_calls == s_fail_alloc)
-    return NULL;
-  return realloc(p, len);
-}
-static void release(void *user, void *p) {
+static void release(void *user, void *ptr) {
   (void)user;
-  if (p != NULL) {
-    assert(s_live != 0u);
-    --s_live;
-    free(p);
-  }
+  h2_pal_mem_free(&test_mem.api, ptr);
 }
-static const h2_pal_mem_vtable_t mem_vtable = {
-    .alloc = allocate, .realloc = reallocate, .free = release};
-static const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
-
-static int monotonic(void *user, uint64_t *out) {
-  (void)user;
-  *out = s_now;
-  return s_mode == CLOCK_ERROR ? H2_PAL_ERR_IO : H2_PAL_OK;
-}
-static int sleep_ms(void *user, uint32_t ms) {
-  (void)user;
-  s_now += ms;
-  return s_mode == SLEEP_ERROR ? H2_PAL_ERR_IO : H2_PAL_OK;
-}
-static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = monotonic,
-                                                 .sleep_ms = sleep_ms};
-static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
-
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
                                      uint32_t ms) {
   assert(fixture != NULL);
-  return s_now + ms <= 31000u;
+  return test_time.monotonic_ms + ms <= 31000u;
 }
 h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *value) {
   return (h2_gizclaw_str_t){.data = value, .len = strlen(value)};
@@ -154,7 +123,7 @@ h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
 h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
                                     uint32_t timeout) {
   assert(request->started && timeout == 10u && s_track != NULL);
-  s_now += timeout;
+  test_time.monotonic_ms += timeout;
   if (s_mode == REMOTE_ERROR || (s_mode == EXTRACT_ERROR && request->extract))
     return H2_GIZCLAW_ERR_REMOTE;
   if (s_mode == WAIT_TIMEOUT)
@@ -226,12 +195,16 @@ h2_pal_result_t h2_gizclaw_resp_parse_speech_extract(
 
 static void run_case(unsigned mode, int expected) {
   s_mode = mode;
-  s_now = s_created = s_released = s_finished = s_cancelled = s_unsets = 0u;
-  assert(s_live == 0u && s_track == NULL);
+  test_time.read = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO,
+      .remaining=mode == CLOCK_ERROR ? UINT32_MAX : 0u};
+  test_time.sleep = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO,
+      .remaining=mode == SLEEP_ERROR ? UINT32_MAX : 0u};
+  test_time.monotonic_ms = s_created = s_released = s_finished = s_cancelled = s_unsets = 0u;
+  assert(test_mem.live_blocks == 0u && s_track == NULL);
   h2_gizclaw_e2e_fixture_t *fixture = calloc(1u, sizeof(*fixture));
   assert(fixture != NULL);
-  fixture->allocator = &mem;
-  fixture->time = &time_api;
+  fixture->allocator = &test_mem.api;
+  fixture->time = &test_time.api;
   fixture->pcm = s_pcm;
   fixture->pcm_len = sizeof(s_pcm);
   fixture->actors[0].service = (h2_gizclaw_service_t *)&s_service;
@@ -240,7 +213,7 @@ static void run_case(unsigned mode, int expected) {
                                        .capacity = sizeof(response)};
   assert(h2_gizclaw_e2e_run_speech(fixture, &storage) == expected);
   assert(s_created == s_released);
-  assert(s_live == (mode == UNSET_ERROR ? 3u : 0u));
+  assert(test_mem.live_blocks == (mode == UNSET_ERROR ? 3u : 0u));
   assert(s_unsets == (mode == SET_ERROR ? 0u : 1u));
   if (mode == NORMAL || mode == UNSET_ERROR) {
     assert(s_created == 2u && s_finished == 4u && s_cancelled == 0u);
@@ -265,6 +238,8 @@ static void run_case(unsigned mode, int expected) {
 }
 
 int main(void) {
+  h2_app_test_mem_init(&test_mem, NULL);
+  h2_app_test_time_init(&test_time, 0u);
   for (size_t i = 0u; i < sizeof(s_pcm); ++i)
     s_pcm[i] = (uint8_t)i;
   run_case(NORMAL, H2_PAL_OK);
@@ -298,22 +273,22 @@ int main(void) {
                            "{\"color\":\"blue\\u0000\"}"};
   for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
     assert(h2_gizclaw_e2e_validate_color_json(
-               &mem, h2_gizclaw_e2e_str(invalid[i])) != H2_PAL_OK);
-    assert(s_live == 0u);
+               &test_mem.api, h2_gizclaw_e2e_str(invalid[i])) != H2_PAL_OK);
+    assert(test_mem.live_blocks == 0u);
   }
   assert(h2_gizclaw_e2e_validate_color_json(
-             &mem, h2_gizclaw_e2e_str(" { \"color\" : \"bl\\u0075e\" } ")) ==
+             &test_mem.api, h2_gizclaw_e2e_str(" { \"color\" : \"bl\\u0075e\" } ")) ==
          H2_PAL_OK);
-  s_alloc_calls = 0u;
+  test_mem.calls = 0u;
   assert(h2_gizclaw_e2e_validate_color_json(
-             &mem, h2_gizclaw_e2e_str("{\"color\":\"blue\"}")) == H2_PAL_OK);
-  const unsigned allocations = s_alloc_calls;
+             &test_mem.api, h2_gizclaw_e2e_str("{\"color\":\"blue\"}")) == H2_PAL_OK);
+  const unsigned allocations = test_mem.calls;
   for (unsigned i = 1u; i <= allocations; ++i) {
-    s_alloc_calls = 0u;
-    s_fail_alloc = i;
+    test_mem.calls = 0u;
+    test_mem.fail_at = i;
     assert(h2_gizclaw_e2e_validate_color_json(
-               &mem, h2_gizclaw_e2e_str("{\"color\":\"blue\"}")) != H2_PAL_OK);
-    assert(s_live == 0u);
+               &test_mem.api, h2_gizclaw_e2e_str("{\"color\":\"blue\"}")) != H2_PAL_OK);
+    assert(test_mem.live_blocks == 0u);
   }
   return 0;
 }

@@ -448,6 +448,68 @@ example_subjects_publish(&adapter->state);
 operation 的 barrier 必须等 worker result 被 production loop 消费后再 snapshot；
 不能依靠固定 sleep。
 
+## Testing PAL
+
+`libs/app_test` 也提供独立于 execution driver 的 Testing PAL。它在 PAL API 边界替换输入、委托调用并记录证据，App 仍使用真实 Runtime。Testing PAL 不拥有 Runtime event queue、component state 或 App state；语义事件注入继续由 Runtime test control 负责。
+
+Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver：
+
+- `//libs/app_test:testing_audio`：真实／fake Audio PAL 的 PCM decorator。
+- `//libs/app_test:testing_pal`：根据 H106 Host 与 GizClaw E2E 测试实际依赖提炼的 fake PAL 和 WebRTC decorator。
+
+### 公共能力
+
+| 能力 | 公共 Header | 控制与观测 |
+| --- | --- | --- |
+| Time | `h2_app_test_time.h` | 显式推进 monotonic/wall time、sleep 失败、overflow |
+| Memory | `h2_app_test_mem.h` | 分配／realloc 失败、存活 block/byte、峰值和显式测试退出回收 |
+| Task / Sync | `h2_app_test_task.h`、`h2_app_test_sync.h` | 串行生命周期测试：显式执行 entry、start/join 故障、mutex ownership；不模拟并发 |
+| WebRTC decorator | `h2_app_test_webrtc.h` | 委托真实／fake provider，包装 peer/channel 与 owned event，同步观察事件 |
+| Preference | `h2_app_test_pref.h` | namespace/key 隔离，bool/i32/u32/string/blob，事务 commit，按 namespace 和修改 key 筛选 commit 故障 |
+| FS | `h2_app_test_fs.h` | 内存文件读写、seek/stat/remove/rename、短读、close/sync 故障 |
+| Wi-Fi / Settings | `h2_app_test_wifi.h` | scan 列表与过滤、连接请求、显式状态、保存／忘记网络 |
+| Modem | `h2_app_test_modem.h` | 状态输入、dial/answer/hangup 请求与失败 |
+| Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图 |
+| Display | `h2_app_test_display.h` | open/close、亮度值及失败；不绘制像素 |
+| Periph / Button / Input / PWM | `h2_app_test_periph.h` | 可配置 ID registry、按键状态、电量／温度、振动 duty |
+| Audio fake | `h2_app_test_audio_fake.h` | 无硬件 mic/speaker/track、音量、静音输入、输出字节、失败与 ownership |
+| Crypto fixture | `h2_app_test_crypto.h` | 显式随机字节序列和已知 X25519 keypair，供 identity 存取测试 |
+
+这些对象属于测试环境，不包含 H106 component ID、preference key、语音素材或业务 provider。`h2_app_test_fault_t` 为每项操作提供返回值、剩余失败次数和调用次数；`skip` 指定故障前成功调用次数；零初始化默认成功，`remaining == UINT32_MAX` 表示持续注入。只有通过参数／状态校验并到达该操作的调用才计入对应 fault 计数。Preference 的 commit 计数只包含匹配 filter 的调用。
+
+简单对象由调用方持有，init 后其地址必须稳定；Preference、FS 和 Audio fake 借用 Memory PAL 分配内部资源，需要 deinit，未关闭的 handle 会阻止释放。
+
+### 执行与状态边界
+
+Fake PAL 是单线程测试对象。调用、fixture 配置和 evidence 读取必须串行；在同一个 libco executor 中运行 worker 时可以复用它们，native 多线程消费者需要外部同步。 Audio decorator 自身的并发约束见对应 public header。
+
+验证生产并发时，Task／Queue／Sync 复用 `//libs/pal/providers/libco`。把 Testing Time 作为 executor 的 `now_ms`／`time_source`，给 production Runtime 注入 **libco 的 Time PAL**，由测试根循环执行 `h2_app_test_time_advance()` 和 `h2_libco_schedule()`。Runtime 操作和 cleanup 中需要锁的部分必须在 executor task 内执行。Testing Time 自身的 sleep 只推进时钟，不调度任务，不能直接给 resident worker 用来代替可让出的 sleep。
+
+H106 Host 对 Timer、HTTP、WebRTC、NFC 等未实现能力继续选择 canonical unsupported，完整 E2E 对应路径保留真实 provider。H106 的 pairing/update/peer provider、业务 fixture、App observation 和 component mapper 仍属于产品，不进入公共 PAL。 Crypto fixture 不实现密码算法，不应作为真实连接的加密 provider。
+
+Wi-Fi connect 和 Modem call 成功只表示操作被接受，不自动生成 GOT_IP 或通话完成； scenario 明确配置后续 PAL status，并通过 Runtime test control 注入相应 event。 Power fake 记录 transition 意图，不重启 Host，不自动增加 boot_count。这样不会把一个成功的 API 返回值当成完整异步产品结果。
+
+Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取已提交数据。 commit 失败保留待提交修改供重试，close 放弃未提交修改。FS 仅模拟 exact-path regular file，目录操作不支持；所有容量和借用关系由 public header 定义。
+
+### Audio decorator 接线
+
+在 Runtime 初始化前，launcher 或测试环境用原 `config.audio` 创建 decorator，再把 `h2_app_test_audio_api()` 返回的 API 放入 `config.audio`。同一条接线可以用于 Memory adapter 的 reset，也可以用于运行完整生产 App 的 Desktop／真机 E2E。
+
+- PCM fixture 由调用方提供，不包含产品枚举、文件路径或业务语音素材。它使用
+  interleaved S16LE，显式声明采样率、通道数和每帧采样数，并与 delegate mic 格式匹配。
+- Mic start/stop 委托给底层；read 用零超时读取真实采集到 bounded scratch，立即
+  清零，再按注入的 monotonic Time PAL 推进 fixture。零等待时可返回 WOULD_BLOCK，
+  等待预算不足返回 TIMEOUT；EOF 后继续输出静音，直到 App 停止 mic。
+- 真实采集错误单独记录，不影响 fixture 数据；业务成功不能代替真实采集健康。
+- Speaker、volume 和 track 操作继续委托；返回的 track handle 也被包装，记录成功
+  write/drain/close、播放字节和 digest，并保留失败 close 的 ownership 供重试。
+- Fixture PCM 和底层 PAL 都是借用；fixture 可在 mic 停止或输出已暂停时更换；mic 运行时必须保持相同格式。先停止 App
+  workers、关闭 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 provider。
+
+Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
+
+测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
+
 ## Memory Driver
 
 Host 测试入口：
@@ -489,3 +551,18 @@ coverage side effect。
 
 Host 结果只能报告为 Runtime-to-App-to-subject evidence，不能报告为真机、
 rendered pixel、perceived audio、真实网络或产品验收。
+
+
+### GizClaw E2E 接入样例
+
+`projects/e2e/apps/gizclaw` 同时展示真实 E2E 和主机边界测试的接线：
+
+- Voice 使用 Testing Audio 注入 PCM。AMOLED 借用真实 Audio PAL，持续 drain 麦克风并记录采集健康；主机边界测试使用 Audio fake。暂停、恢复和同格式素材替换不重启物理麦克风。512 sample 采集帧到 320 sample 上行块的适配仍由 GizClaw consumer 负责。
+- RPC Speech 的转写／提取使用 Audio fake 与 Testing Audio 注入素材；Track 背压时保留尚未接受的完整帧，只在写入成功后推进上传计数。
+- Device API 使用 Testing Audio 的仅播放模式（创建时 fixture 为 NULL）。真机委托真实扬声器；虚拟设备委托 Audio fake 并配置 `playback_time`，以真实／可让出的时间等待播放时长。输出字节、S16LE 峰值和 Track 生命周期由 decorator 记录。先停止 Service 和播放 worker，再释放 PAL；关闭失败保留对象供重试。
+- WebRTC 使用公共 decorator 委托真实连接，GizClaw callback 只判断自己的 service label、stream ID 和 channel 数量。Callback 借用事件，既不能释放也不能保留；消费方仍按 PAL 契约释放 owned event。包装后的 peer/channel 只能配合 decorator API 使用，media track 原样委托。
+- 主机边界测试复用 Memory、Time、Task、Sync 和 Crypto fixture。Request/Session/Resource 替身、远端响应脚本和资源清理断言仍在 GizClaw 测试中。串行 Task/Sync fake 不能用于真实 Service worker；并发测试继续使用真实／libco provider。
+
+这些接入不需要第二个 Runtime。真实 E2E 保留真实网络、加密、存储和调度；Testing PAL 证据补充业务断言，不替代服务器结果和真机验收。
+
+Wi-Fi fake 的 `connect_status` 可脚本化下一次成功连接的状态；UNKNOWN 不改变当前状态。`connect_and_save` 使用同一 `libs/wifi_sta` 事务和内嵌虚拟 Time，只有目标 GOT_IP 且非零有效 IPv4 才写模拟 Settings。测试可注入连接、状态、时钟与保存错误；该 fake 仍由调用方串行使用。

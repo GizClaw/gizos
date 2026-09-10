@@ -3,6 +3,54 @@
 #include <stdint.h>
 #include <string.h>
 
+/* Runtime owns the forwarding vtable; the platform API stays user + vtable. */
+static const h2_pal_time_api_t *runtime_time_provider(void *user) {
+    return &((h2_runtime_t *)user)->private_state->time_provider;
+}
+
+static h2_pal_result_t runtime_time_monotonic_ms(void *user, uint64_t *out) {
+    return h2_pal_time_get_monotonic_ms(runtime_time_provider(user), out);
+}
+static h2_pal_result_t runtime_time_monotonic_us(void *user, uint64_t *out) {
+    return h2_pal_time_get_monotonic_us(runtime_time_provider(user), out);
+}
+static h2_pal_result_t runtime_time_wall_ms(void *user, uint64_t *out) {
+    const h2_pal_time_api_t *provider = runtime_time_provider(user);
+    if (provider->vtable == NULL || provider->vtable->get_wall_ms == NULL)
+        return H2_PAL_ERR_UNSUPPORTED;
+    /* The public Time PAL read checks the forwarded status before returning. */
+    return provider->vtable->get_wall_ms(provider->user, out);
+}
+static h2_pal_result_t runtime_time_status(void *user,
+                                         h2_pal_time_wall_status_t *out) {
+    return h2_pal_time_get_wall_status(runtime_time_provider(user), out);
+}
+static h2_pal_result_t runtime_time_sleep(void *user, uint32_t ms) {
+    return h2_pal_time_sleep_ms(runtime_time_provider(user), ms);
+}
+static h2_pal_result_t runtime_time_set(void *user, uint64_t wall_ms) {
+    h2_pal_result_t rc = h2_pal_time_set_wall_ms(runtime_time_provider(user), wall_ms);
+    if (rc != H2_PAL_OK)
+        return rc;
+    h2_runtime_t *runtime = user;
+    uint64_t now_ms = h2_runtime_now_ms(runtime->time);
+    const h2_runtime_system_event_time_adjusted_t payload = {.wall_ms = wall_ms};
+    /* Publication failure cannot undo a successful clock adjustment. */
+    (void)h2_runtime_emit_event(runtime,
+        H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+        H2_RUNTIME_COMPONENT_SYSTEM_TIME, H2_RUNTIME_COMPONENT_ID_NONE,
+        h2_runtime_next_sequence(runtime), now_ms, &payload, sizeof(payload));
+    return H2_PAL_OK;
+}
+static const h2_pal_time_vtable_t runtime_time_vtable = {
+    .get_monotonic_ms = runtime_time_monotonic_ms,
+    .get_monotonic_us = runtime_time_monotonic_us,
+    .get_wall_ms = runtime_time_wall_ms,
+    .set_wall_ms = runtime_time_set,
+    .get_wall_status = runtime_time_status,
+    .sleep_ms = runtime_time_sleep,
+};
+
 typedef struct h2_runtime_private_layout {
     size_t allocation_size;
     size_t component_mappings_offset;
@@ -161,17 +209,27 @@ h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime) {
     if (!h2_runtime_ready(runtime)) {
         return 0u;
     }
-    while (atomic_flag_test_and_set_explicit(
-        &runtime->private_state->sequence_lock,
-        memory_order_acquire)) {
-    }
-    h2_runtime_sequence_t sequence = runtime->private_state->next_sequence++;
+    h2_runtime_private_t *private_state = runtime->private_state;
+    h2_runtime_sequence_t sequence;
+#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+    sequence = atomic_fetch_add_explicit(
+        &private_state->next_sequence, 1u, memory_order_relaxed);
     if (sequence == 0u) {
-        sequence = runtime->private_state->next_sequence++;
+        /* Wrapped: 0 means "no sequence", take the next one. */
+        sequence = atomic_fetch_add_explicit(
+            &private_state->next_sequence, 1u, memory_order_relaxed);
     }
-    atomic_flag_clear_explicit(
-        &runtime->private_state->sequence_lock,
-        memory_order_release);
+#else
+    h2_runtime_flag_lock(&private_state->sequence_lock);
+    sequence = atomic_load_explicit(
+        &private_state->next_sequence, memory_order_relaxed);
+    if (sequence == 0u) {
+        sequence = 1u;
+    }
+    atomic_store_explicit(
+        &private_state->next_sequence, sequence + 1u, memory_order_relaxed);
+    h2_runtime_flag_unlock(&private_state->sequence_lock);
+#endif
     return sequence;
 }
 
@@ -221,6 +279,7 @@ static h2_pal_result_t runtime_init_release(
             /* Init never starts the poller, so only prepared state is here. */
             h2_runtime_input_release(runtime);
             h2_runtime_stop_system_events(runtime);
+            h2_runtime_system_state_release(runtime);
             if (private_state->event_queue != NULL) {
                 h2_pal_queue_destroy(
                     runtime->queue, private_state->event_queue);
@@ -302,7 +361,10 @@ h2_pal_result_t h2_runtime_init(
     H2_RUNTIME_BIND_PROXY(firmware_info);
     H2_RUNTIME_BIND_PROXY(mem);
     H2_RUNTIME_BIND_PROXY(log);
-    H2_RUNTIME_BIND_PROXY(time);
+    private_state->time_provider = *config->time;
+    private_state->time_proxy = (h2_pal_time_api_t){
+        .user = runtime, .vtable = &runtime_time_vtable};
+    runtime->time = &private_state->time_proxy;
     H2_RUNTIME_BIND_PROXY(timer);
     H2_RUNTIME_BIND_PROXY(task);
     H2_RUNTIME_BIND_PROXY(queue);
@@ -326,6 +388,7 @@ h2_pal_result_t h2_runtime_init(
     H2_RUNTIME_BIND_PROXY(power);
     H2_RUNTIME_BIND_PROXY(display);
     H2_RUNTIME_BIND_PROXY(audio);
+    h2_runtime_audio_bind(runtime);
     H2_RUNTIME_BIND_PROXY(audio_decoder);
     H2_RUNTIME_BIND_PROXY(periph);
     H2_RUNTIME_BIND_PROXY(button);
@@ -348,6 +411,12 @@ h2_pal_result_t h2_runtime_init(
 #undef H2_RUNTIME_BIND_PROXY
 
     private_state->initialized = 1;
+    {
+        h2_pal_result_t state_rc = h2_runtime_system_state_init(runtime);
+        if (state_rc != H2_PAL_OK) {
+            return runtime_init_release(config, runtime, state_rc);
+        }
+    }
     atomic_flag_clear(&private_state->sequence_lock);
     atomic_init(&private_state->system_event_active, 0);
     atomic_init(
@@ -355,7 +424,7 @@ h2_pal_result_t h2_runtime_init(
         H2_RUNTIME_INPUT_PHASE_STOPPED);
     atomic_init(&private_state->input_stop_requested, 0);
     atomic_init(&private_state->input_worker_result, H2_PAL_OK);
-    private_state->next_sequence = 1u;
+    atomic_init(&private_state->next_sequence, 1u);
     private_state->input_sources_ready = 0;
 
     size_t event_queue_capacity = config->event_queue_capacity;
@@ -489,6 +558,8 @@ void h2_runtime_deinit(h2_runtime_t *runtime) {
     }
     h2_runtime_input_release(runtime);
     h2_runtime_stop_system_events(runtime);
+    /* After the ingest stops, so no publication can outlive the lock. */
+    h2_runtime_system_state_release(runtime);
     /* Last producer to shut down: app tasks posting custom events. */
     h2_runtime_custom_event_close(runtime);
 

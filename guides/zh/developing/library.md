@@ -115,6 +115,8 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`app_test`](./app_test.md)：以同一份 C scenario 在 Memory 或未来 device driver
   上验证 Runtime input 到 App state 与 production LVGL subject 的映射。
 - [`audio_mixer`](./audio_mixer.md)：跨平台音频混合 API 和实现。
+- `wifi_sta`：PAL provider 共用的同步目标认证、IP 验证与保存事务；只借用 STA、Time 和 Wi-Fi Settings，由 provider 持有串行 admission。
+- [`ble_wifi_config`](./ble_wifi_config.md)：设备联网前使用的 BLE 配网服务，逐条上报扫描到的 AP 并接收 Wi-Fi 凭据。
 - [`bleikcp`](./bleikcp.md)：在已建立的 BLE connection 上提供可靠有序 byte stream。
 - [`command`](./command.md)：同步、可注册、由调用方注入 byte stream I/O 的命令执行器。
 - [`iostreamikcp`](./iostreamikcp.md)：在可能混入日志的 UART 或 USB Serial-JTAG byte stream 上提供可靠有序传输。
@@ -140,6 +142,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`qrcode`](./qrcode.md)：QR Code Model 2 编码与 RGB565 band 栅格化，全部缓冲区由调用方提供。
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
+- [`semver`](./semver.md)：无堆分配的 SemVer 校验和排序，非法版本统一低于合法版本。
 - [`utils`](./utils.md)：APN 等小型 portable helper。
 - [`wolfssl`](./wolfssl.md)：同一 upstream 下的裁剪 Crypto PAL variant 与
   完整 Crypto/DTLS provider；不公开 WolfSSL private type。

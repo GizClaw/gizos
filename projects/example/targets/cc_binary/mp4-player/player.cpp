@@ -84,6 +84,7 @@ int h2_desktop_mp4_player_main(const h2::desktop::Layout &layout,
       &display,
       nullptr,
       nullptr,
+      false,
   };
   const int app_result =
       h2_smoke_mp4_player_run(runtime, &player_config);

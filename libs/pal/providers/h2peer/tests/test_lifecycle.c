@@ -578,6 +578,29 @@ static void test_send_progress_does_not_idle_wait(int async_receive) {
   cleanup(&f);
 }
 
+static void test_close_preserves_accepted_messages(void) {
+  fixture_t f;
+  create(&f);
+  h2_pal_webrtc_channel_t *channel = NULL;
+  assert(open_sid(&f, 1u, &channel) == H2_PAL_OK);
+  connect(&f, 1u);
+  atomic_store(&f.send_busy, 1);
+  const uint8_t response[] = {0x01, 0x02};
+  const uint8_t eos[] = {0x03};
+  assert(h2_pal_webrtc_channel_send(f.api, channel, response,
+      sizeof(response), 0) == H2_PAL_OK);
+  assert(h2_pal_webrtc_channel_send(f.api, channel, eos,
+      sizeof(eos), 0) == H2_PAL_OK);
+  h2_pal_webrtc_channel_close(f.api, channel);
+  assert(atomic_load(&f.sends) == 0u);
+  atomic_store(&f.send_busy, 0);
+  wait_count(&f, &f.sends, 2u);
+  h2_pal_webrtc_event_t closed = next_kind(&f, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
+  assert(closed.channel_state == H2_PAL_WEBRTC_CHANNEL_CLOSED);
+  h2_pal_webrtc_event_release(&closed);
+  cleanup(&f);
+}
+
 static void test_allocations_and_config(void) {
   for (size_t fail = 1u; fail < 24u; ++fail) {
     fixture_t f;
@@ -613,7 +636,7 @@ static void test_allocations_and_config(void) {
   f.config.net = h2_pal_unsupported_net_api();
   h2_pal_time_vtable_t time = *f.config.time->vtable;
   time.get_monotonic_us = NULL;
-  h2_pal_time_api_t time_api = {NULL, &time};
+  h2_pal_time_api_t time_api = {.user = NULL, .vtable = &time};
   f.config.time = &time_api;
   assert(h2_peer_create(&f.config, &f.owner) == H2_PAL_ERR_INVALID_ARG);
   f.config.time = h2_desktop_platform_time_api();
@@ -897,6 +920,7 @@ static void test_remote_reset_during_send(void) {
 }
 
 int main(void) {
+  test_close_preserves_accepted_messages();
   test_pool_and_event_lease();
   test_reset_quarantine();
   test_reset_busy_then_failure();

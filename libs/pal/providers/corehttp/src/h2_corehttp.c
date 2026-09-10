@@ -1,6 +1,7 @@
 #include "h2_corehttp_internal.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 static const char *method_name(h2_pal_http_method_t method, size_t *out_len) {
@@ -179,6 +180,7 @@ static h2_pal_result_t remaining_ms(
 static h2_pal_result_t open_transport(
     h2_corehttp_exchange_t *exchange,
     const h2_corehttp_url_t *url) {
+    exchange->stage = "bind";
     h2_pal_net_bind_t bind;
     h2_pal_net_bind_t *bind_ptr = NULL;
     memset(&bind, 0, sizeof(bind));
@@ -198,6 +200,7 @@ static h2_pal_result_t open_transport(
 
     h2_pal_net_addr_t remote;
     memset(&remote, 0, sizeof(remote));
+    exchange->stage = "dns";
     h2_pal_net_resolver_t *resolver = NULL;
     h2_pal_result_t rc = h2_pal_net_resolve_start(
         exchange->provider->config.net, url->host, &resolver);
@@ -223,10 +226,12 @@ static h2_pal_result_t open_transport(
     remote.port = url->port;
 
     if (bind_ptr != NULL) {
+        exchange->stage = "bind";
         if (bind.source_addr.family != remote.family) {
             return H2_PAL_ERR_UNAVAILABLE;
         }
     }
+    exchange->stage = "tcp_open";
     rc = h2_pal_net_tcp_open_bound(
         exchange->provider->config.net, remote.family, bind_ptr,
         &exchange->socket);
@@ -234,6 +239,7 @@ static h2_pal_result_t open_transport(
         return rc;
     }
 
+    exchange->stage = "tcp_connect";
     for (;;) {
         uint32_t timeout_ms = 0u;
         rc = remaining_ms(exchange, true, &timeout_ms);
@@ -252,6 +258,7 @@ static h2_pal_result_t open_transport(
         return rc;
     }
 
+    exchange->stage = "tls_wrap";
     uint32_t tls_timeout_ms = 0u;
     rc = remaining_ms(exchange, false, &tls_timeout_ms);
     if (rc != H2_PAL_OK) {
@@ -457,9 +464,11 @@ static h2_pal_result_t perform_attempt(
 
     rc = open_transport(&exchange, &url);
     if (rc == H2_PAL_OK) {
+        exchange.stage = "send";
         rc = send_request(&exchange, &url, forward_authorization);
     }
     if (rc == H2_PAL_OK) {
+        exchange.stage = "receive";
         rc = h2_corehttp_receive_response(&exchange);
     }
     if (exchange.socket >= 0) {
@@ -469,6 +478,7 @@ static h2_pal_result_t perform_attempt(
 
     if (rc == H2_PAL_OK && redirect_status(response->status_code) &&
         redirect_available) {
+        exchange.stage = "redirect";
         if (!exchange.location_seen || exchange.location_len == 0u) {
             rc = H2_PAL_ERR_FORMAT;
         } else {
@@ -490,6 +500,17 @@ static h2_pal_result_t perform_attempt(
                 }
             }
         }
+    }
+    if (rc != H2_PAL_OK && provider->config.log != NULL) {
+        char message[160];
+        /* Log once per failed attempt, never per bounded I/O slice. The caller
+         * logs the safe request identity; no URL or body is exposed here. */
+        (void)snprintf(message, sizeof(message),
+            "stage=%s pal_rc=%d exchange_rc=%d status=%d body_len=%zu",
+            exchange.stage, rc, exchange.result, response->status_code,
+            response->body_len);
+        (void)h2_pal_log_write(provider->config.log, H2_PAL_LOG_ERROR,
+                               "corehttp", message);
     }
     *out_body_delivered = exchange.body_delivered;
     h2_pal_mem_free(provider->config.allocator, exchange.header_name);

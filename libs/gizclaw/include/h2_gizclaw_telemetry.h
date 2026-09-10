@@ -16,12 +16,17 @@ extern "C" {
 #define H2_GIZCLAW_TELEMETRY_MAX_OBSERVATIONS 4u
 #define H2_GIZCLAW_TELEMETRY_TOKEN_MAX 64u
 #define H2_GIZCLAW_TELEMETRY_VERSION_MAX 96u
+#define H2_GIZCLAW_TELEMETRY_IMEI_LEN 15u
+#define H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN 6u
+#define H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN 15u
 
 typedef enum h2_gizclaw_telemetry_kind {
   H2_GIZCLAW_TELEMETRY_BATTERY = 1,
   H2_GIZCLAW_TELEMETRY_GNSS,
   H2_GIZCLAW_TELEMETRY_NETWORK,
   H2_GIZCLAW_TELEMETRY_SYSTEM,
+  H2_GIZCLAW_TELEMETRY_AUDIOPLAYER,
+  H2_GIZCLAW_TELEMETRY_OTA,
 } h2_gizclaw_telemetry_kind_t;
 
 typedef struct h2_gizclaw_telemetry_battery {
@@ -53,6 +58,19 @@ typedef struct h2_gizclaw_telemetry_network {
   h2_gizclaw_str_t operator_name;
   bool has_connected;
   bool connected;
+  /*
+   * Cellular subscriber identity, borrowed for the duration of
+   * h2_gizclaw_req_create_telemetry_send() and copied into the request.
+   * imei is exactly H2_GIZCLAW_TELEMETRY_IMEI_LEN ASCII decimal digits; imsi is
+   * H2_GIZCLAW_TELEMETRY_IMSI_MIN_LEN to H2_GIZCLAW_TELEMETRY_IMSI_MAX_LEN of
+   * them. An empty span is the same as leaving has_* false. Both are rejected
+   * with H2_PAL_ERR_INVALID_ARG when rat compares equal to "wifi", ignoring
+   * case, matching the server rule. Neither value is logged or traced.
+   */
+  bool has_imei;
+  h2_gizclaw_str_t imei;
+  bool has_imsi;
+  h2_gizclaw_str_t imsi;
 } h2_gizclaw_telemetry_network_t;
 
 typedef struct h2_gizclaw_telemetry_system {
@@ -70,6 +88,43 @@ typedef struct h2_gizclaw_telemetry_system {
   h2_gizclaw_str_t hardware_version;
 } h2_gizclaw_telemetry_system_t;
 
+typedef enum h2_gizclaw_ota_state {
+  H2_GIZCLAW_OTA_STATE_UNSPECIFIED = 0,
+  H2_GIZCLAW_OTA_STATE_STARTED = 1,
+  H2_GIZCLAW_OTA_STATE_DOWNLOADING = 2,
+  H2_GIZCLAW_OTA_STATE_SUCCEEDED = 3,
+  H2_GIZCLAW_OTA_STATE_FAILED = 4,
+} h2_gizclaw_ota_state_t;
+
+typedef struct {
+  h2_gizclaw_str_t state;
+  bool has_current_index;
+  uint32_t current_index;
+  uint64_t position_ms;
+  bool has_duration_ms;
+  uint64_t duration_ms;
+  h2_gizclaw_str_t repeat;
+  uint32_t playlist_length;
+  uint32_t playlist_revision;
+  bool has_error_code;
+  h2_gizclaw_str_t error_code;
+  bool has_error_message;
+  h2_gizclaw_str_t error_message;
+} h2_gizclaw_telemetry_audioplayer_t;
+
+typedef struct {
+  h2_gizclaw_ota_state_t state;
+  h2_gizclaw_str_t update_id;
+  bool has_target_version;
+  h2_gizclaw_str_t target_version;
+  bool has_download_percent;
+  double download_percent;
+  bool has_error_code;
+  h2_gizclaw_str_t error_code;
+  bool has_error_message;
+  h2_gizclaw_str_t error_message;
+} h2_gizclaw_telemetry_ota_t;
+
 typedef struct h2_gizclaw_telemetry_observation {
   int32_t observed_at_delta_ms;
   h2_gizclaw_telemetry_kind_t kind;
@@ -78,12 +133,15 @@ typedef struct h2_gizclaw_telemetry_observation {
     h2_gizclaw_telemetry_gnss_t gnss;
     h2_gizclaw_telemetry_network_t network;
     h2_gizclaw_telemetry_system_t system;
+    h2_gizclaw_telemetry_audioplayer_t audioplayer;
+    h2_gizclaw_telemetry_ota_t ota;
   } value;
 } h2_gizclaw_telemetry_observation_t;
 
 /**
  * Borrowed, bounded telemetry frame submitted on the GizClaw owner task.
  *
+ * OTA frames contain exactly one OTA observation (SDK dedicated frame API).
  * Every string and observation is borrowed only for the duration of
  * h2_gizclaw_req_create_telemetry_send(). Missing facts stay unset.
  */

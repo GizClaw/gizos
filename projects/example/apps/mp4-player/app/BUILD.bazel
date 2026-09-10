@@ -1,21 +1,27 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/task_names.c"],
-    hdrs = ["include/h2_smoke_mp4_player_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$mp4-player/audio",
+        "$mp4-player/decoder",
+    ],
 )
 
 cc_library(
     name = "mp4_player",
-    srcs = ["src/app.c"],
-    hdrs = ["include/h2_smoke_mp4_player.h"],
+    srcs = [
+        "src/app.c",
+        "src/task_names.c",
+    ],
+    hdrs = [
+        "include/h2_smoke_mp4_player.h",
+        "include/h2_smoke_mp4_player_task_names.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
@@ -27,7 +33,7 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/mp4_decoder",
         "//libs/pal",
         "//libs/runtime",

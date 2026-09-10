@@ -366,6 +366,21 @@ int main(void) {
   assert(wifi_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP);
   assert(wifi_status.rssi == -51 && wifi_status.channel == 6u);
 
+  const h2_pal_wifi_settings_api_t *saved_api = h2_desktop_platform_wifi_settings();
+  h2_pal_wifi_sta_config_t previous = {.ssid = "previous", .ssid_len = 8};
+  h2_pal_wifi_sta_config_t saved_config = {0};
+  assert(h2_pal_wifi_settings_set_saved_sta_config(saved_api, &previous) == H2_PAL_OK);
+  assert(h2_pal_wifi_sta_connect(h2_desktop_platform_wifi_sta(), &connect_config, 0u) == H2_PAL_OK);
+  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
+  assert(!memcmp(&saved_config, &previous, sizeof(previous)));
+  assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(), &connect_config, 100u) == H2_PAL_OK);
+  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
+  assert(!memcmp(&saved_config, &connect_config, sizeof(connect_config)));
+  connect_config.password[0] = 'X';
+  assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(), &connect_config, 100u) == H2_PAL_ERR_IO);
+  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
+  assert(saved_config.password[0] == 's');
+
   const h2_desktop_wifi_scan_entry_config_t duplicate_ssid_entries[] = {
       {.ssid = "Duplicate",
        .ssid_len = strlen("Duplicate"),

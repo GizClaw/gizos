@@ -1,3 +1,5 @@
+#include "h2_app_test_mem.h"
+#include "h2_app_test_time.h"
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_service.h"
 
@@ -41,10 +43,12 @@ enum {
   NO_MEMORY
 };
 
-static unsigned s_mode, s_live, s_dos, s_accepted, s_waits;
+static unsigned s_mode, s_dos, s_accepted, s_waits;
 static unsigned s_callbacks, s_polls, s_cancels, s_recovery;
 static size_t s_open, s_maximum, s_unique;
-static uint64_t s_now, s_deadline;
+static uint64_t s_deadline;
+static h2_app_test_mem_t allocator;
+static h2_app_test_time_t clock;
 static bool s_concurrency;
 static bool s_emit_evidence;
 static int s_service;
@@ -57,21 +61,13 @@ struct h2_gizclaw_req {
 
 static void *allocate(void *user, size_t size) {
   (void)user;
-  if (s_mode == NO_MEMORY)
-    return NULL;
-  void *p = calloc(1, size);
-  assert(p != NULL);
-  ++s_live;
+  void *p = h2_pal_mem_alloc(&allocator.api, size);
+  if (p) memset(p, 0, size);
   return p;
 }
-
 static void release(void *user, void *p) {
   (void)user;
-  if (p != NULL) {
-    assert(s_live > 0u);
-    --s_live;
-    free(p);
-  }
+  h2_pal_mem_free(&allocator.api, p);
 }
 
 static void request_unref(h2_gizclaw_req_t *request) {
@@ -79,13 +75,7 @@ static void request_unref(h2_gizclaw_req_t *request) {
     release(NULL, request);
 }
 
-static int sleep_ms(void *user, uint32_t ms) {
-  (void)user;
-  if (s_mode == SLEEP_ERROR)
-    return H2_PAL_ERR_IO;
-  s_now += ms;
-  return H2_PAL_OK;
-}
+
 
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
                                      uint32_t ms) {
@@ -95,7 +85,7 @@ bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *fixture,
       (s_mode == WAIT_BUDGET_ERROR && s_dos != 0u) ||
       (s_mode == SECOND_WAIT_BUDGET_ERROR && s_waits != 0u))
     return false;
-  return s_now <= s_deadline && ms <= s_deadline - s_now;
+  return clock.monotonic_ms <= s_deadline && ms <= s_deadline - clock.monotonic_ms;
 }
 
 void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage, int rc) {
@@ -186,9 +176,9 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
   ++s_waits;
   if (!s_concurrency && s_mode == REPEAT_WAIT_ERROR && s_waits == 2u)
     return H2_PAL_ERR_TIMEOUT;
-  s_now += 10;
+  clock.monotonic_ms += 10;
   if (s_mode == HOLD_CALLBACK)
-    s_deadline = s_now + 5u;
+    s_deadline = clock.monotonic_ms + 5u;
   if (!request->terminal && s_concurrency)
     --s_open;
   request->terminal = true;
@@ -257,7 +247,7 @@ h2_pal_result_t h2_gizclaw_rpc_ping(h2_gizclaw_service_t *service,
                                     uint32_t timeout,
                                     h2_gizclaw_ping_result_t *out) {
   assert(service == (h2_gizclaw_service_t *)&s_service && timeout > 0u);
-  assert(s_live == 0u);
+  assert(allocator.live_blocks == 0u);
   ++s_recovery;
   *out = (h2_gizclaw_ping_result_t){.round_trip_ms = 10, .server_time_ms = 100};
   return H2_PAL_OK;
@@ -276,24 +266,24 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
 }
 
 static void reset(unsigned mode, bool concurrency) {
-  assert(s_live == 0u);
+  assert(allocator.live_blocks == 0u);
   s_mode = mode;
+  h2_app_test_mem_init(&allocator, NULL);
+  allocator.fail_at = mode == NO_MEMORY ? 1u : 0u;
+  h2_app_test_time_init(&clock, 0u);
+  clock.sleep = (h2_app_test_fault_t){.result=H2_PAL_ERR_IO,
+      .remaining=mode == SLEEP_ERROR ? UINT32_MAX : 0u};
   s_concurrency = concurrency;
   s_dos = s_accepted = s_waits = s_callbacks = s_polls =
       s_cancels = s_recovery = 0;
-  s_now = 0u;
+  clock.monotonic_ms = 0u;
   s_deadline = 60000u;
 }
 
 int main(int argc, char **argv) {
-  static const h2_pal_mem_vtable_t mem_vtable = {.alloc = allocate,
-                                                 .free = release};
-  static const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
-  static const h2_pal_time_vtable_t time_vtable = {.sleep_ms = sleep_ms};
-  static const h2_pal_time_api_t time = {.vtable = &time_vtable};
   h2_gizclaw_e2e_fixture_t fixture = {
-      .allocator = &mem,
-      .time = &time,
+      .allocator = &allocator.api,
+      .time = &clock.api,
       .registration_token = "local-only-token",
       .runtime_profile_name = "profile",
       .actors = {{.service = (h2_gizclaw_service_t *)&s_service}},
@@ -303,7 +293,7 @@ int main(int argc, char **argv) {
     s_emit_evidence = true;
     puts("H2_GIZCLAW_E2E stage=coverage-begin case=service");
     assert(h2_gizclaw_e2e_run_service(&fixture) == H2_PAL_OK);
-    assert(s_live == 0u);
+    assert(allocator.live_blocks == 0u);
     size_t dispatched = 0u;
     int poll_rc = h2_gizclaw_service_poll(fixture.actors[0].service, 1u,
                                           &dispatched);
@@ -336,7 +326,7 @@ int main(int argc, char **argv) {
     assert(rc == expected[index]);
     if (mode == NORMAL)
       assert(s_waits == 2u && s_polls == 0u && s_cancels == 2u);
-    assert(s_live == 0u);
+    assert(allocator.live_blocks == 0u);
   }
   const unsigned service_modes[] = {
       REPEAT_WAIT_ERROR,     DUPLICATE_DO_ACCEPTED, UNTERMINATED_PROFILE,
@@ -367,7 +357,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "service mode=%u expected=%d actual=%d\n",
               service_modes[i], service_results[i], rc);
     assert(rc == service_results[i]);
-    assert(s_live == 0u);
+    assert(allocator.live_blocks == 0u);
   }
   reset(NORMAL, false);
   assert(h2_gizclaw_e2e_run_service(NULL) == H2_PAL_ERR_INVALID_ARG);
@@ -377,7 +367,7 @@ int main(int argc, char **argv) {
          sizeof(fixture.runtime_profile_name));
   assert(h2_gizclaw_e2e_run_service(&fixture) == H2_PAL_ERR_INVALID_ARG);
   strcpy(fixture.runtime_profile_name, "profile");
-  assert(s_live == 0u && s_dos == 0u);
+  assert(allocator.live_blocks == 0u && s_dos == 0u);
   unsigned modes[] = {NORMAL,          CREATE_ERROR, DO_ERROR,
                       SECOND_DO_ERROR, PARSE_ERROR,  WAIT_ERROR};
   int results[] = {H2_PAL_OK,           H2_PAL_ERR_NO_MEMORY,
@@ -386,7 +376,7 @@ int main(int argc, char **argv) {
   for (size_t i = 0u; i < sizeof(modes) / sizeof(modes[0]); ++i) {
     reset(modes[i], true);
     assert(h2_gizclaw_e2e_run_concurrency(&fixture) == results[i]);
-    assert(s_live == 0u && s_polls == 0u && s_open == 0u);
+    assert(allocator.live_blocks == 0u && s_polls == 0u && s_open == 0u);
     assert(s_recovery == 1u);
     if (modes[i] == NORMAL)
       assert(s_accepted == 3u && s_waits == 3u && s_maximum == 3u &&

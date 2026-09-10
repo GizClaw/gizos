@@ -472,3 +472,11 @@ int h2_bk_h2loader_advertise_app_ble_service(
     return h2_loader_ble_service_set_additional_advertised_services(
         s_ble.service, service_uuid, 1u);
 }
+
+int h2_bk_h2loader_app_commands_get_config(h2_loader_app_client_config_t *out_config) {
+    if (out_config == NULL) return H2_PAL_ERR_INVALID_ARG;
+    memset(out_config, 0, sizeof(*out_config));
+    if (s_ble.client_config.operation_mutex == NULL) return H2_PAL_ERR_INVALID_STATE;
+    *out_config = s_ble.client_config;
+    return H2_PAL_OK;
+}

@@ -90,3 +90,5 @@ projects/<owner>/targets/h2loader_tar_zlib/<app>/<board>/
 App 固件在业务逻辑之前启动 H2Loader App command service，并在达到 command-ready/healthy point 后确认当前 image。它报告 `active_role=app`。同一 Board 的 Loader 与 App 广播相同的 H2Loader Service UUID 和 Board identity；Host 合成相同的 `h2l.<board>` 显示名，并通过 `active_role` 区分当前运行的固件。
 
 APP 复用上面的完整设备命令实现，包括 Stage payload/url/abort 和三个 reboot 命令。APP 与 Loader 共享 Pref、DL 路径、package validator、digest、HTTP/Wi-Fi provider 和 operation mutex，不复制另一套协议或发布逻辑。
+
+配网命令显式调用 PAL `connect_and_save`，使用 15 秒关联/DHCP 总预算。Runtime 与原始 PAL provider 使用相同合同；命令不等待第二次 IP，也不重复保存。连接失败不覆盖旧凭据，保存失败返回错误。BK 启动恢复继续读取保存配置后调用零超时 `connect`，保持异步且不重写凭据。

@@ -127,6 +127,9 @@ typedef struct test_display_fixture {
   h2_display_rect_t draw_rects[8u];
   size_t draw_count;
   size_t present_count;
+  size_t open_count;
+  size_t close_count;
+  int fail_info;
 } test_display_fixture_t;
 
 static test_display_fixture_t s_test_display_fixture;
@@ -136,12 +139,15 @@ static void test_display_reset(void) {
 }
 
 static int test_display_open(void *user) {
+  ++s_test_display_fixture.open_count;
   assert(user == &s_test_display_fixture);
   return H2_DISPLAY_OK;
 }
 
 static int test_display_get_info(void *user, h2_display_info_t *info) {
   assert(user == &s_test_display_fixture);
+  if (s_test_display_fixture.fail_info)
+    return H2_DISPLAY_ERR_INVALID_ARG;
   if (info == NULL)
     return H2_DISPLAY_ERR_INVALID_ARG;
   *info = (h2_display_info_t){
@@ -182,6 +188,7 @@ static int test_display_present(void *user) {
 }
 
 static int test_display_close(void *user) {
+  ++s_test_display_fixture.close_count;
   assert(user == &s_test_display_fixture);
   return H2_DISPLAY_OK;
 }
@@ -762,7 +769,53 @@ static void assert_only_pixels(uint16_t color, const expected_pixel_t *expected,
   }
 }
 
+static void test_borrowed_display(void) {
+  h2_runtime_t *runtime = create_runtime();
+  const char *scripts[] = {
+      "local d=require('display');d.present()",
+      "local d=require('display');d.present();d.deinit()",
+      "local d=require('display');error('after-open')",
+      "require('display')",
+      "local d=require('display');require('runtime').sleep(100000)",
+  };
+  for (size_t i = 0; i < sizeof(scripts) / sizeof(scripts[0]); ++i) {
+    h2_lua_host_t *host = NULL;
+    const h2_lua_host_config_t config = {
+        .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+        .borrow_display = 1, .execution_timeout_ms = 200000u,
+    };
+    test_display_reset();
+    assert(h2_pal_display_open(runtime->display) == H2_PAL_OK);
+    s_test_display_fixture.fail_info = i == 3u;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    h2_lua_job_id_t job;
+    assert(h2_lua_job_submit_text(host, "@borrowed-display.lua",
+        (const uint8_t *)scripts[i], strlen(scripts[i]), NULL, 0u, &job) == H2_PAL_OK);
+    if (i == 4u) {
+      for (unsigned wait = 0u; wait < 1000u &&
+           status(host, job).state != H2_LUA_JOB_WAITING; ++wait)
+        assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
+      assert(status(host, job).state == H2_LUA_JOB_WAITING);
+      assert(h2_lua_host_stop(host) == H2_PAL_OK);
+      assert(h2_lua_host_join(host) == H2_PAL_OK);
+    } else {
+      run_until_terminal(host, job, 64u);
+      assert(status(host, job).state ==
+          (i >= 2u ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
+      assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+    }
+    h2_lua_host_destroy(host);
+    assert(s_test_display_fixture.open_count == 1u);
+    assert(s_test_display_fixture.close_count == 0u);
+    assert(h2_pal_display_close(runtime->display) == H2_PAL_OK);
+    assert(s_test_display_fixture.close_count == 1u);
+  }
+  h2_runtime_deinit(runtime);
+}
+
 int main(void) {
+  test_borrowed_display();
   static const char *const esp_claw_ids[] = {
       "adc",
       "gpio",

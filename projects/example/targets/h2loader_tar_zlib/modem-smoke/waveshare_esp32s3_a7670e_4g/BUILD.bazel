@@ -7,12 +7,25 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 esp_target_task_policy(
-    task_name_deps = [
-        "//libs/bleikcp:task_names",
-        "//libs/pal/providers/h2peer:task_names",
-        "//libs/pal/providers/modem/simcom:task_names",
-        "//projects/h2loader/libs/h2loader:task_names",
-        "//projects/h2loader/apps/loader/app:task_names",
+    default_policy = "4  any  4096  psram",
+    graph = [":modem_smoke_launcher"],
+    policies = [
+        #   task            priority  core  stack  region
+        "h2loader/appcmd    8     0     4096   psram",
+        "$h2loader/return   8     0     4096   psram",
+        "$h2loader/blelink  6     0     4096   psram",
+        "$bleikcp/kcp       7     0     4096   psram",
+        "$bleikcp/server    5     0     4096   psram",
+        "$h2peer/net        7     0     4096   psram",
+        "$h2peer/udp        7     0     4096   psram",
+        "$net/modem_ppp_rx  7     0     4096   psram",
+        "$modem/call_in     6     0     4096   psram",
+        "$modem/gnss_fix    5     0     4096   psram",
+        "$modem/urc         6     0     4096   psram",
+        # The loader UART command task is not started in this image.
+        "$h2loader/uartcmd  default",
+        "$runtime/input  default",
+        "$runtime/nfc  default",
     ],
 )
 
@@ -31,6 +44,7 @@ firmware_lib_component(
         "//libs/pal/providers/modem/simcom:simcom_modem",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
     ],
 )
 

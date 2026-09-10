@@ -108,6 +108,10 @@ def _firmware_native_component_impl(ctx):
     if not component_name and len(cmake_directories) == 1:
         component_directory = cmake_directories.keys()[0]
         component_name = component_directory.rsplit("/", 1)[-1]
+    elif component_name and not component_directory and len(cmake_directories) == 1:
+        # Generated metadata lives under bazel-out (or an external repository),
+        # not necessarily under the declaring package's source directory.
+        component_directory = cmake_directories.keys()[0]
     if component_name:
         component_directory = component_directory or ctx.label.package
         components.append(struct(
@@ -133,7 +137,7 @@ firmware_native_component = rule(
             doc = "Native build metadata and other non-source inputs owned by this component.",
         ),
         "component_directory": attr.string(
-            doc = "Repository-relative native SDK component directory; defaults to this Bazel package.",
+            doc = "Native SDK component directory; defaults to the sole declared CMakeLists.txt directory, then this Bazel package.",
         ),
         "component_name": attr.string(
             doc = "Native SDK component name. Empty means this target is source ownership only.",

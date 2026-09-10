@@ -77,26 +77,30 @@ void h2_runtime_state_mark_dirty(h2_runtime_t *runtime) {
 }
 
 /*
- * reader_count arithmetic runs under a short test-and-set lock so it only
- * needs atomic load/store and exchange, which every supported target
- * (including ARMv5) lowers natively.
+ * reader_count arithmetic is one fetch_add where that is lock-free. ARMv5
+ * only lowers atomic load/store and exchange natively, so there the update
+ * runs under a short test-and-set lock instead.
  */
 static unsigned int reader_count_add(
     h2_runtime_state_publication_t *publication,
     unsigned int slot_index,
     int delta) {
-    while (atomic_flag_test_and_set_explicit(
-        &publication->reader_lock, memory_order_acquire)) {
-    }
+#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+    return atomic_fetch_add_explicit(
+        &publication->reader_count[slot_index],
+        (unsigned int)delta,
+        memory_order_acq_rel);
+#else
+    h2_runtime_flag_lock(&publication->reader_lock);
     const unsigned int previous = atomic_load_explicit(
         &publication->reader_count[slot_index], memory_order_relaxed);
     atomic_store_explicit(
         &publication->reader_count[slot_index],
         (unsigned int)((int)previous + delta),
         memory_order_relaxed);
-    atomic_flag_clear_explicit(
-        &publication->reader_lock, memory_order_release);
+    h2_runtime_flag_unlock(&publication->reader_lock);
     return previous;
+#endif
 }
 
 h2_pal_result_t h2_runtime_state_read_begin(

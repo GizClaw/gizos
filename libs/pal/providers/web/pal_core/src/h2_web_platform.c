@@ -93,12 +93,13 @@ h2_web_get_wall_status(void *user, h2_pal_time_wall_status_t *out_status) {
   if (out_status == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   uint64_t wall_ms = 0u;
+  h2_pal_result_t rc = h2_web_get_wall_ms(user, &wall_ms);
   *out_status = (h2_pal_time_wall_status_t){
-      .valid = h2_web_get_wall_ms(user, &wall_ms) == H2_PAL_OK,
+      .valid = rc == H2_PAL_OK,
       // The browser exposes the host clock, not its synchronization source.
       .source = H2_PAL_TIME_WALL_SOURCE_UNKNOWN,
   };
-  return H2_PAL_OK;
+  return rc;
 }
 
 static const h2_pal_time_vtable_t h2_web_clock_vtable = {
@@ -223,11 +224,23 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   }
   h2_web_platform_timer_init(platform);
   h2_web_platform_pref_init(platform);
+  h2_web_platform_http_init(platform);
+  if (h2_web_platform_crypto_init(platform) != H2_PAL_OK) {
+    h2_web_platform_timer_deinit(platform);
+    (void)h2_libco_destroy(&platform->executor);
+    free(platform);
+    return NULL;
+  }
+  h2_web_platform_audio_init(platform);
+  h2_web_platform_audio_decoder_init(platform);
+  h2_web_platform_video_decoder_init(platform);
   h2_web_platform_display_init(platform);
   h2_web_platform_webrtc_init(platform);
   if (h2_web_platform_serial_init(platform) != H2_PAL_OK) {
     h2_web_platform_webrtc_deinit(platform);
     h2_web_platform_display_deinit(platform);
+    h2_web_platform_audio_deinit(platform);
+    h2_web_platform_crypto_deinit(platform);
     h2_web_platform_timer_deinit(platform);
     (void)h2_libco_destroy(&platform->executor);
     free(platform);
@@ -240,9 +253,9 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   if (platform == NULL) {
     return;
   }
-  // An Asyncify frame still owns its peer and platform. The caller must retry
-  // destruction after the outstanding WebRTC call has returned.
-  if (h2_web_platform_webrtc_busy(platform))
+  // Suspended calls still own the platform. Stop/cancel them and retry
+  // destruction after their PAL calls have returned.
+  if (platform->mic_calls != 0u || h2_web_platform_webrtc_busy(platform))
     return;
   platform->shutting_down = true;
   if (platform->pump_scheduled) {
@@ -258,6 +271,8 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   h2_web_platform_serial_deinit(platform);
   h2_web_platform_webrtc_deinit(platform);
   h2_web_platform_display_deinit(platform);
+  h2_web_platform_audio_deinit(platform);
+  h2_web_platform_crypto_deinit(platform);
   h2_web_platform_timer_deinit(platform);
   free(platform);
 }
@@ -339,6 +354,21 @@ h2_web_platform_timer_api(h2_web_platform_t *platform) {
 const h2_pal_display_api_t *
 h2_web_platform_display_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->display_api;
+}
+
+const h2_pal_audio_api_t *
+h2_web_platform_audio_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->audio_api;
+}
+
+const h2_pal_video_decoder_api_t *
+h2_web_platform_video_decoder_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->video_decoder_api;
+}
+
+const h2_pal_audio_decoder_api_t *
+h2_web_platform_audio_decoder_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->audio_decoder_api;
 }
 
 const h2_pal_touch_api_t *

@@ -7,12 +7,23 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 package(default_visibility = ["//visibility:public"])
 
 esp_target_task_policy(
-    task_name_deps = [
-        "//libs/bleikcp:task_names",
-        "//libs/pal/providers/h2peer:task_names",
-        "//projects/h2loader/libs/h2loader:task_names",
-        "//projects/h2loader/apps/loader/app:task_names",
-        "//projects/example/apps/bleikcp-speed/app:task_names",
+    default_policy = "4 any 4096 psram",
+    graph = [":bleikcp_speed_client_launcher"],
+    policies = [
+        "h2loader/appcmd       8        0  4096  psram",
+        "$h2loader/return      8        0  4096  psram",
+        "$h2loader/blelink     6        0  4096  psram",
+        "$bleikcp/kcp          7        0  4096  psram",
+        "$bleikcp/server       5        0  4096  psram",
+        "$h2peer/net           7        0  4096  psram",
+        "$h2peer/udp           7        0  4096  psram",
+        "bleikcp-speed/kcp     7        0  4096  psram",
+        "bleikcp-speed/server  5        0  4096  psram",
+        "bleikcp-speed/ui      default",
+        "bleikcp-speed/tx      default",
+        "$runtime/input        default",
+        "$runtime/nfc          default",
+        "$h2loader/uartcmd     default",
     ],
 )
 
@@ -26,6 +37,7 @@ firmware_lib_component(
         "//libs/drivers/motion/qmi8658",
         "//libs/iostreamikcp",
         "//libs/pal:unsupported",
+        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
@@ -56,6 +68,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//projects/example/apps/bleikcp-speed/app:tasks",
         ":firmware_lib",
         "//boards/szp/esp32s3",
         "//libs/bleikcp",

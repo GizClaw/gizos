@@ -131,6 +131,7 @@ armino_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/libs/wifi_sta/include"
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"
     "${REPO_ROOT}/libs/pal/providers/h2peer/include"
     "${REPO_ROOT}/libs/pal/providers/h2sctp/include"

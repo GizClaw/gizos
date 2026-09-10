@@ -250,6 +250,10 @@ int run_desktop(int argc, char **argv) {
   session->app_config = {
       .server_endpoint = {session->endpoint.data(), session->endpoint.size()},
       .registration_token = {session->token.data(), session->token.size()},
+      .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL"),
+      .device_audio_url = std::getenv("H2_GIZCLAW_E2E_AUDIO_URL"),
+      .device_real_audio = false,
+      .voice_audio = nullptr,
       .voice_pcm_s16le_16khz_mono = pcm.empty() ? nullptr : pcm.data(),
       .voice_pcm_len = pcm.size(),
       .suites = suites,

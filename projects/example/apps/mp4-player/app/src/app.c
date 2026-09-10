@@ -1009,14 +1009,17 @@ h2_pal_result_t h2_smoke_mp4_player_run(
             runtime, H2_PAL_LOG_INFO, "H2_MP4_PLAYER_STAGE audio-open");
     }
 
-    result = (h2_pal_result_t)h2_pal_display_open(runtime->display);
-    if (result != H2_PAL_OK) {
-        result = player_fail(runtime, "display-open", result);
-        goto close_audio;
+    if (!config->borrow_display) {
+        result = (h2_pal_result_t)h2_pal_display_open(runtime->display);
+        if (result != H2_PAL_OK) {
+            result = player_fail(runtime, "display-open", result);
+            goto close_audio;
+        }
+        display_opened = 1;
     }
-    display_opened = 1;
-    player_log(
-        runtime, H2_PAL_LOG_INFO, "H2_MP4_PLAYER_STAGE display-open");
+    player_log(runtime, H2_PAL_LOG_INFO,
+               config->borrow_display ? "H2_MP4_PLAYER_STAGE display-borrowed"
+                                      : "H2_MP4_PLAYER_STAGE display-open");
     h2_display_info_t display = {0};
     result = (h2_pal_result_t)h2_pal_display_get_info(runtime->display, &display);
     if (result != H2_PAL_OK || display.width <= 0 || display.height <= 0 ||

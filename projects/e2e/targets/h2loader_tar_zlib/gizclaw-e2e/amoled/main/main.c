@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_amoled_config.h"
+#include "h2_gizclaw_e2e_amoled_ota.h"
 #include "h2_gizclaw_e2e_amoled_state.h"
 #include "h2_esp_target_task_policy.h"
 
@@ -25,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/time.h>
 
 #define H2_GIZCLAW_E2E_AMOLED_RUNNER_STACK_SIZE 65536u
 #define H2_GIZCLAW_E2E_AMOLED_WIFI_STACK_SIZE 8192u
@@ -92,10 +94,27 @@ static void emit_progress(void *user,
   fflush(stdout);
 }
 
+#if defined(H2_GIZCLAW_E2E_RESOURCE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_RESOURCE
+#define AMOLED_E2E_SUITE_NAME "resource"
+#elif defined(H2_GIZCLAW_E2E_VOICE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
+#define AMOLED_E2E_SUITE_NAME "voice"
+#elif defined(H2_GIZCLAW_E2E_RPC_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_RPC
+#define AMOLED_E2E_SUITE_NAME "rpc"
+#elif defined(H2_GIZCLAW_E2E_DEVICE_ONLY)
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_DEVICE
+#define AMOLED_E2E_SUITE_NAME "device"
+#else
+#define AMOLED_E2E_SUITES H2_GIZCLAW_E2E_SUITE_ALL
+#define AMOLED_E2E_SUITE_NAME "all"
+#endif
+
 static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=all "
+  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=" AMOLED_E2E_SUITE_NAME " "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
@@ -115,15 +134,23 @@ static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
 
 static void run_e2e(void *raw) {
   h2_gizclaw_e2e_amoled_runner_t *runner = raw;
+#if defined(H2_GIZCLAW_E2E_OTA_ONLY)
+  h2_gizclaw_e2e_amoled_ota_run(runner->runtime);
+  return;
+#endif
   const h2_gizclaw_e2e_amoled_config_t *launcher_config =
       h2_gizclaw_e2e_amoled_config();
   const h2_gizclaw_e2e_config_t app_config = {
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
+      .voice_audio = runner->runtime->audio,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
-      .suites = H2_GIZCLAW_E2E_SUITE_ALL,
+      .suites = AMOLED_E2E_SUITES,
+      .device_api_url = "https://ap.e2e.gizclaw.com",
+      .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
+      .device_real_audio = true,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,
@@ -303,6 +330,18 @@ static void image_entry(void *user) {
       const esp_err_t time_rc = esp_netif_sntp_sync_wait(
           pdMS_TO_TICKS(H2_GIZCLAW_E2E_AMOLED_EVENT_WAIT_MS));
       if (time_rc == ESP_OK) {
+        /* SNTP updates the SDK clock directly. Publish its calibrated value
+         * through Runtime so the Time PAL validity gate also becomes ready. */
+        struct timeval wall;
+        if (gettimeofday(&wall, NULL) != 0 || wall.tv_sec <= 0) {
+          fail_launcher("time_read", H2_PAL_ERR_IO, true);
+        }
+        const uint64_t wall_ms = (uint64_t)wall.tv_sec * 1000u +
+                                 (uint64_t)wall.tv_usec / 1000u;
+        rc = h2_pal_time_set_wall_ms(runtime->time, wall_ms);
+        if (rc != H2_PAL_OK) {
+          fail_launcher("time_publish", rc, true);
+        }
         state.clock_ready = true;
         printf("H2_GIZCLAW_E2E_AMOLED stage=time status=READY\n");
         fflush(stdout);

@@ -9,34 +9,66 @@ _Static_assert(offsetof(h2_runtime_custom_event_payload_t, data) ==
                    H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE,
                "custom event header size must match the delivered layout");
 
-static void custom_event_lock(h2_runtime_private_t *private_state) {
-    while (atomic_flag_test_and_set_explicit(
-        &private_state->custom_event_lock, memory_order_acquire)) {
-    }
+#if !H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+static void custom_event_lock(h2_runtime_t *runtime) {
+    h2_runtime_flag_lock(&runtime->private_state->custom_event_lock);
 }
 
-static void custom_event_unlock(h2_runtime_private_t *private_state) {
-    atomic_flag_clear_explicit(
-        &private_state->custom_event_lock, memory_order_release);
+static void custom_event_unlock(h2_runtime_t *runtime) {
+    h2_runtime_flag_unlock(&runtime->private_state->custom_event_lock);
 }
+#endif
 
 /* Claims a posting slot unless deinit already closed the door. */
-static int custom_event_enter(h2_runtime_private_t *private_state) {
-    custom_event_lock(private_state);
-    int entered = private_state->custom_event_closed == 0;
-    if (entered) {
-        private_state->custom_event_in_flight += 1u;
+static int custom_event_enter(h2_runtime_t *runtime) {
+    h2_runtime_private_t *private_state = runtime->private_state;
+#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+    /*
+     * Claim first, then check the door: deinit closes the door and then reads
+     * in_flight, so a claim it does not see was made after it read, and that
+     * poster sees the closed door and backs out.
+     */
+    atomic_fetch_add_explicit(
+        &private_state->custom_event_in_flight, 1u, memory_order_seq_cst);
+    if (atomic_load_explicit(
+            &private_state->custom_event_closed, memory_order_seq_cst) != 0) {
+        atomic_fetch_sub_explicit(
+            &private_state->custom_event_in_flight, 1u, memory_order_seq_cst);
+        return 0;
     }
-    custom_event_unlock(private_state);
+    return 1;
+#else
+    custom_event_lock(runtime);
+    int entered = atomic_load_explicit(
+        &private_state->custom_event_closed, memory_order_relaxed) == 0;
+    if (entered) {
+        atomic_store_explicit(
+            &private_state->custom_event_in_flight,
+            atomic_load_explicit(
+                &private_state->custom_event_in_flight, memory_order_relaxed) + 1u,
+            memory_order_relaxed);
+    }
+    custom_event_unlock(runtime);
     return entered;
+#endif
 }
 
-static void custom_event_leave(h2_runtime_private_t *private_state) {
-    custom_event_lock(private_state);
-    if (private_state->custom_event_in_flight > 0u) {
-        private_state->custom_event_in_flight -= 1u;
+static void custom_event_leave(h2_runtime_t *runtime) {
+    h2_runtime_private_t *private_state = runtime->private_state;
+#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+    atomic_fetch_sub_explicit(
+        &private_state->custom_event_in_flight, 1u, memory_order_seq_cst);
+#else
+    custom_event_lock(runtime);
+    unsigned int in_flight = atomic_load_explicit(
+        &private_state->custom_event_in_flight, memory_order_relaxed);
+    if (in_flight > 0u) {
+        atomic_store_explicit(
+            &private_state->custom_event_in_flight, in_flight - 1u,
+            memory_order_relaxed);
     }
-    custom_event_unlock(private_state);
+    custom_event_unlock(runtime);
+#endif
 }
 
 static size_t custom_event_capacity(const h2_runtime_private_t *private_state) {
@@ -57,7 +89,7 @@ static h2_pal_result_t post_custom_event(
     if (event->payload_size > custom_event_capacity(runtime->private_state)) {
         return H2_PAL_ERR_TRUNCATED;
     }
-    if (!custom_event_enter(runtime->private_state)) {
+    if (!custom_event_enter(runtime)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
 
@@ -78,7 +110,7 @@ static h2_pal_result_t post_custom_event(
 
     h2_pal_result_t rc =
         h2_runtime_enqueue_event_strict(runtime, &queued, timeout_ms);
-    custom_event_leave(runtime->private_state);
+    custom_event_leave(runtime);
     return rc;
 }
 
@@ -93,11 +125,11 @@ h2_pal_result_t h2_runtime_notify(h2_runtime_t *runtime) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     /* Same door as a post: deinit drains notifiers before the queue goes. */
-    if (!custom_event_enter(runtime->private_state)) {
+    if (!custom_event_enter(runtime)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     h2_runtime_notify_internal(runtime);
-    custom_event_leave(runtime->private_state);
+    custom_event_leave(runtime);
     return H2_PAL_OK;
 }
 
@@ -150,10 +182,20 @@ void h2_runtime_custom_event_close(h2_runtime_t *runtime) {
      * already blocked.
      */
     for (;;) {
-        custom_event_lock(private_state);
-        private_state->custom_event_closed = 1;
-        uint32_t in_flight = private_state->custom_event_in_flight;
-        custom_event_unlock(private_state);
+        unsigned int in_flight;
+#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+        atomic_store_explicit(
+            &private_state->custom_event_closed, 1, memory_order_seq_cst);
+        in_flight = atomic_load_explicit(
+            &private_state->custom_event_in_flight, memory_order_seq_cst);
+#else
+        custom_event_lock(runtime);
+        atomic_store_explicit(
+            &private_state->custom_event_closed, 1, memory_order_relaxed);
+        in_flight = atomic_load_explicit(
+            &private_state->custom_event_in_flight, memory_order_relaxed);
+        custom_event_unlock(runtime);
+#endif
         if (in_flight == 0u) {
             return;
         }

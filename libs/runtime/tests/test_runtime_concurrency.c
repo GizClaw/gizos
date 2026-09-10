@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "h2_runtime_internal.h"
+#include "h2_runtime_test.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -760,6 +761,9 @@ static void test_pinned_reader_does_not_block_publication(void) {
     concurrency_env_init(&env);
     add_single_button(&env);
     h2_runtime_t *runtime = concurrency_runtime_create(&env);
+    /* This case controls each publication explicitly. The background writer
+     * could otherwise rotate the active slot between read_begin and the load. */
+    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
     const h2_runtime_state_bank_t *bank = NULL;
@@ -1095,7 +1099,158 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
     concurrency_env_deinit(&env);
 }
 
+/*
+ * The station snapshot is published by one writer and polled by readers that
+ * never lock. A reader must always come away with one coherent moment, even
+ * while publications keep arriving: station events land in bursts, so a
+ * scheme that only retires the previous copy would hand a reader a snapshot
+ * that is being rewritten underneath it.
+ */
+typedef struct station_reader_args {
+    h2_runtime_t *runtime;
+    atomic_int stop;
+    atomic_ulong reads;
+    int torn;
+} station_reader_args_t;
+
+static void *station_reader_main(void *ctx) {
+    station_reader_args_t *args = ctx;
+    while (atomic_load(&args->stop) == 0) {
+        h2_runtime_system_wifi_sta_state_t state;
+        memset(&state, 0, sizeof(state));
+        if (h2_runtime_system_state_wifi_sta(args->runtime, &state) != H2_PAL_OK) {
+            continue;
+        }
+        atomic_fetch_add(&args->reads, 1ul);
+        if (state.valid == 0u) {
+            continue;
+        }
+        /*
+         * Every published snapshot pairs a channel with the matching RSSI and
+         * SSID length, so any other combination is a torn read.
+         */
+        if ((size_t)state.channel != state.ssid_len ||
+            state.rssi != -(int32_t)state.channel) {
+            args->torn = 1;
+        }
+    }
+    return NULL;
+}
+
+static void test_station_snapshot_survives_a_publication_burst(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    add_single_button(&env);
+    h2_runtime_t *runtime = concurrency_runtime_create(&env);
+
+    station_reader_args_t args = { .runtime = runtime };
+    atomic_init(&args.stop, 0);
+    atomic_init(&args.reads, 0ul);
+    pthread_t reader;
+    assert(pthread_create(&reader, NULL, station_reader_main, &args) == 0);
+    /*
+     * Let the reader get going first. Starting the burst immediately can
+     * finish it before the thread runs at all, which proves nothing.
+     */
+    while (atomic_load(&args.reads) == 0ul) {
+        sched_yield();
+    }
+
+    for (unsigned int i = 0u; i < 20000u; ++i) {
+        uint8_t channel = (uint8_t)(1u + (i % 13u));
+        h2_runtime_system_wifi_sta_state_t state;
+        memset(&state, 0, sizeof(state));
+        state.valid = 1u;
+        state.status = H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED;
+        state.channel = channel;
+        state.ssid_len = channel;
+        state.rssi = -(int32_t)channel;
+        memset(state.ssid, 'a', channel);
+        assert(h2_runtime_test_set_system_wifi_sta_state(runtime, &state) ==
+               H2_PAL_OK);
+    }
+
+    atomic_store(&args.stop, 1);
+    assert(pthread_join(reader, NULL) == 0);
+    assert(atomic_load(&args.reads) > 0ul);
+    assert(args.torn == 0);
+
+    /* The last publication is what a later reader sees. */
+    h2_runtime_system_wifi_sta_state_t final_state;
+    assert(h2_runtime_system_state_wifi_sta(runtime, &final_state) == H2_PAL_OK);
+    assert(final_state.valid == 1u);
+    assert((size_t)final_state.channel == final_state.ssid_len);
+
+    h2_runtime_deinit(runtime);
+    concurrency_env_deinit(&env);
+}
+
+/*
+ * The sequence is one lock-free add on hosts and every MCU but ARMv5.
+ * Concurrent takers must never see a duplicate or a zero.
+ */
+#define SEQUENCE_TAKER_COUNT 8u
+#define SEQUENCE_TAKES_PER_THREAD 20000u
+
+typedef struct sequence_taker {
+    h2_runtime_t *runtime;
+    h2_runtime_sequence_t taken[SEQUENCE_TAKES_PER_THREAD];
+} sequence_taker_t;
+
+static void *sequence_taker_thread(void *user) {
+    sequence_taker_t *taker = (sequence_taker_t *)user;
+    for (size_t i = 0u; i < SEQUENCE_TAKES_PER_THREAD; ++i) {
+        taker->taken[i] = h2_runtime_next_sequence(taker->runtime);
+    }
+    return NULL;
+}
+
+static int sequence_compare(const void *left, const void *right) {
+    const h2_runtime_sequence_t a = *(const h2_runtime_sequence_t *)left;
+    const h2_runtime_sequence_t b = *(const h2_runtime_sequence_t *)right;
+    return a < b ? -1 : a > b;
+}
+
+static void test_concurrent_sequences_are_unique_across_wrap(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    h2_runtime_t *runtime = concurrency_runtime_create(&env);
+    /* Start just below the wrap so the run crosses UINT32_MAX -> 1. */
+    const size_t total = SEQUENCE_TAKER_COUNT * SEQUENCE_TAKES_PER_THREAD;
+    runtime->private_state->next_sequence =
+        (h2_runtime_sequence_t)(UINT32_MAX - total / 2u);
+
+    static sequence_taker_t takers[SEQUENCE_TAKER_COUNT];
+    pthread_t threads[SEQUENCE_TAKER_COUNT];
+    for (size_t t = 0u; t < SEQUENCE_TAKER_COUNT; ++t) {
+        takers[t].runtime = runtime;
+        assert(pthread_create(
+                   &threads[t], NULL, sequence_taker_thread, &takers[t]) == 0);
+    }
+    static h2_runtime_sequence_t all[SEQUENCE_TAKER_COUNT *
+                                     SEQUENCE_TAKES_PER_THREAD];
+    for (size_t t = 0u; t < SEQUENCE_TAKER_COUNT; ++t) {
+        assert(pthread_join(threads[t], NULL) == 0);
+        memcpy(&all[t * SEQUENCE_TAKES_PER_THREAD],
+               takers[t].taken,
+               sizeof(takers[t].taken));
+    }
+    qsort(all, total, sizeof(all[0]), sequence_compare);
+    for (size_t i = 0u; i < total; ++i) {
+        assert(all[i] != 0u);
+        assert(i == 0u || all[i] != all[i - 1u]);
+    }
+    /* Exactly total values were issued, and 0 was skipped once at the wrap. */
+    assert(runtime->private_state->next_sequence ==
+           (h2_runtime_sequence_t)(UINT32_MAX - total / 2u + total + 1u));
+
+    h2_runtime_deinit(runtime);
+    concurrency_env_deinit(&env);
+}
+
 int main(void) {
+    test_concurrent_sequences_are_unique_across_wrap();
+    test_station_snapshot_survives_a_publication_burst();
     test_slow_pal_does_not_block_snapshot_read();
     test_push_edge_does_not_write_while_poller_is_blocked();
     test_pinned_reader_does_not_block_publication();

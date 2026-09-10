@@ -280,3 +280,5 @@ Desktop Component 不应该：
 ### 网络状态模拟
 
 Desktop App 的 `layout.json` 可以在 `simulation.wifi_sta.scan_results` 中声明扫描可见的 Wi-Fi，包含 SSID、RSSI、信道、安全类型和加密网络的预期密码；open 网络不得配置密码。`wifi_sta.scan_outcome` 可以配置 `success`、`io_error` 或 `timeout`，`scan_delay_ms` 可以在 60 秒内延迟结果，用于验证失败、PAL timeout、取消和迟到结果；当延迟超过 PAL 调用的 `timeout_ms` 时，Desktop 必须在 deadline 返回 timeout，不能再投递结果。`wifi_sta` 的当前连接状态与扫描列表分开配置。`simulation.modem` 可以声明 modem 是否可用、`mobile_data_enabled` 初始用户期望、运营商、信号和 RAT；不能用瞬时 PPP 连接结果代替初始用户期望。Desktop H106 只在 `cellular_enabled` preference 缺失时用该值初始化 preference，随后通过正式 Modem PAL 恢复状态；用户在页面上的修改继续跨启动保留。Desktop modem 在移动数据关闭时不报告有效 RSSI，H106 在后台恢复或切换完成后也必须立即刷新 Header，不能留下与当前模拟状态不一致的旧信号。Desktop backend 必须复制配置，并通过正式的 Wi-Fi STA 与 Modem PAL 返回和修改状态；App 不能直接读取 JSON 配置。Desktop H106 示例中加密网络的测试密码是 `h106test`。
+
+Wi-Fi 用户配网通过显式 PAL `connect_and_save` 调用 `libs/wifi_sta` 的共享事务；普通 `connect` 不写保存配置。Provider 在整个事务期间串行接纳连接和断开，只有目标网络认证且得到有效 IP 后才保存，保存失败原样返回。Desktop 成功连接使用文档示例网段的模拟 IPv4，保存仅在当前进程有效；不访问宿主真实 Wi-Fi 配置。

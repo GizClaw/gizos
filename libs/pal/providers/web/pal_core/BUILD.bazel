@@ -64,11 +64,17 @@ cc_library(
     name = "pal_core",
     srcs = [
         "src/h2_web_platform.c",
+        "src/h2_web_platform_audio.c",
+        "src/h2_web_platform_audio_decoder.c",
+        "src/h2_web_platform_crypto.c",
         "src/h2_web_platform_display.c",
+        "src/h2_web_platform_http.c",
         "src/h2_web_platform_internal.h",
+        "src/h2_web_platform_mic.c",
         "src/h2_web_platform_pref.c",
         "src/h2_web_platform_serial.c",
         "src/h2_web_platform_timer.c",
+        "src/h2_web_platform_video_decoder.c",
         "src/h2_web_platform_webrtc.c",
     ],
     hdrs = ["include/h2_web_platform.h"],
@@ -79,6 +85,7 @@ cc_library(
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/libco",
+        "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
 
@@ -187,6 +194,102 @@ js_test(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+# The real browser target uses getUserMedia with Chromium's synthetic device.
+# The Node target controls permission and late-completion failures deterministically.
+
+cc_binary(
+    name = "_wasm/mic_test",
+    testonly = True,
+    srcs = ["tests/test_h2_web_mic.c"],
+    additional_linker_inputs = ["tests/mic_fake.js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+    ] + [
+        "--pre-js",
+        "$(location tests/mic_fake.js)",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+wasm_cc_binary(
+    name = "mic_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/mic_test",
+    exit_runtime = True,
+    outputs = [
+        "mic_test.js",
+        "mic_test.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_binary(
+    name = "_wasm/mic_browser_test",
+    testonly = True,
+    srcs = ["tests/test_h2_web_mic.c"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+wasm_cc_binary(
+    name = "mic_browser_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/mic_browser_test",
+    exit_runtime = True,
+    outputs = [
+        "mic_browser_test.js",
+        "mic_browser_test.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+js_test(
+    name = "mic_test",
+    chdir = package_name(),
+    data = [":mic_test_wasm"],
+    entry_point = "mic_test.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "mic_browser_test",
+    size = "medium",
+    srcs = ["tests/run_mic_browser.py"],
+    args = ["$(locations :mic_browser_test_wasm)"],
+    data = [":mic_browser_test_wasm"] + select({
+        "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
+        "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
+        "//conditions:default": [],
+    }),
+    legacy_create_init = False,
+    main = "tests/run_mic_browser.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )

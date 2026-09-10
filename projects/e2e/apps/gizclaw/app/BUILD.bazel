@@ -2,17 +2,18 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_gizclaw_e2e_task_names.c"],
-    hdrs = ["include/h2_gizclaw_e2e_task_names.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "gizclaw/e2e/runner",
+        "gizclaw/e2e/wifi",
+        "gizclaw/e2e/launcher",
+        "gizclaw/e2e/job",
+    ],
 )
 
 cc_library(
@@ -22,6 +23,7 @@ cc_library(
         "src/h2_gizclaw_e2e_firmware.c",
         "src/h2_gizclaw_e2e_firmware.h",
         "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_resource.h",
         "src/h2_gizclaw_e2e_rpc.h",
         "src/h2_gizclaw_e2e_service.h",
         "src/h2_gizclaw_e2e_voice.h",
@@ -37,12 +39,14 @@ cc_library(
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         ":connectivity",
+        ":device_case",
         ":fixture",
-        ":runner",
         ":request_cases",
+        ":resource_case",
         ":rpc_cases",
+        ":runner",
+        ":tasks",
         ":voice_case",
-        ":task_names",
         "//libs/gizclaw",
         "//libs/pal",
         "//libs/runtime",
@@ -116,17 +120,25 @@ cc_test(
 # Keep their local tests runnable independently of the remaining case migration.
 cc_library(
     name = "fixture",
-    srcs = ["src/h2_gizclaw_e2e_fixture.c"],
+    srcs = [
+        "src/h2_gizclaw_e2e_fixture.c",
+        "src/h2_gizclaw_e2e_task_names.c",
+    ],
     hdrs = [
         "include/h2_gizclaw_e2e.h",
+        "include/h2_gizclaw_e2e_task_names.h",
         "src/h2_gizclaw_e2e_internal.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "src"],
+    includes = [
+        "include",
+        "src",
+    ],
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
-        ":task_names",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
         "//libs/gizclaw",
         "//libs/pal",
         "//libs/runtime",
@@ -140,7 +152,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -150,31 +166,21 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", ":runner", ":speech_case", ":profile_case", ":workflow_case", ":workspace_case", ":contact_case", ":friend_case", ":telemetry_case", ":point_case", ":pet_case", ":group_audio_case", ":group_case", ":group_message_case", ":voice_case", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_library(
-    name = "group_message_case",
-    srcs = ["src/h2_gizclaw_e2e_group_message.c"],
-    hdrs = ["src/h2_gizclaw_e2e_group_message.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_test(
-    name = "gizclaw_e2e_group_message_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_group_message.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":group_message_case"],
+    deps = [
+        ":contact_case",
+        ":fixture",
+        ":friend_case",
+        ":group_case",
+        ":profile_case",
+        ":runner",
+        ":speech_case",
+        ":telemetry_case",
+        ":voice_case",
+        ":workflow_case",
+        ":workspace_case",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -184,7 +190,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -202,61 +212,17 @@ cc_test(
 )
 
 cc_library(
-    name = "group_audio_case",
-    srcs = ["src/h2_gizclaw_e2e_group_audio.c"],
-    hdrs = ["src/h2_gizclaw_e2e_group_audio.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_test(
-    name = "gizclaw_e2e_group_audio_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_group_audio.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":group_audio_case"],
-)
-
-cc_library(
-    name = "pet_case",
-    srcs = ["src/h2_gizclaw_e2e_pet.c"],
-    hdrs = ["src/h2_gizclaw_e2e_pet.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_test(
-    name = "gizclaw_e2e_pet_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_pet.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":pet_case"],
-)
-
-cc_library(
     name = "workspace_case",
     srcs = ["src/h2_gizclaw_e2e_workspace.c"],
     hdrs = ["src/h2_gizclaw_e2e_workspace.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -280,7 +246,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -294,31 +264,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":friend_case", "//libs/pal"],
-)
-
-cc_library(
-    name = "point_case",
-    srcs = ["src/h2_gizclaw_e2e_point.c"],
-    hdrs = ["src/h2_gizclaw_e2e_point.h"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
-)
-
-cc_test(
-    name = "gizclaw_e2e_point_test",
-    srcs = ["tests/test_h2_gizclaw_e2e_point.c"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [":point_case", "//libs/pal"],
+    deps = [
+        ":friend_case",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -328,7 +277,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -342,7 +295,11 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":telemetry_case", "//libs/pal"],
+    deps = [
+        ":telemetry_case",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -352,7 +309,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -366,7 +327,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":contact_case", "//libs/pal"],
+    deps = [
+        ":contact_case",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -376,7 +340,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -390,7 +358,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":workflow_case", "//libs/pal"],
+    deps = [
+        ":workflow_case",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -400,7 +371,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -414,7 +389,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":profile_case", "//libs/pal"],
+    deps = [
+        ":profile_case",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
@@ -424,7 +402,14 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal", "//libs/pal/providers/yyjson"],
+    deps = [
+        ":fixture",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
+        "//libs/gizclaw",
+        "//libs/pal",
+        "//libs/pal/providers/yyjson",
+    ],
 )
 
 cc_library(
@@ -434,7 +419,13 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -451,7 +442,13 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":voice_case", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":voice_case",
+        "//libs/app_test:testing_pal",
+        "//libs/gizclaw",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
 )
 
 cc_test(
@@ -468,12 +465,20 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":speech_case", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":speech_case",
+        "//libs/app_test:testing_pal",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_library(
     name = "runner",
-    deps = [":runner_core", ":catalog_all"],
+    deps = [
+        ":catalog_all",
+        ":runner_core",
+    ],
 )
 
 cc_library(
@@ -496,7 +501,11 @@ cc_library(
 
 cc_library(
     name = "connectivity_app",
-    deps = [":runner_core", ":catalog_connectivity", ":connectivity"],
+    deps = [
+        ":catalog_connectivity",
+        ":connectivity",
+        ":runner_core",
+    ],
 )
 
 cc_library(
@@ -510,6 +519,7 @@ cc_library(
         "src/h2_gizclaw_e2e_concurrency.h",
         "src/h2_gizclaw_e2e_firmware.h",
         "src/h2_gizclaw_e2e_report.h",
+        "src/h2_gizclaw_e2e_resource.h",
         "src/h2_gizclaw_e2e_rpc.h",
         "src/h2_gizclaw_e2e_service.h",
         "src/h2_gizclaw_e2e_voice.h",
@@ -517,7 +527,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", ":task_names", "//libs/pal", "//libs/runtime"],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+        ":fixture",
+    ],
 )
 
 cc_library(
@@ -533,7 +547,11 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
-    deps = [":fixture", "//libs/gizclaw", "//libs/pal"],
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -547,7 +565,11 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":request_cases", "//libs/pal"],
+    deps = [
+        ":request_cases",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+    ],
 )
 
 cc_test(
@@ -562,7 +584,12 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":runner_core", ":catalog_connectivity", "//libs/pal", "//libs/runtime"],
+    deps = [
+        ":catalog_connectivity",
+        ":runner_core",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
 )
 
 cc_test(
@@ -576,7 +603,11 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":runner", "//libs/pal", "//libs/runtime"],
+    deps = [
+        ":runner",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
 )
 
 cc_test(
@@ -605,5 +636,88 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":gizclaw_e2e"],
+    deps = [
+        ":gizclaw_e2e",
+        "//libs/app_test:testing_pal",
+    ],
+)
+
+cc_library(
+    name = "device_case",
+    srcs = ["src/h2_gizclaw_e2e_device.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        ":runner_core",
+        "//libs/app_test:testing_audio",
+        "//libs/app_test:testing_pal",
+        "//libs/gizclaw",
+        "//libs/pal/providers/yyjson",
+    ],
+)
+
+cc_library(
+    name = "device_app",
+    srcs = ["src/h2_gizclaw_e2e_catalog_device.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [
+        ":device_case",
+        ":runner_core",
+    ],
+)
+
+cc_library(
+    name = "resource_case",
+    srcs = ["src/h2_gizclaw_e2e_resource.c"],
+    hdrs = ["src/h2_gizclaw_e2e_resource.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":fixture",
+        "//libs/gizclaw",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_resource_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_resource.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":resource_case",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_device_audio_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_device_audio.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":device_case",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+        "//libs/runtime",
+    ],
 )

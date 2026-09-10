@@ -12,9 +12,8 @@
 #include "gzc_event.h"
 #include "pb.h"
 
-/* Normalize only a valid business not-found response. A missing RPC method
- * (-32601), unknown remote code, or transport failure is not resource absence.
- */
+/* Normalize only a canonical NOT_FOUND status. UNIMPLEMENTED, any other
+ * status code, or a transport failure is not resource absence. */
 static inline h2_pal_result_t
 h2_gizclaw_rpc_error_result_internal(int error_code) {
   return error_code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND ? H2_PAL_ERR_NOT_FOUND
@@ -255,6 +254,8 @@ h2_gizclaw_test_replace_event_stream(h2_gizclaw_client_t *client,
                                      gzc_event_stream_t *events);
 bool h2_gizclaw_test_client_terminal_closed(const h2_gizclaw_client_t *client);
 
+typedef int (*h2_gizclaw_test_ota_send_fn)(void *user, const gzc_telemetry_ota_frame_t *frame);
+void h2_gizclaw_test_set_ota_send(h2_gizclaw_test_ota_send_fn send, void *user);
 typedef int (*h2_gizclaw_test_telemetry_send_fn)(
     void *user, const gzc_telemetry_frame_t *frame);
 struct h2_gizclaw_telemetry_frame;
@@ -276,6 +277,12 @@ int h2_gizclaw_test_telemetry_send(
 void h2_gizclaw_test_set_telemetry_send(h2_gizclaw_test_telemetry_send_fn send,
                                         void *user);
 
+int h2_gizclaw_test_provider_send(h2_pal_webrtc_channel_t *channel,
+    const uint8_t *data, size_t len);
+int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
+    h2_pal_webrtc_channel_t *channel, int respond_result);
+void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,
+    h2_pal_webrtc_channel_t *channel, bool remote);
 bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client);
 int h2_gizclaw_test_peer_create(h2_gizclaw_client_t *client,
                                 h2_pal_webrtc_peer_t **out_peer);

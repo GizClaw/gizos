@@ -1,5 +1,6 @@
 #include "h2_esp_simcom_modem.h"
 #include "h2_esp_simcom_teardown.h"
+#include "h2_esp_simcom_urc.h"
 
 #include "h2_esp_platform_core.h"
 #include "h2_simcom_modem.h"
@@ -177,43 +178,24 @@ static void ppp_status_handler(void *arg, esp_event_base_t base, int32_t event_i
 }
 
 #ifdef CONFIG_ESP_MODEM_URC_HANDLER
+static h2_pal_result_t post_urc(void *user, const char *line) {
+    h2_esp_simcom_modem_t *modem = user;
+    h2_pal_result_t rc = h2_simcom_post_urc_line(&modem->driver, line);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    if (strncmp(line, "+CGNSSPWR: READY!", sizeof("+CGNSSPWR: READY!") - 1u) == 0 &&
+        modem->events != NULL) {
+        xEventGroupSetBits(modem->events, H2_ESP_SIMCOM_GNSS_READY_BIT);
+    }
+    return H2_PAL_OK;
+}
+
 static esp_err_t urc_handler(uint8_t *data, size_t len) {
-    if (s_urc_modem == NULL || data == NULL || len == 0u) {
+    if (s_urc_modem == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    char line[H2_SIMCOM_LINE_MAX];
-    size_t copy_len = len < sizeof(line) - 1u ? len : sizeof(line) - 1u;
-    memcpy(line, data, copy_len);
-    line[copy_len] = '\0';
-    char *cursor = line;
-    while (*cursor != '\0') {
-        while (*cursor == '\r' || *cursor == '\n') {
-            ++cursor;
-        }
-        if (*cursor == '\0') {
-            break;
-        }
-        char *end = cursor;
-        while (*end != '\0' && *end != '\r' && *end != '\n') {
-            ++end;
-        }
-        char saved = *end;
-        *end = '\0';
-        h2_simcom_handle_urc_line(&s_urc_modem->driver, cursor);
-        if (strncmp(
-                cursor,
-                "+CGNSSPWR: READY!",
-                sizeof("+CGNSSPWR: READY!") - 1u) == 0 &&
-            s_urc_modem->events != NULL) {
-            xEventGroupSetBits(
-                s_urc_modem->events, H2_ESP_SIMCOM_GNSS_READY_BIT);
-        }
-        if (saved == '\0') {
-            break;
-        }
-        cursor = end + 1;
-    }
-    return ESP_OK;
+    return h2_esp_simcom_forward_urcs(s_urc_modem, data, len, post_urc);
 }
 #endif
 
@@ -603,6 +585,8 @@ h2_pal_result_t h2_esp_simcom_modem_create(
         .data_close = transport_data_close,
         .wait_gnss_ready = transport_wait_gnss_ready,
         .sync_api = config->sync_api,
+        .urc_task_api = h2_esp_platform_task_api(),
+        .urc_queue_api = h2_esp_platform_queue_api(),
         .allocator = config->allocator,
         .system_events = config->system_events,
         .capabilities = H2_PAL_MODEM_CAPABILITY_DATA |
@@ -620,15 +604,21 @@ h2_pal_result_t h2_esp_simcom_modem_create(
     return H2_PAL_OK;
 }
 
-void h2_esp_simcom_modem_destroy(h2_esp_simcom_modem_t *modem) {
+h2_pal_result_t h2_esp_simcom_modem_destroy(h2_esp_simcom_modem_t *modem) {
     if (modem == NULL) {
-        return;
+        return H2_PAL_ERR_INVALID_ARG;
     }
-    h2_simcom_modem_deinit(&modem->driver);
-    if (modem->transport_ready) {
-        (void)transport_deinit(modem);
+    /* Also covers a partially failed open: stop RX before joining its worker. */
+    h2_pal_result_t rc = transport_deinit(modem);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    rc = h2_simcom_modem_deinit(&modem->driver);
+    if (rc != H2_PAL_OK) {
+        return rc;
     }
     free(modem);
+    return H2_PAL_OK;
 }
 
 h2_pal_modem_api_t *h2_esp_simcom_modem_api(h2_esp_simcom_modem_t *modem) {

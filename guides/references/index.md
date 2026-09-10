@@ -7,6 +7,7 @@
 - [App Test](./app_test.md)
 - [Audio Mixer](./audio_mixer.md)
 - [BLE iKCP](./bleikcp.md)
+- [BLE Wi-Fi Config](./ble_wifi_config.md)
 - [Bundle](./bundle.md)
 - [CoreHTTP](./corehttp.md)
 - [CoreMQTT](./coremqtt.md)
@@ -23,6 +24,7 @@
 - [PIXA](./pixa.md)
 - [QR Code](./qrcode.md)
 - [Runtime](./runtime.md)
+- [SemVer](./semver.md)
 - [Utils](./utils.md)
 - [WolfSSL](./wolfssl.md)
 

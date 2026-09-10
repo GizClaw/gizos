@@ -18,10 +18,10 @@ import sys
 
 
 PREFIX = "h2_gizclaw_"
-TOP_CASES = {"connectivity", "rpc", "firmware", "voice", "concurrency", "service"}
+TOP_CASES = {"resource", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
-             "contact", "friend", "group", "gameplay", "peer-name-isolation",
-             "telemetry"}
+             "contact", "friend", "group", "peer-name-isolation",
+             "telemetry", "api-key", "app-config"}
 CASES = TOP_CASES | {"rpc/" + name for name in RPC_CASES}
 
 
@@ -43,11 +43,12 @@ def requirements():
     groups = {
         "connectivity": "ping speedtest register peer_delete",
         "firmware": "firmware_get",
+        "rpc/app-config": "app_config_list app_config_get",
         "rpc/profile": "profile_get profile_put_name profile_put_emoji",
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
-            "workspace_create workspace_set_input workspace_delete "
-            "workspace_activate workspace_reload workspace_history_list"),
+            "workspace_create workspace_set_parameters workspace_delete "
+            "workspace_activate workspace_reload workspace_reload_with_options workspace_history_list"),
         "rpc/contact": "contact_list contact_get contact_create contact_put contact_delete",
         "rpc/friend": (
             "friend_list friend_info_get friend_add friend_delete "
@@ -56,12 +57,9 @@ def requirements():
             "friend_group_list friend_group_get friend_group_create friend_group_put "
             "friend_group_delete friend_group_join friend_group_invite_token_get "
             "friend_group_invite_token_create friend_group_invite_token_clear "
-            "friend_group_member_list friend_group_member_put friend_group_member_delete "
-            "friend_group_message_list friend_group_message_get friend_group_message_audio_download"),
-        "rpc/gameplay": (
-            "pet_list pet_get pet_adopt pet_delete pet_drive pet_pixa_download "
-            "pet_action_get point_get point_transaction_list"),
+            "friend_group_member_list friend_group_member_put friend_group_member_delete"),
         "rpc/telemetry": "telemetry_send",
+        "rpc/api-key": "api_key_create api_key_revoke",
         "rpc/speech": "speech_transcribe speech_extract",
     }
     rules = []
@@ -80,7 +78,7 @@ def requirements():
             if not method.startswith("speech_"):
                 rpc = PREFIX + "rpc_" + method
                 rules.append(Rule(rpc, case, (rpc,), rpc, stage))
-    for method in "init start set_track unset_track audio_start audio_end poll stop deinit".split():
+    for method in "init start set_track unset_track audio_start audio_end poll stop deinit get_time_sync_status".split():
         symbol = PREFIX + "service_" + method
         case = "voice" if method in {"set_track", "unset_track", "audio_start", "audio_end"} else "service"
         rules.append(Rule(symbol, case, (symbol,), symbol, "service_" + method + "-assert"))
@@ -96,6 +94,41 @@ def requirements():
     symbol = PREFIX + "req_create_audio_play"
     rules.append(Rule(symbol, "voice", (symbol, PREFIX + "req_do", PREFIX + "req_wait"),
                       symbol, "audio_play-assert"))
+    for method in ("player_play player_play_index player_playlist_set "
+                   "player_repeat_set player_stop player_get_status "
+                   "player_playlist_snapshot ota_start ota_get_status").split():
+        symbol = PREFIX + method
+        rules.append(Rule(symbol, "device-api", (symbol,), symbol, method + "-assert"))
+    create = PREFIX + "req_create_debug_set"
+    parse = PREFIX + "resp_parse_debug_set"
+    calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
+    rules += [Rule(symbol, "device-api", calls, parse, "debug_set-assert")
+              for symbol in (create, parse)]
+    create = PREFIX + "req_create_debug_get"
+    parse = PREFIX + "resp_parse_debug_get"
+    calls = (create, PREFIX + "req_do", PREFIX + "req_wait", parse)
+    rules += [Rule(symbol, "device-api", calls, parse, "debug_get-assert")
+              for symbol in (create, parse)]
+    # Service-owned debug snapshot: refresh/set_mode start the library's own
+    # request and snapshot must observe the confirmed mode afterwards.
+    snapshot = PREFIX + "debug_snapshot"
+    for method in ("debug_refresh", "debug_set_mode"):
+        symbol = PREFIX + method
+        rules.append(Rule(symbol, "device-api", (symbol, snapshot), snapshot,
+                          method + "-assert"))
+    rules.append(Rule(snapshot, "device-api", (snapshot,), snapshot,
+                      "debug_snapshot-assert"))
+    # Session requirements remain fail-closed until a real run emits both
+    # the call and its business assertion. Unit mocks are never live evidence.
+    for method in ("create destroy snapshot catalog_copy register refresh select close "
+                   "conversation_create conversation_release audio_start audio_end "
+                   "cancel_pending").split():
+        symbol = PREFIX + "session_" + method
+        case = "voice"
+        rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
+    for method in "create destroy snapshot execute close".split():
+        symbol = PREFIX + "resource_" + method
+        rules.append(Rule(symbol, "resource", (symbol,), symbol, "resource_" + method + "-assert"))
     return sorted(rules, key=lambda rule: rule.symbol)
 
 
@@ -103,9 +136,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 190 or len(set(inventory)) != 190 or
-            len(names) != 190 or len(set(names)) != 190 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 190-function inventory")
+    if (len(inventory) != 204 or len(set(inventory)) != 204 or
+            len(names) != 204 or len(set(names)) != 204 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 204-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 
@@ -182,7 +215,8 @@ def audit(lines, rules, *, endpoint, backend, profile, platform, process_exit_co
         issues.append("expected exactly one final Desktop summary")
     else:
         expected = dict(endpoint=endpoint, backend=backend, profile=profile, platform=platform,
-                        suite="all", selected="6", terminal="6", **{"pass": "6"},
+                        suite="all", selected=str(len(TOP_CASES)), terminal=str(len(TOP_CASES)),
+                        **{"pass": str(len(TOP_CASES))},
                         fail="0", error="0", blocked="0", cancelled="0", cleanup_rc="0",
                         retained_resources="0", complete="true", exit_code="0",
                         first_failure_case="-", first_failure_rc="0")

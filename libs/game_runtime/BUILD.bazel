@@ -1,6 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -120,28 +121,34 @@ cc_library(
     strip_include_prefix = "tests",
 )
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_game_runtime_task_names.c"],
-    hdrs = ["include/h2_game_runtime_task_names.h"],
-    copts = H2_WARNING_COPTS,
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$game-runtime/audio",
+    ],
 )
 
 cc_library(
     name = "game_audio",
-    srcs = ["src/h2_game_runtime_audio.cpp"],
-    hdrs = ["include/h2_game_audio.h"],
+    srcs = [
+        "src/h2_game_runtime_audio.cpp",
+        "src/h2_game_runtime_task_names.c",
+    ],
+    hdrs = [
+        "include/h2_game_audio.h",
+        "include/h2_game_runtime_task_names.h",
+    ],
     copts = _GAME_AUDIO_COPTS,
     cxxopts = H2_CXX17_NO_EXCEPTIONS_RTTI_COPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+    ],
     local_defines = _GAME_AUDIO_DEFINES,
     # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
         ":pixelroot32_audio",
         ":pixelroot32_compat",
-        ":task_names",
         "//libs/pal",
     ],
 )
@@ -171,6 +178,7 @@ cc_library(
     # C++17 is not available on the JieLi pi32v2 clang 4.0.1 toolchain.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        ":tasks",
         ":game_audio",
         ":pixelroot32",
         ":pixelroot32_compat",

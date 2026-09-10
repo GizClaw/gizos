@@ -15,15 +15,19 @@ extern "C" {
 typedef int32_t h2_gizclaw_rpc_method_t;
 
 enum {
+  H2_GIZCLAW_RPC_SERVER_APP_CONFIG_LIST = 121,
+  H2_GIZCLAW_RPC_SERVER_APP_CONFIG_GET = 122,
   H2_GIZCLAW_RPC_ALL_PING = 1,
   H2_GIZCLAW_RPC_ALL_SPEED_TEST_RUN = 2,
   H2_GIZCLAW_RPC_CLIENT_INFO_GET = 3,
   H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET = 4,
   H2_GIZCLAW_RPC_SERVER_INFO_GET = 5,
   H2_GIZCLAW_RPC_SERVER_INFO_PUT = 6,
+  H2_GIZCLAW_RPC_SERVER_RUNTIME_GET = 7,
   H2_GIZCLAW_RPC_SERVER_RUN_WORKSPACE_GET = 11,
   H2_GIZCLAW_RPC_SERVER_RUN_WORKSPACE_SET = 12,
   H2_GIZCLAW_RPC_SERVER_RUN_WORKSPACE_RELOAD = 13,
+  H2_GIZCLAW_RPC_SERVER_RUN_WORKSPACE_RELOAD_WITH_OPTIONS = 120,
   H2_GIZCLAW_RPC_SERVER_FIRMWARE_GET = 22,
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_LIST = 24,
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET = 25,
@@ -59,40 +63,56 @@ enum {
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_ADD = 59,
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_PUT = 60,
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_DELETE = 61,
-  H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_LIST = 62,
-  H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_GET = 63,
-  H2_GIZCLAW_RPC_SERVER_PET_LIST = 65,
-  H2_GIZCLAW_RPC_SERVER_PET_GET = 66,
-  H2_GIZCLAW_RPC_RUNTIME_ADOPT = 67,
-  H2_GIZCLAW_RPC_SERVER_PET_PUT = 68,
-  H2_GIZCLAW_RPC_SERVER_PET_DELETE = 69,
-  H2_GIZCLAW_RPC_SERVER_PET_DRIVE = 70,
-  H2_GIZCLAW_RPC_SERVER_POINTS_GET = 71,
-  H2_GIZCLAW_RPC_SERVER_POINTS_TRANSACTIONS_LIST = 72,
-  H2_GIZCLAW_RPC_SERVER_POINTS_TRANSACTIONS_GET = 73,
   H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE = 82,
-  H2_GIZCLAW_RPC_SERVER_PET_ACTIONS_GET = 86,
-  H2_GIZCLAW_RPC_SERVER_PET_PIXA_DOWNLOAD = 87,
   H2_GIZCLAW_RPC_SERVER_FRIEND_INFO_GET = 89,
   H2_GIZCLAW_RPC_SERVER_REGISTER = 90,
   H2_GIZCLAW_RPC_SERVER_SPEECH_TRANSCRIBE = 91,
   H2_GIZCLAW_RPC_SERVER_SPEECH_SYNTHESIZE = 92,
   H2_GIZCLAW_RPC_SERVER_PEER_DELETE = 93,
   H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT = 94,
-  H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MESSAGES_AUDIO_DOWNLOAD = 95,
-  H2_GIZCLAW_RPC_SERVER_WORKSPACE_INPUT_PUT = 107,
+  /** Device-owned reverse RPCs; registering a number does not install a handler. */
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET = 100,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET = 101,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY = 102,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT = 103,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET = 104,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST = 105,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET = 106,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN = 108,
+  H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT = 109,
+  H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET = 110,
+  H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE = 111,
+  H2_GIZCLAW_RPC_SERVER_RUNTIME_PUT = 112,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET = 113,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET = 114,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET = 115,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND = 116,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY = 117,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP = 118,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET = 119,
+
 };
 
+/** Canonical gRPC status codes (google.rpc.Code) carried by RpcStatus.code.
+ * The values are the wire values; a provider response uses the same set. */
 enum {
-  H2_GIZCLAW_RPC_ERROR_PARSE = -32700,
-  H2_GIZCLAW_RPC_ERROR_INVALID_REQUEST = -32600,
-  H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND = -32601,
-  H2_GIZCLAW_RPC_ERROR_INVALID_PARAMS = -32602,
-  H2_GIZCLAW_RPC_ERROR_INTERNAL = -32603,
-  H2_GIZCLAW_RPC_ERROR_BAD_REQUEST = 400,
-  H2_GIZCLAW_RPC_ERROR_FORBIDDEN = 403,
-  H2_GIZCLAW_RPC_ERROR_NOT_FOUND = 404,
-  H2_GIZCLAW_RPC_ERROR_CONFLICT = 409,
+  H2_GIZCLAW_RPC_ERROR_OK = 0,
+  H2_GIZCLAW_RPC_ERROR_CANCELLED = 1,
+  H2_GIZCLAW_RPC_ERROR_UNKNOWN = 2,
+  H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT = 3,
+  H2_GIZCLAW_RPC_ERROR_DEADLINE_EXCEEDED = 4,
+  H2_GIZCLAW_RPC_ERROR_NOT_FOUND = 5,
+  H2_GIZCLAW_RPC_ERROR_ALREADY_EXISTS = 6,
+  H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED = 7,
+  H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED = 8,
+  H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION = 9,
+  H2_GIZCLAW_RPC_ERROR_ABORTED = 10,
+  H2_GIZCLAW_RPC_ERROR_OUT_OF_RANGE = 11,
+  H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED = 12,
+  H2_GIZCLAW_RPC_ERROR_INTERNAL = 13,
+  H2_GIZCLAW_RPC_ERROR_UNAVAILABLE = 14,
+  H2_GIZCLAW_RPC_ERROR_DATA_LOSS = 15,
+  H2_GIZCLAW_RPC_ERROR_UNAUTHENTICATED = 16,
 };
 
 typedef struct h2_gizclaw_rpc_bytes {
@@ -100,18 +120,33 @@ typedef struct h2_gizclaw_rpc_bytes {
   size_t len;
 } h2_gizclaw_rpc_bytes_t;
 
+/** Optional local response completion on the client poll owner.
+ * OK means the response was accepted by the local transport and its RPC
+ * channel closed normally, not that the remote application acknowledged it.
+ * Failure/stop cancels the continuation. Called once; user must outlive it.
+ * Shutdown calls it from the close/deinit owner; registration rejection may
+ * call it inline on the provider owner.
+ * Only enqueue owner-thread work here; do not block or reenter client APIs.
+ */
+typedef void (*h2_gizclaw_rpc_response_complete_fn)(void *user, int result);
+
 typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_bytes_t payload;
   bool has_error;
   int error_code;
   h2_gizclaw_rpc_bytes_t error_message;
+  h2_gizclaw_rpc_response_complete_fn on_complete;
+  void *complete_user;
 } h2_gizclaw_rpc_provider_response_t;
 
 /**
  * Handle a server-initiated client.* method.
  *
  * Request and response payloads are protobuf message bytes. Returned views are
- * borrowed and need to remain valid only until the callback returns.
+ * borrowed and must remain valid until the adapter consumes the returned
+ * response (for example, use provider-owned storage). Do not return stack
+ * storage. An optional on_complete schedules work after the local response
+ * closes, without a second message or acknowledgment from the caller.
  */
 typedef int (*h2_gizclaw_rpc_provider_fn)(
     void *user, h2_gizclaw_rpc_method_t method,

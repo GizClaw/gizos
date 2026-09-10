@@ -63,7 +63,7 @@ flowchart TB
 
 PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `periph_id`，app 定义 `component_id`，两者的映射由 `boards/main` 提供。
 
-Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，只暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Display、Touch 与 Host Serial accessor。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有单线程 libco executor；Browser event、Promise 与 timeout callback 只记录完成，后续 bounded pump 才能恢复 task，不能 callback 内重入 scheduler。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher单独注入 portable consumer。
+Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 返回 unsupported。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有单线程 libco executor；Browser event、Promise 与 timeout callback 只记录完成，后续 bounded pump 才能恢复 task，不能 callback 内重入 scheduler。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
 
 ## PAL 分类
 
@@ -364,6 +364,12 @@ Scan timing 有两个互斥形式。`interval_units_625us/window_units_625us` �
 不同 session 可以并发使用。同一 session 的 operation 由 backend 串行化；`close` 等待已经开始的 bounded I/O 返回，然后释放 endpoint 并把调用方 handle 置空。调用方必须在 close 开始后阻止新的 operation，并同步对 handle 本身的访问。重复关闭 NULL handle 是成功 no-op。物理拔出使当前或下一次 I/O 返回稳定的 closed/unavailable error；重新插入需要重新 scan/open，旧 session 不会自动绑定新 endpoint。
 
 Host Serial PAL 不解析 H2Loader response、不推断 board、不合并 BLE identity，也不决定 managed install 或 raw recovery policy。Linux provider 归 `libs/pal/providers/linux/serial_host`，Darwin provider 归 `libs/pal/providers/darwin/pal_core`；两者只通过 private `libs/pal/providers/posix/serial_host` 共享 termios/session lifecycle。Windows provider 归 `libs/pal/providers/windows/serial_host`。各 provider 都实现同一 contract，不向 public header 泄漏 file descriptor、termios、IOKit、udev 或 Win32 handle。
+
+## Wi-Fi 连接与持久化
+
+Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 后才调用 Wi-Fi Settings 保存。后者要求非零关联/DHCP 总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
+
+ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 只转发同一 PAL API；不可在 Runtime、BLE、RPC 或 Loader 中再实现一份等待 IP 与保存的算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
 
 ## Contract 形态
 

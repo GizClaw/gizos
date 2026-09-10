@@ -1366,7 +1366,7 @@ static int run_test_app(test_state_t *state) {
     const h2_pal_display_api_t display = {state, &display_vtable};
     const h2_pal_touch_api_t touch = {state, &touch_vtable};
     const h2_pal_audio_api_t audio = {state, &audio_vtable};
-    const h2_pal_time_api_t time = {state, &time_vtable};
+    const h2_pal_time_api_t time = {.user = state, .vtable = &time_vtable};
     h2_runtime_t runtime;
     memset(&runtime, 0, sizeof(runtime));
     runtime.mem = &mem;

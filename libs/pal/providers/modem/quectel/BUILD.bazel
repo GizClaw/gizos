@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,6 +11,7 @@ cc_library(
         "src/h2_quectel_gnss.c",
         "src/h2_quectel_internal.h",
         "src/h2_quectel_modem.c",
+        "src/h2_quectel_power.c",
         "src/h2_quectel_ppp.c",
         "src/h2_quectel_status.c",
         "src/h2_quectel_urc.c",
@@ -20,5 +21,38 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    deps = ["//libs/pal"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal/providers/modem/common:urc",
+    ],
+)
+
+cc_test(
+    name = "quectel_cell_locate_test",
+    srcs = ["tests/test_quectel_cell_locate.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":quectel_modem"],
+)
+
+cc_test(
+    name = "quectel_power_test",
+    srcs = ["tests/test_quectel_power.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quectel_modem",
+        "//libs/pal:unsupported",
+    ],
 )

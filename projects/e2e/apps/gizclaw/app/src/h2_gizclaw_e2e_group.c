@@ -486,7 +486,7 @@ int h2_gizclaw_e2e_run_group_management(h2_gizclaw_e2e_fixture_t *f,
     return H2_PAL_ERR_INVALID_ARG;
   if (f->friend_group_created || f->friend_group_invite_created ||
       f->friend_group_member_joined || f->isolation_group_pending ||
-      f->group_audio_started || !f->run_prefix[0] ||
+      !f->run_prefix[0] ||
       !memchr(f->run_prefix, '\0', sizeof(f->run_prefix)) ||
       !f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key[0] ||
       !memchr(f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key, '\0',

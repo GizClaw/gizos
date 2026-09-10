@@ -1145,5 +1145,24 @@ int main(int argc, char **argv) {
     assert(state.audio_task_starts == 2u);
     assert(state.ready_callbacks == 3u);
     assert(state.allocations == 0u);
+    const size_t opens_before_borrow = state.display_open_calls;
+    const size_t closes_before_borrow = state.display_close_calls;
+    const size_t presents_before_borrow = state.present_calls;
+    h2_smoke_mp4_player_config_t borrowed_config = {
+        .media_path = "/fixture.mp4", .max_frames = 1u, .borrow_display = 1,
+        .acquire_timeout_ms = 25u,
+    };
+    assert(h2_smoke_mp4_player_run(&runtime, &borrowed_config) == H2_PAL_OK);
+    assert(state.present_calls > presents_before_borrow);
+    /* Failure after acquiring decoder resources must retain the caller's display. */
+    state.display_width = -1;
+    assert(h2_smoke_mp4_player_run(&runtime, &borrowed_config) != H2_PAL_OK);
+    state.display_width = 0;
+    borrowed_config.should_stop = stop_callback;
+    borrowed_config.stop_user = &state;
+    assert(h2_smoke_mp4_player_run(&runtime, &borrowed_config) == H2_PAL_OK);
+    assert(state.display_open_calls == opens_before_borrow);
+    assert(state.display_close_calls == closes_before_borrow);
+    assert(state.allocations == 0u);
     return 0;
 }

@@ -11,7 +11,6 @@
 #define H2_LOADER_STAGE_TMP_PATH "/dl/update.tar.zlib.tmp"
 #define H2_LOADER_STAGE_PATH "/dl/update.tar.zlib"
 #define H2_LOADER_STAGE_PREV_PATH "/dl/update.tar.zlib.prev"
-#define H2_LOADER_WIFI_SETTINGS_SETTLE_MS 250u
 #define H2_LOADER_WIFI_READY_POLL_MS 250u
 #define H2_LOADER_WIFI_READY_TIMEOUT_MS 30000u
 #define H2_LOADER_WIFI_SCAN_DEFAULT_LIMIT 16u
@@ -713,21 +712,8 @@ static int h2loader_wifi_command(
             printf("H2_LOADER_WIFI result=invalid_config code=%d\n", rc);
             return rc;
         }
-        if (self->config.wifi_settings != NULL) {
-            rc = h2_pal_wifi_settings_set_saved_sta_config(
-                self->config.wifi_settings,
-                &config);
-            if (rc != H2_PAL_OK) {
-                printf(
-                    "H2_LOADER_WIFI result=error code=%d step=settings\n",
-                    rc);
-                return rc;
-            }
-            self->config.sleep_ms(
-                self->config.clock_user,
-                H2_LOADER_WIFI_SETTINGS_SETTLE_MS);
-        }
-        rc = h2_pal_wifi_sta_connect(sta, &config, 0u);
+        rc = h2_pal_wifi_sta_connect_and_save(sta, &config, 15000u);
+        memset(config.password, 0, sizeof(config.password));
         if (rc != H2_PAL_OK) {
             memset(&status, 0, sizeof(status));
             if (h2_pal_wifi_sta_get_status(sta, &status) == H2_PAL_OK) {
@@ -741,7 +727,7 @@ static int h2loader_wifi_command(
             }
             return rc;
         }
-        printf("H2_LOADER_WIFI result=connecting ssid=%s\n", config.ssid);
+        printf("H2_LOADER_WIFI result=connected ssid=%s\n", config.ssid);
         fflush(stdout);
         return H2_PAL_OK;
     }

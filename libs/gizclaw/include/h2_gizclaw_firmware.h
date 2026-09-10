@@ -23,6 +23,9 @@ typedef struct h2_gizclaw_firmware {
   char url[2049];
   char sha256[65];
   int64_t size;
+  /** Optional package SemVer, at most 128 ASCII bytes. */
+  bool has_version;
+  char version[129];
 } h2_gizclaw_firmware_t;
 
 /** Retain a positive wire channel number without performing network I/O. */

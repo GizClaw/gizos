@@ -119,6 +119,124 @@ const h2FakePort = {
 };
 globalThis.h2FakeSerialPort = h2FakePort;
 
+class H2FakeAudioSource {
+  connect(node) { return node; }
+  start() {
+    this.started = true;
+    globalThis.h2FakeAudioActiveSources =
+        (globalThis.h2FakeAudioActiveSources || 0) + 1;
+  }
+  stop() {
+    if (!this.started || this.stopped) return;
+    this.stopped = true;
+    globalThis.h2FakeAudioActiveSources -= 1;
+    globalThis.h2FakeAudioStoppedSources =
+        (globalThis.h2FakeAudioStoppedSources || 0) + 1;
+    if (this.onended) this.onended();
+  }
+}
+
+class H2FakeAudioContext {
+  constructor() {
+    this.currentTime = 0;
+    this.destination = {};
+    this.state = 'running';
+  }
+  createBuffer(channels, samples, sampleRate) {
+    const outputs = Array.from(
+        {length: channels}, () => new Float32Array(samples));
+    return {
+      duration: samples / sampleRate,
+      getChannelData(channel) { return outputs[channel]; },
+    };
+  }
+  createBufferSource() { return new H2FakeAudioSource(); }
+  createGain() {
+    return {gain: {value: 1}, connect(node) { return node; }};
+  }
+  close() { return Promise.resolve(); }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+}
+globalThis.AudioContext = H2FakeAudioContext;
+
+class H2FakeEncodedChunk {
+  constructor(init) { Object.assign(this, init); }
+}
+
+class H2FakeVideoFrame {
+  constructor(timestamp, duration) {
+    this.displayWidth = 2;
+    this.displayHeight = 2;
+    this.timestamp = timestamp;
+    this.duration = duration;
+  }
+  allocationSize() { return 16; }
+  copyTo(destination) {
+    destination.set([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 255, 255,
+    ]);
+    return Promise.resolve([{offset: 0, stride: 8}]);
+  }
+  close() {}
+}
+
+class H2FakeVideoDecoder {
+  static isConfigSupported(config) {
+    return Promise.resolve({supported: config.codec.startsWith('avc1.')});
+  }
+  constructor(callbacks) {
+    this.callbacks = callbacks;
+    this.decodeQueueSize = 0;
+  }
+  configure() {}
+  decode(chunk) {
+    Promise.resolve().then(() => this.callbacks.output(
+        new H2FakeVideoFrame(chunk.timestamp, chunk.duration)));
+  }
+  flush() { return Promise.resolve(); }
+  close() {}
+}
+
+class H2FakeAudioData {
+  constructor(timestamp, duration) {
+    this.sampleRate = 16000;
+    this.numberOfFrames = 2;
+    this.numberOfChannels = 1;
+    this.timestamp = timestamp;
+    this.duration = duration;
+  }
+  allocationSize() { return 4; }
+  copyTo(destination) {
+    new Int16Array(destination.buffer, destination.byteOffset, 2)
+        .set([1000, -1000]);
+    return Promise.resolve();
+  }
+  close() {}
+}
+
+class H2FakeAudioDecoder {
+  static isConfigSupported(config) {
+    return Promise.resolve({supported: config.codec === 'mp4a.40.2'});
+  }
+  constructor(callbacks) {
+    this.callbacks = callbacks;
+    this.decodeQueueSize = 0;
+  }
+  configure() {}
+  decode(chunk) {
+    Promise.resolve().then(() => this.callbacks.output(
+        new H2FakeAudioData(chunk.timestamp, chunk.duration)));
+  }
+  flush() { return Promise.resolve(); }
+  close() {}
+}
+
+globalThis.EncodedVideoChunk = H2FakeEncodedChunk;
+globalThis.EncodedAudioChunk = H2FakeEncodedChunk;
+globalThis.VideoDecoder = H2FakeVideoDecoder;
+globalThis.AudioDecoder = H2FakeAudioDecoder;
+
 Object.defineProperty(globalThis, "navigator", {
   configurable: true,
   value: {
@@ -126,6 +244,9 @@ Object.defineProperty(globalThis, "navigator", {
       getUserMedia() {
         globalThis.h2FakeGetUserMediaCount =
             (globalThis.h2FakeGetUserMediaCount || 0) + 1;
+        if (globalThis.h2FakeRejectGetUserMedia) {
+          return Promise.reject({name: 'NotAllowedError'});
+        }
         const track = {
           kind: 'audio',
           stopped: false,

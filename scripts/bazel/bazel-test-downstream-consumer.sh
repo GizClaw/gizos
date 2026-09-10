@@ -35,35 +35,9 @@ cp "$fixture_root/layout.txt" "$consumer_root/layout.txt"
 cp "$fixture_root/partition.csv" "$consumer_root/partition.csv"
 cp "$fixture_root/ram_regions.csv" "$consumer_root/ram_regions.csv"
 cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loader.defaults"
-mkdir -p "$consumer_root/private_esp_task_policy/tests"
-sed 's/private_esp_task_policy/h2_esp_target_task_policy/g' \
-    "$fixture_root/private_esp_task_policy.c" > \
-    "$consumer_root/private_esp_task_policy/h2_esp_target_task_policy.c"
-sed 's/PRIVATE_ESP_TASK_POLICY/H2_ESP_TARGET_TASK_POLICY/g; s/private_esp_task_policy/h2_esp_target_task_policy/g' \
-    "$fixture_root/private_esp_task_policy.h" > \
-    "$consumer_root/private_esp_task_policy/h2_esp_target_task_policy.h"
-sed 's/private_esp_task_policy/h2_esp_target_task_policy/g' \
-    "$fixture_root/private_esp_task_policy.CMakeLists.txt.fixture" > \
-    "$consumer_root/private_esp_task_policy/CMakeLists.txt"
-cp "$fixture_root/task_policy_test.c" \
-    "$consumer_root/private_esp_task_policy/tests/test_h2_esp_target_task_policy.c"
-
-for unit in ap cp; do
-    source_policy="private_bk_${unit}_task_policy"
-    destination="$consumer_root/private_bk_task_policy/$unit"
-    mkdir -p "$destination/tests"
-    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
-        "$fixture_root/${source_policy}.c" > \
-        "$destination/h2_bk_target_task_policy.c"
-    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
-        "$fixture_root/${source_policy}.h" > \
-        "$destination/h2_bk_target_task_policy.h"
-    sed "s/${source_policy}/h2_bk_target_task_policy/g" \
-        "$fixture_root/${source_policy}.CMakeLists.txt.fixture" > \
-        "$destination/CMakeLists.txt"
-    cp "$fixture_root/task_policy_test.c" \
-        "$destination/tests/test_h2_bk_target_task_policy.c"
-done
+# The public rules must work without any consumer-owned policy directory.
+test ! -e "$consumer_root/private_esp_task_policy"
+test ! -e "$consumer_root/private_bk_task_policy"
 
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)
@@ -117,6 +91,28 @@ grep -F 'embedded_menu_font=.' font-native-staging.log >/dev/null
 grep -F -- '--native-component-source' font-native-staging.log >/dev/null
 grep -F 'embedded_menu_font.c' font-native-staging.log >/dev/null
 grep -F 'embedded_menu_font.h' font-native-staging.log >/dev/null
+# The descriptor must point at generated metadata, not a nonexistent source directory.
+grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-native-staging.log >/dev/null
+
+
+"${BAZEL_BIN:-bazel}" \
+    --ignore_all_rc_files \
+    --output_base="$consumer_root/output-base" \
+    aquery \
+    --enable_bzlmod \
+    --noenable_workspace \
+    --repository_cache="$repository_cache" \
+    --override_module="gizos=$repository_root" \
+    --define="h2_ci_graph=true" \
+    --define="h2_host_os=$host_os" \
+    --platforms="@gizos//tools/bazel/platforms:$platform" \
+    'mnemonic(Bk7258Firmware, //:generic_private_bk_firmware)' \
+    >bk-policy-staging.log
+for unit in ap cp; do
+    for file in CMakeLists.txt h2_bk_target_task_policy.h h2_bk_target_task_policy.c; do
+        grep -E "${unit}:h2_bk_target_task_policy=bazel-out/.*/private_bk_task_policy/${unit}/${file}" bk-policy-staging.log >/dev/null
+    done
+done
 
 cp BUILD.bazel BUILD.bazel.complete
 expect_missing_policy_failure() {
@@ -146,6 +142,28 @@ expect_missing_policy_failure() {
 expect_missing_policy_failure task_policy //:private_esp_firmware
 expect_missing_policy_failure ap_task_policy //:private_bk_firmware
 expect_missing_policy_failure cp_task_policy //:private_bk_firmware
+cp BUILD.bazel.complete BUILD.bazel
+
+# Generating the component shell must not disconnect the graph coverage audit.
+sed -i.bak 's/tasks = \["private\/consumer"\]/tasks = ["private\/consumer", "private\/unconfigured"]/' BUILD.bazel
+for target in private_esp_firmware private_bk_firmware; do
+    if "${BAZEL_BIN:-bazel}" \
+        --ignore_all_rc_files \
+        --output_base="$consumer_root/output-base" \
+        cquery \
+        --enable_bzlmod \
+        --noenable_workspace \
+        --repository_cache="$repository_cache" \
+        --override_module="gizos=$repository_root" \
+        --define="h2_ci_graph=true" \
+        --define="h2_host_os=$host_os" \
+        --platforms="@gizos//tools/bazel/platforms:$platform" \
+        "//:$target" >"unconfigured-${target}.log" 2>&1; then
+        printf 'expected uncovered task to fail analysis: %s\n' "$target" >&2
+        exit 1
+    fi
+    grep -F 'private/unconfigured' "unconfigured-${target}.log" >/dev/null
+done
 cp BUILD.bazel.complete BUILD.bazel
 
 sed -i.bak 's/font_name = "downstream_font_16"/font_name = "9invalid"/' BUILD.bazel
@@ -205,10 +223,17 @@ cp BUILD.bazel.complete BUILD.bazel
     //:i18n_runtime \
     //:native_component \
     //:package \
+    //:private_bk_ap_task_policy_codegen \
+    //:private_bk_cp_task_policy_codegen \
+    //:private_esp_task_policy_codegen \
     //:private_bk_ap_task_policy_test \
     //:private_bk_cp_task_policy_test \
     //:private_esp_task_policy_test \
     //:runtime
+
+python3 "$fixture_root/check_task_policy.py" "$consumer_root/bazel-bin" "$repository_root"
+test ! -e "$consumer_root/private_esp_task_policy"
+test ! -e "$consumer_root/private_bk_task_policy"
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
@@ -222,7 +247,10 @@ cp BUILD.bazel.complete BUILD.bazel
     --platforms="@gizos//tools/bazel/platforms:$platform" \
     --extra_toolchains="@gizos//tools/bazel/platforms:${platform}_test_toolchain" \
     //:embedded_menu_font_test \
-    //:font_consumer_test
+    //:font_consumer_test \
+    //:private_esp_task_policy_test \
+    //:private_bk_ap_task_policy_test \
+    //:private_bk_cp_task_policy_test
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \

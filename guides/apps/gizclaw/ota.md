@@ -18,7 +18,7 @@ size。产品 App 必须由明确发布策略选择 channel，不能猜测或遍
 这是随 GizClaw release tag `v0.1.0` 对应的 Peer schema
 `064687878378984ff3553613b4479880d2c58ebc` 一次完成的
 clean cutover：GizOS 不保留旧 `firmware_name` 或 artifact path 的兼容 alias，也不根据
-字符串内容猜测旧字段。这与 Points/Friend/history wrapper 保留语义化 public ID
+字符串内容猜测旧字段。这与 Friend/history wrapper 保留语义化 public ID
 并逐字节映射 wire name 的兼容合同无关。旧 Firmware 调用方必须在同一次编译升级中改为显式
 channel；未知或 unspecified channel 在发 RPC 前返回 invalid argument，服务端没有为当前
 Peer/channel 绑定 package 时返回 not found，缺失 URL、SHA-256 或非法 size 按 format error
@@ -27,6 +27,10 @@ Peer/channel 绑定 package 时返回 not found，缺失 URL、SHA-256 或非法
 下载不是另一个 Peer RPC。调用方必须把返回的 HTTPS URL 交给 PAL HTTP，流式接收 package，
 并同时核对 2xx、声明长度、实际接收长度和 SHA-256。URL 可能包含短期授权信息，不写日志、
 不长期保存，也不通过 UI 或 telemetry 暴露。
+
+设备 OTA worker 为整个流式 HTTP 下载（含 Stage 写入）保留 10 分钟总预算，
+不复用连接/RPC 的短超时；关闭 Service 或取消当前 generation 仍会中断下载。
+超时按失败上报并调用产品 abort 清理，不能把部分下载当作可安装 Stage。
 
 ## OTA 流程
 
@@ -66,7 +70,16 @@ H2Loader 只持久化 `boot_intent=LOADER|AUTO`、`stage`、`partition_1`、`par
 
 ## 指令边界
 
-远端 RPC 只提供 firmware metadata 和授权下载 URL，不直接执行本机安装。App 请求 OTA 时产生 effect command；本机管理端使用 `stage url` 或 `stage payload`，成功后使用 `reboot upgrade`。恢复与角色切换分别使用 `reboot loader` 和 `reboot app`；普通重启不会消费 Stage。H2Loader 的 `status`、`stage` 和 `reboot` command 不作为 GizClaw RPC 名称，也不由页面 callback 直接执行。
+`server.firmware.get` 提供经过授权的 metadata 和下载 URL；
+`client.firmware.update` 由 `libs/gizclaw` 的标准设备 provider 接收。
+配置 `h2_gizclaw_config_t.vtable` 的 Stage 方法后，库在回复发送完成后启动设备 task，
+查询 metadata、下载并上报 OTA telemetry，然后调用 H2Loader Stage adapter 校验与发布。
+`ota_activate` 向产品 owner 安排升级收尾；下载或 Stage 完成均不产生 succeeded。
+新固件验证运行 identity 后，使用 Stage adapter 保存的 update_id 上报最终结果。
+
+本机管理端仍可使用 `stage url` 或 `stage payload`，成功后使用 `reboot upgrade`。
+恢复与角色切换分别使用 `reboot loader` 和 `reboot app`；普通重启不会消费 Stage。
+H2Loader 的 command 名称不作为 GizClaw RPC 名称。
 
 重复检查和重复下载必须幂等。取消下载后保留已经确认的当前固件；partial staging 不能被标记为 staged。断电恢复时，H2Loader 只接受完整、校验通过且状态记录一致的 package。
 
@@ -93,3 +106,11 @@ Desktop E2E 只通过 `h2_gizclaw_client_rpc_call()` 与 pinned generated schema
 该测试不为 Firmware response 字段增加第二套 GizOS public wrapper。not-found、错误
 channel、非 HTTPS URL、截断和 digest mismatch 等 negative case 由本地确定性测试完成，
 避免向共享 E2E 环境注入破坏性请求。
+
+## Product integration
+
+A product using the App serial/BLE H2Loader services copies their initialized configuration through the target accessor and borrows the same operation mutex for Stage and digest operations. Release the mutex on the acquiring device task before handing activation to the product lifecycle owner; after joining the Service, reacquire it and verify the intended Stage before rebooting. This keeps recovery commands available without racing two package writers.
+
+The local OTA status snapshot covers accepted/running, staged and failed attempts, including failures before Stage begins. It resets with Service recreation and never claims post-boot success. A product Settings page can use it to end a pending request on failure without creating a control-plane API key or polling the device HTTP endpoint. Hardware acceptance still checks the persisted server snapshot as described by the AMOLED E2E guide.
+
+The public `h2_loader_stage_writer_*` API owns streamed package writes, byte progress, flush/close, size/digest/manifest validation and Stage publication. A product forwards the GizClaw worker payload to this writer under the shared operation mutex; it does not implement filesystem staging or package validation. Between `inspect` and `commit`, the product may persist report identity and recheck battery policy. Any failed transaction is aborted before releasing the mutex. The writer accepts only App packages for the configured board/target; installation remains in the Loader image.

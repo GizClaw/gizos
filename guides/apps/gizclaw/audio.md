@@ -4,6 +4,20 @@ Runtime Audio System 负责设备录音和扬声器 Track；GizClaw service 负�
 
 Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS/EOS 与动态 RPC DataChannel 的关系见 [GizClaw Peer Connection 传输拓扑](/apps/gizclaw/transport)。
 
+## 本地在线音乐播放器
+
+`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus decoder，解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`play_index()`、`playlist_set()`、`repeat_set()`、`stop()`、`get_status()`、`playlist_snapshot()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
+
+设备自身持有 playlist，服务器 `playlist.set` / `append` 推送的专辑不经过网络回读即可展示。`h2_gizclaw_player_playlist_snapshot()` 在设备锁下整份拷贝出 caller-owned 快照：最多 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）个条目的 title 与 source_ref、条目数、current index 及其存在标志、playlist revision 和 repeat 模式。快照不含每条最长 1 KB 的 URL，只有库自己需要它下载；UI 靠 revision 判断缓存是否失效，未变化就不重绘。`h2_gizclaw_player_get_status()` 另外附带 `has_current_index` / `current_index` / `playlist_length` / `playlist_revision`，使“第 3/8 首”这类投影不必再取一次快照。用户选中某条时调用 `h2_gizclaw_player_play_index()`，它走 `client.device.audioplayer.play` 的同一条内部路径；索引达到或超过 playlist 长度返回 `H2_PAL_ERR_INVALID_ARG`，在改动任何状态之前拒绝，不打断正在播放的曲目。这两个入口都不发起网络请求。
+
+设备自己也能写 playlist：`h2_gizclaw_player_playlist_set()` 接收 caller-owned 的 `h2_gizclaw_player_playlist_entry_t` 数组（每条一个必填的 HTTPS Ogg/Opus URL span，title 与 source_ref 可选，len 为 0 表示不存在）与条目数，走 `client.device.audioplayer.playlist.set` 的同一条内部路径：同样先校验全部 URL 再整体替换，因此失败时上一份 playlist 与正在播放的曲目都不受影响，revision 只在成功时前进。count 为 0 清空 playlist；超过 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）返回 `H2_PAL_ERR_INVALID_ARG`（不是 `BUSY`，因为再等也放不下），服务停止中返回 `H2_PAL_ERR_CLOSED`。它与 RPC 一样是纯写入，不启动播放，也清掉 current index；要让专辑开始播放，紧接着调用 `h2_gizclaw_player_play_index(service, 0)`。这样“用户选中本地专辑”与“手机推送 playlist”在设备内是同一条路径。
+
+`h2_gizclaw_player_repeat_set()` 接受与 `client.device.audioplayer.mode.set` 相同的 `off` / `one` / `all`，其他值返回 `H2_PAL_ERR_INVALID_ARG` 并保持当前模式不变，快照的 `repeat` 字段即为回读入口。末曲推进与循环由 library 的 worker 按该模式负责：`one` 重播当前曲，`all` 到末尾回到第 0 条，`off` 播完即停。产品必须设置模式而不是自己实现“下一首、到末尾回绕”，否则会与库内推进重复触发。
+
+HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
+
+停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS Ogg/Opus URL；名称须适合内部有界存储，非法输入在预留任务前拒绝。
+
 ## 对话流程
 
 ```mermaid
@@ -104,15 +118,15 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Mic Task 写入 GizClaw PCM ring，由 GizClaw uplink Task 每 20 ms 切片、编码并通过 WebRTC audio RTP 上行；ring 满时返回 `WOULD_BLOCK`，App 丢弃当前 realtime chunk 并记录 overrun，不等待或改写 payload。
 - Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
-- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Chatroom 可以终止于 transcript route，Agent workflow 可以终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。
+- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Agent workflow 终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。Friend / Friend Group 的 SFU Workspace 不给发言者任何 response route，turn 只能由本地 cancel 结束。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。
 
 ## Desktop E2E 边界
 
-手动 GizClaw PAL E2E 在测试 integration 中把固定 16 kHz mono S16LE 合成语音编码成 20 ms raw Opus packet，再经 public conversation API 进入 selected Desktop WebRTC PAL。验收要求同 generation 的非空 text、raw Opus 下行和 reply terminal；测试侧固定 libopus decoder 对 raw packet 解码并确认非静音。PAL audio-decoder contract 当前只支持 AAC，因此该测试不把 Opus 编解码错误地声明为 GizClaw 或 audio-decoder PAL 能力。
+手动 GizClaw PAL E2E 在测试 integration 中把固定 16 kHz mono S16LE 合成语音编码成 20 ms raw Opus packet，再经 public conversation API 进入 selected Desktop WebRTC PAL。验收要求同 generation 的非空 text、raw Opus 下行和 reply terminal；测试侧固定 libopus decoder 对 raw packet 解码并确认非静音。PAL audio-decoder contract 当前只支持 AAC，因此该 Conversation 测试不通过 audio-decoder PAL 编解码 Opus；本页本地音乐播放器的库内 Ogg/Opus decoder 是独立能力。
 
-terminal 后，测试通过 public Workspace history API 查找本轮发送 Gear 对应的新增 Gear entry，要求 transcript 非空且可回放；再 stream 下载 `audio/ogg`，核对 metadata 与接收长度并独立解析、解码 Ogg/Opus。Chatroom 只做转写和转发，不运行 LLM，也不产生 Agent history。这个 transport gate 不替代 provider 语义质量或真实设备声学验收。
+terminal 后，测试通过 public Workspace history API 查找本轮发送 Gear 对应的新增 Gear entry，要求 transcript 非空且可回放；再 stream 下载 `audio/ogg`，核对 metadata 与接收长度并独立解析、解码 Ogg/Opus。这个 transport gate 不替代 provider 语义质量或真实设备声学验收。
 
-Friend Group 语音仍只通过 Group system Workspace 的 Conversation 写入，不存在 `server.friend_group.messages.send`。读取时以 Friend Group scoped name 调用 message list/get；wrapper 返回稳定 `history_id`，其值逐字节来自底层 wire history name。音频通过 `server.friend_group.messages.audio.get` 接收 metadata、二进制 frames 和唯一 EOS，调用方必须核对声明长度与实际接收长度，并在取消、超限或缺失 EOS 时删除部分文件。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。
+Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-sfu` Workflow）的 Conversation 写入。GizClaw 0.15 起该 Workspace 是 LiveKit SFU 的单工对讲：Server 侧 connector 代表 Peer 入房，Device 保持原有 WebRTC 连接、不感知 LiveKit；下行是锁定一路发言者的 Opus 原样透传，发言者收不到自己的下行。SFU Workspace 没有 History、消息或音频资产，`server.friend_group.messages.*` 已删除，libs/gizclaw 不再提供 friend group message list/get/audio download。被拒绝的输入以同一 `stream_id` 的 typed EOS error 返回（`SFU_RUNTIME_NOT_ATTACHED`、`SFU_ACCESS_REVOKED`、`SFU_ACCESS_CHECK_FAILED`），App 按 code 结束本轮录音状态，不自动切换 Workspace。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。

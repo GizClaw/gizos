@@ -174,7 +174,7 @@ static h2_pal_result_t fake_connect(
         return H2_PAL_ERR_INVALID_ARG;
     }
     platform->connect_count += 1;
-    return H2_PAL_OK;
+    return platform->connect_result;
 }
 
 static int fake_send_timeout(
@@ -188,6 +188,7 @@ static int fake_send_timeout(
         len > FAKE_HTTP_REQUEST_BYTES - platform->request_len) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (platform->send_result != H2_PAL_OK) return platform->send_result;
     size_t amount = len;
     if (platform->send_fragment > 0u && amount > platform->send_fragment) {
         amount = platform->send_fragment;
@@ -217,6 +218,7 @@ static int fake_recv(
         return H2_PAL_ERR_INVALID_ARG;
     }
     platform->recv_count += 1;
+    if (platform->recv_result != H2_PAL_OK) return platform->recv_result;
     if (platform->recv_would_block_count > 0u) {
         platform->recv_would_block_count -= 1u;
         return H2_PAL_ERR_WOULD_BLOCK;
@@ -248,6 +250,7 @@ static h2_pal_result_t fake_tls_wrap(
         return H2_PAL_ERR_INVALID_ARG;
     }
     platform->tls_wrap_count += 1;
+    if (platform->tls_result != H2_PAL_OK) return platform->tls_result;
     platform->tls_config = *config;
     if (config->server_name != NULL) {
         size_t len = strlen(config->server_name);

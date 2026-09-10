@@ -3,7 +3,7 @@
 
 const e2e_case_t h2_gizclaw_e2e_cases[] = {
     {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY, 2u, false,
-     h2_gizclaw_e2e_run_connectivity},
+     h2_gizclaw_e2e_run_connectivity, NULL},
 };
 
 const size_t h2_gizclaw_e2e_case_count =

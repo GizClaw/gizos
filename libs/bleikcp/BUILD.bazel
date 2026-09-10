@@ -1,13 +1,15 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "task_names",
-    srcs = ["src/h2_bleikcp_task_names.c"],
-    hdrs = ["include/h2_bleikcp_task_names.h"],
-    includes = ["include"],
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "$bleikcp/kcp",
+        "$bleikcp/server",
+    ],
 )
 
 cc_library(
@@ -17,11 +19,13 @@ cc_library(
         "src/h2_bleikcp_client.c",
         "src/h2_bleikcp_internal.h",
         "src/h2_bleikcp_server.c",
+        "src/h2_bleikcp_task_names.c",
     ],
     hdrs = [
         "include/h2_bleikcp.h",
         "include/h2_bleikcp_client.h",
         "include/h2_bleikcp_server.h",
+        "include/h2_bleikcp_task_names.h",
         "include/h2_bleikcp_types.h",
     ],
     conlyopts = H2_C11_OPTS,
@@ -31,7 +35,7 @@ cc_library(
         "include",
     ],
     deps = [
-        ":task_names",
+        ":tasks",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_ikcp",
     ],

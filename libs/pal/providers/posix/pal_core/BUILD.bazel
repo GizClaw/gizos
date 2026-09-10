@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -32,6 +33,18 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = _POSIX_OWNERS,
+    deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "host_fs_web",
+    srcs = ["src/h2_posix_host_fs.c"],
+    hdrs = ["include/h2_posix_pal_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-D_XOPEN_SOURCE=700"],
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    visibility = ["//visibility:public"],
     deps = ["//libs/pal"],
 )
 

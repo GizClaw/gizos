@@ -22,7 +22,26 @@ typedef enum h2_pal_modem_capability {
     H2_PAL_MODEM_CAPABILITY_DATA = 1u << 0,
     H2_PAL_MODEM_CAPABILITY_CALL = 1u << 1,
     H2_PAL_MODEM_CAPABILITY_GNSS = 1u << 2,
+    H2_PAL_MODEM_CAPABILITY_CELL_LOCATE = 1u << 3,
+    H2_PAL_MODEM_CAPABILITY_LOW_POWER = 1u << 4,
 } h2_pal_modem_capability_t;
+
+/** Modem policy is volatile; product preferences remain owned by the app. */
+typedef enum h2_pal_modem_power_policy {
+    H2_PAL_MODEM_POWER_POLICY_ACTIVE = 0,
+    H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP = 1,
+} h2_pal_modem_power_policy_t;
+
+typedef enum h2_pal_modem_power_state {
+    H2_PAL_MODEM_POWER_STATE_UNKNOWN = 0,
+    H2_PAL_MODEM_POWER_STATE_ACTIVE = 1,
+    H2_PAL_MODEM_POWER_STATE_ASLEEP = 2,
+} h2_pal_modem_power_state_t;
+
+typedef struct h2_pal_modem_power_status {
+    h2_pal_modem_power_policy_t policy;
+    h2_pal_modem_power_state_t state;
+} h2_pal_modem_power_status_t;
 
 typedef enum h2_pal_modem_sim_state {
     H2_PAL_MODEM_SIM_STATE_UNKNOWN = 0,
@@ -175,6 +194,17 @@ typedef struct h2_pal_modem_gnss_fix {
     uint8_t second;
 } h2_pal_modem_gnss_fix_t;
 
+/* Cell-based location. Independent of the GNSS path: no altitude, speed,
+ * course, satellite count or UTC time, because the network service does not
+ * report them. `valid == 0` means the service could not place the device and
+ * is a normal result, not an error. */
+typedef struct h2_pal_modem_cell_location {
+    uint8_t valid;
+    int32_t latitude_e7;
+    int32_t longitude_e7;
+    uint32_t accuracy_m; /* Horizontal accuracy reported by the service, 0 when unknown. */
+} h2_pal_modem_cell_location_t;
+
 typedef struct h2_pal_modem_vtable {
     h2_pal_result_t (*open)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*close)(void *user, uint32_t timeout_ms);
@@ -195,12 +225,60 @@ typedef struct h2_pal_modem_vtable {
     h2_pal_result_t (*gnss_stop)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*get_gnss_state)(void *user, h2_pal_modem_gnss_state_t *out_state);
     h2_pal_result_t (*get_gnss_fix)(void *user, h2_pal_modem_gnss_fix_t *out_fix);
+    /* Blocking single-shot query against the operator's location service. It
+     * needs packet data, so it is slower than the local GNSS calls; the
+     * provider never brings data up on its own and returns
+     * H2_PAL_ERR_INVALID_STATE when data is not usable. `timeout_ms == 0`
+     * selects the provider's configured timeout. */
+    h2_pal_result_t (*cell_locate)(void *user, uint32_t timeout_ms,
+                                   h2_pal_modem_cell_location_t *out_location);
+    /** Blocking, task-context policy update on an open modem. AUTO_SLEEP must
+     * retain registration and incoming-call reachability. The provider owns
+     * wake/activity holds across complete operations and ongoing call/GNSS/data
+     * sessions; it must not implicitly open data for cell_locate. Success means
+     * policy accepted, not actual sleep. Close resets policy to ACTIVE.
+     * Unsupported model/wiring/backend returns UNSUPPORTED. On failure the
+     * last accepted policy remains; physical state may be UNKNOWN. */
+    h2_pal_result_t (*set_power_policy)(void *user, h2_pal_modem_power_policy_t policy);
+    /** Task-context observation into caller-owned storage, without waking the
+     * modem merely to query it. Report UNKNOWN without reliable observation.
+     * Fails INVALID_STATE when closed; unsupported backends return UNSUPPORTED. */
+    h2_pal_result_t (*get_power_status)(void *user, h2_pal_modem_power_status_t *out_status);
 } h2_pal_modem_vtable_t;
 
 struct h2_pal_modem_api {
     void *user;
     const h2_pal_modem_vtable_t *vtable;
 };
+
+/** @brief Set the volatile modem policy; see the vtable lifecycle contract. */
+static inline h2_pal_result_t h2_pal_modem_set_power_policy(
+    const h2_pal_modem_api_t *modem, h2_pal_modem_power_policy_t policy) {
+    if (policy != H2_PAL_MODEM_POWER_POLICY_ACTIVE &&
+        policy != H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (modem == NULL || modem->vtable == NULL || modem->vtable->set_power_policy == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->set_power_policy(modem->user, policy);
+}
+
+/** @brief Observe policy and actual state without causing a wakeup.
+ * @param out_status Required caller-owned output, reset even on failure.
+ */
+static inline h2_pal_result_t h2_pal_modem_get_power_status(
+    const h2_pal_modem_api_t *modem, h2_pal_modem_power_status_t *out_status) {
+    if (out_status == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    out_status->policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
+    out_status->state = H2_PAL_MODEM_POWER_STATE_UNKNOWN;
+    if (modem == NULL || modem->vtable == NULL || modem->vtable->get_power_status == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->get_power_status(modem->user, out_status);
+}
 
 static inline h2_pal_result_t h2_pal_modem_open(
     const h2_pal_modem_api_t *modem,
@@ -404,6 +482,23 @@ static inline h2_pal_result_t h2_pal_modem_get_gnss_fix(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return modem->vtable->get_gnss_fix(modem->user, out_fix);
+}
+
+static inline h2_pal_result_t h2_pal_modem_cell_locate(
+    const h2_pal_modem_api_t *modem,
+    uint32_t timeout_ms,
+    h2_pal_modem_cell_location_t *out_location) {
+    if (modem == NULL || out_location == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    out_location->valid = 0u;
+    out_location->latitude_e7 = 0;
+    out_location->longitude_e7 = 0;
+    out_location->accuracy_m = 0u;
+    if (modem->vtable == NULL || modem->vtable->cell_locate == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->cell_locate(modem->user, timeout_ms, out_location);
 }
 
 #ifdef __cplusplus

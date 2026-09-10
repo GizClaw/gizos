@@ -24,7 +24,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":desktop_options", "//projects/e2e/apps/gizclaw/app:fixture"],
+    deps = [
+        ":desktop_options",
+        "//projects/e2e/apps/gizclaw/app:fixture",
+    ],
 )
 
 gizclaw_e2e_desktop_live_test(
@@ -34,8 +37,8 @@ gizclaw_e2e_desktop_live_test(
 
 gizclaw_e2e_desktop_live_test(
     name = "gizclaw_h2peer_connectivity_live_test",
-    suite = "connectivity",
     app = "//projects/e2e/apps/gizclaw/app:connectivity_app",
+    suite = "connectivity",
 )
 
 gizclaw_e2e_desktop_live_test(
@@ -101,7 +104,20 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = gizclaw_e2e_desktop_deps(
-        backend = "pion",
         app = "//projects/e2e/apps/gizclaw/app:fixture",
+        backend = "pion",
     ),
+)
+
+gizclaw_e2e_desktop_live_test(
+    name = "gizclaw_h2peer_device_live_test",
+    app = "//projects/e2e/apps/gizclaw/app:device_app",
+    suite = "device",
+)
+
+gizclaw_e2e_desktop_live_test(
+    name = "gizclaw_pion_device_live_test",
+    app = "//projects/e2e/apps/gizclaw/app:device_app",
+    backend = "pion",
+    suite = "device",
 )

@@ -2,6 +2,10 @@
 
 #include "h2/pal/core/h2_pal_errors.h"
 
+#if defined(ESP_PLATFORM)
+#include "esp_log.h"
+#endif
+
 #include <errno.h>
 #include <limits.h>
 #include <stddef.h>
@@ -81,7 +85,13 @@ int h2_esp_net_stream_recv(int fd, uint8_t *data, size_t len, uint32_t timeout_m
         received = recv(fd, data, len, 0);
     }
     if (received < 0) {
-        return h2_esp_net_recv_failure(timeout_ms, errno);
+        int error = errno;
+#if defined(ESP_PLATFORM)
+        if (error != EAGAIN && error != EWOULDBLOCK && error != EINTR) {
+            ESP_LOGE("h2_net", "stage=tcp_recv errno=%d", error);
+        }
+#endif
+        return h2_esp_net_recv_failure(timeout_ms, error);
     }
     return received == 0 ? H2_PAL_ERR_CLOSED : (int)received;
 }

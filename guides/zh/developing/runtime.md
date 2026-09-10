@@ -69,6 +69,32 @@ contract，`poll/wait` 仍要求 caller 提供至少 640 B 的 buffer，并在 b
 `get()`，不复制完整 Board periph inventory；只有实际接受的 mapping 或 mapped
 input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
+## Wi-Fi 凭据与恢复
+
+`runtime->wifi_sta` 1:1 暴露注入的 PAL provider，不替换 vtable，也不按 timeout 推断持久化策略。`connect` 只连接，不写入、清除或覆盖保存凭据；`connect_and_save` 显式执行目标网络认证、有效 IP 验证与持久化。菜单、BLE、GizClaw RPC 和 Loader 用户配网调用后者；产测临时连接与读取已存配置后的重连调用前者。
+
+`connect_and_save` 在调用任务中执行，非零 timeout 是关联与 DHCP 的总预算；零值返回 INVALID_ARG，不改变连接或存储。Provider 串行接纳 connect、connect_and_save 和 disconnect，重叠调用返回 BUSY。连接失败保留旧凭据，保存失败返回真实错误；即使连接同一 SSID 也重新认证，避免旧关联掩盖错误密码。等待与存储算法由 `libs/wifi_sta` 复用，原子替换由 Wi-Fi Settings provider 保证。调用方等待操作结束后才能销毁 provider 或 Runtime。
+
+开机网络 worker 调用 `h2_runtime_wifi_connect_saved()` 恢复同一持久配置，该显式 API 的零 timeout 使用 15 秒默认关联预算；没有配置返回 NOT_FOUND。恢复调用不重写凭据，返回成功表示 provider 已完成关联，IP 可随后通过 station event/state 到达。Runtime init 不阻塞等待网络，也不自行打开无线连接。调用方负责启动时机和失败重试，不能把公共恢复算法重新写进产品页面。
+
+音量和静音由 Runtime 的 audio state 共同持有。UI 与 GizClaw 使用 `h2_runtime_system_state_audio()` 读取同一 snapshot，用 `h2_runtime_audio_set_volume()` 同时提交设定音量和静音。静音保留设定音量，PAL 实际输出为零；解除静音可直接使用 snapshot 中的设定值。现有 `runtime->audio` percent setter 同样更新这份 state 并取消静音，percent getter 仍返回实际输出音量。失败的 PAL 写入不改变 state，重叠操作返回 BUSY。Getter 对比 backend 实际值以识别绕过 proxy 的外部调整；GizClaw 和产品不得另存音量真值。
+
+## 音频电平
+
+`h2_runtime_audio_get_levels()` 报告 Runtime audio proxy 最近一帧的电平：`capture_percent` 是最近一帧 mic PCM 的峰值绝对采样，`playback_percent` 是最近一帧播放 PCM 的峰值，都缩放到 0..100，并各自带上该帧的 monotonic 毫秒。取峰值而不是 RMS：峰值在语音起始的第一个响采样上就抬起来，每采样只花一次比较，音频热路径付得起。只测量 S16LE 帧，其他 sample format 的帧保留上一次的值，不会把电平清零。
+
+Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 不知道消费者的刷新率，衰减、平滑和 peak hold 属于消费者自己。消费者必须把过期的 timestamp 当作静音处理，而不是一直显示最后一个峰值；timestamp 为 0 表示该方向还没有测量过任何帧。
+
+这些电平只用于观测。UI 可以据此画 level meter，但任何音频路径都不得由它决定：不得用来开关 mic/speaker、判定 VAD、门控发送或改变对话状态。
+
+发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
+
+存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
+
+编译期开关 `H2_RUNTIME_AUDIO_LEVELS` 默认打开；置 0 的目标不测量、不包装 track，`h2_runtime_audio_get_levels()` 返回 `H2_PAL_ERR_UNSUPPORTED`，`create_track` 恢复为透明转发。bk3633 只有 BLE、没有音频通路，OAD 镜像也没有余量，因此在该平台构建时关闭。
+
+帧数据按字节读取：`h2_audio_frame_t::data` 是不受约束的 `void *`，PAL 不承诺 `int16_t` 对齐，按 `int16_t` 解引用在 ARM target 上可能取到未定义行为甚至触发异常。时钟读失败时不发布该帧，保留上一次测量，避免出现一个 timestamp 为 0 却标记有效的样本。
+
 ## Component Mapper
 
 Runtime 通过 `h2_runtime_config_t.component_mapper` 接收 `boards/main` 提供的 mapper API。Mapper 使用与 PAL 相同的 `user + vtable` 形态：
@@ -137,6 +163,8 @@ App 不直接调用 `runtime->xxx_api->vtable->operation(...)`，也不自己传
 包括 Wi-Fi STA/AP、Wi-Fi settings、BLE host、modem、display、video decoder、audio decoder 和 audio 在内的 capability 都由 BSP 初始化为 `xxx_api_t` API object，再放入 runtime config。它们不是 Runtime 持有的 state handle；对应运行状态由 backend 的 `api->user` 和 Runtime state 分别管理。
 
 `runtime->video_decoder` 和 `runtime->audio_decoder` 是透明 PAL proxy。Runtime 复制 API object，不取得 decoder session 或 acquired frame 的 ownership，也不改变 frame 的 acquire/release contract。没有对应 decoder 的 board 必须在 config 中绑定 canonical unsupported API，不能传入 `NULL` 或省略 vtable operation。
+
+`runtime->audio` 的 `create_track` 不是透明转发：Runtime 返回自己持有的 wrapper track，用于测量播放帧的电平（见[音频电平](#音频电平)）。wrapper 把 `write`、`close`、`get_volume_factor`、`set_volume_factor`、`drain` 原样转发给 backend track，backend 没有提供的 operation 在 wrapper 上同样是 `NULL`，PAL wrapper 的报错行为不变。`close` 关闭 backend track 并释放 wrapper，调用方仍然只 close 一次。
 
 `runtime->buzzer` 同样是透明 PAL proxy。Runtime 把 `h2_runtime_config_t.buzzer` 的 API object 按值复制到 private storage，再暴露稳定的 App-facing pointer；它不取得物理 provider、tone 或 PWM channel 的 ownership，也不实现 melody sequencing。Buzzer 是 complete capability surface 的必选 binding：真实支持它的 Board 绑定 provider，其余 Runtime owner 显式绑定 `h2_pal_unsupported_buzzer_api()`，传入 `NULL` 会使 Runtime 初始化失败。
 
@@ -267,7 +295,9 @@ typedef struct h2_runtime_event {
 - `component` 表示事件属于哪类 Runtime component。
 - `component_id` 标识 app 定义的具体 component instance；component event 必须携带非零 id。
 - `kind` 是具体事件类型。System Event 使用 `H2_RUNTIME_SYSTEM_EVENT_*`，Component Event 使用 `H2_RUNTIME_COMPONENT_EVENT_*`。
-- `sequence` 是 Runtime 生成的事件序号。
+- `sequence` 是 Runtime 生成的 32 位事件序号，只用于在一段时间窗口内区分和排序事件，不保证
+  设备生命周期内全局唯一：到达 `UINT32_MAX` 后回绕并跳过 0（0 表示"没有序号"）。比较先后请用
+  `h2_runtime_sequence_after(a, b)`，不要直接用 `<`/`>`。
 - `timestamp_ms` 使用 Runtime monotonic time。
 - `payload` 和 `payload_size` 表示该 kind 对应的 Runtime-owned payload schema。
 
@@ -494,3 +524,9 @@ test bytes 或绕过 Runtime 直接处理 input。完整接线见
 Lua Host 不消费 `h2_runtime_poll_event()` 或 `h2_runtime_wait_notify()`。App 始终是
 Runtime Event queue 的唯一消费者，并把允许脚本观察的复制事件与显式 `job_id`
 交给 `h2_lua_dispatch_runtime_event()`。完整合同见 [Lua Runtime](./lua)。
+
+## 系统时间调整事件
+
+`runtime->time` 是 Runtime 包装后的 Time PAL。调用 `h2_pal_time_set_wall_ms(runtime->time, utc_ms)` 成功后自动发布 `H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED`，组件为 `H2_RUNTIME_COMPONENT_SYSTEM_TIME`，payload 为 `h2_runtime_system_event_time_adjusted_t`，其中 `wall_ms` 是本次请求设置的 UTC Unix 毫秒时间戳。事件 envelope 的 `timestamp_ms` 仍使用单调时钟（读取失败时为零），设置失败以及时间读取、sleep 不发布调整事件。GizClaw 等服务应使用此接口，直接调用原始 provider 不经过 Runtime。
+
+事件通过普通有界事件队列投递并唤醒应用；队列满时沿用丢弃计数规则，不能把已经成功的设置改报失败。它是刷新提示，消费者应重新读取 `h2_pal_time_get_wall_ms()`，不要把可能过时的事件 payload 当作当前时间；保留周期刷新以恢复溢出丢失的通知。并发调用时不承诺事件排序等于实际写入顺序。Runtime 生命周期结束前必须停止所有使用其 Time PAL 的任务。UTC 存储和显示时区相互独立。

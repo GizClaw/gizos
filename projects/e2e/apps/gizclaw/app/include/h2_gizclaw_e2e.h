@@ -27,7 +27,9 @@ typedef enum h2_gizclaw_e2e_suite {
   H2_GIZCLAW_E2E_SUITE_VOICE = 1u << 3,
   H2_GIZCLAW_E2E_SUITE_CONCURRENCY = 1u << 4,
   H2_GIZCLAW_E2E_SUITE_SERVICE = 1u << 5,
-  H2_GIZCLAW_E2E_SUITE_ALL = (1u << 6) - 1u,
+  H2_GIZCLAW_E2E_SUITE_DEVICE = 1u << 6,
+  H2_GIZCLAW_E2E_SUITE_RESOURCE = 1u << 7,
+  H2_GIZCLAW_E2E_SUITE_ALL = (1u << 8) - 1u,
 } h2_gizclaw_e2e_suite_t;
 
 typedef enum h2_gizclaw_e2e_exit {
@@ -75,6 +77,15 @@ typedef void (*h2_gizclaw_e2e_progress_fn)(
 typedef struct h2_gizclaw_e2e_config {
   h2_gizclaw_str_t server_endpoint;
   h2_gizclaw_str_t registration_token;
+  /** Optional dedicated device-API acceptance lane endpoints. */
+  const char *device_api_url;
+  const char *device_audio_url;
+  /** Forward the device case PCM sink to runtime.audio for audible testing. */
+  bool device_real_audio;
+  /** Borrowed Audio PAL for Voice capture health. NULL selects the public
+   * Testing Audio fake. The App decorates it with the supplied PCM fixture;
+   * physical samples are discarded. Must support 16 kHz mono S16LE capture. */
+  const h2_pal_audio_api_t *voice_audio;
   const uint8_t *voice_pcm_s16le_16khz_mono;
   size_t voice_pcm_len;
   uint32_t suites;

@@ -3,6 +3,8 @@
 
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2_gizclaw.h"
+#include "h2_app_test_audio.h"
+#include "h2_app_test_audio_fake.h"
 #include "h2_gizclaw_e2e.h"
 
 #include <stdatomic.h>
@@ -25,6 +27,7 @@ typedef enum h2_gizclaw_e2e_actor_role {
 
 typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
+  h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   char public_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
@@ -46,6 +49,11 @@ typedef struct h2_gizclaw_e2e_speed_hooks {
 
 typedef struct h2_gizclaw_e2e_fixture {
   h2_runtime_t *runtime;
+  const h2_pal_audio_api_t *device_audio;
+  h2_app_test_audio_t *device_audio_wrapper;
+  h2_app_test_audio_fake_t device_audio_fake;
+  int (*device_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
+  const h2_gizclaw_vtable_t *device_vtable;
   const h2_gizclaw_e2e_config_t *config;
   const h2_pal_mem_api_t *allocator;
   const h2_pal_crypto_api_t *crypto;
@@ -62,7 +70,6 @@ typedef struct h2_gizclaw_e2e_fixture {
   char run_prefix[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workflow_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workspace_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
-  char pet_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char contact_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_id[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_group_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
@@ -72,23 +79,23 @@ typedef struct h2_gizclaw_e2e_fixture {
   size_t pcm_len;
   /* Owned by the heap fixture, including after a failed Track unset. */
   h2_gizclaw_track_t *speech_track;
+  h2_app_test_audio_t *speech_audio;
+  h2_app_test_audio_fake_t speech_audio_fake;
+  uint8_t speech_pending[640];
+  size_t speech_pending_bytes;
+  bool speech_mic_started;
+  int (*speech_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
   atomic_size_t speech_offset;
   bool speech_track_bound;
   /* A case may retain borrowed Track/hook state through failed teardown. */
   void *case_state;
   int (*case_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
+  bool use_session;
   bool workspace_created;
   h2_gizclaw_e2e_actor_role_t workspace_actor_role;
   /* A valid delete reply is retained until cleanup records the handoff. */
   bool workspace_delete_acknowledged;
-  bool pet_created;
-  bool pet_delete_acknowledged;
   /* Download sinks may outlive a failed wait; keep their state with Service. */
-  atomic_size_t pet_download_bytes;
-  atomic_size_t group_audio_bytes[2];
-  /* Do not reuse sink state after a failed wait while Service may still own it.
-   */
-  bool group_audio_started;
   h2_gizclaw_e2e_speed_hooks_t speed_hooks[6];
   bool contact_created;
   bool friendship_created;
@@ -100,8 +107,6 @@ typedef struct h2_gizclaw_e2e_fixture {
   bool isolation_workspace_delete_acknowledged;
   bool isolation_contact_pending;
   bool isolation_group_pending;
-  bool isolation_pet_pending;
-  bool isolation_pet_delete_acknowledged;
   bool cancel_requested;
   bool cleanup_started;
   /* A job task whose join never succeeded. The handle stays owned here and

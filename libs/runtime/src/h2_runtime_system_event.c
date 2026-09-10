@@ -232,6 +232,43 @@ static h2_pal_result_t map_gpio_event(
     return H2_PAL_OK;
 }
 
+/*
+ * Keep the published snapshot in step with the events. Readers that poll the
+ * state see the same transitions a queue consumer would, without having to
+ * consume the queue - which only the main loop may do.
+ */
+static void publish_system_state(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    const h2_runtime_queued_payload_t *payload) {
+    switch (kind) {
+    case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING:
+    case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED:
+    case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED:
+    case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP:
+    case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP: {
+        const h2_runtime_system_event_wifi_sta_t *e = &payload->wifi_sta;
+        h2_runtime_system_wifi_sta_state_t state;
+        memset(&state, 0, sizeof(state));
+        state.valid = 1u;
+        state.status = e->status;
+        state.ssid_len = e->ssid_len;
+        memcpy(state.ssid, e->ssid, sizeof(state.ssid));
+        memcpy(state.bssid, e->bssid, sizeof(state.bssid));
+        state.bssid_set = e->bssid_set;
+        state.channel = e->channel;
+        state.rssi = e->rssi;
+        state.ip = e->ip;
+        state.ip_valid = e->ip_valid;
+        state.disconnect_reason = e->disconnect_reason;
+        h2_runtime_system_state_publish_wifi_sta(runtime, &state);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 static h2_pal_result_t map_wifi_sta_event(
     const h2_pal_system_event_t *event,
     h2_runtime_queued_payload_t *out_payload,
@@ -716,6 +753,11 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    /*
+     * Publish before enqueuing: a consumer woken by the event must not be able
+     * to read a snapshot older than the event that woke it.
+     */
+    publish_system_state(runtime, kind, &queued.payload);
     return h2_runtime_enqueue_event(runtime, &queued);
 }
 

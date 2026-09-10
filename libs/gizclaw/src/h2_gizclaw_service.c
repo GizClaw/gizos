@@ -1,7 +1,9 @@
 #include "h2_gizclaw_audio_pacer.h"
+#include "h2_gizclaw_device_internal.h"
 #include "h2_gizclaw_internal.h"
 #include "h2_gizclaw_pcm_track_internal.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_gizclaw_session_internal.h"
 
 #include "h2_gizclaw_task_names.h"
 
@@ -41,6 +43,15 @@ void h2_gizclaw_service_log_request(const h2_gizclaw_service_t *service,
                  detail_code, frame_count, byte_count);
   (void)h2_pal_log_write(service->config.client_config->log, level, "gizclaw",
                          message);
+}
+
+void h2_gizclaw_service_flush_audio_log_internal(
+    const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
+  const h2_pal_log_api_t *api = service != NULL ? service->client_config.log : NULL;
+  if (api == NULL)
+    return;
+  for (size_t i = 0u; i < log->count; ++i)
+    (void)h2_pal_log_write(api, log->levels[i], "gizclaw", log->messages[i]);
 }
 
 static uint64_t service_monotonic_ms(const h2_gizclaw_service_t *service) {
@@ -391,6 +402,7 @@ static void mark_terminal(h2_gizclaw_service_t *service,
     service->stopping = true;
     service->terminal_pending = true;
     service->terminal_result = result;
+    (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
     newly_terminal = true;
   }
   unlock_service(service);
@@ -677,6 +689,8 @@ static void net_worker(void *ctx) {
                                  service_cancel_requested, service);
   }
   if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_time_prepare_connect_internal(service);
+  if (rc == H2_PAL_OK)
     rc = client_init(&service->client_config, &service->client);
   if (rc == H2_PAL_OK)
     rc = client_connect(service->client);
@@ -704,6 +718,8 @@ static void net_worker(void *ctx) {
     unlock_service(service);
     if (stopping)
       break;
+
+    h2_gizclaw_time_sync_start_internal(service);
 
     if (service->config.on_event != NULL) {
       rc = client_dispatch_event(service->client);
@@ -985,6 +1001,9 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                                             &service->dispatch_queue);
   if (rc != H2_PAL_OK)
     goto fail;
+  rc = h2_gizclaw_device_init_internal(service);
+  if (rc != H2_PAL_OK)
+    goto fail;
   *out_service = service;
   return H2_PAL_OK;
 
@@ -1046,6 +1065,8 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
     rc = h2_pal_task_start(service->config.task, &options, data_downlink_worker,
                            service, &service->data_downlink_task);
   }
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_device_start_internal(service->device);
   if (rc != H2_PAL_OK)
     (void)h2_gizclaw_service_stop(service);
   return rc;
@@ -1343,14 +1364,22 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
     return H2_PAL_OK;
   }
   service->stopping = true;
+  h2_gizclaw_device_cancel_internal(service->device);
   (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
   unlock_service(service);
+  h2_gizclaw_debug_stop_internal(service);
   (void)h2_pal_queue_close(service->config.queue, service->request_queue);
   if (service->net_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->net_task);
     if (rc != H2_PAL_OK)
       return rc;
     service->net_task = NULL;
+  }
+  if (service->time_task != NULL) {
+    rc = h2_pal_task_join(service->config.task, service->time_task);
+    if (rc != H2_PAL_OK)
+      return rc;
+    service->time_task = NULL;
   }
   if (service->uplink_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->uplink_task);
@@ -1376,6 +1405,9 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
       return rc;
     service->data_downlink_task = NULL;
   }
+  rc = h2_gizclaw_device_stop_internal(service->device);
+  if (rc != H2_PAL_OK)
+    return rc;
   if (lock_service(service) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_STATE;
   service->stopped = true;
@@ -1401,6 +1433,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   h2_gizclaw_track_t *track = atomic_exchange(&service->pcm_track, NULL);
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
+  h2_gizclaw_device_destroy_internal(service->device);
   h2_pal_queue_destroy(service->config.queue, service->dispatch_queue);
   h2_pal_queue_destroy(service->config.queue, service->request_queue);
   (void)h2_pal_cond_destroy(service->config.sync, service->progress_cond);
@@ -1408,4 +1441,57 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   (void)h2_pal_mutex_destroy(service->config.sync, service->audio_mutex);
   h2_pal_mem_free(service->config.client_config->allocator, service);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_session_t *session) {
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (service->session != NULL)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    service->session = session;
+    ++service->request_reference_count;
+  }
+  unlock_service(service);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (service->session_references != 0u) {
+    rc = H2_PAL_ERR_BUSY;
+  } else if (service->session != NULL) {
+    service->session = NULL;
+    --service->request_reference_count;
+  }
+  unlock_service(service);
+  return rc;
+}
+
+h2_pal_result_t
+h2_gizclaw_service_acquire_session_internal(h2_gizclaw_service_t *service,
+                                            h2_gizclaw_session_t **out) {
+  *out = NULL;
+  h2_pal_result_t rc = lock_service(service);
+  if (rc != H2_PAL_OK)
+    return rc;
+  *out = service->session;
+  if (*out != NULL)
+    ++service->session_references;
+  unlock_service(service);
+  return H2_PAL_OK;
+}
+
+void h2_gizclaw_service_release_session_internal(
+    h2_gizclaw_service_t *service) {
+  if (lock_service(service) != H2_PAL_OK)
+    return;
+  --service->session_references;
+  unlock_service(service);
 }

@@ -47,9 +47,8 @@ flowchart TD
 - Peer-addressable resource 使用认证 caller 或 RuntimeProfile scope 下的 immutable
   `name` / `*_name`；Contact/FriendGroup 的 `display_name` 是独立可修改文字。固件不
   拼接 Peer key/token/profile，不暴露或缓存 canonical Admin ID。
-- Friend、FriendGroupMember、Workspace/FriendGroup history、Points transaction、
-  GameResult、reward grant、source、request 和 idempotency key 是 relationship、
-  occurrence 或 ledger record，继续保留 ID。调用方必须按具体类型区分 name 与 ID，
+- Friend、FriendGroupMember、Workspace/FriendGroup history、request 和
+  idempotency key 是 relationship 或 occurrence record，继续保留 ID。调用方必须按具体类型区分 name 与 ID，
   不能因为字段相似而机械重命名。
 - Peer resource create/join 的结果不确定时，先 get 同一个 name，仅在 not-found 时重试
   mutation；不得生成新 name、扫描同 display name 项或删除冲突资源。

@@ -6,6 +6,7 @@
  * events and component state. Production Apps must not receive this control.
  */
 
+#include "h2_runtime_system_state.h"
 #include "h2_runtime.h"
 
 #ifdef __cplusplus
@@ -49,6 +50,16 @@ h2_pal_result_t h2_runtime_test_emit_event(
  * The component id must be present in the Runtime component mapping and the
  * state size must match its Button, NFC, or IMU public state type.
  */
+/**
+ * Publishes one station snapshot through the Runtime's system state storage.
+ *
+ * The Runtime normally builds these from Wi-Fi system events; a test has no
+ * radio to produce them, so this drives the same publication a reader polls.
+ */
+h2_pal_result_t h2_runtime_test_set_system_wifi_sta_state(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_wifi_sta_state_t *state);
+
 h2_pal_result_t h2_runtime_test_set_component_state(
     h2_runtime_test_control_t *control,
     h2_runtime_component_id_t component_id,

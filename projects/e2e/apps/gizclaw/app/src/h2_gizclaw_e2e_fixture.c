@@ -1,3 +1,4 @@
+#include "h2_app_test_webrtc.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/os/h2_pal_task.h"
@@ -16,11 +17,6 @@
 #define H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY 3u
 #define H2_GIZCLAW_E2E_RPC_SERVICE_LABEL "giznet/v1/service/0"
 
-typedef struct observed_peer {
-  h2_pal_webrtc_peer_t *peer;
-  bool in_use;
-} observed_peer_t;
-
 typedef struct observed_channel {
   h2_pal_webrtc_channel_t *channel;
   uint16_t stream_id;
@@ -30,10 +26,8 @@ typedef struct observed_channel {
 typedef struct webrtc_observer {
   const h2_pal_webrtc_api_t *upstream;
   const h2_pal_sync_api_t *sync;
-  h2_pal_webrtc_api_t api;
-  h2_pal_webrtc_vtable_t vtable;
+  h2_app_test_webrtc_t *wrapper;
   h2_pal_mutex_t *mutex;
-  observed_peer_t peers[H2_GIZCLAW_E2E_OBSERVER_PEER_CAPACITY];
   observed_channel_t channels[H2_GIZCLAW_E2E_OBSERVER_CHANNEL_CAPACITY];
   uint16_t stream_ids[H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY];
   size_t stream_id_count;
@@ -116,124 +110,12 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
 }
 
-static h2_pal_result_t observer_peer_create(void *user,
-                                            h2_pal_webrtc_peer_t **out_peer) {
-  webrtc_observer_t *observer = user;
-  if (observer == NULL || out_peer == NULL || observer->upstream == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  observed_peer_t *slot = NULL;
-  (void)h2_pal_mutex_lock(observer->sync, observer->mutex);
-  for (size_t index = 0u; index < H2_GIZCLAW_E2E_OBSERVER_PEER_CAPACITY;
-       ++index) {
-    if (!observer->peers[index].in_use) {
-      slot = &observer->peers[index];
-      slot->in_use = true;
-      break;
-    }
-  }
-  (void)h2_pal_mutex_unlock(observer->sync, observer->mutex);
-  if (slot == NULL)
-    return H2_PAL_ERR_NO_SPACE;
-  const int result = h2_pal_webrtc_peer_create(observer->upstream, out_peer);
-  (void)h2_pal_mutex_lock(observer->sync, observer->mutex);
-  if (result == H2_PAL_OK) {
-    slot->peer = *out_peer;
-  } else {
-    memset(slot, 0, sizeof(*slot));
-  }
-  (void)h2_pal_mutex_unlock(observer->sync, observer->mutex);
-  return result;
+static void observe_event(void *user, const h2_pal_webrtc_event_t *event) {
+  (void)user;
+  if (event->kind == H2_PAL_WEBRTC_EVENT_CHANNEL_STATE)
+    observe_rpc_channel(event->channel, &event->channel_info, event->channel_state);
 }
 
-static h2_pal_result_t
-observer_peer_add_ice_server(h2_pal_webrtc_peer_t *peer,
-                             const h2_pal_webrtc_ice_server_t *server) {
-  return h2_pal_webrtc_peer_add_ice_server(s_webrtc_observer.upstream, peer,
-                                           server);
-}
-
-static h2_pal_result_t observer_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
-  return h2_pal_webrtc_peer_start_offer(s_webrtc_observer.upstream, peer);
-}
-
-static h2_pal_result_t
-observer_peer_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
-                             h2_pal_webrtc_sdp_type_t type,
-                             h2_pal_webrtc_str_t sdp) {
-  return h2_pal_webrtc_peer_set_remote_sdp(s_webrtc_observer.upstream, peer,
-                                           type, sdp);
-}
-
-static h2_pal_result_t
-observer_peer_create_data_channel(h2_pal_webrtc_peer_t *peer,
-                                  const h2_pal_webrtc_channel_config_t *config,
-                                  h2_pal_webrtc_channel_t **out_channel) {
-  return h2_pal_webrtc_peer_create_data_channel(s_webrtc_observer.upstream,
-                                                peer, config, out_channel);
-}
-
-static h2_pal_result_t observer_peer_poll(h2_pal_webrtc_peer_t *peer,
-                                          int timeout_ms,
-                                          h2_pal_webrtc_event_t *out_event) {
-  h2_pal_result_t result = h2_pal_webrtc_peer_poll(s_webrtc_observer.upstream,
-                                                   peer, timeout_ms, out_event);
-  if (result == H2_PAL_OK && out_event != NULL &&
-      out_event->kind == H2_PAL_WEBRTC_EVENT_CHANNEL_STATE)
-    observe_rpc_channel(out_event->channel, &out_event->channel_info,
-                        out_event->channel_state);
-  return result;
-}
-
-static h2_pal_result_t observer_peer_set_track(h2_pal_webrtc_peer_t *peer,
-                                               h2_pal_webrtc_track_t *track) {
-  return h2_pal_webrtc_peer_set_track(s_webrtc_observer.upstream, peer, track);
-}
-
-static h2_pal_result_t observer_peer_unset_track(h2_pal_webrtc_peer_t *peer,
-                                                 h2_pal_webrtc_track_t *track) {
-  return h2_pal_webrtc_peer_unset_track(s_webrtc_observer.upstream, peer,
-                                        track);
-}
-
-static h2_pal_result_t observer_peer_send_opus(h2_pal_webrtc_peer_t *peer,
-                                               const uint8_t *opus,
-                                               size_t opus_len) {
-  return h2_pal_webrtc_peer_send_opus(s_webrtc_observer.upstream, peer, opus,
-                                      opus_len);
-}
-
-static h2_pal_result_t observer_channel_send(h2_pal_webrtc_channel_t *channel,
-                                             const uint8_t *data, size_t len,
-                                             int is_text) {
-  return h2_pal_webrtc_channel_send(s_webrtc_observer.upstream, channel, data,
-                                    len, is_text);
-}
-
-static void observer_channel_close(h2_pal_webrtc_channel_t *channel) {
-  h2_pal_webrtc_channel_close(s_webrtc_observer.upstream, channel);
-}
-
-static void observer_peer_close(h2_pal_webrtc_peer_t *peer) {
-  observed_peer_t *slot = NULL;
-  (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  for (size_t index = 0u; index < H2_GIZCLAW_E2E_OBSERVER_PEER_CAPACITY;
-       ++index) {
-    observed_peer_t *observed = &s_webrtc_observer.peers[index];
-    if (observed->peer == peer) {
-      slot = observed;
-      break;
-    }
-  }
-  (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  h2_pal_webrtc_peer_close(s_webrtc_observer.upstream, peer);
-  if (slot != NULL) {
-    (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-    if (slot->peer == peer)
-      memset(slot, 0, sizeof(*slot));
-    (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
-  }
-}
 static int observer_init(const h2_pal_webrtc_api_t *upstream,
                          const h2_pal_sync_api_t *sync,
                          const h2_pal_mem_api_t *allocator) {
@@ -253,36 +135,28 @@ static int observer_init(const h2_pal_webrtc_api_t *upstream,
   }
   s_webrtc_observer.upstream = upstream;
   s_webrtc_observer.sync = sync;
-  s_webrtc_observer.vtable = (h2_pal_webrtc_vtable_t){
-      .peer_create = observer_peer_create,
-      .peer_add_ice_server = observer_peer_add_ice_server,
-      .peer_start_offer = observer_peer_start_offer,
-      .peer_set_remote_sdp = observer_peer_set_remote_sdp,
-      .peer_create_data_channel = observer_peer_create_data_channel,
-      .peer_set_track = observer_peer_set_track,
-      .peer_unset_track = observer_peer_unset_track,
-      .peer_poll = observer_peer_poll,
-      .peer_send_opus = observer_peer_send_opus,
-      .channel_send = observer_channel_send,
-      .channel_close = observer_channel_close,
-      .peer_close = observer_peer_close,
-  };
-  s_webrtc_observer.api = (h2_pal_webrtc_api_t){
-      .user = &s_webrtc_observer,
-      .vtable = &s_webrtc_observer.vtable,
-  };
+  rc = h2_app_test_webrtc_create(allocator, upstream, observe_event, NULL,
+                                  &s_webrtc_observer.wrapper);
+  if (rc != H2_PAL_OK) {
+    (void)h2_pal_mutex_destroy(sync, s_webrtc_observer.mutex);
+    memset(&s_webrtc_observer, 0, sizeof(s_webrtc_observer));
+    return rc;
+  }
   s_webrtc_observer.initialized = true;
   return H2_PAL_OK;
 }
 
-static void observer_deinit(void) {
+static int observer_deinit(void) {
   if (!s_webrtc_observer.initialized)
-    return;
+    return H2_PAL_OK;
+  int rc = h2_app_test_webrtc_destroy(s_webrtc_observer.wrapper);
+  if (rc != H2_PAL_OK) return rc;
   s_webrtc_observer.initialized = false;
   if (s_webrtc_observer.mutex != NULL) {
     (void)h2_pal_mutex_destroy(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   }
   memset(&s_webrtc_observer, 0, sizeof(s_webrtc_observer));
+  return H2_PAL_OK;
 }
 
 void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void) {
@@ -431,7 +305,7 @@ static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
     return H2_PAL_OK;
   }
   out_response->has_error = true;
-  out_response->error_code = H2_GIZCLAW_RPC_ERROR_METHOD_NOT_FOUND;
+  out_response->error_code = H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
   return H2_PAL_OK;
 }
 
@@ -474,10 +348,34 @@ static int actor_create_identity(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
+static int actor_session_dispose(h2_gizclaw_e2e_actor_t *actor) {
+  if (actor->session == NULL)
+    return H2_PAL_OK;
+  int rc = h2_gizclaw_session_close(actor->session);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session-close", rc);
+  h2_gizclaw_session_state_t state;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_session_snapshot(actor->session, &state);
+  if (rc == H2_PAL_OK && (state.can_start ||
+                          state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_CLOSED))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_session_close", "session_close-assert", rc);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_destroy(&actor->session);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session-destroy", rc);
+    if (rc == H2_PAL_OK && actor->session != NULL)
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_destroy", "session_destroy-assert", rc);
+  }
+  return rc;
+}
+
 static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
   if (actor->service == NULL)
     return H2_PAL_OK;
-  int rc = h2_gizclaw_service_stop(actor->service);
+  int rc = actor->session == NULL ? H2_PAL_OK : h2_gizclaw_session_close(actor->session);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_stop(actor->service);
   h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "fixture-stop", rc);
   if (rc != H2_PAL_OK)
     return rc;
@@ -495,6 +393,9 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
        * claim that stop alone dispatched hooks or released their resources. */
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "service_stop-assert",
                               H2_PAL_OK);
+      rc = actor_session_dispose(actor);
+      if (rc != H2_PAL_OK)
+        return rc;
       rc = h2_gizclaw_service_deinit(actor->service);
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_deinit", "fixture-deinit",
                               rc);
@@ -527,6 +428,10 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .crypto = fixture->crypto,
       .time = fixture->time,
       .log = fixture->log,
+      .audio = fixture->device_audio,
+      .vtable = fixture->device_vtable,
+      .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
+      .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .rpc_provider = provider_call,
       .rpc_provider_user = actor,
       .cancel_requested = cancel_requested,
@@ -557,10 +462,45 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
   /* Connection may succeed even if the following registration times out.
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
-  rc =
-      h2_gizclaw_rpc_register(actor->service, fixture->registration_token,
-                              H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS, &registration);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_register", stage, rc);
+  if (fixture->use_session) {
+    static const char *const collections[] = {"assistants"};
+    const h2_gizclaw_session_config_t session_config = {
+        .service = actor->service, .mem = fixture->allocator,
+        .sync = fixture->runtime->sync, .time = fixture->time,
+        .runtime = fixture->runtime, .collections = collections,
+        .collection_count = 1u, .max_workflows = 128u, .catalog_bytes = 65536u};
+    rc = h2_gizclaw_session_create(&session_config, &actor->session);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session-create", rc);
+    if (rc == H2_PAL_OK) {
+      h2_gizclaw_session_state_t state;
+      rc = h2_gizclaw_session_snapshot(actor->session, &state);
+      if (rc == H2_PAL_OK && (state.can_start ||
+          state.blocking_reason != H2_GIZCLAW_SESSION_BLOCK_REGISTRATION))
+        rc = H2_PAL_ERR_INVALID_STATE;
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session_create-assert", rc);
+    }
+    if (rc == H2_PAL_OK) {
+      rc = h2_gizclaw_session_register(actor->session, fixture->registration_token,
+                                      H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session-register", rc);
+      h2_gizclaw_session_state_t state;
+      const int snapshot_rc = h2_gizclaw_session_snapshot(actor->session, &state);
+      if (snapshot_rc == H2_PAL_OK && state.registration == H2_GIZCLAW_SESSION_READY) {
+        actor->registered = true; /* Catalog failure must still clean up Peer. */
+        memcpy(registration.runtime_profile_name, state.profile_name,
+               sizeof(registration.runtime_profile_name));
+      }
+      if (rc == H2_PAL_OK && (snapshot_rc != H2_PAL_OK ||
+          state.registration != H2_GIZCLAW_SESSION_READY ||
+          state.catalog != H2_GIZCLAW_SESSION_READY || state.can_start))
+        rc = H2_PAL_ERR_INVALID_STATE;
+      h2_gizclaw_e2e_evidence("h2_gizclaw_session_register", "session_register-assert", rc);
+    }
+  } else {
+    rc = h2_gizclaw_rpc_register(actor->service, fixture->registration_token,
+                                H2_GIZCLAW_E2E_CONNECT_TIMEOUT_MS, &registration);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_register", stage, rc);
+  }
   if (rc != H2_PAL_OK)
     return rc;
   if (registration.runtime_profile_name[0] == '\0' ||
@@ -662,9 +602,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
                  run_hex);
   if (!append_name_suffix(fixture->workspace_name,
                           sizeof(fixture->workspace_name), fixture->run_prefix,
-                          "-workspace") ||
-      !append_name_suffix(fixture->pet_name, sizeof(fixture->pet_name),
-                          fixture->run_prefix, "-pet")) {
+                          "-workspace")) {
     memset(fixture->registration_token, 0, config->registration_token.len + 1u);
     h2_pal_mem_free(fixture->allocator, fixture->registration_token);
     fixture->registration_token = NULL;
@@ -677,7 +615,7 @@ int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
     fixture->registration_token = NULL;
     return rc;
   }
-  fixture->webrtc = &s_webrtc_observer.api;
+  fixture->webrtc = h2_app_test_webrtc_api(s_webrtc_observer.wrapper);
   return H2_PAL_OK;
 }
 
@@ -1094,63 +1032,12 @@ static int cleanup_workspace(h2_gizclaw_e2e_fixture_t *fixture,
   return H2_PAL_OK;
 }
 
-static int cleanup_pet(h2_gizclaw_e2e_fixture_t *f,
-                       h2_gizclaw_service_t *service,
-                       h2_gizclaw_resp_storage_t *storage, bool *pending,
-                       bool *acknowledged) {
-  const char *name = f->pet_name;
-  if (!name[0] || !memchr(name, '\0', sizeof(f->pet_name)))
-    return H2_PAL_ERR_INVALID_STATE;
-  storage->used = 0u;
-  if (!*acknowledged) {
-    h2_gizclaw_pet_t value = {0};
-    int rc = h2_gizclaw_e2e_fixture_has_time(f, 15000u)
-                 ? h2_gizclaw_rpc_pet_delete(service, h2_gizclaw_e2e_str(name),
-                                             15000u, storage, &value)
-                 : H2_PAL_ERR_TIMEOUT;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_pet_delete", "cleanup", rc);
-    if (rc == H2_PAL_OK &&
-        (!cleanup_text(storage, value.name) || strcmp(value.name, name)))
-      rc = H2_PAL_ERR_FORMAT;
-    storage->used = 0u;
-    if (rc != H2_PAL_OK)
-      return rc;
-    *acknowledged = true;
-  }
-  for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
-    h2_gizclaw_pet_t value = {0};
-    int rc = h2_gizclaw_e2e_fixture_has_time(f, 15000u)
-                 ? h2_gizclaw_rpc_pet_get(service, h2_gizclaw_e2e_str(name),
-                                          15000u, storage, &value)
-                 : H2_PAL_ERR_TIMEOUT;
-    h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_pet_get", "cleanup-absence", rc);
-    if (rc == H2_PAL_ERR_NOT_FOUND) {
-      *pending = *acknowledged = false;
-      storage->used = 0u;
-      return H2_PAL_OK;
-    }
-    if (rc == H2_PAL_OK &&
-        (!cleanup_text(storage, value.name) || strcmp(value.name, name)))
-      rc = H2_PAL_ERR_FORMAT;
-    storage->used = 0u;
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (attempt == 31u)
-      return H2_PAL_ERR_TIMEOUT;
-    /* Keep the acknowledgement across retries of asynchronous deletion. */
-    rc = h2_pal_time_sleep_ms(f->time, 100u);
-    if (rc != H2_PAL_OK)
-      return rc;
-  }
-  return H2_PAL_ERR_TIMEOUT;
-}
-
 static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t *fixture,
                                         size_t role) {
   const bool owns_workspace =
       fixture->workspace_created && fixture->workspace_actor_role == role;
   if (role == H2_GIZCLAW_E2E_OWNER)
-    return owns_workspace || fixture->contact_created || fixture->pet_created ||
+    return owns_workspace || fixture->contact_created ||
            fixture->friendship_created || fixture->friend_group_created ||
            fixture->friend_group_invite_created ||
            fixture->friend_group_member_joined;
@@ -1159,7 +1046,7 @@ static bool actor_has_pending_resources(const h2_gizclaw_e2e_fixture_t *fixture,
            fixture->friend_invite_created ||
            fixture->isolation_workspace_pending ||
            fixture->isolation_contact_pending ||
-           fixture->isolation_group_pending || fixture->isolation_pet_pending;
+           fixture->isolation_group_pending;
   return owns_workspace || fixture->friend_group_member_joined;
 }
 
@@ -1171,6 +1058,13 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
   (void)h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   if (fixture->case_cleanup != NULL) {
     const int rc = fixture->case_cleanup(fixture);
+    if (rc != H2_PAL_OK)
+      return rc;
+  }
+  /* All Session operations and conversation callbacks have joined. End its
+   * ownership before the resource-ledger cleanup uses low-level deletion. */
+  for (size_t i = 0u; i < H2_GIZCLAW_E2E_ACTOR_COUNT; ++i) {
+    const int rc = actor_session_dispose(&fixture->actors[i]);
     if (rc != H2_PAL_OK)
       return rc;
   }
@@ -1256,11 +1150,6 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
     if (rc == H2_PAL_OK)
       fixture->contact_created = false;
   }
-  if (owner != NULL && fixture->pet_created) {
-    int rc = cleanup_pet(fixture, owner, &storage, &fixture->pet_created,
-                         &fixture->pet_delete_acknowledged);
-    keep_first_failure(rc, &result);
-  }
   h2_gizclaw_service_t *workspace_service =
       fixture->workspace_actor_role < H2_GIZCLAW_E2E_ACTOR_COUNT
           ? fixture->actors[fixture->workspace_actor_role].service
@@ -1275,12 +1164,6 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   /* The second peer's same-name objects are independent resources. Keep each
    * obligation until acknowledged; never lose it with a returned case stack. */
-  if (friend_service != NULL && fixture->isolation_pet_pending) {
-    int rc = cleanup_pet(fixture, friend_service, &storage,
-                         &fixture->isolation_pet_pending,
-                         &fixture->isolation_pet_delete_acknowledged);
-    keep_first_failure(rc, &result);
-  }
   if (friend_service != NULL && fixture->isolation_group_pending) {
     h2_gizclaw_friend_group_t value = {0};
     int rc = h2_gizclaw_rpc_friend_group_delete(
@@ -1365,7 +1248,6 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
                                      fixture->case_state != NULL);
   retained +=
       emit_retained_resource(fixture, "workspace", fixture->workspace_created);
-  retained += emit_retained_resource(fixture, "pet", fixture->pet_created);
   retained +=
       emit_retained_resource(fixture, "contact", fixture->contact_created);
   retained += emit_retained_resource(fixture, "friendship",
@@ -1384,8 +1266,6 @@ size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(
                                      fixture->isolation_contact_pending);
   retained += emit_retained_resource(fixture, "isolation-group",
                                      fixture->isolation_group_pending);
-  retained += emit_retained_resource(fixture, "isolation-pet",
-                                     fixture->isolation_pet_pending);
   for (size_t index = 0u; index < H2_GIZCLAW_E2E_ACTOR_COUNT; ++index) {
     retained += emit_retained_resource(
         fixture, "peer", fixture->actors[index].peer_delete_required);
@@ -1423,10 +1303,18 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
   /* Keep borrowed configuration, providers and credentials alive on failure. */
   if (result != H2_PAL_OK)
     return result;
+  if (fixture->device_cleanup != NULL) {
+    result = fixture->device_cleanup(fixture);
+    if (result != H2_PAL_OK) return result;
+  }
   result = h2_gizclaw_pcm_track_destroy(&fixture->speech_track);
   if (result != H2_PAL_OK)
     return result;
   fixture->speech_track_bound = false;
+  if (fixture->speech_cleanup != NULL) {
+    result = fixture->speech_cleanup(fixture);
+    if (result != H2_PAL_OK) return result;
+  }
   fixture->pcm = NULL;
   fixture->pcm_len = 0u;
   if (fixture->registration_token != NULL) {
@@ -1437,6 +1325,5 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   fixture->http = NULL;
   fixture->webrtc = NULL;
-  observer_deinit();
-  return H2_PAL_OK;
+  return observer_deinit();
 }

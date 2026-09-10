@@ -485,6 +485,24 @@ int main(void) {
     assert(sctp_unregister_data_channel(&sctp, 8u) == 0);
     assert(sctp.stream_count + 1u == stream_count);
     assert(sctp_unregister_data_channel(&sctp, 8u) == -1);
+    /* OPEN and its first application frame can arrive in one SCTP input
+     * call. The remote callback is deferred until that call unwinds. */
+    size_t before_remote = capture.remote_count;
+    size_t before_messages = capture.count;
+    sctp.association_call_active = 1;
+    assert(sctp_handle_incoming_data(&sctp, protocol_dcep,
+        sizeof(protocol_dcep), PPID_CONTROL, 30u, 0) == 0);
+    assert(capture.remote_count == before_remote);
+    assert(sctp_handle_incoming_data(&sctp, payload, 5u, PPID_BINARY, 30u, 0) ==
+        H2_PAL_ERR_WOULD_BLOCK);
+    assert(capture.count == before_messages);
+    sctp.association_call_active = 0;
+    assert(sctp_service(&sctp) == 0);
+    assert(capture.remote_count == before_remote + 1u);
+    assert(sctp_handle_incoming_data(&sctp, payload, 5u, PPID_BINARY, 30u, 0) == 0);
+    assert(capture.count == before_messages + 1u);
+    assert(capture.sid == 30u && capture.len == 5u);
+    assert(memcmp(capture.data, payload, 5u) == 0);
     sctp_destroy_association(&sctp);
     assert(sctp.association == NULL);
     assert(sctp.stream_table == NULL);

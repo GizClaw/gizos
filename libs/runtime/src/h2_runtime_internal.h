@@ -5,6 +5,8 @@
 
 #include <stdatomic.h>
 
+#include "h2_runtime_system_state.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,6 +30,7 @@ typedef enum h2_runtime_input_source_kind {
 } h2_runtime_input_source_kind_t;
 
 #define H2_RUNTIME_SYSTEM_EVENT_SCHEMA_MEMBERS \
+    h2_runtime_system_event_time_adjusted_t time_adjusted; \
     h2_runtime_system_event_gpio_irq_t gpio_irq; \
     h2_runtime_system_event_wifi_sta_t wifi_sta; \
     h2_runtime_system_event_wifi_ap_t wifi_ap; \
@@ -213,9 +216,9 @@ typedef struct h2_runtime_state_publication {
     atomic_int ready;
     atomic_uint active_index;
     /*
-     * Guards reader_count updates: ARMv5 targets have no native atomic
-     * add, so the counters use load/store under this test-and-set lock
-     * (the same pattern as the runtime sequence lock).
+     * Guards reader_count updates where atomic add is not lock-free (ARMv5):
+     * the counters then use load/store under this test-and-set lock, taken
+     * Unused where fetch_add is lock-free.
      */
     atomic_flag reader_lock;
     atomic_uint reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
@@ -225,14 +228,49 @@ typedef struct h2_runtime_state_publication {
     uint64_t deferred_count;
 } h2_runtime_state_publication_t;
 
+/*
+ * System state publication. A system snapshot has no component identity and
+ * exactly one writer, the system-event ingest, so a sequence counter is
+ * enough and needs no second slot: the writer marks the snapshot in flight,
+ * writes it, and marks it settled, while a reader copies and retries if the
+ * counter moved under it.
+ *
+ * Two slots and an index would not be safe here. A reader holding the slot an
+ * index just retired is overwritten by the very next publication, which is
+ * two events away, and station events arrive in bursts.
+ */
+typedef struct h2_runtime_system_state_publication {
+    /*
+     * One short critical section per publication and per read. A snapshot is
+     * a plain struct, so a sequence counter alone would only detect a torn
+     * copy after racing on it; the copy itself would still be a data race.
+     * Both sides are bounded memcpys off any hot path: the writer runs on the
+     * system-event ingest, the reader polls.
+     */
+    h2_pal_mutex_t *mutex;
+    h2_runtime_system_wifi_sta_state_t wifi_sta;
+} h2_runtime_system_state_publication_t;
+
+/* Creates and releases the system state lock; see h2_runtime_system_state.c. */
+h2_pal_result_t h2_runtime_system_state_init(h2_runtime_t *runtime);
+void h2_runtime_system_state_release(h2_runtime_t *runtime);
+
+/* Publishes one station snapshot; see h2_runtime_system_state.c. */
+void h2_runtime_system_state_publish_wifi_sta(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_wifi_sta_state_t *state);
+
 typedef struct h2_runtime_component_mapping {
     h2_runtime_component_t component;
     h2_runtime_component_id_t component_id;
     h2_pal_periph_id_t periph_id;
 } h2_runtime_component_mapping_t;
 
+void h2_runtime_audio_bind(h2_runtime_t *runtime);
+
 struct h2_runtime_private {
     int initialized;
+    h2_runtime_system_state_publication_t system_state;
     size_t allocation_size;
     h2_pal_queue_t *event_queue;
     /*
@@ -248,6 +286,7 @@ struct h2_runtime_private {
     h2_pal_firmware_info_api_t firmware_info_proxy;
     h2_pal_log_api_t log_proxy;
     h2_pal_time_api_t time_proxy;
+    h2_pal_time_api_t time_provider;
     h2_pal_timer_api_t timer_proxy;
     h2_pal_task_api_t task_proxy;
     h2_pal_queue_api_t queue_proxy;
@@ -269,6 +308,35 @@ struct h2_runtime_private {
     h2_pal_modem_api_t modem_proxy;
     h2_pal_power_api_t power_proxy;
     h2_pal_display_api_t display_proxy;
+    /* All Audio proxy volume operations share this Runtime-owned state. */
+    h2_pal_audio_api_t audio_backend;
+    atomic_flag audio_state_busy;
+    bool audio_state_valid;
+    h2_runtime_system_audio_state_t audio_state;
+    /*
+     * Latest measured frame level per direction, published from the audio hot
+     * path by the mic_read and track write thunks.
+     *
+     * Two 32-bit atomics per direction rather than one 64-bit word packing
+     * level and timestamp: a 64-bit atomic lowers to a libatomic call on the
+     * ARMv5 target (bk3633), whose SDK does not provide one, while a 32-bit
+     * atomic load/store is a plain instruction everywhere the Runtime builds.
+     * Level and timestamp are therefore two independent stores, so a reader
+     * racing a frame can pair a new level with the previous frame's timestamp.
+     * The two frames are one frame period apart (10-20 ms), which no level
+     * meter can show, and no consumer may key a decision off the pairing.
+     *
+     * The timestamp holds the low 32 bits of the monotonic millisecond clock
+     * and is widened against the current clock on read; bit 8 of the level word
+     * marks that a frame has ever been measured, which keeps a genuine level of
+     * zero distinct from "no audio yet".
+     */
+#if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
+    atomic_uint audio_capture_level;
+    atomic_uint audio_capture_level_ms;
+    atomic_uint audio_playback_level;
+    atomic_uint audio_playback_level_ms;
+#endif
     h2_pal_audio_api_t audio_proxy;
     h2_pal_audio_decoder_api_t audio_decoder_proxy;
     h2_pal_periph_api_t periph_proxy;
@@ -289,16 +357,19 @@ struct h2_runtime_private {
     /*
      * Custom event producer guard: h2_runtime_post_custom_event() may run on
      * any task, so deinit closes the door and drains the in-flight posters
-     * before the event queue is destroyed. The counter uses the same
-     * test-and-set lock pattern as sequence_lock because ARMv5 targets have
-     * no native atomic add.
+     * before the event queue is destroyed. With lock-free atomic add the
+     * counter is a plain fetch_add; otherwise (ARMv5) updates run under
+     * custom_event_lock.
      */
     atomic_flag custom_event_lock;
-    uint32_t custom_event_in_flight;
-    int custom_event_closed;
+    atomic_uint custom_event_in_flight;
+    atomic_int custom_event_closed;
 
+    /*
+     * Same split: fetch_add where it is lock-free, sequence_lock where not.
+     */
     atomic_flag sequence_lock;
-    h2_runtime_sequence_t next_sequence;
+    atomic_uint next_sequence;
     uint32_t dropped_event_count;
 
     atomic_int system_event_active;
@@ -354,6 +425,34 @@ static inline h2_runtime_timestamp_ms_t h2_runtime_now_ms(const h2_pal_time_api_
 }
 
 h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime);
+
+/*
+ * 1 when a 32-bit atomic add is a single lock-free instruction (Xtensa,
+ * RISC-V, Cortex-M, hosts). ARMv5 (bk3633) reports "sometimes" and lowers
+ * fetch_add to a library call the SDK does not provide, so those targets keep
+ * a short test-and-set critical section instead.
+ *
+ * A bare spin on an atomic_flag is only safe without preemption: on a
+ * preemptive RTOS a waiter that outranks the holder on the holder's core pins
+ * that core forever (ESP-IDF sys_evt vs. $runtime/input on core 0, which is
+ * why the lock-free path exists). The remaining ARMv5 target schedules its
+ * tasks cooperatively on libco coroutines, so a holder is never switched out
+ * inside the critical section and the flag is never contended.
+ */
+#if defined(ATOMIC_INT_LOCK_FREE) && ATOMIC_INT_LOCK_FREE == 2
+#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 1
+#else
+#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 0
+#endif
+
+static inline void h2_runtime_flag_lock(atomic_flag *flag) {
+    while (atomic_flag_test_and_set_explicit(flag, memory_order_acquire)) {
+    }
+}
+
+static inline void h2_runtime_flag_unlock(atomic_flag *flag) {
+    atomic_flag_clear_explicit(flag, memory_order_release);
+}
 
 h2_pal_result_t h2_runtime_emit_event(
     h2_runtime_t *runtime,
