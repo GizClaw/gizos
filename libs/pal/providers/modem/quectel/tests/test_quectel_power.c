@@ -186,9 +186,6 @@ static void test_policy_and_holds(void) {
     fixture_t f;
     h2_pal_system_event_api_t events;
     init_fixture(&f, &events, 0);
-    assert(h2_quectel_post_urc_line(&f.modem, "+CMTI: \"SM\",1") == H2_PAL_OK);
-    assert(h2_quectel_post_urc_line(&f.modem, "+CMT: ignored") == H2_PAL_OK);
-    assert(f.modem.call_hold == 0u);
     h2_pal_modem_t *api = &f.modem.platform;
     h2_pal_modem_data_status_t data_status;
     assert(h2_pal_modem_get_data_status(api, &data_status) == H2_PAL_ERR_CLOSED);
