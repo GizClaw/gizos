@@ -769,6 +769,8 @@ int main(void) {
     bk_init();
     emergency_uart_write_string(0, "H2_BK_AP_MAIN_EMERG stage=after_bk_init\r\n");
     os_printf("H2_BK_AP_MAIN stage=after_bk_init\r\n");
+    /* h2_bk_target_task_policy_install() ran first in main(), before
+     * bk_init(), so bk/h2loader resolves its row in the target policy. */
     h2_pal_task_t *entry_task = NULL;
     const h2_pal_task_options_t entry_options = {
         .name = "bk/h2loader",
