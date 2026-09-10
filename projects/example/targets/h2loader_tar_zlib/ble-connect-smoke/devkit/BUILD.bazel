@@ -19,6 +19,7 @@ firmware_lib_component(
         "//libs/pal/providers/libco",
         "//libs/pixa",
         "//libs/runtime",
+        "//libs/wifi_sta",
     ],
 )
 
