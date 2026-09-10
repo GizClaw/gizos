@@ -60,6 +60,14 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     const h2_gizclaw_workspace_activation_t *activation,
     const h2_gizclaw_workspace_parameters_patch_t *parameters);
 
+/* Drop the downlink's buffered audio: queued Opus, the decoder state and the
+ * Track's unplayed PCM (unless another owner holds the Track downlink). */
+void h2_gizclaw_conversation_downlink_flush_internal(
+    h2_gizclaw_service_t *service);
+/* Decoded chunks written to the Track so far; changes when sound arrives. */
+size_t h2_gizclaw_conversation_downlink_writes_internal(
+    h2_gizclaw_service_t *service);
+
 h2_pal_result_t h2_gizclaw_conversation_retarget_internal(
     h2_gizclaw_conversation_t *conversation, const char *workspace);
 

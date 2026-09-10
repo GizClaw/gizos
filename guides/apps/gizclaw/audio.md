@@ -39,13 +39,11 @@ sequenceDiagram
     Loop->>Audio: stop microphone
     Loop->>Service: submit commit/cancel operation
     Service->>Giz: commit input
-    Giz-->>Service: Opus RTP
+    Service-->>Loop: dispatch completion (input sent)
+    Giz-->>Service: Opus RTP, whenever the server speaks
     Service->>Audio: decode PCM into the downlink Track
-    Service-->>Loop: dispatch REPLY_AUDIO_STARTED once per reply
     Audio-->>Audio: speaker pump reads the Track
-    Service-->>Loop: dispatch response terminal callback
-    Audio-->>Loop: playback drained
-    Loop-->>UI: conversation idle
+    Loop-->>UI: sound playing / idle
 ```
 
 按压式交互在 record pressed 后启动录音，released 后停止麦克风并提交 turn。自然对话在首次 click 后保持 session active，由 Audio/VAD 与 GizClaw realtime flow 推进；再次 click 或 Back 产生 cancel/stop command。
@@ -60,8 +58,8 @@ sequenceDiagram
 | 输入开始 | 启动 microphone | `h2_gizclaw_service_audio_start()` |
 | 输入 PCM | Audio Task 交付 16 kHz mono S16LE chunk | `h2_gizclaw_pcm_track_write()`（Track 的 uplink） |
 | 输入提交（PTT） | 停止 microphone，并提交本轮输入结束 | `h2_gizclaw_service_audio_end()` |
-| 回复 PCM | 扬声器 pump 从有界播放 track 读取 | Track 的 downlink：`h2_gizclaw_pcm_track_read()`；PCM 不经 callback 投递，每个 reply 的第一块 PCM 进入 Track 后 callback 收到一次 `H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED` |
-| 回复 terminal | 等待本地 playback drain 后结束本轮 | `h2_gizclaw_service_poll()` 分发的 `REPLY_DONE` event 与 completion callback |
+| 下行 PCM | 扬声器 pump 从有界播放 track 读取，有数据就播 | Track 的 downlink：`h2_gizclaw_pcm_track_read()`；PCM 不经 callback 投递，也没有回复开始或结束事件 |
+| 本轮完成 | 输入结束已发出即完成，不等待服务端 | `h2_gizclaw_service_poll()` 分发的 completion callback |
 | Cancel / 挂断 | 停止 mic、关闭输入、丢弃未播放输出 | `h2_gizclaw_conversation_cancel()`，之后 `h2_gizclaw_conversation_release()` |
 
 Conversation 完成同时满足服务端 response terminal 和本地 playback drained。
@@ -75,10 +73,11 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Audio format 和 provider frame size 由 Runtime Audio capability 决定，App 不能写死 board I2S 参数，也不能要求所有 board 按 20 ms 产出 PCM。Portable Audio integration 负责把连续 PCM stream 切成合法的 Opus frame；例如 16 kHz Opus 的 20 ms frame 是每声道 320 samples，而 Tiga provider 仍可每次交付 512 samples。
 - Public request API 固定接受 16 kHz mono S16LE PCM。`$gizclaw/audio/uplink` 在内部按 20 ms 连续切片并编码 Opus；`$gizclaw/audio/downlink` 解码 Opus/PLC，并通过有界 PCM ring 向 App 交付。测试专用的 low-level raw Opus API 不属于产品 App 集成边界。
 - `GZC_PROTOCOL_OPUS_PACKET` 的 payload 是原始 Opus packet，不带 firmware-private timestamp header。C SDK 和 PAL provider 负责 media/RTP 映射；App 不调用底层 `peer_send_opus`，也不使用 DataChannel fallback。
-- 上行 input stream ID 与服务端产生的下行 response stream ID 不要求相同。`libs/gizclaw` 按 `transcript`、`assistant` label 分别绑定本轮第一个 response-local stream ID，并接受其 `:<suffix>` 子流；后续不匹配的 response ID 作为旧轮事件丢弃。连接内保留最近 32 个已退役 StreamID，丢弃这些 ID 及其子流的迟到事件；连接释放时清空记录。未绑定的回复 route 只由 BOS 建立，直接命名当前 input 的错误仍可结束输入。
+- 上行 input stream ID 只描述我们自己的输入：BOS、READY、EOS，以及服务端对它的拒绝（该 ID 上带我们 label 或无 label 的 EOS error）。服务端下发的 stream ID、BOS、EOS 设备一概不看：下行音频属于连接，不属于任何一轮输入，服务端发来什么就解码进 Track 播放，下行流结束（有无错误码）都不是错误。文字事件在输入活跃期间转发，不参与状态。
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - PCM uplink/downlink 使用单生产者、单消费者的无锁 byte ring；encoded uplink/downlink 使用无锁 fixed-slot ring。ring 只通过 acquire/release atomic index 发布数据，不持有 service mutex，也不使用 semaphore 唤醒。Audio Task 每 20 ms 尝试消费一帧；`h2_gizclaw_pcm_track_write()` 和内部 slot 写入都不等待。`h2_gizclaw_pcm_track_write()` 成功后调用方可以释放 chunk；`WOULD_BLOCK` 表示本次 chunk 未被接受，实时调用方应丢弃并记录 overrun，不能阻塞 microphone 或积累延迟。`h2_gizclaw_service_audio_end()` 冻结当前已接受的 PCM 前缀并发布 EOS，encoder drain 已接受的 PCM 后补齐最后一个非空残片。
-- 下行 PCM 只走 Track，不复制到 callback。每个 reply 交付给 App main loop 的通知数量有界且与 reply 长度无关：至多一次 `REPLY_AUDIO_STARTED`（第一块解码 PCM 写入 Track 之后、该 reply 的 boundary 之前），文本事件，以及恰好一次 `REPLY_DONE` 或 `ERROR`。文本和音频是服务端两条独立的流，`REPLY_AUDIO_STARTED` 和 `TEXT_DELTA`/`TEXT_DONE` 之间没有顺序保证，文本可能先于第一块音频到达；库不会为了排序而扣住文本。没有解码出音频的 reply 不产生 `REPLY_AUDIO_STARTED`；realtime 的每轮 VAD reply 和被 barge-in 打断后的新 reply 各自重新产生。Reply boundary 在 EOS 标记解码后立即 stage，不等待 App 侧的任何 drain。App 用 `REPLY_AUDIO_STARTED` 切换到 REPLYING 状态，用 Track 深度或 speaker pump 判断播放进度。
+- 下行解码通道在第一个 Conversation 创建时建立，随 Service 存在到 deinit，不随每轮输入或 Conversation release 销毁：产品每轮创建并释放 Conversation，之后到达的音频照常播放。音频播放或 Speech 占用 Track 下行时，到达的对话音频直接丢弃，之前已排队的也丢弃，Track 空出后不会补播旧音频。下行 Opus ring 为 32 格（约 640 ms），满时拒收并由 provider 丢包，不做 PLC、不报错，扬声器卡住时丢音频而不是累积延迟。下行 PCM 只走 Track，不复制到 callback；App 按 speaker pump 实际播放判断“有声音”。
+- PTT 松手（真正结束输入的那次 `audio_end`，重复调用不算）清空此刻缓冲的下行音频：待解码 Opus、解码器状态和 Track 里未播的 PCM；之后到达的音频照常播放。按下不清空，产品在录音期间自行不播放。挂断和 Workspace 切换同样清空；新输入替换旧输入不清空。
 - Opus encode/decode 属于 `libs/gizclaw`，不进入 board driver。接收 provider 的有界重排与 loss marker 合同保持不变；downlink decoder 对 loss marker 执行 PLC，不能直接删除缺失时间。
 - GizClaw service network task 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
@@ -139,19 +138,19 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Mic Task 写入 GizClaw PCM ring，由 GizClaw uplink Task 每 20 ms 切片、编码并通过 WebRTC audio RTP 上行；ring 满时返回 `WOULD_BLOCK`，App 丢弃当前 realtime chunk 并记录 overrun，不等待或改写 payload。
 - Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
-- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Agent workflow 终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。Friend / Friend Group 的 SFU Workspace 不给发言者任何 response route，turn 只能由本地 cancel 结束。
+- PTT 一轮在输入结束发出后完成，不等待服务端；翻译、flowcraft 等多段回复都只是之后到达的下行音频，照常播放。Realtime 一轮持续到挂断。下行事件只以 DEBUG 记录。Friend / Friend Group 的 SFU Workspace 不给发言者任何下行音频，发送后本轮正常完成。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。
 
 ## Desktop E2E 边界
 
-手动 GizClaw PAL E2E 在测试 integration 中把固定 16 kHz mono S16LE 合成语音编码成 20 ms raw Opus packet，再经 public conversation API 进入 selected Desktop WebRTC PAL。验收要求同 generation 的非空 text、raw Opus 下行和 reply terminal；测试侧固定 libopus decoder 对 raw packet 解码并确认非静音。PAL audio-decoder contract 当前只支持 AAC，因此该 Conversation 测试不通过 audio-decoder PAL 编解码 Opus；本页本地音乐播放器的库内 Ogg/Opus decoder 是独立能力。
+手动 GizClaw PAL E2E 在测试 integration 中把固定 16 kHz mono S16LE 合成语音编码成 20 ms raw Opus packet，再经 public conversation API 进入 selected Desktop WebRTC PAL。验收以 speaker pump 实际听到的非静音下行为准：听到声音之后安静 300 ms 计为一轮，PTT 在本轮完成后继续播放直到听到回复；测试侧固定 libopus decoder 对 raw packet 解码并确认非静音。PAL audio-decoder contract 当前只支持 AAC，因此该 Conversation 测试不通过 audio-decoder PAL 编解码 Opus；本页本地音乐播放器的库内 Ogg/Opus decoder 是独立能力。
 
 terminal 后，测试通过 public Workspace history API 查找本轮发送 Gear 对应的新增 Gear entry，要求 transcript 非空且可回放；再 stream 下载 `audio/ogg`，核对 metadata 与接收长度并独立解析、解码 Ogg/Opus。这个 transport gate 不替代 provider 语义质量或真实设备声学验收。
 
-Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-sfu` Workflow）的 Conversation 写入。GizClaw 0.15 起该 Workspace 是 LiveKit SFU 的单工对讲：Server 侧 connector 代表 Peer 入房，Device 保持原有 WebRTC 连接、不感知 LiveKit；下行是锁定一路发言者的 Opus 原样透传，发言者收不到自己的下行。SFU Workspace 没有 History、消息或音频资产，`server.friend_group.messages.*` 已删除，libs/gizclaw 不再提供 friend group message list/get/audio download。被拒绝的输入以同一 `stream_id` 的 typed EOS error 返回（`SFU_RUNTIME_NOT_ATTACHED`、`SFU_ACCESS_REVOKED`、`SFU_ACCESS_CHECK_FAILED`），App 按 code 结束本轮录音状态，不自动切换 Workspace。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。
+Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-sfu` Workflow）的 Conversation 写入。GizClaw 0.15 起该 Workspace 是 LiveKit SFU 的单工对讲：Server 侧 connector 代表 Peer 入房，Device 保持原有 WebRTC 连接、不感知 LiveKit；下行是锁定一路发言者的 Opus 原样透传，发言者收不到自己的下行。SFU Workspace 没有 History、消息或音频资产，`server.friend_group.messages.*` 已删除，libs/gizclaw 不再提供 friend group message list/get/audio download。发送期间被拒绝的输入以同一 `stream_id` 的 typed EOS error 返回（`SFU_RUNTIME_NOT_ATTACHED`、`SFU_ACCESS_REVOKED`、`SFU_ACCESS_CHECK_FAILED`），App 按 code 结束本轮录音状态，不自动切换 Workspace。Speech transcribe/extract/synthesize 的 RuntimeProfile 投影同样按 Model name 选择，不使用 catalog ID 或 alias。
 
 ### 下行边界与取消
 
-PCM/Opus conversation 仅在已接受的 AUDIO BOS 与 AUDIO EOS 之间接收媒体；边界外的包直接丢弃，文本 BOS 不打开音频输入。取消先关闭媒体接收，并与 decoder 写入 Track 串行化后清空待播放 PCM，避免旧 decoder 在清空后重新写入。已交给平台输出的音频缓冲不在此清空保证内。该边界依赖 provider 按序交付控制与媒体，不新增 RTP payload 或时间戳格式。
+下行媒体不看任何 BOS/EOS 边界，收到即解码。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。

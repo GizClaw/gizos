@@ -28,6 +28,8 @@ static h2_pal_result_t audio_start_result, audio_end_result;
 static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
 static atomic_int last_cancel_source;
 static unsigned end_noops;
+static size_t downlink_writes;
+static unsigned flushes;
 /* This test mocks Service; capture Session's production ERROR formatting. */
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
@@ -269,6 +271,8 @@ static void setup(size_t collections) {
   static const char *const names[] = {"alpha", "beta"};
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
   audio_starts = audio_ends = 0u;
+  flushes = 0u;
+  downlink_writes = 0u;
   audio_input_empty = false;
   audio_start_result = audio_end_result = H2_PAL_OK;
   audio_error_log[0] = '\0';
@@ -401,10 +405,26 @@ static void test_control_boundaries(void) {
         assert(!snapshot().conversation_input_open);
       }
       if (phase == 2u || phase == 3u) {
+        /* Text carries no state. */
         assert(on_event(terminal_user, conversation, &reply) == H2_PAL_OK);
         assert(snapshot().conversation ==
                (phase == 3u ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
-                            : H2_GIZCLAW_SESSION_CONVERSATION_REPLYING));
+                            : H2_GIZCLAW_SESSION_CONVERSATION_WAITING));
+      }
+      if (phase == 2u) {
+        /* The input is sent: its generation completes, the wait goes on. */
+        const h2_gizclaw_operation_result_t sent = {
+            .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED,
+            .result = H2_PAL_OK,
+        };
+        terminal(terminal_user, conversation, &sent);
+        assert(snapshot().conversation ==
+               H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+        /* Sound reaching the Track ends WAITING. */
+        ++downlink_writes;
+        assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+        teardown();
+        continue;
       }
       if (phase == 3u) {
         const h2_gizclaw_operation_result_t finished = {
@@ -561,6 +581,12 @@ int main(void) {
   assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
   assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
   terminal(terminal_user, conversation, &result);
+  /* Sent: the wait for sound goes on; without sound it ends silently at
+   * the deadline. */
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+  now += H2_GIZCLAW_SESSION_WAIT_MS - 1u;
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+  now += 1u;
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
   assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
@@ -692,6 +718,19 @@ h2_pal_result_t h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *c) {
   (void)c;
   atomic_store(&cancel_entered, true);
   return H2_PAL_OK;
+}
+
+/* The downlink lives in the Conversation; the Session only reads how much
+ * sound has reached the Track and asks for a flush. */
+size_t h2_gizclaw_conversation_downlink_writes_internal(
+    h2_gizclaw_service_t *service) {
+  (void)service;
+  return downlink_writes;
+}
+void h2_gizclaw_conversation_downlink_flush_internal(
+    h2_gizclaw_service_t *service) {
+  (void)service;
+  ++flushes;
 }
 
 h2_pal_result_t h2_gizclaw_conversation_retarget_internal(
