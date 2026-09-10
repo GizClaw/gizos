@@ -4396,6 +4396,72 @@ static void test_workspace_reload_with_options(void) {
              H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT);
     }
   }
+  /* The synchronous delete RPC participates only for the current Workspace. */
+  uint8_t delete_response[128];
+  size_t delete_response_len = 0u;
+  assert(test_encode_workspace_delete_response(
+      delete_response, sizeof(delete_response), &delete_response_len));
+  static const uint8_t other_request[] = {0x0a, 5, 'o', 't', 'h', 'e', 'r'};
+  static const uint8_t current_request[] = {0x0a, 2, 'w', 's'};
+  test_contact_rpc_t delete_mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE,
+      .expected_request = other_request,
+      .expected_request_len = sizeof(other_request),
+      .response = delete_response,
+      .response_len = delete_response_len};
+  workspace_test_use_single(&delete_mock);
+  h2_gizclaw_session_state_t before;
+  h2_gizclaw_session_state_t after;
+  assert(h2_gizclaw_session_snapshot(session, &before) == H2_PAL_OK);
+  h2_gizclaw_workspace_t deleted;
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(
+             service, (h2_gizclaw_str_t){"other", 5u}, 1234u, &storage,
+             &deleted) == H2_PAL_OK);
+  assert(delete_mock.calls == 1 && delete_mock.request_matches);
+  assert(h2_gizclaw_session_snapshot(session, &after) == H2_PAL_OK);
+  assert(after.revision == before.revision &&
+         after.workspace == H2_GIZCLAW_SESSION_READY &&
+         strcmp(after.current_workspace, "ws") == 0);
+  delete_mock = (test_contact_rpc_t){
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE,
+      .expected_request = current_request,
+      .expected_request_len = sizeof(current_request),
+      .has_error = true,
+      .error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND};
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(service, (h2_gizclaw_str_t){"ws", 2u},
+                                         1234u, &storage,
+                                         &deleted) == H2_PAL_ERR_NOT_FOUND);
+  assert(delete_mock.calls == 1 && delete_mock.request_matches);
+  assert(h2_gizclaw_session_snapshot(session, &after) == H2_PAL_OK);
+  assert(after.workspace == H2_GIZCLAW_SESSION_FAILED &&
+         after.last_error == H2_PAL_ERR_NOT_FOUND &&
+         after.error_stage == H2_GIZCLAW_SESSION_BLOCK_WORKSPACE &&
+         strcmp(after.current_workspace, "ws") == 0);
+  delete_mock = (test_contact_rpc_t){
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE,
+      .expected_request = current_request,
+      .expected_request_len = sizeof(current_request),
+      .response = delete_response,
+      .response_len = delete_response_len};
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(service, (h2_gizclaw_str_t){"ws", 2u},
+                                         1234u, &storage,
+                                         &deleted) == H2_PAL_OK);
+  assert(delete_mock.calls == 1 && delete_mock.request_matches);
+  assert(h2_gizclaw_session_snapshot(session, &after) == H2_PAL_OK);
+  assert(after.workspace == H2_GIZCLAW_SESSION_EMPTY &&
+         after.last_error == H2_PAL_OK &&
+         after.current_workspace[0] == '\0' && after.workflow_name[0] == '\0' &&
+         !after.parameters.has_input && !after.parameters.has_initiative);
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  delete_mock.calls = 0;
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(service, (h2_gizclaw_str_t){"ws", 2u},
+                                         1234u, &storage,
+                                         &deleted) == H2_PAL_ERR_CLOSED);
+  assert(delete_mock.calls == 0);
   h2_gizclaw_req_t *request = NULL;
   h2_gizclaw_workspace_parameters_patch_t bad = {.has_input = true, .input = 99};
   assert(h2_gizclaw_req_create_workspace_reload_with_options(

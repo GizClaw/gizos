@@ -1207,12 +1207,23 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workspace_delete(
       service, 0u, name, timeout_ms, &request);
+  h2_gizclaw_session_t *session = NULL;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_acquire_session_internal(service, &session);
+  bool transition = false;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_session_workspace_delete_begin_internal(
+        session, name, timeout_ms, &transition);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_workspace_delete(request, storage, out_result);
+  if (transition)
+    rc = h2_gizclaw_session_workspace_delete_finish_internal(session, rc);
+  if (session != NULL)
+    h2_gizclaw_service_release_session_internal(service);
   h2_gizclaw_req_release(request);
   return rc;
 }

@@ -71,6 +71,9 @@ typedef struct h2_gizclaw_session_state {
  * per Service; use Session operations exclusively for registration, catalog,
  * and conversations on that Service. Existing synchronous workspace RPCs
  * participate in this Session's lifecycle and publish confirmed parameters.
+ * Deleting the current Workspace stops its conversation (the route still needs
+ * Session release) and returns the Session workspace to EMPTY; the next select
+ * recreates it through normal preparation.
  * Low-level asynchronous workspace requests must not bypass this owner. No
  * product names, defaults or persistence paths are built in.
  */
