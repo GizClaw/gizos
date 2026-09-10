@@ -1,14 +1,13 @@
-# H2Loader-managed BK7258 boards use one full-size position-independent A/B layout.
-# A / primary loader window = primary_cp_app + primary_ap_app
-# B / managed app window = s_app
-# size(s_app) must equal size(primary_cp_app) + size(primary_ap_app)
+# App build: code is linked at its final XIP addresses. The native bootloader
+# image from this build is not the factory Loader bootloader.
 #Name,Offset,Size,Type,Read,Write
-primary_bootloader,,68k,code,TRUE,FALSE
-primary_cp_app,,1360k,code,TRUE,TRUE
-primary_ap_app,,2380k,code,TRUE,TRUE
-s_app,,3740k,data,TRUE,TRUE
-ota_fina_executive,,4k,data,TRUE,TRUE
-usr_config,,128K,data,TRUE,TRUE
+primary_bootloader,0x0,68k,code,TRUE,FALSE
+primary_cp_app,0x264000,1156k,code,TRUE,TRUE
+primary_ap_app,,3944k,code,TRUE,TRUE
+s_app,0x11000,2380k,data,TRUE,TRUE
+ota_fina_executive,0x75f000,4k,data,TRUE,TRUE
+usr_config,0x760000,124K,data,TRUE,TRUE
+h2_boot_request,0x77f000,4K,data,TRUE,TRUE
 flashdb,0x780000,128K,data,TRUE,TRUE
 coredump,0x7a0000,360K,data,TRUE,TRUE
 easyflash,0x7fa000,8K,data,TRUE,TRUE

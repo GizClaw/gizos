@@ -13,14 +13,24 @@ bazel build --config=bk7258 \
 
 ## Partition layout
 
-内部 8 MiB Flash 使用 position-independent A/B：
+内部 8 MiB Flash 的原生启动入口固定为 Loader：
 
-- A / canonical：`primary_cp_app=1360 KiB` 加 `primary_ap_app=2380 KiB`，合计 3740 KiB。
-- B / trial：`s_app=3740 KiB`。
-- 必要固定区保留 `ota_fina_executive=4 KiB`、`usr_config=128 KiB`、`flashdb=128 KiB`、`coredump=360 KiB`，以及 SDK 使用的尾部分区。
-- `/dl` 和 `/data` 位于 SD 卡 FATFS 的 `h2loader/dl` 和 `h2loader/data`，不占用内部 Flash。
+| 区域 | 物理地址 | 物理大小 |
+|---|---|---|
+| 系统 Bootloader | `0x000000` | 68 KiB |
+| Loader CP | `0x011000` | 1156 KiB |
+| Loader AP | `0x132000` | 1224 KiB |
+| App CP | `0x264000` | 1156 KiB |
+| App AP | `0x385000` | 3944 KiB |
+| 原生启动控制 | `0x75f000` | 4 KiB |
+| 用户配置 | `0x760000` | 124 KiB |
+| App 启动记录 | `0x77f000` | 4 KiB |
 
-分区总长度正好为 8 MiB。A/B 边界变化时，旧布局设备必须按 board recovery 流程重新烧录 combined image，不能直接把新 package 当作普通 self-update。
+Loader 合计 **2380 KiB**，App 合计 **5100 KiB**。可执行分区按 68 KiB 对齐；扣除每 32 字节附加 2 字节 CRC，App 的 CPU 可见空间为 **4800 KiB**，还需容纳镜像尾部元数据。尾部 FlashDB、coredump、EasyFlash 与 RF/网络配置保持原地址。`/dl`、`/data` 仍在 SD/FATFS，不占内部 Flash。
+
+Loader 与 App 使用各自的分区表，分别链接到最终地址。App CP 的 XIP 向量位于 `0x02240000`，App AP 的向量位于 `0x02350000`。不通过 BK 原生 B 槽 remap 来执行 App；H2Loader 协议里的 P1/P2 是 Loader/App 逻辑角色，不能直接等同于 SDK 的执行标记。
+
+从旧等大布局迁移必须使用系统烧录路径，安装新 Loader 及其原生 Bootloader 分区表，并初始化启动控制记录。不能把新 Loader 包当作旧布局的普通 self-update。App 的 `all-app.bin` 包含 SDK 打包器生成的引导内容，**不能作为整机恢复镜像烧录**；App 使用 managed `update.tar.zlib` 安装到独立 App 区域。Loader 自升级不再借用 App 分区，当前固定地址后端在写 Flash 前拒绝这种包；Loader 更新使用系统烧录路径。
 
 ## 平台配置
 
@@ -40,13 +50,16 @@ APP 确认与 Stage/reboot 命令使用同一 operation mutex；先提交运行�
 在同一启动任务完成确认后释放。`ble-broadcaster` 使用此顺序，防止启动期间
 新收到的同版本包被延后的确认误认为已安装 Stage 并清理。
 
-未确认 APP 的回滚使用 SDK 执行标记 `final=A, temporary=B, confirm=A`：
-复位后启动 A，同时保留 B 曾被尝试的证据。实际运行 A 时，Power PAL 对这一组合
-撤销 P2 的 `BOOTABLE`，使共享 Loader 保留失败 Stage、P2 metadata、boot intent
-和 last result，避免再次自动安装同一个失败候选。APP 确认成功写入 B/B/confirm-B；
-显式选择 Loader 写入 A/A/confirm-A，不与失败回滚混淆。
-开始替换上传会清空旧 Stage，因此没有 Stage 时也必须尊重 P2 的不可启动标记；
-只有发布了不同的新 Stage，才允许安装新的候选，不能因上传中断再次启动失败 APP。
+原生启动标记始终保持 A，复位总是先运行 Loader CP；Loader CP 在 `driver_init` 之后、无线与 AP 启动之前读取 `0x77f000` 的启动记录，决定是否转入 App CP 的独立 Flash 向量。记录只在发布新请求时擦除一次，其余转换都只清位：
+
+| 记录状态 | 复位后 | 含义 |
+|---|---|---|
+| 空白 / 其他 | 留在 Loader | 显式选择 Loader，或尚未选择 App |
+| 请求（magic 有效、confirmed 为擦除态） | 试运行 App 一次 | Loader 安装完成或 `reboot app` 后发布 |
+| 已消耗（magic=0）、未确认 | 留在 Loader，撤销 P2 的 `BOOTABLE` | 试运行在确认前复位或崩溃 |
+| 已消耗、已确认（confirmed=0） | 每次直接进入 App | App 启动确认后写入，行为同原生已确认的 B |
+
+Loader CP 在检查 App 向量之前先把 magic 写成 0，所以试运行时向量无效也会记为一次失败尝试，不会反复重启。对已确认记录，这次写入不改变任何位，但必须执行：实板上跳转前没有 Flash 编程操作时，App CP 在启动早期 HardFault（`pc=0`，来自 `bk_pm_module_vote_power_ctrl`）。写入 App 分区前先清除启动记录，CP 不会进入写了一半的镜像。App 每次启动都调用确认，只有记录处于“已消耗、未确认”时才写入。显式选择 Loader 会清除记录，包括失败证据。原生 ROM/系统固件烧录路径保留，CP 不承载 H2Loader UART 转发。
 
 BK 条件变量等待使用栈上的静态信号量，但 SDK 仍为每个信号量分配动态自旋锁。
 等待节点从链表移除后必须销毁信号量，再返回并释放栈空间；否则 BLE 高频等待会
@@ -57,7 +70,13 @@ BK 条件变量等待使用栈上的静态信号量，但 SDK 仍为每个信号
 
 运行 `bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- scan` 后，只选择结构化 identity 为 `board=bk7258_v3_202405`、`target=bk7258`、`active_role=loader`、`transport=iostreamikcp` 的设备。APP 或 Loader 状态都可以通过 `send --file <build-dir>/update.tar.zlib` 直接发布 Stage；安装使用 `reboot upgrade`。
 
-验收必须看到 Partition 2 候选 Loader 启动、自动回写、最终运行 Partition 1，且 Partition 1/2 metadata valid、image checksum 相同、Stage 已清理，并在 power-cycle 后复查。reboot accepted 本身不是完成。已经安装 H2Loader 的正常路径不调用 `bk_loader`；只有 scan、status、`reboot loader` 都无法通信或 Loader 无法自我恢复时，才按 `bk_loader.json` 烧录 combined image，并把它记录为恢复路径。不支持 reliable command contract 的旧 image 只能进入该 recovery 流程，不能使用 legacy raw H2Loader command 迁移。
+固定布局验收需要确认：Loader 镜像为 2437120 字节，App 为 5222400 字节；UART1 安装后 App 的实际 PC 落在独立 XIP 地址，SDK native slot 仍为 A；已确认 App 在复位（包括 App 启动过程中连续复位）后由 CP 直接进入；`reboot loader`/`reboot app` 往返；确认前崩溃的 App 回到 Loader 且不再自动启动，重新安装正常 App 后恢复；正常 App 安装不覆盖 Loader。此前等大窗口的自升级验收不能代替此项验证。
+
+2026-09-10 以 Loader、ble-broadcaster 和 crash-before-confirm `0.1.60-fixed-xip` 完成上述矩阵（RTS 接 CEN 复位，未做断电测试）：Loader `pc=0x02143d76`、App `pc=0x0237ad12`，`native_slot=0`；复位后 UART0 只出现 App CP；启动第 0/8/11 秒连续三次复位后 App 正常完成 BLE 自检；crash-before-confirm 在 App 地址 MemFault 后停在 Loader，P2 为该包、Stage 保留；随后重新安装 ble-broadcaster 恢复为已确认 App。
+
+## 旧等大布局的历史验证
+
+以下记录针对迁移前的 A/B 布局，不代表当前固定地址启动和 Loader 更新路径已通过这些矩阵。
 
 2026-09-10 的 UART1 实板验证在 460800 下完整上传并校验 1,691,172 字节的
 `0.1.17-bk-e2e` Loader 包，Host 最后一次累计进度报告为 27,804 bytes/s。

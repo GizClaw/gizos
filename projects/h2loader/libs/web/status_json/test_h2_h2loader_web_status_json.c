@@ -46,6 +46,7 @@ static h2_h2loader_host_status_t test_status(void) {
       .next_partition = 1u,
       .active_image_size = UINT64_MAX,
       .mfg_mode = 1u,
+      .mfg_step_total = 22u,
   };
   (void)snprintf(status.board, sizeof(status.board), "bo\"ard\\\n");
   (void)snprintf(status.target, sizeof(status.target), "target");
@@ -176,8 +177,60 @@ static void test_maximum_projection_fits(h2_yyjson_json_t *provider) {
     slots[index]->valid = 1u;
   }
   status.command_availability = H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL;
+  status.mfg_mode = 2u;
+  status.mfg_step_total = H2_H2LOADER_HOST_MFG_STEP_MAX;
+  memset(status.mfg_steps, 3, sizeof(status.mfg_steps));
   assert_command_availability(provider, &status, 1,
                               H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL);
+}
+
+static void assert_mfg_steps(h2_yyjson_json_t *provider,
+                             const h2_h2loader_host_status_t *status) {
+  char json[TEST_RUNTIME_STATUS_CAPACITY];
+  size_t size = 0u;
+  assert(h2_h2loader_web_status_json_write(
+             status, json, sizeof(json), &size) == H2_PAL_OK);
+  h2_pal_json_value_t *root = NULL;
+  h2_pal_json_document_t *document = parse_json(provider, json, size, &root);
+  const h2_pal_json_api_t *api = h2_yyjson_json_api(provider);
+  h2_pal_json_value_t *mfg = NULL;
+  h2_pal_json_value_t *mode = NULL;
+  h2_pal_json_value_t *steps = NULL;
+  assert(h2_pal_json_object_get(api, root, "mfg", strlen("mfg"), &mfg) ==
+         H2_PAL_OK);
+  assert(h2_pal_json_object_get(api, mfg, "mode", strlen("mode"), &mode) ==
+         H2_PAL_OK);
+  double number = 0.0;
+  assert(h2_pal_json_value_get_number(api, mode, &number) == H2_PAL_OK);
+  assert(number == (double)status->mfg_mode);
+  assert(h2_pal_json_object_get(api, mfg, "steps", strlen("steps"), &steps) ==
+         H2_PAL_OK);
+  size_t count = 0u;
+  assert(h2_pal_json_array_size(api, steps, &count) == H2_PAL_OK);
+  assert(count == status->mfg_step_total);
+  for (size_t index = 0u; index < count; ++index) {
+    h2_pal_json_value_t *step = NULL;
+    assert(h2_pal_json_array_get(api, steps, index, &step) == H2_PAL_OK);
+    assert(h2_pal_json_value_get_number(api, step, &number) == H2_PAL_OK);
+    assert(number == (double)status->mfg_steps[index]);
+  }
+  assert(h2_pal_json_document_destroy(api, &document) == H2_PAL_OK);
+}
+
+static void test_variable_mfg_steps(h2_yyjson_json_t *provider) {
+  h2_h2loader_host_status_t status = test_status();
+  assert_mfg_steps(provider, &status);
+
+  status.mfg_mode = 2u;
+  status.mfg_step_total = 24u;
+  for (size_t index = 0u; index < status.mfg_step_total; ++index) {
+    status.mfg_steps[index] = (uint8_t)(index % 4u);
+  }
+  assert_mfg_steps(provider, &status);
+
+  status.mfg_step_total = H2_H2LOADER_HOST_MFG_STEP_MAX;
+  memset(status.mfg_steps, 3, sizeof(status.mfg_steps));
+  assert_mfg_steps(provider, &status);
 }
 
 static void test_truncation(void) {
@@ -213,6 +266,7 @@ int main(void) {
   }
 
   test_maximum_projection_fits(provider);
+  test_variable_mfg_steps(provider);
   test_truncation();
   assert(h2_yyjson_json_destroy(&provider) == H2_PAL_OK);
   return 0;

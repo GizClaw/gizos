@@ -106,7 +106,7 @@ Host 每次 probe、connect 或 reconnect 都生成新的非零 conversation ID�
 
 H2Loader 的 ESP32-S3 与 BK7258 UART adapter 使用 20-segment receive window。Physical poll 每次最多读取 `512` bytes，并把阻塞等待限制为 `10` ms；每次 poll 后调用 KCP update。KCP 自身 interval 同样为 `10` ms，CWND 保持开启；Host 写入按 KCP MSS 分块，使每个 message 对应一个 KCP segment。
 
-BK7258 上 CP 是 UART0 的唯一 RX owner，AP 持有 IO Stream iKCP instance。CP→AP 方向保持原始输入 byte order；AP→CP 方向用 target-private、SLIP-framed begin/data/end transaction 在 mailbox 限制内分片，CP 完整重组后暂停 shell TX、同步写出一个完整 encoded frame，再恢复 shell TX。CP 等 physical UART TX 完成后，通过独立 mailbox channel 返回 transaction sequence ACK；AP 的底层 write 只有收到匹配 ACK 才成功。该 envelope 与 completion ACK 都不是 H2IKCP wire format，不能进入 PAL public contract，也不能由 Host 感知。
+BK7258 上 AP 直接拥有 UART1，日志和 IO Stream iKCP 共享物理串口。AP UART PAL 接管 RX，并在完整协议帧写入期间暂停 shell TX；CP 不转发串口数据，不再有 mailbox 分片或 completion ACK。
 - `rx_buffer_size`：内部 byte-stream RX ring 大小；`0` 使用 `4096`，且不能小于 MTU。
 - `write_timeout_ms`：底层 byte stream 写入每个 frame 时使用的 timeout。
 - `on_log` 和 `log_user`：可选的同步 borrowed log sink；调用方必须保证 callback 和 user 在 stream 关闭前有效，callback 不能保留输入 slice。

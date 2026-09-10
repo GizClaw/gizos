@@ -7,8 +7,7 @@ class CpStartupContractTest(unittest.TestCase):
     def test_managed_uart_uses_one_460800_contract(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         definitions = {
-            "h2_bk_h2loader_cp_transport.c": "#define H2_BK_CP_UART_BAUD_RATE 460800u",
-            "h2_bk_platform_uart_io_stream.c": "#define H2_BK_UART_BAUD_RATE 460800u",
+            "h2_bk_platform_uart_io_stream.c": "config->baud_rate != CONFIG_UART_PRINT_BAUD_RATE",
             "h2_bk_h2loader_iostreamikcp.c": "#define H2_BK_SERIAL_BAUD_RATE 460800u",
         }
         for name, expected in definitions.items():
@@ -16,14 +15,14 @@ class CpStartupContractTest(unittest.TestCase):
             self.assertEqual(1, len(sources), [str(path) for path in sources])
             self.assertIn(expected, sources[0].read_text(encoding="utf-8"))
 
-        defaults = [path for path in runfiles.rglob("cp.defaults")
-                    if "layouts/loader" not in path.as_posix()]
-        self.assertEqual(2, len(defaults), [str(path) for path in defaults])
+        defaults = list(runfiles.rglob("ap.defaults"))
+        self.assertEqual(4, len(defaults), [str(path) for path in defaults])
         for path in defaults:
-            self.assertIn(
-                "CONFIG_UART_PRINT_BAUD_RATE=460800",
-                path.read_text(encoding="utf-8"),
-            )
+            config = path.read_text(encoding="utf-8")
+            self.assertIn("CONFIG_UART_PRINT_BAUD_RATE=460800", config)
+            self.assertIn("CONFIG_UART_PRINT_PORT=1", config)
+            self.assertIn("CONFIG_SYS_PRINT_DEV_UART=y", config)
+            self.assertIn("# CONFIG_SYS_PRINT_DEV_MAILBOX is not set", config)
 
     def test_loader_watchdog_period_fits_sdk_register(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
@@ -37,7 +36,7 @@ class CpStartupContractTest(unittest.TestCase):
         self.assertGreater(period, 0)
         self.assertLessEqual(period, 0xffff)
 
-    def test_shared_launcher_registers_transport_after_bk_init(self):
+    def test_shared_launcher_preserves_sdk_boot_without_uart_transport(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         launchers = list(runfiles.rglob("h2loader_cp_launcher/src/cp_main.c"))
 
@@ -50,35 +49,21 @@ class CpStartupContractTest(unittest.TestCase):
         self.assertNotIn("rtos_create_thread(", source)
         entry = source.index("static void h2loader_cp_entry(void)")
         policy = source.index("h2_bk_target_task_policy_install()", entry)
-        transport = source.index("h2_bk_h2loader_cp_transport_start()", policy)
-        self.assertLess(policy, transport)
-
-        transports = list(
-            runfiles.rglob("h2_cp_transport/src/h2_bk_h2loader_cp_transport.c")
-        )
-        self.assertEqual(1, len(transports), [str(path) for path in transports])
-        transport = transports[0].read_text(encoding="utf-8")
-        self.assertIn("psram_malloc(H2_BK_CP_UART_RX_QUEUE_SIZE)", transport)
-        self.assertIn("rtos_create_psram_thread(", transport)
-        self.assertIn("bk_uart_take_rx_isr(s_uart_id, uart_rx_isr, NULL)", transport)
-        self.assertIn("bk_uart_disable_rx_interrupt(s_uart_id)", transport)
-        self.assertIn("uart_rx_isr(s_uart_id, NULL)", transport)
-        self.assertIn("H2_BK_CP_READY_REQUEST", transport)
-        self.assertIn("SHELL_IO_CTRL_TX_SUSPEND", transport)
-        self.assertIn("bk_uart_write_bytes(s_uart_id, data", transport)
-        self.assertIn("SHELL_IO_CTRL_TX_RESUME", transport)
-        self.assertNotIn("H2_BK_CP_HOST_FRAME", transport)
-
-        semaphore_failure = transport.index(
-            "if (rtos_init_semaphore(&s_transport_done, 1) != kNoErr)"
-        )
-        release = transport.index("uart_rx_release();", semaphore_failure)
-        free = transport.index("psram_free(s_uart_rx_storage);", semaphore_failure)
-        self.assertLess(release, free)
+        boot = source.index("bk_pm_module_vote_boot_cp1_ctrl(", policy)
+        self.assertLess(policy, boot)
+        self.assertNotIn("bk_uart_", source)
 
         launchers = list(runfiles.rglob("bk7258_v3_202405/ap/ap_main.c"))
         self.assertEqual(1, len(launchers), [str(path) for path in launchers])
         launcher = launchers[0].read_text(encoding="utf-8")
+        # The entry task takes its bk/h2loader policy from the target table.
+        self.assertIn("h2_bk_platform_task_api(), &entry_options", launcher)
+        self.assertNotIn("rtos_create_thread(", launcher)
+        main = launcher.index("int main(void)")
+        install = launcher.index("h2_bk_target_task_policy_install()", main)
+        start = launcher.index("h2_pal_task_start(", main)
+        self.assertLess(install, launcher.index("bk_init();", main))
+        self.assertLess(install, start)
         probe = launcher.index("static int h2loader_probe_pref(void)")
         namespace_missing = launcher.index(
             "if (rc == H2_PAL_ERR_NOT_FOUND) return H2_PAL_OK;", probe

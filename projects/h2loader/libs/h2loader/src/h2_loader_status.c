@@ -50,12 +50,12 @@ int h2_loader_mfg_summary_validate(const h2_loader_mfg_summary_t *summary) {
     if (summary == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (summary->total != 0u && summary->total != H2_LOADER_MFG_STEP_TOTAL) {
+    if (summary->total > H2_LOADER_MFG_STEP_MAX) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    for (uint32_t i = 0u; i < H2_LOADER_MFG_STEP_TOTAL; ++i) {
+    for (uint32_t i = 0u; i < H2_LOADER_MFG_STEP_MAX; ++i) {
         if (summary->step_status[i] > H2_LOADER_MFG_STEP_FAILED ||
-            (summary->total == 0u &&
+            (i >= summary->total &&
              summary->step_status[i] != H2_LOADER_MFG_STEP_UNTESTED)) {
             return H2_PAL_ERR_INVALID_ARG;
         }
@@ -153,7 +153,8 @@ int h2_loader_status_format(
     const char *chip;
     const char *device_uid;
     const char *active_role;
-    char mfg_steps[H2_LOADER_MFG_STEP_TOTAL + 1u];
+    char mfg_steps[H2_LOADER_MFG_STEP_MAX + 1u];
+    size_t mfg_step_width;
 
     if (status == NULL || out == NULL || out_len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -168,10 +169,13 @@ int h2_loader_status_format(
     active_role = status->active_role == H2_LOADER_ACTIVE_ROLE_APP ? "app" :
         status->active_role == H2_LOADER_ACTIVE_ROLE_H2LOADER ? "loader" :
         "unknown";
-    for (size_t index = 0u; index < H2_LOADER_MFG_STEP_TOTAL; ++index) {
+    /* Disabled MFG (total 0) keeps the legacy all-zero field width. */
+    mfg_step_width = status->mfg.total == 0u
+        ? H2_LOADER_MFG_LEGACY_STEP_TOTAL : status->mfg.total;
+    for (size_t index = 0u; index < mfg_step_width; ++index) {
         mfg_steps[index] = (char)('0' + status->mfg.step_status[index]);
     }
-    mfg_steps[H2_LOADER_MFG_STEP_TOTAL] = '\0';
+    mfg_steps[mfg_step_width] = '\0';
 #define VALUE_OR_DASH(value) ((value)[0] != '\0' ? (value) : "-")
 #define ROLE_NAME(value) \
     ((value) == H2_LOADER_IMAGE_ROLE_APP ? "app" : \

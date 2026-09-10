@@ -36,6 +36,10 @@ typedef struct test_fixture {
   int pending_boot_intent_present;
   int32_t pending_last_result;
   int pending_last_result_present;
+  uint32_t acceptance_revision;
+  int acceptance_revision_present;
+  uint32_t pending_acceptance_revision;
+  int pending_acceptance_revision_present;
   int commit_result;
   unsigned commit_fail_at;
   unsigned commits;
@@ -110,7 +114,8 @@ static int pref_get_blob(h2_pal_pref_namespace_t *ns,
   if (record == NULL || !record->present)
     return H2_PAL_ERR_NOT_FOUND;
   *out_data = h2_pal_mem_alloc(allocator, record->len);
-  assert(*out_data != NULL);
+  if (*out_data == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
   memcpy(*out_data, record->data, record->len);
   *out_len = record->len;
   return H2_PAL_OK;
@@ -146,6 +151,13 @@ static int pref_remove(h2_pal_pref_namespace_t *ns, const char *key) {
 static int pref_get_u32(h2_pal_pref_namespace_t *ns, const char *key,
                         uint32_t *out_value) {
   test_fixture_t *fixture = ns->user;
+  if (strcmp(key, "mfg_acceptance_revision") == 0) {
+    *out_value = 0u;
+    if (!fixture->acceptance_revision_present)
+      return H2_PAL_ERR_NOT_FOUND;
+    *out_value = fixture->acceptance_revision;
+    return H2_PAL_OK;
+  }
   if (strcmp(key, "boot_intent") != 0 || !fixture->boot_intent_present) {
     *out_value = 0u; /* BK clears outputs even when the key is absent. */
     return H2_PAL_ERR_NOT_FOUND;
@@ -164,6 +176,9 @@ static int pref_set_u32(h2_pal_pref_namespace_t *ns, const char *key,
   if (strcmp(key, "boot_intent") == 0) {
     fixture->pending_boot_intent = value;
     fixture->pending_boot_intent_present = 1;
+  } else {
+    fixture->pending_acceptance_revision = value;
+    fixture->pending_acceptance_revision_present = 1;
   }
   return H2_PAL_OK;
 }
@@ -195,6 +210,7 @@ static void pref_discard_pending(test_fixture_t *fixture) {
   fixture->pending_remove = 0;
   fixture->pending_boot_intent_present = 0;
   fixture->pending_last_result_present = 0;
+  fixture->pending_acceptance_revision_present = 0;
 }
 
 static int pref_commit(h2_pal_pref_namespace_t *ns) {
@@ -230,6 +246,10 @@ static int pref_commit(h2_pal_pref_namespace_t *ns) {
   if (fixture->pending_last_result_present) {
     fixture->last_result = fixture->pending_last_result;
     fixture->last_result_present = 1;
+  }
+  if (fixture->pending_acceptance_revision_present) {
+    fixture->acceptance_revision = fixture->pending_acceptance_revision;
+    fixture->acceptance_revision_present = 1;
   }
   pref_discard_pending(fixture);
   return H2_PAL_OK;
@@ -602,6 +622,9 @@ static void test_max_status_fits_public_capacity(void) {
   fill_max_status_metadata(&status.stage, H2_LOADER_IMAGE_ROLE_APP);
   fill_max_status_metadata(&status.partition_1, H2_LOADER_IMAGE_ROLE_H2LOADER);
   fill_max_status_metadata(&status.partition_2, H2_LOADER_IMAGE_ROLE_APP);
+  status.mfg.total = H2_LOADER_MFG_STEP_MAX;
+  memset(status.mfg.step_status, H2_LOADER_MFG_STEP_FAILED,
+         sizeof(status.mfg.step_status));
   assert(h2_loader_status_format(&status, line, sizeof(line)) == H2_PAL_OK);
   assert(strlen(line) > 2048u);
   assert(strlen(line) < sizeof(line));
@@ -1273,6 +1296,334 @@ static void test_reboot_app_requires_bootable_partition_and_mfg_gate(void) {
          H2_PAL_ERR_INVALID_STATE);
 }
 
+
+static void put_test_u32_le(uint8_t *out, uint32_t value) {
+  for (size_t i = 0u; i < 4u; ++i)
+    out[i] = (uint8_t)(value >> (i * 8u));
+}
+
+static void store_mfg_record(test_fixture_t *fixture, const uint8_t *data,
+                             size_t len) {
+  pref_record_t *record = find_record(fixture, "mfg");
+  assert(record != NULL && len <= sizeof(record->data));
+  memcpy(record->data, data, len);
+  record->len = len;
+  record->present = 1;
+}
+
+static h2_loader_mfg_summary_t read_mfg(test_fixture_t *fixture,
+                                        int *present) {
+  h2_loader_mfg_summary_t summary;
+  assert(h2_loader_mfg_read(&fixture->pref, &fixture->mem, &summary,
+                            present) == H2_PAL_OK);
+  return summary;
+}
+
+static const char *status_mfg_steps(const h2_loader_mfg_summary_t *summary,
+                                    char *line, size_t line_len) {
+  h2_loader_status_t status;
+  memset(&status, 0, sizeof(status));
+  status.active_role = H2_LOADER_ACTIVE_ROLE_H2LOADER;
+  status.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
+  assert(h2_loader_status_set_mfg(&status, summary) == H2_PAL_OK);
+  assert(h2_loader_status_format(&status, line, line_len) == H2_PAL_OK);
+  const char *field = strstr(line, " mfg_mode=");
+  assert(field != NULL);
+  return field + 1;
+}
+
+static void test_mfg_variable_step_round_trip(void) {
+  test_fixture_t fixture;
+  h2_loader_mfg_summary_t summary;
+  int present = 0;
+  fixture_init(&fixture, 1u);
+
+  memset(&summary, 0, sizeof(summary));
+  summary.total = 24u;
+  for (uint32_t i = 0u; i < summary.total; ++i)
+    summary.step_status[i] = (uint8_t)(i % 4u);
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) == H2_PAL_OK);
+  const pref_record_t *record = find_record(&fixture, "mfg");
+  assert(record->present && record->len == 5u + 24u);
+  assert(record->data[0] == 4u && record->data[1] == 0u &&
+         record->data[2] == 0u && record->data[3] == 0u);
+  assert(record->data[4] == 24u);
+  assert(memcmp(record->data + 5, summary.step_status, 24u) == 0);
+
+  const h2_loader_mfg_summary_t stored = read_mfg(&fixture, &present);
+  assert(present == 1);
+  assert(memcmp(&stored, &summary, sizeof(summary)) == 0);
+  assert(strcmp(h2_loader_mfg_state_name(&stored), "partial") == 0);
+
+  /* Boundary totals and every argument rejection. */
+  memset(&summary, 0, sizeof(summary));
+  summary.total = 1u;
+  summary.step_status[0] = H2_LOADER_MFG_STEP_PASSED;
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) == H2_PAL_OK);
+  assert(read_mfg(&fixture, &present).total == 1u);
+  assert(h2_loader_mfg_summary_is_passed(&summary, 1u));
+  assert(!h2_loader_mfg_summary_is_passed(&summary, 2u));
+  memset(summary.step_status, H2_LOADER_MFG_STEP_PASSED,
+         sizeof(summary.step_status));
+  summary.total = H2_LOADER_MFG_STEP_MAX;
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) == H2_PAL_OK);
+  assert(read_mfg(&fixture, &present).total == H2_LOADER_MFG_STEP_MAX);
+  assert(h2_loader_mfg_summary_is_passed(&summary, H2_LOADER_MFG_STEP_MAX));
+
+  const unsigned writes = fixture.set_blob_calls;
+  memset(&summary, 0, sizeof(summary));
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) ==
+         H2_PAL_ERR_INVALID_ARG);
+  summary.total = H2_LOADER_MFG_STEP_MAX + 1u;
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) ==
+         H2_PAL_ERR_INVALID_ARG);
+  summary.total = 24u;
+  summary.step_status[24] = H2_LOADER_MFG_STEP_PASSED;
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) ==
+         H2_PAL_ERR_INVALID_ARG);
+  summary.step_status[24] = 0u;
+  summary.step_status[23] = H2_LOADER_MFG_STEP_FAILED + 1u;
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_loader_mfg_reset(&fixture.pref, 0u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_loader_mfg_reset(&fixture.pref, H2_LOADER_MFG_STEP_MAX + 1u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(fixture.set_blob_calls == writes);
+
+  assert(h2_loader_mfg_reset(&fixture.pref, 24u) == H2_PAL_OK);
+  const h2_loader_mfg_summary_t reset = read_mfg(&fixture, &present);
+  assert(reset.total == 24u);
+  for (uint32_t i = 0u; i < H2_LOADER_MFG_STEP_MAX; ++i)
+    assert(reset.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
+}
+
+static void test_mfg_legacy_records_decode_as_22_steps(void) {
+  test_fixture_t fixture;
+  uint8_t data[64];
+  int present = 0;
+  fixture_init(&fixture, 1u);
+
+  /* v3: u32 format=3 followed by 22 status bytes. */
+  memset(data, 0, sizeof(data));
+  put_test_u32_le(data, 3u);
+  for (size_t i = 0u; i < 22u; ++i)
+    data[4u + i] = (uint8_t)((i * 3u) % 4u);
+  store_mfg_record(&fixture, data, 4u + 22u);
+  h2_loader_mfg_summary_t summary = read_mfg(&fixture, &present);
+  assert(present == 1 && summary.total == 22u);
+  assert(memcmp(summary.step_status, data + 4, 22u) == 0);
+  for (size_t i = 22u; i < H2_LOADER_MFG_STEP_MAX; ++i)
+    assert(summary.step_status[i] == 0u);
+  /* The legacy record is rewritten once as v4 with the same content. */
+  const pref_record_t *record = find_record(&fixture, "mfg");
+  assert(record->len == 5u + 22u && record->data[0] == 4u &&
+         record->data[4] == 22u);
+  assert(memcmp(record->data + 5, data + 4, 22u) == 0);
+  const unsigned writes = fixture.set_blob_calls;
+  const h2_loader_mfg_summary_t again = read_mfg(&fixture, &present);
+  assert(memcmp(&again, &summary, sizeof(summary)) == 0);
+  assert(fixture.set_blob_calls == writes);
+
+  /* v2: counters plus passed/skipped masks. */
+  memset(data, 0, sizeof(data));
+  put_test_u32_le(data, 2u);
+  put_test_u32_le(data + 4, 1u);
+  put_test_u32_le(data + 8, 2u);
+  put_test_u32_le(data + 12, 22u);
+  put_test_u32_le(data + 16, 0x3u);
+  put_test_u32_le(data + 20, UINT32_C(1) << 21);
+  store_mfg_record(&fixture, data, 24u);
+  summary = read_mfg(&fixture, &present);
+  assert(summary.total == 22u);
+  assert(summary.step_status[0] == H2_LOADER_MFG_STEP_PASSED);
+  assert(summary.step_status[1] == H2_LOADER_MFG_STEP_PASSED);
+  assert(summary.step_status[2] == H2_LOADER_MFG_STEP_UNTESTED);
+  assert(summary.step_status[21] == H2_LOADER_MFG_STEP_SKIPPED);
+
+  /* v1: failed at the first unpassed step. */
+  memset(data, 0, sizeof(data));
+  put_test_u32_le(data, 1u);
+  put_test_u32_le(data + 4, 3u);
+  put_test_u32_le(data + 8, 5u);
+  put_test_u32_le(data + 12, 22u);
+  store_mfg_record(&fixture, data, 16u);
+  summary = read_mfg(&fixture, &present);
+  assert(summary.total == 22u);
+  assert(summary.step_status[4] == H2_LOADER_MFG_STEP_PASSED);
+  assert(summary.step_status[5] == H2_LOADER_MFG_STEP_FAILED);
+
+  /* Corrupt v4 records (bad total, length, or status) reset to 22 zeros. */
+  static const struct {
+    uint8_t total;
+    size_t len;
+    uint8_t bad_status;
+  } corrupt[] = {
+      {0u, 5u, 0u},
+      {33u, 5u + 33u, 0u},
+      {24u, 5u + 23u, 0u},
+      {24u, 5u + 25u, 0u},
+      {24u, 5u + 24u, 4u},
+  };
+  for (size_t c = 0u; c < sizeof(corrupt) / sizeof(corrupt[0]); ++c) {
+    memset(data, 0, sizeof(data));
+    put_test_u32_le(data, 4u);
+    data[4] = corrupt[c].total;
+    data[5] = corrupt[c].bad_status;
+    store_mfg_record(&fixture, data, corrupt[c].len);
+    summary = read_mfg(&fixture, &present);
+    assert(present == 1 && summary.total == 22u);
+    for (size_t i = 0u; i < H2_LOADER_MFG_STEP_MAX; ++i)
+      assert(summary.step_status[i] == 0u);
+    assert(record->len == 5u + 22u && record->data[4] == 22u);
+  }
+  /* An unknown format is also reset. */
+  memset(data, 0, sizeof(data));
+  put_test_u32_le(data, 5u);
+  store_mfg_record(&fixture, data, 5u + 24u);
+  assert(read_mfg(&fixture, &present).total == 22u);
+}
+
+static void test_mfg_acceptance_revision_tracks_total(void) {
+  test_fixture_t fixture;
+  h2_loader_mfg_summary_t summary;
+  uint8_t data[32];
+  int present = 0;
+  fixture_init(&fixture, 1u);
+
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 0u, 1u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_loader_mfg_ensure_acceptance_revision(
+             &fixture.pref, H2_LOADER_MFG_STEP_MAX + 1u, 1u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 22u, 0u) ==
+         H2_PAL_ERR_INVALID_ARG);
+
+  /* A passed legacy v3 22-step record survives the same revision/total. */
+  memset(data, 0, sizeof(data));
+  put_test_u32_le(data, 3u);
+  memset(data + 4, H2_LOADER_MFG_STEP_PASSED, 22u);
+  store_mfg_record(&fixture, data, 4u + 22u);
+  fixture.acceptance_revision = 7u;
+  fixture.acceptance_revision_present = 1;
+  const unsigned writes = fixture.set_blob_calls;
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 22u, 7u) ==
+         H2_PAL_OK);
+  assert(fixture.set_blob_calls == writes);
+  summary = read_mfg(&fixture, &present);
+  assert(summary.total == 22u);
+  assert(h2_loader_mfg_summary_is_passed(&summary, 22u));
+
+  /* Moving the product from 22 to 24 steps starts clean. */
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 7u) ==
+         H2_PAL_OK);
+  summary = read_mfg(&fixture, &present);
+  assert(summary.total == 24u);
+  for (size_t i = 0u; i < H2_LOADER_MFG_STEP_MAX; ++i)
+    assert(summary.step_status[i] == H2_LOADER_MFG_STEP_UNTESTED);
+  assert(fixture.acceptance_revision == 7u);
+
+  /* Same revision and total keeps 24-step progress. */
+  memset(summary.step_status, H2_LOADER_MFG_STEP_PASSED, 24u);
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) == H2_PAL_OK);
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 7u) ==
+         H2_PAL_OK);
+  summary = read_mfg(&fixture, &present);
+  assert(h2_loader_mfg_summary_is_passed(&summary, 24u));
+
+  /* A revision bump still resets with the requested total. */
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 8u) ==
+         H2_PAL_OK);
+  summary = read_mfg(&fixture, &present);
+  assert(summary.total == 24u);
+  assert(!h2_loader_mfg_summary_is_passed(&summary, 24u));
+  assert(fixture.acceptance_revision == 8u);
+
+  /* Missing, corrupt, and oversized records reset despite the revision. */
+  find_record(&fixture, "mfg")->present = 0;
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 8u) ==
+         H2_PAL_OK);
+  assert(read_mfg(&fixture, &present).total == 24u && present == 1);
+  memset(data, 0xffu, sizeof(data));
+  store_mfg_record(&fixture, data, 7u);
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 8u) ==
+         H2_PAL_OK);
+  assert(read_mfg(&fixture, &present).total == 24u);
+  pref_record_t *record = find_record(&fixture, "mfg");
+  memset(record->data, 0, 64u);
+  record->len = 64u;
+  record->present = 1;
+  assert(h2_loader_mfg_ensure_acceptance_revision(&fixture.pref, 24u, 8u) ==
+         H2_PAL_OK);
+  assert(read_mfg(&fixture, &present).total == 24u);
+}
+
+static void test_mfg_status_prints_total_steps(void) {
+  h2_loader_mfg_summary_t summary;
+  char line[H2_LOADER_STATUS_LINE_MAX];
+
+  memset(&summary, 0, sizeof(summary));
+  assert(strcmp(status_mfg_steps(&summary, line, sizeof(line)),
+                "mfg_mode=1 mfg_steps=0000000000000000000000") == 0);
+
+  summary.total = 22u;
+  for (uint32_t i = 0u; i < 22u; ++i)
+    summary.step_status[i] = (uint8_t)(i % 4u);
+  assert(strcmp(status_mfg_steps(&summary, line, sizeof(line)),
+                "mfg_mode=2 mfg_steps=0123012301230123012301") == 0);
+
+  summary.total = 24u;
+  summary.step_status[22] = H2_LOADER_MFG_STEP_SKIPPED;
+  summary.step_status[23] = H2_LOADER_MFG_STEP_PASSED;
+  assert(strcmp(status_mfg_steps(&summary, line, sizeof(line)),
+                "mfg_mode=2 mfg_steps=012301230123012301230121") == 0);
+
+  summary.total = 1u;
+  memset(summary.step_status, 0, sizeof(summary.step_status));
+  summary.step_status[0] = H2_LOADER_MFG_STEP_FAILED;
+  assert(strcmp(status_mfg_steps(&summary, line, sizeof(line)),
+                "mfg_mode=2 mfg_steps=3") == 0);
+
+  h2_loader_status_t status;
+  memset(&status, 0, sizeof(status));
+  summary.total = 2u;
+  summary.step_status[2] = H2_LOADER_MFG_STEP_PASSED;
+  assert(h2_loader_mfg_summary_validate(&summary) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_loader_status_set_mfg(&status, &summary) ==
+         H2_PAL_ERR_INVALID_ARG);
+  summary.step_status[2] = 0u;
+  summary.total = H2_LOADER_MFG_STEP_MAX + 1u;
+  assert(h2_loader_mfg_summary_validate(&summary) == H2_PAL_ERR_INVALID_ARG);
+}
+
+static void test_mfg_required_total_range_and_gate(void) {
+  test_fixture_t fixture;
+  h2_loader_mfg_summary_t summary;
+  fixture_init(&fixture, 1u);
+  fixture.config.mfg_required_total = H2_LOADER_MFG_STEP_MAX + 1u;
+  assert(h2_loader_init(&fixture.loader, &fixture.config) ==
+         H2_PAL_ERR_INVALID_ARG);
+
+  fixture.config.mfg_required_total = 24u;
+  memset(&summary, 0, sizeof(summary));
+  summary.total = 24u;
+  memset(summary.step_status, H2_LOADER_MFG_STEP_PASSED, 24u);
+  assert(h2_loader_mfg_write(&fixture.pref, &summary) == H2_PAL_OK);
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  assert(fixture.loader.status.mfg.total == 24u);
+  assert(h2_loader_set_implemented_commands(
+             &fixture.loader, H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) ==
+         H2_PAL_OK);
+  fixture.loader.status.partition_2 =
+      metadata(H2_LOADER_IMAGE_ROLE_APP, SHA_B);
+  assert((h2_loader_get_command_availability(
+              &fixture.loader, &fixture.loader.status) &
+          H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) != 0u);
+  fixture.loader.status.mfg.step_status[23] = H2_LOADER_MFG_STEP_SKIPPED;
+  assert((h2_loader_get_command_availability(
+              &fixture.loader, &fixture.loader.status) &
+          H2_LOADER_COMMAND_AVAILABLE_REBOOT_APP) == 0u);
+}
+
 static void
 test_stage_begin_invalidates_metadata_and_removes_old_package(void) {
   test_fixture_t fixture;
@@ -1415,6 +1766,11 @@ int main(void) {
   test_reboot_preparation_and_failures_do_not_arm_boot();
   test_reboot_app_requires_bootable_partition_and_mfg_gate();
   test_stage_begin_invalidates_metadata_and_removes_old_package();
+  test_mfg_variable_step_round_trip();
+  test_mfg_legacy_records_decode_as_22_steps();
+  test_mfg_acceptance_revision_tracks_total();
+  test_mfg_status_prints_total_steps();
+  test_mfg_required_total_range_and_gate();
   puts("h2loader v2 boot tests passed");
   return 0;
 }

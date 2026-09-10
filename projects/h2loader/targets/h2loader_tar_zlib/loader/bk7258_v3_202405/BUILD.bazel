@@ -4,6 +4,7 @@ load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -12,10 +13,11 @@ py_test(
     name = "cp_startup_contract_test",
     srcs = ["tests/test_cp_startup_contract.py"],
     data = [
-        "//boards/bk7258_chip/layouts/compile_only:cp.defaults",
-        "//boards/bk7258_v3_202405/bk7258:cp.defaults",
         "//boards/bk7258_v3_202405/bk7258/layouts/loader:cp.defaults",
-        "//native_component_src/bk7258/cp/h2_cp_transport:src/h2_bk_h2loader_cp_transport.c",
+        "//boards/bk7258_v3_202405/bk7258/layouts/loader:ap.defaults",
+        "//boards/bk7258_v3_202405/bk7258/layouts/h2loader:ap.defaults",
+        "//boards/bk7258_v3_202405/bk7258/layouts/media:ap.defaults",
+        "//boards/bk7258_v3_202405/bk7258/layouts/wifi_csi:ap.defaults",
         "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_uart_io_stream.c",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:src/h2_bk_h2loader_iostreamikcp.c",
         "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher:src/cp_main.c",
@@ -30,6 +32,7 @@ bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",
     ap_policies = [
+        "bk/h2loader        6        0  24576  default",
         "h2loader/appcmd    5        0  49152  psram",
         "$h2loader/uartcmd  5        0  49152  psram",
         "$bleikcp/kcp       default",
@@ -43,6 +46,11 @@ bk7258_target_task_policy(
     ],
     cp_default_policy = "6 4096 default",
     graph = [":h2loader_launcher"],
+)
+
+h2_tasks(
+    name = "entry_tasks",
+    tasks = ["bk/h2loader"],
 )
 
 firmware_lib_component(
@@ -91,16 +99,15 @@ firmware_native_component(
     ],
     deps = [
         "//projects/h2loader/apps/loader/app:tasks",
+        ":entry_tasks",
         ":ap_launcher_component",
         ":firmware_lib",
-        "//boards/bk7258_v3_202405/bk7258",
         "//libs/bundle",
         "//libs/command",
         "//libs/pal",
         "//libs/runtime",
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/zlib",
-        "//native_component_src/bk7258/cp/h2_cp_transport",
         "//native_component_src/bk7258/cp/h2_pal_core",
         "//projects/h2loader/libs/h2loader",
         "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
