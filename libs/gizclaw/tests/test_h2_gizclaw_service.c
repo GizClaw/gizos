@@ -7950,6 +7950,18 @@ static void conversation_wait_written(conversation_test_t *test,
   assert(atomic_load(&test->written) == expected);
 }
 
+/* The fake server counts a packet after the downlink accepted it, so the
+ * decoder can write its PCM before the count moves. */
+static void conversation_wait_packets(conversation_test_t *test,
+                                      size_t expected) {
+  for (unsigned spins = 0u;
+       spins < 2000u &&
+       __atomic_load_n(&test->packets, __ATOMIC_ACQUIRE) < expected;
+       ++spins)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(__atomic_load_n(&test->packets, __ATOMIC_ACQUIRE) == expected);
+}
+
 static void conversation_read_owned(h2_gizclaw_track_t *track, uint8_t *out,
                                     size_t len) {
   h2_pal_result_t rc = H2_PAL_ERR_WOULD_BLOCK;
@@ -8226,7 +8238,8 @@ static void test_conversation_public_audio_tasks(void) {
       /* Completion waits for nothing downstream. The echoed audio lands in
        * the Track; the later mic sample did not enter this request. */
       conversation_read_owned(owned_track, test.output, 13u * 640u);
-      assert(test.packets == 13u && atomic_load(&test.written) == 0u);
+      conversation_wait_packets(&test, 13u);
+      assert(atomic_load(&test.written) == 0u);
       test.write_offset = 13u * 640u;
       atomic_store(&test.written, test.write_offset);
       uint8_t remaining[2];
@@ -8239,16 +8252,16 @@ static void test_conversation_public_audio_tasks(void) {
     }
     if (mode == 15 || mode == 16) {
       conversation_wait_written(&test, 2560u);
+      conversation_wait_packets(&test, 4u);
       /* Mode 15's second turn plays after its generation completed, so
        * only the hung-up realtime call counted both turns in the loop. */
-      assert(test.packets == 4u &&
-             (mode == 15 || atomic_load(&test.turns_done) == 2u));
+      assert(mode == 15 || atomic_load(&test.turns_done) == 2u);
       assert(test.bos_attempts == 1u);
     }
     if (mode == 0 || mode == 3 || mode == 4 || mode == 6 || mode == 7 ||
         mode == 9 || mode == 10 || mode == 22 || mode == 24) {
       conversation_wait_written(&test, 13u * 640u);
-      assert(test.packets == 13);
+      conversation_wait_packets(&test, 13u);
       size_t nonzero = 0;
       for (size_t i = 0; i < test.write_offset; ++i)
         nonzero += test.output[i] != 0;
@@ -8282,7 +8295,8 @@ static void test_conversation_public_audio_tasks(void) {
       /* Every chunk reached the speaker Track with no app poll in between;
        * decoding never waited on the app, and the app saw the reply start
        * once. */
-      assert(test.packets == 20u && atomic_load(&test.written) == 20u * 640u);
+      conversation_wait_packets(&test, 20u);
+      assert(atomic_load(&test.written) == 20u * 640u);
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 19) {
@@ -8290,7 +8304,8 @@ static void test_conversation_public_audio_tasks(void) {
        * concealed it as one 20 ms frame, every later packet still played,
        * and the conversation completed normally instead of failing. */
       conversation_wait_written(&test, 14u * 640u);
-      assert(test.loss_markers == 1u && test.packets == 13u);
+      conversation_wait_packets(&test, 13u);
+      assert(test.loss_markers == 1u);
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 20) {
