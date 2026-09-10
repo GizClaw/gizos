@@ -1,0 +1,25 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+package(default_visibility = ["//visibility:public"])
+py_binary(
+    name = "compile_vector_art",
+    legacy_create_init = 0,
+    srcs = ["compile_vector_art.py"],
+)
+
+py_binary(
+    name = "pack_vector_components",
+    legacy_create_init = 0,
+    srcs = ["pack_vector_components.py"],
+)
+
+py_test(
+    name = "pack_vector_components_test",
+    legacy_create_init = 0,
+    srcs = ["test_pack_vector_components.py", "pack_vector_components.py"],
+    main = "test_pack_vector_components.py",
+    imports = ["."],
+    data = [
+        "//projects/example/apps/lua-qi-duel:assets/vector/components/components.h2vp",
+        "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/component_paths.lua",
+    ],
+)

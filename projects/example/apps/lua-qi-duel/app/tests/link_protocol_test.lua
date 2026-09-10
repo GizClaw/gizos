@@ -66,4 +66,18 @@ missing.commits={};missing.reveals={}
 candidates[1]="wave"
 missing:tick(Rules.SELECT_MS);assert(missing.reveals[1].action=="wave")
 missing:tick(Rules.SELECT_MS+1501);assert(missing.error=="ROUND TIMEOUT" and missing.pending==nil)
+for _,n in ipairs({7,8,14,15,22}) do
+    local message
+    local wire={nonce=function() return string.rep("a",32) end,
+        send=function(m) message=m;return true end}
+    local host=Protocol.new(true,0,wire)
+    local peer=Protocol.new(false,0,wire)
+    host.round=n;peer.round=n;peer.id=host.id;peer.phase="ready";peer.offset=-5000
+    host:start(100)
+    peer:receive(message,5100)
+    assert(not peer.error)
+    assert(host.deadline-host.start_at==Rules.selection_ms(n))
+    assert(peer.deadline-peer.start_at==Rules.selection_ms(n))
+    assert(peer.deadline-host.deadline==5000)
+end
 return "ok"

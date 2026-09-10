@@ -10,51 +10,28 @@ remaining scene fades in. Combat starts at 5 HP / 0 qi with a visible three-seco
 choice timer, simultaneous resolution, three-hit full-qi combos and one-round
 shield cooldown. See [GAMEPLAY.md](GAMEPLAY.md) for rules and protocol details.
 
-Round resolution uses the user-approved **ElevenLabs Generation 2** rising,
-strained charge cry (1.02 s), with surrounding silence removed and pitch/tempo
-unchanged. Wave uses the final “哈” (0.74 s) from the user-selected ElevenLabs
-generation W52tf8i2SyAxCSbgjo7P with the same James voice. Absorb uses the final
-“呼” (0.57 s) from the user-approved ElevenLabs download, also with James.
-Guard uses the opening grunt (0.67 s) from its user-approved ElevenLabs
-download. All four skill cues use the same James voice. A Vegeta scream
-excerpt (0.30 s) remains available as an asset. Round resolution plays only
-the local player's skill cue; opponent actions and hit reactions are silent.
-
-WAV previews contain only the short vocal. Embedded PCM adds 450/330/200 ms
-before wave/absorb/guard, and 720 ms before the hit reaction, aligning with skill
-windup and the 750 ms damage update. Charge starts immediately. Including these
-delays, all cues finish by 1.19 s within the 1.8 s round animation.
-Only the local skill track plays, at 45% gain, in both computer and network
-matches. Selection and invalid actions are silent. Writes are nonblocking,
-overdue cues are dropped, and preallocated tracks are reused across rounds and
-restarts to avoid synchronous audio-device stalls. App shutdown closes the tracks. Devices
-without audio continue silently; screenshot capture does not open real audio.
-
-Listen to `assets/generated/sounds/*.wav`. [Source credits](assets/source/voices/CREDITS.md)
-and `assets/source/voices/provenance.json` record upload labels, URLs, checksums
-and excerpt offsets. The remaining third-party character recordings are not CC0 and
-are not covered by the repository license; no commercial-use license is asserted.
-Exact original scenes/dubs have not been independently verified.
-WAVs are mono 16-bit / 16 kHz, peak -3 dBFS, with short fades; there is no pitch
-shifting or time stretching. All four skill cues use generated speech; see their retained
-originals and generation details in the source directory.
+Audio uses the reviewed retro electronic score: four looping scene tracks and
+12 synthesized cues. Lua streams bounded 16 kHz mono S16LE chunks from note and
+oscillator parameters; no recorded PCM clips are packaged. Scene transitions,
+partial writes and cleanup are covered by `qi_duel_retro_audio_test`.
+Audition exports and the approved score remain in `review/retro-audio-v1/`.
 
 ```sh
-python3 projects/example/apps/lua-qi-duel/app/tools/generate_sounds.py
-bazel test //projects/example/apps/lua-qi-duel/app:qi_duel_sounds_test
+python3 projects/example/apps/lua-qi-duel/app/tools/generate_retro_audio.py
+bazel test //projects/example/apps/lua-qi-duel/app:qi_duel_retro_audio_test
 ```
 
 Build and run the real Lua Desktop target:
 
 ```sh
-bazel run \
+bazel run -c opt --define=h2_qi_duel_desktop_vectors=true --define=h2_qi_duel_vector_only=true \
   //projects/example/targets/cc_binary/lua-qi-duel:example-lua-qi-duel
 ```
 
 Build and run the H106 screen-sized native target:
 
 ```sh
-bazel run \
+bazel run -c opt --define=h2_qi_duel_desktop_vectors=true --define=h2_qi_duel_vector_only=true \
   //projects/example/targets/cc_binary/lua-qi-duel:example-lua-qi-duel-h106
 ```
 
@@ -91,19 +68,36 @@ existing bars clear before pairing restarts. Use
 `--clash=equal|player-combo|enemy-combo|both-combo` or `--result=win|lose` with
 `--time-ms=N` for deterministic SDL frame review.
 
-Approved art is embedded as compressed RGBA/style/light resources. Lua drives
-motion and effects; the native compositor submits RGB565 pixels to SDL. Runtime
-does not require PNG decoding or a browser. Desktop fidelity currently uses a
-14 MiB Lua VM budget; it is not an embedded-memory/performance validation.
+On macOS, the commands above select the accepted vector artwork and analytic Lua
+scene lights. The native compositor submits RGB565 pixels to SDL. The original
+RGBA/style/light resources remain available for deterministic reference captures;
+they are excluded from the vector-only build. See [VECTOR-DESKTOP.md](VECTOR-DESKTOP.md)
+for build modes, current poses, comparison metrics and regeneration instructions.
+The 14 MiB desktop Lua VM budget does not establish embedded memory feasibility.
 
-Existing AMOLED package entry (not validated by the current desktop migration;
-embedded resource assembly and memory/performance require separate work):
+AMOLED pure-vector test firmware (hardware performance acceptance pending;
+see [AMOLED-MIGRATION.md](AMOLED-MIGRATION.md) for the download partition limit):
 
 ```sh
-bazel build --config=esp32s3 \
+bazel build -c opt --config=esp32s3 \
+  --define=h2_qi_duel_software_vectors=true \
+  --define=h2_qi_duel_screen=amoled \
+  --//tools/bazel:firmware_version=0.1.0-dev \
   //projects/example/targets/h2loader_tar_zlib/lua-qi-duel/amoled:package
 ```
+
+The screen flag removes the other screen's clash keyframes at build time.
+Omitting it retains both screens for desktop review; `h106` selects H106-only
+frames. All component frames use lossless H2VG v2 coordinate deltas. Every build
+reconstructs and compares the original command bytes before embedding them.
 
 The runtime prints `H2_QI_DUEL_PERF` once per second. After five complete
 measurement windows it prints `H2_QI_DUEL_SELF_TEST result=PASS` when the average
 frame rate is between 27 and 32 FPS.
+
+Countdown accelerates by round: rounds 1–7 use 1000 ms per digit (3 s total),
+rounds 8–14 use 800 ms (2.4 s), and round 15 onward uses 600 ms (1.8 s).
+Local and network deadlines and displayed digits share this timing. A new match
+starts at round 1; early confirmations do not shorten the countdown.
+
+The private Zero ESP32-S3 independent firmware build and its validation limits are documented in [ZERO-STANDALONE.md](ZERO-STANDALONE.md).

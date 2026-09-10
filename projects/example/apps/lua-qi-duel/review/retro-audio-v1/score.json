@@ -1,0 +1,4247 @@
+{
+  "version": 1,
+  "sample_rate": 16000,
+  "authoring": "original procedural composition; no sampled audio",
+  "tracks": [
+    {
+      "id": "pairing",
+      "title": "配对 · 星际信标",
+      "bpm": 120,
+      "beats": 16,
+      "loop": true,
+      "description": "轻快的定位脉冲与短琶音，留出等待空间。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.72,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 1,
+          "length": 0.72,
+          "note": 57,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 2,
+          "length": 0.72,
+          "note": 52,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 3,
+          "length": 0.72,
+          "note": 57,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 0.0,
+          "length": 0.31,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.31,
+          "note": 76,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.31,
+          "note": 81,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.31,
+          "note": 76,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 2.0,
+          "length": 0.24,
+          "note": 73,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.24,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 2,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 0.72,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 5,
+          "length": 0.72,
+          "note": 53,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 6,
+          "length": 0.72,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 7,
+          "length": 0.72,
+          "note": 53,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 4.0,
+          "length": 0.31,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 4.5,
+          "length": 0.31,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 5.0,
+          "length": 0.31,
+          "note": 77,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 5.5,
+          "length": 0.31,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 6.0,
+          "length": 0.24,
+          "note": 69,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 7.0,
+          "length": 0.24,
+          "note": 72,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 6,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 0.72,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 9,
+          "length": 0.72,
+          "note": 60,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 10,
+          "length": 0.72,
+          "note": 55,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 11,
+          "length": 0.72,
+          "note": 60,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 8.0,
+          "length": 0.31,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 8.5,
+          "length": 0.31,
+          "note": 79,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 9.0,
+          "length": 0.31,
+          "note": 84,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 9.5,
+          "length": 0.31,
+          "note": 79,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 10.0,
+          "length": 0.24,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 11.0,
+          "length": 0.24,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 10,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 12,
+          "length": 0.72,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 13,
+          "length": 0.72,
+          "note": 55,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 14,
+          "length": 0.72,
+          "note": 50,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 15,
+          "length": 0.72,
+          "note": 55,
+          "voice": "triangle",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 12.0,
+          "length": 0.31,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 12.5,
+          "length": 0.31,
+          "note": 74,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 13.0,
+          "length": 0.31,
+          "note": 79,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 13.5,
+          "length": 0.31,
+          "note": 74,
+          "voice": "soft",
+          "gain": 0.105,
+          "end_note": null
+        },
+        {
+          "beat": 14.0,
+          "length": 0.24,
+          "note": 71,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.24,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 12,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 14,
+          "length": 0.12,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.025,
+          "end_note": null
+        },
+        {
+          "beat": 12.0,
+          "length": 0.325,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 12.5,
+          "length": 0.325,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 13.0,
+          "length": 0.325,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 13.5,
+          "length": 0.325,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 14.0,
+          "length": 0.325,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 14.5,
+          "length": 0.325,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.325,
+          "note": 71,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 15.5,
+          "length": 0.325,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.095,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "battle",
+      "title": "战斗 · 像素气流",
+      "bpm": 150,
+      "beats": 32,
+      "loop": true,
+      "description": "脉冲主旋律、三角波低音和噪声鼓，八小节完整循环。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.41,
+          "note": 33,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.41,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.41,
+          "note": 40,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.41,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 2.0,
+          "length": 0.41,
+          "note": 33,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 2.5,
+          "length": 0.41,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.41,
+          "note": 40,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 3.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 2,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 1,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 3,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 0.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 2.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 2.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 3.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 0.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 2.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 3.5,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 0.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 0.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 0.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 1.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 1.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 2.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 2.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 2.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 2.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 3.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 3.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 3.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 4.0,
+          "length": 0.41,
+          "note": 29,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 4.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 5.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 5.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 6.0,
+          "length": 0.41,
+          "note": 29,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 6.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 7.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 7.5,
+          "length": 0.41,
+          "note": 39,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 6,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 5,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 7,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 4.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 4.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 5.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 5.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 6.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 6.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 7.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 7.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 4.0,
+          "length": 0.35,
+          "note": 72,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 4.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 5.0,
+          "length": 0.35,
+          "note": 77,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 5.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 6.0,
+          "length": 0.35,
+          "note": 77,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 7.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 7.5,
+          "length": 0.35,
+          "note": 72,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 4.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 4.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 4.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 4.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 5.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 5.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 5.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 5.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 6.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 6.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 6.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 6.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 7.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 7.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 7.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 7.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 8.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 8.5,
+          "length": 0.41,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 9.0,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 9.5,
+          "length": 0.41,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 10.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 10.5,
+          "length": 0.41,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 11.0,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 11.5,
+          "length": 0.41,
+          "note": 46,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 10,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 9,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 11,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 8.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 8.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 9.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 9.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 10.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 10.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 11.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 11.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 8.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 8.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 9.0,
+          "length": 0.35,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 9.5,
+          "length": 0.35,
+          "note": 83,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 10.0,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 10.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 11.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 8.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 8.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 8.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 8.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 9.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 9.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 9.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 9.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 10.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 10.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 10.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 10.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 11.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 11.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 11.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 11.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 12.0,
+          "length": 0.41,
+          "note": 31,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 12.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 13.0,
+          "length": 0.41,
+          "note": 38,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 13.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 14.0,
+          "length": 0.41,
+          "note": 31,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 14.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.41,
+          "note": 38,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 15.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 12,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 14,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 13,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 15,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 12.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 12.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 13.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 13.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 14.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 14.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 15.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 12.0,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 12.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 13.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 13.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 14.0,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 14.5,
+          "length": 0.35,
+          "note": 71,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 12.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 12.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 12.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 12.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 13.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 13.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 13.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 13.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 14.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 14.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 14.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 14.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 15.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 15.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 15.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 15.0,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.075,
+          "end_note": null
+        },
+        {
+          "beat": 15.25,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.087,
+          "end_note": null
+        },
+        {
+          "beat": 15.5,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.099,
+          "end_note": null
+        },
+        {
+          "beat": 15.75,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.111,
+          "end_note": null
+        },
+        {
+          "beat": 16.0,
+          "length": 0.41,
+          "note": 33,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 16.5,
+          "length": 0.41,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 17.0,
+          "length": 0.41,
+          "note": 40,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 17.5,
+          "length": 0.41,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 18.0,
+          "length": 0.41,
+          "note": 33,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 18.5,
+          "length": 0.41,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 19.0,
+          "length": 0.41,
+          "note": 40,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 19.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 16,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 18,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 17,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 19,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 16.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 16.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 17.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 17.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 18.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 18.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 19.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 19.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 16.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 16.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 17.0,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 17.5,
+          "length": 0.35,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 18.0,
+          "length": 0.35,
+          "note": 83,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 18.5,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 19.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 19.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 16.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 16.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 16.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 16.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 17.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 17.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 17.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 17.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 18.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 18.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 18.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 18.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 19.0,
+          "length": 0.15,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 19.25,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 19.5,
+          "length": 0.15,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 19.75,
+          "length": 0.15,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 20.0,
+          "length": 0.41,
+          "note": 29,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 20.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 21.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 21.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 22.0,
+          "length": 0.41,
+          "note": 29,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 22.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 23.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 23.5,
+          "length": 0.41,
+          "note": 39,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 20,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 22,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 21,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 23,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 20.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 20.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 21.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 21.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 22.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 22.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 23.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 23.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 20.0,
+          "length": 0.35,
+          "note": 77,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 20.5,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 21.0,
+          "length": 0.35,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 21.5,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 22.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 22.5,
+          "length": 0.35,
+          "note": 77,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 23.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 23.5,
+          "length": 0.35,
+          "note": 72,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 20.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 20.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 20.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 20.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 21.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 21.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 21.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 21.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 22.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 22.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 22.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 22.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 23.0,
+          "length": 0.15,
+          "note": 53,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 23.25,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 23.5,
+          "length": 0.15,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 23.75,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 24.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 24.5,
+          "length": 0.41,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 25.0,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 25.5,
+          "length": 0.41,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 26.0,
+          "length": 0.41,
+          "note": 36,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 26.5,
+          "length": 0.41,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 27.0,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 27.5,
+          "length": 0.41,
+          "note": 46,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 24,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 26,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 25,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 27,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 24.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 24.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 25.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 25.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 26.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 26.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 27.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 27.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 24.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 24.5,
+          "length": 0.35,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 25.0,
+          "length": 0.35,
+          "note": 83,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 25.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 26.0,
+          "length": 0.35,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 26.5,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 27.0,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 27.5,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 24.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 24.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 24.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 24.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 25.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 25.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 25.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 25.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 26.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 26.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 26.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 26.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 27.0,
+          "length": 0.15,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 27.25,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 27.5,
+          "length": 0.15,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 27.75,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 28.0,
+          "length": 0.41,
+          "note": 31,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 28.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 29.0,
+          "length": 0.41,
+          "note": 38,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 29.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 30.0,
+          "length": 0.41,
+          "note": 31,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 30.5,
+          "length": 0.41,
+          "note": 43,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 31.0,
+          "length": 0.41,
+          "note": 38,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 31.5,
+          "length": 0.41,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 28,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 30,
+          "length": 0.32,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 29,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 31,
+          "length": 0.23,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 28.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 28.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 29.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 29.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 30.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 30.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 31.0,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.024,
+          "end_note": null
+        },
+        {
+          "beat": 31.5,
+          "length": 0.09,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.034,
+          "end_note": null
+        },
+        {
+          "beat": 28.0,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 28.5,
+          "length": 0.35,
+          "note": 71,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 29.0,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 29.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 30.0,
+          "length": 0.35,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 30.5,
+          "length": 0.35,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 31.0,
+          "length": 0.35,
+          "note": 74,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 31.5,
+          "length": 0.35,
+          "note": 71,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 28.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 28.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 28.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 28.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 29.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 29.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 29.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 29.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 30.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 30.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 30.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 30.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 31.0,
+          "length": 0.15,
+          "note": 55,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 31.25,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 31.5,
+          "length": 0.15,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 31.75,
+          "length": 0.15,
+          "note": 62,
+          "voice": "soft",
+          "gain": 0.033,
+          "end_note": null
+        },
+        {
+          "beat": 31.0,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.075,
+          "end_note": null
+        },
+        {
+          "beat": 31.25,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.087,
+          "end_note": null
+        },
+        {
+          "beat": 31.5,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.099,
+          "end_note": null
+        },
+        {
+          "beat": 31.75,
+          "length": 0.14,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.111,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "victory",
+      "title": "胜利 · 星光加冕",
+      "bpm": 132,
+      "beats": 12,
+      "loop": false,
+      "description": "由短上行号角进入明亮大三和弦，一次播放后收尾。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.4,
+          "note": 72,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.4,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.4,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.4,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 2.5,
+          "length": 0.4,
+          "note": 83,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.4,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 3.5,
+          "length": 0.4,
+          "note": 88,
+          "voice": "pulse",
+          "gain": 0.14,
+          "end_note": null
+        },
+        {
+          "beat": 4.0,
+          "length": 0.425,
+          "note": 86,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 4.5,
+          "length": 0.425,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 5.0,
+          "length": 0.425,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 5.5,
+          "length": 0.425,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 6.0,
+          "length": 0.425,
+          "note": 83,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 6.5,
+          "length": 0.425,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.125,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 3.5,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 3.5,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 3.5,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 3.5,
+          "note": 53,
+          "voice": "triangle",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 3.5,
+          "note": 65,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 3.5,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 3.5,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.095,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 3.5,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 3.5,
+          "note": 67,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 3.5,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.048,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.3,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 2,
+          "length": 0.3,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 0.3,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 6,
+          "length": 0.3,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 8,
+          "length": 0.3,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 8.0,
+          "length": 0.4,
+          "note": 84,
+          "voice": "soft",
+          "gain": 0.09,
+          "end_note": null
+        },
+        {
+          "beat": 8.5,
+          "length": 0.4,
+          "note": 88,
+          "voice": "soft",
+          "gain": 0.09,
+          "end_note": null
+        },
+        {
+          "beat": 9.0,
+          "length": 0.4,
+          "note": 91,
+          "voice": "soft",
+          "gain": 0.09,
+          "end_note": null
+        },
+        {
+          "beat": 9.5,
+          "length": 0.4,
+          "note": 96,
+          "voice": "soft",
+          "gain": 0.09,
+          "end_note": null
+        },
+        {
+          "beat": 10,
+          "length": 1.85,
+          "note": 84,
+          "voice": "soft",
+          "gain": 0.08,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "defeat",
+      "title": "失败 · 熄灭的能量",
+      "bpm": 96,
+      "beats": 8,
+      "loop": false,
+      "description": "短下行旋律和低音落点，克制、可快速重开。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.43,
+          "note": 81,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 0.5,
+          "length": 0.43,
+          "note": 79,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 1.0,
+          "length": 0.43,
+          "note": 76,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 1.5,
+          "length": 0.43,
+          "note": 74,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 2.0,
+          "length": 0.43,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 2.5,
+          "length": 0.43,
+          "note": 71,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 3.0,
+          "length": 0.43,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.145,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 1.8,
+          "note": 45,
+          "voice": "triangle",
+          "gain": 0.17,
+          "end_note": null
+        },
+        {
+          "beat": 2,
+          "length": 1.8,
+          "note": 41,
+          "voice": "triangle",
+          "gain": 0.17,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 1.8,
+          "note": 40,
+          "voice": "triangle",
+          "gain": 0.17,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 3.6,
+          "note": 57,
+          "voice": "soft",
+          "gain": 0.075,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 3.6,
+          "note": 60,
+          "voice": "soft",
+          "gain": 0.065,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 3.6,
+          "note": 64,
+          "voice": "soft",
+          "gain": 0.045,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.32,
+          "note": 37,
+          "voice": "kick",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 4,
+          "length": 0.45,
+          "note": 32,
+          "voice": "kick",
+          "gain": 0.12,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "charge",
+      "title": "聚气",
+      "bpm": 60,
+      "beats": 0.62,
+      "loop": false,
+      "description": "逐级上行的能量音，末端扫频收束。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.072,
+          "note": 57,
+          "voice": "pulse",
+          "gain": 0.19,
+          "end_note": null
+        },
+        {
+          "beat": 0.1,
+          "length": 0.072,
+          "note": 64,
+          "voice": "pulse",
+          "gain": 0.19,
+          "end_note": null
+        },
+        {
+          "beat": 0.2,
+          "length": 0.072,
+          "note": 69,
+          "voice": "pulse",
+          "gain": 0.19,
+          "end_note": null
+        },
+        {
+          "beat": 0.3,
+          "length": 0.072,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.19,
+          "end_note": null
+        },
+        {
+          "beat": 0.4,
+          "length": 0.072,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.19,
+          "end_note": null
+        },
+        {
+          "beat": 0.34,
+          "length": 0.25,
+          "note": 69,
+          "voice": "soft",
+          "gain": 0.12,
+          "end_note": 81
+        }
+      ]
+    },
+    {
+      "id": "wave",
+      "title": "发波",
+      "bpm": 60,
+      "beats": 0.48,
+      "loop": false,
+      "description": "从高处俯冲的激光扫频，带短噪声尾迹。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.39,
+          "note": 94,
+          "voice": "pulse",
+          "gain": 0.24,
+          "end_note": 40
+        },
+        {
+          "beat": 0.02,
+          "length": 0.34,
+          "note": 0,
+          "voice": "noise",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.1,
+          "note": 38,
+          "voice": "kick",
+          "gain": 0.18,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "absorb",
+      "title": "吸收",
+      "bpm": 60,
+      "beats": 0.65,
+      "loop": false,
+      "description": "先下潜再吸入的双向扫频，与发波区分。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.32,
+          "note": 81,
+          "voice": "triangle",
+          "gain": 0.27,
+          "end_note": 45
+        },
+        {
+          "beat": 0.27,
+          "length": 0.3,
+          "note": 45,
+          "voice": "soft",
+          "gain": 0.2,
+          "end_note": 88
+        },
+        {
+          "beat": 0.12,
+          "length": 0.0525,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.065,
+          "end_note": null
+        },
+        {
+          "beat": 0.195,
+          "length": 0.0525,
+          "note": 72,
+          "voice": "pulse",
+          "gain": 0.065,
+          "end_note": null
+        },
+        {
+          "beat": 0.27,
+          "length": 0.0525,
+          "note": 69,
+          "voice": "pulse",
+          "gain": 0.065,
+          "end_note": null
+        },
+        {
+          "beat": 0.345,
+          "length": 0.0525,
+          "note": 64,
+          "voice": "pulse",
+          "gain": 0.065,
+          "end_note": null
+        },
+        {
+          "beat": 0.42,
+          "length": 0.0525,
+          "note": 69,
+          "voice": "pulse",
+          "gain": 0.065,
+          "end_note": null
+        },
+        {
+          "beat": 0.495,
+          "length": 0.0525,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.065,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "guard",
+      "title": "防御",
+      "bpm": 60,
+      "beats": 0.45,
+      "loop": false,
+      "description": "清亮的金属护盾和低音锁定。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.3,
+          "note": 76,
+          "voice": "soft",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.3,
+          "note": 83,
+          "voice": "soft",
+          "gain": 0.12,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.3,
+          "note": 91,
+          "voice": "soft",
+          "gain": 0.07,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.18,
+          "note": 48,
+          "voice": "triangle",
+          "gain": 0.21,
+          "end_note": null
+        },
+        {
+          "beat": 0.015,
+          "length": 0.045,
+          "note": 0,
+          "voice": "hat",
+          "gain": 0.09,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "hurt",
+      "title": "受击",
+      "bpm": 60,
+      "beats": 0.3,
+      "loop": false,
+      "description": "短促的低频冲击与失真噪声。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.24,
+          "note": 0,
+          "voice": "noise",
+          "gain": 0.23,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.22,
+          "note": 51,
+          "voice": "pulse",
+          "gain": 0.18,
+          "end_note": 30
+        }
+      ]
+    },
+    {
+      "id": "clash",
+      "title": "对波碰撞",
+      "bpm": 60,
+      "beats": 0.46,
+      "loop": false,
+      "description": "集中爆破后迅速衰减，不拖尾遮盖下一招。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.3,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.23,
+          "end_note": null
+        },
+        {
+          "beat": 0,
+          "length": 0.34,
+          "note": 44,
+          "voice": "kick",
+          "gain": 0.24,
+          "end_note": null
+        },
+        {
+          "beat": 0.02,
+          "length": 0.25,
+          "note": 86,
+          "voice": "pulse",
+          "gain": 0.1,
+          "end_note": 59
+        }
+      ]
+    },
+    {
+      "id": "combo",
+      "title": "三连击",
+      "bpm": 60,
+      "beats": 0.64,
+      "loop": false,
+      "description": "三次递进冲击，最后一击更重。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.2,
+          "note": 45,
+          "voice": "kick",
+          "gain": 0.19,
+          "end_note": null
+        },
+        {
+          "beat": 0.0,
+          "length": 0.13,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.13,
+          "end_note": null
+        },
+        {
+          "beat": 0.0,
+          "length": 0.12,
+          "note": 81,
+          "voice": "pulse",
+          "gain": 0.12,
+          "end_note": 60
+        },
+        {
+          "beat": 0.18,
+          "length": 0.2,
+          "note": 42,
+          "voice": "kick",
+          "gain": 0.23,
+          "end_note": null
+        },
+        {
+          "beat": 0.18,
+          "length": 0.13,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.155,
+          "end_note": null
+        },
+        {
+          "beat": 0.18,
+          "length": 0.12,
+          "note": 84,
+          "voice": "pulse",
+          "gain": 0.12,
+          "end_note": 60
+        },
+        {
+          "beat": 0.36,
+          "length": 0.2,
+          "note": 39,
+          "voice": "kick",
+          "gain": 0.27,
+          "end_note": null
+        },
+        {
+          "beat": 0.36,
+          "length": 0.13,
+          "note": 0,
+          "voice": "snare",
+          "gain": 0.18,
+          "end_note": null
+        },
+        {
+          "beat": 0.36,
+          "length": 0.12,
+          "note": 87,
+          "voice": "pulse",
+          "gain": 0.12,
+          "end_note": 60
+        }
+      ]
+    },
+    {
+      "id": "guard_break",
+      "title": "破盾",
+      "bpm": 60,
+      "beats": 0.58,
+      "loop": false,
+      "description": "玻璃感的碎裂音阶，下坠收尾。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.0455,
+          "note": 95,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.07,
+          "length": 0.0455,
+          "note": 89,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.14,
+          "length": 0.0455,
+          "note": 83,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.21,
+          "length": 0.0455,
+          "note": 77,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.28,
+          "length": 0.0455,
+          "note": 71,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.35,
+          "length": 0.0455,
+          "note": 65,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.02,
+          "length": 0.37,
+          "note": 0,
+          "voice": "noise",
+          "gain": 0.15,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "select",
+      "title": "切换技能",
+      "bpm": 60,
+      "beats": 0.1,
+      "loop": false,
+      "description": "轻微短音，连续滑动时不刺耳。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.075,
+          "note": 81,
+          "voice": "soft",
+          "gain": 0.17,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "title": "确认释放",
+      "bpm": 60,
+      "beats": 0.2,
+      "loop": false,
+      "description": "短上行双音。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.06,
+          "note": 76,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        },
+        {
+          "beat": 0.075,
+          "length": 0.06,
+          "note": 88,
+          "voice": "pulse",
+          "gain": 0.15,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "connected",
+      "title": "配对成功",
+      "bpm": 60,
+      "beats": 0.48,
+      "loop": false,
+      "description": "上行三音提示连接完成。",
+      "events": [
+        {
+          "beat": 0.0,
+          "length": 0.1105,
+          "note": 72,
+          "voice": "soft",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 0.13,
+          "length": 0.1105,
+          "note": 79,
+          "voice": "soft",
+          "gain": 0.2,
+          "end_note": null
+        },
+        {
+          "beat": 0.26,
+          "length": 0.1105,
+          "note": 84,
+          "voice": "soft",
+          "gain": 0.2,
+          "end_note": null
+        }
+      ]
+    },
+    {
+      "id": "countdown",
+      "title": "倒计时",
+      "bpm": 60,
+      "beats": 0.13,
+      "loop": false,
+      "description": "单次计时音，预留给最后三秒。",
+      "events": [
+        {
+          "beat": 0,
+          "length": 0.1,
+          "note": 79,
+          "voice": "pulse",
+          "gain": 0.13,
+          "end_note": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
@@ -171,70 +172,36 @@ h2_lua_resource(
     symbol = "qi_duel_script",
 )
 
-h2_lua_resource(
-    name = "qi_duel_sounds",
-    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/sounds.lua",
-    symbol = "qi_duel_sounds",
-)
-
-h2_lua_resource(
-    name = "qi_duel_sounds_pcm",
-    src = "//projects/example/apps/lua-qi-duel:assets/generated/sounds/sounds_pcm.lua",
-    symbol = "qi_duel_sounds_pcm",
-)
-
 cc_library(
     name = "lua_qi_duel",
+    local_defines = select({":vectors": ["H2_QI_DUEL_DESKTOP_VECTORS"], "//conditions:default": []}) + select({":vector_only": ["H2_QI_DUEL_VECTOR_ONLY"], "//conditions:default": []}),
     srcs = [
-        "src/generated/qi_duel_assets.c",
         "src/h2_lua_qi_duel.c",
         "src/qi_duel_link.c",
         "src/qi_duel_link.h",
     ],
     hdrs = [
         "include/h2_lua_qi_duel.h",
-        "src/generated/qi_duel_assets.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = [
         "include",
-        "src/generated",
     ],
     tags = ["h2-ci-native-package"],
     deps = [
         ":qi_duel_script",
-        ":qi_duel_sounds",
-        ":qi_duel_sounds_pcm",
+        ":qi_duel_retro_audio",
+        ":qi_duel_retro_score",
         ":qi_duel_rules",
         ":qi_duel_link_protocol",
-        ":countdown_rgba",
-        ":impact_labels_rgba",
-        ":wall_atlas",
-        ":arena_atlas",
-        ":opponent_rgba",
-        ":left_rgba",
-        ":right_rgba",
-        ":hud_rgba",
-        ":carousel_rgba",
-        ":charge_rgba",
-        ":skill_styles",
-        ":skill_colors",
-        ":action_opponent",
-        ":action_hands",
-        ":beam_clash_h106",
-        ":beam_clash_amoled",
-        ":beam_clash_fade_h106",
-        ":beam_clash_fade_amoled",
-        ":result_words",
-        ":result_streaks",
         "//libs/lua",
         "//libs/runtime",
         "//projects/example/apps/lua-bloomspeaker/app:controller",
         "//projects/example/apps/lua-bloomspeaker/app:engine",
         "//libs/bleikcp",
         "//tools/bazel:vendor_third_party_lua",
-    ],
+    ] + select({":vector_only": [], "//conditions:default": [":countdown_rgba", ":impact_labels_rgba", ":wall_atlas", ":arena_atlas", ":opponent_rgba", ":left_rgba", ":right_rgba", ":hud_rgba", ":carousel_rgba", ":charge_rgba", ":skill_styles", ":skill_colors", ":action_opponent", ":action_hands", ":beam_clash_h106", ":beam_clash_amoled", ":beam_clash_fade_h106", ":beam_clash_fade_amoled", ":result_words", ":result_streaks"]}) + select({":vectors": [":vector_components", ":qi_duel_component_paths", ":qi_duel_component_renderer", ":vector_right", ":vector_left", ":qi_duel_procedural", ":vector_opponent", ":vector_charge", ":vector_wave", ":vector_absorb", ":vector_guard"], "//conditions:default": []}),
 )
 
 cc_test(
@@ -258,6 +225,7 @@ h2_lua_resource(
 
 cc_test(
     name = "lua_qi_duel_test",
+    local_defines = select({":vectors": ["H2_QI_DUEL_DESKTOP_VECTORS"], "//conditions:default": []}),
     srcs = ["tests/test_h2_lua_qi_duel.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -276,19 +244,153 @@ cc_test(
     ],
 )
 
-h2_lua_resource(
-    name = "qi_duel_sounds_test_script",
-    src = "tests/sounds_test.lua",
-    symbol = "qi_duel_sounds_test",
+selects.config_setting_group(
+    name = "vectors",
+    match_any = [":desktop_vectors", "//libs/lua:software_vectors"],
 )
 
+config_setting(
+    name = "desktop_vectors",
+    define_values = {"h2_qi_duel_desktop_vectors": "true"},
+    constraint_values = ["@platforms//os:macos"],
+)
+
+genrule(
+    name = "vector_opponent_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/opponent-full.svg"],
+    outs = ["vector-opponent.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(
+    name = "vector_opponent",
+    src = ":vector_opponent_commands",
+    symbol = "qi_duel_vector_opponent",
+)
+
+genrule(
+    name = "vector_charge_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/skill-charge.svg"],
+    outs = ["vector-charge.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(
+    name = "vector_charge",
+    src = ":vector_charge_commands",
+    symbol = "qi_duel_vector_charge",
+)
+
+genrule(
+    name = "vector_wave_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/skill-wave.svg"],
+    outs = ["vector-wave.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(
+    name = "vector_wave",
+    src = ":vector_wave_commands",
+    symbol = "qi_duel_vector_wave",
+)
+
+genrule(
+    name = "vector_absorb_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/skill-absorb.svg"],
+    outs = ["vector-absorb.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(
+    name = "vector_absorb",
+    src = ":vector_absorb_commands",
+    symbol = "qi_duel_vector_absorb",
+)
+
+genrule(
+    name = "vector_guard_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/skill-guard.svg"],
+    outs = ["vector-guard.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(
+    name = "vector_guard",
+    src = ":vector_guard_commands",
+    symbol = "qi_duel_vector_guard",
+)
+
+h2_lua_resource(
+    name = "qi_duel_procedural",
+    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/procedural.lua",
+    symbol = "qi_duel_procedural",
+)
+h2_lua_resource(
+    name = "qi_duel_retro_audio",
+    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/retro_audio.lua",
+    symbol = "qi_duel_retro_audio",
+)
+h2_lua_resource(
+    name = "qi_duel_retro_score",
+    src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/retro_score.lua",
+    symbol = "qi_duel_retro_score",
+)
+
+h2_lua_resource(
+    name = "qi_duel_retro_audio_test_script", src = "tests/retro_audio_test.lua", symbol = "qi_duel_retro_audio_test",
+)
 cc_test(
-    name = "qi_duel_sounds_test",
-    srcs = ["tests/test_sounds.c"],
-    deps = [
-        ":qi_duel_sounds",
-        ":qi_duel_sounds_pcm",
-        ":qi_duel_sounds_test_script",
-        "//libs/lua:lua_core",
+    name = "qi_duel_retro_audio_test", srcs = ["tests/test_retro_audio.c"],
+    deps = [":qi_duel_retro_audio", ":qi_duel_retro_score", ":qi_duel_retro_audio_test_script", "//libs/lua:lua_core"],
+)
+
+genrule(
+    name = "vector_left_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/hand-left-review-v3.svg"],
+    outs = ["vector-left.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(name = "vector_left", src = ":vector_left_commands", symbol = "qi_duel_vector_left")
+
+genrule(
+    name = "vector_right_commands",
+    srcs = ["//projects/example/apps/lua-qi-duel:assets/vector/hand-right-review-v1.svg"],
+    outs = ["vector-right.h2vg"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:compile_vector_art"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:compile_vector_art) --source $(SRCS) --output $@",
+)
+qi_duel_art(name = "vector_right", src = ":vector_right_commands", symbol = "qi_duel_vector_right")
+
+config_setting(name = "screen_amoled", define_values = {"h2_qi_duel_screen": "amoled"})
+config_setting(name = "screen_h106", define_values = {"h2_qi_duel_screen": "h106"})
+
+genrule(
+    name = "packed_vector_components",
+    srcs = [
+        "//projects/example/apps/lua-qi-duel:assets/vector/components/components.h2vp",
+        "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/component_paths.lua",
     ],
+    outs = ["components-packed.h2vp", "component_paths_packed.lua"],
+    tools = ["//projects/example/apps/lua-qi-duel/tools:pack_vector_components"],
+    cmd = "$(location //projects/example/apps/lua-qi-duel/tools:pack_vector_components) " +
+          "--bank $(location //projects/example/apps/lua-qi-duel:assets/vector/components/components.h2vp) " +
+          "--directory $(location //projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/component_paths.lua) " +
+          "--output-bank $(location components-packed.h2vp) " +
+          "--output-directory $(location component_paths_packed.lua) --screen " + select({
+              ":screen_amoled": "amoled",
+              ":screen_h106": "h106",
+              "//conditions:default": "all",
+          }),
+)
+
+qi_duel_art(name = "vector_components", src = ":components-packed.h2vp", symbol = "qi_duel_vector_components")
+h2_lua_resource(name = "qi_duel_component_paths", src = ":component_paths_packed.lua", symbol = "qi_duel_component_paths")
+h2_lua_resource(name = "qi_duel_component_renderer", src = "//projects/example/apps/lua-qi-duel:data/skills/qi-duel/scripts/component_renderer.lua", symbol = "qi_duel_component_renderer")
+
+config_setting(name = "desktop_vector_only", define_values = {"h2_qi_duel_desktop_vectors": "true", "h2_qi_duel_vector_only": "true"}, constraint_values = ["@platforms//os:macos"])
+
+selects.config_setting_group(
+    name = "vector_only",
+    match_any = [":desktop_vector_only", "//libs/lua:software_vectors"],
 )

@@ -1,0 +1,28 @@
+{
+  "status": "awaiting-user-component-review",
+  "component": "left hand standing/breathing only",
+  "candidate": "assets/vector/hand-left-review-v3.svg",
+  "frame_step_ms": 33,
+  "frame_count_per_sequence": 61,
+  "resolutions": [
+    [
+      368,
+      448
+    ],
+    [
+      240,
+      240
+    ]
+  ],
+  "renderer": "actual native Lua RGB565 framebuffer",
+  "default_component": "original raster; candidate requires explicit --draw-component=hand-left",
+  "other_components": "unchanged; prior bulk procedural replacement rejected by user",
+  "audio": "retro scheme retained; all 16 complete waveforms match approved review WAV fingerprints",
+  "tests": "native full scene suite and component isolation passed; other component acceptance is not implied",
+  "unique_frames": {
+    "amoled-reference": 61,
+    "amoled-hand-left": 61,
+    "h106-reference": 61,
+    "h106-hand-left": 61
+  }
+}

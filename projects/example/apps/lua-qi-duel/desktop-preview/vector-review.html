@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>气决 · 矢量重绘对比</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080c14;color:#e6edf8;font:14px system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:32px}h1{font-size:25px;margin:0 0 10px}h2{font-size:18px}p{color:#9cacbf;line-height:1.7}header{border-bottom:1px solid #263247;padding-bottom:20px}.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:18px 0}button,select{background:#192338;border:1px solid #374a67;color:#ecf3ff;padding:8px 10px;border-radius:7px}button:disabled{opacity:.4}input{width:150px}#status{color:#f3bf66}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}.card{border:1px solid #24324b;border-radius:12px;background:#0e1522;padding:18px}.card h2{margin:0 0 12px}.views{display:grid;grid-template-columns:1fr 1fr;gap:12px}.views>div{min-width:0}canvas{display:block;background:#000;width:160px;height:160px;max-width:100%;object-fit:contain;border-radius:8px}.zoom canvas{width:100%;height:auto;aspect-ratio:1}label{color:#b8c7da;display:block;margin-bottom:7px}.metrics{font:12px ui-monospace,monospace;color:#a3b5d0;line-height:1.8;margin-top:10px}.small{font-size:12px}#result{white-space:pre-wrap}.character{margin-top:28px}.character canvas{width:306px;height:322px}.character .views{grid-template-columns:repeat(2,minmax(0,306px));justify-content:center}.character .metrics{text-align:center}a{color:#86c6ff}@media(max-width:750px){.grid{grid-template-columns:1fr}main{padding:18px}}
+</style>
+<main>
+<header><h1>气决 · 人物与技能矢量重绘</h1><p>人物与技能矢量样稿，尚未通过画面或真机验收。左侧为旧资源，右侧为 SVG 渲染。矢量仅含几何、渐变和裁剪，没有嵌入图片。</p><div id="status">读取参考资源…</div></header>
+<div class="controls">
+<button id="play">播放样式序列</button>
+<label>焦点 <input id="focus" type="range" min="0" max="33" value="33" step="1"></label>
+<select id="direction" aria-label="渐隐方向"><option value="0">完整</option><option value="1">左侧渐隐</option><option value="2">右侧渐隐</option></select>
+<select id="mode" aria-label="技能样式"><option value="source">原始美术 · 160px</option><option value="style">焦点样式 · 图标 52–88px</option><option value="tint">染色样式 · 图标 52–88px</option><option value="sheen">确认闪光 · 21 帧</option></select>
+<select id="view" aria-label="对比方式"><option value="pair">并排</option><option value="overlay">右侧叠加 · 各 50%</option><option value="diff">右侧差异 · 放大 3 倍</option></select>
+<select id="zoom" aria-label="显示比例"><option value="1">1 CSS 像素 / 渲染像素</option><option value="fit">放大查看</option></select>
+<button id="verify" disabled>检查并保存 900 张样式帧</button><button id="refresh">重新载入稿件</button>
+</div>
+<div class="grid" id="grid"></div>
+<section class="card character"><h2>对手 · 原姿态与装甲分块</h2><div class="controls"><label>人物绘制高度 <select id="character-size"><option value="156">156px · desktop 待机</option><option value="81">81px · 240px 屏缩放参考</option><option value="321">321px · 放大检查</option></select></label></div><div class="views"><div><label>旧贴图</label><canvas id="character-old" width="306" height="322"></canvas></div><div><label>矢量重绘 · 未验收</label><canvas id="character-new" width="306" height="322"></canvas></div></div><div class="metrics" id="character-metrics"></div></section>
+<p class="small">900 张是焦点、方向渐隐、染色和确认闪光的资源样式对照，不是整局游戏的时间帧。差异数值用于定位偏差，不代表通过验收。透明覆盖交并比不能衡量轮廓细节是否一致。浏览器渲染速度不代表 ESP32 性能；手部、动作、特写和真机验证仍待完成。</p>
+<pre id="result"></pre>
+</main>
+<script type="module" src="vector-review.js"></script>
+</html>

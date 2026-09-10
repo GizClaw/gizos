@@ -1,0 +1,7 @@
+{
+  "status": "implementation-authorized",
+  "user_instruction": "按这个音频方案和所有页面显示使用lua绘制的方案实现一版，然后启动desktop版",
+  "additional_instruction": "改完之后106窗口和amoled窗口的desktop都启动我看下效果",
+  "audio_score": "review/retro-audio-v1/score.lua",
+  "scope": "desktop implementation and dual-resolution preview; final visual acceptance and device validation remain pending"
+}

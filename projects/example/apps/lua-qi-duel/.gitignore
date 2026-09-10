@@ -1,0 +1,13 @@
+# Reproducible native capture and audition outputs; reports/approved paths stay visible.
+validation/**/*.png
+validation/**/*.ppm
+validation/**/*.log
+validation/**/capture-manifest.json
+review/**/*.wav
+**/__pycache__/
+
+# Superseded comparison runs; final reports remain source-visible.
+validation/components-v1-*/
+validation/components-v2-check/
+validation/hand-left-v2/
+validation/procedural-desktop/

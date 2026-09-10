@@ -1,0 +1,137 @@
+{
+  "policy": "Autonomous component review authorized by user; RGB mean absolute error below 30/255 within the component region at matching resolution and time; correct deviations before enabling.",
+  "bulk_replacement_status": "rejected by user: visual differences too large",
+  "active_component": null,
+  "active_candidate": null,
+  "status": "accepted-and-desktop-running",
+  "remaining": [],
+  "baseline": "original desktop geometry, layout, material and animation timing; no redesign",
+  "accepted_audio": "retro-audio-v1 complete score, streaming synthesis verified",
+  "sample_approval_is_not_frame_acceptance": true,
+  "accepted_components": {
+    "hand-left": {
+      "candidate": "assets/vector/hand-left-review-v3.svg",
+      "sha256": "df2cc12a984e894fde7ae5c1d94a0df1205b37dea0f4d1a4fd5511d7c3dc019b",
+      "user_confirmation": "可以，继续替换其他组件",
+      "scope": "standing hand and breathing animation; action poses remain original"
+    },
+    "hand-right": {
+      "candidate": "assets/vector/hand-right-review-v1.svg",
+      "sha256": "320ce35b6b0d9838943a59cf4f8cd50a2ccf33f7040f920e3c90706e6ab700e9",
+      "user_confirmation": "验收通过，后续的组件你自己review，能保持平均30/255以下的误差就可以",
+      "scope": "standing hand and breathing animation"
+    },
+    "actions": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 19.2115,
+      "pose_exception": true,
+      "vector_pack_sha256": "de618bc9a4083393ea997acfe3456bbfbbeda37d6b42c9ae3d9a97c6c5571449",
+      "pose_exception_component": "absorb-player",
+      "correction_report": "validation/components-absorb-correction/report.json"
+    },
+    "arena": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 16.3847,
+      "pose_exception": false,
+      "vector_pack_sha256": null
+    },
+    "carousel": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 20.4105,
+      "pose_exception": false,
+      "vector_pack_sha256": "eefbaceeab2d34fc641b073aa3f336ec8a5f38d96cb1e4276c45000867c923f1"
+    },
+    "clash": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 13.1772,
+      "pose_exception": false,
+      "vector_pack_sha256": "eefbaceeab2d34fc641b073aa3f336ec8a5f38d96cb1e4276c45000867c923f1"
+    },
+    "countdown": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 14.1259,
+      "pose_exception": false,
+      "vector_pack_sha256": "eefbaceeab2d34fc641b073aa3f336ec8a5f38d96cb1e4276c45000867c923f1"
+    },
+    "hud": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 9.4977,
+      "pose_exception": false,
+      "vector_pack_sha256": "eefbaceeab2d34fc641b073aa3f336ec8a5f38d96cb1e4276c45000867c923f1"
+    },
+    "impact": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 15.5866,
+      "pose_exception": false,
+      "vector_pack_sha256": "eefbaceeab2d34fc641b073aa3f336ec8a5f38d96cb1e4276c45000867c923f1"
+    },
+    "settlement": {
+      "acceptance": "automatic under user-authorized threshold",
+      "maximum_frame_rgb_mae": 7.3879,
+      "pose_exception": false,
+      "vector_pack_sha256": "eefbaceeab2d34fc641b073aa3f336ec8a5f38d96cb1e4276c45000867c923f1"
+    }
+  },
+  "remaining_component_policy_confirmed": "其他组件都按照这个方式来替换",
+  "automatic_acceptance": {
+    "threshold": 30,
+    "metric": "RGB mean absolute error /255",
+    "region": "component support union, excluding shared empty background",
+    "resolutions": [
+      [
+        368,
+        448
+      ],
+      [
+        240,
+        240
+      ]
+    ],
+    "maximum_per_frame_mean": 30,
+    "frame_pairs": 2998,
+    "maximum_observed": 20.4105,
+    "reports": [
+      "validation/components-final-keyframes/report.json",
+      "validation/components-final-animation/report.json"
+    ],
+    "supplemental_report": "validation/components-optimized-animation/report.json",
+    "supplemental_frame_pairs": 244,
+    "correction_report": "validation/components-absorb-correction/report.json",
+    "correction_frame_pairs": 244
+  },
+  "user_directed_changes": [
+    {
+      "component": "absorb-player",
+      "instruction": "吸收的时候双臂上下平行不弯手腕，不是聚气的时候",
+      "implementation": "original charge poses restored; all three active absorb poses use straight wrists and horizontal parallel arms, one above the other",
+      "old_pose_mae_exempt": true
+    },
+    {
+      "component": "skill-icons",
+      "instruction": "技能图标还是太大了，挡住了聚气环",
+      "implementation": "all four icon scales multiplied by 0.75 on both screens; orbit centers and hit targets preserved"
+    }
+  ],
+  "runtime": {
+    "report": "validation/components-final-runtime/report.json",
+    "cases": 20,
+    "passed": true,
+    "fps_range": [
+      29.2,
+      30.2
+    ],
+    "tests": [
+      "lua_test",
+      "vector_cg_test",
+      "lua_qi_duel_test",
+      "qi_duel_retro_audio_test",
+      "qi_duel_rules_test"
+    ],
+    "desktop_only": true
+  },
+  "cleanup": {
+    "report": "validation/cleanup/report.json",
+    "visual_report": "validation/cleanup/visual-regression.json",
+    "vm_limit_bytes": 14680064
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "image_before_bytes": 5514624,
+  "image_after_bytes": 3233040,
+  "package_before_bytes": 4680113,
+  "package_after_bytes": 2398768,
+  "package_reduction_percent": 48.74551105924152,
+  "image_sha256": "4a586ad3ef8d8928c38d426a9d9e46b2dbeaf0cd081220306d76f9462f7e1a94",
+  "package_sha256": "79ed835015a28ed5e6fd4ddf23a79559449d47e8df60d6c814c87943bdcf2537",
+  "download_partition_bytes": 2097152,
+  "download_capacity_gate": "FAIL",
+  "screen": "amoled",
+  "h106_only_frames_removed": 16,
+  "component_bank_before_bytes": 3272053,
+  "component_bank_after_bytes": 990518,
+  "visual_validation": {
+    "frames": 170,
+    "backends": [
+      "CoreGraphics",
+      "software"
+    ],
+    "pixel_error": 0
+  },
+  "installed": false,
+  "partition_changed": false,
+  "sd_written": false,
+  "tests": {
+    "vector_sw_test": "PASS",
+    "vector_cg_test": "PASS",
+    "pack_vector_components_test": "PASS",
+    "lua_qi_duel_test": "PASS (204.5 seconds; assertions enabled)",
+    "asan_ubsan": "PASS",
+    "lua_qi_duel_test_optimized": "PASS (95.6 seconds; assertions enabled)"
+  },
+  "review": {
+    "scope": [
+      "lossless packer and screen filtering",
+      "H2VG v2 shared decoder and CG/software consumers",
+      "Bazel resource generation and tests",
+      "AMOLED documentation and artifacts"
+    ],
+    "fixed_findings": [
+      "Bazel test module search path",
+      "Bound source decompression and reject trailing zlib data"
+    ],
+    "final_pass": "No new negative findings in changed code; download capacity and hardware validation remain explicitly unresolved",
+    "unrelated_scope": "No changes to board partitions, SD integration, codecs, radio features or approved artwork"
+  },
+  "final_packer_output_matches_firmware": true,
+  "component_bank_sha256": "e43b5b09380b472e844109af151da828eafc9c454751f2ecbcc4f4cb1657a036"
+}

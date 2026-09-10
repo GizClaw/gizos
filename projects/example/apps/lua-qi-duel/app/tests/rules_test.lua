@@ -55,16 +55,24 @@ round=Rules.round(8,0)
 assert(Rules.lock(round,8,1,"guard",300) and Rules.lock(round,8,2,"charge",500))
 local snapshot=Rules.new()
 assert(Rules.finish(round,snapshot,500)==nil) -- both locked: still wait
-assert(Rules.finish(round,snapshot,2999)==nil and not round.done)
+assert(Rules.finish(round,snapshot,2399)==nil and not round.done)
 assert(snapshot[2].qi==0 and snapshot[1].hp==5)
-assert(Rules.finish(round,snapshot,3000).players[2].qi==1)
-assert(Rules.finish(round,snapshot,3001)==nil) -- exactly one settlement
+assert(Rules.finish(round,snapshot,2400).players[2].qi==1)
+assert(Rules.finish(round,snapshot,2401)==nil) -- exactly one settlement
 round=Rules.round(9,0)
-assert(Rules.finish(round,Rules.new(),2999,{"wave","charge"})==nil)
-local automatic=Rules.finish(round,Rules.new(),3000,{"wave","charge"})
+assert(Rules.finish(round,Rules.new(),2399,{"wave","charge"})==nil)
+local automatic=Rules.finish(round,Rules.new(),2400,{"wave","charge"})
 assert(automatic.actions[1]=="invalid" and automatic.actions[2]=="charge")
 round=Rules.round(10,0)
 assert(Rules.lock(round,10,1,"guard",100))
-automatic=Rules.finish(round,state(0,1),3000,{"charge","wave"})
+automatic=Rules.finish(round,state(0,1),2400,{"charge","wave"})
 assert(automatic.actions[1]=="guard" and automatic.actions[2]=="wave" and automatic.players[1].hp==5)
+for _,case in ipairs({{1,1000},{7,1000},{8,800},{14,800},{15,600},{21,600},{22,600},{100,600}}) do
+    local n,step=case[1],case[2]
+    assert(Rules.countdown_step_ms(n)==step)
+    local r=Rules.round(n,100)
+    assert(r.deadline==100+3*step)
+    assert(Rules.finish(r,Rules.new(),r.deadline-1)==nil)
+    assert(Rules.finish(r,Rules.new(),r.deadline))
+end
 return "ok"

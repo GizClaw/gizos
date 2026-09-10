@@ -1,0 +1,49 @@
+{
+  "board": "amoled",
+  "device_uid": "30eda0ae0bf2",
+  "port": "/dev/tty.usbmodem4101",
+  "version": "0.1.0-dev",
+  "image_bytes": 5514624,
+  "image_sha256": "3c93b41c28f42bc9ab2a8e578f198b829a775855dbc5cf40a270e62294ee18b8",
+  "package_bytes": 4680113,
+  "package_sha256": "f6a7b205044e6b1e21ac42c0f923080e0191fe9d5de279b7b8e8fac0edfd69a6",
+  "package_members": [
+    "manifest",
+    "checksum",
+    "app/esp/app.bin"
+  ],
+  "app_partition_bytes": 8388608,
+  "app_free_bytes": 2873984,
+  "download_partition_bytes": 2097152,
+  "download_capacity_gate": "FAIL",
+  "installed": false,
+  "partition_changed": false,
+  "sd_written": false,
+  "hardware_fps": null,
+  "hardware_visual_acceptance": null,
+  "build": "PASS",
+  "stage": "awaiting_storage_direction",
+  "host_tests": {
+    "configuration": "-c opt --copt=-UNDEBUG --define=h2_qi_duel_software_vectors=true",
+    "passed": [
+      "vector_sw_test",
+      "qi_duel_rules_test",
+      "qi_duel_retro_audio_test",
+      "amoled:task_policy_test"
+    ],
+    "initial_attempt": "-c opt alone disables assert; vector_sw_test failed to compile with unused assert-only variables; rerun with assertions enabled passed"
+  },
+  "review": {
+    "scope": "AMOLED launcher, vector-only build selection, package, docs",
+    "findings_fixed": [
+      "Old launcher started rehearsal rather than normal pairing/battle",
+      "Missing firmware management advertising handoff",
+      "Firmware target could silently select raster resources without a define"
+    ],
+    "remaining_blockers": [
+      "Update package exceeds download partition",
+      "Device performance and stability not measured"
+    ],
+    "fresh_review": "No new code findings; installation remains blocked on storage decision"
+  }
+}

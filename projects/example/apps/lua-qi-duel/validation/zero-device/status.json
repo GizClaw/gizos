@@ -1,0 +1,53 @@
+{
+  "board": "zero_esp_v3_0",
+  "port": "/dev/tty.usbserial-510",
+  "stage": "black_screen_waiting_for_power_on_uart_capture",
+  "h2loader_probes": [
+    {
+      "result": "timeout",
+      "code": -6
+    },
+    {
+      "result": "timeout",
+      "code": -6
+    }
+  ],
+  "rom_probe": "No serial data received",
+  "loader_factory_bytes": 1996464,
+  "loader_game_partition_tables_match": true,
+  "flash_written": true,
+  "hardware_fps": null,
+  "hardware_memory": null,
+  "rom_probe_after_user_ready": "No serial data received",
+  "passive_uart_115200_bytes_in_5_seconds": 0,
+  "game_installed": false,
+  "loader_flash_sha256": "138247543eb54f08f43bb70a034d3a4c34107c7e340731e70f389ea31be92e3c",
+  "loader_flash_verification": "Hash of data verified",
+  "rom_identity": {
+    "chip": "ESP32-S3 rev0.2",
+    "mac": "1c:db:d4:49:af:c0",
+    "flash_mib": 16,
+    "embedded_psram_mib": 8
+  },
+  "post_flash_status": {
+    "460800": "timeout (-6)",
+    "230400": "timeout (-6)"
+  },
+  "post_flash_uart": {
+    "passive_230400_bytes": 0,
+    "reset_capture_115200_bytes": 0
+  },
+  "latest_rom_probe": "No serial data received; watchdog reset was not executed because connection failed",
+  "updated_at": "2026-09-10T09:17:47.404283+00:00",
+  "user_report": "Long-press power: display remains blank",
+  "post_power_on_loader_status": "timeout (-6) at 230400",
+  "post_power_on_rom_probe": "No serial data received",
+  "manual_power_capture": {
+    "duration_seconds": 120,
+    "baud": 230400,
+    "bytes": 0,
+    "user_pressed_power": true,
+    "battery_connected": true
+  },
+  "loader_entry_binary_check": "PSRAM entry-task creation present in linked ELF"
+}

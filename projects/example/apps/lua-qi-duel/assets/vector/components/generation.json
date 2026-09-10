@@ -1,0 +1,936 @@
+{
+  "method": "palette-region contour geometry with RDP simplification; no embedded raster data",
+  "palette": 32,
+  "simplification_px": 0.45,
+  "pack_bytes": 3272053,
+  "components": {
+    "hud-states": {
+      "source_sha256": "8b88ccbd950de0058b071d5837856ddb8bc541cbab7e159f09511b4f5f416d69",
+      "source_bytes": 147563,
+      "frames": [
+        {
+          "vertices": 4820,
+          "colors": 31,
+          "bytes": 23460
+        },
+        {
+          "vertices": 5002,
+          "colors": 31,
+          "bytes": 24290
+        },
+        {
+          "vertices": 5186,
+          "colors": 31,
+          "bytes": 25119
+        },
+        {
+          "vertices": 5330,
+          "colors": 31,
+          "bytes": 25764
+        },
+        {
+          "vertices": 5510,
+          "colors": 31,
+          "bytes": 26574
+        },
+        {
+          "vertices": 5682,
+          "colors": 31,
+          "bytes": 27352
+        },
+        {
+          "vertices": 3918,
+          "colors": 31,
+          "bytes": 19231
+        },
+        {
+          "vertices": 4040,
+          "colors": 31,
+          "bytes": 19791
+        },
+        {
+          "vertices": 4182,
+          "colors": 31,
+          "bytes": 20446
+        },
+        {
+          "vertices": 4324,
+          "colors": 31,
+          "bytes": 21101
+        },
+        {
+          "vertices": 4470,
+          "colors": 31,
+          "bytes": 21775
+        },
+        {
+          "vertices": 4616,
+          "colors": 31,
+          "bytes": 22449
+        }
+      ]
+    },
+    "carousel-base": {
+      "source_sha256": "46a5571ffc3983354f0675a515ce5ee67b930e0b56f596744e5caf3a9ae86491",
+      "source_bytes": 43236,
+      "frames": [
+        {
+          "vertices": 20488,
+          "colors": 31,
+          "bytes": 95369
+        }
+      ]
+    },
+    "charge-cells": {
+      "source_sha256": "fc28207f6421313df93aca0521277a271ca0f77cf0eab67754ab1098d3c46faf",
+      "source_bytes": 95109,
+      "frames": [
+        {
+          "vertices": 1090,
+          "colors": 31,
+          "bytes": 6179
+        },
+        {
+          "vertices": 1064,
+          "colors": 31,
+          "bytes": 6063
+        },
+        {
+          "vertices": 1000,
+          "colors": 31,
+          "bytes": 5762
+        },
+        {
+          "vertices": 904,
+          "colors": 31,
+          "bytes": 5297
+        },
+        {
+          "vertices": 738,
+          "colors": 30,
+          "bytes": 4486
+        },
+        {
+          "vertices": 768,
+          "colors": 30,
+          "bytes": 4636
+        },
+        {
+          "vertices": 926,
+          "colors": 31,
+          "bytes": 5409
+        },
+        {
+          "vertices": 1054,
+          "colors": 31,
+          "bytes": 6023
+        },
+        {
+          "vertices": 1092,
+          "colors": 31,
+          "bytes": 6199
+        },
+        {
+          "vertices": 1080,
+          "colors": 31,
+          "bytes": 6130
+        },
+        {
+          "vertices": 2304,
+          "colors": 31,
+          "bytes": 11899
+        },
+        {
+          "vertices": 2226,
+          "colors": 31,
+          "bytes": 11509
+        },
+        {
+          "vertices": 2180,
+          "colors": 31,
+          "bytes": 11310
+        },
+        {
+          "vertices": 2002,
+          "colors": 31,
+          "bytes": 10460
+        },
+        {
+          "vertices": 1934,
+          "colors": 31,
+          "bytes": 10131
+        },
+        {
+          "vertices": 1864,
+          "colors": 31,
+          "bytes": 9815
+        },
+        {
+          "vertices": 1942,
+          "colors": 31,
+          "bytes": 10163
+        },
+        {
+          "vertices": 2218,
+          "colors": 31,
+          "bytes": 11498
+        },
+        {
+          "vertices": 2178,
+          "colors": 31,
+          "bytes": 11302
+        },
+        {
+          "vertices": 2222,
+          "colors": 31,
+          "bytes": 11511
+        },
+        {
+          "vertices": 1208,
+          "colors": 19,
+          "bytes": 6309
+        },
+        {
+          "vertices": 1232,
+          "colors": 20,
+          "bytes": 6471
+        },
+        {
+          "vertices": 1130,
+          "colors": 19,
+          "bytes": 5964
+        },
+        {
+          "vertices": 1158,
+          "colors": 20,
+          "bytes": 6133
+        },
+        {
+          "vertices": 1024,
+          "colors": 20,
+          "bytes": 5471
+        },
+        {
+          "vertices": 1032,
+          "colors": 20,
+          "bytes": 5530
+        },
+        {
+          "vertices": 1082,
+          "colors": 20,
+          "bytes": 5760
+        },
+        {
+          "vertices": 1162,
+          "colors": 19,
+          "bytes": 6101
+        },
+        {
+          "vertices": 1256,
+          "colors": 19,
+          "bytes": 6555
+        },
+        {
+          "vertices": 1192,
+          "colors": 19,
+          "bytes": 6230
+        },
+        {
+          "vertices": 974,
+          "colors": 31,
+          "bytes": 5622
+        },
+        {
+          "vertices": 1018,
+          "colors": 31,
+          "bytes": 5840
+        },
+        {
+          "vertices": 892,
+          "colors": 31,
+          "bytes": 5246
+        },
+        {
+          "vertices": 886,
+          "colors": 31,
+          "bytes": 5195
+        },
+        {
+          "vertices": 864,
+          "colors": 31,
+          "bytes": 5098
+        },
+        {
+          "vertices": 798,
+          "colors": 31,
+          "bytes": 4795
+        },
+        {
+          "vertices": 762,
+          "colors": 31,
+          "bytes": 4621
+        },
+        {
+          "vertices": 862,
+          "colors": 31,
+          "bytes": 5105
+        },
+        {
+          "vertices": 864,
+          "colors": 31,
+          "bytes": 5107
+        },
+        {
+          "vertices": 856,
+          "colors": 31,
+          "bytes": 5066
+        },
+        {
+          "vertices": 544,
+          "colors": 31,
+          "bytes": 3530
+        },
+        {
+          "vertices": 590,
+          "colors": 31,
+          "bytes": 3732
+        },
+        {
+          "vertices": 616,
+          "colors": 31,
+          "bytes": 3854
+        },
+        {
+          "vertices": 616,
+          "colors": 31,
+          "bytes": 3842
+        },
+        {
+          "vertices": 570,
+          "colors": 30,
+          "bytes": 3595
+        },
+        {
+          "vertices": 570,
+          "colors": 31,
+          "bytes": 3628
+        },
+        {
+          "vertices": 596,
+          "colors": 31,
+          "bytes": 3744
+        },
+        {
+          "vertices": 620,
+          "colors": 31,
+          "bytes": 3852
+        },
+        {
+          "vertices": 638,
+          "colors": 31,
+          "bytes": 3945
+        },
+        {
+          "vertices": 590,
+          "colors": 31,
+          "bytes": 3741
+        },
+        {
+          "vertices": 1866,
+          "colors": 14,
+          "bytes": 9229
+        },
+        {
+          "vertices": 1744,
+          "colors": 14,
+          "bytes": 8645
+        },
+        {
+          "vertices": 1690,
+          "colors": 14,
+          "bytes": 8396
+        },
+        {
+          "vertices": 1658,
+          "colors": 13,
+          "bytes": 8214
+        },
+        {
+          "vertices": 1618,
+          "colors": 14,
+          "bytes": 8024
+        },
+        {
+          "vertices": 1628,
+          "colors": 14,
+          "bytes": 8088
+        },
+        {
+          "vertices": 1690,
+          "colors": 14,
+          "bytes": 8390
+        },
+        {
+          "vertices": 1724,
+          "colors": 14,
+          "bytes": 8562
+        },
+        {
+          "vertices": 1798,
+          "colors": 14,
+          "bytes": 8900
+        },
+        {
+          "vertices": 1838,
+          "colors": 14,
+          "bytes": 9117
+        },
+        {
+          "vertices": 1216,
+          "colors": 14,
+          "bytes": 6146
+        },
+        {
+          "vertices": 1232,
+          "colors": 14,
+          "bytes": 6246
+        },
+        {
+          "vertices": 1266,
+          "colors": 13,
+          "bytes": 6382
+        },
+        {
+          "vertices": 1118,
+          "colors": 14,
+          "bytes": 5679
+        },
+        {
+          "vertices": 1040,
+          "colors": 14,
+          "bytes": 5310
+        },
+        {
+          "vertices": 1068,
+          "colors": 14,
+          "bytes": 5449
+        },
+        {
+          "vertices": 1154,
+          "colors": 14,
+          "bytes": 5850
+        },
+        {
+          "vertices": 1152,
+          "colors": 14,
+          "bytes": 5851
+        },
+        {
+          "vertices": 1160,
+          "colors": 14,
+          "bytes": 5892
+        },
+        {
+          "vertices": 1168,
+          "colors": 14,
+          "bytes": 5942
+        }
+      ]
+    },
+    "countdown": {
+      "source_sha256": "85d5aa8f9bd389d339d93f604eef0bdbbcb5fe58733c3e29c8fc4429be98ec99",
+      "source_bytes": 18332,
+      "frames": [
+        {
+          "vertices": 2926,
+          "colors": 31,
+          "bytes": 14642
+        },
+        {
+          "vertices": 3242,
+          "colors": 31,
+          "bytes": 16071
+        },
+        {
+          "vertices": 2520,
+          "colors": 31,
+          "bytes": 12799
+        }
+      ]
+    },
+    "impact-labels": {
+      "source_sha256": "697973e12250fcd327fc8ba2ba1a68eb343a99b8e9583f4f0cc0b9756b20d2ef",
+      "source_bytes": 57127,
+      "frames": [
+        {
+          "vertices": 8638,
+          "colors": 31,
+          "bytes": 41225
+        },
+        {
+          "vertices": 15140,
+          "colors": 31,
+          "bytes": 71289
+        }
+      ]
+    },
+    "result-streaks": {
+      "source_sha256": "c617380c2e31ceabc1e8a629877472465d446eef6e419596e2b1c5deda9610c1",
+      "source_bytes": 20689,
+      "frames": [
+        {
+          "vertices": 104,
+          "colors": 26,
+          "bytes": 949
+        },
+        {
+          "vertices": 124,
+          "colors": 31,
+          "bytes": 1129
+        },
+        {
+          "vertices": 152,
+          "colors": 38,
+          "bytes": 1381
+        },
+        {
+          "vertices": 160,
+          "colors": 40,
+          "bytes": 1453
+        },
+        {
+          "vertices": 136,
+          "colors": 34,
+          "bytes": 1237
+        },
+        {
+          "vertices": 104,
+          "colors": 26,
+          "bytes": 949
+        },
+        {
+          "vertices": 124,
+          "colors": 31,
+          "bytes": 1129
+        },
+        {
+          "vertices": 152,
+          "colors": 38,
+          "bytes": 1381
+        },
+        {
+          "vertices": 160,
+          "colors": 40,
+          "bytes": 1453
+        },
+        {
+          "vertices": 136,
+          "colors": 34,
+          "bytes": 1237
+        }
+      ]
+    },
+    "result-words": {
+      "source_sha256": "7857f43a9a788ba0a47de3fc2b017eeff23bf3c39aeaa394647a5498b5fce89f",
+      "source_bytes": 59748,
+      "frames": [
+        {
+          "vertices": 478,
+          "colors": 2,
+          "bytes": 2015
+        },
+        {
+          "vertices": 5114,
+          "colors": 31,
+          "bytes": 24999
+        },
+        {
+          "vertices": 872,
+          "colors": 2,
+          "bytes": 3579
+        },
+        {
+          "vertices": 7284,
+          "colors": 31,
+          "bytes": 35182
+        },
+        {
+          "vertices": 486,
+          "colors": 2,
+          "bytes": 2047
+        },
+        {
+          "vertices": 5252,
+          "colors": 31,
+          "bytes": 25641
+        },
+        {
+          "vertices": 342,
+          "colors": 2,
+          "bytes": 1489
+        },
+        {
+          "vertices": 5884,
+          "colors": 31,
+          "bytes": 28508
+        }
+      ]
+    },
+    "action-hands": {
+      "source_sha256": "a63ccf220f23b29e1835bb57f253fb73eb1c2cbc3127d63886903d9682f52747",
+      "source_bytes": 549436,
+      "frames": [
+        {
+          "vertices": 17196,
+          "colors": 31,
+          "bytes": 80134
+        },
+        {
+          "vertices": 20706,
+          "colors": 31,
+          "bytes": 97141
+        },
+        {
+          "vertices": 17824,
+          "colors": 31,
+          "bytes": 83903
+        },
+        {
+          "vertices": 17062,
+          "colors": 31,
+          "bytes": 80369
+        },
+        {
+          "vertices": 25028,
+          "colors": 31,
+          "bytes": 117597
+        },
+        {
+          "vertices": 18822,
+          "colors": 31,
+          "bytes": 87583
+        },
+        {
+          "vertices": 20738,
+          "colors": 31,
+          "bytes": 97092
+        },
+        {
+          "vertices": 21186,
+          "colors": 31,
+          "bytes": 99691
+        },
+        {
+          "vertices": 24770,
+          "colors": 31,
+          "bytes": 116337
+        },
+        {
+          "vertices": 20466,
+          "colors": 31,
+          "bytes": 95818
+        },
+        {
+          "vertices": 20978,
+          "colors": 31,
+          "bytes": 98598
+        },
+        {
+          "vertices": 19622,
+          "colors": 31,
+          "bytes": 92250
+        },
+        {
+          "vertices": 24310,
+          "colors": 31,
+          "bytes": 114104
+        },
+        {
+          "vertices": 19472,
+          "colors": 31,
+          "bytes": 91179
+        },
+        {
+          "vertices": 21888,
+          "colors": 31,
+          "bytes": 102664
+        },
+        {
+          "vertices": 19184,
+          "colors": 31,
+          "bytes": 89985
+        }
+      ]
+    },
+    "action-opponent": {
+      "source_sha256": "37b3f4046b66672c17ccb8193e9197ebfc5003ea3672bb6bbaaeae84df6682f2",
+      "source_bytes": 479670,
+      "frames": [
+        {
+          "vertices": 13146,
+          "colors": 31,
+          "bytes": 61723
+        },
+        {
+          "vertices": 12872,
+          "colors": 31,
+          "bytes": 60426
+        },
+        {
+          "vertices": 12404,
+          "colors": 31,
+          "bytes": 58356
+        },
+        {
+          "vertices": 12468,
+          "colors": 31,
+          "bytes": 58588
+        },
+        {
+          "vertices": 12932,
+          "colors": 31,
+          "bytes": 60690
+        },
+        {
+          "vertices": 12144,
+          "colors": 31,
+          "bytes": 57022
+        },
+        {
+          "vertices": 12196,
+          "colors": 31,
+          "bytes": 57494
+        },
+        {
+          "vertices": 12064,
+          "colors": 31,
+          "bytes": 56783
+        },
+        {
+          "vertices": 12754,
+          "colors": 31,
+          "bytes": 59903
+        },
+        {
+          "vertices": 13152,
+          "colors": 31,
+          "bytes": 61831
+        },
+        {
+          "vertices": 12128,
+          "colors": 31,
+          "bytes": 57042
+        },
+        {
+          "vertices": 11886,
+          "colors": 31,
+          "bytes": 55966
+        },
+        {
+          "vertices": 13584,
+          "colors": 31,
+          "bytes": 63730
+        },
+        {
+          "vertices": 12290,
+          "colors": 31,
+          "bytes": 57837
+        },
+        {
+          "vertices": 11596,
+          "colors": 31,
+          "bytes": 54581
+        },
+        {
+          "vertices": 11822,
+          "colors": 31,
+          "bytes": 55587
+        }
+      ]
+    },
+    "beam-clash-h106": {
+      "source_sha256": "170130a6a6929e1a50f3ae4b7b935cf0a55758f20520ed3cddd85b9aedddbeae",
+      "source_bytes": 1080308,
+      "frames": [
+        {
+          "vertices": 19664,
+          "colors": 32,
+          "bytes": 88929
+        },
+        {
+          "vertices": 21786,
+          "colors": 32,
+          "bytes": 98482
+        },
+        {
+          "vertices": 30752,
+          "colors": 32,
+          "bytes": 139035
+        },
+        {
+          "vertices": 44196,
+          "colors": 32,
+          "bytes": 200323
+        },
+        {
+          "vertices": 28510,
+          "colors": 32,
+          "bytes": 128651
+        },
+        {
+          "vertices": 29714,
+          "colors": 32,
+          "bytes": 133983
+        },
+        {
+          "vertices": 29942,
+          "colors": 32,
+          "bytes": 135492
+        },
+        {
+          "vertices": 29782,
+          "colors": 32,
+          "bytes": 133991
+        },
+        {
+          "vertices": 29564,
+          "colors": 32,
+          "bytes": 133497
+        },
+        {
+          "vertices": 29524,
+          "colors": 32,
+          "bytes": 133922
+        },
+        {
+          "vertices": 28584,
+          "colors": 32,
+          "bytes": 129532
+        },
+        {
+          "vertices": 27654,
+          "colors": 32,
+          "bytes": 125167
+        }
+      ]
+    },
+    "beam-clash-amoled": {
+      "source_sha256": "f31f5a044e618d5af9b16bc844612702ec9325feb131465da86cfdc6e55c77cd",
+      "source_bytes": 782810,
+      "frames": [
+        {
+          "vertices": 15096,
+          "colors": 32,
+          "bytes": 68842
+        },
+        {
+          "vertices": 17304,
+          "colors": 32,
+          "bytes": 79030
+        },
+        {
+          "vertices": 23864,
+          "colors": 32,
+          "bytes": 108516
+        },
+        {
+          "vertices": 34252,
+          "colors": 32,
+          "bytes": 156068
+        },
+        {
+          "vertices": 21572,
+          "colors": 32,
+          "bytes": 97623
+        },
+        {
+          "vertices": 23226,
+          "colors": 32,
+          "bytes": 105475
+        },
+        {
+          "vertices": 23332,
+          "colors": 32,
+          "bytes": 106241
+        },
+        {
+          "vertices": 25232,
+          "colors": 32,
+          "bytes": 114885
+        },
+        {
+          "vertices": 23200,
+          "colors": 32,
+          "bytes": 105641
+        },
+        {
+          "vertices": 23298,
+          "colors": 32,
+          "bytes": 106939
+        },
+        {
+          "vertices": 22702,
+          "colors": 32,
+          "bytes": 103976
+        },
+        {
+          "vertices": 21612,
+          "colors": 32,
+          "bytes": 98995
+        }
+      ]
+    },
+    "beam-clash-fade-h106": {
+      "source_sha256": "dd6f6093d07dfab306afa2a3ec06c3134c30fd2215e5abc54add3bc977a37c0f",
+      "source_bytes": 279070,
+      "frames": [
+        {
+          "vertices": 36658,
+          "colors": 32,
+          "bytes": 164468
+        },
+        {
+          "vertices": 30790,
+          "colors": 32,
+          "bytes": 138968
+        },
+        {
+          "vertices": 8694,
+          "colors": 32,
+          "bytes": 40645
+        },
+        {
+          "vertices": 834,
+          "colors": 32,
+          "bytes": 4912
+        }
+      ]
+    },
+    "beam-clash-fade-amoled": {
+      "source_sha256": "70f868c9927429bec129a94904f938c5a97d2cca00270555e41d9c233459edfb",
+      "source_bytes": 203861,
+      "frames": [
+        {
+          "vertices": 28494,
+          "colors": 32,
+          "bytes": 128563
+        },
+        {
+          "vertices": 24232,
+          "colors": 32,
+          "bytes": 109985
+        },
+        {
+          "vertices": 7110,
+          "colors": 32,
+          "bytes": 33658
+        },
+        {
+          "vertices": 448,
+          "colors": 32,
+          "bytes": 3164
+        }
+      ]
+    }
+  }
+}

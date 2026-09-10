@@ -1,0 +1,45 @@
+{
+  "scope": "All changes on codex/qi-duel-lua-app relative to origin/main merge base, including working tree additions",
+  "status": "verified",
+  "removed": [
+    "old PCM audio modules, generators, recordings and tests",
+    "unused A4 and fixed UI label resources and A4 decoder",
+    "H2M8/H2DT bitmap compression experiments and packers",
+    "particle-only firmware boot/replay and capsule/path profiling backend",
+    "unused skeletal pose decoder and temporary 24 MiB desktop override",
+    "ten uncalled Lua helpers and unused procedural drawing helpers"
+  ],
+  "retained": [
+    "approved vector art and retro score",
+    "shared BLE transport, rules and live game flow",
+    "original visual references and regeneration tools",
+    "native component/sequence capture and accepted evidence"
+  ],
+  "runtime_cases": 20,
+  "fps_range": [
+    29.2,
+    30.2
+  ],
+  "exact_pixel_pairs": 100,
+  "all_pixels_identical": true,
+  "vector_resource_bytes": 3424308,
+  "device_validation": false,
+  "pre_cleanup_executables": {
+    "example-lua-qi-duel": "aef2caf177a4232283b6cda14ce9963930602c3bd61f8c7a9b171abf368c2a78",
+    "example-lua-qi-duel-h106": "9a1f7a0bd8fe380af1aaf1152380b53eacb9600546e9243ca7ebb9aec179a23f"
+  },
+  "review_rounds": 4,
+  "fresh_review": "No remaining cleanup findings after checking call sites, resource/build references and active render/audio paths.",
+  "vector_tests_passed": 10,
+  "reference_frame_pairs": 244,
+  "reference_check_passed": true,
+  "removed_files_first_pass": 115,
+  "removed_bytes_first_pass": 28064870,
+  "default_tests_passed": 4,
+  "git_committed": false,
+  "device_flashed": false,
+  "final_executables": {
+    "example-lua-qi-duel": "a1398f260845d83625a40dae44af5de13dc38c118f46855cf1b0faa512c5c8fb",
+    "example-lua-qi-duel-h106": "c128a85efe0bcfc787a16c4ba39edad9211f0b71fcdcc834de05450cecc9e337"
+  }
+}

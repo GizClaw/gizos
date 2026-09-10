@@ -1,0 +1,290 @@
+{
+  "reference_sha256": "224d1e5712685c0f65980f3c55ab50f9b44ff132af189d682144586f3f8b0819",
+  "total": 35,
+  "different": 0,
+  "missing": 0,
+  "frames": [
+    {
+      "time_ms": 0,
+      "identical": true,
+      "expected": "2b0844ed",
+      "observed": [
+        "2b0844ed"
+      ]
+    },
+    {
+      "time_ms": 33,
+      "identical": true,
+      "expected": "924d83c7",
+      "observed": [
+        "924d83c7"
+      ]
+    },
+    {
+      "time_ms": 66,
+      "identical": true,
+      "expected": "00f512d3",
+      "observed": [
+        "00f512d3"
+      ]
+    },
+    {
+      "time_ms": 99,
+      "identical": true,
+      "expected": "688487e4",
+      "observed": [
+        "688487e4"
+      ]
+    },
+    {
+      "time_ms": 132,
+      "identical": true,
+      "expected": "acaf64e3",
+      "observed": [
+        "acaf64e3"
+      ]
+    },
+    {
+      "time_ms": 165,
+      "identical": true,
+      "expected": "5119a7d4",
+      "observed": [
+        "5119a7d4"
+      ]
+    },
+    {
+      "time_ms": 198,
+      "identical": true,
+      "expected": "62adcc91",
+      "observed": [
+        "62adcc91"
+      ]
+    },
+    {
+      "time_ms": 231,
+      "identical": true,
+      "expected": "5216437c",
+      "observed": [
+        "5216437c"
+      ]
+    },
+    {
+      "time_ms": 264,
+      "identical": true,
+      "expected": "21fe2b80",
+      "observed": [
+        "21fe2b80"
+      ]
+    },
+    {
+      "time_ms": 297,
+      "identical": true,
+      "expected": "d448c722",
+      "observed": [
+        "d448c722"
+      ]
+    },
+    {
+      "time_ms": 330,
+      "identical": true,
+      "expected": "0ae4bf14",
+      "observed": [
+        "0ae4bf14"
+      ]
+    },
+    {
+      "time_ms": 363,
+      "identical": true,
+      "expected": "c71f0fc5",
+      "observed": [
+        "c71f0fc5"
+      ]
+    },
+    {
+      "time_ms": 396,
+      "identical": true,
+      "expected": "9d047bc6",
+      "observed": [
+        "9d047bc6"
+      ]
+    },
+    {
+      "time_ms": 429,
+      "identical": true,
+      "expected": "caf4be3b",
+      "observed": [
+        "caf4be3b"
+      ]
+    },
+    {
+      "time_ms": 462,
+      "identical": true,
+      "expected": "89019009",
+      "observed": [
+        "89019009"
+      ]
+    },
+    {
+      "time_ms": 495,
+      "identical": true,
+      "expected": "fead3160",
+      "observed": [
+        "fead3160"
+      ]
+    },
+    {
+      "time_ms": 528,
+      "identical": true,
+      "expected": "5ae608bc",
+      "observed": [
+        "5ae608bc"
+      ]
+    },
+    {
+      "time_ms": 561,
+      "identical": true,
+      "expected": "378e5f59",
+      "observed": [
+        "378e5f59"
+      ]
+    },
+    {
+      "time_ms": 594,
+      "identical": true,
+      "expected": "1ee82312",
+      "observed": [
+        "1ee82312"
+      ]
+    },
+    {
+      "time_ms": 627,
+      "identical": true,
+      "expected": "ac45e3ea",
+      "observed": [
+        "ac45e3ea"
+      ]
+    },
+    {
+      "time_ms": 660,
+      "identical": true,
+      "expected": "5eb6d910",
+      "observed": [
+        "5eb6d910"
+      ]
+    },
+    {
+      "time_ms": 693,
+      "identical": true,
+      "expected": "852cc790",
+      "observed": [
+        "852cc790"
+      ]
+    },
+    {
+      "time_ms": 726,
+      "identical": true,
+      "expected": "324f3e19",
+      "observed": [
+        "324f3e19"
+      ]
+    },
+    {
+      "time_ms": 759,
+      "identical": true,
+      "expected": "adaa0ad8",
+      "observed": [
+        "adaa0ad8"
+      ]
+    },
+    {
+      "time_ms": 792,
+      "identical": true,
+      "expected": "9e3880a7",
+      "observed": [
+        "9e3880a7"
+      ]
+    },
+    {
+      "time_ms": 825,
+      "identical": true,
+      "expected": "d9f5fd82",
+      "observed": [
+        "d9f5fd82"
+      ]
+    },
+    {
+      "time_ms": 858,
+      "identical": true,
+      "expected": "c8270abd",
+      "observed": [
+        "c8270abd"
+      ]
+    },
+    {
+      "time_ms": 891,
+      "identical": true,
+      "expected": "e8f58f61",
+      "observed": [
+        "e8f58f61"
+      ]
+    },
+    {
+      "time_ms": 924,
+      "identical": true,
+      "expected": "f9c03039",
+      "observed": [
+        "f9c03039"
+      ]
+    },
+    {
+      "time_ms": 957,
+      "identical": true,
+      "expected": "9493af43",
+      "observed": [
+        "9493af43"
+      ]
+    },
+    {
+      "time_ms": 990,
+      "identical": true,
+      "expected": "e3d10b8a",
+      "observed": [
+        "e3d10b8a"
+      ]
+    },
+    {
+      "time_ms": 1875,
+      "identical": true,
+      "expected": "75266dd6",
+      "observed": [
+        "75266dd6"
+      ]
+    },
+    {
+      "time_ms": 4000,
+      "identical": true,
+      "expected": "cd328919",
+      "observed": [
+        "cd328919"
+      ]
+    },
+    {
+      "time_ms": 9000,
+      "identical": true,
+      "expected": "301aceb9",
+      "observed": [
+        "301aceb9"
+      ]
+    },
+    {
+      "time_ms": 17000,
+      "identical": true,
+      "expected": "0a8d8e5d",
+      "observed": [
+        "0a8d8e5d"
+      ]
+    }
+  ],
+  "device_log_sha256": "3ff6188cf55f863d55916be1ded87a77d4ea51ca40a41c7641a81d74daa0e21a",
+  "passed": true
+}

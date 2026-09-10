@@ -1,0 +1,83 @@
+{
+  "image_bytes": 5514624,
+  "categories": {
+    "vectors": 3424308,
+    "lua_game": 110063,
+    "retro_synth_and_score": 25168,
+    "system_code_other": 1955085
+  },
+  "symbols": {
+    "qi_duel_component_paths": 3279,
+    "qi_duel_component_renderer": 2153,
+    "qi_duel_link_protocol": 7256,
+    "qi_duel_procedural": 5371,
+    "qi_duel_retro_audio": 7814,
+    "qi_duel_retro_score": 17354,
+    "qi_duel_rules": 2922,
+    "qi_duel_script": 89082,
+    "qi_duel_vector_absorb": 13109,
+    "qi_duel_vector_charge": 13067,
+    "qi_duel_vector_components": 3272053,
+    "qi_duel_vector_guard": 21673,
+    "qi_duel_vector_left": 22949,
+    "qi_duel_vector_opponent": 44055,
+    "qi_duel_vector_right": 26628,
+    "qi_duel_vector_wave": 10774
+  },
+  "vector_components": {
+    "hud-states": {
+      "bytes": 120692,
+      "frames": 12
+    },
+    "carousel-base": {
+      "bytes": 44400,
+      "frames": 1
+    },
+    "charge-cells": {
+      "bytes": 185593,
+      "frames": 70
+    },
+    "countdown": {
+      "bytes": 18372,
+      "frames": 3
+    },
+    "impact-labels": {
+      "bytes": 51423,
+      "frames": 2
+    },
+    "result-streaks": {
+      "bytes": 6536,
+      "frames": 10
+    },
+    "result-words": {
+      "bytes": 54207,
+      "frames": 8
+    },
+    "action-hands": {
+      "bytes": 753697,
+      "frames": 16
+    },
+    "action-opponent": {
+      "bytes": 433966,
+      "frames": 16
+    },
+    "beam-clash-h106": {
+      "bytes": 734724,
+      "frames": 12
+    },
+    "beam-clash-amoled": {
+      "bytes": 579052,
+      "frames": 12
+    },
+    "beam-clash-fade-h106": {
+      "bytes": 161787,
+      "frames": 4
+    },
+    "beam-clash-fade-amoled": {
+      "bytes": 127604,
+      "frames": 4
+    }
+  },
+  "package_bytes": 4680113,
+  "tar_bytes": 5519360
+}

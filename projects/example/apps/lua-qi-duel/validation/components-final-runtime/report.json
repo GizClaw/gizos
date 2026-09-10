@@ -1,0 +1,402 @@
+[
+  {
+    "screen": "amoled",
+    "case": "full",
+    "fps_samples": [
+      29.7,
+      30.1,
+      29.9,
+      30.2,
+      30.0
+    ],
+    "draw_ms_samples": [
+      18,
+      17,
+      17,
+      17,
+      17
+    ],
+    "end_lua_bytes": 5730248,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "charge",
+    "fps_samples": [
+      29.7,
+      30.2,
+      30.1,
+      30.1,
+      30.0
+    ],
+    "draw_ms_samples": [
+      16,
+      16,
+      17,
+      17,
+      17
+    ],
+    "end_lua_bytes": 10032685,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "absorb",
+    "fps_samples": [
+      29.7,
+      30.1,
+      30.1,
+      29.4,
+      30.2
+    ],
+    "draw_ms_samples": [
+      18,
+      17,
+      17,
+      18,
+      17
+    ],
+    "end_lua_bytes": 10070936,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "wave",
+    "fps_samples": [
+      29.2,
+      30.0,
+      30.0,
+      30.1,
+      30.1
+    ],
+    "draw_ms_samples": [
+      20,
+      19,
+      18,
+      17,
+      18
+    ],
+    "end_lua_bytes": 9954087,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "settlement",
+    "fps_samples": [
+      29.7,
+      29.5,
+      29.7,
+      30.1,
+      30.0
+    ],
+    "draw_ms_samples": [
+      28,
+      28,
+      27,
+      19,
+      13
+    ],
+    "end_lua_bytes": 3458703,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "full",
+    "fps_samples": [
+      30.0,
+      30.1,
+      30.1,
+      30.1,
+      30.2
+    ],
+    "draw_ms_samples": [
+      15,
+      14,
+      14,
+      14,
+      14
+    ],
+    "end_lua_bytes": 4819997,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "charge",
+    "fps_samples": [
+      30.0,
+      30.0,
+      30.1,
+      30.1,
+      30.0
+    ],
+    "draw_ms_samples": [
+      13,
+      13,
+      14,
+      14,
+      14
+    ],
+    "end_lua_bytes": 4794849,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "absorb",
+    "fps_samples": [
+      30.0,
+      30.1,
+      30.2,
+      30.0,
+      30.0
+    ],
+    "draw_ms_samples": [
+      16,
+      14,
+      14,
+      14,
+      14
+    ],
+    "end_lua_bytes": 4242340,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "wave",
+    "fps_samples": [
+      29.9,
+      30.1,
+      30.1,
+      30.1,
+      30.0
+    ],
+    "draw_ms_samples": [
+      16,
+      15,
+      14,
+      14,
+      14
+    ],
+    "end_lua_bytes": 4823133,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "settlement",
+    "fps_samples": [
+      30.0,
+      30.0,
+      30.1,
+      30.0,
+      30.0
+    ],
+    "draw_ms_samples": [
+      7,
+      7,
+      7,
+      7,
+      7
+    ],
+    "end_lua_bytes": 2155087,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "guard",
+    "fps_samples": [
+      29.9,
+      29.6,
+      30.0,
+      30.1,
+      30.1
+    ],
+    "draw_ms_samples": [
+      16,
+      16,
+      17,
+      17,
+      16
+    ],
+    "end_lua_bytes": 4696853,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "clash-player",
+    "fps_samples": [
+      30.0,
+      29.3,
+      30.1,
+      30.1,
+      30.0
+    ],
+    "draw_ms_samples": [
+      14,
+      16,
+      14,
+      14,
+      14
+    ],
+    "end_lua_bytes": 2411643,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "clash-enemy",
+    "fps_samples": [
+      30.0,
+      30.0,
+      29.9,
+      30.1,
+      30.0
+    ],
+    "draw_ms_samples": [
+      14,
+      13,
+      14,
+      13,
+      14
+    ],
+    "end_lua_bytes": 2411643,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "defeat",
+    "fps_samples": [
+      30.1,
+      30.1,
+      30.0,
+      30.0,
+      30.2
+    ],
+    "draw_ms_samples": [
+      14,
+      13,
+      12,
+      14,
+      13
+    ],
+    "end_lua_bytes": 3425935,
+    "passed": true
+  },
+  {
+    "screen": "amoled",
+    "case": "clash",
+    "fps_samples": [
+      29.9,
+      30.1,
+      30.0,
+      30.0,
+      30.0
+    ],
+    "draw_ms_samples": [
+      15,
+      15,
+      14,
+      14,
+      14
+    ],
+    "end_lua_bytes": 2610447,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "guard",
+    "fps_samples": [
+      29.9,
+      30.0,
+      30.1,
+      30.0,
+      30.1
+    ],
+    "draw_ms_samples": [
+      13,
+      13,
+      13,
+      13,
+      13
+    ],
+    "end_lua_bytes": 3583915,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "clash-player",
+    "fps_samples": [
+      30.1,
+      29.9,
+      30.0,
+      30.0,
+      30.0
+    ],
+    "draw_ms_samples": [
+      9,
+      10,
+      9,
+      9,
+      9
+    ],
+    "end_lua_bytes": 1442568,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "clash-enemy",
+    "fps_samples": [
+      30.0,
+      30.0,
+      30.1,
+      30.0,
+      30.0
+    ],
+    "draw_ms_samples": [
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "end_lua_bytes": 1443151,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "defeat",
+    "fps_samples": [
+      30.0,
+      30.2,
+      30.0,
+      30.0,
+      30.1
+    ],
+    "draw_ms_samples": [
+      7,
+      7,
+      7,
+      8,
+      7
+    ],
+    "end_lua_bytes": 2122319,
+    "passed": true
+  },
+  {
+    "screen": "h106",
+    "case": "clash",
+    "fps_samples": [
+      30.1,
+      30.1,
+      30.2,
+      30.0,
+      30.0
+    ],
+    "draw_ms_samples": [
+      10,
+      9,
+      10,
+      9,
+      10
+    ],
+    "end_lua_bytes": 1438482,
+    "passed": true
+  }
+]

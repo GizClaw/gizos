@@ -1,0 +1,22 @@
+{
+  "status": "resource-budget-only-not-a-new-firmware-build",
+  "historical_full_amoled_binary_bytes": 13283344,
+  "current_app_partition_bytes": 8388608,
+  "replacement_candidates_bytes": {
+    "skill_styles": 4583183,
+    "derived_skill_colors": 236902,
+    "opponent_mips": 34704,
+    "wall_and_arena_atlases": 3221180
+  },
+  "approved_samples_svg_zlib_bytes": 17872,
+  "sample_covered_raster_bytes": 4854789,
+  "historical_binary_minus_sample_rasters_plus_compressed_svg_bytes": 8446427,
+  "excludes": [
+    "native vector renderer code",
+    "final vector command format",
+    "remaining vector artwork",
+    "later audio and application changes",
+    "alignment/linking changes"
+  ],
+  "binary_reduced_in_this_step": false
+}

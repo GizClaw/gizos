@@ -2029,17 +2029,6 @@ static int display_draw_text_aligned(lua_State *state) {
                       color, scale);
 }
 
-/* Compact game-owned bitmap format used by embedded Lua Apps.
- *
- *   byte 0..3  "H2A4"
- *   byte 4..5  source width, little endian
- *   byte 6..7  source height, little endian
- *   byte 8..   little-endian ARGB4444 pixels, row major
- *
- * Assets remain immutable Host resources and never enter Lua VM memory. The
- * renderer performs clipping, nearest-neighbour scaling, and RGB565 alpha
- * blending directly into the job framebuffer.
- */
 static const h2_lua_resource_t *display_find_resource(const h2_lua_job_t *job,
                                                       const char *name) {
   size_t index;
@@ -2209,104 +2198,6 @@ static int display_draw_light_atlas(lua_State *state) {
   return 0;
 }
 
-static int display_draw_asset(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const char *name = luaL_checkstring(state, 1);
-  int x = check_pixel_number(state, 2);
-  int y = check_pixel_number(state, 3);
-  const h2_lua_resource_t *resource;
-  const uint8_t *bytes;
-  size_t source_pixel_count;
-  int source_width;
-  int source_height;
-  int destination_width;
-  int destination_height;
-  unsigned opacity = 255u;
-  int destination_y;
-
-  if (!job->display_open || !point_is_bounded(job, x, y)) {
-    return luaL_error(state, "invalid draw_asset");
-  }
-  resource = display_find_resource(job, name);
-  if (resource == NULL || resource->source_size < 8u) {
-    return luaL_error(state, "unknown display asset '%s'", name);
-  }
-  bytes = resource->source;
-  if (memcmp(bytes, "H2A4", 4u) != 0) {
-    return luaL_error(state, "invalid display asset '%s'", name);
-  }
-  source_width = (int)((unsigned)bytes[4] | ((unsigned)bytes[5] << 8u));
-  source_height = (int)((unsigned)bytes[6] | ((unsigned)bytes[7] << 8u));
-  if (source_width <= 0 || source_height <= 0 ||
-      (size_t)source_width > SIZE_MAX / (size_t)source_height) {
-    return luaL_error(state, "invalid display asset '%s'", name);
-  }
-  source_pixel_count = (size_t)source_width * (size_t)source_height;
-  if (source_pixel_count > (resource->source_size - 8u) / 2u ||
-      resource->source_size != 8u + source_pixel_count * 2u) {
-    return luaL_error(state, "truncated display asset '%s'", name);
-  }
-
-  destination_width = source_width;
-  destination_height = source_height;
-  if (!lua_isnoneornil(state, 4)) {
-    lua_Integer requested_opacity;
-    luaL_checktype(state, 4, LUA_TTABLE);
-    lua_getfield(state, 4, "width");
-    if (!lua_isnil(state, -1))
-      destination_width = check_pixel_number(state, -1);
-    lua_pop(state, 1);
-    lua_getfield(state, 4, "height");
-    if (!lua_isnil(state, -1))
-      destination_height = check_pixel_number(state, -1);
-    lua_pop(state, 1);
-    lua_getfield(state, 4, "opacity");
-    requested_opacity =
-        lua_isnil(state, -1) ? 255 : luaL_checkinteger(state, -1);
-    lua_pop(state, 1);
-    if (requested_opacity < 0 || requested_opacity > 255) {
-      return luaL_error(state, "display asset opacity must be 0..255");
-    }
-    opacity = (unsigned)requested_opacity;
-  }
-  if (destination_width <= 0 || destination_height <= 0 ||
-      destination_width > job->display_info.width ||
-      destination_height > job->display_info.height ||
-      !rect_is_bounded(job, x, y, destination_width, destination_height)) {
-    return luaL_error(state, "invalid draw_asset destination");
-  }
-
-  mark_dirty_rect(job, x, y, destination_width, destination_height);
-  for (destination_y = 0; destination_y < destination_height; ++destination_y) {
-    int source_y =
-        (int)((int64_t)destination_y * source_height / destination_height);
-    int destination_x;
-    for (destination_x = 0; destination_x < destination_width;
-         ++destination_x) {
-      int source_x =
-          (int)((int64_t)destination_x * source_width / destination_width);
-      size_t offset =
-          8u +
-          ((size_t)source_y * (size_t)source_width + (size_t)source_x) * 2u;
-      uint16_t argb4444 = (uint16_t)bytes[offset] |
-                          (uint16_t)((uint16_t)bytes[offset + 1u] << 8u);
-      unsigned alpha = ((argb4444 >> 12u) & 0x0fu) * 17u;
-      unsigned red = (argb4444 >> 8u) & 0x0fu;
-      unsigned green = (argb4444 >> 4u) & 0x0fu;
-      unsigned blue = argb4444 & 0x0fu;
-      uint16_t rgb565;
-      alpha = (alpha * opacity + 127u) / 255u;
-      if (alpha == 0u)
-        continue;
-      rgb565 = (uint16_t)(((red << 1u) | (red >> 3u)) << 11u |
-                          ((green << 2u) | (green >> 2u)) << 5u |
-                          ((blue << 1u) | (blue >> 3u)));
-      blend_pixel(job, x + destination_x, y + destination_y, rgb565, alpha);
-    }
-  }
-  return 0;
-}
-
 static int display_begin_frame(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   if (!job->display_open || job->frame_open) {
@@ -2408,7 +2299,6 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "fill_triangle", display_fill_triangle, job);
   set_function(state, "draw_text", display_draw_text, job);
   set_function(state, "draw_text_aligned", display_draw_text_aligned, job);
-  set_function(state, "draw_asset", display_draw_asset, job);
   set_function(state, "draw_light_atlas", display_draw_light_atlas, job);
   h2_lua_canvas_register(state, job);
   set_function(state, "begin_frame", display_begin_frame, job);

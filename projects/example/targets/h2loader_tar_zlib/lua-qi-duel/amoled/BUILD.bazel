@@ -19,6 +19,10 @@ esp_target_task_policy(
 
 firmware_lib_component(
     name = "firmware_lib",
+    target_compatible_with = select({
+        "//libs/lua:software_vectors": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//libs/audio_mixer",
         "//libs/bleikcp",
@@ -88,6 +92,6 @@ h2loader_tar_zlib(
     firmware = ":firmware",
     image = "lua-qi-duel",
     role = "app",
-    tags = ["h2-ci-esp-entry"],
+    tags = ["h2-ci-esp-entry", "no-release"],
     target = "esp32s3",
 )

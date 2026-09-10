@@ -1,0 +1,1274 @@
+{
+  "metric": "RGB MAE over union of component pixels > 3/255, after optional ROI; RGB565 native captures",
+  "threshold": 30,
+  "step_ms": 33,
+  "cases": [
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "charge-player",
+      "screen": "amoled",
+      "mean": 6.149,
+      "maximum": 10.1473,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 0.0,
+          "pixels": 8742
+        },
+        {
+          "time_ms": 33,
+          "mae": 0.0,
+          "pixels": 8700
+        },
+        {
+          "time_ms": 66,
+          "mae": 0.0,
+          "pixels": 8708
+        },
+        {
+          "time_ms": 99,
+          "mae": 9.3198,
+          "pixels": 32677
+        },
+        {
+          "time_ms": 132,
+          "mae": 9.3145,
+          "pixels": 32683
+        },
+        {
+          "time_ms": 165,
+          "mae": 9.3007,
+          "pixels": 32738
+        },
+        {
+          "time_ms": 198,
+          "mae": 10.1205,
+          "pixels": 24980
+        },
+        {
+          "time_ms": 231,
+          "mae": 10.1178,
+          "pixels": 24975
+        },
+        {
+          "time_ms": 264,
+          "mae": 10.1428,
+          "pixels": 24925
+        },
+        {
+          "time_ms": 297,
+          "mae": 9.2632,
+          "pixels": 25612
+        },
+        {
+          "time_ms": 330,
+          "mae": 9.2647,
+          "pixels": 25589
+        },
+        {
+          "time_ms": 363,
+          "mae": 9.2672,
+          "pixels": 25656
+        },
+        {
+          "time_ms": 396,
+          "mae": 9.2602,
+          "pixels": 25718
+        },
+        {
+          "time_ms": 429,
+          "mae": 9.2547,
+          "pixels": 25771
+        },
+        {
+          "time_ms": 462,
+          "mae": 9.266,
+          "pixels": 25749
+        },
+        {
+          "time_ms": 495,
+          "mae": 9.2454,
+          "pixels": 25683
+        },
+        {
+          "time_ms": 528,
+          "mae": 9.2808,
+          "pixels": 25619
+        },
+        {
+          "time_ms": 561,
+          "mae": 9.273,
+          "pixels": 25578
+        },
+        {
+          "time_ms": 594,
+          "mae": 9.2612,
+          "pixels": 25612
+        },
+        {
+          "time_ms": 627,
+          "mae": 9.2651,
+          "pixels": 25652
+        },
+        {
+          "time_ms": 660,
+          "mae": 9.2535,
+          "pixels": 25744
+        },
+        {
+          "time_ms": 693,
+          "mae": 9.2659,
+          "pixels": 25765
+        },
+        {
+          "time_ms": 726,
+          "mae": 9.243,
+          "pixels": 25741
+        },
+        {
+          "time_ms": 759,
+          "mae": 9.2657,
+          "pixels": 25642
+        },
+        {
+          "time_ms": 792,
+          "mae": 9.2615,
+          "pixels": 25605
+        },
+        {
+          "time_ms": 825,
+          "mae": 9.2701,
+          "pixels": 25580
+        },
+        {
+          "time_ms": 858,
+          "mae": 9.2758,
+          "pixels": 25625
+        },
+        {
+          "time_ms": 891,
+          "mae": 9.2556,
+          "pixels": 25689
+        },
+        {
+          "time_ms": 924,
+          "mae": 9.2478,
+          "pixels": 25749
+        },
+        {
+          "time_ms": 957,
+          "mae": 9.2505,
+          "pixels": 25760
+        },
+        {
+          "time_ms": 990,
+          "mae": 9.2683,
+          "pixels": 25692
+        },
+        {
+          "time_ms": 1023,
+          "mae": 9.276,
+          "pixels": 25637
+        },
+        {
+          "time_ms": 1056,
+          "mae": 9.277,
+          "pixels": 25582
+        },
+        {
+          "time_ms": 1089,
+          "mae": 9.2683,
+          "pixels": 25584
+        },
+        {
+          "time_ms": 1122,
+          "mae": 9.2778,
+          "pixels": 25644
+        },
+        {
+          "time_ms": 1155,
+          "mae": 9.2581,
+          "pixels": 25719
+        },
+        {
+          "time_ms": 1188,
+          "mae": 9.2486,
+          "pixels": 25771
+        },
+        {
+          "time_ms": 1221,
+          "mae": 9.25,
+          "pixels": 25746
+        },
+        {
+          "time_ms": 1254,
+          "mae": 9.251,
+          "pixels": 25669
+        },
+        {
+          "time_ms": 1287,
+          "mae": 10.1473,
+          "pixels": 24895
+        },
+        {
+          "time_ms": 1320,
+          "mae": 10.1289,
+          "pixels": 24886
+        },
+        {
+          "time_ms": 1353,
+          "mae": 9.3239,
+          "pixels": 32673
+        },
+        {
+          "time_ms": 1386,
+          "mae": 9.3066,
+          "pixels": 32687
+        },
+        {
+          "time_ms": 1419,
+          "mae": 0.0,
+          "pixels": 8706
+        },
+        {
+          "time_ms": 1452,
+          "mae": 0.0,
+          "pixels": 8718
+        },
+        {
+          "time_ms": 1485,
+          "mae": 0.0,
+          "pixels": 8702
+        },
+        {
+          "time_ms": 1518,
+          "mae": 0.0,
+          "pixels": 8734
+        },
+        {
+          "time_ms": 1551,
+          "mae": 0.0,
+          "pixels": 8725
+        },
+        {
+          "time_ms": 1584,
+          "mae": 0.0,
+          "pixels": 8739
+        },
+        {
+          "time_ms": 1617,
+          "mae": 0.0,
+          "pixels": 8745
+        },
+        {
+          "time_ms": 1650,
+          "mae": 0.0,
+          "pixels": 8751
+        },
+        {
+          "time_ms": 1683,
+          "mae": 0.0,
+          "pixels": 8764
+        },
+        {
+          "time_ms": 1716,
+          "mae": 0.0,
+          "pixels": 8770
+        },
+        {
+          "time_ms": 1749,
+          "mae": 0.0,
+          "pixels": 8761
+        },
+        {
+          "time_ms": 1782,
+          "mae": 0.0,
+          "pixels": 8774
+        },
+        {
+          "time_ms": 1815,
+          "mae": 0.0,
+          "pixels": 8766
+        },
+        {
+          "time_ms": 1848,
+          "mae": 0.0,
+          "pixels": 8765
+        },
+        {
+          "time_ms": 1881,
+          "mae": 0.0,
+          "pixels": 8746
+        },
+        {
+          "time_ms": 1914,
+          "mae": 0.0,
+          "pixels": 8760
+        },
+        {
+          "time_ms": 1947,
+          "mae": 0.0,
+          "pixels": 8735
+        },
+        {
+          "time_ms": 1980,
+          "mae": 0.0,
+          "pixels": 8758
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "charge-player",
+      "screen": "h106",
+      "mean": 6.2014,
+      "maximum": 10.7416,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 0.0,
+          "pixels": 3883
+        },
+        {
+          "time_ms": 33,
+          "mae": 0.0,
+          "pixels": 3887
+        },
+        {
+          "time_ms": 66,
+          "mae": 0.0,
+          "pixels": 3890
+        },
+        {
+          "time_ms": 99,
+          "mae": 9.6063,
+          "pixels": 8374
+        },
+        {
+          "time_ms": 132,
+          "mae": 9.5993,
+          "pixels": 8384
+        },
+        {
+          "time_ms": 165,
+          "mae": 9.5971,
+          "pixels": 8405
+        },
+        {
+          "time_ms": 198,
+          "mae": 10.7021,
+          "pixels": 5438
+        },
+        {
+          "time_ms": 231,
+          "mae": 10.722,
+          "pixels": 5426
+        },
+        {
+          "time_ms": 264,
+          "mae": 10.7416,
+          "pixels": 5407
+        },
+        {
+          "time_ms": 297,
+          "mae": 9.1931,
+          "pixels": 5741
+        },
+        {
+          "time_ms": 330,
+          "mae": 9.1963,
+          "pixels": 5744
+        },
+        {
+          "time_ms": 363,
+          "mae": 9.2097,
+          "pixels": 5760
+        },
+        {
+          "time_ms": 396,
+          "mae": 9.2247,
+          "pixels": 5792
+        },
+        {
+          "time_ms": 429,
+          "mae": 9.2664,
+          "pixels": 5808
+        },
+        {
+          "time_ms": 462,
+          "mae": 9.2574,
+          "pixels": 5807
+        },
+        {
+          "time_ms": 495,
+          "mae": 9.2159,
+          "pixels": 5776
+        },
+        {
+          "time_ms": 528,
+          "mae": 9.1936,
+          "pixels": 5750
+        },
+        {
+          "time_ms": 561,
+          "mae": 9.1812,
+          "pixels": 5740
+        },
+        {
+          "time_ms": 594,
+          "mae": 9.198,
+          "pixels": 5740
+        },
+        {
+          "time_ms": 627,
+          "mae": 9.2257,
+          "pixels": 5767
+        },
+        {
+          "time_ms": 660,
+          "mae": 9.2778,
+          "pixels": 5802
+        },
+        {
+          "time_ms": 693,
+          "mae": 9.2474,
+          "pixels": 5813
+        },
+        {
+          "time_ms": 726,
+          "mae": 9.2785,
+          "pixels": 5797
+        },
+        {
+          "time_ms": 759,
+          "mae": 9.2358,
+          "pixels": 5764
+        },
+        {
+          "time_ms": 792,
+          "mae": 9.2062,
+          "pixels": 5743
+        },
+        {
+          "time_ms": 825,
+          "mae": 9.1773,
+          "pixels": 5740
+        },
+        {
+          "time_ms": 858,
+          "mae": 9.2023,
+          "pixels": 5753
+        },
+        {
+          "time_ms": 891,
+          "mae": 9.1988,
+          "pixels": 5780
+        },
+        {
+          "time_ms": 924,
+          "mae": 9.2402,
+          "pixels": 5808
+        },
+        {
+          "time_ms": 957,
+          "mae": 9.2367,
+          "pixels": 5808
+        },
+        {
+          "time_ms": 990,
+          "mae": 9.2,
+          "pixels": 5785
+        },
+        {
+          "time_ms": 1023,
+          "mae": 9.193,
+          "pixels": 5751
+        },
+        {
+          "time_ms": 1056,
+          "mae": 9.1824,
+          "pixels": 5737
+        },
+        {
+          "time_ms": 1089,
+          "mae": 9.2094,
+          "pixels": 5743
+        },
+        {
+          "time_ms": 1122,
+          "mae": 9.2274,
+          "pixels": 5759
+        },
+        {
+          "time_ms": 1155,
+          "mae": 9.2616,
+          "pixels": 5794
+        },
+        {
+          "time_ms": 1188,
+          "mae": 9.2653,
+          "pixels": 5808
+        },
+        {
+          "time_ms": 1221,
+          "mae": 9.2686,
+          "pixels": 5800
+        },
+        {
+          "time_ms": 1254,
+          "mae": 9.2308,
+          "pixels": 5771
+        },
+        {
+          "time_ms": 1287,
+          "mae": 10.7217,
+          "pixels": 5395
+        },
+        {
+          "time_ms": 1320,
+          "mae": 10.7129,
+          "pixels": 5388
+        },
+        {
+          "time_ms": 1353,
+          "mae": 9.5976,
+          "pixels": 8371
+        },
+        {
+          "time_ms": 1386,
+          "mae": 9.5847,
+          "pixels": 8383
+        },
+        {
+          "time_ms": 1419,
+          "mae": 0.0,
+          "pixels": 3897
+        },
+        {
+          "time_ms": 1452,
+          "mae": 0.0,
+          "pixels": 3891
+        },
+        {
+          "time_ms": 1485,
+          "mae": 0.0,
+          "pixels": 3895
+        },
+        {
+          "time_ms": 1518,
+          "mae": 0.0,
+          "pixels": 3896
+        },
+        {
+          "time_ms": 1551,
+          "mae": 0.0,
+          "pixels": 3902
+        },
+        {
+          "time_ms": 1584,
+          "mae": 0.0,
+          "pixels": 3899
+        },
+        {
+          "time_ms": 1617,
+          "mae": 0.0,
+          "pixels": 3896
+        },
+        {
+          "time_ms": 1650,
+          "mae": 0.0,
+          "pixels": 3893
+        },
+        {
+          "time_ms": 1683,
+          "mae": 0.0,
+          "pixels": 3892
+        },
+        {
+          "time_ms": 1716,
+          "mae": 0.0,
+          "pixels": 3892
+        },
+        {
+          "time_ms": 1749,
+          "mae": 0.0,
+          "pixels": 3897
+        },
+        {
+          "time_ms": 1782,
+          "mae": 0.0,
+          "pixels": 3906
+        },
+        {
+          "time_ms": 1815,
+          "mae": 0.0,
+          "pixels": 3899
+        },
+        {
+          "time_ms": 1848,
+          "mae": 0.0,
+          "pixels": 3907
+        },
+        {
+          "time_ms": 1881,
+          "mae": 0.0,
+          "pixels": 3909
+        },
+        {
+          "time_ms": 1914,
+          "mae": 0.0,
+          "pixels": 3909
+        },
+        {
+          "time_ms": 1947,
+          "mae": 0.0,
+          "pixels": 3913
+        },
+        {
+          "time_ms": 1980,
+          "mae": 0.0,
+          "pixels": 3914
+        }
+      ]
+    },
+    {
+      "pose_exception": true,
+      "component": "actions",
+      "name": "absorb-player",
+      "screen": "amoled",
+      "mean": 31.5686,
+      "maximum": 41.7542,
+      "passed": false,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 0.0,
+          "pixels": 8742
+        },
+        {
+          "time_ms": 33,
+          "mae": 0.0,
+          "pixels": 8700
+        },
+        {
+          "time_ms": 66,
+          "mae": 0.0,
+          "pixels": 8708
+        },
+        {
+          "time_ms": 99,
+          "mae": 41.7243,
+          "pixels": 52808
+        },
+        {
+          "time_ms": 132,
+          "mae": 41.7188,
+          "pixels": 52826
+        },
+        {
+          "time_ms": 165,
+          "mae": 41.7209,
+          "pixels": 52837
+        },
+        {
+          "time_ms": 198,
+          "mae": 40.9375,
+          "pixels": 53638
+        },
+        {
+          "time_ms": 231,
+          "mae": 40.9514,
+          "pixels": 53633
+        },
+        {
+          "time_ms": 264,
+          "mae": 40.9823,
+          "pixels": 53592
+        },
+        {
+          "time_ms": 297,
+          "mae": 40.8539,
+          "pixels": 50433
+        },
+        {
+          "time_ms": 330,
+          "mae": 40.8496,
+          "pixels": 50438
+        },
+        {
+          "time_ms": 363,
+          "mae": 40.8444,
+          "pixels": 50462
+        },
+        {
+          "time_ms": 396,
+          "mae": 40.833,
+          "pixels": 50530
+        },
+        {
+          "time_ms": 429,
+          "mae": 40.8238,
+          "pixels": 50545
+        },
+        {
+          "time_ms": 462,
+          "mae": 40.8531,
+          "pixels": 50511
+        },
+        {
+          "time_ms": 495,
+          "mae": 40.8199,
+          "pixels": 50522
+        },
+        {
+          "time_ms": 528,
+          "mae": 40.868,
+          "pixels": 50418
+        },
+        {
+          "time_ms": 561,
+          "mae": 40.8684,
+          "pixels": 50420
+        },
+        {
+          "time_ms": 594,
+          "mae": 40.8526,
+          "pixels": 50438
+        },
+        {
+          "time_ms": 627,
+          "mae": 40.8302,
+          "pixels": 50499
+        },
+        {
+          "time_ms": 660,
+          "mae": 40.8298,
+          "pixels": 50529
+        },
+        {
+          "time_ms": 693,
+          "mae": 40.8303,
+          "pixels": 50543
+        },
+        {
+          "time_ms": 726,
+          "mae": 40.8306,
+          "pixels": 50529
+        },
+        {
+          "time_ms": 759,
+          "mae": 40.8473,
+          "pixels": 50479
+        },
+        {
+          "time_ms": 792,
+          "mae": 40.8597,
+          "pixels": 50433
+        },
+        {
+          "time_ms": 825,
+          "mae": 40.8621,
+          "pixels": 50429
+        },
+        {
+          "time_ms": 858,
+          "mae": 40.8643,
+          "pixels": 50433
+        },
+        {
+          "time_ms": 891,
+          "mae": 40.8296,
+          "pixels": 50519
+        },
+        {
+          "time_ms": 924,
+          "mae": 40.8434,
+          "pixels": 50522
+        },
+        {
+          "time_ms": 957,
+          "mae": 40.8321,
+          "pixels": 50535
+        },
+        {
+          "time_ms": 990,
+          "mae": 40.8303,
+          "pixels": 50522
+        },
+        {
+          "time_ms": 1023,
+          "mae": 40.8551,
+          "pixels": 50448
+        },
+        {
+          "time_ms": 1056,
+          "mae": 40.8541,
+          "pixels": 50431
+        },
+        {
+          "time_ms": 1089,
+          "mae": 40.8565,
+          "pixels": 50428
+        },
+        {
+          "time_ms": 1122,
+          "mae": 40.8445,
+          "pixels": 50471
+        },
+        {
+          "time_ms": 1155,
+          "mae": 40.8316,
+          "pixels": 50526
+        },
+        {
+          "time_ms": 1188,
+          "mae": 40.8274,
+          "pixels": 50544
+        },
+        {
+          "time_ms": 1221,
+          "mae": 40.8505,
+          "pixels": 50517
+        },
+        {
+          "time_ms": 1254,
+          "mae": 40.8316,
+          "pixels": 50509
+        },
+        {
+          "time_ms": 1287,
+          "mae": 40.8688,
+          "pixels": 50419
+        },
+        {
+          "time_ms": 1320,
+          "mae": 40.8718,
+          "pixels": 50417
+        },
+        {
+          "time_ms": 1353,
+          "mae": 40.8669,
+          "pixels": 50419
+        },
+        {
+          "time_ms": 1386,
+          "mae": 40.8393,
+          "pixels": 50502
+        },
+        {
+          "time_ms": 1419,
+          "mae": 40.8304,
+          "pixels": 50531
+        },
+        {
+          "time_ms": 1452,
+          "mae": 40.9063,
+          "pixels": 53668
+        },
+        {
+          "time_ms": 1485,
+          "mae": 40.9402,
+          "pixels": 53634
+        },
+        {
+          "time_ms": 1518,
+          "mae": 40.9951,
+          "pixels": 53586
+        },
+        {
+          "time_ms": 1551,
+          "mae": 41.747,
+          "pixels": 52783
+        },
+        {
+          "time_ms": 1584,
+          "mae": 41.7542,
+          "pixels": 52781
+        },
+        {
+          "time_ms": 1617,
+          "mae": 41.7246,
+          "pixels": 52805
+        },
+        {
+          "time_ms": 1650,
+          "mae": 0.0,
+          "pixels": 8751
+        },
+        {
+          "time_ms": 1683,
+          "mae": 0.0,
+          "pixels": 8764
+        },
+        {
+          "time_ms": 1716,
+          "mae": 0.0,
+          "pixels": 8770
+        },
+        {
+          "time_ms": 1749,
+          "mae": 0.0,
+          "pixels": 8761
+        },
+        {
+          "time_ms": 1782,
+          "mae": 0.0,
+          "pixels": 8774
+        },
+        {
+          "time_ms": 1815,
+          "mae": 0.0,
+          "pixels": 8766
+        },
+        {
+          "time_ms": 1848,
+          "mae": 0.0,
+          "pixels": 8765
+        },
+        {
+          "time_ms": 1881,
+          "mae": 0.0,
+          "pixels": 8746
+        },
+        {
+          "time_ms": 1914,
+          "mae": 0.0,
+          "pixels": 8760
+        },
+        {
+          "time_ms": 1947,
+          "mae": 0.0,
+          "pixels": 8735
+        },
+        {
+          "time_ms": 1980,
+          "mae": 0.0,
+          "pixels": 8758
+        }
+      ]
+    },
+    {
+      "pose_exception": true,
+      "component": "actions",
+      "name": "absorb-player",
+      "screen": "h106",
+      "mean": 32.8343,
+      "maximum": 42.7796,
+      "passed": false,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 0.0,
+          "pixels": 3883
+        },
+        {
+          "time_ms": 33,
+          "mae": 0.0,
+          "pixels": 3887
+        },
+        {
+          "time_ms": 66,
+          "mae": 0.0,
+          "pixels": 3890
+        },
+        {
+          "time_ms": 99,
+          "mae": 42.0139,
+          "pixels": 17414
+        },
+        {
+          "time_ms": 132,
+          "mae": 42.0287,
+          "pixels": 17424
+        },
+        {
+          "time_ms": 165,
+          "mae": 42.0374,
+          "pixels": 17463
+        },
+        {
+          "time_ms": 198,
+          "mae": 42.37,
+          "pixels": 16552
+        },
+        {
+          "time_ms": 231,
+          "mae": 42.3428,
+          "pixels": 16551
+        },
+        {
+          "time_ms": 264,
+          "mae": 42.3745,
+          "pixels": 16531
+        },
+        {
+          "time_ms": 297,
+          "mae": 42.775,
+          "pixels": 15049
+        },
+        {
+          "time_ms": 330,
+          "mae": 42.7712,
+          "pixels": 15045
+        },
+        {
+          "time_ms": 363,
+          "mae": 42.7746,
+          "pixels": 15067
+        },
+        {
+          "time_ms": 396,
+          "mae": 42.7736,
+          "pixels": 15100
+        },
+        {
+          "time_ms": 429,
+          "mae": 42.7432,
+          "pixels": 15143
+        },
+        {
+          "time_ms": 462,
+          "mae": 42.7744,
+          "pixels": 15124
+        },
+        {
+          "time_ms": 495,
+          "mae": 42.7563,
+          "pixels": 15092
+        },
+        {
+          "time_ms": 528,
+          "mae": 42.7634,
+          "pixels": 15060
+        },
+        {
+          "time_ms": 561,
+          "mae": 42.7572,
+          "pixels": 15037
+        },
+        {
+          "time_ms": 594,
+          "mae": 42.7774,
+          "pixels": 15050
+        },
+        {
+          "time_ms": 627,
+          "mae": 42.765,
+          "pixels": 15079
+        },
+        {
+          "time_ms": 660,
+          "mae": 42.7543,
+          "pixels": 15119
+        },
+        {
+          "time_ms": 693,
+          "mae": 42.7619,
+          "pixels": 15141
+        },
+        {
+          "time_ms": 726,
+          "mae": 42.7691,
+          "pixels": 15109
+        },
+        {
+          "time_ms": 759,
+          "mae": 42.7564,
+          "pixels": 15076
+        },
+        {
+          "time_ms": 792,
+          "mae": 42.7674,
+          "pixels": 15049
+        },
+        {
+          "time_ms": 825,
+          "mae": 42.7501,
+          "pixels": 15039
+        },
+        {
+          "time_ms": 858,
+          "mae": 42.7625,
+          "pixels": 15063
+        },
+        {
+          "time_ms": 891,
+          "mae": 42.7579,
+          "pixels": 15096
+        },
+        {
+          "time_ms": 924,
+          "mae": 42.7609,
+          "pixels": 15136
+        },
+        {
+          "time_ms": 957,
+          "mae": 42.7611,
+          "pixels": 15135
+        },
+        {
+          "time_ms": 990,
+          "mae": 42.766,
+          "pixels": 15098
+        },
+        {
+          "time_ms": 1023,
+          "mae": 42.7796,
+          "pixels": 15062
+        },
+        {
+          "time_ms": 1056,
+          "mae": 42.7588,
+          "pixels": 15042
+        },
+        {
+          "time_ms": 1089,
+          "mae": 42.7606,
+          "pixels": 15048
+        },
+        {
+          "time_ms": 1122,
+          "mae": 42.7472,
+          "pixels": 15076
+        },
+        {
+          "time_ms": 1155,
+          "mae": 42.778,
+          "pixels": 15108
+        },
+        {
+          "time_ms": 1188,
+          "mae": 42.7595,
+          "pixels": 15142
+        },
+        {
+          "time_ms": 1221,
+          "mae": 42.7522,
+          "pixels": 15124
+        },
+        {
+          "time_ms": 1254,
+          "mae": 42.7593,
+          "pixels": 15085
+        },
+        {
+          "time_ms": 1287,
+          "mae": 42.7418,
+          "pixels": 15060
+        },
+        {
+          "time_ms": 1320,
+          "mae": 42.7611,
+          "pixels": 15035
+        },
+        {
+          "time_ms": 1353,
+          "mae": 42.7374,
+          "pixels": 15061
+        },
+        {
+          "time_ms": 1386,
+          "mae": 42.7548,
+          "pixels": 15087
+        },
+        {
+          "time_ms": 1419,
+          "mae": 42.7605,
+          "pixels": 15114
+        },
+        {
+          "time_ms": 1452,
+          "mae": 42.2745,
+          "pixels": 16597
+        },
+        {
+          "time_ms": 1485,
+          "mae": 42.3745,
+          "pixels": 16545
+        },
+        {
+          "time_ms": 1518,
+          "mae": 42.4158,
+          "pixels": 16522
+        },
+        {
+          "time_ms": 1551,
+          "mae": 42.0092,
+          "pixels": 17398
+        },
+        {
+          "time_ms": 1584,
+          "mae": 41.9935,
+          "pixels": 17410
+        },
+        {
+          "time_ms": 1617,
+          "mae": 42.0107,
+          "pixels": 17422
+        },
+        {
+          "time_ms": 1650,
+          "mae": 0.0,
+          "pixels": 3893
+        },
+        {
+          "time_ms": 1683,
+          "mae": 0.0,
+          "pixels": 3892
+        },
+        {
+          "time_ms": 1716,
+          "mae": 0.0,
+          "pixels": 3892
+        },
+        {
+          "time_ms": 1749,
+          "mae": 0.0,
+          "pixels": 3897
+        },
+        {
+          "time_ms": 1782,
+          "mae": 0.0,
+          "pixels": 3906
+        },
+        {
+          "time_ms": 1815,
+          "mae": 0.0,
+          "pixels": 3899
+        },
+        {
+          "time_ms": 1848,
+          "mae": 0.0,
+          "pixels": 3907
+        },
+        {
+          "time_ms": 1881,
+          "mae": 0.0,
+          "pixels": 3909
+        },
+        {
+          "time_ms": 1914,
+          "mae": 0.0,
+          "pixels": 3909
+        },
+        {
+          "time_ms": 1947,
+          "mae": 0.0,
+          "pixels": 3913
+        },
+        {
+          "time_ms": 1980,
+          "mae": 0.0,
+          "pixels": 3914
+        }
+      ]
+    }
+  ],
+  "passed": true,
+  "frame_pairs": 244,
+  "vector_pack_sha256": "de618bc9a4083393ea997acfe3456bbfbbeda37d6b42c9ae3d9a97c6c5571449"
+}

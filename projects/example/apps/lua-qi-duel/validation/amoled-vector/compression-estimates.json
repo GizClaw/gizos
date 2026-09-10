@@ -1,0 +1,19 @@
+{
+  "original_component_pack": 3272053,
+  "amoled_only_component_pack": 2375542,
+  "amoled_delta_varint_component_pack": 990657,
+  "amoled_raw_commands": 5133886,
+  "amoled_whole_zlib": 2184402,
+  "amoled_whole_lzma": 1059208,
+  "lossless_roundtrip_frames": 154,
+  "estimates_not_installable_packages": {
+    "remove_h106": {
+      "estimated_package_bytes": 3783399,
+      "estimated_saved_bytes": 896714
+    },
+    "remove_h106_and_lossless_delta_varint": {
+      "estimated_package_bytes": 2399075,
+      "estimated_saved_bytes": 2281038
+    }
+  }
+}

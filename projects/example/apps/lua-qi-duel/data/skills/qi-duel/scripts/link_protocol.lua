@@ -24,7 +24,7 @@ function M:ready(now)
     self:send("READY")
 end
 function M:start(now)
-    self.start_at=now+300;self.deadline=self.start_at+Rules.SELECT_MS;self.phase="choose"
+    self.start_at=now+300;self.deadline=self.start_at+Rules.selection_ms(self.round);self.phase="choose"
     self:send("START",{start=self.start_at})
 end
 function M:lock(action,now,timeout)
@@ -65,7 +65,7 @@ function M:receive(m,now)
         if self.phase=="ready" then self.remote_ready=true end
     elseif m.kind=="START" and not self.central and self.phase=="ready" then
         if not int(m.start,0,2^53) then self.error="BAD START";return end
-        self.start_at=m.start-self.offset;self.deadline=self.start_at+Rules.SELECT_MS;self.phase="choose"
+        self.start_at=m.start-self.offset;self.deadline=self.start_at+Rules.selection_ms(self.round);self.phase="choose"
         if self.start_at<now-200 then self.error="CLOCK TOO LATE" end
     elseif m.kind=="COMMIT" and self.phase=="choose" then
         local peer=3-self.side

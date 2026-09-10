@@ -1,0 +1,26 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>气决 · 组件逐帧验收</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0a1019;color:#e5eef9;font:15px/1.6 system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:28px}h1{font-size:25px;margin:0}p{color:#9eadc1}button,select{background:#182638;color:inherit;border:1px solid #37516c;padding:9px;border-radius:7px;font:inherit}.controls{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:20px 0}input{accent-color:#6edefb}.panels{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.panel{text-align:center;background:#101b2a;padding:12px;border:1px solid #233a51;border-radius:12px}canvas{width:100%;max-width:368px;height:auto;background:black}.metric{color:#78dfb2;padding:12px 0}.note{color:#ffcc87}a{color:#82cfff}@media(max-width:720px){.panels{grid-template-columns:1fr}}
+</style><main><h1>气决 · 组件逐帧验收</h1>
+<p>原生 Lua / RGB565 帧缓冲，同分辨率、同时间点比较。误差仅计算组件可见像素的并集，排除共同黑色背景。</p>
+<p class="note">聚气已恢复原姿势；吸收改为双臂上下平行、手腕伸直，此指定姿势改动单独记录与旧姿势的误差。四个技能图标已统一缩小 25%。</p>
+<div class="controls"><select id="component" aria-label="组件"></select><select id="screen" aria-label="屏幕"><option value="amoled">AMOLED · 368 × 448</option><option value="h106">H106 · 240 × 240</option></select><button id="play">播放</button><input id="frame" type="range" min="0" max="60" value="0" aria-label="帧"><span id="time"></span></div>
+<div class="metric" id="metric">加载验收结果…</div>
+<div class="panels"><div class="panel">旧组件<canvas id="old"></canvas></div><div class="panel">矢量组件<canvas id="new"></canvas></div><div class="panel">50% 叠加<canvas id="overlay"></canvas></div></div>
+<p id="coverage"></p></main>
+<script>
+const $=id=>document.getElementById(id), records=[];
+const labels={'hud':'血条 HUD','hud-player-down':'己方扣血','hud-player-up':'己方回血','hud-enemy-down':'对方扣血','hud-enemy-up':'对方回血','carousel-frame':'轮盘底座','charge-up':'充能增加','charge-down':'充能减少','charge-player':'聚气 · 原姿势','wave-player':'波 · 双臂','absorb-player':'吸收 · 上下平行','guard-player':'防御 · 双臂','charge-opponent':'聚气 · 对手','wave-opponent':'波 · 对手','absorb-opponent':'吸收 · 对手','guard-opponent':'防御 · 对手','clash-equal':'光束 · 势均力敌','clash-player-combo':'光束 · 己方连击','clash-enemy-combo':'光束 · 对方连击','clash-both-combo':'光束 · 双方连击','result-win':'胜利结算','result-lose':'失败结算','impact-combo':'连击特效','impact-armor-break':'破甲特效','walls':'墙面灯光','wheel':'地面光环'};
+let running=false,last=0,token=0;
+function current(){return records.find(r=>r.name===$('component').value&&r.screen===$('screen').value)}
+async function show(){const r=current();if(!r)return;const version=++token;let frame=Math.min(+$('frame').value,r.frames.length-1);$('frame').max=r.frames.length-1;$('frame').value=frame;const row=r.frames[frame];$('time').textContent=`${row.time_ms} ms · ${frame+1}/${r.frames.length}`;
+$('metric').textContent=`本帧 ${row.mae.toFixed(2)}/255 · 全序列平均 ${r.mean.toFixed(2)}/255 · 最差帧 ${r.maximum.toFixed(2)}/255 · ${r.pose_exception?'指定姿势改动':r.passed?'通过 < 30/255':'待修正'}`;
+const suffix=r.frames.length>1?'-'+String(frame).padStart(3,'0'):'';
+const load=mode=>new Promise((resolve,reject)=>{const i=new Image;i.onload=()=>resolve(i);i.onerror=reject;i.src=`../validation/${r.folder}/${r.screen}-${r.name}-${mode}${suffix}.png`});
+try{const [a,b]=await Promise.all([load('reference'),load(r.component)]);if(version!==token)return;for(const [id,im] of [['old',a],['new',b],['overlay',a]]){const c=$(id);c.width=im.width;c.height=im.height;c.getContext('2d').drawImage(im,0,0)}const ctx=$('overlay').getContext('2d');ctx.globalAlpha=.5;ctx.drawImage(b,0,0);ctx.globalAlpha=1;}catch(e){$('metric').textContent+=' · 帧正在生成';}}
+async function init(){for(const folder of ['components-final-keyframes','components-final-animation','components-optimized-animation','components-absorb-correction']){try{const data=await(await fetch('../validation/'+folder+'/report.json')).json();for(const r of data.cases){const i=records.findIndex(v=>v.name===r.name&&v.screen===r.screen);if(i>=0)records.splice(i,1);records.push({...r,folder});}}catch(e){}}
+for(const name of new Set(records.map(r=>r.name))){const o=document.createElement('option');o.value=name;o.textContent=labels[name]||name.replace('charge-','充能格 · ').replace('countdown-','倒计时 · ');$('component').append(o)}$('coverage').textContent=`已记录 ${records.length} 组屏幕/组件序列，${records.reduce((n,r)=>n+r.frames.length,0)} 对实际渲染帧。`;show();}
+$('component').onchange=()=>{$('frame').value=0;show()};$('screen').onchange=show;$('frame').oninput=show;$('play').onclick=()=>{running=!running;$('play').textContent=running?'暂停':'播放'};
+function tick(t){if(running&&t-last>=33){last=t;const r=current();if(r){$('frame').value=(+$('frame').value+1)%r.frames.length;show()}}requestAnimationFrame(tick)}requestAnimationFrame(tick);init();
+</script></html>

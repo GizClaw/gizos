@@ -619,6 +619,23 @@ int main(void) {
     if(id<11)assert(fixture.frame_hash==expected);
     else assert(fixture.frame_hash!=expected);
   }
+#ifdef H2_QI_DUEL_DESKTOP_VECTORS
+  /* Approved hand review switches must agree with the default renderer. */
+  for(int component=0;component<2;component++)for(int h106=0;h106<=1;h106++) {
+    for(int layer=0;layer<3;layer++) {
+      const char *name=layer==0?"hand-left":layer==1?"hand-right":"hud";
+      uint32_t baseline=0;
+      for(int candidate=0;candidate<2;candidate++) {
+        fixture=(fixture_t){.h106=h106,.inspector_layer=22};
+        assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+          .back_component_id=H2_RUNTIME_COMPONENT_ID_NONE,.should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+          .layer=name,.time_ms="250",.draw_component=candidate?(component?"hand-right":"hand-left"):NULL})==H2_PAL_OK);
+        if(!candidate)baseline=fixture.frame_hash;
+        else assert(fixture.frame_hash==baseline);
+      }
+    }
+  }
+#endif
   h2_runtime_test_control_close(control);
   h2_runtime_deinit(runtime);
   return 0;

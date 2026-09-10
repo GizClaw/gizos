@@ -134,10 +134,6 @@ typedef struct test_display_fixture {
 
 static test_display_fixture_t s_test_display_fixture;
 
-static const uint8_t s_test_display_asset[] = {
-    'H',  '2',  'A',  '4',  2,    0,    2,    0,
-    0x00, 0xff, 0xf0, 0xf0, 0x0f, 0xf0, 0xff, 0x0f,
-};
 /* One 1x1 lamp at (2,3), black and RGB(255,128,64) gain samples. */
 static const uint8_t s_test_light_atlas[] = {
     72,50,76,70,8,0,8,0,1,0,2,0,2,0,3,0,1,0,1,0,
@@ -156,11 +152,8 @@ static const uint8_t s_test_styles[]={
   120,156,99,96,248,255,159,1,9,3,0,59,212,7,249,
 };
 static uint8_t s_test_bad_styles[sizeof(s_test_styles)];
-static const h2_lua_resource_t s_test_resources[] = {{
-    .name = "@test/tiny.a4",
-    .source = s_test_display_asset,
-    .source_size = sizeof(s_test_display_asset),
-}, {
+static const uint8_t s_test_vector_slices[] = {49,0,0,0,120,156,243,48,10,115,103,97,96,97,96,96,96,100,96,225,5,209,12,12,2,96,12,33,185,24,254,255,255,207,192,0,68,13,246,96,12,0,121,206,6,250,49,0,0,0,120,156,243,48,10,115,103,97,96,97,96,96,96,100,96,225,5,209,12,12,2,96,12,33,185,24,254,255,103,0,227,6,123,48,6,0,119,208,6,250};
+static const h2_lua_resource_t s_test_resources[] = {{.name="@test/vector.h2vp",.source=s_test_vector_slices,.source_size=sizeof(s_test_vector_slices)}, {
     .name = "@test/light.h2lf", .source = s_test_light_atlas,
     .source_size = sizeof(s_test_light_atlas),
 }, {
@@ -1343,6 +1336,31 @@ int main(void) {
     assert(s_test_display_fixture.pixels[4u*8u+2u]==0u);
     assert(s_test_display_fixture.pixels[4u*8u+3u]==0xffffu);
 
+    static const uint8_t vector_slice_script[] =
+        "local d=require('display');if not d.draw_vector_slice then return 'skip' end\n"
+        "local function draw(cache,mix,x) d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,x or 1,1,1,46,44,mix or 0,cache) end\n"
+        "for n=0,45 do assert(not pcall(d.draw_vector_slice,'@test/vector.h2vp',0,n,1,0,0,1,0,0)) end\n"
+        "assert(not pcall(d.draw_vector_slice,'@test/vector.h2vp',-1,46,1,0,0,1,0,0))\n"
+        "assert(not pcall(d.draw_vector_slice,'@test/vector.h2vp',9999,46,1,0,0,1,0,0))\n"
+        "assert(not pcall(d.draw_vector_slice,'@test/vector.h2vp',0,46,1,0,0,0,0,0))\n"
+        "for i=1,32 do d.clear('black');d.begin_composite();draw(true,0,(i%4)+i*.001);d.end_composite() end\n"
+        "d.clear('black');d.begin_composite();draw(true,0,1);d.end_composite();d.present();return 'ok'\n";
+    canvas_status=run_display_script(host,"@vector-slices.lua",vector_slice_script,sizeof(vector_slice_script)-1u);
+    if(strcmp(canvas_status.message,"skip")) {
+      assert(strcmp(canvas_status.message,"ok")==0);
+      assert(s_test_display_fixture.pixels[2u*8u+2u]==0xf800u);
+      assert(s_test_display_fixture.pixels[0]==0u);
+    }
+    {static const uint8_t script[]="local d=require('display');if not d.draw_vector_slice then return 'skip' end;d.clear('black');d.begin_composite();d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,1,1,1,46,44,0,false);d.end_composite();d.present();return 'ok'";
+    canvas_status=run_display_script(host,"@vector-uncached.lua",script,sizeof(script)-1u);
+    if(strcmp(canvas_status.message,"skip")){assert(strcmp(canvas_status.message,"ok")==0);assert(s_test_display_fixture.pixels[2u*8u+2u]==0xf800u);}}
+    {static const uint8_t script[]="local d=require('display');if not d.draw_vector_slice then return 'skip' end;d.clear('black');d.begin_composite();d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,1,1,1,46,44,.5,false);d.end_composite();d.present();return 'ok'";
+    canvas_status=run_display_script(host,"@vector-blend.lua",script,sizeof(script)-1u);
+    if(strcmp(canvas_status.message,"skip")){assert(strcmp(canvas_status.message,"ok")==0);assert(s_test_display_fixture.pixels[2u*8u+2u]==0x8010u);}}
+
+    {static const uint8_t script[]="local d=require('display');if not d.draw_vector_slice then return 'skip' end;d.clear('black');d.begin_composite();d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,1,1,1,46,44,0,false,true);d.end_composite();d.present();return 'ok'";
+    canvas_status=run_display_script(host,"@vector-tile.lua",script,sizeof(script)-1u);
+    if(strcmp(canvas_status.message,"skip")){assert(strcmp(canvas_status.message,"ok")==0);assert(s_test_display_fixture.pixels[2u*8u+2u]==0xf800u);}}
     static const uint8_t styles_script[] =
         "local d=require('display');d.clear('black');d.begin_composite();"
         "d.draw_sprite_atlas('@test/styles.h2rs',1,1,0,2,3);"
@@ -1518,7 +1536,7 @@ int main(void) {
         "local d=require('display');"
         "for _,g in ipairs({{}, {-1}, {1.1}, {0/0}, {math.huge}, {'bad'}}) do "
         "assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',g)) end;"
-        "assert(not pcall(d.draw_light_atlas,'@test/tiny.a4',{1}));"
+        "assert(not pcall(d.draw_light_atlas,'@test/tiny.h2r8',{1}));"
         "assert(not pcall(d.draw_light_atlas,'missing',{1}));"
         "assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',{1},{0,0,0}));"
         "assert(not pcall(d.draw_light_atlas,'@test/light.h2lf',{1},{1,0/0,0}));"
@@ -1541,21 +1559,6 @@ int main(void) {
                                         sizeof(invalid_atlas_script) - 1u);
       assert(strcmp(light_status.message, "ok") == 0);
     }
-  }
-
-  {
-    static const uint8_t draw_asset_script[] =
-        "local d=require('display');d.present();"
-        "d.draw_asset('@test/tiny.a4',2,3);d.present();d.deinit();return 'ok'";
-    h2_lua_job_status_t display_status =
-        run_display_script(host, "@display-draw-asset.lua", draw_asset_script,
-                           sizeof(draw_asset_script) - 1u);
-    assert(strcmp(display_status.message, "ok") == 0);
-    assert_draw_rect(1u, 2, 3, 2, 2);
-    assert(s_test_display_fixture.pixels[3u * 8u + 2u] == 0xf800u);
-    assert(s_test_display_fixture.pixels[3u * 8u + 3u] == 0x07e0u);
-    assert(s_test_display_fixture.pixels[4u * 8u + 2u] == 0x001fu);
-    assert(s_test_display_fixture.pixels[4u * 8u + 3u] == 0x0000u);
   }
 
   {

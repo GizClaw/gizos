@@ -77,6 +77,7 @@ struct CaptureDisplay {
   AppContext *context;
   std::vector<uint16_t> pixels = std::vector<uint16_t>(h2_desktop_layout::width * h2_desktop_layout::height);
   bool has_frame = false;
+  unsigned frame_limit=1,frame_index=0;
 };
 
 int capture_open(void *user) {
@@ -109,7 +110,13 @@ int capture_present(void *user) {
   if (result != H2_DISPLAY_OK || !tap->has_frame || tap->context->captured)
     return result;
   // Exclusive creation prevents accidentally overwriting a user's file.
-  FILE *file = std::fopen(tap->path, "wbx");
+  char frame_path[4096];const char *path=tap->path;
+  if(tap->frame_limit>1) {
+    int length=std::snprintf(frame_path,sizeof(frame_path),"%s-%03u.ppm",tap->path,tap->frame_index);
+    if(length<0||size_t(length)>=sizeof(frame_path))return H2_DISPLAY_ERR_INVALID_ARG;
+    path=frame_path;
+  }
+  FILE *file = std::fopen(path, "wbx");
   if (!file) {
     std::perror("capture");
     return H2_DISPLAY_ERR_INVALID_ARG;
@@ -123,7 +130,8 @@ int capture_present(void *user) {
     if (std::fwrite(rgb, 1, sizeof(rgb), file) != sizeof(rgb)) ok = false;
   }
   if (std::fclose(file) != 0) ok = false;
-  tap->context->captured = ok;
+  if(ok)tap->frame_index++;
+  tap->context->captured = ok && tap->frame_index>=tap->frame_limit;
   return ok ? H2_DISPLAY_OK : H2_DISPLAY_ERR_INVALID_ARG;
 }
 int capture_brightness(void *user, uint32_t percent) {
@@ -156,6 +164,8 @@ int main(int argc, char **argv) {
   const char *impact = nullptr;
   const char *clash = nullptr;
   const char *settlement = nullptr;
+  const char *draw_component=nullptr;
+  const char *capture_frames=nullptr;
   bool rehearsal=false, game_probe=false;
   for (int i = 1; i < argc; ++i) {
     if (std::strncmp(argv[i], "--layer=", 8) == 0) layer = argv[i] + 8;
@@ -171,6 +181,8 @@ int main(int argc, char **argv) {
     else if (std::strncmp(argv[i], "--impact=", 9) == 0) impact = argv[i] + 9;
     else if (std::strncmp(argv[i], "--clash=", 8) == 0) clash = argv[i] + 8;
     else if (std::strncmp(argv[i], "--result=", 9) == 0) settlement = argv[i] + 9;
+    else if (std::strncmp(argv[i], "--capture-frames=", 17) == 0) capture_frames=argv[i]+17;
+    else if (std::strncmp(argv[i], "--draw-component=", 17) == 0) draw_component=argv[i]+17;
     else if (std::strcmp(argv[i], "--rehearsal") == 0) rehearsal=true;
     else if (std::strcmp(argv[i], "--game") == 0) game_probe=true;
     else {
@@ -188,11 +200,14 @@ int main(int argc, char **argv) {
     return tail != value && *tail == '\0' && std::isfinite(parsed) &&
            parsed >= low && parsed <= high && (!integer || parsed == std::floor(parsed));
   };
+  if(capture_frames && (!capture || !time_ms || !valid_number(capture_frames,1,300,true))) {
+    std::fprintf(stderr,"--capture-frames=1..300 requires --capture and --time-ms\n");return 2;
+  }
   bool valid_layer = false;
   for (const char *candidate : {"full","walls","wheel","arena","dust","particles",
                                 "opponent","hand-left","hand-right","arena-dust","scene7","hud","scene8",
                                 "carousel-frame","charge-cells","charge-base","scene11","carousel",
-                                "skill-charge","skill-wave","skill-absorb","skill-guard"})
+                                "skill-charge","skill-wave","skill-absorb","skill-guard","impact"})
     if (std::strcmp(layer, candidate) == 0) valid_layer = true;
   bool valid_fx = health_fx == nullptr;
   bool valid_action = action == nullptr, valid_actor = actor == nullptr;
@@ -233,6 +248,7 @@ int main(int argc, char **argv) {
   }
   AppContext context = {&display};
   CaptureDisplay tap = {display.display(), capture, &context};
+  tap.frame_limit=capture_frames?static_cast<unsigned>(std::strtoul(capture_frames,nullptr,10)):1;
   const h2_pal_display_t capture_display = {&tap, &kCaptureVtable};
   runtime_config.display = capture ? &capture_display : display.display();
   runtime_config.touch = display.touch();
@@ -273,6 +289,8 @@ int main(int argc, char **argv) {
       .impact = impact,
       .clash = clash,
       .result = settlement,
+      .draw_component = draw_component,
+      .capture_step_ms = capture_frames ? "33" : nullptr,
   };
   result = h2_lua_qi_duel_run(runtime, &config);
   (void)h2::desktop::poll_events(&display);

@@ -19,6 +19,16 @@ static int never_stop(void *user) {
   return 0;
 }
 
+static h2_pal_result_t pause_advertising(void *user) {
+  (void)user;
+  return h2_esp_h2loader_app_commands_pause_ble_advertising();
+}
+
+static h2_pal_result_t resume_advertising(void *user) {
+  (void)user;
+  return h2_esp_h2loader_app_commands_resume_ble_advertising();
+}
+
 static h2_pal_result_t confirm_ready(void *user) {
   h2_runtime_t *runtime = user;
   h2_pal_result_t result = h2_esp_platform_confirm_running_app();
@@ -81,6 +91,9 @@ static void image_entry(void *user) {
                    .should_stop = never_stop,
                    .on_ready = confirm_ready,
                    .on_ready_user = runtime,
+                   .battle = 1,
+                   .pause_management_advertising = pause_advertising,
+                   .resume_management_advertising = resume_advertising,
                });
   printf("H2_LUA_QI_DUEL_EXIT rc=%d recovery=app_command\n", (int)result);
   hold_for_recovery();

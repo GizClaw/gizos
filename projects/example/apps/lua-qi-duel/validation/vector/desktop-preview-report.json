@@ -1,0 +1,55 @@
+{
+  "status": "interactive-desktop-preview-running-not-performance-accepted",
+  "backend": "macOS CoreGraphics interpreting compiled H2VG geometry",
+  "binary_sha256": "0f824465e5e6a73d11d73a5f154c6fad6c349230f80f2d685f22ab4cad1e651e",
+  "launch_arguments": [
+    "--rehearsal"
+  ],
+  "native_vector_assets": [
+    "opponent standing pose",
+    "charge",
+    "wave",
+    "absorb",
+    "guard"
+  ],
+  "remaining_raster_assets": [
+    "hands",
+    "alternate action poses",
+    "clash/closeup",
+    "HUD",
+    "background lighting"
+  ],
+  "tests": {
+    "vector_cg_test": "passed",
+    "lua_qi_duel_test": "passed",
+    "qi_duel_rules_test": "passed"
+  },
+  "recent_perf_logs": [
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=20 fps=19.8 update_ms=0 draw_ms=49 present_ms=0 frame_ms=50/52 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=20 fps=19.6 update_ms=0 draw_ms=49 present_ms=0 frame_ms=50/53 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=20 fps=19.0 update_ms=0 draw_ms=51 present_ms=0 frame_ms=52/58 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=19 fps=18.5 update_ms=0 draw_ms=52 present_ms=0 frame_ms=54/57 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=19 fps=18.8 update_ms=0 draw_ms=51 present_ms=0 frame_ms=53/55 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=20 fps=19.8 update_ms=0 draw_ms=49 present_ms=0 frame_ms=50/52 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=20 fps=19.5 update_ms=0 draw_ms=49 present_ms=0 frame_ms=51/53 skill=ABSORB qi=3 hp=4/4",
+    "H2_LOG level=info scope=lua message=H2_QI_DUEL_PERF frames=20 fps=19.1 update_ms=0 draw_ms=50 present_ms=0 frame_ms=52/55 skill=ABSORB qi=3 hp=4/4"
+  ],
+  "target_fps": 30,
+  "measured_recent_fps": [
+    19.8,
+    19.6,
+    19.0,
+    18.5,
+    18.8,
+    19.8,
+    19.5,
+    19.1
+  ],
+  "compiled_vector_bytes": {
+    "vector-opponent.h2vg": 44053,
+    "vector-guard.h2vg": 21673,
+    "vector-charge.h2vg": 13067,
+    "vector-absorb.h2vg": 13109,
+    "vector-wave.h2vg": 10774
+  }
+}

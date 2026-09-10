@@ -61,6 +61,10 @@ typedef struct h2_lua_qi_duel_config {
   const char *clash;
   /** Optional settlement probe: win or lose. */
   const char *result;
+  /** Explicit desktop component review; NULL keeps only approved replacements. */
+  const char *draw_component;
+  /** Deterministic sequence capture advances this many milliseconds per frame. */
+  const char *capture_step_ms;
 } h2_lua_qi_duel_config_t;
 
 /** Runs the Qi Duel Lua resource using the supplied initialized Runtime. */

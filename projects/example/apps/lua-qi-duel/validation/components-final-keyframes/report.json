@@ -1,0 +1,1130 @@
+{
+  "metric": "RGB MAE over union of component pixels > 3/255, after optional ROI; RGB565 native captures",
+  "threshold": 30,
+  "step_ms": 33,
+  "cases": [
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud",
+      "screen": "amoled",
+      "mean": 7.1276,
+      "maximum": 7.1276,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 7.1276,
+          "pixels": 10689
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud",
+      "screen": "h106",
+      "mean": 9.2288,
+      "maximum": 9.2288,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 9.2288,
+          "pixels": 3932
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-player-down",
+      "screen": "amoled",
+      "mean": 6.8528,
+      "maximum": 6.8528,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 6.8528,
+          "pixels": 10776
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-player-down",
+      "screen": "h106",
+      "mean": 8.847,
+      "maximum": 8.847,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 8.847,
+          "pixels": 3938
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-player-up",
+      "screen": "amoled",
+      "mean": 7.0045,
+      "maximum": 7.0045,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 7.0045,
+          "pixels": 10906
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-player-up",
+      "screen": "h106",
+      "mean": 9.1624,
+      "maximum": 9.1624,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 9.1624,
+          "pixels": 3961
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-enemy-down",
+      "screen": "amoled",
+      "mean": 6.9911,
+      "maximum": 6.9911,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 6.9911,
+          "pixels": 10795
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-enemy-down",
+      "screen": "h106",
+      "mean": 8.9421,
+      "maximum": 8.9421,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 8.9421,
+          "pixels": 3950
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-enemy-up",
+      "screen": "amoled",
+      "mean": 6.9101,
+      "maximum": 6.9101,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 6.9101,
+          "pixels": 10946
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "hud",
+      "name": "hud-enemy-up",
+      "screen": "h106",
+      "mean": 9.0656,
+      "maximum": 9.0656,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 9.0656,
+          "pixels": 3989
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "carousel-frame",
+      "screen": "amoled",
+      "mean": 12.8824,
+      "maximum": 12.8824,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 12.8824,
+          "pixels": 8763
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "carousel-frame",
+      "screen": "h106",
+      "mean": 13.9616,
+      "maximum": 13.9616,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 13.9616,
+          "pixels": 3222
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-0",
+      "screen": "amoled",
+      "mean": 14.3032,
+      "maximum": 14.3032,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 14.3032,
+          "pixels": 2607
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-0",
+      "screen": "h106",
+      "mean": 15.4785,
+      "maximum": 15.4785,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 15.4785,
+          "pixels": 1017
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-1",
+      "screen": "amoled",
+      "mean": 16.144,
+      "maximum": 16.144,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 16.144,
+          "pixels": 3028
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-1",
+      "screen": "h106",
+      "mean": 16.6721,
+      "maximum": 16.6721,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 16.6721,
+          "pixels": 1158
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-2",
+      "screen": "amoled",
+      "mean": 17.5781,
+      "maximum": 17.5781,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 17.5781,
+          "pixels": 3451
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-2",
+      "screen": "h106",
+      "mean": 17.4868,
+      "maximum": 17.4868,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 17.4868,
+          "pixels": 1310
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-3",
+      "screen": "amoled",
+      "mean": 18.7679,
+      "maximum": 18.7679,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 18.7679,
+          "pixels": 3865
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-3",
+      "screen": "h106",
+      "mean": 18.1416,
+      "maximum": 18.1416,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 18.1416,
+          "pixels": 1452
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-4",
+      "screen": "amoled",
+      "mean": 19.6699,
+      "maximum": 19.6699,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 19.6699,
+          "pixels": 4288
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-4",
+      "screen": "h106",
+      "mean": 18.7255,
+      "maximum": 18.7255,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 18.7255,
+          "pixels": 1597
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-5",
+      "screen": "amoled",
+      "mean": 20.4105,
+      "maximum": 20.4105,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 20.4105,
+          "pixels": 4702
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-5",
+      "screen": "h106",
+      "mean": 19.3004,
+      "maximum": 19.3004,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 19.3004,
+          "pixels": 1742
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-up",
+      "screen": "amoled",
+      "mean": 18.9457,
+      "maximum": 18.9457,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 18.9457,
+          "pixels": 4573
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-up",
+      "screen": "h106",
+      "mean": 17.7269,
+      "maximum": 17.7269,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 17.7269,
+          "pixels": 1699
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-down",
+      "screen": "amoled",
+      "mean": 17.7126,
+      "maximum": 17.7126,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 17.7126,
+          "pixels": 4132
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "carousel",
+      "name": "charge-down",
+      "screen": "h106",
+      "mean": 16.8467,
+      "maximum": 16.8467,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 16.8467,
+          "pixels": 1537
+        }
+      ]
+    },
+    {
+      "pose_exception": true,
+      "component": "actions",
+      "name": "charge-player",
+      "screen": "amoled",
+      "mean": 41.7106,
+      "maximum": 41.7106,
+      "passed": false,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 41.7106,
+          "pixels": 39304
+        }
+      ]
+    },
+    {
+      "pose_exception": true,
+      "component": "actions",
+      "name": "charge-player",
+      "screen": "h106",
+      "mean": 41.4319,
+      "maximum": 41.4319,
+      "passed": false,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 41.4319,
+          "pixels": 11355
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "charge-opponent",
+      "screen": "amoled",
+      "mean": 15.3591,
+      "maximum": 15.3591,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 15.3591,
+          "pixels": 8034
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "charge-opponent",
+      "screen": "h106",
+      "mean": 18.667,
+      "maximum": 18.667,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 18.667,
+          "pixels": 2250
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "wave-player",
+      "screen": "amoled",
+      "mean": 11.1568,
+      "maximum": 11.1568,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 11.1568,
+          "pixels": 33001
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "wave-player",
+      "screen": "h106",
+      "mean": 11.8751,
+      "maximum": 11.8751,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 11.8751,
+          "pixels": 8881
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "wave-opponent",
+      "screen": "amoled",
+      "mean": 15.5325,
+      "maximum": 15.5325,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 15.5325,
+          "pixels": 7786
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "wave-opponent",
+      "screen": "h106",
+      "mean": 18.959,
+      "maximum": 18.959,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 18.959,
+          "pixels": 2193
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "absorb-player",
+      "screen": "amoled",
+      "mean": 9.6331,
+      "maximum": 9.6331,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 9.6331,
+          "pixels": 30431
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "absorb-player",
+      "screen": "h106",
+      "mean": 9.5707,
+      "maximum": 9.5707,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 9.5707,
+          "pixels": 6851
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "absorb-opponent",
+      "screen": "amoled",
+      "mean": 15.5827,
+      "maximum": 15.5827,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 15.5827,
+          "pixels": 7670
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "absorb-opponent",
+      "screen": "h106",
+      "mean": 18.54,
+      "maximum": 18.54,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 18.54,
+          "pixels": 2161
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "guard-player",
+      "screen": "amoled",
+      "mean": 8.3706,
+      "maximum": 8.3706,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 8.3706,
+          "pixels": 38213
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "guard-player",
+      "screen": "h106",
+      "mean": 8.5941,
+      "maximum": 8.5941,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 8.5941,
+          "pixels": 10425
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "guard-opponent",
+      "screen": "amoled",
+      "mean": 15.1702,
+      "maximum": 15.1702,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 15.1702,
+          "pixels": 7716
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "actions",
+      "name": "guard-opponent",
+      "screen": "h106",
+      "mean": 18.5053,
+      "maximum": 18.5053,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 350,
+          "mae": 18.5053,
+          "pixels": 2154
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-equal",
+      "screen": "amoled",
+      "mean": 9.3935,
+      "maximum": 9.3935,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 9.3935,
+          "pixels": 89735
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-equal",
+      "screen": "h106",
+      "mean": 8.7073,
+      "maximum": 8.7073,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 8.7073,
+          "pixels": 31399
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-player-combo",
+      "screen": "amoled",
+      "mean": 8.6836,
+      "maximum": 8.6836,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 8.6836,
+          "pixels": 100387
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-player-combo",
+      "screen": "h106",
+      "mean": 7.8485,
+      "maximum": 7.8485,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 7.8485,
+          "pixels": 35124
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-enemy-combo",
+      "screen": "amoled",
+      "mean": 9.8365,
+      "maximum": 9.8365,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 9.8365,
+          "pixels": 77862
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-enemy-combo",
+      "screen": "h106",
+      "mean": 8.9483,
+      "maximum": 8.9483,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 8.9483,
+          "pixels": 27251
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-both-combo",
+      "screen": "amoled",
+      "mean": 9.3935,
+      "maximum": 9.3935,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 9.3935,
+          "pixels": 89735
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "clash",
+      "name": "clash-both-combo",
+      "screen": "h106",
+      "mean": 8.7073,
+      "maximum": 8.7073,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 420,
+          "mae": 8.7073,
+          "pixels": 31399
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "settlement",
+      "name": "result-win",
+      "screen": "amoled",
+      "mean": 7.9475,
+      "maximum": 7.9475,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 640,
+          "mae": 7.9475,
+          "pixels": 72382
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "settlement",
+      "name": "result-win",
+      "screen": "h106",
+      "mean": 7.8198,
+      "maximum": 7.8198,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 640,
+          "mae": 7.8198,
+          "pixels": 31244
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "settlement",
+      "name": "result-lose",
+      "screen": "amoled",
+      "mean": 7.2723,
+      "maximum": 7.2723,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 640,
+          "mae": 7.2723,
+          "pixels": 71356
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "settlement",
+      "name": "result-lose",
+      "screen": "h106",
+      "mean": 7.0573,
+      "maximum": 7.0573,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 640,
+          "mae": 7.0573,
+          "pixels": 30805
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "impact",
+      "name": "impact-combo",
+      "screen": "amoled",
+      "mean": 14.2893,
+      "maximum": 14.2893,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 120,
+          "mae": 14.2893,
+          "pixels": 10573
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "impact",
+      "name": "impact-combo",
+      "screen": "h106",
+      "mean": 15.2075,
+      "maximum": 15.2075,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 120,
+          "mae": 15.2075,
+          "pixels": 6313
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "impact",
+      "name": "impact-armor-break",
+      "screen": "amoled",
+      "mean": 13.6319,
+      "maximum": 13.6319,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 120,
+          "mae": 13.6319,
+          "pixels": 16590
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "impact",
+      "name": "impact-armor-break",
+      "screen": "h106",
+      "mean": 14.566,
+      "maximum": 14.566,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 120,
+          "mae": 14.566,
+          "pixels": 9950
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "arena",
+      "name": "walls",
+      "screen": "amoled",
+      "mean": 16.3252,
+      "maximum": 16.3252,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 300,
+          "mae": 16.3252,
+          "pixels": 2864
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "arena",
+      "name": "walls",
+      "screen": "h106",
+      "mean": 15.247,
+      "maximum": 15.247,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 300,
+          "mae": 15.247,
+          "pixels": 1282
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "arena",
+      "name": "wheel",
+      "screen": "amoled",
+      "mean": 5.9198,
+      "maximum": 5.9198,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 300,
+          "mae": 5.9198,
+          "pixels": 15915
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "arena",
+      "name": "wheel",
+      "screen": "h106",
+      "mean": 5.6623,
+      "maximum": 5.6623,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 300,
+          "mae": 5.6623,
+          "pixels": 6791
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "countdown",
+      "name": "countdown-3",
+      "screen": "amoled",
+      "mean": 9.0159,
+      "maximum": 9.0159,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 9.0159,
+          "pixels": 1089
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "countdown",
+      "name": "countdown-3",
+      "screen": "h106",
+      "mean": 14.1259,
+      "maximum": 14.1259,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 0,
+          "mae": 14.1259,
+          "pixels": 540
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "countdown",
+      "name": "countdown-2",
+      "screen": "amoled",
+      "mean": 7.0112,
+      "maximum": 7.0112,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 1100,
+          "mae": 7.0112,
+          "pixels": 1075
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "countdown",
+      "name": "countdown-2",
+      "screen": "h106",
+      "mean": 12.4302,
+      "maximum": 12.4302,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 1100,
+          "mae": 12.4302,
+          "pixels": 537
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "countdown",
+      "name": "countdown-1",
+      "screen": "amoled",
+      "mean": 7.3275,
+      "maximum": 7.3275,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 2100,
+          "mae": 7.3275,
+          "pixels": 972
+        }
+      ]
+    },
+    {
+      "pose_exception": false,
+      "component": "countdown",
+      "name": "countdown-1",
+      "screen": "h106",
+      "mean": 10.4426,
+      "maximum": 10.4426,
+      "passed": true,
+      "frames": [
+        {
+          "time_ms": 2100,
+          "mae": 10.4426,
+          "pixels": 430
+        }
+      ]
+    }
+  ],
+  "passed": true,
+  "frame_pairs": 70,
+  "vector_pack_sha256": "269feb29b0dbfcebfb3d914ac4c519161987758e4e36495e8e37f013fa5a382f"
+}

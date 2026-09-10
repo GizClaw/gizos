@@ -55,7 +55,11 @@ int main(void) {
   assert_policy(H2_PEER_NETWORK_TASK_NAME_VALUE, 7u);
   assert_policy(H2_PEER_UDP_TASK_NAME_VALUE, 7u);
   assert_policy(H2_RUNTIME_INPUT_TASK_NAME_VALUE, 6u);
-  assert_policy(H2_LUA_WORKER_TASK_NAME_VALUE, 5u);
+  assert(get_policy(H2_LUA_WORKER_TASK_NAME_VALUE, &policy) == H2_PAL_OK);
+  assert(policy.priority == 5u);
+  assert(policy.core == H2_ESP_TASK_CORE_1);
+  assert(policy.min_stack_size == 4096u);
+  assert(policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
   assert_policy(H2_LUA_QI_DUEL_ENTRY_TASK_NAME_VALUE, 4u);
   assert_default_policy("unknown");
   assert(get_policy("", &policy) == H2_PAL_ERR_NOT_FOUND);

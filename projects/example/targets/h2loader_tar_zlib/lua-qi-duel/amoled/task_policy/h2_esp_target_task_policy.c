@@ -25,6 +25,14 @@ static const h2_esp_task_policy_t s_priority_7_policy = POLICY(7u);
 static const h2_esp_task_policy_t s_priority_6_policy = POLICY(6u);
 static const h2_esp_task_policy_t s_priority_5_policy = POLICY(5u);
 static const h2_esp_task_policy_t s_priority_4_policy = POLICY(4u);
+/* Rendering must not monopolize the management/input CPU while a Lua frame
+ * is inside native rasterization. Keep BLE, input and recovery on core 0. */
+static const h2_esp_task_policy_t s_lua_policy = {
+    .priority = 5u,
+    .core = H2_ESP_TASK_CORE_1,
+    .min_stack_size = 4096u,
+    .stack_region = H2_ESP_TASK_STACK_PSRAM,
+};
 
 static h2_pal_result_t
 handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
@@ -53,7 +61,7 @@ static const h2_trie_route_t s_routes[] = {
     {H2_RUNTIME_INPUT_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_6_policy},
     {H2_LUA_WORKER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
-     &s_priority_5_policy},
+     &s_lua_policy},
     {H2_LUA_QI_DUEL_ENTRY_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_4_policy},
 };

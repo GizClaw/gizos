@@ -1,0 +1,462 @@
+[
+  {
+    "path": "libs/lua/src/modules/h2_lua_capsule.c",
+    "bytes": 7486
+  },
+  {
+    "path": "libs/lua/src/modules/h2_lua_capsule.h",
+    "bytes": 454
+  },
+  {
+    "path": "libs/lua/tests/test_h2_lua_capsule.c",
+    "bytes": 4021
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/data/skills/qi-duel/scripts/bgm.lua",
+    "bytes": 3393
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/data/skills/qi-duel/scripts/sounds.lua",
+    "bytes": 3068
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tests/bgm_test.lua",
+    "bytes": 2983
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tests/test_bgm.c",
+    "bytes": 1758
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tests/sounds_test.lua",
+    "bytes": 2412
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tests/test_sounds.c",
+    "bytes": 1788
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tools/generate_bgm.py",
+    "bytes": 1181
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tools/generate_sounds.py",
+    "bytes": 2732
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tools/generate_assets.py",
+    "bytes": 5669
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/src/generated/qi_duel_assets.c",
+    "bytes": 3278609
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/src/generated/qi_duel_assets.h",
+    "bytes": 2176
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/app/tools/pack_ui_labels.py",
+    "bytes": 764
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/ui-labels.h2r8",
+    "bytes": 8205
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/tools/pack_sprite_mips.py",
+    "bytes": 2419
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/tools/pack_skill_derivatives.py",
+    "bytes": 4579
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/hurt.wav",
+    "bytes": 9644
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/guard.wav",
+    "bytes": 21484
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/bgm_pcm.lua",
+    "bytes": 5654271
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/charge.wav",
+    "bytes": 32684
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/dragonball-preview.wav",
+    "bytes": 144044
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/absorb.wav",
+    "bytes": 18284
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/wave.wav",
+    "bytes": 23724
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/generated/sounds/sounds_pcm.lua",
+    "bytes": 643408
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/hurt.wav",
+    "bytes": 9644
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/charge-generation-2.mp3",
+    "bytes": 77252
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/guard.wav",
+    "bytes": 21518
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/provenance.json",
+    "bytes": 3375
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/guard-elevenlabs-original.mp3",
+    "bytes": 68474
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/CREDITS.md",
+    "bytes": 2053
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/wave-elevenlabs-original.mp3",
+    "bytes": 58025
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/charge.wav",
+    "bytes": 32718
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/absorb-elevenlabs-original.mp3",
+    "bytes": 134930
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/absorb.wav",
+    "bytes": 18318
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/voices/wave.wav",
+    "bytes": 23758
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/.DS_Store",
+    "bytes": 6148
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/download-manifest.json",
+    "bytes": 12492
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/generation-plan.json",
+    "bytes": 22648
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerrdefeatloop_instrumental_game_defeat_loop_120_bpm_in_44-2026-09-10-020239.bin",
+    "bytes": 235692
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmireloeclashequal_dry_monocompatible_electronic_plasma_beam-2026-09-10-020457.wav",
+    "bytes": 146378
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmirelorclashequal_dry_monocompatible_realistic_beam_clash-2026-09-10-020446.wav",
+    "bytes": 146376
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmirelorwave_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020453.wav",
+    "bytes": 78796
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015516.bin",
+    "bytes": 46780
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmireloecharge_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020447.wav",
+    "bytes": 103370
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerepairingloop_instrumental_game_pairing_loop_120_bpm_in_44-2026-09-10-020228.bin",
+    "bytes": 313056
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/project-assets.zip",
+    "bytes": 5330179
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015514 (1).bin",
+    "bytes": 47155
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015514.bin",
+    "bytes": 46958
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015530 (1).bin",
+    "bytes": 46626
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_beam_clash_oneshot_palette_e_clean_electronic_plasma_from-2026-09-10-015527.bin",
+    "bytes": 79459
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmirelorguard_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020451.wav",
+    "bytes": 72650
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayeredefeatloop_instrumental_game_defeat_loop_120_bpm_in_44-2026-09-10-020240.bin",
+    "bytes": 237476
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerebattleloop_instrumental_game_battle_loop_150_bpm_in_44-2026-09-10-020230.bin",
+    "bytes": 914268
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmirelorclashunequal_dry_monocompatible_realistic_beam_clash-2026-09-10-020449.wav",
+    "bytes": 146378
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmireloeclashunequal_dry_monocompatible_electronic_plasma_beam-2026-09-10-020450.wav",
+    "bytes": 146380
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmireloeguard_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020443.wav",
+    "bytes": 72650
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerevictoryloop_instrumental_game_victory_loop_120_bpm_in_44-2026-09-10-020238.bin",
+    "bytes": 234695
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmireloeabsorb_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020447.wav",
+    "bytes": 64460
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_beam_clash_oneshot_palette_r_realistic_physical_air-2026-09-10-015523.bin",
+    "bytes": 79637
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerrbattleloop_instrumental_game_battle_loop_150_bpm_in_44-2026-09-10-020231.bin",
+    "bytes": 921608
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_beam_clash_oneshot_palette_e_clean_electronic_plasma_from-2026-09-10-015516.bin",
+    "bytes": 80459
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerrpairingloop_instrumental_game_pairing_loop_120_bpm_in_44-2026-09-10-020238.bin",
+    "bytes": 304782
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmirelorcharge_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020443.wav",
+    "bytes": 103374
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_beam_clash_oneshot_palette_r_realistic_physical_air-2026-09-10-015523 (1).bin",
+    "bytes": 79376
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015530.bin",
+    "bytes": 47182
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmireloewave_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020452.wav",
+    "bytes": 78796
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015527.bin",
+    "bytes": 47148
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdmirelorabsorb_dry_monocompatible_game_skill_cue_immediate_onset-2026-09-10-020443.wav",
+    "bytes": 64460
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/qdlayerrvictoryloop_instrumental_game_victory_loop_120_bpm_in_44-2026-09-10-020228.bin",
+    "bytes": 241459
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015520.bin",
+    "bytes": 46359
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/original-download/game_combat_skill_cue_dry_closemiked_original_adult_male_low_husky-2026-09-10-015521.bin",
+    "bytes": 47942
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_胜利_写实电影_SoniloMusic1.1.m4a",
+    "bytes": 241459
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_失败_电子能量_SoniloMusic1.1.m4a",
+    "bytes": 237476
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_战斗_写实电影_SoniloMusic1.1.m4a",
+    "bytes": 921608
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_09.m4a",
+    "bytes": 47942
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_吸收_写实电影_Mirelo1.6_V2.wav",
+    "bytes": 64460
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_战斗_电子能量_SoniloMusic1.1.m4a",
+    "bytes": 914268
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_吸收_电子能量_Mirelo1.6_V2.wav",
+    "bytes": 64460
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_08.m4a",
+    "bytes": 46359
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_失败_写实电影_SoniloMusic1.1.m4a",
+    "bytes": 235692
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_碰撞_写实电影_对等类型待核对_Sonilo1.1_V1_04.m4a",
+    "bytes": 79637
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_对等碰撞_写实电影_Mirelo1.6_V2.wav",
+    "bytes": 146376
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/说明.txt",
+    "bytes": 706
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_对等碰撞_电子能量_Mirelo1.6_V2.wav",
+    "bytes": 146378
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_胜利_电子能量_SoniloMusic1.1.m4a",
+    "bytes": 234695
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_碰撞_写实电影_对等类型待核对_Sonilo1.1_V1_03.m4a",
+    "bytes": 79376
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_蓄气_电子能量_Mirelo1.6_V2.wav",
+    "bytes": 103370
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_碰撞_电子能量_对等类型待核对_Sonilo1.1_V1_02.m4a",
+    "bytes": 79459
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_蓄气_写实电影_Mirelo1.6_V2.wav",
+    "bytes": 103374
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_配对_电子能量_SoniloMusic1.1.m4a",
+    "bytes": 313056
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_碰撞_电子能量_对等类型待核对_Sonilo1.1_V1_01.m4a",
+    "bytes": 80459
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_06.m4a",
+    "bytes": 46958
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_12.m4a",
+    "bytes": 47182
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_07.m4a",
+    "bytes": 46780
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_发波_写实电影_Mirelo1.6_V2.wav",
+    "bytes": 78796
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_11.m4a",
+    "bytes": 46626
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_05.m4a",
+    "bytes": 47155
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_发波_电子能量_Mirelo1.6_V2.wav",
+    "bytes": 78796
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_技能人声_具体技能与风格待核对_Sonilo1.1_V1_10.m4a",
+    "bytes": 47148
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_不对等碰撞弹飞_电子能量_Mirelo1.6_V2.wav",
+    "bytes": 146380
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_不对等碰撞弹飞_写实电影_Mirelo1.6_V2.wav",
+    "bytes": 146378
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_防御_电子能量_Mirelo1.6_V2.wav",
+    "bytes": 72650
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/音效_防御_写实电影_Mirelo1.6_V2.wav",
+    "bytes": 72650
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/BGM_配对_写实电影_SoniloMusic1.1.m4a",
+    "bytes": 304782
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/候选试听/文件对照表.csv",
+    "bytes": 7217
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/已选BGM/bgm_defeat.m4a",
+    "bytes": 237476
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/已选BGM/bgm_battle.m4a",
+    "bytes": 914268
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/已选BGM/bgm_pairing.m4a",
+    "bytes": 313056
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/已选BGM/bgm_victory.m4a",
+    "bytes": 234695
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/assets/source/layer-audio/已选BGM/selection.json",
+    "bytes": 1474
+  },
+  {
+    "path": "projects/example/targets/h2loader_tar_zlib/lua-qi-duel/amoled/main/frame_probe.c",
+    "bytes": 4658
+  },
+  {
+    "path": "projects/example/targets/h2loader_tar_zlib/lua-qi-duel/amoled/main/frame_probe.h",
+    "bytes": 300
+  },
+  {
+    "path": "projects/example/apps/lua-qi-duel/tools/verify_amoled_frames.py",
+    "bytes": 3878
+  }
+]

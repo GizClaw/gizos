@@ -1,4 +1,12 @@
 #include "h2_lua_canvas.h"
+#ifdef H2_QI_DUEL_DESKTOP_VECTORS
+#ifdef H2_LUA_SOFTWARE_VECTORS
+#include "h2_lua_vector_sw.h"
+#define h2_lua_vector_cg_render h2_lua_vector_sw_render
+#else
+#include "h2_lua_vector_cg.h"
+#endif
+#endif
 
 #include <math.h>
 #include <string.h>
@@ -133,6 +141,7 @@ static void add_capsule(canvas_t *canvas, double ax, double ay, double bx, doubl
     }
   }
 }
+
 
 static int add_disc(lua_State *s) {
   canvas_t *canvas=get_canvas(s);
@@ -291,6 +300,280 @@ static int draw_polygon(lua_State *s) {
   return 0;
 }
 
+#ifdef H2_QI_DUEL_DESKTOP_VECTORS
+static char s_vector_scratch_key;
+static uint8_t *vector_scratch(lua_State *s,size_t bytes) {
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_scratch_key);
+  if(!lua_isuserdata(s,-1)||lua_rawlen(s,-1)<bytes) {
+    lua_pop(s,1);lua_newuserdatauv(s,bytes,0);
+    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_scratch_key);
+  }
+  uint8_t *p=lua_touserdata(s,-1);lua_pop(s,1);return p;
+}
+static const h2_lua_resource_t *vector_resource(lua_State *s) {
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));const char *name=luaL_checkstring(s,1);
+  for(size_t i=0;i<job->host->config.resource_count;i++) {
+    const h2_lua_resource_t *r=&job->host->config.resources[i];
+    if(!strcmp(r->name,name))return r;
+  }
+  luaL_error(s,"unknown vector resource '%s'",name);return NULL;
+}
+static char s_vector_decode_key;
+/* Resolution-specific render cache, not packaged artwork. The fixed arena
+ * bounds retained memory; animated/large keyframes bypass it. */
+#define VECTOR_CACHE_BYTES 1048576u
+typedef struct {
+  const h2_lua_resource_t *resource;size_t offset,length,start,bytes;
+  double matrix[6];int x,y,w,h;unsigned valid;
+} vector_cached_t;
+typedef struct {int screen_w,screen_h;unsigned next;size_t cursor,capacity;vector_cached_t slots[16];uint8_t pixels[];} vector_cache_t;
+static char s_vector_cache_key;
+static const uint8_t *vector_slice(lua_State *s,const h2_lua_resource_t *r,int arg,size_t *size) {
+  lua_Integer off=luaL_checkinteger(s,arg),length=luaL_checkinteger(s,arg+1);
+  if(off<0||length<5||(uint64_t)off>r->source_size||(uint64_t)length>r->source_size-(size_t)off)
+    luaL_error(s,"invalid vector slice bounds");
+  const uint8_t *p=r->source+(size_t)off;
+  uint32_t bytes=p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
+  if(bytes<12||bytes>524288)luaL_error(s,"invalid vector decoded size");
+  /* One bounded decode buffer for every scene/frame; grow only as needed. */
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_decode_key);
+  if(!lua_isuserdata(s,-1)||lua_rawlen(s,-1)<bytes) {
+    size_t capacity=4096;while(capacity<bytes)capacity*=2;
+    lua_pop(s,1);lua_pushnil(s);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_decode_key);
+    lua_gc(s,LUA_GCCOLLECT,0);lua_newuserdatauv(s,capacity,0);
+    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_decode_key);
+  }
+  uint8_t *out=lua_touserdata(s,-1);lua_pop(s,1);uLongf decoded=bytes;
+  if(uncompress(out,&decoded,p+4,(uLong)length-4)!=Z_OK||decoded!=bytes)
+    luaL_error(s,"invalid compressed vector path stream");
+  *size=bytes;return out;
+}
+static void vector_bounds(const canvas_t *c,const uint8_t *data,const double m[6],int box[4]) {
+  unsigned w=data[4]|(unsigned)data[5]<<8,h=data[6]|(unsigned)data[7]<<8;
+  double minx=c->width,miny=c->height,maxx=0,maxy=0;
+  for(int i=0;i<4;i++) {
+    double x=(i&1)?w:0,y=(i&2)?h:0;
+    double tx=m[0]*x+m[2]*y+m[4],ty=m[1]*x+m[3]*y+m[5];
+    minx=fmin(minx,tx);maxx=fmax(maxx,tx);miny=fmin(miny,ty);maxy=fmax(maxy,ty);
+  }
+  box[0]=(int)fmax(0,fmin(c->width,floor(minx)-2));
+  box[1]=(int)fmax(0,fmin(c->height,floor(miny)-2));
+  box[2]=(int)fmax(0,fmin(c->width,ceil(maxx)+2))-box[0];
+  box[3]=(int)fmax(0,fmin(c->height,ceil(maxy)+2))-box[1];
+}
+/* Two path keyframes are interpolated in premultiplied RGBA, matching the
+ * original atlas operation. Only transient framebuffers contain pixels. */
+static int draw_vector_slice(lua_State *s) {
+  canvas_t *c=get_canvas(s);const h2_lua_resource_t *r=vector_resource(s);
+  double m[6];for(int i=0;i<6;i++)m[i]=finite_number(s,i+4);
+  double opacity=lua_isnoneornil(s,10)?1:finite_number(s,10);
+  double mix=lua_isnoneornil(s,13)?0:finite_number(s,13);
+  if(opacity<0||opacity>1||mix<0||mix>1||fabs(m[0]*m[3]-m[1]*m[2])<1e-12)
+    return luaL_error(s,"invalid vector slice transform or blend");
+  if(mix==0&&lua_toboolean(s,14)) {
+    size_t off=(size_t)luaL_checkinteger(s,2),length=(size_t)luaL_checkinteger(s,3);
+    lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_cache_key);
+    vector_cache_t *cache=lua_touserdata(s,-1);
+    if(!cache) {
+      size_t capacity=(size_t)c->width*c->height*16;
+      if(capacity>VECTOR_CACHE_BYTES)capacity=VECTOR_CACHE_BYTES;
+      lua_pop(s,1);cache=lua_newuserdatauv(s,sizeof(*cache)+capacity,0);memset(cache,0,sizeof(*cache));cache->capacity=capacity;
+      lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_cache_key);
+    }
+    lua_pop(s,1);
+    if(cache->screen_w!=c->width||cache->screen_h!=c->height) {
+      memset(cache->slots,0,sizeof(cache->slots));cache->cursor=0;cache->next=0;
+      cache->screen_w=c->width;cache->screen_h=c->height;
+    }
+    vector_cached_t *hit=NULL;
+    for(unsigned i=0;i<16;i++) {
+      vector_cached_t *v=cache->slots+i;
+      if(v->valid&&v->resource==r&&v->offset==off&&v->length==length&&!memcmp(v->matrix,m,sizeof(m))){hit=v;break;}
+    }
+    if(!hit) {
+      size_t n;const uint8_t *data=vector_slice(s,r,2,&n);
+      if(n<12||memcmp(data,"H2VG",4))return luaL_error(s,"invalid cached vector header");
+      int box[4];vector_bounds(c,data,m,box);
+      int x=box[0],y=box[1],cw=box[2],ch=box[3];
+      size_t bytes=(size_t)cw*ch*4;
+      if(cw>0&&ch>0&&bytes<=cache->capacity/4) {
+        if(cache->cursor+bytes>cache->capacity)cache->cursor=0;
+        size_t start=cache->cursor;cache->cursor+=bytes;
+        for(unsigned i=0;i<16;i++) {
+          vector_cached_t *v=cache->slots+i;
+          if(v->valid&&v->start<start+bytes&&start<v->start+v->bytes)v->valid=0;
+        }
+        hit=cache->slots+(cache->next++%16);hit->valid=0;
+        double local[6];memcpy(local,m,sizeof(m));local[4]-=x;local[5]-=y;
+        if(!h2_lua_vector_cg_render(data,n,cache->pixels+start,(unsigned)cw,(unsigned)ch,local))
+          return luaL_error(s,"invalid cached vector commands");
+        *hit=(vector_cached_t){.resource=r,.offset=off,.length=length,.start=start,.bytes=bytes,.x=x,.y=y,.w=cw,.h=ch,.valid=1};
+        memcpy(hit->matrix,m,sizeof(m));
+      }
+    }
+    if(hit) {
+      const uint8_t *rgba=cache->pixels+hit->start;
+      for(int y=0;y<hit->h;y++)for(int x=0;x<hit->w;x++) {
+        size_t p=((size_t)y*hit->w+x)*4;if(!rgba[p+3])continue;
+        size_t q=((size_t)(y+hit->y)*c->width+x+hit->x)*3;
+        double a=rgba[p+3]*opacity/255.;
+        for(int k=0;k<3;k++)c->rgb[q+k]=(uint8_t)fmin(255,floor(rgba[p+k]*opacity+c->rgb[q+k]*(1-a)+.5));
+      }
+      return 0;
+    }
+  }
+  size_t n;int box[]={0,0,c->width,c->height};double local[6];memcpy(local,m,sizeof(m));
+  const uint8_t *data=vector_slice(s,r,2,&n);
+  /* Opt-in for tiled paths contained in their viewbox. Moving streaks need
+   * only their affected rectangle, not a full-screen clear/composite. */
+  if(mix==0&&lua_toboolean(s,15)) {
+    if(n<12||memcmp(data,"H2VG",4))return luaL_error(s,"invalid vector tile header");
+    vector_bounds(c,data,m,box);if(box[2]<=0||box[3]<=0)return 0;
+    local[4]-=box[0];local[5]-=box[1];
+  }
+  size_t bytes=(size_t)box[2]*box[3]*4;
+  uint8_t *rgba=vector_scratch(s,bytes*2),*other=rgba+bytes;
+  if(!h2_lua_vector_cg_render(data,n,rgba,(unsigned)box[2],(unsigned)box[3],local))return luaL_error(s,"invalid vector slice commands");
+  if(mix>0) {
+    data=vector_slice(s,r,11,&n);
+    if(!h2_lua_vector_cg_render(data,n,other,(unsigned)box[2],(unsigned)box[3],local))return luaL_error(s,"invalid vector blend commands");
+    for(size_t i=0;i<bytes;i++)rgba[i]=(uint8_t)floor(rgba[i]*(1-mix)+other[i]*mix+.5);
+  }
+  for(int y=0;y<box[3];y++)for(int x=0;x<box[2];x++) {
+    size_t p=((size_t)y*box[2]+x)*4;if(!rgba[p+3])continue;
+    size_t q=((size_t)(y+box[1])*c->width+x+box[0])*3;
+    double a=rgba[p+3]*opacity/255.;
+    for(int k=0;k<3;k++)c->rgb[q+k]=(uint8_t)fmin(255,floor(rgba[p+k]*opacity+c->rgb[q+k]*(1-a)+.5));
+  }
+  return 0;
+}
+static int draw_vector_affine(lua_State *s) {
+  canvas_t *c=get_canvas(s);const h2_lua_resource_t *r=vector_resource(s);double m[6];
+  for(int i=0;i<6;i++)m[i]=finite_number(s,i+2);
+  double opacity=lua_isnoneornil(s,8)?1:finite_number(s,8);
+  if(opacity<0||opacity>1||fabs(m[0]*m[3]-m[1]*m[2])<1e-12)return luaL_error(s,"invalid vector transform");
+  int arm_fade=lua_isnoneornil(s,9)?0:(int)luaL_checkinteger(s,9);
+  if(arm_fade<0||arm_fade>2)return luaL_error(s,"invalid vector arm fade");
+  uint8_t *rgba=vector_scratch(s,(size_t)c->width*c->height*4);
+  if(!h2_lua_vector_cg_render(r->source,r->source_size,rgba,c->width,c->height,m))return luaL_error(s,"invalid vector commands");
+  for(size_t p=0;p<(size_t)c->width*c->height;p++)if(rgba[p*4+3]) {
+    double coverage=opacity;
+    if(arm_fade) {
+      double dx=(p%(size_t)c->width)+.5-m[4],dy=(p/(size_t)c->width)+.5-m[5];
+      double determinant=m[0]*m[3]-m[1]*m[2];
+      unsigned vw=r->source[4]|(unsigned)r->source[5]<<8,vh=r->source[6]|(unsigned)r->source[7]<<8;
+      double x=(m[3]*dx-m[2]*dy)/determinant*145/vw,y=(-m[1]*dx+m[0]*dy)/determinant*177/vh;
+      double sx=arm_fade==1?91:54,vx=arm_fade==1?-99:99;
+      double t=((x-sx)*vx+(y-101)*80)/(99*99+80*80);
+      double fade=t<.48?1:t<.8?1-(t-.48)/.32*.78:fmax(0,.22*(1-t)/.2);
+      coverage*=fade;
+    }
+    double a=rgba[p*4+3]*coverage/255.;
+    for(int k=0;k<3;k++)c->rgb[p*3+k]=(uint8_t)fmin(255,floor(rgba[p*4+k]*coverage+c->rgb[p*3+k]*(1-a)+.5));
+  }
+  return 0;
+}
+/* Lua-authored geometric command streams use the same validated renderer. */
+static int draw_vector_data(lua_State *s) {
+  canvas_t *c=get_canvas(s);size_t length=0;
+  const uint8_t *data=(const uint8_t *)luaL_checklstring(s,1,&length);double m[6];
+  for(int i=0;i<6;i++)m[i]=finite_number(s,i+2);
+  double opacity=lua_isnoneornil(s,8)?1:finite_number(s,8);
+  if(opacity<0||opacity>1||fabs(m[0]*m[3]-m[1]*m[2])<1e-12)return luaL_error(s,"invalid vector transform");
+  uint8_t *rgba=vector_scratch(s,(size_t)c->width*c->height*4);
+  if(!h2_lua_vector_cg_render(data,length,rgba,c->width,c->height,m))return luaL_error(s,"invalid Lua vector commands");
+  for(size_t p=0;p<(size_t)c->width*c->height;p++)if(rgba[p*4+3]) {
+    double a=rgba[p*4+3]*opacity/255.;
+    for(int k=0;k<3;k++)c->rgb[p*3+k]=(uint8_t)fmin(255,floor(rgba[p*4+k]*opacity+c->rgb[p*3+k]*(1-a)+.5));
+  }
+  return 0;
+}
+typedef struct {
+  const h2_lua_resource_t *resource;
+  double focus,sheen;int dir,palette;
+  uint8_t pixels[160*160*4];
+} vector_icon_slot_t;
+typedef struct { unsigned next;vector_icon_slot_t slots[6]; } vector_icon_cache_t;
+static char s_vector_icon_cache_key;
+/* Six transient rendered styles; keys include every visual parameter. */
+/* Procedural focus, directional mask, tint and confirmation. No style atlas. */
+static int draw_vector_icon(lua_State *s) {
+  canvas_t *c=get_canvas(s);const h2_lua_resource_t *r=vector_resource(s);
+  double focus=finite_number(s,2);int dir=(int)luaL_checkinteger(s,3),palette=(int)luaL_checkinteger(s,4);
+  double sheen=finite_number(s,5),x=finite_number(s,6),y=finite_number(s,7),scale=finite_number(s,8),opacity=finite_number(s,9);
+  if(focus<0||focus>1||dir<0||dir>2||palette< -1||palette>3||sheen< -2||sheen>1||scale<=0||scale>8||opacity<0||opacity>1)
+    return luaL_error(s,"invalid vector icon style");
+  const int w=160;size_t pixels=160u*160u;
+  uint8_t *rgba=vector_scratch(s,pixels*(4+sizeof(float)*2));
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_icon_cache_key);
+  vector_icon_cache_t *cache=lua_touserdata(s,-1);
+  if(!cache) {
+    lua_pop(s,1);cache=lua_newuserdatauv(s,sizeof(*cache),0);memset(cache,0,sizeof(*cache));
+    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_icon_cache_key);
+  }
+  lua_pop(s,1);
+  for(unsigned i=0;i<6;i++) {
+    vector_icon_slot_t *slot=&cache->slots[i];
+    if(slot->resource==r&&slot->focus==focus&&slot->sheen==sheen&&slot->dir==dir&&slot->palette==palette) {
+      rgba=slot->pixels;goto composite_icon;
+    }
+  }
+  float *shadow=(float *)(rgba+pixels*4),*temp=shadow+pixels;
+  double size=52+focus*36,left=(160-size)/2,m[6]={size/160,0,0,size/160,left,left};
+  if(!h2_lua_vector_cg_render(r->source,r->source_size,rgba,w,w,m))return luaL_error(s,"invalid vector icon");
+  double gain=focus>.5?1.05+focus*.32:1,alpha=.34+focus*.66;
+  for(int yy=0;yy<w;yy++)for(int xx=0;xx<w;xx++) {
+    size_t p=(size_t)yy*w+xx;double u=fmax(0,fmin(1,(xx+.5-left)/size)),mask=1;
+    if(dir==1)mask=u<.42?u/.42*.32:.32+(u-.42)/.58*.68;
+    if(dir==2)mask=u<.58?1-u/.58*.68:.32*(1-u)/.42;
+    for(int k=0;k<4;k++)rgba[p*4+k]=(uint8_t)floor(rgba[p*4+k]*mask+.5);
+    shadow[p]=rgba[p*4+3]/255.f;
+  }
+  if(focus>.5) {
+    double sigma=(9+focus*8)/2,kernel[55],sum=0;int radius=(int)ceil(sigma*3);
+    for(int k=-radius;k<=radius;k++){kernel[k+radius]=exp(-k*k/(2*sigma*sigma));sum+=kernel[k+radius];}
+    for(int k=0;k<=radius*2;k++)kernel[k]/=sum;
+    for(int yy=0;yy<w;yy++)for(int xx=0;xx<w;xx++) {
+      double v=0;for(int k=-radius;k<=radius;k++)if(xx+k>=0&&xx+k<w)v+=shadow[yy*w+xx+k]*kernel[k+radius];
+      temp[yy*w+xx]=(float)v;
+    }
+    for(int yy=0;yy<w;yy++)for(int xx=0;xx<w;xx++) {
+      double v=0;for(int k=-radius;k<=radius;k++)if(yy+k>=0&&yy+k<w)v+=temp[(yy+k)*w+xx]*kernel[k+radius];
+      shadow[yy*w+xx]=(float)(v*(.38+focus*.46));
+    }
+  } else memset(shadow,0,pixels*sizeof(float));
+  const double colors[4][3]={{.2,.82,1},{1,.53,.13},{.73,.3,1},{.2,1,.58}};
+  for(size_t p=0;p<pixels;p++) {
+    double a=rgba[p*4+3]/255.,outa=(a+shadow[p]*(1-a))*alpha;
+    double rgb[3],highlight=0;
+    for(int k=0;k<3;k++){rgb[k]=(fmin(255*a,rgba[p*4+k]*gain)+255*shadow[p]*(1-a))*alpha;highlight=fmax(highlight,outa?rgb[k]/outa/255:0);}
+    highlight=pow(highlight,5)*.4;
+    double stripe=sheen<0?0:fmax(0,1-fabs(((p%160)+(p/160)*.3)/160.-(-.15+sheen*1.6))/.09);
+    for(int k=0;k<3;k++) {
+      double colored=rgb[k]*(palette<0?1:colors[palette][k]+(1-colors[palette][k])*highlight);
+      rgba[p*4+k]=(uint8_t)fmin(255*outa,colored*(sheen>=-1?1.15:1)+(255*outa-colored)*stripe*.85);
+    }
+    rgba[p*4+3]=(uint8_t)floor(255*outa+.5);
+  }
+  vector_icon_slot_t *slot=&cache->slots[cache->next++%6];
+  slot->resource=r;slot->focus=focus;slot->sheen=sheen;slot->dir=dir;slot->palette=palette;
+  memcpy(slot->pixels,rgba,pixels*4);
+composite_icon: ;
+  int x0=(int)fmax(0,fmin(c->width,floor(x))),y0=(int)fmax(0,fmin(c->height,floor(y)));
+  int x1=(int)fmax(0,fmin(c->width,ceil(x+160*scale))),y1=(int)fmax(0,fmin(c->height,ceil(y+160*scale)));
+  for(int yy=y0;yy<y1;yy++)for(int xx=x0;xx<x1;xx++) {
+    double sx=fmax(0,fmin(159,(xx+.5-x)/scale-.5)),sy=fmax(0,fmin(159,(yy+.5-y)/scale-.5));
+    int ix=(int)sx,iy=(int)sy,ix1=ix<159?ix+1:ix,iy1=iy<159?iy+1:iy;
+    double u=sx-ix,v=sy-iy,weights[4]={(1-u)*(1-v),u*(1-v),(1-u)*v,u*v},out[4]={0};
+    size_t at[4]={(size_t)iy*160+ix,(size_t)iy*160+ix1,(size_t)iy1*160+ix,(size_t)iy1*160+ix1};
+    for(int j=0;j<4;j++)for(int k=0;k<4;k++)out[k]+=rgba[at[j]*4+k]*weights[j];
+    uint8_t *dest=c->rgb+((size_t)yy*c->width+xx)*3;
+    for(int k=0;k<3;k++)dest[k]=(uint8_t)fmin(255,floor(out[k]*opacity+dest[k]*(1-out[3]*opacity/255)+.5));
+  }
+  return 0;
+}
+#endif
+
 static sprite_t *get_sprite(lua_State *s, h2_lua_job_t *job, const char *name) {
   lua_rawgetp(s,LUA_REGISTRYINDEX,&s_images_key);
   if(lua_isnil(s,-1)) {
@@ -425,6 +708,7 @@ static uint32_t style_u32(const uint8_t *p) {
   return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
 }
 
+
 typedef struct style_cache {
   const h2_lua_resource_t *resource;
   unsigned width,height,next,index[6];
@@ -451,8 +735,8 @@ static int draw_sprite_atlas(lua_State *s) {
   if(!res || res->source_size<12 || memcmp(res->source,"H2RS",4))return luaL_error(s,"unknown sprite atlas");
   const uint8_t *data=res->source;
   unsigned w=style_u16(data+4),h=style_u16(data+6),count=style_u16(data+8);
-  if(!w || !h || w>256 || h>256 || !count || count>512 || style_u16(data+10) ||
-      res->source_size<12u+count*8u)return luaL_error(s,"invalid sprite atlas header");
+  if(!w || !h || w>256 || h>256 || !count || count>512 || (style_u16(data+10) ||
+      res->source_size<12u+count*8u))return luaL_error(s,"invalid sprite atlas header");
   size_t bytes=(size_t)w*h*4u;
   lua_rawgetp(s,LUA_REGISTRYINDEX,&s_styles_key);
   style_cache_t *cache=lua_touserdata(s,-1);
@@ -530,6 +814,9 @@ void h2_lua_canvas_register(lua_State *s,h2_lua_job_t *job) {
     {"draw_polygon",draw_polygon},{"over_line",over_line},
     {"glow_line",glow_line},
     {"draw_sprite_atlas",draw_sprite_atlas},
+#ifdef H2_QI_DUEL_DESKTOP_VECTORS
+    {"draw_vector_slice",draw_vector_slice},{"draw_vector_data",draw_vector_data},{"draw_vector_affine",draw_vector_affine},{"draw_vector_icon",draw_vector_icon},
+#endif
   };
   for(size_t i=0;i<sizeof(functions)/sizeof(functions[0]);i++) {
     lua_pushlightuserdata(s,job);lua_pushcclosure(s,functions[i].fn,1);

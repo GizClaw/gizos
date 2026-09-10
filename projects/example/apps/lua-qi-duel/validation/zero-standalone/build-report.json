@@ -1,0 +1,151 @@
+{
+  "board": "zero_esp_v3_0",
+  "image": "lua-qi-duel",
+  "version": "0.1.0-dev",
+  "app_bytes": 5558096,
+  "app_sha256": "a1f888235f207c7979e35f6c5e41630e278e1900ac31c75b1ed238dc5fc76ea8",
+  "package_bytes": 4705999,
+  "package_sha256": "afdc01179a265d83829e3488d2d27482caf84ef34ec49248da974fea7d41f183",
+  "partition": {
+    "name": "app",
+    "offset": 3276800,
+    "size": 8388608,
+    "type": 0,
+    "subtype": 17
+  },
+  "partition_free_bytes": 2830512,
+  "partitions": [
+    {
+      "name": "nvs",
+      "offset": 36864,
+      "size": 24576,
+      "type": 1,
+      "subtype": 2
+    },
+    {
+      "name": "otadata",
+      "offset": 61440,
+      "size": 8192,
+      "type": 1,
+      "subtype": 0
+    },
+    {
+      "name": "phy_init",
+      "offset": 69632,
+      "size": 4096,
+      "type": 1,
+      "subtype": 1
+    },
+    {
+      "name": "h2loader",
+      "offset": 131072,
+      "size": 3145728,
+      "type": 0,
+      "subtype": 16
+    },
+    {
+      "name": "app",
+      "offset": 3276800,
+      "size": 8388608,
+      "type": 0,
+      "subtype": 17
+    },
+    {
+      "name": "coredump",
+      "offset": 11665408,
+      "size": 65536,
+      "type": 1,
+      "subtype": 3
+    },
+    {
+      "name": "pref",
+      "offset": 11730944,
+      "size": 262144,
+      "type": 1,
+      "subtype": 131
+    }
+  ],
+  "package_payload_matches_app": true,
+  "flashed": false,
+  "device_port": "/dev/tty.usbserial-510",
+  "hardware_acceptance": false,
+  "performance_30fps_passed": false,
+  "backend": "portable-software",
+  "vector_resource_bytes": 3424308,
+  "software_tests": {
+    "passed": true,
+    "targets": [
+      "//libs/lua:vector_sw_test",
+      "//libs/lua:lua_test",
+      "//projects/example/apps/lua-qi-duel/app:lua_qi_duel_test",
+      "//projects/example/apps/lua-qi-duel/app:qi_duel_retro_audio_test",
+      "//projects/example/apps/lua-qi-duel/app:qi_duel_rules_test"
+    ]
+  },
+  "desktop_regression": {
+    "passed": true,
+    "targets": [
+      "//libs/lua:vector_cg_test",
+      "//libs/lua:vector_sw_test",
+      "//projects/example/apps/lua-qi-duel/app:lua_qi_duel_test"
+    ]
+  },
+  "asan_ubsan": {
+    "passed": true,
+    "compiler": "Apple Clang",
+    "malformed_mutations": 1000
+  },
+  "component_comparison": {
+    "streams": 177,
+    "metric": "premultiplied RGB MAE over union of nonempty component pixels",
+    "max_mae": 3.7602603435516357
+  },
+  "scene_comparison": {
+    "frames": 110,
+    "scenes": 10,
+    "first_ms": 300,
+    "step_ms": 33,
+    "metric": "RGB565-output RGB MAE over union of nonempty scene pixels",
+    "max_mae": 2.947451206985105
+  },
+  "resource_audit": {
+    "old_raster_symbols_present": false,
+    "software_renderer_linked": true,
+    "coregraphics_linked": false,
+    "package_contains": [
+      "manifest",
+      "checksum",
+      "app/esp/app.bin"
+    ]
+  },
+  "source_sha256": {
+    "libs/lua/src/modules/h2_lua_vector_sw.c": "011e8df7856f5182e8e3c08ddb0eb747f4e928466cff777077dbac5c8c988475",
+    "libs/lua/src/modules/h2_lua_vector_sw.h": "ae6625c576968fa62cf82edc620bb438403f54a8dfcc2fdd60355232ebfec5cc",
+    "libs/lua/src/modules/h2_lua_canvas.c": "afaf95f217691ab7763a09c16533585598ec0b1e360427a9d11880250546d872",
+    "libs/lua/BUILD.bazel": "2639f3f1473083c9474806f165d92484729897a5d5741b828c6fe6428f068f0a",
+    "projects/example/apps/lua-qi-duel/app/BUILD.bazel": "c44245d4688cfda4581e8e4ecad46ae14d654f001d3b8895a5406d27f19af3e7"
+  },
+  "performance_note": "Portable software backend host clash probes observed 1.5–2.1 FPS; 30 FPS gate not passed. No device execution.",
+  "review_rounds": [
+    {
+      "round": 1,
+      "findings": [
+        "Missing private board native ADC/NFC and APN dependencies",
+        "GCC misleading-indentation warnings",
+        "Missing software-only entry guard"
+      ],
+      "fixed": true
+    },
+    {
+      "round": 2,
+      "findings": [],
+      "scope": "Independent firmware compilation, packaging and initial renderer compatibility; device performance/stability remain outside this pass and unaccepted."
+    }
+  ],
+  "repository_checks": {
+    "repo_check": true,
+    "module_lock_check": true,
+    "query_all": true,
+    "full_host_graph_build_test": "not run; focused Lua/game tests and exact ESP32 firmware target were run"
+  }
+}

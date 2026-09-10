@@ -1,0 +1,13 @@
+{
+  "status": "visual-samples-approved",
+  "date": "2026-09-10",
+  "user_statement": "OK，矢量样稿我看了，没有问题，是否可以减少固件大小了",
+  "scope": "Current opponent standing pose and four skill icon SVG samples; direction for remaining redraws. Not native rendering, complete temporal parity, FPS or memory acceptance.",
+  "inputs_sha256": {
+    "assets/vector/opponent-full.svg": "e1c98430d7c3e86f3ef7ab7d9df38cbd980c13b6293b84e2f8a86458aae56839",
+    "assets/vector/skill-absorb.svg": "8ca5b1b2fa8e2fa095ca5ea1901882db4f9cee7769857b9e030857b83fd1c6cc",
+    "assets/vector/skill-charge.svg": "67dd0b76518eba1fa97ea1f35897197991d3425fc7e481e389d9ef4894f08a2d",
+    "assets/vector/skill-guard.svg": "01c160100b971026178d1818a08616de83b592b7d3d40cabf6156ca0bc89c136",
+    "assets/vector/skill-wave.svg": "2168b1571934787adfa8721426f969f392429fe9bda77512ceafb7fb18eb02b7"
+  }
+}

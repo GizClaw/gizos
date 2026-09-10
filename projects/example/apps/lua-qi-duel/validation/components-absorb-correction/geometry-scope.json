@@ -1,0 +1,30 @@
+{
+  "changed_frames": [
+    [
+      "action-hands",
+      2
+    ],
+    [
+      "action-hands",
+      3
+    ],
+    [
+      "action-hands",
+      4
+    ],
+    [
+      "action-hands",
+      10
+    ],
+    [
+      "action-hands",
+      11
+    ],
+    [
+      "action-hands",
+      12
+    ]
+  ],
+  "description": "charge poses restored; absorb poses made horizontal and parallel; all other decompressed geometry unchanged",
+  "vector_pack_sha256": "de618bc9a4083393ea997acfe3456bbfbbeda37d6b42c9ae3d9a97c6c5571449"
+}

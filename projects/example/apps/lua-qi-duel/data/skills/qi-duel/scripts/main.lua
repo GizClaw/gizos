@@ -4,6 +4,60 @@ local delay = require("delay")
 local system = require("system")
 local Rules = require("rules")
 
+-- Native vector renderer; component selection supports deterministic visual regression.
+if display.draw_vector_affine and display.draw_vector_icon then
+    local review=type(args)=="table" and args.draw_component or ""
+    local accepted=review=="" or review=="all" or review=="hand-left" or review=="hand-right"
+    local affine,atlas=display.draw_affine_asset,display.draw_sprite_atlas
+    local names={"charge","wave","absorb","guard"}
+    local function focus_at(frame)
+        if frame<=17 then return (frame-1)/32 end
+        if frame==18 then return .500001 end
+        return (frame-2)/32
+    end
+    display.draw_affine_asset=function(name,a,b,c,d,e,f,crop,opacity)
+        if accepted and name=="@qi-duel/opponent.h2r8" then
+            assert(crop==nil,"vector opponent crop is unsupported")
+            return display.draw_vector_affine("@qi-duel/vector/opponent.h2vg",a,b,c,d,e,f,opacity or 1)
+        end
+        if accepted and name=="@qi-duel/hand-left.h2r8" then
+            assert(crop==nil,"vector hand crop is unsupported")
+            return display.draw_vector_affine("@qi-duel/vector/hand-left.h2vg",
+                a*145/1141,b*145/1141,c*177/1379,d*177/1379,e,f,opacity or 1,1)
+        end
+        if accepted and name=="@qi-duel/hand-right.h2r8" then
+            assert(crop==nil,"vector hand crop is unsupported")
+            return display.draw_vector_affine("@qi-duel/vector/hand-right.h2vg",
+                a*145/1199,b*145/1199,c*177/1312,d*177/1312,e,f,opacity or 1,2)
+        end
+        return affine(name,a,b,c,d,e,f,crop,opacity)
+    end
+    display.draw_sprite_atlas=function(name,lo,hi,mix,x,y,scale,opacity)
+        if not accepted or (name~="@qi-duel/skill-styles.h2rs" and name~="@qi-duel/skill-colors.h2rs") then
+            return atlas(name,lo,hi,mix,x,y,scale,opacity)
+        end
+        local index,dir,focus,sheen
+        if lo>408 then
+            index=(lo-409)//21+1
+            local frame=(lo-409)%21
+            dir,focus,sheen=0,1,frame==20 and -1 or frame/19
+        else
+            index=(lo-1)//102+1;dir=((lo-1)%102)//34
+            focus=focus_at((lo-1)%34+1)*(1-mix)+focus_at((hi-1)%34+1)*mix
+            sheen=-2
+        end
+        assert(index>=1 and index<=4,"invalid vector skill")
+        return display.draw_vector_icon("@qi-duel/vector/"..names[index]..".h2vg",
+            focus,dir,name=="@qi-duel/skill-styles.h2rs" and -1 or index-1,
+            sheen,x,y,scale or 1,opacity or 1)
+    end
+    local component=(review=="" or review=="hand-left" or review=="hand-right") and "all" or review
+    if component~="reference" then
+        if component=="arena" or component=="all" then require("procedural").install(display,"arena") end
+        if component~="arena" then require("component_renderer").install(display,component) end
+    end
+end
+
 local FRAME_MS = 33
 local PERF_INTERVAL_MS = 1000
 local SELF_TEST_WINDOWS = 5
@@ -57,7 +111,7 @@ local sfx
 if PLAY_GAME then
     local ok,audio = pcall(require,"audio")
     if ok and type(audio)=="table" then
-        sfx = require("sounds").new(audio,require("sounds_pcm"))
+        sfx=require("retro_audio").new(audio,require("retro_score"))
     end
 end
 local fixed_time_ms = tonumber(options.time_ms)
@@ -75,7 +129,7 @@ local Intro={PAIR_TIMEOUT_MS=8000,MIN_SEARCH_MS=2400,SLOWDOWN_MS=650,
     TILT_MS=1450,FADE_MS=480,
     clash_probe=options.clash and options.clash~="" and options.clash or nil}
 local intro=INTRO_ENABLED and {phase="ready",particle_ms=0,last_ms=0} or nil
-local supported_layers = {full=true,walls=true,wheel=true,arena=true,dust=true,
+local supported_layers = {impact=true,full=true,walls=true,wheel=true,arena=true,dust=true,
     particles=true,opponent=true,["hand-left"]=true,["hand-right"]=true,
     ["arena-dust"]=true,scene7=true,hud=true,scene8=true,scene11=true,
     ["carousel-frame"]=true,["charge-cells"]=true,["charge-base"]=true,carousel=true,
@@ -141,71 +195,8 @@ local function ease(value)
     return value*value*(3-2*value)
 end
 
-local function iround(value)
-    return math.floor(value + 0.5)
-end
-
 local function skill_index(index)
     return ((index - 1) % #SKILLS) + 1
-end
-
-local function safe_line(x0, y0, x1, y1, color)
-    display.draw_line(
-        clamp(iround(x0), 0, W - 1), clamp(iround(y0), 0, H - 1),
-        clamp(iround(x1), 0, W - 1), clamp(iround(y1), 0, H - 1), color)
-end
-
-local function thick_line(x0, y0, x1, y1, thickness, color)
-    local dx, dy = x1 - x0, y1 - y0
-    local length = math.max(1, math.sqrt(dx * dx + dy * dy))
-    local nx, ny = -dy / length, dx / length
-    local half = math.floor(thickness / 2)
-    for offset = -half, half do
-        safe_line(x0 + nx * offset, y0 + ny * offset,
-            x1 + nx * offset, y1 + ny * offset, color)
-    end
-end
-
-local function polygon_fill(points, color)
-    for i = 2, #points - 1 do
-        display.fill_triangle(
-            clamp(iround(points[1][1]), 0, W - 1),
-            clamp(iround(points[1][2]), 0, H - 1),
-            clamp(iround(points[i][1]), 0, W - 1),
-            clamp(iround(points[i][2]), 0, H - 1),
-            clamp(iround(points[i + 1][1]), 0, W - 1),
-            clamp(iround(points[i + 1][2]), 0, H - 1), color)
-    end
-end
-
-local function polygon_outline(points, color, thickness)
-    for i = 1, #points do
-        local next_i = i == #points and 1 or i + 1
-        thick_line(points[i][1], points[i][2],
-            points[next_i][1], points[next_i][2], thickness or 1, color)
-    end
-end
-
-local function transformed_polygon(cx, cy, locals, angle, scale)
-    local points = {}
-    local cos_a, sin_a = math.cos(angle or 0), math.sin(angle or 0)
-    scale = scale or 1
-    for i = 1, #locals do
-        local x, y = locals[i][1] * scale, locals[i][2] * scale
-        points[i] = {
-            cx + x * cos_a - y * sin_a,
-            cy + x * sin_a + y * cos_a,
-        }
-    end
-    return points
-end
-
-local function octagon_points(cx, cy, width, height, angle, scale)
-    local x, y, cut = width * 0.5, height * 0.5, 4
-    return transformed_polygon(cx, cy, {
-        {-x + cut, -y}, {x - cut, -y}, {x, -y + cut}, {x, y - cut},
-        {x - cut, y}, {-x + cut, y}, {-x, y - cut}, {-x, -y + cut},
-    }, angle, scale)
 end
 
 local selected = (tonumber(options.selected) or 0)+1
@@ -219,7 +210,8 @@ if PLAY_GAME then qi,player_hp,enemy_hp=0,5,5 end
 local battle,invalid_fx,confirm_fx=nil,nil,nil
 local settlement=result_probe and {kind=result_probe,started=0,clash=false} or nil
 local RESULT_ENTRY_MS,RESULT_EXIT_MS,INTRO_REENTRY_MS=1100,1050,480
-local SKILL_SCALE=H106 and .82 or 1
+-- Keep the charge ring clear; the touch targets stay generous.
+local SKILL_SCALE=(H106 and .82 or 1)*.75
 local function controls_locked()
     return PLAY_GAME and battle and battle.phase~="over" and
         (battle.phase~="select" or battle.round.choices[1]~=nil)
@@ -275,7 +267,7 @@ local wall_lights = {}
 local wall_gains = {}
 local function hash01(value)
     local x = math.sin(value * 91.733 + 17.133) * 43758.5453
-    return x - math.floor(x)
+    return x-math.floor(x)
 end
 -- Same ordering and deterministic envelopes as desktop-preview wallLights.
 -- The atlas only stores static light coverage; Lua drives every lamp live.
@@ -492,6 +484,7 @@ function Intro.update(now)
         if (connected and age>=Intro.MIN_SEARCH_MS) or age>=Intro.PAIR_TIMEOUT_MS then
             intro.decision=connected and "void" or "demon"
             intro.phase="slowdown";intro.phase_started=now
+            if sfx and sfx.cue then sfx.cue("connected",now) end
             if not connected and intro.pair_started then
                 pcall(Link.stop);intro.pair_started=false
             end
@@ -538,6 +531,7 @@ if PLAY_GAME then
             print("H2_QI_DUEL_INVALID skill="..kind)
             return false
         end
+        if sfx and sfx.cue then sfx.cue("confirm",now) end
         return true
     end
 end
@@ -563,6 +557,10 @@ local function play_result(result,now)
 end
 local function apply_result(now)
     if battle.phase=="play" and not battle.applied and now-battle.started>=750 then
+        if sfx and sfx.cue then
+            if battle.result.broken[1] or battle.result.broken[2] then sfx.cue("guard_break",now)
+            elseif battle.result.damage[1]>0 or battle.result.damage[2]>0 then sfx.cue("hurt",now) end
+        end
         local new=battle.result.players
         if qi~=new[1].qi then start_meter_fx("charge",qi,new[1].qi) end
         if player_hp~=new[1].hp then start_meter_fx("player",player_hp,new[1].hp) end
@@ -927,14 +925,6 @@ function Intro.scene_fade(now)
 end
 local function arena_project_45(x,z) return {184+420*x/z,187+624/z} end
 local function arena_project_top(x,z) return {184+x*36,220+(z-8)*36} end
-local function arena_project(x,z)
-    local top,tilted=arena_project_top(x,z),arena_project_45(x,z)
-    local mix=particle_tilt_value
-    return {top[1]+(tilted[1]-top[1])*mix,top[2]+(tilted[2]-top[2])*mix}
-end
-local function particle_perspective(z)
-    return 1+(8/z-1)*particle_tilt_value
-end
 -- The entry camera starts directly above the arena. Every particle uses the
 -- same clock, size, colour and radius as its diametrically opposite partner,
 -- so the waiting pattern is exactly point-symmetric instead of merely radial.
@@ -947,9 +937,6 @@ function Intro.top_particle(index,t)
     local progress=(seed.p0+t*seed.speed*.67)%1
     local radius=5.10+hash01(pair*47+9)*.72
     return progress,angle,radius,seed.size,seed.hue
-end
-local function arena_polar(radius,angle)
-    return arena_project(radius*math.cos(angle),8+radius*math.sin(angle))
 end
 local function smoothstep(value) return value*value*(3-2*value) end
 
@@ -986,6 +973,8 @@ local function draw_space_particles(now_ms)
         local i=index-1
         local top_progress,top_angle,top_extent,top_size,top_hue=
             Intro.top_particle(index,t)
+        local top_cos=Intro.hash_cache and math.cos(top_angle)
+        local top_sin=Intro.hash_cache and math.sin(top_angle)
         if i<52 then
             local final_progress=(p.p0+t*p.speed*.72)%1
             local progress=top_progress+(final_progress-top_progress)*particle_tilt_value
@@ -1010,10 +999,10 @@ local function draw_space_particles(now_ms)
                 local trail=(.21+particle_size*.11)*(.5+perspective^.82*.82)
                 local final_tail_distance=math.max(0,final_distance-trail)
                 local top_tail_distance=math.max(0,top_distance-trail)
-                local top_head=arena_project_top(top_distance*math.cos(top_angle),
-                    8+top_distance*math.sin(top_angle))
-                local top_tail=arena_project_top(top_tail_distance*math.cos(top_angle),
-                    8+top_tail_distance*math.sin(top_angle))
+                local top_head=arena_project_top(top_distance*(top_cos or math.cos(top_angle)),
+                    8+top_distance*(top_sin or math.sin(top_angle)))
+                local top_tail=arena_project_top(top_tail_distance*(top_cos or math.cos(top_angle)),
+                    8+top_tail_distance*(top_sin or math.sin(top_angle)))
                 local final_head=arena_project_45(lateral*final_distance,world_z)
                 local final_tail=arena_project_45(lateral*final_tail_distance,
                     8-forward*final_tail_distance)
@@ -1038,16 +1027,18 @@ local function draw_space_particles(now_ms)
             end
             local route=smoothstep(progress)
             local angle=.025+(i-52+hash01(i*53+7)*.72)/52*(math.pi-.05)
+            local angle_cos=Intro.hash_cache and math.cos(angle)
+            local angle_sin=Intro.hash_cache and math.sin(angle)
             local hit_radius=3+hash01(i*79+3)*.38
-            local final_base_perspective=8/(8+math.sin(angle)*hit_radius)
+            local final_base_perspective=8/(8+(angle_sin or math.sin(angle))*hit_radius)
             local turn_radius=hit_radius-.34
-            local turn_start=arena_project_45(turn_radius*math.cos(angle),
-                8+turn_radius*math.sin(angle))
-            local before=arena_project_45((turn_radius-.12)*math.cos(angle),
-                8+(turn_radius-.12)*math.sin(angle))
+            local turn_start=arena_project_45(turn_radius*(angle_cos or math.cos(angle)),
+                8+turn_radius*(angle_sin or math.sin(angle)))
+            local before=arena_project_45((turn_radius-.12)*(angle_cos or math.cos(angle)),
+                8+(turn_radius-.12)*(angle_sin or math.sin(angle)))
             local radial_x,radial_y=turn_start[1]-before[1],turn_start[2]-before[2]
-            local hit=arena_project_45(hit_radius*math.cos(angle),
-                8+hit_radius*math.sin(angle))
+            local hit=arena_project_45(hit_radius*(angle_cos or math.cos(angle)),
+                8+hit_radius*(angle_sin or math.sin(angle)))
             local turn_end={hit[1],hit[2]-9}
             local raw_y=math.abs(radial_x)>.5 and
                 turn_start[2]+(turn_end[1]-turn_start[1])*radial_y/radial_x or
@@ -1057,9 +1048,9 @@ local function draw_space_particles(now_ms)
             local function final_point_at(u)
                 if u<=.56 then
                     local radius=turn_radius*u/.56
-                    local point=arena_project_45(radius*math.cos(angle),
-                        8+radius*math.sin(angle))
-                    point[3]=8/(8+math.sin(angle)*radius)
+                    local point=arena_project_45(radius*(angle_cos or math.cos(angle)),
+                        8+radius*(angle_sin or math.sin(angle)))
+                    point[3]=8/(8+(angle_sin or math.sin(angle))*radius)
                     return point
                 elseif u<=.72 then
                     local q=(u-.56)/(.72-.56);local v=1-q
@@ -1072,8 +1063,8 @@ local function draw_space_particles(now_ms)
             end
             local function point_at(u)
                 local flat_radius=top_extent*u
-                local top=arena_project_top(flat_radius*math.cos(top_angle),
-                    8+flat_radius*math.sin(top_angle))
+                local top=arena_project_top(flat_radius*(top_cos or math.cos(top_angle)),
+                    8+flat_radius*(top_sin or math.sin(top_angle)))
                 local tilted=final_point_at(u)
                 local mix=particle_tilt_value
                 return {top[1]+(tilted[1]-top[1])*mix,
@@ -1682,7 +1673,7 @@ local function draw_countdown(now)
     if not PLAY_GAME or not battle or battle.phase~="select" then return end
     local remaining=battle.round.deadline-now
     if remaining<=0 then return end
-    local digit=clamp(math.ceil(remaining/1000),1,3)
+    local digit=clamp(math.ceil(remaining/Rules.countdown_step_ms(battle.number)),1,3)
     local size=H106 and 28 or 36
     local x,y=math.floor((SCREEN_W-size)/2),H106 and 39 or 112
     local row=3-digit
@@ -1804,8 +1795,10 @@ local function render(now_ms)
     local scene7=scene8 or inspector_layer=="scene7"
     local arena=scene7 or inspector_layer=="arena" or inspector_layer=="arena-dust"
     display.clear(COLOR.black)
+    if display.procedural_lights then display.begin_composite() end
     if arena or inspector_layer=="walls" then draw_wall_lights(now_ms) end
     if arena or inspector_layer=="wheel" then draw_arena_lights(now_ms) end
+    if display.procedural_lights then display.end_composite() end
     if inspector_layer~="walls" and inspector_layer~="wheel" and inspector_layer~="arena" then
         display.begin_composite()
         viewport("scene")
@@ -1858,6 +1851,7 @@ end
 
 local screen_created = true
 local function cleanup()
+    if sfx and sfx.bgm then sfx.bgm.close() end
     if sfx then sfx.close() end
     if screen_created then
         pcall(display.end_frame)
@@ -1915,10 +1909,33 @@ while true do
     update_battle(scene_time()) -- Deadline wins over an input arriving too late.
     handle_touch(info)
     update_battle(scene_time()) -- Lock input now; settlement still waits for the deadline.
+    if sfx and sfx.cue then
+        local now=scene_time()
+        if Intro.audio_selected and selected~=Intro.audio_selected then sfx.cue("select",now) end
+        Intro.audio_selected=selected
+        if battle and battle.phase=="select" then
+            local digit=math.ceil((battle.round.deadline-now)/Rules.countdown_step_ms(battle.number))
+            local key=tostring(battle.number)..":"..digit
+            if digit>=1 and digit<=3 and Intro.audio_countdown~=key then sfx.cue("countdown",now) end
+            Intro.audio_countdown=key
+        end
+        if cast and cast.round_actions and Intro.audio_cast~=cast and now-cast.started>=ACTIONS.wave.windup then
+            Intro.audio_cast=cast
+            if cast.round_actions[1]=="wave" and cast.round_actions[2]=="wave" then sfx.cue("clash",now)
+            elseif cast.power and (cast.power[1]==3 or cast.power[2]==3) then sfx.cue("combo",now) end
+        end
+    end
     if sfx then sfx.update(scene_time()) end
+    if sfx and sfx.bgm then
+        local now=scene_time()
+        sfx.bgm.update(sfx.bgm_scene(intro,settlement,now),now)
+    end
     local update_finished_ms = system.millis()
     local draw_ms, present_ms = render(fixed_time_ms or (frame_started_ms - scene_started_ms))
     frame_count = frame_count + 1
+    if fixed_time_ms and tonumber(options.capture_step_ms) then
+        fixed_time_ms=fixed_time_ms+math.max(1,math.min(1000,tonumber(options.capture_step_ms)))
+    end
     local active_finished_ms = system.millis()
     local remaining_ms = FRAME_MS - (active_finished_ms - frame_started_ms)
     delay.delay_ms(math.max(1, remaining_ms))

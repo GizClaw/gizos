@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>气决 · 左手组件验收</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0a0e14;color:#e5edf6;font:15px/1.6 system-ui,sans-serif}main{max-width:1160px;margin:auto;padding:28px}h1{font-size:26px;margin:0 0 8px}p{color:#aab7c8;margin:8px 0}.pending{color:#ffc982;background:#352b1c;border:1px solid #685034;padding:12px 16px;border-radius:10px}.controls{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:20px 0}button,select{color:#e6f2ff;background:#162333;border:1px solid #3b526b;border-radius:7px;padding:9px 14px;font:inherit;cursor:pointer}button:hover{background:#28415b}input[type=range]{width:250px;vertical-align:middle;accent-color:#57deff}label{white-space:nowrap}.frames{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.panel{background:#101925;border:1px solid #24364b;border-radius:10px;padding:14px;text-align:center}.panel h2{font-size:15px;margin:0 0 10px}.screen{display:block;max-width:100%;height:auto;margin:auto;background:black;border:1px solid #253044;image-rendering:auto}.detail{margin-top:16px;display:flex;gap:16px}.detail .panel{flex:1}canvas{max-width:100%}.caption{font-size:13px;color:#92a6ba}a{color:#77dcff}footer{margin-top:22px;border-top:1px solid #263445;padding-top:14px}@media(max-width:800px){.frames{grid-template-columns:1fr}.detail{flex-direction:column}}
+</style><main>
+<h1>左手 · 单组件对比</h1><p>只审核左手的静态造型与呼吸动画。右手、技能动作、HUD、场景和结算不在本次修改范围内。</p>
+<div class="pending">左手 v3 已由用户确认通过，现已纳入默认矢量版本。以下保留原版与已验收稿的逐帧对比记录。</div>
+<div class="controls"><label>屏幕 <select id="layout"><option value="amoled">AMOLED · 368×448</option><option value="h106">H106 · 240×240</option></select></label><button id="play">播放呼吸动画</button><button id="prev">上一帧</button><button id="next">下一帧</button><label>帧 <input id="frame" type="range" min="0" max="60" value="0"></label><span id="time">0 ms · 0 / 60</span></div>
+<p class="caption">共 61 个连续时间点（0–1980 ms，步长 33 ms）。以下均由同一 native Lua renderer 的实际 framebuffer 导出，不是网页重画。右侧叠加可检查轮廓偏移。</p>
+<div class="frames"><section class="panel"><h2>原版 · 验收基准</h2><img id="reference" class="screen" alt="原版左手原生帧"></section><section class="panel"><h2>左手 v3 · 已验收</h2><img id="candidate" class="screen" alt="矢量左手候选原生帧"></section><section class="panel"><h2>同位置叠加</h2><canvas id="overlay" class="screen"></canvas><label>候选透明度 <input id="opacity" type="range" min="0" max="100" value="50" style="width:130px"></label></section></div>
+<div class="detail"><section class="panel"><h2>原版 · 组件区域 2× 放大</h2><canvas id="detailReference"></canvas></section><section class="panel"><h2>候选 · 同一区域 2× 放大</h2><canvas id="detailCandidate"></canvas></section></div>
+<footer><p>验收重点：手指和拇指轮廓、长前臂比例、装甲分层、深蓝金属材质、青蓝发光带、前臂末端渐隐，以及呼吸动画的位移与旋转。此版本按用户确认完成该组件的视觉验收；动作姿态不包含在本次验收内。</p><p>左手验收已记录。下一项：<a href="right-hand-component-review.html">右手组件逐帧对比</a>。</p></footer>
+</main><script>
+const $=id=>document.getElementById(id),cache=new Map();let playing=false,prev=0,version=0;
+function path(side,frame){return `../validation/hand-left-v3/${$('layout').value}-${side}-${String(frame).padStart(3,'0')}.png`}
+function load(src){if(!cache.has(src))cache.set(src,new Promise((resolve,reject)=>{let i=new Image();i.onload=()=>resolve(i);i.onerror=reject;i.src=src}));return cache.get(src)}
+async function render(){const n=+$('frame').value;const ticket=++version;const [a,b]=await Promise.all([load(path('reference',n)),load(path('hand-left',n))]);if(ticket!==version)return;$('reference').src=a.src;$('candidate').src=b.src;$('time').textContent=`${n*33} ms · ${n} / 60`;
+const c=$('overlay');c.width=a.width;c.height=a.height;let g=c.getContext('2d');g.drawImage(a,0,0);g.globalAlpha=+$('opacity').value/100;g.drawImage(b,0,0);g.globalAlpha=1;
+const roi=$('layout').value==='amoled'?[0,160,145,208]:[0,98,96,134];for(const [id,im] of [['detailReference',a],['detailCandidate',b]]){let cv=$(id);cv.width=roi[2]*2;cv.height=roi[3]*2;let d=cv.getContext('2d');d.imageSmoothingEnabled=false;d.drawImage(im,...roi,0,0,cv.width,cv.height)}}
+function move(delta){$('frame').value=(+$('frame').value+delta+61)%61;render()}
+$('prev').onclick=()=>move(-1);$('next').onclick=()=>move(1);$('frame').oninput=render;$('opacity').oninput=render;$('layout').onchange=()=>{render();preload()};$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'暂停动画':'播放呼吸动画';prev=performance.now()};
+function tick(t){if(playing&&t-prev>=33){move(1);prev=t}requestAnimationFrame(tick)}
+function preload(){for(let i=0;i<=60;i++)for(const side of ['reference','hand-left'])load(path(side,i)).catch(()=>{})}
+render();preload();requestAnimationFrame(tick);
+</script></html>

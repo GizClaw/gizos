@@ -1,7 +1,7 @@
 ---
 {
   "name": "qi-duel",
-  "description": "Preview the touch-first Qi Duel combat interface.",
+  "description": "Play Qi Duel with touch controls, a computer opponent or a nearby peer.",
   "author": "GizOS contributors",
   "metadata": {
     "category": ["game", "ui"],
@@ -21,9 +21,10 @@
 
 Swipe left or right across the lower carousel to rotate between Charge, Wave,
 Absorb, and Guard. The selected skill is larger and opaque; adjacent skills use
-directional edge fades. This prototype does not resolve combat yet; it exercises
-the AMOLED composition, touch path, continuous idle motion, meter transitions,
-and frame-rate telemetry.
+directional edge fades. The game resolves simultaneous rounds with qi, health, guards and combo waves.
+Click the opening particle field to search for a peer; an unsuccessful search
+continues into a computer match. Background music and skill cues use a streaming
+retro synthesizer.
 
 ## Requirements
 

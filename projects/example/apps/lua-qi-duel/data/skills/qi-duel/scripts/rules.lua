@@ -1,5 +1,9 @@
 -- Pure, simultaneous rules. No rendering, wall clock, random input or transport.
 local M={MAX_QI=5,MAX_HP=5,SELECT_MS=3000,PLAY_MS=1800}
+function M.countdown_step_ms(number)
+    return math.max(600,1000-200*math.floor((number-1)/7))
+end
+function M.selection_ms(number) return 3*M.countdown_step_ms(number) end
 function M.new()
     return {{hp=5,qi=0,shield_cd=0},{hp=5,qi=0,shield_cd=0}}
 end
@@ -42,7 +46,7 @@ end
 
 -- One authoritative local round coordinator. A future network adapter must
 -- deliver authenticated commit/reveal choices here, not remote damage values.
-function M.round(number,now) return {number=number,deadline=now+M.SELECT_MS,choices={}} end
+function M.round(number,now) return {number=number,deadline=now+M.selection_ms(number),choices={}} end
 function M.lock(round,number,side,action,now)
     if number~=round.number or (side~=1 and side~=2) or round.done or
         now>=round.deadline or round.choices[side]~=nil then return false end

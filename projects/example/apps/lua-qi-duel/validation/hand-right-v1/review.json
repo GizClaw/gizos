@@ -1,0 +1,22 @@
+{
+  "status": "accepted-by-user",
+  "component": "right hand standing and breathing only",
+  "candidate": "assets/vector/hand-right-review-v1.svg",
+  "candidate_sha256": "320ce35b6b0d9838943a59cf4f8cd50a2ccf33f7040f920e3c90706e6ab700e9",
+  "frame_count": 61,
+  "step_ms": 33,
+  "screen_sizes": [
+    [
+      368,
+      448
+    ],
+    [
+      240,
+      240
+    ]
+  ],
+  "renderer": "native Lua RGB565 framebuffer",
+  "default": "approved left and right vector hands enabled",
+  "explicit_candidate_switch": "--draw-component=hand-right",
+  "user_confirmation": "验收通过，后续的组件你自己review，能保持平均30/255以下的误差就可以"
+}

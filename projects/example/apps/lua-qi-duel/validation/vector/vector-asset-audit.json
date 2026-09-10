@@ -1,0 +1,43 @@
+{
+  "status": "draft-not-accepted",
+  "native_rendering_verified": false,
+  "assets": [
+    {
+      "file": "assets/vector/opponent-full.svg",
+      "sha256": "e1c98430d7c3e86f3ef7ab7d9df38cbd980c13b6293b84e2f8a86458aae56839",
+      "svg_bytes": 77231,
+      "zlib_bytes": 8747,
+      "path_count": 336
+    },
+    {
+      "file": "assets/vector/skill-absorb.svg",
+      "sha256": "8ca5b1b2fa8e2fa095ca5ea1901882db4f9cee7769857b9e030857b83fd1c6cc",
+      "svg_bytes": 32044,
+      "zlib_bytes": 1628,
+      "path_count": 190
+    },
+    {
+      "file": "assets/vector/skill-charge.svg",
+      "sha256": "67dd0b76518eba1fa97ea1f35897197991d3425fc7e481e389d9ef4894f08a2d",
+      "svg_bytes": 28207,
+      "zlib_bytes": 2861,
+      "path_count": 153
+    },
+    {
+      "file": "assets/vector/skill-guard.svg",
+      "sha256": "01c160100b971026178d1818a08616de83b592b7d3d40cabf6156ca0bc89c136",
+      "svg_bytes": 46535,
+      "zlib_bytes": 2414,
+      "path_count": 267
+    },
+    {
+      "file": "assets/vector/skill-wave.svg",
+      "sha256": "2168b1571934787adfa8721426f969f392429fe9bda77512ceafb7fb18eb02b7",
+      "svg_bytes": 26175,
+      "zlib_bytes": 2222,
+      "path_count": 143
+    }
+  ],
+  "total_svg_bytes": 210192,
+  "total_zlib_bytes": 17872
+}

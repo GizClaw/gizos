@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "amoled-lua-qi-duel-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "4647e152342cc41fc9cc0a5fb8dcb9acb77f21eaf6844a48310ad7cc74c16ad9",
+      "size": 1356085
+    }
+  ],
+  "board": "amoled",
+  "entry": "projects/example/targets/h2loader_tar_zlib/lua-qi-duel/amoled",
+  "image": "lua-qi-duel",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "0a4ae252faf66af4d4711e3f70bc1fe165cb1089fc56cb897a9672fb8b65b437",
+      "size": 17501164
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "af03e0358919eb67b5b993eeb3486c5775bc6d2af8c3a4cd3be3d9ceaa34a8b3",
+      "size": 16222579
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "d4bc7321c2acc545a7ad8c67ac867b3a6bb5fa0ad9f80a4436926830c4f8a353",
+      "size": 2033584
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "ed40528f00f2ca5ba2b85b3d7df84661806f864b12042f11f9b0ca195af5fa07",
+      "size": 21184
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "2ee386eacf4a9de3f8dd53f9064128c1668e0dcb7ff34ff5d545aeaee83e52a1",
+      "size": 2164656
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "d6464ffdf628c827ede1d0ecbf8a5cfa1ab2483710b6e848069dbf904a467433",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "8271cfe4168dc8a9010ac591d6b5dc6adbde9b4c348ddaa0d04515e797e0c94e",
+      "size": 992
+    }
+  ],
+  "package_manifest": {
+    "board": "amoled",
+    "format": 1,
+    "image_sha256": "d4bc7321c2acc545a7ad8c67ac867b3a6bb5fa0ad9f80a4436926830c4f8a353",
+    "image_size": 2033584,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "bazel-native-artifacts"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "bazel-native-artifacts"
+}

@@ -1,0 +1,407 @@
+{
+  "metric": "Exact RGB byte equality at the same native resolution/time",
+  "frame_pairs": 100,
+  "passed": true,
+  "frames": [
+    {
+      "frame": "amoled-absorb-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-absorb-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-absorb-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-absorb-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-absorb-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-charge-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-charge-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-charge-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-charge-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-charge-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-enemy-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-enemy-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-enemy-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-enemy-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-enemy-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-player-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-player-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-player-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-player-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-clash-player-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-defeat-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-defeat-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-defeat-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-defeat-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-defeat-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-full-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-full-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-full-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-full-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-full-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-guard-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-guard-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-guard-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-guard-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-guard-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-settlement-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-settlement-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-settlement-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-settlement-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-settlement-180.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-wave-000.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-wave-011.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-wave-030.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-wave-090.png",
+      "identical": true
+    },
+    {
+      "frame": "amoled-wave-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-absorb-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-absorb-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-absorb-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-absorb-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-absorb-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-charge-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-charge-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-charge-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-charge-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-charge-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-enemy-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-enemy-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-enemy-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-enemy-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-enemy-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-player-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-player-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-player-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-player-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-clash-player-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-defeat-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-defeat-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-defeat-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-defeat-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-defeat-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-full-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-full-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-full-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-full-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-full-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-guard-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-guard-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-guard-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-guard-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-guard-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-settlement-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-settlement-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-settlement-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-settlement-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-settlement-180.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-wave-000.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-wave-011.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-wave-030.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-wave-090.png",
+      "identical": true
+    },
+    {
+      "frame": "h106-wave-180.png",
+      "identical": true
+    }
+  ]
+}

@@ -1,0 +1,341 @@
+{
+  "status": "awaiting-user-review",
+  "format": "16 kHz mono S16LE",
+  "tracks": [
+    {
+      "id": "pairing",
+      "title": "配对 · 星际信标",
+      "description": "轻快的定位脉冲与短琶音，留出等待空间。",
+      "loop": true,
+      "bpm": 120,
+      "event_count": 56,
+      "max_polyphony": 4,
+      "file": "pairing.wav",
+      "seconds": 8.0,
+      "peak_dbfs": -13.0,
+      "rms_dbfs": -25.41,
+      "pcm_bytes": 256000,
+      "sha256": "02421f644ef86dc91b30433dad70a77428f40626c8511d6f0a14e55b6366f827",
+      "clipped_samples": 0
+    },
+    {
+      "id": "battle",
+      "title": "战斗 · 像素气流",
+      "description": "脉冲主旋律、三角波低音和噪声鼓，八小节完整循环。",
+      "loop": true,
+      "bpm": 150,
+      "event_count": 356,
+      "max_polyphony": 6,
+      "file": "battle.wav",
+      "seconds": 12.8,
+      "peak_dbfs": -8.6,
+      "rms_dbfs": -23.08,
+      "pcm_bytes": 409600,
+      "sha256": "4d1c294c82bed7c9460aa09154794a391fda9a152105ba94ae8c329bf93d568a",
+      "clipped_samples": 0
+    },
+    {
+      "id": "victory",
+      "title": "胜利 · 星光加冕",
+      "description": "由短上行号角进入明亮大三和弦，一次播放后收尾。",
+      "loop": false,
+      "bpm": 132,
+      "event_count": 33,
+      "max_polyphony": 6,
+      "file": "victory.wav",
+      "seconds": 5.4545625,
+      "peak_dbfs": -10.4,
+      "rms_dbfs": -24.12,
+      "pcm_bytes": 174546,
+      "sha256": "930604e542a918756f44bbc099c79298c5f1cf0553b4bbab11a22213c388d8fa",
+      "clipped_samples": 0
+    },
+    {
+      "id": "defeat",
+      "title": "失败 · 熄灭的能量",
+      "description": "短下行旋律和低音落点，克制、可快速重开。",
+      "loop": false,
+      "bpm": 96,
+      "event_count": 15,
+      "max_polyphony": 5,
+      "file": "defeat.wav",
+      "seconds": 5.0,
+      "peak_dbfs": -10.88,
+      "rms_dbfs": -21.98,
+      "pcm_bytes": 160000,
+      "sha256": "25fb3cdf66de578a9e6b9fb1f90c78bbed4d7a99e85138399f97ea04f883c82a",
+      "clipped_samples": 0
+    },
+    {
+      "id": "charge",
+      "title": "聚气",
+      "description": "逐级上行的能量音，末端扫频收束。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 6,
+      "max_polyphony": 2,
+      "file": "charge.wav",
+      "seconds": 0.62,
+      "peak_dbfs": -13.28,
+      "rms_dbfs": -24.78,
+      "pcm_bytes": 19840,
+      "sha256": "63e23e94dbcfb84101cc10d3b80003264b3fc916647ef245f914112d0b0c19f1",
+      "clipped_samples": 0
+    },
+    {
+      "id": "wave",
+      "title": "发波",
+      "description": "从高处俯冲的激光扫频，带短噪声尾迹。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 3,
+      "max_polyphony": 3,
+      "file": "wave.wav",
+      "seconds": 0.48,
+      "peak_dbfs": -9.46,
+      "rms_dbfs": -22.05,
+      "pcm_bytes": 15360,
+      "sha256": "1301aaf5f20c3a7cb55dbdc381a2efc8b6b2fa34cacdc8940158758d78797a32",
+      "clipped_samples": 0
+    },
+    {
+      "id": "absorb",
+      "title": "吸收",
+      "description": "先下潜再吸入的双向扫频，与发波区分。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 8,
+      "max_polyphony": 3,
+      "file": "absorb.wav",
+      "seconds": 0.65,
+      "peak_dbfs": -9.02,
+      "rms_dbfs": -19.49,
+      "pcm_bytes": 20800,
+      "sha256": "910b81a966d1c55ffdac46c483e605b31944a2dbf35298a133cb1c1b339b2f0b",
+      "clipped_samples": 0
+    },
+    {
+      "id": "guard",
+      "title": "防御",
+      "description": "清亮的金属护盾和低音锁定。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 5,
+      "max_polyphony": 5,
+      "file": "guard.wav",
+      "seconds": 0.45,
+      "peak_dbfs": -9.19,
+      "rms_dbfs": -21.02,
+      "pcm_bytes": 14400,
+      "sha256": "f3ebfb8cae21e02662ee062abf40dad47311a6f32b7df6dd79c962d33b45a236",
+      "clipped_samples": 0
+    },
+    {
+      "id": "hurt",
+      "title": "受击",
+      "description": "短促的低频冲击与失真噪声。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 2,
+      "max_polyphony": 2,
+      "file": "hurt.wav",
+      "seconds": 0.3,
+      "peak_dbfs": -10.8,
+      "rms_dbfs": -23.69,
+      "pcm_bytes": 9600,
+      "sha256": "52e3428b57c47a186d31410311771cf449bbb78982a495c12330e6cfc05af829",
+      "clipped_samples": 0
+    },
+    {
+      "id": "clash",
+      "title": "对波碰撞",
+      "description": "集中爆破后迅速衰减，不拖尾遮盖下一招。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 3,
+      "max_polyphony": 3,
+      "file": "clash.wav",
+      "seconds": 0.46,
+      "peak_dbfs": -9.17,
+      "rms_dbfs": -25.55,
+      "pcm_bytes": 14720,
+      "sha256": "ee11a47cd4bd4d87df778d10bd4e8ace875318b67ff1b2b0948aa442a1f1b512",
+      "clipped_samples": 0
+    },
+    {
+      "id": "combo",
+      "title": "三连击",
+      "description": "三次递进冲击，最后一击更重。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 9,
+      "max_polyphony": 4,
+      "file": "combo.wav",
+      "seconds": 0.64,
+      "peak_dbfs": -7.46,
+      "rms_dbfs": -23.03,
+      "pcm_bytes": 20480,
+      "sha256": "b1ccc8b79caf18984dea823267b57c9c41c5f848618253730b547869e903094c",
+      "clipped_samples": 0
+    },
+    {
+      "id": "guard_break",
+      "title": "破盾",
+      "description": "玻璃感的碎裂音阶，下坠收尾。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 7,
+      "max_polyphony": 2,
+      "file": "guard_break.wav",
+      "seconds": 0.58,
+      "peak_dbfs": -15.89,
+      "rms_dbfs": -29.86,
+      "pcm_bytes": 18560,
+      "sha256": "43cd6c9e54c43c19fc4a922947e9ef4022cf843126af7e2a0fb0b22fcbffe805",
+      "clipped_samples": 0
+    },
+    {
+      "id": "select",
+      "title": "切换技能",
+      "description": "轻微短音，连续滑动时不刺耳。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 1,
+      "max_polyphony": 1,
+      "file": "select.wav",
+      "seconds": 0.1,
+      "peak_dbfs": -19.9,
+      "rms_dbfs": -28.03,
+      "pcm_bytes": 3200,
+      "sha256": "261db0b9cb257ec4cf99bc076391f3898682fdb9f4e384c01bbaa1a8ce84b7c4",
+      "clipped_samples": 0
+    },
+    {
+      "id": "confirm",
+      "title": "确认释放",
+      "description": "短上行双音。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 2,
+      "max_polyphony": 1,
+      "file": "confirm.wav",
+      "seconds": 0.2,
+      "peak_dbfs": -18.52,
+      "rms_dbfs": -28.93,
+      "pcm_bytes": 6400,
+      "sha256": "d4a1fd4949e7e36b4b055bc0b97ba79afbf48424d229e9991b4b12f57a5eef8b",
+      "clipped_samples": 0
+    },
+    {
+      "id": "connected",
+      "title": "配对成功",
+      "description": "上行三音提示连接完成。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 3,
+      "max_polyphony": 1,
+      "file": "connected.wav",
+      "seconds": 0.48,
+      "peak_dbfs": -17.64,
+      "rms_dbfs": -24.53,
+      "pcm_bytes": 15360,
+      "sha256": "e3f67a74adcebdf1fbe18d2837d8e5b3ef5a73b315226d7df5daf7985e3e43c8",
+      "clipped_samples": 0
+    },
+    {
+      "id": "countdown",
+      "title": "倒计时",
+      "description": "单次计时音，预留给最后三秒。",
+      "loop": false,
+      "bpm": 60,
+      "event_count": 1,
+      "max_polyphony": 1,
+      "file": "countdown.wav",
+      "seconds": 0.13,
+      "peak_dbfs": -19.76,
+      "rms_dbfs": -28.24,
+      "pcm_bytes": 4160,
+      "sha256": "5e6657a1aa0e9722c3f50a14b9cc97c858ae05c40be1d8b555989a601e17c19a",
+      "clipped_samples": 0
+    }
+  ],
+  "context_mix": {
+    "file": "context-mix.wav",
+    "seconds": 26.2545625,
+    "peak_dbfs": -6.72,
+    "rms_dbfs": -23.75,
+    "pcm_bytes": 840146,
+    "sha256": "4a80d4584776cfb4959eb2ba94cc301b3e1a942fa7386ef0a6405b87ac01c06c",
+    "clipped_samples": 0,
+    "segments": [
+      {
+        "id": "pairing",
+        "start_seconds": 0.0
+      },
+      {
+        "id": "battle",
+        "start_seconds": 8.0
+      },
+      {
+        "id": "victory",
+        "start_seconds": 20.8
+      }
+    ],
+    "cues": [
+      [
+        "connected",
+        7.3
+      ],
+      [
+        "charge",
+        9
+      ],
+      [
+        "guard",
+        10.5
+      ],
+      [
+        "wave",
+        12
+      ],
+      [
+        "clash",
+        12.25
+      ],
+      [
+        "absorb",
+        14
+      ],
+      [
+        "wave",
+        16
+      ],
+      [
+        "guard_break",
+        16.2
+      ],
+      [
+        "combo",
+        18
+      ],
+      [
+        "hurt",
+        18.4
+      ]
+    ]
+  },
+  "sfx_sequence": {
+    "file": "sfx-sequence.wav",
+    "seconds": 9.29,
+    "peak_dbfs": -7.46,
+    "rms_dbfs": -25.78,
+    "pcm_bytes": 297280,
+    "sha256": "78215f5db4292678b26abc9e26a1892a943b9068daa6edb55e08b85d100112d5",
+    "clipped_samples": 0
+  },
+  "score_lua_bytes": 17354,
+  "renderer_source_bytes": 11869,
+  "firmware_integration": false,
+  "device_cpu_and_memory_verified": false,
+  "note": "WAVs are audition exports only; compact score and future streaming synth are the firmware inputs."
+}

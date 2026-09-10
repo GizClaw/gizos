@@ -1,4 +1,17 @@
 #include "h2_lua_qi_duel.h"
+#ifdef H2_QI_DUEL_DESKTOP_VECTORS
+#include "qi_duel_procedural_generated.h"
+#include "vector_opponent_generated.h"
+#include "vector_left_generated.h"
+#include "vector_right_generated.h"
+#include "vector_components_generated.h"
+#include "qi_duel_component_paths_generated.h"
+#include "qi_duel_component_renderer_generated.h"
+#include "vector_charge_generated.h"
+#include "vector_wave_generated.h"
+#include "vector_absorb_generated.h"
+#include "vector_guard_generated.h"
+#endif
 
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2_lua.h"
@@ -6,12 +19,12 @@
 #include "h2_lua_job.h"
 #include "h2_lua_module.h"
 #include "qi_duel_link.h"
-#include "qi_duel_assets.h"
 #include "qi_duel_script_generated.h"
-#include "qi_duel_sounds_generated.h"
-#include "qi_duel_sounds_pcm_generated.h"
+#include "qi_duel_retro_audio_generated.h"
+#include "qi_duel_retro_score_generated.h"
 #include "qi_duel_rules_generated.h"
 #include "qi_duel_link_protocol_generated.h"
+#ifndef H2_QI_DUEL_VECTOR_ONLY
 #include "countdown_rgba_generated.h"
 #include "impact_labels_rgba_generated.h"
 #include "wall_atlas_generated.h"
@@ -33,6 +46,7 @@
 #include "beam_clash_fade_amoled_generated.h"
 #include "result_words_generated.h"
 #include "result_streaks_generated.h"
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -62,16 +76,9 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
       .payload = payload,
       .payload_capacity = sizeof(payload),
   };
-#define H2_QI_DUEL_ASSET(asset_name, symbol)                                   \
-  {                                                                            \
-    .name = "@qi-duel/" asset_name ".a4", .source = symbol,                    \
-    .source_size = symbol##_size,                                              \
-  }
   const h2_lua_resource_t resources[] = {
-      {.name = "@qi-duel/sounds.lua", .source = qi_duel_sounds,
-       .source_size = qi_duel_sounds_size},
-      {.name = "@qi-duel/sounds_pcm.lua", .source = qi_duel_sounds_pcm,
-       .source_size = qi_duel_sounds_pcm_size},
+      {.name = "@qi-duel/retro_audio.lua", .source = qi_duel_retro_audio, .source_size = qi_duel_retro_audio_size},
+      {.name = "@qi-duel/retro_score.lua", .source = qi_duel_retro_score, .source_size = qi_duel_retro_score_size},
       {.name = "@qi-duel/main.lua",
        .source = qi_duel_script,
        .source_size = qi_duel_script_size},
@@ -79,6 +86,7 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
        .source_size = qi_duel_rules_size},
       {.name = "@qi-duel/link_protocol.lua", .source = qi_duel_link_protocol,
        .source_size = qi_duel_link_protocol_size},
+#ifndef H2_QI_DUEL_VECTOR_ONLY
       {.name = "@qi-duel/countdown.h2r8", .source = qi_duel_countdown_rgba,
        .source_size = qi_duel_countdown_rgba_size},
       {.name = "@qi-duel/impact-labels.h2r8",
@@ -115,6 +123,21 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
       {.name = "@qi-duel/arena-lights-full.h2lf",
        .source = qi_duel_arena_full_atlas,
        .source_size = qi_duel_arena_full_atlas_size},
+#endif
+#ifdef H2_QI_DUEL_DESKTOP_VECTORS
+      {.name = "@qi-duel/vector/components.h2vp", .source = qi_duel_vector_components, .source_size = qi_duel_vector_components_size},
+      {.name = "@qi-duel/component_paths.lua", .source = qi_duel_component_paths, .source_size = qi_duel_component_paths_size},
+      {.name = "@qi-duel/component_renderer.lua", .source = qi_duel_component_renderer, .source_size = qi_duel_component_renderer_size},
+      {.name = "@qi-duel/procedural.lua", .source = qi_duel_procedural, .source_size = qi_duel_procedural_size},
+      {.name = "@qi-duel/vector/hand-right.h2vg", .source = qi_duel_vector_right, .source_size = qi_duel_vector_right_size},
+      {.name = "@qi-duel/vector/hand-left.h2vg", .source = qi_duel_vector_left, .source_size = qi_duel_vector_left_size},
+      {.name = "@qi-duel/vector/opponent.h2vg", .source = qi_duel_vector_opponent, .source_size = qi_duel_vector_opponent_size},
+      {.name = "@qi-duel/vector/charge.h2vg", .source = qi_duel_vector_charge, .source_size = qi_duel_vector_charge_size},
+      {.name = "@qi-duel/vector/wave.h2vg", .source = qi_duel_vector_wave, .source_size = qi_duel_vector_wave_size},
+      {.name = "@qi-duel/vector/absorb.h2vg", .source = qi_duel_vector_absorb, .source_size = qi_duel_vector_absorb_size},
+      {.name = "@qi-duel/vector/guard.h2vg", .source = qi_duel_vector_guard, .source_size = qi_duel_vector_guard_size},
+#endif
+#ifndef H2_QI_DUEL_VECTOR_ONLY
       {.name = "@qi-duel/opponent.h2r8", .source = qi_duel_opponent_rgba,
        .source_size = qi_duel_opponent_rgba_size},
       {.name = "@qi-duel/hand-left.h2r8", .source = qi_duel_left_rgba,
@@ -131,28 +154,8 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
        .source_size = qi_duel_skill_styles_size},
       {.name = "@qi-duel/skill-colors.h2rs", .source = qi_duel_skill_colors,
        .source_size = qi_duel_skill_colors_size},
-      H2_QI_DUEL_ASSET("player-hud", h2_qi_duel_asset_player_hud),
-      H2_QI_DUEL_ASSET("enemy-hud", h2_qi_duel_asset_enemy_hud),
-      H2_QI_DUEL_ASSET("opponent", h2_qi_duel_asset_opponent),
-      H2_QI_DUEL_ASSET("hand-left", h2_qi_duel_asset_hand_left),
-      H2_QI_DUEL_ASSET("hand-right", h2_qi_duel_asset_hand_right),
-      H2_QI_DUEL_ASSET("carousel", h2_qi_duel_asset_carousel),
-      H2_QI_DUEL_ASSET("skill-charge", h2_qi_duel_asset_skill_charge),
-      H2_QI_DUEL_ASSET("skill-charge-left", h2_qi_duel_asset_skill_charge_left),
-      H2_QI_DUEL_ASSET("skill-charge-right",
-                       h2_qi_duel_asset_skill_charge_right),
-      H2_QI_DUEL_ASSET("skill-wave", h2_qi_duel_asset_skill_wave),
-      H2_QI_DUEL_ASSET("skill-wave-left", h2_qi_duel_asset_skill_wave_left),
-      H2_QI_DUEL_ASSET("skill-wave-right", h2_qi_duel_asset_skill_wave_right),
-      H2_QI_DUEL_ASSET("skill-absorb", h2_qi_duel_asset_skill_absorb),
-      H2_QI_DUEL_ASSET("skill-absorb-left", h2_qi_duel_asset_skill_absorb_left),
-      H2_QI_DUEL_ASSET("skill-absorb-right",
-                       h2_qi_duel_asset_skill_absorb_right),
-      H2_QI_DUEL_ASSET("skill-guard", h2_qi_duel_asset_skill_guard),
-      H2_QI_DUEL_ASSET("skill-guard-left", h2_qi_duel_asset_skill_guard_left),
-      H2_QI_DUEL_ASSET("skill-guard-right", h2_qi_duel_asset_skill_guard_right),
+#endif
   };
-#undef H2_QI_DUEL_ASSET
   if (runtime == NULL || config == NULL || config->should_stop == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -196,6 +199,8 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
         {.name = "qi", .value = config->qi ? config->qi : "3"},
         {.name = "click_controls", .value = config->click_controls ? "1" : "0"},
         {.name = "battle", .value = config->battle ? "1" : "0"},
+        {.name = "draw_component", .value = config->draw_component ? config->draw_component : ""},
+        {.name = "capture_step_ms", .value = config->capture_step_ms ? config->capture_step_ms : ""},
         {.name = "selected", .value = config->selected ? config->selected : "0"},
         {.name = "drag", .value = config->drag ? config->drag : ""},
         {.name = "action", .value = config->action ? config->action : ""},
