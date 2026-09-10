@@ -64,6 +64,10 @@ int main(void) {
         h2_pal_modem_signal_t signal;
         assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
         assert(h2_pal_modem_get_signal(&modem.platform, &signal) == H2_PAL_OK);
+        /* CR/LF-terminated command-mode replies reach the parsers. */
+        assert(status.registration == H2_PAL_MODEM_REGISTRATION_HOME);
+        assert(status.packet == H2_PAL_MODEM_PACKET_ATTACHED);
+        assert(signal.rssi_dbm == -73);
     }
     assert(registration_events == 3u && packet_events == 3u && signal_events == 3u);
     h2_quectel_handle_urc_line(&modem, "RING");

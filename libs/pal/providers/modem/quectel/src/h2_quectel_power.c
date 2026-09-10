@@ -21,6 +21,8 @@ h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t *modem) {
     if (modem == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    /* Both provider mutexes are created H2_PAL_MUTEX_FLAG_RECURSIVE: public
+     * operations nest AT exchanges, each of which begins an operation. */
     if (modem->operation_lock != NULL) {
         h2_pal_result_t rc = h2_pal_mutex_lock(modem->config.sync_api, modem->operation_lock);
         if (rc != H2_PAL_OK) {
