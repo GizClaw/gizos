@@ -1,5 +1,6 @@
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
+#include "h2_bk_platform_core.h"
 #include "h2loader_app_task_names.h"
 
 #include "driver/flash.h"
@@ -29,27 +30,27 @@ static int s_started;
 static mbedtls_sha256_context s_app_sha;
 
 static int app_digest_start(void *user) {
-    (void)user;
-    mbedtls_sha256_init(&s_app_sha);
-    return mbedtls_sha256_starts(&s_app_sha, 0) == 0
+    mbedtls_sha256_context *sha = user != NULL ? user : &s_app_sha;
+    mbedtls_sha256_init(sha);
+    return mbedtls_sha256_starts(sha, 0) == 0
         ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static int app_digest_update(void *user, const uint8_t *data, size_t len) {
-    (void)user;
-    return mbedtls_sha256_update(&s_app_sha, data, len) == 0
+    mbedtls_sha256_context *sha = user != NULL ? user : &s_app_sha;
+    return mbedtls_sha256_update(sha, data, len) == 0
         ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static int app_digest_finish(void *user, uint8_t out_digest[32]) {
-    (void)user;
-    return mbedtls_sha256_finish(&s_app_sha, out_digest) == 0
+    mbedtls_sha256_context *sha = user != NULL ? user : &s_app_sha;
+    return mbedtls_sha256_finish(sha, out_digest) == 0
         ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
 static void app_digest_abort(void *user) {
-    (void)user;
-    mbedtls_sha256_free(&s_app_sha);
+    mbedtls_sha256_context *sha = user != NULL ? user : &s_app_sha;
+    mbedtls_sha256_free(sha);
 }
 
 static void app_digest_hex(const uint8_t digest[32], char out[65]) {
@@ -68,6 +69,9 @@ int h2_bk_h2loader_current_app_identity(
     h2_loader_status_t status;
     const h2_loader_metadata_t *active = NULL;
     const h2_loader_image_reader_api_t *reader = h2_bk_h2loader_image_reader();
+    /* UART can receive a package while BLE startup or App confirmation hashes
+     * the running image. Those operations must not reset the command digest. */
+    mbedtls_sha256_context identity_sha;
     uint8_t buffer[4096];
     uint8_t digest[32];
     char digest_hex[65];
@@ -93,18 +97,18 @@ int h2_bk_h2loader_current_app_identity(
         rc = h2_bk_h2loader_managed_app_image_size(&image_size);
         if (rc != H2_PAL_OK || image_size == 0u) return rc;
     }
-    rc = app_digest_start(NULL);
+    rc = app_digest_start(&identity_sha);
     while (rc == H2_PAL_OK && offset < image_size) {
         size_t take = image_size - offset > sizeof(buffer)
             ? sizeof(buffer) : (size_t)(image_size - offset);
         rc = reader->vtable->read(reader->user,
             H2_BK_H2LOADER_APP_PARTITION_ID, offset, buffer, take);
-        if (rc == H2_PAL_OK) rc = app_digest_update(NULL, buffer, take);
+        if (rc == H2_PAL_OK) rc = app_digest_update(&identity_sha, buffer, take);
         offset += take;
     }
-    if (rc == H2_PAL_OK) rc = app_digest_finish(NULL, digest);
+    if (rc == H2_PAL_OK) rc = app_digest_finish(&identity_sha, digest);
+    app_digest_abort(&identity_sha);
     if (rc != H2_PAL_OK) {
-        app_digest_abort(NULL);
         return rc;
     }
     app_digest_hex(digest, digest_hex);
@@ -231,6 +235,8 @@ static h2_pal_result_t coredump_erase(
     for (uint64_t off = offset; rc == 0 && off < offset + len;
          off += H2_BK_FLASH_SECTOR_SIZE) {
         rc = bk_flash_erase_sector(H2_BK_H2LOADER_COREDUMP_ADDR + (uint32_t)off);
+        /* Let BLE service its connection between blocking flash erases. */
+        if (rc == 0) rtos_delay_milliseconds(10);
     }
     (void)bk_flash_set_protect_type(protect);
     return rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
@@ -307,12 +313,15 @@ int h2_bk_h2loader_init_app_client(
     const h2_loader_app_client_config_t config = {
         .pref = runtime->pref,
         .power = h2_bk_h2loader_app_power_api(runtime->pref),
-        .allocator = runtime->mem,
+        /* Package inflate needs a contiguous 32 KiB window while BLE is live.
+         * Keep command/package allocations off the constrained SDK SRAM heap. */
+        .allocator = h2_bk_platform_psram_allocator(),
         .disk = &s_coredump_disk,
         .fs = runtime->fs,
         .http = runtime->http,
         .wifi = runtime->wifi_sta,
         .wifi_settings = runtime->wifi_settings,
+        .app_entry_path = H2_BK_H2LOADER_APP_ENTRY_PATH,
         .digest = {
             .start = app_digest_start,
             .update = app_digest_update,
@@ -361,7 +370,7 @@ static int handle_ble_session(void *user, h2_bleikcp_t *stream, uint16_t conn_ha
         .write_user = stream,
         .write = h2_loader_ble_app_write,
         .task_name = h2loader_app_command_task_name,
-        .stack_size = 8192u,
+        .stack_size = H2_BK_H2LOADER_APP_COMMAND_STACK_SIZE,
     };
     rc = h2_loader_app_client_start_return_console(&console);
     if (rc != H2_PAL_OK) {

@@ -199,12 +199,18 @@ static int read_control_fields(const h2_pal_pref_api_t *pref,
     rc = H2_PAL_ERR_UNSUPPORTED;
   } else {
     if (ns->get_u32 != NULL) {
-      int get_rc = ns->get_u32(ns, "boot_intent", &intent);
+      uint32_t saved_intent = 0u;
+      int get_rc = ns->get_u32(ns, "boot_intent", &saved_intent);
+      if (get_rc == H2_PAL_OK)
+        intent = saved_intent;
       if (get_rc != H2_PAL_OK && get_rc != H2_PAL_ERR_NOT_FOUND)
         rc = get_rc;
     }
     if (rc == H2_PAL_OK && ns->get_i32 != NULL) {
-      int get_rc = ns->get_i32(ns, "last_result", &result);
+      int32_t saved_result = 0;
+      int get_rc = ns->get_i32(ns, "last_result", &saved_result);
+      if (get_rc == H2_PAL_OK)
+        result = saved_result;
       if (get_rc != H2_PAL_OK && get_rc != H2_PAL_ERR_NOT_FOUND)
         rc = get_rc;
     }
@@ -837,10 +843,11 @@ static int detect_rolled_back_app(h2_loader_t *loader,
   if (loader == NULL || out_rolled_back == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_rolled_back = 0;
-  if (!loader->status.stage.valid ||
-      loader->status.stage.role != H2_LOADER_IMAGE_ROLE_APP ||
-      !h2_loader_metadata_image_equal(&loader->status.stage,
-                                      &loader->status.partition_2)) {
+  if (!loader->status.partition_2.valid ||
+      loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP ||
+      (loader->status.stage.valid &&
+       !h2_loader_metadata_image_equal(&loader->status.stage,
+                                       &loader->status.partition_2))) {
     return H2_PAL_OK;
   }
   int rc =

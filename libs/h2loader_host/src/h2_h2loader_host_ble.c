@@ -118,6 +118,22 @@ static int marker_result_is_ok(
     return 0;
 }
 
+int h2_h2loader_host_ble_stage_receive_failed(
+    const uint8_t *response, size_t response_len) {
+    static const char failure[] = "H2_LOADER_STAGE_RECEIVE result=fail";
+    const size_t len = sizeof(failure) - 1u;
+    if (response == NULL) return 0;
+    for (size_t i = 0u; i + len < response_len; ++i) {
+        if (i != 0u && response[i - 1u] != '\n' && response[i - 1u] != '\r') continue;
+        if (memcmp(response + i, failure, len) != 0) continue;
+        if (response[i + len] != ' ' && response[i + len] != '\r' && response[i + len] != '\n') continue;
+        for (size_t j = i + len; j < response_len; ++j) {
+            if (response[j] == '\r' || response[j] == '\n') return 1;
+        }
+    }
+    return 0;
+}
+
 static h2_pal_result_t ble_write(
     h2_h2loader_host_ble_connection_t *connection,
     const uint8_t *data,
@@ -234,6 +250,14 @@ static h2_pal_result_t ble_read_until(
                 if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
                 return H2_PAL_ERR_NO_SPACE;
             }
+        }
+        /* Receive failure is terminal: the device does not emit a commit
+         * result after rejecting the package. Do not wait for that marker. */
+        if (strcmp(marker_a, "H2_LOADER_STAGE_RECEIVE result=") == 0 &&
+            h2_h2loader_host_ble_stage_receive_failed(response, length)) {
+            *out_len = length;
+            if (out_output_bytes != NULL) *out_output_bytes = output_bytes;
+            return H2_PAL_ERR_IO;
         }
         if (response_has_complete_marker(response, length, marker_a) &&
             (marker_b == NULL ||

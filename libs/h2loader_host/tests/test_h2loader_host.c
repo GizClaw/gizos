@@ -1646,6 +1646,27 @@ static void test_managed_operation(void) {
     assert(fixture.read_status_count == 1);
     assert(fixture.sleep_count == 1);
 
+    /* BLE output backpressure can terminate the stream before Stage commit. */
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    fixture.read_status_count = 0;
+    fixture.sleep_count = 0;
+    fixture.stage_missing_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    fixture.transient_stage_result = H2_PAL_ERR_WOULD_BLOCK;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_OK);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 2);
+    assert(fixture.disconnect_count == 2);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.read_status_count == 1);
+    assert(fixture.sleep_count == 1);
+
+    fixture.transient_stage_result = H2_PAL_OK;
+
     fixture.connect_count = 0;
     fixture.stage_count = 0;
     fixture.disconnect_count = 0;
@@ -2172,7 +2193,25 @@ static void test_serial_connect_deasserts_dtr_and_rts(void) {
     assert(fixture.asserted_lines == 0u);
 }
 
+static void test_ble_stage_receive_failure(void) {
+    const char failure[] = "H2_LOADER_STAGE_RECEIVE result=fail code=-6\n";
+    for (size_t n = 0u; n < sizeof(failure) - 1u; ++n) {
+        assert(!h2_h2loader_host_ble_stage_receive_failed((const uint8_t *)failure, n));
+    }
+    assert(h2_h2loader_host_ble_stage_receive_failed((const uint8_t *)failure, sizeof(failure) - 1u));
+    const char *negative[] = {
+        "H2_LOADER_STAGE_RECEIVE result=OK code=0\n",
+        "log H2_LOADER_STAGE_RECEIVE result=fail code=-6\n",
+        "H2_LOADER_STAGE_RECEIVE result=failure\n",
+    };
+    for (size_t i = 0u; i < sizeof(negative) / sizeof(negative[0]); ++i)
+        assert(!h2_h2loader_host_ble_stage_receive_failed((const uint8_t *)negative[i], strlen(negative[i])));
+    const char prefixed[] = "H2_LOADER_STAGE_ERROR step=validate code=-6\r\nH2_LOADER_STAGE_RECEIVE result=fail code=-6\r\n";
+    assert(h2_h2loader_host_ble_stage_receive_failed((const uint8_t *)prefixed, sizeof(prefixed) - 1u));
+}
+
 int main(void) {
+    test_ble_stage_receive_failure();
     test_typed_command_role_parity();
     test_typed_command_wire_contract();
     test_typed_command_terminal_contract();

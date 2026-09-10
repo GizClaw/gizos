@@ -26,7 +26,6 @@ static void h2_bk_serial_log_string(int port, const char *string) {
 }
 
 #define emergency_uart_write_string h2_bk_serial_log_string
-extern void bk_wdt_force_feed(void);
 
 #define H2_BK_COREDUMP_ADDR H2_BK_H2LOADER_COREDUMP_ADDR
 #define H2_BK_COREDUMP_SIZE H2_BK_H2LOADER_COREDUMP_SIZE
@@ -98,8 +97,8 @@ static void on_event(void *user, h2_loader_startup_event_t event, int code) {
     char line[80];
 
     (void)user;
+    /* Do not use SDK force_feed: it also starts the unserviced AON watchdog. */
     (void)bk_wdt_feed();
-    bk_wdt_force_feed();
     snprintf(line, sizeof(line), "H2_BK_H2LOADER_EVENT event=%d code=%d\r\n", (int)event, code);
     emergency_uart_write_string(0, line);
 }
@@ -112,7 +111,6 @@ static void install_progress(
 
     (void)user;
     (void)bk_wdt_feed();
-    bk_wdt_force_feed();
     if (entry == NULL || stats == NULL) {
         return;
     }
@@ -216,7 +214,6 @@ static int command_digest_update(void *user, const uint8_t *data, size_t len) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     (void)bk_wdt_feed();
-    bk_wdt_force_feed();
     return mbedtls_sha256_update(&s_command_sha, data, len) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 
@@ -418,6 +415,8 @@ static h2_pal_result_t coredump_disk_erase(
     rc = bk_flash_set_protect_type(FLASH_PROTECT_NONE);
     for (uint64_t off = offset; rc == 0 && off < offset + len; off += H2_BK_FLASH_SECTOR_SIZE) {
         rc = bk_flash_erase_sector(H2_BK_COREDUMP_ADDR + (uint32_t)off);
+        /* Let BLE service its connection between blocking flash erases. */
+        if (rc == 0) rtos_delay_milliseconds(10);
     }
     (void)bk_flash_set_protect_type(protect);
     return rc == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;

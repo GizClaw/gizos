@@ -1,0 +1,22 @@
+{
+  "ble42-recovery-lifecycle.json": {
+    "bytes": 34075,
+    "sha256": "cc427b8b9a6f50830088b332cac11823dc45a5945702c38cb97d98967c6ba3bd"
+  },
+  "uart42-lifecycle.json": {
+    "bytes": 39365,
+    "sha256": "6cc7fee1b4259fdc3a495f749852269d562a5ebaab175ee011c468708461f018"
+  },
+  "empty-stage-after-reset-status.txt": {
+    "bytes": 1354,
+    "sha256": "f1734040525c7f0d5a2a334a7b322cab98a55b351d3b7dee84ebd4ded32935e9"
+  },
+  "empty-stage-reset-uart0.txt": {
+    "bytes": 921,
+    "sha256": "928ab9a16310fdd6dcc3ab7611f2a149712bba3c99603e2208c5326579273faf"
+  },
+  "power-cycle-status.txt": {
+    "bytes": 1354,
+    "sha256": "f1734040525c7f0d5a2a334a7b322cab98a55b351d3b7dee84ebd4ded32935e9"
+  }
+}

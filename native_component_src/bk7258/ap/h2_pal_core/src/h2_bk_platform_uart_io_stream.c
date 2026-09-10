@@ -1,4 +1,116 @@
 #include "h2_bk_platform_core.h"
+
+#if CONFIG_SYS_PRINT_DEV_UART
+#include "common/bk_include.h"
+#include "bk_private/bk_uart.h"
+#include "components/shell_task.h"
+#include "driver/uart.h"
+#include "os/os.h"
+#include "shell_drv.h"
+
+/* The board selects the physical console. RX is owned by this provider so
+ * shell command parsing cannot consume protocol bytes. */
+#define H2_BK_DIRECT_RX_CAPACITY 8192u
+static uint8_t s_direct_rx[H2_BK_DIRECT_RX_CAPACITY];
+static size_t s_direct_head, s_direct_tail;
+static int s_direct_overflow;
+static int s_direct_initialized;
+static beken_mutex_t s_direct_write_mutex;
+static const uart_id_t s_direct_port = CONFIG_UART_PRINT_PORT;
+
+static void direct_rx_isr(uart_id_t id, void *user) {
+  (void)user;
+  uint8_t byte;
+  while (uart_read_byte_ex(id, &byte) != -1) {
+    size_t next = (s_direct_head + 1u) % H2_BK_DIRECT_RX_CAPACITY;
+    if (next == s_direct_tail) s_direct_overflow = 1;
+    else { s_direct_rx[s_direct_head] = byte; s_direct_head = next; }
+  }
+}
+static h2_pal_result_t direct_configure(void *user, const h2_pal_uart_io_stream_config_t *config) {
+  (void)user;
+  if (!config || config->baud_rate != CONFIG_UART_PRINT_BAUD_RATE ||
+      config->data_bits != 8u || config->stop_bits != 1u ||
+      config->parity != H2_PAL_UART_PARITY_NONE ||
+      config->flow_control != H2_PAL_UART_FLOW_CONTROL_NONE) return H2_PAL_ERR_INVALID_ARG;
+  if (s_direct_initialized) return H2_PAL_OK;
+  if (!shell_uart.dev_drv || !shell_uart.dev_drv->io_ctrl) return H2_PAL_ERR_INVALID_STATE;
+  if (rtos_init_mutex(&s_direct_write_mutex) != kNoErr) return H2_PAL_ERR_IO;
+  s_direct_head = s_direct_tail = 0u;
+  s_direct_overflow = 0;
+  if (bk_uart_set_baud_rate(s_direct_port, config->baud_rate) != BK_OK ||
+      bk_uart_take_rx_isr(s_direct_port, direct_rx_isr, NULL) != BK_OK) {
+    (void)rtos_deinit_mutex(&s_direct_write_mutex);
+    return H2_PAL_ERR_IO;
+  }
+  (void)bk_uart_enable_rx_interrupt(s_direct_port);
+  s_direct_initialized = 1;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t direct_read(void *user, void *buffer, size_t len, size_t *out_read, uint32_t timeout_ms) {
+  (void)user;
+  if (!buffer || !out_read) return H2_PAL_ERR_INVALID_ARG;
+  *out_read = 0;
+  if (!s_direct_initialized) return H2_PAL_ERR_CLOSED;
+  uint32_t started = rtos_get_time();
+  do {
+    uint32_t level = rtos_enter_critical();
+    /* Short packets do not reliably raise RX-finish on this chip. */
+    direct_rx_isr(s_direct_port, NULL);
+    int overflow = s_direct_overflow;
+    s_direct_overflow = 0;
+    while (*out_read < len && s_direct_tail != s_direct_head) {
+      ((uint8_t *)buffer)[(*out_read)++] = s_direct_rx[s_direct_tail];
+      s_direct_tail = (s_direct_tail + 1u) % H2_BK_DIRECT_RX_CAPACITY;
+    }
+    rtos_exit_critical(level);
+    if (overflow) return H2_PAL_ERR_IO;
+    if (*out_read) return H2_PAL_OK;
+    if (!timeout_ms) return H2_PAL_ERR_WOULD_BLOCK;
+    rtos_delay_milliseconds(1u);
+  } while ((uint32_t)(rtos_get_time() - started) < timeout_ms);
+  return H2_PAL_ERR_TIMEOUT;
+}
+static h2_pal_result_t direct_write(void *user, const void *buffer, size_t len, size_t *out_written, uint32_t timeout_ms) {
+  (void)user; (void)timeout_ms;
+  if (!buffer || !out_written || len > UINT32_MAX) return H2_PAL_ERR_INVALID_ARG;
+  *out_written = 0;
+  if (!s_direct_initialized) return H2_PAL_ERR_CLOSED;
+  if (rtos_lock_mutex(&s_direct_write_mutex) != kNoErr) return H2_PAL_ERR_IO;
+  shell_log_flush();
+  h2_pal_result_t result = H2_PAL_ERR_IO;
+  if (shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_SUSPEND, NULL)) {
+    (void)bk_uart_set_enable_tx(s_direct_port, true);
+    if (bk_uart_write_bytes(s_direct_port, buffer, (uint32_t)len) == BK_OK) {
+      bk_uart_wait_tx_over(s_direct_port);
+      *out_written = len;
+      result = H2_PAL_OK;
+    }
+    (void)shell_uart.dev_drv->io_ctrl(&shell_uart, SHELL_IO_CTRL_TX_RESUME, NULL);
+  }
+  (void)rtos_unlock_mutex(&s_direct_write_mutex);
+  return result;
+}
+static h2_pal_result_t direct_flush(void *user) {
+  (void)user;
+  return s_direct_initialized ? H2_PAL_OK : H2_PAL_ERR_CLOSED;
+}
+static const h2_pal_uart_io_stream_vtable_t s_direct_vtable = {
+  .configure = direct_configure, .read = direct_read,
+  .write = direct_write, .flush = direct_flush,
+};
+static const h2_pal_uart_io_stream_api_t s_direct_api = {.vtable = &s_direct_vtable};
+const h2_pal_uart_io_stream_api_t *h2_bk_platform_uart_io_stream_api(void) { return &s_direct_api; }
+void h2_bk_platform_uart_io_stream_deinit(void) {
+  if (s_direct_initialized) {
+    (void)bk_uart_disable_rx_interrupt(s_direct_port);
+    (void)bk_uart_recover_rx_isr(s_direct_port);
+    s_direct_initialized = 0;
+    (void)rtos_deinit_mutex(&s_direct_write_mutex);
+  }
+}
+#else
+#include "h2_bk_platform_core.h"
 #include "h2_bk_uart_control_tracker.h"
 
 #include "driver/mb_uart_driver.h"
@@ -320,3 +432,5 @@ void h2_bk_platform_uart_io_stream_deinit(void) {
     (void)bk_mb_uart_dev_deinit(MB_UART0);
   }
 }
+
+#endif

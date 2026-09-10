@@ -1,0 +1,22 @@
+ef:I(5):ENV start address is 0x007FA000, size is 8192 bytes.
+ef:I(8):EasyFlash V4.1.0 is initialize success.
+psram:W(11):psram type(16MB) not match CONFIG_PSRAM_CAPACITY 0X00800000
+I(11):driver_init: psram init ok
+sensor:W(11):uncali sdmadc value:[0 0]
+rwnx_cal_set_rfconfig(0x102) phy on; rf off
+cal:W(15):temp in otp is:570
+cal:E(91):load polar tab magic code error 0xffffffff
+xtal_cali:58
+cal:I(91):idx:40=40+(0),r:54,xtal:58,pwr_gain:a4ab7128
+wifi:I(92):wifi inited(1) ret(0)
+bt:W(99):lm_init sco_move_en 0
+H2_PAL_TASK_POLICY_READY unit=cp target=projects/h2loader/targets/h2loader_tar_zlib/loader/bk7258_v3_202405
+mUart:E(1263):Tx Failed!
+mUart:E(1263):Tx Failed!
+bluetoot:W(1263):bk_bluetooth_init bluetooth already initialised
+os:I(1264):psram:0x60034000,size:131072
+bt:W(1274):lm_init sco_move_en 0
+H2_BK_AP_PROBE stage=1
+H2_BK_AP_PROBE stage=2
+H2_BK_AP_PROBE stage=3
+H2_BK_AP_PROBE stage=4

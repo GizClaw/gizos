@@ -34,6 +34,8 @@ typedef struct h2_loader_app_client_config {
     const h2_pal_http_api_t *http;
     const h2_pal_wifi_sta_api_t *wifi;
     const h2_pal_wifi_settings_api_t *wifi_settings;
+    /** Firmware entry inside the archive; NULL selects the default layout. */
+    const char *app_entry_path;
     h2_loader_digest_api_t digest;
     /** Optional shared owner lock for serial/BLE command execution. */
     const h2_pal_sync_api_t *operation_sync;

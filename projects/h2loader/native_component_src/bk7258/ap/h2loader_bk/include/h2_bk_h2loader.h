@@ -24,7 +24,8 @@ extern "C" {
 #define H2_BK_H2LOADER_SD_DATA_ROOT "1:/h2loader/data"
 #define H2_BK_H2LOADER_COREDUMP_ADDR 0x7a0000u
 #define H2_BK_H2LOADER_COREDUMP_SIZE (360u * 1024u)
-#define H2_BK_H2LOADER_APP_COMMAND_STACK_SIZE 8192u
+/* Status formatting and its nested output buffer exceed an 8 KiB stack. */
+#define H2_BK_H2LOADER_APP_COMMAND_STACK_SIZE (32u * 1024u)
 #define H2_BK_H2LOADER_LOADER_COMMAND_STACK_SIZE 49152u
 
 int h2_bk_h2loader_sd_fs_init(h2_pal_fs_api_t *fs);
@@ -65,6 +66,10 @@ int h2_bk_h2loader_pause_app_ble_advertising(void);
 int h2_bk_h2loader_resume_app_ble_advertising(void);
 int h2_bk_h2loader_advertise_app_ble_service(
     const h2_pal_ble_uuid_t *service_uuid);
+/** Initialize the shared command lock before publishing App transports.
+ * An App with asynchronous command services can hold this lock on its startup
+ * task until confirmation finishes, then release it on that same task. */
+int h2_bk_h2loader_prepare_app_operation(h2_runtime_t *runtime);
 int h2_bk_h2loader_app_operation_lock(void);
 void h2_bk_h2loader_app_operation_unlock(void);
 int h2_bk_h2loader_reboot_to_loader(void);

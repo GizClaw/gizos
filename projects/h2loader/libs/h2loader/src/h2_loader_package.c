@@ -8,6 +8,7 @@
 #include <string.h>
 #include <zlib.h>
 
+
 #define H2_LOADER_VALIDATE_IO_BUF_SIZE 1024u
 #define H2_LOADER_IMAGE_IO_BUF_SIZE (64u * 1024u)
 #define H2_LOADER_SHA256_SIZE 32u
