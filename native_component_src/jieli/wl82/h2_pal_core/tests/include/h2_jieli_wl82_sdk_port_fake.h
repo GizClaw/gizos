@@ -44,6 +44,7 @@ size_t h2_jieli_fake_timer_count(void);
  */
 void h2_jieli_fake_set_timer_dispatch_hook(void (*hook)(void));
 void h2_jieli_fake_set_sem_timeout_hook(void (*hook)(void));
+void h2_jieli_fake_set_sem_give_hook(void (*hook)(void));
 
 /** Handle reported by h2_jieli_sdk_task_current(); defaults to a fixed one. */
 void h2_jieli_fake_set_current_task(const void *handle);

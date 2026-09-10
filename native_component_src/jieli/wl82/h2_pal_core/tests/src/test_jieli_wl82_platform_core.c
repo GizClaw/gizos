@@ -96,7 +96,8 @@ static void test_time_extends_32bit_wrap_and_sleeps(void)
     CHECK(us == 0x100000010ull * 1000u + 341u);
     CHECK(h2_pal_time_get_monotonic_ms(time, &ms) == H2_PAL_OK);
     CHECK(ms == us / 1000u);
-    CHECK(h2_pal_time_get_wall_ms(time, &ms) == H2_PAL_ERR_UNSUPPORTED);
+    CHECK(h2_pal_time_get_wall_ms(time, &ms) == H2_PAL_TIME_ERR_UNCALIBRATED);
+    CHECK(ms == 0u);
     CHECK(h2_pal_time_get_wall_status(time, &status) == H2_PAL_OK);
     CHECK(status.valid == 0u);
     CHECK(h2_pal_time_sleep_ms(time, 25u) == H2_PAL_OK);
@@ -135,6 +136,40 @@ static void register_second_waiter(void)
     CHECK(h2_pal_cond_wait(sync, timeout_race_cond, mutex, 10u) == H2_PAL_ERR_TIMEOUT);
     CHECK(h2_pal_mutex_unlock(sync, mutex) == H2_PAL_OK);
     CHECK(h2_pal_mutex_destroy(sync, mutex) == H2_PAL_OK);
+}
+
+static h2_pal_semaphore_t *interleaved_sem;
+static void observe_pending_give(void)
+{
+    const h2_pal_sync_api_t *sync = h2_jieli_wl82_platform_sync_api();
+    /* A completed FULL give establishes an available permit; the following
+     * take cannot time out while the outer give remains pending. */
+    int rc = h2_pal_semaphore_give(sync, interleaved_sem);
+    CHECK(rc == H2_PAL_OK || rc == H2_PAL_ERR_FULL);
+    CHECK(h2_pal_semaphore_take(sync, interleaved_sem, 0u) == H2_PAL_OK);
+}
+
+static void test_semaphore_pending_give(void)
+{
+    const h2_pal_sync_api_t *sync = h2_jieli_wl82_platform_sync_api();
+    const h2_pal_semaphore_config_t config = {
+        .name = "interleaved", .initial_count = 0u, .max_count = 1u,
+    };
+    CHECK(h2_pal_semaphore_create(sync, &config, &interleaved_sem) == H2_PAL_OK);
+    h2_jieli_fake_set_sem_give_hook(observe_pending_give);
+    CHECK(h2_pal_semaphore_give(sync, interleaved_sem) == H2_PAL_OK);
+    CHECK(h2_pal_semaphore_destroy(sync, interleaved_sem) == H2_PAL_OK);
+    const h2_pal_semaphore_config_t large = {
+        .name = "large", .initial_count = 300u, .max_count = 301u,
+    };
+    CHECK(h2_pal_semaphore_create(sync, &large, &interleaved_sem) == H2_PAL_OK);
+    CHECK(h2_pal_semaphore_give(sync, interleaved_sem) == H2_PAL_OK);
+    CHECK(h2_pal_semaphore_give(sync, interleaved_sem) == H2_PAL_ERR_FULL);
+    for (unsigned i = 0; i < 301u; ++i) {
+        CHECK(h2_pal_semaphore_take(sync, interleaved_sem, 0u) == H2_PAL_OK);
+    }
+    CHECK(h2_pal_semaphore_take(sync, interleaved_sem, 0u) == H2_PAL_ERR_TIMEOUT);
+    CHECK(h2_pal_semaphore_destroy(sync, interleaved_sem) == H2_PAL_OK);
 }
 
 static void test_sync_mutex_and_semaphore(void)
@@ -668,6 +703,7 @@ int main(void)
     test_log_bounds_long_scope_and_message_together();
     test_time_extends_32bit_wrap_and_sleeps();
     test_sync_mutex_and_semaphore();
+    test_semaphore_pending_give();
     test_queue_fifo_full_timeout_latest_and_close();
     test_queue_lock_failure_preserves_permits();
     test_queue_wait_relock_failure();

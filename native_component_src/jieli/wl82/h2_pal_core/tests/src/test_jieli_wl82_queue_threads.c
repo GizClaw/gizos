@@ -14,6 +14,7 @@ struct h2_jieli_sdk_sem {
     pthread_mutex_t lock;
     pthread_cond_t changed;
     unsigned count;
+    unsigned max_count;
 };
 static atomic_int allocations, waiting, polling;
 static atomic_int reset_parked, reset_release;
@@ -67,11 +68,15 @@ int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t *m) {
     return pthread_mutex_unlock(&m->lock) == 0 ? 0 : -1;
 }
 h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create(uint32_t count) {
+    return h2_jieli_sdk_sem_create_bounded(count, UINT32_MAX);
+}
+h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create_bounded(uint32_t count, uint32_t max_count) {
     h2_jieli_sdk_sem_t *s = h2_jieli_sdk_malloc(sizeof(*s));
     assert(s != NULL);
     assert(pthread_mutex_init(&s->lock, NULL) == 0);
     assert(pthread_cond_init(&s->changed, NULL) == 0);
     s->count = count;
+    s->max_count = max_count;
     return s;
 }
 void h2_jieli_sdk_sem_destroy(h2_jieli_sdk_sem_t *s) {
@@ -81,6 +86,10 @@ void h2_jieli_sdk_sem_destroy(h2_jieli_sdk_sem_t *s) {
 }
 int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *s) {
     assert(pthread_mutex_lock(&s->lock) == 0);
+    if (s->count >= s->max_count) {
+        assert(pthread_mutex_unlock(&s->lock) == 0);
+        return 1;
+    }
     ++s->count;
     assert(pthread_cond_signal(&s->changed) == 0);
     assert(pthread_mutex_unlock(&s->lock) == 0);

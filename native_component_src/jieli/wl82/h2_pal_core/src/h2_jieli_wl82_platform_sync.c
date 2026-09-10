@@ -11,11 +11,6 @@ struct h2_pal_mutex {
 
 struct h2_pal_semaphore {
     h2_jieli_sdk_sem_t *native;
-    /* os_sem has no ceiling, so the configured bound is tracked here; the
-     * count is updated atomically because give/take may run from
-     * different SDK tasks. */
-    uint32_t max_count;
-    volatile uint32_t count;
 };
 
 typedef struct h2_jieli_cond_waiter {
@@ -173,13 +168,11 @@ static h2_pal_result_t sync_create_semaphore(
     if (semaphore == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
-    semaphore->native = h2_jieli_sdk_sem_create(config->initial_count);
+    semaphore->native = h2_jieli_sdk_sem_create_bounded(config->initial_count, config->max_count);
     if (semaphore->native == NULL) {
         h2_jieli_sdk_free(semaphore);
         return H2_PAL_ERR_NO_MEMORY;
     }
-    semaphore->max_count = config->max_count;
-    semaphore->count = config->initial_count;
     *out_semaphore = semaphore;
     return H2_PAL_OK;
 }
@@ -206,35 +199,19 @@ static h2_pal_result_t sync_take_semaphore(
         return H2_PAL_ERR_INVALID_ARG;
     }
     rc = map_wait(h2_jieli_sdk_sem_take(semaphore->native, timeout_ms));
-    if (rc == H2_PAL_OK) {
-        (void)h2_jieli_atomic_fetch_sub_u32(&semaphore->count, 1u);
-    }
     return rc;
 }
 
 static h2_pal_result_t sync_give_semaphore(void *user, h2_pal_semaphore_t *semaphore)
 {
-    uint32_t count;
+    int rc;
     (void)user;
     if (semaphore == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    /* Reserve a slot below the configured ceiling before posting so a give
-     * racing with another give cannot overshoot it. */
-    count = h2_jieli_atomic_load_u32(&semaphore->count);
-    for (;;) {
-        if (count >= semaphore->max_count) {
-            return H2_PAL_ERR_FULL;
-        }
-        if (h2_jieli_atomic_cas_u32(&semaphore->count, &count, count + 1u)) {
-            break;
-        }
-    }
-    if (h2_jieli_sdk_sem_give(semaphore->native) != 0) {
-        (void)h2_jieli_atomic_fetch_sub_u32(&semaphore->count, 1u);
-        return H2_PAL_ERR_IO;
-    }
-    return H2_PAL_OK;
+    /* Native capacity and permit transitions share the SDK queue lock. */
+    rc = h2_jieli_sdk_sem_give(semaphore->native);
+    return rc == 0 ? H2_PAL_OK : (rc > 0 ? H2_PAL_ERR_FULL : H2_PAL_ERR_IO);
 }
 
 static h2_pal_result_t sync_create_cond(

@@ -212,11 +212,17 @@ int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t *mutex)
 
 h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create(uint32_t initial_count)
 {
+    return h2_jieli_sdk_sem_create_bounded(initial_count, UINT32_MAX);
+}
+
+h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create_bounded(uint32_t initial_count, uint32_t max_count)
+{
+    if (max_count == 0u || initial_count > max_count) return NULL;
     h2_jieli_sdk_sem_t *sem = (h2_jieli_sdk_sem_t *)malloc(sizeof(*sem));
     if (sem == NULL) {
         return NULL;
     }
-    if (os_sem_create(&sem->native, (int)initial_count) != OS_NO_ERR) {
+    if (xQueueCreateCountingSemaphoreStatic(max_count, initial_count, &sem->native) == NULL) {
         free(sem);
         return NULL;
     }
@@ -251,7 +257,9 @@ int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem)
     if (sem == NULL) {
         return -1;
     }
-    return os_sem_post(&sem->native) == OS_NO_ERR ? 0 : -1;
+    /* The pinned SDK returns nonzero only when the native queue is full;
+     * retain its task/ISR dispatch and yield handling. */
+    return os_sem_post(&sem->native) == OS_NO_ERR ? 0 : 1;
 }
 
 /* ---- Tasks --------------------------------------------------------------- */

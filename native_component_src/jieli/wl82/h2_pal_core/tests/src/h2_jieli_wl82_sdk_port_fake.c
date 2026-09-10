@@ -10,6 +10,7 @@ struct h2_jieli_sdk_mutex {
 
 struct h2_jieli_sdk_sem {
     uint32_t count;
+    uint32_t max_count;
 };
 
 typedef struct fake_timer {
@@ -223,9 +224,15 @@ int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t *mutex)
 
 h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create(uint32_t initial_count)
 {
+    return h2_jieli_sdk_sem_create_bounded(initial_count, UINT32_MAX);
+}
+
+h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create_bounded(uint32_t initial_count, uint32_t max_count)
+{
     h2_jieli_sdk_sem_t *sem = (h2_jieli_sdk_sem_t *)h2_jieli_sdk_malloc(sizeof(*sem));
     if (sem != NULL) {
         sem->count = initial_count;
+        sem->max_count = max_count;
     }
     return sem;
 }
@@ -261,11 +268,23 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *sem, uint32_t timeout_ms)
     return 1;
 }
 
+static void (*s_sem_give_hook)(void);
+void h2_jieli_fake_set_sem_give_hook(void (*hook)(void))
+{
+    s_sem_give_hook = hook;
+}
+
 int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem)
 {
     if (sem == NULL) {
         return -1;
     }
+    if (s_sem_give_hook != NULL) {
+        void (*hook)(void) = s_sem_give_hook;
+        s_sem_give_hook = NULL;
+        hook();
+    }
+    if (sem->count >= sem->max_count) return 1;
     sem->count++;
     return 0;
 }

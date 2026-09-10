@@ -59,9 +59,11 @@ int h2_jieli_sdk_mutex_lock(h2_jieli_sdk_mutex_t *mutex, uint32_t timeout_ms);
 int h2_jieli_sdk_mutex_unlock(h2_jieli_sdk_mutex_t *mutex);
 
 h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create(uint32_t initial_count);
+h2_jieli_sdk_sem_t *h2_jieli_sdk_sem_create_bounded(uint32_t initial_count, uint32_t max_count);
 void h2_jieli_sdk_sem_destroy(h2_jieli_sdk_sem_t *sem);
 /** Returns 0 on success, 1 on timeout, negative on error. */
 int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *sem, uint32_t timeout_ms);
+/** Returns 0 on success, 1 when full, negative on error. */
 int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem);
 
 /* ---- Tasks --------------------------------------------------------------- */
