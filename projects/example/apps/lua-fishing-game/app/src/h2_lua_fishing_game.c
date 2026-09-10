@@ -1,6 +1,6 @@
-#include "h2_lua_fishing.h"
+#include "h2_lua_fishing_game.h"
 
-#include "fishing_script_generated.h"
+#include "fishing_game_script_generated.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2_lua.h"
 #include "h2_lua_event.h"
@@ -24,8 +24,8 @@ static int supported_event(h2_runtime_event_kind_t kind) {
 }
 
 h2_pal_result_t
-h2_lua_fishing_run(h2_runtime_t *runtime,
-                      const h2_lua_fishing_config_t *config) {
+h2_lua_fishing_game_run(h2_runtime_t *runtime,
+                      const h2_lua_fishing_game_config_t *config) {
   h2_lua_host_t *host = NULL;
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status;
@@ -39,8 +39,8 @@ h2_lua_fishing_run(h2_runtime_t *runtime,
   const h2_lua_resource_t resources[] = {
       {
           .name = "@fishing/main.lua",
-          .source = fishing_script,
-          .source_size = fishing_script_size,
+          .source = fishing_game_script,
+          .source_size = fishing_game_script_size,
       },
   };
 
@@ -139,7 +139,7 @@ h2_lua_fishing_run(h2_runtime_t *runtime,
                      "terminal state=%d resumes=%llu memory=%zu message=%s",
                      (int)status.state, (unsigned long long)status.resume_count,
                      status.memory_used, status.message);
-      (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "fishing-game",
+      (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-fishing-game",
                              diagnostic);
     }
     if (status.state == H2_LUA_JOB_FAILED ||

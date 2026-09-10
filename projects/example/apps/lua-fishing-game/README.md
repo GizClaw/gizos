@@ -6,7 +6,7 @@ and scanline polygons. There are **no runtime textures, image assets or atlases*
 The PNGs under `design/` are approved visual references only, not build inputs.
 
 ```sh
-bazel run //projects/example/targets/cc_binary/fishing-game:example-fishing-game
+bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fishing-game
 ```
 
 - Starts on the sea. Drag **left** to open gear, **right** to return to the sea.
@@ -34,7 +34,7 @@ bazel run //projects/example/targets/cc_binary/fishing-game:example-fishing-game
 The `iso` / `fly-*` scene presets select the appropriate demonstration outfit.
 
 ```sh
-bazel run //projects/example/targets/cc_binary/fishing-game:example-fishing-game -- \
+bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fishing-game -- \
   --scene=overhead --time-ms=1000 --capture=/tmp/fishing-overhead.ppm --check
 ```
 
@@ -44,8 +44,8 @@ Capture paths must not already exist. `--check` executes compatibility, bending,
 Lua VM before rendering. For fourteen native captures and contact sheets:
 
 ```sh
-python3 projects/example/apps/fishing-game/tools/verify_desktop.py \
-  --binary bazel-bin/projects/example/targets/cc_binary/fishing-game/example-fishing-game \
+python3 projects/example/apps/lua-fishing-game/tools/verify_desktop.py \
+  --binary bazel-bin/projects/example/targets/cc_binary/lua-fishing-game/example-lua-fishing-game \
   --out /tmp/fishing-review
 ```
 

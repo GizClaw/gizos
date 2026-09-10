@@ -1,5 +1,5 @@
 #include "h2_desktop_app_support.h"
-#include "h2_lua_fishing.h"
+#include "h2_lua_fishing_game.h"
 #include "layout_config.h"
 
 #include <cstdio>
@@ -12,7 +12,7 @@
 namespace {
 
 constexpr h2_runtime_component_id_t kBackComponentId =
-    H2_LUA_FISHING_COMPONENT_BACK;
+    H2_LUA_FISHING_GAME_COMPONENT_BACK;
 constexpr h2_runtime_component_mapping_entry_t kButtons[] = {{kBackComponentId,1u}};
 
 constexpr h2::desktop::Layout kLayout = {
@@ -183,13 +183,13 @@ int main(int argc, char **argv) {
   if (result!=H2_PAL_OK) return 1;
   result=h2_runtime_input_start(runtime,nullptr);
   if (result==H2_PAL_OK) {
-    const h2_lua_fishing_config_t config={
+    const h2_lua_fishing_game_config_t config={
       .scene=scene,.time_ms=time_ms,.rod=rod,.reel=reel,.power=power,.action=action,.brand=brand,.check=check,
       .back_component_id=kBackComponentId,.should_stop=should_stop,.should_stop_user=&context,
       .on_ready=nullptr,.on_ready_user=nullptr,
     };
     std::printf("AMOLED Fishing Game: click sea to cast; swipe left for gear; swipe right to return. No textures.\n");
-    result=h2_lua_fishing_run(runtime,&config);
+    result=h2_lua_fishing_game_run(runtime,&config);
   }
   (void)h2::desktop::poll_events(&display);
   h2_runtime_deinit(runtime);
