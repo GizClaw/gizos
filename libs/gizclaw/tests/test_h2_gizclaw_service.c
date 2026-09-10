@@ -7133,6 +7133,8 @@ typedef struct conversation_test {
   uint64_t sent_sequence;
   unsigned ack_reads;
   unsigned reply_events;
+  bool reply_audio_bos_sent;
+  bool pre_bos_audio_discarded;
   unsigned reply_text_ends, transcript_text_ends;
   atomic_bool small_buffer_rejected;
   unsigned filler_callbacks;
@@ -7301,6 +7303,18 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
     if (!wrong) atomic_store(&test->input_ack, true);
     return GZC_OK;
   }
+  if (atomic_load(&test->input_ack) && !test->reply_audio_bos_sent) {
+    *event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+    event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+    event->which_payload = gizclaw_events_v1_PeerEvent_bos_tag;
+    event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
+    snprintf(event->payload.bos.label, sizeof(event->payload.bos.label), "assistant");
+    snprintf(event->payload.bos.stream_id, sizeof(event->payload.bos.stream_id),
+             "%s%s", test->stream,
+             test->mode == 15 || test->mode == 16 || test->mode == 20 ? ":turn-one" : "");
+    test->reply_audio_bos_sent = true;
+    return GZC_OK;
+  }
   if (test->mode == 20) {
     /* Realtime barge-in with all twelve first-burst packets already echoed:
      * 0 BOS turn-one, 1 TEXT_DELTA turn-one, 2 BOS turn-two (interrupts
@@ -7441,6 +7455,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
   event->version = GZC_PEER_EVENT_VERSION;
   event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
   event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+  event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
   snprintf(event->payload.eos.stream_id, sizeof(event->payload.eos.stream_id),
            "%s", test->stream);
   snprintf(event->payload.eos.label, sizeof(event->payload.eos.label), "%s",
@@ -7478,6 +7493,19 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
   (void)client;
   (void)timeout;
   conversation_test_t *test = s_conversation;
+  if (!test->reply_audio_bos_sent) {
+    /* Old-stream bytes arriving before the reply BOS must be consumed without
+     * entering the decoder (this intentionally is not a valid Opus packet). */
+    const uint8_t stale[] = {0xff};
+    assert(h2_gizclaw_service_media_write_opus(test->service, stale, sizeof(stale)) == H2_PAL_OK);
+    test->pre_bos_audio_discarded = true;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  if (atomic_load(&test->reply_sent)) {
+    const uint8_t stale[] = {0xff};
+    assert(h2_gizclaw_service_media_write_opus(test->service, stale, sizeof(stale)) == H2_PAL_OK);
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
   if (test->mode == 4 && !atomic_load(&test->small_buffer_rejected)) {
     size_t len = 99;
     h2_pal_result_t rc = h2_gizclaw_service_media_read_opus(

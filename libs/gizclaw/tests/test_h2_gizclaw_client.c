@@ -637,6 +637,19 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
       h2_gizclaw_conversation_enqueue_peer_event_internal(conv, &late);
       assert(!h2_gizclaw_conversation_wire_input_ready_internal(conv));
     }
+    /* A canceled reply may end after the next input's READY or commit.
+     * It must not claim the new input's as-yet unbound assistant route. */
+    gzc_peer_event_t orphan =
+        test_reply_event(EOS, "assistant", "previous-reply", "", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
+                        conv, &orphan), "unbound old EOS is ignored");
+    orphan = test_reply_event(EOS, "assistant", "previous-reply", "",
+                              "STREAM_INTERRUPTED");
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
+                        conv, &orphan), "unbound old interruption is ignored");
+    orphan = test_reply_event(DONE, "assistant", "previous-reply", "old", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
+                        conv, &orphan), "unbound old text boundary is ignored");
     h2_gizclaw_conversation_event_t out = {0};
     gzc_peer_event_t event =
         test_reply_event(BOS, "assistant", "reply-1", "", NULL);
@@ -765,6 +778,31 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
                   conv),
           "the next reply ends with a normal REPLY_DONE");
     }
+    h2_gizclaw_conversation_wire_destroy_internal(conv);
+    conv = NULL;
+    fails += expect(test_open_ready(client, workspace, 30u + mode, 1000,
+                                    &conv) == H2_PAL_OK,
+                    "next input reuses the same connected client");
+    const char *retired_reply = mode < 2u ? "reply-2" : "reply-1";
+    event = test_reply_event(BOS, "assistant", retired_reply, "", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "retired reply BOS cannot claim a new input after READY");
+    fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(conv, 9u) == H2_PAL_OK,
+                    "next input commits");
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "retired reply BOS cannot claim a committed input");
+    event = test_reply_event(EOS, "assistant", retired_reply, "", NULL);
+    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "retired reply EOS remains ignored");
+    event = test_reply_event(BOS, "assistant", "fresh-reply", "", NULL);
+    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "fresh reply still binds the new input");
+    event = test_reply_event(DONE, "assistant", "fresh-reply", "new", NULL);
+    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "fresh text completion is accepted");
+    event = test_reply_event(EOS, "assistant", "fresh-reply", "", NULL);
+    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
+                    "fresh reply EOS is accepted");
     h2_gizclaw_conversation_wire_destroy_internal(conv);
     fails += expect(h2_gizclaw_client_close(client) == H2_PAL_OK,
                     "barge-in test closes the client");

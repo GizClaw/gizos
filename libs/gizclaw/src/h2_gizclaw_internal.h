@@ -193,6 +193,12 @@ int h2_gizclaw_conversation_wire_poll_internal(
 void h2_gizclaw_conversation_wire_destroy_internal(
     h2_gizclaw_conversation_t *conversation);
 
+/* Connection-local recent stream tombstones, owned by the event poll task. */
+bool h2_gizclaw_client_stream_retired_internal(
+    const h2_gizclaw_client_t *client, const char *stream_id);
+void h2_gizclaw_client_retire_stream_internal(
+    h2_gizclaw_client_t *client, const char *stream_id);
+
 int h2_gizclaw_client_conversation_acquire_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation,
     gzc_event_stream_t **out_events, uint64_t *out_stream_sequence);
