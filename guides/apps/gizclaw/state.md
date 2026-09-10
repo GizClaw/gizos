@@ -32,7 +32,7 @@ Conversation 创建在同一个准备操作中完成 Workspace 校验，然后�
 | Push-to-Talk | IDLE → RECORDING → WAITING → IDLE |
 | RealTime | IDLE ↔ CALLING |
 
-PTT 松手时冻结本轮 PCM 输入窗口：窗口非空才进入 WAITING；窗口为空则回到 IDLE。输入结束发出后本轮请求即完成，不等待服务器回复。WAITING 只是本地状态：按下后旧流的音频被丢弃（见 Audio 文档的丢包标志），一旦有新流的下行音频写入 Track 就回到 IDLE，由声音接管；`H2_GIZCLAW_SESSION_WAIT_MS`（5 秒）内没有任何下行音频也静默回到 IDLE，不报错。该判断在读取快照时进行。没有“回复中”状态。按下前和松手后的 PCM 不计入本轮，按住时长不是判据。
+PTT 松手时冻结本轮 PCM 输入窗口：窗口非空才进入 WAITING；窗口为空则回到 IDLE。输入结束发出后本轮请求即完成，不等待服务器回复。WAITING 只是本地状态：按下后到下一个下行音频 BOS 之前的音频被丢弃（见 Audio 文档的 `waiting_for_bos`），一旦有之后的下行音频写入 Track 就回到 IDLE，由声音接管；`H2_GIZCLAW_SESSION_WAIT_MS`（5 秒）内没有任何下行音频也静默回到 IDLE，不报错。该判断在读取快照时进行。没有“回复中”状态。按下前和松手后的 PCM 不计入本轮，按住时长不是判据。
 
 PTT 在录音期间收到下行音频也不能关闭输入或影响松手 EOS。RealTime 的文本和音频都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
 

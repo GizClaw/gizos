@@ -163,8 +163,8 @@ struct h2_gizclaw_client {
   h2_gizclaw_conversation_t *active_conversation;
   h2_gizclaw_client_event_sink_fn event_handler;
   void *event_handler_user;
-  h2_gizclaw_client_stream_fn downlink_stream;
-  void *downlink_stream_user;
+  h2_gizclaw_client_bos_fn downlink_bos;
+  void *downlink_bos_user;
   bool pending_client_event;
   h2_gizclaw_client_event_t client_event;
   char event_workspace_name[sizeof(
@@ -474,11 +474,10 @@ int h2_gizclaw_client_dispatch_event(h2_gizclaw_client_t *client,
     h2_gizclaw_conversation_enqueue_peer_event_internal(
         client->active_conversation, &peer_event);
   }
-  const char *downlink_stream =
-      h2_gizclaw_conversation_downstream_stream_internal(
-          client->active_conversation, &peer_event);
-  if (downlink_stream != NULL && client->downlink_stream != NULL)
-    client->downlink_stream(client->downlink_stream_user, downlink_stream);
+  if (client->downlink_bos != NULL &&
+      h2_gizclaw_conversation_downstream_audio_bos_internal(
+          client->active_conversation, &peer_event))
+    client->downlink_bos(client->downlink_bos_user);
   if (peer_event.type !=
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
     char message[H2_PAL_LOG_MESSAGE_MAX];
@@ -508,13 +507,12 @@ int h2_gizclaw_client_set_event_handler(
   return H2_PAL_OK;
 }
 
-void h2_gizclaw_client_set_downlink_stream_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_stream_fn on_stream,
-    void *user) {
+void h2_gizclaw_client_set_downlink_bos_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user) {
   if (client == NULL)
     return;
-  client->downlink_stream = on_stream;
-  client->downlink_stream_user = user;
+  client->downlink_bos = on_bos;
+  client->downlink_bos_user = user;
 }
 
 static bool h2_gizclaw_is_canceled(const h2_gizclaw_client_t *client) {

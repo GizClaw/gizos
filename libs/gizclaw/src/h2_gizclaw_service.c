@@ -10,6 +10,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Events read per network turn; a burst larger than this continues on the
+ * next turn instead of delaying the transport poll. */
+#define H2_GIZCLAW_EVENT_DRAIN_MAX 16u
+
 #ifdef H2_GIZCLAW_TESTING
 static const h2_gizclaw_service_client_ops_t *s_client_ops;
 static h2_gizclaw_runtime_notify_test_fn s_runtime_notify;
@@ -142,17 +146,17 @@ client_set_event_handler(h2_gizclaw_client_t *client,
                                                               event_user);
 }
 
-static void service_downlink_stream(void *user, const char *stream_id) {
-  h2_gizclaw_conversation_downlink_stream_internal(user, stream_id);
+static void service_downlink_bos(void *user) {
+  h2_gizclaw_conversation_downlink_bos_internal(user);
 }
 
-static void client_set_downlink_stream(h2_gizclaw_service_t *service) {
+static void client_set_downlink_bos(h2_gizclaw_service_t *service) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->init != NULL)
     return;
 #endif
-  h2_gizclaw_client_set_downlink_stream_internal(
-      service->client, service_downlink_stream, service);
+  h2_gizclaw_client_set_downlink_bos_internal(service->client,
+                                              service_downlink_bos, service);
 }
 
 static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t *client) {
@@ -706,7 +710,7 @@ static void net_worker(void *ctx) {
   if (rc == H2_PAL_OK)
     rc = client_init(&service->client_config, &service->client);
   if (rc == H2_PAL_OK) {
-    client_set_downlink_stream(service);
+    client_set_downlink_bos(service);
     rc = client_connect(service->client);
   }
   if (rc == H2_PAL_OK && service->config.on_event != NULL) {
@@ -736,13 +740,16 @@ static void net_worker(void *ctx) {
 
     h2_gizclaw_time_sync_start_internal(service);
 
-    if (service->config.on_event != NULL) {
+    /* Downstream events flow like downstream audio: every turn reads what
+     * arrived, whether or not a request is running or the owner listens. */
+    rc = H2_PAL_OK;
+    for (unsigned i = 0u; rc == H2_PAL_OK && i < H2_GIZCLAW_EVENT_DRAIN_MAX;
+         ++i)
       rc = client_dispatch_event(service->client);
-      if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
-          rc != H2_PAL_ERR_WOULD_BLOCK) {
-        mark_terminal(service, rc);
-        break;
-      }
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT &&
+        rc != H2_PAL_ERR_WOULD_BLOCK) {
+      mark_terminal(service, rc);
+      break;
     }
 
     h2_gizclaw_operation_t *operation = NULL;

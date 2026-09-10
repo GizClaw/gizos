@@ -127,13 +127,9 @@ struct h2_gizclaw_conversation_downlink {
   atomic_size_t bytes;
   /* Chunks written to the Track: the Session's sign that sound arrived. */
   atomic_size_t pcm_writes;
-  /* The downstream audio stream last announced by BOS. Pressing push-to-talk
-   * sets waiting_response and remembers that stream: downstream audio is
-   * dropped until the server announces a different one. The IDs are guarded
-   * by decode_lock. */
-  char stream_id[H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
-  char waiting_stream_id[H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
-  atomic_bool waiting_response;
+  /* Set by a push-to-talk press: downstream audio is dropped until the next
+   * downstream audio BOS. */
+  atomic_bool waiting_for_bos;
 };
 
 struct h2_gizclaw_conversation {
@@ -444,7 +440,7 @@ static void downlink_release(h2_gizclaw_service_t *service) {
 }
 
 /* Received downstream audio. While audio play or Speech owns the Track, or
- * waiting_response is set by a press, the packet is dropped (OK); a full ring
+ * waiting_for_bos is set by a press, the packet is dropped (OK); a full ring
  * refuses it with WOULD_BLOCK and the provider drops it, so a stalled speaker
  * loses audio instead of delaying it. */
 h2_pal_result_t
@@ -457,7 +453,7 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
   h2_gizclaw_conversation_downlink_t *downlink = downlink_acquire(service);
   if (downlink == NULL)
     return H2_PAL_OK;
-  if (atomic_load_explicit(&downlink->waiting_response, memory_order_acquire)) {
+  if (atomic_load_explicit(&downlink->waiting_for_bos, memory_order_acquire)) {
     downlink_release(service);
     return H2_PAL_OK;
   }
@@ -759,21 +755,15 @@ void h2_gizclaw_conversation_downlink_step_internal(
   downlink_release(service);
 }
 
-/* Pressing push-to-talk: drop the downstream audio from now on until the
- * server announces a stream other than the current one. */
+/* Pressing push-to-talk: drop downstream audio until the next downstream
+ * audio BOS. */
 void h2_gizclaw_conversation_downlink_hold_internal(
     h2_gizclaw_service_t *service) {
   h2_gizclaw_conversation_downlink_t *downlink =
       downlink_acquire_any(service, NULL);
   if (downlink == NULL)
     return;
-  if (h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
-      H2_PAL_OK) {
-    memcpy(downlink->waiting_stream_id, downlink->stream_id,
-           sizeof(downlink->waiting_stream_id));
-    atomic_store_explicit(&downlink->waiting_response, true, memory_order_release);
-    (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
-  }
+  atomic_store_explicit(&downlink->waiting_for_bos, true, memory_order_release);
   downlink_release(service);
 }
 
@@ -803,25 +793,15 @@ void h2_gizclaw_conversation_downlink_flush_internal(
   downlink_release(service);
 }
 
-/* The server announced a downstream audio stream. A stream other than the
- * one remembered at the press clears waiting_response. */
-void h2_gizclaw_conversation_downlink_stream_internal(
-    h2_gizclaw_service_t *service, const char *stream_id) {
-  if (stream_id == NULL || stream_id[0] == '\0')
-    return;
+/* The server announced a downstream audio stream: its audio plays. */
+void h2_gizclaw_conversation_downlink_bos_internal(
+    h2_gizclaw_service_t *service) {
   h2_gizclaw_conversation_downlink_t *downlink =
       downlink_acquire_any(service, NULL);
   if (downlink == NULL)
     return;
-  if (h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
-      H2_PAL_OK) {
-    (void)snprintf(downlink->stream_id, sizeof(downlink->stream_id), "%s",
-                   stream_id);
-    if (atomic_load_explicit(&downlink->waiting_response, memory_order_acquire) &&
-        strcmp(downlink->stream_id, downlink->waiting_stream_id) != 0)
-      atomic_store_explicit(&downlink->waiting_response, false, memory_order_release);
-    (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
-  }
+  atomic_store_explicit(&downlink->waiting_for_bos, false,
+                        memory_order_release);
   downlink_release(service);
 }
 
@@ -851,7 +831,7 @@ downlink_create(h2_gizclaw_service_t *service,
   atomic_init(&downlink->frames, 0u);
   atomic_init(&downlink->bytes, 0u);
   atomic_init(&downlink->pcm_writes, 0u);
-  atomic_init(&downlink->waiting_response, false);
+  atomic_init(&downlink->waiting_for_bos, false);
   const h2_pal_mutex_config_t lock_config = {
       .name = "$gizclaw/downlink", .allocator = allocator};
   h2_pal_result_t rc = h2_pal_mutex_create(service->config.sync, &lock_config,
@@ -965,22 +945,17 @@ bool h2_gizclaw_conversation_accepts_peer_event_internal(
   return accepts_peer_event(conversation, event);
 }
 
-const char *h2_gizclaw_conversation_downstream_stream_internal(
+bool h2_gizclaw_conversation_downstream_audio_bos_internal(
     const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event) {
-  /* Only audio streams count: text and transcript streams open their own BOS,
-   * a transcript under the ID of our previous input. */
-  if (event == NULL ||
-      event->type != gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS ||
-      event->payload.bos.kind != gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO)
-    return NULL;
-  const char *id = event->payload.bos.stream_id;
-  if (memchr(id, '\0', sizeof(event->payload.bos.stream_id)) == NULL ||
-      id[0] == '\0' ||
-      strcmp(event->payload.bos.label, H2_GIZCLAW_CONVERSATION_INPUT_LABEL) ==
-          0 ||
-      (active != NULL && event_names_our_input(active, event)))
-    return NULL;
-  return id;
+  /* Only audio streams count: text and transcript streams open their own
+   * BOS, and our own input's BOS is not downstream. */
+  return event != NULL &&
+         event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
+         event->payload.bos.kind ==
+             gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO &&
+         strcmp(event->payload.bos.label,
+                H2_GIZCLAW_CONVERSATION_INPUT_LABEL) != 0 &&
+         !(active != NULL && event_names_our_input(active, event));
 }
 
 void h2_gizclaw_conversation_describe_peer_event_internal(

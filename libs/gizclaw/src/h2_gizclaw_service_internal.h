@@ -370,8 +370,8 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
                                     const uint8_t *opus, size_t opus_len);
 void h2_gizclaw_conversation_downlink_hold_internal(
     h2_gizclaw_service_t *service);
-void h2_gizclaw_conversation_downlink_stream_internal(
-    h2_gizclaw_service_t *service, const char *stream_id);
+void h2_gizclaw_conversation_downlink_bos_internal(
+    h2_gizclaw_service_t *service);
 
 h2_pal_result_t h2_gizclaw_service_submit_async_internal(
     h2_gizclaw_service_t *service, uint64_t identity,
