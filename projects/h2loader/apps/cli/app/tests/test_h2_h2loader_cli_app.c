@@ -171,8 +171,8 @@ static void test_transport_log_is_atomic_and_rejects_binary(void) {
 
     options.transport = H2_H2LOADER_HOST_TRANSPORT_BLE;
     h2_h2loader_cli_transport_init(&transport, &context, &options, 1000u);
-    assert(transport.on_log == NULL);
-    assert(transport.log_user == NULL);
+    assert(transport.on_log == h2_h2loader_cli_transport_log);
+    assert(transport.log_user == &context);
 }
 
 static void test_help_and_usage(void) {

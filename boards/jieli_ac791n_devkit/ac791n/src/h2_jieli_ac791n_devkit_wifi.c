@@ -142,12 +142,10 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
 }
 
 static int ensure_wifi_on(void) {
-  if (wifi_state.on || wifi_is_on()) {
-    wifi_state.on = 1;
-    return H2_PAL_OK;
-  }
+  if (wifi_state.on) return H2_PAL_OK;
+  /* Bind events even when board startup already enabled the SDK interface. */
   wifi_set_event_callback(wifi_event);
-  if (wifi_on() != 0) return H2_PAL_ERR_IO;
+  if (!wifi_is_on() && wifi_on() != 0) return H2_PAL_ERR_IO;
   wifi_state.on = 1;
   return H2_PAL_OK;
 }

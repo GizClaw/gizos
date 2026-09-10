@@ -8,6 +8,54 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class WifiScanTest(unittest.TestCase):
+    def test_start_binds_events_for_existing_interface(self):
+        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+                  "h2_jieli_ac791n_devkit_wifi.c").read_text()
+        start = source[source.index("static int ensure_wifi_on(void)"):
+                       source.index("static void update_sta_snapshot(void) {")]
+        stub = r'''
+#include <assert.h>
+#define H2_PAL_OK 0
+#define H2_PAL_ERR_IO -1
+static struct { int on; } wifi_state;
+static int sdk_on, registrations, starts, start_error;
+static void wifi_event(void) {}
+static void (*callback)(void);
+static void wifi_set_event_callback(void (*cb)(void)) {
+ callback=cb; ++registrations;
+}
+static int wifi_is_on(void) { return sdk_on; }
+static int wifi_on(void) {
+ assert(callback==wifi_event); ++starts;
+ if(start_error) return start_error;
+ sdk_on=1; return 0;
+}
+'''
+        main = r'''
+int main(void) {
+ sdk_on=1;
+ assert(ensure_wifi_on()==0);
+ assert(callback==wifi_event && registrations==1 && starts==0);
+ assert(ensure_wifi_on()==0 && registrations==1);
+ /* Model a successful stop, then a cold start. */
+ sdk_on=0; wifi_state.on=0;
+ assert(ensure_wifi_on()==0 && registrations==2 && starts==1);
+ assert(ensure_wifi_on()==0 && registrations==2 && starts==1);
+ sdk_on=0; wifi_state.on=0; start_error=-1;
+ assert(ensure_wifi_on()==H2_PAL_ERR_IO && !wifi_state.on);
+ start_error=0;
+ assert(ensure_wifi_on()==0 && wifi_state.on && starts==3);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-wifi-start-") as directory:
+            test = Path(directory) / "test.c"
+            test.write_text(stub + start + main)
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            str(test), "-o", str(binary)], check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=10)
+
     def test_timeout_is_cleaned_only_after_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
