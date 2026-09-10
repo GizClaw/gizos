@@ -23,6 +23,12 @@ function M.install(display,component)
   display.draw_vector_slice('@qi-duel/vector/components.h2vp',first[1],first[2],
     a,b,c,d,e,f,opacity or 1,second[1],second[2],mix,cache,tile)
  end
+ local function action_frame(index)
+  local row=(index-1)//4
+  local step=(index-1)%4
+  assert(step>0,'idle action frame is not packaged')
+  return row*2+(step>=2 and 2 or 1)
+ end
  display.draw_affine_asset=function(name,a,b,c,d,e,f,crop,opacity)
   local key=selected(name)
   if not key then return affine(name,a,b,c,d,e,f,crop,opacity) end
@@ -30,11 +36,18 @@ function M.install(display,component)
   assert(not crop or (crop[1]==0 and crop[3]==entry.w and crop[4]==entry.h),'unsupported vector crop')
   assert(row%entry.h==0,'misaligned vector component frame')
   local frame=row//entry.h+1
+  if key=='charge-cells' then
+   assert((frame-1)%10==0,'unpackaged charge orientation')
+   frame=(frame-1)//10+1
+  end
   draw(entry,frame,frame,0,a,b,c,d,e+c*row,f+d*row,opacity,opacity==nil or opacity==1,true)
  end
  display.draw_sprite_atlas=function(name,lo,hi,mix,x,y,scale,opacity)
   local key=selected(name)
   if not key then return atlas(name,lo,hi,mix,x,y,scale,opacity) end
+  if key=='action-hands' or key=='action-opponent' then
+   lo,hi=action_frame(lo),action_frame(hi)
+  end
   scale=scale or 1
   local cache=key=='result-words' and (mix==0 or mix==1)
   draw(paths[key],lo,hi,mix,scale,0,0,scale,x,y,opacity,cache,key~='action-hands')

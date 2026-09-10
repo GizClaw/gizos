@@ -15,23 +15,34 @@ The `0.1.0-dev` pure-vector firmware builds successfully with
 and battle mode, with management-advertising pause/resume hooks. The target
 requires that flag and is marked `no-release` pending performance acceptance.
 
-| Capacity check | Before optimization | After optimization |
-| --- | ---: | ---: |
-| Application image | 5,514,624 bytes | 3,233,040 bytes |
-| Remaining space in 8 MiB app partition | 2,873,984 bytes | 5,155,568 bytes |
-| Compressed update package | 4,680,113 bytes | 2,398,768 bytes |
+| Capacity check | Before optimization | Delta-varint build | Keyframe build |
+| --- | ---: | ---: | ---: |
+| Application image | 5,514,624 bytes | 3,233,040 bytes | 2,852,768 bytes |
+| Remaining space in 8 MiB app partition | 2,873,984 bytes | 5,155,568 bytes | 5,535,840 bytes |
+| Compressed update package | 4,680,113 bytes | 2,398,768 bytes | 2,019,513 bytes |
+| Margin in 2 MiB download partition | -2,582,961 bytes | -301,616 bytes | 77,639 bytes |
 
-The update package is 48.75% smaller, but still exceeds the 2,097,152-byte download
-partition by 301,616 bytes, before allowing LittleFS overhead. It has not been
-transferred to the device.
+The keyframe build passes the raw 2,097,152-byte download-partition capacity
+gate with 77,639 bytes (3.70%) remaining. A real LittleFS transfer is still
+required to confirm filesystem overhead and the state of existing staged
+content; the build has not been transferred to the device.
 
 Optimization uses `--define=h2_qi_duel_screen=amoled` to exclude 16 H106-specific
 clash/fade frames, and H2VG v2 opcode 14 for lossless coordinate deltas. Whole-pixel
 polygons use unit 4; quarter-pixel polygons retain unit 1. Zigzag varints preserve
 every coordinate exactly. Both backends bound varints to three bytes, validate
 the original signed-16-bit coordinate range and reject truncated or noncanonical
-input. Decoding adds no persistent buffers or allocations. The component bank
-shrinks from 3,272,053 to 990,518 bytes.
+input. Decoding adds no persistent buffers or allocations. The first optimization
+shrinks the component bank from 3,272,053 to 990,518 bytes.
+
+The keyframe optimization reduces the AMOLED bank again to 610,946 bytes. Each
+four-frame action row retains two active poses and remaps its middle pose; the
+idle row entry was never drawn. Charge cells retain one authored orientation
+for empty, lit and five transition layers, and the existing affine transform
+rotates that crystal into all five meter positions. The equal clash fades its
+terminal keyframe with runtime opacity instead of carrying a separate four-frame
+fade bank. All twelve main clash frames remain packaged: an endpoint-only
+experiment failed the visual threshold and was rejected.
 
 The original resource bank and SVGs remain the source reference. The build packer
 round-trips every selected frame back to the original command bytes before
@@ -41,10 +52,9 @@ see `validation/amoled-vector/packed-frame-comparison.json`. This comparison pro
 encoding fidelity; it does not replace device performance or panel acceptance.
 
 The current Loader stages the complete package at `/dl/update.tar.zlib`. AMOLED
-maps `/dl` to internal LittleFS; its provider does not currently mount an SD card.
-Application capacity therefore does not imply managed-update capacity. Storage
-direction must be selected before installation: further geometry size reduction,
-SD staging support, or a separately reviewed partition migration. No device,
+maps `/dl` to internal LittleFS; its provider does not currently mount an SD
+card. The source build now fits the nominal partition without an SD or partition
+change, but device transfer and filesystem acceptance remain pending. No device,
 partition, or SD writes were performed during this vector build.
 
 The baseline package and native debug files are copied to

@@ -5,7 +5,8 @@ import struct
 import unittest
 import zlib
 
-from pack_vector_components import pack_components, pack_frame, unpack_frame
+from pack_vector_components import (pack_components, pack_frame,
+                                    selected_frame_indices, unpack_frame)
 
 
 class VectorPackingTest(unittest.TestCase):
@@ -53,12 +54,26 @@ class VectorPackingTest(unittest.TestCase):
         for screen in ("all", "amoled", "h106"):
             packed, metadata = pack_components(bank, directory, screen)
             selected = frames(packed, metadata)
-            expected = {k: v for k, v in original.items()
-                        if screen == "all" or not k.endswith("-" + ("h106" if screen == "amoled" else "amoled"))}
+            expected = {
+                k: [v[index] for index in selected_frame_indices(k, len(v))]
+                for k, v in original.items()
+                if ((screen == "all" or
+                     not k.endswith("-" + ("h106" if screen == "amoled" else "amoled"))) and
+                    selected_frame_indices(k, len(v)))
+            }
             self.assertEqual(selected.keys(), expected.keys())
             for name, values in selected.items():
                 self.assertEqual([unpack_frame(v) for v in values], expected[name])
             self.assertLess(len(packed), len(bank) // 2)
+
+    def test_runtime_keyframe_contract(self):
+        self.assertEqual(selected_frame_indices("action-hands", 16),
+                         (1, 3, 5, 7, 9, 11, 13, 15))
+        self.assertEqual(selected_frame_indices("beam-clash-amoled", 12),
+                         tuple(range(12)))
+        self.assertEqual(selected_frame_indices("charge-cells", 70),
+                         (0, 10, 20, 30, 40, 50, 60))
+        self.assertEqual(selected_frame_indices("beam-clash-fade-amoled", 4), ())
 
 
 if __name__ == "__main__":

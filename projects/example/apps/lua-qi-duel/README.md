@@ -88,8 +88,10 @@ bazel build -c opt --config=esp32s3 \
 
 The screen flag removes the other screen's clash keyframes at build time.
 Omitting it retains both screens for desktop review; `h106` selects H106-only
-frames. All component frames use lossless H2VG v2 coordinate deltas. Every build
-reconstructs and compares the original command bytes before embedding them.
+frames. Retained component keyframes use lossless H2VG v2 coordinate deltas, and
+every build reconstructs and compares their original command bytes before
+embedding. The packer omits unreachable action poses, reuses one affine charge
+orientation, and replaces the duplicate clash-fade bank with runtime opacity.
 
 The runtime prints `H2_QI_DUEL_PERF` once per second. After five complete
 measurement windows it prints `H2_QI_DUEL_SELF_TEST result=PASS` when the average

@@ -1277,11 +1277,11 @@ function Intro.draw_clash(now,state)
     local y=(SCREEN_H-frame_h*scale)*.5+sy
     local atlas,lo,hi,blend
     if age>=fade_started and state.player_power==state.enemy_power then
-        local phase=clamp((age-fade_started)/360*3,0,3)
-        lo=math.floor(phase);hi=math.min(3,lo+1);blend=ease(phase-lo)
-        atlas=H106 and "@qi-duel/beam-clash-fade-h106.h2rs" or
-            "@qi-duel/beam-clash-fade-amoled.h2rs"
-        lo,hi,opacity=lo+1,hi+1,1
+        -- Fade the terminal clash directly instead of packaging four more
+        -- copies of the same decaying geometry.
+        atlas=H106 and "@qi-duel/beam-clash-h106.h2rs" or
+            "@qi-duel/beam-clash-amoled.h2rs"
+        lo,hi,blend=4,4,0
     else
         local phase=clamp(age/fade_started*3,0,3)
         lo=math.floor(phase);hi=math.min(3,lo+1);blend=ease(phase-lo)
@@ -1546,7 +1546,9 @@ local function draw_charge_cell(index, lit, scale, alpha, transient)
     scale,alpha=(scale or 1)*METER_SCALE,alpha or 1
     -- Reuse the crystalline material, undo its baked orbit angle, then rotate
     -- onto the new five-cell circle. Empty and full share identical geometry.
-    local source_index=math.floor((index-1)*9/(CHARGE_MAX-1)+.5)
+    -- Reuse one authored crystal orientation; the affine transform rotates it
+    -- around the meter without duplicating its paths in every state.
+    local source_index=0
     local source_angle=-.37+source_index*.74/9
     local sx,sy=orbit_point(184,694,359,source_angle)
     -- Widen along each cell's tangent, not the screen's horizontal axis:

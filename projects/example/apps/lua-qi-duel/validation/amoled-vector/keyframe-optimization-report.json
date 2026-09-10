@@ -1,0 +1,35 @@
+{
+  "base_commit": "a312afb361f079140cba6e666620d340ff7a6942",
+  "build_version": "size-opt-v2",
+  "status": "PASS_NOMINAL_DOWNLOAD_CAPACITY",
+  "sizes": {
+    "component_bank_before": 990518,
+    "component_bank_after": 610946,
+    "component_bank_saved": 379572,
+    "app_bin_before": 3233040,
+    "app_bin_after": 2852768,
+    "update_package_before": 2398768,
+    "update_package_after": 2019513,
+    "update_package_saved": 379255,
+    "download_partition": 2097152,
+    "download_partition_margin": 77639
+  },
+  "update_package_sha256": "38424103b96aafe68503a1c32f20c568149b6f47a45350a3420d93d810c331d4",
+  "retained_art": {
+    "action_frames_per_row": 2,
+    "charge_orientations_per_state": 1,
+    "main_clash_frames_per_variant": 4,
+    "separate_clash_fade_frames": 0
+  },
+  "verification": {
+    "pack_vector_components_test": "PASS",
+    "lua_qi_duel_test": "PASS",
+    "visual_mae_threshold": 30,
+    "charge_amoled_max": 20.4259,
+    "charge_h106_max": 19.3046,
+    "clash_amoled_max": 9.8365,
+    "clash_h106_max": 8.9483,
+    "equal_fade_amoled_at_1080_ms": 7.3543
+  },
+  "device_transfer": "NOT_RUN"
+}

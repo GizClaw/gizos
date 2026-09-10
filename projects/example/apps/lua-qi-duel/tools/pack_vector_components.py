@@ -7,6 +7,29 @@ import struct
 import zlib
 
 
+# The runtime already interpolates the cinematic atlases.  Keep the authored
+# endpoints and discard frames that are either unreachable or reproducible by
+# that interpolation.  Indices are zero based and intentionally shared by the
+# AMOLED, H106 and desktop vector builds.
+FRAME_SELECTIONS = {
+    "action-hands": (1, 3, 5, 7, 9, 11, 13, 15),
+    "action-opponent": (1, 3, 5, 7, 9, 11, 13, 15),
+    # One crystalline orientation is rotated by the runtime for all five
+    # positions.  Retain empty, lit and the five transition layers.
+    "charge-cells": (0, 10, 20, 30, 40, 50, 60),
+    # Fade is now an opacity animation over the final clash keyframe.
+    "beam-clash-fade-amoled": (),
+    "beam-clash-fade-h106": (),
+}
+
+
+def selected_frame_indices(name, count):
+    selected = FRAME_SELECTIONS.get(name, tuple(range(count)))
+    if any(index < 0 or index >= count for index in selected):
+        raise ValueError(f"Invalid retained frame for {name}")
+    return selected
+
+
 def unsigned_varint(value):
     result = bytearray()
     while value >= 128:
@@ -109,7 +132,7 @@ def unpack_frame(data):
 
 def pack_components(bank, directory, screen):
     result = bytearray()
-    lines = ["-- Generated lossless H2VG v2 directory; offsets address vector commands.", "return {"]
+    lines = ["-- Generated lossless H2VG v2 directory with interpolated keyframes; offsets address vector commands.", "return {"]
     frames = 0
     for line in directory.splitlines():
         name = re.match(r'\["([^"]+)"\]', line)
@@ -118,7 +141,11 @@ def pack_components(bank, directory, screen):
         if screen != "all" and name[1].endswith("-" + ("h106" if screen == "amoled" else "amoled")):
             continue
         entries = []
-        for offset, size in re.findall(r"\{(\d+),(\d+)\}", line):
+        source_entries = re.findall(r"\{(\d+),(\d+)\}", line)
+        selected = set(selected_frame_indices(name[1], len(source_entries)))
+        for index, (offset, size) in enumerate(source_entries):
+            if index not in selected:
+                continue
             offset, size = int(offset), int(size)
             if size < 5 or offset + size > len(bank):
                 raise ValueError("Invalid source slice")
@@ -139,7 +166,7 @@ def pack_components(bank, directory, screen):
             result.extend(compressed)
             frames += 1
         if not entries:
-            raise ValueError("Missing component frames")
+            continue
         lines.append(line.split("frames=", 1)[0] + "frames={" + ",".join(entries) + "}},")
     if not frames:
         raise ValueError("Empty component bank")
