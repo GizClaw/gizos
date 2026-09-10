@@ -109,6 +109,8 @@ result 由 request handle 持有，通过 `h2_gizclaw_resp_parse_speech_transcri
 
 新的 record action 可以按产品交互模式取消当前回复或结束自然对话，但必须产生显式 cancel command。取消顺序为使 App generation 失效、停止新输入、取消 GizClaw operation、停止/关闭 Audio，并等待 matching completion callback 清理 operation context。Disconnect、mic failure、decode failure、speaker failure 和 timeout 都返回带 generation 的 domain error。
 
+服务端用 `EOS{STREAM_INTERRUPTED}` 截断当前下行音频流时，只表示这条流结束，不论输入是否已封口都不作为 conversation 错误。若服务端在此之前已开始另一条下行流（任意 kind 的 BOS，例如 flowcraft 先发下一段的文字 BOS），视为交接：丢弃被截断流剩余的音频，本轮继续等待下一条音频流；否则按正常结束产生 `REPLY_DONE` 并丢弃其未播放的尾部。
+
 连接失败不应反复打开 microphone；Audio 启动失败也不应销毁仍可复用的 GizClaw connection。重试由 App policy 决定，observer 不自动重试。
 
 ## PTT 控制与输入失败诊断

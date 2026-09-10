@@ -189,6 +189,9 @@ struct h2_gizclaw_conversation {
   bool terminal_has_error;
   bool terminal_retryable;
   bool reply_interrupted;
+  /* A downstream stream other than the active audio one has begun since
+   * that audio stream started: the server is moving on to its next part. */
+  bool newer_downstream;
   bool pending_peer_event;
   gzc_peer_event_t peer_event;
   char text[H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u];
@@ -869,13 +872,32 @@ conversation_reply_route(h2_gizclaw_conversation_t *conversation,
                                                      : &conversation->downstream;
 }
 
-/* Server-side barge-in: the user spoke over the downstream audio and the
- * server cut it short. While our input is still open (realtime) that is a
- * normal end and the service discards its queued playback. Once the input is
- * committed (push-to-talk) it keeps the error semantics. */
+/* The server cut the active downstream audio stream short
+ * (STREAM_INTERRUPTED): the user spoke over it, or the server moved on to
+ * its next stream. Either way it is only the end of that stream, never an
+ * error for the turn. */
 static bool reply_interruptible(const h2_gizclaw_conversation_t *conversation,
                                 const conversation_reply_route_t *route) {
-  return !conversation->committed && route == &conversation->downstream;
+  (void)conversation;
+  return route == &conversation->downstream;
+}
+
+/* Stale playback of the active downstream stream: everything it queued so
+ * far, and whatever it already wrote to the Track, is dropped by the
+ * decoder once it reaches this mark. */
+static void discard_downstream_playback(
+    h2_gizclaw_conversation_t *conversation) {
+  h2_gizclaw_conversation_request_t *request = conversation->service_request;
+  if (request == NULL)
+    return;
+  atomic_store_explicit(&request->reply_media_open, false,
+                        memory_order_release);
+  atomic_store_explicit(
+      &request->discard_frames_before,
+      atomic_load_explicit(&request->reply_frames, memory_order_acquire),
+      memory_order_release);
+  atomic_store_explicit(&request->discard_downlink_pending, true,
+                        memory_order_release);
 }
 
 static void finish_interrupted_reply(h2_gizclaw_conversation_t *conversation,
@@ -927,6 +949,11 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
       route->ended = true;
     return true;
   }
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
+      conversation->downstream.id[0] != '\0' &&
+      !conversation->downstream.ended &&
+      !stream_id_matches(id, conversation->downstream.id))
+    conversation->newer_downstream = true;
   if (!event_is_audio_boundary(event)) {
     /* Text and other non-audio downstream events: forward, no state. */
     return true;
@@ -940,19 +967,11 @@ static bool accepts_peer_event(h2_gizclaw_conversation_t *conversation,
        * old one still has queued or playing is stale. Close the media gate
        * first so the mark covers everything the old stream managed to queue;
        * the new BOS reopens it. */
-      h2_gizclaw_conversation_request_t *request = conversation->service_request;
-      if (route->id[0] != '\0' && route->audio_open && request != NULL) {
-        atomic_store_explicit(&request->reply_media_open, false,
-                              memory_order_release);
-        atomic_store_explicit(
-            &request->discard_frames_before,
-            atomic_load_explicit(&request->reply_frames, memory_order_acquire),
-            memory_order_release);
-        atomic_store_explicit(&request->discard_downlink_pending, true,
-                              memory_order_release);
-      }
+      if (route->id[0] != '\0' && route->audio_open)
+        discard_downstream_playback(conversation);
       memset(route, 0, sizeof(*route));
       memcpy(route->id, id, id_len + 1u);
+      conversation->newer_downstream = false;
     }
     if (label != NULL && label[0] != '\0')
       (void)snprintf(route->label, sizeof(route->label), "%s", label);
@@ -1329,8 +1348,15 @@ int h2_gizclaw_conversation_wire_poll_internal(
                H2_GIZCLAW_CONVERSATION_ERROR_STREAM_INTERRUPTED) == 0 &&
         reply_interruptible(conversation,
                             conversation_reply_route(conversation, &event))) {
-      finish_interrupted_reply(conversation,
-                               conversation_reply_route(conversation, &event));
+      if (conversation->newer_downstream) {
+        /* Handoff: the server already started its next stream. Drop what
+         * is left of this one and keep the turn open for the next audio. */
+        conversation->newer_downstream = false;
+        discard_downstream_playback(conversation);
+      } else {
+        finish_interrupted_reply(conversation,
+                                 conversation_reply_route(conversation, &event));
+      }
       out_event->kind = H2_GIZCLAW_CONVERSATION_EVENT_NONE;
       return H2_PAL_OK;
     }
