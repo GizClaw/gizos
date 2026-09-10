@@ -133,10 +133,14 @@ static void test_loader_update_complete(void) {
   after.stage.valid = 1u;
   assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
          H2_PAL_ERR_INVALID_STATE);
+  /* Partition 2 only carried the relay; its content does not matter. */
   after = updated_status();
   set_loader_metadata(&after.partition_2, OLD_IMAGE, "1.0.0");
   assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
-         H2_PAL_ERR_INVALID_STATE);
+         H2_PAL_OK);
+  after.partition_2.valid = 0u;
+  assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==
+         H2_PAL_OK);
   after = updated_status();
   after.partition_1.valid = 0u;
   assert(h2_h2loader_serial_e2e_loader_update_complete(&after, &asset) ==

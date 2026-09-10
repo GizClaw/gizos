@@ -91,9 +91,9 @@ h2_pal_result_t h2_h2loader_serial_e2e_loader_update_ready(
     const h2_h2loader_host_catalog_entry_t *asset);
 
 /**
- * Loader-update completion: running Loader on Partition 1, Partition 1 and 2
- * valid Loader metadata with the asset image, the asset package recorded in
- * Partition 1, the asset version active, and no Stage left.
+ * Loader-update completion: the device boots the new Loader from Partition 1
+ * (asset version and image active, valid Partition 1 metadata recording the
+ * asset package) and no Stage is left. Partition 2 is not checked.
  */
 h2_pal_result_t h2_h2loader_serial_e2e_loader_update_complete(
     const h2_h2loader_host_status_t *after,

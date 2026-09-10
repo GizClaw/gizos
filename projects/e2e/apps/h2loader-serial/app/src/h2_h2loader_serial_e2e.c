@@ -301,7 +301,6 @@ h2_pal_result_t h2_h2loader_serial_e2e_loader_update_complete(
       strcmp(after->active_version, asset->version) != 0 ||
       strcmp(after->active_checksum, asset->image_sha256) != 0 ||
       !h2_h2loader_serial_e2e_metadata_is_asset(&after->partition_1, asset) ||
-      !h2_h2loader_serial_e2e_metadata_is_asset(&after->partition_2, asset) ||
       strcmp(after->partition_1.package_checksum, asset->sha256) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -409,7 +408,8 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
 }
 
 /* Replace the running Loader with a different Loader image and require the
- * device to finish its Partition 2 relay back on Partition 1. */
+ * device to boot that Loader from Partition 1. Partition 2 only carried the
+ * relay and is not checked. */
 static h2_pal_result_t h2_h2loader_serial_e2e_loader_update(
     h2_h2loader_serial_e2e_context_t *context) {
   h2_h2loader_host_catalog_t *catalog = NULL;

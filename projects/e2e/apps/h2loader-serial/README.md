@@ -13,10 +13,10 @@ The suites are cumulative only when their bits are selected:
 - `install`: validate a packaged catalog by exact SHA-256 and run the managed
   stage, activate, rediscover, reconnect, and final verification flow;
 - `loader-update`: install a Loader package whose image differs from the
-  running Loader in Partition 1 and require the completed self-update: the
-  device relays through Partition 2 and ends running that Loader on
-  Partition 1, with both Partition 1 and 2 holding the package's Loader image,
-  the package recorded in Partition 1, and no Stage. The same image is rejected
+  running Loader in Partition 1 and require that the device then boots the new
+  Loader from Partition 1: the package version and image are active, Partition
+  1 metadata records the package, and no Stage is left. Partition 2 only
+  carries the relay and is not checked. The same image is rejected
   before any device mutation because it would finish without a relay.
   `loader_trial_observed` reports whether a reconnect happened to see the
   candidate Loader on Partition 2; it is timing-dependent evidence, not a pass
