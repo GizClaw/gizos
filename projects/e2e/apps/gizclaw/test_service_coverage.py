@@ -30,7 +30,9 @@ class ServiceCoverageTest(unittest.TestCase):
                                 ("create", "cancel", "release"))
                 expected.update("h2_gizclaw_pcm_track_" + name for name in
                                 ("create", "write", "read", "destroy"))
-                if mode not in {0, 16, 50}:
+                # Normal runs, and replies whose text is missing or empty:
+                # text is display only.
+                if mode not in {0, 2, 16, 50}:
                     expected = set()
                 self.assertEqual(observed, expected)
                 self.assertFalse(result["valid"])

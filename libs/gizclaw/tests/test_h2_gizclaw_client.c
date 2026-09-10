@@ -157,7 +157,6 @@ static int test_open_ready(h2_gizclaw_client_t *client, h2_gizclaw_str_t workspa
            (unsigned long long)generation);
   assert(strstr(detail, expected) == detail);
   assert(strstr(detail, "ready=1 committed=0 canceled=0") != NULL);
-  assert(strstr(detail, "pending=0") != NULL);
   return rc;
 }
 
@@ -553,24 +552,9 @@ static h2_pal_result_t test_feed_reply_event(
   return rc;
 }
 
-/* A pending boundary is emitted without reading the wire. */
-static h2_pal_result_t
-test_drain_reply_event(test_event_stream_t *stream,
-                       h2_gizclaw_conversation_t *conv,
-                       h2_gizclaw_conversation_event_t *out) {
-  stream->read_result = GZC_ERR_WOULD_BLOCK;
-  const size_t reads = stream->read_count;
-  const h2_pal_result_t rc =
-      h2_gizclaw_conversation_wire_poll_internal(conv, 0, out);
-  assert(stream->read_count ==
-         reads + (rc == H2_PAL_ERR_WOULD_BLOCK ? 1u : 0u));
-  return rc;
-}
 
-/* Server-side barge-in while the input is still open (realtime): the reply
- * the server cut short ends with REPLY_DONE, and the next reply's BOS, text
- * and EOS are all accepted. Once the input is committed (push-to-talk) the
- * interruption remains a conversation error. */
+/* Audio BOS and input end retry transport backpressure without skipping a
+ * boundary. */
 static void test_audio_bos_backpressure(const h2_gizclaw_config_t *config) {
   h2_gizclaw_client_t *client = NULL;
   assert(h2_gizclaw_client_init(config, &client) == H2_PAL_OK);
@@ -600,95 +584,12 @@ static void test_audio_bos_backpressure(const h2_gizclaw_config_t *config) {
   h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
 }
 
-/* Upstream and downstream are independent: our input's own EOS and its
- * transcript never end a turn, and the downstream audio stream carries an
- * ID of the server's choosing. Translation shows this on the wire: the
- * input closes right after the transcript, the translated audio follows. */
-static int test_input_eos_before_assistant_reply(
+/* Downstream events carry no conversation state. Whatever the server does
+ * with its streams (new IDs, IDs equal to our input, interruptions, errors)
+ * the wire poll only forwards text; the one error is the server refusing our
+ * own input. Downstream audio plays through the Track independently. */
+static int test_downstream_events_carry_no_state(
     const h2_gizclaw_config_t *config) {
-  static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
-  static const int DONE =
-      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
-  static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
-  int fails = 0;
-  h2_gizclaw_client_t *client = NULL;
-  fails += expect(h2_gizclaw_client_init(config, &client) == H2_PAL_OK &&
-                      client != NULL,
-                  "translation test initializes an independent client");
-  if (client == NULL)
-    return fails;
-  test_event_stream_t stream = {
-      .stream = (gzc_event_stream_t *)(uintptr_t)0x90u,
-      .read_result = GZC_ERR_WOULD_BLOCK,
-  };
-  h2_gizclaw_test_set_event_ops(test_event_send, test_event_read,
-                                test_event_close, &stream);
-  h2_gizclaw_test_set_packet_read(test_packet_read, NULL);
-  fails += expect(
-      h2_gizclaw_test_replace_event_stream(client, stream.stream) == NULL,
-      "translation test installs the client Event handle");
-  h2_gizclaw_conversation_t *conv = NULL;
-  fails += expect(test_open_ready(client,
-                                  (h2_gizclaw_str_t){"demo-home", 9u}, 40u,
-                                  1000, &conv) == H2_PAL_OK &&
-                      conv != NULL,
-                  "translation test opens an active conversation");
-  fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(
-                      conv, 5u) == H2_PAL_OK,
-                  "push-to-talk commits the input before the reply");
-  char input[sizeof(last_input_stream)];
-  memcpy(input, last_input_stream, sizeof(input));
-  h2_gizclaw_conversation_event_t out = {0};
-  gzc_peer_event_t event = test_reply_event(BOS, "transcript", input, "", NULL);
-  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                      H2_PAL_OK,
-                  "the transcript BOS is accepted");
-  event = test_audio_event(BOS, "assistant", "translated-1", NULL);
-  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                      H2_PAL_OK,
-                  "the downstream audio BOS is accepted");
-  event = test_reply_event(DONE, "transcript", input, "ni hao", NULL);
-  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                          H2_PAL_OK &&
-                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
-                  "the transcript is delivered");
-  event = test_reply_event(EOS, "demo-home", input, "", NULL);
-  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                          H2_PAL_OK &&
-                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                  "the input stream EOS is consumed");
-  fails += expect(test_drain_reply_event(&stream, conv, &out) ==
-                      H2_PAL_ERR_WOULD_BLOCK,
-                  "the input stream EOS does not finish an open reply");
-  event = test_reply_event(DONE, "assistant", "translated-1-text", "hello",
-                           NULL);
-  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                          H2_PAL_OK &&
-                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
-                  "text on its own stream is delivered without state");
-  fails += expect(test_drain_reply_event(&stream, conv, &out) ==
-                      H2_PAL_ERR_WOULD_BLOCK,
-                  "text done does not finish the turn");
-  event = test_audio_event(EOS, "assistant", "translated-1", NULL);
-  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                      H2_PAL_OK,
-                  "the downstream audio EOS is accepted");
-  fails += expect(test_drain_reply_event(&stream, conv, &out) == H2_PAL_OK &&
-                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE,
-                  "the downstream audio end finishes the turn");
-  h2_gizclaw_conversation_wire_destroy_internal(conv);
-  h2_gizclaw_client_deinit(client);
-  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
-  return fails;
-}
-
-/* One active downstream audio stream, chosen by the server. A BOS with a new
- * ID replaces the active stream and the old ID's stragglers are ignored;
- * stream IDs are never tied to our input and never retired. A server-side
- * interruption (STREAM_INTERRUPTED) only ends that stream: a handoff when
- * the server already started its next stream, a normal REPLY_DONE when it
- * did not. It is never a conversation error. */
-static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
   static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
   static const int DELTA =
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
@@ -696,20 +597,12 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
       gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
   static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
   int fails = 0;
-  const h2_gizclaw_str_t workspace = {.data = "demo-barge", .len = 10u};
-  /* 0: the next audio BOS arrives before the interrupted EOS (device log).
-   * 1: the interrupted EOS arrives before the next BOS.
-   * 2: committed input (push-to-talk): a new audio BOS replaces the stream.
-   * 3: an error other than STREAM_INTERRUPTED stays an error while open.
-   * 4: committed; the next stream's text BOS precedes the interrupted EOS
-   *    (flowcraft): a handoff, the turn waits for the next audio.
-   * 5: committed; an interruption with no next stream is a REPLY_DONE. */
-  for (unsigned mode = 0; mode < 6; ++mode) {
-    const bool committed = mode == 2 || mode == 4 || mode == 5;
+  /* 0: realtime (input open). 1: push-to-talk after the input is sent. */
+  for (unsigned mode = 0; mode < 2u; ++mode) {
     h2_gizclaw_client_t *client = NULL;
     fails += expect(h2_gizclaw_client_init(config, &client) == H2_PAL_OK &&
                         client != NULL,
-                    "barge-in test initializes an independent client");
+                    "downstream test initializes an independent client");
     if (client == NULL)
       return fails;
     test_event_stream_t stream = {
@@ -721,185 +614,83 @@ static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
     h2_gizclaw_test_set_packet_read(test_packet_read, NULL);
     fails += expect(
         h2_gizclaw_test_replace_event_stream(client, stream.stream) == NULL,
-        "barge-in test installs the client Event handle");
+        "downstream test installs the client Event handle");
     h2_gizclaw_conversation_t *conv = NULL;
-    fails +=
-        expect(test_open_ready(
-                   client, workspace, 20u + mode, 1000, &conv) == H2_PAL_OK &&
-                   conv != NULL && stream.send_count == 2u,
-               "barge-in test opens an active conversation");
-    if (committed)
+    fails += expect(test_open_ready(client, (h2_gizclaw_str_t){"demo-home", 9u},
+                                    20u + mode, 1000, &conv) == H2_PAL_OK &&
+                        conv != NULL,
+                    "downstream test opens an active conversation");
+    if (mode == 1u)
       fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(
-                          conv, 5u) == H2_PAL_OK &&
-                          stream.send_count == 4u,
-                      "push-to-talk commits the input before the reply");
-    if (mode == 2) {
-      gzc_peer_event_t late = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
-      late.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
-      snprintf(late.payload.audio_input_ready.stream_id, sizeof(late.payload.audio_input_ready.stream_id), "%s", last_input_stream);
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conv, &late));
-      h2_gizclaw_conversation_enqueue_peer_event_internal(conv, &late);
-      assert(!h2_gizclaw_conversation_wire_input_ready_internal(conv));
-    }
-    /* Ends of audio streams we never played carry nothing to act on. */
-    gzc_peer_event_t orphan =
-        test_audio_event(EOS, "assistant", "previous-reply", NULL);
-    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
-                        conv, &orphan), "unknown audio EOS is ignored");
-    orphan = test_audio_event(EOS, "assistant", "previous-reply",
-                              "STREAM_INTERRUPTED");
-    fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
-                        conv, &orphan), "unknown audio interruption is ignored");
-    /* Text is display only and never gated on stream state. */
-    orphan = test_reply_event(DONE, "assistant", "previous-reply", "old", NULL);
-    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(
-                        conv, &orphan), "text for any stream is forwarded");
+                          conv, 5u) == H2_PAL_OK,
+                      "push-to-talk sends its input end");
+    char input[sizeof(last_input_stream)];
+    memcpy(input, last_input_stream, sizeof(input));
     h2_gizclaw_conversation_event_t out = {0};
-    gzc_peer_event_t event = test_audio_event(BOS, "assistant", "reply-1", NULL);
-    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                            H2_PAL_OK &&
-                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                    "first audio BOS is accepted");
-    event = test_reply_event(DELTA, "assistant", "reply-1-text", "hel", NULL);
+    /* Boundaries of any stream, however they interleave, are no events. */
+    const struct {
+      int type;
+      const char *label;
+      const char *id;
+      bool audio;
+      const char *error;
+    } silent[] = {
+        {BOS, "transcript", input, false, NULL},
+        {BOS, "assistant", "reply-1", false, NULL},
+        {BOS, "assistant", "reply-1", true, NULL},
+        {BOS, "assistant", "reply-2", false, NULL},
+        {EOS, "assistant", "reply-1", true, "STREAM_INTERRUPTED"},
+        {EOS, "assistant", "reply-3", true, "MODEL_FAILED"},
+        {BOS, "assistant", input, true, NULL},
+        {EOS, "assistant", input, true, "STREAM_INTERRUPTED"},
+        {EOS, "transcript", input, false, "ASR_FAILED"},
+        {EOS, "demo-home", input, false, NULL},
+        {EOS, "assistant", "reply-2", true, NULL},
+    };
+    for (size_t i = 0u; i < sizeof(silent) / sizeof(silent[0]); ++i) {
+      gzc_peer_event_t event =
+          silent[i].audio
+              ? test_audio_event(silent[i].type, silent[i].label, silent[i].id,
+                                 silent[i].error)
+              : test_reply_event(silent[i].type, silent[i].label, silent[i].id,
+                                 "", silent[i].error);
+      fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(
+                          conv, &event),
+                      "a downstream boundary is consumed");
+      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                              H2_PAL_OK &&
+                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
+                      "a downstream boundary produces no event");
+    }
+    gzc_peer_event_t event =
+        test_reply_event(DELTA, "assistant", "reply-2", "hel", NULL);
     fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
                             H2_PAL_OK &&
                         out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA &&
                         out.text_len == 3u,
-                    "text delta is delivered");
-    event = test_reply_event(DONE, "assistant", "reply-1-text", "hello", NULL);
+                    "text delta is forwarded");
+    event = test_reply_event(DONE, "transcript", input, "ni hao", NULL);
     fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
                             H2_PAL_OK &&
                         out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE &&
-                        out.text_len == 5u,
-                    "text done is delivered without a boundary");
-    fails += expect(test_drain_reply_event(&stream, conv, &out) ==
-                        H2_PAL_ERR_WOULD_BLOCK,
-                    "an open audio stream has no pending boundary");
-    if (!committed) {
-      event = test_reply_event(BOS, "transcript", "heard-2", "", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "the next user turn's transcript BOS is accepted");
-      event = test_reply_event(DONE, "transcript", "heard-2", "again", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
-                      "the next user turn's transcript is delivered");
-    }
-    const char *code = mode == 3 ? "MODEL_FAILED" : "STREAM_INTERRUPTED";
-    if (mode == 0 || mode == 2) {
-      event = test_audio_event(BOS, "assistant", "reply-2", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "a new audio BOS replaces the open stream");
-      fails += expect(test_drain_reply_event(&stream, conv, &out) ==
-                          H2_PAL_ERR_WOULD_BLOCK,
-                      "replacing a stream stages no boundary");
-      event = test_audio_event(EOS, "assistant", "reply-1", code);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                          H2_PAL_ERR_WOULD_BLOCK,
-                      "the late EOS of the replaced stream is ignored");
-    } else if (mode == 4) {
-      event = test_reply_event(BOS, "assistant", "reply-2", "", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "the next stream's text BOS is accepted");
-      event = test_audio_event(EOS, "assistant", "reply-1", code);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "the interrupted EOS of the handed-off stream is consumed");
-      fails += expect(test_drain_reply_event(&stream, conv, &out) ==
-                          H2_PAL_ERR_WOULD_BLOCK,
-                      "a handoff interruption stages no boundary");
-      event = test_audio_event(BOS, "assistant", "reply-2", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "the next stream's audio BOS follows the handoff");
-    } else {
-      event = test_audio_event(EOS, "assistant", "reply-1", code);
-      const h2_pal_result_t rc =
-          test_feed_reply_event(&stream, conv, &event, &out);
-      fails += expect(rc == H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "the interrupted EOS is accepted on the open stream");
-      fails += expect(test_drain_reply_event(&stream, conv, &out) == H2_PAL_OK,
-                      "the interrupted EOS stages a boundary");
-      if (mode == 1 || mode == 5) {
-        fails += expect(
-            out.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE &&
-                out.generation == 20u + mode &&
-                h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-                    conv),
-            "an interrupted stream is a REPLY_DONE, never an error");
-      } else {
-        fails += expect(
-            out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR &&
-                out.error_code != NULL && strcmp(out.error_code, code) == 0 &&
-                !out.retryable &&
-                !h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-                    conv),
-            "another EOS error while input is open stays an error");
-      }
-      if (mode == 1) {
-        event = test_audio_event(BOS, "assistant", "reply-2", NULL);
-        fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                                H2_PAL_OK &&
-                            out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                        "the next audio BOS follows the interrupted EOS");
-      }
-    }
-    if (mode != 3 && mode != 5) {
-      event = test_reply_event(DELTA, "assistant", "reply-2-text", "wor", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA,
-                      "the next stream's text delta is delivered");
-      event = test_audio_event(EOS, "assistant", "reply-2", NULL);
-      fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
-                              H2_PAL_OK &&
-                          out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
-                      "the next stream's EOS is accepted");
-      fails += expect(
-          test_drain_reply_event(&stream, conv, &out) == H2_PAL_OK &&
-              out.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE &&
-              !h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-                  conv),
-          "the next stream ends with a normal REPLY_DONE");
-      event = test_audio_event(EOS, "assistant", "reply-2", NULL);
-      fails += expect(!h2_gizclaw_conversation_accepts_peer_event_internal(
-                          conv, &event), "a duplicate EOS is ignored");
-    }
-    h2_gizclaw_conversation_wire_destroy_internal(conv);
-    conv = NULL;
-    fails += expect(test_open_ready(client, workspace, 30u + mode, 1000,
-                                    &conv) == H2_PAL_OK,
-                    "next input reuses the same connected client");
-    /* Stream IDs are the server's; an old ID reused later is a new stream. */
-    event = test_audio_event(BOS, "assistant", "reply-2", NULL);
-    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
-                    "a reused audio ID starts a new stream after READY");
-    fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(conv, 9u) == H2_PAL_OK,
-                    "next input commits");
-    event = test_audio_event(EOS, "assistant", "reply-2", NULL);
-    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
-                    "that stream's EOS is accepted after commit");
-    event = test_audio_event(BOS, "assistant", "fresh-reply", NULL);
-    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
-                    "a fresh audio stream is accepted");
-    event = test_reply_event(DONE, "assistant", "fresh-reply", "new", NULL);
-    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
-                    "fresh text completion is accepted");
-    event = test_audio_event(EOS, "assistant", "fresh-reply", NULL);
-    fails += expect(h2_gizclaw_conversation_accepts_peer_event_internal(conv, &event),
-                    "fresh stream EOS is accepted");
+                        out.text_len == 6u,
+                    "text done is forwarded");
+    /* The server refusing our own input is the one error. */
+    event = test_reply_event(EOS, "", input, "", "INPUT_DENIED");
+    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                            H2_PAL_OK &&
+                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR &&
+                        out.error_code != NULL &&
+                        strcmp(out.error_code, "INPUT_DENIED") == 0,
+                    "a refusal of our input is an error");
+    event = test_reply_event(EOS, "demo-home", input, "", "INPUT_DENIED");
+    fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                            H2_PAL_OK &&
+                        out.kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR,
+                    "a refusal echoing our label is an error");
     h2_gizclaw_conversation_wire_destroy_internal(conv);
     fails += expect(h2_gizclaw_client_close(client) == H2_PAL_OK,
-                    "barge-in test closes the client");
+                    "downstream test closes the client");
     h2_gizclaw_client_deinit(client);
     h2_gizclaw_test_set_packet_read(NULL, NULL);
     h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
@@ -1811,8 +1602,7 @@ int main(void) {
   fails += test_client_event_backpressure(&config);
   fails += test_event_failures_poison_client(client, &config);
   test_audio_bos_backpressure(&config);
-  fails += test_conversation_barge_in(&config);
-  fails += test_input_eos_before_assistant_reply(&config);
+  fails += test_downstream_events_carry_no_state(&config);
   h2_gizclaw_client_deinit(client);
   fails += expect(h2_gizclaw_client_connect(NULL) == H2_PAL_ERR_INVALID_ARG,
                   "connect rejects null client");

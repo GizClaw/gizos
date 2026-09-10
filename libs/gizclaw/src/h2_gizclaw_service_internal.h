@@ -10,6 +10,8 @@
 
 typedef struct h2_gizclaw_conversation_request
     h2_gizclaw_conversation_request_t;
+typedef struct h2_gizclaw_conversation_downlink
+    h2_gizclaw_conversation_downlink_t;
 struct h2_gizclaw_speech_context;
 struct h2_gizclaw_managed_request;
 #include <stdbool.h>
@@ -257,6 +259,10 @@ struct h2_gizclaw_service {
   h2_gizclaw_stream_ring_t stream_rings[H2_GIZCLAW_STREAM_LANE_COUNT];
   struct h2_gizclaw_audio_play *audio_play; /* Protected by mutex. */
   _Atomic(h2_gizclaw_conversation_request_t *) media_request;
+  /* Downstream audio of the configured Conversation route; mutex protects
+   * publication and downlink_refs counts callers inside it. */
+  h2_gizclaw_conversation_downlink_t *conversation_downlink;
+  size_t downlink_refs;
   _Atomic(struct h2_gizclaw_speech_context *) speech_request;
   _Atomic(h2_gizclaw_track_t *) pcm_track;
   /* Protected by mutex. Unset closes admission before waiting for callbacks. */
@@ -340,6 +346,9 @@ void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t *service);
 void h2_gizclaw_conversation_uplink_step_internal(
     h2_gizclaw_service_t *service);
 void h2_gizclaw_conversation_downlink_step_internal(
+    h2_gizclaw_service_t *service);
+/* Deinit only: workers and media callbacks have stopped. */
+void h2_gizclaw_conversation_downlink_destroy_internal(
     h2_gizclaw_service_t *service);
 void h2_gizclaw_audio_play_downlink_step_internal(
     h2_gizclaw_service_t *service);

@@ -1424,6 +1424,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   if (!service->stopped || service->dispatching ||
       service->active_count != 0u || service->caller_reference_count != 0u ||
       service->request_reference_count != 0u || service->pcm_track_refs != 0u ||
+      service->downlink_refs != 0u ||
       service->pcm_track_unsetting || service->queued_event_count != 0u ||
       service->dispatch_item_count != 0u ||
       (service->terminal_pending && !service->terminal_dispatched)) {
@@ -1433,6 +1434,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   h2_gizclaw_track_t *track = atomic_exchange(&service->pcm_track, NULL);
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
+  h2_gizclaw_conversation_downlink_destroy_internal(service);
   h2_gizclaw_device_destroy_internal(service->device);
   h2_pal_queue_destroy(service->config.queue, service->dispatch_queue);
   h2_pal_queue_destroy(service->config.queue, service->request_queue);
