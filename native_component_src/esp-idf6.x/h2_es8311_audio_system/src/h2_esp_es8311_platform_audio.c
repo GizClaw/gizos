@@ -178,12 +178,14 @@ static esp_err_t es8311_update_reg(h2_esp_es8311_audio_system_t *state, uint8_t 
     return es8311_write_reg(state, reg, regv);
 }
 
-static uint8_t es8311_volume_from_percent_with_default(uint32_t percent, uint8_t codec_volume_default) {
-    const uint32_t scaled = (percent * (uint32_t)codec_volume_default) / 100u;
-    if (scaled > 0xffu) {
-        return 0xffu;
+static esp_err_t apply_speaker_volume(h2_esp_es8311_audio_system_t *state, uint32_t percent) {
+    esp_err_t err = es8311_write_reg(state, ES8311_REG_DAC_32,
+        h2_es8311_volume_from_percent(&state->config.speaker_volume,
+                                     state->config.codec_volume_default, percent));
+    if (err == ESP_OK && state->config.speaker_volume.point_count != 0u) {
+        err = es8311_update_reg(state, ES8311_REG_DAC_31, 0x60, percent == 0u ? 0x60 : 0x00);
     }
-    return (uint8_t)scaled;
+    return err;
 }
 
 static esp_err_t es8311_set_sample_rate_16k(h2_esp_es8311_audio_system_t *state) {
@@ -414,11 +416,9 @@ static int es8311_audio_init_codec(h2_esp_es8311_audio_system_t *state) {
         err = es8311_start(state);
     }
     if (err == ESP_OK) {
-        err = es8311_write_reg(state, ES8311_REG_DAC_32, es8311_volume_from_percent_with_default(
-            state->speaker_volume_percent,
-            state->config.codec_volume_default));
+        err = apply_speaker_volume(state, state->speaker_volume_percent);
     }
-    if (err == ESP_OK) {
+    if (err == ESP_OK && state->config.speaker_volume.point_count == 0u) {
         err = es8311_update_reg(state, ES8311_REG_DAC_31, 0x60, 0x00);
     }
     if (err != ESP_OK) {
@@ -1063,13 +1063,20 @@ static int es8311_audio_get_speaker_volume_percent(void *user, uint32_t *out_per
 
 static int es8311_audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
-    state->speaker_volume_percent = percent;
-    if (state->codec == NULL) {
-        return H2_AUDIO_OK;
+    if (state->config.speaker_volume.point_count != 0u && percent > 100u) {
+        return H2_AUDIO_ERR_INVALID_ARG;
     }
-    return map_esp_err(es8311_write_reg(state, ES8311_REG_DAC_32, es8311_volume_from_percent_with_default(
-        percent,
-        state->config.codec_volume_default)));
+    if (state->config.speaker_volume.point_count == 0u) {
+        state->speaker_volume_percent = percent;
+    }
+    if (state->codec != NULL) {
+        int rc = map_esp_err(apply_speaker_volume(state, percent));
+        if (rc != H2_AUDIO_OK) {
+            return rc;
+        }
+    }
+    state->speaker_volume_percent = percent;
+    return H2_AUDIO_OK;
 }
 
 h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *system) {

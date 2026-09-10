@@ -36,7 +36,6 @@ firmware_native_component(
             "tests/**",
         ],
     ),
-    component_directory = "boards/amoled/esp32s3",
     component_name = "h2_esp_board",
     data = [
         "CMakeLists.txt",

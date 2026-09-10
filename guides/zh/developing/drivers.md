@@ -75,3 +75,13 @@ Consumer 集成需要同时完成：
 - PPP adapter 在 SIM invalidation 时撤销旧 IP/DNS、取消旧 generation 回调并异步清理 netif；所有拨号和停止经过 provider 的 PPP 入口，不能绕过活动保持。
 - H106 根据 Wi-Fi 优先和用户期望设置策略，拔卡不复用“用户关闭 4G”的持久化动作；重新插卡按产品期望恢复。
 - 实机核验空闲电流、来电 RI/URC、主控深睡唤醒、DTR 时序、CMUX/PPP、GNSS 与反复插拔。Host mock 和并发测试不能替代这些硬件验收。
+
+
+## ES8311 音量映射
+
+`audio/es8311` 拥有与 SDK 无关的 ES8311 DAC 音量控制点校验和整数插值。
+它只认识 codec 寄存器增益范围，不拥有 I2C、静音寄存器写入或系统生命周期。
+BSP 选择最大增益和曲线，ESP-IDF audio system 负责硬件应用与错误传递；
+固件入口通过 `firmware_lib_component` 链接该 library。
+配置、兼容性、静音语义与接入示例见
+[ES8311 板级音量映射](./components/esp_idf6_x#es8311-板级音量映射)。
