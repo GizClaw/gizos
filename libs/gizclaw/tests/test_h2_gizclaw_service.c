@@ -7973,11 +7973,16 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
     assert(h2_pal_mutex_unlock(capture->service->config.sync,
                               capture->service->audio_mutex) == H2_PAL_OK);
   }
-  if (strstr(message, "stage=terminal_staged") != NULL ||
-      strstr(message, "stage=terminal_dispatch") != NULL ||
-      strstr(message, "event=peer_read") != NULL ||
-      (strstr(message, "stage=hook_dispatched") != NULL &&
-       strstr(message, "rc=0 ") != NULL))
+  /* A reply event dropped by an active conversation is surfaced as WARN. */
+  const bool dropped_reply = strstr(message, "event=peer_read") != NULL &&
+                             strstr(message, "active=1 accepted=0") != NULL;
+  if (dropped_reply)
+    assert(level == H2_PAL_LOG_WARN);
+  else if (strstr(message, "stage=terminal_staged") != NULL ||
+           strstr(message, "stage=terminal_dispatch") != NULL ||
+           strstr(message, "event=peer_read") != NULL ||
+           (strstr(message, "stage=hook_dispatched") != NULL &&
+            strstr(message, "rc=0 ") != NULL))
     assert(level == H2_PAL_LOG_DEBUG);
   if (strstr(message, "stage=completed") != NULL &&
       strstr(message, "rc=-10 detail=1") != NULL) {

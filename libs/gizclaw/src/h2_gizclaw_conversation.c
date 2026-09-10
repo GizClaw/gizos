@@ -1158,6 +1158,18 @@ int h2_gizclaw_conversation_wire_finish_input_internal(
   return rc;
 }
 
+/* The input stream's own end can reach the device before the assistant reply
+ * it produced: translation finishes its transcript, closes the input stream
+ * and only then streams the translated reply. While an assistant reply that
+ * has begun is still open, only that reply's end finishes the turn. */
+static bool assistant_reply_open_elsewhere(
+    const h2_gizclaw_conversation_t *conversation,
+    const conversation_reply_route_t *route) {
+  return route != &conversation->assistant &&
+         conversation->assistant.id[0] != '\0' &&
+         !conversation->assistant.ended;
+}
+
 static void copy_text(char *out, size_t capacity, const char *text,
                       size_t *out_len) {
   size_t len = 0u;
@@ -1223,7 +1235,9 @@ int h2_gizclaw_conversation_wire_poll_internal(
     out_event->text = conversation->text;
     out_event->text_len = text_len;
     if (conversation_reply_route(conversation, &event)->audio_ended &&
-        strcmp(event.payload.text_done.label, "transcript") != 0) {
+        strcmp(event.payload.text_done.label, "transcript") != 0 &&
+        !assistant_reply_open_elsewhere(
+            conversation, conversation_reply_route(conversation, &event))) {
       conversation->terminal_pending = true;
       conversation->reply_interrupted = false;
     }
@@ -1237,6 +1251,11 @@ int h2_gizclaw_conversation_wire_poll_internal(
     /* Audio and text may finish in either order on the same assistant route. */
     if (!event.payload.eos.has_error &&
         conversation_reply_route(conversation, &event)->text_open)
+      return H2_PAL_OK;
+    /* The input stream ended before the assistant reply finished streaming. */
+    if (!event.payload.eos.has_error &&
+        assistant_reply_open_elsewhere(
+            conversation, conversation_reply_route(conversation, &event)))
       return H2_PAL_OK;
     if (event.payload.eos.has_error &&
         strcmp(event.payload.eos.error.code,

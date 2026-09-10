@@ -139,7 +139,7 @@ H106 首页的 `record` component action 按本页边界接入。Tiga 的 ADC re
 - 同一 GizClaw connection generation 和 Workspace 的连续 conversation 不重复 activate；连接重建或 Workspace 切换后重新确认一次。
 - 输入 PCM 由 App-owned Mic Task 写入 GizClaw PCM ring，由 GizClaw uplink Task 每 20 ms 切片、编码并通过 WebRTC audio RTP 上行；ring 满时返回 `WOULD_BLOCK`，App 丢弃当前 realtime chunk 并记录 overrun，不等待或改写 payload。
 - Speech Transcribe/Extract 按 `content_type` 接受不超过 1280 bytes 的 audio chunk；测试覆盖 timeout 透传、queue 满背压、audio-before-EOS FIFO，以及 commit/terminal 后拒绝写入。
-- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Agent workflow 终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。Friend / Friend Group 的 SFU Workspace 不给发言者任何 response route，turn 只能由本地 cancel 结束。
+- 当前已接受 response route 的服务端 EOS 与本地 playback drain 都完成后才进入 idle；Agent workflow 终止于 assistant route，不能用上行 input stream ID 过滤 response-local terminal。assistant 回复已收到 BOS 但尚未结束时，其它 route（包括上行 input stream 自身）的成功 EOS 或 TEXT_DONE 不结束本轮，例如翻译先完成 transcript 并关闭上行流、之后才推送译文；只有 assistant 回复结束才产生 `REPLY_DONE`。被当前 Conversation 丢弃的下行事件以 WARN 记录 stream ID、label 与 route，已接收事件保持 DEBUG。Friend / Friend Group 的 SFU Workspace 不给发言者任何 response route，turn 只能由本地 cancel 结束。
 - Cancel、disconnect 和 Audio failure 都关闭本轮 mic/track，不泄漏 task、queue 或 buffer。
 - 后台 Audio callback 不直接更新 LVGL；GizClaw callback 由 App main loop dispatch。
 - H2Peer host performance gate 在三条并发 request DataChannel（其中一条执行双向各 1 MiB 传输）以及长期 Packet/Event traffic 期间发送 50 个 20 ms Opus RTP frame，要求 frame 完整、有序、无 submit deadline miss，且相邻到达间隔不超过 40 ms；该 gate 验证 transport coexistence，不替代真实设备声学验收。

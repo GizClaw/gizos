@@ -588,6 +588,83 @@ static void test_audio_bos_backpressure(const h2_gizclaw_config_t *config) {
   h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
 }
 
+/* Translation (device log): the input stream's own EOS arrives after the
+ * transcript but before the translated assistant reply has finished. That
+ * EOS must not end the turn; only the assistant reply's end does. */
+static int test_input_eos_before_assistant_reply(
+    const h2_gizclaw_config_t *config) {
+  static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+  static const int DONE =
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
+  static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+  int fails = 0;
+  h2_gizclaw_client_t *client = NULL;
+  fails += expect(h2_gizclaw_client_init(config, &client) == H2_PAL_OK &&
+                      client != NULL,
+                  "translation test initializes an independent client");
+  if (client == NULL)
+    return fails;
+  test_event_stream_t stream = {
+      .stream = (gzc_event_stream_t *)(uintptr_t)0x90u,
+      .read_result = GZC_ERR_WOULD_BLOCK,
+  };
+  h2_gizclaw_test_set_event_ops(test_event_send, test_event_read,
+                                test_event_close, &stream);
+  h2_gizclaw_test_set_packet_read(test_packet_read, NULL);
+  fails += expect(
+      h2_gizclaw_test_replace_event_stream(client, stream.stream) == NULL,
+      "translation test installs the client Event handle");
+  h2_gizclaw_conversation_t *conv = NULL;
+  fails += expect(test_open_ready(client,
+                                  (h2_gizclaw_str_t){"demo-home", 9u}, 40u,
+                                  1000, &conv) == H2_PAL_OK &&
+                      conv != NULL,
+                  "translation test opens an active conversation");
+  fails += expect(h2_gizclaw_conversation_wire_finish_input_internal(
+                      conv, 5u) == H2_PAL_OK,
+                  "push-to-talk commits the input before the reply");
+  char input[sizeof(last_input_stream)];
+  memcpy(input, last_input_stream, sizeof(input));
+  h2_gizclaw_conversation_event_t out = {0};
+  gzc_peer_event_t event = test_reply_event(BOS, "transcript", input, "", NULL);
+  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                      H2_PAL_OK,
+                  "the transcript BOS is accepted");
+  event = test_reply_event(BOS, "assistant", "translated-1", "", NULL);
+  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                      H2_PAL_OK,
+                  "the assistant reply BOS is accepted");
+  event = test_reply_event(DONE, "transcript", input, "ni hao", NULL);
+  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                          H2_PAL_OK &&
+                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
+                  "the transcript is delivered");
+  event = test_reply_event(EOS, "demo-home", input, "", NULL);
+  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                          H2_PAL_OK &&
+                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_NONE,
+                  "the input stream EOS is consumed");
+  fails += expect(test_drain_reply_event(&stream, conv, &out) ==
+                      H2_PAL_ERR_WOULD_BLOCK,
+                  "the input stream EOS does not finish an open reply");
+  event = test_reply_event(DONE, "assistant", "translated-1", "hello", NULL);
+  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                          H2_PAL_OK &&
+                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
+                  "the translated text is delivered");
+  event = test_reply_event(EOS, "assistant", "translated-1", "", NULL);
+  fails += expect(test_feed_reply_event(&stream, conv, &event, &out) ==
+                      H2_PAL_OK,
+                  "the assistant reply EOS is accepted");
+  fails += expect(test_drain_reply_event(&stream, conv, &out) == H2_PAL_OK &&
+                      out.kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE,
+                  "the assistant reply end finishes the turn");
+  h2_gizclaw_conversation_wire_destroy_internal(conv);
+  h2_gizclaw_client_deinit(client);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+  return fails;
+}
+
 static int test_conversation_barge_in(const h2_gizclaw_config_t *config) {
   static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
   static const int DELTA =
@@ -1718,6 +1795,7 @@ int main(void) {
   fails += test_event_failures_poison_client(client, &config);
   test_audio_bos_backpressure(&config);
   fails += test_conversation_barge_in(&config);
+  fails += test_input_eos_before_assistant_reply(&config);
   h2_gizclaw_client_deinit(client);
   fails += expect(h2_gizclaw_client_connect(NULL) == H2_PAL_ERR_INVALID_ARG,
                   "connect rejects null client");
