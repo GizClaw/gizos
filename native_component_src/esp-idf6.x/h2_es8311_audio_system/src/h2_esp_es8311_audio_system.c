@@ -66,7 +66,7 @@ int h2_esp_es8311_audio_system_init(
         config->track_queue_frames == 0u ||
         config->mic_queue_frames == 0u ||
         config->mclk_multiple == 0u ||
-        config->codec_volume_default == 0u ||
+        !h2_es8311_volume_is_valid(&config->speaker_volume, config->codec_volume_default) ||
         config->mic_task_stack_size == 0u ||
         config->speaker_task_stack_size == 0u ||
         (config->aec_nlp_level != H2_ESP_ES8311_AEC_NLP_NORMAL &&

@@ -2,6 +2,7 @@
 #define H2_ESP_ES8311_AUDIO_SYSTEM_H
 
 #include "h2_audio_mixer.h"
+#include "h2_es8311_volume.h"
 #include "h2/pal/hal/h2_pal_audio.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_queue.h"
@@ -62,6 +63,7 @@ typedef struct h2_esp_es8311_audio_system_config {
     int pa_gpio;
     void *pa_user;
     h2_esp_es8311_audio_pa_set_fn pa_set;
+    /** DAC 0x32 at 100%, 1..255; board maximum gain (0xBF = 0 dB). */
     uint8_t codec_volume_default;
     uint8_t adc_digital_volume;
     uint32_t mic_gain_db;
@@ -79,6 +81,8 @@ typedef struct h2_esp_es8311_audio_system_config {
     const h2_pal_sync_api_t *sync_api;
     int enable_aec;
     h2_esp_es8311_aec_nlp_level_t aec_nlp_level;
+    /** Optional board curve; zero initialization preserves legacy mapping. */
+    h2_es8311_volume_config_t speaker_volume;
 } h2_esp_es8311_audio_system_config_t;
 
 typedef struct h2_esp_es8311_sr_state {

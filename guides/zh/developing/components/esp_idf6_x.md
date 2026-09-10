@@ -178,3 +178,71 @@ ESP-IDF Component 不拥有：
 - H2Loader install policy 或 app 业务主循环。
 
 `connect_and_save` 在 provider admission 内调用 `libs/wifi_sta`，共享原始 STA、Settings 与 Time；最终 firmware entry 的 `firmware_lib_component` 显式链接 `//libs/wifi_sta`。保存失败保留原始错误，普通 connect 的 timeout 不选择保存策略。
+
+
+## ES8311 板级音量映射
+
+`h2_es8311_audio_system` 与 `h2_es8311_es7210_audio_system` 的配置都提供
+`speaker_volume`，由 BSP 选择曲线。两条路径依赖同一个 `h2_es8311_volume`
+原生组件，校验及整数插值只实现一次；不依赖 board 名称，也不改变麦克风增益。
+公共 contract 位于该组件的 `include/h2_es8311_volume.h`。
+
+`codec_volume_default` 仍是 100% 的 DAC 输出寄存器上限，范围为 1..255。
+[ES8311 数据手册第 25 页](https://files.waveshare.com/wiki/common/ES8311.DS.pdf)
+定义 `0x32` 每步为 0.5 dB、`0xBF` 为 0 dB、`0xFF` 为 +32 dB。
+该上限描述 DAC 数字增益，不包含 PA 增益或扬声器声压。
+
+`speaker_volume.point_count = 0`（包括省略字段的零初始化）保留原来的
+`floor(percent * codec_volume_default / 100)`，有效输入 0..100 的所有结果不变。
+新增字段位于配置结构末尾；已有源码初始化方式可继续使用，但结构布局发生变化，
+组件和 BSP 必须一起重新编译，不承诺二进制 ABI 兼容。
+
+启用时提供 2..8 个控制点：首点百分比必须为 1，末点必须为 100 且衰减为 0；
+百分比严格递增，衰减非递增。`attenuation_half_db` 是相对最大增益的衰减，
+单位为 0.5 dB，必须小于 `codec_volume_default`，确保非零百分比不会落入寄存器零值。
+相邻点按百分比线性插值 DAC 增益，取整向较低增益方向；不会超出板级上限。
+未使用的点忽略。配置内嵌数组按值复制，初始化后调用方可以释放或改写原配置；
+不得在使用中直接修改 system 保存的配置。非法曲线在初始化获取资源前返回
+`H2_AUDIO_ERR_INVALID_ARG`，不会静默退回旧曲线。
+
+以下字段片段可以放入任一种音频系统的配置初始化器，由 Firmwares 私有 BSP
+自行采用和调校。此例仅说明接入方式，不代表任何板子的声学验收结果：
+
+```c
+.codec_volume_default = 0xB0,
+.speaker_volume = {
+    .point_count = 5,
+    .points = {
+        { .percent = 1,   .attenuation_half_db = 120 },
+        { .percent = 25,  .attenuation_half_db = 36 },
+        { .percent = 50,  .attenuation_half_db = 12 },
+        { .percent = 75,  .attenuation_half_db = 5 },
+        { .percent = 100, .attenuation_half_db = 0 },
+    },
+},
+```
+
+此例在 50% 输出 `0xA4`（-13.5 dB），100% 仍是 `0xB0`（-7.5 dB）；
+旧映射在 50% 为 `0x58`（-51.5 dB）。同一曲线配 `0xBF` 上限时，50% 为
+`0xB3`（-6 dB）。BSP 可以独立更换控制点和最大增益，不需要修改驱动。
+
+启用曲线时，0% 写 `0x32=0` 并设置 `0x31` 的 DAC 静音位 `0x60`；
+非零音量解除这些静音位，保留寄存器其他位。初始化/prepare 使用保存的百分比，
+因此 prepare 前设置 0% 也保持静音。未启用曲线时保留旧的静音行为：
+0% 只写最小 DAC 增益，不新增运行时静音位写入。启用曲线时百分比超过 100 返回参数错误；
+写寄存器失败向上传递错误，保存的百分比不更新，调用方可重试。
+未启用时连越界输入的原有 uint32 乘法及饱和处理、先保存请求百分比再写硬件的
+顺序也保持不变；调用方应始终传入 0..100。
+I2C 多次写入不是原子事务，失败时硬件可能已应用部分写入。
+
+Host 回归入口：
+
+```sh
+bazel test //native_component_src/esp-idf6.x/h2_es8311_volume:volume_test \
+  //native_component_src/esp-idf6.x/h2_es8311_audio_system:config_test \
+  //native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system:config_test
+```
+
+测试覆盖全部 255 个旧上限在 0..100 的兼容输出、配置复制、不同板级上限、
+中段插值、单调性及非法控制点。板级接入后仍需以真实扬声器确认 0%、低音量、
+50%、100%、静音恢复及高幅度 PCM 的失真，并检查 AEC reference 采样是否需要调校。

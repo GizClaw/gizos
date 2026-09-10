@@ -149,9 +149,14 @@ static esp_err_t update_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t ma
     return write_reg(dev, reg, regv);
 }
 
-static uint8_t volume_from_percent(uint32_t percent, uint8_t max_volume) {
-    uint32_t scaled = (percent * (uint32_t)max_volume) / 100u;
-    return scaled > 0xffu ? 0xffu : (uint8_t)scaled;
+static esp_err_t apply_speaker_volume(h2_esp_es8311_es7210_audio_system_t *state, uint32_t percent) {
+    esp_err_t err = write_reg(state->es8311, ES8311_REG_DAC_32,
+        h2_es8311_volume_from_percent(&state->config.speaker_volume,
+                                     state->config.codec_volume_default, percent));
+    if (err == ESP_OK && state->config.speaker_volume.point_count != 0u) {
+        err = update_reg(state->es8311, ES8311_REG_DAC_31, 0x60, percent == 0u ? 0x60 : 0x00);
+    }
+    return err;
 }
 
 static int init_pa(h2_esp_es8311_es7210_audio_system_t *state) {
@@ -261,8 +266,10 @@ static esp_err_t init_es8311(h2_esp_es8311_es7210_audio_system_t *state) {
     ESP_RETURN_ON_ERROR(write_reg(state->es8311, ES8311_REG_SYSTEM_14, 0x1a), TAG, "es8311 sys14");
     ESP_RETURN_ON_ERROR(write_reg(state->es8311, ES8311_REG_DAC_37, 0x08), TAG, "es8311 dac37");
     ESP_RETURN_ON_ERROR(write_reg(state->es8311, ES8311_REG_GP_45, 0x00), TAG, "es8311 gp45");
-    ESP_RETURN_ON_ERROR(write_reg(state->es8311, ES8311_REG_DAC_32, volume_from_percent(state->speaker_volume_percent, state->config.codec_volume_default)), TAG, "es8311 vol");
-    ESP_RETURN_ON_ERROR(update_reg(state->es8311, ES8311_REG_DAC_31, 0x60, 0x00), TAG, "es8311 unmute");
+    ESP_RETURN_ON_ERROR(apply_speaker_volume(state, state->speaker_volume_percent), TAG, "es8311 vol");
+    if (state->config.speaker_volume.point_count == 0u) {
+        ESP_RETURN_ON_ERROR(update_reg(state->es8311, ES8311_REG_DAC_31, 0x60, 0x00), TAG, "es8311 unmute");
+    }
 
     uint8_t id1 = 0;
     uint8_t id2 = 0;
@@ -1014,11 +1021,20 @@ static int audio_get_speaker_volume_percent(void *user, uint32_t *out_percent) {
 
 static int audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     h2_esp_es8311_es7210_audio_system_t *state = (h2_esp_es8311_es7210_audio_system_t *)user;
-    state->speaker_volume_percent = percent;
-    if (state->es8311 == NULL) {
-        return H2_AUDIO_OK;
+    if (state->config.speaker_volume.point_count != 0u && percent > 100u) {
+        return H2_AUDIO_ERR_INVALID_ARG;
     }
-    return map_esp_err(write_reg(state->es8311, ES8311_REG_DAC_32, volume_from_percent(percent, state->config.codec_volume_default)));
+    if (state->config.speaker_volume.point_count == 0u) {
+        state->speaker_volume_percent = percent;
+    }
+    if (state->es8311 != NULL) {
+        int rc = map_esp_err(apply_speaker_volume(state, percent));
+        if (rc != H2_AUDIO_OK) {
+            return rc;
+        }
+    }
+    state->speaker_volume_percent = percent;
+    return H2_AUDIO_OK;
 }
 
 h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_audio_system_t *system) {

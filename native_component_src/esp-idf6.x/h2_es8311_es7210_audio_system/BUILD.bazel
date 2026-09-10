@@ -46,6 +46,7 @@ firmware_native_component(
     ],
     deps = [
         "//libs/audio_mixer",
+        "//native_component_src/esp-idf6.x/h2_es8311_volume",
     ],
 )
 
@@ -59,6 +60,7 @@ cc_test(
     copts = H2_WARNING_COPTS,
     includes = ["tests/system_include"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//native_component_src/esp-idf6.x/h2_es8311_volume:volume_host"],
 )
 
 cc_test(
