@@ -1,6 +1,7 @@
 #include "h2_esp_platform_core.h"
 #include "h2_esp_platform_safe_call.h"
 #include "h2_esp_ble_adv_stop.h"
+#include "h2_esp_ble_connect_role.h"
 #include "h2_esp_ble_exact_adapter.h"
 #include "h2_esp_ble_gatt_schema.h"
 #include "h2_esp_ble_indication_tracker.h"
@@ -1005,7 +1006,16 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
         h2_esp_ble_complete_advertising();
         return 0;
     case BLE_GAP_EVENT_CONNECT: {
-        bool central = s_h2_esp_ble_connect_pending;
+        struct ble_gap_conn_desc desc;
+        memset(&desc, 0, sizeof(desc));
+        bool has_desc = event->connect.status == 0 &&
+                        ble_gap_conn_find(event->connect.conn_handle, &desc) == 0;
+        bool central = h2_esp_ble_connect_event_is_central(
+            event->connect.status,
+            has_desc,
+            has_desc && desc.role == BLE_GAP_ROLE_MASTER,
+            s_h2_esp_ble_connect_pending,
+            arg != NULL);
         ESP_LOGI(
             TAG,
             "connection event status=%d role=%s handle=%u",
@@ -1026,25 +1036,30 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
             conn.conn_handle = event->connect.conn_handle;
             conn.role = central ? H2_PAL_BLE_ROLE_CENTRAL : H2_PAL_BLE_ROLE_PERIPHERAL;
             conn.mtu = ble_att_mtu(event->connect.conn_handle);
-            struct ble_gap_conn_desc desc;
-            if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
+            if (has_desc) {
                 conn.peer_addr.type =
                     h2_esp_ble_addr_type(desc.peer_ota_addr.type);
                 memcpy(conn.peer_addr.value, desc.peer_ota_addr.val,
                        sizeof(conn.peer_addr.value));
             }
-            s_h2_esp_ble_connect_result = H2_PAL_OK;
-            s_h2_esp_ble_connect_handle = event->connect.conn_handle;
+            if (central) {
+                s_h2_esp_ble_connect_result = H2_PAL_OK;
+                s_h2_esp_ble_connect_handle = event->connect.conn_handle;
+            }
             h2_esp_ble_post(
                 H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
                 &conn,
                 sizeof(conn));
-        } else {
+        } else if (central) {
             s_h2_esp_ble_connect_result =
                 h2_esp_ble_map_rc(event->connect.status);
             s_h2_esp_ble_connect_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
         }
         if (!central) {
+            /*
+             * An incoming link ends only the advertising that accepted it; a
+             * pending local connect() keeps waiting for its own event.
+             */
 #if CONFIG_BT_NIMBLE_EXT_ADV
             if (arg != NULL) {
                 h2_esp_ble_complete_adv_set(arg, H2_PAL_OK);
@@ -1053,6 +1068,7 @@ static int h2_esp_ble_gap_event(struct ble_gap_event *event, void *arg) {
             {
                 h2_esp_ble_complete_advertising();
             }
+            return 0;
         }
         s_h2_esp_ble_connect_pending = false;
         if (s_h2_esp_ble_events != NULL) {
