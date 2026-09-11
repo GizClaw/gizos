@@ -80,7 +80,10 @@ firmware_native_component(
             "test/**",
             "tests/**",
         ],
-    ) + ["//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h"],
+    ) + [
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h",
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout_check.h",
+    ],
     data = [
         "CMakeLists.txt",
     ],

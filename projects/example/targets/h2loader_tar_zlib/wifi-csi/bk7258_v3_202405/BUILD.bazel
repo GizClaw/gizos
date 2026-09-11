@@ -67,7 +67,10 @@ firmware_native_component(
     srcs = [
         "cp/wifi_scan_country_code_compat.c",
     ],
-    hdrs = ["//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h"],
+    hdrs = [
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h",
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout_check.h",
+    ],
     component_directory = "projects/example/targets/h2loader_tar_zlib/wifi-csi/bk7258_v3_202405/cp",
     component_name = "cp",
     data = ["cp/CMakeLists.txt"],

@@ -7,7 +7,10 @@ exports_files(["src/cp_main.c", "src/fixed_boot.c"])
 firmware_native_component(
     name = "h2loader_cp_launcher",
     srcs = [":src/cp_main.c", "src/fixed_boot.c"],
-    hdrs = ["//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h"],
+    hdrs = [
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h",
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout_check.h",
+    ],
     component_directory = "projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
     component_name = "cp",
     data = ["CMakeLists.txt"],

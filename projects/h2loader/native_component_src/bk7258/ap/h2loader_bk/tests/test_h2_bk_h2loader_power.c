@@ -63,9 +63,40 @@ static void test_rollback_bootability(const h2_pal_power_api_t *api) {
   fail = 0;
 }
 
+int g_fixed_active, g_fixed_app_failed, g_fixed_relay_failed;
+uint8_t g_fixed_slot;
+
+/* Fixed layout: a trial App that never confirmed, or a candidate Loader the
+ * ROM bootloader rolled back from native B, leaves Partition 2 not bootable
+ * while Loader runs, which stops the Loader relaunching it. */
+static void test_fixed_layout_rollback_bootability(const h2_pal_power_api_t *api) {
+  uint32_t flags = 0u;
+  memset(data, 255, sizeof(data));
+  g_fixed_active = 1;
+  g_fixed_slot = 0u;
+  assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) == 0);
+  assert(flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE);
+  g_fixed_relay_failed = 1;
+  assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) == 0);
+  assert(flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_APP);
+  assert(!(flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE));
+  g_fixed_relay_failed = 0;
+  g_fixed_app_failed = 1;
+  assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) == 0);
+  assert(!(flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE));
+  /* Running from Partition 2 itself, the evidence does not apply. */
+  g_fixed_relay_failed = 1;
+  g_fixed_slot = 1u;
+  assert(h2_pal_power_list_boot_partitions(api, collect_app, &flags) == 0);
+  assert(flags & H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE);
+  g_fixed_active = g_fixed_app_failed = g_fixed_relay_failed = 0;
+  g_fixed_slot = 0u;
+}
+
 int main(void) {
   const h2_pal_power_api_t *api = h2_bk_h2loader_power_api();
   test_rollback_bootability(api);
+  test_fixed_layout_rollback_bootability(api);
   h2_pal_power_boot_partition_t out;
   assert(h2_pal_power_get_next_boot_partition(api, NULL) ==
          H2_PAL_ERR_INVALID_ARG);
