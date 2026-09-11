@@ -5658,6 +5658,15 @@ static void test_public_profile_request_paths(void) {
                                      'b', 0x12, 2, 'B', 0};
   static const uint8_t nul_emoji[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 6, 0x0a, 1,
                                       'b', 0x1a, 1, 0};
+  /* Known fields in a non-string wire type are malformed, not absent; an
+   * unknown field is still skipped. */
+  static const uint8_t varint_name[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 5, 0x0a, 1,
+                                        'b', 0x10, 1};
+  static const uint8_t varint_emoji[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 5, 0x0a,
+                                         1, 'b', 0x18, 1};
+  static const uint8_t varint_key[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 5, 0x08, 1,
+                                       0x0a, 1, 'b'};
+  static const uint8_t varint_item[] = {0x0a, 3, 0x0a, 1, 'a', 0x08, 1};
   /* A 65-byte key exceeds the 64-byte bound even though it fits the wire. */
   uint8_t long_key[4 + 65] = {0x0a, 67, 0x0a, 65};
   memset(long_key + 4, 'a', 65);
@@ -5669,6 +5678,10 @@ static void test_public_profile_request_paths(void) {
                    {bad_utf8, sizeof(bad_utf8)}, {truncated, sizeof(truncated)},
                    {nul_key, sizeof(nul_key)},   {nul_name, sizeof(nul_name)},
                    {nul_emoji, sizeof(nul_emoji)}, {long_key, sizeof(long_key)},
+                   {varint_name, sizeof(varint_name)},
+                   {varint_emoji, sizeof(varint_emoji)},
+                   {varint_key, sizeof(varint_key)},
+                   {varint_item, sizeof(varint_item)},
                    {response, 0u}};
   for (size_t i = 0; i < sizeof(malformed) / sizeof(malformed[0]); ++i) {
     mock.response = malformed[i].bytes;
@@ -5679,6 +5692,13 @@ static void test_public_profile_request_paths(void) {
            H2_PAL_ERR_FORMAT);
     assert(storage.used == checkpoint && list.count == 0u && list.items == NULL);
   }
+  static const uint8_t unknown_fields[] = {0x0a, 5, 0x0a, 1, 'a', 0x20, 7,
+                                           0x0a, 3, 0x0a, 1, 'b', 0x10, 9};
+  mock.response = unknown_fields;
+  mock.response_len = sizeof(unknown_fields);
+  assert(h2_gizclaw_rpc_public_profile_get(service, keys, 3u, 1234u, &storage,
+                                           &list) == H2_PAL_OK &&
+         list.count == 2u && list.items[0].display_name == NULL);
   mock.response = response;
   mock.response_len = sizeof(response);
   assert(h2_gizclaw_rpc_public_profile_get(service, keys, 3u, 1234u, &storage,

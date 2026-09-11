@@ -2020,8 +2020,10 @@ static bool public_profile_request_keys(h2_gizclaw_rpc_bytes_t input,
     bool eof = false;
     if (!pb_decode_tag(&stream, &wire, &tag, &eof))
       return false;
-    if (tag != gizclaw_rpc_v1_ProfileGetRequest_peer_public_keys_tag ||
-        wire != PB_WT_STRING) {
+    if (tag == gizclaw_rpc_v1_ProfileGetRequest_peer_public_keys_tag &&
+        wire != PB_WT_STRING)
+      return false;
+    if (tag != gizclaw_rpc_v1_ProfileGetRequest_peer_public_keys_tag) {
       if (!pb_skip_field(&stream, wire))
         return false;
       continue;
@@ -2099,8 +2101,15 @@ static bool decode_public_profile_item(pb_istream_t *stream,
     bool eof = false;
     if (!pb_decode_tag(stream, &wire, &tag, &eof))
       return false;
+    const bool known =
+        tag == gizclaw_rpc_v1_PublicProfile_peer_public_key_tag ||
+        tag == gizclaw_rpc_v1_PublicProfile_display_name_tag ||
+        tag == gizclaw_rpc_v1_PublicProfile_emoji_tag;
+    /* A known field in another wire type is malformed, not absent. */
+    if (known && wire != PB_WT_STRING)
+      return false;
     bool ok = true;
-    if (wire != PB_WT_STRING)
+    if (!known)
       ok = pb_skip_field(stream, wire);
     else if (tag == gizclaw_rpc_v1_PublicProfile_peer_public_key_tag)
       ok = read_profile_text(stream, item->peer_public_key,
@@ -2112,8 +2121,6 @@ static bool decode_public_profile_item(pb_istream_t *stream,
     else if (tag == gizclaw_rpc_v1_PublicProfile_emoji_tag)
       ok = item->has_emoji = read_profile_text(stream, item->emoji,
                                                sizeof(item->emoji) - 1u);
-    else
-      ok = pb_skip_field(stream, wire);
     if (!ok)
       return false;
   }
@@ -2141,8 +2148,10 @@ decode_public_profiles(const h2_pal_mem_api_t *allocator,
     bool eof = false;
     if (!pb_decode_tag(&stream, &wire, &tag, &eof))
       return H2_PAL_ERR_FORMAT;
-    if (tag != gizclaw_rpc_v1_ProfileGetResponse_items_tag ||
-        wire != PB_WT_STRING) {
+    if (tag == gizclaw_rpc_v1_ProfileGetResponse_items_tag &&
+        wire != PB_WT_STRING)
+      return H2_PAL_ERR_FORMAT;
+    if (tag != gizclaw_rpc_v1_ProfileGetResponse_items_tag) {
       if (!pb_skip_field(&stream, wire))
         return H2_PAL_ERR_FORMAT;
       continue;
