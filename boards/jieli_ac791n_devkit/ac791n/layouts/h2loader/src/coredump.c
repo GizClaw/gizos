@@ -14,6 +14,7 @@
 #define H2_JIELI_COREDUMP_VERSION UINT32_C(2)
 #define H2_JIELI_COREDUMP_COMMITTED UINT32_C(0x54494d43) /* CMIT */
 #define H2_JIELI_CRASH_PENDING UINT32_C(0x48535243) /* CRSH */
+#define H2_JIELI_CRASH_ORIGIN_LOADER UINT32_C(0x5244414c) /* LADR */
 #define H2_JIELI_RETAINED_LOG_MAGIC UINT32_C(0x474f4c48) /* HLOG */
 #define H2_JIELI_RETAINED_LOG_CAPACITY 2048u
 #define H2_JIELI_EXCEPTION_REASON UINT32_C(0x80000000)
@@ -63,6 +64,11 @@ static uint32_t coredump_sequence SEC(.h2_retained);
 static struct h2_jieli_coredump_record pending_record
     SEC(.h2_retained);
 static volatile uint32_t crash_pending SEC(.h2_retained);
+/* Which image recorded crash_pending. running_loader is ordinary zeroed data,
+ * so only the image that called h2_jieli_wl82_coredump_mark_loader() in this
+ * boot can stamp the retained origin. */
+static volatile uint32_t crash_origin SEC(.h2_retained);
+static volatile uint32_t running_loader;
 static struct h2_jieli_retained_log retained_log SEC(.h2_retained);
 static struct h2_jieli_coredump_record replay_record;
 static volatile uint8_t suppress_log_capture;
@@ -191,6 +197,7 @@ void h2_jieli_wl82_assert_reset_hook(void *caller) SEC(.volatile_ram_code);
 
 void h2_jieli_wl82_assert_reset_hook(void *caller) {
   crash_pending = H2_JIELI_CRASH_PENDING;
+  crash_origin = running_loader != 0u ? H2_JIELI_CRASH_ORIGIN_LOADER : 0u;
   h2_jieli_build_record(
       &pending_record, H2_JIELI_EXCEPTION_REASON, caller);
   /* Exception context may have interrupts disabled or another core paused.
@@ -208,9 +215,16 @@ void h2_jieli_wl82_reset_recovery_hook(uint32_t reset_reason) {
   h2_jieli_build_record(&pending_record, reset_reason, NULL);
 }
 
-int h2_jieli_wl82_take_crash_pending(void) {
-  const int pending = crash_pending == H2_JIELI_CRASH_PENDING;
+void h2_jieli_wl82_coredump_mark_loader(void) { running_loader = 1u; }
+
+/* Consume the retained crash flag; report whether the Loader itself crashed.
+ * An App crash reaches the Loader only through trial rollback and must not
+ * put the Loader into its degraded recovery mode. */
+int h2_jieli_wl82_take_loader_crash_pending(void) {
+  const int pending = crash_pending == H2_JIELI_CRASH_PENDING &&
+                      crash_origin == H2_JIELI_CRASH_ORIGIN_LOADER;
   crash_pending = 0u;
+  crash_origin = 0u;
   return pending;
 }
 
