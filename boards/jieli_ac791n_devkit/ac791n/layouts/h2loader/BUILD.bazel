@@ -14,6 +14,7 @@ exports_files([
     "sdk_patches/h2_retained_ram.patch",
     "sdk_patches/preserve_exception_log.patch",
     "sdk_patches/pcm_play_runtime_block.patch",
+    "sdk_patches/ble_data_length.patch",
     "src/coredump.c",
     "src/platform.c",
 ])

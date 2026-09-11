@@ -59,10 +59,13 @@ enum {
   H2_JIELI_GATT_TX_VALUE_HANDLE = 6,
   H2_JIELI_GATT_TX_CCCD_HANDLE = 7,
   H2_JIELI_GATT_RX_VALUE_HANDLE = 9,
-  /* Match JieLi's supported GATT-server configuration.  The SDK reference
-   * peripheral uses a 200-byte local MTU and a 512-byte ATT send cbuf. */
-  H2_JIELI_ATT_MTU = 200,
-  H2_JIELI_ATT_BUFFER_SIZE = ATT_CTRL_BLOCK_SIZE + H2_JIELI_ATT_MTU + 512,
+  /* The SDK reference peripherals stop at a 200-byte MTU with a fixed
+   * 512-byte send cbuf. A full 509-byte notification does not fit that cbuf
+   * and stalls every later notification, so the cbuf scales with the MTU. */
+  H2_JIELI_ATT_MTU = 512,
+  H2_JIELI_ATT_SEND_CBUF_SIZE = 4 * H2_JIELI_ATT_MTU,
+  H2_JIELI_ATT_BUFFER_SIZE =
+      ATT_CTRL_BLOCK_SIZE + H2_JIELI_ATT_MTU + H2_JIELI_ATT_SEND_CBUF_SIZE,
   H2_JIELI_ADV_DATA_MAX = 251,
 };
 
@@ -714,23 +717,62 @@ static int h2_disconnect(void *user, uint16_t conn_handle) {
   return h2_ble_cmd_result(ble_op_disconnect(conn_handle));
 }
 
+/* CoreBluetooth answers a peripheral request with LL_CONNECTION_UPDATE_REQ.
+ * Arriving while the central still runs its LL_LENGTH_REQ and GATT setup,
+ * that update leaves this controller unable to move data, so the request is
+ * sent once the link has settled. */
+#define H2_JIELI_CONN_PARAM_DELAY_MS 3000u
+
+static struct conn_update_param_t h2_conn_param_request;
+static uint16_t h2_conn_param_handle;
+static uint16_t h2_conn_param_timer;
+
+static void h2_conn_param_send(void *user) {
+  (void)user;
+  h2_conn_param_timer = 0u;
+  if (h2_conn_param_handle == 0u ||
+      h2_conn_param_handle != h2_ble.conn_handle) {
+    return;
+  }
+  /* The SDK keeps this pointer until the L2CAP procedure ends. */
+  const int result =
+      ble_op_conn_param_request(h2_conn_param_handle, &h2_conn_param_request);
+  h2_ble_log(
+      "H2_JIELI_BLE_CONN_PARAMS sent interval=%u-%u latency=%u timeout=%u "
+      "vendor=%d\r\n",
+      (unsigned)h2_conn_param_request.interval_min * 5u / 4u,
+      (unsigned)h2_conn_param_request.interval_max * 5u / 4u,
+      (unsigned)h2_conn_param_request.latency,
+      (unsigned)h2_conn_param_request.timeout * 10u, result);
+}
+
+static void h2_conn_param_cancel(void) {
+  h2_conn_param_handle = 0u;
+  if (h2_conn_param_timer != 0u) {
+    sys_timeout_del(h2_conn_param_timer);
+    h2_conn_param_timer = 0u;
+  }
+}
+
 static int h2_update_connection(
     void *user, uint16_t conn_handle,
     const h2_pal_ble_connection_params_t *params) {
   (void)user;
-  if (conn_handle != h2_ble.conn_handle || params == NULL)
+  if (conn_handle != h2_ble.conn_handle || params == NULL ||
+      params->interval_min_ms == 0u ||
+      params->interval_max_ms < params->interval_min_ms)
     return H2_PAL_ERR_INVALID_ARG;
-  /* Keep the central-selected parameters.  JieLi's peripheral examples use
-   * a 20-30 ms request range; forcing the Loader's exact 15 ms request here
-   * makes CoreBluetooth lose link synchronisation before ATT discovery. */
-  h2_ble_log(
-      "H2_JIELI_BLE_CONN_PARAMS keep-central requested=%u-%u latency=%u "
-      "timeout=%u\r\n",
-      (unsigned)params->interval_min_ms,
-      (unsigned)params->interval_max_ms,
-      (unsigned)params->latency,
-      (unsigned)params->supervision_timeout_ms);
-  return H2_PAL_ERR_UNSUPPORTED;
+  h2_conn_param_cancel();
+  h2_conn_param_request = (struct conn_update_param_t){
+      .interval_min = (uint16_t)(params->interval_min_ms * 4u / 5u),
+      .interval_max = (uint16_t)(params->interval_max_ms * 4u / 5u),
+      .latency = params->latency,
+      .timeout = (uint16_t)(params->supervision_timeout_ms / 10u),
+  };
+  h2_conn_param_handle = conn_handle;
+  h2_conn_param_timer = sys_timeout_add_to_task(
+      "sys_timer", NULL, h2_conn_param_send, H2_JIELI_CONN_PARAM_DELAY_MS);
+  return h2_conn_param_timer != 0u ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
 }
 
 static int h2_exchange_mtu(
@@ -744,21 +786,19 @@ static int h2_exchange_mtu(
   return H2_PAL_OK;
 }
 
-static uint8_t h2_conn_phy(h2_pal_ble_phy_t phy) {
-  if (phy == H2_PAL_BLE_PHY_2M) return CONN_SET_2M_PHY;
-  if (phy == H2_PAL_BLE_PHY_CODED) return CONN_SET_CODED_PHY;
-  return CONN_SET_1M_PHY;
-}
-
+/* The central owns PHY selection. CoreBluetooth moves the link to 2M on its
+ * own; a peripheral-initiated LL_PHY_REQ after that is answered with
+ * LL_REJECT_IND, which this controller does not handle: ll_slave.c:662
+ * asserts ("0 S LL_REJECT_IND") and resets the chip. */
 static int h2_set_phy(
     void *user, uint16_t conn_handle, h2_pal_ble_phy_t tx_phy,
     h2_pal_ble_phy_t rx_phy, uint32_t timeout_ms) {
   (void)user;
+  (void)tx_phy;
+  (void)rx_phy;
   (void)timeout_ms;
   if (conn_handle != h2_ble.conn_handle) return H2_PAL_ERR_INVALID_ARG;
-  return h2_ble_cmd_result(ble_op_set_ext_phy(
-      conn_handle, 0u, h2_conn_phy(tx_phy), h2_conn_phy(rx_phy),
-      CONN_SET_PHY_OPTIONS_NONE));
+  return H2_PAL_ERR_UNSUPPORTED;
 }
 
 static uint16_t h2_att_read(
@@ -959,6 +999,7 @@ static void h2_packet_handler(
           .conn_handle = h2_ble.conn_handle,
           .reason = packet[5],
       };
+      h2_conn_param_cancel();
       h2_ble.conn_handle = 0u;
       h2_ble.mtu = 0u;
       (void)ble_op_att_send_init(0u, NULL, 0u, 0u);
@@ -976,6 +1017,11 @@ static void h2_packet_handler(
                   &info, sizeof(info));
       break;
     }
+    case HCI_EVENT_NUMBER_OF_COMPLETED_PACKETS:
+    case ATT_EVENT_CAN_SEND_NOW:
+      /* Per-connection-event data-path signals: logging them from the
+       * stack task serializes every packet behind the UART console. */
+      break;
     default:
       h2_ble_log("H2_JIELI_BLE_HCI event=0x%02x size=%u\r\n",
              (unsigned)event_type, (unsigned)size);

@@ -148,6 +148,7 @@ def h2loader_jieli_firmware(name, board, target, task_policy = None, **kwargs):
             entry.root + ":sdk_patches/early_app_boot.patch",
             entry.root + ":sdk_patches/uart1_console.patch",
             entry.root + ":sdk_patches/pcm_play_runtime_block.patch",
+            entry.root + ":sdk_patches/ble_data_length.patch",
         ],
         target = target,
         **kwargs
