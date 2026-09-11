@@ -37,6 +37,10 @@ Use this ID for row identity, selection, and operation routing during the curren
 SDK client lifetime. USB VID/PID are display metadata and must not be used to
 identify a device because multiple authorized devices can share them.
 
+Each operation waits up to 10 s for the device to acknowledge the serial session
+and up to 10 s for each command response. `rebootUpgrade` uses a 90 s command
+timeout because the device may install the staged image before acknowledging.
+
 ## Status protocol
 
 `status(port)` and `stage(port, blob)` return the exact connected status
