@@ -21,7 +21,7 @@ PREFIX = "h2_gizclaw_"
 TOP_CASES = {"resource", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
              "contact", "friend", "group", "peer-name-isolation",
-             "telemetry", "api-key", "app-config"}
+             "telemetry", "api-key", "app-config", "social-ping"}
 CASES = TOP_CASES | {"rpc/" + name for name in RPC_CASES}
 
 
@@ -44,7 +44,8 @@ def requirements():
         "connectivity": "ping speedtest register peer_delete",
         "firmware": "firmware_get",
         "rpc/app-config": "app_config_list app_config_get",
-        "rpc/profile": "profile_get profile_put_name profile_put_emoji",
+        "rpc/profile": "profile_get profile_put_name profile_put_emoji public_profile_get",
+        "rpc/social-ping": "friend_ping friend_group_ping",
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
             "workspace_create workspace_set_parameters workspace_delete "
@@ -136,9 +137,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 204 or len(set(inventory)) != 204 or
-            len(names) != 204 or len(set(names)) != 204 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 204-function inventory")
+    if (len(inventory) != 213 or len(set(inventory)) != 213 or
+            len(names) != 213 or len(set(names)) != 213 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 213-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 
