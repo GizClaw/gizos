@@ -123,8 +123,8 @@ static const h2_pal_fs_api_t s_test_fs = {
 };
 
 typedef struct test_display_fixture {
-  uint16_t pixels[8u * 8u];
-  h2_display_rect_t draw_rects[8u];
+  uint16_t pixels[64u * 32u];
+  h2_display_rect_t draw_rects[1024u];
   size_t draw_count;
   size_t present_count;
   size_t open_count;
@@ -133,6 +133,7 @@ typedef struct test_display_fixture {
 } test_display_fixture_t;
 
 static test_display_fixture_t s_test_display_fixture;
+static int s_test_display_width = 8, s_test_display_height = 8;
 
 static const uint8_t s_test_display_asset[] = {
     'H',  '2',  'A',  '4',  2,    0,    2,    0,
@@ -193,8 +194,8 @@ static int test_display_get_info(void *user, h2_display_info_t *info) {
   if (info == NULL)
     return H2_DISPLAY_ERR_INVALID_ARG;
   *info = (h2_display_info_t){
-      .width = 8,
-      .height = 8,
+      .width = s_test_display_width,
+      .height = s_test_display_height,
       .native_format = H2_DISPLAY_PIXEL_RGB565,
   };
   return H2_DISPLAY_OK;
@@ -209,13 +210,13 @@ static int test_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   assert(fixture != NULL && rect != NULL && pixels != NULL);
   assert(format == H2_DISPLAY_PIXEL_RGB565);
   assert(rect->x >= 0 && rect->y >= 0 && rect->width > 0 && rect->height > 0 &&
-         rect->x + rect->width <= 8 && rect->y + rect->height <= 8);
+         rect->x + rect->width <= s_test_display_width && rect->y + rect->height <= s_test_display_height);
   assert(stride_bytes >= (size_t)rect->width * sizeof(uint16_t));
   assert(fixture->draw_count <
          sizeof(fixture->draw_rects) / sizeof(fixture->draw_rects[0]));
   fixture->draw_rects[fixture->draw_count++] = *rect;
   for (row = 0; row < rect->height; ++row) {
-    memcpy(fixture->pixels + (size_t)(rect->y + row) * 8u + (size_t)rect->x,
+    memcpy(fixture->pixels + (size_t)(rect->y + row) * (size_t)s_test_display_width + (size_t)rect->x,
            source + (size_t)row * stride_bytes,
            (size_t)rect->width * sizeof(uint16_t));
   }
@@ -1503,6 +1504,108 @@ int main(void) {
         host, "@light.lua", light_script, sizeof(light_script) - 1u);
     assert(strcmp(light_status.message, "ok") == 0);
     assert(s_test_display_fixture.pixels[3u * 8u + 2u] == 0x8204u);
+
+    static const uint8_t retained_script[] =
+        "local d=require('display');d.clear('black');d.present();"
+        "local p,n=d.present({retained=true});assert(p==64 and n==1);"
+        "d.clear('black');p,n=d.present();assert(p==0 and n==0);"
+        "d.draw_line(2,3,2,3,'red');p,n=d.present();assert(p>0 and n==1);"
+        "d.clear('black');d.draw_line(2,3,2,3,'red');"
+        "p,n=d.present();assert(p==0 and n==0);"
+        "d.clear('black');p,n=d.present();assert(p>0 and n==1);"
+        "d.deinit();return 'ok'";
+    h2_lua_job_status_t retained_status = run_display_script(
+        host, "@retained.lua", retained_script, sizeof(retained_script)-1u);
+    assert(strcmp(retained_status.message, "ok") == 0);
+    assert(s_test_display_fixture.pixels[3u*8u+2u] == 0);
+
+    static const uint8_t retained_edges_script[] =
+        "local d=require('display');d.clear('black');"
+        "local p,n=d.present({retained=true});assert(p==561 and n==1);"
+        "d.draw_line(0,0,0,0,'red');d.draw_line(32,16,32,16,'white');"
+        "p,n=d.present();assert(p==257 and n==2);"
+        "d.clear('black');d.draw_line(0,0,0,0,'red');"
+        "d.draw_line(32,16,32,16,'white');p,n=d.present();assert(p==0 and n==0);"
+        "d.draw_line(0,0,0,0,'black');p,n=d.present();assert(p==256 and n==1);"
+        "d.draw_line(16,0,16,0,'red');d.draw_line(16,16,16,16,'red');"
+        "p,n=d.present();assert(p==272 and n==1,'vertical tiles must merge');"
+        "d.draw_line(16,0,16,0,'black');d.draw_line(16,16,16,16,'black');"
+        "p,n=d.present();assert(p==272 and n==1);"
+        "d.deinit();return 'ok'";
+    s_test_display_width = 33; s_test_display_height = 17;
+    retained_status = run_display_script(host, "@retained-edges.lua",
+        retained_edges_script, sizeof(retained_edges_script)-1u);
+    assert(strcmp(retained_status.message, "ok") == 0);
+    assert(s_test_display_fixture.pixels[0] == 0);
+    assert(s_test_display_fixture.pixels[16u*33u+32u] == 0xffffu);
+    s_test_display_width = 8; s_test_display_height = 8;
+
+    static const uint8_t geometry_equivalence_script[] =
+        "local d=require('display');local floor=math.floor;local ceil=math.ceil;"
+        "local function rect(x,y,w,h) x,y,w,h=floor(x+.5),floor(y+.5),floor(w+.5),floor(h+.5);"
+        "local r,b=math.min(8,x+w),math.min(7,y+h);x,y=math.max(0,x),math.max(1,y);"
+        "if r>x and b>y then d.fill_rect(x,y,r-x,b-y,'red') end end;"
+        "d.clear('black');d.present({retained=true});"
+        "for _,v in ipairs({{3.2,3.8,2.4,1.7},{-.4,6.2,3.6,2.1},{7.5,1.2,2,3}}) do "
+        "d.clear('black');for yy=-v[4],v[4] do "
+        "local ex=v[3]*math.sqrt(math.max(0,1-yy*yy/(v[4]*v[4])));"
+        "rect(v[1]-ex+.3,v[2]+yy,2*ex+1,1) end;d.present();"
+        "d.clear('black');d.fill_ellipse(v[1],v[2],v[3],v[4],'red',.3,1,7);"
+        "assert(d.present()==0,'ellipse pixel mismatch') end;"
+        "local cases={{{-.2,1.1},{6.8,2.3},{2,7.9}},"
+        "{{1,1},{7,1},{3,3},{7,7},{1,7}},{{0,3},{7,3},{4,3}},"
+        "{{-99999,2.999999},{99999,3.000001},{4,7}}};"
+        "math.randomseed(719);for k=1,300 do local p={};for i=1,3+k%6 do "
+        "local tiny=k%3==0 and 1e-8 or math.random()/13;"
+        "p[i]={math.random(-10,18)+tiny,math.random(-8,16)-tiny} end;cases[#cases+1]=p end;"
+        "for _,p in ipairs(cases) do "
+        "d.clear('black');for y=1,6 do local xs={};for i,a in ipairs(p) do local b=p[i%#p+1];"
+        "if (a[2]<=y and b[2]>y) or (b[2]<=y and a[2]>y) then "
+        "xs[#xs+1]=a[1]+(y-a[2])*(b[1]-a[1])/(b[2]-a[2]) end end;table.sort(xs);"
+        "for i=1,#xs-1,2 do rect(ceil(xs[i])+.3,y,floor(xs[i+1])-ceil(xs[i])+1,1) end end;"
+        "d.present();d.clear('black');d.fill_polygon(p,'red',.3,1,7);"
+        "assert(d.present()==0,'polygon pixel mismatch') end;"
+        "assert(not pcall(d.fill_ellipse,1,1,2,0,'red'));"
+        "assert(not pcall(d.fill_polygon,{{0,0},{1,1},{0/0,2}},'red'));"
+        "d.deinit();return 'ok'";
+    retained_status = run_display_script(host, "@geometry-equivalence.lua",
+        geometry_equivalence_script, sizeof(geometry_equivalence_script)-1u);
+    assert(strcmp(retained_status.message, "ok") == 0);
+
+    static const uint8_t mesh_equivalence_script[] =
+        "local d=require('display');local mesh={{p={{-1,-1},{2,0},{0,2}},c='red'},"
+        "{p={{0,0},{1,0},{1,1},{0,1}},c='white'}};local h=d.compile_mesh(mesh);"
+        "d.clear('black');d.present({retained=true});"
+        "for _,v in ipairs({{2,2,1,.7},{2,2,1,.7},{2.001,2,1,.7},{4,3,2,-.3},{1,2,5,1.2}}) do "
+        "d.clear('black');local ca,sa=math.cos(v[4]),math.sin(v[4]);local grid=v[3]>3 and 2 or 1;"
+        "for _,f in ipairs(mesh) do local q={};for _,p in ipairs(f.p) do "
+        "q[#q+1]={math.floor((v[1]+(p[1]*ca-p[2]*sa)*v[3])/grid+.5)*grid,"
+        "math.floor((v[2]+(p[1]*sa+p[2]*ca)*v[3])/grid+.5)*grid} end;"
+        "d.fill_polygon(q,f.c,.3,1,7) end;d.present();d.clear('black');"
+        "d.draw_mesh(h,v[1],v[2],v[3],v[4],.3,1,7);assert(d.present()==0,'mesh mismatch') end;"
+        "assert(not pcall(d.compile_mesh,{{p={1,2,3},c='red'}}));"
+        "d.deinit();return 'ok'";
+    retained_status=run_display_script(host,"@mesh-equivalence.lua",
+        mesh_equivalence_script,sizeof(mesh_equivalence_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
+    static const uint8_t command_equivalence_script[] =
+        "local d=require('display')\n"
+        "d.clear('black');d.present({retained=true})\n"
+        "local commands={{0,-2,-1,6,5,'red'},{0,6,6,5,5,'white'},{1,0,7,7,0,'blue'}}\n"
+        "local h=d.compile_commands(commands)\n"
+        "d.fill_rect(0,0,4,4,'red');d.fill_rect(6,6,2,2,'white');d.draw_line(0,7,7,0,'blue');d.present()\n"
+        "d.clear('black');d.draw_commands(h);assert(d.present()==0,'command replay mismatch')\n"
+        "d.clear('black');d.fill_rect(0,2,4,2,'red');d.draw_line(5,2,3,4,'blue');d.present()\n"
+        "d.clear('black');d.draw_commands(h,2,5);assert(d.present()==0,'command clip mismatch')\n"
+        "assert(not pcall(d.compile_commands,{{0,0,0,-1,1,'red'}}))\n"
+        "assert(not pcall(d.compile_commands,{{2,0,0,1,1,'red'}}))\n"
+        "assert(not pcall(d.stroke_path,{{0,0},{2,2}},{-1},'red'))\n"
+        "d.deinit();return 'ok'\n"
+        ;
+    retained_status=run_display_script(host,"@command-equivalence.lua",
+        command_equivalence_script,sizeof(command_equivalence_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
 
     static const uint8_t full_light_script[] =
         "local d=require('display');d.clear('black');"

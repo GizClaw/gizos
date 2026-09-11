@@ -2,6 +2,7 @@
 #include "h2_lua_canvas.h"
 
 #include <limits.h>
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1457,6 +1458,321 @@ static int display_clear(lua_State *state) {
   return 0;
 }
 
+/* Scanline rules match the Lua pixel-geometry reference exactly: integer
+ * polygon scanlines, half-open edges, ceil(left), inclusive floor(right).
+ * Geometry remains authored in Lua; no antialiasing or texture conversion. */
+static double check_geometry_number(lua_State *state, int index) {
+  double v = luaL_checknumber(state, index);
+  if (!isfinite(v) || fabs(v) > 100000.0)
+    luaL_error(state, "invalid geometry coordinate");
+  return v;
+}
+typedef struct h2_lua_cached_span { int32_t left,right,y; uint16_t color; } h2_lua_cached_span_t;
+typedef struct h2_lua_span_cache {
+  const void *source;
+  size_t count,capacity;
+  double offset;
+  int top,bottom,valid;
+} h2_lua_span_cache_t;
+static void display_raster_polygon_capture(h2_lua_job_t *job, const double *px,
+    const double *py, size_t n, uint16_t color, double offset, int top, int bottom,
+    h2_lua_span_cache_t *cache) {
+  double xs[128], lo = job->display_info.height, hi = 0;
+  float x0[128],y0[128],slope[128],error[128];
+  for(size_t i=0;i<n;++i) {
+    size_t j=(i+1)%n;
+    x0[i]=(float)px[i];y0[i]=(float)py[i];
+    float dx=(float)px[j]-x0[i],dy=(float)py[j]-y0[i];
+    slope[i]=fabsf(dy)<1e-5f?0:dx/dy;
+    error[i]=fabsf(dy)<1e-5f?1:32*FLT_EPSILON*(fabsf(x0[i])+fabsf(dx)*(1+(fabsf(y0[i])+job->display_info.height)/fabsf(dy)))+1e-7f;
+  }
+  for (size_t i = 0; i < n; ++i) {
+    if (py[i] < lo) lo = py[i];
+    if (py[i] > hi) hi = py[i];
+  }
+  int first = (int)fmax(top, ceil(lo)), last = (int)fmin(bottom - 1, floor(hi));
+  for (int y = first; y <= last; ++y) {
+    size_t count = 0;
+    for (size_t i = 0; i < n; ++i) {
+      size_t j = (i + 1) % n;
+      if ((py[i] <= y && py[j] > y) || (py[j] <= y && py[i] > y)) {
+        double x;
+        if(px[j]==px[i])x=px[i];
+        else {
+          float fast=x0[i]+((float)y-y0[i])*slope[i],fraction=fast-floorf(fast);
+          /* Quantized output only depends on floor/ceil. Fall back to the
+           * original double expression whenever float error could cross an
+           * integer boundary; ill-conditioned/offscreen edges also fall back. */
+          if(error[i]<.25f && fraction>error[i] && fraction<1-error[i])x=fast;
+          else x=px[i]+(y-py[i])*(px[j]-px[i])/(py[j]-py[i]);
+        }
+        size_t k = count++;
+        while (k > 0 && xs[k-1] > x) { xs[k] = xs[k-1]; --k; }
+        xs[k] = x;
+      }
+    }
+    for (size_t i = 0; i + 1 < count; i += 2) {
+      int left = (int)floor(ceil(xs[i]) + offset + .5);
+      int width = (int)(floor(xs[i+1]) - ceil(xs[i]) + 1);
+      if (width > 0) {
+        fill_span(job, y, left, left + width - 1, color);
+        mark_dirty_rect(job, left, y, width, 1);
+        if(cache && cache->valid) {
+          if(cache->count==cache->capacity)cache->valid=0;
+          else {
+            h2_lua_cached_span_t *spans=(h2_lua_cached_span_t *)(cache+1);
+            spans[cache->count++]=(h2_lua_cached_span_t){left,left+width-1,y,color};
+          }
+        }
+      }
+    }
+  }
+}
+static void display_raster_polygon(h2_lua_job_t *job,const double *px,
+    const double *py,size_t n,uint16_t color,double offset,int top,int bottom) {
+  display_raster_polygon_capture(job,px,py,n,color,offset,top,bottom,NULL);
+}
+static int display_fill_polygon(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  double px[128], py[128];
+  luaL_checktype(state, 1, LUA_TTABLE);
+  size_t n = lua_rawlen(state, 1);
+  uint16_t color = check_color(state, 2);
+  double offset = lua_isnoneornil(state, 3) ? 0 : check_geometry_number(state, 3);
+  int top = (int)luaL_optinteger(state, 4, 0);
+  int bottom = (int)luaL_optinteger(state, 5, job->display_info.height);
+  if (!job->display_open || n < 3 || n > 128 || top < 0 || bottom > job->display_info.height || top > bottom)
+    return luaL_error(state, "invalid fill_polygon");
+  for (size_t i = 0; i < n; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    lua_rawgeti(state, -1, 1); px[i] = check_geometry_number(state, -1); lua_pop(state, 1);
+    lua_rawgeti(state, -1, 2); py[i] = check_geometry_number(state, -1); lua_pop(state, 2);
+  }
+  display_raster_polygon(job, px, py, n, color, offset, top, bottom);
+  return 0;
+}
+static int display_fill_ellipse(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  double x = check_geometry_number(state, 1), y = check_geometry_number(state, 2);
+  double rx = check_geometry_number(state, 3), ry = check_geometry_number(state, 4);
+  uint16_t color = check_color(state, 5);
+  double offset = lua_isnoneornil(state, 6) ? 0 : check_geometry_number(state, 6);
+  int top = (int)luaL_optinteger(state, 7, 0);
+  int bottom = (int)luaL_optinteger(state, 8, job->display_info.height);
+  if (!job->display_open || rx < 0 || ry <= 0 || ry > 2048 || top < 0 || bottom > job->display_info.height || top > bottom)
+    return luaL_error(state, "invalid fill_ellipse");
+  for (double yy = -ry; yy <= ry; yy += 1) {
+    int row = (int)floor(y + yy + .5);
+    if (row < top || row >= bottom) continue;
+    double ex = rx * sqrt(fmax(0, 1 - yy * yy / (ry * ry)));
+    int left = (int)floor(x - ex + offset + .5);
+    int width = (int)floor(2 * ex + 1 + .5);
+    fill_span(job, row, left, left + width - 1, color);
+    mark_dirty_rect(job, left, row, width, 1);
+  }
+  return 0;
+}
+
+static void display_clipped_line(h2_lua_job_t *job, double x, double y,
+    double xx, double yy, uint16_t color, double offset, int top, int bottom) {
+  x+=offset;xx+=offset;double dx=xx-x,dy=yy-y,lo=0,hi=1;
+  if(dx==0) {if(x<0 || x>job->display_info.width-1) return;}
+  else {double a=-x/dx,b=(job->display_info.width-1-x)/dx;
+    if(a>b){double t=a;a=b;b=t;}lo=fmax(lo,a);hi=fmin(hi,b);}
+  if(dy==0) {if(y<top || y>bottom-1) return;}
+  else {double a=(top-y)/dy,b=(bottom-1-y)/dy;
+    if(a>b){double t=a;a=b;b=t;}lo=fmax(lo,a);hi=fmin(hi,b);}
+  if(lo>hi) return;
+  int x0=(int)floor(x+dx*lo+.5),y0=(int)floor(y+dy*lo+.5);
+  int x1=(int)floor(x+dx*hi+.5),y1=(int)floor(y+dy*hi+.5);
+  int ix=abs(x1-x0),iy=-abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,error=ix+iy;
+  mark_dirty_rect(job,x0<x1?x0:x1,y0<y1?y0:y1,ix+1,-iy+1);
+  for(;;){write_pixel(job,x0,y0,color);if(x0==x1 && y0==y1) break;
+    int twice=2*error;if(twice>=iy){error+=iy;x0+=sx;}if(twice<=ix){error+=ix;y0+=sy;}}
+}
+static int display_stroke_path(lua_State *state) {
+  h2_lua_job_t *job=lua_touserdata(state,lua_upvalueindex(1));
+  double x[256],y[256],width[256];uint16_t color[256];
+  luaL_checktype(state,1,LUA_TTABLE);luaL_checktype(state,2,LUA_TTABLE);
+  size_t n=lua_rawlen(state,1);
+  double offset=lua_isnoneornil(state,4)?0:check_geometry_number(state,4);
+  int top=(int)luaL_optinteger(state,5,0),bottom=(int)luaL_optinteger(state,6,job->display_info.height);
+  if(!job->display_open || n<2 || n>256 || lua_rawlen(state,2)!=n-1 || top<0 || bottom>job->display_info.height || top>bottom)
+    return luaL_error(state,"invalid stroke_path");
+  int colors=lua_istable(state,3) && lua_rawlen(state,3)>0;
+  uint16_t single=colors?0:check_color(state,3);
+  if(colors && lua_rawlen(state,3)!=n-1) return luaL_error(state,"invalid path colors");
+  for(size_t i=0;i<n;++i) {
+    lua_rawgeti(state,1,(lua_Integer)i+1);luaL_checktype(state,-1,LUA_TTABLE);
+    lua_rawgeti(state,-1,1);x[i]=check_geometry_number(state,-1);lua_pop(state,1);
+    lua_rawgeti(state,-1,2);y[i]=check_geometry_number(state,-1);lua_pop(state,2);
+    if(i+1<n) {
+      lua_rawgeti(state,2,(lua_Integer)i+1);width[i]=check_geometry_number(state,-1);lua_pop(state,1);
+      if(width[i]<0 || width[i]>1000) return luaL_error(state,"invalid path width");
+      if(colors){lua_rawgeti(state,3,(lua_Integer)i+1);color[i]=check_color(state,-1);lua_pop(state,1);}else color[i]=single;
+    }
+  }
+  for(size_t i=0;i+1<n;++i) {
+    double dx=x[i+1]-x[i],dy=y[i+1]-y[i],len=sqrt(dx*dx+dy*dy),w=width[i];
+    if(len<.01) {
+      int left=(int)floor(x[i]-w/2+offset+.5),row=(int)floor(y[i]-w/2+.5),side=(int)floor(w+.5);
+      for(int j=row;j<row+side;++j) if(j>=top && j<bottom){fill_span(job,j,left,left+side-1,color[i]);mark_dirty_rect(job,left,j,side,1);}
+      continue;
+    }
+    double nx=-dy/len*w/2,ny=dx/len*w/2;
+    double px[]={x[i]+nx,x[i+1]+nx,x[i+1]-nx,x[i]-nx};
+    double py[]={y[i]+ny,y[i+1]+ny,y[i+1]-ny,y[i]-ny};
+    display_raster_polygon(job,px,py,4,color[i],offset,top,bottom);
+    display_clipped_line(job,x[i],y[i],x[i+1],y[i+1],color[i],offset,top,bottom);
+  }
+  return 0;
+}
+
+typedef struct h2_lua_pixel_command { int kind,x,y,a,b; uint16_t color; } h2_lua_pixel_command_t;
+typedef struct h2_lua_pixel_commands { size_t count; } h2_lua_pixel_commands_t;
+#define H2_LUA_COMMANDS_META "h2.display.pixel_commands"
+static int display_compile_commands(lua_State *state) {
+  luaL_checktype(state,1,LUA_TTABLE);size_t n=lua_rawlen(state,1);
+  if(n>16384) return luaL_error(state,"too many pixel commands");
+  h2_lua_pixel_commands_t *list=lua_newuserdatauv(state,sizeof(*list)+n*sizeof(h2_lua_pixel_command_t),0);
+  list->count=n;h2_lua_pixel_command_t *commands=(h2_lua_pixel_command_t *)(list+1);
+  for(size_t i=0;i<n;++i) {
+    lua_rawgeti(state,1,(lua_Integer)i+1);luaL_checktype(state,-1,LUA_TTABLE);
+    int values[5];
+    for(int j=0;j<5;++j) {lua_rawgeti(state,-1,j+1);values[j]=check_pixel_number(state,-1);lua_pop(state,1);
+      if(values[j]<-100000 || values[j]>100000) return luaL_error(state,"pixel command coordinate out of range");}
+    lua_rawgeti(state,-1,6);uint16_t color=check_color(state,-1);lua_pop(state,2);
+    if(values[0]!=0 && values[0]!=1) return luaL_error(state,"invalid pixel command");
+    if(values[0]==0 && (values[3]<0 || values[4]<0)) return luaL_error(state,"invalid command rectangle");
+    commands[i]=(h2_lua_pixel_command_t){values[0],values[1],values[2],values[3],values[4],color};
+  }
+  luaL_newmetatable(state,H2_LUA_COMMANDS_META);lua_setmetatable(state,-2);return 1;
+}
+static int display_draw_commands(lua_State *state) {
+  h2_lua_job_t *job=lua_touserdata(state,lua_upvalueindex(1));
+  h2_lua_pixel_commands_t *list=luaL_checkudata(state,1,H2_LUA_COMMANDS_META);
+  int top=(int)luaL_optinteger(state,2,0),bottom=(int)luaL_optinteger(state,3,job->display_info.height);
+  if(!job->display_open || top<0 || bottom>job->display_info.height || top>bottom) return luaL_error(state,"invalid command clip");
+  const h2_lua_pixel_command_t *commands=(h2_lua_pixel_command_t *)(list+1);
+  for(size_t i=0;i<list->count;++i) {
+    const h2_lua_pixel_command_t *c=commands+i;
+    if(c->kind==0) {
+      int first=c->y>top?c->y:top,last=c->y+c->b<bottom?c->y+c->b:bottom;
+      for(int y=first;y<last;++y) fill_span(job,y,c->x,c->x+c->a-1,c->color);
+      mark_dirty_rect(job,c->x,first,c->a,last-first);
+    } else display_clipped_line(job,c->x,c->y,c->a,c->b,c->color,0,top,bottom);
+  }
+  return 0;
+}
+
+typedef struct h2_lua_mesh_face { uint32_t first; uint16_t count, color; } h2_lua_mesh_face_t;
+typedef struct h2_lua_pixel_mesh {
+  uint32_t faces,vertices;
+  double x,y,scale,angle;
+  int position_valid;
+} h2_lua_pixel_mesh_t;
+#define H2_LUA_PIXEL_MESH_META "h2.display.pixel_mesh"
+static int display_compile_mesh(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TTABLE);
+  size_t count = lua_rawlen(state, 1), total = 0;
+  if (count == 0 || count > 4096) return luaL_error(state, "invalid mesh face count");
+  for (size_t i = 0; i < count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i+1); luaL_checktype(state, -1, LUA_TTABLE);
+    lua_getfield(state, -1, "p"); luaL_checktype(state, -1, LUA_TTABLE);
+    size_t n = lua_rawlen(state, -1);
+    if (n < 3 || n > 128 || total+n > 65536) return luaL_error(state, "invalid mesh vertices");
+    total += n; lua_pop(state, 2);
+  }
+  h2_lua_pixel_mesh_t *mesh = lua_newuserdatauv(state, sizeof(*mesh)+count*sizeof(h2_lua_mesh_face_t)+total*2*(sizeof(double)+sizeof(int32_t)), 0);
+  mesh->faces = (uint32_t)count; mesh->vertices = (uint32_t)total;mesh->position_valid=0;
+  h2_lua_mesh_face_t *faces = (h2_lua_mesh_face_t *)(mesh+1);
+  double *vertices = (double *)(faces+count); size_t at = 0;
+  for (size_t i = 0; i < count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i+1);
+    lua_getfield(state, -1, "c"); faces[i].color = check_color(state, -1); lua_pop(state, 1);
+    lua_getfield(state, -1, "p"); size_t n = lua_rawlen(state, -1);
+    faces[i].first=(uint32_t)at; faces[i].count=(uint16_t)n;
+    for (size_t j = 0; j < n; ++j) {
+      lua_rawgeti(state, -1, (lua_Integer)j+1); luaL_checktype(state, -1, LUA_TTABLE);
+      lua_rawgeti(state, -1, 1); vertices[at*2]=check_geometry_number(state,-1);lua_pop(state,1);
+      lua_rawgeti(state, -1, 2); vertices[at*2+1]=check_geometry_number(state,-1);lua_pop(state,2);
+      ++at;
+    }
+    lua_pop(state,2);
+  }
+  luaL_newmetatable(state,H2_LUA_PIXEL_MESH_META);lua_setmetatable(state,-2);
+  return 1;
+}
+static int display_draw_mesh(lua_State *state) {
+  static const char cache_key;
+  h2_lua_job_t *job=lua_touserdata(state,lua_upvalueindex(1));
+  h2_lua_pixel_mesh_t *mesh=luaL_checkudata(state,1,H2_LUA_PIXEL_MESH_META);
+  double x=check_geometry_number(state,2),y=check_geometry_number(state,3);
+  double scale=check_geometry_number(state,4),angle=check_geometry_number(state,5);
+  double offset=lua_isnoneornil(state,6)?0:check_geometry_number(state,6);
+  int top=(int)luaL_optinteger(state,7,0),bottom=(int)luaL_optinteger(state,8,job->display_info.height);
+  if(!job->display_open || scale<=0 || scale>100 || top<0 || bottom>job->display_info.height || top>bottom)
+    return luaL_error(state,"invalid draw_mesh");
+  h2_lua_mesh_face_t *faces=(h2_lua_mesh_face_t *)(mesh+1);
+  double *vertices=(double *)(faces+mesh->faces);
+  int32_t *positions=(int32_t *)(vertices+mesh->vertices*2);
+  int changed=!mesh->position_valid;
+  if(!mesh->position_valid || mesh->x!=x || mesh->y!=y || mesh->scale!=scale || mesh->angle!=angle) {
+    double ca=cos(angle),sa=sin(angle),grid=scale>3?2:1;
+    for(size_t i=0;i<mesh->vertices;++i) {
+      double vx=vertices[i*2],vy=vertices[i*2+1];
+      float fx=((float)x+((float)vx*(float)ca-(float)vy*(float)sa)*(float)scale)/(float)grid;
+      float fy=((float)y+((float)vx*(float)sa+(float)vy*(float)ca)*(float)scale)/(float)grid;
+      float error=64*FLT_EPSILON*(fabsf((float)x)+fabsf((float)y)+(fabsf((float)vx)+fabsf((float)vy))*(float)scale+1);
+      int32_t px,py;
+      if(error<.25f && fabsf(fx-floorf(fx)-.5f)>error)px=(int32_t)(floorf(fx+.5f)*(float)grid);
+      else px=(int32_t)(floor((x+(vx*ca-vy*sa)*scale)/grid+.5)*grid);
+      if(error<.25f && fabsf(fy-floorf(fy)-.5f)>error)py=(int32_t)(floorf(fy+.5f)*(float)grid);
+      else py=(int32_t)(floor((y+(vx*sa+vy*ca)*scale)/grid+.5)*grid);
+      if(!mesh->position_valid || positions[i*2]!=px || positions[i*2+1]!=py)changed=1;
+      positions[i*2]=px;positions[i*2+1]=py;
+    }
+    mesh->x=x;mesh->y=y;mesh->scale=scale;mesh->angle=angle;mesh->position_valid=1;
+  }
+  /* One VM-local scanline cache, independent of the number of reel models.
+   * This stores procedural drawing commands, never a bitmap or a texture. */
+  lua_rawgetp(state,LUA_REGISTRYINDEX,&cache_key);
+  h2_lua_span_cache_t *cache=lua_isuserdata(state,-1)?lua_touserdata(state,-1):NULL;
+  if(cache && cache->valid && cache->source==mesh && !changed && cache->offset==offset && cache->top==top && cache->bottom==bottom) {
+    h2_lua_cached_span_t *spans=(h2_lua_cached_span_t *)(cache+1);
+    for(size_t i=0;i<cache->count;++i) {
+      const h2_lua_cached_span_t *p=spans+i;
+      fill_span(job,p->y,p->left,p->right,p->color);mark_dirty_rect(job,p->left,p->y,p->right-p->left+1,1);
+    }
+    return 0;
+  }
+  size_t capacity=0;
+  for(size_t i=0;i<mesh->faces;++i) {
+    const h2_lua_mesh_face_t *f=faces+i;int lo=bottom,hi=top;
+    for(size_t j=0;j<f->count;++j) {int py=positions[(f->first+j)*2+1];if(py<lo)lo=py;if(py>hi)hi=py;}
+    if(lo<top)lo=top;
+    if(hi>=bottom)hi=bottom-1;
+    if(hi>=lo)capacity+=(size_t)(hi-lo+1)*(f->count/2);
+    if(capacity>16384){capacity=16384;break;}
+  }
+  if(!cache || cache->capacity<capacity) {
+    lua_pop(state,1);
+    cache=lua_newuserdatauv(state,sizeof(*cache)+capacity*sizeof(h2_lua_cached_span_t),1);
+    memset(cache,0,sizeof(*cache));cache->capacity=capacity;
+    lua_pushvalue(state,-1);lua_rawsetp(state,LUA_REGISTRYINDEX,&cache_key);
+  }
+  lua_pushvalue(state,1);lua_setiuservalue(state,-2,1);
+  cache->source=mesh;cache->offset=offset;cache->top=top;cache->bottom=bottom;cache->count=0;cache->valid=1;
+  double px[128],py[128];
+  for(size_t i=0;i<mesh->faces;++i) {
+    const h2_lua_mesh_face_t *f=faces+i;
+    for(size_t j=0;j<f->count;++j) {px[j]=positions[(f->first+j)*2];py[j]=positions[(f->first+j)*2+1];}
+    display_raster_polygon_capture(job,px,py,f->count,f->color,offset,top,bottom,cache);
+  }
+  return 0;
+}
+
 static int display_fill_rect(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   int x = check_pixel_number(state, 1);
@@ -2331,35 +2647,103 @@ static int display_begin_frame(lua_State *state) {
   return 0;
 }
 
+/* Exact RGB565 comparison against the last successful display update. Opt-in:
+ * display.present({retained=true}); subsequent present calls retain the mode.
+ * Dirty tile runs preserve all pixels, including erasure of previous geometry. */
+static int display_tile_changed(h2_lua_job_t *job, int x, int y, int w, int h) {
+  for (int row = 0; row < h; ++row) {
+    size_t offset = (size_t)(y + row) * (size_t)job->display_info.width + (size_t)x;
+    if (memcmp(job->framebuffer + offset, job->presented_framebuffer + offset,
+               (size_t)w * sizeof(uint16_t)) != 0)
+      return 1;
+  }
+  return 0;
+}
 static int display_present(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  h2_display_rect_t rect;
-  h2_pal_result_t result;
-  if (!job->display_open) {
+  h2_pal_result_t result = H2_PAL_OK;
+  size_t pixels = 0, rectangles = 0;
+  if (!job->display_open)
     return luaL_error(state, "display is not open");
+  if (lua_istable(state, 1)) {
+    lua_getfield(state, 1, "retained");
+    int retained = lua_toboolean(state, -1);
+    lua_pop(state, 1);
+    if (retained && !job->presented_framebuffer) {
+      size_t bytes = (size_t)job->display_info.width *
+                     (size_t)job->display_info.height * sizeof(uint16_t);
+      size_t tiles = ((size_t)job->display_info.width + 15u) / 16u *
+                     (((size_t)job->display_info.height + 15u) / 16u);
+      job->presented_framebuffer = h2_pal_mem_alloc(job->host->config.runtime->mem, bytes + tiles);
+      if (!job->presented_framebuffer)
+        return luaL_error(state, "retained display allocation failed");
+      job->presented_valid = 0;
+      job->dirty_valid = 1;
+    }
   }
-  result = H2_PAL_OK;
   if (job->dirty_valid) {
-    rect = (h2_display_rect_t){job->dirty_min_x, job->dirty_min_y,
-                               job->dirty_max_x - job->dirty_min_x + 1,
-                               job->dirty_max_y - job->dirty_min_y + 1};
-    result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
-        job->host->config.runtime->display, &rect,
-        job->framebuffer +
-            (size_t)job->dirty_min_y * (size_t)job->display_info.width +
-            (size_t)job->dirty_min_x,
-        (size_t)job->display_info.width * sizeof(*job->framebuffer),
-        H2_DISPLAY_PIXEL_RGB565);
+    int width = job->display_info.width, height = job->display_info.height;
+    if (job->presented_framebuffer && job->presented_valid) {
+      const int columns=(width+15)/16,rows=(height+15)/16;
+      uint8_t *changed=(uint8_t *)(job->presented_framebuffer+(size_t)width*height);
+      /* Compare the whole immutable frame before starting panel writes. Mixing
+       * tile comparison with synchronous transfers stretches the visible tear
+       * window. Join touching runs vertically as well as horizontally. */
+      for(int ty=0;ty<rows;++ty) for(int tx=0;tx<columns;++tx) {
+        int x=tx*16,y=ty*16,w=width-x<16?width-x:16,h=height-y<16?height-y:16;
+        changed[ty*columns+tx]=(uint8_t)display_tile_changed(job,x,y,w,h);
+      }
+      for(int ty=0;ty<rows && result==H2_PAL_OK;++ty) for(int tx=0;tx<columns;) {
+        if(!changed[ty*columns+tx]) {++tx;continue;}
+        int end=tx+1;while(end<columns && changed[ty*columns+end])++end;
+        int bottom=ty+1;
+        while(bottom<rows) {
+          int match=1;for(int k=tx;k<end;++k) if(!changed[bottom*columns+k]) {match=0;break;}
+          if(!match)break;
+          ++bottom;
+        }
+        int x=tx*16,y=ty*16,right=end*16<width?end*16:width,low=bottom*16<height?bottom*16:height;
+        h2_display_rect_t rect={x,y,right-x,low-y};
+        size_t offset=(size_t)y*width+x;
+        result=(h2_pal_result_t)h2_pal_display_draw_bitmap(job->host->config.runtime->display,
+            &rect,job->framebuffer+offset,(size_t)width*sizeof(uint16_t),H2_DISPLAY_PIXEL_RGB565);
+        if(result!=H2_PAL_OK)break;
+        pixels+=(size_t)rect.width*rect.height;++rectangles;
+        for(int row=0;row<rect.height;++row) {
+          size_t at=offset+(size_t)row*width;
+          memcpy(job->presented_framebuffer+at,job->framebuffer+at,(size_t)rect.width*sizeof(uint16_t));
+        }
+        for(int yy=ty;yy<bottom;++yy)for(int xx=tx;xx<end;++xx)changed[yy*columns+xx]=0;
+        tx=end;
+      }
+    } else {
+      h2_display_rect_t rect = job->presented_framebuffer
+          ? (h2_display_rect_t){0, 0, width, height}
+          : (h2_display_rect_t){job->dirty_min_x, job->dirty_min_y,
+              job->dirty_max_x - job->dirty_min_x + 1,
+              job->dirty_max_y - job->dirty_min_y + 1};
+      result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
+          job->host->config.runtime->display, &rect,
+          job->framebuffer + (size_t)rect.y * (size_t)width + (size_t)rect.x,
+          (size_t)width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
+      pixels = (size_t)rect.width * (size_t)rect.height;
+      rectangles = 1;
+      if (result == H2_PAL_OK && job->presented_framebuffer)
+        memcpy(job->presented_framebuffer, job->framebuffer,
+               (size_t)width * (size_t)height * sizeof(uint16_t));
+    }
   }
-  if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_pal_display_present(
-        job->host->config.runtime->display);
-  }
+  if (result == H2_PAL_OK)
+    result = (h2_pal_result_t)h2_pal_display_present(job->host->config.runtime->display);
   if (result != H2_PAL_OK) {
+    job->presented_valid = 0;
     return luaL_error(state, "display present failed: %d", result);
   }
+  if (job->presented_framebuffer) job->presented_valid = 1;
   job->dirty_valid = 0;
-  return 0;
+  lua_pushinteger(state, (lua_Integer)pixels);
+  lua_pushinteger(state, (lua_Integer)rectangles);
+  return 2;
 }
 
 static int display_end_frame(lua_State *state) {
@@ -2379,6 +2763,9 @@ static int display_close(lua_State *state) {
       (void)h2_pal_display_close(job->host->config.runtime->display);
     h2_pal_mem_free(job->host->config.runtime->mem, job->framebuffer);
     job->framebuffer = NULL;
+    h2_pal_mem_free(job->host->config.runtime->mem, job->presented_framebuffer);
+    job->presented_framebuffer = NULL;
+    job->presented_valid = 0;
     job->display_open = 0;
     job->frame_open = 0;
     job->dirty_valid = 0;
@@ -2397,6 +2784,13 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   lua_createtable(state, 0, 26);
   set_function(state, "clear", display_clear, job);
   set_function(state, "fill_rect", display_fill_rect, job);
+  set_function(state, "fill_polygon", display_fill_polygon, job);
+  set_function(state, "compile_mesh", display_compile_mesh, job);
+  set_function(state, "compile_commands", display_compile_commands, job);
+  set_function(state, "draw_commands", display_draw_commands, job);
+  set_function(state, "stroke_path", display_stroke_path, job);
+  set_function(state, "draw_mesh", display_draw_mesh, job);
+  set_function(state, "fill_ellipse", display_fill_ellipse, job);
   set_function(state, "draw_line", display_draw_line, job);
   set_function(state, "fill_circle", display_fill_circle, job);
   set_function(state, "draw_circle", display_draw_circle, job);

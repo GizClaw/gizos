@@ -133,6 +133,8 @@ typedef struct h2_lua_job {
   size_t event_head;
   size_t event_count;
   uint16_t *framebuffer;
+  uint16_t *presented_framebuffer;
+  int presented_valid;
   h2_display_info_t display_info;
   int display_open;
   int frame_open;

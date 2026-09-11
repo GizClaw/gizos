@@ -883,6 +883,7 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   }
   h2_lua_job_close_audio_tracks(job);
   h2_pal_mem_free(mem, job->framebuffer);
+  h2_pal_mem_free(mem, job->presented_framebuffer);
   h2_pal_mem_free(mem, job->tasks);
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);
