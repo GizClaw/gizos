@@ -110,3 +110,91 @@ web_archive_browser_test(
     tags = ["manual"],
     timeout_s = 90,
 )
+
+# The 1024x600 H.264/AAC file used by the desktop and Android players.
+cc_binary(
+    name = "_wasm_large/index",
+    srcs = ["main.c"],
+    additional_linker_inputs = [
+        "shell.html",
+        "//projects/example/apps/mp4-player:large_media",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + [
+        "-Wno-deprecated-declarations",
+        "-Wno-shorten-64-to-32",
+    ],
+    features = ["-output_format_js"],
+    local_defines = [
+        "H2_WEB_MP4_WIDTH=1024",
+        "H2_WEB_MP4_HEIGHT=600",
+    ],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sASYNCIFY=1",
+        "-sINITIAL_MEMORY=67108864",
+        "-sNO_EXIT_RUNTIME=1",
+        "--embed-file",
+        "$(location //projects/example/apps/mp4-player:large_media)@/media/startup.mp4",
+        "--shell-file",
+        "$(location shell.html)",
+        "--oformat=html",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+        "//projects/example/apps/mp4-player/app:mp4_player",
+        "//projects/example/libs/host_runtime",
+    ],
+)
+
+wasm_cc_binary(
+    name = "mp4_player_large_wasm",
+    cc_target = ":_wasm_large/index",
+    outputs = [
+        "large/index.html",
+        "large/index.js",
+        "large/index.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+pkg_tar(
+    name = "mp4-player-large",
+    srcs = [":mp4_player_large_wasm"],
+    out = "mp4-player-large.web.tar",
+    mode = "0644",
+    portable_mtime = True,
+    strip_prefix = "large",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+web_archive_serve(
+    name = "serve_large",
+    archive = ":mp4-player-large",
+)
+
+web_archive_browser_test(
+    name = "large_browser_test",
+    archive = ":mp4-player-large",
+    canvas_min = 1000,
+    fails = ["Playback failed"],
+    passes = [
+        "H2_MP4_PLAYER_MEDIA video=1024x600 audio=1",
+        "Playback complete",
+    ],
+    tags = ["manual"],
+    timeout_s = 180,
+)

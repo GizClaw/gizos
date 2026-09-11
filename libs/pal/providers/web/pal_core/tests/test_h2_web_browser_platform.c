@@ -45,6 +45,12 @@ EM_JS(void, test_inject_quota_exceeded, (), {
   };
 });
 
+// Whether the provider saw the track's scheduled audio run out.
+EM_JS(int, test_track_ran_dry, (const void *platform, const void *track), {
+  const state = Module['h2WebAudioPlatforms']?.get(platform);
+  return state?.tracks.get(track)?.underrunReported ? 1 : 0;
+});
+
 EM_JS(void, test_seed_assets, (), {
   FS.mkdirTree('/assets/ui');
   FS.writeFile('/assets/ui/logo.txt', 'preloaded');
@@ -387,24 +393,30 @@ static int run_display_and_speaker(test_context_t *context,
     if (offset == 3200u &&
         h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_ERR_WOULD_BLOCK)
       would_block = 1;
+    // The writer stalls longer than the first 20 ms frame; the start lead
+    // must still cover it.
+    if (offset == 320u)
+      (void)h2_pal_time_sleep_ms(h2_web_platform_time_api(context->platform),
+                                 50u);
     rc = (h2_pal_result_t)h2_pal_audio_track_write(track, &frame, 2000u);
     if (rc != H2_PAL_OK)
       break;
     written_samples += 320u;
   }
   const double write_ms = emscripten_get_now() - started;
+  const int ran_dry = test_track_ran_dry(context->platform, track);
   rc = rc == H2_PAL_OK
            ? (h2_pal_result_t)h2_pal_audio_track_drain(track, 3000u)
            : rc;
   const double total_ms = emscripten_get_now() - started;
   (void)snprintf(detail, sizeof(detail),
-                 "rc=%d samples=%zu write_ms=%.0f total_ms=%.0f block=%d", rc,
-                 written_samples, write_ms, total_ms, would_block);
+                 "rc=%d samples=%zu write_ms=%.0f total_ms=%.0f block=%d dry=%d",
+                 rc, written_samples, write_ms, total_ms, would_block, ran_dry);
   // One second of PCM: writes are throttled to the queue depth and drain
   // returns only once playback reached the end.
   STEP_CHECK("speaker",
              rc == H2_PAL_OK && written_samples == 16000u && would_block &&
-                 write_ms >= 500.0 && total_ms >= 950.0 && total_ms < 2500.0,
+                 !ran_dry && write_ms >= 500.0 && total_ms >= 950.0 && total_ms < 2500.0,
              detail);
   STEP_CHECK("speaker",
              h2_pal_audio_track_close(track) == H2_PAL_OK &&

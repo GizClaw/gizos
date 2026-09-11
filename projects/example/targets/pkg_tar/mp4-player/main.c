@@ -19,6 +19,22 @@ typedef struct web_player {
   int done;
 } web_player_t;
 
+// The large-media archive overrides the display to the video's size.
+#ifndef H2_WEB_MP4_WIDTH
+#define H2_WEB_MP4_WIDTH 240
+#endif
+#ifndef H2_WEB_MP4_HEIGHT
+#define H2_WEB_MP4_HEIGHT 240
+#endif
+
+EM_JS(void, web_size_canvas, (int width, int height), {
+  const canvas = Module['canvas'];
+  if (canvas) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+});
+
 EM_JS(void, web_set_status, (const char *status), {
   const element = document.getElementById('status');
   if (element)
@@ -72,9 +88,10 @@ static void web_player_task(void *context) {
 
 int main(void) {
   const h2_web_platform_config_t platform_config = {
-      .display_width = 240,
-      .display_height = 240,
+      .display_width = H2_WEB_MP4_WIDTH,
+      .display_height = H2_WEB_MP4_HEIGHT,
   };
+  web_size_canvas(H2_WEB_MP4_WIDTH, H2_WEB_MP4_HEIGHT);
   h2_web_platform_t *platform = h2_web_platform_create(&platform_config);
   if (platform == NULL) {
     web_set_status("Web PAL initialization failed");

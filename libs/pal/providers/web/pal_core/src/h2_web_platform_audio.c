@@ -7,6 +7,12 @@
 // Playback queue depth advertised by get_info and enforced by track write.
 #define H2_WEB_AUDIO_TRACK_QUEUE_FRAMES 8u
 #define H2_WEB_AUDIO_MIN_QUEUE_MS 200u
+/*
+ * Playback of a starting or starved track begins this far ahead of the
+ * AudioContext clock. Writes come from the main thread, so without a cushion
+ * any stall longer than the writer's own lead is an audible gap.
+ */
+#define H2_WEB_AUDIO_START_LEAD_MS 80.0
 
 struct h2_web_audio_track {
   h2_pal_audio_track_t base;
@@ -127,7 +133,7 @@ EM_JS(double, h2_web_audio_track_queued_js,
 EM_JS(int, h2_web_audio_track_write_js,
       (uintptr_t platform_address, uintptr_t track_address,
        const int16_t *samples, uint32_t samples_per_channel, int channels,
-       uint32_t sample_rate_hz), {
+       uint32_t sample_rate_hz, double lead_s), {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         const track = state?.tracks.get(track_address);
         const context = state?.activate();
@@ -154,7 +160,19 @@ EM_JS(int, h2_web_audio_track_write_js,
           const source = context.createBufferSource();
           source.buffer = buffer;
           source.connect(track.node);
-          const startTime = Math.max(context.currentTime, track.nextTime);
+          // A track that starts or has run dry begins lead_s ahead of the
+          // clock; later buffers append to it and keep that cushion against
+          // main-thread stalls between writes.
+          const startTime = track.nextTime > context.currentTime
+              ? track.nextTime
+              : context.currentTime + lead_s;
+          if (track.nextTime !== 0 && track.nextTime < context.currentTime &&
+              !track.underrunReported) {
+            track.underrunReported = true;
+            console.warn(`Web Audio track ran dry for ${
+                ((context.currentTime - track.nextTime) * 1000).toFixed(0)
+            } ms; the writer fell behind playback`);
+          }
           track.sources.add(source);
           source.onended = () => track.sources.delete(source);
           source.start(startTime);
@@ -307,7 +325,8 @@ static int h2_web_audio_track_write(h2_pal_audio_track_t *base,
     return H2_AUDIO_ERR_INVALID_STATE;
   return h2_web_audio_track_write_js(
       (uintptr_t)track->platform, (uintptr_t)track, frame->data,
-      frame->samples_per_channel, frame->channels, frame->sample_rate_hz);
+      frame->samples_per_channel, frame->channels, frame->sample_rate_hz,
+      H2_WEB_AUDIO_START_LEAD_MS / 1000.0);
 }
 
 static int h2_web_audio_track_close(h2_pal_audio_track_t *base) {

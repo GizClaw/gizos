@@ -124,7 +124,7 @@ Audio PAL 的麦克风通过 `getUserMedia` 与 `AudioWorklet` 采集，显式�
 ### 音频、视频与 Display
 
 - 麦克风：16 kHz mono S16LE、320 samples/帧；需要用户手势、安全上下文与授权。拒绝或无设备 `UNAVAILABLE`，缺 API `UNSUPPORTED`，设备移除 `CLOSED`。
-- 扬声器：track `write` 按播放时钟限流，最多排队 `track_queue_frames`（8）帧，超时返回 `WOULD_BLOCK`；`drain` 等到已排队音频（含 AudioContext 输出延迟）播放完毕；`close`/`stop_speaker` 立即停止（打断）。音量通过常驻 GainNode 立即作用于已排队音频。AudioContext 受 autoplay policy 限制处于 suspended 时播放时钟停止：Console 立即警告一次，有限 timeout 的写入到期返回 `WOULD_BLOCK`，无限等待会一直等到 AudioContext 恢复，页面必须在用户手势中创建或恢复 AudioContext。
+- 扬声器：track `write` 按播放时钟限流，最多排队 `track_queue_frames`（8）帧，超时返回 `WOULD_BLOCK`；track 开始或排队音频播完后，下一帧从 AudioContext 时钟之后 80 ms 开始，吸收主线程卡顿（代价是 80 ms 输出延迟），排队音频曾经播完时 Console 警告一次；`drain` 等到已排队音频（含 AudioContext 输出延迟）播放完毕；`close`/`stop_speaker` 立即停止（打断）。音量通过常驻 GainNode 立即作用于已排队音频。AudioContext 受 autoplay policy 限制处于 suspended 时播放时钟停止：Console 立即警告一次，有限 timeout 的写入到期返回 `WOULD_BLOCK`，无限等待会一直等到 AudioContext 恢复，页面必须在用户手势中创建或恢复 AudioContext。
 - 解码：WebCodecs H.264 Annex-B 输出单 plane RGB565（stride = width×2），AAC-LC 输出 S16LE；frame 由 allocator 持有，release 后释放；`reset` 后可重复播放；WebCodecs 在 B 帧重排或 flush 时多出的输出不再判为错误。开源 Chromium（含测试用 pinned Chromium）不带 H.264/AAC，configure 返回 `UNSUPPORTED`；Google Chrome、Edge、Safari 提供这些编解码器。
 - Display：必须先 `open`，未打开或已关闭时 `get_info`/`draw_bitmap` 返回 `INVALID_STATE`；Canvas 尺寸取自 `h2_web_platform_config_t`，页面中 `<canvas>` 的 width/height 必须一致（H106 为 240×240）。
 
@@ -189,7 +189,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 | `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
-| `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
+| `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
 
 未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
 
