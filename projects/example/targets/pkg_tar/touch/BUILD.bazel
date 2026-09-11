@@ -1,0 +1,27 @@
+load("//projects/example/libs/web/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+# The browser test taps the canvas and presses the action Button's key; both
+# must reach the App as Runtime touch and Button action events.
+h2_web_app(
+    name = "touch",
+    srcs = ["main.c"],
+    app_name = "touch",
+    canvas_min = 1000,
+    passes = [
+        "touch-smoke\\] Touch up +x=100 +y=100",
+        "touch-smoke\\] event=action",
+        "H2_WEB_APP name=touch result=PASS rc=0 fs=0 destroy=0",
+    ],
+    presses = [[
+        "touch-smoke\\] Touch up",
+        "Enter",
+    ]],
+    taps = [[
+        "H2_WEB_APP name=touch stage=running",
+        100,
+        100,
+    ]],
+    deps = ["//projects/example/apps/touch/app:touch_smoke"],
+)

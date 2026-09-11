@@ -1,13 +1,22 @@
 #include "h2_pal_e2e.h"
 #include "h2_pal_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
+#include "h2_web_fs.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
 #include <stdio.h>
 
+// Node runs the scheduling core; the browser page (?suite=browser) also runs
+// the Web providers: persistent Filesystem, HTTP, netif and System Event.
+EM_JS(int, h2_web_pal_browser_suite, (), {
+  return globalThis.location &&
+      new URLSearchParams(location.search).get('suite') === 'browser' ? 1 : 0;
+});
+
 typedef struct h2_web_pal_app {
   h2_runtime_t *runtime;
+  int browser;
   h2_pal_e2e_result_t result;
   h2_pal_result_t run_result;
 } h2_web_pal_app_t;
@@ -15,7 +24,9 @@ typedef struct h2_web_pal_app {
 static void h2_web_pal_run(void *user) {
   h2_web_pal_app_t *app = user;
   const h2_pal_e2e_config_t config = {
-      .suite_mask = H2_PAL_E2E_SUITE_CORE,
+      .suite_mask = app->browser ? H2_PAL_E2E_SUITE_BROWSER
+                                 : H2_PAL_E2E_SUITE_CORE,
+      .host = {.http_url = "pal-host-e2e"},
   };
   app->run_result = h2_pal_e2e_run(app->runtime, &config, &app->result);
 }
@@ -52,10 +63,21 @@ int main(void) {
   config.webrtc = h2_web_platform_webrtc_api(platform);
   config.netif = h2_web_platform_netif_api(platform);
   config.system_event = h2_web_platform_system_event_api(platform);
+  const int browser = h2_web_pal_browser_suite();
+  h2_web_fs_t *fs = NULL;
+  h2_pal_result_t result = H2_PAL_OK;
+  if (browser) {
+    const h2_web_fs_config_t fs_config = {.persistent_root = "/data"};
+    result = h2_web_fs_open(platform, &fs_config, &fs);
+    config.fs = h2_web_fs_api(fs);
+    config.http = h2_web_platform_http_api(platform);
+  }
   h2_runtime_t *runtime = NULL;
-  h2_pal_result_t result = h2_runtime_init(&config, &runtime);
+  if (result == H2_PAL_OK)
+    result = h2_runtime_init(&config, &runtime);
   h2_web_pal_app_t app = {
       .runtime = runtime,
+      .browser = browser,
       .run_result = result,
   };
   h2_pal_task_t *task = NULL;
@@ -115,7 +137,10 @@ int main(void) {
     h2_runtime_deinit(runtime);
   }
   if (app.result.retained_cleanup == NULL) {
-    h2_web_platform_destroy(platform);
+    const h2_pal_result_t fs_result = h2_web_fs_close(fs);
+    const h2_pal_result_t destroy_result = h2_web_platform_destroy(platform);
+    printf("H2_WEB_PAL_TEARDOWN fs=%d destroy=%d\n", fs_result,
+           destroy_result);
   }
   return result == H2_PAL_OK ? 0 : 1;
 }

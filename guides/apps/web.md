@@ -7,10 +7,17 @@ Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它
 ```text
 projects/example/
 ├── libs/web/tap-reset/            # Web presentation 与 App contract conversion
-├── targets/pkg_tar/tap-reset/     # Emscripten entry、HTML shell 和最终 Web archive
-└── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive
+├── libs/web/app_host/             # 通用 Web launcher、HTML shell 与 h2_web_app() 宏
+├── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive（自带 shell）
+├── targets/pkg_tar/mp4-player/    # WebCodecs MP4 播放 archive（自带 shell）
+└── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
+                                   # starboy、lua-cosmic-drift、audio-system：
+                                   # main.c + h2_web_app()
 
-projects/e2e/targets/pkg_tar/lua-runtime/ # Lua Runtime 九 case Browser archive
+projects/e2e/targets/pkg_tar/
+├── pal/                           # portable PAL E2E；?suite=browser 跑浏览器套件
+├── libco/                         # libco Emscripten Fiber E2E
+└── lua-runtime/                   # Lua Runtime 九 case Browser archive
 
 projects/h2loader/
 ├── libs/web/                      # 可复用的 H2Loader JS/runtime/WASM build target
@@ -29,7 +36,7 @@ Web wrapper C source 由 `//projects/example/libs/web/tap-reset:tap_reset_web` �
 make test-web
 ```
 
-`make test-web` 构建 Tap Reset 以及 `projects/e2e/targets/pkg_tar/` 下的 Web archive，验证归档根目录、入口引用和 WASM magic，并通过 Emscripten/Node 执行 Web PAL、libco、portable PAL registry 与 fake Web Serial E2E。需要浏览器调试时，解包后使用任意静态文件服务托管目录；仓库不维护专用 runner：
+`make test-web` 构建 `projects/example/targets/pkg_tar/` 与 `projects/e2e/targets/pkg_tar/` 下的 Web archive，验证归档根目录、入口引用和 WASM magic，通过 Emscripten/Node 执行 Web PAL、libco、portable PAL registry 与 fake Web Serial E2E，并在真实 Chromium 中运行各 archive 的 `:browser_test`（见下文 [Example 与 E2E 的 Web target](#example-与-e2e-的-web-target)）。每个 target 的 `:serve` 可在本机托管 archive。需要浏览器调试时，解包后使用任意静态文件服务托管目录；仓库不维护专用 runner：
 
 ```sh
 mkdir -p build/web/tap-reset
@@ -163,6 +170,28 @@ config.http = h2_web_platform_http_api(platform);
 config.webrtc = h2_web_platform_webrtc_api(platform);
 // ... remaining Web providers and canonical unsupported APIs.
 ```
+
+### Example 与 E2E 的 Web target
+
+`//projects/example/libs/web/app_host` 是 example App 的通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 把 DOM `KeyboardEvent.key` 的 keydown/keyup 写成 `h2_runtime_button_push_edge()` edge，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
+
+`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
+
+| Target | 浏览器测试验证 |
+|---|---|
+| e2e `pal`（`?suite=browser`） | Memory/Time/Timer/Task/Queue/Mutex/Condition、IndexedDB Filesystem、Fetch HTTP、Netif、System Event 分发给 Runtime、raw Net 返回 `UNSUPPORTED`；teardown `fs=0 destroy=0` |
+| e2e `libco`、`lua-runtime` | Emscripten Fiber 调度；Lua 九 case |
+| `display`、`qrcode`、`log` | Display 输出（非黑像素）、App 正常返回 |
+| `lvgl-smoke` | LVGL 在 Web Task/Timer 上渲染，停止后 LVGL/Runtime 干净退出 |
+| `touch` | Canvas 点击成为 Runtime Touch down/up（坐标一致），Enter 成为 Button down/up/action |
+| `starboy` | 首帧 ready、持续动画、`should_stop` 退出 |
+| `lua-cosmic-drift` | Lua 场景 ready、Canvas 点击、Escape → Back Button 取消 Lua job |
+| `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
+| `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
+| `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
+| `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
+
+未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。
 
 `//projects/e2e/targets/pkg_tar/pal` 注入了 Netif 与 System Event。真实浏览器测试：
 
