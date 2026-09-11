@@ -1,17 +1,12 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["lua_resource.bzl"])
-
-LUA_TARGET_COMPATIBILITY = select({
-    "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
-    "//tools/bazel/platforms:is_bk7258": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
 
 h2_tasks(
     name = "tasks",
@@ -45,7 +40,6 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = ["//tools/bazel:vendor_third_party_lua"],
 )
 
@@ -76,7 +70,6 @@ cc_library(
     includes = [
         "include",
     ],
-    target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = [
         ":tasks",
         ":lua_core",
@@ -84,8 +77,7 @@ cc_library(
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",
     ] + select({
-        "//tools/bazel/platforms:is_esp32p4": ["//third_party/lua_patch"],
-        "//tools/bazel/platforms:is_esp32s3": ["//third_party/lua_patch"],
+        "@platforms//os:none": ["//third_party/lua_patch"],
         "//conditions:default": [],
     }),
 )
@@ -93,8 +85,15 @@ cc_library(
 cc_library(
     name = "lua",
     tags = ["h2-ci-native-package"],
-    target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = [":lua_runtime"],
+)
+
+# Embedded builds of //... run the firmware archive ABI check over the whole
+# Lua archive closure, so a newlib standard-stream dependency fails in GizOS.
+firmware_lib_component(
+    name = "lua_firmware_abi",
+    component_name = "h2_lua",
+    deps = [":lua"],
 )
 
 cc_test(

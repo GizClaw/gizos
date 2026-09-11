@@ -985,7 +985,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "CMDGYbE8LdlkxN5qej400MQLc4V0+UDGXL/CCEKf3kM=",
-        "usagesDigest": "OLI0fvu1GJenIQJpXCtTUlahlrlRYA1HyLmsov2X6+4=",
+        "usagesDigest": "21kwiMuqFOMOiEvBhYCmEEuAzgRFN/bq3bpbz3pudPY=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1203,7 +1203,9 @@
               "nested_archive_sha256": {},
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
-              "overlay_files": {},
+              "overlay_files": {
+                "@@//third_party/lua_patch:h2_lua_embedded_stdio.h": "src/h2_lua_embedded_stdio.h"
+              },
               "patches": [],
               "sha256": "b85ede9dbc4a4292addcfefebe15168acc7f1d42c674cc297d74f0e8ff2f2dd8",
               "strip_prefix": "lua-a5522f06d2679b8f18534fd6a9968f7eb539dc31",
