@@ -30,6 +30,14 @@ static atomic_int last_cancel_source;
 static unsigned end_noops;
 static size_t downlink_writes;
 static unsigned flushes;
+/* Typed RPC order: d=delete, g=get, c=create, r=reload. */
+static char rpc_trace[16];
+static void trace(char step) {
+  const size_t len = strlen(rpc_trace);
+  assert(len + 1u < sizeof(rpc_trace));
+  rpc_trace[len] = step;
+  rpc_trace[len + 1u] = '\0';
+}
 /* This test mocks Service; capture Session's production ERROR formatting. */
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log) {
@@ -169,6 +177,7 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
   (void)timeout;
   (void)storage;
   ++gets;
+  trace('g');
   if (get_failure)
     return H2_PAL_ERR_IO;
   if (missing)
@@ -194,6 +203,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   (void)storage;
   (void)out;
   ++creates;
+  trace('c');
   missing = false;
   /* Server created it but response was lost. Session must reconcile. */
   return H2_PAL_ERR_IO;
@@ -208,6 +218,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   (void)timeout;
   (void)storage;
   ++reloads;
+  trace('r');
   h2_gizclaw_session_state_t state;
   assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
   assert(!state.can_start);
@@ -276,6 +287,7 @@ static void setup(size_t collections) {
   audio_input_empty = false;
   audio_start_result = audio_end_result = H2_PAL_OK;
   audio_error_log[0] = '\0';
+  rpc_trace[0] = '\0';
   atomic_store(&cancel_entered, false);
   list_failure = bad_revision = missing = close_during_list = reload_failure =
       false;
@@ -512,8 +524,146 @@ static void test_control_boundaries(void) {
   teardown();
 }
 
+/* Mirrors the synchronous delete RPC's Session participation at the typed
+ * boundary; a successful server delete makes the next get return Not Found. */
+static h2_pal_result_t delete_workspace(const char *name,
+                                        h2_pal_result_t server_result) {
+  bool participating = false;
+  h2_pal_result_t rc = h2_gizclaw_session_workspace_delete_begin_internal(
+      session, (h2_gizclaw_str_t){name, strlen(name)}, 1000u, &participating);
+  if (rc == H2_PAL_OK) {
+    trace('d');
+    rc = server_result;
+    if (rc == H2_PAL_OK && strcmp(name, selection.workspace_name) == 0)
+      missing = true;
+  }
+  if (participating)
+    rc = h2_gizclaw_session_workspace_delete_finish_internal(session, rc);
+  return rc;
+}
+typedef struct delete_context {
+  const char *name;
+  h2_pal_result_t result;
+} delete_context_t;
+static void delete_thread(void *user) {
+  delete_context_t *context = user;
+  context->result = delete_workspace(context->name, H2_PAL_OK);
+}
+static void assert_deleted_empty(void) {
+  const h2_gizclaw_session_state_t state = snapshot();
+  const h2_gizclaw_workspace_parameters_patch_t none = {0};
+  assert(state.workspace == H2_GIZCLAW_SESSION_EMPTY);
+  assert(state.current_workspace[0] == '\0');
+  assert(state.target_workspace[0] == '\0');
+  assert(state.workflow_name[0] == '\0');
+  assert(memcmp(&state.parameters, &none, sizeof(none)) == 0);
+  assert(state.last_error == H2_PAL_OK);
+  assert(state.error_stage == H2_GIZCLAW_SESSION_BLOCK_NONE);
+  assert(!state.can_start &&
+         state.blocking_reason == H2_GIZCLAW_SESSION_BLOCK_WORKSPACE);
+}
+
+static void test_workspace_delete(void) {
+  const h2_gizclaw_workspace_parameters_patch_t ptt = {
+      .has_input = true,
+      .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+  };
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &ptt;
+
+  /* Deleting the current Workspace forgets it; select prepares it again. */
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(snapshot().can_start && snapshot().parameters.has_input);
+  assert(strcmp(snapshot().workflow_name, "alpha") == 0);
+  rpc_trace[0] = '\0';
+  uint64_t revision = snapshot().revision;
+  assert(delete_workspace("my-chat", H2_PAL_OK) == H2_PAL_OK);
+  assert(snapshot().revision > revision);
+  assert_deleted_empty();
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "dgcgr") == 0);
+  assert(snapshot().can_start);
+  assert(strcmp(snapshot().current_workspace, "my-chat") == 0);
+
+  /* Deleting another Workspace keeps READY and the ready fast path. */
+  rpc_trace[0] = '\0';
+  revision = snapshot().revision;
+  assert(delete_workspace("other", H2_PAL_OK) == H2_PAL_OK);
+  assert(snapshot().revision == revision && snapshot().can_start);
+  assert(strcmp(snapshot().current_workspace, "my-chat") == 0);
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "d") == 0);
+
+  /* An uncertain delete fails the Workspace; select re-validates it. */
+  rpc_trace[0] = '\0';
+  assert(delete_workspace("my-chat", H2_PAL_ERR_TIMEOUT) ==
+         H2_PAL_ERR_TIMEOUT);
+  assert(snapshot().workspace == H2_GIZCLAW_SESSION_FAILED);
+  assert(snapshot().last_error == H2_PAL_ERR_TIMEOUT);
+  assert(snapshot().error_stage == H2_GIZCLAW_SESSION_BLOCK_WORKSPACE);
+  assert(!snapshot().can_start);
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "dgr") == 0 && snapshot().can_start);
+
+  /* A closed Session rejects delete like the other workspace RPCs. */
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  rpc_trace[0] = '\0';
+  assert(delete_workspace("other", H2_PAL_OK) == H2_PAL_ERR_CLOSED);
+  assert(rpc_trace[0] == '\0');
+  teardown();
+
+  /* An active conversation is canceled before the delete RPC is sent. */
+  const h2_pal_task_api_t *tasks = h2_desktop_platform_task_api();
+  const h2_gizclaw_operation_result_t canceled = {
+      .terminal_kind = H2_GIZCLAW_OPERATION_CANCELED,
+      .result = H2_PAL_OK,
+  };
+  const h2_gizclaw_conversation_event_t reply = {
+      .kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA,
+  };
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_session_conversation_create(
+             session, &sel, 1000u, NULL, completed, NULL, &conversation) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_RECORDING);
+  rpc_trace[0] = '\0';
+  delete_context_t context = {.name = "my-chat", .result = H2_PAL_ERR_IO};
+  h2_pal_task_t *task = NULL;
+  assert(h2_pal_task_start(tasks, NULL, delete_thread, &context, &task) ==
+         H2_PAL_OK);
+  wait_flag(&cancel_entered);
+  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  assert(!snapshot().conversation_input_open && audio_ends == 1u);
+  assert(snapshot().workspace == H2_GIZCLAW_SESSION_PREPARING);
+  assert(rpc_trace[0] == '\0');
+  assert(delete_workspace("my-chat", H2_PAL_OK) == H2_PAL_ERR_BUSY);
+  terminal(terminal_user, conversation, &canceled);
+  assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
+  assert(context.result == H2_PAL_OK && terminal_count == 1u);
+  assert(strcmp(rpc_trace, "d") == 0);
+  assert_deleted_empty();
+  /* Late replies cannot revive the deleted route. */
+  assert(on_event(terminal_user, conversation, &reply) == H2_PAL_OK);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_gizclaw_session_conversation_create(
+             session, &sel, 1000u, NULL, completed, NULL, &conversation) ==
+         H2_PAL_OK);
+  assert(strcmp(rpc_trace, "dgcgr") == 0 && conversations == 2u);
+  assert(strcmp(snapshot().current_workspace, "my-chat") == 0);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  teardown();
+}
+
 int main(void) {
   test_control_boundaries();
+  test_workspace_delete();
   test_waiting_selection(false);
   test_waiting_selection(true);
   setup(2u);

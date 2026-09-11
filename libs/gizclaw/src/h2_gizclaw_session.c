@@ -1022,6 +1022,27 @@ static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
   return s->closed ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
 
+/* Called with the Session mutex held after admission checks. Owns the
+ * serialized workspace RPC slot and stops the active conversation first. */
+static h2_pal_result_t
+enter_workspace_rpc_locked(h2_gizclaw_session_t *s, uint32_t timeout,
+                           h2_gizclaw_audio_log_t *logs) {
+  s->workspace_rpc_active = true;
+  s->state.workspace = H2_GIZCLAW_SESSION_PREPARING;
+  s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
+  changed(s);
+  h2_pal_result_t rc =
+      stop_conversation_locked(s, timeout, logs, H2_GIZCLAW_CANCEL_WORKSPACE);
+  if (rc != H2_PAL_OK) {
+    s->workspace_rpc_active = false;
+    s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
+    s->state.last_error = rc;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_WORKSPACE;
+    changed(s);
+  }
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
     h2_gizclaw_session_t *s, h2_gizclaw_str_t name, uint32_t timeout) {
   h2_gizclaw_audio_log_t logs = {0};
@@ -1040,26 +1061,76 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
   }
   const bool pending_selection =
       s->state.workspace == H2_GIZCLAW_SESSION_PREPARING;
-  s->workspace_rpc_active = true;
-  s->state.workspace = H2_GIZCLAW_SESSION_PREPARING;
-  s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
   if (name.len != 0u) {
     memcpy(s->state.target_workspace, name.data, name.len);
     s->state.target_workspace[name.len] = '\0';
   } else if (!pending_selection || s->state.target_workspace[0] == '\0') {
     strcpy(s->state.target_workspace, s->state.current_workspace);
   }
-  changed(s);
-  rc = stop_conversation_locked(s, timeout, &logs, H2_GIZCLAW_CANCEL_WORKSPACE);
-  if (rc != H2_PAL_OK) {
-    s->workspace_rpc_active = false;
-    s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
-    s->state.last_error = rc;
-    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_WORKSPACE;
-    changed(s);
+  rc = enter_workspace_rpc_locked(s, timeout, &logs);
+  unlock_audio(s, &logs);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
+    h2_gizclaw_session_t *s, h2_gizclaw_str_t name, uint32_t timeout,
+    bool *out_participating) {
+  h2_gizclaw_audio_log_t logs = {0};
+  *out_participating = false;
+  if (s == NULL)
+    return H2_PAL_OK;
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const size_t current_len = strlen(s->state.current_workspace);
+  const bool current = name.len != 0u && name.len == current_len &&
+                       memcmp(name.data, s->state.current_workspace,
+                              current_len) == 0;
+  if (s->closed)
+    rc = H2_PAL_ERR_CLOSED;
+  else if (!current)
+    rc = H2_PAL_OK; /* Other Workspaces do not affect this Session. */
+  else if (s->workspace_rpc_active || s->restarting_input)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    rc = enter_workspace_rpc_locked(s, timeout, &logs);
+    *out_participating = rc == H2_PAL_OK;
   }
   unlock_audio(s, &logs);
   return rc;
+}
+
+h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
+    h2_gizclaw_session_t *s, h2_pal_result_t result) {
+  if (s == NULL)
+    return result;
+  h2_pal_result_t lock_rc = lock(s);
+  if (lock_rc != H2_PAL_OK)
+    return lock_rc;
+  s->workspace_rpc_active = false;
+  if (!s->closed &&
+      (!s->busy || s->operation_generation == s->state.generation)) {
+    if (result == H2_PAL_OK) {
+      /* The deleted Workspace's identity and confirmed parameters are gone;
+       * the next select must get/create/reload it from scratch. */
+      if (same(s->state.target_workspace, s->state.current_workspace))
+        s->state.target_workspace[0] = '\0';
+      s->state.workspace = H2_GIZCLAW_SESSION_EMPTY;
+      s->state.current_workspace[0] = '\0';
+      s->state.workflow_name[0] = '\0';
+      memset(&s->state.parameters, 0, sizeof(s->state.parameters));
+    } else {
+      /* Deletion may have happened; never keep an uncertain name as READY. */
+      s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
+    }
+    s->state.last_error = result;
+    s->state.error_stage = result == H2_PAL_OK
+                               ? H2_GIZCLAW_SESSION_BLOCK_NONE
+                               : H2_GIZCLAW_SESSION_BLOCK_WORKSPACE;
+    changed(s);
+  }
+  unlock(s);
+  return result;
 }
 
 h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(

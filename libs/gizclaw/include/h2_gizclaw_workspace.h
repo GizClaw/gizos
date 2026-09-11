@@ -243,6 +243,15 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_t *out_result);
 
+/** Delete a Workspace. With a Session attached to service, deleting the
+ * Session's current Workspace first stops its conversation (waiting up to
+ * timeout_ms for local cancellation dispatch) and is serialized with the other
+ * synchronous workspace RPCs (BUSY while one runs). Success leaves the Session
+ * workspace EMPTY without a current Workspace, Workflow or confirmed
+ * parameters, so the next Session select prepares the name from scratch
+ * (get, create when Not Found, reload). Any failure, including an uncertain
+ * timeout, marks the Session workspace FAILED. Deleting another Workspace
+ * leaves the Session unchanged; a closed Session rejects delete with CLOSED. */
 h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);

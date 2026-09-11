@@ -59,6 +59,17 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     h2_gizclaw_session_t *session, h2_pal_result_t result,
     const h2_gizclaw_workspace_activation_t *activation,
     const h2_gizclaw_workspace_parameters_patch_t *parameters);
+/* Workspace delete participates only when name is the Session's current
+ * Workspace: that path stops the conversation and owns the serialized
+ * workspace RPC slot. Other names leave the Session untouched. A closed
+ * Session rejects every delete. out_participating selects the finish call. */
+h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
+    h2_gizclaw_session_t *session, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    bool *out_participating);
+/* Success publishes EMPTY with no current Workspace, Workflow or confirmed
+ * parameters; any failure, including an uncertain result, publishes FAILED. */
+h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
+    h2_gizclaw_session_t *session, h2_pal_result_t result);
 
 /* Drop the downlink's buffered audio: queued Opus, the decoder state and the
  * Track's unplayed PCM (unless another owner holds the Track downlink). */
