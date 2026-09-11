@@ -70,6 +70,8 @@ wl82 condition 为每个 wait 创建独立的 SDK semaphore，signal/broadcast �
 
 wl82 的 pi32v2 clang 没有可内联的字长原子读改写指令，C11/GCC 原子操作都会降级为 `__sync_*` libcall。工具链 compiler-rt 的实现用裸 `lockset/lockclr` 包住读改写；SDK 自己的 SMP spinlock 已改用 `testset`（`asm/cpu.h` 把旧的 `lockset` 写法放在 `#if 0` 下，它需要每核嵌套计数）。在双核上 compiler-rt 版本会丢更新：PAL system event 的生命周期字从 ACTIVE（`0x80000000`）变成 `0x7fffffff`，此后所有订阅失败，BLE Loader command service 约三分之一的启动无法打开。`h2_jieli_wl82_sdk_port.c` 为 1/2/4/8 字节的 `__sync_*` libcall 提供强定义（asm label 绑定 libcall 符号，`used` 保留到 LTO 之后），每个操作由 SDK `spin_lock` 保护；链接时它们优先于 compiler-rt 归档成员，因此 PAL、board、portable library 与 SDK 代码共用同一实现。单核 AC695N 不受影响。
 
+wl82 SDK 的 `errno` 是 `apps/common/system/init.c` 中的单个全局 `int`，`__errno()` 返回它的地址；FreeRTOS 未启用 `configUSE_NEWLIB_REENTRANT`，newlib `_impure_ptr` 同样全局共享。两个核上的所有任务共用同一个 `errno`，socket 或 libc 调用失败后读取 `errno` 可能读到其它任务写入的值。当前 Loader 与 App 镜像不使用网络；在 AC791N 上启用 Wi-Fi、HTTP、GizClaw 或 h2peer 前，必须先把 `errno` 改为按任务存储，或让 board net provider 不依赖全局 `errno`。
+
 wl82 Queue 的 ring、数据数量和关闭状态由同一把非递归 mutex 保护；readable/writable condition 只通知线程重新检查条件，不在锁外预占数据或空位。`reset` 在锁内丢弃待处理数据并唤醒等待空位的发送者，不重新打开已关闭的队列；`send_latest` 的追加或替换在一次持锁期间完成。`close` 唤醒所有收发等待者，拒绝后续发送，但允许接收者排空已有数据。调用者必须先 close 并结束所有使用者，再 destroy。有限等待跨多次唤醒共用一个超时预算。Queue 通过 wl82 内部 `h2_jieli_wl82_cond_wait_owned` 获取错误返回时的锁归属：SDK 重新加锁失败会返回 IO，Queue 不再尝试解锁；这不改变公共 PAL API。真实 pthread Queue 测试覆盖 reset 与接收访问交错、reset 唤醒发送者、多等待者关闭及关闭后排空，fake 回归覆盖重新加锁失败；它们不能替代板级性能与完整 Loader 生命周期验收。
 
 TinyH264 的 pi32v2 allocator bridge 使用 SDK port 的 task identity 与 sleep 接口，按任务查找当前 allocator；每个作用域的节点由调用栈持有，enter/leave 对称登记和注销，不分配全局固定容量槽、不占用 SDK TLS 槽，也不依赖 `pthread_once`。登记表只在修改和查找时短暂加锁，解码及 allocator callback 在锁外执行；同一任务的嵌套作用域退出后恢复上一层，不串用其它 decoder task 的 allocator。其它平台保留原有 thread-local 路径。
@@ -92,7 +94,7 @@ PAL BLE 诊断包位于 `//projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/
 
 Host 验证：`bazel test //native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_platform_core //projects/h2loader/libs/h2loader:all //projects/h2loader/apps/cli/app:all //projects/example/apps/mp4-player/app:mp4_player_test`。
 
-Linux x86_64 构建与 e2e-runner 验收命令见 [AC791N DevKit H2Loader](/apps/h2loader/boards/jieli_ac791n_devkit/h2loader)；BLE 控制器配置（DLE、2M PHY、MTU 512）及其原因也记录在该页。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、没有新 stage 时再次启动同一已安装 App、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。再次启动已有 App 时必须确认没有重新上传或重写镜像，同时保留 Loader 的恢复能力。
+Linux x86_64 构建与 e2e-runner 验收命令见 [AC791N DevKit H2Loader](/apps/h2loader/boards/jieli_ac791n_devkit/h2loader)；BLE 控制器配置（DLE、2M PHY、MTU 512）、PHY 断言缺陷及复验结论也记录在该页。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、没有新 stage 时再次启动同一已安装 App、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。再次启动已有 App 时必须确认没有重新上传或重写镜像，同时保留 Loader 的恢复能力。
 
 ## Reference validation
 

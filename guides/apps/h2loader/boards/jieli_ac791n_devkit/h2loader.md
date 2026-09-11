@@ -23,11 +23,15 @@ Trial 证据保存在 H2Loader Preference：Loader 在烧写 App BootInfo 之前
 
 ## BLE
 
-- 控制器配置由 board SDK patch `ble_data_length.patch` 打开 DLE（251-byte LL payload）、2M PHY 与 CSA #2。
+- 控制器配置由 board SDK patch `ble_data_length.patch` 打开 DLE（251-byte LL payload）与 2M PHY。
 - ATT MTU 512，ATT send cbuf 为 MTU 的 4 倍。SDK 参考外设固定的 512-byte cbuf 放不下 509-byte notification，会阻塞之后的全部 notification。
 - PHY 由 central 选择，PAL 不发起 `LL_PHY_REQ`。CoreBluetooth 自行切换到 2M 后，外设再发起的 PHY 请求会收到 `LL_REJECT_IND`，该控制器在 `ll_slave.c:662` 断言复位。
-- Loader 的 15 ms 连接参数请求在连接 3 秒后发出；与 central 的 `LL_LENGTH_REQ`/PHY 建立过程同时进行会使链路失步。
-- macOS 上 854,092-byte App package 的 BLE `send` 端到端 33 s，稳态约 30 KiB/s。
+- Loader 连接后立即请求 15 ms interval。
+- Board 不启用 `RF_SLEEP_EN`。开启 RF 睡眠时，控制器会间歇性连续数秒收不到 central 的包并以 supervision timeout 断链，与 PHY、DLE 及 connection update 时机无关；期间两个核的调度间隔最大只有 1–2 个 tick。macOS BLE-only lifecycle 中开启 RF 睡眠 147 次连接断开 9 次，关闭后 72 次连接无断开。
+
+曾经看似需要配置规避的现象都来自两个底层缺陷：compiler-rt `__sync_*` 在双核上丢更新，以及上述 PHY 断言。两者修复后，在同一 DevKit 上逐项复验：1M PHY 下 MTU 512 的多分片 ATT 写入正常；连接后立即请求 15 ms 与 central 的 PHY/DLE 建立交错进行正常；2M PHY 不需要 CSA #2。
+
+macOS 上 854,092-byte App package 的 BLE `send` 端到端 32 s（2M）/ 46 s（1M），2M 稳态约 30 KiB/s。
 
 ## E2E runner
 
@@ -50,10 +54,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
-2026-09-11 在 AC791N DevKit 上以 `40bbb91b` 源码构建的三个包完成 UART + BLE 合并回归，46/46 PASS（约 12.7 分钟）：
+2026-09-12 在 AC791N DevKit 上以 `1bac88f4` 源码构建的三个包完成 UART + BLE 合并回归，46/46 PASS（约 12.4 分钟），BLE 过程中没有 supervision timeout：
 
 - UART 20 项：命令面、payload Stage 与 abort、monitor、`reboot loader/upgrade/app --monitor`、App 安装与确认、App 命令面、两种跨重启 Stage 保留、Loader self-update（P2 候选回写 P1）。
 - BLE 20 项：同一生命周期全部经 BLE 执行，包括 App 安装与 Loader self-update。
 - crash-before-confirm 回滚后，UART 与 BLE 各自完成 coredump status/dump/erase 与擦除后空白复查。
 
-BLE `send` 852 KB App package 33.5 s，UART 同一 package 27.0 s。本轮不含 Wi-Fi/URL、真实断电，也不覆盖"Loader 无新 Stage 时启动已安装 App"（见 [JieLi Components](/zh/developing/components/jieli)）。报告与产物身份：[UART + BLE 报告](./evidence/2026-09-11/uart-ble-lifecycle.json)、[固件包身份](./evidence/2026-09-11/artifacts.json)。
+852 KB App package 的 `send`：BLE 32.6 s，UART 27.6 s。本轮不含 Wi-Fi/URL、真实断电，也不覆盖"Loader 无新 Stage 时启动已安装 App"（见 [JieLi Components](/zh/developing/components/jieli)）。报告与产物身份：[UART + BLE 报告](./evidence/2026-09-12/uart-ble-lifecycle.json)、[固件包身份](./evidence/2026-09-12/artifacts.json)。
