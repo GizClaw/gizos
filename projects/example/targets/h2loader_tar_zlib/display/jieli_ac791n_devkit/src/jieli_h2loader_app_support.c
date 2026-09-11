@@ -147,11 +147,41 @@ int h2_jieli_app_loader_config_init(
   return H2_PAL_OK;
 }
 
+/* Confirmation ends the trial: without the attempt evidence a later Loader
+ * boot with Stage equal to Partition 2 is a restage, not a rollback. */
+static int clear_trial_evidence(void *user) {
+  const h2_pal_pref_api_t *pref = user;
+  static const char *const keys[] = {
+      H2_JIELI_TRIAL_ATTEMPT_KEY,
+      H2_JIELI_TRIAL_CHECKSUM_KEY,
+      H2_JIELI_TRIAL_RESET_REASON_KEY,
+  };
+  h2_pal_pref_namespace_t *name_space = NULL;
+  int result = h2_pal_pref_open(
+      pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE,
+      &name_space);
+  for (size_t index = 0u;
+       result == H2_PAL_OK && index < sizeof(keys) / sizeof(keys[0]);
+       ++index) {
+    result = name_space->remove(name_space, keys[index]);
+    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
+  }
+  if (result == H2_PAL_OK && name_space->commit != NULL) {
+    result = name_space->commit(name_space);
+  }
+  if (name_space != NULL && name_space->close != NULL) {
+    int close_result = name_space->close(name_space);
+    if (result == H2_PAL_OK) result = close_result;
+  }
+  return result;
+}
+
 int h2_jieli_app_loader_confirm(
     const h2_loader_app_client_config_t *config) {
   if (config == NULL) return H2_PAL_ERR_INVALID_ARG;
   return h2_loader_finalize_active_app_with_confirmation(
       config->pref, config->allocator, config->fs,
       H2_LOADER_DEFAULT_PACKAGE_PATH, &config->active_identity,
-      H2_JIELI_PARTITION_APP, H2_JIELI_PARTITION_APP, NULL, NULL);
+      H2_JIELI_PARTITION_APP, H2_JIELI_PARTITION_APP, clear_trial_evidence,
+      (void *)config->pref);
 }

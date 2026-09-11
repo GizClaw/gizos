@@ -11,18 +11,16 @@
 
 extern int snprintf(char *buffer, size_t size, const char *format, ...);
 
-#define H2_JIELI_IMAGE_PATH_FORMAT "/data/.h2loader-image-%u"
-#define H2_JIELI_IMAGE_TEMP_PATH "/data/.h2loader-image.tmp"
 #define H2_JIELI_UPDATE_BLOCK_SIZE 4096u
 #define H2_JIELI_UPDATE_WAIT_TICKS 500u
-#define H2_JIELI_TRIAL_CHECKSUM_KEY "jieli_trial_checksum"
-#define H2_JIELI_TRIAL_RESET_REASON_KEY "jieli_trial_reset_reason"
 
 extern uint32_t get_target_udate_addr(void);
 extern void h2_jieli_loader_diag_write(const char *text);
 
 typedef struct h2_jieli_loader_platform {
   const h2_pal_fs_api_t *fs;
+  const h2_pal_pref_api_t *pref;
+  const h2_pal_mem_api_t *allocator;
   uint32_t running_partition_id;
   uint32_t next_partition_id;
   uint32_t writer_partition_id;
@@ -30,7 +28,10 @@ typedef struct h2_jieli_loader_platform {
   h2_pal_fs_file_t *reader;
   uint32_t reader_partition_id;
   uint64_t reader_size;
+  /* Created once per boot and never deleted: a burn callback that outlives
+   * its wait can only post this live semaphore, which begin drains. */
   OS_SEM update_sem;
+  volatile int burn_waiting;
   uint8_t update_buffer[H2_JIELI_UPDATE_BLOCK_SIZE];
   size_t update_buffered;
   uint64_t update_native_written;
@@ -70,16 +71,26 @@ static void reconcile_trial_state(
           &name_space) != H2_PAL_OK) {
     return;
   }
-  /* Once an App was committed, stage and Partition 2 describe that same
-   * image. Seeing the canonical Loader execute again while both records are
-   * still pending is authoritative rollback evidence, including failures
-   * before the App can mount Pref or write its trial marker. Reinstalling in
-   * that state creates an unrecoverable Loader/App reboot loop. */
-  state.app_trial_rolled_back =
-      state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
+  const int stage_is_partition_2 =
       status.stage.valid && status.partition_2.valid &&
       status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
       h2_loader_metadata_image_equal(&status.stage, &status.partition_2);
+  /* The attempt key is written before this Loader commits the App bank and
+   * removed only by App confirmation. Seeing the canonical Loader again while
+   * it still names the staged Partition 2 image is authoritative rollback
+   * evidence, including failures before the App can mount Pref. Without it,
+   * Stage merely equals the old Partition 2 metadata (for example after the
+   * App returned or the same package was staged again); that is not a boot
+   * attempt and must remain installable. */
+  char *attempt = NULL;
+  int attempt_result = name_space->get_string(
+      name_space, allocator, H2_JIELI_TRIAL_ATTEMPT_KEY, &attempt);
+  state.app_trial_rolled_back =
+      state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
+      stage_is_partition_2 && attempt_result == H2_PAL_OK &&
+      attempt != NULL &&
+      strcmp(attempt, status.partition_2.image_checksum) == 0;
+  if (attempt != NULL) h2_pal_mem_free(allocator, attempt);
   if (state.app_trial_rolled_back) {
     h2_jieli_loader_diag_write(
         "H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode\r\n");
@@ -95,21 +106,58 @@ static void reconcile_trial_state(
         (unsigned)reset_reason);
     h2_jieli_loader_diag_write(line);
   }
-  if (!status.stage.valid || !status.partition_2.valid ||
-      status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP ||
-      !h2_loader_metadata_image_equal(&status.stage, &status.partition_2)) {
-    int result = name_space->remove(
-        name_space, H2_JIELI_TRIAL_CHECKSUM_KEY);
-    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
-    int reason_remove = name_space->remove(
-        name_space, H2_JIELI_TRIAL_RESET_REASON_KEY);
-    if (reason_remove == H2_PAL_ERR_NOT_FOUND) reason_remove = H2_PAL_OK;
-    if (result == H2_PAL_OK) result = reason_remove;
+  if (!stage_is_partition_2) {
+    static const char *const keys[] = {
+        H2_JIELI_TRIAL_ATTEMPT_KEY,
+        H2_JIELI_TRIAL_CHECKSUM_KEY,
+        H2_JIELI_TRIAL_RESET_REASON_KEY,
+    };
+    int result = H2_PAL_OK;
+    for (size_t index = 0u; index < sizeof(keys) / sizeof(keys[0]);
+         ++index) {
+      int remove_result = name_space->remove(name_space, keys[index]);
+      if (remove_result == H2_PAL_ERR_NOT_FOUND) remove_result = H2_PAL_OK;
+      if (result == H2_PAL_OK) result = remove_result;
+    }
     if (result == H2_PAL_OK && name_space->commit != NULL) {
       (void)name_space->commit(name_space);
     }
   }
   if (name_space->close != NULL) (void)name_space->close(name_space);
+}
+
+/* Record the boot attempt before BootInfo can select the new App bank. A
+ * Loader self-update also commits Partition 2, but never as an App trial. */
+static int set_trial_attempt(int present) {
+  h2_loader_status_t status;
+  int result = h2_loader_read_pref_status(
+      state.pref, state.allocator, &status);
+  if (result != H2_PAL_OK) return result;
+  if (present && (!status.partition_2.valid ||
+                  status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP)) {
+    return H2_PAL_OK;
+  }
+  h2_pal_pref_namespace_t *name_space = NULL;
+  result = h2_pal_pref_open(
+      state.pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE,
+      &name_space);
+  if (result != H2_PAL_OK) return result;
+  if (present) {
+    result = name_space->set_string(
+        name_space, H2_JIELI_TRIAL_ATTEMPT_KEY,
+        status.partition_2.image_checksum);
+  } else {
+    result = name_space->remove(name_space, H2_JIELI_TRIAL_ATTEMPT_KEY);
+    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
+  }
+  if (result == H2_PAL_OK && name_space->commit != NULL) {
+    result = name_space->commit(name_space);
+  }
+  if (name_space->close != NULL) {
+    int close_result = name_space->close(name_space);
+    if (result == H2_PAL_OK) result = close_result;
+  }
+  return result;
 }
 
 static int image_path(
@@ -119,7 +167,7 @@ static int image_path(
     return H2_PAL_ERR_NOT_FOUND;
   }
   int length = snprintf(
-      out_path, out_path_size, H2_JIELI_IMAGE_PATH_FORMAT,
+      out_path, out_path_size, H2_JIELI_IMAGE_SHADOW_PATH_FORMAT,
       (unsigned)partition_id);
   return length > 0 && (size_t)length < out_path_size
              ? H2_PAL_OK
@@ -129,11 +177,7 @@ static int image_path(
 static void writer_abort_internal(void) {
   image_reader_close();
   if (state.update_active) {
-    /* SDK eb04f196: exit kills dw_update synchronously before freeing its
-     * context. The burn callback runs in that task; delete its semaphore only
-     * after exit returns. Recheck this ordering when changing SDK versions. */
     (void)dual_bank_passive_update_exit(NULL);
-    (void)os_sem_del(&state.update_sem, 0);
     state.update_active = 0;
   }
   if (state.shadow != NULL) {
@@ -141,7 +185,7 @@ static void writer_abort_internal(void) {
     state.shadow = NULL;
   }
   if (state.fs != NULL) {
-    (void)h2_pal_fs_remove(state.fs, H2_JIELI_IMAGE_TEMP_PATH);
+    (void)h2_pal_fs_remove(state.fs, H2_JIELI_IMAGE_SHADOW_TEMP_PATH);
     if (state.committed_partition_id != 0u && !state.update_committed) {
       char path[48];
       if (image_path(
@@ -287,10 +331,11 @@ static int image_writer_begin(
     return rc == H2_PAL_OK ? H2_PAL_ERR_NO_SPACE : rc;
   }
   rc = h2_pal_fs_open(
-      state.fs, H2_JIELI_IMAGE_TEMP_PATH,
+      state.fs, H2_JIELI_IMAGE_SHADOW_TEMP_PATH,
       H2_PAL_FS_OPEN_WRITE_TRUNCATE, &state.shadow);
   if (rc != H2_PAL_OK) return rc;
-  if (os_sem_create(&state.update_sem, 0) != OS_NO_ERR) {
+  /* Discard a completion posted after an earlier burn wait gave up. */
+  if (os_sem_set(&state.update_sem, 0) != OS_NO_ERR) {
     writer_abort_internal();
     return H2_PAL_ERR_IO;
   }
@@ -405,7 +450,11 @@ static int update_flush_buffer(void) {
 
 static int update_burn_complete(int error) {
   char line[96];
-  state.update_result = error == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+  /* After a timed-out wait the result belongs to nobody; only the post of
+   * the process-lifetime semaphore remains, and the next begin drains it. */
+  if (__atomic_load_n(&state.burn_waiting, __ATOMIC_ACQUIRE)) {
+    state.update_result = error == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+  }
   (void)snprintf(
       line, sizeof(line), "H2_JIELI_UPDATE_BURN_CALLBACK error=%d\r\n", error);
   h2_jieli_loader_diag_write(line);
@@ -481,7 +530,7 @@ static int image_writer_finish(
   if (rc == H2_PAL_OK) {
     (void)h2_pal_fs_remove(state.fs, final_path);
     rc = h2_pal_fs_rename(
-        state.fs, H2_JIELI_IMAGE_TEMP_PATH, final_path);
+        state.fs, H2_JIELI_IMAGE_SHADOW_TEMP_PATH, final_path);
   }
   if (rc != H2_PAL_OK) {
     (void)flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
@@ -611,7 +660,13 @@ static int power_set_next(void *user, uint32_t partition_id) {
       state.committed_partition_id != partition_id) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  int rc = set_trial_attempt(1);
+  if (rc != H2_PAL_OK) {
+    h2_jieli_loader_diag_write("H2_JIELI_TRIAL_ATTEMPT_ERROR\r\n");
+    return rc;
+  }
   state.update_result = H2_PAL_ERR_TIMEOUT;
+  __atomic_store_n(&state.burn_waiting, 1, __ATOMIC_RELEASE);
   h2_jieli_loader_diag_write("H2_JIELI_UPDATE_BURN_ENTER\r\n");
   uint32_t burn_rc = dual_bank_update_burn_boot_info(update_burn_complete);
   (void)snprintf(
@@ -619,16 +674,15 @@ static int power_set_next(void *user, uint32_t partition_id) {
       (unsigned)burn_rc);
   h2_jieli_loader_diag_write(line);
   int pend_rc = OS_NO_ERR;
-  int rc;
   if (burn_rc != 0u) {
     rc = H2_PAL_ERR_IO;
   } else if (
       (pend_rc = os_sem_pend(
            &state.update_sem, H2_JIELI_UPDATE_WAIT_TICKS)) != OS_NO_ERR) {
     rc = H2_PAL_ERR_TIMEOUT;
-  } else {
-    rc = state.update_result;
   }
+  __atomic_store_n(&state.burn_waiting, 0, __ATOMIC_RELEASE);
+  if (rc == H2_PAL_OK) rc = state.update_result;
   (void)snprintf(
       line, sizeof(line),
       "H2_JIELI_UPDATE_BURN call=%u pend=%d result=%d\r\n",
@@ -636,19 +690,16 @@ static int power_set_next(void *user, uint32_t partition_id) {
   h2_jieli_loader_diag_write(line);
   if (state.update_active) {
     h2_jieli_loader_diag_write("H2_JIELI_UPDATE_EXIT_ENTER\r\n");
-    /* This is also the callback-quiescence barrier on a pend timeout:
-     * pinned SDK exit -> task_kill -> os_task_del -> vTaskDelete waits until
-     * dw_update is off both cores before retiring its task/event lists. */
     int exit_rc = dual_bank_passive_update_exit(NULL) == 0u
                       ? H2_PAL_OK
                       : H2_PAL_ERR_IO;
-    (void)os_sem_del(&state.update_sem, 0);
     state.update_active = 0;
     if (rc == H2_PAL_OK) rc = exit_rc;
   }
   if (rc != H2_PAL_OK) {
     (void)flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK);
     writer_abort_internal();
+    (void)set_trial_attempt(0);
     return rc;
   }
   state.update_committed = 1;
@@ -705,6 +756,11 @@ int h2_jieli_loader_platform_init(
   }
   memset(&state, 0, sizeof(state));
   state.fs = fs;
+  state.pref = pref;
+  state.allocator = allocator;
+  if (os_sem_create(&state.update_sem, 0) != OS_NO_ERR) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   h2_loader_status_t loader_status;
   memset(&loader_status, 0, sizeof(loader_status));
   if (h2_loader_read_pref_status(pref, allocator, &loader_status) ==

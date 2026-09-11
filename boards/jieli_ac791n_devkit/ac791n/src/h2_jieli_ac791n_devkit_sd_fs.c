@@ -320,12 +320,12 @@ static int translate_path(
     suffix = "/dl/H2PREV.BIN";
   } else if (strcmp(path, "/dl/update.tar.zlib") == 0) {
     suffix = "/dl/H2STAGE.BIN";
-  } else if (strcmp(path, "/data/.h2loader-image.tmp") == 0) {
-    suffix = "/data/H2IMG.TMP";
-  } else if (strcmp(path, "/data/.h2loader-image-1") == 0) {
-    suffix = "/data/H2IMG1.BIN";
-  } else if (strcmp(path, "/data/.h2loader-image-2") == 0) {
-    suffix = "/data/H2IMG2.BIN";
+  } else if (strcmp(path, "/dl/.h2loader-image.tmp") == 0) {
+    suffix = "/dl/H2IMG.TMP";
+  } else if (strcmp(path, "/dl/.h2loader-image-1") == 0) {
+    suffix = "/dl/H2IMG1.BIN";
+  } else if (strcmp(path, "/dl/.h2loader-image-2") == 0) {
+    suffix = "/dl/H2IMG2.BIN";
   } else if (strcmp(path, "/data/.checksum") == 0) {
     suffix = "/data/H2CHECK.SUM";
   } else if (strcmp(path, "/dl") == 0) {

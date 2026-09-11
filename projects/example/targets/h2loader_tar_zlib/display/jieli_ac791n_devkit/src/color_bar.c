@@ -78,8 +78,6 @@ static uint32_t next_boot_partition = H2_JIELI_PARTITION_APP;
 static uint32_t boot_reset_reason;
 static h2_pal_fs_api_t loader_fs;
 
-#define H2_JIELI_TRIAL_CHECKSUM_KEY "jieli_trial_checksum"
-#define H2_JIELI_TRIAL_RESET_REASON_KEY "jieli_trial_reset_reason"
 
 extern int snprintf(char *buffer, size_t size, const char *format, ...);
 extern int vsnprintf(

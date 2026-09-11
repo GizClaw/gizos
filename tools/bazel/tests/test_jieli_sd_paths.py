@@ -35,11 +35,11 @@ int main(void) {
  }
  const char *paths[]={"/dl","/data","/dl/update.tar.zlib.tmp",
   "/dl/update.tar.zlib.prev","/dl/update.tar.zlib",
-  "/data/.h2loader-image.tmp","/data/.h2loader-image-1",
-  "/data/.h2loader-image-2","/data/.checksum","/data/nested/video.mp4"};
+  "/dl/.h2loader-image.tmp","/dl/.h2loader-image-1",
+  "/dl/.h2loader-image-2","/data/.checksum","/data/nested/video.mp4"};
  const char *mapped[]={"dl","data","dl/H2STAGE.TMP","dl/H2PREV.BIN",
-  "dl/H2STAGE.BIN","data/H2IMG.TMP","data/H2IMG1.BIN",
-  "data/H2IMG2.BIN","data/H2CHECK.SUM","data/nested/video.mp4"};
+  "dl/H2STAGE.BIN","dl/H2IMG.TMP","dl/H2IMG1.BIN",
+  "dl/H2IMG2.BIN","data/H2CHECK.SUM","data/nested/video.mp4"};
  for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);++i) {
   assert(translate_path(paths[i],out)==0);
   assert(strncmp(out,H2_JIELI_SD_ROOT,strlen(H2_JIELI_SD_ROOT))==0);

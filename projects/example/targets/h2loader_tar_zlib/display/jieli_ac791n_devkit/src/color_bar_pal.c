@@ -67,8 +67,6 @@ __attribute__((weak)) int h2_jieli_target_application_run(void) {
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
-#define H2_JIELI_TRIAL_CHECKSUM_KEY "jieli_trial_checksum"
-#define H2_JIELI_TRIAL_RESET_REASON_KEY "jieli_trial_reset_reason"
 
 extern int vsnprintf(
     char *buffer, size_t size, const char *format, va_list arguments);
@@ -219,7 +217,7 @@ static int prepare_destructive_app_return(void *user) {
   };
   int result = h2_jieli_ac791n_devkit_sd_fs_init(&fs);
   if (result == H2_PAL_OK) {
-    result = h2_pal_fs_remove(&fs, "/data/.h2loader-image-2");
+    result = h2_pal_fs_remove(&fs, H2_JIELI_APP_IMAGE_SHADOW_PATH);
     if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
   }
   if (result != H2_PAL_OK) return result;

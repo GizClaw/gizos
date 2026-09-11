@@ -17,6 +17,14 @@
 #define H2_JIELI_IMAGE_MAX_SIZE UINT32_C(0x0037d000)
 #define H2_JIELI_APP_ENTRY_PATH "app/jieli/update.ufw"
 
+/* JieLi's updater transforms the UFW stream before programming a bank, so
+ * the Loader keeps the exact image bytes as an SD shadow for verification
+ * and the self-update copy. They live beside the Stage in /dl: installing an
+ * App clears its /data root after the image writer has finished. */
+#define H2_JIELI_IMAGE_SHADOW_TEMP_PATH "/dl/.h2loader-image.tmp"
+#define H2_JIELI_IMAGE_SHADOW_PATH_FORMAT "/dl/.h2loader-image-%u"
+#define H2_JIELI_APP_IMAGE_SHADOW_PATH "/dl/.h2loader-image-2"
+
 #define H2_JIELI_PREF_ADDRESS UINT32_C(0x00700000)
 #define H2_JIELI_PREF_SIZE UINT32_C(0x00040000)
 
@@ -36,6 +44,14 @@
 #define H2_JIELI_PARTITION_COREDUMP UINT32_C(4)
 #define H2_JIELI_PARTITION_VENDOR UINT32_C(5)
 #define H2_JIELI_PARTITION_BOOT UINT32_C(6)
+
+/* Trial evidence shared by Loader and App in the H2Loader Preference
+ * namespace. The Loader writes the attempt key with the Partition 2 image
+ * checksum before it commits that App bank; the App records its first trial
+ * boot in the checksum key; confirmation removes all three. */
+#define H2_JIELI_TRIAL_ATTEMPT_KEY "jieli_trial_attempt"
+#define H2_JIELI_TRIAL_CHECKSUM_KEY "jieli_trial_checksum"
+#define H2_JIELI_TRIAL_RESET_REASON_KEY "jieli_trial_reset_reason"
 
 #if H2_JIELI_EXECUTABLE_REGION_ADDRESS + H2_JIELI_EXECUTABLE_REGION_SIZE != H2_JIELI_PREF_ADDRESS
 #error "AC791N executable region and pref partition must be contiguous"
