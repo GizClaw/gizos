@@ -69,6 +69,18 @@ typedef struct h2_gizclaw_vtable {
    * action result; the library never falls back to the power PAL. When unset
    * the library waits `delay_ms` on the worker and calls the power PAL. */
   h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
+  /** Optional shared-speaker ownership for library playback (audio player
+   * and client.device.sound.play). Set both or neither; Service init rejects
+   * a lone hook with H2_PAL_ERR_INVALID_ARG. When set, the device
+   * worker calls speaker_acquire before opening its PCM track and exactly one
+   * speaker_release after the track is closed, on every exit path including
+   * failure, stop and cancellation; the library then never calls the audio
+   * PAL's start_speaker or stop_speaker itself. Products that reference-count
+   * a speaker or PA shared with other audio must set them. Both run on the
+   * device worker and must return promptly. When unset, the library calls
+   * start_speaker before playback and leaves the speaker on afterwards. */
+  h2_pal_result_t (*speaker_acquire)(void *user);
+  h2_pal_result_t (*speaker_release)(void *user);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }
