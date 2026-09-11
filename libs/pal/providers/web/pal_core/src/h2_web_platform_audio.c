@@ -98,24 +98,27 @@ EM_JS(void, h2_web_audio_deinit_js, (uintptr_t platform_address), {
   platforms.delete(platform_address);
 });
 
-// Starting the speaker plays what tracks wrote while it was stopped.
+// Starting the speaker plays what tracks wrote while it was stopped. A
+// buffer leaves the held queue only once it is scheduled, so a failed start
+// keeps every accepted write for the next one.
 EM_JS(int, h2_web_audio_start_js, (uintptr_t platform_address, double lead_s), {
   const state = Module['h2WebAudioPlatforms']?.get(platform_address);
   const context = state?.activate();
   if (!context) return -3;
-  state.speakerStarted = true;
   try {
     for (const track of state.tracks.values()) {
-      const pending = track.pending;
-      track.pending = [];
-      track.pendingDuration = 0;
-      for (const buffer of pending)
+      while (track.pending.length > 0) {
+        const buffer = track.pending[0];
         state.schedule(context, track, buffer, lead_s);
+        track.pending.shift();
+        track.pendingDuration = Math.max(0, track.pendingDuration - buffer.duration);
+      }
     }
   } catch (error) {
     console.error('Web Audio playback failed', error);
     return -4;
   }
+  state.speakerStarted = true;
   return 0;
 });
 
