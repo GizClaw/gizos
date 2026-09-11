@@ -180,3 +180,9 @@ Preview with `--scene=weather-demo --hour=18 --weather=sunny`; `--hour=0..23` an
 Wind uses seeded daily targets, smoothly joined across midnight. The prevailing wind is randomized per session; daily targets stay within ±0.35 internal wind units of it, limiting any day's variation to 0.7 units (at most one adjacent icon level). Wind is independent of sunny/cloudy/rain transitions and continues to affect waves and feeding. Temperature follows the time-of-day curve plus smoothly blended cloud/rain cooling (up to 3 C).
 
 Rain uses unequal falling speeds, irregular lanes and depth-dependent length/contrast, plus brief perspective-scaled water impact rings. Precipitation fades over weather transitions; it does not force the daily wind to change.
+
+### AMOLED optimization checkpoint
+
+[Optimization handoff](design/OPTIMIZATION_HANDOFF.md) records the installed
+firmware, actual frame timings, completed checks and remaining stripe/performance
+work. Sustained 30+ FPS hardware animation has not yet been achieved.

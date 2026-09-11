@@ -108,3 +108,10 @@ The user still observes horizontal stripes during movement. Batched dirty-region
 submission has not established a fix. Hardware scanout/transfer diagnosis and
 sustained 30+ FPS animation are open requirements, not completed features.
 The source launcher is restored to interactive `idle` after diagnostic builds.
+
+## Resume checkpoint
+
+See [OPTIMIZATION_HANDOFF.md](OPTIMIZATION_HANDOFF.md) for the installed v15
+identity, measured 10.8–12.2 FPS ready / 4.4–4.5 FPS long-line waiting, verified
+GPIO13 TE mapping, rejected and promising numerical experiments, and exact
+continuation steps. The hardware performance/stripe requirements remain open.
