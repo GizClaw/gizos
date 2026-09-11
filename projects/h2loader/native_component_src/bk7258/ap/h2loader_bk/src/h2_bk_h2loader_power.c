@@ -81,7 +81,8 @@ static h2_pal_result_t power_list_boot_partitions(
     /* App startup arms A as recovery while retaining B as the attempted
      * image. On returning to A, this exact flag combination proves that B
      * never confirmed. Explicit Loader selection writes A/A instead. */
-    if ((h2_bk_fixed_layout_active() && h2_bk_fixed_current_slot() == 0u && h2_bk_fixed_app_failed()) ||
+    if ((h2_bk_fixed_layout_active() && h2_bk_fixed_current_slot() == 0u &&
+         (h2_bk_fixed_app_failed() || h2_bk_fixed_relay_failed())) ||
         (!h2_bk_fixed_layout_active() && h2_bk_fixed_current_slot() == EXEX_A_PART &&
         flags[0] == EXEX_A_PART && flags[4] == EXEC_B_PART && flags[8] == CONFIRM_EXEC_A)) {
         app_flags &= ~H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE;

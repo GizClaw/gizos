@@ -38,6 +38,8 @@ bool parse_suite(const char *value, std::uint32_t *out) {
     *out = H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND;
   } else if (std::strcmp(value, "install") == 0) {
     *out = H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL;
+  } else if (std::strcmp(value, "loader-update") == 0) {
+    *out = H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE;
   } else {
     return false;
   }
@@ -129,7 +131,8 @@ bool parse_options(int argc, char **argv, Options *out) {
     seen |= option;
   }
   const bool install =
-      (out->suites & H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL) != 0u;
+      (out->suites & (H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL |
+                      H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE)) != 0u;
   const bool command =
       (out->suites & H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND) != 0u;
   const bool live = out->suites != H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT;
@@ -210,18 +213,23 @@ void print_ledger(const h2_h2loader_serial_e2e_result_t &result) {
               result.initial_status.active_checksum,
               result.initial_status.command_availability);
   std::printf("H2_DESKTOP_H2LOADER_FINAL board=%s target=%s role=%u "
-              "version=%s checksum=%s availability=0x%08x\n",
+              "version=%s checksum=%s availability=0x%08x running=%u "
+              "p1=%s p2=%s stage=%u\n",
               result.final_status.board, result.final_status.target,
               static_cast<unsigned int>(h2_h2loader_host_status_active_role(
                   &result.final_status)),
               result.final_status.active_version,
               result.final_status.active_checksum,
-              result.final_status.command_availability);
+              result.final_status.command_availability,
+              static_cast<unsigned int>(result.final_status.running_partition),
+              result.final_status.partition_1.image_checksum,
+              result.final_status.partition_2.image_checksum,
+              static_cast<unsigned int>(result.final_status.stage.valid));
   std::printf("H2_DESKTOP_H2LOADER_METRICS command_bytes=%zu "
               "command_transport=%d command_terminal=%d "
               "command_truncated=%u command_lifecycle=%u "
               "acknowledged=%llu total=%llu elapsed_ms=%llu cleanup=%d "
-              "complete=%d\n",
+              "loader_trial_observed=%u complete=%d\n",
               result.command_output_bytes,
               static_cast<int>(result.command_transport_result),
               static_cast<int>(result.command_terminal),
@@ -230,7 +238,9 @@ void print_ledger(const h2_h2loader_serial_e2e_result_t &result) {
               static_cast<unsigned long long>(result.acknowledged_bytes),
               static_cast<unsigned long long>(result.total_bytes),
               static_cast<unsigned long long>(result.elapsed_ms),
-              result.cleanup_result, result.complete);
+              result.cleanup_result,
+              static_cast<unsigned int>(result.loader_trial_observed),
+              result.complete);
 }
 
 }  // namespace
@@ -239,7 +249,7 @@ int main(int argc, char **argv) {
   Options options;
   if (!parse_options(argc, argv, &options)) {
     std::fprintf(stderr,
-                 "usage: %s [--suite preflight|status|command|install] "
+                 "usage: %s [--suite preflight|status|command|install|loader-update] "
                  "[--port-id ID] [--expected-board ID] "
                  "[--expected-target ID] "
                  "[--command help|status|stats|memory] "
