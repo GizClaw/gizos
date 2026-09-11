@@ -106,8 +106,41 @@ static void test_set_default_contract(void) {
     assert(h2_pal_netif_set_default(NULL, &wifi) == H2_PAL_ERR_UNSUPPORTED);
 }
 
+static void test_status_is_usable(void) {
+    h2_pal_netif_status_t status;
+    memset(&status, 0, sizeof(status));
+    assert(!h2_pal_netif_status_is_usable(NULL));
+
+    status.kind = H2_PAL_NETIF_KIND_WIFI_STA;
+    status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP;
+    assert(!h2_pal_netif_status_is_usable(&status));
+    status.flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
+    assert(h2_pal_netif_status_is_usable(&status));
+    status.flags &= ~(uint32_t)H2_PAL_NETIF_FLAG_LINK_UP;
+    assert(!h2_pal_netif_status_is_usable(&status));
+
+    status.kind = H2_PAL_NETIF_KIND_LOOPBACK;
+    status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP |
+                   H2_PAL_NETIF_FLAG_HAS_IPV4;
+    assert(!h2_pal_netif_status_is_usable(&status));
+
+    /* A host-managed path carries no addresses of its own. */
+    status.kind = H2_PAL_NETIF_KIND_HOST;
+    status.flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP |
+                   H2_PAL_NETIF_FLAG_DEFAULT_ROUTE;
+    assert(h2_pal_netif_status_is_usable(&status));
+    status.flags = H2_PAL_NETIF_FLAG_UP;
+    assert(!h2_pal_netif_status_is_usable(&status));
+
+    h2_pal_netif_ref_t host = name_ref("browser", H2_PAL_NETIF_KIND_HOST);
+    assert(h2_pal_netif_ref_is_concrete(&host));
+    host.kind = (h2_pal_netif_kind_t)(H2_PAL_NETIF_KIND_HOST + 1);
+    assert(!h2_pal_netif_ref_is_concrete(&host));
+}
+
 int main(void) {
     test_concrete_refs();
+    test_status_is_usable();
     test_default_changed_payload();
     test_set_default_contract();
     return 0;

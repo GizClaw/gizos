@@ -26,9 +26,16 @@ Runtime Task。Lua coroutine 是同一 VM 内的协作任务，不分配 PAL Tas
 不跨 CPU 并行。Web Task provider 在一个浏览器线程中协作推进，Desktop 和设备
 provider 可以让不同 VM 在多个 worker 上并行。
 
-当前 stable build surface 包含 Desktop、Web 和 ESP32-S3/P4。BK3633 与 BK7258
-在完成 repository-owned BK build contract 前显式标记为 incompatible，不通过
-ESP/newlib portability shim 假装支持。
+当前 build surface 包含 Desktop、Web、ESP32-S3/P4、BK7258 和 BK3633。Embedded
+构建不给 upstream Lua 提供 libc 文件或标准流：vendor overlay 强制包含
+`h2_lua_embedded_stdio.h`，在 `<stdio.h>` 之后把 `stdin`、`stdout`、`stderr`
+以及 Lua 使用的 `fopen`、`getc` 等 stdio 函数重定向到
+`//third_party/lua_patch` 中 fail-closed 的 shim，避免 C library 用宏通过
+`_impure_ptr` 等 reentrancy 状态展开它们。只有 ESP32-S3/P4 额外链接 `lua_esp_libc_compat.c`，补齐 ESP-IDF picolibc
+缺少的 newlib 兼容符号；BK 使用 SDK toolchain 自带的 newlib。
+`//libs/lua:lua_firmware_abi` 在每个 embedded 配置中对完整 Lua archive closure
+运行 firmware archive ABI 检查。GizOS 自身没有链接 Lua 的 BK image，BK 设备上的
+运行验证由消费 Lua 的 firmware 负责。
 
 ## Host 和 job
 

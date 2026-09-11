@@ -1,0 +1,10 @@
+load("//projects/example/libs/web/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_web_app(
+    name = "log",
+    srcs = ["main.c"],
+    app_name = "log",
+    deps = ["//projects/example/apps/log/app:log"],
+)

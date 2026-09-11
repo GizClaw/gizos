@@ -90,7 +90,14 @@ enum {
   H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY = 117,
   H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP = 118,
   H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET = 119,
-
+  H2_GIZCLAW_RPC_SERVER_FRIEND_PING = 123,
+  H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING = 124,
+  H2_GIZCLAW_RPC_SERVER_PROFILE_GET = 125,
+  /** Product-owned reverse RPCs: the library has no built-in handler and
+   * forwards them to the configured rpc_provider (UNIMPLEMENTED without one).
+   * The Server counts a social ping as delivered only on a success reply. */
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND = 126,
+  H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING = 127,
 };
 
 /** Canonical gRPC status codes (google.rpc.Code) carried by RpcStatus.code.

@@ -1028,12 +1028,23 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     if (!output)
       rc = H2_PAL_ERR_NO_MEMORY;
   }
-  if (rc == H2_PAL_OK)
-    rc = h2_pal_audio_start_speaker(d->config.audio);
+  /* A product that shares the speaker counts this playback as one user, so
+   * another user's release cannot cut it off and the last release powers the
+   * speaker down. Without hooks the library only starts the speaker. */
+  const h2_gizclaw_vtable_t *product = d->config.vtable;
+  const bool speaker_hooks = product && product->speaker_acquire;
+  bool speaker_held = false;
+  if (rc == H2_PAL_OK) {
+    rc = speaker_hooks ? product->speaker_acquire(d->config.user)
+                       : h2_pal_audio_start_speaker(d->config.audio);
+    speaker_held = speaker_hooks && rc == H2_PAL_OK;
+  }
   if (rc == H2_PAL_OK)
     rc = h2_pal_audio_create_track(d->config.audio, &audio, &track);
   trace(d, "player-track", 0, rc);
   uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  /* 16 kHz mono PCM16 is 32 bytes per millisecond. */
+  const uint64_t limit_bytes = (uint64_t)limit_ms * 32u;
   uint64_t submitted_bytes = 0, reported_ms = 0;
   size_t buffered = 0;
   bool finished = false;
@@ -1046,10 +1057,16 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     }
     if (rc != H2_PAL_OK)
       break;
-    if (limit_ms &&
-        length >= (uint64_t)limit_ms * 32 - submitted_bytes - buffered) {
-      length = (size_t)((uint64_t)limit_ms * 32 - submitted_bytes - buffered);
-      finished = true;
+    if (limit_ms) {
+      /* Saturate: the limit must stay in force even if the consumed count
+       * ever reaches it without the cut below having ended the loop. */
+      const uint64_t consumed = submitted_bytes + buffered;
+      const uint64_t remaining =
+          consumed < limit_bytes ? limit_bytes - consumed : 0u;
+      if ((uint64_t)length >= remaining) {
+        length = (size_t)remaining;
+        finished = true;
+      }
     }
     for (size_t offset = 0; (offset < length || (finished && buffered)) &&
                             rc == H2_PAL_OK && !interrupted(d);) {
@@ -1114,6 +1131,11 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     int closed = h2_pal_audio_track_close(track);
     if (rc == H2_PAL_OK)
       rc = closed;
+  }
+  if (speaker_held) {
+    /* Product bookkeeping only: a failed release does not fail playback. */
+    const h2_pal_result_t released = product->speaker_release(d->config.user);
+    trace(d, "player-speaker-release", 0, released);
   }
   h2_gizclaw_ogg_opus_destroy(decoder);
   int joined = finish_audio_download(d);
@@ -1350,10 +1372,18 @@ static void device_worker(void *user) {
   }
 }
 
+/* The hooks bracket each playback, so a lone half would leak or underflow
+ * the product's speaker count. */
+static bool speaker_hooks_paired(const h2_gizclaw_vtable_t *vtable) {
+  return vtable == NULL ||
+         (vtable->speaker_acquire == NULL) == (vtable->speaker_release == NULL);
+}
+
 h2_pal_result_t h2_gizclaw_device_set_product_internal(
     h2_gizclaw_service_t *service, const h2_gizclaw_vtable_t *vtable,
     const h2_pal_power_api_t *power) {
-  if (service == NULL || service->device == NULL)
+  if (service == NULL || service->device == NULL ||
+      !speaker_hooks_paired(vtable))
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_device_t *d = service->device;
   /* Only a quiescent device may be re-pointed: readers take no lock, so the
@@ -1377,6 +1407,8 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
       !config->power && !config->vtable && !config->manufacturer &&
       !config->model && !config->serial && !config->hardware_revision)
     return H2_PAL_OK;
+  if (!speaker_hooks_paired(config->vtable))
+    return H2_PAL_ERR_INVALID_ARG;
   size_t audio_capacity =
       config->audio_buffer_bytes ? config->audio_buffer_bytes : 65536u;
   if (config->audio && config->audio_prebuffer_bytes > audio_capacity)
