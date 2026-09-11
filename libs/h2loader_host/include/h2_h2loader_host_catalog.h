@@ -24,6 +24,9 @@ typedef enum h2_h2loader_host_asset_operation {
     H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL = 1,
     H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY = 2,
     H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC = 3,
+    /** Raw factory image flashed from its offset by external tooling; like
+     * diagnostic, Host Core never installs or schedules it. */
+    H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH = 4,
 } h2_h2loader_host_asset_operation_t;
 
 typedef enum h2_h2loader_host_asset_identity_source {

@@ -19,11 +19,14 @@ foreach(H2_BK_ROW_VAR H2_BK_PRIMARY_CP_ROW H2_BK_PRIMARY_AP_ROW H2_BK_S_APP_ROW)
   set("${H2_BK_ROW_VAR}_KIB" "${CMAKE_MATCH_1}")
 endforeach()
 math(EXPR H2_BK_PRIMARY_WINDOW_KIB "${H2_BK_PRIMARY_CP_ROW_KIB} + ${H2_BK_PRIMARY_AP_ROW_KIB}")
-math(EXPR H2_BK_TOTAL_CODE_KIB "${H2_BK_PRIMARY_WINDOW_KIB} + ${H2_BK_S_APP_ROW_KIB}")
-if(NOT H2_BK_TOTAL_CODE_KIB EQUAL 7480 OR
-   NOT H2_BK_PRIMARY_CP_ROW_KIB EQUAL 1156 OR
-   NOT H2_BK_PRIMARY_AP_ROW_KIB EQUAL 1224)
-  message(FATAL_ERROR "BK fixed-XIP layout must match fixed_flash/layout.h")
+# The board owns the sizes. Loader self-update stages the Loader image in the
+# App window (s_app), so it must hold at least the Loader window.
+if(H2_BK_S_APP_ROW_KIB LESS H2_BK_PRIMARY_WINDOW_KIB)
+  message(FATAL_ERROR "BK fixed-XIP App window (s_app) must not be smaller than the Loader window")
+endif()
+file(STRINGS "${H2_BK_PARTITION_CSV}" H2_BK_BOOT_REQUEST_ROW REGEX "^h2_boot_request,")
+if(NOT H2_BK_BOOT_REQUEST_ROW)
+  message(FATAL_ERROR "BK fixed-XIP Loader layout needs an h2_boot_request partition")
 endif()
 if(NOT H2_BK_PRIMARY_CP_ROW MATCHES ",TRUE,TRUE$" OR
    NOT H2_BK_PRIMARY_AP_ROW MATCHES ",TRUE,TRUE$")

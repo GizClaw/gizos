@@ -44,7 +44,7 @@ Payload stage 在设备端报出 `H2_LOADER_STAGE_RECEIVE result=fail` 或 `H2_L
 
 ## Catalog 与 operation
 
-`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 使用现有 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`，diagnostic asset 不可安装。
+`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 使用现有 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`。ESP Loader 的 `factory-flash` asset（从 offset `0` 直接烧录的 `.combined_factory.bin`）与 diagnostic asset 一样可以被 catalog 读取和查询，但不可安装，也不能提交给 scheduler。
 
 浏览器从本地选择 standalone format-1 `.update.tar.zlib` 时没有 Release catalog。Host Core 的 package inspector 通过 caller 提供的 offset reader 按 bounded chunk 读取，计算 archive SHA-256，流式解压 zlib，并复用 Bundle USTAR path contract 校验 manifest、checksum、data 与唯一 App image。它输出 `identity_source=PACKAGE_MANIFEST` 的 immutable managed asset；format 1 不携带 App image name，因此 `image` 为空。只有这个显式 identity source 可以省略 name，既有 `RELEASE_CATALOG=0` caller 仍必须严格匹配 catalog image name，不能从文件名或 chooser label 推断 identity。
 
