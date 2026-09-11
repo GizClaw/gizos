@@ -43,11 +43,11 @@ static int dev_ioctl(void *h, int op, u32 arg) {
   if (init_fail) return -1;
   if (op==UART_SET_CIRCULAR_BUFF_LENTH) assert(arg==16*1024);
   if (op==UART_SET_RECV_BLOCK) assert(arg==0);
-  if (op==UART_FLUSH) ++flushes;
+  if (op==UART_FLUSH) { assert(held); ++flushes; }
   return 0;
 }
 static int dev_read(void *h, void *data, u32 size) {
-  assert(h==&handle);
+  assert(h==&handle && held);
   if (read_result>0) memset(data,0xab,(size_t)read_result);
   return read_result;
 }
@@ -81,6 +81,7 @@ int main(void) {
   lock_fail=1; before=writes;
   assert(h2_jieli_ac791n_devkit_console_write(data,1,0)==H2_PAL_ERR_TIMEOUT);
   assert(writes==before);
+  assert(h2_jieli_ac791n_devkit_console_read(out,32)==0 && !held);
   lock_fail=0;
   read_result=UART_RECV_TIMEOUT;
   assert(h2_jieli_ac791n_devkit_console_read(out,32)==0);

@@ -536,8 +536,16 @@ static void mp4_runtime(void *user) {
     emit("H2_JIELI_MP4_DISPLAY stage=preopen-after rc=%d\r\n", result);
   }
   if (result == H2_PAL_OK) {
+    /* Both package variants share this firmware: the small archive carries
+     * startup.mp4, while the board showcase archive carries showcase.mp4. */
+    const char *media_path = "/data/media/showcase.mp4";
+    h2_pal_fs_stat_t media_stat;
+    if (h2_pal_fs_stat(runtime->fs, media_path, &media_stat) ==
+        H2_PAL_ERR_NOT_FOUND) {
+      media_path = "/data/media/startup.mp4";
+    }
     const h2_smoke_mp4_player_config_t player_config = {
-        .media_path = "/data/media/showcase.mp4",
+        .media_path = media_path,
         .acquire_timeout_ms = 2000u,
         .looping = 1,
         .display_mode = H2_SMOKE_MP4_PLAYER_DISPLAY_CENTER,

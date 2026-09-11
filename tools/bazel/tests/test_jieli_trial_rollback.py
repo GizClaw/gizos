@@ -95,6 +95,36 @@ int main(void) {
 
 
 class TrialRollbackTest(unittest.TestCase):
+    @unittest.expectedFailure
+    def test_fresh_same_image_stage_is_not_a_failed_trial(self):
+        """Reproduce UART reinstall: staging an installed image is not a boot attempt.
+
+        No trial checksum exists and the old Partition 2 metadata matches the
+        freshly downloaded package. The current PAL incorrectly calls this
+        rollback before the installer has written or started the candidate.
+        Keep this explicit until persistent attempt evidence distinguishes the
+        two states; removing early-crash recovery is not a valid fix.
+        """
+        source = SOURCE.read_text()
+        reconcile = source[source.index("static void reconcile_trial_state("):
+                           source.index("static int image_path(")]
+        with tempfile.TemporaryDirectory(prefix="h2-restage-test-") as directory:
+            test = Path(directory) / "test.c"
+            test.write_text(STUB + reconcile + r'''
+int main(void) {
+ reset();
+ stored_checksum = NULL;
+ reconcile_trial_state(NULL, NULL);
+ return state.app_trial_rolled_back ? 1 : 0;
+}
+''')
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", str(test), "-o", str(binary)],
+                           check=True, timeout=60)
+            result = subprocess.run([str(binary)], timeout=60)
+            self.assertEqual(result.returncode, 0,
+                             "fresh same-image stage was misclassified as rollback")
+
     def test_actual_pal_trial_reconciliation_and_partition_flags(self):
         source = SOURCE.read_text()
         reconcile = source[source.index("static void reconcile_trial_state("):

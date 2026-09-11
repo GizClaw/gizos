@@ -39,10 +39,16 @@ int h2_jieli_ac791n_devkit_console_read(void *buffer, size_t size) {
   if (console == NULL) return H2_PAL_ERR_UNAVAILABLE;
   if (buffer == NULL || size == 0 || size > INT_MAX)
     return H2_PAL_ERR_INVALID_ARG;
+  /* Serialize access to the SDK handle with the diagnostic/protocol writer.
+   * RX is non-blocking; do not hold this lock while waiting for input. */
+  if (os_mutex_pend(&tx_mutex, 10) != OS_NO_ERR) return 0;
   int count = dev_read(console, buffer, (u32)size);
-  if (count == UART_RECV_TIMEOUT) return 0;
   if (count == UART_CIRCULAR_BUFFER_WRITE_OVERLAY) {
     (void)dev_ioctl(console, UART_FLUSH, 0);
+  }
+  (void)os_mutex_post(&tx_mutex);
+  if (count == UART_RECV_TIMEOUT) return 0;
+  if (count == UART_CIRCULAR_BUFFER_WRITE_OVERLAY) {
     return H2_PAL_ERR_IO;
   }
   return count < 0 ? H2_PAL_ERR_IO : count;
