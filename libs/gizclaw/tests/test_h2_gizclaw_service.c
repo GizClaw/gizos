@@ -5651,12 +5651,24 @@ static void test_public_profile_request_paths(void) {
   static const uint8_t bad_utf8[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 6, 0x0a, 1,
                                      'b', 0x12, 1, 0xff};
   static const uint8_t truncated[] = {0x0a, 9, 0x0a, 1, 'a'};
+  /* Embedded NULs must not shorten a field into a match or a clean name. */
+  static const uint8_t nul_key[] = {0x0a, 5, 0x0a, 3, 'a', 0, 'x',
+                                    0x0a, 3, 0x0a, 1, 'b'};
+  static const uint8_t nul_name[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 7, 0x0a, 1,
+                                     'b', 0x12, 2, 'B', 0};
+  static const uint8_t nul_emoji[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 6, 0x0a, 1,
+                                      'b', 0x1a, 1, 0};
+  /* A 65-byte key exceeds the 64-byte bound even though it fits the wire. */
+  uint8_t long_key[4 + 65] = {0x0a, 67, 0x0a, 65};
+  memset(long_key + 4, 'a', 65);
   const struct {
     const uint8_t *bytes;
     size_t len;
   } malformed[] = {{swapped, sizeof(swapped)},   {missing, sizeof(missing)},
                    {repeated, sizeof(repeated)}, {stranger, sizeof(stranger)},
                    {bad_utf8, sizeof(bad_utf8)}, {truncated, sizeof(truncated)},
+                   {nul_key, sizeof(nul_key)},   {nul_name, sizeof(nul_name)},
+                   {nul_emoji, sizeof(nul_emoji)}, {long_key, sizeof(long_key)},
                    {response, 0u}};
   for (size_t i = 0; i < sizeof(malformed) / sizeof(malformed[0]); ++i) {
     mock.response = malformed[i].bytes;

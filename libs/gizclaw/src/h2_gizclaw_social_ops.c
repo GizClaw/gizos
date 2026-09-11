@@ -2032,7 +2032,8 @@ static bool public_profile_request_keys(h2_gizclaw_rpc_bytes_t input,
     public_profile_key_t key;
     const size_t len = sub.bytes_left;
     const bool read = len < sizeof(key) && pb_read(&sub, (pb_byte_t *)key, len);
-    if (!pb_close_string_substream(&stream, &sub) || !read)
+    if (!pb_close_string_substream(&stream, &sub) || !read ||
+        memchr(key, '\0', len) != NULL)
       return false;
     key[len] = '\0';
     bool seen = false;
@@ -2074,6 +2075,51 @@ h2_pal_result_t h2_gizclaw_req_create_public_profile_get(
       out_request);
 }
 
+/* Copy one length-delimited string exactly: nanopb's static string decoder
+ * would NUL-terminate at an embedded NUL and let "a\0b" compare equal to
+ * "a", so bound, NUL and UTF-8 checks run on the raw wire bytes. */
+static bool read_profile_text(pb_istream_t *stream, char *out, size_t max_len) {
+  pb_istream_t sub;
+  if (!pb_make_string_substream(stream, &sub))
+    return false;
+  const size_t len = sub.bytes_left;
+  const bool read = len <= max_len && pb_read(&sub, (pb_byte_t *)out, len);
+  if (!pb_close_string_substream(stream, &sub) || !read ||
+      !valid_utf8_span(out, len))
+    return false;
+  out[len] = '\0';
+  return true;
+}
+
+static bool decode_public_profile_item(pb_istream_t *stream,
+                                       gizclaw_rpc_v1_PublicProfile *item) {
+  while (stream->bytes_left > 0u) {
+    pb_wire_type_t wire;
+    uint32_t tag = 0u;
+    bool eof = false;
+    if (!pb_decode_tag(stream, &wire, &tag, &eof))
+      return false;
+    bool ok = true;
+    if (wire != PB_WT_STRING)
+      ok = pb_skip_field(stream, wire);
+    else if (tag == gizclaw_rpc_v1_PublicProfile_peer_public_key_tag)
+      ok = read_profile_text(stream, item->peer_public_key,
+                             sizeof(item->peer_public_key) - 1u);
+    else if (tag == gizclaw_rpc_v1_PublicProfile_display_name_tag)
+      ok = item->has_display_name =
+          read_profile_text(stream, item->display_name,
+                            sizeof(item->display_name) - 1u);
+    else if (tag == gizclaw_rpc_v1_PublicProfile_emoji_tag)
+      ok = item->has_emoji = read_profile_text(stream, item->emoji,
+                                               sizeof(item->emoji) - 1u);
+    else
+      ok = pb_skip_field(stream, wire);
+    if (!ok)
+      return false;
+  }
+  return true;
+}
+
 /* Items are decoded one at a time: the generated ProfileGetResponse holds
  * all sixteen profiles inline (over 6 KiB), too large for a caller stack. */
 static h2_pal_result_t
@@ -2107,12 +2153,9 @@ decode_public_profiles(const h2_pal_mem_api_t *allocator,
     if (!pb_make_string_substream(&stream, &sub))
       return H2_PAL_ERR_FORMAT;
     gizclaw_rpc_v1_PublicProfile item = gizclaw_rpc_v1_PublicProfile_init_zero;
-    const bool decoded =
-        pb_decode(&sub, gizclaw_rpc_v1_PublicProfile_fields, &item);
+    const bool decoded = decode_public_profile_item(&sub, &item);
     if (!pb_close_string_substream(&stream, &sub) || !decoded ||
-        strcmp(item.peer_public_key, keys[count]) != 0 ||
-        (item.has_display_name && !valid_owned_text(item.display_name)) ||
-        (item.has_emoji && !valid_owned_text(item.emoji)))
+        strcmp(item.peer_public_key, keys[count]) != 0)
       return H2_PAL_ERR_FORMAT;
     h2_gizclaw_public_profile_t *out = &items[count++];
     out->peer_public_key = duplicate_text(allocator, item.peer_public_key);
