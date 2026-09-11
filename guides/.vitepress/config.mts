@@ -169,6 +169,15 @@ const appItems = [
             ],
           },
           {
+            text: "JieLi AC791N DevKit",
+            collapsed: true,
+            items: [
+              { text: "总览", link: "/apps/h2loader/boards/jieli_ac791n_devkit/" },
+              { text: "H2Loader", link: "/apps/h2loader/boards/jieli_ac791n_devkit/h2loader" },
+              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/jieli_ac791n_devkit/crash_before_confirm" },
+            ],
+          },
+          {
             text: "SZP",
             collapsed: true,
             items: [

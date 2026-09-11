@@ -68,6 +68,8 @@ FDK AAC 编译由 `libs/fdk_aac` 拥有，PAL decoder 依赖该 first-party libr
 
 wl82 condition 为每个 wait 创建独立的 SDK semaphore，signal/broadcast 只通知当时已经注册且尚未收到通知的等待者；超时退出会注销自己的节点，不把 token 留给后来的等待者。等待者队列用短时间持有的原子 gate 保护，竞争时让出任务；节点在 SDK wait 返回之前始终保持注册，因此 destroy 会拒绝仍有等待者的 condition。与 PAL contract 一致，wait 只接受非递归 mutex，返回前重新取得调用者 mutex。
 
+wl82 的 pi32v2 clang 没有可内联的字长原子读改写指令，C11/GCC 原子操作都会降级为 `__sync_*` libcall。工具链 compiler-rt 的实现用裸 `lockset/lockclr` 包住读改写；SDK 自己的 SMP spinlock 已改用 `testset`（`asm/cpu.h` 把旧的 `lockset` 写法放在 `#if 0` 下，它需要每核嵌套计数）。在双核上 compiler-rt 版本会丢更新：PAL system event 的生命周期字从 ACTIVE（`0x80000000`）变成 `0x7fffffff`，此后所有订阅失败，BLE Loader command service 约三分之一的启动无法打开。`h2_jieli_wl82_sdk_port.c` 为 1/2/4/8 字节的 `__sync_*` libcall 提供强定义（asm label 绑定 libcall 符号，`used` 保留到 LTO 之后），每个操作由 SDK `spin_lock` 保护；链接时它们优先于 compiler-rt 归档成员，因此 PAL、board、portable library 与 SDK 代码共用同一实现。单核 AC695N 不受影响。
+
 wl82 Queue 的 ring、数据数量和关闭状态由同一把非递归 mutex 保护；readable/writable condition 只通知线程重新检查条件，不在锁外预占数据或空位。`reset` 在锁内丢弃待处理数据并唤醒等待空位的发送者，不重新打开已关闭的队列；`send_latest` 的追加或替换在一次持锁期间完成。`close` 唤醒所有收发等待者，拒绝后续发送，但允许接收者排空已有数据。调用者必须先 close 并结束所有使用者，再 destroy。有限等待跨多次唤醒共用一个超时预算。Queue 通过 wl82 内部 `h2_jieli_wl82_cond_wait_owned` 获取错误返回时的锁归属：SDK 重新加锁失败会返回 IO，Queue 不再尝试解锁；这不改变公共 PAL API。真实 pthread Queue 测试覆盖 reset 与接收访问交错、reset 唤醒发送者、多等待者关闭及关闭后排空，fake 回归覆盖重新加锁失败；它们不能替代板级性能与完整 Loader 生命周期验收。
 
 TinyH264 的 pi32v2 allocator bridge 使用 SDK port 的 task identity 与 sleep 接口，按任务查找当前 allocator；每个作用域的节点由调用栈持有，enter/leave 对称登记和注销，不分配全局固定容量槽、不占用 SDK TLS 槽，也不依赖 `pthread_once`。登记表只在修改和查找时短暂加锁，解码及 allocator callback 在锁外执行；同一任务的嵌套作用域退出后恢复上一层，不串用其它 decoder task 的 allocator。其它平台保留原有 thread-local 路径。
@@ -76,7 +78,9 @@ H2Loader host 仍下载 `tar.zlib`，不是直接下载 UFW。Package 内的 `ap
 
 物理 NOR 为 8 MiB：`[0, 0x700000)` 由 SDK double-bank packer 管理，Loader/App 是逻辑角色，不是两个固定地址的裸 flash 分区；`[0x700000, 0x740000)` 为 Preference，`[0x740000, 0x780000)` 为 coredump，`[0x780000, 0x7ff000)` 为 vendor reserved，最后 4 KiB 为 boot reserved。`h2_jieli_ac791n_devkit_partitions.h` 是容量与边界的 source of truth；下载文件位于 SD filesystem，不能把 SD 容量当成可执行 NOR 容量。
 
-当前实现尚未满足非破坏性的 `App → Loader → 已安装 App` 启动合同：App 返回 Loader 时调用 `flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK)`，会清除自己的原生启动信息；Loader 的 `power_set_next` 则只允许存在新镜像更新事务时提交跨 bank 启动。公共 Loader 在没有新 stage 时仍可请求启动已有 App，因此一次安装成功不能证明后续分区选择正确。此限制是接入验收阻塞，不是公共 Loader 的预期行为，也不能通过重装缓存包来替代 `reboot app`。
+当前实现尚未满足非破坏性的 `App → Loader → 已安装 App` 启动合同：App 返回 Loader 时调用 `flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK)`，会清除自己的原生启动信息；Loader 的 `power_set_next` 则只允许存在新镜像更新事务时提交跨 bank 启动。公共 Loader 在没有新 stage 时仍可请求启动已有 App，因此一次安装成功不能证明后续分区选择正确。此限制是接入验收阻塞，不是公共 Loader 的预期行为，也不能通过重装缓存包来替代 `reboot app`。e2e-runner 的 lifecycle 序列每次进入 App 都经过新的安装，不执行"Loader 无新 Stage 时启动已安装 App"，因此 lifecycle 全部通过也不覆盖这一项。
+
+Loader 在 SD 卡 `/dl` 下保存 image 原始字节影子，用于 Partition 2 校验与 self-update 回写；影子不能放在 `/data`，因为安装 App 时 image writer 完成后会清空 App data root。Trial 回滚以 Preference 中的 `jieli_trial_attempt` 为证据：Loader 在烧写 App BootInfo 之前写入 Partition 2 image checksum，App 确认时删除；只有 Stage 等于 Partition 2 且 attempt 仍在，Loader 才报告 Partition 2 不可启动。update semaphore 在每次启动时创建一次、不再删除，超时后迟到的 burn callback 只会 post 仍然有效的 semaphore，writer begin 会先清零。Retained 崩溃记录携带来源镜像：只有 Loader 自身的断言或看门狗才进入降级恢复（阻止 App 自动启动、跳过 BLE），trial App 崩溃经 rollback 回到 Loader 时 BLE 照常启动。
 
 SDK 的 `dual_bank_updata_api.h` 公开了新镜像校验后写入 boot info、清除指定 bank boot info 和读取当前 boot info 的接口；目前尚未确认可安全选择已有 bank 的接口。[官方 AC79 升级说明](https://doc.zh-jieli.com/AC79/zh-cn/master/module_example/system/update.html)描述的是写入另一 bank、校验、更新启动标志的升级流程，不是任意选择已有 bank 的保证。修复必须保留可恢复的 Loader，不得取消更新状态 guard 或直接猜测 boot reserved 格式；在取得支持的选择机制并完成真机验收之前，不宣称完整 A/B 生命周期可用。
 
@@ -88,7 +92,7 @@ PAL BLE 诊断包位于 `//projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/
 
 Host 验证：`bazel test //native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_platform_core //projects/h2loader/libs/h2loader:all //projects/h2loader/apps/cli/app:all //projects/example/apps/mp4-player/app:mp4_player_test`。
 
-Linux x86_64 构建：`bazel build --config=ac791n //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package`。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、没有新 stage 时再次启动同一已安装 App、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。再次启动已有 App 时必须确认没有重新上传或重写镜像，同时保留 Loader 的恢复能力。
+Linux x86_64 构建与 e2e-runner 验收命令见 [AC791N DevKit H2Loader](/apps/h2loader/boards/jieli_ac791n_devkit/h2loader)；BLE 控制器配置（DLE、2M PHY、MTU 512）及其原因也记录在该页。真机验收必须分别检查 UART/BLE 基础命令、App 安装与确认、return-to-loader、没有新 stage 时再次启动同一已安装 App、Loader self-update、失败恢复，不能用基础命令通过代替完整 lifecycle 验收。再次启动已有 App 时必须确认没有重新上传或重写镜像，同时保留 Loader 的恢复能力。
 
 ## Reference validation
 
