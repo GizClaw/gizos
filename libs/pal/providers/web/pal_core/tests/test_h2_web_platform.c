@@ -29,6 +29,8 @@ EM_JS(int, h2_web_test_close_rejected_before_cancel_settled, (),
 
 EM_JS(int, h2_web_test_audio_stopped_sources, (),
       { return globalThis.h2FakeAudioStoppedSources || 0; });
+EM_JS(int, h2_web_test_audio_active_sources, (),
+      { return globalThis.h2FakeAudioActiveSources || 0; });
 
 static void h2_web_test_task(void *user) {
   int *ran = user;
@@ -944,8 +946,16 @@ static int run_tests(void) {
           H2_AUDIO_OK ||
       h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
       h2_web_test_audio_stopped_sources() != 1 ||
+      h2_web_test_audio_active_sources() != 0 ||
+      // A stopped speaker holds writes, like a device mixer queue, and
+      // plays them when it starts again.
       h2_pal_audio_track_write(audio_track, &audio_frame, 1000u) !=
-          H2_AUDIO_ERR_INVALID_STATE ||
+          H2_AUDIO_OK ||
+      h2_web_test_audio_active_sources() != 0 ||
+      h2_pal_audio_start_speaker(audio) != H2_AUDIO_OK ||
+      h2_web_test_audio_active_sources() != 1 ||
+      h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
+      h2_web_test_audio_stopped_sources() != 2 ||
       h2_pal_audio_track_close(audio_track) != H2_AUDIO_OK) {
     return 105;
   }
