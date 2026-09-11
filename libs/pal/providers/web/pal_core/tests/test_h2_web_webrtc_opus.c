@@ -37,6 +37,8 @@ EM_JS(char *, ice_url, (), {
 EM_JS(int, transform_kind, (), {
   return typeof RTCRtpScriptTransform === 'function' ? 2 : 1;
 });
+
+EM_JS(int, legacy_mode, (), { return Module.legacy ? 1 : 0; });
 // clang-format on
 
 typedef struct opus_track {
@@ -145,6 +147,8 @@ int main(void) {
          transform_kind() == 2 ? "script" : "encoded-streams", s_track.sent,
          s_track.echoed, s_track.foreign);
   assert(s_track.echoed >= 25u);
+  // The legacy run hides RTCRtpScriptTransform to force createEncodedStreams.
+  assert(!legacy_mode() || transform_kind() == 1);
 
   // After unset the provider never calls the Track again.
   assert(h2_pal_webrtc_peer_unset_track(api, peer, &track) == H2_PAL_OK);

@@ -93,8 +93,10 @@ h2_pal_result_t h2_web_fs_get_status(h2_web_fs_t *fs,
  * Commit pending changes, unmount the root and release its Web Lock.
  *
  * Returns BUSY, leaving the provider open, while files are open or calls are
- * in progress. Otherwise the provider is released even when the final commit
- * fails; that commit error is returned. NULL returns OK.
+ * in progress, and TIMEOUT, also leaving it open, when a commit the browser
+ * started does not settle within 30 s. Otherwise the provider is released
+ * even when the final commit fails; that commit error is returned. NULL
+ * returns OK.
  */
 h2_pal_result_t h2_web_fs_close(h2_web_fs_t *fs);
 

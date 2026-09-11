@@ -587,14 +587,16 @@ h2_pal_result_t h2_web_fs_close(h2_web_fs_t *fs) {
     return H2_PAL_ERR_BUSY;
   ++fs->calls;
   h2_pal_result_t result = h2_web_fs_commit(fs);
-  // A commit already in flight still reports into this object; let it land.
-  while (fs->syncing && result != H2_PAL_ERR_CLOSED)
-    result = h2_web_platform_sleep_ms(fs->platform, 1u) == H2_PAL_OK
-                 ? result
-                 : H2_PAL_ERR_CLOSED;
+  // A commit already in flight still reports into this object; let it land,
+  // but no longer than one commit timeout.
+  const double deadline_ms =
+      emscripten_get_now() + (double)H2_WEB_FS_COMMIT_TIMEOUT_MS;
+  while (fs->syncing && emscripten_get_now() < deadline_ms &&
+         h2_web_platform_sleep_ms(fs->platform, 1u) == H2_PAL_OK) {
+  }
   --fs->calls;
   if (fs->syncing)
-    return H2_PAL_ERR_BUSY;
+    return H2_PAL_ERR_TIMEOUT;
   h2_web_fs_unmount_js((uintptr_t)fs);
   --fs->platform->open_filesystems;
   h2_web_fs_free(fs);

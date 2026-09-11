@@ -200,13 +200,14 @@ typedef struct media_pass {
   size_t frames;
   size_t pcm_samples;
   int64_t last_pts_us;
+  uint32_t pcm_digest;
 } media_pass_t;
 
 /* Decode the whole file once, checking every frame against the contract. */
 static h2_pal_result_t media_decode(h2_mp4_decoder_t *decoder,
                                     media_pass_t *pass, int16_t *pcm,
                                     size_t pcm_capacity) {
-  *pass = (media_pass_t){.last_pts_us = -1};
+  *pass = (media_pass_t){.last_pts_us = -1, .pcm_digest = 2166136261u};
   for (;;) {
     h2_mp4_decoder_frame_t *frame = NULL;
     h2_pal_result_t rc = h2_mp4_decoder_acquire_frame(decoder, 2000u, &frame);
@@ -228,6 +229,12 @@ static h2_pal_result_t media_decode(h2_mp4_decoder_t *decoder,
       pass->last_pts_us = info.pts_us;
       ++pass->frames;
       const size_t samples = info.pcm_samples_per_channel * info.pcm_channels;
+      // FNV-1a over every sample: repeated playback must be sample-identical.
+      for (size_t index = 0u; index < samples; ++index) {
+        const uint16_t sample = (uint16_t)info.pcm[index];
+        pass->pcm_digest = (pass->pcm_digest ^ (sample & 0xffu)) * 16777619u;
+        pass->pcm_digest = (pass->pcm_digest ^ (sample >> 8u)) * 16777619u;
+      }
       if (pcm != NULL && pass->pcm_samples + samples <= pcm_capacity)
         memcpy(pcm + pass->pcm_samples, info.pcm, samples * sizeof(*pcm));
       pass->pcm_samples += samples;
@@ -297,11 +304,14 @@ static int run_media(test_context_t *context) {
   rc = h2_mp4_decoder_reset(decoder);
   if (rc == H2_PAL_OK)
     rc = media_decode(decoder, &second, NULL, 0u);
-  (void)snprintf(detail, sizeof(detail), "pass2 rc=%d frames=%zu pcm=%zu", rc,
-                 second.frames, second.pcm_samples);
+  (void)snprintf(detail, sizeof(detail),
+                 "pass2 rc=%d frames=%zu pcm=%zu digest=%08x/%08x", rc,
+                 second.frames, second.pcm_samples, second.pcm_digest,
+                 first.pcm_digest);
   STEP_CHECK("media-repeat",
              rc == H2_PAL_OK && second.frames == first.frames &&
-                 second.pcm_samples == first.pcm_samples,
+                 second.pcm_samples == first.pcm_samples &&
+                 second.pcm_digest == first.pcm_digest,
              detail);
   STEP_CHECK("media-repeat", h2_mp4_decoder_close(decoder) == H2_PAL_OK,
              "close");
