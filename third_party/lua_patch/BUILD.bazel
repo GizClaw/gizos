@@ -6,7 +6,10 @@ exports_files(["h2_lua_embedded_stdio.h"])
 
 cc_library(
     name = "lua_patch",
-    srcs = ["lua_portability.c"] + select({
+    srcs = [
+        "h2_lua_embedded_stdio.h",
+        "lua_portability.c",
+    ] + select({
         "//tools/bazel/platforms:is_esp32p4": ["lua_esp_libc_compat.c"],
         "//tools/bazel/platforms:is_esp32s3": ["lua_esp_libc_compat.c"],
         "//conditions:default": [],

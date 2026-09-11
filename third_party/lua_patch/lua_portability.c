@@ -1,11 +1,13 @@
 /*
  * Embedded-only fail-closed stdio shims for upstream Lua helper functions that
- * Firmwares never exposes. The build overlay renames those calls so the vendor
- * source remains unmodified and cannot acquire a newlib standard-stream ABI.
+ * Firmwares never exposes. h2_lua_embedded_stdio.h routes those calls here so
+ * the vendor source remains unmodified and cannot acquire a newlib
+ * standard-stream ABI.
  */
 
+#include "h2_lua_embedded_stdio.h"
+
 #include <stdarg.h>
-#include <stdio.h>
 
 FILE *h2_lua_disabled_stdin;
 FILE *h2_lua_disabled_stdout;
