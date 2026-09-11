@@ -717,62 +717,30 @@ static int h2_disconnect(void *user, uint16_t conn_handle) {
   return h2_ble_cmd_result(ble_op_disconnect(conn_handle));
 }
 
-/* CoreBluetooth answers a peripheral request with LL_CONNECTION_UPDATE_REQ.
- * Arriving while the central still runs its LL_LENGTH_REQ and GATT setup,
- * that update leaves this controller unable to move data, so the request is
- * sent once the link has settled. */
-#define H2_JIELI_CONN_PARAM_DELAY_MS 3000u
-
-static struct conn_update_param_t h2_conn_param_request;
-static uint16_t h2_conn_param_handle;
-static uint16_t h2_conn_param_timer;
-
-static void h2_conn_param_send(void *user) {
-  (void)user;
-  h2_conn_param_timer = 0u;
-  if (h2_conn_param_handle == 0u ||
-      h2_conn_param_handle != h2_ble.conn_handle) {
-    return;
-  }
-  /* The SDK keeps this pointer until the L2CAP procedure ends. */
-  const int result =
-      ble_op_conn_param_request(h2_conn_param_handle, &h2_conn_param_request);
-  h2_ble_log(
-      "H2_JIELI_BLE_CONN_PARAMS sent interval=%u-%u latency=%u timeout=%u "
-      "vendor=%d\r\n",
-      (unsigned)h2_conn_param_request.interval_min * 5u / 4u,
-      (unsigned)h2_conn_param_request.interval_max * 5u / 4u,
-      (unsigned)h2_conn_param_request.latency,
-      (unsigned)h2_conn_param_request.timeout * 10u, result);
-}
-
-static void h2_conn_param_cancel(void) {
-  h2_conn_param_handle = 0u;
-  if (h2_conn_param_timer != 0u) {
-    sys_timeout_del(h2_conn_param_timer);
-    h2_conn_param_timer = 0u;
-  }
-}
-
 static int h2_update_connection(
     void *user, uint16_t conn_handle,
     const h2_pal_ble_connection_params_t *params) {
+  /* The SDK keeps a pointer to the request until the L2CAP procedure ends. */
+  static struct conn_update_param_t request;
   (void)user;
   if (conn_handle != h2_ble.conn_handle || params == NULL ||
       params->interval_min_ms == 0u ||
       params->interval_max_ms < params->interval_min_ms)
     return H2_PAL_ERR_INVALID_ARG;
-  h2_conn_param_cancel();
-  h2_conn_param_request = (struct conn_update_param_t){
+  request = (struct conn_update_param_t){
       .interval_min = (uint16_t)(params->interval_min_ms * 4u / 5u),
       .interval_max = (uint16_t)(params->interval_max_ms * 4u / 5u),
       .latency = params->latency,
       .timeout = (uint16_t)(params->supervision_timeout_ms / 10u),
   };
-  h2_conn_param_handle = conn_handle;
-  h2_conn_param_timer = sys_timeout_add_to_task(
-      "sys_timer", NULL, h2_conn_param_send, H2_JIELI_CONN_PARAM_DELAY_MS);
-  return h2_conn_param_timer != 0u ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
+  const int result = ble_op_conn_param_request(conn_handle, &request);
+  h2_ble_log(
+      "H2_JIELI_BLE_CONN_PARAMS request=%u-%u latency=%u timeout=%u "
+      "vendor=%d\r\n",
+      (unsigned)params->interval_min_ms, (unsigned)params->interval_max_ms,
+      (unsigned)params->latency, (unsigned)params->supervision_timeout_ms,
+      result);
+  return h2_ble_cmd_result(result);
 }
 
 static int h2_exchange_mtu(
@@ -999,7 +967,6 @@ static void h2_packet_handler(
           .conn_handle = h2_ble.conn_handle,
           .reason = packet[5],
       };
-      h2_conn_param_cancel();
       h2_ble.conn_handle = 0u;
       h2_ble.mtu = 0u;
       (void)ble_op_att_send_init(0u, NULL, 0u, 0u);
