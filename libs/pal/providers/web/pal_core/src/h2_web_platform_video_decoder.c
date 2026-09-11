@@ -5,7 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Submission stops at the soft limit; frames already inside the decoder
+// (reordering, flush) may still land up to the hard limit.
 #define H2_WEB_VIDEO_MAX_PENDING 8u
+#define H2_WEB_VIDEO_MAX_QUEUED (3u * H2_WEB_VIDEO_MAX_PENDING)
 
 struct h2_pal_video_decoder_frame {
   struct h2_pal_video_decoder_frame *next;
@@ -18,6 +21,8 @@ struct h2_pal_video_decoder_frame {
 };
 
 struct h2_pal_video_decoder_session {
+  h2_web_platform_t *platform;
+  h2_web_async_t *acquire_op;
   h2_pal_mem_api_t allocator;
   h2_pal_video_decoder_frame_t *head;
   h2_pal_video_decoder_frame_t *tail;
@@ -33,9 +38,9 @@ struct h2_pal_video_decoder_session {
   int failed;
 };
 
-EM_ASYNC_JS(int, h2_web_video_configure_js,
-            (uintptr_t address, const char *codec, uint32_t width,
-             uint32_t height), {
+EM_JS(int, h2_web_video_configure_js,
+      (uintptr_t platform_address, uintptr_t address, uint32_t op_id,
+       const char *codec, uint32_t width, uint32_t height), {
   if (typeof VideoDecoder === 'undefined')
     return -3;
   const config = {
@@ -45,7 +50,7 @@ EM_ASYNC_JS(int, h2_web_video_configure_js,
     optimizeForLatency : true,
     hardwareAcceleration : 'no-preference',
   };
-  try {
+  (async () => { try {
     const support = await VideoDecoder.isConfigSupported(config);
     if (!support.supported)
       return -3;
@@ -112,7 +117,20 @@ return 0;
 catch(error) {
   console.error('WebCodecs video configure failed', error);
   return error && error.name === 'NotSupportedError' ? -3 : -4;
-}
+} })().then((result) => {
+  // A caller that gave up (task cancel) never learns of this decoder.
+  if (!Module['_h2_web_async_complete'](platform_address, op_id, result) &&
+      result === 0) {
+    const entries = Module['h2WebVideoDecoders'];
+    const entry = entries?.get(address);
+    if (entry) {
+      entry.alive = false;
+      try { entry.decoder.close(); } catch (_) {}
+      entries.delete(address);
+    }
+  }
+});
+return 0;
 });
 
 EM_JS(int, h2_web_video_load_js, (uintptr_t address), {
@@ -148,19 +166,25 @@ EM_JS(int, h2_web_video_submit_js,
         }
       });
 
-EM_ASYNC_JS(int, h2_web_video_flush_js, (uintptr_t address), {
+EM_JS(int, h2_web_video_flush_js,
+      (uintptr_t platform_address, uintptr_t address, uint32_t op_id), {
   const entry = Module['h2WebVideoDecoders']?.get(address);
   if (!entry || !entry.alive)
     return -7;
-  try {
-    await entry.decoder.flush();
-    await Promise.all(Array.from(entry.pending));
-    return 0;
-  }
-  catch(error) {
-    console.error('WebCodecs video flush failed', error);
-    return -4;
-  }
+  (async () => {
+    try {
+      await entry.decoder.flush();
+      await Promise.all(Array.from(entry.pending));
+      return 0;
+    }
+    catch(error) {
+      if (!entry.alive) return -10;
+      console.error('WebCodecs video flush failed', error);
+      return -4;
+    }
+  })().then((result) => Module['_h2_web_async_complete'](
+      platform_address, op_id, result));
+  return 0;
 });
 
 EM_JS(void, h2_web_video_drop_js, (uintptr_t address), {
@@ -195,11 +219,18 @@ EMSCRIPTEN_KEEPALIVE void h2_web_video_temp_free(uintptr_t address) {
   free((void *)address);
 }
 
+static void h2_web_video_wake(h2_pal_video_decoder_session_t *session) {
+  if (session->acquire_op != NULL)
+    h2_web_async_signal(session->platform, session->acquire_op, H2_PAL_OK);
+}
+
 EMSCRIPTEN_KEEPALIVE void h2_web_video_error(uintptr_t address) {
   h2_pal_video_decoder_session_t *session =
       (h2_pal_video_decoder_session_t *)address;
-  if (session != NULL)
+  if (session != NULL) {
     session->failed = 1;
+    h2_web_video_wake(session);
+  }
 }
 
 EMSCRIPTEN_KEEPALIVE void
@@ -215,14 +246,17 @@ h2_web_video_output(uintptr_t address, const uint8_t *rgba, size_t rgba_size,
       offset > rgba_size || rgba_size - offset < (size_t)width * 4u ||
       (size_t)(height - 1u) >
           (rgba_size - offset - (size_t)width * 4u) / stride) {
-    if (session != NULL)
+    if (session != NULL) {
       session->failed = 1;
+      h2_web_video_wake(session);
+    }
     return;
   }
   const size_t pixels = (size_t)width * height;
   if (pixels > SIZE_MAX / sizeof(uint16_t) ||
-      session->queued >= H2_WEB_VIDEO_MAX_PENDING) {
+      session->queued >= H2_WEB_VIDEO_MAX_QUEUED) {
     session->failed = 1;
+    h2_web_video_wake(session);
     return;
   }
   h2_pal_video_decoder_frame_t *frame =
@@ -233,6 +267,7 @@ h2_web_video_output(uintptr_t address, const uint8_t *rgba, size_t rgba_size,
     h2_pal_mem_free(&session->allocator, frame);
     h2_pal_mem_free(&session->allocator, output);
     session->failed = 1;
+    h2_web_video_wake(session);
     return;
   }
   for (size_t index = 0u; index < pixels; ++index) {
@@ -259,6 +294,7 @@ h2_web_video_output(uintptr_t address, const uint8_t *rgba, size_t rgba_size,
     session->tail->next = frame;
   session->tail = frame;
   ++session->queued;
+  h2_web_video_wake(session);
 }
 
 static int h2_web_h264_is_key(const uint8_t *data, size_t size) {
@@ -302,7 +338,6 @@ static void h2_web_h264_codec(const uint8_t *data, size_t size,
 static h2_pal_result_t
 h2_web_video_open(void *user, const h2_video_decoder_config_t *config,
                   h2_pal_video_decoder_session_t **out_session) {
-  (void)user;
   if (config->preferred_format != H2_VIDEO_PIXEL_FORMAT_UNSPECIFIED &&
       config->preferred_format != H2_VIDEO_PIXEL_FORMAT_RGB565)
     return H2_PAL_ERR_UNSUPPORTED;
@@ -312,6 +347,7 @@ h2_web_video_open(void *user, const h2_video_decoder_config_t *config,
     return H2_PAL_ERR_NO_MEMORY;
   memset(session, 0, sizeof(*session));
   session->allocator = *config->frame_allocator;
+  session->platform = user;
   *out_session = session;
   return H2_PAL_OK;
 }
@@ -332,8 +368,12 @@ h2_web_video_configure(void *user, h2_pal_video_decoder_session_t *session,
   memcpy(codec_config, config->codec_config, config->codec_config_size);
   char codec[12];
   h2_web_h264_codec(codec_config, config->codec_config_size, codec);
-  const int result = h2_web_video_configure_js(
-      (uintptr_t)session, codec, config->coded_width, config->coded_height);
+  h2_web_async_t op;
+  h2_web_async_begin(session->platform, &op);
+  int result = h2_web_video_configure_js(
+      (uintptr_t)session->platform, (uintptr_t)session, op.id, codec,
+      config->coded_width, config->coded_height);
+  result = h2_web_async_finish(session->platform, &op, result);
   if (result != H2_PAL_OK) {
     h2_pal_mem_free(&session->allocator, codec_config);
     return (h2_pal_result_t)result;
@@ -356,7 +396,11 @@ h2_web_video_submit(void *user, h2_pal_video_decoder_session_t *session,
     return H2_PAL_ERR_IO;
   if ((packet->flags & H2_VIDEO_DECODER_PACKET_END_OF_STREAM) != 0u) {
     session->eos_submitted = 1;
-    const int result = h2_web_video_flush_js((uintptr_t)session);
+    h2_web_async_t op;
+    h2_web_async_begin(session->platform, &op);
+    int result = h2_web_video_flush_js((uintptr_t)session->platform,
+                                       (uintptr_t)session, op.id);
+    result = h2_web_async_finish(session->platform, &op, result);
     if (result == H2_PAL_OK)
       session->eos_reached = 1;
     else
@@ -373,8 +417,6 @@ h2_web_video_submit(void *user, h2_pal_video_decoder_session_t *session,
       (uintptr_t)session, packet->data, packet->size, session->codec_config,
       session->codec_config_size, is_key, (double)packet->pts_us,
       (double)packet->duration_us);
-  if (result == H2_PAL_OK)
-    emscripten_sleep(0u);
   return (h2_pal_result_t)result;
 }
 
@@ -388,9 +430,19 @@ h2_web_video_acquire(void *user, h2_pal_video_decoder_session_t *session,
   const double deadline = emscripten_get_now() + timeout_ms;
   while (session->head == NULL && !session->failed &&
          !(session->eos_reached && session->queued == 0u)) {
-    if (timeout_ms == 0u || emscripten_get_now() >= deadline)
+    const double now = emscripten_get_now();
+    if (timeout_ms == 0u || now >= deadline)
       return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
-    emscripten_sleep(1u);
+    // Tasks yield until WebCodecs delivers output; other tasks keep running.
+    h2_web_async_t op;
+    h2_web_async_begin(session->platform, &op);
+    session->acquire_op = &op;
+    const h2_pal_result_t wait = h2_web_async_wait(
+        session->platform, &op, (uint32_t)(deadline - now) + 1u);
+    session->acquire_op = NULL;
+    h2_web_async_end(session->platform, &op);
+    if (wait == H2_PAL_ERR_CLOSED)
+      return H2_PAL_ERR_CLOSED;
   }
   if (session->failed)
     return H2_PAL_ERR_IO;

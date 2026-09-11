@@ -33,11 +33,14 @@ h2_web_platform_create(const h2_web_platform_config_t *config);
 /**
  * Destroy an idle provider after target-owned Runtime/tasks are released.
  *
- * A busy executor or in-flight asynchronous WebRTC call is left intact; retry
- * after those calls return. NULL is accepted. All borrowed accessor
+ * Returns BUSY and leaves the platform intact while a task is alive, a PAL
+ * call is suspended on a browser Promise (HTTP, WebRTC, decoder, microphone,
+ * filesystem), an h2_web_fs is open or a speaker track is still open;
+ * stop/cancel/close them, keep
+ * pumping and retry. NULL and success return OK. All borrowed accessor
  * results become invalid when destruction succeeds.
  */
-void h2_web_platform_destroy(h2_web_platform_t *platform);
+h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform);
 
 /**
  * Run one non-reentrant bounded scheduler turn on the browser root.
@@ -121,7 +124,19 @@ h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *
 h2_web_platform_serial_host_api(h2_web_platform_t *platform);
 /** Browser RTCPeerConnection/DataChannel provider, called on the JS thread.
- * Media is caller-owned: register {stream: MediaStream, audio:
+ * A Track with native_handle == NULL and a read/write vtable is an Opus
+ * Track (the native-provider model): the provider sends a silent browser
+ * track, replaces each outgoing encoded 20 ms payload with the next packet
+ * (which must therefore carry 20 ms of audio) from
+ * read() and hands every received payload to write() instead of the browser
+ * decoder, using RTCRtpScriptTransform (worker; CSP must allow blob: workers)
+ * or Chromium's createEncodedStreams. A platform-owned task calls read/write,
+ * never a browser callback; the page must have unlocked Module.h2WebAudioContext
+ * (or allow autoplay) for the silent source to run. Missing transform APIs
+ * return UNSUPPORTED. unset returns once no Track callback is in flight
+ * (BUSY from the root while one is); a new Track waits (BUSY) until the
+ * previous media task has exited. Received packet loss is not reported.
+ * Otherwise media is caller-owned: register {stream: MediaStream, audio:
  * HTMLMediaElement} in Module.h2WebRtcTracks (a Map keyed by a nonzero wasm32
  * integer token), then pass a caller-constructed h2_pal_webrtc_track_t with
  * native_handle equal to that token. Either stream or audio may be omitted, but
@@ -141,6 +156,38 @@ h2_web_platform_serial_host_api(h2_web_platform_t *platform);
  */
 const h2_pal_webrtc_api_t *
 h2_web_platform_webrtc_api(h2_web_platform_t *platform);
+
+/**
+ * Browser default-network provider backed by navigator.onLine.
+ *
+ * Exposes exactly one interface: NAME "browser", kind H2_PAL_NETIF_KIND_HOST.
+ * Online status is UP | LINK_UP | DEFAULT_ROUTE; offline status is UP only
+ * and the DEFAULT ref returns NOT_FOUND. HAS_IPV4/HAS_IPV6, addresses,
+ * gateway, DNS, MTU and MAC are never reported because browsers hide them;
+ * consumers test h2_pal_netif_status_is_usable(). Other kinds, names and IDs
+ * return NOT_FOUND; get_dns_servers and set_default on the browser path return
+ * UNSUPPORTED because the browser owns resolution and routing. Without a
+ * boolean navigator.onLine every call returns UNSUPPORTED.
+ *
+ * navigator.onLine only reports whether the host has any network. A service
+ * can still be unreachable (captive portal, firewall, CORS, server down); only
+ * the result of the real Fetch or WebRTC connection decides that.
+ */
+const h2_pal_netif_api_t *
+h2_web_platform_netif_api(h2_web_platform_t *platform);
+
+/**
+ * Single-threaded System Event provider owned by @p platform.
+ *
+ * Browser online/offline notifications are recorded and published from the
+ * next platform pump as H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED with
+ * the "browser" ref on the valid side; repeated notifications that do not
+ * change navigator.onLine are dropped. init only records the baseline and
+ * publishes nothing. post dispatches synchronously on the caller's turn.
+ * At most 64 subscriptions may be live; more return NO_SPACE.
+ */
+const h2_pal_system_event_api_t *
+h2_web_platform_system_event_api(h2_web_platform_t *platform);
 
 /**
  * Start the Web Serial chooser; call only from a direct user gesture.
