@@ -321,3 +321,64 @@ void h2_jieli_sdk_timer_del(uint16_t id, int repeat)
         sys_timeout_del(id);
     }
 }
+
+/* ---------------------------------------------------------------------------
+ * Atomic runtime for C11/GCC atomics on the dual-core wl82.
+ *
+ * pi32v2 clang lowers every atomic read-modify-write to __sync_* libcalls.
+ * The toolchain's compiler-rt versions bracket the operation with a bare
+ * lockset/lockclr pair; the SDK retired that pattern for cross-core locking
+ * (asm/cpu.h keeps it under #if 0, it needs a per-CPU nesting count) and
+ * uses testset spinlocks instead. Under concurrent use from both cores the
+ * compiler-rt operations lose updates: the PAL system-event lifecycle word
+ * dropped from ACTIVE to ACTIVE-1 and rejected every later subscription.
+ *
+ * These strong definitions take precedence over the compiler-rt archive
+ * members for the whole image, so PAL, board, portable libraries and SDK
+ * code all share one testset-guarded implementation. `used` keeps them
+ * through LTO, where the libcalls only appear after code generation.
+ * ------------------------------------------------------------------------- */
+
+static spinlock_t h2_jieli_atomic_lock = {.rwlock = 0};
+
+/* clang reserves the __sync_*_N spellings as builtins; define ordinary
+ * functions and bind them to the libcall symbols with asm labels. */
+#define H2_JIELI_SYNC_RMW(width, type, name, update)                         \
+    __attribute__((used)) type h2_jieli_sync_##name##_##width(             \
+        volatile type *address, type value)                                \
+        __asm__("__sync_" #name "_" #width);                               \
+    type h2_jieli_sync_##name##_##width(                                   \
+        volatile type *address, type value) {                              \
+        spin_lock(&h2_jieli_atomic_lock);                                  \
+        const type previous = *address;                                    \
+        *address = (update);                                               \
+        spin_unlock(&h2_jieli_atomic_lock);                                \
+        return previous;                                                   \
+    }
+
+#define H2_JIELI_SYNC_CAS(width, type)                                       \
+    __attribute__((used)) type h2_jieli_sync_cas_##width(                  \
+        volatile type *address, type expected, type desired)               \
+        __asm__("__sync_val_compare_and_swap_" #width);                    \
+    type h2_jieli_sync_cas_##width(                                        \
+        volatile type *address, type expected, type desired) {             \
+        spin_lock(&h2_jieli_atomic_lock);                                  \
+        const type previous = *address;                                    \
+        if (previous == expected) *address = desired;                      \
+        spin_unlock(&h2_jieli_atomic_lock);                                \
+        return previous;                                                   \
+    }
+
+#define H2_JIELI_SYNC_WIDTH(width, type)                                     \
+    H2_JIELI_SYNC_RMW(width, type, fetch_and_add, previous + value)        \
+    H2_JIELI_SYNC_RMW(width, type, fetch_and_sub, previous - value)        \
+    H2_JIELI_SYNC_RMW(width, type, fetch_and_and, previous & value)        \
+    H2_JIELI_SYNC_RMW(width, type, fetch_and_or, previous | value)         \
+    H2_JIELI_SYNC_RMW(width, type, fetch_and_xor, previous ^ value)        \
+    H2_JIELI_SYNC_RMW(width, type, lock_test_and_set, value)               \
+    H2_JIELI_SYNC_CAS(width, type)
+
+H2_JIELI_SYNC_WIDTH(1, uint8_t)
+H2_JIELI_SYNC_WIDTH(2, uint16_t)
+H2_JIELI_SYNC_WIDTH(4, uint32_t)
+H2_JIELI_SYNC_WIDTH(8, uint64_t)
