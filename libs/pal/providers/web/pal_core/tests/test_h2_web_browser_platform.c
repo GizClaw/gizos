@@ -447,6 +447,23 @@ static int stream_read(void *user, const h2_pal_http_request_t *request,
   return H2_PAL_OK;
 }
 
+// read_cb that cancels the request from inside its first chunk.
+static int stream_cancel_read(void *user, const h2_pal_http_request_t *request,
+                              const uint8_t *chunk, size_t chunk_len,
+                              size_t total_read, size_t remaining) {
+  (void)request;
+  (void)chunk;
+  (void)chunk_len;
+  (void)total_read;
+  (void)remaining;
+  ++((stream_sink_t *)user)->chunks;
+  return H2_PAL_OK;
+}
+
+static int stream_cancel_requested(void *user) {
+  return ((const stream_sink_t *)user)->chunks != 0u;
+}
+
 typedef struct cancel_state {
   test_context_t *context;
   int after_ticks;
@@ -525,6 +542,26 @@ static int run_http(test_context_t *context) {
                  sink.total, sink.chunks);
   STEP_CHECK("http-stream", rc == H2_PAL_OK && sink.total == 262144u &&
                                 sink.chunks >= 64u,
+             url);
+  // Cancelling from read_cb stops delivery even with more bytes buffered:
+  // small chunks split each browser chunk into many callbacks.
+  stream_sink_t stopped = {0};
+  const h2_pal_http_request_t stop_stream = {
+      .method = H2_PAL_HTTP_GET,
+      .url = {.data = stream_url, .len = strlen(stream_url)},
+      .timeout_ms = 5000,
+      .chunk_buf = chunk,
+      .chunk_buf_cap = 64u,
+      .read_cb = stream_cancel_read,
+      .user = &stopped,
+      .cancel_cb = stream_cancel_requested,
+      .cancel_user = &stopped,
+  };
+  rc = (h2_pal_result_t)h2_pal_http_request(http, &stop_stream, &response);
+  (void)snprintf(url, sizeof(url),
+                 "stream rc=%d total=%zu chunks=%zu; cancelled rc=%d chunks=%zu",
+                 H2_PAL_OK, sink.total, sink.chunks, rc, stopped.chunks);
+  STEP_CHECK("http-stream", rc == H2_PAL_ERR_CLOSED && stopped.chunks == 1u,
              url);
   test_report("http-stream", 0, url);
 

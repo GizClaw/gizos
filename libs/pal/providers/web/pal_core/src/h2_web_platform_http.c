@@ -394,6 +394,11 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
   const uintptr_t platform = (uintptr_t)exchange->platform;
   const h2_pal_mem_api_t *allocator = h2_pal_http_response_allocator(request);
   for (;;) {
+    // read_cb may cancel; nothing already buffered is delivered after that.
+    if (h2_pal_http_request_is_canceled(request)) {
+      h2_web_http_cancel_js(platform, exchange->id);
+      return H2_PAL_ERR_CLOSED;
+    }
     h2_pal_result_t result = h2_web_http_fill(exchange);
     if (result != H2_PAL_OK)
       return result;
