@@ -3,6 +3,8 @@
 #include "fishing_game_script_generated.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2_lua.h"
+#include "h2_lua_module.h"
+#include "h2_lua_fishing_math.h"
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
 
@@ -49,14 +51,20 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
   }
 
   const h2_lua_arg_t args[] = {
-      {.name = "scene", .value = config->scene},
-      {.name = "time_ms", .value = config->time_ms},
-      {.name = "rod", .value = config->rod},
-      {.name = "reel", .value = config->reel},
-      {.name = "power", .value = config->power},
-      {.name = "action", .value = config->action},
-      {.name = "brand", .value = config->brand},
-      {.name = "check", .value = config->check},
+      {.name = "profile", .value = config->profile != NULL ? config->profile : "desktop"},
+      {.name = "weather", .value = config->weather ? config->weather : "auto"},
+      {.name = "hour", .value = config->hour ? config->hour : "9"},
+      {.name = "scene", .value = config->scene ? config->scene : "idle"},
+      {.name = "time_ms", .value = config->time_ms ? config->time_ms : ""},
+      {.name = "rod", .value = config->rod ? config->rod : "1"},
+      {.name = "reel", .value = config->reel ? config->reel : "1"},
+      {.name = "lure", .value = config->lure ? config->lure : "1"},
+      {.name = "detail", .value = config->detail ? config->detail : "0"},
+      {.name = "fish_kg", .value = config->fish_kg ? config->fish_kg : "2"},
+      {.name = "power", .value = config->power ? config->power : "ML"},
+      {.name = "action", .value = config->action ? config->action : "F"},
+      {.name = "brand", .value = config->brand ? config->brand : "1"},
+      {.name = "check", .value = config->check ? config->check : "0"},
   };
 
   result = h2_lua_host_create(
@@ -66,10 +74,10 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
           .max_jobs = 1u,
           .event_delivery_capacity = 8u,
           .callback_capacity_per_job = 8u,
-          .vm_memory_limit_bytes = 2u * 1024u * 1024u,
-          .source_limit_bytes = 128u * 1024u,
+          .vm_memory_limit_bytes = 4u * 1024u * 1024u,
+          .source_limit_bytes = 256u * 1024u,
           .output_limit_bytes = 1024u,
-          .instruction_quantum = 10000u,
+          .instruction_quantum = 50000u,
           .execution_timeout_ms = UINT32_MAX,
           .resources = resources,
           .resource_count = sizeof(resources) / sizeof(resources[0]),
@@ -78,7 +86,8 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
   if (result != H2_PAL_OK) {
     return result;
   }
-  result = h2_lua_host_start(host);
+  result = h2_lua_register_module(host, "fishing_math", h2_lua_fishing_math_open, NULL);
+  if (result == H2_PAL_OK) result = h2_lua_host_start(host);
   if (result == H2_PAL_OK) {
     result =
         h2_lua_job_submit_resource(host, "@fishing/main.lua", args,
@@ -129,7 +138,7 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
         }
       }
     }
-    result = h2_pal_time_sleep_ms(runtime->time, 5u);
+    result = h2_pal_time_sleep_ms(runtime->time, 1u);
   }
   if (job_id != H2_LUA_JOB_ID_NONE &&
       h2_lua_job_get_status(host, job_id, &status) == H2_PAL_OK) {

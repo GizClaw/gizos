@@ -9,10 +9,10 @@ h2_lua_resource(
 )
 cc_library(
     name = "lua_fishing_game",
-    srcs = ["src/h2_lua_fishing_game.c"],
+    srcs = ["src/h2_lua_fishing_game.c", "src/h2_lua_fishing_math.c", "src/h2_lua_fishing_math.h"],
     hdrs = ["include/h2_lua_fishing_game.h"],
     includes = ["include"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    deps = [":fishing_game_script", "//libs/lua", "//libs/runtime"],
+    deps = [":fishing_game_script", "//libs/lua", "//libs/runtime", "//tools/bazel:vendor_third_party_lua"],
 )

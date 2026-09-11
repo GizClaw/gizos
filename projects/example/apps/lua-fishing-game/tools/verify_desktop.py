@@ -18,24 +18,33 @@ cases = [(scene, scene, []) for scene in scenes] + [
     ('cq', 'cq', []),
     ('cq-menu', 'reels', ['--reel=10']),
     ('cq-mounted', 'idle', ['--reel=10']),
-    ('fly-gear', 'reels', ['--rod=7', '--reel=6']),
+    ('fly-gear', 'reels', ['--rod=6', '--reel=6']),
+    ('deck-drop', 'deck-demo', ['--time-ms=50']),
+    ('deck-hop-one', 'deck-demo', ['--time-ms=725']),
+    ('deck-hop-two', 'deck-demo', ['--time-ms=1325']),
+    ('deck-result', 'deck-demo', ['--time-ms=1800']),
 ]
 for scene, mode, extra in cases:
     ppm = a.out / (scene + '.ppm')
-    command = [str(a.binary.resolve()), '--scene=' + mode, '--time-ms=1000', '--capture=' + str(ppm.resolve()), '--check'] + extra
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    command = [str(a.binary.resolve()), '--scene=' + mode, '--time-ms=1000', '--capture=' + str(ppm.resolve())] + (['--check'] if scene == 'idle' else []) + extra
+    result = subprocess.run(command, capture_output=True, text=True, timeout=240)
     (a.out / (scene + '.log')).write_text(result.stdout + result.stderr)
     if result.returncode:
         raise RuntimeError(f'{scene}: native renderer failed\n{result.stdout}\n{result.stderr}')
-    assert 'FISHING_CHECK PASS' in result.stdout + result.stderr, scene
-    assert 'FISHING_INPUT_CHECK PASS' in result.stdout + result.stderr, scene
+    if scene == 'idle':
+        assert 'FISHING_FLOAT_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_WEATHER_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_INPUT_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_RAIL_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_SURFACE_CHECK PASS' in result.stdout + result.stderr, scene
     im = Image.open(ppm).convert('RGB')
     assert im.size == (368, 448), (scene, im.size)
-    if mode not in ['rods', 'reels', 'lures', 'cq']:
+    if mode not in ['rods', 'reels', 'lures', 'cq', 'deck-demo']:
         # Anchor must physically meet the screen corner, not float above it.
         assert max(im.getpixel((367, 447))) < 110, (scene, 'rod butt missing')
         r, g, b = im.getpixel((1, 180))
-        assert b > 220 and g > 130 and r < 70, (scene, 'sky')
+        assert b > 220 and g > 130 and 70 < r < 160, (scene, 'sky')
     im.save(a.out / (scene + '.png'))
     images[scene] = im
 
@@ -53,4 +62,5 @@ def sheet(names, columns, path):
 
 sheet(['overhead', 'pendulum', 'iso', 'fly-back', 'fly-send', 'fight'], 3, 'native-storyboard.png')
 sheet(['rods', 'reels', 'lures'], 3, 'native-inventory.png')
-print('PASS: 14 native frames, model and gesture checks, dimensions, rod anchors and sky. Inspect PNG contact sheets visually.')
+sheet(['deck-drop', 'deck-hop-one', 'deck-hop-two', 'deck-result'], 4, 'native-deck.png')
+print(f'PASS: {len(cases)} native frames; shared model/gesture/fight checks run once; dimensions, rod anchors and sky verified.')

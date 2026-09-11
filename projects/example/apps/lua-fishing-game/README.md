@@ -9,26 +9,65 @@ The PNGs under `design/` are approved visual references only, not build inputs.
 bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fishing-game
 ```
 
-- Starts on the sea. Drag **left** to open gear, **right** to return to the sea.
+- Starts on the sea. Drag **left** to open gear. Inside gear, drag horizontally
+  to switch RODS / REELS / LURES; drag right from RODS to return to the sea.
+  Tab content follows the finger and settles with a 180 ms slide.
 - Click RODS / REELS / LURES, then a thumbnail to equip it.
+- Rod cells show C (casting), S (spinning, including ISO), or F (fly) at the
+  upper left. All upper-right lengths use feet/inches rounded to the nearest
+  inch, including metric rods; original catalog length remains in the details.
+  The equipped indicator is at the lower left of rod cells.
+- All 12 brand slots have Lua pixel marks. JACKALL includes the framed jackal
+  head. Other marks use brand-specific lettering, colors and strokes; these
+  are small pixel interpretations, not bitmap logo assets.
 - Incompatible items stay visible and gray; clicking one shows its details but
   does not equip it. Changing rod type clears incompatible reel/lure selections.
-- Use the side arrows or swipe vertically to page through the inventory.
-- Click the rod detail strip to alternate basic specs and line/lure ratings.
+- Drag the inventory vertically for continuous scrolling. Each tab remembers
+  its scroll position; the tabs and detail panel stay fixed during vertical
+  scrolling. Dragging never equips an item; there are no page arrows.
+- Equipment details use four fields in two rows: brand logo / series,
+  followed by length+power / action for rods, model / line capacity for reels,
+  or model / grams for lures. Example rod values: `6'8M` / `RF`.
 - Manufacturer Brand / Series / Model / Power / Action are fixed per model.
   Casting rods accept low-profile or round baitcasters; spinning rods accept
-  spinning reels. Fly reels must fit the rod's WT rating.
-- Catalog: 9 rods, 11 reels, 10 lure/rig entries. This includes every researched
-  item, plus Hydros IV for the 8WT fly rod and the existing CUSTOM float rig.
+  spinning reels. Fly reels must fit the rod's WT rating. Fly rods accept only
+  flies; ISO rods accept only the A-WA rig; freshwater/lure rods reject A-WA.
+  These are discipline/mount rules, not an artificial freshwater/saltwater
+  prohibition on otherwise usable lures.
+- Catalog: 11 rods, 19 reels, 18 lure/rig entries. Rods are curated to one brand/model per displayed length; researched
+  alternatives remain documented in TACKLE_CATALOG.md.
   Unknown specs display N/A; simulation tuning is not a manufacturer claim.
-- Click the sea to rehearse a cast. This is a visual prototype: six-axis gesture
-  recognition, fish AI, fighting/reeling mechanics and persistence are not yet
-  implemented. The rehearsal goes through cast / wait / tension poses.
+- Click the sea once to run a complete cast: backswing, forward sweep, elastic
+  recovery, line payout, flight, water entry and a lowered waiting pose. Click
+  after landing to twitch and retrieve one stroke. Rapidly click four times (gaps at most 650 ms) for sustained A-WA retrieval; isolated A-WA clicks move it only 12 cm. Retrieval stops with 65 cm of leader (85 cm for A-WA); the next click starts a new cast. Vertical casting gestures also remain available; fly casting still requires two reversals. Clicks during casting/flight do not restart it.
+  Horizontal left swipe still opens equipment. Vertical flicks optionally set
+  the strength of the same automatic stroke; fly flicks require two reversals.
+- The pivot is 25 cm behind the grip on its extended centre line. The rod sweeps
+  an oblique circular plane in 3D. Perspective preserves near/far size changes.
+  Fly rods make repeated false casts with pauses for line turnover; ISO rods
+  use a separate pendulum stroke. Fish-load poses remain available through
+  `--scene=fight --fish-kg=2`; this casting test does not trigger fish AI.
+- After water entry, mass, buoyancy and quadratic water drag govern motion.
+  Sinking rigs slowly draw slack out of the fixed paid-out line. Topwater and
+  A-WA stay afloat; floating minnows recover toward the surface and suspending
+  models retain near-neutral buoyancy. Underwater line and lure silhouettes fade
+  with depth. The line is not forcibly interpolated into a straight screen line.
+- Render target: 60 FPS, with measured FPS and 95th-percentile frame intervals
+  logged every two seconds. Rod elasticity uses 120 Hz integration; the XPBD
+  line and lure use 240 Hz, independent of rendering. `--scene=physics-demo`
+  repeats a full cast every ten seconds for live performance checks.
+  Six-axis IMU input is not implemented yet.
+- Changing any equipped rod, reel or lure resets the live simulation and updates
+  the scene. No fallback lure or reel is shown when that slot is empty.
 - Escape closes the desktop window.
 
 `--scene=demo` cycles six storyboard poses. Individual previews:
 `idle`, `overhead`, `pendulum`, `iso`, `fly-back`, `fly-send`, `fight`, `rods`,
-`reels`, `lures`, `cq`. `--rod=1..9`, `--reel=1..11` select catalog items.
+`reels`, `lures`, `cq`. `--rod=1..11`, `--reel=1..19`, `--lure=1..18` select catalog items.
+`--detail=0..1` is retained for capture CLI compatibility; the four-field
+summary is fixed. Inventory
+captures scroll to the selected rod, reel or lure; incompatible
+items are cleared by the same compatibility rules used in the live menu.
 `cq` renders a standalone CQ pixel-art board; reel indices 10/11 select CQ
 100 RIGHT / 200HG RIGHT. The former stat/brand override flags were removed.
 The `iso` / `fly-*` scene presets select the appropriate demonstration outfit.
@@ -40,7 +79,7 @@ bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fish
 
 Captures tap the **actual RGB565 pixels submitted to SDL**, not a second renderer.
 Capture paths must not already exist. `--check` executes compatibility, bending,
-1,944 rod-pose checks and gesture/equipment-transition assertions inside the same
+2,376 rod-pose checks and gesture/equipment-transition assertions inside the same
 Lua VM before rendering. For fourteen native captures and contact sheets:
 
 ```sh
@@ -59,3 +98,85 @@ This is a desktop visual check, not an AMOLED firmware or device-performance tes
 
 Latest visual validation: `validation/cq-circular/`. The main scene remains the sea;
 CQ art is Lua primitive geometry with separate mounted and inventory shapes.
+
+## Rod physics API
+
+`RodPhysics.new(length_m, power, action)` creates a reduced-order elastic beam.
+`RodPhysics.step(state, dt_seconds, input)` integrates handle angular inertia,
+lure mass, fish line tension and spring damping. Inputs: `handle_angle` in
+radians, `lure_g`, `fish_kg`, `fish_pull` (fraction of fish weight transmitted
+as line load), and `drag_n` (reel drag cap). `RodPhysics.points(state)` integrates
+the distributed bend into 65 screen points anchored at (367,447). The zero-load
+reference curve preserves the approved storyboard control points and tip
+(236,123) for a 2.03m rod; physical deflection rotates its tangents.
+
+Power maps to calibrated flexural stiffness and natural frequency; length
+affects compliance and rebound speed; action determines the bending region.
+These are game-calibrated coefficients, not measured manufacturer blank EI.
+Fish load includes buoyancy/pull rather than treating the fish as a dead weight
+suspended in air. The current desktop model uses one bending mode; it is not a
+full fluid/line/finite-element simulation. Substeps limit frame-time dependence.
+
+`--check` also tests fish-weight/power/length/action responses, rebound decay,
+30 vs 120 Hz equivalence, extreme-load stability for every rod, the actual
+mouse handler, landing/hook transitions, fly false casts, and gear resets.
+
+### Sea reel projection
+
+All 19 catalog entries have individual geometry profiles, selected by the actual
+equipped reel. The sea renderer projects simple 3D parts through one orthographic
+side/top camera and sorts visible faces by depth. Spool and crank axes remain
+transverse on baitcasting, round and fly reels; spinning spool axes follow the
+rod. Casting reels mount above the blank; spinning and fly reels hang below.
+The fly reel mounts near the butt and is clipped naturally by the screen edge.
+Hydros rings are open geometry. CQ has two circular side plates surrounding a
+recessed spool. The accepted large inventory CQ drawing is unchanged.
+
+`--scene=reel-view --reel=1..19 --time-ms=1000 --capture=new.ppm` renders
+each complete side/top view independently, including reels incompatible with
+the currently selected rod. Preview geometry uses a two-pixel grid; the sea
+uses native pixels. Meshes are generated once per model and cached.
+
+Profiles are simplified pixel interpretations, not dimensionally measured CAD
+replicas. Reference structures: [Shimano Calcutta Conquest](https://fish.shimano.com/en-SG/product/reels/baitcast/a075f00002k2hkuqay.html),
+[Daiwa STEEZ SV TW](https://www.daiwa.com/scandinavia/product/1yctxba),
+[Abu Revo SX](https://www.abugarcia.com/products/revo-sx-low-profile-reel-1573498),
+and [Orvis Hydros](https://www.orvis.com/product/hydros-reel/3M3R.html).
+
+### Full cast capture
+
+`--scene=cast-demo --time-ms=1800 --capture=/tmp/new-cast.ppm` advances the
+actual simulation to a requested time before capturing the SDL pixels.
+For a deterministic 60 Hz frame sequence, create an empty output directory and
+run `--scene=cast-record --record-prefix=/tmp/new-dir/frame- --record-frames=360`.
+This exports six seconds of simulated time; export speed includes disk I/O and
+is not a real-time FPS measurement. `--scene=physics-demo` measures real time.
+
+The implementation, sources, calibration limits and verification are documented
+in [design/CAST_PHYSICS.md](design/CAST_PHYSICS.md).
+
+Minnow SR/MR/DR and crankbait short/medium/long bills use selected-item Lua geometry in both inventory and live casting. `--scene=lure-view --lure=16 --time-ms=1000 --capture=new.ppm` provides an enlarged procedural preview. Diving-depth ratings apply during retrieval, independently of passive buoyancy.
+
+Fish study: 30 Lua-drawn species in `--scene=fish-atlas`, `fish-atlas-2`, `fish-atlas-3`. Swipe left from LURES to BAG; vertical scrolling browses actual catches. `fish-bag-preview` uses illustrative records. Real catches are stored for the current session only. Weight ranges and fictional coin prices are in `design/FISH_CATALOG.md`.
+
+### Live fishing and deck landing
+
+Click to cast and twitch-retrieve. A committed bite can be hooked with one click. During a fight, click left/right to apply side pressure, or the middle to reel a short stroke. The loaded line is straight; forces still control rod flex, drag payout, slack, hook damage and line failure. Fish arriving near the boat are lifted directly into a full-screen sunny, oblique wooden deck scene, without a net. The actual fish drops, flops twice, settles, and displays its length, weight and coin value. After the 1.8-second sequence, a fresh tap returns to the sea; the following tap casts again. Each catch is recorded exactly once.
+
+Surface-only lures have explicit behavior: SUPER SPOOK JR. alternates lateral acceleration during successive strokes (walk-the-dog); POP-X emits one small splash per stroke. Floating minnows are not treated as surface pencils. Surface feeders rise from below, strike with a surface splash, and pull the rig down; hooking starts a short dive before normal species behavior resumes.
+
+`--scene=fight-demo` drives the same live pipeline automatically for inspection, but can lose fish. `--scene=deck-demo --time-ms=725 --capture=/tmp/new.ppm` captures the actual deck renderer at a chosen animation time, with a clearly designated example record. `fight-revision-1..12` are review poses; these do not replace live validation.
+
+`--profile=amoled` selects a 40 FPS target, 120 Hz fixed physics, at most 72 line nodes and six local solver passes (two for a hooked fish). Desktop defaults to 60 FPS / 240 Hz / 150 nodes / twelve passes. Both profiles use the same Lua geometry and state machine. Use `--check` with either profile for deterministic regression. A desktop run of the AMOLED profile is not an ESP32-S3 performance measurement. The current repository has no fishing-specific AMOLED firmware target; this profile prepares the portable app for that integration. See `design/RENDER_ANIMATION_REVIEW.md` for measured results, budgets and hardware limits.
+
+### Game weather and time
+
+The fishing HUD shows 12-hour time with AM/PM at top left, and a pixel wave wind icon with Celsius temperature at top right. Wind uses four visual levels: no strokes for calm, then one, two or three wave strokes; sea motion also follows wind strength. Weather is fictional game state, not a live forecast: a full day takes 30 real minutes, starting at 09:00. Auto weather transitions between sunny, cloudy and rainy conditions, blending cloud cover over 25 seconds.
+
+Morning sunlight stays outside the view; the afternoon sun enters from the right and descends behind the horizon around 18:00. Sky, sea, clouds and reflections use time/weather palettes, with stars at night. Rendering remains Lua geometry with eight sky bands and bounded wave/rain counts; no textures or extra full-screen buffers.
+
+Preview with `--scene=weather-demo --hour=18 --weather=sunny`; `--hour=0..23` and `--weather=auto|sunny|cloudy|rain` also work in the playable scene.
+
+Wind uses seeded daily targets, smoothly joined across midnight. The prevailing wind is randomized per session; daily targets stay within ±0.35 internal wind units of it, limiting any day's variation to 0.7 units (at most one adjacent icon level). Wind is independent of sunny/cloudy/rain transitions and continues to affect waves and feeding. Temperature follows the time-of-day curve plus smoothly blended cloud/rain cooling (up to 3 C).
+
+Rain uses unequal falling speeds, irregular lanes and depth-dependent length/contrast, plus brief perspective-scaled water impact rings. Precipitation fades over weather transitions; it does not force the daily wind to change.

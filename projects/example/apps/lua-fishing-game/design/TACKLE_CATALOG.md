@@ -62,3 +62,94 @@ Capacity entries are examples from the manufacturer's table, not a complete list
 
 Implemented: all researched items plus Hydros IV. Existing A-WA entry remains
 CUSTOM / PROTOTYPE (no unsupported manufacturer attribution). See main.lua.
+
+
+## Expansion — 2026-09-11
+
+21 additions bring the game to 18 rods, 19 reels and 14 lures/rigs (51 total).
+Existing indices remain stable. Water labels below describe intended catalog
+use, not a new compatibility restriction or a claim of freshwater exclusivity.
+All new art uses the existing procedural Lua rod/reel/minnow geometry.
+
+| Brand | Series / model | Catalog use | Parameters entered | Source |
+|---|---|---|---|---|
+| SHIMANO | POISON ADRENA 166M | Fresh / casting | 6'6 M, R, 92g; 7–21g, 8–16lb | [Official](https://fish.shimano.com/en-SG/product/rods/bass/a075f00003xhfb5qam.html) |
+| SHIMANO | POISON ADRENA 164L-BFS | Fresh / BFS casting | 6'4 L, FF, 82g; 3.5–10g, 6–12lb | Same official ADRENA table |
+| SHIMANO | DIALUNA S90ML | Salt / spinning | 9'0 ML, 125g; 6–28g, PE 0.6–1.5; action N/A | [Official JP](https://fish.shimano.com/ja-JP/product/rod/shoresalt/seabass/a075f00003e2ce4qaa.html) |
+| SHIMANO | DIALUNA S80M | Salt / spinning | 8'0 M, 121g; 7–38g, PE 0.8–2; action N/A | Same official JP DIALUNA table |
+| DAIWA | LATEO 90ML-4 K | Salt / spinning | 9'0 ML, 133g; 7–35g, PE 0.6–1.5; action N/A | [Official](https://www.daiwa.com/jp/product/ye9mr5u) |
+| DAIWA | BLAZON C610M-2 | Fresh / casting | 6'10 M, RF, 110g; 5–21g, 8–16lb | [Official](https://www.daiwa.com/jp/product/sa8zp7i) |
+| DAIWA | BLAZON C69H-2 ST | Fresh / casting | 6'9 H, XF, 121g; 11–42g, 12–25lb | [Official spec table](https://www.daiwa.com/kr/product/2023/05/09/08/30/sa8zp7i) |
+| ABU GARCIA | ZENON ZENC69-4 | Fresh / casting | 6'9 ML, F; 1/8–5/8oz, 4–10lb; mass N/A | [Official US](https://www.abugarcia.com/products/zenon-casting-rod-1285911) |
+| ABU GARCIA | ZENON ZENC70-6 | Fresh / casting | 7'0 MH, F; 3/8–1oz, 10–17lb; mass N/A | Same official US ZENON table |
+| SHIMANO | STRADIC C3000 | Fresh/salt / spinning | 5.1:1, 225g, drag 9kg; PE 1.5 / 270m | [Official JP](https://fish.shimano.com/ja-JP/product/reel/hanyouspinning/a075f00003slvodqas.html) |
+| SHIMANO | STRADIC C2000S | Fresh/salt / spinning | 5.1:1, 185g, drag 3kg; PE 0.6 / 150m | Same official JP STRADIC table |
+| SHIMANO | SLX 70HG | Fresh / baitcasting | 7.2:1, 195g, drag 5.5kg; nylon 12lb / 100m | [Official CN](https://fish.shimano.com/zh-CN/product/reel/baitcasting/baitlurecasting/a075f000042pnchqac.html) |
+| DAIWA | 24 CERTATE LT4000-C | Salt / spinning | 5.2:1, 235g, drag 12kg; PE 1.5 / 200m | [Official](https://www.daiwa.com/jp/product/2023/10/24/05/53/smyoi38) |
+| DAIWA | 24 TATULA TW 100H | Fresh/salt / baitcasting | 7.1:1, 195g, drag 5kg; nylon 16lb / 100m | [Official](https://www.daiwa.com/jp/product/2023/09/06/02/55/b1tqn8b) |
+| ABU GARCIA | REVO LTX-BF8 | Fresh / BFS baitcasting | 8.0:1, 129g, drag 5.5kg; 0.235mm / 8lb / 50m (material unconfirmed) | [Archived manufacturer description, secondary host](https://jdmfishing.com/vault/revo-ltx-bf8-revo-ltx-bf8/), [official historical use](https://www.purefishing.jp/blog/2016/04/revo_ltx-bf85550up.html) |
+| ABU GARCIA | ZENON LTX | Fresh/salt / BFS baitcasting | 8.3:1, 150g, drag 5kg; PE 1 / 100m | [Official JP](https://abugarcia.jp/products/zenon-ltx) |
+| ABU GARCIA | ZENON 2500S | Fresh / spinning | 5.2:1, 148g, drag 5kg; PE 0.8 / 150m | [Official JP](https://abugarcia.jp/pages/zenon-spinning) |
+| SHIMANO | WORLD MINNOW FB 115SP / ZQ-K11T | Fresh / minnow | 115mm, 17g, suspending | [Official](https://fish.shimano.com/en-SG/product/lures/basslure/minnow/a155f00000c5czlqaf.html) |
+| SHIMANO | SILENT ASSASSIN JB 129F / XM-129N | Salt / minnow | 129mm, 22g, floating (not the 24g 129S) | [Official](https://fish.shimano.com/en-SG/product/lures/shoresaltlure/minnow/a155f00000c5crqqaf_p.html) |
+| DAIWA | STEEZ MINNOW 110SP-SR | Fresh / minnow | 110mm, 14.4g, suspending | [Official DE](https://de.daiwa.de/steez_minnow_110spsr--8676m2.html) |
+| DAIWA | SETUPPER 125S-DR | Salt / minnow | 125mm, 26g, slow sinking | [Official](https://www.daiwa.com/jp/product/eopcilx) |
+
+BF8 is a historical model: its old manufacturer product URL no longer resolved
+at verification time, so the secondary-hosted archived table is identified as
+such. ZENON is the official spelling of the user's “zeon”. Preserve FF on ADRENA
+as the manufacturer label; map it to XF only in simulation. DIALUNA JP lure
+ratings above must not be mixed with the different GB listing. No prices are
+used. No stock availability or latest-generation claim is implied.
+
+
+## Pixel identity and rod labels — 2026-09-11
+
+JACKALL's square jackal-head emblem is referenced from its
+[official brand history](https://shop.jackall.co.jp/pages/about) and
+[official website](https://www.jackall.co.jp/). The remaining brands retain
+wordmark-based identities, with custom Lua pixel lettering/strokes and
+contrasting colors adapted to the wood panel. All marks are small stylized
+interpretations, not exact vector reproductions or runtime textures.
+CUSTOM uses a game-authored boxed C mark rather than a manufacturer mark.
+
+Rod thumbnail labels: C = casting reel seat, S = spinning reel seat (including
+ISO), F = fly. Lengths in the thumbnail use feet/inches rounded to the nearest
+inch (5.3m is approximately 17'5"); manufacturer labels remain in the catalog.
+An equipped rod's green dot moves to the lower-left corner.
+
+
+## One rod per length — 2026-09-11
+
+The active catalog now contains 11 rods, 19 reels and 14 rigs/lures (44 items).
+Historical research above is retained, but duplicate-length rod alternatives
+are no longer selectable. Rod CLI indices are reassigned in the order below.
+
+| Index | Retained rod | Length |
+|---|---|---|
+| 1 | BANTAM 168M | 6'8 |
+| 2 | LUNAMIS S80ML | 8'0 |
+| 3 | MORETHAN BRANZINO EX AGS 87LML | 8'7 |
+| 4 | MASTER MODEL II KUCHIBUTO M-53 | 5.3M |
+| 5 | STEEZ C66M TYPE-1.5 | 6'6 |
+| 6 | SALT R8 890-4 | 9'0 |
+| 7 | VERITAS VRPC70-6 | 7'0 |
+| 8 | DESTROYER P5 THE X-BITES F5.5-72X | 7'2 |
+| 9 | POISON ADRENA 164L-BFS | 6'4 |
+| 10 | BLAZON C610M-2 | 6'10 |
+| 11 | ZENON ZENC69-4 | 6'9 |
+
+
+## Diving-bill variants
+
+| Brand | Series / model | Length | Mass | Buoyancy | Bill / rated diving depth |
+|---|---|---|---|---|---|
+| Daiwa | STEEZ MINNOW 110SP-SR | 110 mm | 14.4 g | Suspend | Short / 1.3 m |
+| Daiwa | STEEZ MINNOW 110SP-MR | 110 mm | 15.0 g | Suspend | Medium / 1.7 m |
+| Daiwa | STEEZ MINNOW 110SP-DR | 110 mm | 15.6 g | Suspend | Long / 2.5 m |
+| Jackall | CHUBBY 38F | 38 mm | 4.0 g | Floating | Short |
+| Jackall | CHUBBY 38F MR | 38 mm | 4.2 g | Floating | Medium |
+| Jackall | DD CHUBBY 38F | 38 mm | 4.2 g | Floating | Long |
+
+Sources: [Daiwa official bass catalog](https://www.daiwachina.com/uploadfiles/2022/03/20220324111332510.pdf), [Jackall official CHUBBY specifications](https://www.jackall.co.jp/oversea/products/chubby-crank/).
+Jackall's cited page does not specify exact metre ratings; none are invented here. Bill silhouettes are procedural pixel approximations, with drag coefficients calibrated for gameplay rather than manufacturer measurements. Floating and suspending variants retain their buoyancy after landing; a long bill alone does not cause passive sinking.

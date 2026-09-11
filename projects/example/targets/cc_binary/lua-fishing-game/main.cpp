@@ -8,6 +8,7 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <string>
 
 namespace {
 
@@ -69,6 +70,8 @@ struct CaptureDisplay {
   const h2_pal_display_t *target;
   const char *path;
   AppContext *context;
+  int frame_limit = 1;
+  int frame_index = 0;
   std::vector<uint16_t> pixels = std::vector<uint16_t>(h2_desktop_layout::width * h2_desktop_layout::height);
   bool has_frame = false;
 };
@@ -103,7 +106,13 @@ int capture_present(void *user) {
   if (result != H2_DISPLAY_OK || !tap->has_frame || tap->context->captured)
     return result;
   // Exclusive creation prevents accidentally overwriting a user's file.
-  FILE *file = std::fopen(tap->path, "wbx");
+  std::string path(tap->path);
+  if (tap->frame_limit > 1) {
+    char suffix[24];
+    std::snprintf(suffix, sizeof(suffix), "%05d.ppm", tap->frame_index);
+    path += suffix;
+  }
+  FILE *file = std::fopen(path.c_str(), "wbx");
   if (!file) {
     std::perror("capture");
     return H2_DISPLAY_ERR_INVALID_ARG;
@@ -117,7 +126,7 @@ int capture_present(void *user) {
     if (std::fwrite(rgb, 1, sizeof(rgb), file) != sizeof(rgb)) ok = false;
   }
   if (std::fclose(file) != 0) ok = false;
-  tap->context->captured = ok;
+  tap->context->captured = ok && ++tap->frame_index >= tap->frame_limit;
   return ok ? H2_DISPLAY_OK : H2_DISPLAY_ERR_INVALID_ARG;
 }
 int capture_brightness(void *user, uint32_t percent) {
@@ -141,17 +150,25 @@ int should_stop(void *user) {
 } // namespace
 
 int main(int argc, char **argv) {
-  const char *scene="idle", *time_ms="", *capture=nullptr;
-  const char *rod="1", *reel="1", *power="ML", *action="F", *brand="1", *check="0";
+  const char *weather="auto", *hour="9", *profile="desktop", *scene="idle", *time_ms="", *capture=nullptr, *record=nullptr, *record_frames="360";
+  const char *rod="1", *reel="1", *lure="1", *detail="0", *fish_kg="2", *power="ML", *action="F", *brand="1", *check="0";
   for (int i=1;i<argc;i++) {
-    if (!std::strncmp(argv[i],"--scene=",8)) scene=argv[i]+8;
+    if (!std::strncmp(argv[i],"--profile=",10)) profile=argv[i]+10;
+    else if (!std::strncmp(argv[i],"--weather=",10)) weather=argv[i]+10;
+    else if (!std::strncmp(argv[i],"--hour=",7)) hour=argv[i]+7;
+    else if (!std::strncmp(argv[i],"--scene=",8)) scene=argv[i]+8;
     else if (!std::strncmp(argv[i],"--time-ms=",10)) time_ms=argv[i]+10;
     else if (!std::strncmp(argv[i],"--capture=",10)) capture=argv[i]+10;
+    else if (!std::strncmp(argv[i],"--record-prefix=",16)) record=argv[i]+16;
+    else if (!std::strncmp(argv[i],"--record-frames=",16)) record_frames=argv[i]+16;
     else if (!std::strncmp(argv[i],"--rod=",6)) rod=argv[i]+6;
     else if (!std::strncmp(argv[i],"--reel=",7)) reel=argv[i]+7;
+    else if (!std::strncmp(argv[i],"--lure=",7)) lure=argv[i]+7;
+    else if (!std::strncmp(argv[i],"--detail=",9)) detail=argv[i]+9;
+    else if (!std::strncmp(argv[i],"--fish-kg=",10)) fish_kg=argv[i]+10;
     else if (!std::strcmp(argv[i],"--check")) check="1";
     else {
-      std::fprintf(stderr,"Usage: %s [--scene=demo|idle|overhead|pendulum|iso|fly-back|fly-send|fight|rods|reels|lures|cq] [--time-ms=N] [--capture=new.ppm] [--rod=1..9] [--reel=1..11] [--check]\n",argv[0]);
+      std::fprintf(stderr,"Usage: %s [--scene=demo|physics-demo|idle|overhead|pendulum|iso|fly-back|fly-send|fight|fight-study-1..10|fight-revision-1..12|deck-demo|deck-record|rods|reels|lures|cq|reel-view|lure-view|fish-atlas|fish-atlas-2|fish-atlas-3|fish-bag|fish-bag-preview|retrieve-demo|fight-demo|weather-demo|cast-demo|cast-record] [--profile=desktop|amoled] [--weather=auto|sunny|cloudy|rain] [--hour=0..23] [--time-ms=N] [--capture=new.ppm] [--record-prefix=new/path/frame- --record-frames=360] [--rod=1..11] [--reel=1..19] [--lure=1..18] [--detail=0..1] [--fish-kg=0..50] [--check]\n",argv[0]);
       return 2;
     }
   }
@@ -159,23 +176,32 @@ int main(int argc, char **argv) {
     char *end=nullptr; double n=std::strtod(value,&end);
     return end!=value && *end=='\0' && std::isfinite(n) && n>=lo && n<=hi && n==std::floor(n);
   };
+  char *fish_end=nullptr;
+  double fish_mass=std::strtod(fish_kg,&fish_end);
+  bool fish_ok=fish_end!=fish_kg && *fish_end=='\0' && std::isfinite(fish_mass) && fish_mass>=0 && fish_mass<=50;
   bool scene_ok=false,power_ok=false,action_ok=false;
-  for (auto v:{"demo","idle","overhead","pendulum","iso","fly-back","fly-send","fight","rods","reels","lures","cq"}) if (!std::strcmp(v,scene)) scene_ok=true;
+  for (auto v:{"demo","physics-demo","idle","overhead","pendulum","iso","fly-back","fly-send","fight","rods","reels","lures","cq","reel-view","lure-view","fight-study-1","fight-study-2","fight-study-3","fight-study-4","fight-study-5","fight-study-6","fight-study-7","fight-study-8","fight-study-9","fight-study-10","fight-revision-1","fight-revision-2","fight-revision-3","fight-revision-4","fight-revision-5","fight-revision-6","fight-revision-7","fight-revision-8","fight-revision-9","fight-revision-10","fight-revision-11","fight-revision-12","fish-atlas","fish-atlas-2","fish-atlas-3","fish-bag","fish-bag-preview","retrieve-demo","fight-demo","weather-demo","deck-demo","deck-record","cast-demo","cast-record"}) if (!std::strcmp(v,scene)) scene_ok=true;
   for (auto v:{"UL","L","ML","M","MH","H","XH","XXH","XXXH"}) if (!std::strcmp(v,power)) power_ok=true;
   for (auto v:{"R","RF","F","XF"}) if (!std::strcmp(v,action)) action_ok=true;
-  if (!scene_ok || !power_ok || !action_ok || !valid_number(rod,1,9) || !valid_number(reel,1,11) || !valid_number(brand,1,3) ||
+  if ((record && (capture || !*record || (std::strcmp(scene,"cast-record") && std::strcmp(scene,"deck-record")) || *time_ms)) ||
+      !valid_number(record_frames,2,1800) || ((!std::strcmp(scene,"cast-record") || !std::strcmp(scene,"deck-record")) && !record) ||
+      (std::strcmp(profile,"desktop") && std::strcmp(profile,"amoled")) || !valid_number(hour,0,23) || (std::strcmp(weather,"auto") && std::strcmp(weather,"sunny") && std::strcmp(weather,"cloudy") && std::strcmp(weather,"rain")) || !fish_ok || !scene_ok || !power_ok || !action_ok || !valid_number(rod,1,11) || !valid_number(reel,1,19) || !valid_number(lure,1,18) || !valid_number(detail,0,1) || !valid_number(brand,1,3) ||
       (*time_ms && !valid_number(time_ms,0,3600000)) || (capture && (!*capture || !*time_ms))) {
-    std::fprintf(stderr,"Invalid option; capture requires --time-ms.\n"); return 2;
+    std::fprintf(stderr,"Invalid option; capture requires --time-ms; recording requires cast-record/deck-record and an unused prefix.\n"); return 2;
   }
   h2::desktop::OwnedDisplay display;
   if (h2::desktop::configure_layout(kLayout)!=H2_PAL_OK ||
       h2::desktop::open_display(kLayout,&display)!=H2_DISPLAY_OK ||
       h2_pal_display_open(display.display())!=H2_DISPLAY_OK) return 1;
   AppContext context={&display};
-  CaptureDisplay tap={display.display(),capture,&context};
+  CaptureDisplay tap={display.display(),capture?capture:record,&context,record?std::atoi(record_frames):1};
   const h2_pal_display_t capture_display={&tap,&kCaptureVtable};
   auto runtime_config=h2::desktop::runtime_config(nullptr);
-  runtime_config.display=capture?&capture_display:display.display();
+  h2::desktop::OwnedAudio audio;
+  if (!capture && !record && !*time_ms && std::strcmp(check,"1") && h2::desktop::open_audio(false,&audio)==H2_PAL_OK) {
+    runtime_config.audio=audio.api();
+  }
+  runtime_config.display=(capture||record)?&capture_display:display.display();
   runtime_config.touch=display.touch();
   runtime_config.component_mapper=&kMapper;
   h2_runtime_t *runtime=nullptr;
@@ -184,7 +210,7 @@ int main(int argc, char **argv) {
   result=h2_runtime_input_start(runtime,nullptr);
   if (result==H2_PAL_OK) {
     const h2_lua_fishing_game_config_t config={
-      .scene=scene,.time_ms=time_ms,.rod=rod,.reel=reel,.power=power,.action=action,.brand=brand,.check=check,
+      .profile=profile,.weather=weather,.hour=hour,.scene=scene,.time_ms=time_ms,.rod=rod,.reel=reel,.lure=lure,.detail=detail,.fish_kg=fish_kg,.power=power,.action=action,.brand=brand,.check=check,
       .back_component_id=kBackComponentId,.should_stop=should_stop,.should_stop_user=&context,
       .on_ready=nullptr,.on_ready_user=nullptr,
     };

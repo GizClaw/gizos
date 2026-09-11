@@ -16,10 +16,16 @@ typedef int (*h2_lua_fishing_game_should_stop_fn)(void *user);
 typedef h2_pal_result_t (*h2_lua_fishing_game_ready_fn)(void *user);
 
 typedef struct h2_lua_fishing_game_config {
+  const char *profile;
+  const char *weather;
+  const char *hour;
   const char *scene;
   const char *time_ms;
   const char *rod;
   const char *reel;
+  const char *lure;
+  const char *detail;
+  const char *fish_kg;
   const char *power;
   const char *action;
   const char *brand;
