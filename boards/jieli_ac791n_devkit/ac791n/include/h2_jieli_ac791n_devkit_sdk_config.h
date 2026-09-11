@@ -5,11 +5,15 @@
 #define __FLASH_SIZE__ (8 * 1024 * 1024)
 
 #define TCFG_LOWPOWER_BTOSC_DISABLE 0
-/* Match JieLi's physical WL82 multimedia DevKit reference configuration.
- * Individual layouts may override this before including the shared board
+/* Keep the RF awake between connection events. With RF_SLEEP_EN the BLE
+ * controller intermittently stops hearing the central for several seconds
+ * and drops the link by supervision timeout, on 1M and 2M PHY, with or
+ * without DLE, while both cores keep scheduling normally: 9 of 147 macOS
+ * connections dropped. With RF sleep disabled 0 of 72 dropped. Individual
+ * layouts may still override this before including the shared board
  * configuration for focused power/timing diagnostics. */
 #ifndef TCFG_LOWPOWER_LOWPOWER_SEL
-#define TCFG_LOWPOWER_LOWPOWER_SEL RF_SLEEP_EN
+#define TCFG_LOWPOWER_LOWPOWER_SEL 0
 #endif
 #define TCFG_LOWPOWER_VDDIOM_LEVEL VDDIOM_VOL_32V
 #ifdef CONFIG_RTC_ENABLE
