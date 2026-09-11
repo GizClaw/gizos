@@ -9,15 +9,22 @@ local function blep(p,d)
     return 0
 end
 function M.stream(track)
+    -- Retain only event order/timestamps. Expanded oscillator parameters are
+    -- needed for at most 16 active notes, not every future note in the score.
     local events={}
     for i,e in ipairs(track.events) do
-        local noise=e[4]=='noise' or e[4]=='hat' or e[4]=='snare'
-        local hz=440*2^((e[3]-69)/12)
-        events[i]={start=round(e[1]*60/track.bpm*RATE),length=math.max(1,round(e[2]*60/track.bpm*RATE)),
-            hz=hz,ratio=e[6] and 2^((e[6]-e[3])/12) or 1,kind=e[4],gain=e[5],seed=i*12347+137,
-            attack=(noise or e[4]=='kick') and 48 or 96,release=(e[4]=='pulse' or e[4]=='triangle') and 480 or 1200}
+        events[i]={round(e[1]*60/track.bpm*RATE),i}
     end
-    table.sort(events,function(a,b) if a.start==b.start then return a.seed<b.seed end;return a.start<b.start end)
+    table.sort(events,function(a,b) if a[1]==b[1] then return a[2]<b[2] end;return a[1]<b[1] end)
+    local function activate(event)
+        local i=event[2];local e=track.events[i]
+        local noise=e[4]=='noise' or e[4]=='hat' or e[4]=='snare'
+        return {start=event[1],length=math.max(1,round(e[2]*60/track.bpm*RATE)),
+            hz=440*2^((e[3]-69)/12),ratio=e[6] and 2^((e[6]-e[3])/12) or 1,
+            kind=e[4],gain=e[5],seed=i*12347+137,
+            attack=(noise or e[4]=='kick') and 48 or 96,
+            release=(e[4]=='pulse' or e[4]=='triangle') and 480 or 1200}
+    end
     local count=round(track.beats*60/track.bpm*RATE)
     local position,next_event,active,old,filtered=0,1,{},0,0
     local self={}
@@ -29,8 +36,8 @@ function M.stream(track)
             if position==count and track.loop then position,next_event,active,old,filtered=0,1,{},0,0 end
             local sum=0
             if position<count then
-                while events[next_event] and events[next_event].start<=position do
-                    local e=events[next_event];next_event=next_event+1
+                while events[next_event] and events[next_event][1]<=position do
+                    local e=activate(events[next_event]);next_event=next_event+1
                     assert(#active<16,'score polyphony exceeds bounded synthesizer')
                     active[#active+1]={e=e,phase=0,low=0,rng=e.seed}
                 end
@@ -73,23 +80,34 @@ function M.scene(intro,settlement,now)
 end
 function M.new(audio,score)
     local tracks={};for _,t in ipairs(score) do tracks[t.id]=t end
+    -- Like Flappy Bird, reuse opened outputs; allocate an effect track only
+    -- when it is first played. BGM alone does not need three silent queues.
     local slots={}
-    for i=1,4 do
-        local ok,out=pcall(audio.new_output,{sample_rate=RATE,channels=1,bits_per_sample=16,volume=i==1 and 48 or 55})
-        if ok and out then
-            local n=out:info().frame_samples or 320
-            slots[i]={output=out,n=math.max(1,math.min(4096,n)),pending='',due=0,gain=1}
+    for i=1,4 do slots[i]={pending='',due=0,gain=1,volume=i==1 and 48 or 55} end
+    local function open(slot)
+        if slot.closed then return false end
+        if slot.output then return true end
+        local ok,out=pcall(audio.new_output,{sample_rate=RATE,channels=1,bits_per_sample=16,volume=slot.volume})
+        if not ok or not out then slot.closed=true;return false end
+        local info_ok,info=pcall(out.info,out)
+        if not info_ok or type(info)~='table' then
+            pcall(out.close,out);slot.closed=true;return false
         end
+        slot.output=out
+        slot.n=math.max(1,math.min(4096,info.frame_samples or 320))
+        return true
     end
     local self={bgm_scene=M.scene}
     local current,target
     local function start(slot,kind,now)
-        if not slot then return end
+        if not slot or not open(slot) then return end
         slot.voice=tracks[kind] and M.stream(tracks[kind]) or nil
         slot.pending='';slot.due=now;slot.fade=nil;slot.gain=1
     end
     local function close(slot)
-        if slot and slot.output then pcall(slot.output.close,slot.output);slot.output=nil;slot.voice=nil;slot.pending='' end
+        if not slot then return end
+        if slot.output then pcall(slot.output.close,slot.output) end
+        slot.closed=true;slot.output=nil;slot.voice=nil;slot.pending=''
     end
     local function pump(slot,now)
         if not slot or not slot.output or not slot.voice then return end
@@ -134,11 +152,11 @@ function M.new(audio,score)
     end
     function self.cue(kind,now)
         if not tracks[kind] then return end
-        for i=2,4 do if slots[i] and not slots[i].voice then start(slots[i],kind,now);return end end
+        for i=2,4 do if slots[i] and not slots[i].closed and not slots[i].voice then start(slots[i],kind,now);return end end
     end
     function self.update(now) for i=2,4 do pump(slots[i],now) end end
     self.bgm={close=function() close(slots[1]) end,update=function(kind,now)
-        local slot=slots[1];if not slot or not slot.output then return end
+        local slot=slots[1];if not slot or slot.closed then return end
         if kind~=target then
             target=kind
             if slot.voice and slot.gain>0 then slot.fade=(kind==current and 1/4800 or -1/3200)

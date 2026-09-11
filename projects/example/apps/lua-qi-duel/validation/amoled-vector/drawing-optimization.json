@@ -1,0 +1,55 @@
+{
+  "stage": "draw-opt-v1, before expanded runtime cache",
+  "device_uid": "94a990281a12",
+  "quality": {
+    "software_desktop_frames": 144,
+    "worst_mean_absolute_error_255": 0.007618400621118012,
+    "max_channel_difference": 8,
+    "physical_panel_capture": false
+  },
+  "probe_v4_ms": {
+    "pairing": [
+      1046,
+      1013
+    ],
+    "walls": 246,
+    "wheel": 1605,
+    "opponent": 2146,
+    "left_hand": 2557,
+    "right_hand": 2516,
+    "carousel": 3943,
+    "charge_cells": 1441,
+    "hud": 2433,
+    "battle_first": 18901,
+    "clash": 17887,
+    "settlement_first": 10613,
+    "settlement_warm": [
+      7254,
+      7257
+    ]
+  },
+  "probe_v4_memory": {
+    "internal_min_free": 59887,
+    "psram_min_free": 824912,
+    "psram_largest": 884736
+  },
+  "tests": [
+    "lua_test",
+    "vector_sw_test",
+    "lua_qi_duel_test",
+    "qi_duel_retro_audio_test",
+    "ASan/UBSan vector renderer"
+  ],
+  "normal_firmware": {
+    "version": "draw-opt-v1",
+    "app_bytes": 2860240,
+    "package_bytes": 2023989,
+    "pairing_fps": [
+      0.5,
+      0.8
+    ],
+    "touch_io_error": -4
+  },
+  "acceptance": "FAIL: 30 FPS and complete stability not achieved",
+  "next_stage": "User accepted preparation phase and resolution-specific runtime pixel caches; packaged assets remain vectors."
+}

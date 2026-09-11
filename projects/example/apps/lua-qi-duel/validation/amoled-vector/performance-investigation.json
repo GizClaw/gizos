@@ -1,0 +1,1025 @@
+{
+  "date": "2026-09-11",
+  "base_commit": "7ab33230",
+  "device": {
+    "port": "/dev/tty.usbmodem5101",
+    "uid": "30eda0ae0bf2",
+    "board": "amoled",
+    "hardware_note": "User later reported this panel may have been damaged by a fall; touch IO errors cannot be attributed solely to firmware."
+  },
+  "acceptance": "FAIL_PERFORMANCE_AND_WATCHDOG",
+  "changes": [
+    "Count original 8x8 capsule samples with scanline intervals; integer RGB composition.",
+    "Use PSRAM for AMOLED mixer/PCM queues; keep I2S DMA allocation unchanged.",
+    "Open audio output tracks on demand and reuse them; skip failed/closed slots.",
+    "Store compact note schedules; expand parameters only for active notes.",
+    "Separate audio pumping and panel transfer in all frame timing branches."
+  ],
+  "baseline": {
+    "firmware": "size-opt-v2",
+    "app_bytes": 2852768,
+    "package_bytes": 2019513,
+    "draw_ms": [
+      7512,
+      7833
+    ],
+    "update_ms": [
+      96,
+      326
+    ],
+    "memory": {
+      "internal_free": 9691,
+      "internal_min_free": 1131,
+      "psram_free": 3496900,
+      "psram_min_free": 2153312
+    },
+    "coredump_stored_bytes": 0
+  },
+  "audio_ab": {
+    "ab": [
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "clear",
+        "calls": 1,
+        "ms": 4
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 20
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "begin_frame",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "add_line",
+        "calls": 2724,
+        "ms": 7491
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 18
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "add_line",
+        "calls": 2724,
+        "ms": 7481
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "clear",
+        "calls": 1,
+        "ms": 4
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 19
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "add_line",
+        "calls": 2736,
+        "ms": 7526
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 18
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "add_line",
+        "calls": 2740,
+        "ms": 7632
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "clear",
+        "calls": 1,
+        "ms": 4
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 19
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "add_line",
+        "calls": 2748,
+        "ms": 7510
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 18
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "add_line",
+        "calls": 2756,
+        "ms": 7634
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      }
+    ],
+    "capsule": [
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "clear",
+        "calls": 1,
+        "ms": 6
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 21
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "begin_frame",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 0,
+        "audio": true,
+        "function": "add_line",
+        "calls": 2724,
+        "ms": 1538
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "clear",
+        "calls": 1,
+        "ms": 6
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 23
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "add_line",
+        "calls": 2724,
+        "ms": 1571
+      },
+      {
+        "frame": 1,
+        "audio": true,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 18
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "add_line",
+        "calls": 2736,
+        "ms": 1556
+      },
+      {
+        "frame": 2,
+        "audio": true,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 18
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "add_line",
+        "calls": 2740,
+        "ms": 1672
+      },
+      {
+        "frame": 3,
+        "audio": false,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 18
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "add_line",
+        "calls": 2748,
+        "ms": 1567
+      },
+      {
+        "frame": 4,
+        "audio": false,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 16
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "clear",
+        "calls": 1,
+        "ms": 5
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "begin_composite",
+        "calls": 1,
+        "ms": 19
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "present",
+        "calls": 1,
+        "ms": 25
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "add_line",
+        "calls": 2756,
+        "ms": 1560
+      },
+      {
+        "frame": 5,
+        "audio": false,
+        "function": "end_composite",
+        "calls": 1,
+        "ms": 17
+      }
+    ],
+    "method": "Temporary native-call wrappers; first three pairing frames with audio, then closed outputs. render(0) fixed camera time; particle_ms still advanced slightly in these two A/B builds. The separate scene probe froze particle_ms too. Diagnostic code is not shipped."
+  },
+  "capsule_pixels": {
+    "cases": 2000,
+    "mean_rgb_error": 1.3427734375e-06,
+    "max_channel_error": 1,
+    "different_channels": 33
+  },
+  "audio_schedule_host": {
+    "note": "Same vendored Lua runtime on macOS; not device heap measurements.",
+    "before_bytes": 161956,
+    "after_bytes": 30348,
+    "before_active_bytes": 166848,
+    "after_active_bytes": 33408
+  },
+  "memory_v2_device": {
+    "firmware": "perf-memory-v2",
+    "audio_enabled": true,
+    "internal_free": 64115,
+    "internal_min_free": 47799,
+    "psram_free": 3357356,
+    "psram_min_free": 2073096,
+    "draw_ms": [
+      1910,
+      2130
+    ],
+    "audio_ms": [
+      124,
+      392
+    ],
+    "present_ms": [
+      24,
+      25
+    ],
+    "fps": 0.4
+  },
+  "scene_probe": {
+    "audio_enabled": false,
+    "arena_started_ms": 16952,
+    "last_watchdog_ms": 196023,
+    "frame_completed": false,
+    "watchdog_reports": 35,
+    "blocked_at_least_ms": 179071,
+    "clash_and_settlement": "Not reached; stopped via managed reboot to Loader after watchdog reproduction."
+  },
+  "verification": [
+    "Lua canvas regression with independent 8x8 sampling oracle: PASS",
+    "2000 old/new randomized capsule pixel comparisons: PASS, max channel error 1/255",
+    "ASAN/UBSAN capsule boundary harness: PASS",
+    "Qi Duel application tests: PASS (93.7s)",
+    "All 16 complete reviewed audio waveforms and chunked/loop playback fingerprints: PASS",
+    "Lazy output lifecycle, failed output fallback, longest schedule <64 KiB, retained audio state bound: PASS",
+    "AMOLED audio configuration host test: PASS"
+  ],
+  "unresolved": [
+    "Software vector rasterization blocks the Lua worker and starves CPU1 idle in the arena; 30 FPS not met.",
+    "Lua sample synthesis shares the frame loop and cannot feed continuous audio through multi-second draws.",
+    "Touch IO error -4 also reproduced on the replacement board; its cause remains unproven and requires an I2C/input investigation.",
+    "Software vector malloc/realloc scratch allocation still bypasses the Runtime PSRAM allocator; include it in the next rendering-memory audit.",
+    "No full-game endurance, BLE pairing, panel frame-by-frame capture, clash or settlement acceptance established by this run."
+  ],
+  "replacement_device": {
+    "uid": "94a990281a12",
+    "port": "/dev/tty.usbmodem5101",
+    "board": "amoled",
+    "previous_version": "pr131-pairfix-3d4d06e",
+    "previous_checksum": "f4657eb7a5514ab88a3aebf6e8a7128203b6722e857c923b26869830fd4285c7",
+    "result": {
+      "firmware": "perf-memory-v3",
+      "image_sha256": "eefdea5be728fab4541b9c942243e33d559ea37d793e6b85504f59ee61130c36",
+      "package_sha256": "9407a1de9d5e8577793bc6f525a911517733c361296045c71f7e3c19c8f7b18c",
+      "managed_install": "PASS",
+      "running_partition": 2,
+      "stage_valid": false,
+      "internal_free": 64295,
+      "internal_min_free": 47391,
+      "psram_free": 3578496,
+      "psram_min_free": 2160524,
+      "coredump_stored_bytes": 0,
+      "touch_io_errors": 5,
+      "watchdog_observed": false,
+      "scene": "normal pairing with real BGM, no automation or mute",
+      "complete_game_acceptance": false,
+      "perf_samples": [
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 3,
+          "update_ms": 640,
+          "audio_ms": 640,
+          "draw_ms": 1955,
+          "present_ms": 25,
+          "frame_ms": 2630,
+          "frame_max_ms": 2630
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 392,
+          "audio_ms": 392,
+          "draw_ms": 1930,
+          "present_ms": 25,
+          "frame_ms": 2348,
+          "frame_max_ms": 2348
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 347,
+          "audio_ms": 347,
+          "draw_ms": 1909,
+          "present_ms": 25,
+          "frame_ms": 2282,
+          "frame_max_ms": 2282
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 360,
+          "audio_ms": 360,
+          "draw_ms": 1910,
+          "present_ms": 25,
+          "frame_ms": 2296,
+          "frame_max_ms": 2296
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 124,
+          "audio_ms": 124,
+          "draw_ms": 2128,
+          "present_ms": 25,
+          "frame_ms": 2278,
+          "frame_max_ms": 2278
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 312,
+          "audio_ms": 311,
+          "draw_ms": 1930,
+          "present_ms": 25,
+          "frame_ms": 2268,
+          "frame_max_ms": 2268
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 343,
+          "audio_ms": 341,
+          "draw_ms": 1922,
+          "present_ms": 25,
+          "frame_ms": 2291,
+          "frame_max_ms": 2291
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 227,
+          "audio_ms": 227,
+          "draw_ms": 1934,
+          "present_ms": 25,
+          "frame_ms": 2187,
+          "frame_max_ms": 2187
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 369,
+          "audio_ms": 369,
+          "draw_ms": 1941,
+          "present_ms": 25,
+          "frame_ms": 2336,
+          "frame_max_ms": 2336
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 205,
+          "audio_ms": 205,
+          "draw_ms": 2099,
+          "present_ms": 25,
+          "frame_ms": 2330,
+          "frame_max_ms": 2330
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 317,
+          "audio_ms": 317,
+          "draw_ms": 1935,
+          "present_ms": 25,
+          "frame_ms": 2278,
+          "frame_max_ms": 2278
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 311,
+          "audio_ms": 311,
+          "draw_ms": 1935,
+          "present_ms": 25,
+          "frame_ms": 2272,
+          "frame_max_ms": 2272
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 213,
+          "audio_ms": 212,
+          "draw_ms": 1924,
+          "present_ms": 25,
+          "frame_ms": 2163,
+          "frame_max_ms": 2163
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 205,
+          "audio_ms": 205,
+          "draw_ms": 2116,
+          "present_ms": 25,
+          "frame_ms": 2347,
+          "frame_max_ms": 2347
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 106,
+          "audio_ms": 106,
+          "draw_ms": 1900,
+          "present_ms": 25,
+          "frame_ms": 2032,
+          "frame_max_ms": 2032
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 186,
+          "audio_ms": 186,
+          "draw_ms": 1893,
+          "present_ms": 25,
+          "frame_ms": 2105,
+          "frame_max_ms": 2105
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 335,
+          "audio_ms": 335,
+          "draw_ms": 1889,
+          "present_ms": 25,
+          "frame_ms": 2250,
+          "frame_max_ms": 2250
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 194,
+          "audio_ms": 193,
+          "draw_ms": 1885,
+          "present_ms": 25,
+          "frame_ms": 2105,
+          "frame_max_ms": 2105
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 192,
+          "audio_ms": 192,
+          "draw_ms": 2048,
+          "present_ms": 25,
+          "frame_ms": 2266,
+          "frame_max_ms": 2266
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 5,
+          "update_ms": 132,
+          "audio_ms": 131,
+          "draw_ms": 1817,
+          "present_ms": 25,
+          "frame_ms": 1975,
+          "frame_max_ms": 1975
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 157,
+          "audio_ms": 157,
+          "draw_ms": 1821,
+          "present_ms": 25,
+          "frame_ms": 2004,
+          "frame_max_ms": 2004
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 434,
+          "audio_ms": 434,
+          "draw_ms": 1831,
+          "present_ms": 25,
+          "frame_ms": 2291,
+          "frame_max_ms": 2291
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 283,
+          "audio_ms": 283,
+          "draw_ms": 1944,
+          "present_ms": 25,
+          "frame_ms": 2253,
+          "frame_max_ms": 2253
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 399,
+          "audio_ms": 398,
+          "draw_ms": 1832,
+          "present_ms": 25,
+          "frame_ms": 2257,
+          "frame_max_ms": 2257
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 325,
+          "audio_ms": 324,
+          "draw_ms": 1836,
+          "present_ms": 25,
+          "frame_ms": 2187,
+          "frame_max_ms": 2187
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 5,
+          "update_ms": 97,
+          "audio_ms": 96,
+          "draw_ms": 1839,
+          "present_ms": 25,
+          "frame_ms": 1962,
+          "frame_max_ms": 1962
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 360,
+          "audio_ms": 358,
+          "draw_ms": 1848,
+          "present_ms": 25,
+          "frame_ms": 2234,
+          "frame_max_ms": 2234
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 313,
+          "audio_ms": 312,
+          "draw_ms": 2060,
+          "present_ms": 25,
+          "frame_ms": 2399,
+          "frame_max_ms": 2399
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 267,
+          "audio_ms": 267,
+          "draw_ms": 1852,
+          "present_ms": 25,
+          "frame_ms": 2145,
+          "frame_max_ms": 2145
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 347,
+          "audio_ms": 347,
+          "draw_ms": 1857,
+          "present_ms": 25,
+          "frame_ms": 2230,
+          "frame_max_ms": 2230
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 133,
+          "audio_ms": 132,
+          "draw_ms": 1864,
+          "present_ms": 25,
+          "frame_ms": 2023,
+          "frame_max_ms": 2023
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 371,
+          "audio_ms": 371,
+          "draw_ms": 1863,
+          "present_ms": 25,
+          "frame_ms": 2260,
+          "frame_max_ms": 2260
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 284,
+          "audio_ms": 284,
+          "draw_ms": 2070,
+          "present_ms": 25,
+          "frame_ms": 2380,
+          "frame_max_ms": 2380
+        },
+        {
+          "frames": 1,
+          "fps_whole": 0,
+          "fps_tenth": 4,
+          "update_ms": 211,
+          "audio_ms": 210,
+          "draw_ms": 1870,
+          "present_ms": 24,
+          "frame_ms": 2106,
+          "frame_max_ms": 2106
+        }
+      ],
+      "timed_frames": 34,
+      "timed_frame_ms": 75770
+    }
+  },
+  "final_artifact": {
+    "assets": [
+      {
+        "name": "amoled-lua-qi-duel-esp32s3.update.tar.zlib",
+        "operation": "managed-install",
+        "release_suffix": ".update.tar.zlib",
+        "sha256": "9407a1de9d5e8577793bc6f525a911517733c361296045c71f7e3c19c8f7b18c",
+        "size": 2020116
+      }
+    ],
+    "board": "amoled",
+    "entry": "projects/example/targets/h2loader_tar_zlib/lua-qi-duel/amoled",
+    "image": "lua-qi-duel",
+    "native_artifacts": [
+      {
+        "name": "firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "da1e55ff6dbf35e8d867058d1b5e4e83fc7c5f0ac08ea4fb4698b2cd2081fe00",
+        "size": 18272804
+      },
+      {
+        "name": "firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "b1ce1f060d96f85150278491b29bf3bcc133207f78ce218d8d430458457daa3b",
+        "size": 16248655
+      },
+      {
+        "name": "app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "eefdea5be728fab4541b9c942243e33d559ea37d793e6b85504f59ee61130c36",
+        "size": 2854288
+      },
+      {
+        "name": "bootloader.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "b98b421a58c9f3f0ea80724efd096a7540bcf466fccd891f106388a634648b09",
+        "size": 21184
+      },
+      {
+        "name": "combined_factory.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "04b6cffc82d1fec9f87284a41dbef71e455c7cbf46cc27b9da8144b6ac46bcf7",
+        "size": 2985360
+      },
+      {
+        "name": "partition-table.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "d6464ffdf628c827ede1d0ecbf8a5cfa1ab2483710b6e848069dbf904a467433",
+        "size": 3072
+      },
+      {
+        "name": "flasher_args.json",
+        "operation": "native-debug-or-flash",
+        "sha256": "8271cfe4168dc8a9010ac591d6b5dc6adbde9b4c348ddaa0d04515e797e0c94e",
+        "size": 992
+      }
+    ],
+    "package_manifest": {
+      "board": "amoled",
+      "format": 1,
+      "image_sha256": "eefdea5be728fab4541b9c942243e33d559ea37d793e6b85504f59ee61130c36",
+      "image_size": 2854288,
+      "role": "app",
+      "target": "esp32s3",
+      "version": "perf-memory-v3"
+    },
+    "platform": "esp",
+    "role": "app",
+    "target": "esp32s3",
+    "version": "perf-memory-v3"
+  },
+  "self_review": {
+    "rounds": [
+      {
+        "finding": "Lazy audio creation left a failed slot blocking subsequent cue slots.",
+        "fix": "Skip closed/failed slots; add explicit fallback and no-reopen tests.",
+        "validation": "All reviewed audio fingerprints, retained-memory limits and lifecycle tests pass."
+      },
+      {
+        "finding": null,
+        "validation": "Final firmware builds; replacement board active image/package match; source diff whitespace clean; temporary scene/mute probes removed."
+      }
+    ],
+    "limits": "Performance and watchdog findings are existing rendering limitations, documented as acceptance blockers; not marked solved."
+  }
+}

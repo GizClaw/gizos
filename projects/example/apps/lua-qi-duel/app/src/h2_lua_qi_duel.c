@@ -71,6 +71,7 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
   h2_lua_job_status_t status;
   h2_pal_result_t result;
   int ready_reported = 0;
+  int event_pending = 0;
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {
       .payload = payload,
@@ -217,7 +218,8 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
       (void)h2_lua_job_cancel(host, job_id);
     }
     for (;;) {
-      h2_pal_result_t poll_result = h2_runtime_poll_event(runtime, &event);
+      h2_pal_result_t poll_result = event_pending ? H2_PAL_OK :
+          h2_runtime_poll_event(runtime, &event);
       if (poll_result == H2_PAL_ERR_WOULD_BLOCK ||
           poll_result == H2_PAL_ERR_TIMEOUT) {
         break;
@@ -234,6 +236,15 @@ h2_pal_result_t h2_lua_qi_duel_run(h2_runtime_t *runtime,
         (void)h2_lua_job_cancel(host, job_id);
       } else if (supported_event(event.kind)) {
         result = h2_lua_dispatch_runtime_event(host, job_id, &event);
+        if (result == H2_PAL_ERR_FULL) {
+          /* A native draw can span multiple input events. Retain the current
+           * payload and retry after the VM drains its bounded delivery queue;
+           * do not discard button releases or terminate the application. */
+          event_pending = 1;
+          result = H2_PAL_OK;
+          break;
+        }
+        event_pending = 0;
         if (result != H2_PAL_OK) {
           break;
         }

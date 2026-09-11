@@ -73,7 +73,22 @@ function fake.new_output()
     function out:close() self.closed=true end
     outputs[#outputs+1]=out;return out
 end
+-- Opening a game does not allocate unused device output queues.
 local game=Retro.new(fake,Score)
+assert(#outputs==0,'eager unused audio tracks')
+game.bgm.update('pairing',0)
+assert(#outputs==1,'BGM must use exactly one output')
+game.bgm.update('pairing',33)
+assert(#outputs==1,'BGM output was not reused')
+-- Keep only a compact event schedule, rather than expanded oscillator tables
+-- for every note of the longest score. This bound includes its Lua overhead.
+collectgarbage('collect')
+local schedule_before=collectgarbage('count')
+local schedule=Retro.stream(tracks.battle)
+collectgarbage('collect')
+assert(collectgarbage('count')-schedule_before<64,'oversized score schedule')
+assert(#schedule.render(1)==2)
+schedule=nil
 collectgarbage('collect');local before=collectgarbage('count')
 for t=0,9000,33 do
     game.bgm.update(t<3000 and 'pairing' or t<6500 and 'battle' or 'victory',t)
@@ -82,5 +97,19 @@ for t=0,9000,33 do
 end
 collectgarbage('collect');assert(collectgarbage('count')-before<150,'unbounded retained audio state')
 game.close();for _,out in ipairs(outputs) do assert(out.closed and out.accepted>0) end
+local count=#outputs
+game.bgm.update('defeat',10000);game.cue('select',10000);game.update(10000)
+assert(#outputs==count,'closed output was reopened')
+-- A failed lazy output must not block all later cue slots.
+local attempts=0
+local flaky={new_output=function()
+    attempts=attempts+1
+    if attempts==1 then return nil,'unavailable' end
+    return fake.new_output()
+end}
+local retry=Retro.new(flaky,Score)
+retry.cue('select',0);retry.cue('select',1);retry.update(1)
+assert(attempts==2 and outputs[#outputs].accepted>0,'failed output blocked later slots')
+retry.close()
 assert(Retro.scene(nil,{kind='lose',started=10},10)=='defeat')
 return 'ok'

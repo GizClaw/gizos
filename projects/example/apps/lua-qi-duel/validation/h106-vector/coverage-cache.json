@@ -1,0 +1,2115 @@
+{
+  "screen": "h106",
+  "backend": "software",
+  "frames": 300,
+  "identical": 300,
+  "rows": [
+    {
+      "scene": "walls",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "walls",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "arena",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "full",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "charge",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "absorb",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "guard",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "wave",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "clash",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "win",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 0,
+      "time_ms": 0,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 1,
+      "time_ms": 33,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 2,
+      "time_ms": 66,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 3,
+      "time_ms": 99,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 4,
+      "time_ms": 132,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 5,
+      "time_ms": 165,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 6,
+      "time_ms": 198,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 7,
+      "time_ms": 231,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 8,
+      "time_ms": 264,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 9,
+      "time_ms": 297,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 10,
+      "time_ms": 330,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 11,
+      "time_ms": 363,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 12,
+      "time_ms": 396,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 13,
+      "time_ms": 429,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 14,
+      "time_ms": 462,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 15,
+      "time_ms": 495,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 16,
+      "time_ms": 528,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 17,
+      "time_ms": 561,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 18,
+      "time_ms": 594,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 19,
+      "time_ms": 627,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 20,
+      "time_ms": 660,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 21,
+      "time_ms": 693,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 22,
+      "time_ms": 726,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 23,
+      "time_ms": 759,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 24,
+      "time_ms": 792,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 25,
+      "time_ms": 825,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 26,
+      "time_ms": 858,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 27,
+      "time_ms": 891,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 28,
+      "time_ms": 924,
+      "identical": true,
+      "max_channel_error": 0
+    },
+    {
+      "scene": "lose",
+      "frame": 29,
+      "time_ms": 957,
+      "identical": true,
+      "max_channel_error": 0
+    }
+  ],
+  "date": "2026-09-11",
+  "cache_storage_bytes": 639000,
+  "cache_payload_bytes": 524288,
+  "comparison": "same software renderer, coverage cache disabled versus enabled; 33 ms scene steps",
+  "hardware_fps": null,
+  "hardware_status": "H106 serial disconnected before optimized package installation could be confirmed",
+  "audio_enabled": false
+}

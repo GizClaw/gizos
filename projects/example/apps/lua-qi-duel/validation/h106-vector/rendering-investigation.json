@@ -1,0 +1,319 @@
+{
+  "board": "tiga_esp_v4_2",
+  "device_uid": "1cdbd44dde7e",
+  "port": "/dev/tty.usbserial-410",
+  "target_fps": 25,
+  "accepted": false,
+  "pixel_checks": [
+    {
+      "change": "polygon_scanline",
+      "frames": 240,
+      "identical_frames": 240,
+      "maximum_channel_error": 0,
+      "maximum_frame_mean_error": 0.0,
+      "scenes": [
+        "absorb",
+        "charge",
+        "clash",
+        "full",
+        "guard",
+        "lose",
+        "wave",
+        "win"
+      ],
+      "raw_capture_directory": "/tmp/qi-duel-coverage/polygon-frames"
+    },
+    {
+      "change": "icon_and_composite",
+      "frames": 240,
+      "identical_frames": 240,
+      "maximum_channel_error": 0,
+      "maximum_frame_mean_error": 0.0,
+      "scenes": [
+        "absorb",
+        "charge",
+        "clash",
+        "full",
+        "guard",
+        "lose",
+        "wave",
+        "win"
+      ],
+      "raw_capture_directory": "/tmp/qi-duel-coverage/composite-frames"
+    },
+    {
+      "change": "icon_geometry_shadow_reuse",
+      "frames": 240,
+      "identical_frames": 240,
+      "maximum_channel_error": 0,
+      "extra_persistent_memory_bytes": 0,
+      "shared_arena_bytes": 524288
+    }
+  ],
+  "probe4": {
+    "version": "0.1.0-qi-probe.4",
+    "audio_enabled": false,
+    "automatic_real_rounds": true,
+    "instrumentation": "per-frame and per-native-function logs add overhead outside reported frame durations",
+    "phases": {
+      "pair-ready": {
+        "frames": 16,
+        "fps_from_frame_time": 5.39,
+        "mean_ms": 185.69,
+        "p95_ms": 1357,
+        "p99_ms": 1357,
+        "max_ms": 1357,
+        "draw_mean_ms": 149.25,
+        "present_mean_ms": 33.0,
+        "lua_kb_max": 1346
+      },
+      "pair-search": {
+        "frames": 58,
+        "fps_from_frame_time": 7.54,
+        "mean_ms": 132.55,
+        "p95_ms": 145,
+        "p99_ms": 147,
+        "max_ms": 147,
+        "draw_mean_ms": 98.09,
+        "present_mean_ms": 32.62,
+        "lua_kb_max": 1370
+      },
+      "pair-slowdown": {
+        "frames": 6,
+        "fps_from_frame_time": 8.38,
+        "mean_ms": 119.33,
+        "p95_ms": 139,
+        "p99_ms": 139,
+        "max_ms": 139,
+        "draw_mean_ms": 83.0,
+        "present_mean_ms": 33.67,
+        "lua_kb_max": 1372
+      },
+      "pair-tilt": {
+        "frames": 3,
+        "fps_from_frame_time": 1.81,
+        "mean_ms": 552.67,
+        "p95_ms": 791,
+        "p99_ms": 791,
+        "max_ms": 791,
+        "draw_mean_ms": 516.67,
+        "present_mean_ms": 34.0,
+        "lua_kb_max": 1899
+      }
+    },
+    "exit": {
+      "code": -11,
+      "meaning": "H2_PAL_ERR_FULL",
+      "fix": "Retain the pending input event and retry after delivery queue drains; 24 duplicate DOWN plus UP and ACTION regression passes. Hardware retry pending."
+    }
+  },
+  "display": {
+    "old_full_frame_present_ms": "39-42",
+    "probe4_present_ms": "32-34",
+    "pixel_format": "RGB444 unchanged",
+    "default_tile_bytes": 5760,
+    "qi_duel_tile_bytes": 17280,
+    "default_and_large_tile_pixel_tests": "pass"
+  },
+  "probe7": {
+    "installed_and_confirmed": true,
+    "image_checksum": "2c25178148528857c223fd83f7d35118380de65f246e79280191af602b3a4a47",
+    "stage_valid": 0,
+    "observed_rounds": 31,
+    "observed_elapsed_ms": 537992,
+    "exits_observed": 0,
+    "complete_log_coverage": false,
+    "log_gap": "Initial monitor stopped emitting at round 2; reconnecting monitor showed ongoing real rounds, reaching round 31. No complete stability claim.",
+    "psram_min_free_bytes": 8432,
+    "psram_free_at_sample_bytes": 438468,
+    "psram_largest_at_sample_bytes": 81920,
+    "late_sample_phases": {
+      "play": {
+        "frames": 15,
+        "fps_from_frame_time": 0.16,
+        "mean_ms": 6199.33,
+        "p95_ms": 7144,
+        "p99_ms": 7144,
+        "max_ms": 7144,
+        "draw_mean_ms": 6161.4,
+        "present_mean_ms": 33.73,
+        "lua_kb_max": 4357
+      },
+      "select": {
+        "frames": 14,
+        "fps_from_frame_time": 0.1,
+        "mean_ms": 10399.21,
+        "p95_ms": 11278,
+        "p99_ms": 11278,
+        "max_ms": 11278,
+        "draw_mean_ms": 10357.86,
+        "present_mean_ms": 33.21,
+        "lua_kb_max": 4500
+      }
+    },
+    "cold_icon_style_ms": "6500-9300",
+    "target_fps_pass": false
+  },
+  "latest_pixel_regressions": {
+    "polygon": {
+      "frames": 240,
+      "identical": 240,
+      "max_channel_error": 0,
+      "mean_channel_error": 0.0
+    },
+    "compositing": {
+      "frames": 240,
+      "identical": 240,
+      "max_channel_error": 0,
+      "mean_channel_error": 0.0
+    },
+    "icon_geometry": {
+      "frames": 240,
+      "identical": 240,
+      "max_channel_error": 0,
+      "mean_channel_error": 0.0
+    },
+    "sparse_coverage": {
+      "frames": 240,
+      "identical": 240,
+      "max_channel_error": 0,
+      "mean_channel_error": 0.0
+    },
+    "icon_color_styles": {
+      "frames": 120,
+      "identical": 120,
+      "max_channel_error": 0,
+      "mean_channel_error": 0.0
+    },
+    "icon_color_scenes": {
+      "frames": 240,
+      "identical": 240,
+      "max_channel_error": 0,
+      "mean_channel_error": 0.0
+    }
+  },
+  "comparison_scope": "Consecutive deterministic desktop captures using the software Display PAL renderer before and after each optimization. No physical-panel capture or new CoreGraphics comparison.",
+  "probe8": {
+    "phase_samples": {
+      "pair-ready": {
+        "frames": 9,
+        "fps_from_frame_time": 3.6,
+        "mean_ms": 277.78,
+        "p95_ms": 1478,
+        "p99_ms": 1478,
+        "max_ms": 1478,
+        "draw_mean_ms": 234.33,
+        "present_mean_ms": 34.11,
+        "lua_kb_max": 1345
+      },
+      "pair-search": {
+        "frames": 54,
+        "fps_from_frame_time": 7.17,
+        "mean_ms": 139.43,
+        "p95_ms": 152,
+        "p99_ms": 153,
+        "max_ms": 153,
+        "draw_mean_ms": 105.39,
+        "present_mean_ms": 32.87,
+        "lua_kb_max": 1374
+      },
+      "pair-slowdown": {
+        "frames": 5,
+        "fps_from_frame_time": 7.73,
+        "mean_ms": 129.4,
+        "p95_ms": 150,
+        "p99_ms": 150,
+        "max_ms": 150,
+        "draw_mean_ms": 94.2,
+        "present_mean_ms": 33.0,
+        "lua_kb_max": 1377
+      },
+      "pair-tilt": {
+        "frames": 3,
+        "fps_from_frame_time": 1.83,
+        "mean_ms": 545.67,
+        "p95_ms": 824,
+        "p99_ms": 824,
+        "max_ms": 824,
+        "draw_mean_ms": 511.33,
+        "present_mean_ms": 32.33,
+        "lua_kb_max": 1883
+      },
+      "pair-fade": {
+        "frames": 1,
+        "fps_from_frame_time": 0.06,
+        "mean_ms": 17395.0,
+        "p95_ms": 17395,
+        "p99_ms": 17395,
+        "max_ms": 17395,
+        "draw_mean_ms": 17363.0,
+        "present_mean_ms": 29.0,
+        "lua_kb_max": 3046
+      },
+      "select": {
+        "frames": 31,
+        "fps_from_frame_time": 0.21,
+        "mean_ms": 4841.68,
+        "p95_ms": 11232,
+        "p99_ms": 12562,
+        "max_ms": 12562,
+        "draw_mean_ms": 4800.35,
+        "present_mean_ms": 33.74,
+        "lua_kb_max": 4450
+      },
+      "play": {
+        "frames": 32,
+        "fps_from_frame_time": 0.36,
+        "mean_ms": 2766.56,
+        "p95_ms": 3040,
+        "p99_ms": 3042,
+        "max_ms": 3042,
+        "draw_mean_ms": 2728.75,
+        "present_mean_ms": 33.66,
+        "lua_kb_max": 4486
+      }
+    },
+    "geometry_cache": true,
+    "target_fps_pass": false
+  },
+  "coverage_sparse_storage_host_bytes": 639008,
+  "coverage_sparse_scratch_within_payload_bytes": 32768,
+  "latest_regression_tests": {
+    "vector_sw_test": "pass",
+    "vector_sw_oom_test": "pass",
+    "lua_test": "pass",
+    "lua_qi_duel_test": "pass (67.7 seconds)"
+  },
+  "probe9": {
+    "installed_and_confirmed": true,
+    "image_checksum": "5325cdef221357ae2823c9b688a7b0e65844ec5c145336f3e63e9c26c1328055",
+    "stage_valid": 0,
+    "sparse_coverage": true,
+    "compiler_override": "-O2 only for h2_lua_canvas.c and h2_lua_vector_sw.c; remaining flags unchanged",
+    "phase_samples": {
+      "play": {
+        "frames": 21,
+        "fps_from_frame_time": 0.37,
+        "mean_ms": 2732.48,
+        "p95_ms": 2928,
+        "p99_ms": 2990,
+        "max_ms": 2990,
+        "draw_mean_ms": 2694.71,
+        "present_mean_ms": 33.67,
+        "lua_kb_max": 4476
+      },
+      "select": {
+        "frames": 20,
+        "fps_from_frame_time": 0.2,
+        "mean_ms": 5108.5,
+        "p95_ms": 10969,
+        "p99_ms": 12278,
+        "max_ms": 12278,
+        "draw_mean_ms": 5067.3,
+        "present_mean_ms": 33.8,
+        "lua_kb_max": 4237
+      }
+    },
+    "target_fps_pass": false
+  }
+}

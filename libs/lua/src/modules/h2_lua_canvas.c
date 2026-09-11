@@ -2,7 +2,7 @@
 #ifdef H2_QI_DUEL_DESKTOP_VECTORS
 #ifdef H2_LUA_SOFTWARE_VECTORS
 #include "h2_lua_vector_sw.h"
-#define h2_lua_vector_cg_render h2_lua_vector_sw_render
+#define h2_lua_vector_cg_render(...) render_sw_for_lua(s, __VA_ARGS__)
 #else
 #include "h2_lua_vector_cg.h"
 #endif
@@ -12,8 +12,66 @@
 #include <string.h>
 #include "zlib.h"
 
+#ifdef H2_LUA_SOFTWARE_VECTORS
+typedef struct {
+  h2_lua_job_t *job;
+  uint64_t last_yield_ms;
+} vector_poll_t;
+static int vector_poll(void *user) {
+  vector_poll_t *poll = user;
+  h2_lua_job_t *job = poll->job;
+  uint64_t now = h2_lua_now_ms(job->host);
+  if (job->cancel_requested || atomic_load(&job->host->stopping) ||
+      now - job->started_ms >= job->host->config.execution_timeout_ms) return 0;
+  if (now - poll->last_yield_ms >= 32) {
+    /* Yield the native worker to the RTOS idle/input/audio tasks. This does
+     * not yield Lua across a C boundary or expose a partially drawn frame. */
+    if (h2_pal_time_sleep_ms(job->host->config.runtime->time, 1) != H2_PAL_OK) return 0;
+    poll->last_yield_ms = h2_lua_now_ms(job->host);
+  }
+  return 1;
+}
+static int render_sw_cached_output_for_lua(lua_State *s,const uint8_t *data,size_t length,
+    uint8_t *rgba,uint8_t *const *rows,unsigned width,unsigned height,
+    const double matrix[6],h2_lua_vector_sw_cache_t *cache) {
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+  /* Lua's heap limit does not reserve space for native raster workspaces.
+   * Inputs/outputs are pinned on the stack or in the registry. Retry only an
+   * allocation failure, after the failed renderer has freed every workspace. */
+  if(length>=32768)lua_gc(s,LUA_GCCOLLECT,0);
+  vector_poll_t poll={job,h2_lua_now_ms(job->host)};
+  h2_lua_vector_sw_result_t result=h2_lua_vector_sw_render_cached_result(
+      data,length,rgba,rows,width,height,matrix,vector_poll,&poll,cache);
+  if(result==H2_LUA_VECTOR_SW_NO_MEMORY) {
+    lua_gc(s,LUA_GCCOLLECT,0);
+    poll.last_yield_ms=h2_lua_now_ms(job->host);
+    result=h2_lua_vector_sw_render_cached_result(data,length,rgba,rows,width,height,
+                                         matrix,vector_poll,&poll,cache);
+    if(result==H2_LUA_VECTOR_SW_OK)
+      (void)h2_pal_log_write(job->host->config.runtime->log,H2_PAL_LOG_INFO,
+          "lua.vector","native workspace allocation recovered after Lua GC");
+  }
+  if(result==H2_LUA_VECTOR_SW_NO_MEMORY)
+    return luaL_error(s,"native vector workspace allocation failed after Lua GC");
+  if(result==H2_LUA_VECTOR_SW_INTERRUPTED)
+    return luaL_error(s,"native vector render interrupted");
+  if(result==H2_LUA_VECTOR_SW_WORKSPACE_LIMIT)
+    return luaL_error(s,"native vector workspace limit exceeded");
+  return result==H2_LUA_VECTOR_SW_OK;
+}
+static int render_sw_output_for_lua(lua_State *s,const uint8_t *data,size_t length,
+    uint8_t *rgba,uint8_t *const *rows,unsigned width,unsigned height,
+    const double matrix[6]) {
+  return render_sw_cached_output_for_lua(s,data,length,rgba,rows,width,height,matrix,NULL);
+}
+static int render_sw_for_lua(lua_State *s,const uint8_t *data,size_t length,
+    uint8_t *rgba,unsigned width,unsigned height,const double matrix[6]) {
+  return render_sw_output_for_lua(s,data,length,rgba,NULL,width,height,matrix);
+}
+#endif
+
 typedef struct canvas {
-  int width, height, active;
+  int width, height, active, all_dirty;
   uint8_t rgb[];
 } canvas_t;
 typedef struct sprite {
@@ -22,6 +80,8 @@ typedef struct sprite {
   size_t level_offset[13];
   uint8_t rgba[]; /* premultiplied for filtering */
 } sprite_t;
+static inline float canvas_minf(float a, float b) { return a < b ? a : b; }
+static inline float canvas_maxf(float a, float b) { return a > b ? a : b; }
 static char s_canvas_key, s_images_key, s_polygon_key, s_styles_key;
 
 void h2_lua_canvas_reset(lua_State *s) {
@@ -38,7 +98,7 @@ static double finite_number(lua_State *s, int arg) {
   return value;
 }
 
-static canvas_t *get_canvas(lua_State *s) {
+static canvas_t *borrow_canvas(lua_State *s) {
   h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
   lua_rawgetp(s, LUA_REGISTRYINDEX, &s_canvas_key);
   canvas_t *canvas = lua_touserdata(s, -1);
@@ -49,15 +109,42 @@ static canvas_t *get_canvas(lua_State *s) {
   return canvas;
 }
 
+/* Two compact bitsets follow RGB888: occupied tiles and edited tiles. */
+static size_t canvas_tile_bytes(const canvas_t *c) {
+  return ((size_t)((c->width+15)/16)*((c->height+15)/16)+7)/8;
+}
+static uint8_t *canvas_tiles(canvas_t *c) {return c->rgb+(size_t)c->width*c->height*3;}
+static canvas_t *get_canvas(lua_State *s) {
+  canvas_t *c=borrow_canvas(s);c->all_dirty=1;return c;
+}
+static void canvas_mark_box(canvas_t *c,int x0,int y0,int x1,int y1) {
+  if(c->all_dirty || x0>=x1 || y0>=y1)return;
+  unsigned columns=(unsigned)(c->width+15)/16;
+  uint8_t *occupied=canvas_tiles(c),*dirty=occupied+canvas_tile_bytes(c);
+  for(int y=y0/16;y<=(y1-1)/16;y++)for(int x=x0/16;x<=(x1-1)/16;x++) {
+    unsigned bit=(unsigned)y*columns+(unsigned)x;
+    occupied[bit/8]|=(uint8_t)(1u<<(bit%8));
+    dirty[bit/8]|=(uint8_t)(1u<<(bit%8));
+  }
+}
+
 static int begin_composite(lua_State *s) {
   h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
   if (!job->display_open) return luaL_error(s, "display is not open");
+  int clear = 0;
+  int retain = lua_type(s,1)==LUA_TSTRING && !strcmp(lua_tostring(s,1),"retain");
+  if (!retain && !lua_isnoneornil(s, 1)) {
+    luaL_checktype(s, 1, LUA_TBOOLEAN);
+    clear = lua_toboolean(s, 1);
+  }
   unsigned w = (unsigned)job->display_info.width, h = (unsigned)job->display_info.height;
   if (!w || !h || w > 4096u || h > 4096u) return luaL_error(s, "invalid canvas size");
   lua_rawgetp(s, LUA_REGISTRYINDEX, &s_canvas_key);
   canvas_t *canvas = lua_touserdata(s, -1);
   if (canvas && canvas->active) return luaL_error(s, "canvas composition already open");
-  size_t bytes = sizeof(canvas_t) + (size_t)w * h * 3u;
+  retain = retain && canvas && canvas->width==(int)w && canvas->height==(int)h;
+  size_t tile_bytes=((size_t)((w+15)/16)*((h+15)/16)+7)/8;
+  size_t bytes = sizeof(canvas_t) + (size_t)w * h * 3u + tile_bytes*2;
   if (!canvas || lua_rawlen(s, -1) < bytes) {
     lua_pop(s, 1);
     lua_pushnil(s); lua_rawsetp(s, LUA_REGISTRYINDEX, &s_canvas_key);
@@ -65,7 +152,12 @@ static int begin_composite(lua_State *s) {
     lua_pushvalue(s, -1); lua_rawsetp(s, LUA_REGISTRYINDEX, &s_canvas_key);
   }
   canvas->width = (int)w; canvas->height = (int)h; canvas->active = 1;
-  for (size_t i = 0; i < (size_t)w * h; ++i) {
+  canvas->all_dirty=!retain;
+  if(!retain)memset(canvas_tiles(canvas),0,tile_bytes*2);
+  /* Full redraw callers can clear the composition surface directly instead
+   * of clearing RGB565 and then expanding that same black frame to RGB888. */
+  if (clear) memset(canvas->rgb, 0, (size_t)w * h * 3);
+  else if (!retain) for (size_t i = 0; i < (size_t)w * h; ++i) {
     uint16_t color = job->framebuffer[i];
     unsigned r = color >> 11u, g = (color >> 5u) & 63u, b = color & 31u;
     canvas->rgb[i*3u] = (uint8_t)((r<<3u)|(r>>2u));
@@ -76,15 +168,70 @@ static int begin_composite(lua_State *s) {
   return 0;
 }
 
+/* Retain RGB888 between frames; convert/submit only pixels that changed in
+ * the display's RGB565 representation. Existing dirty edits are unioned. */
 static int end_composite(lua_State *s) {
   h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
-  canvas_t *canvas = get_canvas(s);
-  for (size_t i = 0; i < (size_t)canvas->width * canvas->height; ++i)
-    job->framebuffer[i] = (uint16_t)((canvas->rgb[i*3u]>>3u)<<11u |
-        (canvas->rgb[i*3u+1u]>>2u)<<5u | (canvas->rgb[i*3u+2u]>>3u));
-  canvas->active = 0;
-  job->dirty_valid = 1; job->dirty_min_x = 0; job->dirty_min_y = 0;
-  job->dirty_max_x = canvas->width-1; job->dirty_max_y = canvas->height-1;
+  canvas_t *canvas = borrow_canvas(s);
+  int left=canvas->width,top=canvas->height,right=-1,bottom=-1;
+  unsigned columns=(unsigned)(canvas->width+15)/16,rows=(unsigned)(canvas->height+15)/16;
+  uint8_t *occupied=canvas_tiles(canvas),*dirty=occupied+canvas_tile_bytes(canvas);
+  for(unsigned ty=0;ty<rows;ty++)for(unsigned tx=0;tx<columns;tx++) {
+    unsigned bit=ty*columns+tx;uint8_t flag=(uint8_t)(1u<<(bit%8));
+    if(!canvas->all_dirty && !(dirty[bit/8]&flag))continue;
+    int any=0,x1=(int)(tx*16+16),y1=(int)(ty*16+16);
+    if(x1>canvas->width)x1=canvas->width;
+    if(y1>canvas->height)y1=canvas->height;
+    for(int y=(int)ty*16;y<y1;y++)for(int x=(int)tx*16;x<x1;x++) {
+      size_t i=(size_t)y*canvas->width+x;
+      const uint8_t *rgb=canvas->rgb+i*3;
+      any|=rgb[0]|rgb[1]|rgb[2];
+      uint16_t color=(uint16_t)((rgb[0]>>3)<<11 | (rgb[1]>>2)<<5 | (rgb[2]>>3));
+      if(job->framebuffer[i]==color)continue;
+      job->framebuffer[i]=color;
+      if(x<left)left=x;
+      if(x>right)right=x;
+      if(y<top)top=y;
+      if(y>bottom)bottom=y;
+    }
+    if(any)occupied[bit/8]|=flag;else occupied[bit/8]&=(uint8_t)~flag;
+    dirty[bit/8]&=(uint8_t)~flag;
+  }
+  canvas->active=0;
+  if(right>=left) {
+    if(!job->dirty_valid) {
+      job->dirty_min_x=left;job->dirty_min_y=top;
+      job->dirty_max_x=right;job->dirty_max_y=bottom;
+    } else {
+      if(left<job->dirty_min_x)job->dirty_min_x=left;
+      if(top<job->dirty_min_y)job->dirty_min_y=top;
+      if(right>job->dirty_max_x)job->dirty_max_x=right;
+      if(bottom>job->dirty_max_y)job->dirty_max_y=bottom;
+    }
+    job->dirty_valid=1;
+  }
+  return 0;
+}
+static int fade_composite(lua_State *s) {
+  canvas_t *c=borrow_canvas(s);double alpha=finite_number(s,1);
+  if(alpha<0 || alpha>1)return luaL_error(s,"invalid composite fade");
+  uint8_t values[256];
+  /* Floor guarantees even the dimmest retained pixel eventually disappears. */
+  for(unsigned i=0;i<256;i++)values[i]=(uint8_t)floor(i*(1-alpha));
+  unsigned columns=(unsigned)(c->width+15)/16,rows=(unsigned)(c->height+15)/16;
+  uint8_t *occupied=canvas_tiles(c),*dirty=occupied+canvas_tile_bytes(c);
+  for(unsigned ty=0;ty<rows;ty++)for(unsigned tx=0;tx<columns;tx++) {
+    unsigned bit=ty*columns+tx;uint8_t flag=(uint8_t)(1u<<(bit%8));
+    if(!c->all_dirty && !(occupied[bit/8]&flag))continue;
+    dirty[bit/8]|=flag;
+    int x1=(int)(tx*16+16),y1=(int)(ty*16+16);
+    if(x1>c->width)x1=c->width;
+    if(y1>c->height)y1=c->height;
+    for(int y=(int)ty*16;y<y1;y++) {
+      uint8_t *p=c->rgb+((size_t)y*c->width+tx*16)*3;
+      for(int x=(int)tx*16;x<x1;x++)for(unsigned k=0;k<3;k++,p++)*p=values[*p];
+    }
+  }
   return 0;
 }
 
@@ -103,18 +250,85 @@ static double color_args(lua_State *s, int arg, int alpha_arg, double rgb[3]) {
   return alpha;
 }
 
-static double distance2(double x, double y, double ax, double ay,
-                         double dx, double dy, double inverse_length2) {
-  double t = ((x-ax)*dx + (y-ay)*dy)*inverse_length2;
-  t = fmax(0,fmin(1,t));
-  double px=x-ax-t*dx, py=y-ay-t*dy;
-  return px*px+py*py;
+/* At each of the existing eight subpixel rows a capsule has one horizontal
+ * interval (the union of its rectangle and round caps). Count the same 8x8
+ * samples with integer intervals instead of 64 distance tests per edge pixel.
+ * Keep geometry in double precision, including long off-screen segments. */
+static void capsule_span(double ax, double ay, double bx, double by,
+                         double radius, const double corners[4][2], double sy,
+                         int width, int *first, int *end) {
+  double left = width, right = 0;
+  const double centers[2][2] = {{ax, ay}, {bx, by}};
+  for (unsigned i = 0; i < 2; i++) {
+    double dy = sy - centers[i][1];
+    if (fabs(dy) <= radius) {
+      double dx = sqrt(fmax(0, radius * radius - dy * dy));
+      left = fmin(left, centers[i][0] - dx);
+      right = fmax(right, centers[i][0] + dx);
+    }
+  }
+  for (unsigned i = 0; i < 4; i++) {
+    const double *a = corners[i], *b = corners[(i + 1) % 4];
+    if (a[1] == b[1]) {
+      if (sy == a[1]) {
+        left = fmin(left, fmin(a[0], b[0]));
+        right = fmax(right, fmax(a[0], b[0]));
+      }
+    } else if (sy >= fmin(a[1], b[1]) && sy <= fmax(a[1], b[1])) {
+      double x = a[0] + (sy - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+      left = fmin(left, x);
+      right = fmax(right, x);
+    }
+  }
+  left = fmax(0, fmin(width, left));
+  right = fmax(0, fmin(width, right));
+  *first = (int)ceil(left * 8 - .5);
+  *end = (int)floor(right * 8 - .5) + 1;
+  if (*end < *first) *end = *first;
 }
 
-/* Small additive round-capped strokes, with fractional endpoints and width.
- * Interior/exterior pixels take a fast path; only boundary coverage is sampled.
- * They deliberately compose in RGB888 so overlapping trail segments preserve
- * the reference's additive joint highlights before one RGB565 conversion. */
+/* Ordinary screen coordinates use the hardware-friendly float path. Near
+ * a sample boundary (or for distant geometry), retain the double oracle to
+ * avoid unstable coverage quantization at subpixel boundaries. */
+static int capsule_span_fast(const float centers[2][2], float radius,
+                              const float corners[4][2], const float slopes[4],
+                              float sy, int width, int *first, int *end) {
+  float left = width, right = 0;
+  for (unsigned i = 0; i < 2; i++) {
+    float dy = sy - centers[i][1];
+    if (fabsf(fabsf(dy) - radius) < .005f) return 0;
+    if (fabsf(dy) <= radius) {
+      float dx = sqrtf(canvas_maxf(0, radius * radius - dy * dy));
+      left = canvas_minf(left, centers[i][0] - dx);
+      right = canvas_maxf(right, centers[i][0] + dx);
+    }
+  }
+  for (unsigned i = 0; i < 4; i++) {
+    const float *a = corners[i], *b = corners[(i + 1) % 4];
+    if (fabsf(sy - a[1]) < .002f || fabsf(sy - b[1]) < .002f) return 0;
+    if (a[1] == b[1]) {
+      if (sy == a[1]) {
+        left = canvas_minf(left, canvas_minf(a[0], b[0]));
+        right = canvas_maxf(right, canvas_maxf(a[0], b[0]));
+      }
+    } else if (sy >= canvas_minf(a[1], b[1]) && sy <= canvas_maxf(a[1], b[1])) {
+      if (fabsf(slopes[i]) > 8) return 0;
+      float x = a[0] + (sy - a[1]) * slopes[i];
+      left = canvas_minf(left, x);
+      right = canvas_maxf(right, x);
+    }
+  }
+  left = canvas_maxf(0, canvas_minf(width, left)) * 8 - .5f;
+  right = canvas_maxf(0, canvas_minf(width, right)) * 8 - .5f;
+  if (fabsf(left - roundf(left)) < .05f ||
+      fabsf(right - roundf(right)) < .05f)
+    return 0;
+  *first = (int)ceilf(left);
+  *end = (int)floorf(right) + 1;
+  if (*end < *first) *end = *first;
+  return 1;
+}
+
 static void add_capsule(canvas_t *canvas, double ax, double ay, double bx, double by,
                          double radius, const double rgb[3], double over_alpha) {
   if (radius <= 0 || (rgb[0]==0 && rgb[1]==0 && rgb[2]==0)) return;
@@ -122,29 +336,61 @@ static void add_capsule(canvas_t *canvas, double ax, double ay, double bx, doubl
   int x1=(int)fmax(0,fmin(canvas->width,ceil(fmax(ax,bx)+radius)));
   int y0=(int)fmax(0,fmin(canvas->height,floor(fmin(ay,by)-radius)));
   int y1=(int)fmax(0,fmin(canvas->height,ceil(fmax(ay,by)+radius)));
-  double dx=bx-ax,dy=by-ay, length2=dx*dx+dy*dy;
-  double inverse=length2>0 ? 1/length2 : 0, rr=radius*radius;
-  for(int y=y0;y<y1;y++) for(int x=x0;x<x1;x++) {
-    double dist=distance2(x+.5,y+.5,ax,ay,dx,dy,inverse);
-    if(dist >= (radius+.708)*(radius+.708)) continue;
-    double coverage=1;
-    if(radius < .708 || dist > (radius-.708)*(radius-.708)) {
-      unsigned hit=0;
-      for(unsigned sy=0;sy<8;sy++)for(unsigned sx=0;sx<8;sx++)
-        hit += distance2(x+(sx+.5)/8,y+(sy+.5)/8,ax,ay,dx,dy,inverse)<=rr;
-      coverage=hit/64.0;
+  if (x0 >= x1 || y0 >= y1) return;
+  canvas_mark_box(canvas,x0,y0,x1,y1);
+  double dx=bx-ax,dy=by-ay,len=hypot(dx,dy);
+  double nx=len>0 ? -dy/len*radius : 0, ny=len>0 ? dx/len*radius : 0;
+  const double corners[4][2]={{ax+nx,ay+ny},{bx+nx,by+ny},
+                             {bx-nx,by-ny},{ax-nx,ay-ny}};
+  float fast_corners[4][2], slopes[4];
+  const float centers[2][2] = {{(float)ax, (float)ay}, {(float)bx, (float)by}};
+  int fast = fabs(ax) <= 4096 && fabs(ay) <= 4096 &&
+             fabs(bx) <= 4096 && fabs(by) <= 4096;
+  for (unsigned i = 0; i < 4; i++) {
+    fast_corners[i][0] = (float)corners[i][0];
+    fast_corners[i][1] = (float)corners[i][1];
+    double edge_dy = corners[(i + 1) % 4][1] - corners[i][1];
+    slopes[i] = edge_dy == 0 ? 0 :
+        (float)((corners[(i + 1) % 4][0] - corners[i][0]) / edge_dy);
+  }
+  /* color_args quantizes alpha to 1/255 and channels to integer RGB. */
+  unsigned premul[3];
+  for (unsigned c=0;c<3;c++) premul[c]=(unsigned)floor(rgb[c]*255+.5);
+  unsigned alpha=over_alpha<0 ? 0 : (unsigned)floor(over_alpha*255+.5);
+  for(int y=y0;y<y1;y++) {
+    int first[8],end[8];
+    int row_first = x1 * 8, row_end = x0 * 8;
+    for(unsigned sy=0;sy<8;sy++) {
+      if (!fast || !capsule_span_fast(centers, (float)radius, fast_corners,
+              slopes, y + (sy + .5f) / 8, canvas->width, &first[sy], &end[sy]))
+        capsule_span(ax,ay,bx,by,radius,corners,y+(sy+.5)/8,
+                     canvas->width,&first[sy],&end[sy]);
+      if (first[sy] < row_first) row_first = first[sy];
+      if (end[sy] > row_end) row_end = end[sy];
     }
-    uint8_t *pixel=canvas->rgb+((size_t)y*canvas->width+x)*3u;
-    for(int c=0;c<3;c++) {
-      unsigned value=(unsigned)floor(pixel[c]*(over_alpha<0?1:1-over_alpha*coverage)+rgb[c]*coverage+.5);
-      pixel[c]=(uint8_t)(value>255u?255u:value);
+    int row_x0 = row_first / 8, row_x1 = (row_end + 7) / 8;
+    if (row_x0 < x0) row_x0 = x0;
+    if (row_x1 > x1) row_x1 = x1;
+    for(int x=row_x0;x<row_x1;x++) {
+      unsigned hit=0;
+      for(unsigned sy=0;sy<8;sy++) {
+        int lo=first[sy]>x*8 ? first[sy] : x*8;
+        int hi=end[sy]<(x+1)*8 ? end[sy] : (x+1)*8;
+        if(hi>lo) hit+=(unsigned)(hi-lo);
+      }
+      if(!hit) continue;
+      uint8_t *pixel=canvas->rgb+((size_t)y*canvas->width+x)*3u;
+      for(unsigned c=0;c<3;c++) {
+        unsigned value=(pixel[c]*(255u*64u-alpha*hit)+premul[c]*hit+8160u)/16320u;
+        pixel[c]=(uint8_t)(value>255u?255u:value);
+      }
     }
   }
 }
 
 
 static int add_disc(lua_State *s) {
-  canvas_t *canvas=get_canvas(s);
+  canvas_t *canvas=borrow_canvas(s);
   double x=finite_number(s,1),y=finite_number(s,2),r=finite_number(s,3),rgb[3];
   if(r<0 || r>64) return luaL_error(s,"invalid canvas disc radius");
   color_args(s,4,5,rgb);
@@ -153,12 +399,48 @@ static int add_disc(lua_State *s) {
 }
 
 static int add_line(lua_State *s) {
-  canvas_t *canvas=get_canvas(s);
+  canvas_t *canvas=borrow_canvas(s);
   double ax=finite_number(s,1),ay=finite_number(s,2),bx=finite_number(s,3),by=finite_number(s,4);
   double width=finite_number(s,5),rgb[3];
   if(width<0 || width>128) return luaL_error(s,"invalid canvas line width");
   color_args(s,6,7,rgb);
   add_capsule(canvas,ax,ay,bx,by,width*.5,rgb,-1);
+  return 0;
+}
+
+/* Reusable flat command array: ax, ay, bx, by, width, r, g, b, alpha.
+ * Preserve command order and the same capsule/quantization as add_line. */
+static int add_lines(lua_State *s) {
+  canvas_t *canvas = borrow_canvas(s);
+  luaL_checktype(s, 1, LUA_TTABLE);
+  lua_Integer count = luaL_checkinteger(s, 2);
+  if (count < 0 || count > 8192 || lua_rawlen(s, 1) < (size_t)count * 9)
+    return luaL_error(s, "invalid canvas line batch length");
+  double scale = lua_isnoneornil(s, 3) ? 1 : finite_number(s, 3);
+  double tx = lua_isnoneornil(s, 4) ? 0 : finite_number(s, 4);
+  double ty = lua_isnoneornil(s, 5) ? 0 : finite_number(s, 5);
+  if (scale <= 0) return luaL_error(s, "invalid canvas line batch scale");
+  for (lua_Integer i = 0; i < count; i++) {
+    double v[9];
+    for (unsigned k = 0; k < 9; k++) {
+      lua_rawgeti(s, 1, i * 9 + k + 1);
+      v[k] = finite_number(s, -1);
+      lua_pop(s, 1);
+    }
+    if (v[4] < 0 || v[4] * scale > 128 || v[8] < 0 || v[8] > 1)
+      return luaL_error(s, "invalid canvas line batch width/alpha");
+    for (unsigned k = 5; k < 8; k++)
+      if (v[k] < 0 || v[k] > 255)
+        return luaL_error(s, "invalid canvas line batch color");
+    double ax = v[0] * scale + tx, ay = v[1] * scale + ty;
+    double bx = v[2] * scale + tx, by = v[3] * scale + ty;
+    if (fabs(ax) > 1000000 || fabs(ay) > 1000000 ||
+        fabs(bx) > 1000000 || fabs(by) > 1000000)
+      return luaL_error(s, "canvas batch coordinate out of bounds");
+    double alpha = floor(v[8] * 255 + .5) / 255, rgb[3];
+    for (unsigned k = 0; k < 3; k++) rgb[k] = floor(v[k + 5] + .5) * alpha;
+    add_capsule(canvas, ax, ay, bx, by, v[4] * scale * .5, rgb, -1);
+  }
   return 0;
 }
 
@@ -208,6 +490,10 @@ static int glow_line(lua_State *s) {
  * Unlike light-atlas sprites, this geometry/blur changes continuously at runtime. */
 static int draw_polygon(lua_State *s) {
   canvas_t *canvas=get_canvas(s);
+#ifdef H2_LUA_SOFTWARE_VECTORS
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+  vector_poll_t poll={job,h2_lua_now_ms(job->host)};
+#endif
   luaL_checktype(s,1,LUA_TTABLE);
   size_t count=lua_rawlen(s,1);
   if(count<3 || count>16)return luaL_error(s,"polygon needs 3 to 16 vertices");
@@ -252,6 +538,7 @@ static int draw_polygon(lua_State *s) {
   float *mask=lua_touserdata(s,-1);
   if(!mask || lua_rawlen(s,-1)<bytes) {
     lua_pop(s,1);lua_pushnil(s);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_polygon_key);
+    lua_gc(s,LUA_GCCOLLECT,0);
     mask=lua_newuserdatauv(s,bytes,0);lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_polygon_key);
   }
   lua_pop(s,1);
@@ -265,29 +552,71 @@ static int draw_polygon(lua_State *s) {
     memset(mask,0,pixels*sizeof(float));
     int firstx=pad-(int)ceil(width*.5)-1,lastx=w-firstx;
     int firsty=pad-(int)ceil(width*.5)-1,lasty=h-firsty;
-    for(int y=firsty;y<lasty;y++)for(int x=firstx;x<lastx;x++) {
-      unsigned hits=0;
-      for(int sy=0;sy<8;sy++)for(int sx=0;sx<8;sx++) {
-        double px=x+x0+(sx+.5)/8,py=y+y0+(sy+.5)/8,dist=1e30;int inside=0;
-        for(size_t i=0,j=count-1;i<count;j=i++) {
-          double ax=points[j][0],ay=points[j][1],bx=points[i][0],by=points[i][1];
-          if((ay>py)!=(by>py) && px<(bx-ax)*(py-ay)/(by-ay)+ax)inside=!inside;
-          if(pass){double dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy;
-            dist=fmin(dist,distance2(px,py,ax,ay,dx,dy,len>0?1/len:0));}
+    /* Evaluate the same 8x8 samples by horizontal spans. Fill crossings use
+     * the original even/odd rule; stroke spans are unioned before counting,
+     * so corners and overlapping edges never receive extra coverage. */
+    for(int y=firsty;y<lasty;y++) {
+#ifdef H2_LUA_SOFTWARE_VECTORS
+      if(!vector_poll(&poll))return luaL_error(s,"polygon draw interrupted");
+#endif
+      for(int sy=0;sy<8;sy++) {
+        uint8_t covered[256*8]={0};
+        double py=y+y0+(sy+.5)/8;
+        if(!pass) {
+          double crossings[16];size_t n=0;
+          for(size_t i=0,j=count-1;i<count;j=i++) {
+            double ax=points[j][0],ay=points[j][1],bx=points[i][0],by=points[i][1];
+            if((ay>py)!=(by>py)) {
+              double cross=(bx-ax)*(py-ay)/(by-ay)+ax;
+              size_t at=n++;while(at && crossings[at-1]>cross) {
+                crossings[at]=crossings[at-1];at--;
+              }
+              crossings[at]=cross;
+            }
+          }
+          for(size_t i=0;i+1<n;i+=2) {
+            int lo=(int)ceil(fmax(firstx,fmin(lastx,crossings[i]-x0))*8-.5);
+            int hi=(int)ceil(fmax(firstx,fmin(lastx,crossings[i+1]-x0))*8-.5);
+            for(int k=lo;k<hi;k++)covered[k]=1;
+          }
+        } else {
+          for(size_t i=0,j=count-1;i<count;j=i++) {
+            double ax=points[j][0]-x0,ay=points[j][1];
+            double bx=points[i][0]-x0,by=points[i][1];
+            double dx=bx-ax,dy=by-ay,len=hypot(dx,dy),radius=width*.5;
+            double nx=len>0?-dy/len*radius:0,ny=len>0?dx/len*radius:0;
+            const double corners[4][2]={{ax+nx,ay+ny},{bx+nx,by+ny},
+                                      {bx-nx,by-ny},{ax-nx,ay-ny}};
+            int lo,hi;capsule_span(ax,ay,bx,by,radius,corners,py,w,&lo,&hi);
+            if(lo<firstx*8)lo=firstx*8;
+            if(hi>lastx*8)hi=lastx*8;
+            for(int k=lo;k<hi;k++)covered[k]=1;
+          }
         }
-        hits+=pass?(dist<=width*width*.25):inside;
+        for(int x=firstx;x<lastx;x++) {
+          unsigned hits=0;for(int sx=0;sx<8;sx++)hits+=covered[x*8+sx];
+          mask[(size_t)y*w+x]+=hits/64.f;
+        }
       }
-      mask[(size_t)y*w+x]=hits/64.f;
     }
     for(int y=0;y<h;y++)for(int x=0;x<w;x++) {
+#ifdef H2_LUA_SOFTWARE_VECTORS
+      if(x==0 && !vector_poll(&poll))return luaL_error(s,"polygon draw interrupted");
+#endif
       double value=0;for(int n=-radius;n<=radius;n++)if(x+n>=0 && x+n<w)value+=mask[(size_t)y*w+x+n]*kernel[n+radius];
       tmp[(size_t)y*w+x]=(float)value;
     }
     for(int y=0;y<h;y++)for(int x=0;x<w;x++) {
+#ifdef H2_LUA_SOFTWARE_VECTORS
+      if(x==0 && !vector_poll(&poll))return luaL_error(s,"polygon draw interrupted");
+#endif
       double value=0;for(int n=-radius;n<=radius;n++)if(y+n>=0 && y+n<h)value+=tmp[(size_t)(y+n)*w+x]*kernel[n+radius];
       soft[(size_t)y*w+x]=(float)value;
     }
     for(int y=0;y<h;y++)for(int x=0;x<w;x++) {
+#ifdef H2_LUA_SOFTWARE_VECTORS
+      if(x==0 && !vector_poll(&poll))return luaL_error(s,"polygon draw interrupted");
+#endif
       int dx=x+x0,dy=y+y0;if(dx<0 || dy<0 || dx>=canvas->width || dy>=canvas->height)continue;
       size_t i=(size_t)y*w+x;uint8_t *pixel=canvas->rgb+((size_t)dy*canvas->width+dx)*3;
       for(int c=0;c<3;c++) {
@@ -301,15 +630,53 @@ static int draw_polygon(lua_State *s) {
 }
 
 #ifdef H2_QI_DUEL_DESKTOP_VECTORS
-static char s_vector_scratch_key;
-static uint8_t *vector_scratch(lua_State *s,size_t bytes) {
-  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_scratch_key);
+static char s_vector_scratch_key, s_vector_blend_scratch_key;
+static uint8_t *vector_buffer(lua_State *s,const void *key,size_t bytes) {
+  lua_rawgetp(s,LUA_REGISTRYINDEX,key);
   if(!lua_isuserdata(s,-1)||lua_rawlen(s,-1)<bytes) {
-    lua_pop(s,1);lua_newuserdatauv(s,bytes,0);
-    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_scratch_key);
+    /* No caller retains a scratch pointer across draws. Reclaim the previous
+     * surface before growing, so crossfades do not require old+new buffers. */
+    lua_pop(s,1);lua_pushnil(s);lua_rawsetp(s,LUA_REGISTRYINDEX,key);
+    lua_gc(s,LUA_GCCOLLECT,0);lua_newuserdatauv(s,bytes,0);
+    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,key);
   }
   uint8_t *p=lua_touserdata(s,-1);lua_pop(s,1);return p;
 }
+static uint8_t *vector_scratch(lua_State *s,size_t bytes) {
+  return vector_buffer(s,&s_vector_scratch_key,bytes);
+}
+#ifdef H2_LUA_SOFTWARE_VECTORS
+static char s_vector_rows_key;
+typedef struct { unsigned width,height;uint8_t *rows[]; } vector_rows_t;
+/* Small Lua-owned slabs keep the two full-resolution crossfade frames usable
+ * when long-lived audio buffers fragment PSRAM. The registry table owns both
+ * row metadata and every slab; the renderer only borrows their addresses. */
+static vector_rows_t *vector_rows(lua_State *s,unsigned w,unsigned h) {
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_rows_key);
+  if(lua_istable(s,-1)) {
+    lua_rawgeti(s,-1,1);vector_rows_t *v=lua_touserdata(s,-1);
+    if(v && v->width==w && v->height==h){lua_pop(s,2);return v;}
+    lua_pop(s,1);
+  }
+  lua_pop(s,1);lua_pushnil(s);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_rows_key);
+  lua_gc(s,LUA_GCCOLLECT,0);
+  lua_newtable(s);int table=lua_gettop(s);
+  vector_rows_t *v=lua_newuserdatauv(s,sizeof(*v)+(size_t)h*sizeof(uint8_t *),0);
+  v->width=w;v->height=h;
+  unsigned slab=2,rows_per_slab=16384u/(w*4u);
+  if(!rows_per_slab)rows_per_slab=1;
+  for(unsigned y=0;y<h;y+=rows_per_slab) {
+    unsigned count=h-y<rows_per_slab?h-y:rows_per_slab;
+    uint8_t *pixels=lua_newuserdatauv(s,(size_t)w*count*4,0);
+    for(unsigned row=0;row<count;row++)v->rows[y+row]=pixels+(size_t)row*w*4;
+    lua_rawseti(s,table,slab++);
+  }
+  lua_rawseti(s,table,1);
+  lua_pushvalue(s,table);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_rows_key);
+  lua_pop(s,1);return v;
+}
+
+#endif
 static const h2_lua_resource_t *vector_resource(lua_State *s) {
   h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));const char *name=luaL_checkstring(s,1);
   for(size_t i=0;i<job->host->config.resource_count;i++) {
@@ -320,13 +687,13 @@ static const h2_lua_resource_t *vector_resource(lua_State *s) {
 }
 static char s_vector_decode_key;
 /* Resolution-specific render cache, not packaged artwork. The fixed arena
- * bounds retained memory; animated/large keyframes bypass it. */
-#define VECTOR_CACHE_BYTES 1048576u
+ * bounds retained memory; frames larger than the arena bypass it. */
+#define VECTOR_CACHE_BYTES 524288u
 typedef struct {
   const h2_lua_resource_t *resource;size_t offset,length,start,bytes;
   double matrix[6];int x,y,w,h;unsigned valid;
 } vector_cached_t;
-typedef struct {int screen_w,screen_h;unsigned next;size_t cursor,capacity;vector_cached_t slots[16];uint8_t pixels[];} vector_cache_t;
+typedef struct {int screen_w,screen_h;unsigned next;size_t cursor,capacity;vector_cached_t slots[64];uint8_t pixels[];} vector_cache_t;
 static char s_vector_cache_key;
 static const uint8_t *vector_slice(lua_State *s,const h2_lua_resource_t *r,int arg,size_t *size) {
   lua_Integer off=luaL_checkinteger(s,arg),length=luaL_checkinteger(s,arg+1);
@@ -361,6 +728,117 @@ static void vector_bounds(const canvas_t *c,const uint8_t *data,const double m[6
   box[2]=(int)fmax(0,fmin(c->width,ceil(maxx)+2))-box[0];
   box[3]=(int)fmax(0,fmin(c->height,ceil(maxy)+2))-box[1];
 }
+/* Resolution-local, lossless frame reuse. Authored keys and exact transforms
+ * identify entries; alpha and frame interpolation remain live at composition.
+ * A small deflate window/memory level keeps compression workspace bounded. */
+static vector_cache_t *frame_cache(lua_State *s) {
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_cache_key);
+  vector_cache_t *cache=lua_touserdata(s,-1);
+  if(!cache) {
+    h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+    size_t capacity=(size_t)job->display_info.width*job->display_info.height*16;
+    if(capacity>VECTOR_CACHE_BYTES)capacity=VECTOR_CACHE_BYTES;
+    lua_pop(s,1);cache=lua_newuserdatauv(s,sizeof(*cache)+capacity,0);
+    memset(cache,0,sizeof(*cache));cache->capacity=capacity;
+    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_cache_key);
+  }
+  lua_pop(s,1);return cache;
+}
+/* Reserve output incrementally so a large frame can use the whole arena
+ * without evicting unrelated small frames up front or allocating extra RAM. */
+static int cache_output(vector_cache_t *cache,z_stream *z,size_t start) {
+  if(z->avail_out)return 1;
+  size_t at=start+z->total_out;
+  if(at>=cache->capacity)return 0;
+  size_t bytes=cache->capacity-at;
+  if(bytes>4096)bytes=4096;
+  for(unsigned i=0;i<64;i++) {
+    vector_cached_t *v=&cache->slots[i];
+    if(v->valid && v->start<at+bytes && at<v->start+v->bytes)v->valid=0;
+  }
+  z->next_out=cache->pixels+at;z->avail_out=(uInt)bytes;return 1;
+}
+/* Compressed source pixels and geometry intermediates share one bounded
+ * arena. Geometry entries use SIZE_MAX, outside every valid resource slice. */
+static int cached_pixels(vector_cache_t *cache,const h2_lua_resource_t *resource,
+    size_t offset,size_t length,unsigned w,unsigned h,const double matrix[6],
+    uint8_t *rgba,uint8_t *const *rows) {
+  for(unsigned i=0;i<64;i++) {
+    vector_cached_t *v=&cache->slots[i];
+    if(!v->valid || v->resource!=resource || v->offset!=offset ||
+       v->length!=length || v->w!=(int)w || v->h!=(int)h ||
+       memcmp(v->matrix,matrix,sizeof(v->matrix)))continue;
+    z_stream z={0};
+    if(inflateInit2(&z,9)!=Z_OK)return -1;
+    z.next_in=cache->pixels+v->start;z.avail_in=(uInt)v->bytes;
+    int status=Z_OK;
+    for(unsigned y=0;y<h && status==Z_OK;y++) {
+      z.next_out=rows?rows[y]:rgba+(size_t)y*w*4;z.avail_out=w*4;
+      status=inflate(&z,Z_NO_FLUSH);
+      if(z.avail_out)break;
+    }
+    if(status==Z_OK && z.total_out==(size_t)w*h*4) {
+      uint8_t extra;z.next_out=&extra;z.avail_out=1;
+      status=inflate(&z,Z_FINISH);
+    }
+    int ok=status==Z_STREAM_END && z.total_out==(size_t)w*h*4;
+    inflateEnd(&z);return ok?1:-1;
+  }
+  return 0;
+}
+static void cache_pixels(vector_cache_t *cache,const h2_lua_resource_t *resource,
+    size_t offset,size_t length,unsigned w,unsigned h,const double matrix[6],
+    uint8_t *rgba,uint8_t *const *rows) {
+  if(cache->cursor>=cache->capacity)cache->cursor=0;
+  size_t start=cache->cursor;
+  for(unsigned attempt=0;attempt<2;attempt++) {
+    z_stream z={0};
+    if(deflateInit2(&z,1,Z_DEFLATED,9,1,Z_DEFAULT_STRATEGY)!=Z_OK)return;
+    int status=Z_OK;
+    for(unsigned y=0;y<h && status==Z_OK;y++) {
+      z.next_in=rows?rows[y]:rgba+(size_t)y*w*4;z.avail_in=w*4;
+      while(z.avail_in && status==Z_OK) {
+        if(!cache_output(cache,&z,start)){status=Z_BUF_ERROR;break;}
+        status=deflate(&z,Z_NO_FLUSH);
+      }
+    }
+    while(status==Z_OK) {
+      if(!cache_output(cache,&z,start)){status=Z_BUF_ERROR;break;}
+      status=deflate(&z,Z_FINISH);
+    }
+    size_t bytes=z.total_out;deflateEnd(&z);
+    cache->cursor=start+bytes;
+    if(status==Z_STREAM_END) {
+      vector_cached_t *v=&cache->slots[cache->next++%64];
+      *v=(vector_cached_t){.resource=resource,.offset=offset,.length=length,
+        .start=start,.bytes=bytes,.w=(int)w,.h=(int)h,.valid=1};
+      memcpy(v->matrix,matrix,sizeof(v->matrix));break;
+    }
+    if(!start)break; /* Larger than the entire budget: render without caching. */
+    start=0; /* Retry the same generated pixels across the arena wrap. */
+  }
+  return;
+}
+static int cached_vector_frame(lua_State *s,const h2_lua_resource_t *resource,
+    int arg,const uint8_t *data,size_t length,unsigned w,unsigned h,
+    const double matrix[6],uint8_t *rgba,uint8_t *const *rows) {
+  vector_cache_t *cache=frame_cache(s);
+  size_t offset=(size_t)luaL_checkinteger(s,arg),source_length=(size_t)luaL_checkinteger(s,arg+1);
+  int found=cached_pixels(cache,resource,offset,source_length,w,h,matrix,rgba,rows);
+  if(found)return found>0;
+  if(!data)data=vector_slice(s,resource,arg,&length);
+  int ok;
+#ifdef H2_LUA_SOFTWARE_VECTORS
+  if(rows) {
+    ok=render_sw_output_for_lua(s,data,length,NULL,rows,w,h,matrix);
+  } else
+#endif
+    ok=h2_lua_vector_cg_render(data,length,rgba,w,h,matrix);
+  if(!ok)return 0;
+  cache_pixels(cache,resource,offset,source_length,w,h,matrix,rgba,rows);
+  return 1;
+}
+
 /* Two path keyframes are interpolated in premultiplied RGBA, matching the
  * original atlas operation. Only transient framebuffers contain pixels. */
 static int draw_vector_slice(lua_State *s) {
@@ -370,80 +848,226 @@ static int draw_vector_slice(lua_State *s) {
   double mix=lua_isnoneornil(s,13)?0:finite_number(s,13);
   if(opacity<0||opacity>1||mix<0||mix>1||fabs(m[0]*m[3]-m[1]*m[2])<1e-12)
     return luaL_error(s,"invalid vector slice transform or blend");
-  if(mix==0&&lua_toboolean(s,14)) {
-    size_t off=(size_t)luaL_checkinteger(s,2),length=(size_t)luaL_checkinteger(s,3);
-    lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_cache_key);
-    vector_cache_t *cache=lua_touserdata(s,-1);
-    if(!cache) {
-      size_t capacity=(size_t)c->width*c->height*16;
-      if(capacity>VECTOR_CACHE_BYTES)capacity=VECTOR_CACHE_BYTES;
-      lua_pop(s,1);cache=lua_newuserdatauv(s,sizeof(*cache)+capacity,0);memset(cache,0,sizeof(*cache));cache->capacity=capacity;
-      lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_cache_key);
-    }
-    lua_pop(s,1);
-    if(cache->screen_w!=c->width||cache->screen_h!=c->height) {
-      memset(cache->slots,0,sizeof(cache->slots));cache->cursor=0;cache->next=0;
-      cache->screen_w=c->width;cache->screen_h=c->height;
-    }
-    vector_cached_t *hit=NULL;
-    for(unsigned i=0;i<16;i++) {
-      vector_cached_t *v=cache->slots+i;
-      if(v->valid&&v->resource==r&&v->offset==off&&v->length==length&&!memcmp(v->matrix,m,sizeof(m))){hit=v;break;}
-    }
-    if(!hit) {
-      size_t n;const uint8_t *data=vector_slice(s,r,2,&n);
-      if(n<12||memcmp(data,"H2VG",4))return luaL_error(s,"invalid cached vector header");
-      int box[4];vector_bounds(c,data,m,box);
-      int x=box[0],y=box[1],cw=box[2],ch=box[3];
-      size_t bytes=(size_t)cw*ch*4;
-      if(cw>0&&ch>0&&bytes<=cache->capacity/4) {
-        if(cache->cursor+bytes>cache->capacity)cache->cursor=0;
-        size_t start=cache->cursor;cache->cursor+=bytes;
-        for(unsigned i=0;i<16;i++) {
-          vector_cached_t *v=cache->slots+i;
-          if(v->valid&&v->start<start+bytes&&start<v->start+v->bytes)v->valid=0;
-        }
-        hit=cache->slots+(cache->next++%16);hit->valid=0;
-        double local[6];memcpy(local,m,sizeof(m));local[4]-=x;local[5]-=y;
-        if(!h2_lua_vector_cg_render(data,n,cache->pixels+start,(unsigned)cw,(unsigned)ch,local))
-          return luaL_error(s,"invalid cached vector commands");
-        *hit=(vector_cached_t){.resource=r,.offset=off,.length=length,.start=start,.bytes=bytes,.x=x,.y=y,.w=cw,.h=ch,.valid=1};
-        memcpy(hit->matrix,m,sizeof(m));
-      }
-    }
-    if(hit) {
-      const uint8_t *rgba=cache->pixels+hit->start;
-      for(int y=0;y<hit->h;y++)for(int x=0;x<hit->w;x++) {
-        size_t p=((size_t)y*hit->w+x)*4;if(!rgba[p+3])continue;
-        size_t q=((size_t)(y+hit->y)*c->width+x+hit->x)*3;
-        double a=rgba[p+3]*opacity/255.;
-        for(int k=0;k<3;k++)c->rgb[q+k]=(uint8_t)fmin(255,floor(rgba[p+k]*opacity+c->rgb[q+k]*(1-a)+.5));
-      }
-      return 0;
-    }
-  }
-  size_t n;int box[]={0,0,c->width,c->height};double local[6];memcpy(local,m,sizeof(m));
-  const uint8_t *data=vector_slice(s,r,2,&n);
+  size_t n=0;int box[]={0,0,c->width,c->height};double local[6];memcpy(local,m,sizeof(m));
+  const uint8_t *data=NULL;
   /* Opt-in for tiled paths contained in their viewbox. Moving streaks need
    * only their affected rectangle, not a full-screen clear/composite. */
   if(mix==0&&lua_toboolean(s,15)) {
+    data=vector_slice(s,r,2,&n);
     if(n<12||memcmp(data,"H2VG",4))return luaL_error(s,"invalid vector tile header");
     vector_bounds(c,data,m,box);if(box[2]<=0||box[3]<=0)return 0;
     local[4]-=box[0];local[5]-=box[1];
   }
   size_t bytes=(size_t)box[2]*box[3]*4;
-  uint8_t *rgba=vector_scratch(s,bytes*2),*other=rgba+bytes;
-  if(!h2_lua_vector_cg_render(data,n,rgba,(unsigned)box[2],(unsigned)box[3],local))return luaL_error(s,"invalid vector slice commands");
+  uint8_t *rgba=vector_scratch(s,bytes),*other=NULL;
+  if(!cached_vector_frame(s,r,2,data,n,(unsigned)box[2],(unsigned)box[3],local,rgba,NULL))return luaL_error(s,"invalid vector slice commands");
+#ifdef H2_LUA_SOFTWARE_VECTORS
+  vector_rows_t *second=NULL;
+#endif
   if(mix>0) {
-    data=vector_slice(s,r,11,&n);
-    if(!h2_lua_vector_cg_render(data,n,other,(unsigned)box[2],(unsigned)box[3],local))return luaL_error(s,"invalid vector blend commands");
-    for(size_t i=0;i<bytes;i++)rgba[i]=(uint8_t)floor(rgba[i]*(1-mix)+other[i]*mix+.5);
+    data=NULL;n=0;
+#ifdef H2_LUA_SOFTWARE_VECTORS
+    second=vector_rows(s,(unsigned)box[2],(unsigned)box[3]);
+    if(!cached_vector_frame(s,r,11,data,n,(unsigned)box[2],(unsigned)box[3],local,NULL,second->rows))return luaL_error(s,"invalid vector blend commands");
+#else
+    other=vector_buffer(s,&s_vector_blend_scratch_key,bytes);
+    if(!cached_vector_frame(s,r,11,data,n,(unsigned)box[2],(unsigned)box[3],local,other,NULL))return luaL_error(s,"invalid vector blend commands");
+#endif
   }
-  for(int y=0;y<box[3];y++)for(int x=0;x<box[2];x++) {
-    size_t p=((size_t)y*box[2]+x)*4;if(!rgba[p+3])continue;
-    size_t q=((size_t)(y+box[1])*c->width+x+box[0])*3;
-    double a=rgba[p+3]*opacity/255.;
-    for(int k=0;k<3;k++)c->rgb[q+k]=(uint8_t)fmin(255,floor(rgba[p+k]*opacity+c->rgb[q+k]*(1-a)+.5));
+  /* ESP32-S3 has a float FPU. Reuse channel factors and fall back to the
+   * original double expression near rounding boundaries to preserve pixels. */
+  float source_gain[256],dest_gain[256];
+  for(unsigned i=0;i<256;i++) {
+    source_gain[i]=(float)(i*opacity);
+    dest_gain[i]=(float)(1-i*opacity/255.);
+  }
+  for(int y=0;y<box[3];y++) {
+    uint8_t *row=rgba?rgba+(size_t)y*box[2]*4:NULL;
+    const uint8_t *blend=other?other+(size_t)y*box[2]*4:NULL;
+#ifdef H2_LUA_SOFTWARE_VECTORS
+    if(second)blend=second->rows[y];
+#endif
+    if(mix==.5)for(size_t i=0;i<(size_t)box[2]*4;i++)row[i]=(uint8_t)(((unsigned)row[i]+blend[i]+1)/2);
+    else if(mix>0)for(size_t i=0;i<(size_t)box[2]*4;i++) {
+      float value=row[i]*(float)(1-mix)+blend[i]*(float)mix;
+      float rounded=floorf(value+.5f);
+      row[i]=(uint8_t)(fabsf(value-(rounded-.5f))<.001f ?
+          floor(row[i]*(1-mix)+blend[i]*mix+.5) : rounded);
+    }
+    for(int x=0;x<box[2];x++) {
+      size_t p=(size_t)x*4;if(!row[p+3])continue;
+      size_t q=((size_t)(y+box[1])*c->width+x+box[0])*3;
+      for(int k=0;k<3;k++) {
+        float value=source_gain[row[p+k]]+c->rgb[q+k]*dest_gain[row[p+3]];
+        float rounded=floorf(value+.5f);
+        if(fabsf(value-(rounded-.5f))<.001f) {
+          double a=row[p+3]*opacity/255.;
+          rounded=(float)floor(row[p+k]*opacity+c->rgb[q+k]*(1-a)+.5);
+        }
+        c->rgb[q+k]=(uint8_t)canvas_minf(255,rounded);
+      }
+    }
+  }
+  return 0;
+}
+/* Explicit preparation keeps expensive vector rasterization out of moving
+ * affine draws. These pixels exist only for this Lua job, never in firmware
+ * resources. A two-pixel transparent gutter preserves filtered edge coverage. */
+#define VECTOR_PREPARED_BYTES (1536u * 1024u)
+static char s_vector_prepared_key;
+typedef struct {
+  unsigned width, height, view_w, view_h;
+  int screen_w, screen_h;
+  size_t compressed_bytes;
+  uint8_t pixels[]; /* lossless zlib stream, expanded into reusable scratch */
+} prepared_vector_t;
+static int prepare_vector(lua_State *s) {
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+  const h2_lua_resource_t *r=vector_resource(s);
+  lua_Integer w=luaL_checkinteger(s,2),h=luaL_checkinteger(s,3);
+  if(!job->display_open || w<1 || h<1 || w>1024 || h>1024)
+    return luaL_error(s,"invalid vector preparation size");
+  if(r->source_size<12 || memcmp(r->source,"H2VG",4))
+    return luaL_error(s,"invalid prepared vector header");
+  unsigned vw=r->source[4]|(unsigned)r->source[5]<<8;
+  unsigned vh=r->source[6]|(unsigned)r->source[7]<<8;
+  if(!vw || !vh)return luaL_error(s,"invalid prepared vector viewbox");
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_canvas_key);
+  canvas_t *canvas=lua_touserdata(s,-1);
+  if(canvas && canvas->active)return luaL_error(s,"cannot prepare vector during composition");
+  lua_pop(s,1);
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_prepared_key);
+  if(lua_isnil(s,-1)) {
+    lua_pop(s,1);lua_newtable(s);lua_pushvalue(s,-1);
+    lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_prepared_key);
+  }
+  int table=lua_gettop(s);
+  lua_rawgetp(s,table,r);
+  prepared_vector_t *existing=lua_touserdata(s,-1);
+  if(existing && existing->width==(unsigned)w+4 && existing->height==(unsigned)h+4 &&
+      existing->screen_w==job->display_info.width && existing->screen_h==job->display_info.height) {
+    lua_pushinteger(s,(lua_Integer)lua_rawlen(s,-1));return 1;
+  }
+  lua_pop(s,1);
+  size_t used=0,pixel_bytes=((size_t)w+4)*((size_t)h+4)*4;
+  size_t bytes=sizeof(prepared_vector_t)+pixel_bytes;
+  lua_pushnil(s);
+  while(lua_next(s,table)) { used+=lua_rawlen(s,-1);lua_pop(s,1); }
+  /* Do not evict a working entry before a replacement has rendered. Account
+   * for both entries conservatively in the cache budget; callers can always use the uncached draw path. */
+  if(bytes>VECTOR_PREPARED_BYTES || used>VECTOR_PREPARED_BYTES-bytes) {
+    lua_pushnil(s);lua_pushliteral(s,"vector preparation budget exceeded");return 2;
+  }
+  /* Compress only the generated pixels, losslessly. Keeping full RGBA bodies
+   * resident starves later icon/path rasterization on the 8 MiB PSRAM board. */
+  uint8_t *pixels=lua_newuserdatauv(s,pixel_bytes,0);
+  double m[6]={(double)w/vw,0,0,(double)h/vh,2,2};
+  if(!h2_lua_vector_cg_render(r->source,r->source_size,pixels,(unsigned)w+4,(unsigned)h+4,m))
+    return luaL_error(s,"prepared vector rendering failed");
+  uLongf compressed_bytes=compressBound((uLong)pixel_bytes);
+  uint8_t *compressed=lua_newuserdatauv(s,(size_t)compressed_bytes,0);
+  if(compress2(compressed,&compressed_bytes,pixels,(uLong)pixel_bytes,1)!=Z_OK)
+    return luaL_error(s,"prepared vector compression failed");
+  bytes=sizeof(prepared_vector_t)+(size_t)compressed_bytes;
+  if(bytes>VECTOR_PREPARED_BYTES || used>VECTOR_PREPARED_BYTES-bytes) {
+    lua_settop(s,table);lua_gc(s,LUA_GCCOLLECT,0);
+    lua_pushnil(s);lua_pushliteral(s,"vector preparation budget exceeded");return 2;
+  }
+  prepared_vector_t *v=lua_newuserdatauv(s,bytes,0);
+  *v=(prepared_vector_t){.width=(unsigned)w+4,.height=(unsigned)h+4,
+      .view_w=vw,.view_h=vh,.screen_w=job->display_info.width,.screen_h=job->display_info.height,
+      .compressed_bytes=(size_t)compressed_bytes};
+  memcpy(v->pixels,compressed,(size_t)compressed_bytes);
+  lua_rawsetp(s,table,r);
+  lua_settop(s,table);lua_gc(s,LUA_GCCOLLECT,0);
+  lua_pushinteger(s,(lua_Integer)bytes);return 1;
+}
+static prepared_vector_t *prepared_vector(lua_State *s,const h2_lua_resource_t *r,
+    const canvas_t *c,const double m[6]) {
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_prepared_key);
+  if(lua_isnil(s,-1)){lua_pop(s,1);return NULL;}
+  lua_rawgetp(s,-1,r);prepared_vector_t *v=lua_touserdata(s,-1);
+  lua_pop(s,2);
+  if(!v || v->screen_w!=c->width || v->screen_h!=c->height)return NULL;
+  /* Bound both row and column sums, hence the largest singular value: even
+   * shear must retain two prepared pixels per destination pixel. Larger
+   * transforms fall back to vector rasterization. */
+  double sx=(double)v->view_w/(v->width-4),sy=(double)v->view_h/(v->height-4);
+  double norm=fmax(fabs(m[0]*sx)+fabs(m[2]*sy),fabs(m[1]*sx)+fabs(m[3]*sy));
+  norm=fmax(norm,fmax((fabs(m[0])+fabs(m[1]))*sx,(fabs(m[2])+fabs(m[3]))*sy));
+  return norm<=.5 ? v : NULL;
+}
+static int composite_prepared_vector(lua_State *s,canvas_t *c,const prepared_vector_t *v,
+    const double m[6],double opacity,int arm_fade) {
+  size_t pixel_bytes=(size_t)v->width*v->height*4;
+  uint8_t *pixels=vector_scratch(s,pixel_bytes);
+  uLongf decoded=(uLongf)pixel_bytes;
+  if(uncompress(pixels,&decoded,v->pixels,(uLong)v->compressed_bytes)!=Z_OK || decoded!=pixel_bytes)
+    return luaL_error(s,"invalid prepared vector pixels");
+  double determinant=m[0]*m[3]-m[1]*m[2];
+  float ix=(float)(m[3]/determinant),jx=(float)(-m[2]/determinant);
+  float iy=(float)(-m[1]/determinant),jy=(float)(m[0]/determinant);
+  float sx=(float)(v->width-4)/v->view_w,sy=(float)(v->height-4)/v->view_h;
+  float alpha=(float)opacity,translate_x=(float)m[4],translate_y=(float)m[5];
+  double minx=c->width,miny=c->height,maxx=0,maxy=0;
+  for(unsigned corner=0;corner<4;corner++) {
+    double x=(corner&1)?v->view_w:0,y=(corner&2)?v->view_h:0;
+    double dx=m[0]*x+m[2]*y+m[4],dy=m[1]*x+m[3]*y+m[5];
+    minx=fmin(minx,dx);maxx=fmax(maxx,dx);miny=fmin(miny,dy);maxy=fmax(maxy,dy);
+  }
+  int x0=(int)fmax(0,fmin(c->width,floor(minx)-2));
+  int x1=(int)fmax(0,fmin(c->width,ceil(maxx)+2));
+  int y0=(int)fmax(0,fmin(c->height,floor(miny)-2));
+  int y1=(int)fmax(0,fmin(c->height,ceil(maxy)+2));
+  float sample_dx[4],sample_dy[4];
+  for(unsigned sample=0;sample<4;sample++) {
+    float x=(sample&1)?.25f:-.25f,y=(sample&2)?.25f:-.25f;
+    sample_dx[sample]=(ix*x+jx*y)*sx;sample_dy[sample]=(iy*x+jy*y)*sy;
+  }
+#ifdef H2_LUA_SOFTWARE_VECTORS
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+  vector_poll_t poll={job,h2_lua_now_ms(job->host)};
+#endif
+  /* Scan clipped destination rows. Object-space coordinates also preserve
+   * the original per-destination-pixel wrist/arm fade exactly in position. */
+  for(int y=y0;y<y1;y++) {
+#ifdef H2_LUA_SOFTWARE_VECTORS
+    if(!(y&15) && !vector_poll(&poll))return luaL_error(s,"prepared vector draw interrupted");
+#endif
+    float dy=(float)y+.5f-translate_y;
+    for(int x=x0;x<x1;x++) {
+      float dx=(float)x+.5f-translate_x;
+      float ox=ix*dx+jx*dy,oy=iy*dx+jy*dy;
+      float px=ox*sx+1.5f,py=oy*sy+1.5f;
+      if(px< -1 || py< -1 || px>=v->width || py>=v->height)continue;
+      unsigned out[4]={0};
+      /* Integrate four destination subpixels. A single center sample aliases
+       * at minification, even when the prepared source itself is oversampled. */
+      for(unsigned sample=0;sample<4;sample++) {
+        float sample_x=px+sample_dx[sample],sample_y=py+sample_dy[sample];
+        if(sample_x<0 || sample_y<0 || sample_x>=v->width-1 || sample_y>=v->height-1)continue;
+        unsigned xx=(unsigned)sample_x,yy=(unsigned)sample_y;
+        unsigned u=(unsigned)((sample_x-xx)*256),t=(unsigned)((sample_y-yy)*256);
+        unsigned weights[4]={(256-u)*(256-t),u*(256-t),(256-u)*t,u*t};
+        size_t at=((size_t)yy*v->width+xx)*4;
+        const uint8_t *samples[4]={pixels+at,pixels+at+4,
+            pixels+at+v->width*4,pixels+at+v->width*4+4};
+        for(int j=0;j<4;j++)for(int k=0;k<4;k++)out[k]+=samples[j][k]*weights[j];
+      }
+      if(!out[3])continue;
+      float coverage=alpha;
+      if(arm_fade) {
+        float fx=ox*145/v->view_w,fy=oy*177/v->view_h;
+        float start=arm_fade==1?91:54,vx=arm_fade==1?-99:99;
+        float t=((fx-start)*vx+(fy-101)*80)/(99*99+80*80);
+        float fade=t<.48f?1:t<.8f?1-(t-.48f)/.32f*.78f:canvas_maxf(0,.22f*(1-t)/.2f);
+        coverage*=fade;
+      }
+      float a=out[3]*(coverage/(262144.f*255));
+      uint8_t *dest=c->rgb+((size_t)y*c->width+x)*3;
+      for(int k=0;k<3;k++)dest[k]=(uint8_t)canvas_minf(255,
+          floorf(out[k]*(coverage/262144.f)+dest[k]*(1-a)+.5f));
+    }
   }
   return 0;
 }
@@ -454,6 +1078,8 @@ static int draw_vector_affine(lua_State *s) {
   if(opacity<0||opacity>1||fabs(m[0]*m[3]-m[1]*m[2])<1e-12)return luaL_error(s,"invalid vector transform");
   int arm_fade=lua_isnoneornil(s,9)?0:(int)luaL_checkinteger(s,9);
   if(arm_fade<0||arm_fade>2)return luaL_error(s,"invalid vector arm fade");
+  prepared_vector_t *prepared=prepared_vector(s,r,c,m);
+  if(prepared)return composite_prepared_vector(s,c,prepared,m,opacity,arm_fade);
   uint8_t *rgba=vector_scratch(s,(size_t)c->width*c->height*4);
   if(!h2_lua_vector_cg_render(r->source,r->source_size,rgba,c->width,c->height,m))return luaL_error(s,"invalid vector commands");
   for(size_t p=0;p<(size_t)c->width*c->height;p++)if(rgba[p*4+3]) {
@@ -473,6 +1099,23 @@ static int draw_vector_affine(lua_State *s) {
   }
   return 0;
 }
+#ifdef H2_LUA_SOFTWARE_VECTORS
+static char s_vector_coverage_key;
+static int prepare_vector_coverage(lua_State *s) {
+  lua_Integer payload=luaL_checkinteger(s,1);
+  size_t bytes=payload>=0?h2_lua_vector_sw_cache_bytes((size_t)payload):0;
+  if(!bytes)return luaL_error(s,"invalid vector coverage cache size");
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_coverage_key);
+  if(!lua_isuserdata(s,-1)||lua_rawlen(s,-1)!=bytes) {
+    lua_pop(s,1);lua_pushnil(s);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_coverage_key);
+    lua_gc(s,LUA_GCCOLLECT,0);
+    void *storage=lua_newuserdatauv(s,bytes,0);
+    if(!h2_lua_vector_sw_cache_init(storage,bytes))return luaL_error(s,"invalid vector coverage storage");
+    lua_pushvalue(s,-1);lua_rawsetp(s,LUA_REGISTRYINDEX,&s_vector_coverage_key);
+  }
+  lua_pop(s,1);lua_pushinteger(s,(lua_Integer)bytes);return 1;
+}
+#endif
 /* Lua-authored geometric command streams use the same validated renderer. */
 static int draw_vector_data(lua_State *s) {
   canvas_t *c=get_canvas(s);size_t length=0;
@@ -481,7 +1124,26 @@ static int draw_vector_data(lua_State *s) {
   double opacity=lua_isnoneornil(s,8)?1:finite_number(s,8);
   if(opacity<0||opacity>1||fabs(m[0]*m[3]-m[1]*m[2])<1e-12)return luaL_error(s,"invalid vector transform");
   uint8_t *rgba=vector_scratch(s,(size_t)c->width*c->height*4);
-  if(!h2_lua_vector_cg_render(data,length,rgba,c->width,c->height,m))return luaL_error(s,"invalid Lua vector commands");
+#ifdef H2_LUA_SOFTWARE_VECTORS
+  lua_rawgetp(s,LUA_REGISTRYINDEX,&s_vector_coverage_key);
+  h2_lua_vector_sw_cache_t *cache=lua_touserdata(s,-1);lua_pop(s,1);
+  int rendered=render_sw_cached_output_for_lua(s,data,length,rgba,NULL,c->width,c->height,m,cache);
+#else
+  int rendered=h2_lua_vector_cg_render(data,length,rgba,c->width,c->height,m);
+#endif
+  if(!rendered)return luaL_error(s,"invalid Lua vector commands");
+  if(opacity==1) {
+    /* Exact integer source-over for byte premultiplied RGBA. An odd divisor
+     * has no half-integer ties, so +127 preserves the double path's rounding. */
+    for(size_t p=0;p<(size_t)c->width*c->height;p++)if(rgba[p*4+3]) {
+      unsigned inverse=255u-rgba[p*4+3];
+      for(unsigned k=0;k<3;k++) {
+        unsigned value=rgba[p*4+k]+(c->rgb[p*3+k]*inverse+127u)/255u;
+        c->rgb[p*3+k]=(uint8_t)(value>255u?255u:value);
+      }
+    }
+    return 0;
+  }
   for(size_t p=0;p<(size_t)c->width*c->height;p++)if(rgba[p*4+3]) {
     double a=rgba[p*4+3]*opacity/255.;
     for(int k=0;k<3;k++)c->rgb[p*3+k]=(uint8_t)fmin(255,floor(rgba[p*4+k]*opacity+c->rgb[p*3+k]*(1-a)+.5));
@@ -520,8 +1182,13 @@ static int draw_vector_icon(lua_State *s) {
   }
   float *shadow=(float *)(rgba+pixels*4),*temp=shadow+pixels;
   double size=52+focus*36,left=(160-size)/2,m[6]={size/160,0,0,size/160,left,left};
-  if(!h2_lua_vector_cg_render(r->source,r->source_size,rgba,w,w,m))return luaL_error(s,"invalid vector icon");
+  double geometry_key[6]={focus,(double)dir,0,0,0,0};
+  vector_cache_t *geometry_cache=frame_cache(s);
+  int geometry_hit=cached_pixels(geometry_cache,r,SIZE_MAX,0,w,w*2,geometry_key,rgba,NULL);
+  if(geometry_hit<0)return luaL_error(s,"invalid cached icon geometry");
   double gain=focus>.5?1.05+focus*.32:1,alpha=.34+focus*.66;
+  if(!geometry_hit) {
+  if(!h2_lua_vector_cg_render(r->source,r->source_size,rgba,w,w,m))return luaL_error(s,"invalid vector icon");
   for(int yy=0;yy<w;yy++)for(int xx=0;xx<w;xx++) {
     size_t p=(size_t)yy*w+xx;double u=fmax(0,fmin(1,(xx+.5-left)/size)),mask=1;
     if(dir==1)mask=u<.42?u/.42*.32:.32+(u-.42)/.58*.68;
@@ -542,8 +1209,42 @@ static int draw_vector_icon(lua_State *s) {
       shadow[yy*w+xx]=(float)(v*(.38+focus*.46));
     }
   } else memset(shadow,0,pixels*sizeof(float));
+  /* Store the exact RGBA mask and float Gaussian shadow before tint/sheen.
+   * The scratch layout is contiguous: RGBA followed by one float per pixel. */
+  cache_pixels(geometry_cache,r,SIZE_MAX,0,w,w*2,geometry_key,rgba,NULL);
+  }
   const double colors[4][3]={{.2,.82,1},{1,.53,.13},{.73,.3,1},{.2,1,.58}};
   for(size_t p=0;p<pixels;p++) {
+    if(!rgba[p*4+3] && shadow[p]==0) {memset(rgba+p*4,0,4);continue;}
+    float a=rgba[p*4+3]/255.f,alpha_f=(float)alpha;
+    float outa=(a+shadow[p]*(1-a))*alpha_f;
+    float rgb[3],highlight=0;
+    for(unsigned k=0;k<3;k++) {
+      rgb[k]=(canvas_minf(255*a,rgba[p*4+k]*(float)gain)+255*shadow[p]*(1-a))*alpha_f;
+      highlight=canvas_maxf(highlight,outa?rgb[k]/outa/255.f:0);
+    }
+    float square=highlight*highlight;highlight=square*square*highlight*.4f;
+    float stripe=sheen<0?0:canvas_maxf(0,1-fabsf(((p%160)+(p/160)*.3f)/160.f-(-.15f+(float)sheen*1.6f))/.09f);
+    float output[4];int precise=0;
+    for(unsigned k=0;k<3;k++) {
+      float tint=palette<0?1:(float)colors[palette][k];
+      float colored=rgb[k]*(tint+(1-tint)*highlight);
+      float value=canvas_minf(255*outa,colored*(sheen>=-1?1.15f:1)+(255*outa-colored)*stripe*.85f);
+      output[k]=floorf(value);
+      /* Guard both sides of each truncation boundary; exact zero is safe.
+       * A fully opaque source at alpha=1 has an exact 255 upper bound. */
+      if(value>0 && !(value==255 && alpha==1 && rgba[p*4+3]==255))
+        precise|=value-output[k]<.004f || output[k]+1-value<.004f;
+    }
+    float alpha_value=255*outa;
+    output[3]=floorf(alpha_value+.5f);
+    precise|=fabsf(alpha_value-(output[3]-.5f))<.004f;
+    if(!precise) {
+      for(unsigned k=0;k<4;k++)rgba[p*4+k]=(uint8_t)output[k];
+      continue;
+    }
+    /* Preserve the original double/pow expression near byte boundaries. */
+    {
     double a=rgba[p*4+3]/255.,outa=(a+shadow[p]*(1-a))*alpha;
     double rgb[3],highlight=0;
     for(int k=0;k<3;k++){rgb[k]=(fmin(255*a,rgba[p*4+k]*gain)+255*shadow[p]*(1-a))*alpha;highlight=fmax(highlight,outa?rgb[k]/outa/255:0);}
@@ -554,6 +1255,7 @@ static int draw_vector_icon(lua_State *s) {
       rgba[p*4+k]=(uint8_t)fmin(255*outa,colored*(sheen>=-1?1.15:1)+(255*outa-colored)*stripe*.85);
     }
     rgba[p*4+3]=(uint8_t)floor(255*outa+.5);
+    }
   }
   vector_icon_slot_t *slot=&cache->slots[cache->next++%6];
   slot->resource=r;slot->focus=focus;slot->sheen=sheen;slot->dir=dir;slot->palette=palette;
@@ -561,17 +1263,59 @@ static int draw_vector_icon(lua_State *s) {
 composite_icon: ;
   int x0=(int)fmax(0,fmin(c->width,floor(x))),y0=(int)fmax(0,fmin(c->height,floor(y)));
   int x1=(int)fmax(0,fmin(c->width,ceil(x+160*scale))),y1=(int)fmax(0,fmin(c->height,ceil(y+160*scale)));
-  for(int yy=y0;yy<y1;yy++)for(int xx=x0;xx<x1;xx++) {
-    double sx=fmax(0,fmin(159,(xx+.5-x)/scale-.5)),sy=fmax(0,fmin(159,(yy+.5-y)/scale-.5));
-    int ix=(int)sx,iy=(int)sy,ix1=ix<159?ix+1:ix,iy1=iy<159?iy+1:iy;
-    double u=sx-ix,v=sy-iy,weights[4]={(1-u)*(1-v),u*(1-v),(1-u)*v,u*v},out[4]={0};
-    size_t at[4]={(size_t)iy*160+ix,(size_t)iy*160+ix1,(size_t)iy1*160+ix,(size_t)iy1*160+ix1};
-    for(int j=0;j<4;j++)for(int k=0;k<4;k++)out[k]+=rgba[at[j]*4+k]*weights[j];
-    uint8_t *dest=c->rgb+((size_t)yy*c->width+xx)*3;
-    for(int k=0;k<3;k++)dest[k]=(uint8_t)fmin(255,floor(out[k]*opacity+dest[k]*(1-out[3]*opacity/255)+.5));
+  /* Inverse coordinates are separable. Compute vertical coordinates once per row,
+   * then use the FPU for filtering, retaining the original double calculation
+   * at byte rounding boundaries. Transparent footprints need no blend. */
+  for(int yy=y0;yy<y1;yy++) {
+    double sy=fmax(0,fmin(159,(yy+.5-y)/scale-.5));
+    int iy=(int)sy,iy1=iy<159?iy+1:iy;double v=sy-iy;
+    for(int xx=x0;xx<x1;xx++) {
+      double sx=fmax(0,fmin(159,(xx+.5-x)/scale-.5));int ix=(int)sx,ix1=ix<159?ix+1:ix;double u=sx-ix;
+      size_t at[4]={(size_t)iy*160+ix,(size_t)iy*160+ix1,(size_t)iy1*160+ix,(size_t)iy1*160+ix1};
+      if(!(rgba[at[0]*4+3]|rgba[at[1]*4+3]|rgba[at[2]*4+3]|rgba[at[3]*4+3]))continue;
+      float uf=(float)u,vf=(float)v;
+      float weights[4]={(1-uf)*(1-vf),uf*(1-vf),(1-uf)*vf,uf*vf},out[4]={0};
+      for(int j=0;j<4;j++)for(int k=0;k<4;k++)out[k]+=rgba[at[j]*4+k]*weights[j];
+      uint8_t *dest=c->rgb+((size_t)yy*c->width+xx)*3;float rounded[3];int precise=0;
+      for(int k=0;k<3;k++) {
+        float value=out[k]*(float)opacity+dest[k]*(1-out[3]*(float)opacity/255.f);
+        rounded[k]=floorf(value+.5f);
+        precise|=fabsf(value-(rounded[k]-.5f))<.002f;
+      }
+      if(precise) {
+        double w[4]={(1-u)*(1-v),u*(1-v),(1-u)*v,u*v},exact[4]={0};
+        for(int j=0;j<4;j++)for(int k=0;k<4;k++)exact[k]+=rgba[at[j]*4+k]*w[j];
+        for(int k=0;k<3;k++)rounded[k]=(float)floor(exact[k]*opacity+dest[k]*(1-exact[3]*opacity/255)+.5);
+      }
+      for(int k=0;k<3;k++)dest[k]=(uint8_t)canvas_minf(255,rounded[k]);
+    }
   }
   return 0;
 }
+/* Scene transitions occur outside composition. Keep the reusable primary
+ * scratch allocation: repeatedly freeing a full-screen buffer lets long-lived
+ * audio allocations fragment its space. Optional render caches and crossfade
+ * slabs are released; authored resources and prepared bodies remain available. */
+static int reset_vector_cache(lua_State *s) {
+  lua_rawgetp(s, LUA_REGISTRYINDEX, &s_canvas_key);
+  canvas_t *canvas = lua_touserdata(s, -1);
+  lua_pop(s, 1);
+  if (canvas && canvas->active)
+    return luaL_error(s, "cannot reset vector cache during composition");
+  const void *keys[] = {&s_vector_cache_key, &s_vector_icon_cache_key,
+                         &s_vector_blend_scratch_key
+#ifdef H2_LUA_SOFTWARE_VECTORS
+                         ,&s_vector_rows_key
+#endif
+  };
+  for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    lua_pushnil(s);
+    lua_rawsetp(s, LUA_REGISTRYINDEX, keys[i]);
+  }
+  lua_gc(s, LUA_GCCOLLECT, 0);
+  return 0;
+}
+
 #endif
 
 static sprite_t *get_sprite(lua_State *s, h2_lua_job_t *job, const char *name) {
@@ -809,13 +1553,16 @@ static int draw_sprite_atlas(lua_State *s) {
 
 void h2_lua_canvas_register(lua_State *s,h2_lua_job_t *job) {
   const struct {const char *name;lua_CFunction fn;} functions[]={
-    {"begin_composite",begin_composite},{"end_composite",end_composite},
-    {"add_disc",add_disc},{"add_line",add_line},{"draw_affine_asset",draw_affine_asset},
+    {"begin_composite",begin_composite},{"end_composite",end_composite},{"fade_composite",fade_composite},
+    {"add_disc",add_disc},{"add_line",add_line},{"add_lines",add_lines},{"draw_affine_asset",draw_affine_asset},
     {"draw_polygon",draw_polygon},{"over_line",over_line},
     {"glow_line",glow_line},
     {"draw_sprite_atlas",draw_sprite_atlas},
 #ifdef H2_QI_DUEL_DESKTOP_VECTORS
-    {"draw_vector_slice",draw_vector_slice},{"draw_vector_data",draw_vector_data},{"draw_vector_affine",draw_vector_affine},{"draw_vector_icon",draw_vector_icon},
+    {"prepare_vector",prepare_vector},{"reset_vector_cache",reset_vector_cache},{"draw_vector_slice",draw_vector_slice},{"draw_vector_data",draw_vector_data},{"draw_vector_affine",draw_vector_affine},{"draw_vector_icon",draw_vector_icon},
+#ifdef H2_LUA_SOFTWARE_VECTORS
+    {"prepare_vector_coverage",prepare_vector_coverage},
+#endif
 #endif
   };
   for(size_t i=0;i<sizeof(functions)/sizeof(functions[0]);i++) {

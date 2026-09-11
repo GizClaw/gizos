@@ -1,0 +1,1841 @@
+{
+  "version": "retained-pair-v3",
+  "hardware_acceptance": "Normal v3 verified on board. v2 completed selected frozen-frame diagnostic cases. 30 FPS, full-game animation and long-duration stability remain unaccepted.",
+  "audio_enabled": false,
+  "implemented": [
+    "Shared exact-key lossless vector frame cache; 512 KiB fixed arena, streaming 4 KiB writes and bounded wrap/eviction.",
+    "RGB888 retain/fade with 16x16 occupied/dirty tile bitsets.",
+    "Compare final RGB565 pixels; union changed bounds; unchanged present performs no upload.",
+    "Single composition for battle background and foreground.",
+    "Top-down pairing retains and fades history; reuses head/color storage; tilted/reentry views retain original path rendering.",
+    "FPU composition with double fallback at rounding boundaries."
+  ],
+  "v1_normal_perf": [
+    {
+      "frames": "2",
+      "fps": "1.0",
+      "audio_ms": "0",
+      "draw_ms": "905",
+      "present_ms": "25",
+      "frame_ms": "932/959"
+    },
+    {
+      "frames": "2",
+      "fps": "1.1",
+      "audio_ms": "0",
+      "draw_ms": "873",
+      "present_ms": "25",
+      "frame_ms": "899/900"
+    },
+    {
+      "frames": "2",
+      "fps": "1.0",
+      "audio_ms": "0",
+      "draw_ms": "926",
+      "present_ms": "25",
+      "frame_ms": "953/1000"
+    },
+    {
+      "frames": "1",
+      "fps": "0.9",
+      "audio_ms": "0",
+      "draw_ms": "1064",
+      "present_ms": "25",
+      "frame_ms": "1091/1091"
+    },
+    {
+      "frames": "2",
+      "fps": "1.1",
+      "audio_ms": "0",
+      "draw_ms": "878",
+      "present_ms": "25",
+      "frame_ms": "904/905"
+    },
+    {
+      "frames": "2",
+      "fps": "1.1",
+      "audio_ms": "0",
+      "draw_ms": "879",
+      "present_ms": "25",
+      "frame_ms": "905/909"
+    },
+    {
+      "frames": "2",
+      "fps": "1.1",
+      "audio_ms": "0",
+      "draw_ms": "881",
+      "present_ms": "25",
+      "frame_ms": "908/909"
+    },
+    {
+      "frames": "2",
+      "fps": "0.9",
+      "audio_ms": "0",
+      "draw_ms": "1023",
+      "present_ms": "25",
+      "frame_ms": "1050/1190"
+    },
+    {
+      "frames": "2",
+      "fps": "1.0",
+      "audio_ms": "0",
+      "draw_ms": "886",
+      "present_ms": "25",
+      "frame_ms": "913/918"
+    },
+    {
+      "frames": "1",
+      "fps": "0.3",
+      "audio_ms": "0",
+      "draw_ms": "2477",
+      "present_ms": "23",
+      "frame_ms": "2511/2511"
+    },
+    {
+      "frames": "7",
+      "fps": "6.4",
+      "audio_ms": "0",
+      "draw_ms": "124",
+      "present_ms": "23",
+      "frame_ms": "154/165"
+    },
+    {
+      "frames": "8",
+      "fps": "7.2",
+      "audio_ms": "0",
+      "draw_ms": "114",
+      "present_ms": "21",
+      "frame_ms": "137/138"
+    },
+    {
+      "frames": "6",
+      "fps": "5.3",
+      "audio_ms": "0",
+      "draw_ms": "164",
+      "present_ms": "21",
+      "frame_ms": "187/285"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "114",
+      "present_ms": "19",
+      "frame_ms": "135/140"
+    },
+    {
+      "frames": "8",
+      "fps": "7.5",
+      "audio_ms": "0",
+      "draw_ms": "112",
+      "present_ms": "19",
+      "frame_ms": "132/135"
+    },
+    {
+      "frames": "8",
+      "fps": "7.5",
+      "audio_ms": "0",
+      "draw_ms": "112",
+      "present_ms": "19",
+      "frame_ms": "132/134"
+    },
+    {
+      "frames": "6",
+      "fps": "5.4",
+      "audio_ms": "0",
+      "draw_ms": "163",
+      "present_ms": "18",
+      "frame_ms": "183/337"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "116",
+      "present_ms": "18",
+      "frame_ms": "136/139"
+    },
+    {
+      "frames": "8",
+      "fps": "7.1",
+      "audio_ms": "0",
+      "draw_ms": "118",
+      "present_ms": "19",
+      "frame_ms": "139/142"
+    },
+    {
+      "frames": "8",
+      "fps": "7.1",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "140/144"
+    },
+    {
+      "frames": "5",
+      "fps": "4.9",
+      "audio_ms": "0",
+      "draw_ms": "178",
+      "present_ms": "20",
+      "frame_ms": "200/343"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "141/144"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "141/143"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "141/143"
+    },
+    {
+      "frames": "5",
+      "fps": "4.9",
+      "audio_ms": "0",
+      "draw_ms": "181",
+      "present_ms": "20",
+      "frame_ms": "202/337"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "141/143"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "141/143"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "119",
+      "present_ms": "20",
+      "frame_ms": "141/143"
+    },
+    {
+      "frames": "5",
+      "fps": "4.9",
+      "audio_ms": "0",
+      "draw_ms": "179",
+      "present_ms": "20",
+      "frame_ms": "200/300"
+    },
+    {
+      "frames": "8",
+      "fps": "7.1",
+      "audio_ms": "0",
+      "draw_ms": "118",
+      "present_ms": "20",
+      "frame_ms": "140/143"
+    },
+    {
+      "frames": "8",
+      "fps": "7.2",
+      "audio_ms": "0",
+      "draw_ms": "117",
+      "present_ms": "19",
+      "frame_ms": "138/140"
+    },
+    {
+      "frames": "8",
+      "fps": "7.2",
+      "audio_ms": "0",
+      "draw_ms": "117",
+      "present_ms": "18",
+      "frame_ms": "137/139"
+    },
+    {
+      "frames": "6",
+      "fps": "5.3",
+      "audio_ms": "0",
+      "draw_ms": "166",
+      "present_ms": "17",
+      "frame_ms": "185/322"
+    },
+    {
+      "frames": "8",
+      "fps": "7.2",
+      "audio_ms": "0",
+      "draw_ms": "118",
+      "present_ms": "17",
+      "frame_ms": "137/140"
+    },
+    {
+      "frames": "8",
+      "fps": "7.2",
+      "audio_ms": "0",
+      "draw_ms": "118",
+      "present_ms": "18",
+      "frame_ms": "138/141"
+    },
+    {
+      "frames": "8",
+      "fps": "7.0",
+      "audio_ms": "0",
+      "draw_ms": "121",
+      "present_ms": "20",
+      "frame_ms": "142/169"
+    },
+    {
+      "frames": "6",
+      "fps": "5.3",
+      "audio_ms": "0",
+      "draw_ms": "163",
+      "present_ms": "20",
+      "frame_ms": "185/341"
+    },
+    {
+      "frames": "8",
+      "fps": "7.1",
+      "audio_ms": "0",
+      "draw_ms": "118",
+      "present_ms": "21",
+      "frame_ms": "140/142"
+    },
+    {
+      "frames": "8",
+      "fps": "7.1",
+      "audio_ms": "0",
+      "draw_ms": "117",
+      "present_ms": "21",
+      "frame_ms": "139/142"
+    },
+    {
+      "frames": "7",
+      "fps": "6.6",
+      "audio_ms": "0",
+      "draw_ms": "126",
+      "present_ms": "21",
+      "frame_ms": "149/201"
+    },
+    {
+      "frames": "6",
+      "fps": "5.6",
+      "audio_ms": "0",
+      "draw_ms": "153",
+      "present_ms": "21",
+      "frame_ms": "176/341"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "114",
+      "present_ms": "21",
+      "frame_ms": "136/138"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "113",
+      "present_ms": "22",
+      "frame_ms": "136/137"
+    },
+    {
+      "frames": "7",
+      "fps": "6.6",
+      "audio_ms": "0",
+      "draw_ms": "127",
+      "present_ms": "22",
+      "frame_ms": "151/248"
+    },
+    {
+      "frames": "7",
+      "fps": "6.2",
+      "audio_ms": "0",
+      "draw_ms": "135",
+      "present_ms": "22",
+      "frame_ms": "159/312"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "111",
+      "present_ms": "22",
+      "frame_ms": "135/137"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "112",
+      "present_ms": "22",
+      "frame_ms": "135/137"
+    },
+    {
+      "frames": "7",
+      "fps": "5.5",
+      "audio_ms": "0",
+      "draw_ms": "155",
+      "present_ms": "22",
+      "frame_ms": "178/286"
+    },
+    {
+      "frames": "8",
+      "fps": "7.3",
+      "audio_ms": "0",
+      "draw_ms": "112",
+      "present_ms": "22",
+      "frame_ms": "135/137"
+    }
+  ],
+  "v1_median_draw_ms": 119,
+  "v1_memory": "H2_LOADER_MEMORY result=OK internal_total=255435 internal_free=76871 internal_min_free=60347 internal_largest=31744 iram_total=0 iram_free=0 iram_min_free=0 iram_largest=0 psram_total=5630908 psram_free=2132860 psram_min_free=1590364 psram_largest=1703936",
+  "quality": {
+    "partial_tiles_bitexact_frames": 360,
+    "head_only_computation_bitexact_frames": 360,
+    "large_cache_and_fpu_bitexact_scene_frames": 144,
+    "single_composition_scene_frames": 144,
+    "single_composition_max_frame_mae": 0.04491319444444444,
+    "history-v3": {
+      "frames": 360,
+      "mean_visible_mae": 13.631663790285273,
+      "max_visible_mae": 15.811393805309734,
+      "max_core_mae": 31.896812533765534,
+      "max_frame_mae": 0.40441550925925923
+    },
+    "travel-7": {
+      "frames": 360,
+      "mean_visible_mae": 17.099609782388203,
+      "max_visible_mae": 19.079148584418267,
+      "max_core_mae": 38.28108465608466,
+      "max_frame_mae": 0.44860532407407405
+    },
+    "travel-99": {
+      "frames": 360,
+      "mean_visible_mae": 16.399369847456832,
+      "max_visible_mae": 18.58815896188159,
+      "max_core_mae": 33.675041876046905,
+      "max_frame_mae": 0.6046932870370371
+    },
+    "skip_decode_bitexact_scene_frames": 144
+  },
+  "limitations": [
+    "Not 30 FPS acceptance.",
+    "History trails differ from old geometric tails; bright-core errors exceed 30/255 on some frames although visible-region means remain below 30/255.",
+    "Dynamic lights, affine bodies/icons and tilted particles still require rendering work.",
+    "First-use cache generation and eviction can cause stalls.",
+    "Physical panel pixel capture and long-duration stability are not validated.",
+    "Touch poll -4 persists.",
+    "v2 frozen wave-hold still 18,739 ms; full battle 4,289 ms. Broad performance acceptance remains open."
+  ],
+  "v1_probe": {
+    "complete": true,
+    "cases": {
+      "pairing": [
+        {
+          "draw_ms": 2749,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 143,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 148,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 145,
+          "present_ms": 23
+        },
+        {
+          "draw_ms": 130,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 146,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 128,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 130,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 127,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 211,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 343,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 131,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 125,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 126,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 127,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 128,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 127,
+          "present_ms": 18
+        },
+        {
+          "draw_ms": 126,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 128,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 125,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 126,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 128,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 125,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 124,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 125,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 125,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 124,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 127,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 173,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 372,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 126,
+          "present_ms": 20
+        },
+        {
+          "draw_ms": 123,
+          "present_ms": 20
+        },
+        {
+          "draw_ms": 127,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 129,
+          "present_ms": 20
+        },
+        {
+          "draw_ms": 125,
+          "present_ms": 20
+        }
+      ],
+      "walls": [
+        {
+          "draw_ms": 287,
+          "present_ms": 19
+        },
+        {
+          "draw_ms": 189,
+          "present_ms": 0
+        }
+      ],
+      "wheel": [
+        {
+          "draw_ms": 1642,
+          "present_ms": 14
+        },
+        {
+          "draw_ms": 1626,
+          "present_ms": 0
+        }
+      ],
+      "opponent": [
+        {
+          "draw_ms": 254,
+          "present_ms": 10
+        },
+        {
+          "draw_ms": 253,
+          "present_ms": 1
+        }
+      ],
+      "hand-left": [
+        {
+          "draw_ms": 274,
+          "present_ms": 9
+        },
+        {
+          "draw_ms": 273,
+          "present_ms": 0
+        }
+      ],
+      "hand-right": [
+        {
+          "draw_ms": 273,
+          "present_ms": 10
+        },
+        {
+          "draw_ms": 274,
+          "present_ms": 0
+        }
+      ],
+      "carousel-frame": [
+        {
+          "draw_ms": 4120,
+          "present_ms": 11
+        },
+        {
+          "draw_ms": 158,
+          "present_ms": 1
+        }
+      ],
+      "charge-cells": [
+        {
+          "draw_ms": 1479,
+          "present_ms": 4
+        },
+        {
+          "draw_ms": 86,
+          "present_ms": 0
+        }
+      ],
+      "hud": [
+        {
+          "draw_ms": 2523,
+          "present_ms": 20
+        },
+        {
+          "draw_ms": 262,
+          "present_ms": 0
+        }
+      ],
+      "full": [
+        {
+          "draw_ms": 12601,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 4559,
+          "present_ms": 0
+        }
+      ],
+      "clash": [
+        {
+          "draw_ms": 19205,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 19040,
+          "present_ms": 0
+        }
+      ],
+      "clash-combo": [
+        {
+          "draw_ms": 19038,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 19039,
+          "present_ms": 0
+        }
+      ],
+      "charge-windup": [
+        {
+          "draw_ms": 29249,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 4520,
+          "present_ms": 0
+        }
+      ],
+      "charge-hold": [
+        {
+          "draw_ms": 12355,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 4405,
+          "present_ms": 0
+        }
+      ],
+      "wave-windup": [
+        {
+          "draw_ms": 12905,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 4490,
+          "present_ms": 0
+        }
+      ],
+      "wave-hold": [
+        {
+          "draw_ms": 36399,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 19413,
+          "present_ms": 0
+        }
+      ],
+      "absorb-windup": [
+        {
+          "draw_ms": 15879,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 4512,
+          "present_ms": 0
+        }
+      ],
+      "absorb-hold": [
+        {
+          "draw_ms": 15013,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 4413,
+          "present_ms": 0
+        }
+      ],
+      "guard-windup": [
+        {
+          "draw_ms": 21143,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 4494,
+          "present_ms": 0
+        }
+      ],
+      "guard-hold": [
+        {
+          "draw_ms": 13578,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 10954,
+          "present_ms": 0
+        }
+      ],
+      "settlement-lose": [
+        {
+          "draw_ms": 11739,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 1850,
+          "present_ms": 0
+        }
+      ],
+      "settlement": [
+        {
+          "draw_ms": 12035,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 3505,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1833,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1833,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1831,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 1832,
+          "present_ms": 0
+        }
+      ]
+    },
+    "memory": "H2_LOADER_MEMORY result=OK internal_total=255435 internal_free=76859 internal_min_free=60335 internal_largest=31744 iram_total=0 iram_free=0 iram_min_free=0 iram_largest=0 psram_total=5627884 psram_free=2191060 psram_min_free=455396 psram_largest=704512",
+    "coredump": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1",
+    "scope": "Repeated frozen frames, including cold first use; not animation FPS."
+  },
+  "v2_probe": {
+    "complete": true,
+    "cases": {
+      "pairing": [
+        {
+          "draw_ms": 1977,
+          "present_ms": 23
+        },
+        {
+          "draw_ms": 102,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 111,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 104,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 104,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 97,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 96,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 102,
+          "present_ms": 23
+        },
+        {
+          "draw_ms": 101,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 96,
+          "present_ms": 21
+        },
+        {
+          "draw_ms": 94,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 93,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 96,
+          "present_ms": 22
+        }
+      ],
+      "walls": [
+        {
+          "draw_ms": 277,
+          "present_ms": 22
+        },
+        {
+          "draw_ms": 189,
+          "present_ms": 0
+        }
+      ],
+      "wheel": [
+        {
+          "draw_ms": 1641,
+          "present_ms": 13
+        },
+        {
+          "draw_ms": 1626,
+          "present_ms": 0
+        }
+      ],
+      "opponent": [
+        {
+          "draw_ms": 253,
+          "present_ms": 10
+        },
+        {
+          "draw_ms": 253,
+          "present_ms": 0
+        }
+      ],
+      "hand-left": [
+        {
+          "draw_ms": 273,
+          "present_ms": 9
+        },
+        {
+          "draw_ms": 272,
+          "present_ms": 0
+        }
+      ],
+      "hand-right": [
+        {
+          "draw_ms": 272,
+          "present_ms": 11
+        },
+        {
+          "draw_ms": 272,
+          "present_ms": 0
+        }
+      ],
+      "carousel-frame": [
+        {
+          "draw_ms": 4042,
+          "present_ms": 12
+        },
+        {
+          "draw_ms": 77,
+          "present_ms": 0
+        }
+      ],
+      "charge-cells": [
+        {
+          "draw_ms": 1459,
+          "present_ms": 3
+        },
+        {
+          "draw_ms": 65,
+          "present_ms": 0
+        }
+      ],
+      "hud": [
+        {
+          "draw_ms": 2349,
+          "present_ms": 20
+        },
+        {
+          "draw_ms": 90,
+          "present_ms": 0
+        }
+      ],
+      "full": [
+        {
+          "draw_ms": 12330,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 4289,
+          "present_ms": 0
+        }
+      ],
+      "clash": [
+        {
+          "draw_ms": 16851,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 502,
+          "present_ms": 0
+        }
+      ],
+      "clash-combo": [
+        {
+          "draw_ms": 503,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 503,
+          "present_ms": 0
+        }
+      ],
+      "charge-windup": [
+        {
+          "draw_ms": 28580,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 3841,
+          "present_ms": 0
+        }
+      ],
+      "charge-hold": [
+        {
+          "draw_ms": 11749,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 3805,
+          "present_ms": 0
+        }
+      ],
+      "wave-windup": [
+        {
+          "draw_ms": 12234,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 3817,
+          "present_ms": 0
+        }
+      ],
+      "wave-hold": [
+        {
+          "draw_ms": 28304,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 18739,
+          "present_ms": 0
+        }
+      ],
+      "absorb-windup": [
+        {
+          "draw_ms": 22746,
+          "present_ms": 24
+        },
+        {
+          "draw_ms": 3837,
+          "present_ms": 1
+        }
+      ],
+      "absorb-hold": [
+        {
+          "draw_ms": 14397,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 3790,
+          "present_ms": 0
+        }
+      ],
+      "guard-windup": [
+        {
+          "draw_ms": 13056,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 3799,
+          "present_ms": 0
+        }
+      ],
+      "guard-hold": [
+        {
+          "draw_ms": 20409,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 3837,
+          "present_ms": 0
+        }
+      ],
+      "settlement-lose": [
+        {
+          "draw_ms": 10646,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 690,
+          "present_ms": 0
+        }
+      ],
+      "settlement": [
+        {
+          "draw_ms": 10869,
+          "present_ms": 25
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 1
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 669,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 668,
+          "present_ms": 0
+        },
+        {
+          "draw_ms": 670,
+          "present_ms": 0
+        }
+      ]
+    },
+    "memory": "H2_LOADER_MEMORY result=OK internal_total=255435 internal_free=76871 internal_min_free=59855 internal_largest=31744 iram_total=0 iram_free=0 iram_min_free=0 iram_largest=0 psram_total=5626060 psram_free=2126520 psram_min_free=422128 psram_largest=704512",
+    "coredump": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1",
+    "scope": "Repeated frozen frames, including cold first use; not animation FPS."
+  },
+  "tests": [
+    "Lua unit/regression suite passed with assertions enabled.",
+    "Game suite passed with software backend and assertions enabled.",
+    "144 dual-screen scene frames bit-exact after frame-cache/FPU/skip-decode changes.",
+    "360 dual-screen pairing frames bit-exact after tile tracking and again after head-only computation.",
+    "Initial history approximation compared at animation time steps of 7, 33, and 99 ms, 360 frames each."
+  ],
+  "device_uid": "94a990281a12",
+  "port": "/dev/tty.usbmodem5101",
+  "normal_v3": {
+    "samples": [
+      {
+        "frames": "1",
+        "fps": "0.5",
+        "audio_ms": "0",
+        "draw_ms": "1655",
+        "present_ms": "23",
+        "frame_ms": "1689/1689"
+      },
+      {
+        "frames": "9",
+        "fps": "8.3",
+        "audio_ms": "0",
+        "draw_ms": "90",
+        "present_ms": "23",
+        "frame_ms": "120/132"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "84",
+        "present_ms": "21",
+        "frame_ms": "107/114"
+      },
+      {
+        "frames": "10",
+        "fps": "9.6",
+        "audio_ms": "0",
+        "draw_ms": "82",
+        "present_ms": "19",
+        "frame_ms": "103/107"
+      },
+      {
+        "frames": "10",
+        "fps": "9.9",
+        "audio_ms": "0",
+        "draw_ms": "80",
+        "present_ms": "19",
+        "frame_ms": "100/103"
+      },
+      {
+        "frames": "10",
+        "fps": "9.7",
+        "audio_ms": "0",
+        "draw_ms": "81",
+        "present_ms": "19",
+        "frame_ms": "101/106"
+      },
+      {
+        "frames": "10",
+        "fps": "9.5",
+        "audio_ms": "0",
+        "draw_ms": "84",
+        "present_ms": "18",
+        "frame_ms": "104/107"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "86",
+        "present_ms": "19",
+        "frame_ms": "107/109"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "109/112"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "109/112"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "109/110"
+      },
+      {
+        "frames": "10",
+        "fps": "9.0",
+        "audio_ms": "0",
+        "draw_ms": "89",
+        "present_ms": "20",
+        "frame_ms": "110/111"
+      },
+      {
+        "frames": "10",
+        "fps": "9.0",
+        "audio_ms": "0",
+        "draw_ms": "88",
+        "present_ms": "20",
+        "frame_ms": "109/113"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "109/112"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "109/111"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "109/113"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "19",
+        "frame_ms": "106/108"
+      },
+      {
+        "frames": "10",
+        "fps": "9.5",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "17",
+        "frame_ms": "104/106"
+      },
+      {
+        "frames": "10",
+        "fps": "9.5",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "18",
+        "frame_ms": "104/106"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "86",
+        "present_ms": "19",
+        "frame_ms": "106/108"
+      },
+      {
+        "frames": "10",
+        "fps": "9.2",
+        "audio_ms": "0",
+        "draw_ms": "86",
+        "present_ms": "20",
+        "frame_ms": "107/110"
+      },
+      {
+        "frames": "10",
+        "fps": "9.2",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "21",
+        "frame_ms": "107/111"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "84",
+        "present_ms": "21",
+        "frame_ms": "107/110"
+      },
+      {
+        "frames": "10",
+        "fps": "9.4",
+        "audio_ms": "0",
+        "draw_ms": "82",
+        "present_ms": "21",
+        "frame_ms": "105/108"
+      },
+      {
+        "frames": "10",
+        "fps": "9.5",
+        "audio_ms": "0",
+        "draw_ms": "81",
+        "present_ms": "21",
+        "frame_ms": "104/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.7",
+        "audio_ms": "0",
+        "draw_ms": "79",
+        "present_ms": "22",
+        "frame_ms": "102/103"
+      },
+      {
+        "frames": "10",
+        "fps": "9.7",
+        "audio_ms": "0",
+        "draw_ms": "78",
+        "present_ms": "22",
+        "frame_ms": "102/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.6",
+        "audio_ms": "0",
+        "draw_ms": "80",
+        "present_ms": "22",
+        "frame_ms": "103/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.6",
+        "audio_ms": "0",
+        "draw_ms": "79",
+        "present_ms": "22",
+        "frame_ms": "103/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.6",
+        "audio_ms": "0",
+        "draw_ms": "80",
+        "present_ms": "22",
+        "frame_ms": "103/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.6",
+        "audio_ms": "0",
+        "draw_ms": "81",
+        "present_ms": "20",
+        "frame_ms": "103/106"
+      },
+      {
+        "frames": "10",
+        "fps": "9.7",
+        "audio_ms": "0",
+        "draw_ms": "80",
+        "present_ms": "20",
+        "frame_ms": "102/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.6",
+        "audio_ms": "0",
+        "draw_ms": "81",
+        "present_ms": "20",
+        "frame_ms": "102/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.7",
+        "audio_ms": "0",
+        "draw_ms": "81",
+        "present_ms": "19",
+        "frame_ms": "102/105"
+      },
+      {
+        "frames": "10",
+        "fps": "9.8",
+        "audio_ms": "0",
+        "draw_ms": "81",
+        "present_ms": "18",
+        "frame_ms": "101/103"
+      },
+      {
+        "frames": "10",
+        "fps": "9.5",
+        "audio_ms": "0",
+        "draw_ms": "84",
+        "present_ms": "19",
+        "frame_ms": "104/106"
+      },
+      {
+        "frames": "10",
+        "fps": "9.4",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "19",
+        "frame_ms": "106/108"
+      },
+      {
+        "frames": "10",
+        "fps": "9.4",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "18",
+        "frame_ms": "105/107"
+      },
+      {
+        "frames": "10",
+        "fps": "9.2",
+        "audio_ms": "0",
+        "draw_ms": "86",
+        "present_ms": "19",
+        "frame_ms": "107/108"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "19",
+        "frame_ms": "108/111"
+      },
+      {
+        "frames": "9",
+        "fps": "8.9",
+        "audio_ms": "0",
+        "draw_ms": "89",
+        "present_ms": "20",
+        "frame_ms": "111/113"
+      },
+      {
+        "frames": "9",
+        "fps": "8.9",
+        "audio_ms": "0",
+        "draw_ms": "89",
+        "present_ms": "21",
+        "frame_ms": "111/112"
+      },
+      {
+        "frames": "9",
+        "fps": "8.9",
+        "audio_ms": "0",
+        "draw_ms": "88",
+        "present_ms": "21",
+        "frame_ms": "111/112"
+      },
+      {
+        "frames": "9",
+        "fps": "8.9",
+        "audio_ms": "0",
+        "draw_ms": "88",
+        "present_ms": "21",
+        "frame_ms": "111/113"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "21",
+        "frame_ms": "109/112"
+      },
+      {
+        "frames": "10",
+        "fps": "9.1",
+        "audio_ms": "0",
+        "draw_ms": "87",
+        "present_ms": "20",
+        "frame_ms": "108/110"
+      },
+      {
+        "frames": "10",
+        "fps": "9.2",
+        "audio_ms": "0",
+        "draw_ms": "86",
+        "present_ms": "20",
+        "frame_ms": "107/111"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "19",
+        "frame_ms": "106/109"
+      },
+      {
+        "frames": "10",
+        "fps": "9.3",
+        "audio_ms": "0",
+        "draw_ms": "85",
+        "present_ms": "20",
+        "frame_ms": "106/109"
+      },
+      {
+        "frames": "10",
+        "fps": "9.4",
+        "audio_ms": "0",
+        "draw_ms": "84",
+        "present_ms": "20",
+        "frame_ms": "106/107"
+      },
+      {
+        "frames": "10",
+        "fps": "9.5",
+        "audio_ms": "0",
+        "draw_ms": "83",
+        "present_ms": "20",
+        "frame_ms": "104/107"
+      },
+      {
+        "frames": "10",
+        "fps": "9.4",
+        "audio_ms": "0",
+        "draw_ms": "82",
+        "present_ms": "21",
+        "frame_ms": "105/108"
+      }
+    ],
+    "median_draw_ms": 85.0,
+    "last_20_median_draw_ms": 85.0,
+    "last_20_fps_range": [
+      8.9,
+      9.8
+    ],
+    "memory": "H2_LOADER_MEMORY result=OK internal_total=255435 internal_free=76863 internal_min_free=59863 internal_largest=31744 iram_total=0 iram_free=0 iram_min_free=0 iram_largest=0 psram_total=5628780 psram_free=3466868 psram_min_free=3129256 psram_largest=3014656",
+    "coredump": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1",
+    "status": {
+      "board": "amoled",
+      "target": "esp32s3",
+      "chip": "esp32s3",
+      "device_uid": "94a990281a12",
+      "capabilities": "0x00000007",
+      "command_availability": "0x000f3d3f",
+      "active_role": "app",
+      "active_version": "retained-pair-v3",
+      "active_checksum": "c12fc670138350df323ccfee56027fe349f8c1207a876b8804bc8679819d9a8a",
+      "active_image_size": "2889568",
+      "running_partition": "2",
+      "next_partition": "2",
+      "boot_intent": "auto",
+      "stage_valid": "0",
+      "stage_package_checksum": "-",
+      "stage_package_size": "0",
+      "stage_image_checksum": "-",
+      "stage_image_size": "0",
+      "stage_role": "unknown",
+      "stage_version": "-",
+      "stage_board": "-",
+      "stage_target": "-",
+      "partition_1_valid": "1",
+      "partition_1_package_checksum": "-",
+      "partition_1_package_size": "0",
+      "partition_1_image_checksum": "5ad3716ee7272661a4fe97eee7d3dc3adaf997f61060a0a3be6e466552b49afb",
+      "partition_1_image_size": "1496880",
+      "partition_1_role": "loader",
+      "partition_1_version": "bazel-native-artifacts",
+      "partition_1_board": "amoled",
+      "partition_1_target": "esp32s3",
+      "partition_2_valid": "1",
+      "partition_2_package_checksum": "016668cf9609cf404654e701871cbc7a3e12ba19175ecc11aa364b0b05c9461c",
+      "partition_2_package_size": "2040271",
+      "partition_2_image_checksum": "c12fc670138350df323ccfee56027fe349f8c1207a876b8804bc8679819d9a8a",
+      "partition_2_image_size": "2889568",
+      "partition_2_role": "app",
+      "partition_2_version": "retained-pair-v3",
+      "partition_2_board": "amoled",
+      "partition_2_target": "esp32s3",
+      "last_result": "0",
+      "mfg_mode": "1",
+      "mfg_steps": "0000000000000000000000"
+    },
+    "audio_output_started": false,
+    "preparation": [
+      "I (15296) lua: H2_QI_DUEL_PREPARE bodies=3 bytes=271629 elapsed_ms=12691"
+    ]
+  }
+}

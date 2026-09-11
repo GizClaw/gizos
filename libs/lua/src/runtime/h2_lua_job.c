@@ -214,8 +214,11 @@ static void instruction_hook(lua_State *state, lua_Debug *debug) {
   if (now - job->started_ms >= job->host->config.execution_timeout_ms) {
     luaL_error(state, "job timed out");
   }
-  if (task != NULL && now - task->resume_started_ms >=
-                          job->host->config.resume_time_budget_ms) {
+  /* A Lua comparator/replacement called by a non-continuable C function
+   * (for example table.sort) cannot yield. Defer only the scheduler yield
+   * until the next yieldable instruction; cancellation/timeouts still apply. */
+  if (task != NULL && lua_isyieldable(state) &&
+      now - task->resume_started_ms >= job->host->config.resume_time_budget_ms) {
     task->state = H2_LUA_TASK_READY;
     (void)lua_yield(state, 0);
   }

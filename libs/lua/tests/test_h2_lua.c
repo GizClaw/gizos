@@ -7,9 +7,11 @@
 #include "h2_pal.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct test_fs_file {
@@ -123,7 +125,7 @@ static const h2_pal_fs_api_t s_test_fs = {
 };
 
 typedef struct test_display_fixture {
-  uint16_t pixels[8u * 8u];
+  uint16_t pixels[33u * 35u];
   h2_display_rect_t draw_rects[8u];
   size_t draw_count;
   size_t present_count;
@@ -133,6 +135,7 @@ typedef struct test_display_fixture {
 } test_display_fixture_t;
 
 static test_display_fixture_t s_test_display_fixture;
+static int s_test_display_width=8, s_test_display_height=8;
 
 /* One 1x1 lamp at (2,3), black and RGB(255,128,64) gain samples. */
 static const uint8_t s_test_light_atlas[] = {
@@ -153,7 +156,8 @@ static const uint8_t s_test_styles[]={
 };
 static uint8_t s_test_bad_styles[sizeof(s_test_styles)];
 static const uint8_t s_test_vector_slices[] = {49,0,0,0,120,156,243,48,10,115,103,97,96,97,96,96,96,100,96,225,5,209,12,12,2,96,12,33,185,24,254,255,255,207,192,0,68,13,246,96,12,0,121,206,6,250,49,0,0,0,120,156,243,48,10,115,103,97,96,97,96,96,96,100,96,225,5,209,12,12,2,96,12,33,185,24,254,255,103,0,227,6,123,48,6,0,119,208,6,250};
-static const h2_lua_resource_t s_test_resources[] = {{.name="@test/vector.h2vp",.source=s_test_vector_slices,.source_size=sizeof(s_test_vector_slices)}, {
+static const uint8_t s_test_vector_raw[] = {72,50,86,71,4,0,4,0,0,0,1,0,4,13,4,0,0,0,0,0,16,0,0,0,16,0,16,0,0,0,16,0,10,0,255,255,255,0,0,255,0,0,128,63,0,0,128,63,0};
+static const h2_lua_resource_t s_test_resources[] = {{.name="@test/vector.h2vg",.source=s_test_vector_raw,.source_size=sizeof(s_test_vector_raw)},{.name="@test/vector.h2vp",.source=s_test_vector_slices,.source_size=sizeof(s_test_vector_slices)}, {
     .name = "@test/light.h2lf", .source = s_test_light_atlas,
     .source_size = sizeof(s_test_light_atlas),
 }, {
@@ -186,8 +190,8 @@ static int test_display_get_info(void *user, h2_display_info_t *info) {
   if (info == NULL)
     return H2_DISPLAY_ERR_INVALID_ARG;
   *info = (h2_display_info_t){
-      .width = 8,
-      .height = 8,
+      .width = s_test_display_width,
+      .height = s_test_display_height,
       .native_format = H2_DISPLAY_PIXEL_RGB565,
   };
   return H2_DISPLAY_OK;
@@ -202,13 +206,14 @@ static int test_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   assert(fixture != NULL && rect != NULL && pixels != NULL);
   assert(format == H2_DISPLAY_PIXEL_RGB565);
   assert(rect->x >= 0 && rect->y >= 0 && rect->width > 0 && rect->height > 0 &&
-         rect->x + rect->width <= 8 && rect->y + rect->height <= 8);
+         rect->x + rect->width <= s_test_display_width &&
+         rect->y + rect->height <= s_test_display_height);
   assert(stride_bytes >= (size_t)rect->width * sizeof(uint16_t));
   assert(fixture->draw_count <
          sizeof(fixture->draw_rects) / sizeof(fixture->draw_rects[0]));
   fixture->draw_rects[fixture->draw_count++] = *rect;
   for (row = 0; row < rect->height; ++row) {
-    memcpy(fixture->pixels + (size_t)(rect->y + row) * 8u + (size_t)rect->x,
+    memcpy(fixture->pixels + (size_t)(rect->y + row) * s_test_display_width + (size_t)rect->x,
            source + (size_t)row * stride_bytes,
            (size_t)rect->width * sizeof(uint16_t));
   }
@@ -1336,6 +1341,56 @@ int main(void) {
     assert(s_test_display_fixture.pixels[4u*8u+2u]==0u);
     assert(s_test_display_fixture.pixels[4u*8u+3u]==0xffffu);
 
+    static const uint8_t prepared_vector_script[] =
+        "local d=require('display');if not d.prepare_vector then return 'skip' end;"
+        "assert(not pcall(d.prepare_vector,'@test/vector.h2vg',0,8));"
+        "assert(not pcall(d.prepare_vector,'@test/vector.h2vg',1025,8));"
+        "assert(not pcall(d.prepare_vector,'@test/vector.h2vp',8,8));"
+        "assert(d.prepare_vector('@test/vector.h2vg',1024,1024)==nil);"
+        "local bytes=assert(d.prepare_vector('@test/vector.h2vg',8,8));"
+        "assert(d.prepare_vector('@test/vector.h2vg',8,8)==bytes);"
+        "d.reset_vector_cache();collectgarbage('collect');"
+        "d.clear('black');d.begin_composite();"
+        "assert(not pcall(d.prepare_vector,'@test/vector.h2vg',8,8));"
+        "d.draw_vector_affine('@test/vector.h2vg',1,0,0,1,1,1);"
+        "d.end_composite();d.present();return 'ok'";
+    canvas_status=run_display_script(host,"@prepared-vector.lua",prepared_vector_script,sizeof(prepared_vector_script)-1u);
+    if(strcmp(canvas_status.message,"skip")) {
+      assert(strcmp(canvas_status.message,"ok")==0);
+      assert(s_test_display_fixture.pixels[2u*8u+2u]==0xf800u);
+      assert(s_test_display_fixture.pixels[0]==0u);
+    }
+    /* Compare prepared filtering to the independent vector raster path for
+     * rotation, reflection, fractional translation, opacity and enlargement
+     * fallback. Each run owns a fresh VM so no cache can contaminate baseline. */
+    for(unsigned sample=0;sample<5;sample++) {
+      static const char *transforms[]={"1,0,0,1,1.3,1.6,.7", "0,1,-1,0,6,1,1",
+          "-1,0,0,1,6,1,1", ".92,.39,-.39,.92,2,1,1", "3,0,0,3,-2,-2,1"};
+      uint16_t reference[64];
+      for(unsigned prepared=0;prepared<2;prepared++) {
+        char source[768];
+        int length=snprintf(source,sizeof(source),
+            "local d=require('display');if not d.prepare_vector then return 'skip' end;"
+            "%s d.clear('black');d.begin_composite();"
+            "d.draw_vector_affine('@test/vector.h2vg',%s);"
+            "d.end_composite();d.present();return 'ok'",
+            prepared?"assert(d.prepare_vector('@test/vector.h2vg',16,16));":"",transforms[sample]);
+        assert(length>0 && (size_t)length<sizeof(source));
+        canvas_status=run_display_script(host,"@prepared-transform.lua",(const uint8_t *)source,(size_t)length);
+        if(!strcmp(canvas_status.message,"skip"))break;
+        assert(!strcmp(canvas_status.message,"ok"));
+        if(!prepared)memcpy(reference,s_test_display_fixture.pixels,sizeof(reference));
+        else {
+          unsigned error=0;
+          for(unsigned pixel=0;pixel<64;pixel++) {
+            int a=(reference[pixel]>>11)*255/31;
+            int b=(s_test_display_fixture.pixels[pixel]>>11)*255/31;
+            error+=(unsigned)abs(a-b);
+          }
+          assert(error<64u*8u);
+        }
+      }
+    }
     static const uint8_t vector_slice_script[] =
         "local d=require('display');if not d.draw_vector_slice then return 'skip' end\n"
         "local function draw(cache,mix,x) d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,x or 1,1,1,46,44,mix or 0,cache) end\n"
@@ -1361,6 +1416,31 @@ int main(void) {
     {static const uint8_t script[]="local d=require('display');if not d.draw_vector_slice then return 'skip' end;d.clear('black');d.begin_composite();d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,1,1,1,46,44,0,false,true);d.end_composite();d.present();return 'ok'";
     canvas_status=run_display_script(host,"@vector-tile.lua",script,sizeof(script)-1u);
     if(strcmp(canvas_status.message,"skip")){assert(strcmp(canvas_status.message,"ok")==0);assert(s_test_display_fixture.pixels[2u*8u+2u]==0xf800u);}}
+    {static const uint8_t script[]=
+      "local d=require('display');if not d.draw_vector_slice then return 'skip' end;"
+      "for i=1,16 do d.clear('black');d.begin_composite();"
+      "assert(not pcall(d.draw_vector_slice,'@test/vector.h2vp',0,46,1,0,0,1,1,1,1,9999,44,.5));"
+      "d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,i%4+1,1,1,46,44,.5);"
+      "d.end_composite();collectgarbage('collect');"
+      "if i%4==0 then d.reset_vector_cache() end end;d.present();return 'ok'";
+      canvas_status=run_display_script(host,"@segmented-blend-lifetime.lua",script,sizeof(script)-1u);
+      if(strcmp(canvas_status.message,"skip")) {
+        assert(strcmp(canvas_status.message,"ok")==0);
+        assert(s_test_display_fixture.pixels[2u*8u+2u]==0x8010u);
+      }
+    }
+    {static const uint8_t script[]=
+      "local d=require('display');if not d.draw_vector_slice then return 'skip' end;"
+      "for i=1,8 do d.begin_composite(true);"
+      "d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,1,1,1,46,44,(i%2)*.5);"
+      "d.end_composite();collectgarbage('collect');end;d.present();return 'ok'";
+      canvas_status=run_display_script(host,"@frame-cache-blend-reuse.lua",script,sizeof(script)-1u);
+      if(strcmp(canvas_status.message,"skip")) {
+        assert(strcmp(canvas_status.message,"ok")==0);
+        /* Interpolation must not overwrite the cached unblended source. */
+        assert(s_test_display_fixture.pixels[2u*8u+2u]==0xf800u);
+      }
+    }
     static const uint8_t styles_script[] =
         "local d=require('display');d.clear('black');d.begin_composite();"
         "d.draw_sprite_atlas('@test/styles.h2rs',1,1,0,2,3);"
@@ -1440,6 +1520,132 @@ int main(void) {
     assert(strcmp(canvas_status.message,"ok")==0);
     assert(s_test_display_fixture.pixels[3u*8u+2u]==0xf800u);
     assert(s_test_display_fixture.pixels[1u*8u+3u]==0x07e0u);
+
+    static const uint8_t reset_vector_cache_script[] =
+        "local d=require('display');if not d.reset_vector_cache then return 'skip' end;"
+        "local function draw() d.begin_composite(true);"
+        "d.draw_vector_slice('@test/vector.h2vp',0,46,1,0,0,1,1,1,1,46,44,0,true);"
+        "assert(not pcall(d.reset_vector_cache));d.end_composite();d.present() end;"
+        "draw();collectgarbage('collect');local before=collectgarbage('count');"
+        "d.reset_vector_cache();assert(before-collectgarbage('count')>1);"
+        "draw();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@reset-vector-cache.lua",reset_vector_cache_script,sizeof(reset_vector_cache_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0 || strcmp(canvas_status.message,"skip")==0);
+
+    static const uint8_t clear_composite_script[] =
+        "local d=require('display');d.clear('white');d.begin_composite(true);"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@clear-composite.lua",clear_composite_script,sizeof(clear_composite_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    for (unsigned i=0;i<64;i++) assert(s_test_display_fixture.pixels[i]==0);
+
+    /* Batched commands must match ordered scalar draws, including the H106
+     * transform, subpixel coordinates and alpha rounding. */
+    uint16_t scalar_lines[64];
+    static const uint8_t scalar_lines_script[] =
+        "local d=require('display');d.clear('blue');d.begin_composite();"
+        "for i=1,20 do d.add_line(i*.21-1,(i%5)*.4+1,7-i*.12,6-i*.2,"
+        "(i%4+1)*.3,{r=37+i*7,g=151,b=219},i/21) end;"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@scalar-lines.lua",scalar_lines_script,sizeof(scalar_lines_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    memcpy(scalar_lines,s_test_display_fixture.pixels,sizeof(scalar_lines));
+    static const uint8_t batch_lines_script[] =
+        "local d=require('display');d.clear('blue');d.begin_composite();local v={};"
+        "for i=1,20 do local n=(i-1)*9;v[n+1]=(i*.21-2)/.5;v[n+2]=(i%5)*.4/.5;"
+        "v[n+3]=(6-i*.12)/.5;v[n+4]=(5-i*.2)/.5;v[n+5]=(i%4+1)*.3/.5;"
+        "v[n+6]=37+i*7;v[n+7]=151;v[n+8]=219;v[n+9]=i/21 end;"
+        "d.add_lines(v,20,.5,1,1);d.add_lines({},0);"
+        "assert(not pcall(d.add_lines,v,21));assert(not pcall(d.add_lines,v,-1));"
+        "assert(not pcall(d.add_lines,v,20,0));"
+        "v[9]=2;assert(not pcall(d.add_lines,v,20));v[9]=1;"
+        "v[6]=-1;assert(not pcall(d.add_lines,v,20));v[6]=37;"
+        "v[1]=0/0;assert(not pcall(d.add_lines,v,20));"
+        "d.end_composite();d.present();d.deinit();return 'ok'";
+    canvas_status=run_display_script(host,"@batch-lines.lua",batch_lines_script,sizeof(batch_lines_script)-1u);
+    assert(strcmp(canvas_status.message,"ok")==0);
+    assert(!memcmp(scalar_lines,s_test_display_fixture.pixels,sizeof(scalar_lines)));
+
+    /* Independent 8x8 point-sampling oracle for the scanline capsule path.
+     * Includes round caps, zero length, clipping, steep/flat segments, both
+     * blend modes, and subpixel widths. */
+    for (unsigned probe=0;probe<48;probe++) {
+      double ax=(int)(probe%9)-1.37, ay=(int)(probe%7)-.21;
+      double bx=(int)((probe*5)%13)-2.19, by=(int)((probe*7)%11)-1.43;
+      if (probe%4==0) bx=ax;
+      if (probe%5==0) by=ay;
+      if (probe%11==0) {bx=ax;by=ay;}
+      double width=.17+(probe%8)*.61, alpha=(37+probe*3)/255.0;
+      char script[768];
+      int length=snprintf(script,sizeof(script),
+          "local d=require('display');d.clear('blue');d.begin_composite();"
+          "d.%s(%.17g,%.17g,%.17g,%.17g,%.17g,{r=87,g=131,b=209},%.17g);"
+          "d.end_composite();d.present();d.deinit();return 'ok'",
+          probe%2 ? "over_line" : "add_line",ax,ay,bx,by,width,alpha);
+      assert(length>0 && (size_t)length<sizeof(script));
+      canvas_status=run_display_script(host,"@capsule-oracle.lua",(const uint8_t *)script,(size_t)length);
+      assert(strcmp(canvas_status.message,"ok")==0);
+      for(unsigned y=0;y<8;y++) for(unsigned x=0;x<8;x++) {
+        unsigned hits=0;double dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+        for(unsigned sy=0;sy<8;sy++) for(unsigned sx=0;sx<8;sx++) {
+          double px=x+(sx+.5)/8-ax,py=y+(sy+.5)/8-ay;
+          double t=len2>0 ? fmax(0,fmin(1,(px*dx+py*dy)/len2)) : 0;
+          px-=t*dx;py-=t*dy;
+          hits+=px*px+py*py<=width*width*.25;
+        }
+        unsigned rgb[3],color[]={87,131,209};
+        for(unsigned c=0;c<3;c++) {
+          double value=(c==2 ? 255 : 0)*(probe%2 ? 1-alpha*hits/64 : 1)+color[c]*alpha*hits/64;
+          rgb[c]=(unsigned)fmin(255,floor(value+.5));
+        }
+        uint16_t expected=(uint16_t)((rgb[0]>>3)<<11 | (rgb[1]>>2)<<5 | (rgb[2]>>3));
+        assert(s_test_display_fixture.pixels[y*8+x]==expected);
+      }
+    }
+
+    /* Independent point-sampling oracle for polygon scanline masks,
+     * including concave/self-crossing shapes, repeated vertices and clipping. */
+    for(unsigned probe=0;probe<40;probe++) {
+      double points[5][2];
+      for(unsigned i=0;i<5;i++) {
+        points[i][0]=(int)((probe*3+i*7)%13)-2+(probe%3)*.0625;
+        points[i][1]=(int)((probe*5+i*3)%11)-1+(probe%4)*.125;
+      }
+      if(probe%4==0)memcpy(points[1],points[0],sizeof(points[0]));
+      double width=.25+(probe%7)*.5,alpha=113/255.;
+      int stroke=probe%2;char script[1536];
+      int length=snprintf(script,sizeof(script),
+          "local d=require('display');d.clear('blue');d.begin_composite();"
+          "local c={r=87,g=131,b=209};local z={r=0,g=0,b=0};"
+          "d.draw_polygon({{%.17g,%.17g},{%.17g,%.17g},{%.17g,%.17g},"
+          "{%.17g,%.17g},{%.17g,%.17g}},c,%.17g,c,%.17g,%.17g,z,0,0);"
+          "d.end_composite();d.present();d.deinit();return 'ok'",
+          points[0][0],points[0][1],points[1][0],points[1][1],
+          points[2][0],points[2][1],points[3][0],points[3][1],
+          points[4][0],points[4][1],stroke?0:alpha,stroke?alpha:0,width);
+      assert(length>0 && (size_t)length<sizeof(script));
+      canvas_status=run_display_script(host,"@polygon-oracle.lua",(const uint8_t *)script,(size_t)length);
+      assert(strcmp(canvas_status.message,"ok")==0);
+      for(unsigned y=0;y<8;y++)for(unsigned x=0;x<8;x++) {
+        unsigned hits=0;
+        for(unsigned sy=0;sy<8;sy++)for(unsigned sx=0;sx<8;sx++) {
+          double px=x+(sx+.5)/8,py=y+(sy+.5)/8;int inside=0,on=0;
+          for(unsigned i=0,j=4;i<5;j=i++) {
+            double ax=points[j][0],ay=points[j][1],dx=points[i][0]-ax,dy=points[i][1]-ay;
+            if((ay>py)!=(points[i][1]>py) && px<dx*(py-ay)/dy+ax)inside=!inside;
+            double len=dx*dx+dy*dy;
+            double t=len>0?fmax(0,fmin(1,((px-ax)*dx+(py-ay)*dy)/len)):0;
+            double ex=px-ax-t*dx,ey=py-ay-t*dy;
+            on|=ex*ex+ey*ey<=width*width*.25;
+          }
+          hits+=stroke?on:inside;
+        }
+        unsigned rgb[3],color[]={87,131,209};
+        for(unsigned c=0;c<3;c++)rgb[c]=(unsigned)floor((c==2?255:0)*(1-alpha*hits/64)+color[c]*alpha*hits/64+.5);
+        uint16_t expected=(uint16_t)((rgb[0]>>3)<<11 | (rgb[1]>>2)<<5 | (rgb[2]>>3));
+        assert(s_test_display_fixture.pixels[y*8+x]==expected);
+      }
+    }
 
     static const uint8_t invalid_canvas_script[] =
         "local d=require('display');d.clear('black');assert(not pcall(d.end_composite));d.begin_composite();"
@@ -1691,6 +1897,50 @@ int main(void) {
   }
 
   {
+    static const uint8_t script[] =
+      "local d=require('display');local z={r=0,g=0,b=0};"
+      "local function rect(x,y,c)d.draw_polygon({{x,y},{x+2,y},{x+2,y+2},{x,y+2}},c,1,z,0,0,z,0,0)end;"
+      "d.present();"
+      "d.begin_composite(true);rect(1,1,{r=255,g=0,b=0});d.end_composite();d.present();"
+      "d.begin_composite(true);rect(1,1,{r=255,g=0,b=0});d.end_composite();d.present();"
+      "d.begin_composite('retain');d.fade_composite(0);d.end_composite();d.present();"
+      "d.begin_composite(true);rect(5,5,{r=0,g=255,b=0});d.end_composite();d.present();"
+      "d.begin_composite('retain');d.fade_composite(1);d.end_composite();d.present();"
+      "d.deinit();return 'retained-dirty'";
+    (void)run_display_script(host,"@retained-dirty.lua",script,sizeof(script)-1u);
+    assert(s_test_display_fixture.present_count==6u);
+    assert(s_test_display_fixture.draw_count==4u);
+    assert_draw_rect(1u,1,1,2,2);
+    assert_draw_rect(2u,1,1,6,6); /* Erase old pixels as well as drawing new ones. */
+    assert_draw_rect(3u,5,5,2,2);
+    for(unsigned i=0;i<64;i++)assert(s_test_display_fixture.pixels[i]==0);
+  }
+
+  {
+    /* Retained tiles cover a boundary crossing and clipped edge tiles. */
+    s_test_display_width=33;s_test_display_height=35;
+    static const uint8_t script[] =
+      "local d=require('display');local white={r=255,g=255,b=255};d.present();"
+      "d.begin_composite(true);d.end_composite();d.present();"
+      "d.begin_composite('retain');d.add_line(14,14,18,18,3,white,1);"
+      "d.add_disc(32,34,2,white,1);d.end_composite();d.present();"
+      "d.begin_composite('retain');d.fade_composite(0);d.end_composite();d.present();"
+      "d.begin_composite('retain');d.fade_composite(1);d.end_composite();d.present();"
+      "d.begin_composite('retain');d.fade_composite(.5);d.end_composite();d.present();"
+      "d.deinit();return 'tile-edges'";
+    (void)run_display_script(host,"@tile-edges.lua",script,sizeof(script)-1u);
+    assert(s_test_display_fixture.present_count==6u);
+    assert(s_test_display_fixture.draw_count==3u);
+    assert(s_test_display_fixture.draw_rects[1].x<16);
+    assert(s_test_display_fixture.draw_rects[1].y<16);
+    assert(s_test_display_fixture.draw_rects[1].x+s_test_display_fixture.draw_rects[1].width==33);
+    assert(s_test_display_fixture.draw_rects[1].y+s_test_display_fixture.draw_rects[1].height==35);
+    assert(memcmp(&s_test_display_fixture.draw_rects[1],&s_test_display_fixture.draw_rects[2],sizeof(h2_display_rect_t))==0);
+    for(unsigned i=0;i<33u*35u;i++)assert(s_test_display_fixture.pixels[i]==0);
+    s_test_display_width=8;s_test_display_height=8;
+  }
+
+  {
     static const uint8_t clear_script[] =
         "local d=require('display');d.present();d.clear('red');"
         "d.present();d.deinit();return 'ok'";
@@ -1800,6 +2050,22 @@ int main(void) {
   run_until_terminal(host, job_id, 256u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(status(host, job_id).resume_count > 1u);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
+  /* Force the budget to expire inside a C-invoked Lua comparator. The
+   * automatic yield must wait until table.sort returns, not fail the job. */
+  static const uint8_t sorted_callback_script[] =
+      "local a={9,2,8,1,7,3,6,4,5};"
+      "table.sort(a,function(x,y) local n=0;for i=1,20 do n=n+i end;"
+      "assert(n==210);return x<y end);"
+      "for i=1,9 do assert(a[i]==i) end;return 'sorted-callback'";
+  assert(h2_lua_job_submit_text(host, "@sorted-callback.lua", sorted_callback_script,
+                                sizeof(sorted_callback_script) - 1u, NULL, 0u,
+                                &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 4096u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(status(host, job_id).resume_count > 1u);
+  assert(strcmp(status(host, job_id).message, "sorted-callback") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
   static const uint8_t yielded_arguments_script[] =

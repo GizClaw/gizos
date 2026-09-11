@@ -5,6 +5,7 @@
 #include "h2_runtime_test.h"
 
 #include <assert.h>
+#include <string.h>
 
 typedef struct fixture {
   size_t display_open;
@@ -17,6 +18,7 @@ typedef struct fixture {
   size_t ready;
   int inspector_layer; /* one-based index in the inspector test table */
   uint32_t frame_hash;
+  uint16_t pixels[368u*448u];
   int tap_x, tap_y;
   int touch_synced;
   size_t tap_count;
@@ -24,11 +26,14 @@ typedef struct fixture {
   int drag_dy;
   int skip_move;
   int h106;
+  int no_touch;
   h2_runtime_test_control_t *button_control;
   unsigned button_id;
   int button_sent;
+  int button_burst;
   int game_lock_probe;
   int intro_probe;
+  int result_key_probe;
 } fixture_t;
 
 static h2_pal_result_t button_map_list(void *user,h2_runtime_component_t kind,
@@ -79,12 +84,15 @@ static int draw_bitmap(void *user, const h2_display_rect_t *rect,
                        h2_display_pixel_format_t format) {
   fixture_t *fixture = user;
   size_t width=fixture->h106?240u:368u,height=fixture->h106?240u:448u;
-  assert(rect->x == 0 && rect->y == 0 && rect->width == (int)width &&
-         rect->height == (int)height);
+  assert(rect->x>=0 && rect->y>=0 && rect->width>0 && rect->height>0 &&
+         rect->x+rect->width<=(int)width && rect->y+rect->height<=(int)height);
   assert(pixels != NULL && stride == width * sizeof(uint16_t));
   assert(format == H2_DISPLAY_PIXEL_RGB565);
+  for(int row=0;row<rect->height;row++)
+    memcpy(fixture->pixels+(size_t)(rect->y+row)*width+rect->x,
+           (const uint8_t *)pixels+(size_t)row*stride,(size_t)rect->width*2);
   if (fixture->inspector_layer) {
-    const uint16_t *frame = pixels;
+    const uint16_t *frame = fixture->pixels;
     uint32_t hash = 2166136261u;
     size_t lit = 0u;
     for (size_t i = 0u; i < width * height; ++i) {
@@ -117,7 +125,7 @@ static int draw_bitmap(void *user, const h2_display_rect_t *rect,
       if (fixture->inspector_layer >= 18 && fixture->inspector_layer <= 21 && i < 368u*320u)
         assert(frame[i] == 0u);
     }
-    assert(lit > 50u);
+    if(!fixture->result_key_probe)assert(lit > 50u);
     if (fixture->draw != 0u && !fixture->tap_count && !fixture->drag_distance && !fixture->drag_dy && !fixture->button_id && !fixture->game_lock_probe && !fixture->intro_probe) assert(hash == fixture->frame_hash);
     fixture->frame_hash = hash;
   }
@@ -136,8 +144,9 @@ static int display_close(void *user) {
 }
 
 static h2_pal_result_t touch_open(void *user) {
-  ((fixture_t *)user)->touch_open++;
-  return H2_PAL_OK;
+  fixture_t *fixture = user;
+  fixture->touch_open++;
+  return fixture->no_touch ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
 }
 
 static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out_info) {
@@ -200,7 +209,7 @@ static int should_stop(void *user) {
     const h2_runtime_button_up_event_t up={10,20};
     const h2_runtime_button_action_event_t action={.pressed_at_ms=10,.released_at_ms=20};
     /* Duplicate DOWN and the Runtime's separate ACTION must not fire twice. */
-    for(int i=0;i<2;i++)assert(h2_runtime_test_emit_event(fixture->button_control,
+    for(int i=0;i<(fixture->button_burst?fixture->button_burst:2);i++)assert(h2_runtime_test_emit_event(fixture->button_control,
       H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,H2_RUNTIME_COMPONENT_BUTTON,fixture->button_id,10,&down,sizeof(down))==H2_PAL_OK);
     assert(h2_runtime_test_emit_event(fixture->button_control,
       H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP,H2_RUNTIME_COMPONENT_BUTTON,fixture->button_id,20,&up,sizeof(up))==H2_PAL_OK);
@@ -208,7 +217,7 @@ static int should_stop(void *user) {
       H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,H2_RUNTIME_COMPONENT_BUTTON,fixture->button_id,20,&action,sizeof(action))==H2_PAL_OK);
     fixture->button_sent=1;
   }
-  return fixture->ready != 0u && fixture->present >= 6u+fixture->tap_count*2+(fixture->game_lock_probe?6u:0u);
+  return fixture->ready != 0u && fixture->present >= 6u+(fixture->intro_probe?4u:0u)+fixture->tap_count*2+(fixture->game_lock_probe?6u:0u);
 }
 
 static int never_stop(void *user) {
@@ -289,7 +298,7 @@ int main(void) {
   assert(fixture.ready == 1u);
   assert(fixture.display_open == 1u && fixture.display_close == 1u);
   assert(fixture.touch_open == 1u && fixture.touch_close == 1u);
-  assert(fixture.draw >= 6u && fixture.present >= 6u);
+  assert(fixture.draw >= 1u && fixture.present >= 6u);
   const char *layers[] = {"walls", "wheel", "arena", "dust", "particles",
       "opponent", "hand-left", "hand-right", "arena-dust", "scene7", "hud", "scene8",
       "carousel-frame","charge-cells","charge-base","scene11","carousel",
@@ -304,7 +313,7 @@ int main(void) {
                             .on_ready_user = &fixture,
                             .layer = layers[layer], .time_ms = "1875",
                         }) == H2_PAL_OK);
-    assert(fixture.draw >= 6u && fixture.ready == 1u);
+    assert(fixture.draw >= 1u && fixture.ready == 1u);
     assert(fixture.display_open == 1u && fixture.display_close == 1u);
   }
   const char *effects[]={"player-down","player-up","enemy-down","enemy-up"};
@@ -384,7 +393,7 @@ int main(void) {
     assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
       .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
       .layer=layers[layer],.time_ms="1875"})==H2_PAL_OK);
-    assert(fixture.draw>=6u && fixture.display_close==1 && fixture.touch_close==1);
+    assert(fixture.draw>=1u && fixture.present>=6u && fixture.display_close==1 && fixture.touch_close==1);
   }
   const int h106_taps[][2]={{25,22},{80,22},{150,22},{220,22},{70,172},{170,172}};
   for(int i=0;i<6;i++) {
@@ -611,13 +620,26 @@ int main(void) {
       .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
       .layer="carousel",.time_ms="0",.selected=id==9?"1":id==10?"3":"0",.drag="0"})==H2_PAL_OK);
     uint32_t expected=fixture.frame_hash;
-    fixture=(fixture_t){.h106=1,.inspector_layer=17,.button_control=control,.button_id=id};
+    fixture=(fixture_t){.h106=1,.no_touch=1,.inspector_layer=17,.button_control=control,.button_id=id,.button_burst=id==9?24:0};
     assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
       .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
       .layer="carousel",.time_ms="0",.drag="0"})==H2_PAL_OK);
     assert(fixture.button_sent);
+    assert(fixture.ready && fixture.present >= 6 && fixture.touch_close == 0);
     if(id<11)assert(fixture.frame_hash==expected);
     else assert(fixture.frame_hash!=expected);
+  }
+  /* On the button-only H106, only Record dismisses the result screen. */
+  uint32_t result_hash=0;
+  for(unsigned id=8;id<=11;id++) {
+    fixture=(fixture_t){.h106=1,.no_touch=1,.inspector_layer=22,.game_lock_probe=1,.result_key_probe=1,
+        .button_control=control,.button_id=id==8?0:id};
+    assert(h2_lua_qi_duel_run(runtime,&(h2_lua_qi_duel_config_t){
+        .should_stop=should_stop,.should_stop_user=&fixture,.on_ready=ready,.on_ready_user=&fixture,
+        .battle=1,.result="win",.time_ms="5000",.capture_step_ms="33"})==H2_PAL_OK);
+    if(id==8)result_hash=fixture.frame_hash;
+    else if(id<11)assert(fixture.frame_hash==result_hash);
+    else assert(fixture.frame_hash!=result_hash);
   }
 #ifdef H2_QI_DUEL_DESKTOP_VECTORS
   /* Approved hand review switches must agree with the default renderer. */

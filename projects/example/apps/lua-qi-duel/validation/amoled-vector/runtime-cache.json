@@ -1,0 +1,1427 @@
+{
+  "stage": "runtime preparation, idle bodies prototype",
+  "packaged_bitmap_assets_added": false,
+  "prepared_cache_limit_bytes": 1572864,
+  "prepared_bytes": {
+    "amoled_firmware": 271629,
+    "amoled_host": 271633,
+    "h106_host": 113735
+  },
+  "quality": {
+    "reference": "draw-opt-v1 software desktop output",
+    "screen_frame_count": 144,
+    "worst_frame_mae_255": 0.5896701388888889,
+    "max_channel_difference": 91,
+    "bit_identical": false,
+    "visual_review": "AMOLED and H106 before/after full scene at 413 ms: no obvious contour/pose loss. Four destination subpixel samples reduce minification aliasing; edge pixels differ.",
+    "physical_panel_capture": false,
+    "frames": [
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 0,
+        "mae": 0.43191964285714285,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 33,
+        "mae": 0.42660010675465837,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 66,
+        "mae": 0.4253728325569358,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 380,
+        "mae": 0.42756049430641824,
+        "max": 66
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 413,
+        "mae": 0.4240990553830228,
+        "max": 66
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 446,
+        "mae": 0.4252131049430642,
+        "max": 66
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 700,
+        "mae": 0.4252798266045549,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 733,
+        "mae": 0.4293640010351967,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "full",
+        "time_ms": 766,
+        "mae": 0.4277465062111801,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 0,
+        "mae": 0.43191964285714285,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 33,
+        "mae": 0.42660010675465837,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 66,
+        "mae": 0.4253728325569358,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "charge",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 0,
+        "mae": 0.43191964285714285,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 33,
+        "mae": 0.42660010675465837,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 66,
+        "mae": 0.4253728325569358,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "absorb",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 0,
+        "mae": 0.43191964285714285,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 33,
+        "mae": 0.42660010675465837,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "guard",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 0,
+        "mae": 0.43191964285714285,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 33,
+        "mae": 0.42660010675465837,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 66,
+        "mae": 0.4253728325569358,
+        "max": 74
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "wave",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 0,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 33,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "clash",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 0,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 33,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "win",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 0,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 33,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "amoled",
+        "scene": "lose",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 0,
+        "mae": 0.5722627314814814,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 33,
+        "mae": 0.5739756944444444,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 66,
+        "mae": 0.5794675925925926,
+        "max": 91
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 380,
+        "mae": 0.5896701388888889,
+        "max": 82
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 413,
+        "mae": 0.5882581018518519,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 446,
+        "mae": 0.5814814814814815,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 700,
+        "mae": 0.5841840277777778,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 733,
+        "mae": 0.585306712962963,
+        "max": 75
+      },
+      {
+        "screen": "h106",
+        "scene": "full",
+        "time_ms": 766,
+        "mae": 0.5832233796296297,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 0,
+        "mae": 0.5722627314814814,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 33,
+        "mae": 0.5739756944444444,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 66,
+        "mae": 0.5794675925925926,
+        "max": 91
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "charge",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 0,
+        "mae": 0.5722627314814814,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 33,
+        "mae": 0.5739756944444444,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 66,
+        "mae": 0.5794675925925926,
+        "max": 91
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "absorb",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 0,
+        "mae": 0.5722627314814814,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 33,
+        "mae": 0.5739756944444444,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "guard",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 0,
+        "mae": 0.5722627314814814,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 33,
+        "mae": 0.5739756944444444,
+        "max": 83
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 66,
+        "mae": 0.5794675925925926,
+        "max": 91
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "wave",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 0,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 33,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "clash",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 0,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 33,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "win",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 0,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 33,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 66,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 380,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 413,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 446,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 700,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 733,
+        "mae": 0.0,
+        "max": 0
+      },
+      {
+        "screen": "h106",
+        "scene": "lose",
+        "time_ms": 766,
+        "mae": 0.0,
+        "max": 0
+      }
+    ],
+    "component_regions": [
+      {
+        "screen": "amoled",
+        "component_region": "opponent",
+        "time_ms": 413,
+        "bounds": [
+          95,
+          85,
+          275,
+          275
+        ],
+        "mae_255": 1.1614619883040935
+      },
+      {
+        "screen": "amoled",
+        "component_region": "left",
+        "time_ms": 413,
+        "bounds": [
+          0,
+          165,
+          155,
+          380
+        ],
+        "mae_255": 0.6942035508877219
+      },
+      {
+        "screen": "amoled",
+        "component_region": "right",
+        "time_ms": 413,
+        "bounds": [
+          235,
+          165,
+          368,
+          380
+        ],
+        "mae_255": 0.6419420644634843
+      },
+      {
+        "screen": "h106",
+        "component_region": "opponent",
+        "time_ms": 413,
+        "bounds": [
+          70,
+          40,
+          175,
+          150
+        ],
+        "mae_255": 1.3162481962481962
+      },
+      {
+        "screen": "h106",
+        "component_region": "left",
+        "time_ms": 413,
+        "bounds": [
+          0,
+          95,
+          105,
+          240
+        ],
+        "mae_255": 0.7864696223316913
+      },
+      {
+        "screen": "h106",
+        "component_region": "right",
+        "time_ms": 413,
+        "bounds": [
+          150,
+          95,
+          240,
+          240
+        ],
+        "mae_255": 0.7597445721583652
+      }
+    ],
+    "worst_changed_pixel_mae_255": 6.5054587243823025
+  },
+  "hardware": {
+    "device_uid": "94a990281a12",
+    "port": "/dev/tty.usbmodem5101",
+    "audio_off_probe": {
+      "version": "cache-probe-v2",
+      "prepare_ms": 12439,
+      "draw_ms": {
+        "pairing": [
+          1002,
+          1012
+        ],
+        "walls": [
+          299
+        ],
+        "wheel": [
+          1606
+        ],
+        "opponent": [
+          276,
+          276
+        ],
+        "hand-left": [
+          296,
+          296
+        ],
+        "hand-right": [
+          295,
+          295
+        ],
+        "carousel-frame": [
+          3928
+        ],
+        "charge-cells": [
+          1443
+        ],
+        "hud": [
+          2431
+        ],
+        "full": [
+          12544,
+          4568
+        ],
+        "clash": [
+          17958
+        ],
+        "settlement": [
+          10637,
+          7251,
+          7253,
+          7252,
+          7253,
+          7249,
+          7251
+        ]
+      },
+      "psram_min_free": 571808,
+      "psram_largest_after_probe": 1802240,
+      "internal_min_free": 59987,
+      "observed_script_exit": false,
+      "observed_watchdog": false,
+      "observed_touch_error": -4
+    },
+    "first_prototype_failure": {
+      "version": "cache-probe-v1",
+      "raw_retained_bytes": 1368200,
+      "error": "invalid vector icon at first full battle",
+      "psram_min_free": 15472,
+      "resolution": "Compress prepared pixels losslessly and reclaim replaced scratch buffers before allocation."
+    },
+    "audio_on_probe": {
+      "version": "cache-audio-v1",
+      "prepare_ms": 12500,
+      "battle_draw_ms": [
+        12567,
+        4580
+      ],
+      "battle_audio_ms": [
+        406,
+        401
+      ],
+      "result": "FAILED entering clash: not enough memory",
+      "lua_bytes_at_failure": 1334197,
+      "psram_min_free": 172120,
+      "next_fix": "Use independent frame scratch allocations instead of one contiguous double-frame allocation; retest pending."
+    },
+    "audio_on_probe_v3": {
+      "version": "cache-audio-v3",
+      "result": "Passed equal clash after splitting frame buffers; FAILED on charge-hold: invalid vector slice commands",
+      "psram_min_free": 8292,
+      "lua_bytes_at_failure": 3831984,
+      "pending_fix": "GC before large native vector renders; active/crossing arrays sized for current scanline rather than every edge."
+    },
+    "audio_on_probe_v4": {
+      "version": "cache-audio-v4",
+      "result": "FAILED in clash: not enough memory",
+      "lua_bytes_at_failure": 1997608,
+      "fix": "Keep primary scratch and divide secondary crossfade frame into <=16 KiB row slabs."
+    },
+    "audio_on_probe_v5": {
+      "version": "cache-audio-v5",
+      "result": "Both clash modes passed; FAILED charge-hold: invalid vector slice commands",
+      "lua_bytes_at_failure": 3204260,
+      "fix": "32 KiB edge blocks with heap merge avoid contiguous 512 KiB edge realloc and its temporary copies."
+    },
+    "audio_on_probe_v6": {
+      "version": "cache-audio-v6",
+      "prepare_ms": 12742,
+      "draw_ms": {
+        "pairing": [
+          1015,
+          1106
+        ],
+        "walls": [
+          222
+        ],
+        "wheel": [
+          1630
+        ],
+        "opponent": [
+          276,
+          277
+        ],
+        "hand-left": [
+          298,
+          297
+        ],
+        "hand-right": [
+          296,
+          296
+        ],
+        "carousel-frame": [
+          4067
+        ],
+        "charge-cells": [
+          23571
+        ],
+        "hud": [
+          268
+        ],
+        "full": [
+          4622,
+          4605
+        ],
+        "clash": [
+          18486
+        ],
+        "clash-combo": [
+          18295
+        ],
+        "charge-windup": [
+          28725
+        ],
+        "charge-hold": [
+          11965
+        ],
+        "wave-windup": [
+          12471
+        ],
+        "wave-hold": [
+          27855
+        ],
+        "absorb-windup": [
+          15446
+        ],
+        "absorb-hold": [
+          14629
+        ],
+        "guard-windup": [
+          13149
+        ],
+        "guard-hold": [
+          13096
+        ],
+        "settlement-lose": [
+          10631
+        ],
+        "settlement": [
+          10900,
+          7471,
+          7470
+        ]
+      },
+      "psram_min_free": 33104,
+      "internal_min_free": 47779,
+      "observed_script_exit": false,
+      "watchdog": "Two IDLE1 warnings in wave-hold; symbolicated to draw_polygon. Added row-level cooperative polling without changing arithmetic.",
+      "diagnostic_label_note": "charge-cells accidentally invoked charge-hold because of prefix matching; corrected in v7. Do not interpret its timing as isolated charge cells."
+    },
+    "audio_on_probe_v7": {
+      "version": "cache-audio-v7",
+      "active_image_sha256": "a939380d253efd7e5c611d894f013bc4e7fbe38209110e53330e7d2eccbd9d5d",
+      "package_sha256": "9d4ddf051c59dd2211f8414a6fbbc43751f0dedab8da2ffaa72122b2415b2007",
+      "prepare_ms": 12701,
+      "draw_ms": {
+        "pairing": [
+          1016,
+          1110
+        ],
+        "walls": [
+          222
+        ],
+        "wheel": [
+          1628
+        ],
+        "opponent": [
+          276,
+          276
+        ],
+        "hand-left": [
+          296,
+          296
+        ],
+        "hand-right": [
+          296,
+          295
+        ],
+        "carousel-frame": [
+          4067
+        ],
+        "charge-cells": [
+          1466
+        ],
+        "hud": [
+          2482
+        ],
+        "full": [
+          12641,
+          4604
+        ],
+        "clash": [
+          18479
+        ],
+        "clash-combo": [
+          18294
+        ],
+        "charge-windup": [
+          28729
+        ],
+        "charge-hold": [
+          11966
+        ],
+        "wave-windup": [
+          12471
+        ],
+        "wave-hold": [
+          28459
+        ],
+        "absorb-windup": [
+          15445
+        ],
+        "absorb-hold": [
+          14630
+        ],
+        "guard-windup": [
+          13143
+        ],
+        "guard-hold": [
+          13097
+        ],
+        "settlement-lose": [
+          10630
+        ],
+        "settlement": [
+          10908,
+          7471,
+          7470
+        ]
+      },
+      "psram_min_free": 170796,
+      "psram_free_after": 1706804,
+      "internal_min_free": 47795,
+      "observed_script_exit": false,
+      "observed_watchdog": false,
+      "coredump_stored_bytes": 0,
+      "touch_poll_error": -4,
+      "coverage": "Real BGM and action sound effects; two selected poses per each of four skills, equal/combo clashes, lose/win settlements. Short deterministic probe, not all animation frames or a long soak."
+    },
+    "installed_normal": {
+      "version": "cache-opt-v6",
+      "image_bytes": 2881776,
+      "image_sha256": "1530b4cf65c8346a5fd6299865780a036027cc0c81b444e13da276224f99bb33",
+      "package_bytes": 2037042,
+      "package_sha256": "71b7a7da8901d443361b41c35e8a34603dcee3a9cf1639ffa3e1b52be9d7b6f1",
+      "prepare_ms": 12739,
+      "prepared_bytes": 271629,
+      "normal_pairing_fps_range": [
+        0.5,
+        0.9
+      ],
+      "internal_free": 64307,
+      "internal_min_free": 47799,
+      "psram_free": 2421944,
+      "psram_min_free": 1358508,
+      "coredump_stored_bytes": 0,
+      "observed_script_exit": false,
+      "observed_watchdog": false,
+      "touch_poll_error": -4,
+      "automatic_scene_probe_removed": true,
+      "artifacts": "build/qi-duel-amoled-cache-opt-v6/"
+    }
+  },
+  "acceptance": "Cache prototype implemented; short diagnostic completed without script exits or watchdog warnings. NOT accepted for 30 FPS, all-frame device parity, touch reliability, or full-game/long-term stability.",
+  "storage": "Lossless zlib compression of resolution-specific prepared RGBA in RAM; reusable decompression scratch, no generated bitmap resource in firmware",
+  "tests": [
+    "lua_test",
+    "vector_sw_test",
+    "lua_qi_duel_test",
+    "qi_duel_retro_audio_test"
+  ],
+  "workspace_verification": {
+    "component_frames": 170,
+    "max_channel_difference": 0,
+    "mae_255": 0,
+    "independent_asan_ubsan": "PASS",
+    "hand_workspace_bytes_before_range": [
+      785896,
+      946492
+    ],
+    "edge_and_row_storage_component_frames": 170,
+    "edge_and_row_storage_max_channel_difference": 0,
+    "regressions": "Four suites PASS; extra multi-block same-winding contours and scattered-row lifetime tests PASS; ASan/UBSan PASS.",
+    "hand_workspace_bytes_after_live_array_change": 581632
+  }
+}

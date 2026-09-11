@@ -1,5 +1,4 @@
 local display = require("display")
-local touch = require("lcd_touch")
 local delay = require("delay")
 local system = require("system")
 local Rules = require("rules")
@@ -65,6 +64,12 @@ local MIN_PASS_FPS_TENTHS = 270
 local MAX_PASS_FPS_TENTHS = 320
 local SCREEN_W, SCREEN_H = display.width, display.height
 local H106 = SCREEN_W==240 and SCREEN_H==240
+-- H106 hardware is button-only; desktop previews may also provide touch.
+local touch_ok, touch = pcall(require, "lcd_touch")
+if not touch_ok or type(touch) ~= "table" then
+    if not H106 then error("touch unavailable: " .. tostring(touch)) end
+    touch = nil
+end
 -- Art/animation coordinates stay in the approved design space. Each H106
 -- group has its own uniform transform; never squash the portrait scene.
 local W, H = 368, 448
@@ -94,6 +99,7 @@ if H106 then
     display.glow_line=function(ax,ay,bx,by,w,color,alpha,blur,shadow)
         native.glow_line(ax*s+tx,ay*s+ty,bx*s+tx,by*s+ty,w*s,color,alpha,blur*s,shadow)
     end
+    display.add_lines=function(lines,count) native.add_lines(lines,count,s,tx,ty) end
     display.draw_polygon=function(points,fill,fa,stroke,sa,w,shadow,sha,blur)
         local mapped={}
         for i,p in ipairs(points) do mapped[i]={p[1]*s+tx,p[2]*s+ty} end
@@ -107,8 +113,10 @@ local options = type(args) == "table" and args or {}
 local DESKTOP_CLICKS = options.click_controls=="1"
 local inspector_layer = options.layer or "full"
 local PLAY_GAME=options.battle=="1" and inspector_layer=="full"
+-- Keep synthesis and audio output closed while validating display performance.
+local AUDIO_ENABLED=false
 local sfx
-if PLAY_GAME then
+if PLAY_GAME and AUDIO_ENABLED then
     local ok,audio = pcall(require,"audio")
     if ok and type(audio)=="table" then
         sfx=require("retro_audio").new(audio,require("retro_score"))
@@ -325,6 +333,22 @@ for i = 0, 103 do
         hue = i % 5 == 0 and 292 or (i % 7 == 0 and 28 or 193),
         wobble = arena_rand() * TAU,
     }
+end
+-- Geometry seeds and angles are immutable; calculate them once, preserving
+-- the original double-precision expressions used by each animation frame.
+for index,p in ipairs(space_particles) do
+    local i=index-1
+    local pair=math.floor(i/2)
+    p.top_angle=((pair*.61803398875)%1)*TAU+(i%2)*math.pi
+    p.top_extent=5.10+hash01(pair*47+9)*.72
+    p.top_cos,p.top_sin=math.cos(p.top_angle),math.sin(p.top_angle)
+    p.lateral=(hash01(i*31+4)*2-1)*.76
+    p.forward=math.sqrt(1-p.lateral*p.lateral)
+    p.final_extent=5.05+hash01(i*47+9)*.72
+    p.path_angle=.025+(i-52+hash01(i*53+7)*.72)/52*(math.pi-.05)
+    p.path_cos,p.path_sin=math.cos(p.path_angle),math.sin(p.path_angle)
+    p.hit_radius=3+hash01(i*79+3)*.38
+    p.wall_extra=hash01(i*101+5)*22
 end
 for i = 0, 33 do
     ring_dust[i + 1] = {a = arena_rand() * TAU, r = .24 + arena_rand() * .76,
@@ -812,8 +836,7 @@ local function handle_touch(info)
     carousel_offset = fixed_drag or (carousel_offset+(target_drag-carousel_offset)*.24)
 end
 
--- H106 product logical component IDs; its launcher maps these to real keys.
--- Desktop mirrors Volume+ / Volume- / Record with Up / Down / Tab.
+-- Logical next / previous / confirm IDs; the H106 launcher maps Right / Left / Record.
 if H106 then
     local runtime=require("runtime")
     local held={}
@@ -821,7 +844,7 @@ if H106 then
         if held[id] then return end
         held[id]=true
         if PLAY_GAME and settlement then
-            begin_settlement_exit(scene_time())
+            if id==11 then begin_settlement_exit(scene_time()) end
             return
         end
         if PLAY_GAME and intro and intro.phase~="done" then
@@ -837,7 +860,7 @@ if H106 then
             local direction=id==9 and 1 or -1
             selected=skill_index(selected+direction)
             carousel_offset=direction*CAROUSEL_RADIUS*CAROUSEL_STEP
-            print(string.format("H2_QI_DUEL_BUTTON key=%s selected=%s",id==9 and "volume_up" or "volume_down",SKILLS[selected].kind))
+            print(string.format("H2_QI_DUEL_BUTTON key=%s selected=%s",id==9 and "right" or "left",SKILLS[selected].kind))
         elseif id==11 and submit_action(SKILLS[selected].kind,scene_time()) then
             start_icon_echo(selected,0)
         end
@@ -932,10 +955,9 @@ function Intro.top_particle(index,t)
     local zero=index-1
     local pair=math.floor(zero/2)
     local seed=space_particles[pair*2+1]
-    local opposite=zero%2
-    local angle=((pair*.61803398875)%1)*TAU+opposite*math.pi
+    local angle=space_particles[index].top_angle
     local progress=(seed.p0+t*seed.speed*.67)%1
-    local radius=5.10+hash01(pair*47+9)*.72
+    local radius=space_particles[index].top_extent
     return progress,angle,radius,seed.size,seed.hue
 end
 local function smoothstep(value) return value*value*(3-2*value) end
@@ -951,15 +973,68 @@ local function draw_dust(now_ms)
             p.size,hsl(p.hue,.66),twinkle*.7)
     end
 end
-local function draw_particle_path(points,width,hue,alpha)
-    for i=2,#points do
-        local u=(i-1)/(#points-1)
-        local taper=.12+.88*u^1.35
-        local segment_alpha=alpha*u^1.7
-        local a,b=points[i-1],points[i]
-        display.add_line(a[1],a[2],b[1],b[2],width*taper*4.4,hsl(hue,.58),segment_alpha*.18)
-        display.add_line(a[1],a[2],b[1],b[2],math.max(.18,width*taper),hsl(hue,.76),segment_alpha)
+-- Keep one command array; the native batch preserves per-segment halo/core
+-- order. Taper coefficients depend only on segment count, not the frame.
+local draw_particle_path
+do
+local particle_lines,particle_line_count,particle_tapers={},0,{}
+local function append_particle_line(a,b,width,color,alpha)
+    local n=particle_line_count*9
+    particle_lines[n+1],particle_lines[n+2]=a[1],a[2]
+    particle_lines[n+3],particle_lines[n+4]=b[1],b[2]
+    particle_lines[n+5]=width
+    particle_lines[n+6],particle_lines[n+7],particle_lines[n+8]=color.r,color.g,color.b
+    particle_lines[n+9]=alpha
+    particle_line_count=particle_line_count+1
+end
+draw_particle_path=function(points,width,hue,alpha)
+    if Intro.history_active then
+        local head=points[#points]
+        local p=space_particles[Intro.history_index]
+        if not p.history_halo then p.history_halo=hsl(hue,.58);p.history_core=hsl(hue,.76) end
+        local halo,core=p.history_halo,p.history_core
+        local x,y=head[1],head[2]
+        local previous=p.history_x and p.history_progress<=Intro.history_progress
+        local core_width=math.max(.18,width)
+        local gain=Intro.history_gain or 1
+        local core_gain,halo_gain=1,1
+        if previous then
+            local distance=math.sqrt((x-p.history_x)^2+(y-p.history_y)^2)
+            -- A short new segment overlaps more retained round caps. Account
+            -- for travel and cap width so slow frames do not brighten tails.
+            core_gain=(distance+core_width*gain)/(distance+core_width)
+            halo_gain=(distance+width*4.4*gain)/(distance+width*4.4)
+        end
+        local core_alpha=math.min(1,alpha*1.2*core_gain)
+        local halo_alpha=math.min(1,alpha*.18*1.2*halo_gain)
+        if previous then
+            display.add_line(p.history_x,p.history_y,x,y,width*4.4,halo,halo_alpha)
+            display.add_line(p.history_x,p.history_y,x,y,core_width,core,core_alpha)
+        else
+            display.add_disc(x,y,width*2.2,halo,halo_alpha)
+            display.add_disc(x,y,core_width*.5,core,core_alpha)
+        end
+        p.history_x,p.history_y,p.history_progress=x,y,Intro.history_progress
+        return
     end
+    particle_line_count=0
+    local count=#points-1
+    local coefficients=particle_tapers[count]
+    if not coefficients then
+        coefficients={}
+        for i=1,count do local u=i/count;coefficients[i]={.12+.88*u^1.35,u^1.7} end
+        particle_tapers[count]=coefficients
+    end
+    local halo,core=hsl(hue,.58),hsl(hue,.76)
+    for i=2,#points do
+        local taper=coefficients[i-1][1]
+        local segment_alpha=alpha*coefficients[i-1][2]
+        local a,b=points[i-1],points[i]
+        append_particle_line(a,b,width*taper*4.4,halo,segment_alpha*.18)
+        append_particle_line(a,b,math.max(.18,width*taper),core,segment_alpha)
+    end
+    display.add_lines(particle_lines,particle_line_count)
+end
 end
 local function draw_space_particles(now_ms)
     particle_tilt_value=Intro.camera_tilt(now_ms)
@@ -969,12 +1044,58 @@ local function draw_space_particles(now_ms)
         if intro.phase=="done" then particle_ms=particle_ms+now_ms-intro.last_ms end
     end
     local t=particle_ms*.001
+    if Intro.history_active then
+        -- Top-down history needs only the current head. Reuse its storage;
+        -- tilted projections and backwards tail samples belong to the full path.
+        for index,p in ipairs(space_particles) do
+            local progress,_,extent,size,hue=Intro.top_particle(index,t)
+            local fraction,opacity=1,1
+            local visible=true
+            if index<=52 then
+                if progress<.58 then
+                    local grow=smoothstep(progress/.58)
+                    fraction=.24+grow*.76;opacity=.28+grow*.72
+                else
+                    local inverse=1-(progress-.58)/.42
+                    fraction=inverse^1.45;opacity=inverse^1.7
+                end
+                local final_progress=(p.p0+t*p.speed*.72)%1
+                visible=8-p.forward*smoothstep(final_progress)*p.final_extent>1.15
+            else
+                if progress<.36 then
+                    local grow=smoothstep(progress/.36)
+                    fraction=.24+grow*.76;opacity=.28+grow*.72
+                end
+                if progress>.80 then opacity=opacity*clamp((1-progress)/.20,0,1) end
+            end
+            if visible then
+                local radius=smoothstep(progress)*extent
+                local points=p.history_points
+                if not points then points={{0,0}};p.history_points=points end
+                points[1][1]=184+radius*p.top_cos*36
+                points[1][2]=220+((8+radius*p.top_sin)-8)*36
+                local width
+                if index<=52 then
+                    width=math.min(14,(.44+size*.36)*fraction)
+                    opacity=math.min(1,opacity*(.35+.28))
+                else
+                    width=math.max(.16,(.46+size*.36)*fraction)
+                    opacity=math.min(1,opacity*(.38+.55))
+                end
+                Intro.history_index=index;Intro.history_progress=progress
+                draw_particle_path(points,width,hue,opacity)
+            end
+        end
+        return
+    end
     for index,p in ipairs(space_particles) do
         local i=index-1
+        Intro.history_index=index
         local top_progress,top_angle,top_extent,top_size,top_hue=
             Intro.top_particle(index,t)
-        local top_cos=Intro.hash_cache and math.cos(top_angle)
-        local top_sin=Intro.hash_cache and math.sin(top_angle)
+        Intro.history_progress=top_progress
+        local top_cos=p.top_cos
+        local top_sin=p.top_sin
         if i<52 then
             local final_progress=(p.p0+t*p.speed*.72)%1
             local progress=top_progress+(final_progress-top_progress)*particle_tilt_value
@@ -986,9 +1107,9 @@ local function draw_space_particles(now_ms)
                 local inverse=1-(progress-.58)/.42
                 size_fraction=inverse^1.45;opacity=inverse^1.7
             end
-            local lateral=(hash01(i*31+4)*2-1)*.76
-            local forward=math.sqrt(1-lateral*lateral)
-            local final_distance=smoothstep(final_progress)*(5.05+hash01(i*47+9)*.72)
+            local lateral=p.lateral
+            local forward=p.forward
+            local final_distance=smoothstep(final_progress)*p.final_extent
             local top_distance=smoothstep(top_progress)*top_extent
             local world_z=8-forward*final_distance
             if world_z>1.15 then
@@ -999,10 +1120,10 @@ local function draw_space_particles(now_ms)
                 local trail=(.21+particle_size*.11)*(.5+perspective^.82*.82)
                 local final_tail_distance=math.max(0,final_distance-trail)
                 local top_tail_distance=math.max(0,top_distance-trail)
-                local top_head=arena_project_top(top_distance*(top_cos or math.cos(top_angle)),
-                    8+top_distance*(top_sin or math.sin(top_angle)))
-                local top_tail=arena_project_top(top_tail_distance*(top_cos or math.cos(top_angle)),
-                    8+top_tail_distance*(top_sin or math.sin(top_angle)))
+                local top_head=arena_project_top(top_distance*top_cos,
+                    8+top_distance*top_sin)
+                local top_tail=arena_project_top(top_tail_distance*top_cos,
+                    8+top_tail_distance*top_sin)
                 local final_head=arena_project_45(lateral*final_distance,world_z)
                 local final_tail=arena_project_45(lateral*final_tail_distance,
                     8-forward*final_tail_distance)
@@ -1011,8 +1132,10 @@ local function draw_space_particles(now_ms)
                 local tail={top_tail[1]+(final_tail[1]-top_tail[1])*mix,
                     top_tail[2]+(final_tail[2]-top_tail[2])*mix}
                 local points={}
-                for step=0,8 do
-                    points[#points+1]={tail[1]+(head[1]-tail[1])*step/8,tail[2]+(head[2]-tail[2])*step/8}
+                if Intro.history_active then points[1]=head else
+                    for step=0,8 do
+                        points[#points+1]={tail[1]+(head[1]-tail[1])*step/8,tail[2]+(head[2]-tail[2])*step/8}
+                    end
                 end
                 local width=math.min(14,(.44+particle_size*.36)*perspective^1.58*size_fraction)
                 draw_particle_path(points,width,top_hue,math.min(1,opacity*(.35+perspective*.28)))
@@ -1026,31 +1149,31 @@ local function draw_space_particles(now_ms)
                 size_fraction=.24+grow*.76;opacity=.28+grow*.72
             end
             local route=smoothstep(progress)
-            local angle=.025+(i-52+hash01(i*53+7)*.72)/52*(math.pi-.05)
-            local angle_cos=Intro.hash_cache and math.cos(angle)
-            local angle_sin=Intro.hash_cache and math.sin(angle)
-            local hit_radius=3+hash01(i*79+3)*.38
-            local final_base_perspective=8/(8+(angle_sin or math.sin(angle))*hit_radius)
+            local angle=p.path_angle
+            local angle_cos=p.path_cos
+            local angle_sin=p.path_sin
+            local hit_radius=p.hit_radius
+            local final_base_perspective=8/(8+angle_sin*hit_radius)
             local turn_radius=hit_radius-.34
-            local turn_start=arena_project_45(turn_radius*(angle_cos or math.cos(angle)),
-                8+turn_radius*(angle_sin or math.sin(angle)))
-            local before=arena_project_45((turn_radius-.12)*(angle_cos or math.cos(angle)),
-                8+(turn_radius-.12)*(angle_sin or math.sin(angle)))
+            local turn_start=arena_project_45(turn_radius*angle_cos,
+                8+turn_radius*angle_sin)
+            local before=arena_project_45((turn_radius-.12)*angle_cos,
+                8+(turn_radius-.12)*angle_sin)
             local radial_x,radial_y=turn_start[1]-before[1],turn_start[2]-before[2]
-            local hit=arena_project_45(hit_radius*(angle_cos or math.cos(angle)),
-                8+hit_radius*(angle_sin or math.sin(angle)))
+            local hit=arena_project_45(hit_radius*angle_cos,
+                8+hit_radius*angle_sin)
             local turn_end={hit[1],hit[2]-9}
             local raw_y=math.abs(radial_x)>.5 and
                 turn_start[2]+(turn_end[1]-turn_start[1])*radial_y/radial_x or
                 (turn_start[2]+turn_end[2])*.5
             local control={turn_end[1],clamp(raw_y,math.min(turn_start[2],turn_end[2]),math.max(turn_start[2],turn_end[2]))}
-            local wall_rise=turn_end[2]+34+hash01(i*101+5)*22
+            local wall_rise=turn_end[2]+34+p.wall_extra
             local function final_point_at(u)
                 if u<=.56 then
                     local radius=turn_radius*u/.56
-                    local point=arena_project_45(radius*(angle_cos or math.cos(angle)),
-                        8+radius*(angle_sin or math.sin(angle)))
-                    point[3]=8/(8+(angle_sin or math.sin(angle))*radius)
+                    local point=arena_project_45(radius*angle_cos,
+                        8+radius*angle_sin)
+                    point[3]=8/(8+angle_sin*radius)
                     return point
                 elseif u<=.72 then
                     local q=(u-.56)/(.72-.56);local v=1-q
@@ -1063,8 +1186,9 @@ local function draw_space_particles(now_ms)
             end
             local function point_at(u)
                 local flat_radius=top_extent*u
-                local top=arena_project_top(flat_radius*(top_cos or math.cos(top_angle)),
-                    8+flat_radius*(top_sin or math.sin(top_angle)))
+                local top=arena_project_top(flat_radius*top_cos,
+                    8+flat_radius*top_sin)
+                if particle_tilt_value==0 then return {top[1],top[2],1} end
                 local tilted=final_point_at(u)
                 local mix=particle_tilt_value
                 return {top[1]+(tilted[1]-top[1])*mix,
@@ -1085,7 +1209,7 @@ local function draw_space_particles(now_ms)
             end
             local wanted=(8+perspective*24)*(.34+size_fraction*.66)
             local points={head};local sampled,accumulated=route,0
-            for _=1,22 do
+            for _=1,Intro.history_active and 0 or 22 do
                 if sampled<=0 or accumulated>=wanted then break end
                 sampled=math.max(0,sampled-.005)
                 local point=point_at(sampled);local first=points[1]
@@ -1097,6 +1221,34 @@ local function draw_space_particles(now_ms)
             draw_particle_path(points,width,top_hue,math.min(1,opacity*(.38+perspective*.55)))
         end
     end
+end
+
+-- The pairing surface is its own retained history. Scene/camera changes clear
+-- this history so old screen-space trails never leak into the next scene.
+function Intro.draw_history(now_ms)
+    local current=intro.particle_ms
+    local reset=not Intro.history_last or current<Intro.history_last
+    display.begin_composite(reset and true or "retain")
+    viewport("scene")
+    Intro.history_active=true
+    if reset then
+        for _,p in ipairs(space_particles) do p.history_x=nil end
+        -- Warm the existing trajectories, including particles alive at t=0.
+        -- This prepares history once, outside subsequent moving frames.
+        Intro.history_gain=1
+        for sample=current-594,current,33 do
+            display.fade_composite(1-.85^(33*.06))
+            intro.particle_ms=sample;draw_space_particles(now_ms)
+        end
+        intro.particle_ms=current
+    else
+        local elapsed=current-Intro.history_last
+        Intro.history_gain=elapsed/33
+        display.fade_composite(1-.85^(elapsed*.06))
+        draw_space_particles(now_ms)
+    end
+    Intro.history_active=false;Intro.history_last=current
+    display.end_composite()
 end
 
 local function action_state(now_ms,actor)
@@ -1754,12 +1906,33 @@ local function draw_impact_label(now)
     sprite(scale,angle,fade,0,0)
 end
 
+-- Account for the panel transfer in every render branch, including cinematics.
+local function present_render(draw_started_ms)
+    local present_started_ms=system.millis()
+    display.present()
+    return present_started_ms-draw_started_ms,system.millis()-present_started_ms
+end
+
+local render_phase
+local function start_render_phase(phase)
+    if phase~=render_phase then
+        Intro.history_last=nil
+        if display.reset_vector_cache then display.reset_vector_cache() end
+        render_phase=phase
+    end
+end
 local function render(now_ms)
     local draw_started_ms = system.millis()
     local intro_active=PLAY_GAME and intro and intro.phase~="done"
     local intro_fading=intro_active and intro.phase=="fade"
     if intro_active and not intro_fading then
-        display.clear(COLOR.black);display.begin_composite()
+        start_render_phase("intro")
+        if display.fade_composite and Intro.camera_tilt(now_ms)==0 and not intro.reentry_started then
+            Intro.draw_history(now_ms)
+            return present_render(draw_started_ms)
+        end
+        Intro.history_last=nil
+        display.begin_composite(true)
         viewport("scene");draw_space_particles(now_ms)
         if intro.reentry_started then
             local cover=1-ease((now_ms-intro.reentry_started)/INTRO_REENTRY_MS)
@@ -1770,39 +1943,38 @@ local function render(now_ms)
             end
         end
         display.end_composite()
-        display.present()
-        return system.millis()-draw_started_ms,0
+        return present_render(draw_started_ms)
     end
     local clash_state=inspector_layer=="full" and Intro.clash_state(now_ms) or nil
     if clash_state then
+        start_render_phase("clash")
         -- A hard cinematic cut keeps the close-up genuinely OLED black: no
         -- arena, actors, hands, HUD or residual glow is drawn underneath.
-        display.clear(COLOR.black);display.begin_composite()
+        display.begin_composite(true)
         viewport("screen");Intro.draw_clash(now_ms,clash_state)
         display.end_composite()
-        display.present()
-        return system.millis()-draw_started_ms,0
+        return present_render(draw_started_ms)
     end
     local settlement_state=inspector_layer=="full" and Intro.settlement_state(now_ms) or nil
     if settlement_state then
-        display.clear(COLOR.black);display.begin_composite()
+        start_render_phase("settlement")
+        display.begin_composite(true)
         viewport("screen");Intro.draw_settlement(now_ms,settlement_state)
         display.end_composite()
-        display.present()
-        return system.millis()-draw_started_ms,0
+        return present_render(draw_started_ms)
     end
     local full=inspector_layer=="full"
     local scene11=full or inspector_layer=="scene11"
     local scene8=scene11 or inspector_layer=="scene8"
     local scene7=scene8 or inspector_layer=="scene7"
     local arena=scene7 or inspector_layer=="arena" or inspector_layer=="arena-dust"
-    display.clear(COLOR.black)
-    if display.procedural_lights then display.begin_composite() end
+    start_render_phase("battle")
+    if display.procedural_lights then display.begin_composite(true)
+    else display.clear(COLOR.black) end
     if arena or inspector_layer=="walls" then draw_wall_lights(now_ms) end
     if arena or inspector_layer=="wheel" then draw_arena_lights(now_ms) end
-    if display.procedural_lights then display.end_composite() end
     if inspector_layer~="walls" and inspector_layer~="wheel" and inspector_layer~="arena" then
-        display.begin_composite()
+        if not display.procedural_lights then display.begin_composite() end
         viewport("scene")
         if scene7 or inspector_layer=="dust" or inspector_layer=="arena-dust" then draw_dust(now_ms) end
         if (scene7 or inspector_layer=="particles") and not intro_fading then
@@ -1843,12 +2015,10 @@ local function render(now_ms)
             end
         end
         display.end_composite()
+    elseif display.procedural_lights then
+        display.end_composite()
     end
-    local present_started_ms = system.millis()
-    display.present()
-    local present_finished_ms = system.millis()
-    return present_started_ms - draw_started_ms,
-        present_finished_ms - present_started_ms
+    return present_render(draw_started_ms)
 end
 
 local screen_created = true
@@ -1868,19 +2038,53 @@ if not H106 and (SCREEN_W ~= 368 or SCREEN_H ~= 448) then
     return
 end
 
-local touch_ok, touch_info = pcall(touch.sync)
-if not touch_ok then
+local sync_ok, touch_info = true, nil
+if touch then sync_ok, touch_info = pcall(touch.sync) end
+if not sync_ok then
     print("[qi-duel] ERROR: touch unavailable: " .. tostring(touch_info))
     cleanup()
     return
 end
 
 display.begin_frame({ clear = true, color = COLOR.black })
+if H106 and display.prepare_vector_coverage then
+    local bytes = display.prepare_vector_coverage(512 * 1024)
+    print("H2_QI_DUEL_PREPARE coverage_bytes=" .. bytes)
+end
 print(string.format("[qi-duel] ready screen=%dx%d layout=%s target_fps=30 skills=4 selected=%d layer=%s game=%s", SCREEN_W, SCREEN_H,H106 and "h106" or "amoled", selected, inspector_layer, tostring(PLAY_GAME)))
+
+-- Prepare moving vector bodies once at more than twice their on-screen size.
+-- Progress is outside the game clock; no battle deadline advances while loading.
+if display.prepare_vector then
+    local started,bytes=system.millis(),0
+    local body_scale,hand_scale=H106 and .52 or 1,H106 and .62 or 1
+    local entries={{"opponent",math.ceil(312*body_scale),math.ceil(328*body_scale)},
+        {"hand-left",math.ceil(308*hand_scale),math.ceil(376*hand_scale)},
+        {"hand-right",math.ceil(308*hand_scale),math.ceil(376*hand_scale)}}
+    local function progress(n)
+        if not PLAY_GAME or fixed_time_ms then return end
+        display.clear(COLOR.black)
+        display.draw_text(math.floor((SCREEN_W-126)/2),math.floor(SCREEN_H/2)-28,
+            "LOADING",{font_size=21,color=COLOR.cyan_hot})
+        display.fill_rect(32,math.floor(SCREEN_H/2)+12,SCREEN_W-64,4,COLOR.near_black)
+        if n>0 then display.fill_rect(32,math.floor(SCREEN_H/2)+12,
+            math.floor((SCREEN_W-64)*n/#entries),4,COLOR.cyan) end
+        display.present()
+    end
+    progress(0)
+    for i,entry in ipairs(entries) do
+        local allocated,reason=display.prepare_vector("@qi-duel/vector/"..entry[1]..".h2vg",entry[2],entry[3])
+        if not allocated then error("vector preparation failed: "..tostring(reason)) end
+        bytes=bytes+allocated
+        progress(i)
+    end
+    print(string.format("H2_QI_DUEL_PREPARE bodies=%d bytes=%d elapsed_ms=%d",#entries,bytes,system.millis()-started))
+end
 
 local perf_window_started_ms = system.millis()
 local perf_frames = 0
 local perf_update_total_ms = 0
+local perf_audio_total_ms = 0
 local perf_draw_total_ms = 0
 local perf_present_total_ms = 0
 local perf_frame_total_ms = 0
@@ -1893,7 +2097,11 @@ scene_started_ms = system.millis()
 
 while true do
     local frame_started_ms = system.millis()
-    local polled, info = pcall(touch.poll)
+    local polled, info = true, {
+        pressed = false, just_pressed = false, just_released = false,
+        x = CX, y = 400,
+    }
+    if touch then polled, info = pcall(touch.poll) end
     if not polled then
         if not touch_error_reported then
             print("[qi-duel] WARN: touch.poll failed: " .. tostring(info))
@@ -1927,6 +2135,7 @@ while true do
             elseif cast.power and (cast.power[1]==3 or cast.power[2]==3) then sfx.cue("combo",now) end
         end
     end
+    local audio_started_ms=system.millis()
     if sfx then sfx.update(scene_time()) end
     if sfx and sfx.bgm then
         local now=scene_time()
@@ -1934,6 +2143,9 @@ while true do
     end
     local update_finished_ms = system.millis()
     local draw_ms, present_ms = render(fixed_time_ms or (frame_started_ms - scene_started_ms))
+    -- Advance collection between frames so transient path tables do not crowd
+    -- native raster workspaces out of PSRAM before Lua reaches its own limit.
+    collectgarbage("step",128)
     frame_count = frame_count + 1
     if fixed_time_ms and tonumber(options.capture_step_ms) then
         fixed_time_ms=fixed_time_ms+math.max(1,math.min(1000,tonumber(options.capture_step_ms)))
@@ -1947,6 +2159,7 @@ while true do
 
     perf_frames = perf_frames + 1
     perf_update_total_ms = perf_update_total_ms + update_ms
+    perf_audio_total_ms = perf_audio_total_ms + update_finished_ms-audio_started_ms
     perf_draw_total_ms = perf_draw_total_ms + draw_ms
     perf_present_total_ms = perf_present_total_ms + present_ms
     perf_frame_total_ms = perf_frame_total_ms + frame_ms
@@ -1956,9 +2169,10 @@ while true do
     if perf_window_ms >= PERF_INTERVAL_MS then
         local fps_tenths = math.floor(perf_frames * 10000 / perf_window_ms)
         print(string.format(
-            "H2_QI_DUEL_PERF frames=%d fps=%d.%d update_ms=%d draw_ms=%d present_ms=%d frame_ms=%d/%d skill=%s qi=%d hp=%d/%d",
+            "H2_QI_DUEL_PERF frames=%d fps=%d.%d update_ms=%d audio_ms=%d draw_ms=%d present_ms=%d frame_ms=%d/%d skill=%s qi=%d hp=%d/%d",
             perf_frames, fps_tenths // 10, fps_tenths % 10,
             perf_update_total_ms // perf_frames,
+            perf_audio_total_ms // perf_frames,
             perf_draw_total_ms // perf_frames,
             perf_present_total_ms // perf_frames,
             perf_frame_total_ms // perf_frames, perf_frame_max_ms,
@@ -1981,6 +2195,7 @@ while true do
         perf_window_started_ms = frame_finished_ms
         perf_frames = 0
         perf_update_total_ms = 0
+        perf_audio_total_ms = 0
         perf_draw_total_ms = 0
         perf_present_total_ms = 0
         perf_frame_total_ms = 0

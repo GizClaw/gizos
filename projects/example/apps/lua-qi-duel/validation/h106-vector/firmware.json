@@ -1,0 +1,43 @@
+{
+  "version": "0.1.0-qi-render.5",
+  "board": "tiga_esp_v4_2",
+  "screen": [
+    240,
+    240
+  ],
+  "files": {
+    "tiga_esp_v4_2-lua-qi-duel-esp32s3.update.tar.zlib": {
+      "bytes": 2146793,
+      "sha256": "30d59babf06f5351c918edf39d7e2ab7e4de23fee703589ac7853ab7aeabbc75"
+    },
+    "app.bin": {
+      "bytes": 3034384,
+      "sha256": "0983a16b6f3d6c807fd1ace463bfab9b05c22f4ed6c1632ec3097df486591dae"
+    }
+  },
+  "installed": false,
+  "hardware_fps": null,
+  "reason": "Normal button-controlled render.5 built successfully; device installation pending final diagnostic sample.",
+  "software_frames_identical": 300,
+  "software_frames_total": 300,
+  "coverage_storage_bytes": 639008,
+  "audio": false,
+  "tests": {
+    "targeted_suites": "pass",
+    "record_result_keys": "pass",
+    "ubsan": "pass",
+    "asan": "blocked in macOS sanitizer runtime initialization before main",
+    "private_host_graph": {
+      "passed": 52,
+      "failed_to_build": 81,
+      "skipped": 1
+    }
+  },
+  "build_flags": [
+    "-c opt",
+    "--config=esp32s3",
+    "--define=h2_qi_duel_software_vectors=true",
+    "--define=h2_qi_duel_screen=h106",
+    "--per_file_copt=libs/lua/src/modules/h2_lua_(canvas|vector_sw)[.]c@-O2"
+  ]
+}
