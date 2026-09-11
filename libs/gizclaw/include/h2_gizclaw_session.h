@@ -29,13 +29,18 @@ typedef enum h2_gizclaw_session_blocker {
   H2_GIZCLAW_SESSION_BLOCK_CLOSED,
 } h2_gizclaw_session_blocker_t;
 
+/** Local input state only. Downstream audio has no phase: it plays whenever
+ * the server sends it. WAITING follows the release of push-to-talk input and
+ * ends, back to IDLE, as soon as downstream audio arrives or after
+ * H2_GIZCLAW_SESSION_WAIT_MS without any. */
 typedef enum h2_gizclaw_session_conversation_phase {
   H2_GIZCLAW_SESSION_CONVERSATION_IDLE = 0,
   H2_GIZCLAW_SESSION_CONVERSATION_RECORDING,
   H2_GIZCLAW_SESSION_CONVERSATION_WAITING,
-  H2_GIZCLAW_SESSION_CONVERSATION_REPLYING,
   H2_GIZCLAW_SESSION_CONVERSATION_CALLING,
 } h2_gizclaw_session_conversation_phase_t;
+
+#define H2_GIZCLAW_SESSION_WAIT_MS 5000u
 
 /** Copied, pointer-free state. READY describes server-confirmed facts, not
  * device microphone readiness. revision changes on every published transition.
@@ -49,7 +54,7 @@ typedef struct h2_gizclaw_session_state {
   h2_gizclaw_session_conversation_phase_t conversation;
   bool conversation_input_open;
   /** Confirmed workspace parameters. Unset patch members preserve these values.
-   * input distinguishes PTT (IDLE/RECORDING/WAITING/REPLYING) from realtime
+   * input distinguishes PTT (IDLE/RECORDING/WAITING) from realtime
    * (IDLE/CALLING). Errors are results, never conversation phases. */
   h2_gizclaw_workspace_parameters_patch_t parameters;
   char profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
@@ -71,6 +76,9 @@ typedef struct h2_gizclaw_session_state {
  * per Service; use Session operations exclusively for registration, catalog,
  * and conversations on that Service. Existing synchronous workspace RPCs
  * participate in this Session's lifecycle and publish confirmed parameters.
+ * Deleting the current Workspace stops its conversation (the route still needs
+ * Session release) and returns the Session workspace to EMPTY; the next select
+ * recreates it through normal preparation.
  * Low-level asynchronous workspace requests must not bypass this owner. No
  * product names, defaults or persistence paths are built in.
  */
@@ -146,8 +154,10 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
     h2_gizclaw_conversation_t **out_conversation);
 /** Start/end input on the Session-owned conversation route and update the
  * public input state. Completion still comes through service_poll. Start
- * interrupts a previous waiting/replying generation on the same route, waiting
- * up to 30 seconds for local cancellation dispatch (not for the agent reply).
+ * interrupts a previous generation still sending on the same route, waiting
+ * up to 30 seconds for local cancellation dispatch.
+ * Start opens a control BOS immediately. PCM opens its audio channel lazily;
+ * start followed by end without PCM sends only a control BOS/EOS pair.
  * Repeated start while recording and end while idle are harmless. Call from a
  * control task; service_poll must continue on its owner while start waits.
  */

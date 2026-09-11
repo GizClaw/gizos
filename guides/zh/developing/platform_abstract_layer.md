@@ -1,5 +1,7 @@
 # Platform Abstraction Layer
 
+Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC](./modem_urc.md)。
+
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
 ## API Reference

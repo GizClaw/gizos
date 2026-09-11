@@ -13,8 +13,16 @@ typedef struct h2_gizclaw_audio_log {
 
 static inline char *h2_gizclaw_audio_log_append_internal(
     h2_gizclaw_audio_log_t *log, h2_pal_log_level_t level) {
-  if (log->count == 8u)
+  if (log->count == 8u) {
+    /* Preserve an error return even when interruption filled the trace. */
+    if (level == H2_PAL_LOG_ERROR)
+      for (size_t i = 0u; i < log->count; ++i)
+        if (log->levels[i] != H2_PAL_LOG_ERROR) {
+          log->levels[i] = level;
+          return log->messages[i];
+        }
     return NULL;
+  }
   log->levels[log->count] = level;
   return log->messages[log->count++];
 }
@@ -22,9 +30,18 @@ static inline char *h2_gizclaw_audio_log_append_internal(
 void h2_gizclaw_service_flush_audio_log_internal(
     const h2_gizclaw_service_t *service, const h2_gizclaw_audio_log_t *log);
 h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log);
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty);
+typedef enum h2_gizclaw_cancel_source {
+  H2_GIZCLAW_CANCEL_UNSPECIFIED,
+  H2_GIZCLAW_CANCEL_API,
+  H2_GIZCLAW_CANCEL_RESTART,
+  H2_GIZCLAW_CANCEL_WORKSPACE,
+  H2_GIZCLAW_CANCEL_REALTIME_END,
+} h2_gizclaw_cancel_source_t;
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log);
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
+    int source);
 
 /* Session and its Service outlive all admitted RPC calls. */
 h2_pal_result_t
@@ -42,6 +59,25 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     h2_gizclaw_session_t *session, h2_pal_result_t result,
     const h2_gizclaw_workspace_activation_t *activation,
     const h2_gizclaw_workspace_parameters_patch_t *parameters);
+/* Workspace delete participates only when name is the Session's current
+ * Workspace: that path stops the conversation and owns the serialized
+ * workspace RPC slot. Other names leave the Session untouched. A closed
+ * Session rejects every delete. out_participating selects the finish call. */
+h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
+    h2_gizclaw_session_t *session, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    bool *out_participating);
+/* Success publishes EMPTY with no current Workspace, Workflow or confirmed
+ * parameters; any failure, including an uncertain result, publishes FAILED. */
+h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
+    h2_gizclaw_session_t *session, h2_pal_result_t result);
+
+/* Drop the downlink's buffered audio: queued Opus, the decoder state and the
+ * Track's unplayed PCM (unless another owner holds the Track downlink). */
+void h2_gizclaw_conversation_downlink_flush_internal(
+    h2_gizclaw_service_t *service);
+/* Decoded chunks written to the Track so far; changes when sound arrives. */
+size_t h2_gizclaw_conversation_downlink_writes_internal(
+    h2_gizclaw_service_t *service);
 
 h2_pal_result_t h2_gizclaw_conversation_retarget_internal(
     h2_gizclaw_conversation_t *conversation, const char *workspace);

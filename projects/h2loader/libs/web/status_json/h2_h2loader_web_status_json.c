@@ -144,7 +144,10 @@ h2_pal_result_t h2_h2loader_web_status_json_write(
   append_metadata(&writer, &status->partition_2);
   append_format(&writer, ",\"lastResult\":%d,\"mfg\":{\"mode\":%u,\"steps\":[",
                 (int)status->last, (unsigned)status->mfg_mode);
-  for (size_t index = 0u; index < H2_H2LOADER_HOST_MFG_STEP_TOTAL; ++index) {
+  for (size_t index = 0u;
+       index < status->mfg_step_total &&
+       index < H2_H2LOADER_HOST_MFG_STEP_MAX;
+       ++index) {
     append_format(&writer, "%s%u", index == 0u ? "" : ",",
                   (unsigned)status->mfg_steps[index]);
   }

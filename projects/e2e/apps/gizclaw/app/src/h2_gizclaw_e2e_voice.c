@@ -11,6 +11,9 @@
 #define HISTORY_TIMEOUT_MS 30000u
 #define DISPOSE_TIMEOUT_MS 5000u
 #define GROUP_TALK_GRACE_MS 1500u
+/* A reply is heard audio followed by this much quiet: downstream audio has
+ * no boundaries a device can rely on, so the pump's own record decides. */
+#define VOICE_QUIET_MS 300u
 #define RESPONSE_BYTES 65536u
 #define FRAME_BYTES 640u
 
@@ -53,7 +56,8 @@ typedef struct voice_state {
   atomic_int hook_error, terminal_result, terminal_kind;
   atomic_uint completions, rounds;
   uint64_t generation;
-  bool round_text_seen, round_text_done, round_audio_started;
+  bool hearing;
+  uint64_t heard_ms;
   uint8_t *response;
   h2_gizclaw_resp_storage_t storage;
   history_snapshot_t before;
@@ -117,6 +121,14 @@ static int pump_pcm(voice_state_t *state);
 
 static int step(voice_state_t *state) {
   int rc = pump_pcm(state);
+  if (rc == H2_PAL_OK && state->hearing) {
+    uint64_t now = 0u;
+    rc = clock_now(state, &now);
+    if (rc == H2_PAL_OK && now - state->heard_ms >= VOICE_QUIET_MS) {
+      state->hearing = false;
+      atomic_fetch_add(&state->rounds, 1u);
+    }
+  }
   if (rc == H2_PAL_OK)
     rc = poll_service(state);
   if (rc == H2_PAL_OK)
@@ -303,6 +315,12 @@ static int pump_pcm(voice_state_t *state) {
       evidence("h2_gizclaw_pcm_track_read", "voice-pump", H2_PAL_OK);
       state->speaker_read_reported = true;
     }
+    for (size_t i = 0u; i < len; ++i)
+      if (pcm[i] != 0u) {
+        state->hearing = true;
+        state->heard_ms = now;
+        break;
+      }
     state->speaker_next_ms = now + 20u;
     return state->replacement_bound ? replacement_write(state, pcm, len)
                                     : write_pcm(state, pcm, len);
@@ -378,30 +396,10 @@ static h2_pal_result_t on_event(void *user,
   switch (event->kind) {
   case H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA:
   case H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE:
+    /* Text is display only and carries no state. */
     if (event->text == NULL ||
         memchr(event->text, '\0', event->text_len) != NULL)
       rc = H2_PAL_ERR_FORMAT;
-    if (rc == H2_PAL_OK && event->text_len != 0u)
-      state->round_text_seen = true;
-    if (rc == H2_PAL_OK &&
-        event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE)
-      state->round_text_done = true;
-    break;
-  case H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED:
-    /* Once per reply; the PCM itself only travels through the Track, where
-     * the speaker pump checks it for silence. */
-    if (state->round_audio_started)
-      rc = H2_PAL_ERR_INVALID_STATE;
-    state->round_audio_started = true;
-    break;
-  case H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE:
-    if (!state->round_text_seen || !state->round_text_done ||
-        !state->round_audio_started)
-      rc = H2_PAL_ERR_INVALID_STATE;
-    if (rc == H2_PAL_OK)
-      atomic_fetch_add(&state->rounds, 1u);
-    state->round_text_seen = state->round_text_done =
-        state->round_audio_started = false;
     break;
   case H2_GIZCLAW_CONVERSATION_EVENT_ERROR:
     rc = H2_GIZCLAW_ERR_REMOTE;
@@ -437,8 +435,8 @@ static void reset_capture(voice_state_t *state, bool realtime) {
   state->capture_size = state->capture_offset = 0u;
   state->delivery_next_ms = 0u;
   state->mic_pending_len = state->mic_voice_len = 0u;
-  state->round_text_seen = state->round_text_done = state->round_audio_started =
-      false;
+  state->hearing = false;
+  state->heard_ms = 0u;
   atomic_store(&state->clips_allowed, 1u);
   atomic_store(&state->captured, 0u);
   atomic_store(&state->written, 0u);
@@ -571,7 +569,11 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
     rc = begin(state);
   bool ended = false;
   uint64_t hangup_started = 0u;
-  while (rc == H2_PAL_OK && atomic_load(&state->active)) {
+  /* A push-to-talk generation completes once its input is sent; the reply
+   * arrives afterwards as downstream audio, so keep pumping until heard. */
+  while (rc == H2_PAL_OK &&
+         (atomic_load(&state->active) ||
+          (!realtime && ended && atomic_load(&state->rounds) == 0u))) {
     rc = within(state, realtime && ended ? hangup_started : started,
                 realtime && ended ? DISPOSE_TIMEOUT_MS : VOICE_TIMEOUT_MS);
     if (rc != H2_PAL_OK)
@@ -583,9 +585,8 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
                  : atomic_load(&state->captured) == state->fixture->pcm_len;
     if (!ended && ready) {
       if (realtime) {
-        /* Telephone semantics: the caller hangs up the active stream. Reply
-         * EOS only delimits VAD rounds; do not wait for another server reply
-         * or invent a session-completion acknowledgement after two rounds. */
+        /* Telephone semantics: the caller hangs up after hearing two
+         * replies; there is no server acknowledgement to wait for. */
         capture_enable(state, false);
         rc = clock_now(state, &hangup_started);
         if (rc == H2_PAL_OK)
@@ -1076,13 +1077,13 @@ static int verify_track_replacement(voice_state_t *state, const char *id) {
 }
 
 /* An SFU Workspace is a walkie-talkie: the runtime forwards the sender's
- * utterance to the other members and keeps no History, and the sender's own
- * route receives neither a reply nor a terminal, so the turn never finishes by
- * itself. A rejected turn (SFU_RUNTIME_NOT_ATTACHED, SFU_ACCESS_REVOKED,
+ * utterance to the other members and keeps no History, and the sender hears
+ * nothing back. The generation completes once the input is sent. A turn
+ * refused while it is sent (SFU_RUNTIME_NOT_ATTACHED, SFU_ACCESS_REVOKED,
  * SFU_ACCESS_CHECK_FAILED) arrives as a typed EOS error on the same stream and
- * surfaces here as CONVERSATION_EVENT_ERROR. Acceptance is therefore a turn
- * that stays open and silent through the grace window after EOS; dispose_voice
- * then hangs up and requires the CANCELED terminal. */
+ * surfaces here as CONVERSATION_EVENT_ERROR. Acceptance is therefore one
+ * successful completion after the input end and silence through the grace
+ * window. */
 static int talk_group_clip(voice_state_t *state) {
   int rc = configure_mode(state, false);
   if (rc != H2_PAL_OK)
@@ -1113,12 +1114,9 @@ static int talk_group_clip(voice_state_t *state) {
     rc = within(state, started, VOICE_TIMEOUT_MS);
     if (rc == H2_PAL_OK)
       rc = step(state);
-    if (rc == H2_PAL_OK && !atomic_load(&state->active)) {
-      /* The Server ended the turn: report its own result, or the unexpected
-       * finish of a route that must stay open until the local hangup. */
-      const int terminal = atomic_load(&state->terminal_result);
-      rc = terminal != H2_PAL_OK ? terminal : H2_PAL_ERR_INVALID_STATE;
-    }
+    if (rc == H2_PAL_OK && !atomic_load(&state->active) &&
+        atomic_load(&state->terminal_result) != H2_PAL_OK)
+      rc = atomic_load(&state->terminal_result);
   }
   /* Half-duplex: the speaker never hears its own utterance back. The paced
    * speaker pump may not have run since the last poll, so probe the Track
@@ -1131,7 +1129,8 @@ static int talk_group_clip(voice_state_t *state) {
                                      : rc;
   }
   if (rc == H2_PAL_OK &&
-      (atomic_load(&state->completions) != 0u ||
+      (atomic_load(&state->completions) != 1u ||
+       atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED ||
        atomic_load(&state->rounds) != 0u || atomic_load(&state->written) != 0u))
     rc = H2_PAL_ERR_INVALID_STATE;
   return rc;

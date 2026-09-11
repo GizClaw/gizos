@@ -8,20 +8,29 @@ static int parse_registration_urc(h2_quectel_modem_t *modem, const char *line, h
     if (modem == NULL || line == NULL || out_status == NULL) {
         return 0;
     }
-    const char *comma = strchr(line, ',');
-    int stat = 0;
-    if (comma != NULL) {
-        stat = (int)strtol(comma + 1, NULL, 10);
-    } else {
-        const char *colon = strchr(line, ':');
-        if (colon == NULL) {
-            return 0;
-        }
-        stat = (int)strtol(colon + 1, NULL, 10);
+    const char *colon = strchr(line, ':');
+    if (colon == NULL) {
+        return 0;
+    }
+    char *end = NULL;
+    long stat = strtol(colon + 1, &end, 10);
+    if (end == colon + 1 || stat < 0 || stat > 5) {
+        return 0;
+    }
+    while (*end == ' ') { end++; }
+    /* Notifications are <stat>[,"lac","ci",...]. Two numeric fields
+     * are the solicited <n>,<stat> query response, not a notification. */
+    if (*end != '\0' && *end != ',') {
+        return 0;
+    }
+    if (*end == ',') {
+        end++;
+        while (*end == ' ') { end++; }
+        if (*end != '"') { return 0; }
     }
     memset(out_status, 0, sizeof(*out_status));
     out_status->capabilities = h2_quectel_modem_capabilities(modem);
-    out_status->registration = h2_quectel_parse_registration_stat(stat);
+    out_status->registration = h2_quectel_parse_registration_stat((int)stat);
     out_status->rat = H2_PAL_MODEM_RAT_LTE;
     return 1;
 }
@@ -216,6 +225,10 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     }
 
     if (strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0) {
+        modem->reset_generation++;
+        modem->registration_seen = 0u;
+        modem->packet_seen = 0u;
+        modem->signal_seen = 0u;
         modem->prepared = 0u;
         modem->power_configured = 0u;
         modem->cell_locate_token_sent = 0u;
@@ -251,6 +264,8 @@ void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t s
         }
         status.registration = H2_PAL_MODEM_REGISTRATION_OFFLINE;
         status.packet = H2_PAL_MODEM_PACKET_DETACHED;
+        h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
+            &status, sizeof(status));
         h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
             &status, sizeof(status));
     }
@@ -259,9 +274,12 @@ void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t s
 }
 
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
-    if (h2_quectel_operation_begin(modem) != H2_PAL_OK) {
+    if (!h2_quectel_is_urc(line, NULL) || h2_quectel_state_lock(modem) != H2_PAL_OK) {
         return;
     }
     h2_quectel_handle_urc_locked(modem, line);
-    (void)h2_quectel_operation_end(modem, H2_PAL_OK);
+    if (modem->operation_depth == 0u) {
+        (void)h2_quectel_power_reconcile(modem, H2_PAL_OK);
+    }
+    h2_quectel_state_unlock(modem);
 }

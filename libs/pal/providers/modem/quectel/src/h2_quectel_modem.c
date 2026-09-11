@@ -177,14 +177,18 @@ static h2_pal_result_t h2_quectel_modem_open_impl(h2_pal_modem_t *platform, uint
         return H2_PAL_OK;
     }
     if (modem->config.init != NULL) {
+        h2_quectel_state_unlock(modem);
         h2_pal_result_t rc = modem->config.init(modem->config.transport_user);
+        (void)h2_quectel_state_lock(modem);
         if (rc != H2_PAL_OK) {
             return rc;
         }
     }
     h2_pal_result_t rc = h2_quectel_modem_prepare(modem);
     if (rc != H2_PAL_OK && modem->config.deinit != NULL) {
+        h2_quectel_state_unlock(modem);
         (void)modem->config.deinit(modem->config.transport_user);
+        (void)h2_quectel_state_lock(modem);
     }
     if (rc == H2_PAL_OK) {
         modem->opened = 1u;
@@ -223,7 +227,9 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
         return result;
     }
     if (modem->config.deinit != NULL) {
+        h2_quectel_state_unlock(modem);
         rc = modem->config.deinit(modem->config.transport_user);
+        (void)h2_quectel_state_lock(modem);
         if (rc != H2_PAL_OK) {
             modem->power_fault = 1u;
             return rc;
@@ -239,6 +245,9 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     modem->data_hold = 0u;
     modem->model_checked = 0u;
     modem->sim_seen = 0u;
+    modem->registration_seen = 0u;
+    modem->packet_seen = 0u;
+    modem->signal_seen = 0u;
     modem->sim_state = H2_PAL_MODEM_SIM_STATE_UNKNOWN;
     memset(&modem->data_status, 0, sizeof(modem->data_status));
     modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
@@ -268,15 +277,48 @@ void h2_quectel_post_system_event(
     h2_pal_system_event_type_t type,
     const void *payload,
     size_t payload_size) {
-    if (modem == NULL || modem->config.system_events == NULL) {
+    if (modem == NULL) {
         return;
+    }
+    /* All producers hold the state lock. Compare semantic fields rather than
+     * struct padding or URC strings, preserving A -> B -> A transitions. */
+    if (payload != NULL && payload_size == sizeof(h2_pal_modem_status_t)) {
+        const h2_pal_modem_status_t *status = payload;
+        if (type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED) {
+            if (modem->registration_seen && modem->observed_status.registration == status->registration) {
+                return;
+            }
+            modem->registration_seen = 1u;
+            modem->registration_generation++;
+            modem->observed_status.registration = status->registration;
+        } else if (type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED) {
+            if (modem->packet_seen && modem->observed_status.packet == status->packet) {
+                return;
+            }
+            modem->packet_seen = 1u;
+            modem->packet_generation++;
+            modem->observed_status.packet = status->packet;
+        }
+    }
+    if (type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED && payload != NULL &&
+        payload_size == sizeof(h2_pal_modem_signal_t)) {
+        const h2_pal_modem_signal_t *signal = payload;
+        if (modem->signal_seen && modem->observed_signal.rssi_dbm == signal->rssi_dbm &&
+            modem->observed_signal.ber == signal->ber && modem->observed_signal.rat == signal->rat) {
+            return;
+        }
+        modem->signal_seen = 1u;
+        modem->observed_signal = *signal;
     }
     h2_pal_system_event_t event;
     memset(&event, 0, sizeof(event));
     event.type = type;
     event.payload = payload;
     event.payload_size = payload != NULL ? payload_size : 0u;
-    (void)h2_pal_system_event_post(modem->config.system_events, &event, 0u);
+    if (modem->config.system_events != NULL &&
+        h2_pal_system_event_post(modem->config.system_events, &event, 0u) != H2_PAL_OK) {
+        modem->event_drop_count++;
+    }
 }
 
 static void dispatch_urc(void *user, const char *line) {
@@ -285,7 +327,9 @@ static void dispatch_urc(void *user, const char *line) {
 }
 
 h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *line) {
-    return modem != NULL ? h2_modem_urc_post(&modem->urc_worker, line) : H2_PAL_ERR_INVALID_ARG;
+    if (modem == NULL || line == NULL) { return H2_PAL_ERR_INVALID_ARG; }
+    return h2_quectel_is_urc(line, NULL)
+        ? h2_modem_urc_post(&modem->urc_worker, line) : H2_PAL_OK;
 }
 
 h2_pal_result_t h2_quectel_modem_init(
@@ -347,6 +391,13 @@ h2_pal_result_t h2_quectel_modem_init(
         if (rc != H2_PAL_OK) {
             return rc;
         }
+        mutex_config.name = "quectel/operation";
+        rc = h2_pal_mutex_create(config->sync_api, &mutex_config, &modem->operation_lock);
+        if (rc != H2_PAL_OK) {
+            (void)h2_pal_mutex_destroy(config->sync_api, modem->lock);
+            modem->lock = NULL;
+            return rc;
+        }
     }
     modem->platform.user = modem;
     modem->platform.vtable = cell_locate_ready
@@ -357,6 +408,8 @@ h2_pal_result_t h2_quectel_modem_init(
         h2_pal_result_t rc = h2_modem_urc_start(&modem->urc_worker,
             config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem);
         if (rc != H2_PAL_OK) {
+            (void)h2_pal_mutex_destroy(config->sync_api, modem->operation_lock);
+            modem->operation_lock = NULL;
             (void)h2_pal_mutex_destroy(config->sync_api, modem->lock);
             modem->lock = NULL;
             return rc;
@@ -383,6 +436,13 @@ h2_pal_result_t h2_quectel_modem_deinit(h2_quectel_modem_t *modem) {
     }
     if (modem->lock != NULL && modem->config.sync_api != NULL) {
         rc = h2_pal_mutex_destroy(modem->config.sync_api, modem->lock);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+    }
+    modem->lock = NULL;
+    if (modem->operation_lock != NULL) {
+        rc = h2_pal_mutex_destroy(modem->config.sync_api, modem->operation_lock);
         if (rc != H2_PAL_OK) {
             return rc;
         }

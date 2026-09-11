@@ -14,6 +14,17 @@ extern "C" {
 
 typedef void (*h2_modem_urc_handler_t)(void *user, const char *line);
 
+/** @brief Per-instance counters since start; unsigned counters wrap at 2^32.
+ * handled counts completed handlers; accepted may include queued/in-flight
+ * lines or lines discarded by stop. A live snapshot is not an atomic tuple.
+ */
+typedef struct h2_modem_urc_stats {
+    uint32_t accepted;
+    uint32_t handled;
+    uint32_t full;
+    uint32_t truncated;
+} h2_modem_urc_stats_t;
+
 typedef struct h2_modem_urc_worker {
     const h2_pal_task_api_t *task_api;
     const h2_pal_queue_api_t *queue_api;
@@ -23,6 +34,7 @@ typedef struct h2_modem_urc_worker {
     void *user;
     h2_pal_result_t result;
     int stopping;
+    h2_modem_urc_stats_t stats;
 } h2_modem_urc_worker_t;
 
 /* Zero-initialize before first start. Lifecycle calls are externally
@@ -39,6 +51,13 @@ h2_pal_result_t h2_modem_urc_start(
  * queue space or handler completion. FULL/TRUNCATED must be handled by the
  * transport; notifications are never overwritten or processed inline. */
 h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t *worker, const char *line);
+
+/** @brief Read counters concurrently with post/dispatch, without blocking.
+ * worker/out_stats are required, borrowed for this call. Externally serialize
+ * with start/stop/destruction. No payload, identity or command text is exposed.
+ */
+h2_pal_result_t h2_modem_urc_get_stats(
+    const h2_modem_urc_worker_t *worker, h2_modem_urc_stats_t *out_stats);
 
 /* Stop/join RX producers first. Call without any lock needed by the handler.
  * Closes the queue (pending lines may be discarded) and joins the task.

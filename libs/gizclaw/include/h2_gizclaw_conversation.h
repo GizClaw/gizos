@@ -22,38 +22,29 @@ extern "C" {
 
 typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
 
-/** One ordered result emitted by a conversation generation. */
+/** One result emitted while a conversation generation's input is active. */
 typedef enum h2_gizclaw_conversation_event_kind {
   H2_GIZCLAW_CONVERSATION_EVENT_NONE = 0,
-  /** The first decoded chunk of a reply reached the bound PCM Track. */
-  H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED,
   H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA,
   H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE,
-  H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE,
+  /** The server refused this generation's input. */
   H2_GIZCLAW_CONVERSATION_EVENT_ERROR,
 } h2_gizclaw_conversation_event_kind_t;
 
 /**
  * One event delivered in service_poll() context. Views are borrowed only for
  * the duration of the callback. `generation` identifies the current begin/end
- * cycle. Reply PCM (signed PCM16LE, 16 kHz mono) never travels through
- * events: the decoder writes every chunk to the service's downlink Track and
- * the application's speaker pump reads it there. Per reply the hook observes
- * at most one REPLY_AUDIO_STARTED (after the reply's first decoded chunk
- * reached the Track and before that reply's REPLY_DONE or ERROR), the text
- * events, and exactly one REPLY_DONE or ERROR, so the number of
- * notifications does not grow with the reply length. Text and audio are
- * independent server streams, so REPLY_AUDIO_STARTED is not ordered against
- * TEXT_DELTA/TEXT_DONE: text may arrive before the first audio chunk. A
- * reply that ends before any audio was decoded produces no
- * REPLY_AUDIO_STARTED. Completion follows draining accepted playback.
- * REPLY_DONE marks one server reply, not necessarily the end of the begin/end
- * cycle: while input remains open, server-side VAD may produce further replies,
- * each with its own REPLY_AUDIO_STARTED.
- * A reply the server cuts short because the user spoke over it (barge-in)
- * also ends with REPLY_DONE while input remains open; its queued playback is
- * discarded. After the input is committed such an interruption is ERROR.
- * TEXT_DONE may have empty text when earlier TEXT_DELTA events carried it.
+ * cycle, which covers one input only: a push-to-talk generation completes
+ * once its input end is on the wire, a realtime one when it is canceled.
+ * Downstream audio is not part of any generation and never travels through
+ * events: whatever the server sends is decoded into the service's downlink
+ * Track, whatever its stream IDs, BOS or EOS, and the application's speaker
+ * pump plays it from there. Ending push-to-talk input clears the audio
+ * buffered at that moment. Server text is forwarded while the input is
+ * active and carries no state. ERROR reports that the server refused this
+ * input; the end of a downstream stream, with or without an error code, is
+ * never an error. TEXT_DONE may have empty text when earlier TEXT_DELTA
+ * events carried it.
  */
 typedef struct h2_gizclaw_conversation_event {
   h2_gizclaw_conversation_event_kind_t kind;
@@ -77,11 +68,13 @@ typedef void (*h2_gizclaw_conversation_completion_fn)(
 
 /** Configure the Service's conversation route without starting recording.
  * One configured Conversation per Service; another create returns BUSY.
- * Use service_audio_start to start recording. For PTT, service_audio_end
- * submits the input and the generation waits for its reply. Realtime is a
- * continuous call: reply EOS ends a VAD round, not the call; use
- * conversation_cancel to hang up without waiting for another reply EOS.
- * Speech may use the same Service while this Conversation is idle. */
+ * Downstream audio belongs to the connection: the first route starts it and
+ * it keeps playing after a route is released. Use service_audio_start to
+ * start recording. For PTT, service_audio_end submits
+ * the input, clears buffered downstream audio and completes the generation
+ * once the input end is sent. Realtime is a continuous call; use
+ * conversation_cancel to hang up. Speech may use the same Service while
+ * this Conversation is idle. */
 h2_pal_result_t h2_gizclaw_conversation_create(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t workspace,
     h2_gizclaw_conversation_callback_fn callback,
@@ -89,7 +82,8 @@ h2_pal_result_t h2_gizclaw_conversation_create(
     h2_gizclaw_conversation_t **out_conversation);
 
 /** Cancel the active generation (hang up a Realtime call), without closing
- * the Service or Peer. Completion is still delivered by poll. */
+ * the Service or Peer, and stop buffered downstream audio. Completion is
+ * still delivered by poll. */
 h2_pal_result_t
 h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *conversation);
 

@@ -4396,6 +4396,72 @@ static void test_workspace_reload_with_options(void) {
              H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT);
     }
   }
+  /* The synchronous delete RPC participates only for the current Workspace. */
+  uint8_t delete_response[128];
+  size_t delete_response_len = 0u;
+  assert(test_encode_workspace_delete_response(
+      delete_response, sizeof(delete_response), &delete_response_len));
+  static const uint8_t other_request[] = {0x0a, 5, 'o', 't', 'h', 'e', 'r'};
+  static const uint8_t current_request[] = {0x0a, 2, 'w', 's'};
+  test_contact_rpc_t delete_mock = {
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE,
+      .expected_request = other_request,
+      .expected_request_len = sizeof(other_request),
+      .response = delete_response,
+      .response_len = delete_response_len};
+  workspace_test_use_single(&delete_mock);
+  h2_gizclaw_session_state_t before;
+  h2_gizclaw_session_state_t after;
+  assert(h2_gizclaw_session_snapshot(session, &before) == H2_PAL_OK);
+  h2_gizclaw_workspace_t deleted;
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(
+             service, (h2_gizclaw_str_t){"other", 5u}, 1234u, &storage,
+             &deleted) == H2_PAL_OK);
+  assert(delete_mock.calls == 1 && delete_mock.request_matches);
+  assert(h2_gizclaw_session_snapshot(session, &after) == H2_PAL_OK);
+  assert(after.revision == before.revision &&
+         after.workspace == H2_GIZCLAW_SESSION_READY &&
+         strcmp(after.current_workspace, "ws") == 0);
+  delete_mock = (test_contact_rpc_t){
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE,
+      .expected_request = current_request,
+      .expected_request_len = sizeof(current_request),
+      .has_error = true,
+      .error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND};
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(service, (h2_gizclaw_str_t){"ws", 2u},
+                                         1234u, &storage,
+                                         &deleted) == H2_PAL_ERR_NOT_FOUND);
+  assert(delete_mock.calls == 1 && delete_mock.request_matches);
+  assert(h2_gizclaw_session_snapshot(session, &after) == H2_PAL_OK);
+  assert(after.workspace == H2_GIZCLAW_SESSION_FAILED &&
+         after.last_error == H2_PAL_ERR_NOT_FOUND &&
+         after.error_stage == H2_GIZCLAW_SESSION_BLOCK_WORKSPACE &&
+         strcmp(after.current_workspace, "ws") == 0);
+  delete_mock = (test_contact_rpc_t){
+      .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_DELETE,
+      .expected_request = current_request,
+      .expected_request_len = sizeof(current_request),
+      .response = delete_response,
+      .response_len = delete_response_len};
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(service, (h2_gizclaw_str_t){"ws", 2u},
+                                         1234u, &storage,
+                                         &deleted) == H2_PAL_OK);
+  assert(delete_mock.calls == 1 && delete_mock.request_matches);
+  assert(h2_gizclaw_session_snapshot(session, &after) == H2_PAL_OK);
+  assert(after.workspace == H2_GIZCLAW_SESSION_EMPTY &&
+         after.last_error == H2_PAL_OK &&
+         after.current_workspace[0] == '\0' && after.workflow_name[0] == '\0' &&
+         !after.parameters.has_input && !after.parameters.has_initiative);
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  delete_mock.calls = 0;
+  storage.used = 0u;
+  assert(h2_gizclaw_rpc_workspace_delete(service, (h2_gizclaw_str_t){"ws", 2u},
+                                         1234u, &storage,
+                                         &deleted) == H2_PAL_ERR_CLOSED);
+  assert(delete_mock.calls == 0);
   h2_gizclaw_req_t *request = NULL;
   h2_gizclaw_workspace_parameters_patch_t bad = {.has_input = true, .input = 99};
   assert(h2_gizclaw_req_create_workspace_reload_with_options(
@@ -7128,10 +7194,13 @@ typedef struct conversation_test {
   uint8_t output[16000];
   size_t packets;
   unsigned event_close_count, mode;
-  unsigned bos_attempts, eos_attempts;
-  atomic_bool input_ack;
+  unsigned bos_attempts, eos_attempts, audio_bos_attempts;
+  atomic_bool input_ack, audio_bos, audio_eos;
+  uint64_t sent_sequence;
   unsigned ack_reads;
   unsigned reply_events;
+  bool reply_audio_bos_sent;
+  bool pre_bos_audio_discarded;
   unsigned reply_text_ends, transcript_text_ends;
   atomic_bool small_buffer_rejected;
   unsigned filler_callbacks;
@@ -7140,6 +7209,14 @@ typedef struct conversation_test {
   char stream[64];
   /* Mode 20: the library-owned speaker Track, read by the app thread. */
   h2_gizclaw_track_t *owned_track;
+  /* Mode 20: one echoed packet, sent again by the "server" after release. */
+  uint8_t server_packet[H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
+  size_t server_packet_len;
+  unsigned server_packets;
+  /* A push-to-talk server answers after the input end: echoes wait here. */
+  uint8_t held[32][H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES];
+  size_t held_len[32];
+  unsigned held_count, held_next;
 } conversation_test_t;
 static conversation_test_t *s_conversation;
 
@@ -7190,37 +7267,63 @@ static int conversation_test_send(void *user, gzc_event_stream_t *stream,
   assert(stream == (gzc_event_stream_t *)test);
   assert(pthread_equal(pthread_self(), test->network_thread));
   if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
-    assert(!atomic_load(&test->bos));
-    assert(event->payload.bos.sequence == 0u);
-    if (test->bos_attempts++ != 0)
-      assert(strcmp(test->stream, event->payload.bos.stream_id) == 0);
-    snprintf(test->stream, sizeof(test->stream), "%s",
-             event->payload.bos.stream_id);
-    if (test->mode == 4 && test->bos_attempts <= 3) {
-      assert(atomic_load(&test->captured) == 0);
-      return test->bos_attempts % 2 ? GZC_ERR_WOULD_BLOCK : GZC_ERR_TIMEOUT;
+    assert(event->payload.bos.sequence == test->sent_sequence);
+    if (event->payload.bos.kind == gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO) {
+      assert(atomic_load(&test->bos) && !atomic_load(&test->audio_bos));
+      assert(strcmp(event->payload.bos.mime_type, "audio/opus") == 0);
+      assert(strcmp(event->payload.bos.stream_id, test->stream) == 0);
+      assert(!atomic_load(&test->eos));
+      if (test->mode == 27 && ++test->audio_bos_attempts <= 3u)
+        return GZC_ERR_WOULD_BLOCK;
+      atomic_store(&test->audio_bos, true);
+    } else {
+      assert(event->payload.bos.kind == gizclaw_events_v1_StreamKind_STREAM_KIND_UNSPECIFIED);
+      assert(event->payload.bos.mime_type[0] == '\0');
+      assert(!atomic_load(&test->bos));
+      assert(event->payload.bos.sequence == 0u);
+      if (test->bos_attempts++ != 0)
+        assert(strcmp(test->stream, event->payload.bos.stream_id) == 0);
+      snprintf(test->stream, sizeof(test->stream), "%s", event->payload.bos.stream_id);
+      if (test->mode == 4 && test->bos_attempts <= 3) {
+        assert(atomic_load(&test->captured) == 0);
+        return test->bos_attempts % 2 ? GZC_ERR_WOULD_BLOCK : GZC_ERR_TIMEOUT;
+      }
+      atomic_store(&test->bos, true);
     }
-    atomic_store(&test->bos, true);
   } else {
     assert(event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS);
     assert(atomic_load(&test->bos));
-    assert(event->payload.eos.sequence == 1u);
-    if (test->mode == 4 && ++test->eos_attempts <= 3)
-      return GZC_ERR_WOULD_BLOCK;
-    if (event->payload.eos.has_error)
-      atomic_store(&test->canceled, true);
-    atomic_store(&test->eos, true);
+    assert(event->payload.eos.sequence == test->sent_sequence);
+    assert(strcmp(event->payload.eos.stream_id, test->stream) == 0);
+    if (event->payload.eos.kind == gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO) {
+      assert(atomic_load(&test->audio_bos) && !atomic_load(&test->audio_eos));
+      assert(strcmp(event->payload.eos.mime_type, "audio/opus") == 0);
+      atomic_store(&test->audio_eos, true);
+    } else {
+      assert(event->payload.eos.kind == gizclaw_events_v1_StreamKind_STREAM_KIND_UNSPECIFIED);
+      assert(event->payload.eos.mime_type[0] == '\0');
+      if (test->mode == 4 && ++test->eos_attempts <= 3)
+        return GZC_ERR_WOULD_BLOCK;
+      if (event->payload.eos.has_error)
+        atomic_store(&test->canceled, true);
+      else if (atomic_load(&test->audio_bos))
+        assert(atomic_load(&test->audio_eos));
+      atomic_store(&test->eos, true);
+    }
   }
+  ++test->sent_sequence;
   return GZC_OK;
 }
 
 static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                                         int timeout, gzc_peer_event_t *event) {
   conversation_test_t *test = user;
+  if (test->mode == 28u)
+    return GZC_ERR_WOULD_BLOCK;
   (void)timeout;
   assert(stream == (gzc_event_stream_t *)test);
-  if (atomic_load(&test->bos) && !atomic_load(&test->input_ack)) {
-    assert(atomic_load(&test->captured) == 0 && test->pending_len == 0);
+  if (atomic_load(&test->audio_bos) && !atomic_load(&test->input_ack)) {
+    assert(test->packets == 0 && test->pending_len == 0);
     ++test->ack_reads;
     if (test->mode == 5 || test->mode == 21 || (test->mode == 0 && test->ack_reads < 8))
       return GZC_ERR_WOULD_BLOCK;
@@ -7248,8 +7351,9 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
       }
       return GZC_OK;
     }
-    if ((test->mode == 22 || test->mode == 23) && test->ack_reads == 1) {
-      if (test->mode == 22) {
+    if ((test->mode == 8 || test->mode == 22 || test->mode == 23) &&
+        test->ack_reads == 1) {
+      if (test->mode == 8 || test->mode == 22) {
         event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
         event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
         snprintf(event->payload.text_delta.stream_id,
@@ -7276,6 +7380,18 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
     if (!wrong) atomic_store(&test->input_ack, true);
     return GZC_OK;
   }
+  if (atomic_load(&test->input_ack) && !test->reply_audio_bos_sent) {
+    *event = (gzc_peer_event_t)gizclaw_events_v1_PeerEvent_init_zero;
+    event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+    event->which_payload = gizclaw_events_v1_PeerEvent_bos_tag;
+    event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
+    snprintf(event->payload.bos.label, sizeof(event->payload.bos.label), "assistant");
+    snprintf(event->payload.bos.stream_id, sizeof(event->payload.bos.stream_id),
+             "%s%s", test->stream,
+             test->mode == 15 || test->mode == 16 || test->mode == 20 ? ":turn-one" : "");
+    test->reply_audio_bos_sent = true;
+    return GZC_OK;
+  }
   if (test->mode == 20) {
     /* Realtime barge-in with all twelve first-burst packets already echoed:
      * 0 BOS turn-one, 1 TEXT_DELTA turn-one, 2 BOS turn-two (interrupts
@@ -7299,7 +7415,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.bos.stream_id), "%s", id);
       snprintf(event->payload.bos.label, sizeof(event->payload.bos.label),
                "assistant");
-      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     } else if (stage == 1) {
       event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
       event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
@@ -7325,6 +7441,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.eos.stream_id), "%s", id);
       snprintf(event->payload.eos.label, sizeof(event->payload.eos.label),
                "assistant");
+      event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
       if (stage == 3) {
         event->payload.eos.has_error = true;
         snprintf(event->payload.eos.error.code,
@@ -7337,7 +7454,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
     unsigned stage = test->reply_events;
     bool second = stage >= 8;
     bool transcript = stage == 0 || stage == 1 || stage == 8 || stage == 9;
-    if (stage >= 15 || test->packets < (second ? 4u : 2u) ||
+    if (stage >= 15 || test->packets < (stage >= 11 ? 4u : 2u) ||
         atomic_load(&test->canceled) ||
         (stage == 14 && test->mode == 15 && !atomic_load(&test->eos)))
       return GZC_ERR_WOULD_BLOCK;
@@ -7358,7 +7475,9 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.bos.stream_id), "%s", id);
       snprintf(event->payload.bos.label, sizeof(event->payload.bos.label), "%s",
                label);
-      event->payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
+      event->payload.bos.kind = transcript
+          ? gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT
+          : gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     } else if (stage == 3) {
       event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
       event->which_payload = gizclaw_events_v1_PeerEvent_text_delta_tag;
@@ -7389,7 +7508,28 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
                sizeof(event->payload.eos.stream_id), "%s", id);
       snprintf(event->payload.eos.label, sizeof(event->payload.eos.label), "%s",
                label);
+      if (!transcript)
+        event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
     }
+    return GZC_OK;
+  }
+  if (test->mode == 6 && test->reply_events == 0 && test->reply_audio_bos_sent) {
+    /* A downstream stream ends in an error while our input is still being
+     * sent. It is not an error of this conversation. */
+    ++test->reply_events;
+    memset(event, 0, sizeof(*event));
+    event->version = GZC_PEER_EVENT_VERSION;
+    event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+    event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+    event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
+    snprintf(event->payload.eos.stream_id,
+             sizeof(event->payload.eos.stream_id), "reply-1");
+    snprintf(event->payload.eos.label, sizeof(event->payload.eos.label),
+             "assistant");
+    event->payload.eos.has_error = true;
+    snprintf(event->payload.eos.error.code,
+             sizeof(event->payload.eos.error.code), "TEST_REMOTE_ERROR");
+    event->payload.eos.error.retryable = true;
     return GZC_OK;
   }
   if ((test->mode == 13 || test->mode == 14) && atomic_load(&test->bos) &&
@@ -7416,16 +7556,11 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
   event->version = GZC_PEER_EVENT_VERSION;
   event->type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
   event->which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+  event->payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
   snprintf(event->payload.eos.stream_id, sizeof(event->payload.eos.stream_id),
            "%s", test->stream);
   snprintf(event->payload.eos.label, sizeof(event->payload.eos.label), "%s",
            transcript ? "transcript" : "assistant");
-  if (test->mode == 6) {
-    event->payload.eos.has_error = true;
-    snprintf(event->payload.eos.error.code,
-             sizeof(event->payload.eos.error.code), "TEST_REMOTE_ERROR");
-    event->payload.eos.error.retryable = true;
-  }
   return GZC_OK;
 }
 
@@ -7448,11 +7583,32 @@ static int conversation_test_read_packet(void *user, gzc_client_t *client,
   return GZC_ERR_WOULD_BLOCK;
 }
 
+/* Whether the fake server still holds its echo. Releasing push-to-talk
+ * clears buffered audio, so a reply that overlapped the release would make
+ * the played amount depend on timing. Realtime turns (16, the first turn of
+ * 15) and the release test (20) answer while the input is open. */
+static bool conversation_test_holds_reply(conversation_test_t *test) {
+  if (atomic_load(&test->eos) || test->mode == 16 || test->mode == 20)
+    return false;
+  return !(test->mode == 15 && atomic_load(&test->turns_done) == 0u);
+}
+
 static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
                                               int timeout) {
   (void)client;
   (void)timeout;
   conversation_test_t *test = s_conversation;
+  if (!test->reply_audio_bos_sent) {
+    /* Bytes that are not a valid Opus packet reach the downlink like any
+     * other audio and are dropped by the decoder; a full ring refuses them. */
+    const uint8_t stale[] = {0xff};
+    const h2_pal_result_t stale_rc =
+        h2_gizclaw_service_media_write_opus(test->service, stale, sizeof(stale));
+    assert(stale_rc == H2_PAL_OK || stale_rc == H2_PAL_ERR_WOULD_BLOCK);
+    test->pre_bos_audio_discarded = true;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+
   if (test->mode == 4 && !atomic_load(&test->small_buffer_rejected)) {
     size_t len = 99;
     h2_pal_result_t rc = h2_gizclaw_service_media_read_opus(
@@ -7480,14 +7636,59 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
     assert(rc == H2_PAL_OK);
     test->loss_markers = 1u;
   }
+  if (test->mode == 20 && atomic_load(&test->eos) &&
+      test->server_packets < 4u) {
+    /* The input end is on the wire; the server's audio keeps coming and
+     * plays although the request is complete. */
+    assert(test->server_packet_len != 0u);
+    h2_pal_result_t rc = h2_gizclaw_service_media_write_opus(
+        test->service, test->server_packet, test->server_packet_len);
+    if (rc == H2_PAL_OK)
+      ++test->server_packets;
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  if (!conversation_test_holds_reply(test) &&
+      test->held_next < test->held_count) {
+    const unsigned i = test->held_next;
+    h2_pal_result_t rc = h2_gizclaw_service_media_write_opus(
+        test->service, test->held[i], test->held_len[i]);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+      atomic_store(&test->echo_blocked, true);
+    } else {
+      assert(rc == H2_PAL_OK);
+      if (test->server_packet_len == 0u) {
+        memcpy(test->server_packet, test->held[i], test->held_len[i]);
+        test->server_packet_len = test->held_len[i];
+      }
+      ++test->held_next;
+      ++test->packets;
+    }
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
   if (test->pending_len != 0) {
     assert(atomic_load(&test->bos) && atomic_load(&test->input_ack));
+    /* The second realtime turn's audio follows the second stream's
+     * events (stage 10). */
+    if ((test->mode == 15 || test->mode == 16) &&
+        test->packets + test->held_count >= 2u && test->reply_events < 11u)
+      return H2_PAL_ERR_WOULD_BLOCK;
+    if (conversation_test_holds_reply(test)) {
+      assert(test->held_count < 32u);
+      memcpy(test->held[test->held_count], test->pending, test->pending_len);
+      test->held_len[test->held_count++] = test->pending_len;
+      test->pending_len = 0;
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
     h2_pal_result_t rc = h2_gizclaw_service_media_write_opus(
         test->service, test->pending, test->pending_len);
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
       atomic_store(&test->echo_blocked, true);
     else {
       assert(rc == H2_PAL_OK);
+      if (test->server_packet_len == 0u) {
+        memcpy(test->server_packet, test->pending, test->pending_len);
+        test->server_packet_len = test->pending_len;
+      }
       test->pending_len = 0;
       ++test->packets;
     }
@@ -7502,10 +7703,12 @@ static h2_pal_result_t conversation_test_track_read(void *user, uint8_t *pcm,
   assert(atomic_load(&test->bos));
   assert(!pthread_equal(pthread_self(), test->app_thread));
   assert(!pthread_equal(pthread_self(), test->network_thread));
-  if (test->mode == 13 || test->mode == 14)
+  if (test->mode == 13 || test->mode == 14 || test->mode == 26)
     return H2_PAL_ERR_WOULD_BLOCK;
   if (test->mode == 2 && test->read_offset != 0)
     return H2_PAL_ERR_CLOSED;
+  if (test->mode == 25 && test->read_offset != 0)
+    return H2_PAL_ERR_INVALID_ARG;
   const bool multi_turn = test->mode == 15 || test->mode == 16;
   /* Mode 18 echoes more reply chunks than the hook ring holds (8 x 1280 B =
    * 16 chunks) so a stalled hook consumer is actually exercised. */
@@ -7549,51 +7752,26 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
                        const h2_gizclaw_conversation_event_t *event) {
   conversation_test_t *test = user;
   assert(pthread_equal(pthread_self(), test->app_thread));
-  if (test->mode == 20) {
-    assert(event->kind != H2_GIZCLAW_CONVERSATION_EVENT_ERROR);
-    if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED) {
-      ++test->audio_started;
-    } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE) {
-      ++test->reply_text_ends;
-    } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
-      unsigned turn = atomic_load(&test->turns_done) + 1u;
-      assert(turn <= 2u);
-      /* Each reply announced its audio once, before its own boundary. */
-      assert(test->audio_started == turn);
-      if (turn == 1u) {
-        /* The interrupted reply: every first-burst chunk was decoded into
-         * the speaker Track, which now holds none of it. Both discards ran
-         * (the Track tail at staging, and the frames that drained behind the
-         * EOS marker at dispatch). */
-        uint8_t probe[2];
-        assert(h2_gizclaw_pcm_track_read(test->owned_track, probe,
-                                         sizeof(probe)) ==
-               H2_PAL_ERR_WOULD_BLOCK);
-      }
-      atomic_store(&test->turns_done, turn);
-    }
-    return H2_PAL_OK;
-  }
+  /* Only text and the refusal of our own input reach the hook. */
+  assert(event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA ||
+         event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE ||
+         event->kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR);
   if (test->mode == 15 || test->mode == 16) {
     if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE) {
       assert(
           event->text_len == 0u ||
           (event->text_len == 5u && (memcmp(event->text, "reply", 5u) == 0 ||
-                                     memcmp(event->text, "heard", 5u) == 0)));
+                                     memcmp(event->text, "heard", 5u) == 0 ||
+                                     memcmp(event->text, "stale", 5u) == 0)));
       if (event->text_len == 5u && memcmp(event->text, "heard", 5u) == 0)
         ++test->transcript_text_ends;
       else
         ++test->reply_text_ends;
     }
-    if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
-      unsigned turn = atomic_load(&test->turns_done) + 1u;
-      /* Every chunk of the reply is in the Track before its boundary, and
-       * the reply announced its audio exactly once. */
-      assert(turn <= 2u && test->audio_started == turn);
-      assert(atomic_load(&test->written) == turn * 1280u);
-      atomic_store(&test->turns_done, turn);
-    }
   }
+  if (test->mode == 8 &&
+      event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA)
+    return H2_PAL_ERR_IO; /* A failing hook aborts the generation. */
   if (test->mode == 22 &&
       event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA) {
     assert(event->text_len == strlen("before-ready") &&
@@ -7616,16 +7794,6 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
     /* The network has freed its wire state while this hook is still running. */
     assert(memcmp(event->text, "borrowed-wire-text", event->text_len) == 0);
   }
-  if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED) {
-    /* Announced once per reply, only after the first chunk hit the Track. */
-    assert(atomic_load(&test->written) >= 640u);
-    assert(++test->audio_started == atomic_load(&test->turns_done) + 1u);
-    if (test->mode == 8)
-      return H2_PAL_ERR_IO;
-  } else if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE) {
-    /* Audio, when any was decoded, was announced before the boundary. */
-    assert((test->audio_started != 0u) == (atomic_load(&test->written) != 0u));
-  }
   return H2_PAL_OK;
 }
 
@@ -7635,11 +7803,7 @@ conversation_test_complete(void *user, h2_gizclaw_conversation_t *conversation,
   (void)conversation;
   conversation_test_t *test = user;
   assert(pthread_equal(pthread_self(), test->app_thread));
-  if (test->mode == 6) {
-    /* Completion runs after the wire/request buffers have been destroyed. */
-    assert(strcmp(result->error_code, "TEST_REMOTE_ERROR") == 0);
-    assert(result->retryable);
-  } else if (test->mode == 23) {
+  if (test->mode == 23) {
     assert(strcmp(result->error_code, "INPUT_DENIED") == 0);
     assert(!result->retryable);
   } else {
@@ -7665,193 +7829,244 @@ static int conversation_test_join_task(void *user, h2_pal_task_t *task) {
   return h2_pal_task_join(h2_desktop_platform_task_api(), task);
 }
 
-static void test_conversation_reply_route_ids(void) {
-  const size_t lengths[] = {1u, 63u, 64u, 127u, 128u};
-  const char *labels[] = {"", "assistant", "transcript"};
-  for (size_t label = 0; label < 3u; ++label) {
-    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
-      test_env_t env;
-      h2_gizclaw_service_t *service = create_service(&env, 2u);
-      h2_gizclaw_conversation_t *conversation = NULL;
-      assert(h2_gizclaw_conversation_create(
-                 service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
-                 &conversation) == H2_PAL_OK);
+/* The Conversation takes every downstream event while it is active; only
+ * READY is checked, against our own input. Stream IDs of any length and any
+ * boundary order are fine: none of them carries state. */
+static void test_conversation_accepts_downstream_events(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  const int types[] = {
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS,
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA,
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE,
+      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS,
+  };
+  const size_t lengths[] = {0u, 1u, 64u, 127u};
+  for (size_t t = 0u; t < sizeof(types) / sizeof(types[0]); ++t) {
+    for (size_t l = 0u; l < sizeof(lengths) / sizeof(lengths[0]); ++l) {
       gzc_peer_event_t event = {0};
-      event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
-      snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
-               labels[label]);
-      // Empty and non-terminated wire IDs must not pin a route.
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      memset(event.payload.bos.stream_id, 'x',
-             sizeof(event.payload.bos.stream_id));
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      const size_t length = lengths[i];
-      assert(length < sizeof(event.payload.bos.stream_id));
-      memset(event.payload.bos.stream_id, 'a', length);
-      event.payload.bos.stream_id[length] = '\0';
-      event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
+      event.type = types[t];
+      memset(event.payload.eos.stream_id, 'a', lengths[l]);
       assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
                                                                  &event));
-      char id[sizeof(event.payload.bos.stream_id)];
-      memcpy(id, event.payload.bos.stream_id, length + 1u);
-      memset(&event, 0, sizeof(event));
-      event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
-      snprintf(event.payload.text_delta.label,
-               sizeof(event.payload.text_delta.label), "%s", labels[label]);
-      memcpy(event.payload.text_delta.stream_id, id, length + 1u);
-      assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                 &event));
-      memset(&event, 0, sizeof(event));
-      event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
-      snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
-               labels[label]);
-      memcpy(event.payload.eos.stream_id, id, length + 1u);
-      // IDs which differ only at the final byte must remain distinct.
-      event.payload.eos.stream_id[length - 1u] = 'b';
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      event.payload.eos.stream_id[length - 1u] = 'a';
-      assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                 &event));
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      memset(&event, 0, sizeof(event));
-      event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
-      snprintf(event.payload.text_done.label,
-               sizeof(event.payload.text_done.label), "%s", labels[label]);
-      memcpy(event.payload.text_done.stream_id, id, length + 1u);
-      assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                 &event));
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      // A distinct BOS may start the next VAD turn after the completed reply.
-      memset(&event, 0, sizeof(event));
-      event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
-      snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
-               labels[label]);
-      memcpy(event.payload.bos.stream_id, id, length + 1u);
-      assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                  &event));
-      event.payload.bos.stream_id[length - 1u] = 'b';
-      assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                 &event));
-      h2_gizclaw_conversation_release(conversation);
-      assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-      assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     }
   }
+  gzc_peer_event_t ready = {0};
+  ready.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_AUDIO_INPUT_READY;
+  snprintf(ready.payload.audio_input_ready.stream_id,
+           sizeof(ready.payload.audio_input_ready.stream_id), "not-ours");
+  assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
+                                                              &ready));
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
-static gzc_peer_event_t barge_in_event(int type, const char *label,
-                                       const char *id, const char *code) {
+/* Downlink policy without a running worker: packets are dropped while
+ * another request owns the Track, the 32-slot ring then fills and refuses
+ * further packets, and a release flush empties it. */
+static void test_conversation_downlink_policy(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+  service->audio_play = (struct h2_gizclaw_audio_play *)(uintptr_t)1u;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+         H2_PAL_OK);
+  for (unsigned i = 0u; i < 40u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+  service->audio_play = NULL;
+  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+         H2_PAL_OK);
+  /* Nothing was queued while the Track was owned: the ring is empty. */
+  for (unsigned i = 0u; i < 32u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  h2_gizclaw_conversation_downlink_flush_internal(service);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_conversation_downlink_writes_internal(service) == 0u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static gzc_peer_event_t downstream_bos(int kind, const char *label,
+                                       const char *stream_id) {
   gzc_peer_event_t event = {0};
-  event.type = type;
-  if (type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
-    snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
-             label);
-    snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
-             "%s", id);
-    event.payload.bos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT;
-  } else if (type ==
-             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA) {
-    snprintf(event.payload.text_delta.label,
-             sizeof(event.payload.text_delta.label), "%s", label);
-    snprintf(event.payload.text_delta.stream_id,
-             sizeof(event.payload.text_delta.stream_id), "%s", id);
-  } else if (type ==
-             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE) {
-    snprintf(event.payload.text_done.label,
-             sizeof(event.payload.text_done.label), "%s", label);
-    snprintf(event.payload.text_done.stream_id,
-             sizeof(event.payload.text_done.stream_id), "%s", id);
-  } else {
-    snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
-             label);
-    snprintf(event.payload.eos.stream_id, sizeof(event.payload.eos.stream_id),
-             "%s", id);
-    if (code != NULL) {
-      event.payload.eos.has_error = true;
-      snprintf(event.payload.eos.error.code,
-               sizeof(event.payload.eos.error.code), "%s", code);
-    }
-  }
+  event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
+  event.payload.bos.kind = kind;
+  snprintf(event.payload.bos.label, sizeof(event.payload.bos.label), "%s",
+           label);
+  snprintf(event.payload.bos.stream_id, sizeof(event.payload.bos.stream_id),
+           "%s", stream_id);
   return event;
 }
 
-/* Server-side barge-in: the next reply's BOS arrives while the previous
- * assistant route is still open. It must pin the new route instead of being
- * dropped, and the old reply's late EOS must no longer reach the app. */
-static void test_conversation_barge_in_supersedes_open_reply(void) {
-  static const int BOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS;
-  static const int DELTA =
-      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DELTA;
-  static const int DONE =
-      gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE;
-  static const int EOS = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
-  const char *labels[] = {"assistant", ""};
-  for (size_t label = 0; label < 2u; ++label) {
-    test_env_t env;
-    h2_gizclaw_service_t *service = create_service(&env, 2u);
-    h2_gizclaw_conversation_t *conversation = NULL;
-    assert(h2_gizclaw_conversation_create(
-               service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
-               &conversation) == H2_PAL_OK);
-    const char *reply = labels[label];
-    gzc_peer_event_t event = barge_in_event(BOS, reply, "reply-1", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    event = barge_in_event(DELTA, reply, "reply-1", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    event = barge_in_event(DONE, reply, "reply-1", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    // The user speaks again; the transcript route is independent.
-    event = barge_in_event(BOS, "transcript", "heard-1", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    // An open transcript is not superseded by another transcript BOS.
-    event = barge_in_event(BOS, "transcript", "heard-2", NULL);
-    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                &event));
-    // A sub-stream of the same reply is not a new reply.
-    event = barge_in_event(BOS, reply, "reply-1:audio", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    // The next reply starts before reply-1 ended: reply-1 is interrupted.
-    event = barge_in_event(BOS, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    assert(h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    // The old reply's late EOS and text no longer match the pinned route.
-    event = barge_in_event(EOS, reply, "reply-1", "STREAM_INTERRUPTED");
-    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                &event));
-    event = barge_in_event(DONE, reply, "reply-1", NULL);
-    assert(!h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                                &event));
-    event = barge_in_event(DELTA, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    event = barge_in_event(DONE, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    event = barge_in_event(EOS, reply, "reply-2", NULL);
-    assert(h2_gizclaw_conversation_accepts_peer_event_internal(conversation,
-                                                               &event));
-    assert(!h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-        conversation));
-    h2_gizclaw_conversation_release(conversation);
-    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+/* A press drops downstream audio until the next downstream audio BOS. Text
+ * and transcript BOS and our own input's BOS keep it dropped. */
+static void test_conversation_downlink_waits_for_bos(void) {
+  const gzc_peer_event_t audio = downstream_bos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "assistant", "reply-2");
+  const gzc_peer_event_t text = downstream_bos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT, "transcript", "demo-1");
+  const gzc_peer_event_t input = downstream_bos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "demo-home", "demo-2");
+  assert(h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &audio));
+  assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &text));
+  assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &input));
+
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  h2_gizclaw_conversation_downlink_hold_internal(service);
+  /* Dropped, not queued: the 32-slot ring would refuse the 33rd packet. */
+  for (unsigned i = 0u; i < 40u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  h2_gizclaw_conversation_downlink_bos_internal(service);
+  for (unsigned i = 0u; i < 32u; ++i)
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+/* Between turns, with no request running and no application event sink, the
+ * network loop still reads downstream events: a text BOS keeps the hold, the
+ * next audio BOS clears it. */
+typedef struct {
+  atomic_int stage;
+  atomic_uint idle_reads;
+} bos_drain_test_t;
+static bos_drain_test_t *s_bos_drain;
+
+static h2_pal_result_t bos_drain_connect(h2_gizclaw_client_t *client) {
+  (void)h2_gizclaw_test_replace_event_stream(client,
+                                             (gzc_event_stream_t *)s_bos_drain);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t bos_drain_poll(h2_gizclaw_client_t *client,
+                                      int timeout) {
+  (void)client;
+  (void)timeout;
+  h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static int bos_drain_read(void *user, gzc_event_stream_t *stream, int timeout,
+                          gzc_peer_event_t *event) {
+  bos_drain_test_t *test = user;
+  (void)stream;
+  (void)timeout;
+  const int stage = atomic_load(&test->stage);
+  if (stage == 1 || stage == 3) {
+    *event = stage == 1
+                 ? downstream_bos(gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT,
+                                  "transcript", "demo-1")
+                 : downstream_bos(gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO,
+                                  "assistant", "reply-1");
+    atomic_store(&test->idle_reads, 0u);
+    atomic_store(&test->stage, stage + 1);
+    return GZC_OK;
   }
+  atomic_fetch_add(&test->idle_reads, 1u);
+  return GZC_ERR_WOULD_BLOCK;
+}
+
+/* The real client dispatch, reading the test Event stream. */
+static h2_pal_result_t bos_drain_dispatch(h2_gizclaw_client_t *client) {
+  return (h2_pal_result_t)h2_gizclaw_client_dispatch_event(client, 0, NULL,
+                                                           NULL);
+}
+
+static void bos_drain_close(void *user, gzc_event_stream_t *stream) {
+  (void)user;
+  (void)stream;
+}
+
+static void bos_drain_wait_idle(bos_drain_test_t *test) {
+  while (atomic_load(&test->idle_reads) < 2u)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+}
+
+/* Arms the next stage and waits until the network loop read past it. */
+static void bos_drain_step(bos_drain_test_t *test, int stage) {
+  atomic_store(&test->idle_reads, 0u);
+  atomic_store(&test->stage, stage);
+  while (atomic_load(&test->stage) != stage + 1)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  bos_drain_wait_idle(test);
+}
+
+static void test_conversation_drains_events_between_turns(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 8u);
+  bos_drain_test_t test = {0};
+  s_bos_drain = &test;
+  static const h2_gizclaw_service_client_ops_t ops = {
+      .connect = bos_drain_connect,
+      .poll = bos_drain_poll,
+      .dispatch_event = bos_drain_dispatch};
+  h2_gizclaw_service_test_set_client_ops(&ops);
+  h2_gizclaw_test_set_event_ops(NULL, bos_drain_read, bos_drain_close, &test);
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_crypto_api_t crypto = {0};
+  static const h2_pal_webrtc_api_t webrtc = {0};
+  service->client_config.http = &http;
+  service->client_config.crypto = &crypto;
+  service->client_config.webrtc = &webrtc;
+  service->client_config.connect_timeout_ms = 1000;
+  service->client_config.server_endpoint = (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+  service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+  service->config.client_config = &service->client_config;
+  service->config.on_event = NULL;
+  service->config.prepare = NULL;
+  service->config.cleanup = NULL;
+  service->config.terminal = NULL;
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  bos_drain_wait_idle(&test);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  h2_gizclaw_conversation_downlink_hold_internal(service);
+  bos_drain_step(&test, 1);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+  bos_drain_step(&test, 3);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 1u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+  h2_gizclaw_service_test_set_client_ops(NULL);
+  s_bos_drain = NULL;
 }
 
 static void
@@ -7895,6 +8110,9 @@ typedef struct conversation_log_capture {
   h2_gizclaw_service_t *service;
   atomic_bool control_error;
   atomic_bool canceled_completion;
+  atomic_uint worker_errors;
+  atomic_bool invalid_pcm_read;
+  atomic_bool api_cancel_state;
 } conversation_log_capture_t;
 
 static int conversation_capture_log(void *user, h2_pal_log_level_t level,
@@ -7913,9 +8131,8 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
     assert(h2_pal_mutex_unlock(capture->service->config.sync,
                               capture->service->audio_mutex) == H2_PAL_OK);
   }
-  if (strstr(message, "stage=terminal_staged") != NULL ||
-      strstr(message, "stage=terminal_dispatch") != NULL ||
-      strstr(message, "event=peer_read") != NULL ||
+  /* Downstream events are diagnostics only. */
+  if (strstr(message, "event=peer_read ") != NULL ||
       (strstr(message, "stage=hook_dispatched") != NULL &&
        strstr(message, "rc=0 ") != NULL))
     assert(level == H2_PAL_LOG_DEBUG);
@@ -7923,6 +8140,26 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
       strstr(message, "rc=-10 detail=1") != NULL) {
     assert(level == H2_PAL_LOG_INFO);
     atomic_store(&capture->canceled_completion, true);
+  }
+  if (strstr(message, "stage=audio_worker_failed") != NULL) {
+    assert(level == H2_PAL_LOG_ERROR);
+    assert(strstr(message, "identity=1 generation=1") != NULL);
+    /* First fatal error only, and the Log PAL may inspect Service state. */
+    h2_gizclaw_time_sync_status_t status;
+    assert(h2_gizclaw_service_get_time_sync_status(capture->service, &status) ==
+           H2_PAL_OK);
+    atomic_fetch_add(&capture->worker_errors, 1u);
+    if (strstr(message, "phase=pcm_read rc=-1") != NULL) {
+      assert(strstr(message, "committed=0 media_eos=0") != NULL);
+      assert(strstr(message, "frames=0 bytes=100") != NULL);
+      atomic_store(&capture->invalid_pcm_read, true);
+    }
+  }
+  if (strstr(message, "stage=cancel_state") != NULL &&
+      strstr(message, "cancel_source=1") != NULL) {
+    assert(level == H2_PAL_LOG_INFO);
+    assert(strstr(message, "identity=1 generation=1") != NULL);
+    atomic_store(&capture->api_cancel_state, true);
   }
   /* Simulate an ERROR-only sink for control failures. */
   if (level != H2_PAL_LOG_ERROR)
@@ -7936,8 +8173,41 @@ static int conversation_capture_log(void *user, h2_pal_log_level_t level,
   return H2_PAL_OK;
 }
 
+/* Downstream audio is decoded after the request may already be complete. */
+static void conversation_wait_written(conversation_test_t *test,
+                                      size_t expected) {
+  for (unsigned spins = 0u;
+       spins < 2000u && atomic_load(&test->written) < expected; ++spins)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(atomic_load(&test->written) == expected);
+}
+
+/* The fake server counts a packet after the downlink accepted it, so the
+ * decoder can write its PCM before the count moves. */
+static void conversation_wait_packets(conversation_test_t *test,
+                                      size_t expected) {
+  for (unsigned spins = 0u;
+       spins < 2000u &&
+       __atomic_load_n(&test->packets, __ATOMIC_ACQUIRE) < expected;
+       ++spins)
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  assert(__atomic_load_n(&test->packets, __ATOMIC_ACQUIRE) == expected);
+}
+
+static void conversation_read_owned(h2_gizclaw_track_t *track, uint8_t *out,
+                                    size_t len) {
+  h2_pal_result_t rc = H2_PAL_ERR_WOULD_BLOCK;
+  for (unsigned spins = 0u; spins < 2000u && rc == H2_PAL_ERR_WOULD_BLOCK;
+       ++spins) {
+    rc = h2_gizclaw_pcm_track_read(track, out, len);
+    if (rc == H2_PAL_ERR_WOULD_BLOCK)
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(rc == H2_PAL_OK);
+}
+
 static void test_conversation_public_audio_tasks(void) {
-  for (unsigned mode = 0; mode < 25; ++mode) {
+  for (unsigned mode = 0; mode < 29; ++mode) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_service(&env, 8);
     conversation_log_capture_t log_capture = {.service = service};
@@ -7982,7 +8252,7 @@ static void test_conversation_public_audio_tasks(void) {
         .write = conversation_test_track_write};
     h2_gizclaw_track_t track = {.user = &test, .vtable = &track_vt};
     h2_gizclaw_track_t *owned_track = NULL;
-    if (mode == 17u || mode == 20u) {
+    if (mode == 17u || mode == 20u || mode == 28u) {
       const h2_gizclaw_pcm_track_config_t config = {
           .allocator = service->client_config.allocator,
           .uplink_capacity = 8192u,
@@ -7990,7 +8260,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(h2_gizclaw_pcm_track_create(&config, &owned_track) == H2_PAL_OK);
       test.owned_track = owned_track;
     }
-    if (mode == 17u) {
+    if (mode == 17u || mode == 28u) {
       const uint8_t stale[2] = {0xff, 0xee};
       assert(h2_gizclaw_pcm_track_write(owned_track, stale, sizeof(stale)) ==
              H2_PAL_OK);
@@ -8037,7 +8307,21 @@ static void test_conversation_public_audio_tasks(void) {
       assert(h2_gizclaw_pcm_track_write(owned_track, pcm, sizeof(pcm)) ==
              H2_PAL_OK);
     }
+    if (mode == 28u) {
+      /* No PCM in this window: neither stale nor post-END bytes count.
+       * The server never replies; control EOS must still complete locally. */
+      assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+      const uint8_t later[2] = {0x32, 0x71};
+      assert(h2_gizclaw_pcm_track_write(owned_track, later, sizeof(later)) ==
+             H2_PAL_OK);
+    }
     atomic_store(&test.connect_gate, true);
+    if (mode == 26) {
+      for (unsigned spins = 0; spins < 2000 && !atomic_load(&test.bos); ++spins)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+      assert(atomic_load(&test.bos));
+      assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+    }
     if (mode == 0) {
       for (unsigned spins = 0; spins < 2000 && !atomic_load(&test.bos); ++spins)
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
@@ -8046,15 +8330,14 @@ static void test_conversation_public_audio_tasks(void) {
     }
     if (mode >= 9 && mode <= 12) {
       unsigned spins = 0;
-      while ((!conversation_test_notification_count(&test) ||
-              !atomic_load(&test.written)) &&
-             spins++ < 2000)
+      while (!atomic_load(&test.captured) && spins++ < 2000)
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
       assert(spins < 2000);
-      assert(test.audio_started == 0 && test.filler_callbacks == 0);
+      assert(test.filler_callbacks == 0);
       conversation_test_probe(&test); /* No application poll has run yet. */
+      /* Audio plays without notifying the app. */
       assert(conversation_test_notification_count(&test) ==
-             (mode == 10 ? 8 : 1));
+             (mode == 10 ? 8 : 0));
       if (mode == 9) {
         for (spins = 0;
              spins < 2000 && atomic_load(&test.captured) != 12 * 640 + 100;
@@ -8064,7 +8347,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         for (spins = 0; spins < 2000 && !atomic_load(&test.eos); ++spins)
           h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
-        assert(atomic_load(&test.eos) && test.audio_started == 0);
+        assert(atomic_load(&test.eos));
       }
       if (mode == 11) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
@@ -8083,17 +8366,23 @@ static void test_conversation_public_audio_tasks(void) {
     for (unsigned spins = 0; spins < 4000 && !atomic_load(&test.done);
          ++spins) {
       if (mode == 21 && atomic_load(&test.bos) && !input_ended) {
-        assert(atomic_load(&test.captured) == 0 && !atomic_load(&test.input_ack));
+        assert(test.packets == 0 && !atomic_load(&test.input_ack));
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
-      } else if (mode == 15 && atomic_load(&test.turns_done) == 1u &&
+      }
+      /* A realtime turn is over once its echoed audio has been heard. */
+      if ((mode == 15 || mode == 16) &&
+          atomic_load(&test.written) >=
+              (atomic_load(&test.turns_done) + 1u) * 1280u)
+        atomic_fetch_add(&test.turns_done, 1u);
+      if (mode == 15 && atomic_load(&test.turns_done) == 1u &&
           atomic_load(&test.captured) == 2560u && !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
       } else if (mode == 16 && atomic_load(&test.turns_done) == 2u &&
                  !input_ended) {
-        /* Both reply EOS events have already arrived. Hangup must finish
-         * without sending a normal input end and awaiting another reply. */
+        /* Both turns were heard. Hangup finishes without sending a normal
+         * input end. */
         assert(!atomic_load(&test.eos) && !atomic_load(&test.done));
         conversation_test_probe(&test);
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
@@ -8103,7 +8392,7 @@ static void test_conversation_public_audio_tasks(void) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       } else if ((mode == 0 || mode == 3 || mode == 4 ||
-                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24) &&
+                  (mode >= 6 && mode <= 10) || mode == 19 || mode == 22 || mode == 24 || mode == 27) &&
                  atomic_load(&test.captured) == 12 * 640 + 100 &&
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
@@ -8113,16 +8402,10 @@ static void test_conversation_public_audio_tasks(void) {
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
-      } else if (mode == 20 && atomic_load(&test.turns_done) == 1u &&
-                 !input_ended) {
-        /* The interrupted boundary was non-terminal: the second burst is
-         * the next reply's audio, then the input ends (push-to-talk commit)
-         * so its EOS becomes the terminal boundary. */
-        uint8_t pcm[4u * 640u];
-        for (size_t i = 0u; i < sizeof(pcm); ++i)
-          pcm[i] = (uint8_t)(i % 127u);
-        assert(h2_gizclaw_pcm_track_write(owned_track, pcm, sizeof(pcm)) ==
-               H2_PAL_OK);
+      } else if (mode == 20 && test.packets >= 12u && !input_ended) {
+        /* Twelve echoed packets are buffered or queued and nobody played
+         * them. Releasing push-to-talk drops all of it. */
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 20);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
       }
@@ -8133,16 +8416,15 @@ static void test_conversation_public_audio_tasks(void) {
           (atomic_load(&test.echo_blocked) || input_ended))
         atomic_store(&test.playback_blocked, false);
       /* Mode 18: the app does not poll while twenty chunks decode. Every
-       * chunk still reaches the speaker Track, and the whole reply leaves
-       * exactly one notification (REPLY_AUDIO_STARTED) waiting for the app,
-       * not one per chunk. */
+       * chunk still reaches the speaker Track and none of it leaves a
+       * notification for the app. */
       if (mode == 18 &&
           (atomic_load(&test.written) < 20u * 640u || hook_settle++ < 50u)) {
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
         continue;
       }
       if (mode == 18 && hook_settle == 51u)
-        assert(conversation_test_notification_count(&test) == 1u);
+        assert(conversation_test_notification_count(&test) == 0u);
       size_t dispatched;
       assert(h2_gizclaw_service_poll(service, 32, &dispatched) == H2_PAL_OK);
       h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
@@ -8151,9 +8433,32 @@ static void test_conversation_public_audio_tasks(void) {
     assert(test.result ==
            ((mode == 1 || mode == 2 || (mode >= 11 && mode <= 14) || mode == 16 || mode == 21)
                 ? H2_PAL_ERR_CLOSED
+            : mode == 25             ? H2_PAL_ERR_INVALID_ARG
             : mode == 5              ? H2_PAL_ERR_TIMEOUT
-            : mode == 6 || mode == 8 || mode == 23 ? H2_PAL_ERR_IO
+            : mode == 8 || mode == 23 ? H2_PAL_ERR_IO
                                      : H2_PAL_OK));
+    if (mode == 27) {
+      /* Packets went up; the fake server may still be holding its echo. */
+      assert(test.audio_bos_attempts == 4u && test.held_count > 0u);
+      assert(atomic_load(&test.audio_eos) && atomic_load(&test.eos));
+    }
+    if (mode == 26 || mode == 28) {
+      assert(test.sent_sequence == 2u && test.packets == 0u);
+      assert(atomic_load(&test.eos) && !atomic_load(&test.canceled));
+      assert(!atomic_load(&test.audio_bos) && !atomic_load(&test.input_ack));
+    }
+    if (mode == 28) {
+      assert(test.reply_events == 0u);
+      assert(atomic_load(&test.written) == 0u);
+    }
+    if (mode == 25) {
+      assert(atomic_load(&log_capture.worker_errors) == 1u);
+      assert(atomic_load(&log_capture.invalid_pcm_read));
+      /* Teardown emits cancellation EOS, not a committed input EOS. */
+      assert(atomic_load(&test.eos) && atomic_load(&test.canceled));
+    }
+    if (mode == 21)
+      assert(atomic_load(&log_capture.api_cancel_state));
     assert(test.event_close_count == (mode == 12 || mode == 14 ? 1u : 0u));
     assert(service->stopping == (mode == 12 || mode == 14));
     assert(atomic_load(&service->media_request) == NULL);
@@ -8162,11 +8467,11 @@ static void test_conversation_public_audio_tasks(void) {
       conversation_test_probe(&test); /* Hangup leaves the Peer usable. */
     }
     if (mode == 17u) {
-      /* Completion does not wait for the external speaker. All decoded PCM
-       * is still buffered; the later mic sample did not enter this request. */
-      assert(test.packets == 13u && atomic_load(&test.written) == 0u);
-      assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 13u * 640u) ==
-             H2_PAL_OK);
+      /* Completion waits for nothing downstream. The echoed audio lands in
+       * the Track; the later mic sample did not enter this request. */
+      conversation_read_owned(owned_track, test.output, 13u * 640u);
+      conversation_wait_packets(&test, 13u);
+      assert(atomic_load(&test.written) == 0u);
       test.write_offset = 13u * 640u;
       atomic_store(&test.written, test.write_offset);
       uint8_t remaining[2];
@@ -8178,15 +8483,17 @@ static void test_conversation_public_audio_tasks(void) {
              H2_PAL_ERR_WOULD_BLOCK);
     }
     if (mode == 15 || mode == 16) {
-      assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 15u);
-      assert(test.reply_text_ends == 2u && test.transcript_text_ends == 2u);
-      assert(test.packets == 4u && atomic_load(&test.written) == 2560u);
-      assert(test.audio_started == 2u && test.bos_attempts == 1u);
+      conversation_wait_written(&test, 2560u);
+      conversation_wait_packets(&test, 4u);
+      /* Mode 15's second turn plays after its generation completed, so
+       * only the hung-up realtime call counted both turns in the loop. */
+      assert(mode == 15 || atomic_load(&test.turns_done) == 2u);
+      assert(test.bos_attempts == 1u);
     }
     if (mode == 0 || mode == 3 || mode == 4 || mode == 6 || mode == 7 ||
-        mode == 9 || mode == 10 || mode == 17 || mode == 22 || mode == 24) {
-      assert(test.packets == 13 && atomic_load(&test.written) == 13 * 640);
-      assert(test.audio_started == (mode == 3 || mode == 17 ? 0u : 1u));
+        mode == 9 || mode == 10 || mode == 22 || mode == 24) {
+      conversation_wait_written(&test, 13u * 640u);
+      conversation_wait_packets(&test, 13u);
       size_t nonzero = 0;
       for (size_t i = 0; i < test.write_offset; ++i)
         nonzero += test.output[i] != 0;
@@ -8198,11 +8505,11 @@ static void test_conversation_public_audio_tasks(void) {
     if (mode == 4)
       assert(test.bos_attempts == 4 && test.eos_attempts == 4 &&
              atomic_load(&test.small_buffer_rejected));
-    if (mode == 7)
-      assert(test.reply_events == 2);
+    if (mode == 6)
+      assert(test.reply_events == 1u);
     if (mode == 5)
       assert(test.bos_attempts == 1 && test.ack_reads > 0 &&
-             atomic_load(&test.captured) == 0 && !atomic_load(&test.input_ack) &&
+             test.packets == 0 && !atomic_load(&test.input_ack) &&
              atomic_load(&test.bos) && atomic_load(&test.eos));
     if (mode == 0)
       assert(test.bos_attempts == 1 && test.ack_reads == 9);
@@ -8210,9 +8517,9 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.bos_attempts == 1 && test.ack_reads == 2 && test.reply_text_ends == 1 && atomic_load(&test.input_ack));
     if (mode == 23)
       assert(test.ack_reads == 2 && atomic_load(&test.input_ack) &&
-             atomic_load(&test.captured) == 0 && test.packets == 0);
+             test.pending_len == 0 && test.packets == 0);
     if (mode == 21)
-      assert(test.bos_attempts == 1 && atomic_load(&test.captured) == 0 &&
+      assert(test.bos_attempts == 1 && test.packets == 0 &&
              !atomic_load(&test.input_ack) && atomic_load(&test.canceled));
     if (mode == 10)
       assert(test.filler_callbacks == 8);
@@ -8220,38 +8527,37 @@ static void test_conversation_public_audio_tasks(void) {
       /* Every chunk reached the speaker Track with no app poll in between;
        * decoding never waited on the app, and the app saw the reply start
        * once. */
-      assert(test.packets == 20u && atomic_load(&test.written) == 20u * 640u);
-      assert(test.audio_started == 1u);
+      conversation_wait_packets(&test, 20u);
+      assert(atomic_load(&test.written) == 20u * 640u);
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 19) {
       /* One loss marker between the first and second packet: the decoder
        * concealed it as one 20 ms frame, every later packet still played,
        * and the conversation completed normally instead of failing. */
-      assert(test.loss_markers == 1u && test.packets == 13u);
-      assert(atomic_load(&test.written) == 14u * 640u);
-      assert(test.audio_started == 1u);
+      conversation_wait_written(&test, 14u * 640u);
+      conversation_wait_packets(&test, 13u);
+      assert(test.loss_markers == 1u);
       assert(test.result == H2_PAL_OK);
     }
-    if (mode == 11 || mode == 12)
-      assert(test.audio_started == 0u);
     if (mode == 20) {
-      /* Both replies announced their audio; the speaker Track holds exactly
-       * the second reply, the interrupted first reply was discarded. */
-      assert(atomic_load(&test.turns_done) == 2u && test.reply_events == 6u);
-      assert(test.reply_text_ends == 1u && test.packets == 16u);
-      assert(test.audio_started == 2u && test.result == H2_PAL_OK);
-      assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 4u * 640u) ==
-             H2_PAL_OK);
+      /* Release dropped the unplayed first burst; the server's audio after
+       * the request completed plays, and nothing else is in the Track. */
+      assert(test.result == H2_PAL_OK && test.packets == 12u);
+      conversation_read_owned(owned_track, test.output, 4u * 640u);
+      for (unsigned spins = 0u; spins < 2000u && test.server_packets < 4u;
+           ++spins)
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 20);
       assert(h2_gizclaw_pcm_track_read(owned_track, test.output, 2u) ==
              H2_PAL_ERR_WOULD_BLOCK);
     }
     assert(conversation_test_notification_count(&test) == 0);
-    size_t captured = atomic_load(&test.captured),
-           written = atomic_load(&test.written);
+    /* Capture stops with the generation; downstream audio may keep
+     * playing after it, by design. */
+    size_t captured = atomic_load(&test.captured);
     h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 5);
-    assert(captured == atomic_load(&test.captured) &&
-           written == atomic_load(&test.written));
+    assert(captured == atomic_load(&test.captured));
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
     h2_gizclaw_conversation_release(conversation);
@@ -8275,9 +8581,19 @@ typedef struct speed_wire_test {
   void *receive_user;
   uint8_t metadata[gizclaw_rpc_v1_SpeedTestResponse_size];
   size_t metadata_len;
+  bool activity_clock_failed;
 } speed_wire_test_t;
 
 static speed_wire_test_t *s_speed_wire;
+
+static h2_pal_result_t speed_test_clock(void *user, uint64_t *out_ms) {
+  if (s_speed_wire != NULL && s_speed_wire->mode == 27u &&
+      s_speed_wire->next == 2u && !s_speed_wire->activity_clock_failed) {
+    s_speed_wire->activity_clock_failed = true;
+    return H2_PAL_ERR_IO; /* Only the DATA activity timestamp is unavailable. */
+  }
+  return fake_req_clock(user, out_ms);
+}
 
 static h2_pal_result_t speed_test_input(void *user, uint8_t *buffer,
                                         size_t capacity, size_t *out_read) {
@@ -8363,6 +8679,16 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
   speed_wire_test_t *wire = (speed_wire_test_t *)request;
   assert(wire == s_speed_wire);
   memset(out, 0, sizeof(*out));
+  /* Stall at a real RPC boundary: response only, partial DATA, complete DATA,
+   * or accepted EOS while the SDK request remains pending. */
+  if (wire->mode >= 22u &&
+      wire->next >= (wire->mode == 22u ? 1u : wire->mode == 25u ? 3u : 2u)) {
+    /* Let the real direction worker consume the enqueued frames before
+     * advancing this fake deadline / delivering the terminal error. */
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 5u);
+    atomic_fetch_add(&s_env->clock_ms, 100u);
+    return wire->mode == 26u ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_WOULD_BLOCK;
+  }
   h2_gizclaw_rpc_stream_event_t event = {0};
   uint8_t bytes[258];
   for (size_t i = 0u; i < sizeof(bytes); ++i)
@@ -8378,6 +8704,8 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
     event.data = (h2_gizclaw_rpc_bytes_t){
         bytes, wire->download + (wire->mode == 6u ? 1u : 0u) -
                    (wire->mode == 12u ? 1u : 0u)};
+    if (wire->mode == 23u || wire->mode == 26u || wire->mode == 27u)
+      event.data.len = 128u;
     if (wire->mode == 15u)
       bytes[0] ^= 1u;
     if (wire->mode == 16u)
@@ -8428,7 +8756,37 @@ static void speed_wire_destroy(h2_gizclaw_rpc_request_t *request) {
   ++s_speed_wire->destroys;
 }
 
+static void speed_wire_diagnostic(h2_gizclaw_rpc_request_t *request,
+                                  h2_gizclaw_rpc_diagnostic_t *out) {
+  speed_wire_test_t *wire = (speed_wire_test_t *)request;
+  /* Capture must precede our own cleanup cancellation. */
+  assert(wire->cancels == 0u);
+  *out = (h2_gizclaw_rpc_diagnostic_t){
+      .available = true,
+      .completion_seen = wire->mode == 26u,
+      .completion_gzc_rc = wire->mode == 26u ? -4321 : 0,
+  };
+}
+
+typedef struct speed_log_capture {
+  unsigned calls;
+  char message[1024];
+} speed_log_capture_t;
+
+static int capture_speed_log(void *user, h2_pal_log_level_t level,
+                             const char *scope, const char *message) {
+  speed_log_capture_t *capture = user;
+  if (strcmp(scope, "gizclaw") == 0 &&
+      strstr(message, "request=speedtest stage=failed ") != NULL) {
+    assert(level == H2_PAL_LOG_ERROR);
+    ++capture->calls;
+    (void)snprintf(capture->message, sizeof(capture->message), "%s", message);
+  }
+  return H2_PAL_OK;
+}
+
 static const h2_gizclaw_async_rpc_ops_t speed_wire_ops = {
+    .diagnostic = speed_wire_diagnostic,
     .start_stream = speed_wire_start,
     .write = speed_wire_write,
     .finish_write = speed_wire_finish,
@@ -8451,10 +8809,10 @@ static h2_pal_result_t sync_speedtest_call(void *ctx) {
 
 static void test_speedtest_managed_requests(void) {
   static const h2_pal_time_vtable_t clock_vtable = {
-      .get_monotonic_ms = fake_req_clock,
+      .get_monotonic_ms = speed_test_clock,
       .get_wall_ms = fake_valid_wall,
       .get_wall_status = fake_valid_wall_status};
-  for (unsigned mode = 0u; mode < 22u; ++mode) {
+  for (unsigned mode = 0u; mode < 28u; ++mode) {
     if (mode == 8u)
       continue; /* Request wait timeout is covered by lifecycle tests. */
     test_env_t env;
@@ -8462,6 +8820,10 @@ static void test_speedtest_managed_requests(void) {
     h2_pal_time_api_t time = {.user = &env, .vtable = &clock_vtable};
     service->client_config.time = &time;
     atomic_store(&env.clock_ms, 100u);
+    speed_log_capture_t capture = {0};
+    const h2_pal_log_vtable_t log_vtable = {.write = capture_speed_log};
+    const h2_pal_log_api_t log = {.user = &capture, .vtable = &log_vtable};
+    service->client_config.log = &log;
     const bool upload_only =
         mode == 0u || mode == 3u || mode == 4u || mode == 8u || mode == 10u;
     speed_wire_test_t wire = {
@@ -8497,7 +8859,8 @@ static void test_speedtest_managed_requests(void) {
                wire.download != 0u && mode != 1u ? speed_test_output : NULL,
                NULL) == H2_PAL_OK);
     const int expected =
-        (mode == 5u || mode == 13u) ? H2_PAL_ERR_IO
+        mode >= 22u ? (mode == 26u ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_TIMEOUT)
+        : (mode == 5u || mode == 13u) ? H2_PAL_ERR_IO
         : (mode == 6u || mode == 9u || mode == 12u || mode == 14u ||
            (mode >= 15u && mode <= 18u) || mode == 20u)
             ? H2_PAL_ERR_FORMAT
@@ -8511,6 +8874,34 @@ static void test_speedtest_managed_requests(void) {
               expected, wait_rc);
     assert(wait_rc == expected);
     assert(h2_gizclaw_resp_parse_speedtest(request, &result) == expected);
+    assert(capture.calls == (expected == H2_PAL_OK ? 0u : 1u));
+    if (mode >= 22u) {
+      const size_t received = mode == 22u ? 0u :
+          (mode == 23u || mode == 26u || mode == 27u ? 128u : wire.download);
+      /* These assertions couple failure diagnostics to actual ingress and
+       * parser state, not merely to the existence of a log format string. */
+      if (wire.output_consumed != received)
+        fprintf(stderr, "mode=%u consumed=%zu expected=%zu %s\n", mode,
+                wire.output_consumed, received, capture.message);
+      assert(wire.output_consumed == received);
+      char field[64];
+      (void)snprintf(field, sizeof(field), "rx_data=%zu ", received);
+      assert(strstr(capture.message, field) != NULL);
+      assert(strstr(capture.message, "seq=0 ") == NULL);
+      assert(strstr(capture.message, "identity=1 direction=download") != NULL);
+      assert(strstr(capture.message, "tx_target=0 rx_target=257") != NULL);
+      assert(strstr(capture.message, mode == 22u ? "activity_seen=0 idle_valid=0" :
+                    mode == 27u ? "activity_seen=1 idle_valid=0" :
+                    "activity_seen=1 idle_valid=1") != NULL);
+      assert(strstr(capture.message, mode == 25u ?
+                    "eos_seen=1 " :
+                    "eos_seen=0 ") != NULL);
+      assert(strstr(capture.message, "rpc_result_ok=0") != NULL);
+      if (mode == 26u)
+        assert(strstr(capture.message,
+                      "sdk_completion_seen=1 sdk_completion_gzc_rc=-4321") != NULL);
+    }
+
     if (expected == H2_PAL_OK) {
       assert(result.upload_bytes == wire.upload &&
              result.download_bytes == wire.download);
@@ -8553,6 +8944,8 @@ static void test_speedtest_managed_requests(void) {
       wire.input_produced = wire.output_consumed = 0u;
       wire.destroys = wire.cancels = 0u;
       wire.previous_timeout = 1234u;
+      capture.calls = 0u;
+      wire.activity_clock_failed = false;
       atomic_store(&env.clock_ms, 100u);
       const h2_gizclaw_speedtest_result_t request_result = result;
       memset(&result, 0xa5, sizeof(result));
@@ -8561,6 +8954,7 @@ static void test_speedtest_managed_requests(void) {
                                   .download = wire.download,
                                   .result = &result};
       assert(app_call_sync(service, sync_speedtest_call, &job) == expected);
+      assert(capture.calls == (expected == H2_PAL_OK ? 0u : 1u));
       assert(memcmp(&result, &request_result, sizeof(result)) == 0);
       assert(wire.destroys == (mode == 8u || mode == 13u ? 0u : 1u));
     }
@@ -9769,8 +10163,10 @@ int main(int argc, char **argv) {
   test_firmware_public_request_paths();
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();
-  test_conversation_reply_route_ids();
-  test_conversation_barge_in_supersedes_open_reply();
+  test_conversation_accepts_downstream_events();
+  test_conversation_downlink_policy();
+  test_conversation_downlink_waits_for_bos();
+  test_conversation_drains_events_between_turns();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();
   test_stream_data_task_handoff();

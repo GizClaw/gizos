@@ -2,13 +2,15 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["src/cp_main.c"])
+exports_files(["src/cp_main.c", "src/fixed_boot.c"])
 
 firmware_native_component(
     name = "h2loader_cp_launcher",
-    srcs = [":src/cp_main.c"],
-    hdrs = [],
-    component_directory = "projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
+    srcs = [":src/cp_main.c", "src/fixed_boot.c"],
+    hdrs = [
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h",
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout_check.h",
+    ],
     component_name = "cp",
     data = ["CMakeLists.txt"],
     execution_unit = "cp",

@@ -3,13 +3,40 @@
 #include <stdio.h>
 #include <string.h>
 
+h2_pal_result_t h2_quectel_state_lock(h2_quectel_modem_t *modem) {
+    if (modem == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    return modem->lock != NULL
+        ? h2_pal_mutex_lock(modem->config.sync_api, modem->lock) : H2_PAL_OK;
+}
+
+void h2_quectel_state_unlock(h2_quectel_modem_t *modem) {
+    if (modem->lock != NULL) {
+        (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->lock);
+    }
+}
+
 h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t *modem) {
     if (modem == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (modem->lock != NULL) {
-        h2_pal_result_t rc = h2_pal_mutex_lock(modem->config.sync_api, modem->lock);
+    /* Both provider mutexes are created H2_PAL_MUTEX_FLAG_RECURSIVE: public
+     * operations nest AT exchanges, each of which begins an operation. */
+    if (modem->operation_lock != NULL) {
+        h2_pal_result_t rc = h2_pal_mutex_lock(modem->config.sync_api, modem->operation_lock);
         if (rc != H2_PAL_OK) {
+            return rc;
+        }
+    }
+    /* Nested operations retain just one state lock acquisition. The command
+     * path can release it during transport waits while retaining operation_lock. */
+    if (modem->operation_depth == 0u) {
+        h2_pal_result_t rc = h2_quectel_state_lock(modem);
+        if (rc != H2_PAL_OK) {
+            if (modem->operation_lock != NULL) {
+                (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
+            }
             return rc;
         }
     }
@@ -29,7 +56,7 @@ h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t *modem) {
     return rc;
 }
 
-static h2_pal_result_t power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_t result) {
+h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_t result) {
     if (modem->opened != 0u && modem->power_configured != 0u && modem->power_fault == 0u &&
         modem->power_policy == H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP && modem->gnss_hold == 0u &&
         modem->call_hold == 0u && modem->data_hold == 0u && modem->sleep_allowed == 0u) {
@@ -51,10 +78,13 @@ static h2_pal_result_t power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_
 h2_pal_result_t h2_quectel_operation_end(h2_quectel_modem_t *modem, h2_pal_result_t result) {
     modem->operation_depth--;
     if (modem->operation_depth == 0u) {
-        result = power_reconcile(modem, result);
+        result = h2_quectel_power_reconcile(modem, result);
     }
-    if (modem->lock != NULL) {
-        h2_pal_result_t rc = h2_pal_mutex_unlock(modem->config.sync_api, modem->lock);
+    if (modem->operation_depth == 0u) {
+        h2_quectel_state_unlock(modem);
+    }
+    if (modem->operation_lock != NULL) {
+        h2_pal_result_t rc = h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
         if (result == H2_PAL_OK) {
             result = rc;
         }
@@ -154,7 +184,7 @@ h2_pal_result_t h2_quectel_set_power_policy(void *user, h2_pal_modem_power_polic
         modem->power_fault = 0u;
         modem->power_configured = 1u;
     }
-    rc = power_reconcile(modem, rc);
+    rc = h2_quectel_power_reconcile(modem, rc);
     if (rc != H2_PAL_OK) {
         modem->power_policy = saved;
     }
@@ -168,7 +198,7 @@ h2_pal_result_t h2_quectel_get_power_status(void *user, h2_pal_modem_power_statu
     out_status->policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
     out_status->state = H2_PAL_MODEM_POWER_STATE_UNKNOWN;
     h2_quectel_modem_t *modem = user;
-    h2_pal_result_t rc = h2_quectel_operation_begin(modem);
+    h2_pal_result_t rc = h2_quectel_state_lock(modem);
     if (rc != H2_PAL_OK) {
         return rc;
     }
@@ -180,5 +210,6 @@ h2_pal_result_t h2_quectel_get_power_status(void *user, h2_pal_modem_power_statu
         out_status->policy = modem->power_policy;
         /* DTR/configuration are intentions, not a physical sleep sensor. */
     }
-    return h2_quectel_operation_end(modem, rc);
+    h2_quectel_state_unlock(modem);
+    return rc;
 }

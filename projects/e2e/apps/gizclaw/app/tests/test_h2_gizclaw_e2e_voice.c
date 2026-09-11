@@ -32,19 +32,29 @@ void h2_gizclaw_service_flush_audio_log_internal(
   (void)service;
   (void)log;
 }
-h2_pal_result_t h2_gizclaw_service_audio_control_internal(
-    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log) {
-  (void)log;
-  return start ? h2_gizclaw_service_audio_start(service)
-               : h2_gizclaw_service_audio_end(service);
-}
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log) {
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
+    int source) {
+  (void)source;
   (void)log;
   return h2_gizclaw_conversation_cancel(conversation);
 }
 
 static bool s_session;
+static bool s_empty_ptt;
+/* Downstream audio written by the fake server: the Session's sign that a
+ * released input was answered. */
+static size_t s_downlink_writes;
+static bool s_reply_pending;
+size_t h2_gizclaw_conversation_downlink_writes_internal(
+    h2_gizclaw_service_t *service) {
+  (void)service;
+  return s_downlink_writes;
+}
+void h2_gizclaw_conversation_downlink_flush_internal(
+    h2_gizclaw_service_t *service) {
+  (void)service;
+}
 #include "h2_gizclaw_pcm_track_fake.h"
 
 #ifdef NDEBUG
@@ -251,10 +261,24 @@ h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
     return H2_PAL_ERR_IO;
   /* Realtime never submits a final utterance to obtain an invented EOS ack. */
   assert(!s_realtime);
-  assert(value->input_bytes == sizeof(s_pcm));
+  assert(value->input_bytes == (s_empty_ptt ? 0u : sizeof(s_pcm)));
   value->ended = true;
   s_ended_at = test_time.monotonic_ms;
   return H2_PAL_OK;
+}
+/* Mirrors the Service contract: END reports an empty turn when no PCM was
+ * captured, so the real Session returns to IDLE instead of WAITING. */
+h2_pal_result_t h2_gizclaw_service_audio_control_internal(
+    h2_gizclaw_service_t *service, bool start, h2_gizclaw_audio_log_t *log,
+    bool *out_empty) {
+  (void)log;
+  if (out_empty != NULL)
+    *out_empty = false;
+  const h2_pal_result_t rc = start ? h2_gizclaw_service_audio_start(service)
+                                   : h2_gizclaw_service_audio_end(service);
+  if (rc == H2_PAL_OK && !start && out_empty != NULL)
+    *out_empty = s_conversation != NULL && s_conversation->input_bytes == 0u;
+  return rc;
 }
 h2_pal_result_t
 h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *value) {
@@ -296,45 +320,46 @@ static void complete(h2_gizclaw_conversation_t *value, bool cancelled) {
   if (s_mode == DUPLICATE_COMPLETION)
     value->completion(value->user, value, &result);
 }
-static int emit_reply(h2_gizclaw_conversation_t *value) {
+/* Text accompanies a reply only while the input is still open (realtime);
+ * a push-to-talk reply comes after the generation completed. */
+static int emit_reply_text(h2_gizclaw_conversation_t *value) {
   h2_gizclaw_conversation_event_t event = {.generation = value->generation};
-  if (s_mode == REMOTE_ERROR) {
-    event.kind = H2_GIZCLAW_CONVERSATION_EVENT_ERROR;
-    return value->callback(value->user, value, &event);
-  }
-  if (s_mode != MISSING_TEXT) {
-    if (s_mode == EMPTY_TEXT_DONE) {
-      event.kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA;
-      event.text = "reply";
-      event.text_len = 5u;
-      int rc = value->callback(value->user, value, &event);
-      if (rc != H2_PAL_OK)
-        return rc;
-    }
-    event.kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE;
-    event.text =
-        s_mode == EMPTY_TEXT_DONE || s_mode == EMPTY_REPLY ? "" : "reply";
-    event.text_len = strlen(event.text);
+  if (s_mode == MISSING_TEXT)
+    return H2_PAL_OK;
+  if (s_mode == EMPTY_TEXT_DONE) {
+    event.kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA;
+    event.text = "reply";
+    event.text_len = 5u;
     int rc = value->callback(value->user, value, &event);
     if (rc != H2_PAL_OK)
       return rc;
   }
+  event.kind = H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DONE;
+  event.text =
+      s_mode == EMPTY_TEXT_DONE || s_mode == EMPTY_REPLY ? "" : "reply";
+  event.text_len = strlen(event.text);
+  return value->callback(value->user, value, &event);
+}
+
+/* The reply's audio: plain PCM in the downlink, no boundaries. */
+static void emit_reply_audio(void) {
+  if (s_mode == EMPTY_REPLY)
+    return;
   uint8_t pcm[64] = {0};
   if (s_mode != SILENT_REPLY)
     pcm[0] = 1u;
   assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) == H2_PAL_OK);
-  event.kind = H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED;
-  int rc = value->callback(value->user, value, &event);
-  if (rc != H2_PAL_OK)
-    return rc;
-  event.kind = H2_GIZCLAW_CONVERSATION_EVENT_REPLY_DONE;
-  rc = value->callback(value->user, value, &event);
-  if (rc == H2_PAL_OK) {
-    ++value->replies;
-    ++s_replies;
-  }
-  return rc;
+  ++s_downlink_writes;
+  ++s_replies;
 }
+
+static int emit_remote_error(h2_gizclaw_conversation_t *value) {
+  h2_gizclaw_conversation_event_t event = {
+      .generation = value->generation,
+      .kind = H2_GIZCLAW_CONVERSATION_EVENT_ERROR};
+  return value->callback(value->user, value, &event);
+}
+
 h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
                                         size_t max, size_t *count) {
   assert(service == (h2_gizclaw_service_t *)&s_service && max > 0u);
@@ -342,6 +367,21 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
   if (s_mode == POLL_ERROR)
     return H2_PAL_ERR_IO;
   h2_gizclaw_conversation_t *value = s_conversation;
+  /* A forwarded frame landing after the last paced speaker pump, right at
+   * the grace boundary, after the group turn completed: the case must
+   * still see it before passing. */
+  if (s_group && s_mode == GROUP_LATE_DOWNLINK && s_ended_at != UINT64_MAX &&
+      s_track != NULL && test_time.monotonic_ms - s_ended_at == 1499u) {
+    uint8_t pcm[64] = {1};
+    assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) ==
+           H2_PAL_OK);
+  }
+  if (s_reply_pending && s_track != NULL) {
+    s_reply_pending = false;
+    emit_reply_audio();
+    *count = 1u;
+    return H2_PAL_OK;
+  }
   if (value != NULL && !value->active && value->cancelled && s_track != NULL) {
     uint8_t pcm[64] = {1};
     if (s_mode == CANCEL_KEEPS_READING) {
@@ -383,35 +423,46 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
   if (s_group) {
     /* An SFU Workspace answers the sender with nothing: no reply, no terminal.
      * The faults below are the Server behaviours the case must reject. */
-    if (value->ended && s_replies == 0u) {
-      ++s_replies;
-      if (s_mode == REMOTE_ERROR || s_mode == GROUP_UNEXPECTED_REPLY) {
-        int rc = emit_reply(value);
+    if (s_mode == GROUP_EARLY_FINISH && !value->ended &&
+        value->input_bytes != 0u) {
+      complete(value, false);
+      return H2_PAL_OK;
+    }
+    if (value->ended) {
+      if (s_mode == REMOTE_ERROR) {
+        int rc = emit_remote_error(value);
         if (rc != H2_PAL_OK)
           return rc;
       }
-      if (s_mode == GROUP_EARLY_FINISH || s_mode == GROUP_EARLY_FAILURE)
-        complete(value, false);
-    }
-    /* A forwarded frame landing after the last paced speaker pump, right at
-     * the grace boundary: the case must still see it before passing. */
-    if (s_mode == GROUP_LATE_DOWNLINK && value->ended &&
-        test_time.monotonic_ms - s_ended_at == 1499u) {
-      uint8_t pcm[64] = {1};
-      assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) ==
-             H2_PAL_OK);
+      /* The input is sent: the generation completes; the SFU says nothing
+       * back, unless it misbehaves. */
+      if (s_mode == GROUP_UNEXPECTED_REPLY)
+        s_reply_pending = true;
+      complete(value, false);
+      return H2_PAL_OK;
     }
     return H2_PAL_OK;
   }
   if (!s_realtime && value->ended) {
-    int rc = emit_reply(value);
-    if (rc == H2_PAL_OK)
-      complete(value, false);
+    if (s_mode == REMOTE_ERROR) {
+      int rc = emit_remote_error(value);
+      if (rc != H2_PAL_OK)
+        return rc;
+    }
+    /* The input end is on the wire: the generation completes, and the
+     * reply follows as downstream audio. */
+    complete(value, false);
+    s_reply_pending = true;
   } else if (s_realtime &&
              value->input_bytes == (value->replies + 1u) * sizeof(s_pcm) &&
              test_time.monotonic_ms - value->last_voice >= 500u && value->replies < 2u &&
              !(s_mode == MISSING_VAD_REPLY && value->replies == 1u)) {
-    int rc = emit_reply(value);
+    int rc = s_mode == REMOTE_ERROR ? emit_remote_error(value)
+                                    : emit_reply_text(value);
+    if (rc == H2_PAL_OK) {
+      emit_reply_audio();
+      ++value->replies;
+    }
     if (rc == H2_PAL_OK && s_mode == EARLY_VAD_END)
       complete(value, false);
   }
@@ -711,6 +762,9 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   s_detached_track = NULL;
   s_begins = s_replies = s_cancels = s_reconnects = s_play_creates = test_mem.calls =
       0u;
+  s_downlink_writes = 0u;
+  s_reply_pending = false;
+  s_ended_at = UINT64_MAX;
   test_mem.fail_at = fail_alloc;
   h2_gizclaw_e2e_fixture_t *fixture = calloc(1u, sizeof(*fixture));
   assert(fixture != NULL);
@@ -752,7 +806,7 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   const unsigned allocations = test_mem.calls;
   if (mode == NORMAL && fail_alloc == 0u) {
     assert(s_begins == (s_group ? 1u : 3u) &&
-           s_replies == (s_group ? 1u : 3u) && s_cancels == (s_group ? 1u : 2u));
+           s_replies == (s_group ? 0u : 3u) && s_cancels == (s_group ? 0u : 2u));
     assert(s_hangups == (s_group ? 0u : 1u) &&
            s_post_hangup_pings == (s_group ? 0u : 1u));
     assert(s_play_creates == (s_group ? 0u : 3u) &&
@@ -764,8 +818,7 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
            rc == H2_PAL_OK ? "PASS" : "FAIL", rc,
            fixture->case_state == NULL ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE);
   if (mode == POLL_ERROR || mode == UNSET_ERROR ||
-      mode == REPLACEMENT_UNSET_ERROR || mode == GROUP_CANCEL_ERROR ||
-      mode == HANGUP_IGNORED) {
+      mode == REPLACEMENT_UNSET_ERROR || mode == HANGUP_IGNORED) {
     assert(fixture->case_cleanup != NULL && fixture->case_state != NULL &&
            test_mem.live_blocks > 0u);
     s_mode = NORMAL;
@@ -780,12 +833,65 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   free(fixture);
   return allocations;
 }
+/* A released PTT with no captured PCM completes locally: the Session must
+ * report IDLE rather than wait for a reply that will never arrive. */
+static h2_pal_result_t empty_ptt_event(void *user, h2_gizclaw_conversation_t *conversation,
+                                       const h2_gizclaw_conversation_event_t *event) {
+  (void)user;
+  (void)conversation;
+  (void)event;
+  return H2_PAL_OK;
+}
+static void empty_ptt_complete(void *user, h2_gizclaw_conversation_t *conversation,
+                               const h2_gizclaw_operation_result_t *result) {
+  (void)user;
+  (void)conversation;
+  (void)result;
+}
+static void run_empty_ptt_session(void) {
+  assert(test_mem.live_blocks == 0u && s_conversation == NULL);
+  s_mode = NORMAL;
+  s_empty_ptt = true;
+  static const char *const collections[] = {"assistants"};
+  h2_gizclaw_session_config_t config = {.service=(h2_gizclaw_service_t *)&s_service,
+      .mem=&test_mem.api, .sync=h2_desktop_platform_sync_api(), .time=&test_time.api,
+      .collections=collections, .collection_count=1u, .max_workflows=4u, .catalog_bytes=4096u};
+  h2_gizclaw_session_t *session = NULL;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 30000u) == H2_PAL_OK);
+  const h2_gizclaw_workspace_parameters_patch_t parameters = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  const h2_gizclaw_session_selection_t selection = {.collection="assistants",
+      .workflow_name="assistant", .workspace_name="test-workspace",
+      .parameters=&parameters};
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_session_conversation_create(session, &selection, 30000u,
+             empty_ptt_event, empty_ptt_complete, NULL, &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+  h2_gizclaw_session_state_t state;
+  assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+  assert(state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  /* The fake has no poll loop; deliver the control-only turn's completion. */
+  complete(conversation, false);
+  assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+  assert(state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
+  s_empty_ptt = false;
+  assert(test_mem.live_blocks == 0u && s_conversation == NULL);
+}
 static int expected_result(unsigned mode) {
   switch (mode) {
   case NORMAL:
   case EMPTY_TEXT_DONE:
+  case MISSING_TEXT: /* text is display only */
   case HISTORY_UNKNOWN_TYPE:
     return H2_PAL_OK;
+  case SILENT_REPLY: /* silence is never heard as a reply */
+  case EMPTY_REPLY:  /* no reply audio at all */
+    return H2_PAL_ERR_TIMEOUT;
   case REMOTE_ERROR:
     return H2_GIZCLAW_ERR_REMOTE;
   case MISSING_VAD_REPLY:
@@ -834,9 +940,10 @@ int main(int argc, char **argv) {
   s_session = true;
   run_case(NORMAL, H2_PAL_OK, 0u);
   s_session = false;
+  run_empty_ptt_session();
   unsigned allocations = run_case(NORMAL, H2_PAL_OK, 0u);
-  run_case(SILENT_REPLY, H2_PAL_ERR_INVALID_STATE, 0u);
-  run_case(MISSING_TEXT, H2_PAL_ERR_INVALID_STATE, 0u);
+  run_case(SILENT_REPLY, expected_result(SILENT_REPLY), 0u);
+  run_case(MISSING_TEXT, expected_result(MISSING_TEXT), 0u);
   run_case(REMOTE_ERROR, H2_GIZCLAW_ERR_REMOTE, 0u);
   run_case(EARLY_VAD_END, H2_PAL_ERR_INVALID_STATE, 0u);
   run_case(MISSING_VAD_REPLY, H2_PAL_ERR_TIMEOUT, 0u);
@@ -851,7 +958,7 @@ int main(int argc, char **argv) {
   run_case(BEGIN_ERROR, H2_PAL_ERR_IO, 0u);
   run_case(CREATE_ERROR, H2_PAL_ERR_NO_MEMORY, 0u);
   run_case(EMPTY_TEXT_DONE, H2_PAL_OK, 0u);
-  run_case(EMPTY_REPLY, H2_PAL_ERR_INVALID_STATE, 0u);
+  run_case(EMPTY_REPLY, expected_result(EMPTY_REPLY), 0u);
   run_case(SET_ERROR, H2_PAL_ERR_IO, 0u);
   run_case(REPLACEMENT_SET_ERROR, H2_PAL_ERR_IO, 0u);
   run_case(REPLACEMENT_UNSET_ERROR, H2_PAL_ERR_IO, 0u);
@@ -895,8 +1002,9 @@ int main(int argc, char **argv) {
         : (mode == GROUP_UNEXPECTED_REPLY || mode == GROUP_EARLY_FINISH ||
            mode == GROUP_LATE_DOWNLINK)
             ? H2_PAL_ERR_INVALID_STATE
-        : (mode == GROUP_EARLY_FAILURE || mode == GROUP_CANCEL_ERROR)
-            ? H2_PAL_ERR_IO
+        : mode == GROUP_EARLY_FAILURE ? H2_PAL_ERR_IO
+        /* A completed group turn is never hung up. */
+        : mode == GROUP_CANCEL_ERROR ? H2_PAL_OK
             : expected_result(mode);
     run_case(mode, expected, 0u);
   }

@@ -23,6 +23,10 @@ struct h2_gizclaw_session {
   h2_gizclaw_workflow_page_t catalog;
   h2_gizclaw_conversation_t *conversation;
   bool conversation_running;
+  /* WAITING ends once downstream audio passes wait_mark, or at the
+   * deadline. */
+  size_t wait_mark;
+  uint64_t wait_deadline_ms;
   h2_gizclaw_conversation_callback_fn callback;
   h2_gizclaw_conversation_completion_fn completion;
   void *user;
@@ -39,12 +43,13 @@ static void record_audio_level(const h2_gizclaw_session_t *s, const char *stage,
   (void)snprintf(message, H2_PAL_LOG_MESSAGE_MAX,
                  "session=%p conversation=%p stage=%s rc=%d event_generation=%llu "
                  "detail=%d open=%d running=%d restarting=%d state=%d "
-                 "closed=%d busy=%d rpc=%d workspace=%d",
+                 "closed=%d busy=%d rpc=%d workspace=%d gen=%llu",
                  (const void *)s, (void *)s->conversation, stage, (int)rc,
                  (unsigned long long)generation, detail,
                  s->state.conversation_input_open, s->conversation_running,
                  s->restarting_input, (int)s->state.conversation, s->closed,
-                 s->busy, s->workspace_rpc_active, (int)s->state.workspace);
+                 s->busy, s->workspace_rpc_active, (int)s->state.workspace,
+                 (unsigned long long)s->state.generation);
 }
 
 static void record_audio(const h2_gizclaw_session_t *s, const char *stage,
@@ -202,6 +207,19 @@ h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session,
   h2_pal_result_t rc = lock(session);
   if (rc != H2_PAL_OK)
     return rc;
+  if (session->state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING) {
+    /* Downstream sound takes over from WAITING; without any, give up
+     * silently at the deadline. */
+    uint64_t now = 0u;
+    if (h2_gizclaw_conversation_downlink_writes_internal(
+            session->config.service) != session->wait_mark ||
+        (h2_pal_time_get_monotonic_ms(session->config.time, &now) ==
+             H2_PAL_OK &&
+         now >= session->wait_deadline_ms)) {
+      session->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
+      ++session->state.revision;
+    }
+  }
   *out = session->state;
   out->blocking_reason =
       session->closed ? H2_GIZCLAW_SESSION_BLOCK_CLOSED
@@ -793,26 +811,16 @@ conversation_event(void *user, h2_gizclaw_conversation_t *conversation,
   }
   if (event->kind != H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA)
     record_audio(s, "event_accept", &logs, H2_PAL_OK, event->generation, (int)event->kind);
+  /* Text carries no state. ERROR is the server refusing this input. */
   if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR) {
     snprintf(s->state.error_code, sizeof(s->state.error_code), "%s",
              event->error_code != NULL ? event->error_code : "");
     s->state.retryable = event->retryable;
     s->state.last_error = H2_PAL_ERR_IO;
     s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_CONVERSATION;
+    s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
+    changed(s);
   }
-  if (event->kind == H2_GIZCLAW_CONVERSATION_EVENT_ERROR) {
-    if (s->state.parameters.input != H2_GIZCLAW_WORKSPACE_INPUT_REALTIME ||
-        event->error_code == NULL ||
-        strcmp(event->error_code, "STREAM_INTERRUPTED") != 0)
-      s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
-  } else if (s->state.parameters.input != H2_GIZCLAW_WORKSPACE_INPUT_REALTIME &&
-             !s->state.conversation_input_open &&
-             (event->kind ==
-                  H2_GIZCLAW_CONVERSATION_EVENT_REPLY_AUDIO_STARTED ||
-              event->kind == H2_GIZCLAW_CONVERSATION_EVENT_TEXT_DELTA)) {
-    s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_REPLYING;
-  }
-  changed(s);
   h2_gizclaw_conversation_callback_fn callback = s->callback;
   void *callback_user = s->user;
   unlock_audio(s, &logs);
@@ -847,10 +855,9 @@ static void conversation_complete(void *user,
       s->state.workspace == H2_GIZCLAW_SESSION_READY &&
       s->state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_CALLING &&
       result->terminal_kind != H2_GIZCLAW_OPERATION_CANCELED &&
-      (result->result == H2_PAL_OK ||
-       strcmp(result->error_code, "STREAM_INTERRUPTED") == 0)) {
+      result->result == H2_PAL_OK) {
     h2_pal_result_t rc = h2_gizclaw_service_audio_control_internal(
-        s->config.service, true, &logs);
+        s->config.service, true, &logs, NULL);
     record_audio(s, "auto_audio_start", &logs, rc, 0u, 0);
     if (rc == H2_PAL_OK) {
       s->conversation_running = true;
@@ -861,7 +868,11 @@ static void conversation_complete(void *user,
     effective_result.result = rc;
   }
   s->state.conversation_input_open = false;
-  s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
+  /* A push-to-talk input is complete once it is sent; the wait for sound
+   * started at release goes on. Any failure ends it. */
+  if (s->state.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING ||
+      result->result != H2_PAL_OK)
+    s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
   s->state.last_error = result->result;
   memcpy(s->state.error_code, result->error_code, sizeof(s->state.error_code));
   s->state.error_code[sizeof(s->state.error_code) - 1u] = '\0';
@@ -943,7 +954,9 @@ void h2_gizclaw_session_conversation_release(
     s->conversation = NULL;
     (void)h2_pal_cond_broadcast(s->config.sync, s->progress);
     s->state.conversation_input_open = false;
-    s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
+    /* A sent input's wait for sound outlives its route. */
+    if (s->state.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING)
+      s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
     changed(s);
   }
   unlock(s);
@@ -970,15 +983,19 @@ h2_pal_result_t h2_gizclaw_session_cancel_pending(h2_gizclaw_session_t *s) {
  * reply. The caller is a control task; service_poll runs independently. */
 static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
                                                 uint32_t timeout,
-                                                h2_gizclaw_audio_log_t *logs) {
-  if (!s->conversation_running)
+                                                h2_gizclaw_audio_log_t *logs,
+                                                h2_gizclaw_cancel_source_t source) {
+  if (!s->conversation_running) {
+    if (source != H2_GIZCLAW_CANCEL_RESTART)
+      h2_gizclaw_conversation_downlink_flush_internal(s->config.service);
     return H2_PAL_OK;
+  }
   if (s->state.conversation_input_open) {
     (void)h2_gizclaw_service_audio_control_internal(
-        s->config.service, false, logs);
+        s->config.service, false, logs, NULL);
   }
   h2_pal_result_t rc =
-      h2_gizclaw_conversation_cancel_internal(s->conversation, logs);
+      h2_gizclaw_conversation_cancel_internal(s->conversation, logs, source);
   if (rc != H2_PAL_OK)
     return rc;
   s->state.conversation_input_open = false;
@@ -1005,6 +1022,27 @@ static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
   return s->closed ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
 
+/* Called with the Session mutex held after admission checks. Owns the
+ * serialized workspace RPC slot and stops the active conversation first. */
+static h2_pal_result_t
+enter_workspace_rpc_locked(h2_gizclaw_session_t *s, uint32_t timeout,
+                           h2_gizclaw_audio_log_t *logs) {
+  s->workspace_rpc_active = true;
+  s->state.workspace = H2_GIZCLAW_SESSION_PREPARING;
+  s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
+  changed(s);
+  h2_pal_result_t rc =
+      stop_conversation_locked(s, timeout, logs, H2_GIZCLAW_CANCEL_WORKSPACE);
+  if (rc != H2_PAL_OK) {
+    s->workspace_rpc_active = false;
+    s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
+    s->state.last_error = rc;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_WORKSPACE;
+    changed(s);
+  }
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
     h2_gizclaw_session_t *s, h2_gizclaw_str_t name, uint32_t timeout) {
   h2_gizclaw_audio_log_t logs = {0};
@@ -1023,26 +1061,76 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
   }
   const bool pending_selection =
       s->state.workspace == H2_GIZCLAW_SESSION_PREPARING;
-  s->workspace_rpc_active = true;
-  s->state.workspace = H2_GIZCLAW_SESSION_PREPARING;
-  s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_IDLE;
   if (name.len != 0u) {
     memcpy(s->state.target_workspace, name.data, name.len);
     s->state.target_workspace[name.len] = '\0';
   } else if (!pending_selection || s->state.target_workspace[0] == '\0') {
     strcpy(s->state.target_workspace, s->state.current_workspace);
   }
-  changed(s);
-  rc = stop_conversation_locked(s, timeout, &logs);
-  if (rc != H2_PAL_OK) {
-    s->workspace_rpc_active = false;
-    s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
-    s->state.last_error = rc;
-    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_WORKSPACE;
-    changed(s);
+  rc = enter_workspace_rpc_locked(s, timeout, &logs);
+  unlock_audio(s, &logs);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
+    h2_gizclaw_session_t *s, h2_gizclaw_str_t name, uint32_t timeout,
+    bool *out_participating) {
+  h2_gizclaw_audio_log_t logs = {0};
+  *out_participating = false;
+  if (s == NULL)
+    return H2_PAL_OK;
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const size_t current_len = strlen(s->state.current_workspace);
+  const bool current = name.len != 0u && name.len == current_len &&
+                       memcmp(name.data, s->state.current_workspace,
+                              current_len) == 0;
+  if (s->closed)
+    rc = H2_PAL_ERR_CLOSED;
+  else if (!current)
+    rc = H2_PAL_OK; /* Other Workspaces do not affect this Session. */
+  else if (s->workspace_rpc_active || s->restarting_input)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    rc = enter_workspace_rpc_locked(s, timeout, &logs);
+    *out_participating = rc == H2_PAL_OK;
   }
   unlock_audio(s, &logs);
   return rc;
+}
+
+h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
+    h2_gizclaw_session_t *s, h2_pal_result_t result) {
+  if (s == NULL)
+    return result;
+  h2_pal_result_t lock_rc = lock(s);
+  if (lock_rc != H2_PAL_OK)
+    return lock_rc;
+  s->workspace_rpc_active = false;
+  if (!s->closed &&
+      (!s->busy || s->operation_generation == s->state.generation)) {
+    if (result == H2_PAL_OK) {
+      /* The deleted Workspace's identity and confirmed parameters are gone;
+       * the next select must get/create/reload it from scratch. */
+      if (same(s->state.target_workspace, s->state.current_workspace))
+        s->state.target_workspace[0] = '\0';
+      s->state.workspace = H2_GIZCLAW_SESSION_EMPTY;
+      s->state.current_workspace[0] = '\0';
+      s->state.workflow_name[0] = '\0';
+      memset(&s->state.parameters, 0, sizeof(s->state.parameters));
+    } else {
+      /* Deletion may have happened; never keep an uncertain name as READY. */
+      s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
+    }
+    s->state.last_error = result;
+    s->state.error_stage = result == H2_PAL_OK
+                               ? H2_GIZCLAW_SESSION_BLOCK_NONE
+                               : H2_GIZCLAW_SESSION_BLOCK_WORKSPACE;
+    changed(s);
+  }
+  unlock(s);
+  return result;
 }
 
 h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
@@ -1126,6 +1214,7 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
     return rc;
   }
   if (!start && s->conversation == NULL) {
+    record_audio(s, "audio_end_no_conversation", &logs, H2_PAL_OK, 0u, 0);
     unlock_audio(s, &logs);
     return H2_PAL_OK;
   }
@@ -1139,6 +1228,8 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
   }
   if ((!start && !s->state.conversation_input_open) ||
       (start && s->state.conversation_input_open)) {
+    record_audio(s, start ? "audio_start_already_open" : "audio_end_not_open",
+                 &logs, H2_PAL_OK, 0u, 0);
     unlock_audio(s, &logs);
     return H2_PAL_OK;
   }
@@ -1146,7 +1237,7 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
     s->busy = true;
     s->restarting_input = true;
     record_audio_level(s, "interrupt_begin", &logs, H2_PAL_OK, 0u, 0, H2_PAL_LOG_INFO);
-    rc = stop_conversation_locked(s, 30000u, &logs);
+    rc = stop_conversation_locked(s, 30000u, &logs, H2_GIZCLAW_CANCEL_RESTART);
     record_audio(s, "interrupt_drained", &logs, rc, 0u, 0);
     s->restarting_input = false;
     s->busy = false;
@@ -1159,7 +1250,9 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
       return rc;
     }
   }
-  rc = h2_gizclaw_service_audio_control_internal(s->config.service, start, &logs);
+  bool empty_input = false;
+  rc = h2_gizclaw_service_audio_control_internal(
+      s->config.service, start, &logs, &empty_input);
   record_audio(s, start ? "audio_start" : "audio_end", &logs, rc, 0u, 0);
   if (rc == H2_PAL_OK) {
     s->state.conversation =
@@ -1167,11 +1260,22 @@ static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {
             ? (start ? H2_GIZCLAW_SESSION_CONVERSATION_CALLING
                      : H2_GIZCLAW_SESSION_CONVERSATION_IDLE)
             : (start ? H2_GIZCLAW_SESSION_CONVERSATION_RECORDING
-                     : H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+                     : empty_input ? H2_GIZCLAW_SESSION_CONVERSATION_IDLE
+                                   : H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+    if (s->state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING) {
+      /* Released: wait for the server's sound, silently giving up after a
+       * while. The release already cleared what was buffered before. */
+      uint64_t now = 0u;
+      (void)h2_pal_time_get_monotonic_ms(s->config.time, &now);
+      s->wait_mark =
+          h2_gizclaw_conversation_downlink_writes_internal(s->config.service);
+      s->wait_deadline_ms = now + H2_GIZCLAW_SESSION_WAIT_MS;
+    }
     s->state.conversation_input_open = start;
     if (!start &&
         s->state.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME) {
-      rc = h2_gizclaw_conversation_cancel_internal(s->conversation, &logs);
+      rc = h2_gizclaw_conversation_cancel_internal(
+          s->conversation, &logs, H2_GIZCLAW_CANCEL_REALTIME_END);
       record_audio(s, "audio_end_cancel", &logs, rc, 0u, 0);
     }
     if (start) {

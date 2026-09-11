@@ -3,6 +3,7 @@
 #else
 #include "h2_bk_h2loader.h"
 #include "h2_bk_h2loader_internal.h"
+#include "h2_bk_fixed_boot.h"
 
 #include "bk_private/bk_ota_private.h"
 #include "components/system.h"
@@ -18,6 +19,8 @@
 extern part_flag update_part_flag;
 
 static h2_pal_result_t commit_next_partition(part_flag target) {
+    if (h2_bk_fixed_layout_active()) return h2_bk_fixed_select(
+        target == UPDATE_A_PART ? H2_BK_H2LOADER_PRIMARY_PARTITION_ID : H2_BK_H2LOADER_APP_PARTITION_ID);
     int rc;
 
     update_part_flag = target;
@@ -78,8 +81,10 @@ static h2_pal_result_t power_list_boot_partitions(
     /* App startup arms A as recovery while retaining B as the attempted
      * image. On returning to A, this exact flag combination proves that B
      * never confirmed. Explicit Loader selection writes A/A instead. */
-    if (bk_ota_get_current_partition() == EXEX_A_PART &&
-        flags[0] == EXEX_A_PART && flags[4] == EXEC_B_PART && flags[8] == CONFIRM_EXEC_A) {
+    if ((h2_bk_fixed_layout_active() && h2_bk_fixed_current_slot() == 0u &&
+         (h2_bk_fixed_app_failed() || h2_bk_fixed_relay_failed())) ||
+        (!h2_bk_fixed_layout_active() && h2_bk_fixed_current_slot() == EXEX_A_PART &&
+        flags[0] == EXEX_A_PART && flags[4] == EXEC_B_PART && flags[8] == CONFIRM_EXEC_A)) {
         app_flags &= ~H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE;
     }
     fill_partition(&partition,
@@ -104,7 +109,7 @@ static h2_pal_result_t power_get_running_boot_partition(void *user, h2_pal_power
     if (out_partition == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    current = bk_ota_get_current_partition();
+    current = h2_bk_fixed_current_slot();
     if (current == 0u) {
         fill_partition(out_partition,
             H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
@@ -130,6 +135,15 @@ static h2_pal_result_t power_get_next_boot_partition(
     uint8_t next;
 
     if (out_partition == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (h2_bk_fixed_layout_active()) {
+        int app = h2_bk_fixed_next_app();
+        fill_partition(out_partition,
+            app ? H2_BK_H2LOADER_APP_PARTITION_ID : H2_BK_H2LOADER_PRIMARY_PARTITION_ID,
+            app ? "fixed_app" : "primary_loader",
+            H2_PAL_POWER_BOOT_PARTITION_FLAG_BOOTABLE | H2_PAL_POWER_BOOT_PARTITION_FLAG_NEXT |
+            (app ? H2_PAL_POWER_BOOT_PARTITION_FLAG_APP : H2_PAL_POWER_BOOT_PARTITION_FLAG_RECOVERY));
+        return H2_PAL_OK;
+    }
     control = bk_flash_partition_get_info(BK_PARTITION_OTA_FINA_EXECUTIVE);
     if (control == NULL ||
         bk_flash_read_bytes(control->partition_start_addr, flags, sizeof(flags)) != BK_OK) {
@@ -170,11 +184,8 @@ static h2_pal_result_t power_set_next_boot_partition(void *user, uint32_t partit
 static h2_pal_result_t power_reboot(void *user, uint32_t reason) {
     (void)user;
     (void)reason;
-    /* bk_reboot() asks the other core to reset this AP and then spins
-       forever. The H2Loader CP owns a long-running UART transport, so that
-       mailbox reboot can remain pending indefinitely. The watchdog reset is
-       the SDK's whole-device reset path and honors the committed OTA boot
-       selection. */
+    /* Reset the whole device after committing the boot selection, so CP and
+       AP restart together through the system firmware boot path. */
     bk_wdt_force_reboot();
     return H2_PAL_OK;
 }

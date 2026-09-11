@@ -15,6 +15,7 @@ typedef int (*h2_esp_h2loader_mount_fn)(const char *path);
 typedef struct h2_esp_h2loader_config {
     const char *board;
     h2_esp_h2loader_mount_fn mount_file_point;
+    /** 0 disables the MFG gate, otherwise 1..H2_LOADER_MFG_STEP_MAX. */
     uint32_t mfg_required_total;
     void *user;
     int (*run_mfg)(void *user, h2_loader_t *loader,

@@ -8,6 +8,7 @@ typedef struct h2_h2loader_serial_e2e_context {
   h2_h2loader_serial_e2e_result_t *result;
   h2_h2loader_host_serial_connection_t *connection;
   const char *payload_resource_name;
+  const h2_h2loader_host_catalog_entry_t *loader_update_asset;
   int initial_status_recorded;
 } h2_h2loader_serial_e2e_context_t;
 
@@ -203,7 +204,18 @@ static void h2_h2loader_serial_e2e_progress(void *user, uint64_t acknowledged,
 
 static h2_pal_result_t h2_h2loader_serial_e2e_managed_connect(
     void *user, h2_h2loader_host_status_t *out_status) {
-  return h2_h2loader_serial_e2e_connect(user, out_status);
+  h2_h2loader_serial_e2e_context_t *context = user;
+  const h2_pal_result_t result =
+      h2_h2loader_serial_e2e_connect(context, out_status);
+  const h2_h2loader_host_catalog_entry_t *asset = context->loader_update_asset;
+  if (result == H2_PAL_OK && asset != NULL &&
+      out_status->running_partition == 2u &&
+      h2_h2loader_host_status_active_role(out_status) ==
+          H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+      strcmp(out_status->active_checksum, asset->image_sha256) == 0) {
+    context->result->loader_trial_observed = 1u;
+  }
+  return result;
 }
 
 static h2_pal_result_t h2_h2loader_serial_e2e_managed_stage(
@@ -240,8 +252,67 @@ static h2_pal_result_t h2_h2loader_serial_e2e_payload(
       offset, out, out_size, out_read);
 }
 
-static h2_pal_result_t h2_h2loader_serial_e2e_install(
-    h2_h2loader_serial_e2e_context_t *context) {
+static int h2_h2loader_serial_e2e_metadata_is_asset(
+    const h2_h2loader_host_metadata_t *metadata,
+    const h2_h2loader_host_catalog_entry_t *asset) {
+  return metadata->valid &&
+         metadata->role == H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER &&
+         strcmp(metadata->image_checksum, asset->image_sha256) == 0 &&
+         strcmp(metadata->version, asset->version) == 0 &&
+         strcmp(metadata->board, asset->board) == 0 &&
+         strcmp(metadata->target, asset->target) == 0;
+}
+
+static int h2_h2loader_serial_e2e_loader_asset(
+    const h2_h2loader_host_catalog_entry_t *asset) {
+  return asset->role == H2_H2LOADER_HOST_ASSET_ROLE_LOADER &&
+         asset->operation == H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL;
+}
+
+h2_pal_result_t h2_h2loader_serial_e2e_loader_update_ready(
+    const h2_h2loader_host_status_t *before,
+    const h2_h2loader_host_catalog_entry_t *asset) {
+  if (before == NULL || asset == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_h2loader_serial_e2e_loader_asset(asset)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (strcmp(before->board, asset->board) != 0 ||
+      strcmp(before->target, asset->target) != 0) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  /* The same image would complete without a Partition 2 relay. */
+  if (before->partition_1.valid &&
+      strcmp(before->partition_1.image_checksum, asset->image_sha256) == 0) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_h2loader_serial_e2e_loader_update_complete(
+    const h2_h2loader_host_status_t *after,
+    const h2_h2loader_host_catalog_entry_t *asset) {
+  if (after == NULL || asset == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_h2loader_serial_e2e_loader_asset(asset)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (after->running_partition != 1u || after->stage.valid ||
+      h2_h2loader_host_status_active_role(after) !=
+          H2_H2LOADER_HOST_ACTIVE_ROLE_LOADER ||
+      strcmp(after->active_version, asset->version) != 0 ||
+      strcmp(after->active_checksum, asset->image_sha256) != 0 ||
+      !h2_h2loader_serial_e2e_metadata_is_asset(&after->partition_1, asset) ||
+      strcmp(after->partition_1.package_checksum, asset->sha256) != 0) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  return H2_PAL_OK;
+}
+
+/* Select the unique managed-install asset with the configured SHA-256 for the
+ * expected board and target. The caller owns and closes the catalog. */
+static h2_pal_result_t h2_h2loader_serial_e2e_select_asset(
+    h2_h2loader_serial_e2e_context_t *context,
+    h2_h2loader_host_catalog_t **out_catalog,
+    h2_h2loader_host_catalog_entry_t *out_asset) {
   if (context->config->catalog_json == NULL ||
       context->config->catalog_json_len == 0u ||
       !h2_h2loader_serial_e2e_sha256_valid(
@@ -249,7 +320,6 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
       context->config->read_resource == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  h2_h2loader_host_catalog_t *catalog = NULL;
   const h2_h2loader_host_catalog_config_t catalog_config = {
       .allocator = context->runtime->mem,
       .index_json = context->config->catalog_json,
@@ -258,14 +328,15 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
       .resource_user = context->config->resource_user,
   };
   h2_pal_result_t result = h2_h2loader_host_catalog_open(&catalog_config,
-                                                          &catalog);
+                                                          out_catalog);
   size_t count = 0u;
-  h2_h2loader_host_catalog_entry_t asset = {0};
   size_t matches = 0u;
-  if (result == H2_PAL_OK) result = h2_h2loader_host_catalog_count(catalog, &count);
+  if (result == H2_PAL_OK) {
+    result = h2_h2loader_host_catalog_count(*out_catalog, &count);
+  }
   for (size_t index = 0u; result == H2_PAL_OK && index < count; ++index) {
     h2_h2loader_host_catalog_entry_t candidate = {0};
-    result = h2_h2loader_host_catalog_get(catalog, index, &candidate);
+    result = h2_h2loader_host_catalog_get(*out_catalog, index, &candidate);
     if (result == H2_PAL_OK && strcmp(candidate.sha256,
                                       context->config->asset_sha256) == 0 &&
         candidate.operation == H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL &&
@@ -273,7 +344,7 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
                                              candidate.board) &&
         h2_h2loader_serial_e2e_text_matches(context->config->expected_target,
                                              candidate.target)) {
-      if (matches == 0u) asset = candidate;
+      if (matches == 0u) *out_asset = candidate;
       ++matches;
     }
   }
@@ -281,6 +352,12 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
   if (result == H2_PAL_OK && matches > 1u) {
     result = H2_PAL_ERR_INVALID_STATE;
   }
+  return result;
+}
+
+static h2_pal_result_t h2_h2loader_serial_e2e_run_managed(
+    h2_h2loader_serial_e2e_context_t *context,
+    const h2_h2loader_host_catalog_entry_t *asset) {
   static const h2_h2loader_host_managed_transport_vtable_t vtable = {
       .connect = h2_h2loader_serial_e2e_managed_connect,
       .stage = h2_h2loader_serial_e2e_managed_stage,
@@ -288,31 +365,79 @@ static h2_pal_result_t h2_h2loader_serial_e2e_install(
       .disconnect = h2_h2loader_serial_e2e_managed_disconnect,
       .rediscover = h2_h2loader_serial_e2e_managed_rediscover,
   };
-  if (result == H2_PAL_OK) {
-    context->payload_resource_name = asset.resource_name;
-    const h2_h2loader_host_managed_operation_config_t operation = {
-        .time = context->runtime->time,
-        .transport = {context, &vtable},
-        .asset = &asset,
-        .read_payload = h2_h2loader_serial_e2e_payload,
-        .payload_user = context,
-        .is_cancelled = context->config->is_cancelled,
-        .cancel_user = context->config->cancel_user,
-        .on_progress = h2_h2loader_serial_e2e_progress,
-        .progress_user = context->result,
-        .reconnect_delay_ms = h2_h2loader_serial_e2e_timeout(
-            context->config->reconnect_delay_ms, 1000u),
-        .reconnect_attempts = h2_h2loader_serial_e2e_timeout(
-            context->config->reconnect_attempts, 30u),
-    };
-    result = h2_h2loader_host_managed_operation_run(
-        &operation, &context->result->final_status);
-  }
-  const h2_pal_result_t cleanup = h2_h2loader_host_catalog_close(&catalog);
+  context->payload_resource_name = asset->resource_name;
+  const h2_h2loader_host_managed_operation_config_t operation = {
+      .time = context->runtime->time,
+      .transport = {context, &vtable},
+      .asset = asset,
+      .read_payload = h2_h2loader_serial_e2e_payload,
+      .payload_user = context,
+      .is_cancelled = context->config->is_cancelled,
+      .cancel_user = context->config->cancel_user,
+      .on_progress = h2_h2loader_serial_e2e_progress,
+      .progress_user = context->result,
+      .reconnect_delay_ms = h2_h2loader_serial_e2e_timeout(
+          context->config->reconnect_delay_ms, 1000u),
+      .reconnect_attempts = h2_h2loader_serial_e2e_timeout(
+          context->config->reconnect_attempts, 30u),
+  };
+  return h2_h2loader_host_managed_operation_run(
+      &operation, &context->result->final_status);
+}
+
+static h2_pal_result_t h2_h2loader_serial_e2e_close_catalog(
+    h2_h2loader_serial_e2e_context_t *context,
+    h2_h2loader_host_catalog_t **catalog, h2_pal_result_t result) {
+  const h2_pal_result_t cleanup = h2_h2loader_host_catalog_close(catalog);
   if (cleanup != H2_PAL_OK && context->result->cleanup_result == H2_PAL_OK) {
     context->result->cleanup_result = cleanup;
   }
   return result == H2_PAL_OK ? cleanup : result;
+}
+
+static h2_pal_result_t h2_h2loader_serial_e2e_install(
+    h2_h2loader_serial_e2e_context_t *context) {
+  h2_h2loader_host_catalog_t *catalog = NULL;
+  h2_h2loader_host_catalog_entry_t asset = {0};
+  h2_pal_result_t result =
+      h2_h2loader_serial_e2e_select_asset(context, &catalog, &asset);
+  if (result == H2_PAL_OK) {
+    result = h2_h2loader_serial_e2e_run_managed(context, &asset);
+  }
+  return h2_h2loader_serial_e2e_close_catalog(context, &catalog, result);
+}
+
+/* Replace the running Loader with a different Loader image and require the
+ * device to boot that Loader from Partition 1. Partition 2 only carried the
+ * relay and is not checked. */
+static h2_pal_result_t h2_h2loader_serial_e2e_loader_update(
+    h2_h2loader_serial_e2e_context_t *context) {
+  h2_h2loader_host_catalog_t *catalog = NULL;
+  h2_h2loader_host_catalog_entry_t asset = {0};
+  h2_h2loader_host_status_t before = {0};
+  h2_pal_result_t result =
+      h2_h2loader_serial_e2e_select_asset(context, &catalog, &asset);
+  if (result == H2_PAL_OK && !h2_h2loader_serial_e2e_loader_asset(&asset)) {
+    result = H2_PAL_ERR_INVALID_ARG;
+  }
+  if (result == H2_PAL_OK) {
+    result = h2_h2loader_serial_e2e_connect(context, &before);
+    const h2_pal_result_t cleanup = h2_h2loader_serial_e2e_disconnect(context);
+    if (result == H2_PAL_OK) result = cleanup;
+  }
+  if (result == H2_PAL_OK) {
+    result = h2_h2loader_serial_e2e_loader_update_ready(&before, &asset);
+  }
+  if (result == H2_PAL_OK) {
+    context->loader_update_asset = &asset;
+    result = h2_h2loader_serial_e2e_run_managed(context, &asset);
+    context->loader_update_asset = NULL;
+  }
+  if (result == H2_PAL_OK) {
+    result = h2_h2loader_serial_e2e_loader_update_complete(
+        &context->result->final_status, &asset);
+  }
+  return h2_h2loader_serial_e2e_close_catalog(context, &catalog, result);
 }
 
 h2_pal_result_t h2_h2loader_serial_e2e_run(
@@ -325,21 +450,25 @@ h2_pal_result_t h2_h2loader_serial_e2e_run(
       (config->suite_mask & ~(H2_H2LOADER_SERIAL_E2E_SUITE_PREFLIGHT |
                               H2_H2LOADER_SERIAL_E2E_SUITE_STATUS |
                               H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND |
-                              H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL)) != 0u) {
+                              H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL |
+                              H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE)) !=
+          0u) {
     if (out_result != NULL) {
       out_result->result = H2_PAL_ERR_INVALID_ARG;
       out_result->complete = 1;
     }
     return H2_PAL_ERR_INVALID_ARG;
   }
+  const uint32_t managed_suites = H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL |
+                                  H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE;
   const uint32_t live_suites = H2_H2LOADER_SERIAL_E2E_SUITE_STATUS |
                                H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND |
-                               H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL;
+                               managed_suites;
   if (((config->suite_mask & live_suites) != 0u &&
        (config->port_id == NULL || config->port_id[0] == '\0')) ||
       ((config->suite_mask & H2_H2LOADER_SERIAL_E2E_SUITE_COMMAND) != 0u &&
        !h2_h2loader_serial_e2e_command_valid(config->command)) ||
-      ((config->suite_mask & H2_H2LOADER_SERIAL_E2E_SUITE_INSTALL) != 0u &&
+      ((config->suite_mask & managed_suites) != 0u &&
        (config->expected_board == NULL || config->expected_board[0] == '\0' ||
         config->expected_target == NULL ||
         config->expected_target[0] == '\0'))) {
@@ -394,6 +523,16 @@ h2_pal_result_t h2_h2loader_serial_e2e_run(
       h2_h2loader_serial_e2e_record(
           out_result, H2_H2LOADER_SERIAL_E2E_CASE_INSTALL,
           h2_h2loader_serial_e2e_install(&context));
+    }
+  }
+  if ((config->suite_mask & H2_H2LOADER_SERIAL_E2E_SUITE_LOADER_UPDATE) != 0u) {
+    if (dependent_blocked) {
+      h2_h2loader_serial_e2e_skip(out_result,
+                                  H2_H2LOADER_SERIAL_E2E_CASE_LOADER_UPDATE);
+    } else {
+      h2_h2loader_serial_e2e_record(
+          out_result, H2_H2LOADER_SERIAL_E2E_CASE_LOADER_UPDATE,
+          h2_h2loader_serial_e2e_loader_update(&context));
     }
   }
   (void)h2_h2loader_serial_e2e_disconnect(&context);

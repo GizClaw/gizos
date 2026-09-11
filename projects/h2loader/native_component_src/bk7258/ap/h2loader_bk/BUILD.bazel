@@ -18,6 +18,22 @@ cc_test(
     deps = ["//libs/pal"],
 )
 
+cc_test(
+    name = "fixed_boot_test",
+    srcs = [
+        "src/h2_bk_fixed_boot.c",
+        "tests/h2_bk_fixed_boot_test_sdk.h",
+        "tests/test_h2_bk_fixed_boot.c",
+    ],
+    includes = ["tests"],
+    local_defines = ["H2_BK_FIXED_BOOT_HOST_TEST=1"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        "//libs/pal",
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout",
+    ],
+)
+
 py_test(
     name = "ble_advertising_contract_test",
     srcs = ["tests/test_ble_advertising_contract.py"],
@@ -64,7 +80,10 @@ firmware_native_component(
             "test/**",
             "tests/**",
         ],
-    ),
+    ) + [
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout.h",
+        "//projects/h2loader/native_component_src/bk7258/fixed_flash:layout_check.h",
+    ],
     data = [
         "CMakeLists.txt",
     ],

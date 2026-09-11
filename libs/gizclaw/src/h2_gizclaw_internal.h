@@ -32,6 +32,19 @@ typedef struct h2_gizclaw_rpc_response {
 } h2_gizclaw_rpc_response_t;
 
 typedef struct h2_gizclaw_rpc_request h2_gizclaw_rpc_request_t;
+/* Network-owner snapshot, taken before cancel/destroy. SDK status is not a
+ * PAL status or a DataChannel close reason. */
+typedef struct h2_gizclaw_rpc_diagnostic {
+  bool available;
+  bool completion_seen;
+  int completion_gzc_rc;
+  bool error_seen;
+  int error_gzc_rc;
+} h2_gizclaw_rpc_diagnostic_t;
+void h2_gizclaw_rpc_diagnostic_internal(
+    const h2_gizclaw_rpc_request_t *request,
+    h2_gizclaw_rpc_diagnostic_t *out);
+
 typedef void (*h2_gizclaw_rpc_complete_fn)(void *user,
                                            h2_pal_result_t result);
 
@@ -164,6 +177,8 @@ void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
  * Audio packets use the PAL Track exclusively; these are not user APIs.
  * A WOULD_BLOCK open retains its lease in out_conversation for BOS retry;
  * the network owner must destroy it on every terminal path. */
+int h2_gizclaw_conversation_wire_begin_audio_internal(
+    h2_gizclaw_conversation_t *conversation);
 int h2_gizclaw_conversation_wire_open_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_str_t workspace_name,
     uint64_t generation, int timeout_ms,
@@ -177,6 +192,12 @@ int h2_gizclaw_conversation_wire_poll_internal(
     h2_gizclaw_conversation_event_t *out_event);
 void h2_gizclaw_conversation_wire_destroy_internal(
     h2_gizclaw_conversation_t *conversation);
+
+/* Connection-local recent stream tombstones, owned by the event poll task. */
+bool h2_gizclaw_client_stream_retired_internal(
+    const h2_gizclaw_client_t *client, const char *stream_id);
+void h2_gizclaw_client_retire_stream_internal(
+    h2_gizclaw_client_t *client, const char *stream_id);
 
 int h2_gizclaw_client_conversation_acquire_internal(
     h2_gizclaw_client_t *client, h2_gizclaw_conversation_t *conversation,
@@ -194,15 +215,15 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
-/* Server EOS error code for a reply cut short by barge-in. While the input is
- * still open it is a reply boundary (REPLY_DONE); after the input is committed
- * it stays a conversation error. */
-#define H2_GIZCLAW_CONVERSATION_ERROR_STREAM_INTERRUPTED "STREAM_INTERRUPTED"
-/* Returns and clears whether the pending or last REPLY_DONE ended an
- * interrupted reply whose queued playback should be discarded. */
-bool h2_gizclaw_conversation_wire_take_reply_interrupted_internal(
-    h2_gizclaw_conversation_t *conversation);
-/* Formats the reply-route state a peer event lands on, for diagnostics. */
+/* Whether the event is a downstream audio BOS; text BOS and our input's own
+ * BOS are not. */
+bool h2_gizclaw_conversation_downstream_audio_bos_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
+/* Tells the owner that the server announced a downstream audio stream. */
+typedef void (*h2_gizclaw_client_bos_fn)(void *user);
+void h2_gizclaw_client_set_downlink_bos_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user);
+/* Formats a peer event and the input it arrived for, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,
     const gzc_peer_event_t *event, char *out, size_t cap);
@@ -222,6 +243,7 @@ int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
 #include "gzc_telemetry.h"
 #include "platform/gzc_platform_webrtc.h"
 
+bool h2_gizclaw_test_rpc_diagnostic(void);
 int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
                                           int *out_sdk_result);
 typedef int (*h2_gizclaw_test_event_send_fn)(void *user,

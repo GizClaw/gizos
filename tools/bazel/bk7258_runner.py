@@ -468,6 +468,7 @@ def publish_outputs(
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--temporary-root", type=Path)
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--project-name", required=True)
@@ -770,8 +771,8 @@ def run(arguments: argparse.Namespace) -> None:
     except ValueError as error:
         raise RunnerError(f"launcher project escapes source root: {source_project}") from error
 
-    with tempfile.TemporaryDirectory(prefix="h2-bk7258-") as temporary:
-        temporary_root = Path(temporary)
+    with tempfile.TemporaryDirectory(prefix="h2-bk7258-", dir=arguments.temporary_root) as temporary:
+        temporary_root = Path(temporary).resolve()
         project_copy = temporary_root / "source" / relative_project
         project_copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_project, project_copy)

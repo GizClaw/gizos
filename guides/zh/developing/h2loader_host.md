@@ -32,7 +32,7 @@ Console 和 Firmware 生命周期动作只能使用
 
 Firmware 先以 command registration 声明 implemented mask，再由产品 owner 通过 `h2_loader_set_command_availability(loader, flags, available)` 原子 set/clear 运行时 gate。它们只能额外限制 Loader 自身的 MFG、artifact 与 lifecycle 校验。connected status 发布 effective mask，执行路径在所需 operation lock 内重新计算；BLE advertisement 不携带该动态值，serial 与 BLE-iKCP 都以 connected status 为准。
 
-Browser SDK 0.2.0 投影 `deviceUid`、`commandAvailability`、`capabilities`、`active` identity、`runningPartition`、`nextPartition`、`bootIntent`、`stage`、`partition1`、`partition2`、`lastResult` 和 MFG 信息。`H2LoaderCapabilities`、`H2LoaderCommands` 与 `commandAvailable()` 是公共解码入口；生命周期没有旧 packed states、installed/staged scalar 或 APP 专用 status fallback。SDK 的 breaking lifecycle API 只有 `stage`、`stageUrl`、`abortStage`、`rebootApp`、`rebootLoader` 和 `rebootUpgrade`。
+Browser SDK 0.2.0 投影 `deviceUid`、`commandAvailability`、`capabilities`、`active` identity、`runningPartition`、`nextPartition`、`bootIntent`、`stage`、`partition1`、`partition2`、`lastResult` 和 MFG 信息；MFG 的 `steps` 数组长度等于设备 `mfg_steps` 的位数（1..32，由产品步数决定，见 [MFG 进度记录](/apps/h2loader/update/#mfg-进度记录)）。`H2LoaderCapabilities`、`H2LoaderCommands` 与 `commandAvailable()` 是公共解码入口；生命周期没有旧 packed states、installed/staged scalar 或 APP 专用 status fallback。SDK 的 breaking lifecycle API 只有 `stage`、`stageUrl`、`abortStage`、`rebootApp`、`rebootLoader` 和 `rebootUpgrade`。
 
 Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Reliable serial 的 transport log sink 覆盖整个 session 生命周期，而不只是 typed command 的响应：ready-marker 握手期读到的原始字节，以及 `SESSION_OPEN`/`SESSION_CLOSE` control 交换期间被 frame filter 判定为普通日志的字节，都投影到同一个 sink。Log sink 返回错误时立即结束当前阶段并原样上报，不静默丢弃。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。BLE-iKCP 的无响应写允许在 `WOULD_BLOCK` 后最多重试 40 次、每次间隔 2 ms；Host 与 Loader/App 两端使用相同 bounded backpressure，超过预算仍返回原始 transport error。
 
@@ -44,7 +44,7 @@ Payload stage 在设备端报出 `H2_LOADER_STAGE_RECEIVE result=fail` 或 `H2_L
 
 ## Catalog 与 operation
 
-`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 使用现有 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`，diagnostic asset 不可安装。
+`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 使用现有 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`。ESP Loader 的 `factory-flash` asset（从 offset `0` 直接烧录的 `.combined_factory.bin`）与 diagnostic asset 一样可以被 catalog 读取和查询，但不可安装，也不能提交给 scheduler。
 
 浏览器从本地选择 standalone format-1 `.update.tar.zlib` 时没有 Release catalog。Host Core 的 package inspector 通过 caller 提供的 offset reader 按 bounded chunk 读取，计算 archive SHA-256，流式解压 zlib，并复用 Bundle USTAR path contract 校验 manifest、checksum、data 与唯一 App image。它输出 `identity_source=PACKAGE_MANIFEST` 的 immutable managed asset；format 1 不携带 App image name，因此 `image` 为空。只有这个显式 identity source 可以省略 name，既有 `RELEASE_CATALOG=0` caller 仍必须严格匹配 catalog image name，不能从文件名或 chooser label 推断 identity。
 

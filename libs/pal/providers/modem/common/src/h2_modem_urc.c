@@ -2,6 +2,26 @@
 
 #include <string.h>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
+static void counter_increment(uint32_t *counter) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    (void)_InterlockedIncrement((volatile long *)counter);
+#else
+    (void)__atomic_fetch_add(counter, 1u, __ATOMIC_RELAXED);
+#endif
+}
+
+static uint32_t counter_load(const uint32_t *counter) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    return (uint32_t)_InterlockedCompareExchange((volatile long *)counter, 0, 0);
+#else
+    return __atomic_load_n(counter, __ATOMIC_RELAXED);
+#endif
+}
+
 typedef struct urc_line {
     char text[H2_MODEM_URC_LINE_MAX];
 } urc_line_t;
@@ -17,6 +37,7 @@ static void urc_task(void *user) {
             return;
         }
         worker->handler(worker->user, line.text);
+        counter_increment(&worker->stats.handled);
     }
 }
 
@@ -70,6 +91,7 @@ h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t *worker, const char *lin
     size_t len = 0u;
     while (len < H2_MODEM_URC_LINE_MAX && line[len] != '\0') { len++; }
     if (len == H2_MODEM_URC_LINE_MAX) {
+        counter_increment(&worker->stats.truncated);
         return H2_PAL_ERR_TRUNCATED;
     }
     if (len == 0u) {
@@ -79,7 +101,13 @@ h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t *worker, const char *lin
     memcpy(item.text, line, len);
     h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_send(
         worker->queue_api, worker->queue, &item, H2_PAL_QUEUE_NO_WAIT);
-    return rc == H2_PAL_ERR_TIMEOUT ? H2_PAL_ERR_FULL : rc;
+    if (rc == H2_PAL_OK) {
+        counter_increment(&worker->stats.accepted);
+    } else if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_FULL) {
+        counter_increment(&worker->stats.full);
+        rc = H2_PAL_ERR_FULL;
+    }
+    return rc;
 }
 
 h2_pal_result_t h2_modem_urc_stop(h2_modem_urc_worker_t *worker) {
@@ -104,4 +132,16 @@ h2_pal_result_t h2_modem_urc_stop(h2_modem_urc_worker_t *worker) {
     h2_pal_queue_destroy(worker->queue_api, worker->queue);
     worker->queue = NULL;
     return worker->result;
+}
+
+h2_pal_result_t h2_modem_urc_get_stats(
+    const h2_modem_urc_worker_t *worker, h2_modem_urc_stats_t *out_stats) {
+    if (worker == NULL || out_stats == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    out_stats->accepted = counter_load(&worker->stats.accepted);
+    out_stats->handled = counter_load(&worker->stats.handled);
+    out_stats->full = counter_load(&worker->stats.full);
+    out_stats->truncated = counter_load(&worker->stats.truncated);
+    return H2_PAL_OK;
 }

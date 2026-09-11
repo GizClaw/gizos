@@ -56,7 +56,10 @@ Lifecycle state is returned directly as `deviceUid`, `active`,
 `partition2`, `lastResult`, and `mfg`. The `active` object contains `role`,
 `version`, `imageChecksum`, and `imageSize`. Stage and partition metadata contain
 `valid`, `packageChecksum`, `packageSize`, `imageChecksum`, `imageSize`, `role`,
-`version`, `board`, and `target`. Removed install-state, loader-upgrade,
+`version`, `board`, and `target`. `mfg` contains `mode` (1 disabled,
+2 enabled) and `steps`, one status per product MFG step (0 untested, 1 passed,
+2 skipped, 3 failed); its length is the device-reported step count, 1..32.
+Removed install-state, loader-upgrade,
 manual-hold, and app-confirmed fields are not reconstructed by the SDK. Unsigned
 64-bit sizes are decimal strings so JavaScript does not round them.
 

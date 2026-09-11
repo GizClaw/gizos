@@ -378,6 +378,8 @@ static const char *operation_name(
             return "recovery";
         case H2_H2LOADER_HOST_ASSET_OPERATION_DIAGNOSTIC:
             return "diagnostic";
+        case H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH:
+            return "factory-flash";
     }
     return "invalid";
 }

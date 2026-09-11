@@ -876,6 +876,162 @@ static void test_catalog(void) {
     assert(catalog == NULL);
 }
 
+static h2_pal_result_t loader_asset_read(
+    void *user,
+    const char *resource_name,
+    uint64_t offset,
+    uint8_t *out,
+    size_t out_size,
+    size_t *out_read) {
+    static const uint8_t payload[] = "abc";
+    (void)user;
+    assert(strcmp(resource_name, "devkit-loader-esp32s3.update.tar.zlib") == 0 ||
+           strcmp(resource_name, "devkit-loader-esp32s3.recovery.h2fb") == 0 ||
+           strcmp(resource_name,
+                  "devkit-loader-esp32s3.combined_factory.bin") == 0);
+    *out_read = 0u;
+    if (offset > sizeof(payload) - 1u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    size_t remaining = sizeof(payload) - 1u - (size_t)offset;
+    size_t take = remaining < out_size ? remaining : out_size;
+    memcpy(out, &payload[offset], take);
+    *out_read = take;
+    return H2_PAL_OK;
+}
+
+/* ESP Loader release metadata lists a factory-flash image next to the managed
+ * package and recovery bundle; the catalog keeps it but never selects it for
+ * managed install or recovery. */
+static void test_catalog_esp_loader_assets(void) {
+#define ABC_SHA256 \
+    "\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\""
+    static const char index[] =
+        "{\"format\":1,\"version\":\"v1\",\"firmware_count\":1,"
+        "\"firmware\":[{"
+        "\"platform\":\"esp\",\"board\":\"devkit\","
+        "\"target\":\"esp32s3\",\"image\":\"loader\","
+        "\"role\":\"h2loader\",\"version\":\"v1\","
+        "\"package_manifest\":{\"image_sha256\":"
+        "\"0000000000000000000000000000000000000000000000000000000000000000\""
+        "},"
+        "\"assets\":["
+        "{\"name\":\"devkit-loader-esp32s3.update.tar.zlib\","
+        "\"operation\":\"managed-install\",\"sha256\":" ABC_SHA256 ","
+        "\"size\":3},"
+        "{\"name\":\"devkit-loader-esp32s3.recovery.h2fb\","
+        "\"operation\":\"recovery\",\"sha256\":" ABC_SHA256 ","
+        "\"size\":3},"
+        "{\"name\":\"devkit-loader-esp32s3.combined_factory.bin\","
+        "\"operation\":\"factory-flash\",\"flash_offset\":0,"
+        "\"release_suffix\":\".combined_factory.bin\","
+        "\"sha256\":" ABC_SHA256 ",\"size\":3}"
+        "]}]}";
+#undef ABC_SHA256
+    const h2_h2loader_host_catalog_config_t config = {
+        .allocator = &test_mem,
+        .index_json = (const uint8_t *)index,
+        .index_json_len = sizeof(index) - 1u,
+        .read_resource = loader_asset_read,
+    };
+    h2_h2loader_host_catalog_t *catalog = NULL;
+    assert(h2_h2loader_host_catalog_open(&config, &catalog) == H2_PAL_OK);
+    size_t count = 0u;
+    assert(h2_h2loader_host_catalog_count(catalog, &count) == H2_PAL_OK);
+    assert(count == 3u);
+    static const h2_h2loader_host_asset_operation_t operations[] = {
+        H2_H2LOADER_HOST_ASSET_OPERATION_MANAGED_INSTALL,
+        H2_H2LOADER_HOST_ASSET_OPERATION_RECOVERY,
+        H2_H2LOADER_HOST_ASSET_OPERATION_FACTORY_FLASH,
+    };
+    static const char *const names[] = {
+        "devkit-loader-esp32s3.update.tar.zlib",
+        "devkit-loader-esp32s3.recovery.h2fb",
+        "devkit-loader-esp32s3.combined_factory.bin",
+    };
+    for (size_t i = 0u; i < 3u; ++i) {
+        size_t index_value = SIZE_MAX;
+        size_t matches = 0u;
+        assert(h2_h2loader_host_catalog_find(
+                   catalog,
+                   "devkit",
+                   "esp32s3",
+                   H2_H2LOADER_HOST_ASSET_ROLE_LOADER,
+                   operations[i],
+                   &index_value,
+                   1u,
+                   &matches) == H2_PAL_OK);
+        assert(matches == 1u);
+        h2_h2loader_host_catalog_entry_t entry;
+        assert(h2_h2loader_host_catalog_get(catalog, index_value, &entry) ==
+               H2_PAL_OK);
+        assert(entry.operation == operations[i]);
+        assert(strcmp(entry.resource_name, names[i]) == 0);
+    }
+    assert(h2_h2loader_host_catalog_close(&catalog) == H2_PAL_OK);
+}
+
+static h2_pal_result_t parse_with_mfg_tail(
+    const char *base_line,
+    const char *tail,
+    h2_h2loader_host_status_t *out_status) {
+    char line[H2_H2LOADER_HOST_STATUS_LINE_MAX];
+    const char *mode = strstr(base_line, "mfg_mode=");
+    assert(mode != NULL);
+    const size_t prefix = (size_t)(mode - base_line);
+    assert(prefix + strlen(tail) + 2u <= sizeof(line));
+    memcpy(line, base_line, prefix);
+    (void)snprintf(line + prefix, sizeof(line) - prefix, "%s\n", tail);
+    return h2_h2loader_host_status_parse(line, out_status);
+}
+
+static void test_status_mfg_step_lengths(const char *base_line) {
+    h2_h2loader_host_status_t status;
+
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=1111111111111111111111", &status) ==
+           H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 22u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 21u) == 1u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 22u) == UINT32_MAX);
+
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=012312312312312312312302", &status) ==
+           H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_mode(&status) == 2u);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 24u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 0u) == 0u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 1u) == 1u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 3u) == 3u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 22u) == 0u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 23u) == 2u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 24u) == UINT32_MAX);
+    for (size_t index = 24u; index < H2_H2LOADER_HOST_MFG_STEP_MAX; ++index) {
+        assert(status.mfg_steps[index] == 0u);
+    }
+
+    assert(parse_with_mfg_tail(base_line, "mfg_mode=2 mfg_steps=3", &status) ==
+           H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 1u);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=33333333333333333333333333333333",
+               &status) == H2_PAL_OK);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) ==
+           H2_H2LOADER_HOST_MFG_STEP_MAX);
+
+    assert(parse_with_mfg_tail(base_line, "mfg_mode=2 mfg_steps=", &status) ==
+           H2_PAL_ERR_FORMAT);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=333333333333333333333333333333333",
+               &status) == H2_PAL_ERR_FORMAT);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=2 mfg_steps=000000000000000000000004", &status) ==
+           H2_PAL_ERR_FORMAT);
+    assert(parse_with_mfg_tail(base_line,
+               "mfg_mode=1 mfg_steps=000000000000000000000001", &status) ==
+           H2_PAL_ERR_FORMAT);
+}
+
 static void test_status(void) {
     static const char checksum[] =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -916,6 +1072,11 @@ static void test_status(void) {
     assert(status.capabilities == 5u);
     assert(status.command_availability == UINT32_C(0x08));
     assert(status.running_partition == 2u);
+    assert(status.mfg_mode == 1u);
+    assert(h2_h2loader_host_status_mfg_step_total(&status) == 22u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 21u) == 0u);
+    assert(h2_h2loader_host_status_mfg_step(&status, 22u) == UINT32_MAX);
+    test_status_mfg_step_lengths(v2_line);
 
     char invalid_uid[sizeof(v2_line)];
     strcpy(invalid_uid, v2_line);
@@ -2217,6 +2378,7 @@ int main(void) {
     test_typed_command_terminal_contract();
     test_typed_command_transport_execution();
     test_catalog();
+    test_catalog_esp_loader_assets();
     test_status();
     test_factory_bundle();
     test_recovery();

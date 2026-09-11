@@ -3,6 +3,7 @@
 
 #include "h2/pal/hal/h2_pal_modem.h"
 #include "h2_modem_urc.h"
+#include "h2_modem_rx.h"
 #include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/os/h2_pal_system_event.h"
 
@@ -75,7 +76,9 @@ typedef struct h2_quectel_modem_config {
     h2_quectel_modem_command_fn command;
     const h2_pal_sync_api_t *sync_api;
     /* Supply both APIs for asynchronous RX. The worker lives from init to
-     * deinit; sync_api is required to serialize it with AT exchanges. */
+     * deinit; sync_api protects state independently of serialized AT operations.
+     * With this worker, command() returns solicited text; any URCs included
+     * in that text are ignored because physical RX already delivered them. */
     const h2_pal_task_api_t *urc_task_api;
     const h2_pal_queue_api_t *urc_queue_api;
     const h2_pal_mem_api_t *allocator;
@@ -107,7 +110,18 @@ typedef struct h2_quectel_modem_config {
 struct h2_quectel_modem {
     h2_pal_modem_t platform;
     h2_quectel_modem_config_t config;
+    /** State mutex; AT I/O releases it while retaining operation_lock. */
     h2_pal_mutex_t *lock;
+    h2_pal_mutex_t *operation_lock;
+    h2_pal_modem_status_t observed_status;
+    h2_pal_modem_signal_t observed_signal;
+    uint8_t registration_seen;
+    uint8_t packet_seen;
+    uint8_t signal_seen;
+    uint32_t reset_generation;
+    uint32_t registration_generation;
+    uint32_t packet_generation;
+    uint32_t event_drop_count;
     h2_modem_urc_worker_t urc_worker;
     uint32_t operation_depth;
     h2_pal_modem_power_policy_t power_policy;
@@ -146,17 +160,44 @@ h2_pal_result_t h2_quectel_modem_set_apn(
     h2_pal_modem_t *platform,
     const h2_pal_modem_apn_config_t *config);
 h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem);
-/** Feed complete URCs from a task, never ISR. May block on the provider lock.
- * Transport must queue asynchronous URCs without waiting for this call while
- * command() is pending; inline command-response URCs are handled internally.
- * Stop/join every caller before deinit; callbacks must not reenter APIs.
+/** @brief Apply a complete, classified URC from a task, never ISR.
+ * Takes only the short state lock, never the AT operation lock. Callbacks
+ * (system event, sleep gate, invalidate_data) must not reenter modem APIs or
+ * wait for a command/RX/URC task. Stop/join callers before deinit.
  * Without sync_api all calls require external serialization.
  */
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line);
-/* RX entry: copies a complete notification to $modem/urc without waiting.
- * Requires urc_task_api/urc_queue_api. Handle FULL/TRUNCATED in transport.
- * Never call handle_urc_line directly from an asynchronous RX callback. */
+/** @brief Copy a complete, already classified notification to the worker.
+ * Requires urc_task_api/urc_queue_api. No modem lock or waiting for queue space.
+ * Unknown/ordinary response lines are ignored. Ambiguous response prefixes
+ * require command-aware classification through rx_feed before this entry.
+ * FULL/TRUNCATED is a lost occurrence: count/report it, never replay a batch.
+ */
 h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *line);
+/** @brief Frame and classify physical RX bytes before queuing notifications.
+ * receiver is caller-owned, zero-initialized per ordered command channel; see
+ * h2_modem_rx_feed for authoritative physical offset, replay and gap semantics.
+ * command is borrowed during this call: the command owning these bytes, or
+ * NULL while idle. Serialize command-context changes with RX. A retained tail
+ * belongs to its original command; finish/discard it at a known channel reset
+ * before changing context. Never infer stream offsets from content/pointers.
+ * For esp_modem cumulative callbacks, obtain the original buffer base offset
+ * or feed only data + consumed, len at the DTE process_line boundary. The
+ * legacy (data,total_len) URC hook alone cannot identify buffer reset/replay.
+ * CMUX channels require separate receivers; do not feed PPP binary frames.
+ * Single producer, task context only; no modem lock, allocation or blocking.
+ * All bytes are consumed on FULL/TRUNCATED/FORMAT; return the first error.
+ * Identical ambiguous query/URC formats (CPIN/CSQ/CGATT/CLCC/QSIMSTAT) during
+ * their matching command are treated as solicited; transport must route any
+ * independently identified notification via post_urc_line instead.
+ */
+h2_pal_result_t h2_quectel_rx_feed(
+    h2_quectel_modem_t *modem,
+    h2_modem_rx_t *receiver,
+    uint64_t offset,
+    const uint8_t *data,
+    size_t length,
+    const char *command);
 h2_pal_result_t h2_quectel_modem_dial_ppp(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_modem_drop_ppp(h2_quectel_modem_t *modem);
 

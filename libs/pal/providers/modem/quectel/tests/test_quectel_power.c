@@ -187,12 +187,17 @@ static void test_policy_and_holds(void) {
     h2_pal_system_event_api_t events;
     init_fixture(&f, &events, 0);
     h2_pal_modem_t *api = &f.modem.platform;
+    h2_pal_modem_data_status_t data_status;
+    assert(h2_pal_modem_get_data_status(api, &data_status) == H2_PAL_ERR_CLOSED);
+    assert(f.modem.operation_depth == 0u);
     assert(h2_pal_modem_set_power_policy(api, H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(h2_pal_modem_open(api, 0u) == H2_PAL_OK);
     assert(h2_pal_modem_set_power_policy(api, H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP) == H2_PAL_OK);
     assert(f.asleep_allowed);
     unsigned commands = f.commands, wakes = f.wake_count;
+    assert(h2_pal_modem_get_data_status(api, &data_status) == H2_PAL_OK);
+    assert(f.commands == commands && f.wake_count == wakes);
     h2_pal_modem_power_status_t status;
     assert(h2_pal_modem_get_power_status(api, &status) == H2_PAL_OK);
     assert(status.policy == H2_PAL_MODEM_POWER_POLICY_AUTO_SLEEP);

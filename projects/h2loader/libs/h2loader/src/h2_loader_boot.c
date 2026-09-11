@@ -843,8 +843,12 @@ static int detect_rolled_back_app(h2_loader_t *loader,
   if (loader == NULL || out_rolled_back == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   *out_rolled_back = 0;
+  /* Covers App and Loader candidates alike: once the platform reports that a
+   * candidate in Partition 2 failed to confirm, AUTO must not relaunch it
+   * until a different Stage is published. */
   if (!loader->status.partition_2.valid ||
-      loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP ||
+      (loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP &&
+       loader->status.partition_2.role != H2_LOADER_IMAGE_ROLE_H2LOADER) ||
       (loader->status.stage.valid &&
        !h2_loader_metadata_image_equal(&loader->status.stage,
                                        &loader->status.partition_2))) {
@@ -876,6 +880,7 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
       config->power == NULL || config->h2loader_partition_id == 0u ||
       config->app_partition_id == 0u ||
       config->h2loader_partition_id == config->app_partition_id ||
+      config->mfg_required_total > H2_LOADER_MFG_STEP_MAX ||
       config->hardware_capabilities == 0u ||
       (config->hardware_capabilities & ~H2_LOADER_CAPABILITIES_ALL) != 0u ||
       !identity_valid(&config->active_identity)) {

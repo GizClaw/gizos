@@ -23,19 +23,12 @@ armino_component_register(
     "${REPO_ROOT}/libs/runtime/include"
   REQUIRES
     h2_bk_target_task_policy
-    h2_bk7258_board
-    audio_play
-    audio_record
-    bk_display
-    bk_peripheral
     bk_wifi
     bk_cli
     driver
     h2_firmware_lib
     h2loader_bk
     h2_pal_core
-    media_service
-    multimedia
     psa_mbedtls
     zlib)
 

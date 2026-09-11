@@ -1,6 +1,6 @@
 # GizClaw 状态与请求
 
-`libs/gizclaw` 的 Session 持有连接作用域内的 Runtime Profile 身份、Workflow catalog、 Workspace 准备状态和 Conversation 状态。产品读取公共快照并投影到页面，不再维护另一份 可用于业务决策的 Profile/catalog/Workspace 状态。低层 Service/RPC 仍可独立使用； 选择 Session 的同一 Service 通过 Session 执行注册、catalog 和 Conversation 操作。现有同步 Workspace activate/reload/reload-with-options RPC 自动进入 Session 的收尾与状态发布逻辑；低层异步 request 接口仍只处理协议，不能用于绕过 Session 的受管 Workspace 修改。
+`libs/gizclaw` 的 Session 持有连接作用域内的 Runtime Profile 身份、Workflow catalog、 Workspace 准备状态和 Conversation 状态。产品读取公共快照并投影到页面，不再维护另一份 可用于业务决策的 Profile/catalog/Workspace 状态。低层 Service/RPC 仍可独立使用； 选择 Session 的同一 Service 通过 Session 执行注册、catalog 和 Conversation 操作。现有同步 Workspace activate/reload/reload-with-options RPC，以及删除 Session 当前 Workspace 的同步 delete RPC，自动进入 Session 的收尾与状态发布逻辑；低层异步 request 接口仍只处理协议，不能用于绕过 Session 的受管 Workspace 修改。
 
 ## 数据与职责
 
@@ -29,17 +29,21 @@ Conversation 创建在同一个准备操作中完成 Workspace 校验，然后�
 
 | 交互模式 | 对话状态 |
 | --- | --- |
-| Push-to-Talk | IDLE → RECORDING → WAITING → REPLYING → IDLE |
+| Push-to-Talk | IDLE → RECORDING → WAITING → IDLE |
 | RealTime | IDLE ↔ CALLING |
 
-PTT 在录音期间收到回复也不能关闭输入或影响松手 EOS。RealTime 的文本、音频、单轮 REPLY_DONE 都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
+PTT 松手时冻结本轮 PCM 输入窗口：窗口非空才进入 WAITING；窗口为空则回到 IDLE。输入结束发出后本轮请求即完成，不等待服务器回复。WAITING 只是本地状态：按下后到下一个下行音频 BOS 之前的音频被丢弃（见 Audio 文档的 `waiting_for_bos`），一旦有之后的下行音频写入 Track 就回到 IDLE，由声音接管；`H2_GIZCLAW_SESSION_WAIT_MS`（5 秒）内没有任何下行音频也静默回到 IDLE，不报错。该判断在读取快照时进行。没有“回复中”状态。按下前和松手后的 PCM 不计入本轮，按住时长不是判据。
 
-Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品，也不能改回REPLYING。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。
+PTT 在录音期间收到下行音频也不能关闭输入或影响松手 EOS。RealTime 的文本和音频都不改变 CALLING；必要的轮次重启由 Session 处理。停止、取消或失败回 IDLE，错误保存在结果字段。Registration/catalog/workspace 的准备状态独立于这组对话状态，产品不能将它们拼成另一套控制音频的状态机。
+
+Workspace 切换或 reload 先关闭旧输入并取消旧 generation，丢弃旧播放、发布 IDLE，只等待本地取消分发，不等待 Agent 回复完成。期间旧事件不转发到产品。RPC 成功且目标确认为 RUNNING 后发布有效参数和 Workspace；失败时Workspace 标为 FAILED，保留旧名称和参数作为显示信息。调用在控制任务执行，`service_poll` 必须持续运行以分发取消完成；同一 Session 的 Workspace RPC 串行。
+
+同步 delete 只在名字等于 `current_workspace` 时参与 Session：与切换相同，先关闭旧输入、取消旧 generation 并占用同一个串行 Workspace RPC 槽位，已有 Workspace RPC 进行中时返回 BUSY。删除成功后 workspace phase 回到 EMPTY，清空 `current_workspace`、`workflow_name` 和已确认的 `parameters`，Conversation route 仍由产品通过 Session release 释放；下一次 select 或 Conversation 创建按正常准备流程 get、Not Found 时创建同名 Workspace 并 reload。删除失败或结果不确定（例如超时）时 workspace phase 为 FAILED，下一次 select 重新 get 校验，不把可能已被删除的名字当作就绪。删除其它 Workspace 不改变 Session 状态，也不打断对话；Session 关闭后 delete 与其它 Workspace RPC 一样返回 CLOSED。
 ## 对话错误详情
 
-Conversation 的远端 ERROR 在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。
+Conversation 的远端 ERROR 只表示服务端拒绝了本轮输入，在事件、完成回调和 Session 快照中保留原始 `error_code` 与 `retryable`；下行流的结束（有无错误码）都不是 ERROR。完成结果拥有错误码副本，释放本轮请求后仍可在完成回调中读取；Session 在转发错误事件前更新快照，并在完成后保留详情。产品展示错误时读取这些字段和 `error_stage`，不能只用通用 `last_error` 显示 `STREAM ERROR`。PAL 完成状态仍表示通用失败，不替代服务端错误原因；服务端只提供笼统错误码时，客户端不会推测更具体原因。
 
-收到远端错误时，Service 日志输出 `remote_error code=... retryable=...`。新一轮输入成功启动时清除旧错误；新的准备操作完成或 Conversation 创建结果也会替换最近错误状态，没有远端详情时错误码为空且 `retryable=false`。`retryable` 透传服务端提示，不触发自动重试或改变 catalog、Workspace 的有效性判定。测试覆盖输入就绪前的拒绝、回复终止错误、请求释放后的详情读取，以及 Session 快照副本和下一轮清除行为。
+收到远端错误时，Service 日志输出 `remote_error code=... retryable=...`。新一轮输入成功启动时清除旧错误；新的准备操作完成或 Conversation 创建结果也会替换最近错误状态，没有远端详情时错误码为空且 `retryable=false`。`retryable` 透传服务端提示，不触发自动重试或改变 catalog、Workspace 的有效性判定。测试覆盖输入就绪前的拒绝、请求释放后的详情读取，以及 Session 快照副本和下一轮清除行为。
 
 ## 并发与生命周期
 
@@ -53,7 +57,7 @@ Session 借用 Service、PAL 和配置中的 collection 字符串。准备操作
 
 ## 验证
 
-Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择复用、切换失败、Conversation 回调释放，以及关闭后迟到 catalog/activation 不提交。真实服务器和设备验收与这些自动测试分别记录。Portable E2E 的普通 Voice case 从连接注册开始使用 Session，并在 PTT、Realtime 和 route 释放边界验证公共快照；AMOLED 可通过 `H2_GIZCLAW_E2E_VOICE_ONLY` 单独运行该流程，见 [AMOLED Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
+Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管理。覆盖自动分页加载、 读取副本隔离、混合版本拒绝、空页循环限制、总超时、等待中的选择、取消等待、创建响应 丢失后的精确恢复、重复选择复用、切换失败、Conversation 回调释放、删除当前 Workspace 后先取消对话再回到 EMPTY 并按 get、create、reload 重新准备、删除失败置 FAILED 后重新校验、删除其它 Workspace 不影响就绪，以及关闭后迟到 catalog/activation 不提交。真实服务器和设备验收与这些自动测试分别记录。Portable E2E 的普通 Voice case 从连接注册开始使用 Session，并在 PTT、Realtime 和 route 释放边界验证公共快照；AMOLED 可通过 `H2_GIZCLAW_E2E_VOICE_ONLY` 单独运行该流程，见 [AMOLED Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
 ## 自动系统校时
 
@@ -94,3 +98,10 @@ Resource 的 `h2_gizclaw_resource_test` 直接执行生产 Resource，仅在 typ
 使用 `H2_GIZCLAW_RESOURCE_FIRMWARE` 创建 Resource，并设置正数 `firmware_channel`；每个实例固定一个 channel，允许未来的正数 channel。该资源不使用 `max_items/page_size/storage_bytes`，它们可为零。调用方 worker 显式执行 `H2_GIZCLAW_RESOURCE_REFRESH`，通过 `snapshot.data.firmware` 读取 channel、description、URL、SHA-256、size，以及 GizClaw 0.16.5 新增的 `has_version/version`。version 是最多 128 字节的包 SemVer；缺省时 `has_version=false` 且字符串为空，不能据此推断当前设备版本。
 
 快照沿用 `valid/stale/busy/closed/last_error` 和 revision 通知。刷新失败、超时、返回 channel 不匹配或关闭后迟到结果均不覆盖旧快照；成功刷新会替换全部元数据，包括清除旧版本号。读取复制整个内联结构，不占用 response storage 字节，可传入清零的 storage。这里只读取并缓存服务器固件元数据，不自动轮询、比较版本、下载或安装。
+
+### 内部诊断与 Session 快照
+
+PTT 的首个音频 worker 失败阶段和首次取消来源仅写入内部诊断日志，不新增或改写
+Session 快照字段。`error_stage`、`last_error`、远端错误详情的保留规则，以及
+generation、取消完成和 callback 的生命周期保持本页既有合同。日志中的 request
+generation 用于关联本轮执行，不能替代 Session generation 或产品自己的轮次标识。
