@@ -51,7 +51,12 @@ h2_lua_fishing_game_amoled_runtime_config(h2_runtime_config_t *out_config) {
   if (result != H2_PAL_OK)
     return result;
   result = h2_esp_board_display_configure(
-      &(h2_esp_board_display_config_t){.pclk_hz = 80u * 1000u * 1000u});
+      &(h2_esp_board_display_config_t){
+          /* Hardware A/B: v16 saw no TE edges; compare with v15 at 80 MHz. */
+          .pclk_hz = 40u * 1000u * 1000u,
+          .te_timeout_ms = 0u,
+          .sync_to_te = 0,
+      });
   if (result != H2_PAL_OK)
     return result;
   result = h2_esp_board_runtime_config(out_config);

@@ -10,7 +10,9 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_sh8601.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <stdbool.h>
@@ -26,6 +28,7 @@
 #define LCD_DATA1_GPIO GPIO_NUM_5
 #define LCD_DATA2_GPIO GPIO_NUM_6
 #define LCD_DATA3_GPIO GPIO_NUM_7
+#define LCD_TE_GPIO GPIO_NUM_13
 #define LCD_RST_GPIO GPIO_NUM_NC
 #define LCD_CONTROL_RESET_MASK (1u << 0)
 #define LCD_CONTROL_POWER_MASK (1u << 1)
@@ -53,8 +56,14 @@ typedef struct h2_esp_amoled_display_state {
     esp_lcd_panel_handle_t panel;
     uint16_t *dma_buffer;
     size_t dma_buffer_pixels;
+    StaticSemaphore_t te_semaphore_storage;
+    SemaphoreHandle_t te_semaphore;
+    uint32_t te_wait_count;
+    uint32_t te_timeout_count;
     bool initialized;
     bool opened;
+    bool te_initialized;
+    bool sync_before_next_draw;
 } h2_esp_amoled_display_state_t;
 
 static const char *TAG = "h2_esp_amoled";
@@ -134,6 +143,88 @@ static int set_brightness(h2_esp_amoled_display_state_t *state, uint8_t brightne
         ESP_LOGE(TAG, "set display brightness failed: %s", esp_err_to_name(err));
     }
     return esp_result(err);
+}
+
+static void IRAM_ATTR te_rising_edge(void *user) {
+    h2_esp_amoled_display_state_t *state =
+        (h2_esp_amoled_display_state_t *)user;
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    if (state != NULL && state->te_semaphore != NULL) {
+        xSemaphoreGiveFromISR(state->te_semaphore, &higher_priority_task_woken);
+    }
+    if (higher_priority_task_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static int init_te_sync(h2_esp_amoled_display_state_t *state) {
+    if (!s_display_config.sync_to_te || state->te_initialized) {
+        return H2_DISPLAY_OK;
+    }
+    state->te_semaphore = xSemaphoreCreateBinaryStatic(
+        &state->te_semaphore_storage);
+    if (state->te_semaphore == NULL) {
+        return H2_DISPLAY_ERR_NO_MEMORY;
+    }
+    const gpio_config_t te_gpio_config = {
+        .pin_bit_mask = 1ULL << LCD_TE_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_POSEDGE,
+    };
+    esp_err_t err = gpio_config(&te_gpio_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "TE gpio configure failed: %s", esp_err_to_name(err));
+        return esp_result(err);
+    }
+    err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "TE gpio ISR service failed: %s", esp_err_to_name(err));
+        return esp_result(err);
+    }
+    err = gpio_isr_handler_add(LCD_TE_GPIO, te_rising_edge, state);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "TE gpio ISR handler failed: %s", esp_err_to_name(err));
+        return esp_result(err);
+    }
+    state->te_initialized = true;
+    state->sync_before_next_draw = true;
+    ESP_LOGI(TAG, "display TE sync gpio=%d edge=rising timeout=%ums",
+             LCD_TE_GPIO, (unsigned)s_display_config.te_timeout_ms);
+    return H2_DISPLAY_OK;
+}
+
+static void wait_for_frame_te(h2_esp_amoled_display_state_t *state) {
+    if (!s_display_config.sync_to_te || !state->sync_before_next_draw ||
+        state->te_semaphore == NULL) {
+        return;
+    }
+    state->sync_before_next_draw = false;
+    while (xSemaphoreTake(state->te_semaphore, 0) == pdTRUE) {
+    }
+    const int64_t started_us = esp_timer_get_time();
+    const BaseType_t received = xSemaphoreTake(
+        state->te_semaphore, pdMS_TO_TICKS(s_display_config.te_timeout_ms));
+    const uint32_t waited_us = (uint32_t)(esp_timer_get_time() - started_us);
+    ++state->te_wait_count;
+    if (received != pdTRUE) {
+        ++state->te_timeout_count;
+        if (state->te_timeout_count == 1u ||
+            state->te_timeout_count % 60u == 0u) {
+            ESP_LOGW(TAG,
+                     "display TE timeout waits=%u timeouts=%u waited_us=%u",
+                     (unsigned)state->te_wait_count,
+                     (unsigned)state->te_timeout_count,
+                     (unsigned)waited_us);
+        }
+    } else if (state->te_wait_count == 1u ||
+               state->te_wait_count % 120u == 0u) {
+        ESP_LOGI(TAG, "display TE ready waits=%u timeouts=%u waited_us=%u",
+                 (unsigned)state->te_wait_count,
+                 (unsigned)state->te_timeout_count,
+                 (unsigned)waited_us);
+    }
 }
 
 static int init_panel_power_control(h2_esp_amoled_display_state_t *state) {
@@ -217,6 +308,10 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
         return rc;
     }
     rc = init_panel_io(state);
+    if (rc != H2_DISPLAY_OK) {
+        return rc;
+    }
+    rc = init_te_sync(state);
     if (rc != H2_DISPLAY_OK) {
         return rc;
     }
@@ -424,6 +519,8 @@ static int amoled_draw_bitmap(
         max_chunk_rows = LCD_DRAW_ROWS;
     }
 
+    wait_for_frame_te(state);
+
     int y = clipped.y;
     const int y_end = clipped.y + clipped.height;
     while (y < y_end) {
@@ -456,7 +553,13 @@ static int amoled_draw_bitmap(
 
 static int amoled_present(void *user) {
     h2_esp_amoled_display_state_t *state = (h2_esp_amoled_display_state_t *)user;
-    return state->opened ? H2_DISPLAY_OK : H2_DISPLAY_ERR_INVALID_STATE;
+    if (!state->opened) {
+        return H2_DISPLAY_ERR_INVALID_STATE;
+    }
+    if (s_display_config.sync_to_te) {
+        state->sync_before_next_draw = true;
+    }
+    return H2_DISPLAY_OK;
 }
 
 static int amoled_set_brightness_percent(void *user, uint32_t percent) {

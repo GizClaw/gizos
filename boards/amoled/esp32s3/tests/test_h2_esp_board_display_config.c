@@ -6,6 +6,8 @@
 int main(void) {
     h2_esp_board_display_config_t config = {
         .pclk_hz = 0u,
+        .te_timeout_ms = 0u,
+        .sync_to_te = 0,
     };
     assert(h2_esp_board_display_config_is_valid(&config));
     assert(h2_esp_board_display_config_is_valid(NULL) == 0);
@@ -13,6 +15,19 @@ int main(void) {
     config.pclk_hz = (uint32_t)INT_MAX;
     assert(h2_esp_board_display_config_is_valid(&config));
     config.pclk_hz = (uint32_t)INT_MAX + 1u;
+    assert(h2_esp_board_display_config_is_valid(&config) == 0);
+    config.pclk_hz = 0u;
+
+    config.sync_to_te = 1;
+    assert(h2_esp_board_display_config_is_valid(&config) == 0);
+    config.te_timeout_ms = 34u;
+    assert(h2_esp_board_display_config_is_valid(&config));
+    config.sync_to_te = 2;
+    assert(h2_esp_board_display_config_is_valid(&config) == 0);
+    config.sync_to_te = 0;
+    assert(h2_esp_board_display_config_is_valid(&config) == 0);
+    config.te_timeout_ms = 1001u;
+    config.sync_to_te = 1;
     assert(h2_esp_board_display_config_is_valid(&config) == 0);
 
     assert(h2_esp_board_display_config_may_apply(0));

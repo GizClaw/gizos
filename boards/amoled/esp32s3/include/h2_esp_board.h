@@ -13,11 +13,15 @@ typedef void (*h2_esp_board_entry_task_fn)(void *user);
 
 /**
  * Optional workload-specific display transport tuning. A zero pixel clock
- * keeps the SH8601 component default. Configure this before the first display
- * or panel power operation.
+ * keeps the SH8601 component default. When sync_to_te is non-zero, the board
+ * waits for the next rising edge from the SH8601 TE output on GPIO13 before
+ * the first bitmap write of each logical frame. te_timeout_ms must then be
+ * non-zero. Configure this before the first display or panel power operation.
  */
 typedef struct h2_esp_board_display_config {
     uint32_t pclk_hz;
+    uint32_t te_timeout_ms;
+    int sync_to_te;
 } h2_esp_board_display_config_t;
 
 h2_pal_result_t h2_esp_board_display_configure(
