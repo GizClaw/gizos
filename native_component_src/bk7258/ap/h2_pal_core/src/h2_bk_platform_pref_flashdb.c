@@ -8,7 +8,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define H2_BK_PREF_KEY_MAX 32u
+/* Storage keys are "<namespace>.<key>"; FlashDB accepts names up to
+ * FDB_KV_NAME_MAX, e.g. "h2loader.mfg_acceptance_revision" (32 chars). */
+#define H2_BK_PREF_KEY_MAX FDB_KV_NAME_MAX
 #define H2_BK_PREF_OPEN_MAX 4u
 
 typedef struct h2_bk_pref_namespace {
