@@ -192,6 +192,25 @@ static void test_loader_relay_through_native_b(void) {
   assert(h2_bk_fixed_select(H2_BK_H2LOADER_APP_PARTITION_ID) == H2_PAL_OK);
   assert(memcmp(native_sector, relay_confirmed, 12) == 0);
 
+  /* A pending B the bootloader rolled back (final=A, temp=B, confirm=1) is a
+   * failed candidate seen from the Loader window; it no longer selects B. */
+  {
+    static const uint8_t rolled_back[12] = {0, 0xff, 0xff, 0xff, 1, 0xff,
+                                            0xff, 0xff, 1, 0xff, 0xff, 0xff};
+    uint8_t saved[12];
+    memcpy(saved, native_sector, sizeof(saved));
+    memcpy(native_sector, rolled_back, sizeof(rolled_back));
+    native_slot = 0u;
+    assert(h2_bk_fixed_relay_failed() && !h2_bk_fixed_next_app());
+    native_slot = 1u;
+    assert(!h2_bk_fixed_relay_failed());
+    memcpy(native_sector, relay_pending, sizeof(relay_pending));
+    native_slot = 0u;
+    assert(!h2_bk_fixed_relay_failed() && h2_bk_fixed_next_app());
+    memcpy(native_sector, saved, sizeof(saved));
+    native_slot = 1u;
+  }
+
   /* After the copy, Loader selection returns native boot to A. */
   assert(h2_bk_fixed_select(H2_BK_H2LOADER_PRIMARY_PARTITION_ID) == H2_PAL_OK);
   assert(memcmp(native_sector, loader_flags, 12) == 0);

@@ -28,6 +28,8 @@ Loader 只要确认自身 role 为 Loader 且运行在 Partition 2，就执行�
 
 写入失败时不选择 Partition 1，Partition 1 保持 invalid；下次从 Partition 2 启动后重新完整回写。
 
+候选 Loader 在确认前复位或崩溃、平台回滚到 Partition 1 并撤销 Partition 2 的 `BOOTABLE` 时，Partition 1 Loader 不再自动启动这个候选：Stage 保留，留在命令模式，与失败 App 的处理相同。只有发布不同的新 Stage 才会再次尝试。
+
 ## Partition 1 收尾
 
 回到 Partition 1 后，Loader 发现 Partition 1/2 checksum 相同，不再进入 Partition 2。如果 Stage checksum 也相同，则补齐 Partition 1 的 package 来源 metadata，清理 Stage，并留在 Partition 1 命令模式。

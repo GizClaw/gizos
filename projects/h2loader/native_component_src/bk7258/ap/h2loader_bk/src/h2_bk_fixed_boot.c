@@ -98,9 +98,19 @@ static int read_native_flags(uint8_t out[12]) {
         bk_flash_read_bytes(control->partition_start_addr, out, 12u) == BK_OK;
 }
 
+/* final=B: the next reset runs the candidate Loader in the App window. */
 static int native_selects_relay(void) {
     uint8_t flags[12];
-    return read_native_flags(flags) && (flags[0] == 1u || flags[4] == 1u);
+    return read_native_flags(flags) && flags[0] == 1u;
+}
+
+int h2_bk_fixed_relay_failed(void) {
+    /* The ROM bootloader tries a pending B once and, when the candidate never
+     * confirms, returns to A leaving final=A, temp=B, confirm=pending. Seen
+     * from the Loader window this proves the candidate Loader failed. */
+    uint8_t flags[12];
+    return h2_bk_fixed_layout() != NULL && !native_relay_active() &&
+        read_native_flags(flags) && flags[0] == 0u && flags[4] == 1u && flags[8] == 1u;
 }
 
 int h2_bk_fixed_next_app(void) {

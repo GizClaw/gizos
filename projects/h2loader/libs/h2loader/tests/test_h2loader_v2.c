@@ -1013,6 +1013,36 @@ static void test_rolled_back_app_leaves_partition_2_state_untouched(void) {
   assert(fixture.reboot_calls == 0u);
 }
 
+static void test_rolled_back_loader_candidate_is_not_relaunched(void) {
+  test_fixture_t fixture;
+  h2_loader_startup_action_t action;
+  int present;
+  h2_loader_metadata_t p1 = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+  h2_loader_metadata_t candidate = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_B);
+  candidate.package_size = 1024u;
+  (void)snprintf(candidate.package_checksum, sizeof(candidate.package_checksum), "%s",
+                 SHA_A);
+  fixture_init(&fixture, 1u);
+  fixture.boot_intent = H2_LOADER_BOOT_INTENT_AUTO;
+  fixture.boot_intent_present = 1;
+  fixture.package_present = 1;
+  /* The platform rolled back an unconfirmed candidate Loader. */
+  fixture.app_partition_bootable = 0;
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &candidate);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &p1);
+  write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_2, &candidate);
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+
+  assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
+  assert(action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE);
+  assert(fixture.reboot_calls == 0u);
+  assert(fixture.writer_offset == 0u);
+  h2_loader_metadata_t retained_stage =
+      read_metadata(&fixture, H2_LOADER_METADATA_SLOT_STAGE, &present);
+  assert(present && retained_stage.valid);
+  assert(h2_loader_metadata_image_equal(&retained_stage, &candidate));
+}
+
 static void test_interrupted_replacement_does_not_boot_failed_app(void) {
   test_fixture_t fixture;
   h2_loader_startup_action_t action;
@@ -1759,6 +1789,7 @@ int main(void) {
   test_converged_loader_does_not_ignore_different_stage();
   test_same_image_new_package_is_still_inspected();
   test_rolled_back_app_leaves_partition_2_state_untouched();
+  test_rolled_back_loader_candidate_is_not_relaunched();
   test_interrupted_replacement_does_not_boot_failed_app();
   test_app_finalize_only_consumes_matching_stage();
   test_app_confirmation_is_between_metadata_and_stage_cleanup();

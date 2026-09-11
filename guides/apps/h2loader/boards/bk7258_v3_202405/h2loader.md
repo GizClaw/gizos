@@ -70,7 +70,7 @@ Loader image 按 Loader window 链接，不能在 App window 的地址上运行�
 3. 复位后 bootloader 开启 Flash 控制器的地址偏移，Loader window 的地址从 App window 取指。候选 Loader 通过重映射位（`native_slot=1`）报告运行在 Partition 2，并把原生标记确认为 B（confirm=4）。随后共享流程把 Partition 2 拷回 Partition 1。
 4. 拷回完成后选择 Partition 1，原生标记恢复 A/A/confirm-A，新 Loader 从 Loader window 启动；Partition 1/2 image 相同，Stage 清理。App window 中留下的 Loader 在下次安装 App 时被覆盖。
 
-拷回 Loader window 途中复位或掉电时，原生标记仍是已确认的 B，复位后回到 App window 中的候选 Loader 重新拷回。旧 Loader 在 Loader window 运行时只允许把 Loader image 写入 App window；只有经重映射运行的候选 Loader 能写 Loader window。
+拷回 Loader window 途中复位或掉电时，原生标记仍是已确认的 B，复位后回到 App window 中的候选 Loader 重新拷回。候选在确认 B 之前失败时，ROM bootloader 只试一次待确认的 B，随后回到 A 并留下 final=A、temp=B、confirm=1。旧 Loader 据此撤销 Partition 2 的 `BOOTABLE`，保留 Stage、不再自动重启进 B，发布不同的新 Loader 包时再重试。擦写原生标记途中掉电留下的空白标记由 bootloader 按 A 启动，三个写标记点（选择 B、确认 B、恢复 A）因此都落在可重试的状态。旧 Loader 在 Loader window 运行时只允许把 Loader image 写入 App window；只有经重映射运行的候选 Loader 能写 Loader window。
 
 BK 条件变量等待使用栈上的静态信号量，但 SDK 仍为每个信号量分配动态自旋锁。
 等待节点从链表移除后必须销毁信号量，再返回并释放栈空间；否则 BLE 高频等待会
