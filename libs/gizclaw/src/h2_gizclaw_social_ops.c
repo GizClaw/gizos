@@ -6,6 +6,7 @@
 #include "h2_gizclaw_rpc.h"
 
 #include "payload/social.pb.h"
+#include "payload/system.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
@@ -1828,6 +1829,362 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_delete(
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_friend_group_member_delete(request, storage,
                                                           out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+/* Friend and FriendGroup ping share one response shape; the per-method rules
+ * only differ in how many devices a delivered ping may reach. */
+static h2_pal_result_t
+social_ping_from_wire(gizclaw_rpc_v1_SocialPingResult result,
+                      int32_t delivered_count, bool has_retry_after_seconds,
+                      int32_t retry_after_seconds, int32_t max_delivered,
+                      h2_gizclaw_social_ping_t *out_result) {
+  const bool delivered =
+      result == gizclaw_rpc_v1_SocialPingResult_SOCIAL_PING_RESULT_DELIVERED;
+  const bool rate_limited =
+      result == gizclaw_rpc_v1_SocialPingResult_SOCIAL_PING_RESULT_RATE_LIMITED;
+  if (!delivered && !rate_limited &&
+      result != gizclaw_rpc_v1_SocialPingResult_SOCIAL_PING_RESULT_NOT_ONLINE)
+    return H2_PAL_ERR_FORMAT;
+  if (delivered ? delivered_count < 1 || delivered_count > max_delivered
+                : delivered_count != 0)
+    return H2_PAL_ERR_FORMAT;
+  if (has_retry_after_seconds != rate_limited ||
+      (rate_limited && retry_after_seconds < 1))
+    return H2_PAL_ERR_FORMAT;
+  *out_result = (h2_gizclaw_social_ping_t){
+      .result = (h2_gizclaw_social_ping_result_t)result,
+      .delivered_count = (uint32_t)delivered_count,
+      .has_retry_after_seconds = has_retry_after_seconds,
+      .retry_after_seconds =
+          has_retry_after_seconds ? (uint32_t)retry_after_seconds : 0u};
+  return H2_PAL_OK;
+}
+
+static const char friend_ping_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_ping(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_id, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_text(friend_id, false) &&
+        friend_id.len <
+            sizeof(((gizclaw_rpc_v1_FriendPingRequest *)0)->name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendPingRequest message =
+      gizclaw_rpc_v1_FriendPingRequest_init_zero;
+  memcpy(message.name, friend_id.data, friend_id.len);
+  message.name[friend_id.len] = '\0';
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_ping_tag, H2_GIZCLAW_RPC_SERVER_FRIEND_PING,
+      gizclaw_rpc_v1_FriendPingRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_ping(const h2_gizclaw_req_t *request,
+                                  h2_gizclaw_social_ping_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc =
+      h2_gizclaw_req_response_internal(request, &friend_ping_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendPingResponse decoded =
+      gizclaw_rpc_v1_FriendPingResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendPingResponse_fields, &decoded))
+    return H2_PAL_ERR_FORMAT;
+  return social_ping_from_wire(decoded.result, decoded.delivered_count,
+                               decoded.has_retry_after_seconds,
+                               decoded.retry_after_seconds, 1, out_result);
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_ping(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_str_t friend_id,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_social_ping_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_ping(
+      service, 0u, friend_id, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_ping(request, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+static const char friend_group_ping_tag;
+h2_pal_result_t h2_gizclaw_req_create_friend_group_ping(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (!(valid_group_name(group_name) &&
+        group_name.len <
+            sizeof(((gizclaw_rpc_v1_FriendGroupPingRequest *)0)->name)))
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_FriendGroupPingRequest message =
+      gizclaw_rpc_v1_FriendGroupPingRequest_init_zero;
+  memcpy(message.name, group_name.data, group_name.len);
+  message.name[group_name.len] = '\0';
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &friend_group_ping_tag,
+      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING,
+      gizclaw_rpc_v1_FriendGroupPingRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_group_ping(const h2_gizclaw_req_t *request,
+                                        h2_gizclaw_social_ping_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &friend_group_ping_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_FriendGroupPingResponse decoded =
+      gizclaw_rpc_v1_FriendGroupPingResponse_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  if (!pb_decode(&stream, gizclaw_rpc_v1_FriendGroupPingResponse_fields,
+                 &decoded))
+    return H2_PAL_ERR_FORMAT;
+  return social_ping_from_wire(decoded.result, decoded.delivered_count,
+                               decoded.has_retry_after_seconds,
+                               decoded.retry_after_seconds, INT32_MAX,
+                               out_result);
+}
+
+h2_pal_result_t h2_gizclaw_rpc_friend_group_ping(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    uint32_t timeout_ms, h2_gizclaw_social_ping_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_friend_group_ping(
+      service, 0u, group_name, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_friend_group_ping(request, out_result);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
+typedef char public_profile_key_t[H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES + 1u];
+_Static_assert(sizeof(((gizclaw_rpc_v1_ProfileGetRequest *)0)->peer_public_keys) ==
+                   sizeof(public_profile_key_t) * H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS,
+               "server.profile.get key bounds drifted from the pinned SDK");
+
+static bool valid_public_key(h2_gizclaw_str_t key) {
+  if (key.len == 0u || key.len > H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES ||
+      key.data == NULL)
+    return false;
+  for (size_t i = 0u; i < key.len; ++i) {
+    const unsigned char c = (unsigned char)key.data[i];
+    if (c < 0x21u || c > 0x7eu)
+      return false;
+  }
+  return true;
+}
+
+/* Recover the distinct requested keys, in order, from the copied request so
+ * the parser can match every returned item without keeping create inputs. */
+static bool public_profile_request_keys(h2_gizclaw_rpc_bytes_t input,
+                                        public_profile_key_t *keys,
+                                        size_t *out_count) {
+  *out_count = 0u;
+  pb_istream_t stream = pb_istream_from_buffer(input.data, input.len);
+  while (stream.bytes_left > 0u) {
+    pb_wire_type_t wire;
+    uint32_t tag = 0u;
+    bool eof = false;
+    if (!pb_decode_tag(&stream, &wire, &tag, &eof))
+      return false;
+    if (tag != gizclaw_rpc_v1_ProfileGetRequest_peer_public_keys_tag ||
+        wire != PB_WT_STRING) {
+      if (!pb_skip_field(&stream, wire))
+        return false;
+      continue;
+    }
+    pb_istream_t sub;
+    if (!pb_make_string_substream(&stream, &sub))
+      return false;
+    public_profile_key_t key;
+    const size_t len = sub.bytes_left;
+    const bool read = len < sizeof(key) && pb_read(&sub, (pb_byte_t *)key, len);
+    if (!pb_close_string_substream(&stream, &sub) || !read)
+      return false;
+    key[len] = '\0';
+    bool seen = false;
+    for (size_t i = 0u; i < *out_count && !seen; ++i)
+      seen = strcmp(keys[i], key) == 0;
+    if (seen)
+      continue;
+    if (*out_count >= H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS)
+      return false;
+    memcpy(keys[(*out_count)++], key, len + 1u);
+  }
+  return *out_count > 0u;
+}
+
+static const char public_profile_get_tag;
+h2_pal_result_t h2_gizclaw_req_create_public_profile_get(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_str_t *peer_public_keys, size_t key_count,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+  if (out_request != NULL)
+    *out_request = NULL;
+  if (peer_public_keys == NULL || key_count == 0u ||
+      key_count > H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS)
+    return H2_PAL_ERR_INVALID_ARG;
+  gizclaw_rpc_v1_ProfileGetRequest message =
+      gizclaw_rpc_v1_ProfileGetRequest_init_zero;
+  for (size_t i = 0u; i < key_count; ++i) {
+    if (!valid_public_key(peer_public_keys[i]))
+      return H2_PAL_ERR_INVALID_ARG;
+    memcpy(message.peer_public_keys[i], peer_public_keys[i].data,
+           peer_public_keys[i].len);
+    message.peer_public_keys[i][peer_public_keys[i].len] = '\0';
+  }
+  message.peer_public_keys_count = (pb_size_t)key_count;
+  return h2_gizclaw_social_create_message_internal(
+      service, identity, &public_profile_get_tag,
+      H2_GIZCLAW_RPC_SERVER_PROFILE_GET,
+      gizclaw_rpc_v1_ProfileGetRequest_fields, &message, timeout_ms,
+      out_request);
+}
+
+/* Items are decoded one at a time: the generated ProfileGetResponse holds
+ * all sixteen profiles inline (over 6 KiB), too large for a caller stack. */
+static h2_pal_result_t
+decode_public_profiles(const h2_pal_mem_api_t *allocator,
+                       const h2_gizclaw_rpc_response_t *response,
+                       const public_profile_key_t *keys, size_t key_count,
+                       h2_gizclaw_public_profile_list_t *out_result) {
+  h2_gizclaw_public_profile_t *items =
+      h2_pal_mem_alloc(allocator, key_count * sizeof(*items));
+  if (items == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(items, 0, key_count * sizeof(*items));
+  size_t count = 0u;
+  pb_istream_t stream = pb_istream_from_buffer(response->result_payload,
+                                               response->result_payload_len);
+  while (stream.bytes_left > 0u) {
+    pb_wire_type_t wire;
+    uint32_t tag = 0u;
+    bool eof = false;
+    if (!pb_decode_tag(&stream, &wire, &tag, &eof))
+      return H2_PAL_ERR_FORMAT;
+    if (tag != gizclaw_rpc_v1_ProfileGetResponse_items_tag ||
+        wire != PB_WT_STRING) {
+      if (!pb_skip_field(&stream, wire))
+        return H2_PAL_ERR_FORMAT;
+      continue;
+    }
+    if (count >= key_count)
+      return H2_PAL_ERR_FORMAT;
+    pb_istream_t sub;
+    if (!pb_make_string_substream(&stream, &sub))
+      return H2_PAL_ERR_FORMAT;
+    gizclaw_rpc_v1_PublicProfile item = gizclaw_rpc_v1_PublicProfile_init_zero;
+    const bool decoded =
+        pb_decode(&sub, gizclaw_rpc_v1_PublicProfile_fields, &item);
+    if (!pb_close_string_substream(&stream, &sub) || !decoded ||
+        strcmp(item.peer_public_key, keys[count]) != 0 ||
+        (item.has_display_name && !valid_owned_text(item.display_name)) ||
+        (item.has_emoji && !valid_owned_text(item.emoji)))
+      return H2_PAL_ERR_FORMAT;
+    h2_gizclaw_public_profile_t *out = &items[count++];
+    out->peer_public_key = duplicate_text(allocator, item.peer_public_key);
+    if (item.has_display_name)
+      out->display_name = duplicate_text(allocator, item.display_name);
+    if (item.has_emoji)
+      out->emoji = duplicate_text(allocator, item.emoji);
+    if (out->peer_public_key == NULL ||
+        (item.has_display_name && out->display_name == NULL) ||
+        (item.has_emoji && out->emoji == NULL))
+      return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (count != key_count)
+    return H2_PAL_ERR_FORMAT;
+  *out_result = (h2_gizclaw_public_profile_list_t){.items = items,
+                                                   .count = count};
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_gizclaw_resp_parse_public_profile_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_public_profile_list_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  const h2_gizclaw_rpc_response_t *response = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_response_internal(
+      request, &public_profile_get_tag, &response);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_rpc_bytes_t input;
+  rc = h2_gizclaw_req_input_internal(request, &public_profile_get_tag, &input);
+  if (rc != H2_PAL_OK)
+    return rc;
+  public_profile_key_t keys[H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS];
+  size_t key_count = 0u;
+  if (!public_profile_request_keys(input, keys, &key_count))
+    return H2_PAL_ERR_FORMAT;
+  h2_gizclaw_resp_arena_t arena;
+  rc = h2_gizclaw_resp_arena_begin(storage, &arena);
+  if (rc != H2_PAL_OK)
+    return rc;
+  h2_gizclaw_public_profile_list_t result = {0};
+  rc = decode_public_profiles(&arena.allocator, response,
+                              (const public_profile_key_t *)keys, key_count,
+                              &result);
+  rc = h2_gizclaw_resp_arena_end(&arena, rc);
+  if (rc == H2_PAL_OK)
+    *out_result = result;
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_rpc_public_profile_get(
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *peer_public_keys,
+    size_t key_count, uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_public_profile_list_t *out_result) {
+  if (out_result == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out_result, 0, sizeof(*out_result));
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_req_t *request = NULL;
+  h2_pal_result_t rc = h2_gizclaw_req_create_public_profile_get(
+      service, 0u, peer_public_keys, key_count, timeout_ms, &request);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_resp_parse_public_profile_get(request, storage,
+                                                  out_result);
   h2_gizclaw_req_release(request);
   return rc;
 }

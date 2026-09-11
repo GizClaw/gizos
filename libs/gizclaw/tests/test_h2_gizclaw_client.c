@@ -1250,6 +1250,13 @@ int main(void) {
                   "register wire method remains 90");
   fails += expect(H2_GIZCLAW_RPC_SERVER_PEER_DELETE == 93,
                   "peer delete wire method remains 93");
+  fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_PING == 123 &&
+                      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING == 124 &&
+                      H2_GIZCLAW_RPC_SERVER_PROFILE_GET == 125,
+                  "social ping and public profile wire methods are 123-125");
+  fails += expect(H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND == 126 &&
+                      H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING == 127,
+                  "device find and social ping reverse methods are 126-127");
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
   config.server_endpoint.data = "127.0.0.1:19820";

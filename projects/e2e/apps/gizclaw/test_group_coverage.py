@@ -31,7 +31,7 @@ class GroupCoverageTest(unittest.TestCase):
 
     def test_thirty_six_functions(self):
         expected = {rule.symbol for rule in api_coverage.requirements()
-                    if "_friend_group_" in rule.symbol and "_message_" not in rule.symbol}
+                    if rule.case == "rpc/group"}
         self.assertEqual(len(expected), 36)
         self.assertEqual(self.audit(), expected)
         self.assertEqual(self.audit(pages=1), expected)
