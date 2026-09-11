@@ -349,6 +349,9 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_lua",
     build_file = "//third_party:lua.BUILD.bazel",
+    overlay_files = {
+        "//third_party/lua_patch:h2_lua_embedded_stdio.h": "src/h2_lua_embedded_stdio.h",
+    },
     sha256 = "b85ede9dbc4a4292addcfefebe15168acc7f1d42c674cc297d74f0e8ff2f2dd8",
     strip_prefix = "lua-a5522f06d2679b8f18534fd6a9968f7eb539dc31",
     urls = ["https://codeload.github.com/lua/lua/tar.gz/a5522f06d2679b8f18534fd6a9968f7eb539dc31"],
