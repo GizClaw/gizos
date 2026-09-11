@@ -113,10 +113,14 @@ static void time_worker(void *user) {
                                   ? H2_GIZCLAW_TIME_SYNC_SUCCEEDED
                                   : H2_GIZCLAW_TIME_SYNC_RETRY;
     (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
+    /* A clock the platform will not let us set (a browser's host clock) is
+     * owned by the platform; retrying cannot calibrate it. */
+    const bool unsupported = rc == H2_PAL_ERR_UNSUPPORTED;
     h2_gizclaw_service_log_request(service,
-        rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
-        "time", rc == H2_PAL_OK ? "calibrated" : "retry", 0u, rc, 0, 0u, 0u);
-    if (rc == H2_PAL_OK)
+        rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, "time",
+        rc == H2_PAL_OK ? "calibrated" : unsupported ? "unsupported" : "retry",
+        0u, rc, 0, 0u, 0u);
+    if (rc == H2_PAL_OK || unsupported)
       return;
     uint64_t now = 0u;
     if (h2_pal_time_get_monotonic_ms(service->client_config.time, &now) != H2_PAL_OK)

@@ -29,6 +29,8 @@ EM_JS(int, h2_web_test_close_rejected_before_cancel_settled, (),
 
 EM_JS(int, h2_web_test_audio_stopped_sources, (),
       { return globalThis.h2FakeAudioStoppedSources || 0; });
+EM_JS(int, h2_web_test_audio_active_sources, (),
+      { return globalThis.h2FakeAudioActiveSources || 0; });
 
 static void h2_web_test_task(void *user) {
   int *ran = user;
@@ -944,10 +946,56 @@ static int run_tests(void) {
           H2_AUDIO_OK ||
       h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
       h2_web_test_audio_stopped_sources() != 1 ||
+      h2_web_test_audio_active_sources() != 0 ||
+      // A stopped speaker holds writes, like a device mixer queue, and
+      // plays them when it starts again.
       h2_pal_audio_track_write(audio_track, &audio_frame, 1000u) !=
-          H2_AUDIO_ERR_INVALID_STATE ||
+          H2_AUDIO_OK ||
+      h2_web_test_audio_active_sources() != 0 ||
+      h2_pal_audio_start_speaker(audio) != H2_AUDIO_OK ||
+      h2_web_test_audio_active_sources() != 1 ||
+      h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
+      h2_web_test_audio_stopped_sources() != 2 ||
       h2_pal_audio_track_close(audio_track) != H2_AUDIO_OK) {
     return 105;
+  }
+  {
+    // A stopped track holds up to its queue capacity (8 frames); the next
+    // write waits for room and returns WOULD_BLOCK at its timeout.
+    static int16_t held_samples[960];
+    const h2_audio_pcm_format_t held_format = {
+        .sample_rate_hz = 16000u,
+        .frame_samples_per_channel = 960u,
+        .channels = 1u,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE,
+    };
+    const h2_audio_track_config_t held_config = {
+        .name = "web-test-held",
+        .format = held_format,
+        .volume_factor_milli = 1000u,
+        .buffer_frames = 8u,
+    };
+    h2_audio_frame_t held_frame = h2_audio_frame_for_buffer(
+        held_samples, sizeof(held_samples), held_format);
+    held_frame.bytes = sizeof(held_samples);
+    h2_pal_audio_track_t *held_track = NULL;
+    const int active = h2_web_test_audio_active_sources();
+    if (h2_pal_audio_create_track(audio, &held_config, &held_track) !=
+        H2_AUDIO_OK)
+      return 111;
+    for (int frame = 0; frame < 8; ++frame) {
+      if (h2_pal_audio_track_write(held_track, &held_frame, 0u) !=
+          H2_AUDIO_OK)
+        return 112;
+    }
+    if (h2_pal_audio_track_write(held_track, &held_frame, 0u) !=
+            H2_AUDIO_ERR_WOULD_BLOCK ||
+        h2_web_test_audio_active_sources() != active ||
+        h2_pal_audio_start_speaker(audio) != H2_AUDIO_OK ||
+        h2_web_test_audio_active_sources() != active + 8 ||
+        h2_pal_audio_stop_speaker(audio) != H2_AUDIO_OK ||
+        h2_pal_audio_track_close(held_track) != H2_AUDIO_OK)
+      return 113;
   }
   h2_web_webrtc_test_t webrtc_test = {0};
   const h2_pal_webrtc_api_t *webrtc = h2_web_platform_webrtc_api(platform);

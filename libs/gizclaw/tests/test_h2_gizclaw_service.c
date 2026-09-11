@@ -10674,6 +10674,43 @@ static void test_preconnect_time_stop(void) {
   }
 }
 
+/* A platform-owned clock cannot be set; one attempt ends calibration. */
+static void test_unsettable_time_sync(void) {
+  test_env_t env;
+  time_test_t test = {.set_result = H2_PAL_ERR_UNSUPPORTED};
+  atomic_store(&test.wall, 1700000000000ull);
+  atomic_store(&test.valid, true);
+  atomic_store(&test.http_gate, true);
+  const h2_pal_time_vtable_t tv = {.get_monotonic_ms = time_test_mono,
+      .get_wall_ms = time_test_wall, .get_wall_status = time_test_status,
+      .set_wall_ms = time_test_set};
+  const h2_pal_time_api_t time = {.user = &test, .vtable = &tv};
+  const h2_pal_http_vtable_t hv = {.request = time_test_http};
+  const h2_pal_http_api_t http = {.user = &test, .vtable = &hv};
+  h2_gizclaw_service_t *service = create_service(&env, 2);
+  service->config.on_event = NULL;
+  service->client_config.time = &time;
+  service->client_config.http = &http;
+  service->client_config.server_endpoint = (h2_gizclaw_str_t){"example.test:9821", 17};
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_time_sync_status_t status =
+      time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RETRY);
+  assert(status.attempts == 1 && status.last_result == H2_PAL_ERR_UNSUPPORTED);
+  /* Advance past many retry periods; no further attempt is made. */
+  for (unsigned n = 0; n < 50; ++n) {
+    atomic_fetch_add(&test.offset, 30001);
+    h2_pal_mutex_lock(service->config.sync, service->mutex);
+    h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
+    h2_pal_mutex_unlock(service->config.sync, service->mutex);
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(atomic_load(&test.calls) == 1);
+  assert(h2_gizclaw_service_get_time_sync_status(service, &status) == H2_PAL_OK);
+  assert(status.attempts == 1 && status.state == H2_GIZCLAW_TIME_SYNC_RETRY);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_automatic_time_sync(void) {
   const char *invalid[] = {NULL, "{\"server_time\":0}",
       "{\"server_time\":-1}", "{\"server_time\":1.5}",
@@ -10797,6 +10834,7 @@ int main(int argc, char **argv) {
   assert(argc == 1);
   test_preconnect_time_stop();
   test_automatic_time_sync();
+  test_unsettable_time_sync();
   test_time_sync_reconnect();
   test_stream_sink_one_shot();
   test_workspace_reload_with_options();

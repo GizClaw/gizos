@@ -15,6 +15,10 @@ extern "C" {
 #define H2_LIBCO_EMSCRIPTEN_ALIGNMENT 16u
 #define H2_LIBCO_EMSCRIPTEN_ASYNCIFY_STACK_SIZE (64u * 1024u)
 #define H2_LIBCO_EMSCRIPTEN_PARTITION_GUARD UINT64_C(0x68326173796e6321)
+/* Task stack budgets are sized for native targets. Wasm keeps address-taken
+ * locals and spills in linear memory, and unoptimized builds keep every local
+ * there, so each task gets this much C stack on top of its request. */
+#define H2_LIBCO_EMSCRIPTEN_C_STACK_RESERVE (48u * 1024u)
 
 typedef struct h2_libco_emscripten_thread {
   emscripten_fiber_t fiber;
@@ -31,10 +35,15 @@ static size_t h2_libco_emscripten_align(size_t value) {
          ~(H2_LIBCO_EMSCRIPTEN_ALIGNMENT - 1u);
 }
 
-size_t h2_libco_emscripten_context_overhead(void) {
+static size_t h2_libco_emscripten_partition_overhead(void) {
   return h2_libco_emscripten_align(sizeof(h2_libco_emscripten_thread_t)) +
          H2_LIBCO_EMSCRIPTEN_ASYNCIFY_STACK_SIZE +
          H2_LIBCO_EMSCRIPTEN_ALIGNMENT;
+}
+
+size_t h2_libco_emscripten_context_overhead(void) {
+  return h2_libco_emscripten_partition_overhead() +
+         H2_LIBCO_EMSCRIPTEN_C_STACK_RESERVE;
 }
 
 int h2_libco_emscripten_context_valid(const void *memory, size_t size) {
@@ -85,7 +94,9 @@ cothread_t co_derive(void *memory, unsigned int size,
   unsigned char *c_stack = partition + H2_LIBCO_EMSCRIPTEN_ALIGNMENT;
   thread->entry = entry;
   emscripten_fiber_init(&thread->fiber, h2_libco_emscripten_thunk, thread,
-                        c_stack, (size_t)size - overhead, asyncify_stack,
+                        c_stack,
+                        (size_t)size - h2_libco_emscripten_partition_overhead(),
+                        asyncify_stack,
                         H2_LIBCO_EMSCRIPTEN_ASYNCIFY_STACK_SIZE);
   return (cothread_t)thread;
 }

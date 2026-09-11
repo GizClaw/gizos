@@ -43,6 +43,33 @@ EM_JS(void, h2_web_audio_init_js, (uintptr_t platform_address), {
     return state.context;
   };
   state.activate = ensureContext;
+  // Schedules one buffer on a track. A track that starts or has run dry
+  // begins lead_s ahead of the clock; later buffers append to it and keep
+  // that cushion against main-thread stalls between writes.
+  state.schedule = (context, track, buffer, lead_s) => {
+    if (!track.node || track.node.context !== context) {
+      track.node = context.createGain();
+      track.node.gain.value = track.gain;
+      track.node.connect(context.destination);
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(track.node);
+    const startTime = track.nextTime > context.currentTime
+        ? track.nextTime
+        : context.currentTime + lead_s;
+    if (track.nextTime !== 0 && track.nextTime < context.currentTime &&
+        !track.underrunReported) {
+      track.underrunReported = true;
+      console.warn(`Web Audio track ran dry for ${
+          ((context.currentTime - track.nextTime) * 1000).toFixed(0)
+      } ms; the writer fell behind playback`);
+    }
+    track.sources.add(source);
+    source.onended = () => track.sources.delete(source);
+    source.start(startTime);
+    track.nextTime = startTime + buffer.duration;
+  };
   if (typeof globalThis.addEventListener === 'function') {
     globalThis.addEventListener('pointerdown', ensureContext, {passive: true});
     globalThis.addEventListener('keydown', ensureContext, {passive: true});
@@ -71,9 +98,26 @@ EM_JS(void, h2_web_audio_deinit_js, (uintptr_t platform_address), {
   platforms.delete(platform_address);
 });
 
-EM_JS(int, h2_web_audio_start_js, (uintptr_t platform_address), {
+// Starting the speaker plays what tracks wrote while it was stopped. A
+// buffer leaves the held queue only once it is scheduled, so a failed start
+// keeps every accepted write for the next one.
+EM_JS(int, h2_web_audio_start_js, (uintptr_t platform_address, double lead_s), {
   const state = Module['h2WebAudioPlatforms']?.get(platform_address);
-  if (!state || !state.activate()) return -3;
+  const context = state?.activate();
+  if (!context) return -3;
+  try {
+    for (const track of state.tracks.values()) {
+      while (track.pending.length > 0) {
+        const buffer = track.pending[0];
+        state.schedule(context, track, buffer, lead_s);
+        track.pending.shift();
+        track.pendingDuration = Math.max(0, track.pendingDuration - buffer.duration);
+      }
+    }
+  } catch (error) {
+    console.error('Web Audio playback failed', error);
+    return -4;
+  }
   state.speakerStarted = true;
   return 0;
 });
@@ -95,8 +139,10 @@ EM_JS(void, h2_web_audio_track_open_js,
       (uintptr_t platform_address, uintptr_t track_address, double gain), {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         if (state) {
-          state.tracks.set(track_address,
-                           {nextTime: 0, sources: new Set(), gain, node: null});
+          state.tracks.set(track_address, {
+            nextTime: 0, sources: new Set(), gain, node: null,
+            pending: [], pendingDuration: 0,
+          });
         }
       });
 
@@ -121,19 +167,19 @@ EM_JS(double, h2_web_audio_track_queued_js,
         HEAP32[out_suspended >>> 2] = 0;
         if (!track) return -1;
         const context = state.context;
-        if (!context) return 0;
+        if (!context) return track.pendingDuration;
         HEAP32[out_suspended >>> 2] = context.state === 'running' ? 0 : 1;
         // Output latency counts too: "drained" means heard, not handed off.
         const latency = (context.outputLatency || 0) + (context.baseLatency || 0);
-        return track.nextTime > context.currentTime
+        return track.pendingDuration + (track.nextTime > context.currentTime
             ? track.nextTime - context.currentTime + latency
-            : 0;
+            : 0);
       });
 
 EM_JS(int, h2_web_audio_track_write_js,
       (uintptr_t platform_address, uintptr_t track_address,
        const int16_t *samples, uint32_t samples_per_channel, int channels,
-       uint32_t sample_rate_hz, double lead_s), {
+       uint32_t sample_rate_hz, double lead_s, int hold), {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         const track = state?.tracks.get(track_address);
         const context = state?.activate();
@@ -152,31 +198,13 @@ EM_JS(int, h2_web_audio_track_write_js,
                   32768.0;
             }
           }
-          if (!track.node || track.node.context !== context) {
-            track.node = context.createGain();
-            track.node.gain.value = track.gain;
-            track.node.connect(context.destination);
+          // A stopped speaker keeps written audio until it starts again.
+          if (hold) {
+            track.pending.push(buffer);
+            track.pendingDuration += buffer.duration;
+          } else {
+            state.schedule(context, track, buffer, lead_s);
           }
-          const source = context.createBufferSource();
-          source.buffer = buffer;
-          source.connect(track.node);
-          // A track that starts or has run dry begins lead_s ahead of the
-          // clock; later buffers append to it and keep that cushion against
-          // main-thread stalls between writes.
-          const startTime = track.nextTime > context.currentTime
-              ? track.nextTime
-              : context.currentTime + lead_s;
-          if (track.nextTime !== 0 && track.nextTime < context.currentTime &&
-              !track.underrunReported) {
-            track.underrunReported = true;
-            console.warn(`Web Audio track ran dry for ${
-                ((context.currentTime - track.nextTime) * 1000).toFixed(0)
-            } ms; the writer fell behind playback`);
-          }
-          track.sources.add(source);
-          source.onended = () => track.sources.delete(source);
-          source.start(startTime);
-          track.nextTime = startTime + buffer.duration;
           return 0;
         } catch (error) {
           console.error('Web Audio playback failed', error);
@@ -277,7 +305,8 @@ static int h2_web_audio_start_speaker(void *user) {
   if (platform == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  const int result = h2_web_audio_start_js((uintptr_t)platform);
+  const int result = h2_web_audio_start_js(
+      (uintptr_t)platform, H2_WEB_AUDIO_START_LEAD_MS / 1000.0);
   if (result == H2_AUDIO_OK) {
     platform->speaker_started = true;
     platform->speaker_stopped = false;
@@ -309,9 +338,6 @@ static int h2_web_audio_track_write(h2_pal_audio_track_t *base,
                           sizeof(int16_t)) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  if (track->platform->speaker_stopped) {
-    return H2_AUDIO_ERR_INVALID_STATE;
-  }
   // Keep at most track_queue_frames of audio ahead of the playback clock.
   const double frame_ms = (double)frame->samples_per_channel * 1000.0 /
                           (double)frame->sample_rate_hz;
@@ -321,12 +347,11 @@ static int h2_web_audio_track_write(h2_pal_audio_track_t *base,
   const int wait = h2_web_audio_track_wait(track, target_ms, timeout_ms);
   if (wait != H2_AUDIO_OK)
     return wait;
-  if (track->platform->speaker_stopped)
-    return H2_AUDIO_ERR_INVALID_STATE;
   return h2_web_audio_track_write_js(
       (uintptr_t)track->platform, (uintptr_t)track, frame->data,
       frame->samples_per_channel, frame->channels, frame->sample_rate_hz,
-      H2_WEB_AUDIO_START_LEAD_MS / 1000.0);
+      H2_WEB_AUDIO_START_LEAD_MS / 1000.0,
+      track->platform->speaker_stopped ? 1 : 0);
 }
 
 static int h2_web_audio_track_close(h2_pal_audio_track_t *base) {
