@@ -18,6 +18,12 @@ typedef enum h2_pal_e2e_suite {
   H2_PAL_E2E_SUITE_MQTT = 1u << 1,
   H2_PAL_E2E_SUITE_PREF = 1u << 2,
   H2_PAL_E2E_SUITE_HOST = 1u << 3,
+  /**
+   * Browser host: memory, core scheduling, the writable Filesystem under
+   * /data, HTTP to host.http_url, netif, System Event, and raw sockets
+   * reporting UNSUPPORTED instead of pretending to work.
+   */
+  H2_PAL_E2E_SUITE_BROWSER = 1u << 4,
 } h2_pal_e2e_suite_t;
 
 typedef enum h2_pal_e2e_case_id {
@@ -44,6 +50,8 @@ typedef enum h2_pal_e2e_case_id {
   H2_PAL_E2E_CASE_HOST_MQTT,
   H2_PAL_E2E_CASE_HOST_NETIF,
   H2_PAL_E2E_CASE_HOST_SYSTEM_EVENT,
+  H2_PAL_E2E_CASE_BROWSER_HTTP,
+  H2_PAL_E2E_CASE_BROWSER_NET_UNSUPPORTED,
 } h2_pal_e2e_case_id_t;
 
 typedef struct h2_pal_e2e_case_result {
@@ -102,6 +110,8 @@ typedef struct h2_pal_e2e_config {
     uint16_t tls_echo_port;
     uint16_t tls_wrong_ca_port;
     uint16_t https_port;
+    /** Browser suite: URL whose 200 body is exactly "host-e2e". */
+    const char *http_url;
     uint32_t timeout_ms;
     const uint8_t *root_ca_pem;
     size_t root_ca_pem_len;

@@ -225,6 +225,11 @@ static h2_pal_result_t h2_web_display_info(void *user,
   if (platform == NULL || out_info == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  // The contract requires open first; a closed display reports that state so
+  // callers such as "open if get_info fails" reopen it.
+  if (platform->rgba == NULL) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
   *out_info = (h2_display_info_t){
       .width = platform->width,
       .height = platform->height,
@@ -237,8 +242,11 @@ static h2_pal_result_t h2_web_display_draw(
     void *user, const h2_display_rect_t *rect, const void *pixels,
     size_t stride_bytes, h2_display_pixel_format_t format) {
   h2_web_platform_t *platform = user;
+  if (platform != NULL && platform->rgba == NULL) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
   if (platform == NULL || rect == NULL || pixels == NULL ||
-      platform->rgba == NULL || format != H2_DISPLAY_PIXEL_RGB565 ||
+      format != H2_DISPLAY_PIXEL_RGB565 ||
       rect->x < 0 || rect->y < 0 || rect->width <= 0 || rect->height <= 0 ||
       rect->width > platform->width - rect->x ||
       rect->height > platform->height - rect->y ||

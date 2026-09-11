@@ -40,6 +40,8 @@ typedef enum h2_runtime_system_netif_kind {
     H2_RUNTIME_SYSTEM_NETIF_KIND_WIFI_AP,
     H2_RUNTIME_SYSTEM_NETIF_KIND_MODEM_DATA,
     H2_RUNTIME_SYSTEM_NETIF_KIND_ETHERNET,
+    /** Host-managed default path, such as a browser; see H2_PAL_NETIF_KIND_HOST. */
+    H2_RUNTIME_SYSTEM_NETIF_KIND_HOST,
 } h2_runtime_system_netif_kind_t;
 
 typedef struct h2_runtime_system_netif_ref {

@@ -8,7 +8,7 @@ class PalWebArchiveTest(unittest.TestCase):
     def test_archive(self):
         with tarfile.open(pathlib.Path(sys.argv[1])) as archive:
             self.assertEqual(
-                ["index.html", "index.js", "index.wasm"],
+                ["index.html", "index.js", "index.wasm", "pal-host-e2e"],
                 [member.name for member in archive.getmembers()],
             )
             html = archive.extractfile("index.html").read().decode("utf-8")

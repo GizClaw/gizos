@@ -3,6 +3,9 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING
 
 package(default_visibility = ["//visibility:public"])
 
+# Also decoded by the real-browser Web PAL test.
+exports_files(["tests/fixtures/high_bframes_aac.mp4"])
+
 cc_library(
     name = "mp4_decoder",
     srcs = [

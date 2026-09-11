@@ -394,6 +394,14 @@ callback，`find` 返回可供后续查询或提交使用的具体 NAME 或 ID�
 Event init 时只建立 baseline，不发布初始事件；相同 route notification 必须
 去重。异步 `post()` 必须在返回前复制 borrowed payload。
 
+判断“默认网络可用”统一使用 `h2_pal_netif_status_is_usable()`：接口必须
+`UP | LINK_UP`、不是 loopback；由 PAL 管理地址的接口还必须 `HAS_IPV4`。
+`H2_PAL_NETIF_KIND_HOST` 表示地址、路由和 DNS 由宿主环境（浏览器）管理且对
+provider 不可见的默认路径：它从不设置 `HAS_IPV4/HAS_IPV6`，地址、网关、DNS、
+MTU、MAC 保持为零，只能经宿主传输（Fetch、WebRTC）通信。Consumer 不得自行
+组合 `UP | LINK_UP | HAS_IPV4` 判断可用性。可用只表示存在默认网络；目标服务是否
+可达由实际 HTTP/WebRTC 连接结果决定。
+
 PAL 不提供独立 NetMon API，也不拥有路由选择策略、UDP socket 或重连策略。Desktop
 和 Linux target 监听操作系统 route notification；ESP-IDF 与 BK7258 AP 在各自
 Wi-Fi/PPP route owner 或 `set_default` 完成变更后 reconcile。

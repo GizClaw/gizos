@@ -1,0 +1,16 @@
+load("//projects/example/libs/web/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+# Starboy animates on the 240x240 canvas until the host asks it to stop.
+h2_web_app(
+    name = "starboy",
+    srcs = ["main.c"],
+    app_name = "starboy",
+    canvas_min = 1000,
+    passes = [
+        "H2_WEB_APP name=starboy stage=ready",
+        "H2_WEB_APP name=starboy result=PASS rc=0 fs=0 destroy=0",
+    ],
+    deps = ["//projects/example/apps/starboy/app:starboy"],
+)

@@ -5,7 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Submission stops at the soft limit; output already inside the decoder may
+// still land up to the hard limit.
 #define H2_WEB_AUDIO_MAX_PENDING 16u
+#define H2_WEB_AUDIO_MAX_QUEUED (3u * H2_WEB_AUDIO_MAX_PENDING)
 
 struct h2_pal_audio_decoder_frame {
   struct h2_pal_audio_decoder_frame *next;
@@ -19,6 +22,8 @@ struct h2_pal_audio_decoder_frame {
 };
 
 struct h2_pal_audio_decoder_session {
+  h2_web_platform_t *platform;
+  h2_web_async_t *acquire_op;
   h2_pal_mem_api_t allocator;
   h2_pal_audio_decoder_frame_t *head;
   h2_pal_audio_decoder_frame_t *tail;
@@ -30,9 +35,10 @@ struct h2_pal_audio_decoder_session {
   int failed;
 };
 
-EM_ASYNC_JS(int, h2_web_audio_decoder_configure_js,
-            (uintptr_t address, uint32_t sample_rate, uint32_t channels,
-             const void *description, size_t description_size), {
+EM_JS(int, h2_web_audio_decoder_configure_js,
+      (uintptr_t platform_address, uintptr_t address, uint32_t op_id,
+       uint32_t sample_rate, uint32_t channels, const void *description,
+       size_t description_size), {
   if (typeof AudioDecoder === 'undefined')
     return -3;
   const config = {
@@ -41,7 +47,7 @@ EM_ASYNC_JS(int, h2_web_audio_decoder_configure_js,
     numberOfChannels : channels,
     description : HEAPU8.slice(description, description + description_size),
   };
-  try {
+  (async () => { try {
     const support = await AudioDecoder.isConfigSupported(config);
     if (!support.supported)
       return -3;
@@ -107,7 +113,20 @@ return 0;
 catch(error) {
   console.error('WebCodecs audio configure failed', error);
   return error && error.name === 'NotSupportedError' ? -3 : -4;
-}
+} })().then((result) => {
+  // A caller that gave up (task cancel) never learns of this decoder.
+  if (!Module['_h2_web_async_complete'](platform_address, op_id, result) &&
+      result === 0) {
+    const entries = Module['h2WebAudioDecoders'];
+    const entry = entries?.get(address);
+    if (entry) {
+      entry.alive = false;
+      try { entry.decoder.close(); } catch (_) {}
+      entries.delete(address);
+    }
+  }
+});
+return 0;
 });
 
 EM_JS(int, h2_web_audio_decoder_load_js, (uintptr_t address), {
@@ -137,19 +156,25 @@ EM_JS(int, h2_web_audio_decoder_submit_js,
         }
       });
 
-EM_ASYNC_JS(int, h2_web_audio_decoder_flush_js, (uintptr_t address), {
+EM_JS(int, h2_web_audio_decoder_flush_js,
+      (uintptr_t platform_address, uintptr_t address, uint32_t op_id), {
   const entry = Module['h2WebAudioDecoders']?.get(address);
   if (!entry || !entry.alive)
     return -7;
-  try {
-    await entry.decoder.flush();
-    await Promise.all(Array.from(entry.pending));
-    return 0;
-  }
-  catch(error) {
-    console.error('WebCodecs audio flush failed', error);
-    return -4;
-  }
+  (async () => {
+    try {
+      await entry.decoder.flush();
+      await Promise.all(Array.from(entry.pending));
+      return 0;
+    }
+    catch(error) {
+      if (!entry.alive) return -10;
+      console.error('WebCodecs audio flush failed', error);
+      return -4;
+    }
+  })().then((result) => Module['_h2_web_async_complete'](
+      platform_address, op_id, result));
+  return 0;
 });
 
 EM_JS(void, h2_web_audio_decoder_drop_js, (uintptr_t address), {
@@ -185,11 +210,19 @@ EMSCRIPTEN_KEEPALIVE void h2_web_audio_decoder_temp_free(uintptr_t address) {
   free((void *)address);
 }
 
+static void
+h2_web_audio_decoder_wake(h2_pal_audio_decoder_session_t *session) {
+  if (session->acquire_op != NULL)
+    h2_web_async_signal(session->platform, session->acquire_op, H2_PAL_OK);
+}
+
 EMSCRIPTEN_KEEPALIVE void h2_web_audio_decoder_error(uintptr_t address) {
   h2_pal_audio_decoder_session_t *session =
       (h2_pal_audio_decoder_session_t *)address;
-  if (session != NULL)
+  if (session != NULL) {
     session->failed = 1;
+    h2_web_audio_decoder_wake(session);
+  }
 }
 
 EMSCRIPTEN_KEEPALIVE void
@@ -205,9 +238,11 @@ h2_web_audio_decoder_output(uintptr_t address, const uint8_t *samples,
       (size_t)samples_per_channel > SIZE_MAX / channels ||
       (size_t)samples_per_channel * channels > SIZE_MAX / sizeof(int16_t) ||
       bytes != (size_t)samples_per_channel * channels * sizeof(int16_t) ||
-      session->queued >= H2_WEB_AUDIO_MAX_PENDING) {
-    if (session != NULL)
+      session->queued >= H2_WEB_AUDIO_MAX_QUEUED) {
+    if (session != NULL) {
       session->failed = 1;
+      h2_web_audio_decoder_wake(session);
+    }
     return;
   }
   h2_pal_audio_decoder_frame_t *frame =
@@ -217,6 +252,7 @@ h2_web_audio_decoder_output(uintptr_t address, const uint8_t *samples,
     h2_pal_mem_free(&session->allocator, frame);
     h2_pal_mem_free(&session->allocator, copy);
     session->failed = 1;
+    h2_web_audio_decoder_wake(session);
     return;
   }
   memcpy(copy, samples, bytes);
@@ -235,12 +271,12 @@ h2_web_audio_decoder_output(uintptr_t address, const uint8_t *samples,
     session->tail->next = frame;
   session->tail = frame;
   ++session->queued;
+  h2_web_audio_decoder_wake(session);
 }
 
 static h2_pal_result_t
 h2_web_audio_decoder_open(void *user, const h2_audio_decoder_config_t *config,
                           h2_pal_audio_decoder_session_t **out_session) {
-  (void)user;
   if (config->preferred_format != 0 &&
       config->preferred_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_UNSUPPORTED;
@@ -250,6 +286,7 @@ h2_web_audio_decoder_open(void *user, const h2_audio_decoder_config_t *config,
     return H2_PAL_ERR_NO_MEMORY;
   memset(session, 0, sizeof(*session));
   session->allocator = *config->pcm_allocator;
+  session->platform = user;
   *out_session = session;
   return H2_PAL_OK;
 }
@@ -264,9 +301,13 @@ h2_web_audio_decoder_configure(void *user,
   if (config->codec != H2_AUDIO_CODEC_AAC_LC ||
       config->bitstream_format != H2_AUDIO_BITSTREAM_AAC_RAW)
     return H2_PAL_ERR_UNSUPPORTED;
-  const int result = h2_web_audio_decoder_configure_js(
-      (uintptr_t)session, config->sample_rate_hz, config->channels,
-      config->codec_config, config->codec_config_size);
+  h2_web_async_t op;
+  h2_web_async_begin(session->platform, &op);
+  int result = h2_web_audio_decoder_configure_js(
+      (uintptr_t)session->platform, (uintptr_t)session, op.id,
+      config->sample_rate_hz, config->channels, config->codec_config,
+      config->codec_config_size);
+  result = h2_web_async_finish(session->platform, &op, result);
   if (result != H2_PAL_OK)
     return (h2_pal_result_t)result;
   session->configured = 1;
@@ -283,7 +324,11 @@ h2_web_audio_decoder_submit(void *user, h2_pal_audio_decoder_session_t *session,
     return H2_PAL_ERR_IO;
   if ((packet->flags & H2_AUDIO_DECODER_PACKET_END_OF_STREAM) != 0u) {
     session->eos_submitted = 1;
-    const int result = h2_web_audio_decoder_flush_js((uintptr_t)session);
+    h2_web_async_t op;
+    h2_web_async_begin(session->platform, &op);
+    int result = h2_web_audio_decoder_flush_js(
+        (uintptr_t)session->platform, (uintptr_t)session, op.id);
+    result = h2_web_async_finish(session->platform, &op, result);
     if (result == H2_PAL_OK)
       session->eos_reached = 1;
     else
@@ -298,8 +343,6 @@ h2_web_audio_decoder_submit(void *user, h2_pal_audio_decoder_session_t *session,
   const int result = h2_web_audio_decoder_submit_js(
       (uintptr_t)session, packet->data, packet->size, (double)packet->pts_us,
       (double)packet->duration_us);
-  if (result == H2_PAL_OK)
-    emscripten_sleep(0u);
   return (h2_pal_result_t)result;
 }
 
@@ -312,9 +355,19 @@ static h2_pal_result_t h2_web_audio_decoder_acquire(
   const double deadline = emscripten_get_now() + timeout_ms;
   while (session->head == NULL && !session->failed &&
          !(session->eos_reached && session->queued == 0u)) {
-    if (timeout_ms == 0u || emscripten_get_now() >= deadline)
+    const double now = emscripten_get_now();
+    if (timeout_ms == 0u || now >= deadline)
       return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
-    emscripten_sleep(1u);
+    // Tasks yield until WebCodecs delivers output; other tasks keep running.
+    h2_web_async_t op;
+    h2_web_async_begin(session->platform, &op);
+    session->acquire_op = &op;
+    const h2_pal_result_t wait = h2_web_async_wait(
+        session->platform, &op, (uint32_t)(deadline - now) + 1u);
+    session->acquire_op = NULL;
+    h2_web_async_end(session->platform, &op);
+    if (wait == H2_PAL_ERR_CLOSED)
+      return H2_PAL_ERR_CLOSED;
   }
   if (session->failed)
     return H2_PAL_ERR_IO;

@@ -41,8 +41,19 @@ struct h2_pal_webrtc_peer {
   h2_pal_result_t event_error;
   bool error_reported;
   bool poll_waiting;
+  h2_web_async_t *poll_op;
+  // Offer/answer/unset waits: pc.close() leaves their Promises unsettled, so
+  // peer_close completes them with CLOSED.
+  struct h2_web_webrtc_control *controls;
   h2_pal_webrtc_peer_state_t state;
   h2_pal_webrtc_track_t *media_track;
+  // Opus tracks: a media task moves packets between the track and the
+  // browser's encoded transforms.
+  h2_pal_task_t *media_task;
+  h2_web_async_t *media_op;
+  bool opus_mode;
+  bool media_stop;
+  bool media_in_callback;
   bool offer_started;
   bool track_detaching;
   unsigned async_calls;
@@ -50,15 +61,18 @@ struct h2_pal_webrtc_peer {
   bool close_pending;
 };
 
-EM_JS(void, h2_web_webrtc_wake_js, (uintptr_t address),
-      { Module['h2WebRtcPeers'] ?.get(address) ?.wakePoll ?.(0); });
+// A browser event wakes a task waiting in peer_poll without touching libco.
+static void h2_web_webrtc_wake(h2_pal_webrtc_peer_t *peer) {
+  if (peer->poll_op != NULL)
+    h2_web_async_signal(peer->owner, peer->poll_op, H2_PAL_OK);
+}
 
 EMSCRIPTEN_KEEPALIVE void h2_web_webrtc_fail(uintptr_t address, int error) {
   h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)address;
   if (peer == NULL || peer->closed || peer->event_error != H2_PAL_OK)
     return;
   peer->event_error = (h2_pal_result_t)error;
-  h2_web_webrtc_wake_js(address);
+  h2_web_webrtc_wake(peer);
 }
 
 static void h2_web_webrtc_event_release(h2_pal_webrtc_event_t *event) {
@@ -131,7 +145,7 @@ static int h2_web_webrtc_enqueue(
   peer->event_tail = node;
   peer->event_count++;
   peer->event_bytes += node->bytes;
-  h2_web_webrtc_wake_js((uintptr_t)peer);
+  h2_web_webrtc_wake(peer);
   return 1;
 fail:
   free(node->label);
@@ -202,7 +216,6 @@ EM_JS(int, h2_web_webrtc_peer_create_js, (uintptr_t peer_address), {
       pc,
       iceServers : [],
       binding : null,
-      wakePoll : null,
       cancelOffer : null
     };
     peers.set(peer_address, entry);
@@ -366,51 +379,66 @@ EM_JS(int, h2_web_webrtc_add_ice_js,
         catch(_) { return -4; }
       });
 
-EM_ASYNC_JS(int, h2_web_webrtc_start_offer_js, (uintptr_t peer_address), {
+// Completes op_id with the offer result; ICE gathering is capped so an
+// unreachable STUN/TURN server cannot stall the offer forever.
+EM_JS(int, h2_web_webrtc_start_offer_js,
+      (uintptr_t platform_address, uintptr_t peer_address, uint32_t op_id), {
   const entry = Module['h2WebRtcPeers'] ?.get(peer_address);
   if (!entry)
     return -10;
-  try {
-    const pc = entry.pc;
-    const offer = await pc.createOffer();
-    if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
-      return -10;
-    await pc.setLocalDescription(offer);
-    if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
-      return -10;
-    if (pc.iceGatheringState !== 'complete') {
-      await new Promise((resolve) => {
-        const finish = () => {
-          pc.removeEventListener('icegatheringstatechange', changed);
-          entry.cancelOffer = null;
-          resolve();
-        };
-        const changed = () => {
-          if (pc.iceGatheringState === 'complete')
+  const complete = (result) =>
+      Module['_h2_web_async_complete'](platform_address, op_id, result);
+  (async () => {
+    try {
+      const pc = entry.pc;
+      const offer = await pc.createOffer();
+      if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
+        return -10;
+      await pc.setLocalDescription(offer);
+      if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
+        return -10;
+      if (pc.iceGatheringState !== 'complete') {
+        await new Promise((resolve) => {
+          const finish = () => {
+            clearTimeout(timer);
+            pc.removeEventListener('icegatheringstatechange', changed);
+            entry.cancelOffer = null;
+            resolve();
+          };
+          const changed = () => {
+            if (pc.iceGatheringState === 'complete')
+              finish();
+          };
+          const timer = setTimeout(() => {
+            console.warn('Web WebRTC ICE gathering incomplete after ' +
+                         `${Module['h2WebRtcIceGatherTimeoutMs'] || 10000} ms; ` +
+                         'offering the candidates gathered so far');
             finish();
-        };
-        entry.cancelOffer = finish;
-        pc.addEventListener('icegatheringstatechange', changed);
-        changed();
-      });
+          }, Module['h2WebRtcIceGatherTimeoutMs'] || 10000);
+          entry.cancelOffer = finish;
+          pc.addEventListener('icegatheringstatechange', changed);
+          changed();
+        });
+      }
+      if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
+        return -10;
+      const sdp = entry.pc.localDescription ?.sdp;
+      if (typeof sdp !== 'string')
+        return -4;
+      const length = lengthBytesUTF8(sdp);
+      const buffer = _malloc(length + 1);
+      if (!buffer)
+        return -5;
+      stringToUTF8(sdp, buffer, length + 1);
+      Module['_h2_web_webrtc_local_sdp'](peer_address, 1, buffer, length);
+      _free(buffer);
+      return Module['h2WebRtcPeers'] ?.get(peer_address) === entry ? 0 : -10;
     }
-    if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
-      return -10;
-    const sdp = entry.pc.localDescription ?.sdp;
-    if (typeof sdp !== 'string')
-      return -4;
-    const length = lengthBytesUTF8(sdp);
-    const buffer = _malloc(length + 1);
-    if (!buffer)
-      return -5;
-    stringToUTF8(sdp, buffer, length + 1);
-    Module['_h2_web_webrtc_local_sdp'](peer_address, 1, buffer, length);
-    _free(buffer);
-    return Module['h2WebRtcPeers'] ?.get(peer_address) === entry ? 0 : -10;
-  }
-  catch(_) {
-    return Module['h2WebRtcPeers'] ?.get(peer_address) === entry ? -4 : -10;
-  }
+    catch(_) {
+      return Module['h2WebRtcPeers'] ?.get(peer_address) === entry ? -4 : -10;
+    }
+  })().then(complete);
+  return 0;
 });
 
 EM_JS(int, h2_web_webrtc_set_media_track_js,
@@ -465,7 +493,8 @@ EM_JS(int, h2_web_webrtc_set_media_track_js,
         }
       });
 
-EM_ASYNC_JS(int, h2_web_webrtc_unset_media_track_js, (uintptr_t peer_address), {
+EM_JS(int, h2_web_webrtc_unset_media_track_js,
+      (uintptr_t platform_address, uintptr_t peer_address, uint32_t op_id), {
   const entry = Module['h2WebRtcPeers'] ?.get(peer_address);
   if (!entry)
     return -10;
@@ -473,7 +502,9 @@ EM_ASYNC_JS(int, h2_web_webrtc_unset_media_track_js, (uintptr_t peer_address), {
   if (!binding || binding.detaching)
     return -7;
   binding.detaching = true;
-  try {
+  const complete = (result) =>
+      Module['_h2_web_async_complete'](platform_address, op_id, result);
+  (async () => { try {
     if (binding.audio) {
       binding.audio.pause();
       binding.audio.srcObject = null;
@@ -497,25 +528,183 @@ EM_ASYNC_JS(int, h2_web_webrtc_unset_media_track_js, (uintptr_t peer_address), {
   catch(_) {
     binding.detaching = false;
     return Module['h2WebRtcPeers'] ?.get(peer_address) === entry ? -4 : -10;
+  } })().then(complete);
+  return 0;
+});
+
+EM_JS(int, h2_web_webrtc_set_remote_sdp_js,
+      (uintptr_t platform_address, uintptr_t peer_address, uint32_t op_id,
+       int type, const char *sdp, size_t sdp_len), {
+  const entry = Module['h2WebRtcPeers'] ?.get(peer_address);
+  if (!entry)
+    return -10;
+  if (type !== 2)
+    return -7;
+  const description = {type : 'answer', sdp : UTF8ToString(sdp, sdp_len)};
+  entry.pc.setRemoteDescription(description).then(
+      () => Module['h2WebRtcPeers']?.get(peer_address) === entry ? 0 : -10,
+      () => Module['h2WebRtcPeers']?.get(peer_address) === entry ? -4 : -10)
+      .then((result) => Module['_h2_web_async_complete'](
+          platform_address, op_id, result));
+  return 0;
+});
+
+
+// Opus Tracks ride on browser-encoded RTP: a silent source keeps the browser
+// Opus encoder producing one frame per packet time, and encoded transforms
+// replace each outgoing payload with the Track's Opus packet and hand every
+// incoming payload to the Track instead of the browser decoder. RTCRtpScript
+// Transform (worker) is preferred; Chromium's createEncodedStreams is the
+// fallback.
+EM_JS(int, h2_web_webrtc_set_opus_track_js, (uintptr_t peer_address), {
+  const entry = Module['h2WebRtcPeers']?.get(peer_address);
+  if (!entry)
+    return -10;
+  if (entry.binding || entry.opus || entry.pc.signalingState !== 'stable' ||
+      entry.pc.localDescription)
+    return -7;
+  const script = typeof globalThis.RTCRtpScriptTransform === 'function';
+  const legacy = typeof globalThis.RTCRtpSender === 'function' &&
+      typeof RTCRtpSender.prototype.createEncodedStreams === 'function';
+  const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if ((!script && !legacy) || !AudioContext)
+    return -3;
+  // Runs in the transform context: sender payloads come from `port`,
+  // receiver payloads go to it; received frames are not played by the browser.
+  const run = function(readable, writable, side, port) {
+    const queue = [];
+    if (side === 'sender') {
+      port.onmessage = (event) => {
+        queue.push(event.data);
+        if (queue.length > 50) queue.shift();
+      };
+    }
+    readable.pipeThrough(new TransformStream({
+      transform(frame, controller) {
+        if (side === 'sender') {
+          const packet = queue.shift();
+          if (packet) frame.data = packet;
+          controller.enqueue(frame);
+          port.postMessage(0);
+        } else {
+          const data = frame.data;
+          port.postMessage(data, [data]);
+        }
+      }
+    })).pipeTo(writable).catch(() => {});
+  };
+  try {
+    const context = Module['h2WebAudioContext'] || new AudioContext();
+    if (context.state !== 'running') {
+      console.warn('Web WebRTC Opus Track: AudioContext is ' + context.state +
+                   '; no uplink frames until a user gesture resumes it');
+      context.resume().catch(() => {});
+    }
+    const source = context.createConstantSource();
+    source.offset.value = 0;
+    const destination = context.createMediaStreamDestination();
+    source.connect(destination);
+    source.start();
+    const track = destination.stream.getAudioTracks()[0];
+    const transceiver = entry.pc.addTransceiver(
+        track, {direction: 'sendrecv', streams: [destination.stream]});
+    const opus = {source, destination, track, transceiver, worker: null,
+                  ports: [], rx: [], txQueued: 0, ownsContext:
+                      context !== Module['h2WebAudioContext'], context};
+    const wake = () => {
+      if (Module['h2WebRtcPeers']?.get(peer_address) === entry)
+        Module['_h2_web_webrtc_media_wake'](peer_address);
+    };
+    const sender = new MessageChannel();
+    const receiver = new MessageChannel();
+    sender.port1.onmessage = () => {
+      opus.txQueued = Math.max(0, opus.txQueued - 1);
+      wake();
+    };
+    receiver.port1.onmessage = (event) => {
+      opus.rx.push(new Uint8Array(event.data));
+      if (opus.rx.length > 100) opus.rx.shift();
+      wake();
+    };
+    opus.txPort = sender.port1;
+    opus.ports.push(sender.port1, receiver.port1);
+    if (script) {
+      const code = `const run = ${run.toString()};\n` +
+          'onrtctransform = (event) => { const t = event.transformer; ' +
+          'run(t.readable, t.writable, t.options.side, t.options.port); };';
+      const url = URL.createObjectURL(new Blob([code],
+                                               {type: 'text/javascript'}));
+      opus.worker = new Worker(url);
+      URL.revokeObjectURL(url);
+      transceiver.sender.transform = new RTCRtpScriptTransform(
+          opus.worker, {side: 'sender', port: sender.port2}, [sender.port2]);
+      transceiver.receiver.transform = new RTCRtpScriptTransform(
+          opus.worker, {side: 'receiver', port: receiver.port2},
+          [receiver.port2]);
+    } else {
+      const out = transceiver.sender.createEncodedStreams();
+      run(out.readable, out.writable, 'sender', sender.port2);
+      const input = transceiver.receiver.createEncodedStreams();
+      run(input.readable, input.writable, 'receiver', receiver.port2);
+      opus.ports.push(sender.port2, receiver.port2);
+    }
+    opus.teardown = () => {
+      if (entry.opus !== opus)
+        return;
+      entry.opus = null;
+      for (const port of opus.ports) {
+        port.onmessage = null;
+        try { port.close(); } catch (_) {}
+      }
+      try { opus.transceiver.sender.replaceTrack(null).catch(() => {}); }
+      catch (_) {}
+      try { opus.source.stop(); } catch (_) {}
+      opus.track.stop();
+      opus.worker?.terminate();
+      if (opus.ownsContext)
+        opus.context.close().catch(() => {});
+    };
+    entry.opus = opus;
+    return 0;
+  } catch (error) {
+    console.error('Web WebRTC Opus track setup failed', error);
+    return -4;
   }
 });
 
-EM_ASYNC_JS(int, h2_web_webrtc_set_remote_sdp_js,
-            (uintptr_t peer_address, int type, const char *sdp, size_t sdp_len),
-            {
-              const entry = Module['h2WebRtcPeers'] ?.get(peer_address);
-              if (!entry)
-                return -10;
-              if (type !== 2)
-                return -7;
-              try {
-                await entry.pc.setRemoteDescription(
-                    {type : 'answer', sdp : UTF8ToString(sdp, sdp_len)});
-                return Module['h2WebRtcPeers']
-                    ?.get(peer_address) === entry ? 0 : -10;
-              }
-              catch(_) { return -4; }
-            });
+EM_JS(void, h2_web_webrtc_opus_teardown_js, (uintptr_t peer_address), {
+  Module['h2WebRtcPeers']?.get(peer_address)?.opus?.teardown();
+});
+
+// Copies one received Opus payload; -9 when none is queued.
+EM_JS(int, h2_web_webrtc_opus_rx_take_js,
+      (uintptr_t peer_address, uint8_t *out, size_t out_cap), {
+  const opus = Module['h2WebRtcPeers']?.get(peer_address)?.opus;
+  if (!opus)
+    return -10;
+  const packet = opus.rx.shift();
+  if (!packet)
+    return -9;
+  if (packet.byteLength > out_cap)
+    return -13;
+  HEAPU8.set(packet, out);
+  return packet.byteLength;
+});
+
+EM_JS(int, h2_web_webrtc_opus_tx_queued_js, (uintptr_t peer_address), {
+  const opus = Module['h2WebRtcPeers']?.get(peer_address)?.opus;
+  return opus ? opus.txQueued : -10;
+});
+
+EM_JS(void, h2_web_webrtc_opus_tx_push_js,
+      (uintptr_t peer_address, const uint8_t *data, size_t len), {
+  const opus = Module['h2WebRtcPeers']?.get(peer_address)?.opus;
+  if (!opus)
+    return;
+  const buffer = HEAPU8.slice(data, data + len).buffer;
+  opus.txPort.postMessage(buffer, [buffer]);
+  ++opus.txQueued;
+});
 
 EM_JS(int, h2_web_webrtc_channel_create_js,
       (uintptr_t peer_address, uintptr_t channel_address, const char *label,
@@ -585,8 +774,6 @@ EM_JS(void, h2_web_webrtc_peer_close_js, (uintptr_t peer_address), {
   if (!entry)
     return;
   peers.delete(peer_address);
-  if (entry.wakePoll)
-    entry.wakePoll(-10);
   const channels = Module['h2WebRtcChannels'];
   if (channels) {
     for (const[address, channel] of channels) {
@@ -604,6 +791,7 @@ EM_JS(void, h2_web_webrtc_peer_close_js, (uintptr_t peer_address), {
       null;
   if (entry.cancelOffer)
     entry.cancelOffer();
+  entry.opus?.teardown();
   if (entry.binding) {
     const binding = entry.binding;
     binding.detaching = true;
@@ -813,6 +1001,27 @@ h2_web_webrtc_peer_add_ice_server(h2_pal_webrtc_peer_t *peer,
       server->username.len, server->credential.data, server->credential.len);
 }
 
+typedef struct h2_web_webrtc_control {
+  struct h2_web_webrtc_control *next;
+  h2_web_async_t op;
+} h2_web_webrtc_control_t;
+
+/* Finish one browser Promise started with control->op; peer_close ends it. */
+static h2_pal_result_t
+h2_web_webrtc_control_finish(h2_pal_webrtc_peer_t *peer,
+                             h2_web_webrtc_control_t *control,
+                             h2_pal_result_t started) {
+  control->next = peer->controls;
+  peer->controls = control;
+  const h2_pal_result_t result = (h2_pal_result_t)h2_web_async_finish(
+      peer->owner, &control->op, started);
+  h2_web_webrtc_control_t **cursor = &peer->controls;
+  while (*cursor != control)
+    cursor = &(*cursor)->next;
+  *cursor = control->next;
+  return result;
+}
+
 static h2_pal_result_t
 h2_web_webrtc_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
   if (peer == NULL || peer->closed)
@@ -821,8 +1030,11 @@ h2_web_webrtc_peer_start_offer(h2_pal_webrtc_peer_t *peer) {
     return H2_PAL_ERR_INVALID_STATE;
   peer->offer_started = true;
   peer->async_calls++;
-  h2_pal_result_t result =
-      (h2_pal_result_t)h2_web_webrtc_start_offer_js((uintptr_t)peer);
+  h2_web_webrtc_control_t control;
+  h2_web_async_begin(peer->owner, &control.op);
+  h2_pal_result_t result = (h2_pal_result_t)h2_web_webrtc_start_offer_js(
+      (uintptr_t)peer->owner, (uintptr_t)peer, control.op.id);
+  result = h2_web_webrtc_control_finish(peer, &control, result);
   if (peer->closed && result == H2_PAL_OK)
     result = H2_PAL_ERR_CLOSED;
   if (result == H2_PAL_OK && peer->event_error != H2_PAL_OK)
@@ -838,8 +1050,12 @@ h2_web_webrtc_peer_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
   if (peer == NULL || peer->closed)
     return H2_PAL_ERR_CLOSED;
   peer->async_calls++;
+  h2_web_webrtc_control_t control;
+  h2_web_async_begin(peer->owner, &control.op);
   h2_pal_result_t rc = (h2_pal_result_t)h2_web_webrtc_set_remote_sdp_js(
-      (uintptr_t)peer, type, sdp.data, sdp.len);
+      (uintptr_t)peer->owner, (uintptr_t)peer, control.op.id, type, sdp.data,
+      sdp.len);
+  rc = h2_web_webrtc_control_finish(peer, &control, rc);
   if (peer->closed)
     rc = H2_PAL_ERR_CLOSED;
   (void)h2_web_webrtc_peer_end_async(peer);
@@ -873,15 +1089,153 @@ static h2_pal_result_t h2_web_webrtc_peer_create_data_channel(
   return H2_PAL_OK;
 }
 
+// Largest Opus packet accepted from a Track or the network (RFC 6716 bound).
+#define H2_WEB_WEBRTC_OPUS_MAX 1275u
+// Opus packets queued ahead of the browser's 20 ms packet clock.
+#define H2_WEB_WEBRTC_OPUS_TX_AHEAD 3
+#define H2_WEB_WEBRTC_MEDIA_PERIOD_MS 10u
+
+EMSCRIPTEN_KEEPALIVE void h2_web_webrtc_media_wake(uintptr_t peer_address) {
+  h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)peer_address;
+  if (peer != NULL && peer->media_op != NULL)
+    h2_web_async_signal(peer->owner, peer->media_op, H2_PAL_OK);
+}
+
+/*
+ * Moves Opus between the Track and the browser. Track callbacks run here, on
+ * a task as the Track contract requires, and never from browser callbacks.
+ */
+static void h2_web_webrtc_media_entry(void *user) {
+  h2_pal_webrtc_peer_t *peer = user;
+  uint8_t packet[H2_WEB_WEBRTC_OPUS_MAX];
+  while (!peer->media_stop) {
+    h2_pal_webrtc_track_t *track = peer->media_track;
+    for (;;) {
+      const int received = h2_web_webrtc_opus_rx_take_js(
+          (uintptr_t)peer, packet, sizeof(packet));
+      if (received < 0 || peer->media_stop)
+        break;
+      peer->media_in_callback = true;
+      // WOULD_BLOCK means the consumer is behind: drop, like other providers.
+      (void)track->vtable->write(track->user, packet, (size_t)received);
+      peer->media_in_callback = false;
+    }
+    while (!peer->media_stop &&
+           h2_web_webrtc_opus_tx_queued_js((uintptr_t)peer) >= 0 &&
+           h2_web_webrtc_opus_tx_queued_js((uintptr_t)peer) <
+               H2_WEB_WEBRTC_OPUS_TX_AHEAD) {
+      size_t length = 0u;
+      peer->media_in_callback = true;
+      const h2_pal_result_t result =
+          track->vtable->read(track->user, packet, sizeof(packet), &length);
+      peer->media_in_callback = false;
+      if (result != H2_PAL_OK || length == 0u || length > sizeof(packet) ||
+          peer->media_stop)
+        break;
+      h2_web_webrtc_opus_tx_push_js((uintptr_t)peer, packet, length);
+    }
+    if (peer->media_stop)
+      break;
+    h2_web_async_t op;
+    h2_web_async_begin(peer->owner, &op);
+    peer->media_op = &op;
+    const h2_pal_result_t wait = h2_web_async_wait(
+        peer->owner, &op, H2_WEB_WEBRTC_MEDIA_PERIOD_MS);
+    peer->media_op = NULL;
+    h2_web_async_end(peer->owner, &op);
+    if (wait == H2_PAL_ERR_CLOSED)
+      break;
+  }
+  // The platform pump joins the finished task; the peer may be freed here.
+  h2_web_platform_t *owner = peer->owner;
+  h2_web_webrtc_zombie_t *zombie = malloc(sizeof(*zombie));
+  if (zombie != NULL) {
+    *zombie = (h2_web_webrtc_zombie_t){
+        .next = owner->webrtc_zombies,
+        .task = peer->media_task,
+    };
+    owner->webrtc_zombies = zombie;
+  }
+  peer->media_task = NULL;
+  (void)h2_web_webrtc_peer_end_async(peer);
+}
+
+static void h2_web_webrtc_media_stop(h2_pal_webrtc_peer_t *peer) {
+  if (!peer->opus_mode)
+    return;
+  peer->media_stop = true;
+  h2_web_webrtc_opus_teardown_js((uintptr_t)peer);
+  h2_web_webrtc_media_wake((uintptr_t)peer);
+}
+
+static h2_pal_result_t
+h2_web_webrtc_set_opus_track(h2_pal_webrtc_peer_t *peer,
+                             h2_pal_webrtc_track_t *track) {
+  if (track->vtable == NULL || track->vtable->read == NULL ||
+      track->vtable->write == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  // The media task of a previous Track may still be winding down.
+  if (peer->media_task != NULL)
+    return H2_PAL_ERR_BUSY;
+  h2_pal_result_t rc =
+      (h2_pal_result_t)h2_web_webrtc_set_opus_track_js((uintptr_t)peer);
+  if (rc != H2_PAL_OK)
+    return rc;
+  peer->media_track = track;
+  peer->opus_mode = true;
+  peer->media_stop = false;
+  peer->async_calls++;
+  const h2_pal_task_options_t options = {.name = "webrtc/media"};
+  rc = h2_pal_task_start(h2_web_platform_task_api(peer->owner), &options,
+                         h2_web_webrtc_media_entry, peer, &peer->media_task);
+  if (rc != H2_PAL_OK) {
+    peer->async_calls--;
+    peer->opus_mode = false;
+    peer->media_track = NULL;
+    h2_web_webrtc_opus_teardown_js((uintptr_t)peer);
+  }
+  return rc;
+}
+
+/* Wait until no Track callback is in flight; the root cannot wait for tasks. */
+static h2_pal_result_t
+h2_web_webrtc_media_quiesce(h2_pal_webrtc_peer_t *peer) {
+  while (peer->media_in_callback) {
+    const h2_pal_result_t slept =
+        h2_pal_time_sleep_ms(h2_web_platform_time_api(peer->owner), 1u);
+    if (slept == H2_PAL_ERR_INVALID_STATE)
+      return H2_PAL_ERR_BUSY;
+    if (slept != H2_PAL_OK)
+      return slept == H2_PAL_EXIT ? H2_PAL_ERR_CLOSED : slept;
+  }
+  return H2_PAL_OK;
+}
+
+void h2_web_platform_webrtc_reap(h2_web_platform_t *platform) {
+  h2_web_webrtc_zombie_t **cursor = &platform->webrtc_zombies;
+  while (*cursor != NULL) {
+    h2_web_webrtc_zombie_t *zombie = *cursor;
+    if (h2_pal_task_join(h2_web_platform_task_api(platform), zombie->task) ==
+        H2_PAL_ERR_BUSY) {
+      cursor = &zombie->next;
+      continue;
+    }
+    *cursor = zombie->next;
+    free(zombie);
+  }
+}
+
 static h2_pal_result_t
 h2_web_webrtc_peer_set_track(h2_pal_webrtc_peer_t *peer,
                              h2_pal_webrtc_track_t *track) {
   if (peer == NULL || peer->closed)
     return H2_PAL_ERR_CLOSED;
-  if (track == NULL || track->native_handle == NULL)
+  if (track == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  if (peer->offer_started || peer->media_track != NULL)
+  if (peer->offer_started || peer->media_track != NULL || peer->opus_mode)
     return H2_PAL_ERR_INVALID_STATE;
+  if (track->native_handle == NULL)
+    return h2_web_webrtc_set_opus_track(peer, track);
   h2_pal_result_t rc = (h2_pal_result_t)h2_web_webrtc_set_media_track_js(
       (uintptr_t)peer, (uintptr_t)track->native_handle);
   if (rc == H2_PAL_OK)
@@ -898,10 +1252,23 @@ h2_web_webrtc_peer_unset_track(h2_pal_webrtc_peer_t *peer,
     return H2_PAL_ERR_CLOSED;
   if (peer->media_track != track || peer->track_detaching)
     return H2_PAL_ERR_INVALID_STATE;
+  if (peer->opus_mode) {
+    h2_web_webrtc_media_stop(peer);
+    const h2_pal_result_t quiet = h2_web_webrtc_media_quiesce(peer);
+    if (quiet != H2_PAL_OK)
+      return quiet;
+    // The media task exits on its next turn and never touches the Track.
+    peer->media_track = NULL;
+    peer->opus_mode = false;
+    return H2_PAL_OK;
+  }
   peer->track_detaching = true;
   peer->async_calls++;
-  h2_pal_result_t rc =
-      (h2_pal_result_t)h2_web_webrtc_unset_media_track_js((uintptr_t)peer);
+  h2_web_webrtc_control_t control;
+  h2_web_async_begin(peer->owner, &control.op);
+  h2_pal_result_t rc = (h2_pal_result_t)h2_web_webrtc_unset_media_track_js(
+      (uintptr_t)peer->owner, (uintptr_t)peer, control.op.id);
+  rc = h2_web_webrtc_control_finish(peer, &control, rc);
   if (peer->closed)
     rc = H2_PAL_ERR_CLOSED;
   if (rc == H2_PAL_OK)
@@ -910,21 +1277,6 @@ h2_web_webrtc_peer_unset_track(h2_pal_webrtc_peer_t *peer,
   (void)h2_web_webrtc_peer_end_async(peer);
   return rc;
 }
-
-EM_ASYNC_JS(int, h2_web_webrtc_wait_js, (uintptr_t address, int timeout_ms), {
-  const entry = Module['h2WebRtcPeers'] ?.get(address);
-  if (!entry)
-    return -10;
-  return await new Promise(resolve => {
-    const finish = result => {
-      clearTimeout(timer);
-      entry.wakePoll = null;
-      resolve(result);
-    };
-    const timer = setTimeout(() => finish(-6), timeout_ms);
-    entry.wakePoll = finish;
-  });
-});
 
 static h2_pal_result_t h2_web_webrtc_peer_poll(h2_pal_webrtc_peer_t *peer,
                                                int timeout_ms,
@@ -940,11 +1292,19 @@ static h2_pal_result_t h2_web_webrtc_peer_poll(h2_pal_webrtc_peer_t *peer,
     return result;
   peer->poll_waiting = true;
   peer->async_calls++;
-  result = (h2_pal_result_t)h2_web_webrtc_wait_js((uintptr_t)peer, timeout_ms);
+  h2_web_async_t op;
+  h2_web_async_begin(peer->owner, &op);
+  peer->poll_op = &op;
+  // Tasks yield here; other tasks, timers and the root keep running.
+  result = h2_web_async_wait(peer->owner, &op, (uint32_t)timeout_ms);
+  peer->poll_op = NULL;
+  h2_web_async_end(peer->owner, &op);
   if (peer->closed)
     result = H2_PAL_ERR_CLOSED;
   else if (result == H2_PAL_OK)
     result = h2_web_webrtc_dequeue(peer, event);
+  if (result == H2_PAL_ERR_WOULD_BLOCK)
+    result = H2_PAL_ERR_TIMEOUT;
   peer->poll_waiting = false;
   (void)h2_web_webrtc_peer_end_async(peer);
   return result;
@@ -986,7 +1346,12 @@ static void h2_web_webrtc_peer_close(h2_pal_webrtc_peer_t *peer) {
   peer->closed = true;
   // Stop browser callbacks and cancel ICE waiting immediately; only the C
   // allocation waits for outstanding Asyncify frames to return.
+  h2_web_webrtc_media_stop(peer);
   h2_web_webrtc_peer_close_js((uintptr_t)peer);
+  h2_web_webrtc_wake(peer);
+  for (h2_web_webrtc_control_t *control = peer->controls; control != NULL;
+       control = control->next)
+    h2_web_async_signal(peer->owner, &control->op, H2_PAL_ERR_CLOSED);
   peer->media_track = NULL;
   if (peer->async_calls != 0u) {
     peer->close_pending = true;

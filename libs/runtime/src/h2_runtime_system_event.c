@@ -615,6 +615,8 @@ static h2_runtime_system_netif_kind_t map_netif_kind(
         return H2_RUNTIME_SYSTEM_NETIF_KIND_MODEM_DATA;
     case H2_PAL_NETIF_KIND_ETHERNET:
         return H2_RUNTIME_SYSTEM_NETIF_KIND_ETHERNET;
+    case H2_PAL_NETIF_KIND_HOST:
+        return H2_RUNTIME_SYSTEM_NETIF_KIND_HOST;
     case H2_PAL_NETIF_KIND_UNKNOWN:
     default:
         return H2_RUNTIME_SYSTEM_NETIF_KIND_UNKNOWN;

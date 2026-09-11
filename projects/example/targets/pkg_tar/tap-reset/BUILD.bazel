@@ -1,58 +1,28 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//projects/example/libs/web/app_host:web_app.bzl", "h2_web_app")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
-    name = "_wasm/index",
+# The LVGL App runs in a Web task until the host stops it; the browser test
+# taps its button and requires a clean LVGL, Runtime and platform teardown.
+h2_web_app(
+    name = "tap-reset",
     srcs = ["main.c"],
-    additional_linker_inputs = ["shell.html"],
-    conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS + [
-        "-Wno-deprecated-declarations",
-        "-Wno-shorten-64-to-32",
-    ],
-    features = ["-output_format_js"],
-    linkopts = [
-        "-sALLOW_MEMORY_GROWTH=1",
-        "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
-        "-sINITIAL_MEMORY=67108864",
-        "-sNO_EXIT_RUNTIME=1",
-        "--shell-file",
-        "$(location shell.html)",
-        "--oformat=html",
-    ],
-    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    app_name = "tap-reset",
+    canvas_min = 1000,
+    taps = [[
+        "H2_WEB_APP name=tap-reset stage=running",
+        180,
+        470,
+    ]],
     deps = [
-        "//libs/lvgl:platform_web",
-        "//libs/pal/providers/web/pal_core",
-        "//libs/runtime",
         "//projects/example/apps/tap-reset/app:tap_reset_web",
-        "//projects/example/libs/host_runtime",
         "//projects/example/libs/web/tap-reset:tap_reset_web",
     ],
-)
-
-wasm_cc_binary(
-    name = "tap_reset_wasm",
-    cc_target = ":_wasm/index",
-    outputs = [
-        "index.html",
-        "index.js",
-        "index.wasm",
-    ],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
 )
 
 cc_binary(
@@ -99,21 +69,6 @@ js_test(
     }),
     data = [":web_pal_test_wasm"],
     entry_point = "web_pal_test.js",
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//tools/bazel/platforms:host_windows_target_windows": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-)
-
-pkg_tar(
-    name = "tap-reset",
-    srcs = [":tap_reset_wasm"],
-    out = "tap-reset.web.tar",
-    mode = "0644",
-    portable_mtime = True,
-    strip_prefix = ".",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

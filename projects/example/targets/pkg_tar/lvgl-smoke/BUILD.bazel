@@ -1,0 +1,15 @@
+load("//projects/example/libs/web/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_web_app(
+    name = "lvgl-smoke",
+    srcs = ["main.c"],
+    app_name = "lvgl-smoke",
+    canvas_min = 1000,
+    passes = [
+        "H2_WEB_APP name=lvgl-smoke stage=ready",
+        "H2_WEB_APP name=lvgl-smoke result=PASS rc=0 fs=0 destroy=0",
+    ],
+    deps = ["//projects/example/apps/lvgl-smoke/app:lvgl_smoke"],
+)
