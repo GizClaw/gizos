@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//projects/example/libs/web/app_host:lua_web_app.bzl", "h2_lua_web_app")
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
@@ -9,7 +9,7 @@ cc_library(
     srcs = ["smoke_extension.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    deps = ["//projects/example/libs/web/app_host:lua_app_extension"],
+    deps = ["//libs/lua/web:lua_app_extension"],
 )
 
 # Extension hooks: the script needs the smoke.echo capability registered by

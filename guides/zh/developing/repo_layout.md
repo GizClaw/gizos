@@ -258,9 +258,11 @@ Web 入口也归 portable App owner。最终交付物使用实际 Bazel packagin
 projects/example/libs/web/tap-reset/
 projects/example/targets/pkg_tar/tap-reset/
 libs/pal/providers/web/pal_core/
+libs/pal/providers/web/app_host/
+libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；可复用的 Browser Runtime composition、Start/Stop shell 与 `h2_web_app()` 属于 `libs/pal/providers/web/app_host`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 

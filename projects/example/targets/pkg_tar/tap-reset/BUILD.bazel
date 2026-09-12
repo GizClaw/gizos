@@ -2,7 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//projects/example/libs/web/app_host:web_app.bzl", "h2_web_app")
+load("//libs/pal/providers/web/app_host:web_app.bzl", "h2_web_app")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])

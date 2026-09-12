@@ -7,16 +7,14 @@ Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它
 ```text
 projects/example/
 ├── libs/web/tap-reset/            # Web presentation 与 App contract conversion
-├── libs/web/app_host/             # 通用 Web launcher、HTML shell、h2_web_app() 与
-│                                  # 单个 Lua 脚本的 h2_lua_web_app() 宏
 ├── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive（自带 shell）
 ├── targets/pkg_tar/mp4-player/    # WebCodecs MP4 播放 archive（自带 shell）
+├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
+├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
+├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
                                    # main.c + h2_web_app()
-├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
-├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
-├── targets/pkg_tar/lua-script-extension/ # 同上加 extension：capability 与 exit_requested
 
 projects/e2e/targets/pkg_tar/
 ├── pal/                           # portable PAL E2E；?suite=browser 跑浏览器套件
@@ -28,9 +26,11 @@ projects/h2loader/
 └── targets/npm_package/h2loader/  # @gizclaw/h2loader Browser SDK npm package
 
 libs/pal/providers/web/pal_core/    # Canvas/Emscripten reusable PAL backend
+libs/pal/providers/web/app_host/    # 通用 Web launcher、HTML shell 与 h2_web_app() 宏
+libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app() 宏与通用入口
 ```
 
-`projects/<owner>/libs/web/<app>` 只能保存 Web-specific wrapper、required capability 和 portable App contract conversion；`targets/pkg_tar/<app>` 负责 lifecycle、Runtime assembly、HTML shell、package metadata 和最终可交付 archive。Canvas display、pointer handler、Memory、Time 和 Queue backend 属于 `libs/pal/providers/web/pal_core`，不能复制进 project entry。
+`projects/<owner>/libs/web/<app>` 只能保存 Web-specific wrapper、required capability 和 portable App contract conversion；`targets/pkg_tar/<app>` 负责 lifecycle、Runtime assembly、HTML shell、package metadata 和最终可交付 archive。Canvas display、pointer handler、Memory、Time 和 Queue backend 属于 `libs/pal/providers/web/pal_core`，不能复制进 project entry。与 Desktop 的 `libs/pal/providers/desktop/app_support` 相同，完整 Browser Runtime composition 由 `libs/pal/providers/web/app_host` 拥有，任何 project（包括下游仓库）的 `pkg_tar` entry 都可以复用它。
 
 ## Build Boundary
 
@@ -177,9 +177,9 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 ### Example 与 E2E 的 Web target
 
-`//projects/example/libs/web/app_host` 是 example App 的通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 把 DOM `KeyboardEvent.key` 的 keydown/keyup 写成 `h2_runtime_button_push_edge()` edge，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
+`//libs/pal/providers/web/app_host` 是通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 把 DOM `KeyboardEvent.key` 的 keydown/keyup 写成 `h2_runtime_button_push_edge()` edge，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
-只运行一个 Lua 脚本的 App 不需要 `main.c`：`lua_web_app.bzl` 的
+只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
 `h2_lua_web_app(name, script, buttons, exit_button, extension)` 用
 `h2_lua_resource()` 嵌入脚本，并把通用入口 `src/h2_web_lua_app.c` 交给
 `h2_web_app()`。`buttons` 是有序的 Button 名到 DOM `KeyboardEvent.key` 的映射
@@ -188,17 +188,18 @@ Button event 转发给 Lua job。`exit_button` 的事件不进入脚本，默认
 Action 上取消 job，页面 Stop 同样取消 job 并以 OK 结束。job 第一次进入
 WAITING 时输出 `stage=ready`；脚本失败时打印 `H2_WEB_LUA_APP job state=...`
 并以 FAIL 结束。`extension` 是定义 `h2_web_lua_app_extension`
-（`:lua_app_extension` 只提供声明）的唯一 cc_library；没有 extension 时入口
+（`//libs/lua/web:lua_app_extension` 只提供声明）的唯一 cc_library；没有 extension 时入口
 不引用该符号。`register_host` 在 Host start 前调用一次，返回非 OK 时不 start、
 不提交 job，App 以该结果 FAIL；`exit_requested` 接收 exit Button 的每个
 Runtime event（Down、Up、Action），返回 true 取消 job 一次，并取代默认的
 release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出与页面 Stop
 相同的停止请求（用于测试）。参数校验由 `lua_web_app_argument_error()` 完成，
-`:lua_web_app_argument_test` 覆盖空或超过 8 个 Button、非法名称和未知
+`//libs/lua/web:lua_web_app_argument_test` 覆盖空或超过 8 个 Button、非法名称和未知
 `exit_button`。其余参数原样交给
 `h2_web_app()`。每个 package 只能有一个 `h2_lua_web_app()`/`h2_web_app()`。
 这些宏内部 label 都用 `Label()` 解析到 GizOS，下游仓库可以直接 load
-`@gizos//projects/example/libs/web/app_host:lua_web_app.bzl`。
+`@gizos//libs/pal/providers/web/app_host:web_app.bzl` 与
+`@gizos//libs/lua/web:lua_web_app.bzl`。
 
 `tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 

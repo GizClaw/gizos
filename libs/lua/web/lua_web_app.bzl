@@ -3,7 +3,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
-load(":web_app.bzl", "h2_web_app")
+load("//libs/pal/providers/web/app_host:web_app.bzl", "h2_web_app")
 
 _NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _MAX_BUTTONS = 8  # H2_WEB_APP_HOST_MAX_BUTTONS
@@ -47,7 +47,7 @@ def h2_lua_web_app(
         `KeyboardEvent.key` that drives it, at most 8.
       exit_button: Optional Button name that cancels the job.
       extension: Optional cc_library defining `h2_web_lua_app_extension`
-        (//projects/example/libs/web/app_host:lua_app_extension) to register
+        (//libs/lua/web:lua_app_extension) to register
         modules or capabilities and to decide when the exit Button ends the job.
       display_width: Canvas width in pixels.
       display_height: Canvas height in pixels.
@@ -105,13 +105,13 @@ def h2_lua_web_app(
     linkopts = kwargs.pop("linkopts", [])
     h2_web_app(
         name = name,
-        srcs = [Label("//projects/example/libs/web/app_host:src/h2_web_lua_app.c")],
+        srcs = [Label("//libs/lua/web:src/h2_web_lua_app.c")],
         app_name = name,
         linkopts = ["-sASYNCIFY_REMOVE=['lua*','yyjson*']"] + linkopts,
         deps = [
             ":" + name + "_config",
             Label("//libs/lua"),
-            Label("//projects/example/libs/web/app_host:lua_app_extension"),
+            Label("//libs/lua/web:lua_app_extension"),
         ] + ([extension] if extension else []),
         **kwargs
     )

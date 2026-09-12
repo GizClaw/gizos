@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load(":lua_web_app_test.bzl", "lua_web_app_argument_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Generic Lua App entry compiled by every h2_lua_web_app() page.
+exports_files(["src/h2_web_lua_app.c"])
+
+# Hook contract for h2_lua_web_app(extension = ...) libraries.
+cc_library(
+    name = "lua_app_extension",
+    hdrs = ["include/h2_web_lua_app.h"],
+    includes = ["include"],
+    deps = [
+        "//libs/lua",
+        "//libs/runtime",
+    ],
+)
+
+# h2_lua_web_app() rejects empty or oversized buttons, bad names and an
+# unknown exit_button at loading time; this covers the validator it calls.
+lua_web_app_argument_test(name = "lua_web_app_argument_test")

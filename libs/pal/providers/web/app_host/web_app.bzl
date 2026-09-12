@@ -7,7 +7,7 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
-_SHELL = Label("//projects/example/libs/web/app_host:shell.html")
+_SHELL = Label("//libs/pal/providers/web/app_host:shell.html")
 _HOSTS = select({
     Label("//tools/bazel/platforms:host_linux_target_linux"): [],
     Label("//tools/bazel/platforms:host_macos_target_macos"): [],
@@ -72,7 +72,7 @@ def h2_web_app(
             "--oformat=html",
         ] + preload_opts + linkopts,
         target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
-        deps = deps + [Label("//projects/example/libs/web/app_host")],
+        deps = deps + [Label("//libs/pal/providers/web/app_host")],
     )
     outputs = ["index.html", "index.js", "index.wasm"]
     if preload:

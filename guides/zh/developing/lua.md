@@ -197,7 +197,7 @@ bazel run //projects/e2e/targets/cc_binary/lua-runtime:e2e-lua-runtime
 
 query 和 `rg` 都应为空。E2E 的九个固定 case 见 [E2E 测试 App](/apps/e2e)。
 
-单个 Lua 脚本可以用 `h2_lua_web_app()` 直接生成浏览器页面、`:serve` 与
+单个 Lua 脚本可以用 `//libs/lua/web:lua_web_app.bzl` 的 `h2_lua_web_app()` 直接生成浏览器页面、`:serve` 与
 `:browser_test`，不写 C 入口；见 [Web](/apps/web)。
 
 ## 借用 Display 与 UI 交接
