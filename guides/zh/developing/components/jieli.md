@@ -26,7 +26,7 @@
 
 `jieli_firmware(name, target, board, image, project_makefile, graph, srcs)`：
 
-- `target` 只能是 `br23` 或 `wl82`；macro 按 target 绑定 SDK locator、commit 文件、本地 post 脚本（`tools/bazel/jieli/local_post_<target>.sh`）与 SDK 子目录，调用方不得覆盖。
+- `target` 只能是 `br23`、`br35` 或 `wl82`；macro 按 target 绑定 SDK locator、commit 文件、本地 post 脚本（`tools/bazel/jieli/local_post_<target>.sh`）与 SDK 子目录，调用方不得覆盖。
 - `project_makefile` 必须是 `boards/<board>/<chip>/layouts/<profile>/project.mk` 中的仓库文件。它拥有完整 compiler flags、defines、include paths、SDK source inventory、linker inputs、generated files 与 output paths；SDK application/demo Makefile 不得成为 input，也不得被 include。
 - Runner 把 SDK 子树复制到 invocation-local 目录（排除 `.git`、`doc`、`ui_project`），在 SDK 根执行 layout-owned project，并用 `TOOL_DIR=<pi32v2/bin>` 覆盖 `/opt/jieli` 默认值。SDK 只提供 source/header/archive/linker/post-build substrate。随后仓库自有 post 脚本用 objcopy、`isd_download`、`fw_add` 与 `ufw_maker` 生成发布输出。
 - 固定输出 `firmware/firmware.elf`、`symbols.txt`（objsizedump 符号表）、`jl_isd.bin`（完整 NOR flash 镜像）、`jl_isd.fw`、`update.ufw`（USB 虚拟盘 / SD 卡 / OTA 升级包）与 `manifest.json`；`JieliFirmwareInfo`、`DefaultInfo.files` 与 `OutputGroupInfo.release` 暴露相同文件。不返回 `FirmwareReleaseInfo`，不进入 H2Loader package 或 GitHub Release matrix。
@@ -63,3 +63,48 @@ AC695N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_con
 - Linux x86_64：`. ../firmwares-devenv/export.sh && bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
 - macOS：同一命令应报告 target incompatible 而非失败。
 - 真机：空片首刷与 `update.ufw` 升级在开发板到位后各验证一次，记录于对应 board 文档。
+
+## AC707N (BR35) 工具链
+
+`--config=ac707n` 选择 `//tools/bazel/platforms:ac707n` 和独立的
+`gizos_jieli_ac707n_cc_toolchain`。复用已固定的 pi32v2 clang 4.0.1，
+按 BR35 SDK 添加 `-mllvm -pi32v2-large-program=true`、`-fdiscrete-bitfield-abi`；
+其他杰理平台的编译参数保持原样。BR35 原生链接使用 `pi32v2/lib/r3-large`。
+
+SDK locator 使用 `JIELI_AC707N_SDK_PATH`，由 firmware-devenv 导出为
+`third_party/jieli_ac707n_sdk/SDK`，固定到
+`h2vivi/e_badge_707_sdk_200@d0167685d032d745d88fe50233302edd46941622`。
+这是 2.0.0 系列吧唧 SDK；头文件位于 `interface`。
+
+`boards/ac707n_chip/ac707n/layouts/compile_only` 拥有最小原生工程，使用 SDK 的
+BR35 startup、CPU/system/config/VM/FS/device 库和链接脚本。仓库 launcher
+启动 UCOS 后组装 Runtime，调用现有 `projects/e2e/apps/pal/app:pal_e2e` 的 core suite。
+测试结果保留在 `h2_ac707n_pal_e2e_result`；未启用的外设使用 PAL unsupported provider。
+
+在 Linux x86_64 开发环境（macOS 使用 Linux/amd64 容器）内运行：
+
+```sh
+bazel build --config=ac707n //projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip:firmware
+```
+
+firmware-devenv 的 `make jieli-ac707n-toolchain-check` 另行验证 BR35 参数下
+的编译及 `r3-large` 运行库链接，不代表硬件运行验收。
+
+输出目录为 `bazel-bin/projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip/firmware/`，
+包含 `firmware.elf`、`symbols.txt`、`jl_isd.bin`、`jl_isd.fw`、`update.ufw` 和固定依赖版本的 `manifest.json`。
+CI native build matrix 包含 AC707N。编译、链接与离线打包可验证；没有开发板，
+启动、时钟、Flash 配置和升级包的硬件适配尚未验收。当前 compile-only 配置
+采用 8 MiB Flash、24 MHz 晶振和 PB07 reset，实际板卡必须另建并验证板级配置。
+
+普通固件入口是 `//projects/e2e/targets/native_firmware/pal/ac707n_chip:firmware`。
+H2Loader 入口 `//projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip:package`
+产出 H2Loader format-1 tar.zlib，固件成员为
+`app/jieli/update.ufw`。这只验证封装和依赖图；设备端 H2Loader UFW 安装、
+Loader/App 选择及回退还需要 BR35 专用 backend，不能把普通 SDK 双 bank OTA
+当作已完成的 H2Loader 启动协议。
+
+BR35 PAL core 在 `native_component_src/jieli/br35/h2_pal_core`，使用 UCOS，
+仅 CPU0；互斥量采用二值信号量，零等待在关中断区域查询并消费已有 token，
+不依赖未导出的 `os_sem_accept` / `os_mutex_accept`。任务 join 由创建者回收，
+条件变量使用逐等待者信号量。SDK sys_timer 回调仍属于注册任务；PAL task queue
+专用，sleep 期间通过 `os_taskq_pend_timeout` 派发回调。真机时序尚未验证。

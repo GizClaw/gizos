@@ -91,6 +91,8 @@ int h2_loader_app_client_init(
     const h2_loader_app_client_config_t *config);
 /**
  * Executes an App coredump subcommand over a caller-owned output stream.
+ * Targets built with H2_LOADER_REQUIRE_OUTPUT_CALLBACK require a non-NULL
+ * writer here and in return-console configuration; they have no stdio fallback.
  * The caller owns command serialization; a null subcommand selects status.
  */
 int h2_loader_app_client_coredump(

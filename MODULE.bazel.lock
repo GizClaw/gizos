@@ -659,7 +659,7 @@
     },
     "//tools/bazel/native_repositories:repositories.bzl%native_repositories": {
       "general": {
-        "bzlTransitiveDigest": "f0IR00E1HRZ7Vfgo35rYur/uVtPzwdlo5heuO8EkpxU=",
+        "bzlTransitiveDigest": "wSSkodKxEfdG5hxn2xJUfdmHEkXt/UHHtNchkmuFJPA=",
         "usagesDigest": "fCQHbHWyxHU4pBYo/A9GZrhbJ1InAj7MZI3GG5+X9Gs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -724,6 +724,20 @@
                 "cpu/br23/sdk_ld.c",
                 "cpu/br23/tools/download.c",
                 "cpu/br23/tools/download/standard/download.bat"
+              ]
+            }
+          },
+          "h2_jieli_ac707n_sdk": {
+            "repoRuleId": "@@//tools/bazel/native_repositories:repositories.bzl%_local_sdk_repository",
+            "attributes": {
+              "allow_subdirectory": true,
+              "commit_file": "@@//tools/bazel:native_versions/jieli_ac707n_sdk_commit.txt",
+              "environment_variable": "JIELI_AC707N_SDK_PATH",
+              "kind": "jieli-ac707n-sdk",
+              "required_files": [
+                "cpu/br35/sdk_ld.c",
+                "cpu/br35/tools/download.c",
+                "cpu/br35/maskrom_stubs.ld"
               ]
             }
           },
@@ -815,7 +829,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "S/X+e8Ngh/EnnKW/yX28ZIxJCjnqDugVkciDkqpqvhs=",
+        "bzlTransitiveDigest": "KlXG8daeLl/hFGd/saw404bWMm5P/RR9zuXBQMnSkhE=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -929,6 +943,58 @@
               "toolchain_identifier": "esp32p4-local-esp-15.2.0",
               "version_key": "esp32p4",
               "versions_file": "@@//tools/bazel:native_versions/esp_idf_tool_versions.txt"
+            }
+          },
+          "gizos_jieli_ac707n_cc_toolchain": {
+            "repoRuleId": "@@//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_repository",
+            "attributes": {
+              "compile_flags": [
+                "-target",
+                "pi32v2",
+                "-mcpu=r3",
+                "-mllvm",
+                "-pi32v2-large-program=true",
+                "-fdiscrete-bitfield-abi",
+                "-integrated-as",
+                "-Oz",
+                "-fno-common",
+                "-fallow-pointer-null",
+                "-fprefer-gnu-section",
+                "-fms-extensions",
+                "-Wno-shift-negative-value"
+              ],
+              "compiler_kind": "clang",
+              "exec_hosts": [
+                "linux_x86_64"
+              ],
+              "layout": "bin_dir",
+              "locator": "@@+native_repositories+h2_jieli_toolchain//:locator.json",
+              "locator_path": "pi32v2_bin",
+              "prefix": "",
+              "system_include_dirs": [
+                "../include"
+              ],
+              "target_constraints": [
+                "@gizos//tools/bazel/platforms:cpu_pi32v2",
+                "@gizos//tools/bazel/platforms:target_ac707n",
+                "@platforms//os:none"
+              ],
+              "target_cpu": "pi32v2",
+              "target_system_name": "pi32v2-elf",
+              "tool_overrides": {
+                "as": "clang",
+                "cpp": "clang",
+                "gcc": "clang",
+                "gcov": "clang",
+                "ld": "lto-wrapper"
+              },
+              "toolchain_identifier": "jieli-ac707n-clang-4.0.1",
+              "unfiltered_compile_flags": [
+                "-Wno-missing-field-initializers",
+                "-Wno-missing-braces"
+              ],
+              "version_key": "jieli_clang",
+              "versions_file": "@@//tools/bazel:native_versions/jieli_tool_versions.txt"
             }
           },
           "gizos_jieli_pi32v2_cc_toolchain": {

@@ -45,6 +45,10 @@ cc_library(
     includes = [
         "include",
     ],
+    local_defines = select({
+        "//tools/bazel/platforms:is_ac707n": ["H2_LOADER_REQUIRE_OUTPUT_CALLBACK=1"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":tasks",
         "//libs/bleikcp",

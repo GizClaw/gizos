@@ -106,12 +106,17 @@ static const h2_command_io_vtable_t s_output_io_vtable = {
     .flush = console_flush,
 };
 
+#if defined(H2_LOADER_REQUIRE_OUTPUT_CALLBACK) && H2_LOADER_REQUIRE_OUTPUT_CALLBACK
+#define stdout_write NULL
+#else
 static int stdout_write(void *user, const char *data, size_t len) {
     (void)user;
     if (data == NULL) return H2_PAL_ERR_INVALID_ARG;
     return fwrite(data, 1u, len, stdout) == len && fflush(stdout) == 0
         ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
+
+#endif
 
 static h2_loader_command_config_t command_config(
     h2_loader_app_client_t *client, h2_command_io_api_t io) {
@@ -186,7 +191,7 @@ int h2_loader_app_client_coredump(
     h2_loader_command_config_t config;
     const char *argv[3] = {"h2loader", "coredump", subcommand};
     size_t argc = subcommand != NULL && subcommand[0] != '\0' ? 3u : 2u;
-    if (client == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (client == NULL || output.write == NULL) return H2_PAL_ERR_INVALID_ARG;
     config = command_config(client, (h2_command_io_api_t){
         .user = &output,
         .vtable = &s_output_io_vtable,
@@ -227,6 +232,9 @@ int h2_loader_app_client_start_return_console(
     h2_pal_task_options_t options;
     if (config == NULL || config->client == NULL || config->task == NULL ||
         config->read_byte == NULL) return H2_PAL_ERR_INVALID_ARG;
+#if defined(H2_LOADER_REQUIRE_OUTPUT_CALLBACK) && H2_LOADER_REQUIRE_OUTPUT_CALLBACK
+    if (config->write == NULL) return H2_PAL_ERR_INVALID_ARG;
+#endif
     if (config->client->return_console_task != NULL ||
         config->client->return_console_private != NULL) {
         return H2_PAL_ERR_INVALID_STATE;

@@ -1,0 +1,29 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "defs.bzl",
+    "include/app_config.h",
+    "include/app.ld",
+    "include/sdk_used_list.c",
+    "project.mk",
+    "src/platform.c",
+    "src/sdk_config.c",
+])
+
+firmware_native_component(
+    name = "layout",
+    srcs = [
+        "src/platform.c",
+        "src/sdk_config.c",
+    ],
+    hdrs = glob(["include/**"]),
+    component_name = "ac707n_compile_only_layout",
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac707n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

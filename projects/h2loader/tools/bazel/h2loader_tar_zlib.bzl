@@ -2,6 +2,7 @@
 
 load("//tools/bazel:bk7258.bzl", "Bk7258FirmwareInfo")
 load("//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+load("//tools/bazel:jieli.bzl", "JieliFirmwareInfo")
 
 FirmwareReleaseInfo = provider(
     doc = "Canonical H2Loader release outputs for one firmware entry.",
@@ -81,7 +82,29 @@ def _native_firmware(ctx):
             target = firmware.target,
             version = firmware.version,
         )
-    fail("firmware must provide FirmwareInfo or Bk7258FirmwareInfo")
+    if JieliFirmwareInfo in target:
+        firmware = target[JieliFirmwareInfo]
+        if firmware.target != "br35" or ctx.attr.role != "app":
+            fail("JieLi packaging currently supports BR35 App UFW payloads only")
+        return struct(
+            app_image = firmware.update_image,
+            app_path = "app/jieli/update.ufw",
+            factory_image = None,
+            inputs = firmware.files.to_list(),
+            native_artifacts = [
+                struct(name = "firmware.elf", file = firmware.elf),
+                struct(name = "symbols.txt", file = firmware.symbols),
+                struct(name = "jl_isd.bin", file = firmware.flash_image),
+                struct(name = "jl_isd.fw", file = firmware.fw),
+                struct(name = "update.ufw", file = firmware.update_image),
+            ],
+            platform = "jieli",
+            recovery_image = None,
+            recovery_inputs = [],
+            target = "ac707n",
+            version = firmware.version,
+        )
+    fail("firmware must provide FirmwareInfo, Bk7258FirmwareInfo or JieliFirmwareInfo")
 
 def _h2loader_tar_zlib_impl(ctx):
     firmware = _native_firmware(ctx)

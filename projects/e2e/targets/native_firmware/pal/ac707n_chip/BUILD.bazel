@@ -1,0 +1,10 @@
+load("//boards/ac707n_chip/ac707n/layouts/compile_only:defs.bzl", "ac707n_compile_only_firmware")
+
+package(default_visibility = ["//visibility:public"])
+
+ac707n_compile_only_firmware(
+    name = "firmware",
+    board = "ac707n_chip",
+    graph = ["//projects/e2e/native_component_src/jieli/br35/pal:pal_launcher"],
+    image = "pal",
+)

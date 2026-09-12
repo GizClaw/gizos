@@ -22,7 +22,7 @@ JieliFirmwareInfo = provider(
         "image": "Image identity.",
         "manifest": "Normalized native build manifest.",
         "symbols": "Sorted symbol size table exported by objsizedump.",
-        "target": "JieLi SDK cpu target name (br23, wl82).",
+        "target": "JieLi SDK cpu target name (br23, br35, wl82).",
         "update_image": "update.ufw upgrade package for USB disk, SD card and OTA upgrade.",
         "version": "Firmware version supplied to the native build.",
     },
@@ -37,6 +37,13 @@ _TARGETS = {
         sdk_locator = Label("@h2_jieli_ac695n_sdk//:locator.json"),
         sdk_version = Label("//tools/bazel:native_versions/jieli_ac695n_sdk_commit.txt"),
         post_script = Label("//tools/bazel:jieli/local_post_br23.sh"),
+    ),
+    "br35": struct(
+        family = "ac707n",
+        compatibility = Label("//tools/bazel/platforms:is_ac707n_linux_host"),
+        sdk_locator = Label("@h2_jieli_ac707n_sdk//:locator.json"),
+        sdk_version = Label("//tools/bazel:native_versions/jieli_ac707n_sdk_commit.txt"),
+        post_script = Label("//tools/bazel:jieli/local_post_br35.sh"),
     ),
     "wl82": struct(
         family = "ac791n",
@@ -235,7 +242,7 @@ def jieli_firmware(name, target, **kwargs):
 
     Args:
       name: Bazel target name.
-      target: JieLi SDK cpu target (`br23` for AC695N, `wl82` for AC791N).
+      target: JieLi SDK cpu target (`br23` for AC695N, `br35` for AC707N, `wl82` for AC791N).
       **kwargs: Attributes forwarded to the private firmware rule.
     """
     if target not in _TARGETS:

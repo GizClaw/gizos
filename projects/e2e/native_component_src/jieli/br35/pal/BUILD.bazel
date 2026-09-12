@@ -1,0 +1,35 @@
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC707N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac707n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "firmware_lib",
+    target_compatible_with = AC707N_COMPATIBILITY,
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ],
+)
+
+firmware_native_component(
+    name = "pal_launcher",
+    srcs = ["main.c"],
+    component_name = "pal_launcher",
+    tags = ["manual"],
+    target_compatible_with = AC707N_COMPATIBILITY,
+    deps = [
+        ":firmware_lib",
+        "//boards/ac707n_chip/ac707n",
+        "//libs/pal:unsupported",
+        "//native_component_src/jieli/br35/h2_pal_core",
+        "//projects/e2e/apps/pal/app:pal_e2e",
+    ],
+)
