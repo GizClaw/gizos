@@ -106,8 +106,9 @@ def web_archive_browser_test(
         srcs = [_BROWSER_TEST, _SERVER],
         args = args,
         data = data + select({
-            _HOST_LINUX: ["@h2_playwright_chromium_linux_x86_64//:runtime"],
-            _HOST_MACOS: ["@h2_playwright_chromium_macos_arm64//:runtime"],
+            # Label() resolves the browser repos from GizOS for downstream callers.
+            _HOST_LINUX: [Label("@h2_playwright_chromium_linux_x86_64//:runtime")],
+            _HOST_MACOS: [Label("@h2_playwright_chromium_macos_arm64//:runtime")],
             "//conditions:default": [],
         }),
         legacy_create_init = 0,

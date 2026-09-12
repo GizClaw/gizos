@@ -7,12 +7,14 @@ Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它
 ```text
 projects/example/
 ├── libs/web/tap-reset/            # Web presentation 与 App contract conversion
-├── libs/web/app_host/             # 通用 Web launcher、HTML shell 与 h2_web_app() 宏
+├── libs/web/app_host/             # 通用 Web launcher、HTML shell、h2_web_app() 与
+│                                  # 单个 Lua 脚本的 h2_lua_web_app() 宏
 ├── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive（自带 shell）
 ├── targets/pkg_tar/mp4-player/    # WebCodecs MP4 播放 archive（自带 shell）
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
                                    # main.c + h2_web_app()
+├── targets/pkg_tar/lua-script/    # h2_lua_web_app() 的 smoke：Button args、exit Button、extension
 
 projects/e2e/targets/pkg_tar/
 ├── pal/                           # portable PAL E2E；?suite=browser 跑浏览器套件
@@ -175,6 +177,21 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 `//projects/example/libs/web/app_host` 是 example App 的通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 把 DOM `KeyboardEvent.key` 的 keydown/keyup 写成 `h2_runtime_button_push_edge()` edge，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
+只运行一个 Lua 脚本的 App 不需要 `main.c`：`lua_web_app.bzl` 的
+`h2_lua_web_app(name, script, buttons, exit_button, extension)` 用
+`h2_lua_resource()` 嵌入脚本，并把通用入口 `src/h2_web_lua_app.c` 交给
+`h2_web_app()`。`buttons` 是有序的 Button 名到 DOM `KeyboardEvent.key` 的映射
+（最多 8 个），按顺序得到 Runtime component id 1..N，脚本从 `args.<name>` 读取；
+Button event 转发给 Lua job。`exit_button` 的事件不进入脚本，默认在 release
+Action 上取消 job，页面 Stop 同样取消 job 并以 OK 结束。job 第一次进入
+WAITING 时输出 `stage=ready`；脚本失败时打印 `H2_WEB_LUA_APP job state=...`
+并以 FAIL 结束。`extension` 是定义 `h2_web_lua_app_extension`
+（`:lua_app_extension`）的 cc_library，可在 Host start 前注册 module 或
+capability，并决定 exit Button 何时结束 job（例如需要长按）。其余参数原样交给
+`h2_web_app()`。每个 package 只能有一个 `h2_lua_web_app()`/`h2_web_app()`。
+这些宏内部 label 都用 `Label()` 解析到 GizOS，下游仓库可以直接 load
+`@gizos//projects/example/libs/web/app_host:lua_web_app.bzl`。
+
 `tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 
 | Target | 浏览器测试验证 |
@@ -189,6 +206,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 | `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
+| `lua-script` | `h2_lua_web_app()`：脚本校验 Button args 与 extension capability 后 ready，Escape（exit Button）取消 job 并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
 
 未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。

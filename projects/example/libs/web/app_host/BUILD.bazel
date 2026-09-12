@@ -4,8 +4,12 @@ load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBI
 
 package(default_visibility = ["//visibility:public"])
 
-# Shared Start/Stop shell for Web App targets built on app_host.
-exports_files(["shell.html"])
+# Shared Start/Stop shell for Web App targets built on app_host, and the
+# generic Lua App entry compiled by h2_lua_web_app().
+exports_files([
+    "shell.html",
+    "src/h2_web_lua_app.c",
+])
 
 cc_library(
     name = "app_host",
@@ -20,6 +24,17 @@ cc_library(
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+    ],
+)
+
+# Hook contract for h2_lua_web_app(extension = ...) libraries.
+cc_library(
+    name = "lua_app_extension",
+    hdrs = ["include/h2_web_lua_app.h"],
+    includes = ["include"],
+    deps = [
+        "//libs/lua",
         "//libs/runtime",
     ],
 )
