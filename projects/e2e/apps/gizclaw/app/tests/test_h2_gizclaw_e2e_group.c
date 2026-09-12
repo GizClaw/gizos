@@ -295,9 +295,16 @@ static void response(enum method m, const char *arg,
       p->items[0] = member(s, false);
       if (target)
         p->items[1] = member(s, true);
+      p->items[0].has_online = true;
+      p->items[0].online = true;
+      p->items[0].last_seen_at = save(s, "2026-09-12T09:00:00Z");
+      if (target)
+        p->items[1].has_online = true;
       p->count = count;
       p->has_next = next;
-      if (fault == 4u && target)
+      if (fault == 6u)
+        p->items[0].last_seen_at = "external";
+      else if (fault == 4u && target)
         p->items[1].friend_group_name = save(s, "wrong-group");
       else if (fault <= 5u && target)
         corrupt(s, &p->items[1].id, fault);

@@ -299,7 +299,8 @@ static bool valid_member(h2_gizclaw_e2e_fixture_t *f,
   return text(s, m->id, true) && text(s, m->peer_public_key, true) &&
          text(s, m->friend_group_name, true) &&
          !strcmp(m->friend_group_name, f->friend_group_name) &&
-         text(s, m->created_at, false) && text(s, m->updated_at, false);
+         text(s, m->created_at, false) && text(s, m->updated_at, false) &&
+         text(s, m->last_seen_at, false);
 }
 static int pages(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
                  bool req, bool members, uint64_t *id, const char *display,

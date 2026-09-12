@@ -14,7 +14,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 当前固定为 0.18.5。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 当前固定为 0.18.7。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -25,6 +25,8 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 0.18.0 相对 0.17.0 只有增量：新增 RPC 123–127、对应 protobuf message，`WorkspaceHistoryListRequest` 增加可选 `start_time_ms` / `end_time_ms`（GizOS 暂不暴露，仍用生成的 `_init_zero` 初始化），以及 GizOS 不使用的 control API（device find、device runtime-profile）。GizOS 侧无需适配已有调用。
 
 0.18.5 相对 0.18.0 只有增量，RPC registry 与 core 源码不变：`FriendObject` 增加仅由 `server.friend.list` 填写的 `online`、`last_seen_at`、`display_name`、`emoji`；`DoubaoRealtimeWorkflowSpec` 增加可选 `tts`（GizOS 不解析）；control API 新增的方法 GizOS 不使用。`h2_gizclaw_friend_t` 因此在好友列表中直接带出 `name` / `emoji`（未设置为 NULL，显式设为空时为 `""`，与 `friend_info_get` 相同）以及 `has_online` / `online` / `last_seen_at`；`friend_info_get` 仍只投影资料，不带在线状态（`has_online` 为 false）。
+
+0.18.7 相对 0.18.5 只有增量：`FriendGroupMemberObject` 增加仅由 `server.friend_group.members.list` 填写的 `online` / `last_seen_at`；control API 的变化 GizOS 不使用。`h2_gizclaw_friend_group_member_t` 因此在成员列表中带出 `has_online` / `online` / `last_seen_at`：`online` 表示成员设备是否连接到回答请求的 Server，未报告在线状态（包括 presence 读取失败或旧服务端未提供字段）时 `has_online` 为 false；`last_seen_at` 是 UTC RFC 3339 文本，最多 64 字节，Server 从未观察到该成员时为 NULL。超长、含 NUL 或非法 UTF-8 的时间文本使整页返回 `H2_PAL_ERR_FORMAT` 并回滚 storage。member add/put/delete 仍不带 presence（`has_online` 为 false，`last_seen_at` 为 NULL），即使响应携带这些字段也忽略；公开 API 函数数量不变。
 
 设备间社交提醒使用三组 typed wrapper，沿用 Social 的 create/parse/sync 生命周期：
 
@@ -57,7 +59,7 @@ Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access h
 
 Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但事件队列和下行处理继续推进，避免业务事件占住队列后阻塞 READY。READY 前只有显式关联当前 input stream 的事件能够绑定回复 route，允许服务端提前拒绝当前输入；取消的旧输入或独立旧 reply 的迟到事件不得污染新会话。READY 后允许服务端生成的独立 response ID。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
 
-当前 `MODULE.bazel` 固定的 C SDK 0.18.5 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
+当前 `MODULE.bazel` 固定的 C SDK 0.18.7 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 

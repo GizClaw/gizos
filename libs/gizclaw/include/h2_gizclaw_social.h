@@ -103,6 +103,12 @@ typedef struct h2_gizclaw_invite_token {
   char *expires_at;
 } h2_gizclaw_invite_token_t;
 
+/** Owned FriendGroup member snapshot. Presence (has_online, online,
+ * last_seen_at) comes only from server.friend_group.members.list; online is
+ * whether the member's device is connected to the answering Server, and
+ * last_seen_at is NULL when that Server has never observed it. Member
+ * add/put/delete never report presence: has_online is false and last_seen_at
+ * is NULL, even if the wire carries those fields. */
 typedef struct h2_gizclaw_friend_group_member {
   /** Membership ID copied verbatim from the wire member name. */
   char *id;
@@ -111,6 +117,11 @@ typedef struct h2_gizclaw_friend_group_member {
   char *created_at;
   char *updated_at;
   h2_gizclaw_friend_group_role_t role;
+  /** False when the Server reported no presence for this member. */
+  bool has_online;
+  bool online;
+  /** Last observed device activity, UTC RFC 3339 text. */
+  char *last_seen_at;
 } h2_gizclaw_friend_group_member_t;
 
 typedef struct h2_gizclaw_friend_group_member_page {

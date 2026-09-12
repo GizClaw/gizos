@@ -18,7 +18,7 @@ Fixture 仅在注册 profile 非空、完整终止且与已有 actor 一致后�
 
 Workspace 清理分别记录主/隔离 actor 的有效删除确认。case 删除后若列表验证失败，Fixture 保留确认并在重试时 get 检查目标缺失；确认存在且 get 返回 NOT_FOUND 才退还义务。未确认删除的 NOT_FOUND、错误对象或查询失败不能算完成；仍查到目标时允许下一次重试删除。清理预算耗尽后不再发送 Peer delete，保留身份用于重试。两个 actor 的 36 组边界场景覆盖此状态交接；不能据此声称超时创建永远不会迟到。
 
-当前固定 GizClaw C SDK 0.18.5，公开 API 共 217 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
+当前固定 GizClaw C SDK 0.18.7，公开 API 共 217 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
 
 Connectivity 使用两个隔离 Peer，以便分别验证 req/resp 和同步 RPC 的 peer_delete；注册复验、ping 与全部测速始终使用同一个主 Service，不在测量间重连。全部测速成功后才删除两个 Peer，有效删除响应清除对应义务，任何失败仍交给 Fixture 收尾。`gizclaw_e2e_connectivity_test` 的本地场景覆盖调用阶段失败、错误响应、取消失败、预算耗尽、时钟读取失败、上传读取、下载写入、块顺序/内容和 poll 失败；`connectivity_coverage_test` 检查 12 个业务函数、12 条测量记录及六条数据搬运记录，缺少实际 dispatch 记录不能认证 req/resp 下载测速。正常场景仍为 `valid=false`，不是实际网络速度或远端清理验收。
 
