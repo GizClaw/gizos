@@ -156,7 +156,7 @@ libs/<library>/
 └── BUILD.bazel
 ```
 
-`libs/app_host/` 是 App 启动层：它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability，也不选择 App 或依赖任何 project。当前只有 Web 实现（`:app_host` 只兼容 WebAssembly，另有默认 Start/Stop shell 与 `web_app.bzl` 的 `h2_web_app()`）；其他平台以后可以在同一 library 中增加变体。
+`libs/app_host/` 是上述"platform 无关"要求的唯一例外：它是 App 启动层，当前只有 Web 实现，其他平台以后在同一 library 中增加变体。它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability、不选择 App。依赖边界：`libs/app_host` 只依赖 `libs/pal`、`libs/pal:unsupported`、`libs/pal/providers/web/pal_core`、`libs/lvgl:platform_web` 与 `libs/runtime`，不依赖任何 project、App 或 artifact entry；`targets/pkg_tar/<app>` 依赖它，反向不成立。`web_app.bzl` 的 `h2_web_app()` 在调用方 entry 的 package 内声明 wasm binary、archive、`:serve` 与 `:browser_test`，所以最终 archive、`main`、App entry 与配置、Button/key 映射和 preload 仍归该 entry；entry 也可以不经 `app_host` 自行组装。`libs/lua/web` 可以依赖 `libs/app_host`，同样不依赖 project。
 
 每个 library 都有独立的 `BUILD.bazel`。`BUILD.bazel` 通过显式 `srcs`、`hdrs`、`data` 和 `deps` 定义 library target 与 tests，测试目录统一使用 `tests/`。CI 直接分析所选平台的完整 compatible graph，不通过 tag 维护第二份 library 或 artifact inventory。平台差异只需要 toolchain 或 compatibility 即可表达时，不复制 source tree；只有接入 API、构建系统或 OS service 不同时，才在 `libs/pal/providers/` 下建立具名平台边界。
 
@@ -264,7 +264,7 @@ libs/app_host/
 libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive，其中 Runtime assembly、默认 shell 和 archive 规则可以委托给 `libs/app_host`（见 `libs` 一节的例外），archive target 仍在该 entry 的 package 内。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 

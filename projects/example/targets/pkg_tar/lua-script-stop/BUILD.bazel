@@ -3,7 +3,8 @@ load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
 package(default_visibility = ["//visibility:public"])
 
 # Stop path: no key is pressed; run_ms raises the same stop request as the
-# page Stop button, the entry cancels the job and the App still passes.
+# page Stop button, the entry cancels the job and the App still passes. The
+# extra deps check that caller dependencies merge with the macro's own.
 h2_lua_web_app(
     name = "lua-script-stop",
     buttons = {
@@ -12,6 +13,7 @@ h2_lua_web_app(
         "back": "Escape",
     },
     canvas_min = 300,
+    deps = ["//libs/runtime"],
     exit_button = "back",
     passes = [
         "H2_WEB_APP name=lua-script-stop stage=ready",

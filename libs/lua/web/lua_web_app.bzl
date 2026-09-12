@@ -57,7 +57,8 @@ def h2_lua_web_app(
       run_ms: Nonzero stops the App after this long exactly as the page Stop
         button does (for tests).
       **kwargs: Passed to h2_web_app() (passes, fails, presses, taps,
-        canvas_min, test_timeout_s, ...).
+        canvas_min, test_timeout_s, ...); `deps` and `linkopts` are appended
+        to the macro's own, and `srcs`/`app_name` are rejected.
     """
     error = lua_web_app_argument_error(buttons, exit_button, run_ms)
     if error:
@@ -105,7 +106,13 @@ def h2_lua_web_app(
         deps = [":" + name + "_script"],
     )
 
+    # The entry source and marker name are fixed; list-valued settings the
+    # caller also passes are merged instead of colliding.
+    for fixed in ("srcs", "app_name"):
+        if fixed in kwargs:
+            fail("h2_lua_web_app: %s is set by the macro" % fixed)
     linkopts = kwargs.pop("linkopts", [])
+    deps = kwargs.pop("deps", [])
     h2_web_app(
         name = name,
         srcs = [Label("//libs/lua/web:src/h2_web_lua_app.c")],
@@ -115,6 +122,6 @@ def h2_lua_web_app(
             ":" + name + "_config",
             Label("//libs/lua"),
             Label("//libs/lua/web:lua_app_extension"),
-        ] + ([extension] if extension else []),
+        ] + ([extension] if extension else []) + deps,
         **kwargs
     )
