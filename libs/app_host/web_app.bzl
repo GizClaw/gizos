@@ -2,7 +2,7 @@
 
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load(":web_board.bzl", "H2WebBoardInfo")
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
@@ -105,6 +105,7 @@ def h2_web_app(
         evals = [],
         board = None,
         skin = None,
+        copts = [],
         linkopts = []):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
 
@@ -134,6 +135,7 @@ def h2_web_app(
       skin: Name of one of the board's skins (an unknown name fails
         analysis). Omitted: the board's default_skin, or the plain
         default_layout.html when the board has none.
+      copts: Extra C compile options for srcs.
       linkopts: Extra Emscripten link options.
     """
     _web_board_page(
@@ -147,12 +149,22 @@ def h2_web_app(
     preload_opts = []
     for label, path in preload.items():
         preload_opts += ["--preload-file", "$(location %s)@%s" % (label, path)]
-    cc_binary(
-        name = "_wasm/index",
-        srcs = srcs + [":" + name + "_board.c"],
-        additional_linker_inputs = [shell] + preload.keys(),
+    # The generated board definition is host code: caller copts stay off it.
+    cc_library(
+        name = name + "_board",
+        srcs = [":" + name + "_board.c"],
+        alwayslink = True,
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
+        target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+        deps = [Label("//libs/app_host")],
+    )
+    cc_binary(
+        name = "_wasm/index",
+        srcs = srcs,
+        additional_linker_inputs = [shell] + preload.keys(),
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS + copts,
         features = ["-output_format_js"],
         linkopts = [
             "-sALLOW_MEMORY_GROWTH=1",
@@ -166,7 +178,7 @@ def h2_web_app(
             "--oformat=html",
         ] + preload_opts + linkopts,
         target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
-        deps = deps + [Label("//libs/app_host")],
+        deps = deps + [":" + name + "_board", Label("//libs/app_host")],
     )
     outputs = ["index.html", "index.js", "index.wasm"]
     if preload:

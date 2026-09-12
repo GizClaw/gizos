@@ -30,6 +30,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
 | Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
+| Lua Link | `//projects/e2e/apps/lua-link/app:lua_link_e2e` | DevKit ESP32-S3 host + AMOLED ESP32-S3 join over BLE Extended Advertising；reliable/datagram/stream/peer-exit per session，final hold session for link loss |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
@@ -62,6 +63,12 @@ Browser launcher 位于 `projects/e2e/targets/pkg_tar/pal`，只选择不需要�
 `h2_h2loader_serial_e2e_run()` 接收初始化后的 Runtime、独立注入的 Host Serial API、opaque port ID、预期 board/target、closed typed command，以及 install 所需的 catalog bytes、精确 asset SHA-256 和资源读取回调。portable App 拥有 preflight、authoritative status、安全只读 command、managed install/reconnect/final verification 和固定 ledger；它不读取文件、environment 或 DOM，也不选择 concrete provider。
 
 macOS Desktop launcher 先通过 Darwin Serial 运行同一 App。Browser launcher 必须从直接用户手势取得 Web Serial 授权，再把 opaque ID 交给 App；scan 不打开 chooser。确定性 Node validation 只证明 Web Serial/PAL/Host Core wasm graph 与 preflight，不能替代真实设备的 status、HELP、install 或跨 OS Chrome evidence。无法通过稳定 USB identity 关联重启后原设备时必须失败，不得按 label 或 VID/PID 自动换设备。
+
+## Lua Link
+
+`h2_lua_link_e2e_run()` 在已启动的 BLE Host 上创建一个 Lua Host，调用 `h2_lua_link_enable()` 并以 `args.role`（`host` 或 `join`）运行固定脚本。每个 session 依次测 20 次可靠消息往返、双向各 200 条有序可靠消息、双向各 100 条 50 Hz datagram、双向各 64 KiB 逐字节校验的字节流，最后 joiner 离开、host 必须报告 `peer_closed`；结果以 `LINK stage=...` 和 `H2_LUA_LINK_E2E result=...` 写入 Runtime Log。`hold` 模式保持一个 10 Hz datagram session 直到链路断开，并报告断开距最后一条 datagram 的时间。App 只依赖 Runtime 与 `link` module，不使用 Wi-Fi；`//projects/e2e/apps/lua-link/app:lua_link_e2e_test` 在 fake BLE air 上让两个角色互跑完整 suite 和 hold 断链。
+
+DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运行 `host`，AMOLED launcher（`.../lua-link/amoled`）运行 `join`，两者都使用 Extended Advertising/Scanning。H2Loader App command service 启动 BLE Host；image 在 command service 运行后确认，只证明基础设施可用。每次 boot 连续运行五个 session 并输出 `stage=summary ... passed=<n> rounds=5`，最后进入 `hold` session。先启动 AMOLED joiner，再启动 DevKit host。
 
 ## GizClaw
 

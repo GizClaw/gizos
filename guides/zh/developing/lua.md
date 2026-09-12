@@ -249,6 +249,8 @@ Datagram 可能先于对端 `HELLO` 到达，握手完成前最多暂存 4 条�
 之后投递。没有注册回调的事件被丢弃，App 应在 `host`/`join` 前注册。
 `LINK_ERROR` 或 `LINK_DISCONNECTED` 之后 session 结束。
 
+终态事件发布后，`link.read()` 仍先返回断开前已接收的流字节；缓冲耗尽后返回 `nil, "link: closed"`，不依赖后台 session task 是否已经返回。Lua 回调可能先于该 task 的最终退出运行，因此不能用 task 退出状态代替已发布的 session 终态。
+
 **连接与协议。** Join 扫描时每 1.5 s 重启一次 scan：controller 的 duplicate filter
 在一次 scan 内对同一地址只上报一次，host 在开始 `host()` 之前已经用同一地址广播其他
 内容（例如 H2Loader 管理服务）时，不重启就永远看不到 link 广播。Join 以 30 ms

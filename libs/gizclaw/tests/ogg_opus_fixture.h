@@ -3,11 +3,12 @@
 
 #include "opus.h"
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 typedef struct fixture {
-  uint8_t bytes[32768];
+  uint8_t bytes[131072];
   size_t len;
   uint8_t packet[1500];
   size_t packet_len;
@@ -84,6 +85,46 @@ static void headers(fixture_t *f, uint32_t serial, unsigned channels,
   packet_page(f, 2, 0, serial, 0, head, sizeof(head));
   const uint8_t tags[16] = "OpusTags";
   packet_page(f, 0, 0, serial, 1, tags, sizeof(tags));
+}
+
+/* Append `packets` copies of f->packet (20 ms each) as audio pages from
+ * sequence 2. One packet per page, or pages flushed once their body reaches
+ * page_body bytes so packets straddle pages. The last page is EOS and trims
+ * eos_trim samples. Returns the byte offset of the first audio page. */
+static size_t paginate(fixture_t *f, uint32_t serial, unsigned packets,
+                       size_t page_body, uint64_t eos_trim) {
+  const size_t first = f->len;
+  uint8_t laces[255], body[255 * 255];
+  size_t lace_count = 0, body_len = 0;
+  uint64_t granule = 0, page_granule = UINT64_MAX;
+  uint32_t sequence = 2;
+  bool continued = false;
+  assert(f->packet_len % 255 != 0);
+  for (unsigned index = 0; index < packets; ++index) {
+    for (size_t offset = 0;;) {
+      size_t segment = f->packet_len - offset < 255 ? f->packet_len - offset : 255;
+      laces[lace_count++] = (uint8_t)segment;
+      memcpy(body + body_len, f->packet + offset, segment);
+      body_len += segment;
+      offset += segment;
+      const bool done = segment < 255, last = done && index + 1 == packets;
+      if (done) {
+        granule += 960;
+        page_granule = granule;
+      }
+      if (last || lace_count == 255 || (page_body ? body_len >= page_body : done)) {
+        page(f, (continued ? 1u : 0u) | (last ? 4u : 0u),
+             last ? granule - eos_trim : page_granule, serial, sequence++, laces,
+             lace_count, body, body_len);
+        continued = !done;
+        lace_count = body_len = 0;
+        page_granule = UINT64_MAX;
+      }
+      if (done)
+        break;
+    }
+  }
+  return first;
 }
 
 static void make_packet(fixture_t *f, unsigned channels) {
