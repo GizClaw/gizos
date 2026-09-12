@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define TEST_QUEUE_COUNT 4u
@@ -200,6 +201,35 @@ static int test_queue_close(void *user, h2_pal_queue_t *opaque) {
     return H2_PAL_QUEUE_OK;
 }
 
+/* Returns 0xa5-filled blocks, like an uninitialized heap, and fails the
+ * allocation numbered fail_at (1-based). */
+typedef struct poison_allocator {
+    unsigned calls;
+    unsigned fail_at;
+} poison_allocator_t;
+
+static void *poison_alloc(void *user, size_t len) {
+    poison_allocator_t *allocator = (poison_allocator_t *)user;
+    if (++allocator->calls == allocator->fail_at) {
+        return NULL;
+    }
+    void *ptr = malloc(len);
+    if (ptr != NULL) {
+        memset(ptr, 0xa5, len);
+    }
+    return ptr;
+}
+
+static void *poison_realloc(void *user, void *ptr, size_t len) {
+    (void)user;
+    return realloc(ptr, len);
+}
+
+static void poison_free(void *user, void *ptr) {
+    (void)user;
+    free(ptr);
+}
+
 int main(void) {
     test_env_t env = {0};
     static const h2_pal_queue_vtable_t queue_vtable = {
@@ -243,6 +273,22 @@ int main(void) {
         .queue_api = &queue_api,
         .sync_api = &sync_api,
     };
+    /* A failed allocation after the track table must clean up without
+     * reading uninitialized track state. Calls: impl, tracks, accum. */
+    static const h2_pal_mem_vtable_t poison_vtable = {
+        .alloc = poison_alloc,
+        .realloc = poison_realloc,
+        .free = poison_free,
+    };
+    poison_allocator_t poison = {.fail_at = 3u};
+    h2_pal_mem_api_t poison_api = {.user = &poison, .vtable = &poison_vtable};
+    h2_audio_mixer_config_t failing_config = config;
+    failing_config.max_tracks = 4u;
+    failing_config.allocator = &poison_api;
+    h2_audio_mixer_t failed = {0};
+    assert(h2_audio_mixer_init(&failed, &failing_config) == H2_AUDIO_ERR_NO_MEMORY);
+    assert(failed.impl == NULL);
+
     h2_audio_mixer_t mixer = {0};
     env.mixer = &mixer;
     assert(h2_audio_mixer_init(&mixer, &config) == H2_AUDIO_OK);

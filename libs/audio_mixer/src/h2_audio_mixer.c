@@ -444,6 +444,10 @@ int h2_audio_mixer_init(h2_audio_mixer_t *mixer, const h2_audio_mixer_config_t *
     }
 
     impl->tracks = (h2_audio_mixer_track_state_t *)mixer_alloc(impl, sizeof(*impl->tracks) * config->max_tracks);
+    if (impl->tracks != NULL) {
+        /* Clear before any failure path: deinit walks every track. */
+        memset(impl->tracks, 0, sizeof(*impl->tracks) * config->max_tracks);
+    }
     impl->accum = (float *)mixer_alloc(impl, sizeof(float) * impl->frame_samples);
     impl->ref_accum = (float *)mixer_alloc(impl, sizeof(float) * impl->frame_samples);
     impl->mix_scratch = (int16_t *)mixer_alloc(impl, mixer_item_size(impl));
@@ -452,7 +456,6 @@ int h2_audio_mixer_init(h2_audio_mixer_t *mixer, const h2_audio_mixer_config_t *
         h2_audio_mixer_deinit(&cleanup);
         return H2_AUDIO_ERR_NO_MEMORY;
     }
-    memset(impl->tracks, 0, sizeof(*impl->tracks) * config->max_tracks);
     mixer->impl = impl;
     return H2_AUDIO_OK;
 }
