@@ -82,6 +82,40 @@ cc_library(
     }),
 )
 
+h2_tasks(
+    name = "link_tasks",
+    tasks = [
+        "$lua/link",
+    ],
+)
+
+# BLE KCP provider behind the Lua `link` module. Separate from lua_runtime so
+# images that never call h2_lua_link_enable() do not link BLE iKCP.
+cc_library(
+    name = "lua_link",
+    srcs = [
+        "src/core/h2_lua_internal.h",
+        "src/link/h2_lua_link.c",
+        "src/link/h2_lua_link_task_names.c",
+        "src/runtime/h2_lua_internal.h",
+    ],
+    hdrs = [
+        "include/h2_lua_link.h",
+        "include/h2_lua_link_task_names.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    deps = [
+        ":link_tasks",
+        ":lua_runtime",
+        "//libs/bleikcp",
+        "//libs/pal:unsupported",
+        "//tools/bazel:vendor_third_party_lua",
+    ],
+)
+
 cc_library(
     name = "lua",
     tags = ["h2-ci-native-package"],
@@ -125,6 +159,24 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "lua_link_test",
+    srcs = ["tests/test_h2_lua_link.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":lua_link",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],

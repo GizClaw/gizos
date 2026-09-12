@@ -83,6 +83,9 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
 | `audio` | `new_output`（每条 Track 的 `write/info/close`）、`new_input`（`read/level/info/close`） | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format，Input frame 大小取自设备 mic format；PAL 混合多条 Track，不接收 codec handle |
+| `link` | `available`、`host`、`join`、`send`、`close`、`state`、`on`、`off` | Launcher 调用 `h2_lua_link_enable()` 后由 `//libs/lua:lua_link` 经 BLE Host PAL 与 `libs/bleikcp` 提供；未启用或没有 BLE 时 `available()` 为 `false`，操作返回 `nil, "link: unavailable"` |
+
+`link` 与 `runtime` 同属 GizOS 新增 module，不在 ESP-Claw 兼容库存内。
 
 `runtime.components.getByName()`、`board_manager`、SDK handle 和动态 C module
 不属于首期合同。Display、Touch 和 Audio 保持 ESP-Claw 的 module acquisition，内部
@@ -163,6 +166,74 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
   不会让调用方的大超时（包括逼近 `UINT32_MAX` 的取值）拖住 Lua worker 或
   阻塞 Host shutdown。
 
+### BLE KCP peer link
+
+`link` 让两台相邻设备通过 BLE 配对，并交换小而可靠、有序的消息。它只使用 BLE
+Host、Task、Sync、Time、Mem 和 System Event PAL，不使用 Wi-Fi、Netif 或任何网络
+API，产品在对局中关闭 Wi-Fi 不影响链路。
+
+**启用。** `//libs/lua:lua_link` 是独立 target，不使用 link 的 image 不链接 BLE
+iKCP。Launcher 在 `h2_lua_host_start()` 前调用
+`h2_lua_link_enable(host, &(h2_lua_link_config_t){adv_type, scan_type})`，按板级
+BLE stack 选择 legacy 或 extended advertising/scan。Runtime 没有 `ble_host`、
+没有 `system_event`、或接入的是 canonical unsupported object 时返回
+`H2_PAL_ERR_UNSUPPORTED`，link 保持不可用；start 之后或重复调用返回
+`H2_PAL_ERR_INVALID_STATE`。Launcher 负责启动 BLE Host，并保证它存活到
+`h2_lua_host_destroy()` 返回；与同进程其他 GATT service（例如管理服务）的共存也由
+launcher 负责。
+
+**Lua API。**
+
+- `link.host({tag=, timeout_ms=})`：开始广播并接受一个 peer；`timeout_ms` 省略或
+  为 `0` 时一直广播到 close。
+- `link.join({tag=, timeout_ms=})`：扫描并连接同一 tag 的 host；默认 10000 ms，
+  上限 60000 ms，覆盖 scan、connect 和握手。
+- `tag` 为 1..32 字节，选项非法时抛出 Lua argument error。
+- `link.send(data)`：`data` 为 1..256 字节的 Lua string，永不阻塞 Lua worker；
+  未连接返回 `nil, "link: not connected"`，本地发送缓冲放不下整条消息返回
+  `nil, "link: busy"`，stream 已失败返回 `nil, "link: closed"`。
+- `link.close()`：幂等、不阻塞；丢弃该 session 未投递的事件，本地关闭不再产生事件。
+- `link.state()`：`"idle"`、`"hosting"`、`"joining"`、`"connected"`，未启用时为
+  `"unavailable"`。
+- 进程内同一时间只有一个 session；已有 session 时 `host`/`join` 返回
+  `nil, "link: busy"`，已结束的 session 由下一次 `host`/`join` 回收。`close()` 之后
+  session task 仍在发送 `BYE` 和释放 BLE（通常不超过约 1 s，连接建立中最长为一次
+  connect 超时 5 s），期间 `state()` 已为 `"idle"`，但 `host`/`join` 仍返回 `busy`，
+  App 应稍后重试。
+
+**事件。** `link.on(kind, fn)` 返回 handle，`link.off(handle)` 或
+`runtime.components.off(handle)` 注销；handle 与 `runtime.components.on` 共用
+`callback_capacity_per_job`。`kind` 为 `runtime.event.LINK_CONNECTED`（`role` 为
+`"host"`/`"join"`）、`LINK_MESSAGE`（`data`）、`LINK_DISCONNECTED`（`reason` 为
+`"peer_closed"` 或 `"lost"`，以及 `result`）和 `LINK_ERROR`（`reason` 为
+`"timeout"`、`"not_found"`、`"mismatch"` 或 `"ble"`，以及 PAL `result`）。事件表同时
+带 `event_type`、`sequence`、`timestamp_ms`，`component_id` 与 `component_kind` 为
+`0`。回调作为同一 VM 的 scheduler task 运行，受相同 quantum、取消和超时约束；上一个
+事件的回调全部结束后才投递下一个，因此 `LINK_MESSAGE` 保持到达顺序。没有注册回调的
+事件被丢弃，App 应在 `host`/`join` 前注册。`LINK_ERROR` 或 `LINK_DISCONNECTED` 之后
+session 结束。
+
+**Profile 与协议。** Service UUID 是固定 128-bit base，末 4 字节为 tag 的 FNV-1a
+hash；TX/RX characteristic 为固定 128-bit UUID。广播只携带 service UUID，不同 tag
+的设备看不到、也 discover 不到彼此的 service。Join 以 30 ms interval、2000 ms
+supervision timeout 连接，因此掉电或离开范围在约 2 s 内报告 `"lost"`。bleikcp 使用
+244-byte datagram、16-segment window、32 帧输入队列和 4096-byte TX/RX buffer，关闭
+congestion window。Byte stream 上的帧为 `[type u8][len u16 big-endian][payload]`：
+`HELLO`（版本 + tag，双方先发，5000 ms 内校验，不符报 `"mismatch"`）、`DATA`（一条
+消息）和 `BYE`（close、job 结束或 Host stop 时发送并最多 flush 200 ms，对端立即报告
+`"peer_closed"`）。超长或未知帧按协议错误结束为 `"lost"`。
+
+**流控。** 发送侧是 4096-byte bleikcp TX buffer（约 15 条最大消息），满时返回
+`busy`。接收侧是进程级 16 项事件环；环满时 reader 停止读取，KCP 接收窗口随之填满，
+对端 `send` 变为 `busy`，不丢消息。
+
+**线程与回收。** 每个 session 一个 `$lua/link` task 负责建立连接；join 的读循环在该
+task 上，host 的读循环在 bleikcp server handler 上。锁顺序为 job mutex → link
+mutex，session task 只取 link mutex 并用 `h2_lua_host_wake_job()` 唤醒 job。
+`link.close()`、job 进入终态、`h2_lua_host_stop()` 和 `h2_lua_job_release()` 只请求
+关闭；session task 随后发送 `BYE`，停止广播/扫描，关闭 server 或 stream 并断开
+连接。`h2_lua_host_destroy()` join session task 并释放 provider 后才返回。
+
 ## ESP-Claw profile
 
 兼容库存固定到 ESP-Claw commit
@@ -190,6 +261,7 @@ release 时归还 bounded request 槽位。
 
 ```sh
 bazel test //libs/lua:all
+bazel test //libs/lua:lua_link_test
 bazel query 'somepath(//libs/lua:lua_core, //libs/runtime:runtime)'
 rg -n 'h2_runtime_(poll|wait)_event' libs/lua/src
 bazel run //projects/e2e/targets/cc_binary/lua-runtime:e2e-lua-runtime

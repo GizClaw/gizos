@@ -14,7 +14,7 @@ static int is_terminal(h2_lua_job_state_t state) {
 static int module_name_is_reserved(const char *name) {
   static const char *const reserved[] = {
       "runtime",   "delay", "system", "display",
-      "lcd_touch", "audio", "json",   "capability",
+      "lcd_touch", "audio", "json",   "capability", "link",
   };
   for (size_t i = 0u; i < sizeof(reserved) / sizeof(reserved[0]); ++i) {
     if (strcmp(name, reserved[i]) == 0) {
@@ -55,6 +55,7 @@ static void worker_entry(void *context) {
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
       h2_lua_cancel_job_capabilities(host, terminal_job_id,
                                      terminal_job_generation);
+      h2_lua_link_job_ended(host, terminal_job_id, terminal_job_generation);
     }
     if (!progressed && atomic_load(&host->stopping) == 0) {
       (void)h2_pal_queue_recv(host->config.runtime->queue, worker->wake_queue,
@@ -131,6 +132,14 @@ static void release_job(h2_lua_job_t *job) {
   h2_lua_vm_close(job->vm);
   memset(job, 0, sizeof(*job));
   job->mutex = mutex;
+}
+
+void h2_lua_link_job_ended(h2_lua_host_t *host, h2_lua_job_id_t job_id,
+                           uint32_t job_generation) {
+  if (host != NULL && host->link_hooks != NULL &&
+      job_id != H2_LUA_JOB_ID_NONE) {
+    host->link_hooks->job_ended(host->link_user, job_id, job_generation);
+  }
 }
 
 void h2_lua_cancel_job_capabilities(h2_lua_host_t *host, h2_lua_job_id_t job_id,
@@ -516,6 +525,7 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
     }
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs[i].mutex);
     h2_lua_cancel_job_capabilities(host, job_id, job_generation);
+    h2_lua_link_job_ended(host, job_id, job_generation);
   }
   for (i = 0u; i < host->config.worker_count; ++i) {
     if (host->workers[i].wake_queue != NULL) {
@@ -569,6 +579,11 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   }
   for (i = 0u; i < host->config.max_jobs; ++i) {
     release_job(&host->jobs[i]);
+  }
+  if (host->link_hooks != NULL) {
+    host->link_hooks->destroy(host->link_user);
+    host->link_hooks = NULL;
+    host->link_user = NULL;
   }
   if (host->capability_mutex != NULL) {
     (void)h2_pal_mutex_destroy(host->config.runtime->sync,

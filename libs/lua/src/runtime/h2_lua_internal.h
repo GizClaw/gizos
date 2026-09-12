@@ -48,13 +48,24 @@ typedef struct h2_lua_task {
   h2_lua_capability_request_id_t capability_request_id;
   int cancel_requested;
   int release_when_done;
+  /* Set on link callback tasks; the next link event waits until none of
+   * them is live so messages are handled in arrival order. */
+  int ordered_callback;
   char message[H2_LUA_MESSAGE_MAX];
 } h2_lua_task_t;
+
+/* Lua-only event kinds for the `link` module. They are delivered through the
+ * same per-job callback table as Runtime events, with component_id NONE, and
+ * sit far above every h2_runtime_event_kind_t value. */
+#define H2_LUA_LINK_EVENT_CONNECTED 0x10001u
+#define H2_LUA_LINK_EVENT_MESSAGE 0x10002u
+#define H2_LUA_LINK_EVENT_DISCONNECTED 0x10003u
+#define H2_LUA_LINK_EVENT_ERROR 0x10004u
 
 typedef struct h2_lua_callback {
   uint32_t token;
   h2_runtime_component_id_t component_id;
-  h2_runtime_event_kind_t kind;
+  uint32_t kind;
   int lua_ref;
   int active;
 } h2_lua_callback_t;
@@ -161,6 +172,21 @@ typedef struct h2_lua_job {
   char require_root[H2_LUA_PATH_MAX];
 } h2_lua_job_t;
 
+/*
+ * Hooks installed by //libs/lua:lua_link before Host start. open_module adds
+ * the provider's operations to the `link` table on top of the stack. deliver
+ * runs on the owning worker with the job mutex held. job_ended only requests
+ * teardown and never blocks; destroy joins and frees the provider after every
+ * worker has been joined.
+ */
+typedef struct h2_lua_link_hooks {
+  void (*open_module)(void *user, lua_State *state, struct h2_lua_job *job);
+  void (*deliver)(void *user, struct h2_lua_job *job);
+  void (*job_ended)(void *user, h2_lua_job_id_t job_id,
+                    uint32_t job_generation);
+  void (*destroy)(void *user);
+} h2_lua_link_hooks_t;
+
 typedef struct h2_lua_worker {
   struct h2_lua_host *host;
   size_t index;
@@ -188,6 +214,8 @@ struct h2_lua_host {
   h2_pal_mutex_t *audio_mutex;
   size_t audio_speaker_users;
   size_t audio_mic_users;
+  const h2_lua_link_hooks_t *link_hooks;
+  void *link_user;
 };
 
 void *h2_lua_runtime_realloc(void *user, void *ptr, size_t old_size,
@@ -209,6 +237,13 @@ void h2_lua_job_release_audio_speaker(h2_lua_job_t *job);
 h2_pal_result_t h2_lua_job_acquire_audio_mic(h2_lua_job_t *job);
 void h2_lua_job_release_audio_mic(h2_lua_job_t *job);
 void h2_lua_deliver_events(h2_lua_job_t *job);
+/* Registers the function at function_index for (component_id, kind) and
+ * pushes the handle; raises a Lua error when the table is full. */
+int h2_lua_push_callback_register(lua_State *state, h2_lua_job_t *job,
+                                  h2_runtime_component_id_t component_id,
+                                  uint32_t kind, int function_index);
+void h2_lua_link_job_ended(h2_lua_host_t *host, h2_lua_job_id_t job_id,
+                           uint32_t job_generation);
 h2_lua_task_t *h2_lua_current_task(lua_State *state);
 h2_lua_task_t *h2_lua_find_task(h2_lua_job_t *job, uint32_t task_id);
 h2_pal_result_t h2_lua_spawn_task(h2_lua_job_t *job, lua_State *source_state,

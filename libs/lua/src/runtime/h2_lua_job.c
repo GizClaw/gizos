@@ -771,6 +771,9 @@ h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job) {
     return H2_PAL_OK;
   }
   h2_lua_deliver_events(job);
+  if (job->host->link_hooks != NULL) {
+    job->host->link_hooks->deliver(job->host->link_user, job);
+  }
   if (!is_terminal(job->state)) {
     update_waiters(job, now);
     h2_lua_task_t *task = next_ready_task(job);
@@ -894,5 +897,6 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_release_job_capabilities(host, job_id, job_generation);
+  h2_lua_link_job_ended(host, job_id, job_generation);
   return H2_PAL_OK;
 }

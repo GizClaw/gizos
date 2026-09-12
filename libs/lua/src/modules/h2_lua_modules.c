@@ -146,8 +146,6 @@ static int lua_runtime_on(lua_State *state) {
   h2_runtime_event_kind_t kind =
       (h2_runtime_event_kind_t)luaL_checkinteger(state, 2);
   h2_runtime_component_info_t component_info;
-  h2_lua_callback_t *callback;
-  size_t callback_index;
   luaL_checktype(state, 3, LUA_TFUNCTION);
   if (component_id == H2_RUNTIME_COMPONENT_ID_NONE ||
       (kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN &&
@@ -172,6 +170,16 @@ static int lua_runtime_on(lua_State *state) {
        component_info.kind != H2_RUNTIME_COMPONENT_IMU)) {
     return luaL_error(state, "Runtime component does not support event type");
   }
+  return h2_lua_push_callback_register(state, job, component_id, (uint32_t)kind,
+                                       3);
+}
+
+int h2_lua_push_callback_register(lua_State *state, h2_lua_job_t *job,
+                                  h2_runtime_component_id_t component_id,
+                                  uint32_t kind, int function_index) {
+  h2_lua_callback_t *callback;
+  size_t callback_index;
+  function_index = lua_absindex(state, function_index);
   for (callback_index = 0u; callback_index < job->callback_count;
        ++callback_index) {
     if (!job->callbacks[callback_index].active) {
@@ -192,7 +200,7 @@ static int lua_runtime_on(lua_State *state) {
   callback->component_id = component_id;
   callback->kind = kind;
   callback->active = 1;
-  lua_pushvalue(state, 3);
+  lua_pushvalue(state, function_index);
   callback->lua_ref = luaL_ref(state, LUA_REGISTRYINDEX);
   lua_pushinteger(state, (lua_Integer)callback->token);
   return 1;
@@ -241,7 +249,7 @@ static int open_runtime(lua_State *state) {
   set_function(state, "off", lua_runtime_off, job);
   lua_setfield(state, -2, "components");
 
-  lua_createtable(state, 0, 6);
+  lua_createtable(state, 0, 10);
 #define H2_SET_EVENT(name, kind)                                               \
   lua_pushinteger(state, H2_RUNTIME_COMPONENT_EVENT_##kind);                   \
   lua_setfield(state, -2, name)
@@ -252,6 +260,14 @@ static int open_runtime(lua_State *state) {
   H2_SET_EVENT("IMU_GESTURE", IMU_GESTURE);
   H2_SET_EVENT("ERROR", ERROR);
 #undef H2_SET_EVENT
+#define H2_SET_LINK_EVENT(name, kind)                                          \
+  lua_pushinteger(state, H2_LUA_LINK_EVENT_##kind);                            \
+  lua_setfield(state, -2, name)
+  H2_SET_LINK_EVENT("LINK_CONNECTED", CONNECTED);
+  H2_SET_LINK_EVENT("LINK_MESSAGE", MESSAGE);
+  H2_SET_LINK_EVENT("LINK_DISCONNECTED", DISCONNECTED);
+  H2_SET_LINK_EVENT("LINK_ERROR", ERROR);
+#undef H2_SET_LINK_EVENT
   lua_setfield(state, -2, "event");
   return 1;
 }
@@ -2985,6 +3001,61 @@ static void add_preload(lua_State *state, const char *name, lua_CFunction open,
   lua_pop(state, 2);
 }
 
+static int lua_link_available(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  lua_pushboolean(state, job->host->link_hooks != NULL);
+  return 1;
+}
+
+static int lua_link_unavailable(lua_State *state) {
+  lua_pushnil(state);
+  lua_pushliteral(state, "link: unavailable");
+  return 2;
+}
+
+static int lua_link_close_unavailable(lua_State *state) {
+  lua_pushboolean(state, 1);
+  return 1;
+}
+
+static int lua_link_state_unavailable(lua_State *state) {
+  lua_pushliteral(state, "unavailable");
+  return 1;
+}
+
+static int lua_link_on(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  lua_Integer kind = luaL_checkinteger(state, 1);
+  luaL_checktype(state, 2, LUA_TFUNCTION);
+  if (kind != H2_LUA_LINK_EVENT_CONNECTED &&
+      kind != H2_LUA_LINK_EVENT_MESSAGE &&
+      kind != H2_LUA_LINK_EVENT_DISCONNECTED &&
+      kind != H2_LUA_LINK_EVENT_ERROR) {
+    return luaL_argerror(state, 1, "expected a runtime.event.LINK_* kind");
+  }
+  return h2_lua_push_callback_register(
+      state, job, H2_RUNTIME_COMPONENT_ID_NONE, (uint32_t)kind, 2);
+}
+
+/* Builtin `link` surface. Without an installed provider every operation fails
+ * cleanly; h2_lua_link_enable() replaces host/join/send/close/state. */
+static int open_link(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  lua_createtable(state, 0, 8);
+  set_function(state, "available", lua_link_available, job);
+  set_function(state, "on", lua_link_on, job);
+  set_function(state, "off", lua_runtime_off, job);
+  set_function(state, "host", lua_link_unavailable, job);
+  set_function(state, "join", lua_link_unavailable, job);
+  set_function(state, "send", lua_link_unavailable, job);
+  set_function(state, "close", lua_link_close_unavailable, job);
+  set_function(state, "state", lua_link_state_unavailable, job);
+  if (job->host->link_hooks != NULL) {
+    job->host->link_hooks->open_module(job->host->link_user, state, job);
+  }
+  return 1;
+}
+
 h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   size_t i;
   lua_State *state;
@@ -3003,6 +3074,7 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "audio", open_audio, job);
   add_preload(state, "json", open_json, job);
   add_preload(state, "capability", open_capability, job);
+  add_preload(state, "link", open_link, job);
   lua_getglobal(state, "package");
   lua_getfield(state, -1, "searchers");
   lua_pushlightuserdata(state, job);
