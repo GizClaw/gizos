@@ -166,13 +166,14 @@ h2_pal_result_t h2_lua_lock_job(h2_lua_host_t *host, h2_lua_job_id_t id,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NOT_FOUND;
   }
-  result = h2_pal_mutex_lock(host->config.runtime->sync, job->mutex);
+  result = h2_pal_mutex_lock(host->config.runtime->sync, h2_lua_job_mutex(job));
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   if (result != H2_PAL_OK) {
     return result;
   }
   if (job->id != id) {
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync,
+                              h2_lua_job_mutex(job));
     return H2_PAL_ERR_NOT_FOUND;
   }
   *out_job = job;
@@ -181,7 +182,8 @@ h2_pal_result_t h2_lua_lock_job(h2_lua_host_t *host, h2_lua_job_id_t id,
 
 void h2_lua_unlock_job(h2_lua_job_t *job) {
   if (job != NULL && job->host != NULL) {
-    (void)h2_pal_mutex_unlock(job->host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                              h2_lua_job_mutex(job));
   }
 }
 
@@ -347,14 +349,13 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_FULL;
   }
-  if (h2_pal_mutex_lock(host->config.runtime->sync, job->mutex) != H2_PAL_OK) {
+  size_t job_index = (size_t)(job - host->jobs);
+  h2_pal_mutex_t *job_mutex = host->job_mutexes[job_index];
+  if (h2_pal_mutex_lock(host->config.runtime->sync, job_mutex) != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_BUSY;
   }
-  h2_pal_mutex_t *job_mutex = job->mutex;
-  size_t job_index = (size_t)(job - host->jobs);
   memset(job, 0, sizeof(*job));
-  job->mutex = job_mutex;
   job->host = host;
   if (app_id != NULL) {
     memcpy(job->app_id, app_id, strlen(app_id) + 1u);
@@ -364,7 +365,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
     if (slash != NULL) {
       size_t root_length = (size_t)(slash - (chunk_name + 1));
       if (root_length >= sizeof(job->require_root)) {
-        (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+        (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
         (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
         return H2_PAL_ERR_NO_SPACE;
       }
@@ -403,8 +404,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
     h2_pal_mem_free(host->config.runtime->mem, job->tasks);
     h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
     memset(job, 0, sizeof(*job));
-    job->mutex = job_mutex;
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -432,8 +432,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
     h2_pal_mem_free(host->config.runtime->mem, job->tasks);
     h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
     memset(job, 0, sizeof(*job));
-    job->mutex = job_mutex;
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -447,8 +446,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
     h2_pal_mem_free(host->config.runtime->mem, job->tasks);
     h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
     memset(job, 0, sizeof(*job));
-    job->mutex = job_mutex;
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -462,8 +460,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
       h2_pal_mem_free(host->config.runtime->mem, job->tasks);
       h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
       memset(job, 0, sizeof(*job));
-      job->mutex = job_mutex;
-      (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+      (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
       return H2_PAL_ERR_INVALID_ARG;
     }
@@ -494,7 +491,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
               (int)host->config.instruction_quantum);
   job->id = new_job_id;
   *out_job_id = new_job_id;
-  (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+  (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_host_wake_job(job);
   return H2_PAL_OK;
@@ -849,6 +846,7 @@ h2_pal_result_t h2_lua_job_get_status(const h2_lua_host_t *host,
 h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
                                    h2_lua_job_id_t job_id) {
   h2_lua_job_t *job = NULL;
+  h2_pal_mutex_t *job_mutex;
   const h2_pal_mem_api_t *mem;
   uint32_t job_generation;
   h2_pal_result_t result;
@@ -864,7 +862,8 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NOT_FOUND;
   }
-  result = h2_pal_mutex_lock(host->config.runtime->sync, job->mutex);
+  job_mutex = h2_lua_job_mutex(job);
+  result = h2_pal_mutex_lock(host->config.runtime->sync, job_mutex);
   if (result != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return result;
@@ -892,9 +891,7 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   h2_pal_mem_free(mem, job->events);
   h2_pal_mem_free(mem, job->audio_tracks);
   h2_lua_vm_close(job->vm);
-  h2_pal_mutex_t *job_mutex = job->mutex;
   memset(job, 0, sizeof(*job));
-  job->mutex = job_mutex;
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_release_job_capabilities(host, job_id, job_generation);

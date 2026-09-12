@@ -37,7 +37,7 @@ static void worker_entry(void *context) {
       h2_lua_job_t *job = &host->jobs[i];
       h2_lua_job_id_t terminal_job_id = H2_LUA_JOB_ID_NONE;
       uint32_t terminal_job_generation = 0u;
-      if (h2_pal_mutex_lock(host->config.runtime->sync, job->mutex) !=
+      if (h2_pal_mutex_lock(host->config.runtime->sync, host->job_mutexes[i]) !=
           H2_PAL_OK) {
         continue;
       }
@@ -52,7 +52,8 @@ static void worker_entry(void *context) {
           terminal_job_generation = job->generation;
         }
       }
-      (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+      (void)h2_pal_mutex_unlock(host->config.runtime->sync,
+                                host->job_mutexes[i]);
       h2_lua_cancel_job_capabilities(host, terminal_job_id,
                                      terminal_job_generation);
     }
@@ -101,7 +102,6 @@ uint64_t h2_lua_now_ms(const h2_lua_host_t *host) {
 
 static void release_job(h2_lua_job_t *job) {
   const h2_pal_mem_api_t *mem;
-  h2_pal_mutex_t *mutex;
   h2_lua_job_id_t job_id;
   uint32_t job_generation;
   size_t i;
@@ -109,7 +109,6 @@ static void release_job(h2_lua_job_t *job) {
     return;
   }
   mem = job->host->config.runtime->mem;
-  mutex = job->mutex;
   job_id = job->id;
   job_generation = job->generation;
   h2_lua_release_job_capabilities(job->host, job_id, job_generation);
@@ -130,7 +129,6 @@ static void release_job(h2_lua_job_t *job) {
   h2_pal_mem_free(mem, job->audio_tracks);
   h2_lua_vm_close(job->vm);
   memset(job, 0, sizeof(*job));
-  job->mutex = mutex;
 }
 
 void h2_lua_cancel_job_capabilities(h2_lua_host_t *host, h2_lua_job_id_t job_id,
@@ -214,6 +212,7 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
                                    h2_lua_host_t **out_host) {
   h2_lua_host_t *host;
   h2_lua_host_config_t normalized;
+  size_t host_size;
   size_t i;
   if (config == NULL || out_host == NULL || config->runtime == NULL ||
       config->runtime->mem == NULL || config->runtime->time == NULL) {
@@ -325,11 +324,12 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
     }
   }
 
-  host = h2_pal_mem_alloc(normalized.runtime->mem, sizeof(*host));
+  host_size = sizeof(*host) + normalized.max_jobs * sizeof(*host->job_mutexes);
+  host = h2_pal_mem_alloc(normalized.runtime->mem, host_size);
   if (host == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  memset(host, 0, sizeof(*host));
+  memset(host, 0, host_size);
   host->config = normalized;
   atomic_init(&host->started, 0);
   atomic_init(&host->stopping, 0);
@@ -422,12 +422,12 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
                                   .name = "h2-lua-job",
                                   .allocator = normalized.runtime->mem,
                               },
-                              &host->jobs[job_index].mutex);
+                              &host->job_mutexes[job_index]);
       if (mutex_result != H2_PAL_OK) {
         for (size_t created_index = 0u; created_index < job_index;
              ++created_index) {
           (void)h2_pal_mutex_destroy(normalized.runtime->sync,
-                                     host->jobs[created_index].mutex);
+                                     host->job_mutexes[created_index]);
         }
         (void)h2_pal_mutex_destroy(normalized.runtime->sync, host->audio_mutex);
         (void)h2_pal_mutex_destroy(normalized.runtime->sync, host->jobs_mutex);
@@ -514,7 +514,7 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
   for (i = 0u; i < host->config.max_jobs; ++i) {
     h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
     uint32_t job_generation = 0u;
-    if (h2_pal_mutex_lock(host->config.runtime->sync, host->jobs[i].mutex) !=
+    if (h2_pal_mutex_lock(host->config.runtime->sync, host->job_mutexes[i]) !=
         H2_PAL_OK) {
       continue;
     }
@@ -528,7 +528,7 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
       }
       h2_lua_job_finish(&host->jobs[i], H2_LUA_JOB_STOPPED, "host stopped");
     }
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs[i].mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->job_mutexes[i]);
     h2_lua_cancel_job_capabilities(host, job_id, job_generation);
   }
   for (i = 0u; i < host->config.worker_count; ++i) {
@@ -596,9 +596,9 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
     (void)h2_pal_mutex_destroy(host->config.runtime->sync, host->jobs_mutex);
   }
   for (i = 0u; i < host->config.max_jobs; ++i) {
-    if (host->jobs[i].mutex != NULL) {
+    if (host->job_mutexes[i] != NULL) {
       (void)h2_pal_mutex_destroy(host->config.runtime->sync,
-                                 host->jobs[i].mutex);
+                                 host->job_mutexes[i]);
     }
   }
   h2_pal_mem_free(mem, host->jobs);

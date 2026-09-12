@@ -608,32 +608,32 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime) {
   return host;
 }
 
-static void assert_missing_worker_apis_are_rejected(h2_runtime_t *runtime) {
-  const h2_pal_queue_api_t *queue = runtime->queue;
-  const h2_pal_task_api_t *task = runtime->task;
-  h2_pal_queue_vtable_t fallback_vtable = *queue->vtable;
+static void
+assert_missing_worker_apis_are_rejected(const h2_runtime_t *runtime) {
+  /* Probe a copy: the shared runtime's input task reads queue concurrently. */
+  h2_runtime_t probe = *runtime;
+  h2_pal_queue_vtable_t fallback_vtable = *runtime->queue->vtable;
   h2_pal_queue_api_t fallback_queue = {
-      .user = queue->user,
+      .user = runtime->queue->user,
       .vtable = &fallback_vtable,
   };
   h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = runtime};
-  runtime->queue = NULL;
+  h2_lua_host_config_t config = {.runtime = &probe};
+  probe.queue = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_UNSUPPORTED);
   assert(host == NULL);
-  runtime->queue = queue;
-  runtime->task = NULL;
+  probe.queue = runtime->queue;
+  probe.task = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_UNSUPPORTED);
   assert(host == NULL);
-  runtime->task = task;
+  probe.task = runtime->task;
 
   fallback_vtable.send_latest = NULL;
-  runtime->queue = &fallback_queue;
+  probe.queue = &fallback_queue;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   assert(h2_lua_host_step(host) == H2_PAL_OK);
   h2_lua_host_destroy(host);
-  runtime->queue = queue;
 }
 
 typedef struct capability_fixture {
@@ -1238,7 +1238,7 @@ int main(void) {
                                   audio_input_block_script,
                                   sizeof(audio_input_block_script) - 1u, NULL,
                                   0u, &block_job_id) == H2_PAL_OK);
-    /* The worker holds job->mutex for the whole blocking read, so polling
+    /* The worker holds the slot mutex for the whole blocking read, so polling
      * status via h2_lua_job_get_status here would itself block on that same
      * mutex. Watch the mic-acquired counter instead: it flips before the
      * script's input:read() call, without needing the lock. */
