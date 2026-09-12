@@ -29,14 +29,19 @@ native_component_src/
     └── cp/                # BK7258 CP components
 ├── bk3633/                # BK3633 SDK runtime 与 PAL backend
 └── jieli/
-    └── br23/              # JieLi AC695N PAL core provider
+    ├── br23/              # JieLi AC695N PAL core provider
+    └── br35/              # JieLi AC707N PAL core provider
 ```
 
 ESP32-S3、ESP32-P4 和 ESP32-C5 共用 ESP-IDF 6.x component root。Chip 差异通过 `IDF_TARGET`、target-specific source selection 或 component config 表达，不按 chip 复制一整套 component tree。
 
 Multi-chip 或 multi-core target 必须明确区分代码运行在哪一个执行单元上。BK7258 的 AP 和 CP 因为拥有不同的 SDK 能力、启动流程和依赖，所以分别放在 `native_component_src/bk7258/ap/` 与 `native_component_src/bk7258/cp/`。
 
-杰理 (JieLi) 各系列 SDK 由 `jieli_firmware` external rule 按 `target`（`br23` = AC695N、`wl82` = AC791N）驱动，共用一条工具链 repository；`native_component_src/jieli/br23/h2_pal_core/` 保存 AC695N 的 PAL core provider，接入方式见 [JieLi Components](./components/jieli)。
+杰理 (JieLi) 各系列 SDK 由 `jieli_firmware` external rule 按 `target`
+（`br23` = AC695N、`br35` = AC707N、`wl82` = AC791N）驱动，共用一条
+工具链 repository；`native_component_src/jieli/br23/h2_pal_core/` 与
+`native_component_src/jieli/br35/h2_pal_core/` 分别保存 AC695N 和 AC707N 的
+PAL core provider，接入方式见 [JieLi Components](./components/jieli)。
 
 Bazel 直接编译的平台实现位于 `libs/pal/providers/{linux,darwin,posix,allwinner-linux,desktop,ios,android,web}/`。这些目录仍使用下方平台专题文档，但不属于顶层 `native_component_src/` source tree。
 
@@ -76,6 +81,7 @@ PAL backend roots 包括：
 - `native_component_src/bk7258/ap/h2_pal_core`
 - `native_component_src/bk7258/cp/h2_pal_core`
 - `native_component_src/jieli/br23/h2_pal_core`
+- `native_component_src/jieli/br35/h2_pal_core`
 
 负责运行完整 runtime 的 target 如果不支持某项 PAL 能力，仍应提供 contract 要求的 API object，并使用明确的 unsupported、dummy 或 fake implementation；不能让调用方依赖缺失 symbol 判断能力。不运行 runtime 的辅助 chip 或 core 不要求提供完整 PAL 和 runtime config。
 

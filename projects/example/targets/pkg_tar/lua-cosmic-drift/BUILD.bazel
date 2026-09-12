@@ -1,0 +1,27 @@
+load("//libs/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+# The browser test drags across the Lua scene, then presses Escape: the Back
+# Button action must cancel the Lua job and end the App cleanly.
+h2_web_app(
+    name = "lua-cosmic-drift",
+    srcs = ["main.c"],
+    app_name = "lua-cosmic-drift",
+    canvas_min = 1000,
+    linkopts = ["-sASYNCIFY_REMOVE=['lua*','yyjson*']"],
+    passes = [
+        "H2_WEB_APP name=lua-cosmic-drift stage=ready",
+        "H2_WEB_APP name=lua-cosmic-drift result=PASS rc=0 fs=0 destroy=0",
+    ],
+    presses = [[
+        "H2_WEB_APP name=lua-cosmic-drift stage=ready",
+        "Escape",
+    ]],
+    taps = [[
+        "H2_WEB_APP name=lua-cosmic-drift stage=ready",
+        120,
+        120,
+    ]],
+    deps = ["//projects/example/apps/lua-cosmic-drift/app:lua_cosmic_drift"],
+)

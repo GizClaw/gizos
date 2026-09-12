@@ -1,0 +1,16 @@
+load("//libs/app_host:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Web board: the browser counterpart of this board for h2_web_app() pages.
+# 1024×600 framebuffer (landscape), gt9xx touch; the right-side user key (PD14).
+h2_web_board(
+    name = "web",
+    buttons = {
+        "action_button": "Enter",
+    },
+    default_skin = "device",
+    display_height = 600,
+    display_width = 1024,
+    skins = {"device": "device.html"},
+)

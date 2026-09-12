@@ -1250,6 +1250,13 @@ int main(void) {
                   "register wire method remains 90");
   fails += expect(H2_GIZCLAW_RPC_SERVER_PEER_DELETE == 93,
                   "peer delete wire method remains 93");
+  fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_PING == 123 &&
+                      H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING == 124 &&
+                      H2_GIZCLAW_RPC_SERVER_PROFILE_GET == 125,
+                  "social ping and public profile wire methods are 123-125");
+  fails += expect(H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND == 126 &&
+                      H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING == 127,
+                  "device find and social ping reverse methods are 126-127");
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
   config.server_endpoint.data = "127.0.0.1:19820";
@@ -1784,6 +1791,74 @@ int main(void) {
                           NULL, 0u, id, id, 1000u, &social_request) ==
                           H2_PAL_ERR_INVALID_ARG,
                   "friend group member operations reject invalid arguments");
+  {
+    /* Each call breaks exactly one argument, so the fake service is never
+     * reached; a request is created only after every argument is valid. */
+    h2_gizclaw_service_t *const unused = (h2_gizclaw_service_t *)0x1;
+    char long_key[H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES + 1u];
+    memset(long_key, 'k', sizeof(long_key));
+    const h2_gizclaw_str_t key = {.data = "pk", .len = 2u};
+    const h2_gizclaw_str_t bad_keys[] = {
+        {.data = NULL, .len = 0u},
+        {.data = "", .len = 0u},
+        {.data = "p k", .len = 3u},
+        {.data = "p\x7f", .len = 2u},
+        {.data = "\xe4\xbd\xa0", .len = 3u},
+        {.data = long_key, .len = sizeof(long_key)},
+    };
+    const h2_gizclaw_str_t bad_names[] = {
+        {.data = NULL, .len = 0u},
+        {.data = "", .len = 0u},
+        {.data = "\xff", .len = 1u},
+        {.data = "a\0b", .len = 3u},
+        oversized_group,
+    };
+    const h2_gizclaw_friend_group_role_t bad_roles[] = {
+        H2_GIZCLAW_FRIEND_GROUP_ROLE_UNSPECIFIED,
+        H2_GIZCLAW_FRIEND_GROUP_ROLE_OWNER,
+        (h2_gizclaw_friend_group_role_t)99,
+    };
+    bool rejected = true;
+    const h2_gizclaw_friend_group_role_t member_role =
+        H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER;
+    for (size_t i = 0u; i < sizeof(bad_keys) / sizeof(bad_keys[0]); ++i) {
+      social_request = (h2_gizclaw_req_t *)0x1;
+      rejected &= h2_gizclaw_req_create_friend_group_member_add(
+                      unused, 0u, id, bad_keys[i], id, member_role, 1000u,
+                      &social_request) == H2_PAL_ERR_INVALID_ARG &&
+                  social_request == NULL;
+    }
+    for (size_t i = 0u; i < sizeof(bad_names) / sizeof(bad_names[0]); ++i) {
+      rejected &= h2_gizclaw_req_create_friend_group_member_add(
+                      unused, 0u, bad_names[i], key, id, member_role, 1000u,
+                      &social_request) == H2_PAL_ERR_INVALID_ARG &&
+                  h2_gizclaw_req_create_friend_group_member_add(
+                      unused, 0u, id, key, bad_names[i], member_role, 1000u,
+                      &social_request) == H2_PAL_ERR_INVALID_ARG;
+    }
+    for (size_t i = 0u; i < sizeof(bad_roles) / sizeof(bad_roles[0]); ++i)
+      rejected &= h2_gizclaw_req_create_friend_group_member_add(
+                      unused, 0u, id, key, id, bad_roles[i], 1000u,
+                      &social_request) == H2_PAL_ERR_INVALID_ARG;
+    rejected &= h2_gizclaw_req_create_friend_group_member_add(
+                    NULL, 0u, id, key, id, member_role, 1000u,
+                    &social_request) == H2_PAL_ERR_INVALID_ARG &&
+                h2_gizclaw_req_create_friend_group_member_add(
+                    NULL, 0u, id, key, id, member_role, 1000u, NULL) ==
+                    H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_friend_group_member_t member;
+    h2_gizclaw_resp_storage_t no_storage = {0};
+    rejected &= h2_gizclaw_rpc_friend_group_member_add(
+                    unused, id, key, id, member_role, 1000u, NULL, &member) ==
+                    H2_PAL_ERR_INVALID_ARG &&
+                h2_gizclaw_rpc_friend_group_member_add(
+                    unused, id, key, id, member_role, 1000u, &no_storage,
+                    NULL) == H2_PAL_ERR_INVALID_ARG &&
+                h2_gizclaw_resp_parse_friend_group_member_add(
+                    NULL, &no_storage, &member) == H2_PAL_ERR_INVALID_ARG;
+    fails += expect(rejected,
+                    "friend group member add validates key, names and role");
+  }
   fails += expect(h2_gizclaw_provider_result_to_gzc(H2_PAL_ERR_NOT_FOUND) ==
                       GZC_ERR_UNSUPPORTED,
                   "provider not-found maps to unsupported");

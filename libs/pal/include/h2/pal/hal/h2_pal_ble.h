@@ -499,6 +499,8 @@ typedef struct h2_pal_ble_vtable {
         uint16_t conn_handle,
         const h2_pal_ble_gatt_subscribe_t *subscribe,
         uint32_t timeout_ms);
+    h2_pal_result_t (*unregister_gatt_service)(
+        void *user, const h2_pal_ble_uuid_t *service_uuid);
 } h2_pal_ble_vtable_t;
 
 struct h2_pal_ble_api {
@@ -815,8 +817,8 @@ static inline h2_pal_result_t h2_pal_ble_stop_scan(const h2_pal_ble_host_api_t *
  * Register a GATT schema whose declarations and callbacks remain borrowed.
  *
  * The caller keeps the service, characteristic, UUID, initial-value, callback
- * context, and output-handle storage valid until unregister_gatt_services()
- * or Host stop completes. Providers may impose implementation-specific schema
+ * context, and output-handle storage valid until unregister_gatt_service() for that service,
+ * unregister_gatt_services(), or Host stop completes. Providers may impose implementation-specific schema
  * and resource limits. Resource exhaustion returns H2_PAL_ERR_NO_SPACE without
  * exposing a partial schema.
  */
@@ -842,6 +844,26 @@ static inline h2_pal_result_t h2_pal_ble_unregister_gatt_services(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return ble->vtable->unregister_gatt_services(ble->user);
+}
+
+/**
+ * Unbind only the named service's callbacks, contexts and output-handle pointers.
+ *
+ * The service keeps its schema slot; same-UUID re-registration reuses it.
+ * Other services stay bound. An unknown UUID returns H2_PAL_ERR_NOT_FOUND.
+ * NULL arguments return H2_PAL_ERR_INVALID_ARG; an absent optional operation
+ * returns H2_PAL_ERR_UNSUPPORTED.
+ */
+static inline h2_pal_result_t h2_pal_ble_unregister_gatt_service(
+    const h2_pal_ble_host_api_t *ble,
+    const h2_pal_ble_uuid_t *service_uuid) {
+    if (ble == NULL || service_uuid == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (ble->vtable == NULL || ble->vtable->unregister_gatt_service == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return ble->vtable->unregister_gatt_service(ble->user, service_uuid);
 }
 
 static inline h2_pal_result_t h2_pal_ble_notify(

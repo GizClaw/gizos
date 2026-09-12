@@ -274,6 +274,7 @@ cc_library(
         "//tools/bazel/platforms:is_bk7258": [":firmware"],
         "//tools/bazel/platforms:is_esp32p4": [":firmware"],
         "//tools/bazel/platforms:is_esp32s3": [":firmware"],
+        "@platforms//cpu:wasm32": [":platform_web"],
         "//conditions:default": [
             ":platform",
             ":upstream",

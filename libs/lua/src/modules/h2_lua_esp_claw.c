@@ -34,7 +34,7 @@ static const h2_lua_esp_claw_module_info_t s_modules[] = {
     {"lvgl", H2_LUA_ESP_CLAW_MODULE_UNAVAILABLE},
     {"magnetometer", H2_LUA_ESP_CLAW_MODULE_UNAVAILABLE},
     {"sci", H2_LUA_ESP_CLAW_MODULE_UNAVAILABLE},
-    {"storage", H2_LUA_ESP_CLAW_MODULE_UNAVAILABLE},
+    {"storage", H2_LUA_ESP_CLAW_MODULE_PROFILE},
     {"system", H2_LUA_ESP_CLAW_MODULE_PROFILE},
     {"vision", H2_LUA_ESP_CLAW_MODULE_UNAVAILABLE},
 };

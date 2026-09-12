@@ -608,32 +608,32 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime) {
   return host;
 }
 
-static void assert_missing_worker_apis_are_rejected(h2_runtime_t *runtime) {
-  const h2_pal_queue_api_t *queue = runtime->queue;
-  const h2_pal_task_api_t *task = runtime->task;
-  h2_pal_queue_vtable_t fallback_vtable = *queue->vtable;
+static void
+assert_missing_worker_apis_are_rejected(const h2_runtime_t *runtime) {
+  /* Probe a copy: the shared runtime's input task reads queue concurrently. */
+  h2_runtime_t probe = *runtime;
+  h2_pal_queue_vtable_t fallback_vtable = *runtime->queue->vtable;
   h2_pal_queue_api_t fallback_queue = {
-      .user = queue->user,
+      .user = runtime->queue->user,
       .vtable = &fallback_vtable,
   };
   h2_lua_host_t *host = NULL;
-  h2_lua_host_config_t config = {.runtime = runtime};
-  runtime->queue = NULL;
+  h2_lua_host_config_t config = {.runtime = &probe};
+  probe.queue = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_UNSUPPORTED);
   assert(host == NULL);
-  runtime->queue = queue;
-  runtime->task = NULL;
+  probe.queue = runtime->queue;
+  probe.task = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_UNSUPPORTED);
   assert(host == NULL);
-  runtime->task = task;
+  probe.task = runtime->task;
 
   fallback_vtable.send_latest = NULL;
-  runtime->queue = &fallback_queue;
+  probe.queue = &fallback_queue;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   assert(h2_lua_host_step(host) == H2_PAL_OK);
   h2_lua_host_destroy(host);
-  runtime->queue = queue;
 }
 
 typedef struct capability_fixture {
@@ -731,7 +731,7 @@ static h2_lua_job_status_t run_display_script(h2_lua_host_t *host,
   h2_lua_job_id_t job_id;
   h2_lua_job_status_t job_status;
   test_display_reset();
-  assert(h2_lua_job_submit_text(host, name, script, script_size, NULL, 0u,
+  assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 64u);
   job_status = status(host, job_id);
@@ -790,8 +790,9 @@ static void test_borrowed_display(void) {
     assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
     assert(h2_lua_host_start(host) == H2_PAL_OK);
     h2_lua_job_id_t job;
-    assert(h2_lua_job_submit_text(host, "@borrowed-display.lua",
-        (const uint8_t *)scripts[i], strlen(scripts[i]), NULL, 0u, &job) == H2_PAL_OK);
+    assert(h2_lua_job_submit_text(
+               host, NULL, "@borrowed-display.lua", (const uint8_t *)scripts[i],
+               strlen(scripts[i]), NULL, 0u, &job) == H2_PAL_OK);
     if (i == 4u) {
       for (unsigned wait = 0u; wait < 1000u &&
            status(host, job).state != H2_LUA_JOB_WAITING; ++wait)
@@ -959,7 +960,7 @@ int main(void) {
   h2_lua_job_id_t invalid_size_job_id = H2_LUA_JOB_ID_NONE;
   static const uint8_t invalid_size_script[] = "require('invalid_size')";
   assert(h2_lua_job_submit_text(
-             invalid_size_host, "@scripts/invalid-size-test.lua",
+             invalid_size_host, NULL, "@scripts/invalid-size-test.lua",
              invalid_size_script, sizeof(invalid_size_script) - 1u, NULL, 0u,
              &invalid_size_job_id) == H2_PAL_OK);
   run_until_terminal(invalid_size_host, invalid_size_job_id, 16u);
@@ -1057,34 +1058,35 @@ int main(void) {
       .payload_size = sizeof(component_error),
   };
 
-  assert(h2_lua_job_submit_text(host, "@embedded-nul.lua", embedded_nul_source,
+  assert(h2_lua_job_submit_text(host, NULL, "@embedded-nul.lua",
+                                embedded_nul_source,
                                 sizeof(embedded_nul_source), NULL, 0u,
                                 &job_id) == H2_PAL_ERR_INVALID_ARG);
-  assert(h2_lua_job_submit_file(host, "../escape.lua", NULL, 0u, &job_id) ==
-         H2_PAL_ERR_INVALID_ARG);
-  assert(h2_lua_job_submit_file(host, "/absolute.lua", NULL, 0u, &job_id) ==
-         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_job_submit_file(host, NULL, "../escape.lua", NULL, 0u,
+                                &job_id) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_job_submit_file(host, NULL, "/absolute.lua", NULL, 0u,
+                                &job_id) == H2_PAL_ERR_INVALID_ARG);
   const h2_pal_fs_api_t *fs = runtime->fs;
   runtime->fs = NULL;
-  assert(h2_lua_job_submit_file(host, "scripts/main.lua", NULL, 0u, &job_id) ==
-         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_lua_job_submit_file(host, NULL, "scripts/main.lua", NULL, 0u,
+                                &job_id) == H2_PAL_ERR_UNSUPPORTED);
   runtime->fs = fs;
-  assert(h2_lua_job_submit_file(host, "scripts/oversize.lua", NULL, 0u,
+  assert(h2_lua_job_submit_file(host, NULL, "scripts/oversize.lua", NULL, 0u,
                                 &job_id) == H2_PAL_ERR_NO_SPACE);
-  assert(h2_lua_job_submit_file(host, "scripts/bytecode.lua", NULL, 0u,
+  assert(h2_lua_job_submit_file(host, NULL, "scripts/bytecode.lua", NULL, 0u,
                                 &job_id) == H2_PAL_ERR_FORMAT);
-  assert(h2_lua_job_submit_file(host, "scripts/malformed.lua", NULL, 0u,
+  assert(h2_lua_job_submit_file(host, NULL, "scripts/malformed.lua", NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
-  assert(h2_lua_job_submit_file(host, "scripts/main.lua", file_args, 1u,
+  assert(h2_lua_job_submit_file(host, NULL, "scripts/main.lua", file_args, 1u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "file:ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
-  assert(h2_lua_job_submit_text(host, "@system-profile.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@system-profile.lua",
                                 system_profile_script,
                                 sizeof(system_profile_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
@@ -1100,7 +1102,7 @@ int main(void) {
   atomic_store(&s_test_audio_mic_stop_count, 0);
   s_test_audio_written_bytes = 0u;
   s_test_audio_frame_count = 0u;
-  assert(h2_lua_job_submit_text(host, "@component-profile.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@component-profile.lua",
                                 component_profile_script,
                                 sizeof(component_profile_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
@@ -1138,7 +1140,7 @@ int main(void) {
   const h2_pal_audio_api_t *audio = runtime->audio;
   runtime->touch = NULL;
   runtime->audio = NULL;
-  assert(h2_lua_job_submit_text(host, "@optional-singletons.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@optional-singletons.lua",
                                 optional_singletons_script,
                                 sizeof(optional_singletons_script) - 1u, NULL,
                                 0u, &job_id) == H2_PAL_OK);
@@ -1158,10 +1160,12 @@ int main(void) {
   atomic_store(&s_test_audio_close_count, 0);
   atomic_store(&s_test_audio_start_count, 0);
   atomic_store(&s_test_audio_stop_count, 0);
-  assert(h2_lua_job_submit_text(host, "@audio-wait-1.lua", audio_wait_script,
+  assert(h2_lua_job_submit_text(host, NULL, "@audio-wait-1.lua",
+                                audio_wait_script,
                                 sizeof(audio_wait_script) - 1u, NULL, 0u,
                                 &audio_job_1) == H2_PAL_OK);
-  assert(h2_lua_job_submit_text(host, "@audio-wait-2.lua", audio_wait_script,
+  assert(h2_lua_job_submit_text(host, NULL, "@audio-wait-2.lua",
+                                audio_wait_script,
                                 sizeof(audio_wait_script) - 1u, NULL, 0u,
                                 &audio_job_2) == H2_PAL_OK);
   while (status(host, audio_job_1).state != H2_LUA_JOB_WAITING ||
@@ -1188,11 +1192,11 @@ int main(void) {
   h2_lua_job_id_t audio_input_job_2;
   atomic_store(&s_test_audio_mic_start_count, 0);
   atomic_store(&s_test_audio_mic_stop_count, 0);
-  assert(h2_lua_job_submit_text(host, "@audio-input-wait-1.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@audio-input-wait-1.lua",
                                 audio_input_wait_script,
                                 sizeof(audio_input_wait_script) - 1u, NULL, 0u,
                                 &audio_input_job_1) == H2_PAL_OK);
-  assert(h2_lua_job_submit_text(host, "@audio-input-wait-2.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@audio-input-wait-2.lua",
                                 audio_input_wait_script,
                                 sizeof(audio_input_wait_script) - 1u, NULL, 0u,
                                 &audio_input_job_2) == H2_PAL_OK);
@@ -1230,11 +1234,11 @@ int main(void) {
     atomic_store(&s_test_audio_mic_start_count, 0);
     atomic_store(&s_test_audio_mic_stop_count, 0);
     atomic_store(&s_test_audio_mic_block, 1);
-    assert(h2_lua_job_submit_text(block_host, "@audio-input-block.lua",
+    assert(h2_lua_job_submit_text(block_host, NULL, "@audio-input-block.lua",
                                   audio_input_block_script,
                                   sizeof(audio_input_block_script) - 1u, NULL,
                                   0u, &block_job_id) == H2_PAL_OK);
-    /* The worker holds job->mutex for the whole blocking read, so polling
+    /* The worker holds the slot mutex for the whole blocking read, so polling
      * status via h2_lua_job_get_status here would itself block on that same
      * mutex. Watch the mic-acquired counter instead: it flips before the
      * script's input:read() call, without needing the lock. */
@@ -1274,7 +1278,7 @@ int main(void) {
   atomic_store(&s_test_audio_close_count, 0);
   atomic_store(&s_test_audio_start_count, 0);
   atomic_store(&s_test_audio_stop_count, 0);
-  assert(h2_lua_job_submit_text(host, "@audio-failure.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@audio-failure.lua",
                                 audio_failure_script,
                                 sizeof(audio_failure_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
@@ -1459,7 +1463,7 @@ int main(void) {
       "local ok,err=pcall(d.draw_text_aligned,2147483647,0,2147483647,1,'x',"
       "{color={r=0,g=0,b=0},align='right'});"
       "d.deinit();return tostring(line_err)..':'..tostring(err)";
-  assert(h2_lua_job_submit_text(host, "@display-overflow.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@display-overflow.lua",
                                 display_overflow_script,
                                 sizeof(display_overflow_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
@@ -1482,9 +1486,9 @@ int main(void) {
       "d.fade_rect_to_black(2,2,4,4,38);"
       "d.fill_circle_aa(4,4,2,'black');"
       "d.deinit();return 'display-aa-ok'";
-  assert(h2_lua_job_submit_text(host, "@display-aa.lua", display_aa_script,
-                                sizeof(display_aa_script) - 1u, NULL, 0u,
-                                &job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(
+             host, NULL, "@display-aa.lua", display_aa_script,
+             sizeof(display_aa_script) - 1u, NULL, 0u, &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "display-aa-ok") == 0);
@@ -1505,7 +1509,8 @@ int main(void) {
   host = create_unstarted_host_with_scheduler(runtime, 1u, UINT32_MAX,
                                               UINT32_MAX, 4096u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  assert(h2_lua_job_submit_text(host, "@large-budget.lua", resume_budget_script,
+  assert(h2_lua_job_submit_text(host, NULL, "@large-budget.lua",
+                                resume_budget_script,
                                 sizeof(resume_budget_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
@@ -1518,7 +1523,8 @@ int main(void) {
   host =
       create_unstarted_host_with_scheduler(runtime, 1u, 1u, UINT32_MAX, 4096u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  assert(h2_lua_job_submit_text(host, "@small-budget.lua", resume_budget_script,
+  assert(h2_lua_job_submit_text(host, NULL, "@small-budget.lua",
+                                resume_budget_script,
                                 sizeof(resume_budget_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 256u);
@@ -1534,7 +1540,7 @@ int main(void) {
       "local total=0;for i=1,32 do local x=i*3;local top_h=130;"
       "fill_rect(x-2,top_h-10,43+4,10,rgb(1,2,3));total=total+x end;"
       "return tostring(total)";
-  assert(h2_lua_job_submit_text(host, "@yielded-arguments.lua",
+  assert(h2_lua_job_submit_text(host, NULL, "@yielded-arguments.lua",
                                 yielded_arguments_script,
                                 sizeof(yielded_arguments_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
@@ -1561,7 +1567,8 @@ int main(void) {
                strcmp(module->id, "system") == 0 ||
                strcmp(module->id, "display") == 0 ||
                strcmp(module->id, "lcd_touch") == 0 ||
-               strcmp(module->id, "audio") == 0) {
+               strcmp(module->id, "audio") == 0 ||
+               strcmp(module->id, "storage") == 0) {
       assert(module->status == H2_LUA_ESP_CLAW_MODULE_PROFILE);
     } else if (strcmp(module->id, "button") == 0) {
       assert(module->status == H2_LUA_ESP_CLAW_MODULE_COMPONENT_ADAPTED);
@@ -1575,8 +1582,9 @@ int main(void) {
     assert(strcmp(h2_lua_extension_at(i), extension_ids[i]) == 0);
   }
   assert(h2_lua_extension_at(1u) == NULL);
-  assert(h2_lua_job_submit_text(host, "@test.lua", script, sizeof(script) - 1u,
-                                args, 1u, &job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@test.lua", script,
+                                sizeof(script) - 1u, args, 1u,
+                                &job_id) == H2_PAL_OK);
   while (status(host, job_id).state != H2_LUA_JOB_WAITING) {
     assert(h2_lua_host_step(host) == H2_PAL_OK);
     assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
@@ -1649,9 +1657,9 @@ int main(void) {
       "local c=coroutine.create(function() while true do end end);"
       "local ok=coroutine.resume(c);"
       "return ok and coroutine.status(c) or 'failed'";
-  assert(h2_lua_job_submit_text(host, "@nested-cpu.lua", nested_cpu_script,
-                                sizeof(nested_cpu_script) - 1u, NULL, 0u,
-                                &job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(
+             host, NULL, "@nested-cpu.lua", nested_cpu_script,
+             sizeof(nested_cpu_script) - 1u, NULL, 0u, &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "suspended") == 0);
@@ -1669,7 +1677,7 @@ int main(void) {
       "trace[#trace+1]='b';a.yield();trace[#trace+1]='B';return v end,'y')\n"
       "local okx,rx=a.join(x);local oky,ry=a.join(y)\n"
       "return table.concat(trace)..':'..tostring(okx)..rx..tostring(oky)..ry\n";
-  assert(h2_lua_job_submit_text(host, "@async.lua", async_script,
+  assert(h2_lua_job_submit_text(host, NULL, "@async.lua", async_script,
                                 sizeof(async_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 32u);
@@ -1685,9 +1693,9 @@ int main(void) {
       "local child=a.spawn(function()error('child failed')end);"
       "local ok,message=a.join(child);"
       "return tostring(ok)..':'..tostring(message):match('child failed')";
-  assert(h2_lua_job_submit_text(host, "@failed-child.lua", failed_child_script,
-                                sizeof(failed_child_script) - 1u, NULL, 0u,
-                                &job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(
+             host, NULL, "@failed-child.lua", failed_child_script,
+             sizeof(failed_child_script) - 1u, NULL, 0u, &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 32u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "false:child failed") == 0);
@@ -1715,9 +1723,9 @@ int main(void) {
       "tostring(a)..':'..tostring(b)..':'..tostring(e)..':'..tostring(x)..':'.."
       "tostring(y)..':'.."
       "tostring(z)\n";
-  assert(h2_lua_job_submit_text(host, "@capability.lua", capability_script,
-                                sizeof(capability_script) - 1u, NULL, 0u,
-                                &job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(
+             host, NULL, "@capability.lua", capability_script,
+             sizeof(capability_script) - 1u, NULL, 0u, &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
   h2_lua_job_status_t capability_status = status(host, job_id);
   if (capability_status.state != H2_LUA_JOB_SUCCEEDED) {
@@ -1734,7 +1742,7 @@ int main(void) {
 
   static const uint8_t pending_script[] =
       "local c=require('capability');return c.call('pending',nil,nil)";
-  assert(h2_lua_job_submit_text(host, "@pending.lua", pending_script,
+  assert(h2_lua_job_submit_text(host, NULL, "@pending.lua", pending_script,
                                 sizeof(pending_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   capability.job_id = job_id;
@@ -1751,9 +1759,9 @@ int main(void) {
   assert(status(host, job_id).state == H2_LUA_JOB_CANCELLED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   capability.pending_id = 0u;
-  assert(h2_lua_job_submit_text(host, "@pending-again.lua", pending_script,
-                                sizeof(pending_script) - 1u, NULL, 0u,
-                                &job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, "@pending-again.lua",
+                                pending_script, sizeof(pending_script) - 1u,
+                                NULL, 0u, &job_id) == H2_PAL_OK);
   capability.job_id = job_id;
   while (status(host, job_id).state != H2_LUA_JOB_WAITING) {
     assert(h2_lua_host_step(host) == H2_PAL_OK);

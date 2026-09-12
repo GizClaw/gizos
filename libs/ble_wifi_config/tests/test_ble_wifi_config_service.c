@@ -48,6 +48,8 @@ typedef struct fake_runtime {
 
     const h2_pal_ble_gatt_service_t *service;
     int unregister_count;
+    int unregister_service_count;
+    h2_pal_result_t unregister_service_result;
     int fail_next_unregister;
     int adv_start_count;
     int adv_stop_count;
@@ -370,6 +372,22 @@ static h2_pal_result_t fake_register(
             *ch->out_cccd_handle = (uint16_t)(3u + 2u * i);
         }
     }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t fake_unregister_service(
+    void *user, const h2_pal_ble_uuid_t *service_uuid) {
+    fake_runtime_t *runtime = user;
+    CHECK(runtime->service != NULL);
+    CHECK(service_uuid != NULL);
+    CHECK(service_uuid->len == runtime->service->uuid.len);
+    CHECK(memcmp(service_uuid->data, runtime->service->uuid.data,
+                 service_uuid->len) == 0);
+    runtime->unregister_service_count++;
+    if (runtime->unregister_service_result != H2_PAL_OK) {
+        return runtime->unregister_service_result;
+    }
+    runtime->service = NULL;
     return H2_PAL_OK;
 }
 
@@ -1510,7 +1528,45 @@ static void test_reconnect_cannot_interleave_with_a_send(void) {
     fake_runtime_deinit(&runtime);
 }
 
+static void test_per_service_unregister(void) {
+    h2_pal_ble_uuid_t uuid = {0};
+    h2_pal_ble_host_api_t ble = {0};
+    CHECK(h2_pal_ble_unregister_gatt_service(NULL, &uuid) == H2_PAL_ERR_INVALID_ARG);
+    CHECK(h2_pal_ble_unregister_gatt_service(&ble, NULL) == H2_PAL_ERR_INVALID_ARG);
+    CHECK(h2_pal_ble_unregister_gatt_service(&ble, &uuid) == H2_PAL_ERR_UNSUPPORTED);
+    h2_pal_ble_vtable_t empty_vtable = {0};
+    ble.vtable = &empty_vtable;
+    CHECK(h2_pal_ble_unregister_gatt_service(&ble, &uuid) == H2_PAL_ERR_UNSUPPORTED);
+    const h2_pal_result_t results[] = {
+        H2_PAL_OK, H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_BUSY, H2_PAL_ERR_NOT_FOUND,
+    };
+    for (size_t i = 0u; i < sizeof(results) / sizeof(results[0]); ++i) {
+        fake_runtime_t runtime;
+        fake_runtime_init(&runtime);
+        h2_pal_ble_vtable_t vtable = *runtime.ble.vtable;
+        vtable.unregister_gatt_service = fake_unregister_service;
+        runtime.ble.vtable = &vtable;
+        runtime.unregister_service_result = results[i];
+        h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+        h2_pal_result_t expected = results[i] == H2_PAL_ERR_UNSUPPORTED
+            ? H2_PAL_OK : results[i];
+        CHECK(h2_ble_wifi_config_close(service) == expected);
+        CHECK(runtime.unregister_service_count == 1);
+        CHECK(runtime.unregister_count == (results[i] == H2_PAL_ERR_UNSUPPORTED));
+        if (expected != H2_PAL_OK) {
+            CHECK(runtime.service != NULL);
+            runtime.unregister_service_result = H2_PAL_OK;
+            CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+            CHECK(runtime.unregister_service_count == 2);
+            CHECK(runtime.unregister_count == 0);
+        }
+        CHECK(runtime.service == NULL);
+        fake_runtime_deinit(&runtime);
+    }
+}
+
 int main(void) {
+    test_per_service_unregister();
     test_open_registers_schema();
     test_caller_owned_registration();
     test_scan_reports_one_ap_per_notification();

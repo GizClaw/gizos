@@ -71,7 +71,7 @@ h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
   result = h2_lua_host_start(host);
   if (result == H2_PAL_OK) {
     result =
-        h2_lua_job_submit_resource(host, "@cosmic-drift/main.lua", args,
+        h2_lua_job_submit_resource(host, NULL, "@cosmic-drift/main.lua", args,
                                    sizeof(args) / sizeof(args[0]), &job_id);
   }
   while (result == H2_PAL_OK) {

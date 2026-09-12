@@ -142,7 +142,7 @@ h2_pal_result_t h2_bloomspeaker_run(
   }
   if (result == H2_PAL_OK) {
     result = h2_lua_job_submit_resource(
-        host, "@lua-bloomspeaker/main.lua", NULL, 0u, &job_id);
+        host, NULL, "@lua-bloomspeaker/main.lua", NULL, 0u, &job_id);
   }
   while (result == H2_PAL_OK) {
     uint64_t now_ms = 0u;

@@ -1,6 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
-load("//tools/bazel/platforms:compatibility.bzl", "LINUX_ARMV7_GNUEABIHF_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,7 +10,12 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
-    target_compatible_with = LINUX_ARMV7_GNUEABIHF_ARTIFACT_COMPATIBILITY,
+    # KickPi K4B hardware and the Browser Web target.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "@platforms//cpu:wasm32": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//libs/lvgl",
         "//libs/pal",

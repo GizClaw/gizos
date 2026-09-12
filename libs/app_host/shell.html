@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GizOS Web App</title>
+    <style>
+      /* Behaviour only; every visual style comes from the layout. */
+      #canvas { image-rendering: pixelated; touch-action: none; }
+      [data-h2-button] { touch-action: none; user-select: none; }
+    </style>
+  </head>
+  <body>
+    <!-- H2_WEB_APP_LAYOUT -->
+    <template id="program">{{{ SCRIPT }}}</template>
+    <script>
+      // Page components. app_host ships no UI: the layout (usually a board's
+      // reusable HTML/CSS) places each component with a slot element, and
+      // app_host creates the component inside it:
+      //   [data-h2-slot="display"]  the display canvas (#canvas)
+      //   [data-h2-slot="controls"] Start/Stop buttons (#start, #stop)
+      //   [data-h2-slot="status"]   the status line (#status)
+      // A missing slot gets a plain container at the end of <body>.
+      function h2Slot(name) {
+        let slot = document.querySelector(`[data-h2-slot="${name}"]`);
+        if (!slot) {
+          slot = document.createElement('div');
+          slot.dataset.h2Slot = name;
+          document.body.append(slot);
+        }
+        return slot;
+      }
+      const h2Canvas = document.createElement('canvas');
+      h2Canvas.id = 'canvas';
+      h2Slot('display').append(h2Canvas);
+      for (const [id, text] of [['start', 'Start'], ['stop', 'Stop']]) {
+        const button = document.createElement('button');
+        button.id = id;
+        button.type = 'button';
+        button.textContent = text;
+        button.disabled = id === 'stop';
+        h2Slot('controls').append(button);
+      }
+      const h2Status = document.createElement('p');
+      h2Status.id = 'status';
+      h2Status.textContent = 'Ready';
+      h2Slot('status').append(h2Status);
+      var Module = {
+        canvas: document.getElementById('canvas'),
+        print: text => console.log(text),
+        printErr: text => console.error(text),
+      };
+      const start = document.getElementById('start');
+      const stop = document.getElementById('stop');
+      // Start is the user gesture that unlocks audio and the microphone.
+      start.addEventListener('click', () => {
+        start.disabled = true;
+        stop.disabled = false;
+        const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
+        if (AudioContext) {
+          Module.h2WebAudioContext = new AudioContext();
+          Module.h2WebAudioContext.resume().catch(() => {});
+        }
+        const source = document.querySelector('#program').content.querySelector('script');
+        const loader = document.createElement('script');
+        for (const attribute of source.attributes)
+          loader.setAttribute(attribute.name, attribute.value);
+        loader.addEventListener('error', () => {
+          document.getElementById('status').textContent = 'WebAssembly load failed';
+        });
+        document.body.appendChild(loader);
+      }, {once: true});
+      stop.addEventListener('click', () => {
+        stop.disabled = true;
+        Module._h2_web_app_host_request_stop?.();
+      });
+
+      // Button input. app_host passes each Button's index, keyboard key and
+      // name; the key and every [data-h2-button="<name>"] element hold it.
+      // Sources merge into one pressed state, so only real Down/Up changes
+      // reach the Runtime. Blur, hide and teardown release everything.
+      const h2Buttons = [];
+      function h2SetSource(entry, source, pressed) {
+        const was = entry.sources.size > 0;
+        if (pressed) entry.sources.add(source);
+        else entry.sources.delete(source);
+        const is = entry.sources.size > 0;
+        for (const element of entry.elements) element.dataset.pressed = String(is);
+        if (was === is) return;
+        const rc = Module._h2_web_app_host_button?.(entry.index, is ? 1 : 0);
+        if (rc) console.warn(`H2_WEB_APP button=${entry.name || entry.key} ${is ? 'down' : 'up'} rc=${rc}`);
+      }
+      function h2ReleaseAll() {
+        for (const entry of h2Buttons)
+          for (const source of [...entry.sources]) h2SetSource(entry, source, false);
+      }
+      function h2OnKey(event, down) {
+        if (event.repeat) return;
+        for (const entry of h2Buttons) {
+          if (!entry.key || event.key !== entry.key) continue;
+          event.preventDefault();
+          h2SetSource(entry, 'key', down);
+        }
+      }
+      const h2KeyDown = (event) => h2OnKey(event, true);
+      const h2KeyUp = (event) => h2OnKey(event, false);
+      globalThis.h2WebAppHostBindButton = (index, key, name) => {
+        const selector = name ? `[data-h2-button="${CSS.escape(name)}"]` : null;
+        const entry = {index, key, name, sources: new Set(), abort: new AbortController(),
+                       elements: selector ? [...document.querySelectorAll(selector)] : []};
+        const signal = entry.abort.signal;
+        for (const element of entry.elements) {
+          element.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            try { element.setPointerCapture?.(event.pointerId); } catch (_) {}
+            h2SetSource(entry, `pointer:${event.pointerId}`, true);
+          }, {signal});
+          for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+            element.addEventListener(type, (event) =>
+              h2SetSource(entry, `pointer:${event.pointerId}`, false), {signal});
+        }
+        if (h2Buttons.length === 0) {
+          globalThis.addEventListener('keydown', h2KeyDown);
+          globalThis.addEventListener('keyup', h2KeyUp);
+        }
+        h2Buttons.push(entry);
+      };
+      globalThis.h2WebAppHostUnbindButtons = () => {
+        h2ReleaseAll();
+        for (const entry of h2Buttons) entry.abort.abort();
+        globalThis.removeEventListener('keydown', h2KeyDown);
+        globalThis.removeEventListener('keyup', h2KeyUp);
+        h2Buttons.length = 0;
+      };
+      globalThis.addEventListener('blur', h2ReleaseAll);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) h2ReleaseAll();
+      });
+    </script>
+  </body>
+</html>

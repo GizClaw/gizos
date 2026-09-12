@@ -28,6 +28,13 @@
 #include "payload/workspace.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
+#ifdef H2_GIZCLAW_PLAYER_LIVE
+#include "h2_corehttp.h"
+#include "h2_desktop_app_support_c.h"
+#include <math.h>
+#include <signal.h>
+#include <strings.h>
+#endif
 
 #include "ogg_opus_fixture.h"
 #ifdef NDEBUG
@@ -2874,6 +2881,898 @@ static void test_device_provider_pal_and_player(void) {
   h2_runtime_deinit(runtime);
 }
 
+/* Playback speaker ownership: a product that shares the speaker with other
+ * audio counts every library playback as one user. The fake counts users the
+ * way a product reference count would and records the count seen by each PCM
+ * write, so a write outside an acquired window is visible. */
+typedef struct speaker_test_state {
+  fixture_t fixture;
+  atomic_uint acquires, releases, starts, stops, writes, closes, tracks;
+  atomic_uint unheld_writes, pad_errors, http_calls;
+  atomic_int users;
+  atomic_bool block_writes;
+  h2_pal_result_t acquire_result;
+  uint32_t last_frame_bytes;
+  h2_pal_audio_track_t track;
+} speaker_test_state_t;
+static int speaker_audio_info(void *user, h2_audio_info_t *out) {
+  (void)user;
+  /* 10 ms frames: fine enough to observe duration_ms truncation. */
+  *out = (h2_audio_info_t){.available = 1, .playback_supported = 1,
+      .playback_format = {.sample_rate_hz = 16000,
+        .frame_samples_per_channel = 160, .channels = 1,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE}};
+  return H2_PAL_OK;
+}
+static int speaker_start(void *user) {
+  atomic_fetch_add(&((speaker_test_state_t *)user)->starts, 1u);
+  return H2_PAL_OK;
+}
+static int speaker_stop(void *user) {
+  atomic_fetch_add(&((speaker_test_state_t *)user)->stops, 1u);
+  return H2_PAL_OK;
+}
+static int speaker_pcm_write(h2_pal_audio_track_t *track,
+                             const h2_audio_frame_t *frame, uint32_t timeout_ms) {
+  (void)timeout_ms;
+  speaker_test_state_t *state = track->user;
+  if (atomic_load(&state->block_writes))
+    return H2_PAL_ERR_WOULD_BLOCK;
+  assert(frame->bytes == 320u && frame->samples_per_channel == 160u);
+  if (atomic_load(&state->acquires) > 0u && atomic_load(&state->users) != 1)
+    atomic_fetch_add(&state->unheld_writes, 1u);
+  atomic_fetch_add(&state->writes, 1u);
+  return H2_PAL_OK;
+}
+static int speaker_pcm_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+  (void)track; (void)timeout_ms;
+  return H2_PAL_OK;
+}
+static int speaker_pcm_close(h2_pal_audio_track_t *track) {
+  speaker_test_state_t *state = track->user;
+  /* The release must follow the close: the track is still a speaker user. */
+  if (atomic_load(&state->acquires) > 0u && atomic_load(&state->users) != 1)
+    atomic_fetch_add(&state->unheld_writes, 1u);
+  atomic_fetch_add(&state->closes, 1u);
+  return H2_PAL_OK;
+}
+static int speaker_track_create(void *user, const h2_audio_track_config_t *config,
+                                h2_pal_audio_track_t **out) {
+  (void)config;
+  speaker_test_state_t *state = user;
+  atomic_fetch_add(&state->tracks, 1u);
+  state->track = (h2_pal_audio_track_t){.user = state, .write = speaker_pcm_write,
+    .drain = speaker_pcm_drain, .close = speaker_pcm_close};
+  *out = &state->track;
+  return H2_PAL_OK;
+}
+static int speaker_http(void *user, const h2_pal_http_request_t *request,
+                        h2_pal_http_response_t *response) {
+  speaker_test_state_t *state = user;
+  atomic_fetch_add(&state->http_calls, 1u);
+  response->status_code = 200;
+  response->content_length = (int64_t)state->fixture.len;
+  return request->read_cb(request->user, request, state->fixture.bytes,
+                          state->fixture.len, state->fixture.len, 0u);
+}
+static h2_pal_result_t speaker_acquire(void *user) {
+  speaker_test_state_t *state = user;
+  atomic_fetch_add(&state->acquires, 1u);
+  if (state->acquire_result != H2_PAL_OK)
+    return state->acquire_result;
+  atomic_fetch_add(&state->users, 1);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t speaker_release(void *user) {
+  speaker_test_state_t *state = user;
+  atomic_fetch_add(&state->releases, 1u);
+  return atomic_fetch_sub(&state->users, 1) > 0 ? H2_PAL_OK
+                                                : H2_PAL_ERR_INVALID_STATE;
+}
+static h2_pal_result_t speaker_resolve_sound(void *user, const char *name,
+                                             char *out_url, size_t capacity) {
+  (void)user;
+  assert(strcmp(name, "find") == 0);
+  (void)snprintf(out_url, capacity, "https://example.test/find.ogg");
+  return H2_PAL_OK;
+}
+static h2_gizclaw_service_t *speaker_service(test_env_t *env,
+                                             speaker_test_state_t *state,
+                                             const h2_pal_audio_api_t *audio,
+                                             const h2_pal_http_api_t *http,
+                                             const h2_gizclaw_vtable_t *vtable) {
+  h2_gizclaw_service_t *service = create_profile_service(env);
+  service->client_config.audio = audio;
+  service->client_config.http = http;
+  service->client_config.user = state;
+  service->client_config.vtable = vtable;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  return service;
+}
+static void speaker_fixture(speaker_test_state_t *state) {
+  /* Three 20 ms packets: 60 ms, 1920 bytes, six 10 ms frames. */
+  make_packet(&state->fixture, 1);
+  headers(&state->fixture, 321, 1, 0, 0);
+  packet_page(&state->fixture, 0, 960, 321, 2, state->fixture.packet,
+              state->fixture.packet_len);
+  packet_page(&state->fixture, 0, 1920, 321, 3, state->fixture.packet,
+              state->fixture.packet_len);
+  packet_page(&state->fixture, 4, 2880, 321, 4, state->fixture.packet,
+              state->fixture.packet_len);
+}
+static void speaker_wait_player(h2_gizclaw_service_t *service,
+                                const char *state_name) {
+  h2_gizclaw_player_status_t local = {0};
+  for (unsigned i = 0; i < 5000u; ++i) {
+    assert(h2_gizclaw_player_get_status(service, &local) == H2_PAL_OK);
+    if (strcmp(local.state, state_name) == 0)
+      return;
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(!"player did not reach the expected state");
+}
+static void speaker_play_sound(h2_gizclaw_service_t *service,
+                               speaker_test_state_t *state, int64_t duration_ms,
+                               unsigned expected_releases) {
+  gizclaw_rpc_v1_ClientDeviceSoundPlayRequest sound = {0};
+  strcpy(sound.sound, "find");
+  sound.has_duration_ms = duration_ms > 0;
+  sound.duration_ms = duration_ms;
+  h2_gizclaw_rpc_provider_response_t response;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY,
+      gizclaw_rpc_v1_ClientDeviceSoundPlayRequest_fields, &sound, &response) == 0);
+  assert(response.on_complete != NULL);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  wait_for_count(&state->closes, expected_releases);
+  /* The worker still holds the action reservation after the close and the
+   * release (decoder teardown and download join follow), and any action
+   * issued before it clears is refused BUSY. Wait for the action itself. */
+  for (unsigned i = 0; h2_gizclaw_device_action_pending_internal(service);
+       ++i) {
+    assert(i < 5000u && "sound action did not finish");
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+}
+
+static void test_device_playback_speaker_hooks(void) {
+  static speaker_test_state_t state;
+  memset(&state, 0, sizeof(state));
+  speaker_fixture(&state);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = speaker_audio_info,
+    .start_speaker = speaker_start, .stop_speaker = speaker_stop,
+    .create_track = speaker_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = speaker_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  const h2_gizclaw_vtable_t hooks = {.resolve_sound_url = speaker_resolve_sound,
+    .speaker_acquire = speaker_acquire, .speaker_release = speaker_release};
+  test_env_t env;
+  h2_gizclaw_service_t *service =
+      speaker_service(&env, &state, &audio, &http, &hooks);
+
+  /* A whole track: one acquire before the track, one release after close,
+   * and the library never switches the shared speaker itself. */
+  const char *url = "https://example.test/song.ogg";
+  assert(h2_gizclaw_player_play(service, (h2_gizclaw_str_t){url, strlen(url)}) ==
+         H2_PAL_OK);
+  speaker_wait_player(service, "ended");
+  wait_for_count(&state.releases, 1u);
+  assert(atomic_load(&state.acquires) == 1u && atomic_load(&state.releases) == 1u);
+  assert(atomic_load(&state.users) == 0 && atomic_load(&state.unheld_writes) == 0u);
+  assert(atomic_load(&state.writes) == 6u && atomic_load(&state.closes) == 1u);
+  assert(atomic_load(&state.starts) == 0u && atomic_load(&state.stops) == 0u);
+
+  /* duration_ms truncates to exactly its PCM: 30 ms is three full frames;
+   * 45 ms is four frames plus one zero-padded half frame. A longer limit
+   * than the sound plays the whole sound once. */
+  atomic_store(&state.writes, 0u);
+  speaker_play_sound(service, &state, 30, 2u);
+  wait_for_count(&state.releases, 2u);
+  assert(atomic_load(&state.writes) == 3u);
+  atomic_store(&state.writes, 0u);
+  speaker_play_sound(service, &state, 45, 3u);
+  wait_for_count(&state.releases, 3u);
+  assert(atomic_load(&state.writes) == 5u);
+  atomic_store(&state.writes, 0u);
+  speaker_play_sound(service, &state, 60000, 4u);
+  wait_for_count(&state.releases, 4u);
+  assert(atomic_load(&state.writes) == 6u);
+  assert(atomic_load(&state.acquires) == 4u && atomic_load(&state.users) == 0);
+
+  /* Stop while the track is blocked: the release still happens exactly once
+   * after the close, so another user's count is never left inflated. */
+  atomic_store(&state.block_writes, true);
+  assert(h2_gizclaw_player_play(service, (h2_gizclaw_str_t){url, strlen(url)}) ==
+         H2_PAL_OK);
+  wait_for_count(&state.acquires, 5u);
+  assert(h2_gizclaw_player_stop(service) == H2_PAL_OK);
+  wait_for_count(&state.releases, 5u);
+  assert(atomic_load(&state.closes) == 5u && atomic_load(&state.users) == 0);
+  atomic_store(&state.block_writes, false);
+
+  /* A refused acquire opens no track and releases nothing. */
+  state.acquire_result = H2_PAL_ERR_BUSY;
+  assert(h2_gizclaw_player_play(service, (h2_gizclaw_str_t){url, strlen(url)}) ==
+         H2_PAL_OK);
+  speaker_wait_player(service, "error");
+  assert(atomic_load(&state.acquires) == 6u && atomic_load(&state.releases) == 5u);
+  assert(atomic_load(&state.tracks) == 5u && atomic_load(&state.users) == 0);
+  assert(atomic_load(&state.starts) == 0u && atomic_load(&state.stops) == 0u);
+  assert(atomic_load(&state.unheld_writes) == 0u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+
+  /* Without hooks the previous contract is unchanged: the library starts
+   * the speaker and leaves it on. */
+  memset(&state, 0, sizeof(state));
+  speaker_fixture(&state);
+  const h2_gizclaw_vtable_t no_hooks = {.resolve_sound_url = speaker_resolve_sound};
+  service = speaker_service(&env, &state, &audio, &http, &no_hooks);
+  speaker_play_sound(service, &state, 30, 1u);
+  assert(atomic_load(&state.writes) == 3u);
+  assert(atomic_load(&state.starts) == 1u && atomic_load(&state.stops) == 0u);
+  assert(atomic_load(&state.acquires) == 0u && atomic_load(&state.releases) == 0u);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+
+  /* Half a pair would leak or underflow the product count: refuse it. */
+  const h2_gizclaw_vtable_t acquire_only = {.speaker_acquire = speaker_acquire};
+  const h2_gizclaw_vtable_t release_only = {.speaker_release = speaker_release};
+  const h2_gizclaw_vtable_t *unpaired[] = {&acquire_only, &release_only};
+  for (size_t i = 0; i < 2u; ++i) {
+    service = create_profile_service(&env);
+    service->client_config.audio = &audio;
+    service->client_config.vtable = unpaired[i];
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_ERR_INVALID_ARG);
+    assert(service->device == NULL);
+    service->client_config.vtable = &hooks;
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+    assert(h2_gizclaw_device_set_product_internal(service, unpaired[i], NULL) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
+/* Timed start. A fake HTTP server that answers Range the way a static file
+ * server does (or deliberately does not), over a 30 s low-bitrate stream so
+ * a byte-rate estimate can land anywhere in it. */
+enum {
+  SEEK_SERVER_RANGE,    /* 206 with Content-Range for every Range. */
+  SEEK_SERVER_IGNORE,   /* 200 whole body, no Content-Range. */
+  SEEK_SERVER_MISPLACE, /* Probe honoured; the seek names the wrong bytes. */
+  SEEK_SERVER_NOT_206,  /* Probe honoured; the seek answers 200 whole body. */
+  SEEK_SERVER_RETOTAL,  /* Probe honoured; the seek names another length. */
+};
+typedef struct seek_test_state {
+  fixture_t fixture;
+  size_t header_len;
+  uint64_t plain16; /* 16 kHz samples a start-from-zero playback emits. */
+  unsigned server;
+  atomic_uint calls, writes;
+  char ranges[8][48];
+} seek_test_state_t;
+static int seek_audio_info(void *user, h2_audio_info_t *out) {
+  (void)user;
+  *out = (h2_audio_info_t){.available = 1, .playback_supported = 1,
+      .playback_format = {.sample_rate_hz = 16000,
+        .frame_samples_per_channel = 160, .channels = 1,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE}};
+  return H2_PAL_OK;
+}
+static int seek_speaker(void *user) { (void)user; return H2_PAL_OK; }
+static int seek_pcm_write(h2_pal_audio_track_t *track,
+                          const h2_audio_frame_t *frame, uint32_t timeout_ms) {
+  (void)timeout_ms;
+  assert(frame->bytes == 320u);
+  atomic_fetch_add(&((seek_test_state_t *)track->user)->writes, 1u);
+  return H2_PAL_OK;
+}
+static int seek_pcm_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+  (void)track; (void)timeout_ms;
+  return H2_PAL_OK;
+}
+static int seek_pcm_close(h2_pal_audio_track_t *track) {
+  (void)track;
+  return H2_PAL_OK;
+}
+static h2_pal_audio_track_t s_seek_track;
+static int seek_track_create(void *user, const h2_audio_track_config_t *config,
+                             h2_pal_audio_track_t **out) {
+  (void)config;
+  s_seek_track = (h2_pal_audio_track_t){.user = user, .write = seek_pcm_write,
+    .drain = seek_pcm_drain, .close = seek_pcm_close};
+  *out = &s_seek_track;
+  return H2_PAL_OK;
+}
+/* Deliver [first, first + len) in small chunks so cancellation and ring
+ * backpressure are exercised; a cancelled request stops mid-body. */
+static int seek_body(const h2_pal_http_request_t *request, const uint8_t *data,
+                     size_t len) {
+  for (size_t offset = 0; offset < len;) {
+    size_t chunk = len - offset < 700u ? len - offset : 700u;
+    int rc = request->read_cb(request->user, request, data + offset, chunk,
+                              offset + chunk, len - offset - chunk);
+    if (rc != H2_PAL_OK)
+      return rc;
+    offset += chunk;
+  }
+  return H2_PAL_OK;
+}
+static int seek_http(void *user, const h2_pal_http_request_t *request,
+                     h2_pal_http_response_t *response) {
+  seek_test_state_t *state = user;
+  const unsigned call = atomic_fetch_add(&state->calls, 1u);
+  assert(call < 8u);
+  const size_t total = state->fixture.len;
+  unsigned long long first = 0, last = total - 1;
+  bool ranged = false;
+  for (size_t i = 0; i < request->header_count; ++i) {
+    const h2_pal_http_header_t *h = &request->headers[i];
+    if (h->name.len == 5 && !memcmp(h->name.data, "Range", 5)) {
+      assert(h->value.len < sizeof(state->ranges[call]));
+      memcpy(state->ranges[call], h->value.data, h->value.len);
+      state->ranges[call][h->value.len] = 0;
+      ranged = true;
+      char *end = NULL;
+      assert(!strncmp(state->ranges[call], "bytes=", 6));
+      first = strtoull(state->ranges[call] + 6, &end, 10);
+      assert(*end == '-');
+      if (end[1])
+        last = strtoull(end + 1, NULL, 10);
+      if (last > total - 1)
+        last = total - 1;
+    }
+  }
+  const bool partial = ranged && state->server != SEEK_SERVER_IGNORE &&
+                       !(state->server == SEEK_SERVER_NOT_206 && call > 0);
+  if (!partial) {
+    response->status_code = 200;
+    response->content_length = (int64_t)total;
+    return seek_body(request, state->fixture.bytes, total);
+  }
+  assert(first <= last);
+  char value[64];
+  const unsigned long long named =
+      state->server == SEEK_SERVER_MISPLACE && call > 0 ? first + 1 : first;
+  const size_t length =
+      state->server == SEEK_SERVER_RETOTAL && call > 0 ? total + 1u : total;
+  (void)snprintf(value, sizeof(value), "bytes %llu-%llu/%zu", named,
+                 state->server == SEEK_SERVER_RETOTAL && call > 0 ? last + 1u : last,
+                 length);
+  int rc = h2_pal_http_deliver_response_header(request, "Content-Range", 13,
+                                               value, strlen(value));
+  if (rc != H2_PAL_OK)
+    return rc;
+  response->status_code = 206;
+  response->content_length = (int64_t)(last - first + 1);
+  return seek_body(request, state->fixture.bytes + first, last - first + 1);
+}
+/* 1500 × 20 ms at 6 kbit/s, ten packets per page, pre-skip 312. */
+static void seek_fixture_build(seek_test_state_t *state) {
+  fixture_t *f = &state->fixture;
+  int rc;
+  OpusEncoder *encoder =
+      opus_encoder_create(16000, 1, OPUS_APPLICATION_AUDIO, &rc);
+  assert(encoder && rc == OPUS_OK);
+  assert(opus_encoder_ctl(encoder, OPUS_SET_BITRATE(6000)) == OPUS_OK);
+  assert(opus_encoder_ctl(encoder, OPUS_SET_VBR(0)) == OPUS_OK);
+  opus_int16 samples[320];
+  for (unsigned i = 0; i < 320; ++i)
+    samples[i] = (opus_int16)((int)(i % 32) * 1000 - 16000);
+  int len = opus_encode(encoder, samples, 320, f->packet, sizeof(f->packet));
+  assert(len > 0 && len < 255);
+  f->packet_len = (size_t)len;
+  opus_encoder_destroy(encoder);
+  headers(f, 55, 1, 312, 0);
+  state->header_len = paginate(f, 55, 1500, (size_t)len * 10u, 0);
+  /* 1440000 samples less the pre-skip, on the 16 kHz grid. */
+  state->plain16 = 1440000u / 3u - (312u + 2u) / 3u;
+}
+static h2_gizclaw_service_t *seek_service(test_env_t *env,
+                                          const h2_pal_audio_api_t *audio,
+                                          const h2_pal_http_api_t *http) {
+  h2_gizclaw_service_t *service = create_profile_service(env);
+  service->client_config.audio = audio;
+  service->client_config.http = http;
+  service->client_config.audio_buffer_bytes = 4096;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  return service;
+}
+/* Play item 0 from start_ms and wait for it to end. Returns the frames
+ * written; the status must end with the item's real length. */
+static unsigned seek_play(h2_gizclaw_service_t *service,
+                          seek_test_state_t *state, uint64_t duration_ms,
+                          uint64_t start_ms, uint64_t buffering_position) {
+  h2_gizclaw_player_playlist_entry_t entry = {
+      .url = device_span("https://example.test/episode.ogg"),
+      .duration_ms = duration_ms};
+  assert(h2_gizclaw_player_playlist_set(service, &entry, 1) == H2_PAL_OK);
+  atomic_store(&state->calls, 0u);
+  atomic_store(&state->writes, 0u);
+  memset(state->ranges, 0, sizeof(state->ranges));
+  assert(h2_gizclaw_player_play_index_at(service, 0, start_ms) == H2_PAL_OK);
+  h2_gizclaw_player_status_t status;
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(!strcmp(status.state, "buffering"));
+  assert(status.position_ms == buffering_position);
+  speaker_wait_player(service, "ended");
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(status.has_duration_ms && status.duration_ms == state->plain16 / 16u);
+  assert(status.position_ms == status.duration_ms);
+  return atomic_load(&state->writes);
+}
+/* Frames a playback starting at output sample origin16 writes. */
+static unsigned seek_frames(const seek_test_state_t *state, uint64_t origin16) {
+  return (unsigned)((state->plain16 - origin16 + 159u) / 160u);
+}
+static uint64_t seek_offset(const seek_test_state_t *state, uint64_t start_ms,
+                            uint64_t duration_ms) {
+  const uint64_t aim = start_ms > 5000u ? start_ms - 5000u : 0u;
+  return state->header_len +
+         (uint64_t)((double)(state->fixture.len - state->header_len) *
+                    (double)aim / (double)duration_ms);
+}
+
+static void test_device_player_timed_start(void) {
+  static seek_test_state_t state;
+  memset(&state, 0, sizeof(state));
+  seek_fixture_build(&state);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+    .start_speaker = seek_speaker, .create_track = seek_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  test_env_t env;
+  h2_gizclaw_service_t *service = seek_service(&env, &audio, &http);
+  char expected[48];
+
+  /* 206: a probe, then one ranged request from 5 s before the start by byte
+   * rate. The landing page is earlier, so the decoder skips to exactly
+   * 20 s; every later sample is written and the end is the real length. */
+  assert(seek_play(service, &state, 30000, 20000, 20000) ==
+         seek_frames(&state, 20000u * 16u));
+  assert(atomic_load(&state.calls) == 2u);
+  assert(!strcmp(state.ranges[0], "bytes=0-"));
+  (void)snprintf(expected, sizeof(expected), "bytes=%llu-",
+                 (unsigned long long)seek_offset(&state, 20000, 30000));
+  assert(!strcmp(state.ranges[1], expected));
+  /* The same 206 path with the estimate after the start (a claimed length
+   * shorter than the file aims 10 s into 17 s, i.e. about 17.6 s of this
+   * 30 s file): it lands on the next whole page after the byte and reports
+   * that page's granule start plus the 80 ms pre-roll, not the requested
+   * 15 s. Pages hold ten 20 ms packets, so page k starts at granule 9600 k. */
+  const uint64_t page_bytes = 27u + 10u + 10u * state.fixture.packet_len;
+  const uint64_t late = seek_offset(&state, 15000, 17000) - state.header_len;
+  const uint64_t page = (late + page_bytes - 1u) / page_bytes;
+  assert(page * 200u > 15000u);
+  assert(seek_play(service, &state, 17000, 15000, 15000) ==
+         seek_frames(&state, 9600u * page / 3u - 104u + 1280u));
+  assert(atomic_load(&state.calls) == 2u);
+
+  /* start_ms 0 is play_index: one plain GET, no Range. */
+  assert(seek_play(service, &state, 30000, 0, 0) == seek_frames(&state, 0));
+  assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+  /* Unknown length: plays from 0 and says so. */
+  assert(seek_play(service, &state, 0, 20000, 0) == seek_frames(&state, 0));
+  assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+
+  /* Server ignores Range: the 200 body is read once and skipped through. */
+  state.server = SEEK_SERVER_IGNORE;
+  assert(seek_play(service, &state, 30000, 20000, 20000) ==
+         seek_frames(&state, 20000u * 16u));
+  assert(atomic_load(&state.calls) == 1u);
+  assert(!strcmp(state.ranges[0], "bytes=0-"));
+
+  /* A seek response for other bytes, a 200 to the ranged seek, or a slice
+   * of a file whose length differs from the probe's (replaced in between)
+   * is refused at its first byte; one plain GET then skips to the start. */
+  const unsigned bad[] = {SEEK_SERVER_MISPLACE, SEEK_SERVER_NOT_206,
+                          SEEK_SERVER_RETOTAL};
+  for (size_t i = 0; i < 3u; ++i) {
+    state.server = bad[i];
+    assert(seek_play(service, &state, 30000, 20000, 20000) ==
+           seek_frames(&state, 20000u * 16u));
+    assert(atomic_load(&state.calls) == 3u);
+    assert(!strcmp(state.ranges[0], "bytes=0-"));
+    assert(state.ranges[1][0] && !state.ranges[2][0]);
+  }
+
+  /* Offset past the end: a claimed length far beyond the file aims inside
+   * its last (EOS) page, which cannot anchor a timeline. The fallback skips
+   * through the file, finds the start is past its end and ends the item
+   * there with the real length and nothing written. */
+  state.server = SEEK_SERVER_RANGE;
+  assert(seek_play(service, &state, 100000000, 99999999, 99999999) == 0u);
+  assert(atomic_load(&state.calls) == 3u);
+  assert(!state.ranges[2][0]);
+
+  /* Rejections touch nothing: start at or past a known length, bad index. */
+  h2_gizclaw_player_status_t before, after;
+  assert(h2_gizclaw_player_get_status(service, &before) == H2_PAL_OK);
+  assert(h2_gizclaw_player_play_index_at(service, 0, 100000000) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_play_index_at(service, 1, 0) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_play_index_at(NULL, 0, 0) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_get_status(service, &after) == H2_PAL_OK);
+  assert(!memcmp(&before, &after, sizeof(before)));
+
+  /* A remotely pushed item carries no length: timed starts play from 0. */
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest *push =
+      calloc(1, sizeof(*push));
+  assert(push);
+  push->items_count = 1;
+  strcpy(push->items[0].url, "https://example.test/pushed.ogg");
+  h2_gizclaw_rpc_provider_response_t response;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
+      gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest_fields, push,
+      &response) == 0);
+  free(push);
+  atomic_store(&state.calls, 0u);
+  atomic_store(&state.writes, 0u);
+  memset(state.ranges, 0, sizeof(state.ranges));
+  assert(h2_gizclaw_player_play_index_at(service, 0, 20000) == H2_PAL_OK);
+  assert(h2_gizclaw_player_get_status(service, &after) == H2_PAL_OK);
+  assert(after.position_ms == 0);
+  speaker_wait_player(service, "ended");
+  assert(atomic_load(&state.writes) == seek_frames(&state, 0));
+  assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+#ifdef H2_GIZCLAW_PLAYER_LIVE
+/* Manual: a timed start against a real HTTPS server through the desktop
+ * coreHTTP provider. Every request, its Range, status and Content-Range are
+ * logged; the PCM written after the start is compared with a whole-file
+ * decode of the same item to prove the reported position is exact.
+ *   h2_gizclaw_player_live_test <url> <whole-file.pcm> <duration_ms> <start_ms>
+ * The PCM oracle is `h2_gizclaw_ogg_opus_test <file.ogg> <file.pcm>`. */
+typedef struct live_call {
+  char range[48], content_range[96];
+  h2_pal_http_response_header_fn inner;
+  void *inner_user;
+  int rc, status;
+  int64_t content_length;
+  uint64_t bytes, started_ms, ended_ms;
+  h2_pal_http_read_fn read;
+  void *read_user;
+} live_call_t;
+typedef struct live_state {
+  h2_pal_http_api_t real;
+  h2_gizclaw_service_t *service;
+  live_call_t calls[8];
+  atomic_uint call_count;
+  uint8_t *pcm;
+  size_t pcm_len, pcm_cap;
+  bool have_first;
+  uint64_t first_position_ms, first_write_ms, command_ms;
+} live_state_t;
+static live_state_t s_live;
+static uint64_t live_now(void) {
+  uint64_t now = 0;
+  (void)h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &now);
+  return now;
+}
+static int live_header(void *user, const h2_pal_http_request_t *request,
+                       h2_pal_http_str_t name, h2_pal_http_str_t value) {
+  live_call_t *call = user;
+  if (name.len == 13 && !strncasecmp(name.data, "content-range", 13) &&
+      value.len < sizeof(call->content_range)) {
+    memcpy(call->content_range, value.data, value.len);
+    call->content_range[value.len] = 0;
+  }
+  return call->inner ? call->inner(call->inner_user, request, name, value)
+                     : H2_PAL_OK;
+}
+static int live_read(void *user, const h2_pal_http_request_t *request,
+                     const uint8_t *chunk, size_t len, size_t total,
+                     size_t remaining) {
+  live_call_t *call = user;
+  call->bytes += len;
+  return call->read(call->read_user, request, chunk, len, total, remaining);
+}
+static int live_http(void *user, const h2_pal_http_request_t *request,
+                     h2_pal_http_response_t *response) {
+  live_state_t *state = user;
+  const unsigned index = atomic_fetch_add(&state->call_count, 1u);
+  assert(index < 8u);
+  live_call_t *call = &state->calls[index];
+  for (size_t i = 0; i < request->header_count; ++i)
+    if (request->headers[i].value.len < sizeof(call->range))
+      memcpy(call->range, request->headers[i].value.data,
+             request->headers[i].value.len);
+  h2_pal_http_request_t copy = *request;
+  call->inner = request->response_header_cb;
+  call->inner_user = request->response_header_user;
+  call->read = request->read_cb;
+  call->read_user = request->user;
+  copy.response_header_cb = live_header;
+  copy.response_header_user = call;
+  copy.read_cb = live_read;
+  copy.user = call;
+  call->started_ms = live_now();
+  call->rc = state->real.vtable->request(state->real.user, &copy, response);
+  call->ended_ms = live_now();
+  call->status = response->status_code;
+  call->content_length = response->content_length;
+  return call->rc;
+}
+static void live_free(void *user, h2_pal_http_response_t *response) {
+  live_state_t *state = user;
+  h2_pal_http_response_free(&state->real, response);
+}
+static int live_audio_info(void *user, h2_audio_info_t *out) {
+  (void)user;
+  *out = (h2_audio_info_t){.available = 1, .playback_supported = 1,
+      .playback_format = {.sample_rate_hz = 16000,
+        .frame_samples_per_channel = 160, .channels = 1,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE}};
+  return H2_PAL_OK;
+}
+static int live_speaker(void *user) { (void)user; return H2_PAL_OK; }
+static int live_write(h2_pal_audio_track_t *track, const h2_audio_frame_t *frame,
+                      uint32_t timeout_ms) {
+  (void)track; (void)timeout_ms;
+  live_state_t *state = &s_live;
+  if (!state->have_first) {
+    /* Before the first frame is written the status holds the origin. */
+    h2_gizclaw_player_status_t status;
+    assert(h2_gizclaw_player_get_status(state->service, &status) == H2_PAL_OK);
+    state->first_position_ms = status.position_ms;
+    state->first_write_ms = live_now();
+    state->have_first = true;
+  }
+  assert(state->pcm_len + frame->bytes <= state->pcm_cap);
+  memcpy(state->pcm + state->pcm_len, frame->data, frame->bytes);
+  state->pcm_len += frame->bytes;
+  return H2_PAL_OK;
+}
+static int live_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+  (void)track; (void)timeout_ms;
+  return H2_PAL_OK;
+}
+static int live_close(h2_pal_audio_track_t *track) { (void)track; return H2_PAL_OK; }
+static h2_pal_audio_track_t s_live_track;
+static int live_track(void *user, const h2_audio_track_config_t *config,
+                      h2_pal_audio_track_t **out) {
+  (void)config;
+  s_live_track = (h2_pal_audio_track_t){.user = user, .write = live_write,
+    .drain = live_drain, .close = live_close};
+  *out = &s_live_track;
+  return H2_PAL_OK;
+}
+static uint8_t *live_load(const char *path, size_t *len) {
+  FILE *file = fopen(path, "rb");
+  assert(file && fseek(file, 0, SEEK_END) == 0);
+  long size = ftell(file);
+  assert(size > 0 && fseek(file, 0, SEEK_SET) == 0);
+  uint8_t *data = malloc((size_t)size);
+  assert(data && fread(data, 1, (size_t)size, file) == (size_t)size);
+  fclose(file);
+  *len = (size_t)size;
+  return data;
+}
+static int player_live(int argc, char **argv) {
+  assert(argc == 6);
+  const char *url = argv[2];
+  size_t oracle_len = 0;
+  uint8_t *oracle = live_load(argv[3], &oracle_len);
+  const uint64_t duration_ms = strtoull(argv[4], NULL, 10);
+  const uint64_t start_ms = strtoull(argv[5], NULL, 10);
+  assert(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
+  h2_desktop_network_services_t *network = NULL;
+  assert(h2_desktop_network_services_create(0, 0, &network) == H2_PAL_OK);
+  const h2_corehttp_config_t http_config = {
+      .allocator = h2_desktop_platform_default_allocator(),
+      .net = h2_desktop_host_net_api(),
+      .time = h2_desktop_platform_time_api(),
+      .log = h2_desktop_platform_log_api(),
+      .tls_verify = H2_PAL_NET_TLS_VERIFY_DEFAULT,
+  };
+  h2_corehttp_t *provider = NULL;
+  live_state_t *state = &s_live;
+  assert(h2_corehttp_create(&http_config, &provider, &state->real) == H2_PAL_OK);
+  state->pcm_cap = oracle_len + 320u; /* The last frame is zero-padded. */
+  state->pcm = malloc(state->pcm_cap);
+  assert(state->pcm);
+  const h2_pal_http_vtable_t http_vtable = {.request = live_http,
+                                            .response_free = live_free};
+  const h2_pal_http_api_t http = {.user = state, .vtable = &http_vtable};
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = live_audio_info,
+    .start_speaker = live_speaker, .create_track = live_track};
+  const h2_pal_audio_api_t audio = {.user = state, .vtable = &audio_vtable};
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  service->client_config.audio = &audio;
+  service->client_config.http = &http;
+  service->client_config.log = h2_desktop_platform_log_api();
+  service->client_config.connect_timeout_ms = 30000;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  state->service = service;
+  h2_gizclaw_player_playlist_entry_t entry = {.url = device_span(url),
+                                              .duration_ms = duration_ms};
+  assert(h2_gizclaw_player_playlist_set(service, &entry, 1) == H2_PAL_OK);
+  state->command_ms = live_now();
+  assert(h2_gizclaw_player_play_index_at(service, 0, start_ms) == H2_PAL_OK);
+  h2_gizclaw_player_status_t status;
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  printf("command: start_ms=%llu duration_ms=%llu state=%s position_ms=%llu\n",
+         (unsigned long long)start_ms, (unsigned long long)duration_ms,
+         status.state, (unsigned long long)status.position_ms);
+  for (unsigned i = 0;; ++i) {
+    assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+    if (!strcmp(status.state, "ended") || !strcmp(status.state, "error"))
+      break;
+    if (i % 5000u == 0u)
+      printf("t=%llus state=%s position_ms=%llu\n",
+             (unsigned long long)((live_now() - state->command_ms) / 1000u),
+             status.state, (unsigned long long)status.position_ms);
+    assert(i < 600000u); /* 10 minutes. */
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  const unsigned calls = atomic_load(&state->call_count);
+  for (unsigned i = 0; i < calls; ++i) {
+    const live_call_t *call = &state->calls[i];
+    printf("request %u: range=%s status=%d content-range=%s content-length=%lld "
+           "bytes=%llu rc=%d ms=%llu\n", i, call->range[0] ? call->range : "-",
+           call->status, call->content_range[0] ? call->content_range : "-",
+           (long long)call->content_length, (unsigned long long)call->bytes,
+           call->rc, (unsigned long long)(call->ended_ms - call->started_ms));
+  }
+  printf("end: state=%s position_ms=%llu duration_ms=%llu error=%s\n",
+         status.state, (unsigned long long)status.position_ms,
+         (unsigned long long)status.duration_ms, status.error_code);
+  printf("first frame: position_ms=%llu after %llu ms; pcm bytes=%zu\n",
+         (unsigned long long)state->first_position_ms,
+         (unsigned long long)(state->first_write_ms - state->command_ms),
+         state->pcm_len);
+  int failed = strcmp(status.state, "ended") != 0 ||
+               status.duration_ms != oracle_len / 32u;
+  /* The written PCM must be the whole-file decode from the origin on: find
+   * the best alignment near the reported origin and require it to be zero
+   * samples away, with the decoder converged after the pre-roll. */
+  const int64_t origin = (int64_t)state->first_position_ms * 16;
+  const int16_t *got = (const int16_t *)state->pcm;
+  const int16_t *want = (const int16_t *)oracle;
+  const size_t want_samples = oracle_len / 2u;
+  const size_t window = 16000u; /* One second after the first frame. */
+  int64_t best_shift = 0;
+  double best = -1.0;
+  for (int64_t shift = -320; shift <= 320 && state->pcm_len >= 2u * window;
+       ++shift) {
+    const int64_t base = origin + shift;
+    if (base < 0 || (size_t)base + window > want_samples)
+      continue;
+    double signal = 0, noise = 0;
+    for (size_t i = 0; i < window; ++i) {
+      const double a = want[base + (int64_t)i], b = got[i];
+      signal += a * a;
+      noise += (a - b) * (a - b);
+    }
+    const double snr = noise > 0 ? 10.0 * log10(signal / noise) : 200.0;
+    if (snr > best) {
+      best = snr;
+      best_shift = shift;
+    }
+  }
+  printf("alignment: best shift=%lld samples, snr=%.1f dB over the first second\n",
+         (long long)best_shift, best);
+  /* position_ms truncates the origin to whole milliseconds (16 samples). */
+  if (state->pcm_len >= 2u * window)
+    failed |= best_shift < 0 || best_shift >= 16 || best < 30.0;
+  /* Everything after the origin was written exactly once. */
+  const size_t exact = (size_t)(origin + best_shift);
+  const size_t expected = ((want_samples - exact + 159u) / 160u) * 320u;
+  printf("pcm: written=%zu expected=%zu\n", state->pcm_len, expected);
+  failed |= state->pcm_len != expected;
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_corehttp_destroy(provider);
+  h2_desktop_network_services_destroy(network);
+  free(state->pcm);
+  free(oracle);
+  printf("%s\n", failed ? "LIVE FAIL" : "LIVE PASS");
+  return failed;
+}
+#endif
+
+/* client.device.find (126) and client.social.ping (127) have no library
+ * handler: the device layer forwards them, bytes untouched, to the product
+ * rpc_provider, and answers UNIMPLEMENTED when no provider is configured. */
+typedef struct product_rpc_state {
+  unsigned calls;
+  h2_gizclaw_rpc_method_t method;
+  uint8_t request[1024];
+  size_t request_len;
+} product_rpc_state_t;
+static int product_rpc(void *user, h2_gizclaw_rpc_method_t method,
+                       h2_gizclaw_rpc_bytes_t request,
+                       h2_gizclaw_rpc_provider_response_t *out_response) {
+  product_rpc_state_t *state = user;
+  ++state->calls;
+  state->method = method;
+  assert(request.len <= sizeof(state->request));
+  if (request.len)
+    memcpy(state->request, request.data, request.len);
+  state->request_len = request.len;
+  /* Both responses are empty messages; success is what the Server counts. */
+  *out_response = (h2_gizclaw_rpc_provider_response_t){0};
+  return H2_PAL_OK;
+}
+static void test_device_forwards_find_and_social_ping(void) {
+  gizclaw_rpc_v1_ClientDeviceFindRequest find =
+      gizclaw_rpc_v1_ClientDeviceFindRequest_init_zero;
+  find.has_duration_ms = true;
+  find.duration_ms = 8000;
+  gizclaw_rpc_v1_ClientSocialPingRequest ping =
+      gizclaw_rpc_v1_ClientSocialPingRequest_init_zero;
+  memset(ping.from_peer_public_key, 'k', 44);
+  ping.has_from_display_name = true;
+  strcpy(ping.from_display_name, "Alice");
+  ping.has_friend_group_name = true;
+  strcpy(ping.friend_group_name, "my-team");
+  const struct {
+    int method;
+    const pb_msgdesc_t *fields;
+    const void *message;
+  } cases[] = {
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND,
+       gizclaw_rpc_v1_ClientDeviceFindRequest_fields, &find},
+      {H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING,
+       gizclaw_rpc_v1_ClientSocialPingRequest_fields, &ping},
+  };
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = speaker_audio_info};
+  const h2_pal_audio_api_t audio = {.vtable = &audio_vtable};
+  for (unsigned with_provider = 0u; with_provider < 2u; ++with_provider) {
+    product_rpc_state_t product = {0};
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    /* A device-capable Service: its own provider fronts the product one. */
+    service->client_config.audio = &audio;
+    service->client_config.model = "fixture";
+    if (with_provider) {
+      service->client_config.rpc_provider = product_rpc;
+      service->client_config.rpc_provider_user = &product;
+    }
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+    assert(service->client_config.rpc_provider != product_rpc);
+    for (size_t i = 0; i < 2u; ++i) {
+      uint8_t payload[1024];
+      pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+      assert(pb_encode(&stream, cases[i].fields, cases[i].message));
+      h2_gizclaw_rpc_provider_response_t response;
+      memset(&response, 0xa5, sizeof(response));
+      assert(service->client_config.rpc_provider(
+                 service->client_config.rpc_provider_user, cases[i].method,
+                 (h2_gizclaw_rpc_bytes_t){payload, stream.bytes_written},
+                 &response) == H2_PAL_OK);
+      if (with_provider) {
+        assert(product.calls == i + 1u && product.method == cases[i].method);
+        assert(product.request_len == stream.bytes_written &&
+               memcmp(product.request, payload, stream.bytes_written) == 0);
+        assert(!response.has_error && response.payload.len == 0u);
+      } else {
+        assert(response.has_error &&
+               response.error_code == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
+      }
+    }
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
 static h2_pal_result_t ota_random_failure(void *user, uint8_t *out, size_t len) {
   (void)user; (void)out; (void)len;
   return H2_PAL_ERR_IO;
@@ -5103,6 +6002,319 @@ static void test_req_start_backpressure_deadline_and_cancel(void) {
   }
 }
 
+static void test_social_ping_request_paths(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  test_contact_rpc_t mock;
+  workspace_test_use_single(&mock);
+  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_social_ping_t ping;
+  static const uint8_t input[] = {0x0a, 1, 'x'};
+  static const uint8_t delivered[] = {0x08, 1, 0x10, 1};
+  static const uint8_t not_online[] = {0x08, 2};
+  static const uint8_t rate_limited[] = {0x08, 3, 0x18, 60};
+  static const uint8_t group_delivered[] = {0x08, 1, 0x10, 5};
+  for (unsigned group = 0u; group < 2u; ++group) {
+    mock = (test_contact_rpc_t){
+        .expected_method = group ? H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING
+                                 : H2_GIZCLAW_RPC_SERVER_FRIEND_PING,
+        .expected_request = input,
+        .expected_request_len = sizeof(input),
+        .response = group ? group_delivered : delivered,
+        .response_len = group ? sizeof(group_delivered) : sizeof(delivered)};
+    char text[] = "x";
+    const h2_gizclaw_str_t name = {text, 1u};
+    assert((group ? h2_gizclaw_req_create_friend_group_ping(service, 1u, name,
+                                                            1234u, &request)
+                  : h2_gizclaw_req_create_friend_ping(service, 1u, name, 1234u,
+                                                      &request)) == H2_PAL_OK);
+    /* Create copies the name and sends nothing; parsing needs a response. */
+    text[0] = 'y';
+    assert(mock.calls == 0);
+    assert((group ? h2_gizclaw_resp_parse_friend_group_ping(request, &ping)
+                  : h2_gizclaw_resp_parse_friend_ping(request, &ping)) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
+           mock.request_matches);
+    assert((group ? h2_gizclaw_resp_parse_friend_group_ping(request, &ping)
+                  : h2_gizclaw_resp_parse_friend_ping(request, &ping)) ==
+           H2_PAL_OK);
+    assert(ping.result == H2_GIZCLAW_SOCIAL_PING_RESULT_DELIVERED &&
+           ping.delivered_count == (group ? 5u : 1u) &&
+           !ping.has_retry_after_seconds);
+    /* The typed parser rejects a request of the other kind. */
+    assert((group ? h2_gizclaw_resp_parse_friend_ping(request, &ping)
+                  : h2_gizclaw_resp_parse_friend_group_ping(request, &ping)) !=
+           H2_PAL_OK);
+    h2_gizclaw_req_release(request);
+    text[0] = 'x';
+
+    const struct {
+      const uint8_t *bytes;
+      size_t len;
+      h2_pal_result_t rc;
+      h2_gizclaw_social_ping_result_t result;
+      uint32_t retry;
+    } replies[] = {
+        {not_online, sizeof(not_online), H2_PAL_OK,
+         H2_GIZCLAW_SOCIAL_PING_RESULT_NOT_ONLINE, 0u},
+        {rate_limited, sizeof(rate_limited), H2_PAL_OK,
+         H2_GIZCLAW_SOCIAL_PING_RESULT_RATE_LIMITED, 60u},
+    };
+    for (size_t i = 0; i < sizeof(replies) / sizeof(replies[0]); ++i) {
+      mock.response = replies[i].bytes;
+      mock.response_len = replies[i].len;
+      memset(&ping, 0xa5, sizeof(ping));
+      assert((group ? h2_gizclaw_rpc_friend_group_ping(service, name, 1234u,
+                                                        &ping)
+                    : h2_gizclaw_rpc_friend_ping(service, name, 1234u,
+                                                 &ping)) == replies[i].rc);
+      assert(ping.result == replies[i].result && ping.delivered_count == 0u &&
+             ping.has_retry_after_seconds == (replies[i].retry != 0u) &&
+             ping.retry_after_seconds == replies[i].retry);
+    }
+
+    /* Replies that break the result contract are malformed, not guesses. */
+    static const uint8_t unspecified[] = {0};
+    static const uint8_t unknown[] = {0x08, 9};
+    static const uint8_t delivered_none[] = {0x08, 1};
+    static const uint8_t negative[] = {0x08, 1, 0x10, 0xff, 0xff, 0xff, 0xff,
+                                       0xff, 0xff, 0xff, 0xff, 0xff, 0x01};
+    static const uint8_t offline_count[] = {0x08, 2, 0x10, 1};
+    static const uint8_t offline_retry[] = {0x08, 2, 0x18, 5};
+    static const uint8_t limited_no_retry[] = {0x08, 3};
+    static const uint8_t limited_zero_retry[] = {0x08, 3, 0x18, 0};
+    static const uint8_t delivered_retry[] = {0x08, 1, 0x10, 1, 0x18, 5};
+    static const uint8_t friend_two[] = {0x08, 1, 0x10, 2};
+    const struct {
+      const uint8_t *bytes;
+      size_t len;
+    } malformed[] = {
+        {unspecified, 0u},
+        {unknown, sizeof(unknown)},
+        {delivered_none, sizeof(delivered_none)},
+        {negative, sizeof(negative)},
+        {offline_count, sizeof(offline_count)},
+        {offline_retry, sizeof(offline_retry)},
+        {limited_no_retry, sizeof(limited_no_retry)},
+        {limited_zero_retry, sizeof(limited_zero_retry)},
+        {delivered_retry, sizeof(delivered_retry)},
+        {friend_two, group ? 0u : sizeof(friend_two)},
+    };
+    for (size_t i = 0; i < sizeof(malformed) / sizeof(malformed[0]); ++i) {
+      if (malformed[i].bytes == friend_two && group)
+        continue; /* A rally may reach many devices. */
+      mock.response = malformed[i].bytes;
+      mock.response_len = malformed[i].len;
+      memset(&ping, 0xa5, sizeof(ping));
+      assert((group ? h2_gizclaw_rpc_friend_group_ping(service, name, 1234u,
+                                                        &ping)
+                    : h2_gizclaw_rpc_friend_ping(service, name, 1234u,
+                                                 &ping)) == H2_PAL_ERR_FORMAT);
+      assert(ping.result == H2_GIZCLAW_SOCIAL_PING_RESULT_UNSPECIFIED &&
+             ping.delivered_count == 0u && !ping.has_retry_after_seconds);
+    }
+    mock.response = friend_two;
+    mock.response_len = sizeof(friend_two);
+    if (group) {
+      assert(h2_gizclaw_rpc_friend_group_ping(service, name, 1234u, &ping) ==
+                 H2_PAL_OK &&
+             ping.delivered_count == 2u);
+    }
+    mock.has_error = true;
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
+    assert((group ? h2_gizclaw_rpc_friend_group_ping(service, name, 1234u,
+                                                      &ping)
+                  : h2_gizclaw_rpc_friend_ping(service, name, 1234u, &ping)) ==
+           H2_PAL_ERR_NOT_FOUND);
+
+    /* Invalid names fail before any request exists. */
+    const int calls = mock.calls;
+    char long_name[257];
+    memset(long_name, 'n', sizeof(long_name));
+    const h2_gizclaw_str_t invalid[] = {
+        {NULL, 0u}, {"", 0u}, {"\xff", 1u}, {"a\0b", 3u},
+        {long_name, group ? 256u : 256u}};
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+      request = (h2_gizclaw_req_t *)1;
+      assert((group ? h2_gizclaw_req_create_friend_group_ping(
+                          service, 1u, invalid[i], 1234u, &request)
+                    : h2_gizclaw_req_create_friend_ping(
+                          service, 1u, invalid[i], 1234u, &request)) ==
+             H2_PAL_ERR_INVALID_ARG);
+      assert(request == NULL);
+    }
+    assert((group ? h2_gizclaw_rpc_friend_group_ping(service, name, 1234u, NULL)
+                  : h2_gizclaw_rpc_friend_ping(service, name, 1234u, NULL)) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(mock.calls == calls);
+  }
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_public_profile_request_paths(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  uint8_t buffer[4096];
+  h2_gizclaw_resp_storage_t storage = {.data = buffer,
+                                       .capacity = sizeof(buffer)};
+  test_contact_rpc_t mock;
+  workspace_test_use_single(&mock);
+  /* "a" is asked twice; the Server answers each distinct key once, in order. */
+  static const uint8_t input[] = {0x0a, 1, 'a', 0x0a, 1, 'b', 0x0a, 1, 'a'};
+  static const uint8_t response[] = {0x0a, 10, 0x0a, 1, 'a', 0x12, 2, 'A', 'l',
+                                     0x1a, 1, 'E', 0x0a, 3, 0x0a, 1, 'b'};
+  mock = (test_contact_rpc_t){.expected_method =
+                                  H2_GIZCLAW_RPC_SERVER_PROFILE_GET,
+                              .expected_request = input,
+                              .expected_request_len = sizeof(input),
+                              .response = response,
+                              .response_len = sizeof(response)};
+  char a[] = "a";
+  h2_gizclaw_str_t keys[H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS + 1u] = {
+      {a, 1u}, {"b", 1u}, {"a", 1u}};
+  h2_gizclaw_req_t *request = NULL;
+  h2_gizclaw_public_profile_list_t list;
+  assert(h2_gizclaw_req_create_public_profile_get(service, 1u, keys, 3u, 1234u,
+                                                  &request) == H2_PAL_OK);
+  a[0] = 'z';
+  assert(mock.calls == 0);
+  assert(h2_gizclaw_resp_parse_public_profile_get(request, &storage, &list) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
+         mock.request_matches);
+  assert(h2_gizclaw_resp_parse_public_profile_get(request, &storage, &list) ==
+         H2_PAL_OK);
+  assert(list.count == 2u);
+  assert(strcmp(list.items[0].peer_public_key, "a") == 0 &&
+         strcmp(list.items[0].display_name, "Al") == 0 &&
+         strcmp(list.items[0].emoji, "E") == 0);
+  /* A Peer that is unknown or set nothing has both fields absent. */
+  assert(strcmp(list.items[1].peer_public_key, "b") == 0 &&
+         list.items[1].display_name == NULL && list.items[1].emoji == NULL);
+  h2_gizclaw_resp_storage_t tiny = {.data = buffer, .capacity = 8u};
+  assert(h2_gizclaw_resp_parse_public_profile_get(request, &tiny, &list) ==
+             H2_PAL_ERR_NO_SPACE &&
+         tiny.used == 0u && list.count == 0u && list.items == NULL);
+  h2_gizclaw_req_release(request);
+  a[0] = 'a';
+
+  /* Items must be exactly the distinct keys in request order. */
+  static const uint8_t swapped[] = {0x0a, 3, 0x0a, 1, 'b', 0x0a, 3, 0x0a, 1, 'a'};
+  static const uint8_t missing[] = {0x0a, 3, 0x0a, 1, 'a'};
+  static const uint8_t repeated[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 3, 0x0a, 1,
+                                     'b', 0x0a, 3, 0x0a, 1, 'a'};
+  static const uint8_t stranger[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 3, 0x0a, 1, 'c'};
+  static const uint8_t bad_utf8[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 6, 0x0a, 1,
+                                     'b', 0x12, 1, 0xff};
+  static const uint8_t truncated[] = {0x0a, 9, 0x0a, 1, 'a'};
+  /* Embedded NULs must not shorten a field into a match or a clean name. */
+  static const uint8_t nul_key[] = {0x0a, 5, 0x0a, 3, 'a', 0, 'x',
+                                    0x0a, 3, 0x0a, 1, 'b'};
+  static const uint8_t nul_name[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 7, 0x0a, 1,
+                                     'b', 0x12, 2, 'B', 0};
+  static const uint8_t nul_emoji[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 6, 0x0a, 1,
+                                      'b', 0x1a, 1, 0};
+  /* Known fields in a non-string wire type are malformed, not absent; an
+   * unknown field is still skipped. */
+  static const uint8_t varint_name[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 5, 0x0a, 1,
+                                        'b', 0x10, 1};
+  static const uint8_t varint_emoji[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 5, 0x0a,
+                                         1, 'b', 0x18, 1};
+  static const uint8_t varint_key[] = {0x0a, 3, 0x0a, 1, 'a', 0x0a, 5, 0x08, 1,
+                                       0x0a, 1, 'b'};
+  static const uint8_t varint_item[] = {0x0a, 3, 0x0a, 1, 'a', 0x08, 1};
+  /* A 65-byte key exceeds the 64-byte bound even though it fits the wire. */
+  uint8_t long_key[4 + 65] = {0x0a, 67, 0x0a, 65};
+  memset(long_key + 4, 'a', 65);
+  const struct {
+    const uint8_t *bytes;
+    size_t len;
+  } malformed[] = {{swapped, sizeof(swapped)},   {missing, sizeof(missing)},
+                   {repeated, sizeof(repeated)}, {stranger, sizeof(stranger)},
+                   {bad_utf8, sizeof(bad_utf8)}, {truncated, sizeof(truncated)},
+                   {nul_key, sizeof(nul_key)},   {nul_name, sizeof(nul_name)},
+                   {nul_emoji, sizeof(nul_emoji)}, {long_key, sizeof(long_key)},
+                   {varint_name, sizeof(varint_name)},
+                   {varint_emoji, sizeof(varint_emoji)},
+                   {varint_key, sizeof(varint_key)},
+                   {varint_item, sizeof(varint_item)},
+                   {response, 0u}};
+  for (size_t i = 0; i < sizeof(malformed) / sizeof(malformed[0]); ++i) {
+    mock.response = malformed[i].bytes;
+    mock.response_len = malformed[i].len;
+    const size_t checkpoint = storage.used;
+    assert(h2_gizclaw_rpc_public_profile_get(service, keys, 3u, 1234u,
+                                             &storage, &list) ==
+           H2_PAL_ERR_FORMAT);
+    assert(storage.used == checkpoint && list.count == 0u && list.items == NULL);
+  }
+  static const uint8_t unknown_fields[] = {0x0a, 5, 0x0a, 1, 'a', 0x20, 7,
+                                           0x0a, 3, 0x0a, 1, 'b', 0x10, 9};
+  mock.response = unknown_fields;
+  mock.response_len = sizeof(unknown_fields);
+  assert(h2_gizclaw_rpc_public_profile_get(service, keys, 3u, 1234u, &storage,
+                                           &list) == H2_PAL_OK &&
+         list.count == 2u && list.items[0].display_name == NULL);
+  mock.response = response;
+  mock.response_len = sizeof(response);
+  assert(h2_gizclaw_rpc_public_profile_get(service, keys, 3u, 1234u, &storage,
+                                           &list) == H2_PAL_OK &&
+         list.count == 2u);
+  mock.has_error = true;
+  mock.error_code = H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT;
+  assert(h2_gizclaw_rpc_public_profile_get(service, keys, 3u, 1234u, &storage,
+                                           &list) == H2_GIZCLAW_ERR_REMOTE);
+
+  /* Key count and each key are checked before a request exists. */
+  const int calls = mock.calls;
+  char wide[65];
+  memset(wide, 'k', sizeof(wide));
+  for (size_t i = 0; i < H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS + 1u; ++i)
+    keys[i] = (h2_gizclaw_str_t){wide, 64u};
+  request = NULL;
+  assert(h2_gizclaw_req_create_public_profile_get(
+             service, 1u, keys, H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS, 1234u,
+             &request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  const struct {
+    const h2_gizclaw_str_t *keys;
+    size_t count;
+  } bad_counts[] = {{NULL, 1u}, {keys, 0u},
+                    {keys, H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS + 1u}};
+  for (size_t i = 0; i < sizeof(bad_counts) / sizeof(bad_counts[0]); ++i) {
+    request = (h2_gizclaw_req_t *)1;
+    assert(h2_gizclaw_req_create_public_profile_get(
+               service, 1u, bad_counts[i].keys, bad_counts[i].count, 1234u,
+               &request) == H2_PAL_ERR_INVALID_ARG &&
+           request == NULL);
+  }
+  const h2_gizclaw_str_t bad_keys[] = {
+      {NULL, 0u}, {"", 0u}, {NULL, 1u}, {wide, 65u}, {"a b", 3u},
+      {"a\0b", 3u}, {"\xc3\xa9", 2u}};
+  for (size_t i = 0; i < sizeof(bad_keys) / sizeof(bad_keys[0]); ++i) {
+    keys[0] = (h2_gizclaw_str_t){"a", 1u};
+    keys[1] = bad_keys[i];
+    request = (h2_gizclaw_req_t *)1;
+    assert(h2_gizclaw_req_create_public_profile_get(service, 1u, keys, 2u,
+                                                    1234u, &request) ==
+               H2_PAL_ERR_INVALID_ARG &&
+           request == NULL);
+  }
+  assert(h2_gizclaw_rpc_public_profile_get(service, keys, 1u, 1234u, NULL,
+                                           &list) == H2_PAL_ERR_INVALID_ARG);
+  assert(mock.calls == calls);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_friend_public_request_paths(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -5139,6 +6351,9 @@ static void test_friend_public_request_paths(void) {
     assert(h2_gizclaw_resp_parse_friend_list(request, &storage, &value) ==
            H2_PAL_OK);
     assert(strcmp(value.items[0].id, "x") == 0);
+    assert(!value.items[0].has_online && !value.items[0].online &&
+           value.items[0].last_seen_at == NULL &&
+           value.items[0].name == NULL && value.items[0].emoji == NULL);
 
     h2_gizclaw_resp_storage_t tiny = {.data = buffer, .capacity = 1u};
     assert(h2_gizclaw_resp_parse_friend_list(request, &tiny, &value) ==
@@ -5161,6 +6376,66 @@ static void test_friend_public_request_paths(void) {
     assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){text, 1u}, 1u,
                                       1234u, &storage,
                                       &value) == H2_PAL_ERR_NOT_FOUND);
+  }
+  {
+    /* server.friend.list presence and profile: online, last_seen_at,
+     * display_name, emoji; an explicitly empty display name stays "". */
+    static const uint8_t input[] = {0x10, 2};
+    static const uint8_t response[] = {
+        0x12, 36,   0x12, 1,    'x',  0x30, 1,    0x3a, 20,   '2',
+        '0',  '2',  '6',  '-',  '0',  '9',  '-',  '1',  '2',  'T',
+        '0',  '9',  ':',  '0',  '0',  ':',  '0',  '0',  'Z',  0x42,
+        1,    'A',  0x4a, 4,    0xf0, 0x9f, 0x90, 0xb1, 0x12, 7,
+        0x12, 1,    'y',  0x30, 0,    0x42, 0};
+    mock = (test_contact_rpc_t){.expected_method =
+                                    H2_GIZCLAW_RPC_SERVER_FRIEND_LIST,
+                                .expected_request = input,
+                                .expected_request_len = sizeof(input),
+                                .response = response,
+                                .response_len = sizeof(response)};
+    storage.used = 0u;
+    h2_gizclaw_friend_page_t value;
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage, &value) == H2_PAL_OK);
+    assert(mock.request_matches && value.count == 2u);
+    const h2_gizclaw_friend_t *on = &value.items[0], *off = &value.items[1];
+    assert(on->has_online && on->online &&
+           strcmp(on->last_seen_at, "2026-09-12T09:00:00Z") == 0 &&
+           strcmp(on->name, "A") == 0 &&
+           strcmp(on->emoji, "\xf0\x9f\x90\xb1") == 0);
+    assert(off->has_online && !off->online && off->last_seen_at == NULL &&
+           off->name != NULL && off->name[0] == '\0' && off->emoji == NULL);
+    const size_t checkpoint = storage.used;
+
+    /* Profile text keeps the FriendInfo bounds; text fields reject NUL. */
+    static const uint8_t too_long[] = {0x12, 70, 0x12, 1, 'x', 0x4a, 65};
+    uint8_t long_emoji[sizeof(too_long) + 65u];
+    memcpy(long_emoji, too_long, sizeof(too_long));
+    memset(long_emoji + sizeof(too_long), 'e', 65u);
+    static const uint8_t ok_emoji[] = {0x12, 69, 0x12, 1, 'x', 0x4a, 64};
+    uint8_t max_emoji[sizeof(ok_emoji) + 64u];
+    memcpy(max_emoji, ok_emoji, sizeof(ok_emoji));
+    memset(max_emoji + sizeof(ok_emoji), 'e', 64u);
+    static const uint8_t nul_seen[] = {0x12, 8,   0x12, 1, 'x',
+                                       0x3a, 3,   'a',  0, 'b'};
+    mock.response = max_emoji;
+    mock.response_len = sizeof(max_emoji);
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage, &value) == H2_PAL_OK);
+    assert(strlen(value.items[0].emoji) == 64u);
+    storage.used = checkpoint;
+    mock.response = long_emoji;
+    mock.response_len = sizeof(long_emoji);
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage,
+                                      &value) == H2_PAL_ERR_FORMAT);
+    assert(storage.used == checkpoint && value.items == NULL);
+    mock.response = nul_seen;
+    mock.response_len = sizeof(nul_seen);
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage,
+                                      &value) == H2_PAL_ERR_FORMAT);
+    assert(storage.used == checkpoint && value.items == NULL);
   }
   {
     char text[] = "x";
@@ -5978,6 +7253,133 @@ static void test_group_member_request_paths(void) {
     assert(h2_gizclaw_rpc_friend_group_member_list(
                service, text_arg, text_arg, 1u, 1234u, &storage, &value) ==
            H2_GIZCLAW_ERR_REMOTE);
+  }
+  {
+    char group[] = "x", key[] = "pk", name[] = "m";
+    h2_gizclaw_str_t group_arg = {group, 1u}, key_arg = {key, 2u},
+                     name_arg = {name, 1u};
+    static const uint8_t input[] = {0x0a, 1,   'x', 0x12, 2, 'p', 'k',
+                                    0x18, 2,   0x22, 1,   'm'};
+    static const uint8_t response[] = {0x0a, 13,  0x12, 1,   'm',  0x1a, 2,
+                                       'p',  'k', 0x22, 2,   'p',  'k',  0x28,
+                                       3};
+    mock = (test_contact_rpc_t){
+        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_ADD,
+        .expected_request = input,
+        .expected_request_len = sizeof(input),
+        .response = response,
+        .response_len = sizeof(response)};
+    h2_gizclaw_friend_group_member_t value;
+    assert(h2_gizclaw_req_create_friend_group_member_add(
+               service, 1u, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u,
+               &request) == H2_PAL_OK);
+    assert(mock.calls == 0);
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(
+               request, &storage, &value) == H2_PAL_ERR_INVALID_STATE);
+    group[0] = key[0] = name[0] = 'y';
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
+           mock.request_matches);
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(request, &storage,
+                                                         &value) == H2_PAL_OK);
+    assert(strcmp(value.id, "pk") == 0 &&
+           strcmp(value.peer_public_key, "pk") == 0 &&
+           strcmp(value.friend_group_name, "m") == 0);
+    assert(value.role == H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER);
+    h2_gizclaw_resp_storage_t tiny = {.data = arena_buffer, .capacity = 1u};
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(
+               request, &tiny, &value) == H2_PAL_ERR_NO_SPACE &&
+           tiny.used == 0u);
+    h2_gizclaw_req_release(request);
+    group[0] = 'x';
+    key[0] = 'p';
+    name[0] = 'm';
+    assert(h2_gizclaw_rpc_friend_group_member_add(
+               service, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u, &storage,
+               &value) == H2_PAL_OK);
+    const size_t checkpoint = storage.used;
+
+    /* The shared member decoder rejects a NUL inside any text field. */
+    static const uint8_t nul_peer[] = {0x0a, 15,  0x12, 1,   'm',  0x1a,
+                                       2,    'p', 'k',  0x22, 4,   'p',
+                                       'k',  0,   'x',  0x28, 3};
+    static const uint8_t no_value[] = {0};
+    static const uint8_t bad[] = {0x0a};
+    const struct {
+      const uint8_t *data;
+      size_t len;
+    } rejected[] = {{nul_peer, sizeof(nul_peer)},
+                    {no_value, 0u},
+                    {bad, sizeof(bad)}};
+    for (size_t i = 0u; i < sizeof(rejected) / sizeof(rejected[0]); ++i) {
+      mock.response = rejected[i].data;
+      mock.response_len = rejected[i].len;
+      assert(h2_gizclaw_rpc_friend_group_member_add(
+                 service, group_arg, key_arg, name_arg,
+                 H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u, &storage,
+                 &value) == H2_PAL_ERR_FORMAT);
+      assert(value.id == NULL && storage.used == checkpoint);
+    }
+
+    /* Group not visible to the caller is NOT_FOUND; full group, peer group
+     * limit and permission failures stay generic remote errors. */
+    mock.response = response;
+    mock.response_len = sizeof(response);
+    mock.has_error = true;
+    const struct {
+      int code;
+      h2_pal_result_t result;
+    } errors[] = {
+        {H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_ERR_NOT_FOUND},
+        {H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED, H2_GIZCLAW_ERR_REMOTE},
+        {H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED, H2_GIZCLAW_ERR_REMOTE},
+        {H2_GIZCLAW_RPC_ERROR_INTERNAL, H2_GIZCLAW_ERR_REMOTE},
+        {H2_GIZCLAW_RPC_ERROR_ABORTED, H2_GIZCLAW_ERR_REMOTE},
+    };
+    for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+      mock.error_code = errors[i].code;
+      assert(h2_gizclaw_rpc_friend_group_member_add(
+                 service, group_arg, key_arg, name_arg,
+                 H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u, &storage,
+                 &value) == errors[i].result);
+      assert(value.id == NULL && storage.used == checkpoint);
+    }
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+    assert(h2_gizclaw_req_create_friend_group_member_add(
+               service, 2u, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u,
+               &request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_GIZCLAW_ERR_REMOTE);
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(
+               request, &storage, &value) == H2_GIZCLAW_ERR_REMOTE);
+    assert(value.id == NULL && storage.used == checkpoint);
+    h2_gizclaw_req_release(request);
+  }
+  {
+    h2_gizclaw_str_t group_arg = {"x", 1u}, key_arg = {"pk", 2u},
+                     name_arg = {"m", 1u};
+    static const uint8_t input[] = {0x0a, 1,   'x', 0x12, 2, 'p', 'k',
+                                    0x18, 1,   0x22, 1,   'm'};
+    static const uint8_t response[] = {0x0a, 13,  0x12, 1,   'm',  0x1a, 2,
+                                       'p',  'k', 0x22, 2,   'p',  'k',  0x28,
+                                       2};
+    mock = (test_contact_rpc_t){
+        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_ADD,
+        .expected_request = input,
+        .expected_request_len = sizeof(input),
+        .response = response,
+        .response_len = sizeof(response)};
+    h2_gizclaw_friend_group_member_t value;
+    storage.used = 0u;
+    assert(h2_gizclaw_rpc_friend_group_member_add(
+               service, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN, 1234u, &storage,
+               &value) == H2_PAL_OK);
+    assert(mock.request_matches &&
+           value.role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN);
   }
   {
     char text[] = "x";
@@ -8574,7 +9976,10 @@ static void test_conversation_public_audio_tasks(void) {
 
 typedef struct speed_wire_test {
   unsigned mode, starts, writes, finishes, next, destroys, cancels;
-  size_t upload, download, accepted, input_produced, output_consumed;
+  size_t upload, download, accepted, input_produced, delivered;
+  /* Written by the App dispatch, awaited by the fake RPC on the net owner. */
+  atomic_size_t output_consumed;
+  bool await_output;
   uint64_t upload_started, download_started;
   uint32_t previous_timeout;
   h2_gizclaw_rpc_stream_fn receive;
@@ -8612,7 +10017,7 @@ static h2_pal_result_t speed_test_output(void *user, const uint8_t *data,
   assert(wire != NULL && out_written != NULL);
   if (length != 0u)
     assert(data != NULL);
-  wire->output_consumed += length;
+  atomic_fetch_add(&wire->output_consumed, length);
   *out_written = length;
   return H2_PAL_OK;
 }
@@ -8683,9 +10088,19 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
    * or accepted EOS while the SDK request remains pending. */
   if (wire->mode >= 22u &&
       wire->next >= (wire->mode == 22u ? 1u : wire->mode == 25u ? 3u : 2u)) {
-    /* Let the real direction worker consume the enqueued frames before
-     * advancing this fake deadline / delivering the terminal error. */
-    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 5u);
+    /* Let the real direction worker and App dispatch hand every delivered
+     * byte to output_write before advancing this fake deadline / delivering
+     * the terminal error: teardown drops frames still queued. Without an
+     * output sink (sync helper) nothing below asserts consumption. */
+    if (wire->await_output) {
+      for (unsigned i = 0u; atomic_load(&wire->output_consumed) < wire->delivered;
+           ++i) {
+        assert(i < 5000u && "delivered DATA never reached output_write");
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+      }
+    } else {
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 5u);
+    }
     atomic_fetch_add(&s_env->clock_ms, 100u);
     return wire->mode == 26u ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_WOULD_BLOCK;
   }
@@ -8727,6 +10142,7 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
       const int prefix_rc = wire->receive(wire->receive_user, &event);
       if (prefix_rc != H2_PAL_OK)
         return prefix_rc;
+      wire->delivered += event.data.len;
       if (wire->mode == 20u)
         bytes[7] ^= 1u;
       event.data = (h2_gizclaw_rpc_bytes_t){bytes + 7u, wire->download - 7u};
@@ -8743,6 +10159,9 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
   }
   ++wire->next;
   const int rc = wire->receive(wire->receive_user, &event);
+  if (rc == H2_PAL_OK && event.kind == H2_GIZCLAW_RPC_STREAM_DATA &&
+      event.data.data != NULL)
+    wire->delivered += event.data.len;
   return rc == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : rc;
 }
 
@@ -8832,6 +10251,7 @@ static void test_speedtest_managed_requests(void) {
         .download = upload_only ? 0u : 257u,
         .previous_timeout = 1234u,
     };
+    wire.await_output = wire.download != 0u && mode != 1u;
     gizclaw_rpc_v1_SpeedTestResponse metadata =
         gizclaw_rpc_v1_SpeedTestResponse_init_zero;
     metadata.up_content_length = mode == 14u ? -1 : (int64_t)wire.upload;
@@ -8856,7 +10276,7 @@ static void test_speedtest_managed_requests(void) {
     assert(h2_gizclaw_req_do(
                request, &wire,
                wire.upload != 0u && mode != 0u ? speed_test_input : NULL,
-               wire.download != 0u && mode != 1u ? speed_test_output : NULL,
+               wire.await_output ? speed_test_output : NULL,
                NULL) == H2_PAL_OK);
     const int expected =
         mode >= 22u ? (mode == 26u ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_TIMEOUT)
@@ -8880,10 +10300,11 @@ static void test_speedtest_managed_requests(void) {
           (mode == 23u || mode == 26u || mode == 27u ? 128u : wire.download);
       /* These assertions couple failure diagnostics to actual ingress and
        * parser state, not merely to the existence of a log format string. */
-      if (wire.output_consumed != received)
+      const size_t consumed = atomic_load(&wire.output_consumed);
+      if (consumed != received)
         fprintf(stderr, "mode=%u consumed=%zu expected=%zu %s\n", mode,
-                wire.output_consumed, received, capture.message);
-      assert(wire.output_consumed == received);
+                consumed, received, capture.message);
+      assert(consumed == received);
       char field[64];
       (void)snprintf(field, sizeof(field), "rx_data=%zu ", received);
       assert(strstr(capture.message, field) != NULL);
@@ -8941,7 +10362,9 @@ static void test_speedtest_managed_requests(void) {
     {
       wire.starts = wire.writes = wire.finishes = wire.next = wire.accepted =
           0u;
-      wire.input_produced = wire.output_consumed = 0u;
+      wire.input_produced = wire.delivered = 0u;
+      atomic_store(&wire.output_consumed, 0u);
+      wire.await_output = false; /* The sync helper has no output sink. */
       wire.destroys = wire.cancels = 0u;
       wire.previous_timeout = 1234u;
       capture.calls = 0u;
@@ -10026,6 +11449,43 @@ static void test_preconnect_time_stop(void) {
   }
 }
 
+/* A platform-owned clock cannot be set; one attempt ends calibration. */
+static void test_unsettable_time_sync(void) {
+  test_env_t env;
+  time_test_t test = {.set_result = H2_PAL_ERR_UNSUPPORTED};
+  atomic_store(&test.wall, 1700000000000ull);
+  atomic_store(&test.valid, true);
+  atomic_store(&test.http_gate, true);
+  const h2_pal_time_vtable_t tv = {.get_monotonic_ms = time_test_mono,
+      .get_wall_ms = time_test_wall, .get_wall_status = time_test_status,
+      .set_wall_ms = time_test_set};
+  const h2_pal_time_api_t time = {.user = &test, .vtable = &tv};
+  const h2_pal_http_vtable_t hv = {.request = time_test_http};
+  const h2_pal_http_api_t http = {.user = &test, .vtable = &hv};
+  h2_gizclaw_service_t *service = create_service(&env, 2);
+  service->config.on_event = NULL;
+  service->client_config.time = &time;
+  service->client_config.http = &http;
+  service->client_config.server_endpoint = (h2_gizclaw_str_t){"example.test:9821", 17};
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_time_sync_status_t status =
+      time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RETRY);
+  assert(status.attempts == 1 && status.last_result == H2_PAL_ERR_UNSUPPORTED);
+  /* Advance past many retry periods; no further attempt is made. */
+  for (unsigned n = 0; n < 50; ++n) {
+    atomic_fetch_add(&test.offset, 30001);
+    h2_pal_mutex_lock(service->config.sync, service->mutex);
+    h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
+    h2_pal_mutex_unlock(service->config.sync, service->mutex);
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(atomic_load(&test.calls) == 1);
+  assert(h2_gizclaw_service_get_time_sync_status(service, &status) == H2_PAL_OK);
+  assert(status.attempts == 1 && status.state == H2_GIZCLAW_TIME_SYNC_RETRY);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_automatic_time_sync(void) {
   const char *invalid[] = {NULL, "{\"server_time\":0}",
       "{\"server_time\":-1}", "{\"server_time\":1.5}",
@@ -10111,6 +11571,10 @@ static void test_automatic_time_sync(void) {
 }
 
 int main(int argc, char **argv) {
+#ifdef H2_GIZCLAW_PLAYER_LIVE
+  if (argc >= 2 && strcmp(argv[1], "--player-live") == 0)
+    return player_live(argc, argv);
+#endif
   if (argc == 2 && strcmp(argv[1], "--app-hooks-only") == 0) {
     test_stream_data_task_handoff();
     return 0;
@@ -10149,6 +11613,7 @@ int main(int argc, char **argv) {
   assert(argc == 1);
   test_preconnect_time_stop();
   test_automatic_time_sync();
+  test_unsettable_time_sync();
   test_time_sync_reconnect();
   test_stream_sink_one_shot();
   test_workspace_reload_with_options();
@@ -10184,6 +11649,8 @@ int main(int argc, char **argv) {
   test_group_member_request_paths();
   test_friend_group_public_request_paths();
   test_friend_public_request_paths();
+  test_social_ping_request_paths();
+  test_public_profile_request_paths();
   test_req_start_backpressure_deadline_and_cancel();
   test_contact_and_group_public_paths();
   test_contact_mutation_requests();
@@ -10201,6 +11668,9 @@ int main(int argc, char **argv) {
   test_req_ping_execution_timing();
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
+  test_device_playback_speaker_hooks();
+  test_device_player_timed_start();
+  test_device_forwards_find_and_social_ping();
   test_device_identifiers_imeis();
   test_device_ota_telemetry_copy();
   test_ota_status_before_stage_failure();

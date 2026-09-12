@@ -10,6 +10,7 @@
 #include "sdkconfig.h"
 
 #if CONFIG_BT_NIMBLE_ENABLED
+#include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -148,7 +149,10 @@ static h2_pal_ble_adv_set_t
 static ble_uuid_any_t
     s_h2_esp_ble_service_uuid[H2_ESP_BLE_MAX_GATT_SERVICES];
 static ble_uuid_any_t s_h2_esp_ble_char_uuid[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
-static uint8_t s_h2_esp_ble_value[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS][H2_ESP_BLE_MAX_VALUE_LEN];
+/* Up to 514 bytes per slot: keep the value copies in PSRAM when the board
+ * allows external BSS; no ISR reads them. */
+static EXT_RAM_BSS_ATTR uint8_t
+    s_h2_esp_ble_value[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS][H2_ESP_BLE_MAX_VALUE_LEN];
 static size_t s_h2_esp_ble_value_len[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static size_t s_h2_esp_ble_value_max_len[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static h2_pal_ble_gatt_read_fn s_h2_esp_ble_read[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
@@ -2577,6 +2581,50 @@ static h2_pal_result_t h2_esp_ble_register_gatt_services(
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_esp_ble_unregister_gatt_service(
+    void *user, const h2_pal_ble_uuid_t *service_uuid) {
+    (void)user;
+    if (service_uuid == NULL) return H2_PAL_ERR_INVALID_ARG;
+    ble_uuid_any_t uuid;
+    if (!h2_esp_ble_uuid_from_pal(service_uuid, &uuid)) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (s_h2_esp_ble_gatt_mutex != NULL) {
+        if (xSemaphoreTake(s_h2_esp_ble_gatt_mutex, portMAX_DELAY) != pdTRUE) return H2_PAL_ERR_IO;
+    }
+    h2_pal_result_t result = H2_PAL_ERR_NOT_FOUND;
+    for (size_t i = 0u; i < s_h2_esp_ble_service_count; ++i) {
+        if (!(ble_uuid_cmp(&s_h2_esp_ble_service_uuid[i].u, &uuid.u) == 0)) continue;
+        size_t service_index = i;
+        size_t first = h2_esp_ble_gatt_schema_slot(service_index, 0u);
+        for (size_t j = 0u;
+             j < s_h2_esp_ble_service_characteristic_count[service_index]; ++j) {
+            size_t index = first + j;
+            s_h2_esp_ble_read[index] = NULL;
+            s_h2_esp_ble_write[index] = NULL;
+            s_h2_esp_ble_gatt_user[index] = NULL;
+            s_h2_esp_ble_out_value_handle[index] = NULL;
+            s_h2_esp_ble_out_cccd_handle[index] = NULL;
+        }
+        s_h2_esp_ble_out_service_handle[service_index] = NULL;
+        /* Keep the schema slot and other services' bindings intact. */
+        bool attached = false;
+        for (size_t j = 0u; j < H2_ESP_BLE_MAX_GATT_CHARACTERISTICS; ++j) {
+            if (s_h2_esp_ble_read[j] != NULL || s_h2_esp_ble_write[j] != NULL) {
+                attached = true;
+                break;
+            }
+        }
+        s_h2_esp_ble_gatt_attached = attached;
+        result = H2_PAL_OK;
+        break;
+    }
+    if (s_h2_esp_ble_gatt_mutex != NULL) {
+        (void)xSemaphoreGive(s_h2_esp_ble_gatt_mutex);
+    }
+    return result;
+}
+
 static h2_pal_result_t h2_esp_ble_unregister_gatt_services(
     h2_pal_ble_t *ble) {
     (void)ble;
@@ -3340,6 +3388,7 @@ static const h2_pal_ble_vtable_t s_h2_esp_ble_vtable = {
     .start_scan = (h2_pal_result_t (*)(void *, const h2_pal_ble_scan_params_t *, h2_pal_ble_scan_result_fn, void *))h2_esp_ble_start_scan,
     .stop_scan = (h2_pal_result_t (*)(void *))h2_esp_ble_stop_scan,
     .register_gatt_services = (h2_pal_result_t (*)(void *, const h2_pal_ble_gatt_service_t *, size_t))h2_esp_ble_register_gatt_services,
+    .unregister_gatt_service = h2_esp_ble_unregister_gatt_service,
     .unregister_gatt_services = (h2_pal_result_t (*)(void *))h2_esp_ble_unregister_gatt_services,
     .notify = (h2_pal_result_t (*)(void *, uint16_t, uint16_t, const uint8_t *, size_t))h2_esp_ble_notify,
     .indicate = (h2_pal_result_t (*)(void *, uint16_t, uint16_t, const uint8_t *, size_t, uint32_t))h2_esp_ble_indicate,

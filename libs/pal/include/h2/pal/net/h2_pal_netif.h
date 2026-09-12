@@ -22,6 +22,15 @@ typedef enum h2_pal_netif_kind {
     H2_PAL_NETIF_KIND_WIFI_AP = 3,
     H2_PAL_NETIF_KIND_MODEM_DATA = 4,
     H2_PAL_NETIF_KIND_ETHERNET = 5,
+    /**
+     * The default network path of a host environment that owns addressing,
+     * routing and DNS and hides them from the provider, such as a browser.
+     * HOST status never sets HAS_IPV4/HAS_IPV6 and leaves ipv4, netmask4,
+     * gateway4, ipv6, mtu, mac and dns zeroed; traffic reaches it only
+     * through host transports (Fetch, WebRTC). It has no physical link to
+     * configure, so Wi-Fi, modem and route-selection operations do not apply.
+     */
+    H2_PAL_NETIF_KIND_HOST = 6,
 } h2_pal_netif_kind_t;
 
 typedef enum h2_pal_netif_flag {
@@ -137,7 +146,27 @@ static inline int h2_pal_netif_ref_is_default(const h2_pal_netif_ref_t *ref) {
 }
 
 static inline int h2_pal_netif_kind_is_valid(h2_pal_netif_kind_t kind) {
-    return (unsigned int)kind <= (unsigned int)H2_PAL_NETIF_KIND_ETHERNET;
+    return (unsigned int)kind <= (unsigned int)H2_PAL_NETIF_KIND_HOST;
+}
+
+/**
+ * @brief Return nonzero when status describes a path that can carry traffic.
+ *
+ * The interface must be UP and LINK_UP and must not be loopback. Interfaces
+ * the provider can address must also report HAS_IPV4 (the IPv4 default-route
+ * contract); a HOST interface satisfies addressing through its host stack.
+ * Usable only means a default network exists: whether a particular service is
+ * reachable is decided by the result of the actual connection.
+ */
+static inline int h2_pal_netif_status_is_usable(
+    const h2_pal_netif_status_t *status) {
+    const uint32_t required = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP;
+    if (status == NULL || (status->flags & required) != required ||
+        status->kind == H2_PAL_NETIF_KIND_LOOPBACK) {
+        return 0;
+    }
+    return status->kind == H2_PAL_NETIF_KIND_HOST ||
+           (status->flags & H2_PAL_NETIF_FLAG_HAS_IPV4) != 0u;
 }
 
 static inline int h2_pal_netif_ref_is_zero(const h2_pal_netif_ref_t *ref) {

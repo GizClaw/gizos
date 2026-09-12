@@ -1035,6 +1035,48 @@ static h2_pal_result_t h2_pal_e2e_run_mqtt(
     h2_runtime_t *runtime, const h2_pal_e2e_config_t *config,
     h2_pal_e2e_result_t *out_result);
 
+static h2_pal_result_t h2_pal_e2e_browser_http(h2_runtime_t *runtime,
+                                               const char *url,
+                                               uint32_t timeout_ms) {
+  if (runtime->http == NULL || url == NULL || url[0] == '\0')
+    return H2_PAL_ERR_INVALID_ARG;
+  uint8_t body[16] = {0};
+  h2_pal_http_request_t request = {
+      .method = H2_PAL_HTTP_GET,
+      .url = {.data = url, .len = strlen(url)},
+      .timeout_ms = (int)timeout_ms,
+      .response_buf = body,
+      .response_buf_cap = sizeof(body),
+  };
+  h2_pal_http_response_t response;
+  h2_pal_http_response_reset(&response);
+  h2_pal_result_t result = (h2_pal_result_t)h2_pal_http_request(
+      runtime->http, &request, &response);
+  if (result == H2_PAL_OK &&
+      (response.status_code != 200 || response.body_len != 8u ||
+       memcmp(response.body, "host-e2e", 8u) != 0)) {
+    result = H2_PAL_ERR_INVALID_STATE;
+  }
+  h2_pal_http_response_free(runtime->http, &response);
+  return result;
+}
+
+/* A browser has no raw sockets; the provider must say so explicitly. */
+static h2_pal_result_t h2_pal_e2e_browser_net_unsupported(
+    h2_runtime_t *runtime) {
+  h2_pal_net_addr_t address;
+  if (h2_pal_net_resolve_addr(runtime->net, "localhost", &address) !=
+      H2_PAL_ERR_UNSUPPORTED)
+    return H2_PAL_ERR_INVALID_STATE;
+  h2_pal_net_socket_t socket_token = -1;
+  h2_pal_net_addr_t bound;
+  memset(&bound, 0, sizeof(bound));
+  const h2_pal_result_t open = (h2_pal_result_t)h2_pal_net_udp_open_bound(
+      runtime->net, H2_PAL_NET_FAMILY_IPV4, 0u, NULL, &socket_token, &bound);
+  return open == H2_PAL_ERR_UNSUPPORTED ? H2_PAL_OK
+                                        : H2_PAL_ERR_INVALID_STATE;
+}
+
 static int h2_pal_e2e_host_netif_callback(
     void *user, const h2_pal_netif_ref_t *ref,
     const h2_pal_netif_status_t *status) {
@@ -1070,8 +1112,16 @@ static h2_pal_result_t h2_pal_e2e_host_system_event(
       runtime->system_event,
       H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
       h2_pal_e2e_host_event_handler, &calls, &subscription);
+  // A well-formed payload: a real Runtime subscriber validates it too.
+  h2_pal_netif_default_changed_t change;
+  memset(&change, 0, sizeof(change));
+  change.current.type = H2_PAL_NETIF_REF_NAME;
+  memcpy(change.current.name, "e2e0", sizeof("e2e0"));
+  change.current_valid = 1u;
   h2_pal_system_event_t event = {
       .type = H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
+      .payload = &change,
+      .payload_size = sizeof(change),
   };
   if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_system_event_post(
@@ -1136,6 +1186,38 @@ static void h2_pal_e2e_run_host(h2_runtime_t *runtime,
                     h2_pal_e2e_host_netif(runtime));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_SYSTEM_EVENT,
                     h2_pal_e2e_host_system_event(runtime));
+}
+
+static void h2_pal_e2e_run_browser(h2_runtime_t *runtime,
+                                   const h2_pal_e2e_config_t *config,
+                                   h2_pal_e2e_result_t *result) {
+  const uint32_t timeout_ms = config->host.timeout_ms == 0u
+                                  ? 2000u : config->host.timeout_ms;
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_MEMORY,
+                    h2_pal_e2e_host_memory(runtime));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIME,
+                    h2_pal_e2e_core_time(runtime));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIMER,
+                    h2_pal_e2e_core_timer(runtime, result));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TASK,
+                    h2_pal_e2e_core_task(runtime));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_QUEUE,
+                    h2_pal_e2e_core_queue(runtime, result));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_MUTEX,
+                    h2_pal_e2e_core_mutex(runtime, result));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONDITION,
+                    h2_pal_e2e_core_condition(runtime, result));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_FILESYSTEM,
+                    h2_pal_e2e_host_filesystem(runtime));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_BROWSER_HTTP,
+                    h2_pal_e2e_browser_http(runtime, config->host.http_url,
+                                            timeout_ms));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_NETIF,
+                    h2_pal_e2e_host_netif(runtime));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_SYSTEM_EVENT,
+                    h2_pal_e2e_host_system_event(runtime));
+  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_BROWSER_NET_UNSUPPORTED,
+                    h2_pal_e2e_browser_net_unsupported(runtime));
 }
 
 static int h2_pal_e2e_mqtt_str_valid(h2_pal_mqtt_str_t value) {
@@ -1385,7 +1467,8 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
       (config->suite_mask & ~(H2_PAL_E2E_SUITE_CORE |
                               H2_PAL_E2E_SUITE_MQTT |
                               H2_PAL_E2E_SUITE_PREF |
-                              H2_PAL_E2E_SUITE_HOST)) != 0u ||
+                              H2_PAL_E2E_SUITE_HOST |
+                              H2_PAL_E2E_SUITE_BROWSER)) != 0u ||
       ((config->suite_mask & H2_PAL_E2E_SUITE_PREF) != 0u &&
        config->suite_mask != H2_PAL_E2E_SUITE_PREF)) {
     out_result->result = H2_PAL_ERR_INVALID_ARG;
@@ -1401,6 +1484,9 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
   }
   if ((config->suite_mask & H2_PAL_E2E_SUITE_HOST) != 0u) {
     h2_pal_e2e_run_host(runtime, config, out_result);
+  }
+  if ((config->suite_mask & H2_PAL_E2E_SUITE_BROWSER) != 0u) {
+    h2_pal_e2e_run_browser(runtime, config, out_result);
   }
   if ((config->suite_mask & H2_PAL_E2E_SUITE_MQTT) != 0u) {
     const h2_pal_result_t mqtt_result =

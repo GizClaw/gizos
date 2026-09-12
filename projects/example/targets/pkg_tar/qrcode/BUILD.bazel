@@ -1,0 +1,15 @@
+load("//libs/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_web_app(
+    name = "qrcode",
+    srcs = ["main.c"],
+    app_name = "qrcode",
+    canvas_min = 10000,
+    passes = [
+        "H2_WEB_APP name=qrcode stage=ready",
+        "H2_WEB_APP name=qrcode result=PASS rc=0 fs=0 destroy=0",
+    ],
+    deps = ["//projects/example/apps/qrcode/app:qrcode"],
+)

@@ -328,6 +328,53 @@ def _extension_impl(_module_ctx):
     )
 
     local_embedded_cc_repository(
+        name = "gizos_jieli_ac707n_cc_toolchain",
+        compile_flags = [
+            "-target",
+            "pi32v2",
+            "-mcpu=r3",
+            "-mllvm",
+            "-pi32v2-large-program=true",
+            "-fdiscrete-bitfield-abi",
+            "-integrated-as",
+            "-Oz",
+            "-fno-common",
+            "-fallow-pointer-null",
+            "-fprefer-gnu-section",
+            "-fms-extensions",
+            "-Wno-shift-negative-value",
+        ],
+        compiler_kind = "clang",
+        exec_hosts = ["linux_x86_64"],
+        layout = "bin_dir",
+        locator = "@h2_jieli_toolchain//:locator.json",
+        locator_path = "pi32v2_bin",
+        prefix = "",
+        system_include_dirs = ["../include"],
+        target_constraints = [
+            "@gizos//tools/bazel/platforms:cpu_pi32v2",
+            "@gizos//tools/bazel/platforms:target_ac707n",
+            "@platforms//os:none",
+        ],
+        target_cpu = "pi32v2",
+        target_system_name = "pi32v2-elf",
+        tool_overrides = {
+            "as": "clang",
+            "cpp": "clang",
+            "gcc": "clang",
+            "gcov": "clang",
+            "ld": "lto-wrapper",
+        },
+        toolchain_identifier = "jieli-ac707n-clang-4.0.1",
+        unfiltered_compile_flags = [
+            "-Wno-missing-field-initializers",
+            "-Wno-missing-braces",
+        ],
+        version_key = "jieli_clang",
+        versions_file = "//tools/bazel:native_versions/jieli_tool_versions.txt",
+    )
+
+    local_embedded_cc_repository(
         name = "gizos_jieli_pi32v2_cc_toolchain",
         compile_flags = [
             "-target",

@@ -25,6 +25,11 @@ int main(void) {
         }
     }
 
+    assert(H2_BK_BLE_MAX_GATT_SERVICES == 6u);
+    assert(h2_bk_ble_gatt_schema_first_slot(5u) == 15u);
+    assert(h2_bk_ble_gatt_schema_first_slot(5u) + 2u ==
+           H2_BK_BLE_MAX_GATT_CHARACTERISTICS - 1u);
+
     /*
      * EtherMind spends one entry per characteristic plus one for a CCCD, so
      * the worst case is two each. The provisioning service is one write-only

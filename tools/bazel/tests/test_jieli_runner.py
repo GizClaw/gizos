@@ -65,7 +65,7 @@ class JieliRunnerFixture:
         self.root = root
         self.target = target
         self.family = runner.FAMILIES[target]
-        self.subdirectory = "SDK" if target == "br23" else "."
+        self.subdirectory = "SDK" if target in ("br23", "br35") else "."
         self.checkout = root / "sdk-checkout"
         sdk_root = self.checkout / self.subdirectory
         (sdk_root / "cpu" / target / "tools").mkdir(parents=True)
@@ -157,6 +157,32 @@ class JieliRunnerFixture:
         )
         values.update(overrides)
         return mock.Mock(**values)
+
+
+class Br35PostBuildTest(unittest.TestCase):
+    def test_rejects_capacity_failure_even_when_packager_emits_files(self):
+        script = MODULE_PATH.parent / "jieli/local_post_br35.sh"
+        for failed in (False, True):
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                sdk = root / "sdk"
+                sdk_tools = sdk / "cpu/br35/tools"
+                sdk_tools.mkdir(parents=True)
+                (sdk_tools / "sdk.elf").write_bytes(b"elf")
+                toolchain = root / "toolchain"
+                write_executable(toolchain / "pi32v2/bin/objcopy",
+                                 'for last; do :; done\nprintf bin > "$last"\n')
+                write_executable(toolchain / "pi32v2/bin/objsizedump", 'echo symbol\n')
+                postbuild = root / "postbuild"
+                message = "!!!!!! FAIL: OTA capacity" if failed else "Device Offline"
+                write_executable(postbuild / "isd_download",
+                                 'printf bin > jl_isd.bin\nprintf fw > jl_isd.fw\nprintf ufw > update.ufw\n'
+                                 + 'echo "' + message + '"\nexit 1\n')
+                output = root / "out"
+                result = subprocess.run(["bash", str(script), str(sdk), str(toolchain),
+                                         str(postbuild), str(output)], capture_output=True)
+                self.assertEqual(result.returncode == 0, not failed)
+                self.assertEqual((output / "update.ufw").exists(), not failed)
 
 
 class JieliRunnerTest(unittest.TestCase):
@@ -266,6 +292,18 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertEqual(manifest["project_makefile"], "project.mk")
             self.assertEqual(manifest["native_sources"], [])
             # The pinned checkout is never written to.
+            self.assertEqual(git(fixture.checkout, "status", "--porcelain"), "")
+
+    def test_br35_build_uses_sdk_subdirectory_and_preserves_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = JieliRunnerFixture(Path(temporary).resolve(), target="br35")
+            runner.build(fixture.arguments())
+            manifest = json.loads((fixture.outputs / "manifest.json").read_text())
+            self.assertEqual(manifest["family"], "ac707n")
+            self.assertEqual(manifest["target"], "br35")
+            self.assertEqual(manifest["sdk_commit"], fixture.commit)
+            for name in runner.OUTPUT_NAMES.values():
+                self.assertTrue((fixture.outputs / name).is_file())
             self.assertEqual(git(fixture.checkout, "status", "--porcelain"), "")
 
     def test_build_does_not_select_an_sdk_application_project(self):

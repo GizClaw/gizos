@@ -66,6 +66,11 @@ constraint_value(
 )
 
 constraint_value(
+    name = "target_ac707n",
+    constraint_setting = ":firmware_target",
+)
+
+constraint_value(
     name = "target_ac791n",
     constraint_setting = ":firmware_target",
 )
@@ -135,6 +140,11 @@ config_setting(
 )
 
 config_setting(
+    name = "is_ac707n",
+    define_values = {"h2_firmware_target": "ac707n"},
+)
+
+config_setting(
     name = "is_ac791n",
     define_values = {"h2_firmware_target": "ac791n"},
 )
@@ -146,6 +156,14 @@ config_setting(
     name = "is_ac695n_linux_host",
     define_values = {
         "h2_firmware_target": "ac695n",
+        "h2_host_os": "linux",
+    },
+)
+
+config_setting(
+    name = "is_ac707n_linux_host",
+    define_values = {
+        "h2_firmware_target": "ac707n",
         "h2_host_os": "linux",
     },
 )
@@ -389,6 +407,15 @@ platform(
     constraint_values = [
         ":cpu_pi32v2",
         ":target_ac695n",
+        "@platforms//os:none",
+    ],
+)
+
+platform(
+    name = "ac707n",
+    constraint_values = [
+        ":cpu_pi32v2",
+        ":target_ac707n",
         "@platforms//os:none",
     ],
 )

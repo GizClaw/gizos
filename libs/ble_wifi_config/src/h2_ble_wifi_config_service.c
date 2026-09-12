@@ -1098,7 +1098,11 @@ int h2_ble_wifi_config_close(h2_ble_wifi_config_t *service) {
          * released memory, so keep the instance alive and let the caller
          * retry close().
          */
-        int rc = h2_pal_ble_unregister_gatt_services(service->api.ble);
+        int rc = h2_pal_ble_unregister_gatt_service(
+            service->api.ble, &service->service.uuid);
+        if (rc == H2_PAL_ERR_UNSUPPORTED) {
+            rc = h2_pal_ble_unregister_gatt_services(service->api.ble);
+        }
         if (rc != H2_PAL_OK) {
             return rc;
         }

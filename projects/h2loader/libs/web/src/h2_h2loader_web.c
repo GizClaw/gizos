@@ -16,6 +16,10 @@
 #define H2_WEB_BLOB_SLICE_MAX (64u * 1024u)
 #define H2_WEB_JSON_SIZE 32768u
 #define H2_WEB_ERROR_DETAIL_SIZE 256u
+// Some boards answer the session open and status command slowly, so the web
+// client waits 10 s for each instead of the host default.
+#define H2_WEB_HANDSHAKE_TIMEOUT_MS 10000u
+#define H2_WEB_COMMAND_TIMEOUT_MS 10000u
 // reboot-upgrade may install the staged image before acknowledging, so its
 // command read needs headroom: read timeout = command_timeout_ms + 30000.
 #define H2_WEB_INSTALL_COMMAND_TIMEOUT_MS 90000u
@@ -202,10 +206,10 @@ static h2_pal_result_t job_connect(void *user,
       .time = h2_web_platform_time_api(job->client->platform),
       .allocator = h2_web_platform_mem_api(),
       .port_id = job->port_id,
-      .handshake_timeout_ms = 5000u,
+      .handshake_timeout_ms = H2_WEB_HANDSHAKE_TIMEOUT_MS,
       .command_timeout_ms = job->command_timeout_ms != 0u
           ? job->command_timeout_ms
-          : H2_H2LOADER_HOST_DEFAULT_COMMAND_TIMEOUT_MS,
+          : H2_WEB_COMMAND_TIMEOUT_MS,
   };
   (void)h2_h2loader_host_serial_disconnect(&job->connection);
   h2_pal_result_t result =

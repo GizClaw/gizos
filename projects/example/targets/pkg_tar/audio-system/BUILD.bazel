@@ -1,0 +1,22 @@
+load("//libs/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+# Plays the packaged Opus loop from a read-only preloaded root while looping
+# the (fake) browser microphone back to the speaker; the microphone must
+# deliver non-silent frames and both workers must stop and join.
+h2_web_app(
+    name = "audio-system",
+    srcs = ["main.c"],
+    app_name = "audio-system",
+    passes = [
+        "H2_WEB_AUDIO_SYSTEM run rc=0",
+        "H2_SMOKE_AUDIO_MIC peak=[1-9]",
+        "H2_WEB_AUDIO_SYSTEM stop rc=0",
+        "H2_WEB_APP name=audio-system result=PASS rc=0 fs=0 destroy=0",
+    ],
+    preload = {
+        "//projects/example/apps/audio-system:data/audio/music_loop.ogg": "/assets/audio/music_loop.ogg",
+    },
+    deps = ["//projects/example/apps/audio-system/app:audio_system"],
+)

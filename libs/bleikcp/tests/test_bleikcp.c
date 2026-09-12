@@ -36,6 +36,8 @@ typedef struct fake_runtime {
     const h2_pal_ble_gatt_service_t *service;
     size_t service_count;
     int unregister_count;
+    int unregister_service_count;
+    h2_pal_result_t unregister_service_result;
     atomic_int fail_next_register;
     atomic_int fail_next_join;
     atomic_int drop_next_gatt_write;
@@ -319,7 +321,8 @@ static h2_pal_result_t fake_register(
     if (atomic_exchange(&runtime->fail_next_register, 0) != 0) {
         return H2_PAL_ERR_NO_MEMORY;
     }
-    if (count != 1u || services == NULL || services[0].characteristic_count != 2u) {
+    if (count != 1u || services == NULL || services[0].characteristic_count < 2u ||
+        services[0].characteristic_count > 2u + H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     runtime->service = services;
@@ -330,6 +333,23 @@ static h2_pal_result_t fake_register(
         if (ch->out_value_handle != NULL) *ch->out_value_handle = (uint16_t)(2u + 2u * i);
         if (ch->out_cccd_handle != NULL) *ch->out_cccd_handle = (uint16_t)(3u + 2u * i);
     }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t fake_unregister_service(
+    void *user, const h2_pal_ble_uuid_t *service_uuid) {
+    fake_runtime_t *runtime = user;
+    CHECK(runtime->service != NULL);
+    CHECK(service_uuid != NULL);
+    CHECK(service_uuid->len == runtime->service->uuid.len);
+    CHECK(memcmp(service_uuid->data, runtime->service->uuid.data,
+                 service_uuid->len) == 0);
+    runtime->unregister_service_count++;
+    if (runtime->unregister_service_result != H2_PAL_OK) {
+        return runtime->unregister_service_result;
+    }
+    runtime->service = NULL;
+    runtime->service_count = 0u;
     return H2_PAL_OK;
 }
 
@@ -661,6 +681,73 @@ static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
     CHECK(resolved.value.server_task_options.min_stack_size == 8u * 1024u);
 }
 
+static atomic_int s_extra_writes;
+
+static h2_pal_result_t extra_write(
+    void *user,
+    const h2_pal_ble_gatt_access_t *access,
+    const uint8_t *data,
+    size_t len) {
+    (void)user;
+    CHECK(access != NULL && access->attr_handle == 6u);
+    CHECK(len == 3u && memcmp(data, "abc", 3u) == 0);
+    atomic_fetch_add(&s_extra_writes, 1);
+    return H2_PAL_OK;
+}
+
+static int idle_handler(void *user, h2_bleikcp_t *stream, uint16_t conn_handle) {
+    (void)user;
+    (void)stream;
+    (void)conn_handle;
+    return H2_PAL_OK;
+}
+
+/* Caller characteristics join the server's own service after TX and RX. */
+static void test_extra_characteristics(
+    fake_runtime_t *runtime,
+    const h2_bleikcp_api_t *api) {
+    static const uint8_t extra_uuid[] = { 0xe3u, 0xfeu };
+    uint16_t extra_value_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
+    uint16_t extra_cccd_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
+    const h2_pal_ble_gatt_characteristic_t extra = {
+        .uuid = { extra_uuid, sizeof(extra_uuid) },
+        .properties = H2_PAL_BLE_GATT_PROPERTY_WRITE_NO_RSP |
+                      H2_PAL_BLE_GATT_PROPERTY_NOTIFY,
+        .permissions = H2_PAL_BLE_GATT_PERMISSION_WRITE,
+        .write = extra_write,
+        .out_value_handle = &extra_value_handle,
+        .out_cccd_handle = &extra_cccd_handle,
+    };
+    h2_bleikcp_server_t *server = NULL;
+    h2_bleikcp_config_t config = {
+        .extra_characteristics = &extra,
+        .extra_characteristic_count =
+            H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX + 1u,
+    };
+    CHECK(h2_bleikcp_server_open(api, &config, idle_handler, NULL, &server) ==
+          H2_PAL_ERR_INVALID_ARG);
+    config.extra_characteristics = NULL;
+    config.extra_characteristic_count = 1u;
+    CHECK(h2_bleikcp_server_open(api, &config, idle_handler, NULL, &server) ==
+          H2_PAL_ERR_INVALID_ARG);
+    CHECK(server == NULL);
+
+    config.extra_characteristics = &extra;
+    CHECK(h2_bleikcp_server_open(api, &config, idle_handler, NULL, &server) ==
+          H2_PAL_OK);
+    CHECK(runtime->service != NULL);
+    CHECK(runtime->service->characteristic_count == 3u);
+    CHECK(runtime->service->characteristics[2].write == extra_write);
+    CHECK(extra_value_handle == 6u && extra_cccd_handle == 7u);
+    CHECK(h2_pal_ble_gatt_write(
+              api->ble, 5u, extra_value_handle, (const uint8_t *)"abc", 3u,
+              false, 1000u) == H2_PAL_OK);
+    CHECK(atomic_load(&s_extra_writes) == 1);
+    CHECK(h2_bleikcp_server_close(server) == H2_PAL_OK);
+    CHECK(runtime->service == NULL);
+    runtime->unregister_count = 0;
+}
+
 static void stream_event(
     void *user,
     h2_bleikcp_t *stream,
@@ -767,7 +854,47 @@ static void run_client_exchange(
     wait_for_server_idle(runtime, api, conn_handle);
 }
 
+static void test_per_service_unregister(void) {
+    const h2_pal_result_t results[] = {
+        H2_PAL_OK, H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_BUSY, H2_PAL_ERR_NOT_FOUND,
+    };
+    for (size_t i = 0u; i < sizeof(results) / sizeof(results[0]); ++i) {
+        fake_runtime_t runtime;
+        fake_runtime_init(&runtime);
+        h2_pal_ble_vtable_t vtable = *runtime.ble.vtable;
+        vtable.unregister_gatt_service = fake_unregister_service;
+        runtime.ble.vtable = &vtable;
+        runtime.unregister_service_result = results[i];
+        h2_bleikcp_api_t api = {
+            .ble = &runtime.ble, .task = &runtime.task, .time = &runtime.time,
+            .sync = &runtime.sync, .system_event = &runtime.events,
+            .allocator = &runtime.allocator,
+        };
+        h2_bleikcp_config_t config = {0};
+        handler_state_t handler_state = { .api = &api };
+        h2_bleikcp_server_t *service = NULL;
+        CHECK(h2_bleikcp_server_open(
+                  &api, &config, server_handler, &handler_state,
+                  &service) == H2_PAL_OK);
+        h2_pal_result_t expected = results[i] == H2_PAL_ERR_UNSUPPORTED
+            ? H2_PAL_OK : results[i];
+        CHECK(h2_bleikcp_server_close(service) == expected);
+        CHECK(runtime.unregister_service_count == 1);
+        CHECK(runtime.unregister_count == (results[i] == H2_PAL_ERR_UNSUPPORTED));
+        if (expected != H2_PAL_OK) {
+            CHECK(runtime.service != NULL);
+            runtime.unregister_service_result = H2_PAL_OK;
+            CHECK(h2_bleikcp_server_close(service) == H2_PAL_OK);
+            CHECK(runtime.unregister_service_count == 2);
+            CHECK(runtime.unregister_count == 0);
+        }
+        CHECK(runtime.service == NULL);
+        CHECK(pthread_mutex_destroy(&runtime.event_mutex) == 0);
+    }
+}
+
 int main(void) {
+    test_per_service_unregister();
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);
     h2_bleikcp_api_t api = {
@@ -781,6 +908,7 @@ int main(void) {
     test_task_name_ownership(&api);
     test_flush_result_precedence(&api);
     test_nonprogress_does_not_wake_data_waiters(&runtime, &api);
+    test_extra_characteristics(&runtime, &api);
     handler_state_t handler_state = { .api = &api };
     event_state_t event_state = {0};
     h2_bleikcp_config_t config = {

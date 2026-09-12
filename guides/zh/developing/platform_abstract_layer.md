@@ -65,7 +65,7 @@ flowchart TB
 
 PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `periph_id`，app 定义 `component_id`，两者的映射由 `boards/main` 提供。
 
-Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 返回 unsupported。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有单线程 libco executor；Browser event、Promise 与 timeout callback 只记录完成，后续 bounded pump 才能恢复 task，不能 callback 内重入 scheduler。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
+Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 返回 unsupported。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有单线程 libco executor；Browser event、Promise 与 timeout callback 只记录完成，后续 bounded pump 才能恢复 task，不能 callback 内重入 scheduler。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
 
 ## PAL 分类
 
@@ -337,6 +337,8 @@ Peripheral、central、GATT server 和 GATT client 是 BLE connection 或 operat
 
 `h2_pal_ble_host_api_t` 遵循统一的 `user + vtable` contract，由 BSP 初始化后放入 runtime config。不支持 BLE 的 board 使用 PAL 包提供的 canonical unsupported BLE host API；某个平台不支持个别 operation 时，该 operation 的完整 vtable entry 返回 unsupported，不能留为 NULL。
 
+`h2_pal_ble_register_gatt_services()` 注册 service schema。可选的 `h2_pal_ble_unregister_gatt_service(ble, service_uuid)` 只解绑指定 service 的 read/write callback、user context 和 output-handle 指针，保留 schema slot；相同 UUID 和 characteristic 布局重新注册时复用该 slot，其他 service 保持绑定。未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`，NULL 参数返回 `H2_PAL_ERR_INVALID_ARG`。Provider 未实现时返回 `H2_PAL_ERR_UNSUPPORTED`；bleikcp server 和 BLE Wi-Fi 配网 close 仅在此结果下回退到全局 `h2_pal_ble_unregister_gatt_services()`，其他错误保留实例供重试。全局 unregister 仍解绑所有 service。
+
 `h2_pal_ble_indicate()` 是唯一的 GATT server indication operation。调用方提供明确 timeout；`H2_PAL_OK` 只表示 peer 已确认，提交失败、协议拒绝、断连、Host stop 或 timeout 直接作为该调用的最终结果返回。`timeout_ms == 0` 只有在无需等待即可完成时才能成功，否则必须在发送前返回 `H2_PAL_ERR_WOULD_BLOCK`。Provider 可以只允许一个未完成 indication，并以 `H2_PAL_ERR_BUSY` 拒绝冲突调用；SDK sequence、generation 和迟到 completion 都是 provider private state，不能通过 indication ID 或 System Event 泄漏。Notification 仍只报告提交结果。
 
 当前 BK3633、ESP-IDF 6.x NimBLE 和 BK7258 AP EtherMind backend 等待各自 stack 的 peer confirmation。无法可靠观察 confirmation 的 BK7258 legacy BLE stack、Desktop simulator 和 CoreBluetooth backend 在发送前返回 `H2_PAL_ERR_UNSUPPORTED`，不得把普通“已发出”回调伪装为确认。
@@ -393,6 +395,14 @@ callback，`find` 返回可供后续查询或提交使用的具体 NAME 或 ID�
 具体 NAME/ID；无默认路由的一侧必须完全清零。平台私有 monitor 在 System
 Event init 时只建立 baseline，不发布初始事件；相同 route notification 必须
 去重。异步 `post()` 必须在返回前复制 borrowed payload。
+
+判断“默认网络可用”统一使用 `h2_pal_netif_status_is_usable()`：接口必须
+`UP | LINK_UP`、不是 loopback；由 PAL 管理地址的接口还必须 `HAS_IPV4`。
+`H2_PAL_NETIF_KIND_HOST` 表示地址、路由和 DNS 由宿主环境（浏览器）管理且对
+provider 不可见的默认路径：它从不设置 `HAS_IPV4/HAS_IPV6`，地址、网关、DNS、
+MTU、MAC 保持为零，只能经宿主传输（Fetch、WebRTC）通信。Consumer 不得自行
+组合 `UP | LINK_UP | HAS_IPV4` 判断可用性。可用只表示存在默认网络；目标服务是否
+可达由实际 HTTP/WebRTC 连接结果决定。
 
 PAL 不提供独立 NetMon API，也不拥有路由选择策略、UDP socket 或重连策略。Desktop
 和 Linux target 监听操作系统 route notification；ESP-IDF 与 BK7258 AP 在各自

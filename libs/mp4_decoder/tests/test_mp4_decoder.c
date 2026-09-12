@@ -68,6 +68,9 @@ struct test_state {
     int64_t audio_pts_offset_us;
     int fail_video_configure;
     int video_backpressure;
+    /* Output appears only once a caller waits, like WebCodecs callbacks. */
+    int audio_async;
+    size_t timed_audio_acquires;
 };
 
 static void *tracked_alloc(void *user, size_t size) {
@@ -385,13 +388,18 @@ static h2_pal_result_t audio_acquire(
     h2_pal_audio_decoder_session_t *session,
     uint32_t timeout_ms,
     h2_pal_audio_decoder_frame_t **out_frame) {
-    (void)user;
-    (void)timeout_ms;
+    test_state_t *state = user;
     if (session->acquired) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
     if (!session->ready) {
         return session->eos ? H2_PAL_EXIT : H2_PAL_ERR_WOULD_BLOCK;
+    }
+    if (state->audio_async && !session->eos) {
+        if (timeout_ms == 0u) {
+            return H2_PAL_ERR_WOULD_BLOCK;
+        }
+        ++state->timed_audio_acquires;
     }
     session->acquired = 1;
     *out_frame = &session->frame;
@@ -558,6 +566,18 @@ int main(int argc, char **argv) {
     assert(h2_mp4_decoder_open(&config, &decoder) == H2_PAL_ERR_UNSUPPORTED);
     assert(decoder == NULL && state.allocations == 0u);
     assert(state.video_closes == 1u && state.audio_closes == 0u);
+
+    /* An asynchronous audio backend refuses input until its output is
+     * consumed and only delivers when waited on; pre-decoding must wait. */
+    const test_state_t before_async = state;
+    state.fail_video_configure = 0;
+    state.audio_async = 1;
+    assert(h2_mp4_decoder_open(&config, &decoder) == H2_PAL_OK);
+    assert(state.timed_audio_acquires > 1u);
+    assert(h2_mp4_decoder_close(decoder) == H2_PAL_OK);
+    assert(state.allocations == 0u);
+    decoder = NULL;
+    state = before_async;
     state.fail_video_configure = 0;
 
     assert(h2_mp4_decoder_open(&config, &decoder) == H2_PAL_OK);

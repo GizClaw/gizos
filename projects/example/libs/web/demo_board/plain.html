@@ -1,0 +1,18 @@
+<!-- demo_board "plain" skin: the same Buttons as a bare row under the screen. -->
+<style>
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: #0b0f17; color: #e5e7eb; font-family: system-ui, sans-serif; }
+  .demo-plain { display: grid; gap: 10px; justify-items: center; }
+  .demo-plain .row { display: flex; gap: 6px; }
+  .demo-plain [data-h2-button] { padding: 8px 16px; }
+  .demo-plain [data-h2-button][data-pressed="true"] { outline: 2px solid #60a5fa; }
+</style>
+<main class="demo-plain">
+  <div data-h2-slot="display"></div>
+  <div class="row">
+    <button type="button" data-h2-button="left">Left</button>
+    <button type="button" data-h2-button="ok">OK</button>
+    <button type="button" data-h2-button="back">Back</button>
+  </div>
+  <div data-h2-slot="controls"></div>
+  <div data-h2-slot="status"></div>
+</main>

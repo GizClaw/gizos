@@ -1769,6 +1769,12 @@ static int archive_close(void *user, h2_pal_fs_file_t *file) {
   return H2_PAL_OK;
 }
 
+#if defined(H2_LOADER_REQUIRE_OUTPUT_CALLBACK) && H2_LOADER_REQUIRE_OUTPUT_CALLBACK
+static int no_stdio_read(void *user, uint32_t timeout_ms) {
+  (void)user; (void)timeout_ms; return -1;
+}
+#endif
+
 static void test_app_client_validates_target_archive_entry(void) {
   test_fixture_t fixture;
   h2_loader_app_client_t client;
@@ -1792,6 +1798,14 @@ static void test_app_client_validates_target_archive_entry(void) {
       .h2loader_partition_id = 1u, .app_partition_id = 2u,
       .now_ms = app_test_now, .sleep_ms = app_test_sleep,
   };
+#if defined(H2_LOADER_REQUIRE_OUTPUT_CALLBACK) && H2_LOADER_REQUIRE_OUTPUT_CALLBACK
+  assert(h2_loader_app_client_coredump(&client, NULL, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+  static const h2_pal_task_api_t task_api = {0};
+  const h2_loader_app_client_return_console_config_t console = {
+      .client = &client, .task = &task_api, .read_byte = no_stdio_read,
+  };
+  assert(h2_loader_app_client_start_return_console(&console) == H2_PAL_ERR_INVALID_ARG);
+#endif
   /* The default ESP layout must continue rejecting another target's entry. */
   assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
   assert(h2_loader_package_inspect_path(&client.loader.package, "archive",

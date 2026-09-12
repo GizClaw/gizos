@@ -84,18 +84,13 @@ def _native_firmware(ctx):
         )
     if JieliFirmwareInfo in target:
         firmware = target[JieliFirmwareInfo]
+        if firmware.target != "wl82" and (firmware.target != "br35" or ctx.attr.role != "app"):
+            fail("JieLi packaging supports WL82 managed firmware and BR35 Apps only")
         return struct(
             app_image = firmware.update_image,
             app_path = "app/jieli/update.ufw",
             factory_image = None,
-            inputs = [
-                firmware.elf,
-                firmware.symbols,
-                firmware.flash_image,
-                firmware.fw,
-                firmware.update_image,
-                firmware.manifest,
-            ],
+            inputs = firmware.files.to_list(),
             native_artifacts = [
                 struct(name = "firmware.elf", file = firmware.elf),
                 struct(name = "symbols.txt", file = firmware.symbols),
@@ -107,10 +102,10 @@ def _native_firmware(ctx):
             platform = "jieli",
             recovery_image = None,
             recovery_inputs = [],
-            target = firmware.target,
+            target = "ac707n" if firmware.target == "br35" else firmware.target,
             version = firmware.version,
         )
-    fail("firmware must provide FirmwareInfo or Bk7258FirmwareInfo")
+    fail("firmware must provide FirmwareInfo, Bk7258FirmwareInfo or JieliFirmwareInfo")
 
 def _h2loader_tar_zlib_impl(ctx):
     firmware = _native_firmware(ctx)

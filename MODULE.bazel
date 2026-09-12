@@ -48,10 +48,10 @@ http_archive = use_repo_rule(
 
 http_archive(
     name = "h2_gizclaw_c_sdk",
-    integrity = "sha256-VdCFCkUbUwRSHaP0yQHptTX7dNHSa3r/cvff9VrssN8=",
-    strip_prefix = "gizclaw-c-sdk-0.17.0",
+    integrity = "sha256-1flE+aJBeYNJb/rQedkIgBy6ZN1R3nls6AuzaoqiAhg=",
+    strip_prefix = "gizclaw-c-sdk-0.18.5",
     urls = [
-        "https://github.com/GizClaw/gizclaw/releases/download/v0.17.0/gizclaw-c-sdk-0.17.0.tar.gz",
+        "https://github.com/GizClaw/gizclaw/releases/download/v0.18.5/gizclaw-c-sdk-0.18.5.tar.gz",
     ],
 )
 
@@ -204,7 +204,6 @@ use_repo(
     go_deps,
     "com_github_getkin_kin_openapi",
     "com_github_pion_datachannel",
-
     "com_github_pion_dtls_v3",
     "com_github_pion_rtp",
     "com_github_pion_stun_v3",
@@ -349,6 +348,9 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_lua",
     build_file = "//third_party:lua.BUILD.bazel",
+    overlay_files = {
+        "//third_party/lua_patch:h2_lua_embedded_stdio.h": "src/h2_lua_embedded_stdio.h",
+    },
     sha256 = "b85ede9dbc4a4292addcfefebe15168acc7f1d42c674cc297d74f0e8ff2f2dd8",
     strip_prefix = "lua-a5522f06d2679b8f18534fd6a9968f7eb539dc31",
     urls = ["https://codeload.github.com/lua/lua/tar.gz/a5522f06d2679b8f18534fd6a9968f7eb539dc31"],
@@ -518,6 +520,7 @@ use_repo(
     native_repositories,
     "h2_bk3633_sdk",
     "h2_jieli_ac695n_sdk",
+    "h2_jieli_ac707n_sdk",
     "h2_jieli_ac791n_sdk",
     "h2_jieli_postbuild",
     "h2_jieli_toolchain",
@@ -547,6 +550,7 @@ use_repo(
     "gizos_bk7258_cc_toolchain",
     "gizos_esp32c5_cc_toolchain",
     "gizos_esp32p4_cc_toolchain",
+    "gizos_jieli_ac707n_cc_toolchain",
     "gizos_jieli_pi32v2_cc_toolchain",
 )
 
@@ -555,5 +559,6 @@ register_toolchains(
     "@gizos_bk7258_cc_toolchain//:toolchain",
     "@gizos_esp32c5_cc_toolchain//:toolchain",
     "@gizos_esp32p4_cc_toolchain//:toolchain",
+    "@gizos_jieli_ac707n_cc_toolchain//:toolchain",
     "@gizos_jieli_pi32v2_cc_toolchain//:toolchain",
 )

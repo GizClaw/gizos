@@ -156,6 +156,8 @@ libs/<library>/
 └── BUILD.bazel
 ```
 
+`libs/app_host/` 是上述"platform 无关"要求的唯一例外：它是 App 启动层，当前只有 Web 实现，其他平台以后在同一 library 中增加变体。它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability、不选择 App。依赖边界：`libs/app_host` 只依赖 `libs/pal`、`libs/pal:unsupported`、`libs/pal/providers/web/pal_core`、`libs/lvgl:platform_web` 与 `libs/runtime`，不依赖任何 project、App 或 artifact entry；`targets/pkg_tar/<app>` 依赖它，反向不成立。`web_app.bzl` 的 `h2_web_app()` 在调用方 entry 的 package 内声明 wasm binary、archive、`:serve` 与 `:browser_test`，所以最终 archive、`main`、App entry 与配置、Button/key 映射和 preload 仍归该 entry；entry 也可以不经 `app_host` 自行组装。`libs/lua/web` 可以依赖 `libs/app_host`，同样不依赖 project。
+
 每个 library 都有独立的 `BUILD.bazel`。`BUILD.bazel` 通过显式 `srcs`、`hdrs`、`data` 和 `deps` 定义 library target 与 tests，测试目录统一使用 `tests/`。CI 直接分析所选平台的完整 compatible graph，不通过 tag 维护第二份 library 或 artifact inventory。平台差异只需要 toolchain 或 compatibility 即可表达时，不复制 source tree；只有接入 API、构建系统或 OS service 不同时，才在 `libs/pal/providers/` 下建立具名平台边界。
 
 Library 集成的 upstream dependency 需要补充 CPU/ABI implementation 时，修改 upstream selection 的 patch 与新增 backend source 统一归 `third_party/<dependency>_patch/`；vendor repository 将它们应用到固定 upstream checkout，`libs/<library>` 仍只暴露一个 semantic target。Backend 可以使用目标 compiler/ABI，但不能取得 SDK lifecycle、board wiring 或 firmware policy；upstream checkout 本身保持未修改。
@@ -216,6 +218,8 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 - Board firmware profile，放在 `layouts/<profile>/`，包含该启动与升级模型共用的 partition、layout-specific SDK defaults、link 和 recovery 输入。
 - Embedded task scheduling policy 属于具体 firmware target，而不是 board layout 或某个上层 packaging workflow。任何使用 PAL task policy 的 `projects/**/targets/**/<board>/` package 都按 execution unit 声明 portable task name 到 priority、core affinity、minimum stack 和 stack-memory region 的最终映射；board layout 只提供硬件、SDK、partition、GPIO 与 RAM-region 输入。Shared PAL provider 只翻译已解析 policy 到 SDK task creation，App/library 只拥有稳定 portable name 与 requested minimum stack。Launcher 在 Runtime/PAL task access 前安装且只安装一个 target policy。
 
+有屏幕的 board 另有 `boards/<board>/web/`：`h2_web_board()` 声明这块板在浏览器里提供的屏幕尺寸和 Button（名字取 BSP 的 periph 名），以及一套或多套外观 HTML/CSS；浏览器页面选这块板和其中一套外观运行（见 [Web](/apps/web)）。它不含 BSP 源码，也不依赖任何 project。
+
 同一个物理 board 包含多个 chip 或 core 时，它们仍放在同一个 `<board>` 根目录下，再按 `<chip-or-target>` 拆分。例如 BK7258 的 AP/CP 或同时包含 ESP32-P4、ESP32-C5 的开发板。
 
 只有负责运行 Runtime 的 BSP 才需要提供 runtime config；辅助 chip/core 只暴露自身职责需要的 public API。
@@ -232,7 +236,23 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 projects/<project>/targets/<artifact-rule>/<app>[/<variant>]/
 ```
 
-当前稳定 rule roots 包括 `cc_binary`、`macos_application`、`ios_application`、`android_binary`、`h2loader_tar_zlib`、`bk3633_firmware` 和 `jieli_firmware`。`jieli_firmware` entry 消费 firmwares-devenv 通过 `JIELI_*` locator 提供的杰理 SDK checkout 与解包工具链，SDK 不进入本仓 submodule。目录名描述最终交付物的 rule 类型，App 名描述业务入口；只有同一 App 的原生构建必须按 board 隔离、或多个 package 必须保留相同本地 target 名时，才增加 `<variant>`。H2Loader package root 内部可以用 `esp_idf_firmware` 或 `bk7258_firmware` 生成平台原生固件，但平台 rule 不是该目录的最终交付物。
+当前稳定 rule roots 包括 `cc_binary`、`macos_application`、`ios_application`、
+`android_binary`、`h2loader_tar_zlib`、`native_firmware`、`bk3633_firmware` 和
+`jieli_firmware`。`native_firmware` 保存 portable App 的 standalone vendor firmware
+entry，终态 `:firmware` 直接交付 vendor image、ELF、symbol 和 manifest；它只拥有
+App/board graph selection 与固件 metadata。`jieli_firmware` root 保留现有杰理
+reference-smoke entry，底层同名 external build rule 也可由 `native_firmware` 或
+`h2loader_tar_zlib` entry 调用。二者消费通过 `JIELI_*` locator 提供的杰理 SDK
+checkout 与解包工具链，SDK 不进入本仓 submodule。若同一 App 同时提供 standalone
+固件和 H2Loader package，两者必须复用 project-owned native launcher graph；
+`h2loader_tar_zlib` 另外拥有 format-1 package metadata，而 `native_firmware` 不表示
+设备已支持 H2Loader 安装或启动。
+
+目录名描述最终交付物的 rule 类型，App 名描述业务入口；只有同一 App 的原生构建
+必须按 board 隔离、或多个 package 必须保留相同本地 target 名时，才增加
+`<variant>`。H2Loader package root 内部可以用 `esp_idf_firmware`、
+`bk7258_firmware` 或 `jieli_firmware` 生成平台原生固件，但平台 rule 不是该目录的
+最终交付物。
 
 `targets/cc_binary/<app>` 保存普通 host 或 Linux executable 的薄 main、Runtime assembly、layout 和显式 runtime data。Desktop 可复用支持仍归 `libs/pal/providers/desktop/`，project 私有、由 Bazel 编译的 Desktop glue 归 `projects/<project>/libs/desktop*/`。
 
@@ -258,9 +278,11 @@ Web 入口也归 portable App owner。最终交付物使用实际 Bazel packagin
 projects/example/libs/web/tap-reset/
 projects/example/targets/pkg_tar/tap-reset/
 libs/pal/providers/web/pal_core/
+libs/app_host/
+libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive，其中 Runtime assembly、shell 和 archive 规则可以委托给 `libs/app_host`，页面外观与按键来自所选 web board（`h2_web_board()`，产品 board 放在该 board 目录旁）及其一套外观（见 `libs` 一节的例外），archive target 仍在该 entry 的 package 内。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 

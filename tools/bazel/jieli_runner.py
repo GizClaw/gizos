@@ -34,7 +34,7 @@ from native_runtime import (  # noqa: E402
 
 COMMIT = re.compile(r"[0-9a-f]{40}")
 SAFE_NAME = re.compile(r"[A-Za-z0-9_.-]+")
-FAMILIES = {"br23": "ac695n", "wl82": "ac791n"}
+FAMILIES = {"br23": "ac695n", "br35": "ac707n", "wl82": "ac791n"}
 IGNORED_SDK_DIRECTORIES = (".git", "doc", "ui_project")
 OUTPUT_NAMES = {
     "elf": "firmware.elf",

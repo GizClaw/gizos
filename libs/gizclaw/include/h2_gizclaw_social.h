@@ -65,7 +65,13 @@ typedef struct h2_gizclaw_friend_group_page {
   char *next_cursor;
 } h2_gizclaw_friend_group_page_t;
 
-/** Owned Friend relationship and its optional projected profile information. */
+/** Owned Friend relationship and its optional projected profile information.
+ * server.friend.list and server.friend.info.get both project the Friend's
+ * self-chosen profile: name and emoji are NULL when unset and "" when set
+ * empty. Presence (has_online, online, last_seen_at) comes only from
+ * server.friend.list; online is whether the Friend's device is connected to
+ * the answering Server, and last_seen_at is NULL when that Server has never
+ * observed it. */
 typedef struct h2_gizclaw_friend {
   /** Relationship ID copied verbatim from the wire FriendObject.name. */
   char *id;
@@ -76,6 +82,11 @@ typedef struct h2_gizclaw_friend {
   /** Optional projected profile display name. */
   char *name;
   char *emoji;
+  /** False when the Server reported no presence for this Friend. */
+  bool has_online;
+  bool online;
+  /** Last observed device activity, UTC RFC 3339 text. */
+  char *last_seen_at;
 } h2_gizclaw_friend_t;
 
 typedef struct h2_gizclaw_friend_page {
@@ -121,6 +132,38 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
     h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_friend_group_member_page_t *out_result);
+
+/** server.friend_group.members.add (59) adds the Peer with public key text
+ * peer_public_key (as in h2_gizclaw_friend_t.peer_public_key) to the caller's
+ * FriendGroup group_name. member_name is the FriendGroup name the added Peer
+ * sees in its own list; it follows the group_name rules. role is ADMIN or
+ * MEMBER; the key is 1..64 printable ASCII bytes. Create copies every input
+ * and performs no network I/O.
+ *
+ * The Server decides who may add and how many: ADMIN needs the caller to be
+ * the owner, MEMBER an owner or admin, and a FriendGroup holds at most 10
+ * members including the owner. It does not require a Friend relationship.
+ * Re-adding a current member under the same member_name changes that
+ * member's role; the owner cannot be re-added. A group the caller does not
+ * belong to fails with H2_PAL_ERR_NOT_FOUND. A full group, a target already in
+ * its maximum number of groups, a missing permission, a conflicting
+ * member_name and every other Server rejection fail with
+ * H2_GIZCLAW_ERR_REMOTE, as for the other Social wrappers. Parse decodes the
+ * returned member like member_put and member_delete. */
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_add(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t peer_public_key,
+    h2_gizclaw_str_t member_name, h2_gizclaw_friend_group_role_t role,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_add(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_add(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t peer_public_key, h2_gizclaw_str_t member_name,
+    h2_gizclaw_friend_group_role_t role, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result);
 
 h2_pal_result_t h2_gizclaw_req_create_friend_group_member_put(
     h2_gizclaw_service_t *service, uint64_t identity,
@@ -459,6 +502,94 @@ h2_pal_result_t
 h2_gizclaw_rpc_friend_group_invite_token_clear(h2_gizclaw_service_t *service,
                                                h2_gizclaw_str_t group_name,
                                                uint32_t timeout_ms);
+
+/** Outcome of server.friend.ping / server.friend_group.ping. */
+typedef enum h2_gizclaw_social_ping_result {
+  H2_GIZCLAW_SOCIAL_PING_RESULT_UNSPECIFIED = 0,
+  /** At least one target device acknowledged the ping. */
+  H2_GIZCLAW_SOCIAL_PING_RESULT_DELIVERED = 1,
+  /** No target device is online; nothing was sent and no rate-limit window
+   * was started. */
+  H2_GIZCLAW_SOCIAL_PING_RESULT_NOT_ONLINE = 2,
+  /** The friend pair or the FriendGroup pinged within the Server window. */
+  H2_GIZCLAW_SOCIAL_PING_RESULT_RATE_LIMITED = 3,
+} h2_gizclaw_social_ping_result_t;
+
+/** Caller-owned ping outcome; needs no response storage.
+ * delivered_count is at least 1 only for DELIVERED (a friend ping reaches at
+ * most one device) and 0 otherwise. retry_after_seconds is present, and at
+ * least 1, only for RATE_LIMITED. A response violating these rules, or with
+ * an unknown result, fails to parse with H2_PAL_ERR_FORMAT. */
+typedef struct h2_gizclaw_social_ping {
+  h2_gizclaw_social_ping_result_t result;
+  uint32_t delivered_count;
+  bool has_retry_after_seconds;
+  uint32_t retry_after_seconds;
+} h2_gizclaw_social_ping_t;
+
+/** server.friend.ping (123) pings the caller's Friend by relationship ID
+ * (h2_gizclaw_friend_t.id); the Server pushes client.social.ping to that
+ * device. Create copies friend_id and performs no network I/O. */
+h2_pal_result_t h2_gizclaw_req_create_friend_ping(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t friend_id, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_ping(const h2_gizclaw_req_t *request,
+                                  h2_gizclaw_social_ping_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_friend_ping(h2_gizclaw_service_t *service,
+                                           h2_gizclaw_str_t friend_id,
+                                           uint32_t timeout_ms,
+                                           h2_gizclaw_social_ping_t *out_result);
+
+/** server.friend_group.ping (124) rallies every other member device of the
+ * caller's FriendGroup name. Same ownership and validation as friend_ping. */
+h2_pal_result_t h2_gizclaw_req_create_friend_group_ping(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
+h2_pal_result_t
+h2_gizclaw_resp_parse_friend_group_ping(const h2_gizclaw_req_t *request,
+                                        h2_gizclaw_social_ping_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_friend_group_ping(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    uint32_t timeout_ms, h2_gizclaw_social_ping_t *out_result);
+
+#define H2_GIZCLAW_PUBLIC_PROFILE_MAX_KEYS 16u
+#define H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES 64u
+
+/** Owned public projection of one Peer's DeviceInfo. Only the self-chosen
+ * display name and emoji are public; either is NULL when the Peer does not
+ * exist or has not set it. */
+typedef struct h2_gizclaw_public_profile {
+  char *peer_public_key;
+  char *display_name;
+  char *emoji;
+} h2_gizclaw_public_profile_t;
+
+/** One item per distinct requested key, in request order. */
+typedef struct h2_gizclaw_public_profile_list {
+  h2_gizclaw_public_profile_t *items;
+  size_t count;
+} h2_gizclaw_public_profile_list_t;
+
+/** server.profile.get (125) looks up 1..16 Peers by public key text (as in
+ * h2_gizclaw_friend_t.peer_public_key). Each key must be non-empty, at most
+ * 64 bytes and printable ASCII; the Server enforces the canonical encoding.
+ * Duplicate keys are sent as given and answered once. Create copies every key
+ * and performs no network I/O. Parse fails with H2_PAL_ERR_FORMAT unless the
+ * items are exactly the distinct requested keys in request order. */
+h2_pal_result_t h2_gizclaw_req_create_public_profile_get(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    const h2_gizclaw_str_t *peer_public_keys, size_t key_count,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_resp_parse_public_profile_get(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_public_profile_list_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_public_profile_get(
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *peer_public_keys,
+    size_t key_count, uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_public_profile_list_t *out_result);
 #ifdef __cplusplus
 }
 #endif

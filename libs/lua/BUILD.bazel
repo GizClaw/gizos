@@ -1,17 +1,12 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["lua_resource.bzl"])
-
-LUA_TARGET_COMPATIBILITY = select({
-    "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
-    "//tools/bazel/platforms:is_bk7258": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
 
 h2_tasks(
     name = "tasks",
@@ -45,7 +40,6 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = ["//tools/bazel:vendor_third_party_lua"],
 )
 
@@ -55,6 +49,7 @@ cc_library(
         "src/core/h2_lua_internal.h",
         "src/modules/h2_lua_esp_claw.c",
         "src/modules/h2_lua_modules.c",
+        "src/modules/h2_lua_storage.c",
         "src/runtime/h2_lua.c",
         "src/runtime/h2_lua_event.c",
         "src/runtime/h2_lua_internal.h",
@@ -76,7 +71,6 @@ cc_library(
     includes = [
         "include",
     ],
-    target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = [
         ":tasks",
         ":lua_core",
@@ -84,17 +78,55 @@ cc_library(
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",
     ] + select({
-        "//tools/bazel/platforms:is_esp32p4": ["//third_party/lua_patch"],
-        "//tools/bazel/platforms:is_esp32s3": ["//third_party/lua_patch"],
+        "@platforms//os:none": ["//third_party/lua_patch"],
         "//conditions:default": [],
     }),
+)
+
+h2_tasks(
+    name = "link_tasks",
+    tasks = [
+        "$lua/link",
+    ],
+)
+
+# BLE KCP provider behind the Lua `link` module. Separate from lua_runtime so
+# images that never call h2_lua_link_enable() do not link BLE iKCP.
+cc_library(
+    name = "lua_link",
+    srcs = [
+        "src/core/h2_lua_internal.h",
+        "src/link/h2_lua_link.c",
+        "src/runtime/h2_lua_internal.h",
+    ],
+    hdrs = [
+        "include/h2_lua_link.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    deps = [
+        ":link_tasks",
+        ":lua_runtime",
+        "//libs/bleikcp",
+        "//libs/pal:unsupported",
+        "//tools/bazel:vendor_third_party_lua",
+    ],
 )
 
 cc_library(
     name = "lua",
     tags = ["h2-ci-native-package"],
-    target_compatible_with = LUA_TARGET_COMPATIBILITY,
     deps = [":lua_runtime"],
+)
+
+# Embedded builds of //... run the firmware archive ABI check over the whole
+# Lua archive closure, so a newlib standard-stream dependency fails in GizOS.
+firmware_lib_component(
+    name = "lua_firmware_abi",
+    component_name = "h2_lua",
+    deps = [":lua"],
 )
 
 cc_test(
@@ -126,6 +158,66 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+# Test-only two-device BLE air shared by the link tests and the Lua link E2E
+# App test.
+cc_library(
+    name = "link_fake_ble",
+    testonly = True,
+    srcs = ["tests/h2_lua_link_fake_ble.c"],
+    hdrs = ["tests/h2_lua_link_fake_ble.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "lua_storage_test",
+    srcs = ["tests/test_h2_lua_storage.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":lua_runtime",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "lua_link_test",
+    srcs = ["tests/test_h2_lua_link.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":link_fake_ble",
+        ":lua_link",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],

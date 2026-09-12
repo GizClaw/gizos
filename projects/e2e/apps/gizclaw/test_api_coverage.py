@@ -49,10 +49,10 @@ class CoverageTest(unittest.TestCase):
         return coverage.audit(lines, self.rules if rules is None else rules,
                               **{**IDENTITY, "process_exit_code": 0, **kwargs})
 
-    def test_independent_matrix_matches_all_204_approved_functions(self):
+    def test_independent_matrix_matches_all_217_approved_functions(self):
         inventory = (coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text()
         coverage.validate_inventory(self.rules, inventory)
-        self.assertEqual(len(self.rules), 204)
+        self.assertEqual(len(self.rules), 217)
         for changed in (self.rules[:-1], self.rules + self.rules[:1]):
             with self.assertRaises(ValueError):
                 coverage.validate_inventory(changed, inventory)
@@ -62,7 +62,7 @@ class CoverageTest(unittest.TestCase):
     def test_all_functions_need_ordered_calls_and_assertion(self):
         result = self.audit(self.lines)
         self.assertTrue(result["valid"], result["issues"])
-        self.assertEqual(result["covered"], 204)
+        self.assertEqual(result["covered"], 217)
         self.assertEqual(result["missing"], 0)
         for row in result["functions"]:
             self.assertEqual(len(row["call_lines"]), len(row["calls"]))
@@ -90,6 +90,24 @@ class CoverageTest(unittest.TestCase):
         result = self.audit(lines)
         self.assertFalse(result["valid"])
         self.assertEqual(result["missing"], 6)
+
+    def test_social_ping_and_public_profile_require_real_calls_and_assertions(self):
+        expected = {"rpc/social-ping": ("friend_ping", "friend_group_ping"),
+                    "rpc/profile": ("public_profile_get",)}
+        for case, methods in expected.items():
+            with self.subTest(case=case):
+                symbols = {"h2_gizclaw_" + kind + "_" + method
+                           for kind in ("req_create", "resp_parse", "rpc")
+                           for method in methods}
+                rules = [rule for rule in self.rules if rule.symbol in symbols]
+                self.assertEqual({rule.symbol for rule in rules}, symbols)
+                self.assertEqual({rule.case for rule in rules}, {case})
+                self.assertEqual({rule.assertion_stage for rule in rules},
+                                 {method + "-assert" for method in methods})
+                lines = passing_log([rule for rule in self.rules if rule not in rules])
+                result = self.audit(lines)
+                self.assertFalse(result["valid"])
+                self.assertEqual(result["missing"], len(symbols))
 
     def test_header_or_source_symbol_listing_is_not_a_call(self):
         lines = passing_log([])

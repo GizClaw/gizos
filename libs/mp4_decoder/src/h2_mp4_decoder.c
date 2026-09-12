@@ -873,21 +873,30 @@ static h2_pal_result_t append_audio_frame(
     return H2_PAL_OK;
 }
 
+/*
+ * Asynchronous backends (e.g. WebCodecs) produce output after submit returns.
+ * When the backend refuses input and nothing is ready, wait this long for
+ * one output before declaring the stream stuck.
+ */
+#define H2_MP4_DECODER_AUDIO_OUTPUT_WAIT_MS 2000u
+
 static h2_pal_result_t drain_audio(
     h2_mp4_decoder_t *decoder,
     const h2_pal_audio_decoder_api_t *api,
     h2_pal_audio_decoder_session_t *session,
     int require_eos,
+    uint32_t first_wait_ms,
     size_t *out_frames) {
     *out_frames = 0u;
     for (;;) {
         h2_pal_audio_decoder_frame_t *frame = NULL;
-        const h2_pal_result_t acquire =
-            h2_pal_audio_decoder_acquire_frame(api, session, 0u, &frame);
+        const h2_pal_result_t acquire = h2_pal_audio_decoder_acquire_frame(
+            api, session, *out_frames == 0u ? first_wait_ms : 0u, &frame);
         if (acquire == H2_PAL_EXIT) {
             return H2_PAL_EXIT;
         }
-        if (acquire == H2_PAL_ERR_WOULD_BLOCK) {
+        if (acquire == H2_PAL_ERR_WOULD_BLOCK ||
+            acquire == H2_PAL_ERR_TIMEOUT) {
             return require_eos ? H2_PAL_ERR_FORMAT : H2_PAL_OK;
         }
         if (acquire != H2_PAL_OK) {
@@ -969,7 +978,11 @@ static h2_pal_result_t decode_audio(
             break;
         }
         size_t drained = 0u;
-        result = drain_audio(decoder, &api, session, 0, &drained);
+        result = drain_audio(
+            decoder, &api, session, 0,
+            submit == H2_PAL_ERR_WOULD_BLOCK
+                ? H2_MP4_DECODER_AUDIO_OUTPUT_WAIT_MS : 0u,
+            &drained);
         if (result == H2_PAL_EXIT) {
             result = H2_PAL_ERR_FORMAT;
         } else if (result == H2_PAL_OK &&
@@ -991,7 +1004,8 @@ static h2_pal_result_t decode_audio(
             break;
         }
         size_t drained = 0u;
-        result = drain_audio(decoder, &api, session, 0, &drained);
+        result = drain_audio(decoder, &api, session, 0,
+                             H2_MP4_DECODER_AUDIO_OUTPUT_WAIT_MS, &drained);
         if (result == H2_PAL_EXIT) {
             result = H2_PAL_ERR_FORMAT;
         } else if (result == H2_PAL_OK && drained == 0u) {
@@ -1000,7 +1014,7 @@ static h2_pal_result_t decode_audio(
     }
     if (result == H2_PAL_OK) {
         size_t drained = 0u;
-        result = drain_audio(decoder, &api, session, 1, &drained);
+        result = drain_audio(decoder, &api, session, 1, 0u, &drained);
         if (result == H2_PAL_EXIT) result = H2_PAL_OK;
     }
     const h2_pal_result_t close = h2_pal_audio_decoder_close(&api, session);

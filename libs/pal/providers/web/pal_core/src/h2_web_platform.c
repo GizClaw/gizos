@@ -114,6 +114,8 @@ static const h2_pal_time_api_t h2_web_clock = {
 
 static h2_libco_result_t h2_web_poll_external(void *user,
                                                h2_libco_t *executor) {
+  h2_web_platform_netif_poll(user);
+  h2_web_platform_async_poll(user, executor);
   return h2_web_platform_serial_poll(user, executor);
 }
 
@@ -235,9 +237,11 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   h2_web_platform_audio_decoder_init(platform);
   h2_web_platform_video_decoder_init(platform);
   h2_web_platform_display_init(platform);
+  h2_web_platform_netif_init(platform);
   h2_web_platform_webrtc_init(platform);
   if (h2_web_platform_serial_init(platform) != H2_PAL_OK) {
     h2_web_platform_webrtc_deinit(platform);
+    h2_web_platform_netif_deinit(platform);
     h2_web_platform_display_deinit(platform);
     h2_web_platform_audio_deinit(platform);
     h2_web_platform_crypto_deinit(platform);
@@ -249,14 +253,18 @@ h2_web_platform_create(const h2_web_platform_config_t *config) {
   return platform;
 }
 
-void h2_web_platform_destroy(h2_web_platform_t *platform) {
+h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform) {
   if (platform == NULL) {
-    return;
+    return H2_PAL_OK;
   }
-  // Suspended calls still own the platform. Stop/cancel them and retry
-  // destruction after their PAL calls have returned.
-  if (platform->mic_calls != 0u || h2_web_platform_webrtc_busy(platform))
-    return;
+  // Suspended calls and open caller-owned objects still reference the
+  // platform. Stop/cancel/close them and retry destruction afterwards.
+  if (platform->mic_calls != 0u || platform->async_waiters != 0u ||
+      platform->http_requests != 0u || platform->audio_tracks != NULL ||
+      platform->open_filesystems != 0u ||
+      h2_web_platform_webrtc_busy(platform))
+    return H2_PAL_ERR_BUSY;
+  h2_web_platform_webrtc_reap(platform);
   platform->shutting_down = true;
   if (platform->pump_scheduled) {
     h2_web_pump_cancel_js((uintptr_t)platform);
@@ -266,15 +274,17 @@ void h2_web_platform_destroy(h2_web_platform_t *platform) {
   if (h2_libco_destroy(&platform->executor) != H2_LIBCO_OK) {
     platform->shutting_down = false;
     h2_web_platform_request_pump(platform, h2_web_now_ms(platform));
-    return;
+    return H2_PAL_ERR_BUSY;
   }
   h2_web_platform_serial_deinit(platform);
   h2_web_platform_webrtc_deinit(platform);
+  h2_web_platform_netif_deinit(platform);
   h2_web_platform_display_deinit(platform);
   h2_web_platform_audio_deinit(platform);
   h2_web_platform_crypto_deinit(platform);
   h2_web_platform_timer_deinit(platform);
   free(platform);
+  return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
@@ -287,6 +297,7 @@ h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
       platform->shutting_down) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  h2_web_platform_webrtc_reap(platform);
   platform->pumping = true;
   h2_web_platform_timer_dispatch(platform);
   size_t resumed = 0u;
@@ -384,4 +395,14 @@ h2_web_platform_serial_host_api(h2_web_platform_t *platform) {
 const h2_pal_webrtc_api_t *
 h2_web_platform_webrtc_api(h2_web_platform_t *platform) {
   return platform == NULL ? NULL : &platform->webrtc_api;
+}
+
+const h2_pal_netif_api_t *
+h2_web_platform_netif_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->netif_api;
+}
+
+const h2_pal_system_event_api_t *
+h2_web_platform_system_event_api(h2_web_platform_t *platform) {
+  return platform == NULL ? NULL : &platform->system_event_api;
 }

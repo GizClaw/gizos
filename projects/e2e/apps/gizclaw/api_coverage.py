@@ -21,7 +21,7 @@ PREFIX = "h2_gizclaw_"
 TOP_CASES = {"resource", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
              "contact", "friend", "group", "peer-name-isolation",
-             "telemetry", "api-key", "app-config"}
+             "telemetry", "api-key", "app-config", "social-ping"}
 CASES = TOP_CASES | {"rpc/" + name for name in RPC_CASES}
 
 
@@ -44,7 +44,8 @@ def requirements():
         "connectivity": "ping speedtest register peer_delete",
         "firmware": "firmware_get",
         "rpc/app-config": "app_config_list app_config_get",
-        "rpc/profile": "profile_get profile_put_name profile_put_emoji",
+        "rpc/profile": "profile_get profile_put_name profile_put_emoji public_profile_get",
+        "rpc/social-ping": "friend_ping friend_group_ping",
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
             "workspace_create workspace_set_parameters workspace_delete "
@@ -57,7 +58,8 @@ def requirements():
             "friend_group_list friend_group_get friend_group_create friend_group_put "
             "friend_group_delete friend_group_join friend_group_invite_token_get "
             "friend_group_invite_token_create friend_group_invite_token_clear "
-            "friend_group_member_list friend_group_member_put friend_group_member_delete"),
+            "friend_group_member_list friend_group_member_add friend_group_member_put "
+            "friend_group_member_delete"),
         "rpc/telemetry": "telemetry_send",
         "rpc/api-key": "api_key_create api_key_revoke",
         "rpc/speech": "speech_transcribe speech_extract",
@@ -94,9 +96,10 @@ def requirements():
     symbol = PREFIX + "req_create_audio_play"
     rules.append(Rule(symbol, "voice", (symbol, PREFIX + "req_do", PREFIX + "req_wait"),
                       symbol, "audio_play-assert"))
-    for method in ("player_play player_play_index player_playlist_set "
-                   "player_repeat_set player_stop player_get_status "
-                   "player_playlist_snapshot ota_start ota_get_status").split():
+    for method in ("player_play player_play_index player_play_index_at "
+                   "player_playlist_set player_repeat_set player_stop "
+                   "player_get_status player_playlist_snapshot ota_start "
+                   "ota_get_status").split():
         symbol = PREFIX + method
         rules.append(Rule(symbol, "device-api", (symbol,), symbol, method + "-assert"))
     create = PREFIX + "req_create_debug_set"
@@ -136,9 +139,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 204 or len(set(inventory)) != 204 or
-            len(names) != 204 or len(set(names)) != 204 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 204-function inventory")
+    if (len(inventory) != 217 or len(set(inventory)) != 217 or
+            len(names) != 217 or len(set(names)) != 217 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 217-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

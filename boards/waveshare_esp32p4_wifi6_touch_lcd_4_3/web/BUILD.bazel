@@ -1,0 +1,16 @@
+load("//libs/app_host:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Web board: the browser counterpart of this board for h2_web_app() pages.
+# ST7701 480×800 MIPI-DSI (portrait); BOOT (GPIO0).
+h2_web_board(
+    name = "web",
+    buttons = {
+        "boot": "Escape",
+    },
+    default_skin = "device",
+    display_height = 800,
+    display_width = 480,
+    skins = {"device": "device.html"},
+)

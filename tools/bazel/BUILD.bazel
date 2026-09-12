@@ -10,9 +10,9 @@ package(default_visibility = ["//visibility:public"])
 py_test(
     name = "gizclaw_live_command_test",
     srcs = ["tests/test_gizclaw_live_command.py"],
-    main = "tests/test_gizclaw_live_command.py",
     data = ["//:live_e2e_command_files"],
     legacy_create_init = False,
+    main = "tests/test_gizclaw_live_command.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -56,6 +56,7 @@ exports_files([
     "jieli.bzl",
     "jieli/h2_project_rules.mk",
     "jieli/local_post_br23.sh",
+    "jieli/local_post_br35.sh",
     "jieli/local_post_wl82.sh",
     "native_component.bzl",
     "native_component.cmake",
@@ -66,6 +67,7 @@ exports_files([
     "native_versions/esp_idf_commit.txt",
     "native_versions/esp_idf_tool_versions.txt",
     "native_versions/jieli_ac695n_sdk_commit.txt",
+    "native_versions/jieli_ac707n_sdk_commit.txt",
     "native_versions/jieli_ac791n_sdk_commit.txt",
     "native_versions/jieli_tool_versions.txt",
     "native_versions/jieli_toolchain_archives.txt",
@@ -76,6 +78,7 @@ exports_files([
     "release_bundle.bzl",
     "release_inputs.bzl",
     "web_archive.bzl",
+    "web_archive_browser_test.py",
     "web_archive_server.py",
 ])
 
@@ -337,6 +340,7 @@ py_test(
     name = "jieli_runner_test",
     srcs = ["tests/test_jieli_runner.py"],
     data = [
+        "jieli/local_post_br35.sh",
         "jieli_runner.py",
     ],
     legacy_create_init = 0,

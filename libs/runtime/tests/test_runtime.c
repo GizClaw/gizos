@@ -1803,6 +1803,8 @@ static void test_system_event_netif_transitions_copy_and_order(void) {
         test_netif_name_ref("wifi0", H2_PAL_NETIF_KIND_WIFI_STA);
     const h2_pal_netif_ref_t ppp =
         test_netif_name_ref("ppp0", H2_PAL_NETIF_KIND_MODEM_DATA);
+    const h2_pal_netif_ref_t host =
+        test_netif_name_ref("browser", H2_PAL_NETIF_KIND_HOST);
     const struct {
         h2_pal_netif_ref_t previous;
         h2_pal_netif_ref_t current;
@@ -1815,6 +1817,8 @@ static void test_system_event_netif_transitions_copy_and_order(void) {
         {.previous = ppp, .current = wifi,
          .previous_valid = 1u, .current_valid = 1u},
         {.previous = wifi, .previous_valid = 1u},
+        {.current = host, .current_valid = 1u},
+        {.previous = host, .previous_valid = 1u},
     };
     h2_runtime_sequence_t last_sequence = 0u;
     for (size_t i = 0u; i < sizeof(transitions) / sizeof(transitions[0]); ++i) {
@@ -1850,6 +1854,13 @@ static void test_system_event_netif_transitions_copy_and_order(void) {
             assert(change->current.name_valid == 1u);
             assert(strcmp(change->current.name,
                           transitions[i].current.name) == 0);
+            assert(change->current.kind ==
+                   (transitions[i].current.kind == H2_PAL_NETIF_KIND_HOST
+                        ? H2_RUNTIME_SYSTEM_NETIF_KIND_HOST
+                        : transitions[i].current.kind ==
+                                  H2_PAL_NETIF_KIND_WIFI_STA
+                              ? H2_RUNTIME_SYSTEM_NETIF_KIND_WIFI_STA
+                              : H2_RUNTIME_SYSTEM_NETIF_KIND_MODEM_DATA));
         }
     }
     h2_runtime_deinit(runtime);

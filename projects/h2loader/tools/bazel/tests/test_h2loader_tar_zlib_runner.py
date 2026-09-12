@@ -18,6 +18,26 @@ os.environ["PYTHONPATH"] = str(ROOT)
 
 
 class H2LoaderTarZlibRunnerTest(unittest.TestCase):
+    def test_packages_br35_ufw_without_changing_payload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = root / "update.ufw"
+            payload.write_bytes(b"BR35-test-UFW\x00\xff")
+            package = root / "pal.update.tar.zlib"
+            metadata = root / "pal.firmware.json"
+            result = subprocess.run([
+                sys.executable, str(RUNNER), "--source-root", str(root),
+                "--app-image", str(payload), "--app-path", "app/jieli/update.ufw",
+                "--entry", "projects/e2e/targets/h2loader_tar_zlib/pal/ac707n_chip",
+                "--platform", "jieli", "--board", "ac707n_chip", "--image", "pal",
+                "--role", "app", "--target", "ac707n", "--version", "1.0.0",
+                "--package-output", str(package), "--metadata-output", str(metadata),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as tar:
+                self.assertEqual(tar.extractfile("app/jieli/update.ufw").read(), payload.read_bytes())
+            self.assertEqual(json.loads(metadata.read_text())["platform"], "jieli")
+
     def test_packages_esp_loader_recovery_from_symlinked_flash_tree(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

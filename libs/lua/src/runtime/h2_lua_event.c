@@ -249,7 +249,7 @@ void h2_lua_deliver_events(h2_lua_job_t *job) {
       int function_index;
       if (!callback->active ||
           callback->component_id != record->event.component_id ||
-          callback->kind != record->event.kind) {
+          callback->kind != (uint32_t)record->event.kind) {
         continue;
       }
       lua_rawgeti(job->vm->state, LUA_REGISTRYINDEX, callback->lua_ref);
