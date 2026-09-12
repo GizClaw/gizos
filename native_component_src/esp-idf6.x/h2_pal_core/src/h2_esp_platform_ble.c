@@ -10,6 +10,7 @@
 #include "sdkconfig.h"
 
 #if CONFIG_BT_NIMBLE_ENABLED
+#include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -148,7 +149,10 @@ static h2_pal_ble_adv_set_t
 static ble_uuid_any_t
     s_h2_esp_ble_service_uuid[H2_ESP_BLE_MAX_GATT_SERVICES];
 static ble_uuid_any_t s_h2_esp_ble_char_uuid[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
-static uint8_t s_h2_esp_ble_value[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS][H2_ESP_BLE_MAX_VALUE_LEN];
+/* Up to 514 bytes per slot: keep the value copies in PSRAM when the board
+ * allows external BSS; no ISR reads them. */
+static EXT_RAM_BSS_ATTR uint8_t
+    s_h2_esp_ble_value[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS][H2_ESP_BLE_MAX_VALUE_LEN];
 static size_t s_h2_esp_ble_value_len[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static size_t s_h2_esp_ble_value_max_len[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
 static h2_pal_ble_gatt_read_fn s_h2_esp_ble_read[H2_ESP_BLE_MAX_GATT_CHARACTERISTICS];
