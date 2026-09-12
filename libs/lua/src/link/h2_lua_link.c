@@ -22,8 +22,10 @@
 #define H2_LUA_LINK_FRAME_MAX                                                  \
   (H2_LUA_LINK_FRAME_HEADER + H2_LUA_LINK_STREAM_CHUNK)
 #define H2_LUA_LINK_HELLO_TIMEOUT_MS 5000u
-#define H2_LUA_LINK_BYE_FLUSH_MS 200u
+#define H2_LUA_LINK_BYE_FLUSH_MS 400u
 #define H2_LUA_LINK_HANDLER_EXIT_MS 1000u
+_Static_assert(2u * H2_LUA_LINK_BYE_FLUSH_MS < H2_LUA_LINK_HANDLER_EXIT_MS,
+               "the host must wait out a BYE write and flush before closing");
 #define H2_LUA_LINK_SLICE_MS 50u
 #define H2_LUA_LINK_READ_POLL_MS 2u
 #define H2_LUA_LINK_JOIN_TIMEOUT_DEFAULT_MS 10000u
