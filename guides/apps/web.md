@@ -184,6 +184,8 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 `//libs/app_host` 是通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 描述 Runtime Button：`{component_id, key, name}`。输入全部由 shell 的 JavaScript 处理：`key`（DOM `KeyboardEvent.key`）和页面中所有 `data-h2-button="<name>"` 元素（鼠标、触摸）共同按住同一个 Button，合并成一个按下状态后才写 `h2_runtime_button_push_edge()` edge；页面失焦、隐藏或 App 结束时全部释放，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
+需要模拟更多板级硬件的 App（电源与深睡、电池、振动、自己的 component id）用可选的 `hardware`（`h2_web_app_host_hardware_t`），三个 hook 都可省略：`prepare` 在打开 Filesystem 之前运行（例如把预加载资源解包到之后只读挂载的目录）；`configure_runtime` 在 host 填好 Web provider 之后修改 Runtime 配置（安装 power、periph、input、pwm_switch 和 component mapper，也可以改 `board` 名）；装了自己的 mapper 时 host 不再添加自己的 Button periph，由 `button` 把页面的每个 Button edge（按 `buttons` 里的 component id）送到目标自己的 periph，`button` 为 NULL 时仍推到 host 的 Button periph。`h2_web_app()` 的 `copts` 只追加到调用方 srcs 的编译选项，生成的 board 定义不受影响。
+
 ### Web board
 
 浏览器页面跑在一块 web board 上，它是实体 board 在浏览器里的对应物。`//libs/app_host:web_board.bzl` 的 `h2_web_board()` 声明这块板提供的外设和外观：
@@ -232,6 +234,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
 | `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
 | `web-board-{amoled,bk7258,k4b,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
+| `web-hardware` | `hardware` hook：`prepare` 与 `configure_runtime` 在 App 前运行、Runtime `board` 为 hook 设置的名字；Enter 的 Down 与 Up 两个 edge 都经 `button` hook 推到目标自己的 periph（component 42 → periph 501）且 Runtime 都接受，之后 PASS |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |

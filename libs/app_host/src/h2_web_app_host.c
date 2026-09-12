@@ -149,6 +149,11 @@ EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
   if (s_host == NULL || s_host->runtime == NULL || index < 0 ||
       (size_t)index >= s_host->config->button_count)
     return H2_PAL_ERR_UNAVAILABLE;
+  const h2_web_app_host_hardware_t *hardware = s_host->config->hardware;
+  if (hardware != NULL && hardware->button != NULL)
+    return hardware->button(hardware->user, s_host->runtime,
+                            s_host->config->buttons[index].component_id,
+                            pressed);
   // Edges are addressed by peripheral id; the mapper resolves the component.
   return h2_runtime_button_push_edge(
       s_host->runtime, (h2_pal_periph_id_t)(index + 1),
@@ -272,6 +277,16 @@ static h2_runtime_config_t h2_web_app_host_runtime_config(
   return config;
 }
 
+/* Board hardware may replace any provider, including the Button mapping. */
+static h2_pal_result_t
+h2_web_app_host_configure_runtime(const h2_web_app_host_t *host,
+                                  h2_runtime_config_t *config) {
+  const h2_web_app_host_hardware_t *hardware = host->config->hardware;
+  if (hardware == NULL || hardware->configure_runtime == NULL)
+    return H2_PAL_OK;
+  return hardware->configure_runtime(hardware->user, config);
+}
+
 static void h2_web_app_host_app_task(void *user) {
   h2_web_app_host_t *host = user;
   h2_web_app_host_mark(host, "running");
@@ -286,9 +301,12 @@ static void h2_web_app_host_app_task(void *user) {
 static void h2_web_app_host_task(void *user) {
   h2_web_app_host_t *host = user;
   const h2_web_app_host_config_t *config = host->config;
-  const h2_runtime_config_t runtime_config =
+  h2_runtime_config_t runtime_config =
       h2_web_app_host_runtime_config(host, host->fs);
-  h2_pal_result_t result = h2_runtime_init(&runtime_config, &host->runtime);
+  h2_pal_result_t result =
+      h2_web_app_host_configure_runtime(host, &runtime_config);
+  if (result == H2_PAL_OK)
+    result = h2_runtime_init(&runtime_config, &host->runtime);
   if (result == H2_PAL_OK && config->button_count != 0u) {
     result = h2_runtime_input_start(host->runtime, NULL);
     for (size_t index = 0u; result == H2_PAL_OK && index < config->button_count;
@@ -356,6 +374,9 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
   host.platform = h2_web_platform_create(&platform_config);
   h2_pal_result_t result =
       host.platform != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
+  const h2_web_app_host_hardware_t *hardware = config->hardware;
+  if (result == H2_PAL_OK && hardware != NULL && hardware->prepare != NULL)
+    result = hardware->prepare(hardware->user, host.platform);
   h2_web_fs_t *fs = NULL;
   if (result == H2_PAL_OK && config->persistent_root != NULL) {
     const h2_web_fs_config_t fs_config = {
