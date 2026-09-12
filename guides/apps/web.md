@@ -7,9 +7,14 @@ Web 入口归 portable App 的 project owner。Web 不是 Mobile 子平台；它
 ```text
 projects/example/
 ├── libs/web/tap-reset/            # Web presentation 与 App contract conversion
-├── libs/web/app_host/             # 通用 Web launcher、HTML shell 与 h2_web_app() 宏
+├── libs/web/demo_board/           # 示例 web board：240×240 屏幕、left/ok/back，device 与 plain 两套外观
 ├── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive（自带 shell）
 ├── targets/pkg_tar/mp4-player/    # WebCodecs MP4 播放 archive（自带 shell）
+├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
+├── targets/pkg_tar/lua-script-input/ # Button 输入合同（demo_board plain 外观）：多源合并、blur/隐藏/结束释放
+├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
+├── targets/pkg_tar/web-board-{amoled,bk7258,k4b,szp,p4-lcd43}/ # 每块 board 的检查页；包名保持短，避免 Windows 路径超长
+├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
                                    # main.c + h2_web_app()
@@ -24,9 +29,13 @@ projects/h2loader/
 └── targets/npm_package/h2loader/  # @gizclaw/h2loader Browser SDK npm package
 
 libs/pal/providers/web/pal_core/    # Canvas/Emscripten reusable PAL backend
+boards/<board>/web/                 # 有屏幕的 board 的 web board 与外观：amoled、bk7258_v3_202405、
+                                    # kickpi_k4b、szp、waveshare_esp32p4_wifi6_touch_lcd_4_3
+libs/app_host/                      # App 启动层（当前仅 Web）：launcher、HTML shell 与 h2_web_app() 宏
+libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app() 宏与通用入口
 ```
 
-`projects/<owner>/libs/web/<app>` 只能保存 Web-specific wrapper、required capability 和 portable App contract conversion；`targets/pkg_tar/<app>` 负责 lifecycle、Runtime assembly、HTML shell、package metadata 和最终可交付 archive。Canvas display、pointer handler、Memory、Time 和 Queue backend 属于 `libs/pal/providers/web/pal_core`，不能复制进 project entry。
+`projects/<owner>/libs/web/<app>` 只能保存 Web-specific wrapper、required capability 和 portable App contract conversion；`targets/pkg_tar/<app>` 负责 lifecycle、Runtime assembly、HTML shell、package metadata 和最终可交付 archive。Canvas display、pointer handler、Memory、Time 和 Queue backend 属于 `libs/pal/providers/web/pal_core`，不能复制进 project entry。可复用的 App 启动层是 `libs/app_host`（见[目录结构](/zh/developing/repo_layout)）：它消费 `web/pal_core` 组装 Runtime，但不选择 App；任何 project（包括下游仓库）的 `pkg_tar` entry 都可以用它运行自己的 App。
 
 ## Build Boundary
 
@@ -173,9 +182,40 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 ### Example 与 E2E 的 Web target
 
-`//projects/example/libs/web/app_host` 是 example App 的通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 把 DOM `KeyboardEvent.key` 的 keydown/keyup 写成 `h2_runtime_button_push_edge()` edge，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
+`//libs/app_host` 是通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 描述 Runtime Button：`{component_id, key, name}`。输入全部由 shell 的 JavaScript 处理：`key`（DOM `KeyboardEvent.key`）和页面中所有 `data-h2-button="<name>"` 元素（鼠标、触摸）共同按住同一个 Button，合并成一个按下状态后才写 `h2_runtime_button_push_edge()` edge；页面失焦、隐藏或 App 结束时全部释放，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
-`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
+### Web board
+
+浏览器页面跑在一块 web board 上，它是实体 board 在浏览器里的对应物。`//libs/app_host:web_board.bzl` 的 `h2_web_board()` 声明这块板提供的外设和外观：
+
+- `display_width` / `display_height`：屏幕（canvas）像素尺寸；
+- `buttons`：有序的 Button 名到键盘键（DOM `KeyboardEvent.key`，可为空）的映射，最多 8 个，第 i 个是 periph id i + 1；
+- `skins`：外观名到 HTML 文件（可带 `<style>`）的映射，一块板可以有多套外观，`default_skin` 指定默认那套。
+
+外观要做得和实物一样：`app_host` 把页面组件创建进外观的插槽——`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop（`#start`、`#stop`），`data-h2-slot="status"` 放状态行（`#status`），缺少的插槽放进 `<body>` 末尾的普通容器；外观中 `data-h2-button="<name>"` 的元素和该 Button 的键盘键共同驱动同一个 Button，按下时带 `data-pressed="true"`。`app_host` 自己不带 UI，shell 只有页面骨架和输入脚本。
+
+组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 据此生成 `h2_web_board`（`h2_web_board_t`，屏幕尺寸与 Button 表）编进页面，`h2_web_app_host_config_t` 的 Button 按名字引用板上的 Button（`key` 为 NULL 时用板上的键），`display_width/height` 为 0 时用板上的尺寸。不指定 board 时用 `//libs/app_host:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。board 与外观放在该 board 自己的目录旁 `boards/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的五块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`kickpi_k4b`（1024×600，`action_button`）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。`amoled` 的 `device` 外观按 Waveshare 官方尺寸图用 CSS 画出实物（黑色表壳 37.60 × 45.20 mm、屏幕 28.70 × 34.94 mm、右侧从上到下 BOOT、USB-C、PWR）；其余四块的 `device` 外观目前是按 BSP 参数画的示意图（屏幕尺寸与方向准确），之后按实物资料替换。外观只用 CSS 绘制，不嵌入厂商图片。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
+
+只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
+`h2_lua_web_app(name, script, board, skin, exit_button, extension)` 用
+`h2_lua_resource()` 嵌入脚本，并把通用入口 `src/h2_web_lua_app.c` 交给
+`h2_web_app()`。板上每个 Button 按板上顺序得到 Runtime component id 1..N，脚本从
+`args.<name>` 读取；Button event 转发给 Lua job。`exit_button` 必须是板上的 Button（否则 analysis 失败），它的事件不进入脚本，默认在 release
+Action 上取消 job，页面 Stop 同样取消 job 并以 OK 结束。job 第一次进入
+WAITING 时输出 `stage=ready`；脚本失败时打印 `H2_WEB_LUA_APP job state=...`
+并以 FAIL 结束。`extension` 是定义 `h2_web_lua_app_extension`
+（`//libs/lua/web:lua_app_extension` 只提供声明）的唯一 cc_library；没有 extension 时入口
+不引用该符号。`register_host` 在 Host start 前调用一次，返回非 OK 时不 start、
+不提交 job，App 以该结果 FAIL；`exit_requested` 接收 exit Button 的每个
+Runtime event（Down、Up、Action），返回 true 取消 job 一次，并取代默认的
+release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出与页面 Stop
+相同的停止请求（用于测试）。`//libs/app_host:web_board_argument_test` 覆盖 board 参数校验（屏幕尺寸、超过 8 个 Button、非法 Button/外观名、未知 `default_skin`），`//libs/lua/web:lua_web_app_argument_test` 覆盖 `run_ms` 范围。其余参数原样交给
+`h2_web_app()`。每个 package 只能有一个 `h2_lua_web_app()`/`h2_web_app()`。
+这些宏内部 label 都用 `Label()` 解析到 GizOS，下游仓库可以直接 load
+`@gizos//libs/app_host:web_app.bzl` 与
+`@gizos//libs/lua/web:lua_web_app.bzl`。
+
+`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`clicks`（按 CSS selector 点击页面元素）、`evals`（在页面执行一段 JS，例如驱动输入边沿）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 
 | Target | 浏览器测试验证 |
 |---|---|
@@ -189,6 +229,11 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 | `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
+| `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
+| `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
+| `web-board-{amoled,bk7258,k4b,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
+| `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
+| `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
 
 未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。

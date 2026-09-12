@@ -14,7 +14,7 @@ static int is_terminal(h2_lua_job_state_t state) {
 static int module_name_is_reserved(const char *name) {
   static const char *const reserved[] = {
       "runtime", "delay", "system",     "display", "lcd_touch",
-      "audio",   "json",  "capability", "storage",
+      "audio",   "json",  "capability", "link",    "storage",
   };
   for (size_t i = 0u; i < sizeof(reserved) / sizeof(reserved[0]); ++i) {
     if (strcmp(name, reserved[i]) == 0) {
@@ -50,6 +50,8 @@ static void worker_entry(void *context) {
         if (is_terminal(job->state)) {
           terminal_job_id = job->id;
           terminal_job_generation = job->generation;
+          /* Under the job mutex, so no release can reuse the slot first. */
+          h2_lua_link_job_ended(host, terminal_job_id, terminal_job_generation);
         }
       }
       (void)h2_pal_mutex_unlock(host->config.runtime->sync,
@@ -129,6 +131,16 @@ static void release_job(h2_lua_job_t *job) {
   h2_pal_mem_free(mem, job->audio_tracks);
   h2_lua_vm_close(job->vm);
   memset(job, 0, sizeof(*job));
+}
+
+/* Called with the job mutex held (job mutex -> link mutex), before the slot
+ * can be released or reused. */
+void h2_lua_link_job_ended(h2_lua_host_t *host, h2_lua_job_id_t job_id,
+                           uint32_t job_generation) {
+  if (host != NULL && host->link_hooks != NULL &&
+      job_id != H2_LUA_JOB_ID_NONE) {
+    host->link_hooks->job_ended(host->link_user, job_id, job_generation);
+  }
 }
 
 void h2_lua_cancel_job_capabilities(h2_lua_host_t *host, h2_lua_job_id_t job_id,
@@ -527,6 +539,7 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
         h2_lua_task_timer_destroy(&host->jobs[i].tasks[task_index]);
       }
       h2_lua_job_finish(&host->jobs[i], H2_LUA_JOB_STOPPED, "host stopped");
+      h2_lua_link_job_ended(host, job_id, job_generation);
     }
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->job_mutexes[i]);
     h2_lua_cancel_job_capabilities(host, job_id, job_generation);
@@ -585,6 +598,11 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
     release_job(&host->jobs[i]);
   }
   h2_lua_storage_host_deinit(host);
+  if (host->link_hooks != NULL) {
+    host->link_hooks->destroy(host->link_user);
+    host->link_hooks = NULL;
+    host->link_user = NULL;
+  }
   if (host->capability_mutex != NULL) {
     (void)h2_pal_mutex_destroy(host->config.runtime->sync,
                                host->capability_mutex);

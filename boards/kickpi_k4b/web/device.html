@@ -1,0 +1,26 @@
+<!-- kickpi_k4b "device" skin: a schematic of the board drawn from its BSP, not a
+     photo. 1024×600 framebuffer (landscape), gt9xx touch; the right-side user key (PD14).
+     Replace the drawing with a product image when one is available. -->
+<style>
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: #0b0f17; color: #e5e7eb; font-family: system-ui, sans-serif; }
+  .board { display: grid; gap: 12px; justify-items: center; padding: 18px 18px 14px; border-radius: 18px; background: #1f2a1f; border: 2px solid #3f4f3f; box-shadow: 0 8px 30px #0008; }
+  .board .name { margin: 0; font-size: 12px; letter-spacing: 0.06em; color: #b7c4b7; }
+  .board [data-h2-slot="display"] { padding: 8px; border-radius: 10px; background: #050505; }
+  .board #canvas { display: block; width: min(1024px, 86vw, calc(70vh * 1024 / 600)); height: auto; background: #000; }
+  .board .keys { display: flex; gap: 10px; }
+  .board [data-h2-button] { min-width: 64px; padding: 8px 12px; border: 1px solid #6b7280; border-radius: 999px; background: #111827; color: #e5e7eb; font: 600 12px system-ui, sans-serif; }
+  .board [data-h2-button][data-pressed="true"] { background: #2563eb; border-color: #93c5fd; }
+  .board [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .board [data-h2-slot="controls"] button { padding: 6px 16px; border: 0; border-radius: 6px; background: #38bdf8; color: #082f49; font: 700 12px system-ui, sans-serif; }
+  .board [data-h2-slot="controls"] button:disabled { opacity: 0.6; }
+  .board #status { margin: 0; color: #94a3b8; font-size: 12px; }
+</style>
+<main class="board">
+  <p class="name">KICKPI K4B (T113-S3)</p>
+  <div data-h2-slot="display"></div>
+  <div class="keys">
+    <button type="button" data-h2-button="action_button">USER</button>
+  </div>
+  <div data-h2-slot="controls"></div>
+  <div data-h2-slot="status"></div>
+</main>

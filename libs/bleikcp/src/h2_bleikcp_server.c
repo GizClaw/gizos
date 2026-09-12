@@ -14,7 +14,8 @@ struct h2_bleikcp_server {
     h2_pal_cond_t *cond;
     h2_pal_task_t *dispatch_task;
     h2_pal_system_event_subscription_t *subscriptions[H2_BLEIKCP_SERVER_SUBSCRIPTION_COUNT];
-    h2_pal_ble_gatt_characteristic_t characteristics[2];
+    h2_pal_ble_gatt_characteristic_t
+        characteristics[2u + H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX];
     h2_pal_ble_gatt_service_t service;
     uint16_t service_handle;
     uint16_t tx_value_handle;
@@ -265,6 +266,13 @@ int h2_bleikcp_server_open(
     if (api->ble == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
+    if (config != NULL &&
+        (config->extra_characteristic_count >
+             H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX ||
+         (config->extra_characteristic_count != 0u &&
+          config->extra_characteristics == NULL))) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     h2_bleikcp_resolved_config_t resolved;
     int rc = h2_bleikcp_resolve_config(api, config, &resolved);
     if (rc != H2_PAL_OK) return rc;
@@ -319,11 +327,16 @@ int h2_bleikcp_server_open(
         .user = server,
         .out_value_handle = &server->rx_value_handle,
     };
+    for (size_t i = 0u; i < server->config.value.extra_characteristic_count; ++i) {
+        server->characteristics[2u + i] =
+            server->config.value.extra_characteristics[i];
+    }
     server->service = (h2_pal_ble_gatt_service_t){
         .uuid = server->config.value.service_uuid,
         .primary = true,
         .characteristics = server->characteristics,
-        .characteristic_count = 2u,
+        .characteristic_count =
+            2u + server->config.value.extra_characteristic_count,
         .out_service_handle = &server->service_handle,
     };
     rc = h2_pal_task_start(
