@@ -168,7 +168,7 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
 
 每个 `h2_lua_job_submit_*()` 都接收 app id。App id 和文件名都是 `1..32` 字节的 `a-z`、`0-9`、`_`、`-`、`.`，且不能以 `.` 开头，因此绝对路径、`/`、`..`、反斜线、大写字母和隐藏文件都会被拒绝，大小写不敏感的文件系统也不会让两个名字指向同一个文件。非法 app id 使提交返回 `INVALID_ARG`。相同 app id 的 job 共享 `<root>/<app_id>/` 下的文件，不同 app id 互相不可见。
 
-`storage` 始终可以 `require`。Host 未配置 fs 或 job 没有 app id 时，除 `join_path` 外的调用都返回 `nil, "storage: unavailable"`，`exists` 返回 `false`，App 可以继续运行。
+`storage` 始终可以 `require`。Host 未配置 fs 或 job 没有 app id 时，除 `join_path` 外的调用都返回 `nil, "storage: unavailable"`，`exists` 返回 `false`，App 可以继续运行。存储可用时 `exists(name)` 对存在的文件返回 `true`、对不存在的合法名字返回 `false`，非法名字和 I/O 错误返回 `nil, message`。
 
 模块保持 ESP-Claw `storage` 的函数名和成功返回值，差异如下：
 

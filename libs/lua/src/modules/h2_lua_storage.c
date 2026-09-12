@@ -698,14 +698,20 @@ static int storage_exists(lua_State *state) {
   const char *name = check_name(state, 1);
   uint64_t size = 0u;
   storage_status_t status;
-  if (!storage_available(job) || name == NULL) {
+  if (!storage_available(job)) {
     lua_pushboolean(state, 0);
     return 1;
+  }
+  if (name == NULL) {
+    return push_failure(state, STORAGE_INVALID_NAME);
   }
   status = storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_size_locked(job, name, &size);
     storage_unlock(job);
+  }
+  if (status != STORAGE_OK && status != STORAGE_NOT_FOUND) {
+    return push_failure(state, status);
   }
   lua_pushboolean(state, status == STORAGE_OK);
   return 1;
