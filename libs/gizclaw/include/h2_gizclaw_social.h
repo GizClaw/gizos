@@ -65,7 +65,13 @@ typedef struct h2_gizclaw_friend_group_page {
   char *next_cursor;
 } h2_gizclaw_friend_group_page_t;
 
-/** Owned Friend relationship and its optional projected profile information. */
+/** Owned Friend relationship and its optional projected profile information.
+ * server.friend.list and server.friend.info.get both project the Friend's
+ * self-chosen profile: name and emoji are NULL when unset and "" when set
+ * empty. Presence (has_online, online, last_seen_at) comes only from
+ * server.friend.list; online is whether the Friend's device is connected to
+ * the answering Server, and last_seen_at is NULL when that Server has never
+ * observed it. */
 typedef struct h2_gizclaw_friend {
   /** Relationship ID copied verbatim from the wire FriendObject.name. */
   char *id;
@@ -76,6 +82,11 @@ typedef struct h2_gizclaw_friend {
   /** Optional projected profile display name. */
   char *name;
   char *emoji;
+  /** False when the Server reported no presence for this Friend. */
+  bool has_online;
+  bool online;
+  /** Last observed device activity, UTC RFC 3339 text. */
+  char *last_seen_at;
 } h2_gizclaw_friend_t;
 
 typedef struct h2_gizclaw_friend_page {

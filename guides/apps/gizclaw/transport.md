@@ -146,7 +146,7 @@ managed request 诊断。已提交请求失败时仅增加一条 ERROR：
 `rx_data == rx_target` 但 `eos_seen=0` 表示数据量已齐却未见协议结束；
 EOS 已见但 `rpc_result_ok=0` 则还没有取得成功的最终请求结果。
 
-当前固定 C SDK v0.18.0 的公开 RPC API 不提供 request → DataChannel 关联、通道终态原因、
+当前固定 C SDK v0.18.5 的公开 RPC API 不提供 request → DataChannel 关联、通道终态原因、
 原始 PAL/transport 错误或实际远端收取量，因此日志不提供这些字段。
 SDK 的 `GZC_ERR_CLOSED` 同时用于 DataChannel close、client close 和主动 cancel，不能仅凭
 该码进一步归因；SDK 已映射的错误也不能当作原始 PAL 错误。

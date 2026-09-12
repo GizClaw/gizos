@@ -5787,6 +5787,9 @@ static void test_friend_public_request_paths(void) {
     assert(h2_gizclaw_resp_parse_friend_list(request, &storage, &value) ==
            H2_PAL_OK);
     assert(strcmp(value.items[0].id, "x") == 0);
+    assert(!value.items[0].has_online && !value.items[0].online &&
+           value.items[0].last_seen_at == NULL &&
+           value.items[0].name == NULL && value.items[0].emoji == NULL);
 
     h2_gizclaw_resp_storage_t tiny = {.data = buffer, .capacity = 1u};
     assert(h2_gizclaw_resp_parse_friend_list(request, &tiny, &value) ==
@@ -5809,6 +5812,66 @@ static void test_friend_public_request_paths(void) {
     assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){text, 1u}, 1u,
                                       1234u, &storage,
                                       &value) == H2_PAL_ERR_NOT_FOUND);
+  }
+  {
+    /* server.friend.list presence and profile: online, last_seen_at,
+     * display_name, emoji; an explicitly empty display name stays "". */
+    static const uint8_t input[] = {0x10, 2};
+    static const uint8_t response[] = {
+        0x12, 36,   0x12, 1,    'x',  0x30, 1,    0x3a, 20,   '2',
+        '0',  '2',  '6',  '-',  '0',  '9',  '-',  '1',  '2',  'T',
+        '0',  '9',  ':',  '0',  '0',  ':',  '0',  '0',  'Z',  0x42,
+        1,    'A',  0x4a, 4,    0xf0, 0x9f, 0x90, 0xb1, 0x12, 7,
+        0x12, 1,    'y',  0x30, 0,    0x42, 0};
+    mock = (test_contact_rpc_t){.expected_method =
+                                    H2_GIZCLAW_RPC_SERVER_FRIEND_LIST,
+                                .expected_request = input,
+                                .expected_request_len = sizeof(input),
+                                .response = response,
+                                .response_len = sizeof(response)};
+    storage.used = 0u;
+    h2_gizclaw_friend_page_t value;
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage, &value) == H2_PAL_OK);
+    assert(mock.request_matches && value.count == 2u);
+    const h2_gizclaw_friend_t *on = &value.items[0], *off = &value.items[1];
+    assert(on->has_online && on->online &&
+           strcmp(on->last_seen_at, "2026-09-12T09:00:00Z") == 0 &&
+           strcmp(on->name, "A") == 0 &&
+           strcmp(on->emoji, "\xf0\x9f\x90\xb1") == 0);
+    assert(off->has_online && !off->online && off->last_seen_at == NULL &&
+           off->name != NULL && off->name[0] == '\0' && off->emoji == NULL);
+    const size_t checkpoint = storage.used;
+
+    /* Profile text keeps the FriendInfo bounds; text fields reject NUL. */
+    static const uint8_t too_long[] = {0x12, 70, 0x12, 1, 'x', 0x4a, 65};
+    uint8_t long_emoji[sizeof(too_long) + 65u];
+    memcpy(long_emoji, too_long, sizeof(too_long));
+    memset(long_emoji + sizeof(too_long), 'e', 65u);
+    static const uint8_t ok_emoji[] = {0x12, 69, 0x12, 1, 'x', 0x4a, 64};
+    uint8_t max_emoji[sizeof(ok_emoji) + 64u];
+    memcpy(max_emoji, ok_emoji, sizeof(ok_emoji));
+    memset(max_emoji + sizeof(ok_emoji), 'e', 64u);
+    static const uint8_t nul_seen[] = {0x12, 8,   0x12, 1, 'x',
+                                       0x3a, 3,   'a',  0, 'b'};
+    mock.response = max_emoji;
+    mock.response_len = sizeof(max_emoji);
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage, &value) == H2_PAL_OK);
+    assert(strlen(value.items[0].emoji) == 64u);
+    storage.used = checkpoint;
+    mock.response = long_emoji;
+    mock.response_len = sizeof(long_emoji);
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage,
+                                      &value) == H2_PAL_ERR_FORMAT);
+    assert(storage.used == checkpoint && value.items == NULL);
+    mock.response = nul_seen;
+    mock.response_len = sizeof(nul_seen);
+    assert(h2_gizclaw_rpc_friend_list(service, (h2_gizclaw_str_t){0}, 2u,
+                                      1234u, &storage,
+                                      &value) == H2_PAL_ERR_FORMAT);
+    assert(storage.used == checkpoint && value.items == NULL);
   }
   {
     char text[] = "x";

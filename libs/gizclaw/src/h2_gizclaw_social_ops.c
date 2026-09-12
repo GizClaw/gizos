@@ -188,13 +188,14 @@ static void friend_deinit(const h2_pal_mem_api_t *allocator,
   h2_pal_mem_free(allocator, friend_value->updated_at);
   h2_pal_mem_free(allocator, friend_value->name);
   h2_pal_mem_free(allocator, friend_value->emoji);
+  h2_pal_mem_free(allocator, friend_value->last_seen_at);
   memset(friend_value, 0, sizeof(*friend_value));
 }
 
 static bool decode_friend_object(pb_istream_t *stream, h2_gizclaw_friend_t *out,
                                  const h2_pal_mem_api_t *allocator) {
   gizclaw_rpc_v1_FriendObject decoded = gizclaw_rpc_v1_FriendObject_init_zero;
-  social_text_decode_t text[5];
+  social_text_decode_t text[8];
   set_decoder(&decoded.name, &text[0], allocator, &out->id);
   set_decoder(&decoded.peer_public_key, &text[1], allocator,
               &out->peer_public_key);
@@ -202,6 +203,15 @@ static bool decode_friend_object(pb_istream_t *stream, h2_gizclaw_friend_t *out,
               &out->workspace_name);
   set_decoder(&decoded.created_at, &text[3], allocator, &out->created_at);
   set_decoder(&decoded.updated_at, &text[4], allocator, &out->updated_at);
+  /* Same bounds as the FriendInfo profile projected by friend_info_get. */
+  set_bounded_decoder(&decoded.display_name, &text[5], allocator, &out->name,
+                      sizeof(((gizclaw_rpc_v1_FriendInfo *)0)->display_name) -
+                          1u);
+  set_bounded_decoder(&decoded.emoji, &text[6], allocator, &out->emoji,
+                      sizeof(((gizclaw_rpc_v1_FriendInfo *)0)->emoji) - 1u);
+  set_bounded_decoder(&decoded.last_seen_at, &text[7], allocator,
+                      &out->last_seen_at,
+                      H2_GIZCLAW_CONTACT_TIMESTAMP_MAX_BYTES);
   if (!pb_decode(stream, gizclaw_rpc_v1_FriendObject_fields, &decoded) ||
       out->id == NULL || out->id[0] == '\0' ||
       !valid_owned_text(out->peer_public_key) ||
@@ -211,6 +221,8 @@ static bool decode_friend_object(pb_istream_t *stream, h2_gizclaw_friend_t *out,
     friend_deinit(allocator, out);
     return false;
   }
+  out->has_online = decoded.has_online;
+  out->online = decoded.has_online && decoded.online;
   return true;
 }
 
