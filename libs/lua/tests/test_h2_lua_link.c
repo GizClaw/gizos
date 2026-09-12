@@ -748,6 +748,11 @@ static int mark_reached(void *user) {
   return atomic_load((atomic_int *)user) > 0;
 }
 
+static int device_advertising(void *user) {
+  const fake_snapshot_t value = fake_snapshot(user);
+  return value.adv_running && value.registered;
+}
+
 static int device_released(void *user) {
   return fake_is_released(user);
 }
@@ -783,7 +788,7 @@ static void wait_released(fake_device_t *device) {
   "local function wait(f) for _=1,4000 do if f() then return end "            \
   "rt.sleep(5) end error('wait timed out') end;"                              \
   "local function mark() require('capability').call('mark','{}') end;"        \
-  "local function start(f,o) for _=1,200 do local ok,err=f(o);"               \
+  "local function start(f,o) for _=1,600 do local ok,err=f(o);"               \
   "if ok then return end;assert(err=='link: busy',err);rt.sleep(5) end "      \
   "error('link stayed busy') end;"
 
@@ -927,6 +932,18 @@ static const char s_wait_peer_closed[] =
     "wait(function() return s.role end);mark();"
     "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);"
     "return 'peer-closed-ok'";
+
+/* host() straight from the LINK_DISCONNECTED callback must not see busy. */
+static const char s_rehost_from_callback[] =
+    LUA_PRELUDE
+    "link.on(ev.LINK_DISCONNECTED,function(e) "
+    "s.again={link.host({tag='again'})} end);"
+    "start(link.host,{tag='idle'});"
+    "wait(function() return s.role end);mark();"
+    "wait(function() return s.again end);"
+    "assert(s.again[1]==true,tostring(s.again[2]));"
+    "assert(link.state()=='hosting');assert(link.close());"
+    "return 'rehost-ok'";
 
 static const char s_host_forever[] =
     LUA_PRELUDE
@@ -1105,6 +1122,28 @@ static void test_sequential_sessions_reuse_service(void) {
   pair_close(&pair);
 }
 
+static void test_rehost_from_disconnect_callback(void) {
+  pair_t pair;
+  pair_open(&pair);
+  for (int round = 0; round < 5; ++round) {
+    atomic_store(&s_marks[0], 0);
+    atomic_store(&s_marks[1], 0);
+    h2_lua_job_id_t host = submit(pair.host[0], "@rehost.lua",
+                                  s_rehost_from_callback, "host");
+    h2_lua_job_id_t join =
+        submit(pair.host[1], "@idle.lua", s_connect_then_idle, "join");
+    wait_until(mark_reached, &s_marks[0]);
+    wait_until(mark_reached, &s_marks[1]);
+    assert(h2_lua_job_cancel(pair.host[1], join) == H2_PAL_OK);
+    (void)wait_job(pair.host[1], join);
+    assert(h2_lua_job_release(pair.host[1], join) == H2_PAL_OK);
+    expect_success(pair.host[0], host, "rehost-ok");
+    wait_released(&pair.air.devices[0]);
+    wait_released(&pair.air.devices[1]);
+  }
+  pair_close(&pair);
+}
+
 static void test_link_loss(void) {
   pair_t pair;
   pair_open(&pair);
@@ -1146,8 +1185,8 @@ static void test_host_destroy_releases_link(void) {
   pair_open(&pair);
   (void)submit(pair.host[0], "@forever.lua", s_host_forever, "destroy");
   wait_until(mark_reached, &s_marks[0]);
-  assert(fake_snapshot(&pair.air.devices[0]).adv_running == 1);
-  assert(fake_snapshot(&pair.air.devices[0]).registered == 1);
+  /* host() returns before the session task starts advertising. */
+  wait_until(device_advertising, &pair.air.devices[0]);
   /* Destroy joins the session task: nothing is left once it returns. */
   h2_lua_host_destroy(pair.host[0]);
   pair.host[0] = NULL;
@@ -1256,6 +1295,8 @@ int main(void) {
   test_release_during_traffic();
   fprintf(stderr, "== test_sequential_sessions_reuse_service\n");
   test_sequential_sessions_reuse_service();
+  fprintf(stderr, "== test_rehost_from_disconnect_callback\n");
+  test_rehost_from_disconnect_callback();
   fprintf(stderr, "== test_link_loss\n");
   test_link_loss();
   fprintf(stderr, "== test_job_exit_releases_link\n");

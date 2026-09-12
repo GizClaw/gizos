@@ -975,9 +975,12 @@ static int link_reclaim_locked(h2_lua_link_t *link) {
   if (!link->in_use) {
     return 1;
   }
-  /* After the final event the task only publishes task_done, so an app that
-   * reacts to LINK_DISCONNECTED/ERROR by hosting again is not told busy. */
-  for (int i = 0; link->ended && !link->task_done && i < 20; ++i) {
+  /* The final event is queued only after every BLE and KCP resource has been
+   * released; the task then just returns from link_post() and publishes
+   * task_done under this mutex, without waiting on anything. Waiting for it
+   * here is therefore bounded, and an app reacting to LINK_DISCONNECTED or
+   * LINK_ERROR with a new host()/join() never sees busy. */
+  while (link->ended && !link->task_done) {
     link_wait(link, H2_LUA_LINK_SLICE_MS);
   }
   if (!link->task_done) {
