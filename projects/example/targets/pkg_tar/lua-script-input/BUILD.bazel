@@ -48,10 +48,8 @@ _SEQUENCE = "".join([
 # A duplicate or missing edge fails through the fails patterns.
 h2_lua_web_app(
     name = "lua-script-input",
-    buttons = {
-        "ok": "Enter",
-        "back": "Escape",
-    },
+    board = "//projects/example/libs/web/demo_board",
+    skin = "plain",
     evals = [
         [
             "H2_WEB_APP name=lua-script-input stage=ready",
@@ -72,7 +70,6 @@ h2_lua_web_app(
         "H2_WEB_APP_INPUT after-hide held=true",
         "H2_WEB_APP_INPUT teardown held=true",
     ],
-    layout = "//projects/example/targets/pkg_tar/lua-script:layout.html",
     passes = [
         "H2_WEB_APP name=lua-script-input stage=ready",
         "H2_WEB_APP_INPUT after-pointer-up held=true",

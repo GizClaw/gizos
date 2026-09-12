@@ -1,10 +1,11 @@
 /* App entry for one Lua script, compiled once per h2_lua_web_app().
  *
  * The generated h2_web_lua_app_config.h names the embedded script, the app
- * name, the Buttons and the optional exit Button. app_host assembles the Web
- * Runtime; this entry runs one Lua job, passes every Button component id to
- * the script as `args.<name>`, forwards Button events to the job and ends it
- * from the exit Button or the host stop request. */
+ * name and the optional exit Button; the web board (h2_web_board) supplies
+ * the Buttons and display. app_host assembles the Web Runtime; this entry
+ * runs one Lua job, passes every board Button's component id to the script
+ * as `args.<name>`, forwards Button events to the job and ends it from the
+ * exit Button or the host stop request. */
 #include "h2_web_lua_app_config.h"
 
 #include "h2_lua.h"
@@ -19,17 +20,16 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-typedef struct web_lua_button {
-  const char *name;
-  const char *key;
-} web_lua_button_t;
+#include <string.h>
 
-#define H2_WEB_LUA_BUTTON(name, key) {name, key},
-static const web_lua_button_t s_buttons[] = {
-    H2_WEB_LUA_APP_BUTTONS(H2_WEB_LUA_BUTTON)};
-#undef H2_WEB_LUA_BUTTON
-
-#define BUTTON_COUNT (sizeof(s_buttons) / sizeof(s_buttons[0]))
+/* Component id of the exit Button (its board index + 1), or 0 for none. */
+static h2_runtime_component_id_t exit_component(void) {
+  for (size_t i = 0u; i < h2_web_board.button_count; ++i) {
+    if (strcmp(h2_web_board.buttons[i].name, H2_WEB_LUA_APP_EXIT_BUTTON) == 0)
+      return (h2_runtime_component_id_t)(i + 1u);
+  }
+  return H2_RUNTIME_COMPONENT_ID_NONE;
+}
 
 static bool exit_requested(const h2_runtime_event_t *event) {
 #if H2_WEB_LUA_APP_EXTENSION
@@ -48,8 +48,10 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
       .source = H2_WEB_LUA_APP_SOURCE,
       .source_size = H2_WEB_LUA_APP_SOURCE_SIZE,
   };
-  char ids[BUTTON_COUNT][12];
-  h2_lua_arg_t args[BUTTON_COUNT];
+  char ids[H2_WEB_APP_HOST_MAX_BUTTONS][12];
+  h2_lua_arg_t args[H2_WEB_APP_HOST_MAX_BUTTONS];
+  const size_t button_count = h2_web_board.button_count;
+  const h2_runtime_component_id_t exit_id = exit_component();
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {.payload = payload,
                               .payload_capacity = sizeof(payload)};
@@ -60,9 +62,10 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
   /* Set once a cancel was accepted, so later events do not repeat it. */
   bool cancelling = false;
   (void)user;
-  for (size_t i = 0u; i < BUTTON_COUNT; ++i) {
+  for (size_t i = 0u; i < button_count; ++i) {
     (void)snprintf(ids[i], sizeof(ids[i]), "%u", (unsigned)(i + 1u));
-    args[i] = (h2_lua_arg_t){.name = s_buttons[i].name, .value = ids[i]};
+    args[i] = (h2_lua_arg_t){.name = h2_web_board.buttons[i].name,
+                             .value = ids[i]};
   }
   h2_pal_result_t rc = h2_lua_host_create(
       &(h2_lua_host_config_t){
@@ -89,7 +92,7 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
   if (rc == H2_PAL_OK)
     rc = h2_lua_host_start(host);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_job_submit_resource(host, "app.lua", args, BUTTON_COUNT, &job);
+    rc = h2_lua_job_submit_resource(host, "app.lua", args, button_count, &job);
   while (rc == H2_PAL_OK) {
     if (!cancelling && h2_web_app_host_should_stop(app_host)) {
       rc = h2_lua_job_cancel(host, job);
@@ -104,8 +107,8 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
       } else if (event.component != H2_RUNTIME_COMPONENT_BUTTON ||
                  cancelling) {
         continue;
-      } else if (H2_WEB_LUA_APP_EXIT_BUTTON != 0u &&
-                 event.component_id == H2_WEB_LUA_APP_EXIT_BUTTON) {
+      } else if (exit_id != H2_RUNTIME_COMPONENT_ID_NONE &&
+                 event.component_id == exit_id) {
         if (exit_requested(&event)) {
           rc = h2_lua_job_cancel(host, job);
           cancelling = rc == H2_PAL_OK;
@@ -148,22 +151,21 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
 }
 
 int main(void) {
-  h2_web_app_host_button_t buttons[BUTTON_COUNT];
-  for (size_t i = 0u; i < BUTTON_COUNT; ++i) {
-    /* The page drives each Button from its key and from layout elements
-     * marked data-h2-button="<name>". */
+  /* Every board Button maps to component id index + 1 under its board name;
+   * the board key and skin elements drive it. */
+  h2_web_app_host_button_t buttons[H2_WEB_APP_HOST_MAX_BUTTONS];
+  const size_t button_count = h2_web_board.button_count;
+  for (size_t i = 0u; i < button_count; ++i) {
     buttons[i] = (h2_web_app_host_button_t){
         .component_id = (h2_runtime_component_id_t)(i + 1u),
-        .key = s_buttons[i].key[0] != '\0' ? s_buttons[i].key : NULL,
-        .name = s_buttons[i].name,
+        .key = NULL,
+        .name = h2_web_board.buttons[i].name,
     };
   }
   const h2_web_app_host_config_t config = {
       .name = H2_WEB_LUA_APP_NAME,
-      .display_width = H2_WEB_LUA_APP_DISPLAY_WIDTH,
-      .display_height = H2_WEB_LUA_APP_DISPLAY_HEIGHT,
       .buttons = buttons,
-      .button_count = BUTTON_COUNT,
+      .button_count = button_count,
       .run_ms = H2_WEB_LUA_APP_RUN_MS,
       .stack_size = 262144u,
   };

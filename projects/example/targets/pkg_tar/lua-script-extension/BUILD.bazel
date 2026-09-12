@@ -17,14 +17,9 @@ cc_library(
 # keeps running until the second Escape, and only then does the App pass.
 h2_lua_web_app(
     name = "lua-script-extension",
-    buttons = {
-        "left": "ArrowLeft",
-        "ok": "Enter",
-        "back": "Escape",
-    },
+    board = "//projects/example/libs/web/demo_board",
     canvas_min = 300,
     exit_button = "back",
-    layout = "//projects/example/targets/pkg_tar/lua-script:layout.html",
     extension = ":smoke_extension",
     passes = [
         "H2_WEB_APP name=lua-script-extension stage=ready",

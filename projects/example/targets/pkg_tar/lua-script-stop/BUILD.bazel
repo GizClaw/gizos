@@ -7,11 +7,7 @@ package(default_visibility = ["//visibility:public"])
 # extra deps check that caller dependencies merge with the macro's own.
 h2_lua_web_app(
     name = "lua-script-stop",
-    buttons = {
-        "left": "ArrowLeft",
-        "ok": "Enter",
-        "back": "Escape",
-    },
+    board = "//projects/example/libs/web/demo_board",
     canvas_min = 300,
     deps = ["//libs/runtime"],
     exit_button = "back",

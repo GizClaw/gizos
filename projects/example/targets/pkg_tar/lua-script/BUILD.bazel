@@ -2,24 +2,17 @@ load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "layout.html",
-    "smoke.lua",
-])
+exports_files(["smoke.lua"])
 
-# Device layout (reused by the other lua-script* pages, like a board layout):
-# app_host creates the canvas and status line in the layout's display/status
-# slots; clicking the layout's OK element (a non-exit Button) must reach the
+# Runs on demo_board's default "device" skin (the input page uses its
+# "plain" skin): app_host creates the canvas and status line in the skin's
+# display/status slots; clicking the skin's OK element (a non-exit Button) must reach the
 # script's OK callback; then clicking the page Stop button (#start/#stop live
 # in the controls slot) cancels the job and the App passes. The default exit
 # Button path is covered by lua-script-input, run_ms by lua-script-stop.
 h2_lua_web_app(
     name = "lua-script",
-    buttons = {
-        "left": "ArrowLeft",
-        "ok": "Enter",
-        "back": "Escape",
-    },
+    board = "//projects/example/libs/web/demo_board",
     canvas_min = 300,
     clicks = [
         [
@@ -31,7 +24,6 @@ h2_lua_web_app(
             "#stop",
         ],
     ],
-    layout = "layout.html",
     evals = [[
         "H2_WEB_APP name=lua-script stage=ready",
         "console.log('H2_WEB_APP_LAYOUT display=' + " +

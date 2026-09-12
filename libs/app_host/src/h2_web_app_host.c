@@ -6,6 +6,7 @@
 
 #include <emscripten.h>
 #include <stdio.h>
+#include <string.h>
 
 struct h2_web_app_host {
   const h2_web_app_host_config_t *config;
@@ -31,6 +32,21 @@ static const h2_pal_periph_single_button_payload_t s_button_payload = {
 };
 
 // Peripheral ids are button index + 1.
+/* The config key overrides; otherwise the web board's key for that name. */
+static const char *
+h2_web_app_host_button_key(const h2_web_app_host_button_t *button) {
+  if (button->key != NULL)
+    return button->key;
+  for (size_t index = 0u; button->name != NULL &&
+                          index < h2_web_board.button_count;
+       ++index) {
+    const h2_web_board_button_t *board = &h2_web_board.buttons[index];
+    if (strcmp(board->name, button->name) == 0)
+      return board->key[0] != '\0' ? board->key : NULL;
+  }
+  return NULL;
+}
+
 static h2_pal_periph_info_t h2_web_app_host_button_info(size_t index) {
   h2_pal_periph_info_t info = {
       .id = (h2_pal_periph_id_t)(index + 1u),
@@ -274,8 +290,9 @@ static void h2_web_app_host_task(void *user) {
     result = h2_runtime_input_start(host->runtime, NULL);
     for (size_t index = 0u; result == H2_PAL_OK && index < config->button_count;
          ++index)
-      h2_web_app_host_bind_button((int)index, config->buttons[index].key,
-                                  config->buttons[index].name);
+      h2_web_app_host_bind_button(
+          (int)index, h2_web_app_host_button_key(&config->buttons[index]),
+          config->buttons[index].name);
   }
   if (result == H2_PAL_OK) {
     if (config->run_ms != 0u)
@@ -323,11 +340,16 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
       .result = H2_PAL_ERR_TASK,
   };
   s_host = &host;
+  const int32_t width = config->display_width != 0 ? config->display_width
+                                                   : h2_web_board.display_width;
+  const int32_t height = config->display_height != 0
+                             ? config->display_height
+                             : h2_web_board.display_height;
   const h2_web_platform_config_t platform_config = {
-      .display_width = config->display_width,
-      .display_height = config->display_height,
+      .display_width = width,
+      .display_height = height,
   };
-  h2_web_app_host_size_canvas(config->display_width, config->display_height);
+  h2_web_app_host_size_canvas(width, height);
   host.platform = h2_web_platform_create(&platform_config);
   h2_pal_result_t result =
       host.platform != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;

@@ -31,13 +31,35 @@ typedef h2_pal_result_t (*h2_web_app_host_entry_fn)(h2_web_app_host_t *host,
                                                     h2_runtime_t *runtime,
                                                     void *user);
 
+#define H2_WEB_APP_HOST_MAX_BUTTONS 8u
+
+/** One push-edge Button a web board offers. */
+typedef struct h2_web_board_button {
+  const char *name;
+  /** KeyboardEvent.key that drives it, e.g. "Escape"; "" for none. */
+  const char *key;
+} h2_web_board_button_t;
+
 /**
- * One Runtime Button driven from the page. The shell's JavaScript owns the
- * input: it binds `key` (KeyboardEvent.key, e.g. "Escape"; NULL for none) and
- * every element marked `data-h2-button="<name>"` in the page layout (pointer
- * and touch; NULL name for none), merges them into one pressed state and
- * pushes Down/Up edges. Layout is plain HTML/CSS supplied through
- * h2_web_app(layout = ...), usually a board's reusable HTML/CSS.
+ * The web board a page runs on: the browser counterpart of a physical board.
+ * h2_web_app() generates this definition from its h2_web_board() target
+ * (web_board.bzl); the chosen skin supplies the page UI.
+ */
+typedef struct h2_web_board {
+  int32_t display_width;
+  int32_t display_height;
+  const h2_web_board_button_t *buttons;
+  size_t button_count;
+} h2_web_board_t;
+
+extern const h2_web_board_t h2_web_board;
+
+/**
+ * Maps one board Button (by name) to an App component. The shell's
+ * JavaScript owns the input: it binds the key (the board key unless `key`
+ * overrides it; NULL keeps the board key) and every skin element marked
+ * `data-h2-button="<name>"` (pointer and touch), merges them into one pressed
+ * state and pushes Down/Up edges.
  */
 typedef struct h2_web_app_host_button {
   h2_runtime_component_id_t component_id;
@@ -45,11 +67,10 @@ typedef struct h2_web_app_host_button {
   const char *name;
 } h2_web_app_host_button_t;
 
-#define H2_WEB_APP_HOST_MAX_BUTTONS 8u
-
 typedef struct h2_web_app_host_config {
   /** Short App name used in the markers. */
   const char *name;
+  /** Zero takes the web board's display size. */
   int32_t display_width;
   int32_t display_height;
   /** Optional writable IndexedDB root, e.g. "/data"; NULL keeps fs unsupported. */
