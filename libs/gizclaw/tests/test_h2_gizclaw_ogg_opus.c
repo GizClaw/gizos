@@ -6,6 +6,7 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -522,7 +523,161 @@ static int decode_file(const char *source, const char *target) {
   return rc == H2_PAL_EXIT ? 0 : 1;
 }
 
+/* Host-only: exercise seek on an external Ogg/Opus file
+ * (`h2_gizclaw_ogg_opus_test --seek-sweep file.ogg`). Every resync offset and
+ * sequential target must give an origin that, with the samples after it, adds
+ * up to the whole-file decode, and output that lines up best at shift 0 with
+ * that decode at the origin. */
+typedef struct sweep_file {
+  uint8_t *data;
+  size_t len, header_len;
+  int16_t *plain;
+  size_t plain_samples;
+} sweep_file_t;
+static seek_result_t sweep_one(const sweep_file_t *file, bool resync,
+                               size_t from, uint64_t target_ms, int16_t *out,
+                               size_t out_cap) {
+  memory_t mem = {0};
+  h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
+  seek_input_t input = {.file = file->data, .file_len = file->len,
+                        .range = file->data + from, .range_len = file->len - from};
+  h2_gizclaw_ogg_opus_t *decoder = NULL;
+  assert(h2_gizclaw_ogg_opus_create_reader(&allocator, seek_read, &input,
+                                           &decoder) == H2_PAL_OK);
+  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  size_t len = 0;
+  seek_result_t result = {.rc = H2_PAL_OK};
+  while (result.rc == H2_PAL_OK && !h2_gizclaw_ogg_opus_headers_done(decoder))
+    result.rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+  if (result.rc == H2_PAL_OK) {
+    if (resync) {
+      input.switched = true;
+      input.offset = 0;
+    }
+    assert(h2_gizclaw_ogg_opus_seek(decoder, target_ms, resync) == H2_PAL_OK);
+  }
+  bool known = false;
+  while (result.rc == H2_PAL_OK) {
+    result.rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+    if (len && !known) {
+      assert(h2_gizclaw_ogg_opus_origin(decoder, &result.origin));
+      known = true;
+    }
+    if (result.emitted * 2u + len <= out_cap * 2u)
+      memcpy(out + result.emitted, pcm, len);
+    result.emitted += len / 2u;
+  }
+  if (result.rc == H2_PAL_EXIT && !known)
+    assert(h2_gizclaw_ogg_opus_origin(decoder, &result.origin));
+  h2_gizclaw_ogg_opus_destroy(decoder);
+  assert(mem.live == 0);
+  return result;
+}
+/* SNR of `got` against the plain decode at `origin + shift` over n samples. */
+static double sweep_snr(const sweep_file_t *file, const int16_t *got, size_t n,
+                        uint64_t origin, int shift) {
+  double signal = 0, noise = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const double a = file->plain[(int64_t)origin + shift + (int64_t)i], b = got[i];
+    signal += a * a;
+    noise += (a - b) * (a - b);
+  }
+  if (noise == 0)
+    return 200.0;
+  return signal == 0 ? -200.0 : 10.0 * log10(signal / noise);
+}
+static int seek_sweep(const char *path) {
+  sweep_file_t file = {0};
+  FILE *in = fopen(path, "rb");
+  assert(in && fseek(in, 0, SEEK_END) == 0);
+  file.len = (size_t)ftell(in);
+  assert(file.len > 0 && fseek(in, 0, SEEK_SET) == 0);
+  file.data = malloc(file.len);
+  assert(file.data && fread(file.data, 1, file.len, in) == file.len);
+  fclose(in);
+  /* Plain decode: the oracle, and where the header pages end. */
+  memory_t mem = {0};
+  h2_pal_mem_api_t allocator = {.user = &mem, .vtable = &memory_vtable};
+  seek_input_t input = {.file = file.data, .file_len = file.len};
+  h2_gizclaw_ogg_opus_t *decoder = NULL;
+  assert(h2_gizclaw_ogg_opus_create_reader(&allocator, seek_read, &input,
+                                           &decoder) == H2_PAL_OK);
+  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  size_t len = 0, cap = file.len * 64u + 16000u;
+  file.plain = malloc(cap * 2u);
+  assert(file.plain);
+  h2_pal_result_t rc = H2_PAL_OK;
+  while (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &len);
+    if (!file.header_len && h2_gizclaw_ogg_opus_headers_done(decoder))
+      file.header_len = input.offset;
+    assert(file.plain_samples + len / 2u <= cap);
+    memcpy(file.plain + file.plain_samples, pcm, len);
+    file.plain_samples += len / 2u;
+  }
+  h2_gizclaw_ogg_opus_destroy(decoder);
+  printf("file=%s bytes=%zu header=%zu plain_rc=%d duration_ms=%zu\n", path,
+         file.len, file.header_len, rc, file.plain_samples / 16u);
+  if (rc != H2_PAL_EXIT) {
+    printf("SWEEP UNSUPPORTED plain decode rc=%d\n", rc);
+    return 2;
+  }
+  int16_t *out = malloc(file.plain_samples * 2u + 4096u);
+  assert(out);
+  unsigned landed = 0, format = 0, bad = 0;
+  double worst = 1000.0;
+  /* 97 resync offsets across the audio, then 41 sequential targets. */
+  for (unsigned k = 0; k < 97u + 41u; ++k) {
+    const bool resync = k < 97u;
+    const size_t from = resync ? file.header_len +
+        (size_t)((double)(file.len - file.header_len) * k / 97.0) : 0;
+    const uint64_t target = resync ? 0 :
+        (uint64_t)((double)file.plain_samples / 16.0 * (k - 97u) / 41.0);
+    seek_result_t r = sweep_one(&file, resync, from, target, out,
+                                file.plain_samples + 2048u);
+    if (r.rc == H2_PAL_ERR_FORMAT && resync) {
+      ++format; /* Past the last page that can anchor. */
+      continue;
+    }
+    bool ok = r.rc == H2_PAL_EXIT && r.origin + r.emitted == file.plain_samples;
+    if (!resync)
+      ok = ok && (target * 16u >= file.plain_samples
+                      ? r.origin == file.plain_samples
+                      : r.origin == target * 16u);
+    const size_t n = r.emitted < 16000u ? r.emitted : 16000u;
+    if (ok && n >= 1600u) {
+      /* Exact alignment: shift 0 beats every other shift within 20 ms. */
+      const double at = sweep_snr(&file, out, n, r.origin, 0);
+      for (int shift = -320; shift <= 320 && ok; ++shift)
+        if (shift && (int64_t)r.origin + shift >= 0 &&
+            r.origin + (uint64_t)shift + n <= file.plain_samples &&
+            sweep_snr(&file, out, n, r.origin, shift) >= at)
+          ok = false;
+      if (at < worst)
+        worst = at;
+    }
+    if (resync && ok)
+      ++landed;
+    if (!ok) {
+      ++bad;
+      printf("BAD %s from=%zu target=%llu rc=%d origin=%llu emitted=%llu\n",
+             resync ? "resync" : "sequential", from,
+             (unsigned long long)target, r.rc, (unsigned long long)r.origin,
+             (unsigned long long)r.emitted);
+    }
+  }
+  printf("resync landed=%u format_at_tail=%u sequential=41 bad=%u "
+         "worst_snr=%.1f dB\n", landed, format, bad, worst);
+  printf("%s\n", bad ? "SWEEP FAIL" : "SWEEP PASS");
+  free(out);
+  free(file.plain);
+  free(file.data);
+  return bad ? 1 : 0;
+}
+
 int main(int argc, char **argv) {
+  if (argc == 3 && strcmp(argv[1], "--seek-sweep") == 0)
+    return seek_sweep(argv[2]);
   if (argc == 3)
     return decode_file(argv[1], argv[2]);
   assert(argc == 1);
