@@ -146,17 +146,20 @@ client_set_event_handler(h2_gizclaw_client_t *client,
                                                               event_user);
 }
 
-static void service_downlink_bos(void *user) {
-  h2_gizclaw_conversation_downlink_bos_internal(user);
+static void service_downlink_boundary(
+    void *user, const h2_gizclaw_downlink_boundary_t *boundary) {
+  if (boundary->begin)
+    h2_gizclaw_conversation_downlink_bos_internal(user);
+  h2_gizclaw_downlink_stream_boundary_internal(user, boundary);
 }
 
-static void client_set_downlink_bos(h2_gizclaw_service_t *service) {
+static void client_set_downlink(h2_gizclaw_service_t *service) {
 #ifdef H2_GIZCLAW_TESTING
   if (s_client_ops != NULL && s_client_ops->init != NULL)
     return;
 #endif
-  h2_gizclaw_client_set_downlink_bos_internal(service->client,
-                                              service_downlink_bos, service);
+  h2_gizclaw_client_set_downlink_internal(service->client,
+                                          service_downlink_boundary, service);
 }
 
 static h2_pal_result_t client_dispatch_event(h2_gizclaw_client_t *client) {
@@ -201,6 +204,7 @@ static bool dispatch_work_ready_locked(const h2_gizclaw_service_t *service) {
   const h2_gizclaw_stream_ring_t *ring =
       &service->stream_rings[H2_GIZCLAW_STREAM_DATA_DOWNLINK];
   return service->dispatch_item_count != 0u ||
+         h2_gizclaw_downlink_stream_ready_locked(service) ||
          (service->data_downlink_stream != NULL && ring->dispatch_ready &&
           ring->queued_frames != 0u) ||
          (service->terminal_pending && !service->terminal_dispatched &&
@@ -710,7 +714,7 @@ static void net_worker(void *ctx) {
   if (rc == H2_PAL_OK)
     rc = client_init(&service->client_config, &service->client);
   if (rc == H2_PAL_OK) {
-    client_set_downlink_bos(service);
+    client_set_downlink(service);
     rc = client_connect(service->client);
   }
   if (rc == H2_PAL_OK && service->config.on_event != NULL) {
@@ -808,6 +812,8 @@ static void net_worker(void *ctx) {
 
   complete_pending_as_closed(service);
   complete_queued_as_closed(service);
+  /* No more events will arrive on this connection. */
+  h2_gizclaw_downlink_stream_closed_internal(service);
   close_client(service);
 }
 
@@ -874,7 +880,8 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
 
   size_t dispatched = 0u;
   while (dispatched < max_callbacks) {
-    if (h2_gizclaw_req_dispatch_output_internal(service)) {
+    if (h2_gizclaw_req_dispatch_output_internal(service) ||
+        h2_gizclaw_downlink_stream_dispatch_step_internal(service)) {
       ++dispatched;
       continue;
     }
@@ -1023,6 +1030,9 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
                                             &service->dispatch_queue);
   if (rc != H2_PAL_OK)
     goto fail;
+  rc = h2_gizclaw_downlink_streams_create_internal(service);
+  if (rc != H2_PAL_OK)
+    goto fail;
   rc = h2_gizclaw_device_init_internal(service);
   if (rc != H2_PAL_OK)
     goto fail;
@@ -1030,6 +1040,7 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   return H2_PAL_OK;
 
 fail:
+  h2_gizclaw_downlink_streams_destroy_internal(service);
   if (service->audio_mutex != NULL)
     (void)h2_pal_mutex_destroy(config->sync, service->audio_mutex);
   if (service->dispatch_queue != NULL)
@@ -1457,6 +1468,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
   h2_gizclaw_pcm_track_detach_internal(track);
   unlock_service(service);
   h2_gizclaw_conversation_downlink_destroy_internal(service);
+  h2_gizclaw_downlink_streams_destroy_internal(service);
   h2_gizclaw_device_destroy_internal(service->device);
   h2_pal_queue_destroy(service->config.queue, service->dispatch_queue);
   h2_pal_queue_destroy(service->config.queue, service->request_queue);

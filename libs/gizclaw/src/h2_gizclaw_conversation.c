@@ -955,17 +955,44 @@ bool h2_gizclaw_conversation_accepts_peer_event_internal(
   return accepts_peer_event(conversation, event);
 }
 
-bool h2_gizclaw_conversation_downstream_audio_bos_internal(
-    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event) {
-  /* Only audio streams count: text and transcript streams open their own
-   * BOS, and our own input's BOS is not downstream. */
-  return event != NULL &&
-         event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS &&
-         event->payload.bos.kind ==
-             gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO &&
-         strcmp(event->payload.bos.label,
-                H2_GIZCLAW_CONVERSATION_INPUT_LABEL) != 0 &&
-         !(active != NULL && event_names_our_input(active, event));
+bool h2_gizclaw_conversation_downstream_audio_boundary_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event,
+    h2_gizclaw_downlink_boundary_t *out_boundary) {
+  if (event == NULL || out_boundary == NULL)
+    return false;
+  /* Only audio streams count: text and transcript streams open and close
+   * their own streams, and our own input's boundaries are not downstream. */
+  h2_gizclaw_downlink_boundary_t boundary = {0};
+  int kind = 0;
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    kind = (int)event->payload.bos.kind;
+    boundary = (h2_gizclaw_downlink_boundary_t){
+        .begin = true,
+        .stream_id = event->payload.bos.stream_id,
+        .stream_id_size = sizeof(event->payload.bos.stream_id),
+        .label = event->payload.bos.label,
+        .label_size = sizeof(event->payload.bos.label),
+    };
+  } else if (event->type ==
+             gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS) {
+    kind = (int)event->payload.eos.kind;
+    boundary = (h2_gizclaw_downlink_boundary_t){
+        .error = event->payload.eos.has_error,
+        .stream_id = event->payload.eos.stream_id,
+        .stream_id_size = sizeof(event->payload.eos.stream_id),
+        .label = event->payload.eos.label,
+        .label_size = sizeof(event->payload.eos.label),
+    };
+  } else {
+    return false;
+  }
+  if (kind != (int)gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO ||
+      strncmp(boundary.label, H2_GIZCLAW_CONVERSATION_INPUT_LABEL,
+              boundary.label_size) == 0 ||
+      (active != NULL && event_names_our_input(active, event)))
+    return false;
+  *out_boundary = boundary;
+  return true;
 }
 
 void h2_gizclaw_conversation_describe_peer_event_internal(

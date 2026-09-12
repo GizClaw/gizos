@@ -58,7 +58,8 @@ sequenceDiagram
 | 输入开始 | 启动 microphone | `h2_gizclaw_service_audio_start()` |
 | 输入 PCM | Audio Task 交付 16 kHz mono S16LE chunk | `h2_gizclaw_pcm_track_write()`（Track 的 uplink） |
 | 输入提交（PTT） | 停止 microphone，并提交本轮输入结束 | `h2_gizclaw_service_audio_end()` |
-| 下行 PCM | 扬声器 pump 从有界播放 track 读取，有数据就播 | Track 的 downlink：`h2_gizclaw_pcm_track_read()`；PCM 不经 callback 投递，也没有回复开始或结束事件 |
+| 下行 PCM | 扬声器 pump 从有界播放 track 读取，有数据就播 | Track 的 downlink：`h2_gizclaw_pcm_track_read()`；PCM 不经 callback 投递 |
+| 下行流边界（可选） | App 需要知道哪路下行流开始、结束时 | Service config 的 `on_downlink_stream`，由 `h2_gizclaw_service_poll()` 分发；只观察，不影响播放 |
 | 本轮完成 | 输入结束已发出即完成，不等待服务端 | `h2_gizclaw_service_poll()` 分发的 completion callback |
 | Cancel / 挂断 | 停止 mic、关闭输入、丢弃未播放输出 | `h2_gizclaw_conversation_cancel()`，之后 `h2_gizclaw_conversation_release()` |
 
@@ -73,7 +74,7 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Audio format 和 provider frame size 由 Runtime Audio capability 决定，App 不能写死 board I2S 参数，也不能要求所有 board 按 20 ms 产出 PCM。Portable Audio integration 负责把连续 PCM stream 切成合法的 Opus frame；例如 16 kHz Opus 的 20 ms frame 是每声道 320 samples，而 Tiga provider 仍可每次交付 512 samples。
 - Public request API 固定接受 16 kHz mono S16LE PCM。`$gizclaw/audio/uplink` 在内部按 20 ms 连续切片并编码 Opus；`$gizclaw/audio/downlink` 解码 Opus/PLC，并通过有界 PCM ring 向 App 交付。测试专用的 low-level raw Opus API 不属于产品 App 集成边界。
 - `GZC_PROTOCOL_OPUS_PACKET` 的 payload 是原始 Opus packet，不带 firmware-private timestamp header。C SDK 和 PAL provider 负责 media/RTP 映射；App 不调用底层 `peer_send_opus`，也不使用 DataChannel fallback。
-- 上行 input stream ID 只描述我们自己的输入：BOS、READY、EOS，以及服务端对它的拒绝（该 ID 上带我们 label 或无 label 的 EOS error）。服务端下发的 stream ID、BOS、EOS 设备一概不看：下行音频属于连接，不属于任何一轮输入，服务端发来什么就解码进 Track 播放，下行流结束（有无错误码）都不是错误。文字事件在输入活跃期间转发，不参与状态。
+- 上行 input stream ID 只描述我们自己的输入：BOS、READY、EOS，以及服务端对它的拒绝（该 ID 上带我们 label 或无 label 的 EOS error）。播放不看服务端下发的 stream ID、BOS、EOS：下行音频属于连接，不属于任何一轮输入，服务端发来什么就解码进 Track 播放，下行流结束（有无错误码）都不是错误。App 需要这些边界时使用可选的 Service 级观察钩子，见下文“下行流边界观察”。文字事件在输入活跃期间转发，不参与状态。
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - PCM uplink/downlink 使用单生产者、单消费者的无锁 byte ring；encoded uplink/downlink 使用无锁 fixed-slot ring。ring 只通过 acquire/release atomic index 发布数据，不持有 service mutex，也不使用 semaphore 唤醒。Audio Task 每 20 ms 尝试消费一帧；`h2_gizclaw_pcm_track_write()` 和内部 slot 写入都不等待。`h2_gizclaw_pcm_track_write()` 成功后调用方可以释放 chunk；`WOULD_BLOCK` 表示本次 chunk 未被接受，实时调用方应丢弃并记录 overrun，不能阻塞 microphone 或积累延迟。`h2_gizclaw_service_audio_end()` 冻结当前已接受的 PCM 前缀并发布 EOS，encoder drain 已接受的 PCM 后补齐最后一个非空残片。
 - 下行解码通道在第一个 Conversation 创建时建立，随 Service 存在到 deinit，不随每轮输入或 Conversation release 销毁：产品每轮创建并释放 Conversation，之后到达的音频照常播放。音频播放或 Speech 占用 Track 下行时，到达的对话音频直接丢弃，之前已排队的也丢弃，Track 空出后不会补播旧音频。下行 Opus ring 为 32 格（约 640 ms），满时拒收并由 provider 丢包，不做 PLC、不报错，扬声器卡住时丢音频而不是累积延迟。下行 PCM 只走 Track，不复制到 callback；App 按 speaker pump 实际播放判断“有声音”。
@@ -155,3 +156,14 @@ Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-
 ### 下行边界与取消
 
 下行媒体不看 EOS，除按下后的 `waiting_for_bos` 外收到即解码；标志只由按下后的下一个下行音频 BOS 清除。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。
+
+### 下行流边界观察
+
+`h2_gizclaw_service_config_t.on_downlink_stream` 是可选的观察钩子，报告服务端下行音频流的开始和结束，以及服务端给该流的 label。它挂在 Service 上而不是 Conversation 上，因为下行音频比 Conversation 活得久：Conversation release 后音频继续播放，钩子也继续报告。没有配置钩子时 Service 不分配、不跟踪任何状态，行为与之前完全相同。
+
+- 只看下行音频边界：`kind=AUDIO` 的 BOS/EOS，排除文本、转写流和我们自己输入的边界。网络任务读到 Event 时记录边界，App 在 `h2_gizclaw_service_poll()` 中收到回调，与其他 Service 回调共用 poll 预算。
+- 事件是 `h2_gizclaw_downlink_stream_event_t`：`kind`（BEGIN/END）、`stream_id`、`label` 和 `interrupted`。`stream_id` 与 `label` 是以 NUL 结尾的定长副本，上限与 Peer Event wire 字段一致（`H2_GIZCLAW_DOWNLINK_STREAM_ID_MAX_BYTES` 128、`H2_GIZCLAW_DOWNLINK_STREAM_LABEL_MAX_BYTES` 64）；服务端没带 label 时为空串。事件只在回调期间有效，需要保留时复制。
+- 下行只有一路音频，所以同一时刻至多一个流处于打开状态。每个 BEGIN 恰好对应一个同 `stream_id`、同 `label` 的 END。服务端正常 EOS 的 END `interrupted=false`；EOS 带错误码（如 `STREAM_INTERRUPTED`）、另一个流的 BOS 先到、或连接的 Event stream 关闭（连接断开、Service 停止）时，END 的 `interrupted=true`。重复的 BOS 和不属于当前打开流的 EOS（例如被截断的旧流迟到的 EOS）被忽略。
+- 超过上限或没有 NUL 结尾的 stream ID、label，以及空 stream ID，不截断：截断后的 label 可能与另一个身份混淆，截断后的 stream ID 也无法与 EOS 对应。这样的 BOS 不报告，但仍会结束当前打开的流。当前 SDK 的字段大小与上限相同，这条规则只防未来字段变长。
+- 钩子只观察，不影响播放：边界在网络任务上记录，不经过音频任务，也不等待 App。最多积压 8 个未分发的边界；App 落后更多时丢弃最早一对完整的 BEGIN/END，保证 App 收到的每个 END 都跟在它的 BEGIN 之后。Service deinit 时丢弃尚未分发的边界，不阻塞 teardown。
+- 边界描述的是服务端发送了什么，不是播放了什么：音频走独立 transport，与边界不对齐；音频播放或 Speech 占用 Track、或 PTT 按下后的 `waiting_for_bos` 期间音频会被丢弃，但边界照常报告。

@@ -98,6 +98,51 @@ typedef void (*h2_gizclaw_req_complete_fn)(
 typedef void (*h2_gizclaw_service_terminal_fn)(void *user,
                                                h2_pal_result_t result);
 
+/** Longest downlink stream ID and label, in bytes, excluding the NUL. They
+ * match the Peer Event wire fields. */
+#define H2_GIZCLAW_DOWNLINK_STREAM_ID_MAX_BYTES 128u
+#define H2_GIZCLAW_DOWNLINK_STREAM_LABEL_MAX_BYTES 64u
+
+typedef enum h2_gizclaw_downlink_stream_kind {
+  H2_GIZCLAW_DOWNLINK_STREAM_BEGIN = 1,
+  H2_GIZCLAW_DOWNLINK_STREAM_END,
+} h2_gizclaw_downlink_stream_kind_t;
+
+/**
+ * One boundary of a downstream audio stream, copied out of the Peer Event.
+ *
+ * The downlink carries one audio stream at a time. BEGIN reports a stream
+ * the server started; END reports that it ended, exactly once for every
+ * BEGIN and with the same stream_id and label. `interrupted` is false only
+ * when the server closed the stream with a clean EOS. It is true when that
+ * EOS carried an error code, when a BOS for another stream arrived first, or
+ * when the connection closed. A duplicate BOS and an EOS for a stream that is
+ * not open are ignored.
+ *
+ * stream_id is never empty. label is the server's stream label, empty when it
+ * sent none. A BOS whose stream ID or label is longer than the maximum is not
+ * reported, but still ends the open stream.
+ *
+ * These boundaries describe what the server sent, not what was played:
+ * audio arrives on its own transport, is not aligned with them, and may be
+ * dropped while another owner holds the Track or push-to-talk is pressed.
+ * Releasing a Conversation does not end a stream; downstream audio outlives it.
+ */
+typedef struct h2_gizclaw_downlink_stream_event {
+  h2_gizclaw_downlink_stream_kind_t kind;
+  bool interrupted;
+  char stream_id[H2_GIZCLAW_DOWNLINK_STREAM_ID_MAX_BYTES + 1u];
+  char label[H2_GIZCLAW_DOWNLINK_STREAM_LABEL_MAX_BYTES + 1u];
+} h2_gizclaw_downlink_stream_event_t;
+
+/** Optional observation hook invoked by service_poll(). The event is borrowed
+ * for the call. It cannot affect playback; audio keeps flowing while
+ * boundaries wait for poll. If the application falls more than eight
+ * boundaries behind, the oldest undelivered BEGIN/END pair is dropped, so
+ * every delivered END still follows its BEGIN. */
+typedef void (*h2_gizclaw_downlink_stream_fn)(
+    void *user, const h2_gizclaw_downlink_stream_event_t *event);
+
 /** Run caller-owned preparation on the service worker before client creation.
  */
 typedef h2_pal_result_t (*h2_gizclaw_service_prepare_fn)(
@@ -128,6 +173,10 @@ typedef struct h2_gizclaw_service_config {
   /** Optional Peer Event handler, invoked during caller-thread dispatch. */
   h2_gizclaw_client_event_fn on_event;
   void *event_user;
+  /** Optional downlink stream boundary hook, invoked during caller-thread
+   * dispatch. Without it the Service does not track downlink streams. */
+  h2_gizclaw_downlink_stream_fn on_downlink_stream;
+  void *downlink_stream_user;
   /** Optional worker-side preparation performed before client creation. */
   h2_gizclaw_service_prepare_fn prepare;
   void *prepare_user;

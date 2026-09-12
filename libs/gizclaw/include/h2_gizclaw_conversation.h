@@ -39,9 +39,11 @@ typedef enum h2_gizclaw_conversation_event_kind {
  * Downstream audio is not part of any generation and never travels through
  * events: whatever the server sends is decoded into the service's downlink
  * Track, whatever its stream IDs, BOS or EOS, and the application's speaker
- * pump plays it from there. Ending push-to-talk input clears the audio
- * buffered at that moment. Server text is forwarded while the input is
- * active and carries no state. ERROR reports that the server refused this
+ * pump plays it from there. Its stream boundaries are reported by the
+ * Service's optional on_downlink_stream hook, not by these events, because
+ * downstream audio outlives any Conversation. Ending push-to-talk input clears
+ * the audio buffered at that moment. Server text is forwarded while the input
+ * is active and carries no state. ERROR reports that the server refused this
  * input; the end of a downstream stream, with or without an error code, is
  * never an error. TEXT_DONE may have empty text when earlier TEXT_DELTA
  * events carried it.

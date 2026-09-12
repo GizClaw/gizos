@@ -8572,9 +8572,15 @@ static void test_conversation_downlink_waits_for_bos(void) {
       gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT, "transcript", "demo-1");
   const gzc_peer_event_t input = downstream_bos(
       gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "demo-home", "demo-2");
-  assert(h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &audio));
-  assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &text));
-  assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &input));
+  h2_gizclaw_downlink_boundary_t boundary;
+  assert(h2_gizclaw_conversation_downstream_audio_boundary_internal(
+      NULL, &audio, &boundary));
+  assert(boundary.begin && strcmp(boundary.stream_id, "reply-2") == 0 &&
+         strcmp(boundary.label, "assistant") == 0);
+  assert(!h2_gizclaw_conversation_downstream_audio_boundary_internal(
+      NULL, &text, &boundary));
+  assert(!h2_gizclaw_conversation_downstream_audio_boundary_internal(
+      NULL, &input, &boundary));
 
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 2u);

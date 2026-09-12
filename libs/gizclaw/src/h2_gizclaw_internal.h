@@ -215,14 +215,30 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
-/* Whether the event is a downstream audio BOS; text BOS and our input's own
- * BOS are not. */
-bool h2_gizclaw_conversation_downstream_audio_bos_internal(
-    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
-/* Tells the owner that the server announced a downstream audio stream. */
-typedef void (*h2_gizclaw_client_bos_fn)(void *user);
-void h2_gizclaw_client_set_downlink_bos_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user);
+/* One downstream audio stream boundary the server announced. The views are
+ * the event's wire fields, borrowed for the call; the sizes are their storage
+ * sizes, so a field is valid only if it holds a NUL within that size. */
+typedef struct h2_gizclaw_downlink_boundary {
+  bool begin;
+  /* EOS only: the server ended the stream with an error code. */
+  bool error;
+  const char *stream_id;
+  size_t stream_id_size;
+  const char *label;
+  size_t label_size;
+} h2_gizclaw_downlink_boundary_t;
+/* Whether the event is a downstream audio BOS or EOS, and its fields. Text
+ * boundaries and our own input's boundaries are not downstream audio. */
+bool h2_gizclaw_conversation_downstream_audio_boundary_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event,
+    h2_gizclaw_downlink_boundary_t *out_boundary);
+/* Tells the owner, on the event poll task, that the server began or ended a
+ * downstream audio stream. */
+typedef void (*h2_gizclaw_client_downlink_fn)(
+    void *user, const h2_gizclaw_downlink_boundary_t *boundary);
+void h2_gizclaw_client_set_downlink_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_downlink_fn on_boundary,
+    void *user);
 /* Formats a peer event and the input it arrived for, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,

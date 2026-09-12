@@ -65,6 +65,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_conversation.c",
     "src/h2_gizclaw_diagnostics.c",
     "src/h2_gizclaw_download.c",
+    "src/h2_gizclaw_downlink_stream.c",
     "src/h2_gizclaw_firmware.c",
     "src/h2_gizclaw_download_internal.h",
     "src/h2_gizclaw_internal.h",
@@ -169,6 +170,7 @@ cc_library(
         "src/h2_gizclaw_device_internal.h",
         "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_download.c",
+        "src/h2_gizclaw_downlink_stream.c",
         "src/h2_gizclaw_download_internal.h",
         "src/h2_gizclaw_firmware.c",
         "src/h2_gizclaw_internal.h",
@@ -341,6 +343,28 @@ cc_test(
         ":gizclaw_test_support",
         "//libs/pal:unsupported",
         "//libs/runtime",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_downlink_stream_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/test_h2_gizclaw_downlink_stream.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )

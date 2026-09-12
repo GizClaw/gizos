@@ -12,6 +12,7 @@ typedef struct h2_gizclaw_conversation_request
     h2_gizclaw_conversation_request_t;
 typedef struct h2_gizclaw_conversation_downlink
     h2_gizclaw_conversation_downlink_t;
+typedef struct h2_gizclaw_downlink_streams h2_gizclaw_downlink_streams_t;
 struct h2_gizclaw_speech_context;
 struct h2_gizclaw_managed_request;
 #include <stdbool.h>
@@ -263,6 +264,8 @@ struct h2_gizclaw_service {
    * publication and downlink_refs counts callers inside it. */
   h2_gizclaw_conversation_downlink_t *conversation_downlink;
   size_t downlink_refs;
+  /* Present only with config.on_downlink_stream. */
+  h2_gizclaw_downlink_streams_t *downlink_streams;
   _Atomic(struct h2_gizclaw_speech_context *) speech_request;
   _Atomic(h2_gizclaw_track_t *) pcm_track;
   /* Protected by mutex. Unset closes admission before waiting for callbacks. */
@@ -368,6 +371,26 @@ h2_gizclaw_service_media_read_opus(h2_gizclaw_service_t *service, uint8_t *opus,
 h2_pal_result_t
 h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
                                     const uint8_t *opus, size_t opus_len);
+/* Downlink stream observation. create/destroy run on the lifecycle task.
+ * boundary and closed run on the network task, which alone tracks the open
+ * stream; the observations they queue wait under service->mutex for
+ * dispatch_step, which runs only on the service_poll task. */
+h2_pal_result_t
+h2_gizclaw_downlink_streams_create_internal(h2_gizclaw_service_t *service);
+void h2_gizclaw_downlink_streams_destroy_internal(
+    h2_gizclaw_service_t *service);
+void h2_gizclaw_downlink_stream_boundary_internal(
+    h2_gizclaw_service_t *service,
+    const h2_gizclaw_downlink_boundary_t *boundary);
+/* The connection's events are gone: end the open stream. */
+void h2_gizclaw_downlink_stream_closed_internal(h2_gizclaw_service_t *service);
+/* Caller holds service->mutex. */
+bool h2_gizclaw_downlink_stream_ready_locked(
+    const h2_gizclaw_service_t *service);
+/* Deliver the oldest queued observation; false when none is queued. */
+bool h2_gizclaw_downlink_stream_dispatch_step_internal(
+    h2_gizclaw_service_t *service);
+
 void h2_gizclaw_conversation_downlink_hold_internal(
     h2_gizclaw_service_t *service);
 void h2_gizclaw_conversation_downlink_bos_internal(
