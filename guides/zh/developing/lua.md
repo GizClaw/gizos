@@ -190,9 +190,13 @@ BLE stack 选择 legacy 或 extended advertising/scan。Runtime 没有 `ble_host
 | KCP RX | `0685b803-18da-449c-88a2-66c491b17772` | write / write-no-rsp（bleikcp） |
 | Datagram | `0685b804-18da-449c-88a2-66c491b17772` | write-no-rsp / notify |
 
-固定 service 让只增不减的 GATT table（ESP NimBLE 最多 2 个 service、每个 3 个
-characteristic）只登记一次；bleikcp server 通过 `extra_characteristics` 把
-Datagram 放进同一个 service。`tag` 不进入 GATT：host 广播 session UUID
+每次 `host()` 都用同一组 UUID 和同样三个 characteristic 调用
+`h2_bleikcp_server_open()`，session 结束时 `h2_bleikcp_server_close()` 调用
+`h2_pal_ble_unregister_gatt_services()`。对只增不减的 GATT table（ESP NimBLE 最多
+2 个 service、每个 3 个 characteristic，unregister 只解绑回调），再次注册已存在的
+service UUID 且 characteristic 布局相同时，backend 复用保留的 service slot，重新绑定
+回调并写回 handle，因此连续多次 host 始终只占一个 slot；这正是 service UUID 必须固定
+的原因。bleikcp server 通过 `extra_characteristics` 把 Datagram 放进同一个 service。`tag` 不进入 GATT：host 广播 session UUID
 `0221d1f2-9dce-4921-bac4-eeb9XXXXXXXX`，末 4 字节为 tag 的 FNV-1a hash，join 按它
 过滤扫描结果；连接后双方在 KCP 上交换 `HELLO`（版本 + 完整 tag），不符报
 `"mismatch"`。bleikcp server close 仍按 PAL 合同调用
@@ -224,7 +228,8 @@ Datagram 放进同一个 service。`tag` 不进入 GATT：host 广播 session UU
   不再产生事件。`link.state()` 返回 `"idle"`、`"hosting"`、`"joining"`、
   `"connected"`，未启用时为 `"unavailable"`。
 - 进程内同一时间只有一个 session；已有 session 时 `host`/`join` 返回
-  `nil, "link: busy"`，已结束的 session 由下一次 `host`/`join` 回收。`close()` 之后
+  `nil, "link: busy"`，已结束的 session 由下一次 `host`/`join` 回收；收到 `LINK_DISCONNECTED` 或
+`LINK_ERROR` 之后立即调用不会返回 `busy`。`close()` 或 job 结束之后
   session task 仍在发送 `BYE` 和释放 BLE（通常不超过约 1 s，连接建立中最长为一次
   connect 超时 5 s），期间 `state()` 已为 `"idle"`，但 `host`/`join` 仍返回 `busy`，
   App 应稍后重试。

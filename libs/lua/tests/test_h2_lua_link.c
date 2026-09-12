@@ -24,6 +24,8 @@
 #define FAKE_PERIPHERAL_HANDLE 7u
 #define FAKE_CENTRAL_HANDLE 9u
 #define FAKE_MTU 247u
+/* Like ESP NimBLE: two service slots, never freed once registered. */
+#define FAKE_GATT_SERVICE_SLOTS 2u
 
 struct h2_pal_system_event_subscription {
   h2_pal_system_event_type_t type;
@@ -50,7 +52,11 @@ typedef struct fake_device {
   h2_pal_ble_scan_result_fn scan_cb;
   void *scan_user;
   const h2_pal_ble_gatt_service_t *service;
+  uint8_t retained_uuid[FAKE_GATT_SERVICE_SLOTS][16];
+  size_t retained_count;
+  int registrations;
   int connected;
+  uint16_t conn_handle;
   int connects;
   /* Subscriptions the Runtime itself keeps; the link must return to it. */
   int baseline_subscriptions;
@@ -229,8 +235,29 @@ static h2_pal_result_t fake_register(void *user,
                                      const h2_pal_ble_gatt_service_t *services,
                                      size_t count) {
   fake_device_t *device = user;
+  size_t slot;
   /* KCP TX, KCP RX and the datagram characteristic in one service. */
   assert(count == 1u && services[0].characteristic_count == 3u);
+  assert(services[0].uuid.len == 16u);
+  /* A known UUID reattaches callbacks to its retained slot; a new one takes
+   * a slot for good, as the GATT table only grows. */
+  pthread_mutex_lock(&device->air->mutex);
+  for (slot = 0u; slot < device->retained_count; ++slot) {
+    if (memcmp(device->retained_uuid[slot], services[0].uuid.data, 16u) ==
+        0) {
+      break;
+    }
+  }
+  if (slot == device->retained_count) {
+    if (slot == FAKE_GATT_SERVICE_SLOTS) {
+      pthread_mutex_unlock(&device->air->mutex);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    memcpy(device->retained_uuid[slot], services[0].uuid.data, 16u);
+    device->retained_count++;
+  }
+  device->registrations++;
+  pthread_mutex_unlock(&device->air->mutex);
   if (services[0].out_service_handle != NULL) {
     *services[0].out_service_handle = 1u;
   }
@@ -259,7 +286,7 @@ static h2_pal_result_t fake_unregister(void *user) {
 }
 
 static uint16_t fake_handle(const fake_device_t *device) {
-  return device->index == 0 ? FAKE_PERIPHERAL_HANDLE : FAKE_CENTRAL_HANDLE;
+  return device->conn_handle;
 }
 
 static h2_pal_result_t fake_connect(void *user, const h2_pal_ble_addr_t *addr,
@@ -278,6 +305,8 @@ static h2_pal_result_t fake_connect(void *user, const h2_pal_ble_addr_t *addr,
   peripheral->adv_running = 0;
   peripheral->connected = 1;
   central->connected = 1;
+  peripheral->conn_handle = FAKE_PERIPHERAL_HANDLE;
+  central->conn_handle = FAKE_CENTRAL_HANDLE;
   central->connects++;
   pthread_mutex_unlock(&central->air->mutex);
   const h2_pal_ble_connection_t to_peripheral = {
@@ -509,6 +538,9 @@ static void fake_air_init(fake_air_t *air) {
     fake_device_t *device = &air->devices[i];
     device->air = air;
     device->index = i;
+    /* Another service (e.g. a management service) already holds one slot. */
+    memset(device->retained_uuid[0], 0xa5, 16u);
+    device->retained_count = 1u;
     pthread_mutex_init(&device->bus_mutex, NULL);
     device->ble = (h2_pal_ble_host_api_t){
         .user = device,
@@ -720,6 +752,21 @@ static int device_released(void *user) {
   return fake_is_released(user);
 }
 
+static void wait_released(fake_device_t *device) {
+  for (int i = 0; i < 20000 && !fake_is_released(device); ++i) {
+    (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  if (!fake_is_released(device)) {
+    const fake_snapshot_t v = fake_snapshot(device);
+    fprintf(stderr,
+            "device %d not released: sets=%d adv=%d scan=%d reg=%d conn=%d "
+            "subs=%d/%d\n",
+            device->index, v.adv_sets, v.adv_running, v.scanning, v.registered,
+            v.connected, v.subscriptions, device->baseline_subscriptions);
+    abort();
+  }
+}
+
 /* ---- Lua scripts ---- */
 
 #define LUA_PRELUDE                                                           \
@@ -734,7 +781,10 @@ static int device_released(void *user) {
   "link.on(ev.LINK_ERROR,function(e) s.err=e.reason end);"                    \
   "local function wait(f) for _=1,4000 do if f() then return end "            \
   "rt.sleep(5) end error('wait timed out') end;"                              \
-  "local function mark() require('capability').call('mark','{}') end;"
+  "local function mark() require('capability').call('mark','{}') end;"        \
+  "local function start(f,o) for _=1,200 do local ok,err=f(o);"               \
+  "if ok then return end;assert(err=='link: busy',err);rt.sleep(5) end "      \
+  "error('link stayed busy') end;"
 
 static const char s_host_round_trip[] =
     LUA_PRELUDE
@@ -863,14 +913,14 @@ static const char s_wait_lost[] =
 
 static const char s_connect_then_idle[] =
     LUA_PRELUDE
-    "if args.tag=='host' then assert(link.host({tag='idle'})) "
-    "else assert(link.join({tag='idle',timeout_ms=5000})) end;"
+    "if args.tag=='host' then start(link.host,{tag='idle'}) "
+    "else start(link.join,{tag='idle',timeout_ms=5000}) end;"
     "wait(function() return s.role end);mark();"
     "while true do rt.sleep(10) end";
 
 static const char s_wait_peer_closed[] =
     LUA_PRELUDE
-    "assert(link.host({tag='idle'}));"
+    "start(link.host,{tag='idle'});"
     "wait(function() return s.role end);mark();"
     "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);"
     "return 'peer-closed-ok'";
@@ -1008,6 +1058,48 @@ static void test_release_during_traffic(void) {
     wait_until(device_released, &pair.air.devices[1]);
     pair_close(&pair);
   }
+}
+
+/* Repeated sessions on the same devices, swapping roles, must reuse the one
+ * retained link service instead of taking another GATT slot. */
+static void test_sequential_sessions_reuse_service(void) {
+  pair_t pair;
+  pair_open(&pair);
+  for (int round = 0; round < 4; ++round) {
+    const int h = round % 2;
+    atomic_store(&s_marks[0], 0);
+    atomic_store(&s_marks[1], 0);
+    h2_lua_job_id_t host =
+        submit(pair.host[h], "@peer.lua", s_wait_peer_closed, "host");
+    h2_lua_job_id_t join =
+        submit(pair.host[1 - h], "@idle.lua", s_connect_then_idle, "join");
+    for (int i = 0; i < 10000 && !(atomic_load(&s_marks[0]) &&
+                                   atomic_load(&s_marks[1])); ++i) {
+      (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+    }
+    if (!(atomic_load(&s_marks[0]) && atomic_load(&s_marks[1]))) {
+      h2_lua_job_status_t a;
+      h2_lua_job_status_t b;
+      assert(h2_lua_job_get_status(pair.host[h], host, &a) == H2_PAL_OK);
+      assert(h2_lua_job_get_status(pair.host[1 - h], join, &b) == H2_PAL_OK);
+      fprintf(stderr, "round %d: host state=%d msg=%s | join state=%d msg=%s\n",
+              round, (int)a.state, a.message, (int)b.state, b.message);
+      abort();
+    }
+    assert(h2_lua_job_cancel(pair.host[1 - h], join) == H2_PAL_OK);
+    (void)wait_job(pair.host[1 - h], join);
+    assert(h2_lua_job_release(pair.host[1 - h], join) == H2_PAL_OK);
+    expect_success(pair.host[h], host, "peer-closed-ok");
+    wait_released(&pair.air.devices[0]);
+    wait_released(&pair.air.devices[1]);
+  }
+  for (int i = 0; i < 2; ++i) {
+    pthread_mutex_lock(&pair.air.mutex);
+    assert(pair.air.devices[i].registrations == 2);
+    assert(pair.air.devices[i].retained_count == 2u);
+    pthread_mutex_unlock(&pair.air.mutex);
+  }
+  pair_close(&pair);
 }
 
 static void test_link_loss(void) {
@@ -1159,6 +1251,8 @@ int main(void) {
   test_flow_control_keeps_order();
   fprintf(stderr, "== test_release_during_traffic\n");
   test_release_during_traffic();
+  fprintf(stderr, "== test_sequential_sessions_reuse_service\n");
+  test_sequential_sessions_reuse_service();
   fprintf(stderr, "== test_link_loss\n");
   test_link_loss();
   fprintf(stderr, "== test_job_exit_releases_link\n");

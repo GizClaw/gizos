@@ -131,6 +131,9 @@ typedef struct h2_lua_link {
    * host/join or destroy joins the finished task. */
   int in_use;
   int task_done;
+  /* The session queued its final DISCONNECTED or ERROR event; only
+   * bookkeeping remains before task_done. */
+  int ended;
   h2_pal_task_t *task;
   h2_lua_job_t *job;
   h2_lua_job_id_t job_id;
@@ -292,6 +295,10 @@ static int link_post(h2_lua_link_t *link, uint32_t kind, const char *reason,
     return H2_PAL_ERR_CLOSED;
   }
   event = link_push_locked(link, kind);
+  if (kind == H2_LUA_LINK_EVENT_DISCONNECTED ||
+      kind == H2_LUA_LINK_EVENT_ERROR) {
+    link->ended = 1;
+  }
   event->reason = reason;
   event->result = result;
   event->reliable = 1;
@@ -968,6 +975,11 @@ static int link_reclaim_locked(h2_lua_link_t *link) {
   if (!link->in_use) {
     return 1;
   }
+  /* After the final event the task only publishes task_done, so an app that
+   * reacts to LINK_DISCONNECTED/ERROR by hosting again is not told busy. */
+  for (int i = 0; link->ended && !link->task_done && i < 20; ++i) {
+    link_wait(link, H2_LUA_LINK_SLICE_MS);
+  }
   if (!link->task_done) {
     return 0;
   }
@@ -1029,6 +1041,7 @@ static int link_start(lua_State *state, h2_lua_link_role_t role) {
                                               : H2_LUA_LINK_JOINING;
   link->closing = 0;
   link->task_done = 0;
+  link->ended = 0;
   link->timeout_ms = (uint32_t)timeout_ms;
   link->started_ms = link_now_ms(link);
   memcpy(link->tag, tag, tag_len);
