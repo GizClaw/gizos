@@ -3,7 +3,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
-load("//libs/pal/providers/web/app_host:web_app.bzl", "h2_web_app")
+load("//libs/app_host:web_app.bzl", "h2_web_app")
 
 _NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _MAX_BUTTONS = 8  # H2_WEB_APP_HOST_MAX_BUTTONS

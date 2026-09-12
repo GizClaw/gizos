@@ -156,6 +156,8 @@ libs/<library>/
 └── BUILD.bazel
 ```
 
+`libs/app_host/` 是 App 启动层：它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability，也不选择 App 或依赖任何 project。当前只有 Web 实现（`:app_host` 只兼容 WebAssembly，另有默认 Start/Stop shell 与 `web_app.bzl` 的 `h2_web_app()`）；其他平台以后可以在同一 library 中增加变体。
+
 每个 library 都有独立的 `BUILD.bazel`。`BUILD.bazel` 通过显式 `srcs`、`hdrs`、`data` 和 `deps` 定义 library target 与 tests，测试目录统一使用 `tests/`。CI 直接分析所选平台的完整 compatible graph，不通过 tag 维护第二份 library 或 artifact inventory。平台差异只需要 toolchain 或 compatibility 即可表达时，不复制 source tree；只有接入 API、构建系统或 OS service 不同时，才在 `libs/pal/providers/` 下建立具名平台边界。
 
 Library 集成的 upstream dependency 需要补充 CPU/ABI implementation 时，修改 upstream selection 的 patch 与新增 backend source 统一归 `third_party/<dependency>_patch/`；vendor repository 将它们应用到固定 upstream checkout，`libs/<library>` 仍只暴露一个 semantic target。Backend 可以使用目标 compiler/ABI，但不能取得 SDK lifecycle、board wiring 或 firmware policy；upstream checkout 本身保持未修改。
@@ -203,8 +205,6 @@ Linux userspace 通用 PAL backend 归 `libs/pal/providers/linux/`；Darwin host
 `libs/pal/providers/desktop/app_support:app_support` 是 Linux/macOS Desktop Runtime composition owner：它按 Bazel target platform 选择 Linux 或 Darwin provider，再把 PAL API object 注入跨平台 Desktop integration。Windows 原生 OS capability 归 `libs/pal/providers/windows/pal_core`，不经过 Desktop-named accessor 或 forwarding facade；Windows Desktop 产品组装仍由具体 project owner 完成。所有 OS provider 都不能依赖另一个 OS provider 或 Desktop 实现。
 
 iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/pal/providers/ios/`、`libs/pal/providers/android/` 和 `libs/pal/providers/web/`。它们提供 reusable platform capability，不选择 App、不组装完整 Runtime，也不能依赖具体 project 的 App、adapter 或 artifact entry 类型。
-
-与 Desktop 的 `app_support` 相同，Browser 有一个明确的 composition 例外：`libs/pal/providers/web/app_host:app_host` 是 Browser Runtime composition owner。它创建 Web platform，把 `web/pal_core` 与可选 LVGL platform 的 PAL API object 注入 Runtime（其余能力为 canonical unsupported），提供默认 Start/Stop shell、push-edge Button 与 `H2_WEB_APP` marker，并由 `web_app.bzl` 的 `h2_web_app()` 生成 archive、`:serve` 与 `:browser_test`。它不选择 App：`targets/pkg_tar/<app>` entry 仍拥有 `main`、App entry 与配置、Button/key 映射、preload 和最终 archive，也可以不经 `app_host` 自行组装。`app_host` 不能依赖任何 project 的 App、adapter 或 entry；除它以外，`libs/pal/providers/web/` 下的 target 仍不组装完整 Runtime。
 
 ## `boards`
 
@@ -260,11 +260,11 @@ Web 入口也归 portable App owner。最终交付物使用实际 Bazel packagin
 projects/example/libs/web/tap-reset/
 projects/example/targets/pkg_tar/tap-reset/
 libs/pal/providers/web/pal_core/
-libs/pal/providers/web/app_host/
+libs/app_host/
 libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；可复用的 Browser Runtime composition、Start/Stop shell 与 `h2_web_app()` 属于上文的 `libs/pal/providers/web/app_host` 例外；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；`pkg_tar/<app>` 可以直接组装 Runtime，也可以复用 `libs/app_host` 的 App 启动层与 `h2_web_app()`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 
