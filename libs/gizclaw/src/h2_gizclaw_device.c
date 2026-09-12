@@ -801,10 +801,12 @@ static uint32_t io_timeout(h2_gizclaw_device_t *d) {
  * an OpusTags packet at the decoder's 64 KiB ceiling. It is cancelled as soon
  * as both headers parse, so a small file header costs little more. */
 #define AUDIO_SEEK_PROBE_BYTES 131072u
-/* Aim the ranged request this far before the start: the landing page is then
- * usually earlier and the decoder skips to the exact start instead of
- * overshooting it by the error of a byte-rate estimate. */
-#define AUDIO_SEEK_BACKOFF_MS 2000u
+/* Aim the ranged request this far before the start so the landing page is
+ * earlier and the decoder skips to the exact start instead of overshooting it
+ * by the error of a byte-rate estimate. On a real 7.5 min VBR speech file with
+ * 1 s pages the estimate drifted up to ~2 s; 5 s landed early for every start
+ * at a cost of a few seconds of skipped bytes. */
+#define AUDIO_SEEK_BACKOFF_MS 5000u
 struct audio_download {
   h2_gizclaw_device_t *device;
   char url[1025];

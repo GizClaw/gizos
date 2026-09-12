@@ -345,6 +345,39 @@ cc_test(
     ],
 )
 
+# Manual: a timed start against a real HTTPS server (see player_live in the
+# source for arguments). Needs the network, so it never runs in CI.
+cc_test(
+    name = "h2_gizclaw_player_live_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_service.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    linkopts = ["-lm"],
+    local_defines = [
+        "H2_GIZCLAW_TESTING",
+        "H2_GIZCLAW_PLAYER_LIVE",
+    ],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+    ],
+)
+
 cc_test(
     name = "gzc_firmware_platform_link_test",
     srcs = ["tests/test_gzc_firmware_platform_link.c"],
