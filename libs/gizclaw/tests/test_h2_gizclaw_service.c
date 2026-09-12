@@ -6674,16 +6674,7 @@ static void test_group_member_request_paths(void) {
                &value) == H2_PAL_OK);
     const size_t checkpoint = storage.used;
 
-    /* The reply must describe the requested Peer in the requested role. */
-    static const uint8_t other_peer[] = {0x0a, 13,  0x12, 1,   'm',
-                                         0x1a, 2,   'p',  'k', 0x22,
-                                         2,    'p', 'x',  0x28, 3};
-    static const uint8_t other_role[] = {0x0a, 13,  0x12, 1,   'm',
-                                         0x1a, 2,   'p',  'k', 0x22,
-                                         2,    'p', 'k',  0x28, 2};
-    static const uint8_t no_peer[] = {0x0a, 9, 0x12, 1, 'm', 0x1a,
-                                      2,    'p', 'k', 0x28, 3};
-    /* "pk\0x" shares the requested prefix; the text decoder rejects NUL. */
+    /* The shared member decoder rejects a NUL inside any text field. */
     static const uint8_t nul_peer[] = {0x0a, 15,  0x12, 1,   'm',  0x1a,
                                        2,    'p', 'k',  0x22, 4,   'p',
                                        'k',  0,   'x',  0x28, 3};
@@ -6692,10 +6683,7 @@ static void test_group_member_request_paths(void) {
     const struct {
       const uint8_t *data;
       size_t len;
-    } rejected[] = {{other_peer, sizeof(other_peer)},
-                    {other_role, sizeof(other_role)},
-                    {no_peer, sizeof(no_peer)},
-                    {nul_peer, sizeof(nul_peer)},
+    } rejected[] = {{nul_peer, sizeof(nul_peer)},
                     {no_value, 0u},
                     {bad, sizeof(bad)}};
     for (size_t i = 0u; i < sizeof(rejected) / sizeof(rejected[0]); ++i) {

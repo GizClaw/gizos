@@ -137,9 +137,8 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
  * belong to fails with H2_PAL_ERR_NOT_FOUND. A full group, a target already in
  * its maximum number of groups, a missing permission, a conflicting
  * member_name and every other Server rejection fail with
- * H2_GIZCLAW_ERR_REMOTE, as for the other Social wrappers. Parse fails with
- * H2_PAL_ERR_FORMAT unless the returned member carries the requested
- * peer_public_key and role. */
+ * H2_GIZCLAW_ERR_REMOTE, as for the other Social wrappers. Parse decodes the
+ * returned member like member_put and member_delete. */
 h2_pal_result_t h2_gizclaw_req_create_friend_group_member_add(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t group_name, h2_gizclaw_str_t peer_public_key,

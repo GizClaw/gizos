@@ -1687,23 +1687,6 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
   return rc;
 }
 
-typedef struct member_add_key {
-  char text[H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES + 1u];
-} member_add_key_t;
-
-static bool decode_member_add_key(pb_istream_t *stream, const pb_field_t *field,
-                                  void **arg) {
-  (void)field;
-  member_add_key_t *key = *arg;
-  const size_t len = stream->bytes_left;
-  if (key->text[0] != '\0' || len == 0u ||
-      len > H2_GIZCLAW_PEER_PUBLIC_KEY_MAX_BYTES ||
-      !pb_read(stream, (pb_byte_t *)key->text, len))
-    return false;
-  key->text[len] = '\0';
-  return true;
-}
-
 static const char friend_group_member_add_tag;
 h2_pal_result_t h2_gizclaw_req_create_friend_group_member_add(
     h2_gizclaw_service_t *service, uint64_t identity,
@@ -1745,26 +1728,6 @@ h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_add(
       request, &friend_group_member_add_tag, &response);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_gizclaw_rpc_bytes_t input;
-  rc = h2_gizclaw_req_input_internal(request, &friend_group_member_add_tag,
-                                     &input);
-  if (rc != H2_PAL_OK)
-    return rc;
-  member_add_key_t key = {{0}};
-  gizclaw_rpc_v1_FriendGroupMemberAddRequest params =
-      gizclaw_rpc_v1_FriendGroupMemberAddRequest_init_zero;
-  params.peer_public_key.funcs.decode = decode_member_add_key;
-  params.peer_public_key.arg = &key;
-  pb_istream_t input_stream = pb_istream_from_buffer(input.data, input.len);
-  if (!pb_decode(&input_stream,
-                 gizclaw_rpc_v1_FriendGroupMemberAddRequest_fields, &params) ||
-      key.text[0] == '\0')
-    return H2_PAL_ERR_FORMAT;
-  const h2_gizclaw_friend_group_role_t role =
-      params.role ==
-              gizclaw_rpc_v1_FriendGroupMemberMutableRole_FRIEND_GROUP_MEMBER_MUTABLE_ROLE_ADMIN
-          ? H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN
-          : H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER;
 
   h2_gizclaw_resp_arena_t arena;
   rc = h2_gizclaw_resp_arena_begin(storage, &arena);
@@ -1777,10 +1740,6 @@ h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_add(
   rc = (h2_pal_result_t)decode_member_response(
       allocator, response, gizclaw_rpc_v1_FriendGroupMemberAddResponse_fields,
       &decoded, &decoded.value, &decoded.has_value, &result);
-  if (rc == H2_PAL_OK &&
-      (result.peer_public_key == NULL ||
-       strcmp(result.peer_public_key, key.text) != 0 || result.role != role))
-    rc = H2_PAL_ERR_FORMAT;
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
   if (rc == H2_PAL_OK)
     *out_result = result;
