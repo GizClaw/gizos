@@ -7,6 +7,7 @@
 - [H2Loader](./h2loader)
 - [GizClaw E2E](./gizclaw_e2e)
 - [Libco Smoke](./libco_smoke)
+- [Lua Link E2E](./lua_link_e2e)
 - [PAL Preference](./pal_pref)
 - [WebRTC Performance](./webrtc_performance)
 
