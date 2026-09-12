@@ -34,6 +34,13 @@ def _argument_errors_impl(ctx):
         'exit_button "home" is not in buttons',
         lua_web_app_argument_error(_BUTTONS, "home"),
     )
+    asserts.equals(env, "", lua_web_app_argument_error(_BUTTONS, "back", 4294967295))
+    for run_ms, shown in ((-1, "-1"), (4294967296, "4294967296"), ("1500", '"1500"')):
+        asserts.equals(
+            env,
+            "run_ms %s must be an int in 0..4294967295" % shown,
+            lua_web_app_argument_error(_BUTTONS, "back", run_ms),
+        )
     return unittest.end(env)
 
 lua_web_app_argument_test = unittest.make(_argument_errors_impl)

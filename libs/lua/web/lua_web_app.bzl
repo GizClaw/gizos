@@ -7,9 +7,12 @@ load("//libs/pal/providers/web/app_host:web_app.bzl", "h2_web_app")
 
 _NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _MAX_BUTTONS = 8  # H2_WEB_APP_HOST_MAX_BUTTONS
+_MAX_RUN_MS = 4294967295  # h2_web_app_host_config_t.run_ms is uint32_t
 
-def lua_web_app_argument_error(buttons, exit_button):
+def lua_web_app_argument_error(buttons, exit_button, run_ms = 0):
     """Returns why h2_lua_web_app() arguments are invalid, or "" when valid."""
+    if type(run_ms) != "int" or run_ms < 0 or run_ms > _MAX_RUN_MS:
+        return "run_ms %r must be an int in 0..%d" % (run_ms, _MAX_RUN_MS)
     if not buttons or len(buttons) > _MAX_BUTTONS:
         return "buttons needs 1..%d entries" % _MAX_BUTTONS
     for button in buttons.keys():
@@ -56,7 +59,7 @@ def h2_lua_web_app(
       **kwargs: Passed to h2_web_app() (passes, fails, presses, taps,
         canvas_min, test_timeout_s, ...).
     """
-    error = lua_web_app_argument_error(buttons, exit_button)
+    error = lua_web_app_argument_error(buttons, exit_button, run_ms)
     if error:
         fail("h2_lua_web_app: " + error)
     names = list(buttons.keys())

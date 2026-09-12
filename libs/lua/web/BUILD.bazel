@@ -19,4 +19,13 @@ cc_library(
 
 # h2_lua_web_app() rejects empty or oversized buttons, bad names and an
 # unknown exit_button at loading time; this covers the validator it calls.
-lua_web_app_argument_test(name = "lua_web_app_argument_test")
+lua_web_app_argument_test(
+    name = "lua_web_app_argument_test",
+    # Embedded platforms have no test execution toolchain.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
