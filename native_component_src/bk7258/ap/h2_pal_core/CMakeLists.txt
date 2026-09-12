@@ -191,7 +191,7 @@ endif()
 armino_component_get_property(
   H2_BK_MBEDTLS_COMPONENT_LIB psa_mbedtls COMPONENT_LIB)
 target_compile_definitions(
-  ${H2_BK_MBEDTLS_COMPONENT_LIB} PRIVATE
+  ${H2_BK_MBEDTLS_COMPONENT_LIB} PUBLIC
     MBEDTLS_SSL_DTLS_SRTP
     MBEDTLS_SSL_SRV_C
     MBEDTLS_X509_CREATE_C
@@ -204,7 +204,10 @@ target_compile_definitions(
 # copying SDK crypto sources into Firmwares.
 armino_component_get_property(
   H2_BK_PSA_MBEDTLS_LIB psa_mbedtls COMPONENT_LIB)
-target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PRIVATE
+# These options also control public structure layouts. In particular,
+# MBEDTLS_PSA_CRYPTO_C adds a field to mbedtls_pk_context embedded in
+# mbedtls_x509_crt. Consumers must allocate the same layout as the library.
+target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_PSA_CRYPTO_C
   MBEDTLS_ECP_DP_CURVE25519_ENABLED
   MBEDTLS_CHACHA20_C
