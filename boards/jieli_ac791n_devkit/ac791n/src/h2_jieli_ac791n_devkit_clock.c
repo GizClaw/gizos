@@ -30,7 +30,7 @@ static ___interrupt SEC_USED(.volatile_ram_code) void clock_overflow(void)
     /* SDK csync orders the CPU, but has no compiler memory clobber. */
     __asm__ volatile("" ::: "memory");
     if (JL_TIMER5->CON & BIT(15)) {
-        completed_ticks += H2_JIELI_CLOCK_PERIOD;
+        completed_ticks += H2_JIELI_CLOCK_CYCLE_TICKS;
         JL_TIMER5->CON |= BIT(14);
     }
     __asm__ volatile("" ::: "memory");

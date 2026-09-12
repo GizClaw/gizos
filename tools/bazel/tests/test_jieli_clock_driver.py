@@ -74,14 +74,14 @@ int main(void) {
  clock_overflow();
  registers.CON&=~BIT(15); /* Model the W1C acknowledgement. */
  assert(h2_jieli_ac791n_devkit_clock_read_us(&us)==0 && us==pending);
- assert(completed_ticks==65535 && registrations==1);
+ assert(completed_ticks==65536 && registrations==1);
  registers.CON|=BIT(15);
  pthread_t a,b,c;
  assert(!pthread_create(&a,NULL,reader,NULL));
  assert(!pthread_create(&b,NULL,reader,NULL));
  assert(!pthread_create(&c,NULL,interrupts,NULL));
  assert(!pthread_join(a,NULL) && !pthread_join(b,NULL) && !pthread_join(c,NULL));
- assert(completed_ticks==UINT64_C(10001)*65535);
+ assert(completed_ticks==UINT64_C(10001)*65536);
 }
 '''
         with tempfile.TemporaryDirectory(prefix="h2-clock-driver-") as directory:

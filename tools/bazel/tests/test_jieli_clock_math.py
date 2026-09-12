@@ -28,10 +28,11 @@ int main(void) {
          (uint64_t)(((__uint128_t)long_ticks*8192*1000000)/clocks[i]));
  }
  const uint64_t base=UINT64_C(0x100000000);
- const uint64_t before=h2_jieli_clock_snapshot_ticks(base,65534,0);
+ const uint64_t before=h2_jieli_clock_snapshot_ticks(base,65535,0);
  const uint64_t pending=h2_jieli_clock_snapshot_ticks(base,0,1);
- const uint64_t serviced=h2_jieli_clock_snapshot_ticks(base+65535,0,0);
+ const uint64_t serviced=h2_jieli_clock_snapshot_ticks(base+65536,0,0);
  assert(before+1 == pending && pending == serviced);
+ assert(h2_jieli_clock_snapshot_ticks(base,1,1) == serviced+1);
  assert(h2_jieli_clock_ticks_to_us(1,24000000) == 341);
 }
 '''
