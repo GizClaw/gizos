@@ -96,6 +96,8 @@ PAL backend 只处理 platform/SDK 能力。具体 display、audio codec、senso
 
 NimBLE GATT server schema 的静态上限是 4 个 service、每个 service 3 个 characteristic；超出的注册在改变 state 前返回 `H2_PAL_ERR_UNSUPPORTED`。Characteristic 与 NimBLE access callback 之间的 index 在注册时写入，不来自手写的常量列表——否则扩大表格会让靠后的槽位读成 index 0，把一个 characteristic 的读写派发到另一个上。
 
+`h2_pal_ble_unregister_gatt_service()` 在 GATT mutex 下仅清除指定 UUID 对应 service 的 read/write callback、user context 和 output-handle 指针，保留 slot 供同 UUID 重注册；其他 service 的绑定不变。仅在所有 service 都没有绑定回调时清除 `gatt_attached`，未知 UUID 返回 `H2_PAL_ERR_NOT_FOUND`。全局 unregister 仍解绑全部 service。
+
 启用动态服务时，component 在 Host 启动前通过 `ble_gatts_count_cfg()` 按上述容量预留资源，包含每个 characteristic 在每条连接及缓存中的 CCCD；容量定义只用于计数，不注册服务。NimBLE 的 connectable advertising 检查要求 CCCD 池仍有空闲项，仅靠动态注册的 heap fallback 不足以保证广播可以启动。仅按启动时已注册服务分配，会使随后打开的 BLE 配网服务耗尽初始池并返回 `H2_PAL_ERR_NO_MEMORY`。验证时需要覆盖先启动 Host、再打开配网、手机连接及通知、退出后重新打开；`CONFIG_BT_NIMBLE_MAX_CCCDS` 控制持久化 CCCD 数量，不能替代运行时池预留。
 
 显式停止 advertising 是同步完成的：NimBLE 只在 advertising 自行结束或因连接结束时上报 `BLE_GAP_EVENT_ADV_COMPLETE`，成功的 `ble_gap_adv_stop()` 不产生任何事件。因此 legacy 与 Extended 两条路径在 stop 返回 `0` 或 `BLE_HS_EALREADY` 时都直接就地完成并发出 stopped 通知，不等待该事件；等待只会让每次显式停止耗尽 GAP timeout 再报 `H2_PAL_ERR_TIMEOUT`。

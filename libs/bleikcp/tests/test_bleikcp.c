@@ -36,6 +36,8 @@ typedef struct fake_runtime {
     const h2_pal_ble_gatt_service_t *service;
     size_t service_count;
     int unregister_count;
+    int unregister_service_count;
+    h2_pal_result_t unregister_service_result;
     atomic_int fail_next_register;
     atomic_int fail_next_join;
     atomic_int drop_next_gatt_write;
@@ -331,6 +333,23 @@ static h2_pal_result_t fake_register(
         if (ch->out_value_handle != NULL) *ch->out_value_handle = (uint16_t)(2u + 2u * i);
         if (ch->out_cccd_handle != NULL) *ch->out_cccd_handle = (uint16_t)(3u + 2u * i);
     }
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t fake_unregister_service(
+    void *user, const h2_pal_ble_uuid_t *service_uuid) {
+    fake_runtime_t *runtime = user;
+    CHECK(runtime->service != NULL);
+    CHECK(service_uuid != NULL);
+    CHECK(service_uuid->len == runtime->service->uuid.len);
+    CHECK(memcmp(service_uuid->data, runtime->service->uuid.data,
+                 service_uuid->len) == 0);
+    runtime->unregister_service_count++;
+    if (runtime->unregister_service_result != H2_PAL_OK) {
+        return runtime->unregister_service_result;
+    }
+    runtime->service = NULL;
+    runtime->service_count = 0u;
     return H2_PAL_OK;
 }
 
@@ -835,7 +854,47 @@ static void run_client_exchange(
     wait_for_server_idle(runtime, api, conn_handle);
 }
 
+static void test_per_service_unregister(void) {
+    const h2_pal_result_t results[] = {
+        H2_PAL_OK, H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_BUSY, H2_PAL_ERR_NOT_FOUND,
+    };
+    for (size_t i = 0u; i < sizeof(results) / sizeof(results[0]); ++i) {
+        fake_runtime_t runtime;
+        fake_runtime_init(&runtime);
+        h2_pal_ble_vtable_t vtable = *runtime.ble.vtable;
+        vtable.unregister_gatt_service = fake_unregister_service;
+        runtime.ble.vtable = &vtable;
+        runtime.unregister_service_result = results[i];
+        h2_bleikcp_api_t api = {
+            .ble = &runtime.ble, .task = &runtime.task, .time = &runtime.time,
+            .sync = &runtime.sync, .system_event = &runtime.events,
+            .allocator = &runtime.allocator,
+        };
+        h2_bleikcp_config_t config = {0};
+        handler_state_t handler_state = { .api = &api };
+        h2_bleikcp_server_t *service = NULL;
+        CHECK(h2_bleikcp_server_open(
+                  &api, &config, server_handler, &handler_state,
+                  &service) == H2_PAL_OK);
+        h2_pal_result_t expected = results[i] == H2_PAL_ERR_UNSUPPORTED
+            ? H2_PAL_OK : results[i];
+        CHECK(h2_bleikcp_server_close(service) == expected);
+        CHECK(runtime.unregister_service_count == 1);
+        CHECK(runtime.unregister_count == (results[i] == H2_PAL_ERR_UNSUPPORTED));
+        if (expected != H2_PAL_OK) {
+            CHECK(runtime.service != NULL);
+            runtime.unregister_service_result = H2_PAL_OK;
+            CHECK(h2_bleikcp_server_close(service) == H2_PAL_OK);
+            CHECK(runtime.unregister_service_count == 2);
+            CHECK(runtime.unregister_count == 0);
+        }
+        CHECK(runtime.service == NULL);
+        CHECK(pthread_mutex_destroy(&runtime.event_mutex) == 0);
+    }
+}
+
 int main(void) {
+    test_per_service_unregister();
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);
     h2_bleikcp_api_t api = {
