@@ -220,7 +220,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
-| `lua-script` | `h2_lua_web_app()` + 共享设备 layout：canvas 与状态行进入 layout 的 slot；脚本校验 Button args 后 ready；点击 layout 的 `data-h2-button=ok` 元素触发脚本 OK 回调；一次 Escape（exit Button）release 取消 job 并 PASS |
+| `lua-script` | `h2_lua_web_app()` + 共享设备 layout：canvas 与状态行进入 layout 的 slot；脚本校验 Button args 后 ready；点击 layout 的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
 | `lua-script-input` | Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |

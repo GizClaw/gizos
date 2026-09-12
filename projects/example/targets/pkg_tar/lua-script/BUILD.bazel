@@ -7,11 +7,12 @@ exports_files([
     "smoke.lua",
 ])
 
-# Default exit policy with a device layout (reused by the other lua-script*
-# pages, like a board layout): app_host creates the canvas and status line in
-# the layout's display/status slots; clicking the layout's OK element (a
-# non-exit Button) must reach the script's OK callback; then one Escape (the
-# exit Button key) release cancels the job and the App passes.
+# Device layout (reused by the other lua-script* pages, like a board layout):
+# app_host creates the canvas and status line in the layout's display/status
+# slots; clicking the layout's OK element (a non-exit Button) must reach the
+# script's OK callback; then clicking the page Stop button (#start/#stop live
+# in the controls slot) cancels the job and the App passes. The default exit
+# Button path is covered by lua-script-input, run_ms by lua-script-stop.
 h2_lua_web_app(
     name = "lua-script",
     buttons = {
@@ -20,10 +21,16 @@ h2_lua_web_app(
         "back": "Escape",
     },
     canvas_min = 300,
-    clicks = [[
-        "H2_WEB_APP name=lua-script stage=ready",
-        "[data-h2-button=ok]",
-    ]],
+    clicks = [
+        [
+            "H2_WEB_APP name=lua-script stage=ready",
+            "[data-h2-button=ok]",
+        ],
+        [
+            "H2_WEB_LUA_APP_SMOKE ok=up",
+            "#stop",
+        ],
+    ],
     layout = "layout.html",
     evals = [[
         "H2_WEB_APP name=lua-script stage=ready",
@@ -38,9 +45,5 @@ h2_lua_web_app(
         "H2_WEB_LUA_APP_SMOKE ok=up",
         "H2_WEB_APP name=lua-script result=PASS rc=0 fs=0 destroy=0",
     ],
-    presses = [[
-        "H2_WEB_LUA_APP_SMOKE ok=up",
-        "Escape",
-    ]],
     script = "smoke.lua",
 )
