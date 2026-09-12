@@ -6683,6 +6683,10 @@ static void test_group_member_request_paths(void) {
                                          2,    'p', 'k',  0x28, 2};
     static const uint8_t no_peer[] = {0x0a, 9, 0x12, 1, 'm', 0x1a,
                                       2,    'p', 'k', 0x28, 3};
+    /* "pk\0x" shares the requested prefix; the text decoder rejects NUL. */
+    static const uint8_t nul_peer[] = {0x0a, 15,  0x12, 1,   'm',  0x1a,
+                                       2,    'p', 'k',  0x22, 4,   'p',
+                                       'k',  0,   'x',  0x28, 3};
     static const uint8_t no_value[] = {0};
     static const uint8_t bad[] = {0x0a};
     const struct {
@@ -6691,6 +6695,7 @@ static void test_group_member_request_paths(void) {
     } rejected[] = {{other_peer, sizeof(other_peer)},
                     {other_role, sizeof(other_role)},
                     {no_peer, sizeof(no_peer)},
+                    {nul_peer, sizeof(nul_peer)},
                     {no_value, 0u},
                     {bad, sizeof(bad)}};
     for (size_t i = 0u; i < sizeof(rejected) / sizeof(rejected[0]); ++i) {
