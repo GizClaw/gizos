@@ -522,6 +522,44 @@ static int decode_file(const char *source, const char *target) {
   return rc == H2_PAL_EXIT ? 0 : 1;
 }
 
+/* Cover art makes OpusTags far larger than the 64 KiB packet ceiling. The
+ * reader keeps the first 64 KiB, checks the magic and drops the rest; the
+ * memory decoder keeps and validates all of it; both play the same audio,
+ * and a timed start still lands exactly. */
+static void test_oversized_tags(void) {
+  static fixture_t f;
+  static uint8_t tags[70000];
+  for (unsigned mode = 0; mode < 2; ++mode) {
+    memset(&f, 0, sizeof(f));
+    make_packet(&f, 1);
+    headers(&f, 123, 1, 312, 0);
+    f.len = 47; /* Keep only the OpusHead page. */
+    memset(tags, 'p', sizeof(tags));
+    memcpy(tags, mode ? "OpusTagZ" : "OpusTags", 8);
+    put32(tags + 8, (uint32_t)(sizeof(tags) - 16u));
+    put32(tags + sizeof(tags) - 4u, 0);
+    uint8_t laces[255];
+    memset(laces, 255, sizeof(laces));
+    page(&f, 0, UINT64_MAX, 123, 1, laces, 255, tags, 255u * 255u);
+    const size_t rest = sizeof(tags) - 255u * 255u;
+    const size_t count = rest / 255u + 1u;
+    laces[count - 1u] = (uint8_t)(rest % 255u);
+    page(&f, 1, 0, 123, 2, laces, count, tags + 255u * 255u, rest);
+    const size_t header_len = f.len;
+    for (uint32_t i = 0; i < 20; ++i)
+      packet_page(&f, i + 1 == 20 ? 4 : 0, 960u * (i + 1u), 123, 3 + i,
+                  f.packet, f.packet_len);
+    if (mode) {
+      decode(&f, H2_PAL_ERR_FORMAT, 0); /* No magic, oversized or not. */
+      continue;
+    }
+    const uint64_t plain = decode(&f, H2_PAL_EXIT, 0) / 2u;
+    assert(plain == (19200u - 312u) / 3u);
+    seek_result_t r = seek_decode(&f, header_len, NULL, 0, 200);
+    assert(r.rc == H2_PAL_EXIT && r.origin == 3200u && r.origin + r.emitted == plain);
+  }
+}
+
 /* Host-only: exercise seek on an external Ogg/Opus file
  * (`h2_gizclaw_ogg_opus_test --seek-sweep file.ogg`). Every resync offset and
  * sequential target must give an origin that, with the samples after it, adds
@@ -690,6 +728,7 @@ int main(int argc, char **argv) {
   test_seek_sequential();
   test_seek_resync_every_offset();
   test_seek_resync_rejects_fake_pages();
+  test_oversized_tags();
   puts("Ogg/Opus decoder tests passed");
   return 0;
 }

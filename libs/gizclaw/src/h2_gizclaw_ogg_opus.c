@@ -25,6 +25,9 @@ struct h2_gizclaw_ogg_opus {
   bool have_stream, stream_ended, have_audio_page, page_loaded;
   uint8_t *packet;
   size_t packet_len, packet_capacity;
+  /* Reader mode: an OpusTags packet past the 64 KiB packet ceiling (large
+   * embedded cover art) keeps its first 64 KiB and drops the rest. */
+  bool tags_truncated;
   /* Reader mode only: bytes already read past the current page (left over
    * when a resync rescans a rejected candidate) wait at page[pend_off..]. */
   size_t pend_off, pend_len;
@@ -343,8 +346,16 @@ static h2_pal_result_t append(h2_gizclaw_ogg_opus_t *d, size_t len) {
   if (len > SIZE_MAX - d->packet_len)
     return H2_PAL_ERR_NO_SPACE;
   size_t needed = d->packet_len + len;
-  if (d->read && needed > 65536u)
-    return H2_PAL_ERR_NO_SPACE;
+  if (d->read && needed > 65536u) {
+    /* The comment header is validated, never used: past the ceiling its
+     * bytes are dropped as they arrive, so memory stays one page plus
+     * 64 KiB however large the tags are. Audio packets keep the limit. */
+    if (d->headers != 1)
+      return H2_PAL_ERR_NO_SPACE;
+    d->tags_truncated = true;
+    d->body_offset += len;
+    return H2_PAL_OK;
+  }
   if (needed > d->packet_capacity) {
     size_t capacity = d->packet_capacity ? d->packet_capacity : 512;
     while (capacity < needed) {
@@ -415,8 +426,10 @@ static h2_pal_result_t decode_packet(h2_gizclaw_ogg_opus_t *d, uint8_t *pcm,
       if (opus_decoder_init(d->opus, 16000, 1) != OPUS_OK ||
           opus_decoder_ctl(d->opus, OPUS_SET_GAIN(gain)) != OPUS_OK)
         return H2_PAL_ERR_IO;
-    } else if (!valid_tags(p, len))
-      return H2_PAL_ERR_FORMAT;
+    } else if (d->tags_truncated ? memcmp(p, "OpusTags", 8) != 0
+                                 : !valid_tags(p, len))
+      return H2_PAL_ERR_FORMAT; /* A truncated one can only show its magic. */
+    d->tags_truncated = false;
     ++d->headers;
     return H2_PAL_OK;
   }

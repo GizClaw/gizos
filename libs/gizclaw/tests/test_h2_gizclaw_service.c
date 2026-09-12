@@ -3331,7 +3331,7 @@ static void test_device_player_timed_start(void) {
   assert(seek_play(service, &state, 30000, 20000, 20000) ==
          seek_frames(&state, 20000u * 16u));
   assert(atomic_load(&state.calls) == 2u);
-  assert(!strcmp(state.ranges[0], "bytes=0-131071"));
+  assert(!strcmp(state.ranges[0], "bytes=0-"));
   (void)snprintf(expected, sizeof(expected), "bytes=%llu-",
                  (unsigned long long)seek_offset(&state, 20000, 30000));
   assert(!strcmp(state.ranges[1], expected));
@@ -3360,7 +3360,7 @@ static void test_device_player_timed_start(void) {
   assert(seek_play(service, &state, 30000, 20000, 20000) ==
          seek_frames(&state, 20000u * 16u));
   assert(atomic_load(&state.calls) == 1u);
-  assert(!strcmp(state.ranges[0], "bytes=0-131071"));
+  assert(!strcmp(state.ranges[0], "bytes=0-"));
 
   /* A seek response for other bytes, a 200 to the ranged seek, or a slice
    * of a file whose length differs from the probe's (replaced in between)
@@ -3372,7 +3372,7 @@ static void test_device_player_timed_start(void) {
     assert(seek_play(service, &state, 30000, 20000, 20000) ==
            seek_frames(&state, 20000u * 16u));
     assert(atomic_load(&state.calls) == 3u);
-    assert(!strcmp(state.ranges[0], "bytes=0-131071"));
+    assert(!strcmp(state.ranges[0], "bytes=0-"));
     assert(state.ranges[1][0] && !state.ranges[2][0]);
   }
 

@@ -8,7 +8,7 @@
 #include <string.h>
 
 typedef struct fixture {
-  uint8_t bytes[32768];
+  uint8_t bytes[131072];
   size_t len;
   uint8_t packet[1500];
   size_t packet_len;

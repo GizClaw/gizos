@@ -797,10 +797,6 @@ static uint32_t io_timeout(h2_gizclaw_device_t *d) {
              ? (uint32_t)d->config.connect_timeout_ms
              : 15000u;
 }
-/* A timed start first fetches this much from byte 0: enough for OpusHead and
- * an OpusTags packet at the decoder's 64 KiB ceiling. It is cancelled as soon
- * as both headers parse, so a small file header costs little more. */
-#define AUDIO_SEEK_PROBE_BYTES 131072u
 /* Aim the ranged request this far before the start so the landing page is
  * earlier and the decoder skips to the exact start instead of overshooting it
  * by the error of a byte-rate estimate. On a real 7.5 min VBR speech file with
@@ -1125,7 +1121,7 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
 /* Where playback of one item starts, in order of preference. */
 typedef enum audio_source {
   AUDIO_SOURCE_PLAIN,    /* From byte 0, no seek. */
-  AUDIO_SOURCE_PROBE,    /* Range 0-N until the headers parse. */
+  AUDIO_SOURCE_PROBE,    /* Range 0- until the headers parse. */
   AUDIO_SOURCE_WHOLE,    /* Range ignored: skip through the whole body. */
   AUDIO_SOURCE_RANGE,    /* Range offset-: resync on the next page. */
   AUDIO_SOURCE_FALLBACK, /* Plain GET, skip through the whole body. */
@@ -1198,8 +1194,10 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
   audio_source_t source = start_ms && duration_ms ? AUDIO_SOURCE_PROBE
                                                   : AUDIO_SOURCE_PLAIN;
   int rc = source == AUDIO_SOURCE_PROBE
-               ? start_audio_download(d, url, music, true, 0,
-                                      AUDIO_SEEK_PROBE_BYTES - 1u, 0)
+               /* The probe asks for the whole file (bytes=0-) and is
+                * cancelled once both headers parse, so headers of any size
+                * (large embedded cover art) fit in it. */
+               ? start_audio_download(d, url, music, true, 0, UINT64_MAX, 0)
                : start_audio_download(d, url, music, false, 0, 0, 0);
   h2_gizclaw_ogg_opus_t *decoder = NULL;
   h2_pal_audio_track_t *track = NULL;

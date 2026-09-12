@@ -24,7 +24,10 @@ h2_pal_result_t h2_gizclaw_ogg_opus_create(const h2_pal_mem_api_t *allocator,
                                            h2_gizclaw_ogg_opus_t **out);
 /* Blocking sequential reader: OK must supply 1..capacity bytes, EXIT means EOF.
  * Streaming retains one Ogg page and at most 64 KiB of a continued packet;
- * total track length is unrestricted. Reader and user live until destroy. */
+ * total track length is unrestricted. An OpusTags packet above 64 KiB (large
+ * embedded cover art) is accepted on its "OpusTags" magic and the rest is
+ * discarded as it streams in; an audio packet above 64 KiB is NO_SPACE. Reader and user
+ * live until destroy. */
 typedef h2_pal_result_t (*h2_gizclaw_ogg_opus_read_fn)(void *user, uint8_t *out,
                                                        size_t capacity,
                                                        size_t *out_len);
