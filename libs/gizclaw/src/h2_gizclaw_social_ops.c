@@ -280,6 +280,7 @@ static void member_deinit(const h2_pal_mem_api_t *allocator,
   h2_pal_mem_free(allocator, member->peer_public_key);
   h2_pal_mem_free(allocator, member->created_at);
   h2_pal_mem_free(allocator, member->updated_at);
+  h2_pal_mem_free(allocator, member->last_seen_at);
   memset(member, 0, sizeof(*member));
 }
 
@@ -288,7 +289,7 @@ static bool decode_member_object(pb_istream_t *stream,
                                  const h2_pal_mem_api_t *allocator) {
   gizclaw_rpc_v1_FriendGroupMemberObject decoded =
       gizclaw_rpc_v1_FriendGroupMemberObject_init_zero;
-  social_text_decode_t text[5];
+  social_text_decode_t text[6];
   set_decoder(&decoded.name, &text[0], allocator, &out->id);
   set_bounded_decoder(&decoded.friend_group_name, &text[1], allocator,
                       &out->friend_group_name,
@@ -297,6 +298,9 @@ static bool decode_member_object(pb_istream_t *stream,
               &out->peer_public_key);
   set_decoder(&decoded.created_at, &text[3], allocator, &out->created_at);
   set_decoder(&decoded.updated_at, &text[4], allocator, &out->updated_at);
+  set_bounded_decoder(&decoded.last_seen_at, &text[5], allocator,
+                      &out->last_seen_at,
+                      H2_GIZCLAW_CONTACT_TIMESTAMP_MAX_BYTES);
   if (!pb_decode(stream, gizclaw_rpc_v1_FriendGroupMemberObject_fields,
                  &decoded) ||
       out->id == NULL || out->id[0] == '\0' || out->friend_group_name == NULL ||
@@ -310,6 +314,8 @@ static bool decode_member_object(pb_istream_t *stream,
     member_deinit(allocator, out);
     return false;
   }
+  out->has_online = decoded.has_online;
+  out->online = decoded.has_online && decoded.online;
   out->role = decoded.has_role ? (h2_gizclaw_friend_group_role_t)decoded.role
                                : H2_GIZCLAW_FRIEND_GROUP_ROLE_UNSPECIFIED;
   return true;
@@ -425,6 +431,7 @@ static int decode_member_response(
     const h2_gizclaw_rpc_response_t *response, const pb_msgdesc_t *fields,
     void *decoded, gizclaw_rpc_v1_FriendGroupMemberObject *value,
     bool *has_value, h2_gizclaw_friend_group_member_t *out_member) {
+  /* Mutation responses deliberately ignore presence, even if sent. */
   social_text_decode_t text[5];
   set_decoder(&value->name, &text[0], allocator, &out_member->id);
   set_bounded_decoder(&value->friend_group_name, &text[1], allocator,
