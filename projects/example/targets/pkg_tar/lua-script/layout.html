@@ -1,0 +1,23 @@
+<!-- Example device layout shared by the lua-script* pages, the way a board's
+     web layout is reused by every App on that board. -->
+<style>
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: #080b12; color: #e5e7eb; font-family: system-ui, sans-serif; }
+  .example-device [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .example-device { display: grid; gap: 12px; justify-items: center; padding: 16px; border-radius: 28px; background: #1e293b; }
+  .example-device [data-h2-slot="display"] canvas { width: 240px; border-radius: 12px; }
+  .example-pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 8px; }
+  .example-pad button { padding: 10px 0; border: 1px solid #475569; border-radius: 10px; background: #111c30; color: #e5e7eb; font: inherit; }
+  .example-pad button[data-pressed="true"] { background: #1d4ed8; }
+  .example-pad .back { grid-column: 1 / 4; }
+</style>
+<div class="example-device">
+  <div data-h2-slot="display"></div>
+  <div class="example-pad">
+    <button type="button" data-h2-button="left">◀</button>
+    <button type="button" data-h2-button="ok">OK</button>
+    <button type="button" disabled></button>
+    <button type="button" class="back" data-h2-button="back">Back</button>
+  </div>
+  <div data-h2-slot="controls"></div>
+  <div data-h2-slot="status"></div>
+</div>

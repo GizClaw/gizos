@@ -136,7 +136,7 @@ EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
       pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
 }
 
-/* The shell's JavaScript owns keyboard and panel input for each Button. */
+/* The shell's JavaScript owns keyboard and layout input for each Button. */
 EM_JS(void, h2_web_app_host_bind_button, (int index, const char *key,
                                           const char *name), {
   const bind = globalThis.h2WebAppHostBindButton;

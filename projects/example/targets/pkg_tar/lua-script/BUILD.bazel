@@ -2,9 +2,14 @@ load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["smoke.lua"])
+exports_files([
+    "layout.html",
+    "smoke.lua",
+])
 
-# Default exit policy plus a page panel: clicking the panel's OK element (a
+# Default exit policy with a device layout (reused by the other lua-script*
+# pages, like a board layout): app_host creates the canvas and status line in
+# the layout's display/status slots; clicking the layout's OK element (a
 # non-exit Button) must reach the script's OK callback; then one Escape (the
 # exit Button key) release cancels the job and the App passes.
 h2_lua_web_app(
@@ -19,10 +24,17 @@ h2_lua_web_app(
         "H2_WEB_APP name=lua-script stage=ready",
         "[data-h2-button=ok]",
     ]],
-    panel = "panel.html",
+    layout = "layout.html",
+    evals = [[
+        "H2_WEB_APP name=lua-script stage=ready",
+        "console.log('H2_WEB_APP_LAYOUT display=' + " +
+        "document.getElementById('canvas').parentElement.dataset.h2Slot + " +
+        "' status=' + document.getElementById('status').parentElement.dataset.h2Slot)",
+    ]],
     exit_button = "back",
     passes = [
         "H2_WEB_APP name=lua-script stage=ready",
+        "H2_WEB_APP_LAYOUT display=display status=status",
         "H2_WEB_LUA_APP_SMOKE ok=up",
         "H2_WEB_APP name=lua-script result=PASS rc=0 fs=0 destroy=0",
     ],

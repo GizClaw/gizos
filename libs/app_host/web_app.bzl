@@ -8,6 +8,7 @@ load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_s
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 _SHELL = Label("//libs/app_host:shell.html")
+_DEFAULT_LAYOUT = Label("//libs/app_host:default_layout.html")
 _HOSTS = select({
     Label("//tools/bazel/platforms:host_linux_target_linux"): [],
     Label("//tools/bazel/platforms:host_macos_target_macos"): [],
@@ -15,29 +16,29 @@ _HOSTS = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-def _panel_shell_impl(ctx):
+def _layout_shell_impl(ctx):
     args = ctx.actions.args()
     args.add("--shell", ctx.file.shell)
-    args.add("--panel", ctx.file.panel)
+    args.add("--layout", ctx.file.layout)
     args.add("--out", ctx.outputs.out)
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [ctx.file.shell, ctx.file.panel],
+        inputs = [ctx.file.shell, ctx.file.layout],
         outputs = [ctx.outputs.out],
-        mnemonic = "H2WebAppPanel",
-        progress_message = "Injecting Web App panel %{label}",
+        mnemonic = "H2WebAppLayout",
+        progress_message = "Injecting Web App layout %{label}",
     )
     return [DefaultInfo(files = depset([ctx.outputs.out]))]
 
-_panel_shell = rule(
-    implementation = _panel_shell_impl,
+_layout_shell = rule(
+    implementation = _layout_shell_impl,
     attrs = {
         "out": attr.output(mandatory = True),
-        "panel": attr.label(allow_single_file = [".html"], mandatory = True),
+        "layout": attr.label(allow_single_file = [".html"], mandatory = True),
         "shell": attr.label(allow_single_file = [".html"], mandatory = True),
         "_tool": attr.label(
-            default = Label("//libs/app_host:inject_panel"),
+            default = Label("//libs/app_host:inject_layout"),
             executable = True,
             cfg = "exec",
         ),
@@ -61,7 +62,7 @@ def h2_web_app(
         taps = [],
         clicks = [],
         evals = [],
-        panel = None,
+        layout = None,
         linkopts = []):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
 
@@ -83,20 +84,22 @@ def h2_web_app(
       clicks: [regex, css_selector] page-element clicks the browser test
         performs (pointer press and release at the element centre).
       evals: [regex, javascript] page scripts the browser test evaluates.
-      panel: Optional HTML file (markup plus <style>) injected into the shell
-        below the canvas. Elements marked data-h2-button="<name>" drive the
-        Button with that name in h2_web_app_host_config_t; layout is free.
+      layout: Optional HTML file (markup plus <style>) that is the page UI,
+        usually a board's reusable layout shared by every App on that board.
+        app_host ships no UI: it creates the canvas, Start/Stop controls and
+        status line inside the layout's data-h2-slot="display" | "controls" |
+        "status" elements, and elements marked data-h2-button="<name>" drive
+        the Button with that name in h2_web_app_host_config_t. Defaults to
+        //libs/app_host:default_layout.html.
       linkopts: Extra Emscripten link options.
     """
-    shell = _SHELL
-    if panel:
-        _panel_shell(
-            name = name + "_shell",
-            out = name + "_shell.html",
-            panel = panel,
-            shell = _SHELL,
-        )
-        shell = ":" + name + "_shell.html"
+    _layout_shell(
+        name = name + "_shell",
+        out = name + "_shell.html",
+        layout = layout if layout else _DEFAULT_LAYOUT,
+        shell = _SHELL,
+    )
+    shell = ":" + name + "_shell.html"
     preload_opts = []
     for label, path in preload.items():
         preload_opts += ["--preload-file", "$(location %s)@%s" % (label, path)]

@@ -72,7 +72,7 @@ h2_lua_web_app(
         "H2_WEB_APP_INPUT after-hide held=true",
         "H2_WEB_APP_INPUT teardown held=true",
     ],
-    panel = "panel.html",
+    layout = "//projects/example/targets/pkg_tar/lua-script:layout.html",
     passes = [
         "H2_WEB_APP name=lua-script-input stage=ready",
         "H2_WEB_APP_INPUT after-pointer-up held=true",

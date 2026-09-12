@@ -5,15 +5,19 @@ load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBI
 
 package(default_visibility = ["//visibility:public"])
 
-# Shared Start/Stop shell for Web App targets built with h2_web_app().
-exports_files(["shell.html"])
+# UI-free page skeleton for h2_web_app(), and the plain layout used when a
+# target passes none. Real layouts come from boards or products.
+exports_files([
+    "default_layout.html",
+    "shell.html",
+])
 
-# Build tool: writes a shell with an h2_web_app(panel = ...) fragment injected.
+# Build tool: writes the shell with one h2_web_app(layout = ...) injected.
 py_binary(
-    name = "inject_panel",
-    srcs = ["inject_panel.py"],
+    name = "inject_layout",
+    srcs = ["inject_layout.py"],
     legacy_create_init = 0,
-    main = "inject_panel.py",
+    main = "inject_layout.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

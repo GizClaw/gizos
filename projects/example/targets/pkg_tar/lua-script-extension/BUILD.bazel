@@ -24,6 +24,7 @@ h2_lua_web_app(
     },
     canvas_min = 300,
     exit_button = "back",
+    layout = "//projects/example/targets/pkg_tar/lua-script:layout.html",
     extension = ":smoke_extension",
     passes = [
         "H2_WEB_APP name=lua-script-extension stage=ready",

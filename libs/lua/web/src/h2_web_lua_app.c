@@ -150,7 +150,7 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
 int main(void) {
   h2_web_app_host_button_t buttons[BUTTON_COUNT];
   for (size_t i = 0u; i < BUTTON_COUNT; ++i) {
-    /* The page drives each Button from its key and from panel elements
+    /* The page drives each Button from its key and from layout elements
      * marked data-h2-button="<name>". */
     buttons[i] = (h2_web_app_host_button_t){
         .component_id = (h2_runtime_component_id_t)(i + 1u),

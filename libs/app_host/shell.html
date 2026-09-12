@@ -5,29 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GizOS Web App</title>
     <style>
-      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #080b12; color: #e5e7eb; }
-      body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
-      main { display: grid; gap: 12px; justify-items: center; }
-      canvas { max-width: calc(100vw - 32px); background: #000; image-rendering: pixelated; touch-action: none; }
-      .controls { display: flex; gap: 8px; }
-      button { padding: 10px 24px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font: inherit; font-weight: 700; cursor: pointer; }
-      button:disabled { cursor: default; opacity: 0.65; }
-      #status { margin: 0; color: #94a3b8; font-size: 13px; }
+      /* Behaviour only; every visual style comes from the layout. */
+      #canvas { image-rendering: pixelated; touch-action: none; }
       [data-h2-button] { touch-action: none; user-select: none; }
     </style>
   </head>
   <body>
-    <main>
-      <canvas id="canvas" width="240" height="240"></canvas>
-      <div class="controls">
-        <button id="start" type="button">Start</button>
-        <button id="stop" type="button" disabled>Stop</button>
-      </div>
-      <!-- H2_WEB_APP_PANEL -->
-      <p id="status">Ready</p>
-    </main>
+    <!-- H2_WEB_APP_LAYOUT -->
     <template id="program">{{{ SCRIPT }}}</template>
     <script>
+      // Page components. app_host ships no UI: the layout (usually a board's
+      // reusable HTML/CSS) places each component with a slot element, and
+      // app_host creates the component inside it:
+      //   [data-h2-slot="display"]  the display canvas (#canvas)
+      //   [data-h2-slot="controls"] Start/Stop buttons (#start, #stop)
+      //   [data-h2-slot="status"]   the status line (#status)
+      // A missing slot gets a plain container at the end of <body>.
+      function h2Slot(name) {
+        let slot = document.querySelector(`[data-h2-slot="${name}"]`);
+        if (!slot) {
+          slot = document.createElement('div');
+          slot.dataset.h2Slot = name;
+          document.body.append(slot);
+        }
+        return slot;
+      }
+      const h2Canvas = document.createElement('canvas');
+      h2Canvas.id = 'canvas';
+      h2Slot('display').append(h2Canvas);
+      for (const [id, text] of [['start', 'Start'], ['stop', 'Stop']]) {
+        const button = document.createElement('button');
+        button.id = id;
+        button.type = 'button';
+        button.textContent = text;
+        button.disabled = id === 'stop';
+        h2Slot('controls').append(button);
+      }
+      const h2Status = document.createElement('p');
+      h2Status.id = 'status';
+      h2Status.textContent = 'Ready';
+      h2Slot('status').append(h2Status);
       var Module = {
         canvas: document.getElementById('canvas'),
         print: text => console.log(text),
