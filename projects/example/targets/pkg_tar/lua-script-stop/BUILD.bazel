@@ -1,0 +1,23 @@
+load("//projects/example/libs/web/app_host:lua_web_app.bzl", "h2_lua_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+# Stop path: no key is pressed; run_ms raises the same stop request as the
+# page Stop button, the entry cancels the job and the App still passes.
+h2_lua_web_app(
+    name = "lua-script-stop",
+    buttons = {
+        "left": "ArrowLeft",
+        "ok": "Enter",
+        "back": "Escape",
+    },
+    canvas_min = 300,
+    exit_button = "back",
+    passes = [
+        "H2_WEB_APP name=lua-script-stop stage=ready",
+        "H2_WEB_APP name=lua-script-stop stage=stop-requested",
+        "H2_WEB_APP name=lua-script-stop result=PASS rc=0 fs=0 destroy=0",
+    ],
+    run_ms = 1500,
+    script = "//projects/example/targets/pkg_tar/lua-script:smoke.lua",
+)

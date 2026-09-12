@@ -14,7 +14,8 @@ projects/example/
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
                                    # main.c + h2_web_app()
-├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、默认 exit Button
+├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
+├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
 ├── targets/pkg_tar/lua-script-extension/ # 同上加 extension：capability 与 exit_requested
 
 projects/e2e/targets/pkg_tar/
@@ -191,7 +192,10 @@ WAITING 时输出 `stage=ready`；脚本失败时打印 `H2_WEB_LUA_APP job stat
 不引用该符号。`register_host` 在 Host start 前调用一次，返回非 OK 时不 start、
 不提交 job，App 以该结果 FAIL；`exit_requested` 接收 exit Button 的每个
 Runtime event（Down、Up、Action），返回 true 取消 job 一次，并取代默认的
-release 规则，例如只接受长按。其余参数原样交给
+release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出与页面 Stop
+相同的停止请求（用于测试）。参数校验由 `lua_web_app_argument_error()` 完成，
+`:lua_web_app_argument_test` 覆盖空或超过 8 个 Button、非法名称和未知
+`exit_button`。其余参数原样交给
 `h2_web_app()`。每个 package 只能有一个 `h2_lua_web_app()`/`h2_web_app()`。
 这些宏内部 label 都用 `Label()` 解析到 GizOS，下游仓库可以直接 load
 `@gizos//projects/example/libs/web/app_host:lua_web_app.bzl`。
@@ -210,7 +214,8 @@ release 规则，例如只接受长按。其余参数原样交给
 | `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
-| `lua-script` | `h2_lua_web_app()`：脚本校验 Button args 后 ready，一次 Escape（exit Button）release 取消 job 并 PASS |
+| `lua-script` | `h2_lua_web_app()`：脚本校验 Button args 后 ready；Enter 触发脚本 OK 回调；一次 Escape（exit Button）release 取消 job 并 PASS |
+| `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
 

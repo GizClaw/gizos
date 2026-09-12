@@ -8,6 +8,17 @@ load(":web_app.bzl", "h2_web_app")
 _NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
 _MAX_BUTTONS = 8  # H2_WEB_APP_HOST_MAX_BUTTONS
 
+def lua_web_app_argument_error(buttons, exit_button):
+    """Returns why h2_lua_web_app() arguments are invalid, or "" when valid."""
+    if not buttons or len(buttons) > _MAX_BUTTONS:
+        return "buttons needs 1..%d entries" % _MAX_BUTTONS
+    for button in buttons.keys():
+        if not button or [c for c in button.elems() if c not in _NAME_CHARS]:
+            return "Button name %r must use [a-z0-9_]" % button
+    if exit_button != None and exit_button not in buttons:
+        return "exit_button %r is not in buttons" % exit_button
+    return ""
+
 def _c_string(value):
     return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -19,6 +30,7 @@ def h2_lua_web_app(
         extension = None,
         display_width = 240,
         display_height = 240,
+        run_ms = 0,
         **kwargs):
     """Declares `<name>` (web tar), `serve` and `browser_test` for one script.
 
@@ -39,17 +51,15 @@ def h2_lua_web_app(
         modules or capabilities and to decide when the exit Button ends the job.
       display_width: Canvas width in pixels.
       display_height: Canvas height in pixels.
+      run_ms: Nonzero stops the App after this long exactly as the page Stop
+        button does (for tests).
       **kwargs: Passed to h2_web_app() (passes, fails, presses, taps,
         canvas_min, test_timeout_s, ...).
     """
-    if not buttons or len(buttons) > _MAX_BUTTONS:
-        fail("h2_lua_web_app: buttons needs 1..%d entries" % _MAX_BUTTONS)
+    error = lua_web_app_argument_error(buttons, exit_button)
+    if error:
+        fail("h2_lua_web_app: " + error)
     names = list(buttons.keys())
-    for button in names:
-        if not button or [c for c in button.elems() if c not in _NAME_CHARS]:
-            fail("h2_lua_web_app: Button name %r must use [a-z0-9_]" % button)
-    if exit_button != None and exit_button not in names:
-        fail("h2_lua_web_app: exit_button %r is not in buttons" % exit_button)
     symbol = name.replace("-", "_") + "_script"
 
     h2_lua_resource(
@@ -79,6 +89,7 @@ def h2_lua_web_app(
             "#define H2_WEB_LUA_APP_EXTENSION %d" % (1 if extension else 0),
             "#define H2_WEB_LUA_APP_DISPLAY_WIDTH %d" % display_width,
             "#define H2_WEB_LUA_APP_DISPLAY_HEIGHT %d" % display_height,
+            "#define H2_WEB_LUA_APP_RUN_MS %du" % run_ms,
             "#endif",
             "",
         ],

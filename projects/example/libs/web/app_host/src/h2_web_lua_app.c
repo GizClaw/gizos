@@ -161,6 +161,7 @@ int main(void) {
       .display_height = H2_WEB_LUA_APP_DISPLAY_HEIGHT,
       .buttons = buttons,
       .button_count = BUTTON_COUNT,
+      .run_ms = H2_WEB_LUA_APP_RUN_MS,
       .stack_size = 262144u,
   };
   return h2_web_app_host_run(&config, run_script, NULL);
